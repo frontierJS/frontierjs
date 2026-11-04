@@ -23,8 +23,9 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel } from '../../core/hooks.ts'
 import { db, ws }   from '../../core/resource.ts'
-import { declaredFor, gradePosture, gradeReplication, lastKnownControls, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
+import { declaredFor, gradePosture, gradeReplication, gradeRuntimeContainers, gradeRuntimeUnits, lastKnownControls, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
 import type { Control, PostureReadings } from '../../domain/host/posture.ts'
+import { LONG_RUNNING_KINDS } from '../../domain/host/runtime.ts'
 import { notifyPeople, workspaceMembers } from '../../domain/notification/notify.ts'
 import { statusOf } from '../../core/dependencies.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -117,16 +118,24 @@ async function ingest(server: any, data: ReportData) {
  */
 export async function postureView(server: any, row: any, { readings = false } = {}) {
   const host    = !!await hostReplicaDestination(sys(), server)
-  const replica = gradeReplication(server.replication, await replicatingOn(server.id), Date.now(), host)
+  const now     = Date.now()
+  // The heartbeat's readings, graded here rather than in the six-hourly report,
+  // so they turn red inside one beat and age into unknown on their own clock.
+  const beat    = [
+    gradeReplication(server.replication, await replicatingOn(server.id), now, host),
+    gradeRuntimeContainers(server.runtime, await placedOn(server.id), now),
+    gradeRuntimeUnits(server.runtime, now),
+  ]
   if (!row) return {
     serverId: server.id, serverName: server.name, status: server.status,
-    reported: false, stale: false, at: null, controls: [replica], failing: replica.ok === false ? 1 : 0,
-    unknown: replica.ok === 'unknown' ? 1 : 0, rank: 5_000 + postureRank([replica]),
+    reported: false, stale: false, at: null, controls: beat,
+    failing: beat.filter(c => c.ok === false).length,
+    unknown: beat.filter(c => c.ok === 'unknown').length, rank: 5_000 + postureRank(beat),
   }
-  const stale    = Date.now() - Date.parse(row.at) > 2 * POSTURE_INTERVAL_MS
+  const stale    = now - Date.parse(row.at) > 2 * POSTURE_INTERVAL_MS
   const controls = [...(row.controls as Control[]).map(c => stale
     ? { ...c, ok: 'unknown' as const, message: `Stale — last said: ${c.message}` }
-    : c), replica]
+    : c), ...beat]
   return {
     serverId: server.id, serverName: server.name, status: server.status,
     reported: true, stale, at: row.at, controls,
@@ -143,6 +152,16 @@ async function replicatingOn(serverId: string): Promise<{ id: string; slug: stri
   if (!placed.length) return []
   return sys().app.findMany({
     where:  { id: { in: [...new Set(placed.map(p => p.appId))] }, replicaDestinationId: { not: null } },
+    select: { id: true, slug: true }, orderBy: { slug: 'asc' },
+  })
+}
+
+/** The apps live on a machine (a placement a deploy finished) that `runtime.containers` expects a container for. */
+async function placedOn(serverId: string): Promise<{ id: string; slug: string }[]> {
+  const placed = await sys().appServer.findMany({ where: { serverId, status: 'running' }, select: { appId: true } }) as { appId: string }[]
+  if (!placed.length) return []
+  return sys().app.findMany({
+    where:  { id: { in: [...new Set(placed.map(p => p.appId))] }, kind: { in: LONG_RUNNING_KINDS } },
     select: { id: true, slug: true }, orderBy: { slug: 'asc' },
   })
 }

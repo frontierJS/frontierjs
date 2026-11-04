@@ -10,6 +10,13 @@ renders follow `README.md` § 2–4 and `theme-field`. A logo has to read in one
 flat color at 16px, and this kit asks for painterly depth. Both are right,
 because they cover different things.
 
+**A picture or a poster: decide which before writing a prompt** (`FJS-D1861`).
+A picture is imagery, such as a vista, a hero or a texture, and carries no
+lettering because the page sets the type (§ 1–8). A poster is informational: a
+field-series plate that explains one subject at a glance, and its words are the
+point (§ 9). Strip every word from the image: a picture still does its job, a
+poster stops working.
+
 The reference image is `fjs-backdrop-portrait.png` at the repo root. When a
 prompt and that image disagree, the image wins. `assets/moodboard.image-ref.png`
 is the board for the whole range: the swatches, the material close-ups and the
@@ -143,8 +150,8 @@ paper.
 
 ## 5 · Negative prompt
 
-Paste this into the tool's negative-prompt field. Where a tool has no such
-field, append it as `Avoid: …`.
+Paste this into the tool's negative-prompt field for a picture; a poster uses
+§ 9's list. Where a tool has no such field, append it as `Avoid: …`.
 
 ```text
 generic startup branding, corporate stock photography, sterile minimalism, flat
@@ -200,7 +207,8 @@ Two rules connect pictures to the page:
 
 ## 8 · Acceptance check
 
-An image ships when every line is true. Judge it at the size it will be used at.
+A picture ships when every line is true, and a poster when § 9's lines are.
+Judge it at the size it will be used at.
 
 - [ ] It has both halves of § 1: scale, and something handmade.
 - [ ] The light is golden hour or lamplight, with long shadows and haze between
@@ -218,3 +226,72 @@ A shippable file goes in `assets/`. Keep the prompt that made it in a sidecar
 `<name>.prompt.txt` beside it, so the image can be regenerated or varied. A
 large source or contact sheet is named `*.image-ref.*`, which keeps it out of
 git (`README.md`, top).
+
+## 9 · Field-series poster
+
+An informational plate: one subject explained at a glance, for the site, a
+deck or a README header, read by a developer and finished enough for
+marketing. The reference is `assets/field-series-04.image-ref.png`
+(plate 04, *One schema. One stack.*), gitignored like the moodboard. Plates are
+numbered in series and the panel prints the number as `FJS-04`, which reads as
+an `ISSUES.md` id to the register check, so prose cites one as *plate 04*. The
+next is plate 05.
+
+**Five zones, in reading order:**
+
+- **Header band.** The compass-rose mark, the wordmark `FrontierJS`, and
+  `BUILT FOR THE WILD` between two rules; `EXPLORE / BUILD / SHIP / TOGETHER`
+  in small caps at the top right; a painted alpine panorama behind the right
+  half.
+- **Left column.** A small-caps kicker, a two-line heavy-serif headline that
+  states the claim, and a one-sentence subhead.
+- **Center panel.** An engraved frame titled `FRONTIERJS FIELD SERIES` with
+  the plate number at its right. Inside, a painted scene that IS the subject
+  (§ 3's light and palette, a § 4 realm line), with inked leader lines from
+  numbered markers to dark-slate icon tiles, each a heading and a two-line note.
+- **Right column.** An engraved panel of five or six rows: a line icon, a
+  small-caps heading and one line of body.
+- **Bottom band.** Four stat cells, each a big serif word or number, a
+  small-caps label and one line beneath.
+
+**The base.** Paste it, then write every word the plate carries, quoted, zone
+by zone. Keep a heading under five words and a note under ten: a model's
+spelling degrades with length.
+
+```text
+A landscape 3:2 informational poster in the style of a vintage expedition
+field-guide plate. Aged parchment ground with fine paper grain, engraved
+linework borders, heritage serif display type, small-caps labels, and
+dark-slate icon tiles with parchment line icons. Earthy palette: sandstone,
+burnt sienna, rust, amber, deep forest green, muted slate blue, warm charcoal
+ink. Painted vignettes in the tradition of Bierstadt and Moran, golden hour,
+amber rim light, atmospheric haze. Restrained ornament, strong hierarchy,
+generous margins. Every word below is spelled exactly as written, and no
+other text appears.
+```
+
+**Negative prompt for a poster.** § 5's list without its lettering and
+diagram words, which a poster needs:
+
+```text
+generic startup branding, corporate stock photography, sterile minimalism,
+neon colors, saturated electric blue, hacker green, pure white background,
+pure black background, cyberpunk, steampunk, western caricature, cowboy hat,
+glossy plastic surfaces, futuristic interface, glossy UI, 3D render, isometric,
+oversaturated HDR, cartoon landscape, cluttered composition, generic AI
+fantasy art, misspelled words, invented words, extra text, watermark
+```
+
+**A poster ships when every line is true**, at the width it ships at:
+
+- [ ] § 8's light, palette, hat, painterly and restrained-ornament lines hold.
+- [ ] Every word matches the prompt letter for letter. Plate 04's reference
+      reads `SOLITE` where it means SQLite; a word that will not come out
+      right is set in HTML or Figma over a plate generated without it.
+- [ ] Every claim is true today: a number counted, a behavior a drive proves.
+      The sidecar names the count or the drive behind each one, and a claim
+      that waits on an unrun drill stays off the plate until it runs.
+- [ ] The headline states the claim, the way a caption does.
+- [ ] The smallest text, the stat labels, reads at the shipped width.
+
+The sidecar `<name>.prompt.txt` holds the prompt and the source of each claim.

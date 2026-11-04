@@ -1,6 +1,6 @@
 // tools/schema-layers.js
 // The schema as layers: foreign-key clusters on a floor, dependency depth as
-// height. Studio's Layers tab draws what this returns and lays nothing out.
+// height. Studio's Clusters tab draws what this returns and lays nothing out.
 //
 // Groups come from foreign keys alone (Louvain over the model graph), with each
 // key weighted down by how many models point at its target so the models
@@ -109,7 +109,10 @@ function builtFrom(name, lead) {
 // a count: in-degree alone ranks the models every table points at (an App, a
 // Server) above the tenant and the person. The tenancy root is what the row
 // tenant column points at, the principal is the @@auth model, and what the
-// principal itself points at is the organization it belongs to.
+// principal itself points at is the organization it belongs to. A principal
+// that points at nothing belongs through a join (lago's Membership: a User and
+// an Organization), but only to a model more keys point at than at the
+// principal — discourse's User has two-key joins to an ad and a review too.
 function hubsOf(schema, g) {
   const hubs = new Set()
   const t = schema.tenancy
@@ -126,6 +129,11 @@ function hubsOf(schema, g) {
   if (principal && g.inDeg[principal.name] != null) {
     hubs.add(principal.name)
     for (const target of g.out[principal.name]) hubs.add(target)
+    if (!g.out[principal.name].length) for (const n of g.names) {
+      const keys = g.out[n]
+      const other = keys.length === 2 && keys.includes(principal.name) && keys.find(t => t !== principal.name)
+      if (other && g.inDeg[other] > g.inDeg[principal.name]) hubs.add(other)
+    }
   }
   if (!hubs.size && g.names.length) {
     hubs.add(g.names.reduce((a, b) => g.inDeg[b] > g.inDeg[a] ? b : a))
@@ -174,10 +182,12 @@ function ringOrder(keys, rad, links, minR) {
   return best
 }
 
-// The group holding the most hubs in the middle, the rest the ring around it,
-// far enough out that no disc touches the center one.
-function hubCenters(keys, rad, hubCount, links) {
-  const hub = keys.reduce((a, b) => hubCount(b) > hubCount(a) ? b : a)
+// The group whose hubs the most keys point at in the middle, the rest the ring
+// around it, far enough out that no disc touches the center one. Counting hubs
+// instead centers mastodon's User, whose lookups are hubs beside it, over the
+// Account 59 keys point at.
+function hubCenters(keys, rad, hubWeight, links) {
+  const hub = keys.reduce((a, b) => hubWeight(b) > hubWeight(a) ? b : a)
   const rest = keys.filter(k => k !== hub)
   const minR = rad(hub) + Math.max(0, ...rest.map(rad)) + 260
   const out = ringCenters(ringOrder(rest, rad, links, minR), rad, minR)
@@ -324,7 +334,7 @@ export function schemaLayers(schema) {
     (core.has(b) - core.has(a)) || (hop[a] ?? Infinity) - (hop[b] ?? Infinity) || g.inDeg[b] - g.inDeg[a] || a.localeCompare(b))]))
 
   const rad = k => DISC_SCALE * byKey.get(k).length ** DISC_EXPONENT
-  const hubCount = k => byKey.get(k).filter(n => hubSet.has(n)).length
+  const hubWeight = k => byKey.get(k).filter(n => hubSet.has(n)).reduce((s, n) => s + g.inDeg[n], 0)
   const between = new Map()
   for (const [a, b] of g.edges) {
     if (group[a] === group[b]) continue
@@ -334,7 +344,7 @@ export function schemaLayers(schema) {
   const links = [...between].map(([pair, w]) => [...pair.split('|'), w])
   const centers = {
     ring: ringCenters(ringOrder(keys, rad, links), rad),
-    hub: hubCenters(keys, rad, hubCount, links),
+    hub: hubCenters(keys, rad, hubWeight, links),
   }
   const floors = {}
   for (const [name, at] of Object.entries(centers)) {
@@ -357,7 +367,7 @@ export function schemaLayers(schema) {
     edges: g.edges,
     groups: keys.map(k => ({
       key: k,
-      label: k === 'unlinked' ? 'No foreign keys' : k.slice(7) + ' cluster',
+      label: k === 'unlinked' ? 'No foreign keys' : k.slice(7),
       members: ranked.get(k),
       core: ranked.get(k).filter(n => core.has(n)).length,
       r: round(rad(k)),

@@ -8,7 +8,8 @@
 // is `fromPath(path)`, a wrapper only code can build.
 
 import { describe, test, expect, afterAll } from 'bun:test'
-import { writeFileSync, rmSync } from 'fs'
+import { writeFileSync, rmSync, statSync, existsSync, readFileSync } from 'fs'
+import { createHash } from 'crypto'
 import { join } from 'path'
 import { createClient, autoMigrate } from '../src/index.js'
 import { FileStorage, fromPath } from '../src/storage/file-storage.js'
@@ -139,6 +140,76 @@ describe('a file reaches the provider without being read whole (FJS-3094)', () =
     const row = await db.asSystem().photo.create({ data: { id: 1, original: fromPath(secret) }, select: { original: { resolve: false } } })
     expect(bodies[0]).toBeInstanceOf(ReadableStream)
     expect(row.original.size).toBe('server-only bytes'.length)
+    db.$close()
+  })
+})
+
+// A resumed upload is assembled on the server's disk and handed over at the
+// end. Copying it is its size read and written again; on the same filesystem
+// the last step is one read (the hash) and a rename (FJS-3971).
+describe('fromPath(path, { move: true }) adopts the file (FJS-3971)', () => {
+  async function onDisk() {
+    const root = join(dir, `adopt-${crypto.randomUUID()}`)
+    const db: any = await createClient({
+      schema: `model Photo {\n id Int @id\n original File?\n @@allow(all, true)\n}`,
+      db: ':memory:', plugins: [FileStorage({ provider: 'local', bucket: 'test', localPath: root, publicBase: 'https://cdn.test' })],
+    })
+    await autoMigrate(db)
+    return { db, root }
+  }
+
+  test('the source is renamed into the store: same inode, source gone, hash and size recorded', async () => {
+    const { db, root } = await onDisk()
+    const part = join(dir, `${crypto.randomUUID()}.part.txt`)
+    writeFileSync(part, 'assembled bytes')
+    const inode = statSync(part).ino
+    const row = await db.asSystem().photo.create({ data: { id: 1, original: fromPath(part, { move: true }) }, select: { original: { resolve: false } } })
+    expect(existsSync(part)).toBe(false)
+    expect(statSync(join(root, row.original.key)).ino).toBe(inode)
+    expect(readFileSync(join(root, row.original.key), 'utf8')).toBe('assembled bytes')
+    expect(row.original.size).toBe('assembled bytes'.length)
+    expect(row.original.sha256).toBe(createHash('sha256').update('assembled bytes').digest('hex'))
+    db.$close()
+  })
+
+  test('without move the source stays and the store holds a copy', async () => {
+    const { db, root } = await onDisk()
+    const part = join(dir, `${crypto.randomUUID()}.txt`)
+    writeFileSync(part, 'kept')
+    const row = await db.asSystem().photo.create({ data: { id: 1, original: fromPath(part) }, select: { original: { resolve: false } } })
+    expect(existsSync(part)).toBe(true)
+    expect(statSync(join(root, row.original.key)).ino).not.toBe(statSync(part).ino)
+    db.$close()
+  })
+
+  test('a refused type leaves the source where it was', async () => {
+    const root = join(dir, `adopt-${crypto.randomUUID()}`)
+    const db: any = await createClient({
+      schema: `model Photo {\n id Int @id\n original File? @accept("image/png")\n @@allow(all, true)\n}`,
+      db: ':memory:', plugins: [FileStorage({ provider: 'local', bucket: 'test', localPath: root })],
+    })
+    await autoMigrate(db)
+    const part = join(dir, `${crypto.randomUUID()}.txt`)
+    writeFileSync(part, 'not a png')
+    await expect(db.asSystem().photo.create({ data: { id: 1, original: fromPath(part, { move: true }) } })).rejects.toThrow()
+    expect(existsSync(part)).toBe(true)
+    db.$close()
+  })
+
+  test('a provider with no adopt stores the bytes, then removes the source', async () => {
+    const files = FileStorage({ provider: 'local', bucket: 'test' }) as any
+    const db: any = await createClient({
+      schema: `model Photo {\n id Int @id\n original File?\n @@allow(all, true)\n}`,
+      db: ':memory:', plugins: [files],
+    })
+    await autoMigrate(db)
+    const got: string[] = []
+    files._provider = { async put(_k: string, body: any) { got.push(await new Response(body).text()) }, async get() { return null }, async delete() {} }
+    const part = join(dir, `${crypto.randomUUID()}.txt`)
+    writeFileSync(part, 'remote bytes')
+    await db.asSystem().photo.create({ data: { id: 1, original: fromPath(part, { move: true }) } })
+    expect(got).toEqual(['remote bytes'])
+    expect(existsSync(part)).toBe(false)
     db.$close()
   })
 })

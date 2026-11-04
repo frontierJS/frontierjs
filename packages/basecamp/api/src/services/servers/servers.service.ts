@@ -52,6 +52,8 @@ import { sendVia }               from '../../providers/compute/accounts.ts'
 import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
 import { mintEnrollToken, cloudInit, outpostUnpublished, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
 import { issueEnrollmentFor, refusePlaceholderKey, useHost, findHost } from '../../domain/host/host-machine.ts'
+import { LONG_RUNNING_KINDS, runtimeEdges, stampRestarts } from '../../domain/host/runtime.ts'
+import type { RuntimeEdge, RuntimeReading } from '../../domain/host/runtime.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { listSshHosts, probeSshHost } from '../../domain/local/local-ssh.ts'
 import { outbound, outpostFor } from '../../providers/outpost.ts'
@@ -116,6 +118,21 @@ export interface HeartbeatData {
   replication?:  { apps?: { app_id: string; status: string | null; last_sync_at: string | null; databases: number }[]; error?: string }
   /** The public half of each App's deploy key the machine holds (`FJS-D1555`). */
   deploy_keys?:  { app_id: string; public_key: string }[]
+  /** The containers, units and boot id, read every beat (`domain/host/runtime.ts`). */
+  runtime?:      RuntimeReading
+}
+
+/** The runtime edges a beat owes, its containers named by App slug and kept
+ *  only for an App that holds one up. Read only when a container moved, so a
+ *  quiet beat costs no query. */
+async function runtimeEdgesFor(sys: any, serverId: string, before: RuntimeReading | null, after: RuntimeReading | undefined): Promise<RuntimeEdge[]> {
+  const edges = runtimeEdges(before, after)
+  if (!edges.some(e => e.kind.startsWith('container'))) return edges
+  const ids  = [...new Set((after?.containers ?? []).map(c => c.app_id).filter(Boolean))] as string[]
+  const apps = await sys.app.findMany({ where: { id: { in: ids }, kind: { in: LONG_RUNNING_KINDS } }, select: { id: true, slug: true } }) as { id: string; slug: string }[]
+  const slug = new Map(apps.map(a => [a.id, a.slug]))
+  return runtimeEdges(before, after, appId => (appId ? slug.get(appId) : undefined))
+    .filter(e => !e.kind.startsWith('container') || slug.has(e.metadata.app_id as string))
 }
 
 /**
@@ -1158,6 +1175,10 @@ export default createService({
     // find the row. Same trap `setVariable` had, and the deploy job's
     // projection before it: a partial row is indistinguishable from a full
     // one until it breaks.
+    // Against the stored reading, before the update overwrites it: the stored
+    // row is the only memory of what the box was doing a beat ago.
+    const edges = await runtimeEdgesFor(sys, id, server.runtime, data.runtime)
+
     const updated = await sys.server.update({
       where: { id },
       data: {
@@ -1172,8 +1193,11 @@ export default createService({
         // An Outpost too old to read Litestream leaves the last reading, whose
         // `checked_at` then ages into unknown on the posture screen.
         ...(data.replication ? { replication: { ...data.replication, checked_at: now } } : {}),
+        ...(data.runtime ? { runtime: { ...stampRestarts(server.runtime, data.runtime, now), checked_at: now } } : {}),
       },
     })
+    for (const e of edges)
+      await sys.serverEvent.create({ data: { serverId: id, kind: e.kind, message: e.message, metadata: e.metadata } })
 
     // KEEP THE READINGS. `Server.health` is a SNAPSHOT — one column, one row,
     // overwritten every check-in — so until now the answer to *what was this

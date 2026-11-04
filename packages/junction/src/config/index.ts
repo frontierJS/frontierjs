@@ -125,7 +125,7 @@ export interface AppConfig {
     rateLimit?:      import('../transport/middleware.ts').RateLimitOptions
     bodyLimit?:      { maxSize?: number }
     // Grace period (ms) between stop() and process.exit — lets in-flight
-    // requests complete. Default 5000ms.
+    // requests complete. Default derived from the stop grace (`shutdownBudgets`).
     drainTimeout?: number
     // How much junction holds for a WebSocket that is not draining before it
     // closes it. Default 8MB. Past Bun's own buffer a frame is
@@ -171,10 +171,11 @@ export interface AppConfig {
   // stop (`FJS-693`).
   shutdown?: {
     // Whole-shutdown deadline. Past it the process exits 1 rather than waiting.
-    // Default 15000ms.
+    // Every default here derives from the stop grace (`shutdownBudgets`), and
+    // a stated budget the grace cannot hold refuses the boot.
     timeout?: number
     // Per-plugin `shutdown()` deadline. One plugin that never settles must not
-    // take the rest of the list with it. Default 5000ms.
+    // take the rest of the list with it.
     pluginTimeout?: number
     // Install `unhandledRejection` / `uncaughtException` handlers that log,
     // stop the app and exit 1. Skipped where the app has already installed its
@@ -545,6 +546,62 @@ function envOverrides(): Partial<AppConfig> {
   if (process.env.FRONTIER_HOSTNAME) out.hostname = process.env.FRONTIER_HOSTNAME
   if (process.env.DEBUG === '1') out.debug = true
   return out
+}
+
+// ─── Shutdown budgets ─────────────────────────────────────────────────────
+
+/** Docker's own `docker stop` default, assumed where no grace was handed (`fli dev`). */
+export const DEFAULT_STOP_GRACE_S = 10
+
+export interface ShutdownBudgets {
+  graceMs:       number
+  timeout:       number
+  pluginTimeout: number
+  drainTimeout:  number
+  /** Each stated budget the grace cannot hold, and a grace that is not a number. */
+  misfits:       string[]
+}
+
+/**
+ * The three shutdown budgets, fitted inside the container's stop grace
+ * (`FJS-D1839`, `FJS-D1841`). Outpost hands the grace as `FRONTIER_STOP_GRACE`
+ * beside `--stop-timeout`; past it docker SIGKILLs, so a budget beyond it is
+ * never reached and the exit status the deadline exists to report is lost.
+ *
+ * Stated budgets are kept and named in `misfits` when they reach the grace;
+ * `load-config` refuses the boot on any. The rest derive: the whole stops a
+ * margin short of the grace, the HTTP drain takes at most a third of it, and
+ * the plugins take what is left — a queue's drain is the slow step.
+ */
+export function shutdownBudgets(
+  config: { http?: { drainTimeout?: number }; shutdown?: AppConfig['shutdown'] },
+  env: Record<string, string | undefined> = process.env,
+): ShutdownBudgets {
+  const misfits: string[] = []
+  const raw = env.FRONTIER_STOP_GRACE
+  let graceS = DEFAULT_STOP_GRACE_S
+  if (raw != null && raw !== '') {
+    if (Number(raw) > 0) graceS = Number(raw)
+    else misfits.push(`FRONTIER_STOP_GRACE must be a number of seconds above 0 — got '${raw}'`)
+  }
+  const graceMs = graceS * 1_000
+  const cfg     = config
+
+  const stated = {
+    'shutdown.timeout':       cfg.shutdown?.timeout,
+    'shutdown.pluginTimeout': cfg.shutdown?.pluginTimeout,
+    'http.drainTimeout':      cfg.http?.drainTimeout,
+  }
+  for (const [key, ms] of Object.entries(stated)) {
+    if (ms != null && ms >= graceMs) {
+      misfits.push(`${key} (${ms}ms) does not fit inside the ${graceS}s stop grace (FRONTIER_STOP_GRACE) — the container is killed first`)
+    }
+  }
+
+  const timeout       = stated['shutdown.timeout'] ?? graceMs - Math.min(1_000, graceMs / 10)
+  const drainTimeout  = stated['http.drainTimeout'] ?? Math.min(5_000, Math.floor(timeout / 3))
+  const pluginTimeout = stated['shutdown.pluginTimeout'] ?? Math.max(0, timeout - drainTimeout)
+  return { graceMs, timeout, pluginTimeout, drainTimeout, misfits }
 }
 
 // ─── Deep merge ───────────────────────────────────────────────────────────

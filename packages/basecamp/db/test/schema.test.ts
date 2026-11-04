@@ -2523,8 +2523,8 @@ describe('App runtime columns', () => {
   test('every runtime column is an App column, and a Blueprint one but containerPort', () => {
     const app = columns('App'), blueprint = columns('Blueprint')
     expect(RUNTIME_COLUMNS.filter(c => !app.includes(c))).toEqual([])
-    // `containerPort` is App-only: a blueprint's `port` is both until a person splits them.
-    expect(RUNTIME_COLUMNS.filter(c => !blueprint.includes(c))).toEqual(['containerPort'])
+    // `containerPort` and `stopGrace` are App-only: a blueprint's `port` is both until a person splits them.
+    expect(RUNTIME_COLUMNS.filter(c => !blueprint.includes(c))).toEqual(['containerPort', 'stopGrace'])
   })
 
   test('a new App column is either a runtime column or named exempt', () => {

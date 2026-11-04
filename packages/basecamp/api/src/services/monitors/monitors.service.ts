@@ -10,7 +10,7 @@
 // caller can set (`@system`), and `status` moves only by `@@transitions`.
 // `MonitorCheck` and `MonitorEvent` are written by the system and read here.
 
-import { createService, NotFound, Conflict, parseWhere, $ } from '@frontierjs/junction'
+import { createService, NotFound, Conflict, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
@@ -22,6 +22,26 @@ const RECENT_CHECKS = 50
 
 /** The rolled-up days `get` carries: a year of history. */
 const UPTIME_DAYS = 365
+
+/** What the system regenerates on a managed Monitor (`domain/monitor/managed.ts`).
+ *  A person's write to one would be overwritten by the next Domain write, so it
+ *  is refused by name rather than kept until then. */
+const MANAGED_COLUMNS = ['url', 'appId', 'isManaged'] as const
+
+function refuseManagedEdit(monitor: Record<string, unknown>, asked: Record<string, unknown>) {
+  if (!monitor.isManaged) return
+  const changed = MANAGED_COLUMNS.filter(key => key in asked && asked[key] !== monitor[key])
+  if (changed.length)
+    throw new BadRequest(`${changed.join(', ')} of an automatic Monitor follows its App's primary Domain — change the Domain instead`)
+}
+
+async function patchMonitor() {
+  const monitor = await getScoped('monitor', 'Monitor')
+  refuseManagedEdit(monitor, ($.data ?? {}) as Record<string, unknown>)
+  const patch = narrowPatch($.data as Record<string, unknown>)
+  if (changesNothing(patch)) return monitor
+  return db().monitor.update({ where: { id: $.id as string }, data: patch })
+}
 
 /** A monitor with where it pages and what it last saw — the shape `get`
  *  answers, so attach/detach and pause/resume return the record the client is
@@ -80,15 +100,21 @@ export default createService({
     return db().monitor.create({ data: $.data as Record<string, unknown> })
   },
 
+  // `update` is `patch` with an id required; left out, the base CRUD answers it
+  // and a PUT writes past the managed-row refusal.
+  async update() {
+    return patchMonitor()
+  },
+
   async patch() {
-    await getScoped('monitor', 'Monitor')
-    const patch = narrowPatch($.data as Record<string, unknown>)
-    if (changesNothing(patch)) return getScoped('monitor', 'Monitor')
-    return db().monitor.update({ where: { id: $.id as string }, data: patch })
+    return patchMonitor()
   },
 
   async remove() {
     const monitor = await getScoped('monitor', 'Monitor')
+    // It would come back on the next Domain write; pausing it is the person's move.
+    if (monitor.isManaged)
+      throw new BadRequest('An automatic Monitor goes with its App\'s last Domain — pause it instead')
     // Before the delete: the cascade takes the channel links the resolve goes through.
     await resolveDownMonitor($.app, $.db.asSystem(), monitor as never, 'Monitor deleted')
     // A real delete: the schema cascades the checks, events and channel links.

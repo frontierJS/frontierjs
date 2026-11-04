@@ -67,6 +67,10 @@ if (existsSync(join(APP, 'db', 'migrations'))) cpSync(join(APP, 'db', 'migration
 const pkg = JSON.parse(readFileSync(join(APP, 'package.json'), 'utf8'))
 for (const dep of Object.keys(pkg.dependencies ?? {})) {
   if (dep.startsWith('@frontierjs/')) continue
+  if (!existsSync(join(APP, 'node_modules', dep))) {
+    console.error(`make-sidecar: '${dep}' is not installed in ${join(APP, 'node_modules')}; run bun install in ${APP} first`)
+    process.exit(1)
+  }
   cpSync(realpathSync(join(APP, 'node_modules', dep)), join(app, 'node_modules', dep), { recursive: true, dereference: true })
 }
 

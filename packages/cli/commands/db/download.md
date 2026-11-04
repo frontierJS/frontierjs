@@ -4,6 +4,7 @@ description: Download the app's database to db/backups/ — through Basecamp whe
 alias: db-download
 examples:
   - fli db:download
+  - fli db:download --take
   - fli db:download --dev
   - fli db:download --dry
 flags:
@@ -11,13 +12,19 @@ flags:
     type: boolean
     description: Download from the dev server instead of production (ssh only)
     defaultValue: false
+  take:
+    type: boolean
+    description: Back the App up now and fetch that archive, rather than the newest one already in its bucket (Basecamp only)
+    defaultValue: false
 ---
 
 With `BASECAMP_APP_ID` set, the App's newest bucket archive is fetched and
-unpacked under `db/backups/<stamp>/`, as `fli basecamp:backup` does; with no
+unpacked under `db/backups/<stamp>/`, or one taken now with `--take`; with no
 archive in a bucket it refuses, and never falls back to ssh (`FJS-D1717`).
-Otherwise `production.db*` is copied by scp from `PROD_SERVER` (or
-`DEV_SERVER` with `--dev`) at its `*_SERVER_PATH`.
+This is the one command that takes an App's archive (`FJS-D1848`);
+`BASECAMP_API_KEY` needs `appBackups:read`, and `--take` also
+`appBackups:write` and `apps:read`. Otherwise `production.db*` is copied by
+scp from `PROD_SERVER` (or `DEV_SERVER` with `--dev`) at its `*_SERVER_PATH`.
 
 ```js
 const env    = $.env

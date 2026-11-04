@@ -174,10 +174,10 @@ describe('a release is put back', () => {
   })
 
   test('a release records how its container starts, and a later edit leaves it alone', async () => {
-    const { app: target } = await anAppWithHistory({ port: 8080, containerPort: 80, healthCheck: '/up', memLimitMb: 128 })
+    const { app: target } = await anAppWithHistory({ port: 8080, containerPort: 80, healthCheck: '/up', memLimitMb: 128, stopGrace: 25 })
     const made: any = await env.as(developer).service('deployments').create({ appId: target.id, toImage: `${target.slug}:v3` })
     const snap = async () => (await (env.system as any).deployment.findUnique({ where: { id: made.id } })).configSnapshot
-    const shipped = { port: 8080, containerPort: 80, healthCheck: '/up', memLimitMb: 128 }
+    const shipped = { port: 8080, containerPort: 80, healthCheck: '/up', memLimitMb: 128, stopGrace: 25 }
     expect((await snap()).runtime).toEqual(shipped)
 
     await env.as(admin).service('apps').patch(target.id, { memLimitMb: 512 })
@@ -453,5 +453,40 @@ describe('a rollback and the volume', () => {
       expect(row.error).not.toContain('running again')
       expect(sent.map(s => s.path)).not.toContain('/deploy')
     })
+  })
+})
+
+describe('how the machine swapped, on the row', () => {
+
+  /** A rollback whose one step starts the container, against a machine that answers `/deploy` with `deployed`. */
+  async function startAgainst(deployed: Record<string, unknown>) {
+    const { app, first, current } = await anAppWithHistory()
+    const sys = env.system as any
+    const replacement = await sys.deployment.create({ data: {
+      appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
+      previousDeploymentId: current.id, configSnapshot: first.configSnapshot } })
+    await sys.deploymentStep.create({ data: { deploymentId: replacement.id, position: 0, name: 'Start container' } })
+
+    const conduit = {
+      resolve: async () => ({ pinned_cert: true }),
+      send: async (call: any) => ({ data: call.path === '/deploy' ? deployed : {} }),
+    }
+    const via = new Proxy(env.app, { get: (t, k) =>
+      k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+    await env.app.runAs(admin.id, { tenant: ws.id }, () =>
+      (deploymentRun as any).handler({ app: via, data: { deployment_id: replacement.id } }))
+    return sys.deployment.findUnique({ where: { id: replacement.id } })
+  }
+
+  test('a rollback onto the older schema is stop-first, and the row says why', async () => {
+    const row = await startAgainst({ swap: 'stop-first', swap_reason: 'this release is a contract' })
+    expect(row.status).toBe('success')
+    expect(row.swap).toBe('stopFirst')
+    expect(row.swapReason).toBe('this release is a contract')
+  })
+
+  test('an overlap records no reason, and a machine that names no swap records none', async () => {
+    expect(await startAgainst({ swap: 'start-first', swap_reason: null })).toMatchObject({ swap: 'startFirst', swapReason: null })
+    expect(await startAgainst({})).toMatchObject({ swap: null, swapReason: null })
   })
 })

@@ -27,7 +27,7 @@ import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { NotFound, toFrameworkError, type ErrorMapper } from './errors.ts'
 import { helmet, cors, csrf, bodyLimit, correlationId, requestLogger, rateLimit } from '../transport/middleware.ts'
 import type { HelmetOptions } from '../transport/middleware.ts'
-import { defaultConfig, deepMerge, loadConfig, unknownKeys, unknownSections } from '../config/index.ts'
+import { defaultConfig, deepMerge, loadConfig, shutdownBudgets, unknownKeys, unknownSections } from '../config/index.ts'
 import type { DeepPartial }                     from '../config/index.ts'
 import { createLogger }             from './logger.ts'
 import type { ILogger }          from './logger.ts'
@@ -1102,7 +1102,7 @@ export function createApp(opts: AppOptions = {}): App {
   // outbox relay and the litestone close never ran. A step that silently did
   // not run is the failure this exists to stop.
   const shutdownPlugins = async (list: Plugin[]): Promise<void> => {
-    const pluginMs = config.shutdown?.pluginTimeout ?? 5_000
+    const pluginMs = shutdownBudgets(config).pluginTimeout
     for (const plugin of [...list].reverse()) {
       if (!plugin.shutdown) continue
       try {
@@ -1129,7 +1129,7 @@ export function createApp(opts: AppOptions = {}): App {
       const detail = err instanceof Error ? (err.stack ?? err.message) : String(err)
       process.stderr.write(`${what}\n${detail}\n`)
     }
-    const ms = config.shutdown?.timeout ?? 15_000
+    const ms = shutdownBudgets(config).timeout
     withDeadline(app.stop(), ms, () => {})
       .then(() => process.exit(1))
       .catch(() => process.exit(1))
@@ -1689,6 +1689,8 @@ export function createApp(opts: AppOptions = {}): App {
       }
       rebasePrefix()
       http.reconfigure(httpOptionsFromConfig())
+      const { misfits } = shutdownBudgets(config)
+      if (misfits.length) throw new Error(`[Junction] ${misfits.join('; ')}`)
     },
 
     errorMappers,
@@ -1850,7 +1852,7 @@ export function createApp(opts: AppOptions = {}): App {
       // because Bun's graceful stop never resolves once a socket has been
       // upgraded. `http.stop(drainMs)` says goodbye to each socket, waits for
       // what is genuinely outstanding, and forces the server down (`FJS-460`).
-      if (!await http.stop(config.http?.drainTimeout ?? 5_000)) {
+      if (!await http.stop(shutdownBudgets(config).drainTimeout)) {
         _shutdownCutShort = true
         logger.error('[App] requests or sockets still open at the drain deadline were cut off')
       }
@@ -2239,6 +2241,11 @@ export function createApp(opts: AppOptions = {}): App {
       // registered later (e.g. in a plugin's ready(), or by user code after start()).
       { name: 'compile-hook-pipelines', run: () => services.setAppHooks(app._appHooks) },
 
+      // The route cache `http.fetch()` reads. `listen` builds it too, but
+      // `_startForTest()` skips `listen`, so a test that called `app.http.fetch`
+      // straight after it got a 404 for every route it had just registered.
+      { name: 'build-router', run: () => http.router.build() },
+
       // After the pipelines compile, so the first job a worker claims runs
       // through the hooks a request would. A work() that throws fails the
       // start: a serving process whose queue never started is not serving.
@@ -2285,7 +2292,7 @@ export function createApp(opts: AppOptions = {}): App {
         // and so does a stop that finished only by abandoning a plugin or a
         // request at its own budget (`FJS-3944`).
         _signalHandler = () => {
-          const ms = config.shutdown?.timeout ?? 15_000
+          const ms = shutdownBudgets(config).timeout
           let timedOut = false
           withDeadline(app.stop(), ms, () => {
             timedOut = true

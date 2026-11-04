@@ -8635,6 +8635,48 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1865"></a>2026-11-04 · `FJS-D1865` — Q4 — How does a box Basecamp did not buy get its vendor link — As A, and the linked row carries `adopted`, which refuses Destroy: a box Basecamp did not buy is never deleted from Basecamp.
+
+Asked in [`IDEAS/machine-backups.md`](IDEAS/machine-backups.md) § Open questions. **B** was picked over **A** (adopt through the marks: `reconcile` already lists marked machines with no row, and the host mark `markHost` writes names the hub's droplet, so a person picks the marked machine and the three `@system` columns are written from it. A machine with no mark is matched by IP only after the person confirms its name, IP and region), **C** (only machines Basecamp bought get this feature).
+
+The paper's recommendation, taken as written: yuma is the box this was asked for, and linking it for its backups should not also hand Basecamp a button that deletes the machine Basecamp runs on. `provision` stops being the columns' only writer, so their schema comment changes with it.
+
+### <a id="fjs-d1864"></a>2026-11-04 · `FJS-D1864` — Q2 — What does a new machine default to — C (confidence 2).
+
+Asked in [`IDEAS/machine-backups.md`](IDEAS/machine-backups.md) § Open questions. **C** was picked as the recommendation qualifies it (*C (confidence 2)*) over **A** (off, as the vendors do), **B** (on, daily, for every machine).
+
+all of C: the contract defaults off, and the provision form and fli basecamp:create ask, prefilled on for a hub host and off for an app box.
+
+### <a id="fjs-d1863"></a>2026-11-04 · `FJS-D1863` — Q3 — Does Basecamp restore from a machine backup — No: it shows the backups and links to the vendor's restore page.
+
+Asked in [`IDEAS/machine-backups.md`](IDEAS/machine-backups.md) § Open questions. **A** was picked over **B** (yes: a restore action with a typed confirmation).
+
+The paper's recommendation, taken as written: a restore rewinds the whole disk, Basecamp's own when it is the host, and Basecamp cannot supervise its own rewind.
+
+### <a id="fjs-d1862"></a>2026-11-04 · `FJS-D1862` — Q1 — Where does the backup state live — A desired column on `Server`, with `sync` pushing the vendor back to it.
+
+Asked in [`IDEAS/machine-backups.md`](IDEAS/machine-backups.md) § Open questions. **B** was picked over **A** (observed, written by `sync` into one `@system` Json column on `Server` with its `readAt`, shown as stale past a sync interval; the vendor is the truth and the switch is an action that re-reads), **C** (nothing stored: the Server screen reads the vendor live, as the catalog does).
+
+Against the recommendation (**A**): Basecamp's setting is the one that holds: a change made in the vendor console is put back on the next sync.
+
+### <a id="fjs-d1860"></a>2026-11-04 · `FJS-D1860` — Q5 — Can the control see a restart — The receiver stamps each stored container with `restartsSinceLast` (camelCase: it is Basecamp's field, not the wire's) before storing, and the control reads it with a hold window so a single restart does not blink red for one beat.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (the control reads recent `containerCrashLooping` events), **C** (stay state-only).
+
+The paper's recommendation, taken as written: the control and the event then agree on what a restart is, and the hold window is the one place the two differ.
+
+### <a id="fjs-d1859"></a>2026-11-04 · `FJS-D1859` — Q3 — The automatic Monitor's shape — A Monitor row the system owns: `appId` set, a `@system isManaged`, `url` regenerated from the App's primary Domain on every Domain write, not editable.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (no row: the sweep probes App hostnames directly and records onto the App), **C** (stay opt-in; the Routes card already grades the hostname's certificate).
+
+The paper's recommendation, taken as written: the sweep, checks, uptime days and channels all hang off the Monitor row and B would build them twice; `isManaged` keeps the url from being a stale copy, which is the `decision-rules` objection to a plain row.
+
+### <a id="fjs-d1858"></a>2026-11-04 · `FJS-D1858` — Q1 — Which report carries the readings — Both on the heartbeat, graded by `posture.ts` like `replication`.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (units on the 6 h posture report, containers on the heartbeat), **C** (a fourth report on its own clock).
+
+The paper's recommendation, taken as written: a stopped Caddy or firewall unit is an outage, and 6 h is the wrong clock for one; `systemctl show` over five units is one process, the same cost `replication` already pays each beat. The grader stays one owner either way; A moves one object between two posts if it is wrong.
+
 ### <a id="fjs-d1855"></a>2026-11-04 · `FJS-D1855` — Q4 — Is the install's Cloudflare token stored as the in-app provider key — Asked, yes by default, with the zone picked from the token's zones.
 
 Asked in [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md) § Open questions. **A** was picked over **B** (always), **C** (never).
@@ -16339,6 +16381,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1841"></a>2026-11-04 · `FJS-D1841` — How does an App's one stop grace reach the container and Junction: where the number lives, its env var, and the formula for the three budgets — The release's runtime config holds the grace beside `logs` (`runtimeFor`, `deployment-run.job.ts:354`; `deploy.*.logs` on the `fli deploy` path). Outpost passes it once as `docker run --stop-timeout N -e FRONTIER_STOP_GRACE=N`, and every `docker stop -t` and `STOP_GRACE_S` goes. Junction's config resolution (where `FRONTIER_PORT_BE` is read) derives the three budgets, for example whole = N − 1 s and drain ≤ whole / 3 with the plugins taking the rest. An explicit budget that does not fit is refused at boot. With no env var (`fli dev`) Docker's 10 s is assumed.
+
+Asked in [`IDEAS/zero-downtime-deploy.md`](IDEAS/zero-downtime-deploy.md) § Open questions. **A** was picked over **B** (the app's own Junction config holds `shutdown.grace`. The Dockerfile template writes it as an image label, and Outpost inspects the image for `docker stop -t`. That gives two origins: a hand-written Dockerfile drops the label silently, and changing the grace means a rebuild), **C** (one framework default for every App (e.g. 30 s), with Junction deriving from it and a per-App override later. Every stop-first release waits it out, which is the option `FJS-D1839` was picked over).
+
+The paper's recommendation, taken as written: it is the `logs` and `FRONTIER_TRUST_PROXY` shape already on both deploy paths, and the container carries its own grace, so an operator's `docker stop` or a daemon shutdown waits the same number. The margin, the drain share and the default grace (above 15 s) are the build's to choose.
+
 ### <a id="fjs-d1844"></a>2026-11-04 · `FJS-D1844` — Q5 — Bun inside, or bun required — A, with C as the reopen path.
 
 Asked in [`IDEAS/portable-install.md`](IDEAS/portable-install.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, with C as the reopen path*) over **B** (bun required: the plain kind only. Cost: the target needs bun, which needs the internet or bun's zip on the drive, and the drive is tied to one bun minor (2.7)), **C** (both, one flag apart (`make-drive.ts --plain`, as prototyped). Cost: `verify:portable` (3.1) runs twice, and two kinds to document and support).
@@ -17015,6 +17063,10 @@ Raised by `FJS-D1516`. Picked over `views/<area>/` (the Rails and Laravel word, 
 thod's five documents stay in `domain/documents/`, and `Letterhead`, `PricedLines` and `Footing` move to `components/documents/`. example's order confirmation is rendered by `example/api/src/notifications/OrderConfirmation.notification.ts` and goes to `domain/orders/`.
 
 *Lives in:* `packages/cli/core/checks/app.js`, `README.md` § Project Structure.
+
+### <a id="fjs-d1861"></a>2026-11-04 · `FJS-D1861` — Is an image that explains something with words a fourth kind of figure — Yes: a **poster**, owned by `brand/IMAGERY.md` § 9 and routed from `illustrate`'s kind table; an illustration stays wordless.
+
+The owner, on reading a six-layer infra figure prompted as a wordless painting with the labels left to the page: an informational image wants its text ON the image, and field-series plate 04 (`brand/assets/field-series-04.image-ref.png`) is the shape. The two kinds differ on lettering, so the deciding test is whether the image still does its job with every word removed. A poster's words carry the risk a painting's do not, misspelling and an untrue claim, so its check proofreads every word and names the source of every claim in the sidecar. Enforcement: that checklist only; nothing fails when a shipped poster's claim goes stale.
 
 ### <a id="fjs-d1501"></a>2026-10-24 · `FJS-D1501` — Q4 — The first five — The five mechanisms `ARCHITECT.md` spends the most words on, measured by section length; expected: the three realms from one schema, a `$`-directive crossing the bridge (Invariant 10), the gate ladder, the hook pipeline around a service call, the surfaces beside `db/` (Invariant 3).
 

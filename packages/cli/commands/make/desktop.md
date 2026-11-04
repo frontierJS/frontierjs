@@ -55,7 +55,9 @@ one bun binary (`desktop/sidecar/make-sidecar.ts`, run by `build:desktop`) and
 shipped beside the shell, which:
 
 - starts it on a free 127.0.0.1 port with its data in the OS app-data
-  directory, and builds the window only once `<apiPrefix>/health` answers;
+  directory's `api/` (`api-debug/` in a debug build, so a dev run never
+  touches the installed app's data; the webview's own storage stays beside
+  them), and builds the window only once `<apiPrefix>/health` answers;
 - hands the page that origin as `globalThis.__sierraApiUrl`, so no build
   inlines one and `build.mjs` refuses a bundle whose sierra does not read it;
 - stops it by closing its stdin, which also ends it when the shell dies some

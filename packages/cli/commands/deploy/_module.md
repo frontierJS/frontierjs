@@ -18,6 +18,7 @@ const { loadFrontierConfig, dockerfileScripts, unexecdEntrypoint } = await impor
 const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))
+const { stopGraceArgs } = await import(new URL('file://' + global.fliRoot + '/core/stop-grace.js'))
 const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
@@ -647,11 +648,10 @@ const swapContainer = ($, { host, appId, container, image, apiPort, dbPath, envF
 fi`)
 
   log.info('Stopping _replaced container...')
-  // `-t`, not `--time`: docker deprecated the long form in favor of `--timeout`
-  // and prints a warning on every deploy, while the short form means the same
-  // thing in both and is not deprecated in either.
+  // No `-t`: the container carries the grace it was started with
+  // (`--stop-timeout`, below), so this stop waits what an operator's would.
   machine.run(`if docker inspect ${replaced} > /dev/null 2>&1; then
-  docker stop -t 10 ${replaced}
+  docker stop ${replaced}
 fi`)
 
   log.info(`Starting ${image}...`)
@@ -688,6 +688,9 @@ fi`)
     // fills the disk and the database stops writing before anybody reads a log.
     // `deploy.logs` is the escape for a daemon already pointed somewhere.
     ...dockerLogArgs(deployConf),
+    // The grace docker waits before SIGKILL, and the same number to Junction as
+    // FRONTIER_STOP_GRACE so its drain fits inside it (`FJS-D1841`).
+    ...stopGraceArgs(deployConf),
     // What this process states on every response, so a browser holding the
     // previous build can tell (`FJS-D160`). The same value the web build was
     // stamped with — one deploy is one build on both sides of the wire.
@@ -1416,6 +1419,10 @@ export default {
       // driver:  'journald',         // instead of the two above
       // options: { 'loki-url': '…' },// a named driver's own options
     },
+
+    // Seconds a stopping container gets before docker kills it, also handed to
+    // Junction as FRONTIER_STOP_GRACE so its drain fits inside. Whole, at least 2.
+    stopGrace: 40,                    // default: 40
 
     // Per-target overrides — server/user/path only
     production: { server: 'prod.myapp.com' },

@@ -207,8 +207,17 @@ t('directory.tenantsListedOnlyWhenThereAreTenants', await probe(`
 
 // ─── the diagram ──────────────────────────────────────────────────────────
 
-await evaluate(`
+t('models.opensOnClusters', await probe(`
   showTool('schema');
+  return {
+    tab:      document.querySelector('#panelSchema [role=tab][aria-selected=true]')?.textContent,
+    clusters: !document.getElementById('lyView').hidden,
+    diagram:  !document.getElementById('erView').hidden,
+  };
+`), { tab: 'Clusters', clusters: true, diagram: false })
+
+await evaluate(`
+  erShowTab('diagram');
   const t0 = Date.now();
   while (Date.now() - t0 < 15000) {
     if (document.querySelectorAll('.er-table').length) return true;

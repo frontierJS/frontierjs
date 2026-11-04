@@ -658,3 +658,23 @@ describe('a sweep hands its pages back', () => {
     db.$close()
   })
 })
+
+// FJS-3914: the mode is set only on a file that does not have it. The pragma is a
+// write transaction even when it changes nothing, so a second process opening the
+// client while the first held a write threw SQLITE_BUSY out of createClient.
+describe('opening an incremental database beside a writer', () => {
+  test('does not wait for the write lock', async () => {
+    const dir  = tmp()
+    const path = join(dir, 'app.db')
+    ;(await createClient({ schema: SCHEMA(dir) })).$close()
+
+    const holder = new BunDatabase(path)
+    holder.run('BEGIN IMMEDIATE')
+    try {
+      const t0 = Date.now()
+      const db = await createClient({ schema: SCHEMA(dir), busyTimeout: 400 })
+      expect(Date.now() - t0).toBeLessThan(300)
+      db.$close()
+    } finally { holder.run('ROLLBACK'); holder.close() }
+  })
+})

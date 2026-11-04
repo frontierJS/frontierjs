@@ -4153,6 +4153,30 @@ describe('required-system-unfilled', () => {
     expect(only(tree('rsu-create', app({ service: svc("['find', 'create']") })), 'required-system-unfilled').findings).toHaveLength(1)
   })
 
+  // FJS-3978: Grant's tokenHash arrives through @@trait, so a line scan of the
+  // file never saw it and the rule skipped on an app that owed a filler.
+  describe('a column that arrives through @@trait', () => {
+    const viaTrait = (text) => text.replace('  code        String @system\n', '  @@trait(Tok)\n') +
+      '\ntrait Tok {\n  code String @unique @guarded @system\n}\n'
+    const MINT = { 'api/src/core/bearer.ts':
+        "export const bearer = bearerClaim({ model: 'Lead', column: 'code', claims: {} })\n",
+      'api/src/services/leads.service.ts':
+        SERVICE.replace(STAMP, '').replace('createService({', 'createService({ hooks: bearer.mintOnCreate(),') }
+
+    test('is graded, and unfilled is a warning on the model', () => {
+      const { findings, skipped } = only(tree('rsu-trait', app({ schema: viaTrait })), 'required-system-unfilled')
+      expect(skipped).toHaveLength(0)
+      expect(findings).toHaveLength(1)
+      expect(findings[0].message).toMatch(/Lead\.code is required and @system/)
+    })
+
+    test('a mintOnCreate() hook on a bearer naming the column fills it', () => {
+      const { findings, skipped } = only(tree('rsu-mint', app({ schema: viaTrait, extra: MINT, service: MINT['api/src/services/leads.service.ts'] })), 'required-system-unfilled')
+      expect(skipped).toHaveLength(0)
+      expect(findings).toHaveLength(0)
+    })
+  })
+
   test('a default, an optional column, a scalar list and a @system move are not owed a filler', () => {
     for (const [name, spelling] of [
       ['rsu-default',  'code        String @system @default("L")'],

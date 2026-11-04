@@ -12,7 +12,7 @@ import { readdirSync, readFileSync, rmSync, existsSync } from 'fs'
 import { join } from 'path'
 import { Readable } from 'stream'
 import { createClient, autoMigrate } from '../src/index.js'
-import { FileStorage, fromStream } from '../src/storage/file-storage.js'
+import { FileStorage, fromStream, fromPath } from '../src/storage/file-storage.js'
 import { S3Provider } from '../src/storage/providers/s3.js'
 import { tempDir } from '../src/tmp-dirs.js'
 
@@ -208,16 +208,40 @@ describe('@digest (FJS-D1292)', () => {
     expect(err.message).toMatch(/sha256/)
     expect(err.message).toMatch(/file/)
     expect(await db.asSystem().doc.count()).toBe(1)
-    expect(stored().length).toBeGreaterThanOrEqual(1)
+    expect(stored().length).toBe(1)
     db.$close()
   })
 
-  test('a disagreeing sibling on an update is refused and the row is unchanged', async () => {
-    const { db } = await client(`file File? @digest(sha256)\n sha256 String?`)
-    await db.asSystem().doc.create({ data: { id: 1, file: png } })
+  // FJS-3985: the object is stored before the sibling is compared, so a
+  // refusal that keeps it leaves a file no row names.
+  test('a refused sibling leaves no object, from bytes, a File, a stream, a path, or a moved path', async () => {
+    const { db, stored } = await client(`file File? @digest(sha256)\n sha256 String?\n gallery File[]`)
+    const src = join(root, 'refused-src.png')
+    const wrong = 'ab'.repeat(32)
+    for (const file of [
+      () => png,
+      () => new File([png], 'a.png', { type: 'image/png' }),
+      () => fromStream(streamOf(png), { name: 'a.png', size: png.length }),
+      () => fromPath(src),
+      () => fromPath(src, { move: true }),
+    ]) {
+      await Bun.write(src, png)
+      const value = file()
+      await expect(db.asSystem().doc.create({ data: { id: 1, file: value, sha256: wrong, gallery: [png] } })).rejects.toThrow(/sha256 states/)
+      expect(stored()).toEqual([])
+    }
+    db.$close()
+  })
+
+  test('a disagreeing sibling on an update is refused, the row is unchanged, and its file outlives the next write', async () => {
+    const { db, dir, stored } = await client(`file File? @digest(sha256)\n sha256 String?\n note String?`)
+    const row = await db.asSystem().doc.create({ data: { id: 1, file: png }, select: raw })
     await expect(db.asSystem().doc.update({ where: { id: 1 }, data: { file: new Uint8Array([1, 2, 3]), sha256: sha(png) } }))
       .rejects.toThrow(/sha256/)
     expect((await db.asSystem().doc.findUnique({ where: { id: 1 }, select: { sha256: true } })).sha256).toBe(sha(png))
+    expect(stored().length).toBe(1)
+    await db.asSystem().doc.update({ where: { id: 1 }, data: { note: 'x' } })
+    expect(existsSync(join(dir, row.file.key))).toBe(true)
     db.$close()
   })
 

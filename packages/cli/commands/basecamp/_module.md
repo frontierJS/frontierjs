@@ -10,11 +10,15 @@ description: Basecamp itself — make its box at a cloud, install it, point its 
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, provisionScript, markHost,
   cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine }
   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-const { basecamp, basecampAll, pullAppArchive, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, pullHubArchive, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 
 // Basecamp's own hostname, the one `pointHost` points at the box.
 const webDomain = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
+
+// The box `fli deploy` ships Basecamp to, as ssh reaches it.
+const deployServer = async () =>
+  (await import(provisionScript().root + 'frontier.config.js')).default.deploy.server
 
 // Asked before the install, so a token that opens no zone holding the hostname
 // refuses before minutes of apt rather than after them. No token is not a
@@ -408,10 +412,9 @@ owner through `fli deploy:repl` — and stores it in the global env, with no
 browser and no password. `fli basecamp:create` offers one for the first admin
 once the install is done.
 
-`fli basecamp:backup` fetches an App's newest bucket archive, or takes one
-first with `--take`, and unpacks it under `db/backups/<stamp>/`; `fli
-db:download` and `fli db:import` fetch the same way when `BASECAMP_APP_ID` is
-set (`FJS-D1717`).
+`fli basecamp:backup` takes a backup of Basecamp itself and brings it to this
+machine, checked against its manifest. An App's archive is `fli db:download`'s
+(`FJS-D1848`).
 
 `fli basecamp:live` says why a released App is not answering — its release,
 its machine, then each hostname's zone, DNS and HTTPS — and `--retry` reloads

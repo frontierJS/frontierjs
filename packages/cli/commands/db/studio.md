@@ -6,7 +6,13 @@ examples:
   - fli studio
   - fli studio --test
   - fli studio --port 5502
+  - fli studio --schema packages/litestone/test/fixtures/corpus/calcom.lite
 flags:
+  schema:
+    type: string
+    kind: path
+    description: Open this .lite file instead of the project's db/schema.lite, over a throwaway database with a throwaway encryption key
+    defaultValue: ''
   port:
     char: p
     type: number
@@ -23,7 +29,10 @@ flags:
 ---
 
 <script>
-import { join } from 'path'
+import { join, basename } from 'path'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { randomBytes } from 'crypto'
 
 // The flag's declared default is the global port, so whether --port was typed
 // is read off the argv: a default must not pin an in-project studio to 5502.
@@ -34,6 +43,23 @@ async function studioPortFor($, flag) {
   const env   = flag.production ? 'prod' : flag.test ? 'test' : 'dev'
   return studioPort(inApp ? $.paths.root : null, { env })
 }
+
+// A foreign schema left to litestone's defaults opens ./development.db in the
+// project root — the project's own database under someone else's schema — and
+// one with an @encrypted field refuses to start without a key. Both are
+// throwaway: the database is empty, so the key seals nothing worth keeping.
+function scratchFor(schema) {
+  const dir = mkdtempSync(join(tmpdir(), 'fli-studio-'))
+  return {
+    db:  join(dir, `${basename(schema, '.lite')}.db`),
+    env: { ...process.env, ENCRYPTION_KEY: randomBytes(32).toString('hex') },
+  }
+}
+
+function studioCommand($, { schema, port, scratch, open }) {
+  const db = scratch ? ` --db ${JSON.stringify(scratch.db)}` : ''
+  return `${litestone($)} studio --schema ${JSON.stringify(schema)}${db} --port ${port}${open ? '' : ' --no-open'}`
+}
 </script>
 
 In a project, studio sits in that project's tooling row beside `fli gui` —
@@ -41,14 +67,19 @@ In a project, studio sits in that project's tooling row beside `fli gui` —
 scaffolded app's `fli dev` slot, so the app on 8001 has its GUI on 8501 and
 its studio on 8503 (`studioPort()`). Outside a project it is the global 5502.
 
+`--schema` opens any `.lite` file — a test fixture, a corpus schema — over an
+empty database in a temp directory, never the project's.
+
 ```js
-if (!requireSchema($)) return
+if (!requireSchema($, flag)) return
 
 const { schema } = resolveDb($, flag)
 const port       = await studioPortFor($, flag)
+const scratch    = flag.schema ? scratchFor(schema) : null
 
-echo(chalk`  {bold Litestone Studio} {cyan http://localhost:${port}}`)
-await $.stream({
-  command: `${litestone($)} studio --schema ${schema} --port ${port}${flag.open ? '' : ' --no-open'}`
-})
+echo`  {bold Litestone Studio} {cyan http://localhost:${port}}`
+if (scratch) echo`
+  {dim schema} ${schema}
+  {dim db}     ${scratch.db} {dim (throwaway)}`
+await $.stream({ command: studioCommand($, { schema, port, scratch, open: flag.open }), ...(scratch && { env: scratch.env }) })
 ```

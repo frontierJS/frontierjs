@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-74 model(s) · 57 enum(s) · 2 database(s) · 1 value set(s)
+74 model(s) · 58 enum(s) · 2 database(s) · 1 value set(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -36,6 +36,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `ComputeProvider` | `custom` · `digitalocean` · `hetzner` |
 | `DependencyKind` | `dependency` · `dev` · `optional` · `peer` |
 | `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolledBack` · `success` |
+| `DeploySwap` | `startFirst` · `stopFirst` |
 | `DeployTrigger` | `button` · `freeze` · `laptop` · `observed` · `publish` · `push` · `rebind` · `rollback` |
 | `DrillKind` | `manual` · `scheduled` |
 | `EditorRole` | `edit` · `publish` |
@@ -64,7 +65,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `RegisterMethod` | `imported` · `provisioned` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `backup` · `generic` · `notification` · `providerKey` · `registryAuth` · `sshKey` · `tlsCert` |
-| `ServerEventKind` | `cameOnline` · `cleanupFailed` · `cleanupQueued` · `cleanupRan` · `created` · `destroyFinished` · `destroyRequested` · `drainCancelled` · `drainStarted` · `enrollmentIssued` · `postureFailed` · `postureRestored` · `provisionCreated` · `provisionReady` · `provisionRequested` · `provisionTimeout` · `rebootRequested` · `recipeFailed` · `recipeRan` · `removed` · `statusSyncIgnored` · `statusSynced` · `syncFailed` · `syncNoAccount` · `syncRequested` · `syncUnrecognized` · `syncUnsupported` · `unreachable` · `volumeRemoved` · `volumesPruned` |
+| `ServerEventKind` | `cameOnline` · `cleanupFailed` · `cleanupQueued` · `cleanupRan` · `containerCrashLooping` · `containerRecovered` · `created` · `destroyFinished` · `destroyRequested` · `drainCancelled` · `drainStarted` · `enrollmentIssued` · `postureFailed` · `postureRestored` · `provisionCreated` · `provisionReady` · `provisionRequested` · `provisionTimeout` · `rebootRequested` · `rebooted` · `recipeFailed` · `recipeRan` · `removed` · `statusSyncIgnored` · `statusSynced` · `syncFailed` · `syncNoAccount` · `syncRequested` · `syncUnrecognized` · `syncUnsupported` · `unitFailed` · `unitRestored` · `unreachable` · `volumeRemoved` · `volumesPruned` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
 | `ServerStatus` | `destroyed` · `destroying` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
 | `SslMode` | `flexible` · `full` · `fullStrict` · `off` |
@@ -286,6 +287,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `slug` | `String` | no | — | **required on write** |
 | `source` | `Json` | no | `'{}'` | — |
 | `status` | `AppStatus` | no | `'unknown'` | @system |
+| `stopGrace` | `Int` | yes | — | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `variables` | `Variable[]` | — | — | relation |
 | `volumePath` | `String` | yes | — | — |
@@ -873,6 +875,8 @@ table `deployment` · db `main` · gate `2.4.4.4`
 | `startedAt` | `DateTime` | yes | — | @system |
 | `status` | `DeployStatus` | no | `'pending'` | — |
 | `steps` | `DeploymentStep[]` | — | — | relation |
+| `swap` | `DeploySwap` | yes | — | @system |
+| `swapReason` | `String` | yes | — | @system |
 | `toImage` | `String` | yes | — | — |
 | `trigger` | `DeployTrigger` | no | `'button'` | — |
 | `triggeredBy` | `String` | yes | — | — |
@@ -1500,6 +1504,7 @@ table `monitor` · db `main` · gate `2.5`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `intervalSeconds` | `Int` | no | `120` | — |
 | `isInverted` | `Boolean` | no | `0` | — |
+| `isManaged` | `Boolean` | no | `0` | @system |
 | `isTlsIgnored` | `Boolean` | no | `0` | — |
 | `lastCheckedAt` | `DateTime` | yes | — | @system |
 | `lastLatencyMs` | `Int` | yes | — | @system |
@@ -1520,6 +1525,7 @@ table `monitor` · db `main` · gate `2.5`
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
+@@index(appId, isManaged)
 @@index(status, nextCheckAt)
 @@index(workspaceId)
 @@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
@@ -2047,6 +2053,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `registerMethod` | `RegisterMethod` | no | `'imported'` | — |
 | `replication` | `Json` | yes | — | — |
 | `role` | `ServerRole` | no | `'general'` | — |
+| `runtime` | `Json` | yes | — | — |
 | `serverNetworks` | `ServerNetwork[]` | — | — | relation |
 | `slug` | `String` | no | — | **required on write** |
 | `sshKeyId` | `String` | yes | — | `@values(SshKeys, strength: required)` |

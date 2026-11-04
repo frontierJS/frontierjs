@@ -1,6 +1,6 @@
 ---
 name: illustrate
-description: Before drawing or prompting any figure for a FrontierJS document, page or README — a diagram, an SVG, a Mermaid fence, a painted image, a chart — fill the eleven-line brief here, pick the kind, and route to its renderer. Use when a page is long enough that a paragraph and one picture might replace it, and before shrinking a page on the strength of a figure.
+description: Before drawing or prompting any figure for a FrontierJS document, page or README — a diagram, an SVG, a Mermaid fence, a painted image, an informational poster, a chart — fill the eleven-line brief here, pick the kind, and route to its renderer. Use when a page is long enough that a paragraph and one picture might replace it, and before shrinking a page on the strength of a figure.
 ---
 
 # Illustrate
@@ -11,13 +11,14 @@ description: Before drawing or prompting any figure for a FrontierJS document, p
 
 Larkin & Simon's condition: a picture beats the prose only where the prose would make the reader *search or compute*. **A flow, a boundary crossed, a state that changes, two options compared: draw it. A list of facts, a definition, a policy: a diagram of a list is a list.** Say which the subject is before filling the brief.
 
-## Three kinds, each with an owner
+## Four kinds, each with an owner
 
-Roam's question picks the kind: *what/who* is an illustration, *how*, *where* and *when* a mechanism, *how much* a chart.
+Roam's question picks the kind: *what/who* is an illustration, *how*, *where* and *when* a mechanism, *how much* a chart. **Imagery or information decides between an illustration and a poster** (`FJS-D1861`): strip every word from the image, and one that still does its job is an illustration, one that stops working is a poster. A mechanism also stops working without its words; a claim that is a sequence or a crossing is a mechanism, drawn as SVG, and a poster summarizes a whole subject.
 
 | Kind | Answers | Renderer | Owner |
 | ---- | ------- | -------- | ----- |
-| **Illustration** | *what a thing is* — a Gate, a Surface, a Stressor | an image model, painted, no lettering | `brand/IMAGERY.md` |
+| **Illustration** | *what a thing is* — a Gate, a Surface, a Stressor | an image model, painted, no lettering | `brand/IMAGERY.md` § 1–8 |
+| **Poster** | *what a whole thing is and does, at a glance* — a field-series plate for the site or a deck, where the text is the point | an image model, painted and lettered | `brand/IMAGERY.md` § 9 |
 | **Mechanism** | *how it works* — a call crossing the bridge, the hook pipeline, a write announced | hand SVG up to about eight parts, D2 compiled to SVG above that, committed as `.svg` beside the doc; a Mermaid fence only where the reader is GitHub's renderer, a `README.md` (`FJS-D1499`) | this skill, until `brand/README.md` § Diagrams exists (`FJS-D1500`) |
 | **Chart** | *how much* | SVG from data | the `dataviz` skill |
 
@@ -39,12 +40,15 @@ Fill it in order, one line each, before a line is drawn or a prompt sent. **A fi
 10. **Cut** — what was left out and why.
 11. **Check** — the list below, answered yes.
 
-The brief is kept: for an `.svg` it goes in a comment at the top of the file, for a painted image in the `<name>.prompt.txt` sidecar `brand/IMAGERY.md` § 8 already asks for, for a chart in the figure's `<figcaption>` and the commit.
+A poster runs the brief once for the plate, its headline as field 1, and field 6 once per panel.
+
+The brief is kept: for an `.svg` it goes in a comment at the top of the file, for a painted image or a poster in the `<name>.prompt.txt` sidecar `brand/IMAGERY.md` § 8 already asks for, for a chart in the figure's `<figcaption>` and the commit.
 
 ## Rendering, by kind
 
 - **Mechanism.** Load the `artifact-diagramming` skill for the mechanics: depict the mechanism not its name, one figure one claim, `<figcaption>` and `aria-label` carry the claim, `currentColor` so it reads in both themes. Count the parts first; above about eight, write D2 source and compile, since a hand-written SVG degrades with every part added (SVGenius, `IDEAS/illustration.md` § 3). Neither `d2` nor `mmdc` is installed here; a compile step says what it needs.
 - **Illustration.** Paste `brand/IMAGERY.md` § 3's scene base, append the brief's claim as the subject line, add the realm and figure lines from § 4, and grade the result against § 8. No lettering in the image: the page sets the type.
+- **Poster.** Paste `brand/IMAGERY.md` § 9's base, then every word the plate carries, quoted, zone by zone, and grade it against § 9's check. The words are the risk: proofread each one at full size, and set any that will not come out right in HTML over a plate generated without it.
 - **Chart.** Load the `dataviz` skill and hand it the brief's claim and encoding.
 
 ## The check

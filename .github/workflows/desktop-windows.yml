@@ -32,9 +32,14 @@ on:
       - packages/cli/core/shell-origins.js
       - packages/cli/commands/make/desktop.md
       - packages/cli/commands/new/**
+      - packages/cli/core/scaffold/**
+      - packages/cli/core/app-config.js
+      - packages/auth/*.ts
+      - packages/auth/db/**
       - packages/junction/src/**
       - packages/sierra/src/**
       - packages/litestone/src/**
+      - bun.lock
   pull_request:
     paths:
       - .github/workflows/desktop-windows.yml
@@ -44,9 +49,14 @@ on:
       - packages/cli/core/shell-origins.js
       - packages/cli/commands/make/desktop.md
       - packages/cli/commands/new/**
+      - packages/cli/core/scaffold/**
+      - packages/cli/core/app-config.js
+      - packages/auth/*.ts
+      - packages/auth/db/**
       - packages/junction/src/**
       - packages/sierra/src/**
       - packages/litestone/src/**
+      - bun.lock
   workflow_dispatch:
 
 concurrency:

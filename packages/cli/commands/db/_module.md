@@ -23,7 +23,9 @@ const resolveDb = ($, flag) => {
   const dbPath  = $.paths.db
   const dbName  = flag.test ? 'test' : 'development'
   const dbFile  = process.env.DB_FILE || `${dbName}.db`
-  const schema  = resolve(dbPath, 'schema.lite')
+  // litestone runs from the project root, so a typed --schema is resolved
+  // against where fli was run or a relative fixture path names nothing.
+  const schema  = flag.schema ? resolve(process.cwd(), flag.schema) : resolve(dbPath, 'schema.lite')
   return { dbPath, dbFile, dbName, full: `${dbPath}/${dbFile}`, schema }
 }
 
@@ -91,13 +93,18 @@ const resolveSeeder = ($, { force = false } = {}) => {
 }
 
 // ─── requireSchema ────────────────────────────────────────────────────────────
-// Checks schema.lite exists before running a command.
+// Checks the schema a command will open exists — the project's, or the one
+// --schema names where the command takes that flag.
 
-const requireSchema = ($) => {
-  const schemaPath = resolve($.paths.db, 'schema.lite')
-  if (!existsSync(schemaPath)) {
-    $.log.error(`schema.lite not found at ${schemaPath}`)
-    $.log.info('Create a schema.lite file in your db/ directory to get started')
+const requireSchema = ($, flag = {}) => {
+  const { schema } = resolveDb($, flag)
+  if (flag.schema && !schema.endsWith('.lite')) {
+    $.log.error(`--schema must name a .lite file: ${schema}`)
+    return false
+  }
+  if (!existsSync(schema)) {
+    $.log.error(`schema not found at ${schema}`)
+    if (!flag.schema) $.log.info('Create a schema.lite file in your db/ directory to get started')
     return false
   }
   return true
@@ -200,6 +207,10 @@ const jsonSchemaDone = ($, json, out) => {
  *  another server, and another environment is another App, so it is refused. */
 const pullPath = ({ flag, log, echo, chalk }) => {
   const appId = process.env.BASECAMP_APP_ID
+  if (!appId && flag.take) {
+    log.error('--take asks Basecamp for a backup, and with no BASECAMP_APP_ID the pull is a copy over ssh: run `BASECAMP_APP_ID=<id> fli db:download --take`')
+    return false
+  }
   if (!appId) { echo(chalk`  {dim No BASECAMP_APP_ID — pulling over ssh}`); return null }
   echo(chalk`  {dim BASECAMP_APP_ID} ${appId} {dim detected — pulling through Basecamp}`)
   if (flag.dev) {
@@ -209,15 +220,16 @@ const pullPath = ({ flag, log, echo, chalk }) => {
   return appId
 }
 
-/** The App's newest bucket archive, unpacked under db/backups/<stamp>/ — `fli
- *  basecamp:backup`'s fetch. Answers what `pullAppArchive` does, or null after
+/** The App's newest bucket archive, or one taken now with `--take`, unpacked
+ *  under db/backups/<stamp>/. Answers what `pullAppArchive` does, or null after
  *  saying why. */
 const pullThroughBasecamp = async ({ $, flag, log, echo, chalk }, appId) => {
   const { pullAppArchive, LOCAL_BASECAMP } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
   const key = process.env.BASECAMP_API_KEY
   if (!key) { log.error('needs BASECAMP_API_KEY — a key with appBackups:read, issued at /api-keys/ in the Basecamp workspace the app is in'); return null }
   const origin = (process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
-  const got = await pullAppArchive({ origin, key, appId, dbDir: $.paths.db, dry: flag.dry, log })
+  const say = (line) => echo(chalk`  {dim ${line}}`)
+  const got = await pullAppArchive({ origin, key, appId, take: !!flag.take, dbDir: $.paths.db, dry: flag.dry, log, say })
     .catch(err => { log.error(err.message); return null })
   if (got) echo(chalk`  {green ✓} {dim archive taken} ${got.row.startedAt} {dim unpacked into} ${got.dir}`)
   return got

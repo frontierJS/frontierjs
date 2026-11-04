@@ -3,12 +3,12 @@
 // `basecamp:app`, `basecamp:deploy`, `outpost:install` and `deploy`'s
 // `08b-outpost` step share these, so a box cannot be enrolled two ways; an
 // enrolled box's Outpost is read here for `outpost:status`, an app's
-// archive is fetched for `basecamp:backup` and the `db:` verbs, and each
-// machine's stored grade for `basecamp:posture`.
+// archive is fetched for the `db:` verbs and Basecamp's own for
+// `basecamp:backup`, and each machine's stored grade for `basecamp:posture`.
 
 import { spawnSync }                from 'node:child_process'
-import { mkdirSync, rmSync }        from 'node:fs'
-import { basename, join, resolve }  from 'node:path'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { basename, join, relative, resolve } from 'node:path'
 import { chalk }                    from './color.js'
 import { ageOf }                    from './cloud.js'
 
@@ -32,7 +32,7 @@ export async function basecamp(origin, key, path, { method = 'GET', body, header
   if (res.headers.get('content-type')?.includes('text/html'))
     throw new Error(`Basecamp answered ${method} ${path} with HTML (${res.status}), not the API — is ${path} a path its proxy routes?`)
   const answer = await res.json().catch(() => null)
-  if (!res.ok) throw new Error(`Basecamp refused ${method} ${path} (${res.status}): ${answer?.message ?? answer?.error ?? res.statusText}`)
+  if (!res.ok) throw Object.assign(new Error(`Basecamp refused ${method} ${path} (${res.status}): ${answer?.message ?? answer?.error ?? res.statusText}`), { status: res.status })
   return answer?.data ?? answer
 }
 
@@ -225,8 +225,7 @@ export const postureDetail = (view) => {
 }
 
 // ─── An app's archive, fetched────────────────────────────────────────────────
-// `basecamp:backup`, `db:download` and `db:import` fetch through this one
-// (`FJS-D1717`). Only an archive in a bucket has a URL: no bytes cross the
+// `db:download` and `db:import` fetch through this one (`FJS-D1717`). Only an archive in a bucket has a URL: no bytes cross the
 // command port (`FJS-D1485`), so one kept on its machine is refused, never
 // fetched some other way. The tar is flat — `./<name>.db` with its `-wal`
 // beside it (IDEAS/app-archives.md 0.1).
@@ -239,7 +238,7 @@ async function archiveRow(origin, key, appId, { take, dry, log, say }) {
   if (!take) {
     const rows = (await basecampAll(origin, key, `/app-backups?appId=${encodeURIComponent(appId)}&status=success`)).filter(inBucket)
     const newest = rows.sort((a, b) => Date.parse(b.startedAt ?? b.createdAt) - Date.parse(a.startedAt ?? a.createdAt))[0]
-    if (!newest) throw new Error(`App ${appId} has no archive in a bucket to fetch — take one with fli basecamp:backup --take, once the App has a backup destination`)
+    if (!newest) throw new Error(`App ${appId} has no archive in a bucket to fetch — take one with fli db:download --take, once the App has a backup destination`)
     return newest
   }
   const app = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
@@ -257,6 +256,17 @@ async function archiveRow(origin, key, appId, { take, dry, log, say }) {
   if (row.status !== 'success') throw new Error(`The backup on ${machine} ${row.status}: ${row.error ?? 'no reason given'}`)
   if (!inBucket(row)) throw new Error(`The backup was taken but its upload failed, so it is kept on ${machine}: ${row.error}`)
   return row
+}
+
+/** `url` saved to `file`, answering the sha256 of the bytes as they arrived. */
+async function fetchHashed(url, file, what) {
+  const res = await fetch(url)
+  if (!res.ok || !res.body) throw new Error(`${new URL(url).host} answered ${res.status} for ${what}`)
+  const hasher = new Bun.CryptoHasher('sha256')
+  const sink   = Bun.file(file).writer()
+  for await (const chunk of res.body) { hasher.update(chunk); sink.write(chunk) }
+  await sink.end()
+  return hasher.digest('hex')
 }
 
 /** A tar whose every entry is a file at its top, as an archive's is. */
@@ -284,15 +294,9 @@ export async function pullAppArchive({ origin, key, appId, take = false, dbDir, 
 
   const { url, name } = await basecamp(origin, key, `/app-backups/${encodeURIComponent(row.id)}`,
     { method: 'POST', headers: { 'x-service-method': 'download' }, body: {} })
-  const res = await fetch(url)
-  if (!res.ok || !res.body) throw new Error(`the bucket answered ${res.status} for the archive taken ${row.startedAt}`)
   mkdirSync(dir, { recursive: true })
-  const file   = join(dir, basename(name))
-  const hasher = new Bun.CryptoHasher('sha256')
-  const sink   = Bun.file(file).writer()
-  for await (const chunk of res.body) { hasher.update(chunk); sink.write(chunk) }
-  await sink.end()
-  const got = hasher.digest('hex')
+  const file = join(dir, basename(name))
+  const got  = await fetchHashed(url, file, `the archive taken ${row.startedAt}`)
   if (row.sha256 && got !== row.sha256) {
     rmSync(file, { force: true })
     throw new Error(`the archive fetched hashes ${got}, not the ${row.sha256} Basecamp recorded — not unpacked`)
@@ -301,4 +305,99 @@ export async function pullAppArchive({ origin, key, appId, take = false, dbDir, 
   const r = spawnSync('tar', ['-xzf', file, '-C', dir, '--no-same-owner'], { encoding: 'utf8' })
   if (r.status !== 0) throw new Error(`could not unpack ${file}: ${r.stderr.trim()}`)
   return { dir, file, files, row }
+}
+
+// ─── Basecamp's own archive, fetched ─────────────────────────────────────────
+// `basecamp:backup` takes one through `hubBackups` and brings it to the laptop
+// (`FJS-D1848`). The tar holds one directory, `basecamp-<stamp>/`, with
+// `manifest.json` and every file it lists. An archive kept on the box is tarred
+// as it is fetched, so it has no recorded sha256 of its own: the copy is graded
+// against the manifest, which `/setup` will grade again.
+
+const HUB_SETTLED = ['success', 'failed', 'timeout']
+
+/** The hub's backup destination, null for the box's own disk. */
+async function hubDestination(origin, key) {
+  // `find` answers a list even before the hub App exists, so a 404 from it is
+  // `requireSystemAdmin`'s, where one from `current` is no settings saved yet.
+  await basecamp(origin, key, '/hub-backups?$limit=1').catch(err => {
+    if (err.status !== 404) throw err
+    throw new Error("Basecamp answered 404 for /hub-backups: the key's holder is not a system admin — mint a key for the first admin with fli basecamp:key --as <email>")
+  })
+  const config = await basecamp(origin, key, '/hub-config', { method: 'POST', headers: { 'x-service-method': 'current' }, body: {} })
+    .catch(err => { if (err.status === 404) return null; throw err })
+  return config?.app?.backupDestinationId ?? null
+}
+
+/** The row once `backup:run` has settled it. A job can retry, so the wait is
+ *  its attempts, not one timeout. */
+async function hubSettled(origin, key, id, { everyMs = 2_000, forMs = 40 * 60_000 } = {}) {
+  for (const until = Date.now() + forMs; Date.now() < until; await Bun.sleep(everyMs)) {
+    const row = await basecamp(origin, key, `/hub-backups/${encodeURIComponent(id)}`)
+    if (HUB_SETTLED.includes(row.status)) return row
+  }
+  throw new Error(`backup ${id} had not settled after ${forMs / 60_000} minutes — its row on /hub/backups/ says where it is`)
+}
+
+/** The one directory a hub tar holds, refusing anything that would land outside it. */
+function hubEntries(file) {
+  const r = spawnSync('tar', ['-tzf', file], { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error(`${file} is not a tar.gz: ${r.stderr.trim()}`)
+  const entries = r.stdout.split('\n').filter(Boolean).map(e => e.replace(/^\.\//, ''))
+  const top = entries[0]?.split('/')[0]
+  const off = entries.find(e => e.startsWith('/') || e.split('/').includes('..') || e.split('/')[0] !== top)
+  if (!top || off) throw new Error(`${file} holds ${off ?? 'nothing'}, and a hub archive is one basecamp-<stamp>/ directory — not unpacked`)
+  return top
+}
+
+/** Each file `manifest.json` lists that is missing or whose bytes differ, as a sentence. */
+async function manifestMismatches(dir) {
+  const path = join(dir, 'manifest.json')
+  if (!existsSync(path)) return { manifest: null, off: ['the archive has no manifest.json'] }
+  const manifest = JSON.parse(readFileSync(path, 'utf8'))
+  const off = []
+  for (const f of manifest.files ?? []) {
+    const at = join(dir, f.path)
+    if (relative(dir, at).startsWith('..')) { off.push(`manifest.json names ${f.path}, outside the archive`); continue }
+    if (!existsSync(at)) { off.push(`${f.path} is listed and missing`); continue }
+    const hasher = new Bun.CryptoHasher('sha256')
+    for await (const chunk of Bun.file(at).stream()) hasher.update(chunk)
+    if (statSync(at).size !== f.bytes || hasher.digest('hex') !== f.sha256) off.push(`${f.path} does not match its sha256`)
+  }
+  return { manifest, off }
+}
+
+/**
+ * Take a hub backup, wait for it, fetch it into `<out>/<stamp>/` and unpack it
+ * there, graded against its manifest. Answers `{ dir, file, archive, manifest,
+ * row }` — `archive` the unpacked `basecamp-<stamp>/` — or null on a dry run.
+ */
+export async function pullHubArchive({ origin, key, out, dry = false, log, say = () => {} }) {
+  const destinationId = await hubDestination(origin, key)
+  const where = destinationId ? 'its backup destination' : 'its own disk, with no backup destination set'
+  if (dry) { log.dry(`take a backup of Basecamp at ${origin} to ${where}, then fetch it under ${out}`); return null }
+
+  say(`Backing up Basecamp to ${where} — answered once the archive is written`)
+  const queued = await basecamp(origin, key, '/hub-backups', { method: 'POST', headers: { 'x-service-method': 'take' }, body: { destinationId } })
+  const row = await hubSettled(origin, key, queued.id)
+  if (row.status !== 'success') throw new Error(`The backup ${row.status}: ${row.error ?? 'no reason given'}`)
+  if (row.error) log.warn(`The backup was taken and kept on the box: ${row.error}`)
+
+  const { url, name } = await basecamp(origin, key, `/hub-backups/${encodeURIComponent(row.id)}`,
+    { method: 'POST', headers: { 'x-service-method': 'download' }, body: {} })
+  const dir  = resolve(out, (row.startedAt ?? row.createdAt).replace(/[:.]/g, '-'))
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, basename(name))
+  const got  = await fetchHashed(new URL(url, origin + '/').href, file, `the archive taken ${row.startedAt}`)
+  if (row.sha256 && got !== row.sha256) {
+    rmSync(file, { force: true })
+    throw new Error(`the archive fetched hashes ${got}, not the ${row.sha256} Basecamp recorded — not unpacked`)
+  }
+  const top = hubEntries(file)
+  const r = spawnSync('tar', ['-xzf', file, '-C', dir, '--no-same-owner'], { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error(`could not unpack ${file}: ${r.stderr.trim()}`)
+  const archive = join(dir, top)
+  const { manifest, off } = await manifestMismatches(archive)
+  if (off.length) throw new Error(`the archive in ${dir} does not match its manifest: ${off.join('; ')}`)
+  return { dir, file, archive, manifest, row }
 }

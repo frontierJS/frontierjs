@@ -60,7 +60,7 @@ export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' 
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
-export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'cameOnline' | 'unreachable' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
+export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
 
 export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github'
 
@@ -91,6 +91,8 @@ export type AppStatus = 'unknown' | 'stopped' | 'starting' | 'running' | 'stoppi
 export type DeployStatus = 'pending' | 'building' | 'success' | 'failed' | 'cancelled' | 'rolledBack'
 
 export type DeployTrigger = 'button' | 'push' | 'laptop' | 'rollback' | 'rebind' | 'publish' | 'freeze' | 'observed'
+
+export type DeploySwap = 'startFirst' | 'stopFirst'
 
 export type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
 
@@ -2445,6 +2447,7 @@ export interface Server {
   health?: unknown | null
   dockerState?: unknown | null
   replication?: unknown | null
+  runtime?: unknown | null
   labels: unknown
   createdAt: string
   updatedAt: string
@@ -2495,6 +2498,7 @@ export interface ServerCreate {
   health?: unknown | null
   dockerState?: unknown | null
   replication?: unknown | null
+  runtime?: unknown | null
   labels?: unknown
 }
 
@@ -2521,6 +2525,7 @@ export interface ServerUpdate {
   health?: unknown | null
   dockerState?: unknown | null
   replication?: unknown | null
+  runtime?: unknown | null
   labels?: unknown
 }
 
@@ -2560,6 +2565,7 @@ export interface ServerWhere extends WhereBase {
   health?: unknown | WhereOp<unknown> | null
   dockerState?: unknown | WhereOp<unknown> | null
   replication?: unknown | WhereOp<unknown> | null
+  runtime?: unknown | WhereOp<unknown> | null
   labels?: unknown | WhereOp<unknown> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -3005,6 +3011,7 @@ export interface App {
   healthCheck?: string | null
   cpuLimit?: number | null
   memLimitMb?: number | null
+  stopGrace?: number | null
   command: string[]
   hasExposedPort: boolean
   isDeployedOnPush: boolean
@@ -3040,6 +3047,7 @@ export interface AppCreate {
   healthCheck?: string | null
   cpuLimit?: number | null
   memLimitMb?: number | null
+  stopGrace?: number | null
   command?: string[]
   hasExposedPort?: boolean
   backupCron?: string | null
@@ -3062,6 +3070,7 @@ export interface AppUpdate {
   healthCheck?: string | null
   cpuLimit?: number | null
   memLimitMb?: number | null
+  stopGrace?: number | null
   command?: string[]
   hasExposedPort?: boolean
   backupCron?: string | null
@@ -3097,6 +3106,7 @@ export interface AppWhere extends WhereBase {
   healthCheck?: string | WhereOp<string> | null
   cpuLimit?: number | WhereOp<number> | null
   memLimitMb?: number | WhereOp<number> | null
+  stopGrace?: number | WhereOp<number> | null
   command?: string[] | WhereOp<string[]> | null
   hasExposedPort?: boolean | WhereOp<boolean> | null
   isDeployedOnPush?: boolean | WhereOp<boolean> | null
@@ -3786,6 +3796,8 @@ export interface Deployment {
   branch?: string | null
   author?: string | null
   builtImage?: string | null
+  swap?: DeploySwap | null
+  swapReason?: string | null
   platformVersion?: string | null
   previousDeploymentId?: string | null
   configSnapshot: unknown
@@ -3832,6 +3844,8 @@ export interface DeploymentSystem {
   commitSha?: string | null
   branch?: string | null
   builtImage?: string | null
+  swap?: DeploySwap | null
+  swapReason?: string | null
   platformVersion?: string | null
   previousDeploymentId?: string | null
   startedAt?: string | Date | null
@@ -3852,6 +3866,8 @@ export interface DeploymentWhere extends WhereBase {
   branch?: string | WhereOp<string> | null
   author?: string | WhereOp<string> | null
   builtImage?: string | WhereOp<string> | null
+  swap?: DeploySwap | WhereOp<DeploySwap> | null
+  swapReason?: string | WhereOp<string> | null
   platformVersion?: string | WhereOp<string> | null
   previousDeploymentId?: string | WhereOp<string> | null
   configSnapshot?: unknown | WhereOp<unknown> | null
@@ -4983,6 +4999,7 @@ export interface Monitor {
   workspaceId: string
   name: string
   appId?: string | null
+  isManaged: boolean
   url: string
   method: HttpMethod
   headers: unknown
@@ -5053,6 +5070,7 @@ export interface MonitorUpdate {
 }
 
 export interface MonitorSystem {
+  isManaged?: boolean
   failStreak?: number
   lastCheckedAt?: string | Date | null
   nextCheckAt?: string | Date | null
@@ -5066,6 +5084,7 @@ export interface MonitorWhere extends WhereBase {
   workspaceId?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  isManaged?: boolean | WhereOp<boolean> | null
   url?: string | WhereOp<string> | null
   method?: HttpMethod | WhereOp<HttpMethod> | null
   headers?: unknown | WhereOp<unknown> | null
@@ -6472,7 +6491,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly appBackup: TableClient<AppBackup, AppBackupCreate, AppBackupUpdate, AppBackupWhere, AppBackupRelations, never, '@@gate'>
   readonly appDrill: TableClient<AppDrill, AppDrillCreate, AppDrillUpdate, AppDrillWhere, AppDrillRelations, never, '@@gate'>
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate'>
-  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem>
+  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'swap' | 'swapReason' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem>
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>
   readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate', JobSystem>
   readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere, JobRunRelations, never, '@@gate'>
@@ -6488,7 +6507,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem>
   readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations, never, '@@gate'>
   readonly alert: TableClient<Alert, AlertCreate, AlertUpdate, AlertWhere, AlertRelations, never, '@@gate'>
-  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume', 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'certExpiresAt' | 'certWarnedDays' | 'status' | '@@gate', MonitorSystem>
+  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume', 'isManaged' | 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'certExpiresAt' | 'certWarnedDays' | 'status' | '@@gate', MonitorSystem>
   readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere, MonitorCheckRelations, never, '@@gate'>
   readonly monitorUptimeDay: TableClient<MonitorUptimeDay, MonitorUptimeDayCreate, MonitorUptimeDayUpdate, MonitorUptimeDayWhere, MonitorUptimeDayRelations, never, '@@gate'>
   readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere, MonitorEventRelations, never, 'noticeOwedAt' | '@@gate', MonitorEventSystem>

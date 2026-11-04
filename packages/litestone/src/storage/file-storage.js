@@ -37,7 +37,8 @@ import { contentTypeFor, sniff, baseType, extensionFor, sameType } from '@fronti
 import { buildWhere }         from '../core/query.js'
 import { ValidationError }    from '../core/validate.js'
 import { extname, basename }  from 'path'
-import { existsSync, openAsBlob } from 'fs'
+import { existsSync, openAsBlob, createReadStream } from 'fs'
+import { rm } from 'fs/promises'
 import { createHash }         from 'crypto'
 import { Readable }           from 'stream'
 
@@ -96,16 +97,22 @@ function checkAccept(mime, accept, model, field, claimed) {
 // JSON body naming `/etc/hostname` would upload the server's own file, and a
 // system import of untrusted rows carries the same `./x` (FJS-2061). The class
 // instance is the authority, and JSON cannot construct one.
+//
+// `move` hands the file over: a local store renames it into place after one
+// read for the hash, and any other provider removes it once its copy is stored.
+// A copy of a multi-GiB resumed upload is its size read and written again
+// (FJS-3971).
 class FromPath {
-  constructor(path) {
+  constructor(path, { move = false } = {}) {
     if (typeof path !== 'string' || !path) throw new Error('fromPath(path): path must be a non-empty string')
     this.path = path
+    this.move = move === true
     Object.freeze(this)
   }
 }
 
 /** Upload a file from the server's disk into a File column. Code only — a request body cannot spell it. */
-export function fromPath(path) { return new FromPath(path) }
+export function fromPath(path, options) { return new FromPath(path, options) }
 
 // ─── Uploading from a stream ──────────────────────────────────────────────────
 
@@ -283,7 +290,10 @@ async function readValue(value, fieldName, model) {
   if (value instanceof FromPath) {
     const { path } = value
     if (!existsSync(path)) throw new Error(`@file: file not found: ${path}`)
-    return blobValue(await openAsBlob(path), { mime: guessMime(path), filename: basename(path), name: displayName(basename(path)) })
+    return blobValue(await openAsBlob(path), {
+      mime: guessMime(path), filename: basename(path), name: displayName(basename(path)),
+      ...(value.move ? { move: path } : {}),
+    })
   }
   if (isInlineFile(value) || (typeof value === 'string' && DATA_URL.test(value))) {
     const { bytes, ...fields } = readInline(value, fieldName, model)
@@ -416,7 +426,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
   // serialize: Buffer/File/fromPath/fromStream → upload → return ref object
   async serialize(value, { field, model, id, ctx }) {
     const fieldOpts = this._maps(ctx).fieldMap[model]?.[field] ?? {}
-    const { body, head, mime, filename, name, size: stated, cancel } = await readValue(value, field, model)
+    const { body, head, mime, filename, name, size: stated, cancel, move } = await readValue(value, field, model)
     let key, type
     try {
       // The stored type is the evidence and never the claim: `mime` is what the
@@ -431,7 +441,11 @@ class FileStoragePlugin extends ExternalRefPlugin {
       await cancel?.(err)
       throw err
     }
-    const { sha256, size } = await this._store(key, body, { contentType: type, size: stated, model, field })
+    const adopting = move && this._provider.adopt
+    const { sha256, size } = adopting
+      ? await this._adopt(key, move)
+      : await this._store(key, body, { contentType: type, size: stated, model, field })
+    if (move && !adopting) await rm(move, { force: true })
     return {
       key,
       ...(name ? { name } : {}),
@@ -482,6 +496,16 @@ class FileStoragePlugin extends ExternalRefPlugin {
         `the file's ${count} bytes disagree with its stated size of ${size}; nothing was kept`)
     }
     return { sha256: hash.digest('hex'), size: count }
+  }
+
+  // A file already on the provider's own disk: hashed in one read, then moved
+  // into place without a second write.
+  async _adopt(key, path) {
+    const hash = createHash('sha256')
+    let size = 0
+    for await (const chunk of createReadStream(path)) { hash.update(chunk); size += chunk.length }
+    await this._provider.adopt(key, path)
+    return { sha256: hash.digest('hex'), size }
   }
 
   // resolve: ref object → public URL string
@@ -578,9 +602,43 @@ class FileStoragePlugin extends ExternalRefPlugin {
       }
     }
     if (!fields || !args.data) return super.onBeforeCreate(model, args, ctx)
-    const raw = this._rawDigested(fields, args.data)
+    const raw     = this._rawDigested(fields, args.data)
+    const written = this._written(fields, args.data)
     await super.onBeforeCreate(model, args, ctx)
-    this._followBytes(model, fields, args.data, raw, false)
+    await this._followOrDrop(model, fields, args.data, raw, written, false, ctx)
+  }
+
+  // Each File value of each row this write hands bytes to, as [field, index],
+  // index null for a single File; read before serialize replaces it with a ref.
+  _written(fields, data) {
+    return [].concat(data ?? []).map(row => Object.entries(fields).flatMap(([field, opts]) =>
+      opts.isArray
+        ? [].concat(row?.[field] ?? []).flatMap((item, i) => isFileValue(item) ? [[field, i]] : [])
+        : isFileValue(row?.[field]) ? [[field, null]] : []))
+  }
+
+  // The objects are stored before the sibling can be compared, and a write
+  // that throws reaches no onAfterWrite: a refusal deletes what this write
+  // stored and forgets the old refs it queued for cleanup, or the bytes are
+  // orphaned and the next update's cleanup deletes the file the row still holds.
+  async _followOrDrop(model, fields, data, raw, written, isUpdate, ctx) {
+    try {
+      this._followBytes(model, fields, data, raw, isUpdate)
+    } catch (err) {
+      const rows = [].concat(data ?? [])
+      await Promise.all(written.flatMap((pairs, r) => pairs.map(([field, i]) =>
+        this._cleanupRef(i === null ? this._parseRef(rows[r]?.[field]) : rows[r]?.[field]?.[i], { field, model, ctx }))))
+      if (isUpdate) this._forgetStash(ctx, model, written.flat().map(([field]) => field))
+      throw err
+    }
+  }
+
+  _forgetStash(ctx, model, written) {
+    const stash = this._stashMap.get(ctx._flavor ?? ctx)
+    if (!stash) return
+    for (const field of new Set(written)) {
+      for (const k of stash.keys()) if (k === `${model}.${field}` || k.startsWith(`${model}.${field}[`)) stash.delete(k)
+    }
   }
 
   // ── @digest: the sibling column follows the bytes ──────────────────────────
@@ -629,9 +687,10 @@ class FileStoragePlugin extends ExternalRefPlugin {
   async onBeforeUpdate(model, args, ctx) {
     const fields = this._maps(ctx).fieldMap[model]
     if (!fields || !args.data) return
-    const raw = this._rawDigested(fields, args.data)
+    const raw     = this._rawDigested(fields, args.data)
+    const written = this._written(fields, args.data)
     await this._storeUpdate(model, args, ctx, fields)
-    this._followBytes(model, fields, args.data, raw, true)
+    await this._followOrDrop(model, fields, args.data, raw, written, true, ctx)
   }
 
   async _storeUpdate(model, args, ctx, fields) {

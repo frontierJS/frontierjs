@@ -527,8 +527,11 @@ enum ServerEventKind {
   // that means a connector needs a new row.
   syncRequested statusSynced statusSyncIgnored syncFailed
   syncNoAccount syncUnsupported syncUnrecognized
-  // The machine itself.
-  cameOnline unreachable
+  // The machine itself. `rebooted` is its boot id changing between two
+  // heartbeats; `rebootRequested` above is a person's ask.
+  cameOnline unreachable rebooted
+  // A container or a supervised unit moving, read off `Server.runtime` (`domain/host/runtime.ts`).
+  containerCrashLooping containerRecovered unitFailed unitRestored
   // Work run on it, through the outpost.
   recipeRan recipeFailed cleanupQueued cleanupRan cleanupFailed
   // Disks.
@@ -572,6 +575,9 @@ enum DeployStatus   { pending building success failed cancelled rolledBack }
 // `observed` is a release a platform ran that Basecamp did not start.
 // `Job.trigger` is another noun (manual/scheduled) and stays a String.
 enum DeployTrigger  { button push laptop rollback rebind publish freeze observed }
+// How a release's container replaced the live one, as Outpost answered:
+// `startFirst` overlapped the two, `stopFirst` left a gap (`FJS-D1846`).
+enum DeploySwap     { startFirst stopFirst }
 enum StepStatus     { pending running success failed skipped }
 enum JobKind        { oneShot scheduled triggered workflow }
 enum JobStatus      { pending running failed cancelled }
@@ -1451,6 +1457,12 @@ model Server {
   // heartbeat already writes this row and a column per app would be a second
   // trailed write per app every thirty seconds. `checked_at` is when it was read.
   replication      Json?
+  // What this machine's containers and supervised units are doing, as the
+  // heartbeat carried it: `{ boot_id, containers, units }` (`IDEAS/box-health.md`).
+  // A crashing container under `--restart unless-stopped` still reads `running`
+  // on `App.status`, which only a deploy moves; this is the observation beside it.
+  // `checked_at` is when it was read, and a null part is one the box could not take.
+  runtime          Json?
   labels           Json         @default("{}")
 
   createdAt        DateTime     @default(now())
@@ -1850,6 +1862,11 @@ model App {
   healthCheck   String?     @trim @regex("^/[^ ]*$", "a path beginning with '/'")
   cpuLimit      Float?      @gt(0) @lte(256)
   memLimitMb    Int?        @gte(6)
+  // Seconds a stopping container gets before docker kills it, beside `logs`
+  // in the release's runtime; Outpost hands it on as `--stop-timeout` and
+  // `FRONTIER_STOP_GRACE` for Junction's drain to fit inside (`FJS-D1841`).
+  // Null is Outpost's default (40). App-only, as `containerPort` is.
+  stopGrace     Int?        @gte(2)
   // The arguments after the image, replacing its CMD as compose's `command:`
   // does; empty runs the image's own (`FJS-D1585`). Argv, not `Job.command`'s
   // shell line.
@@ -2335,6 +2352,10 @@ model Deployment {
   branch               String?      @system
   author               String?      @immutable
   builtImage           String?      @system
+  // Null on a release that started no container. `swapReason` is why a
+  // stop-first release could not overlap; null on one nobody asked to.
+  swap                 DeploySwap?  @system
+  swapReason           String?      @system
   // The vendor's version id on a platform release, as the vendor answered it.
   // A rollback promotes it, so a caller who could write it picks what goes live.
   platformVersion      String?      @system
@@ -3071,6 +3092,11 @@ model Monitor {
   // has no App row. Bare id, no @relation: the app being removed must not take
   // the history of the URL with it.
   appId       String?
+  // The one Monitor per App the system keeps from the App's primary Domain
+  // (`FJS-D1859`, `domain/monitor/managed.ts`). Its `url` is regenerated on
+  // every Domain write, so a person editing it would hold a copy the next
+  // write silently overwrites.
+  isManaged   Boolean   @default(false) @system
   // `@url` is http(s) only, and carries no `@length` for the reason
   // `HubConfig.baseUrl` gives: a bound alongside it cannot be isolated.
   url         String    @trim @url
@@ -3127,6 +3153,7 @@ model Monitor {
   @@trail(audit)
   @@index([workspaceId])
   @@index([status, nextCheckAt])
+  @@index([appId, isManaged])
 }
 
 // One per probe: the heartbeat bar. Raw and short-lived, like `MetricPoint`.

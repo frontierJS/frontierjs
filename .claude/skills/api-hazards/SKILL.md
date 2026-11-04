@@ -114,4 +114,5 @@ Detail: `references/jobs-and-the-clock.md`
 - **A battery names a vendor in a comment and never in a call** (`FJS-D215`)
 - **Nothing here mocks a module, and the reason is a design rule.**
 - **A test may not name a port, and the reason is the runner.**
+- **The shutdown budgets live inside the container's stop grace, and a stated one that reaches it refuses the boot** (`FJS-D1841`)
 - Plus a table and prose that are only in the reference file.

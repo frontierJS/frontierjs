@@ -6,10 +6,10 @@
 //
 // The shell passes everything by environment:
 //   FJS_SIDECAR_APP      the app's own files (the bundle's resources/app)
-//   DATABASE_URL         <app data>/app.db — jobs.db lands beside it
-//   AUDIT_PATH           <app data>/audit.db
-//   STORAGE_ROOT         <app data>/storage
-//   ENCRYPTION_KEY_FILE  <app data>/encryption.key, made on first run
+//   DATABASE_URL         <app data>/api/app.db — jobs.db lands beside it
+//   AUDIT_PATH           <app data>/api/audit.db
+//   STORAGE_ROOT         <app data>/api/storage
+//   ENCRYPTION_KEY_FILE  <app data>/api/encryption.key, made on first run
 //   FRONTIER_PORT_BE     the free 127.0.0.1 port the shell picked
 //   FJS_SIDECAR_LIFELINE=1  stop when stdin closes (a SIGTERM to itself, so the
 //                        app's graceful shutdown runs): the shell holds the

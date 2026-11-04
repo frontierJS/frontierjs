@@ -2427,6 +2427,15 @@ try {
     bpApp?.memLimitMb === redisBp?.memLimitMb && bpApp?.cpuLimit === redisBp?.cpuLimit
       && runtime.includes(`${redisBp?.memLimitMb} MiB`) && runtime.includes(String(redisBp?.port)),
     runtime)
+  // The grace was settable by API patch alone, with nowhere to read it back (FJS-3984).
+  check('…and says the grace is the machine\'s default while none is set',
+    bpApp?.stopGrace == null && /Stop grace\s*the machine's default/.test(runtime), runtime)
+  const graced = await asOwner('PATCH', `/apps/${bpAppId}`, { stopGrace: 90, version: bpApp?.version })
+  check('an app takes a stop grace', graced.status < 300 && graced.body?.stopGrace === 90, JSON.stringify(graced).slice(0, 160))
+  await goto(`/apps/${bpAppId}/?tab=config`)
+  const gracedRuntime = await until(`document.getElementById('app-runtime')?.textContent ?? ''`,
+    t => t.includes('Stop grace'), 'the Config tab never drew the runtime').catch(() => '')
+  check('its Config tab shows the stop grace in seconds', /Stop grace\s*90 s/.test(gracedRuntime), gracedRuntime)
 
   // ─── Deploy on push (FJS-3393) ─────────────────────────────────────────
   console.log('\n  app detail — deploy on push')

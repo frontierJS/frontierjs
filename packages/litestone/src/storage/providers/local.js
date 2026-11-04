@@ -4,6 +4,7 @@
 // provider signed (FJS-D1703).
 
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, createWriteStream } from 'fs'
+import { rename, copyFile, unlink } from 'fs/promises'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { join, resolve, dirname } from 'path'
 import { Readable } from 'stream'
@@ -42,6 +43,21 @@ export class LocalProvider {
       : typeof body === 'string'           ? Buffer.from(body, 'utf8')
       : body
     writeFileSync(path, buf)
+  }
+
+  // A file already on this machine becomes the object. A rename keeps the inode
+  // and writes nothing; across filesystems it is a copy and the source is
+  // removed, since the caller handed the file over.
+  async adopt(/** @type {string} */ key, /** @type {string} */ from) {
+    const path = this._filePath(key)
+    mkdirSync(dirname(path), { recursive: true })
+    try {
+      await rename(from, path)
+    } catch (err) {
+      if (/** @type {any} */ (err)?.code !== 'EXDEV') throw err
+      await copyFile(from, path)
+      await unlink(from)
+    }
   }
 
   async get(/** @type {string} */ key) {

@@ -273,6 +273,15 @@ try {
   check('…every control answered, unknown where the box could not read',
     posture?.controls?.length > 0 && posture.controls.every(c => [true, false, 'unknown'].includes(c.ok)))
 
+  // The heartbeat's runtime reading, stored as it came with the time it was read.
+  // A part this laptop could not take is null, which is a shape and not a failure.
+  const runtimeOf = async () => (await call(`/servers/${first.serverId}`, auth).catch(() => null))?.runtime ?? null
+  let runtime = null
+  check('a heartbeat carries the machine\'s runtime and the Server row holds it, with checked_at',
+    await until(async () => !!(runtime = await runtimeOf())?.checked_at, 45_000))
+  check('…naming its boot id, containers and units, each read or null',
+    !!runtime && 'boot_id' in runtime && [runtime.containers, runtime.units].every(p => p === null || Array.isArray(p)))
+
   // Its own app rather than whichever one the seed put in this workspace:
   // the seed spreads its app kinds across workspaces by a counter.
   const environment = (await call('/environments', auth))?.data?.[0]
@@ -369,6 +378,8 @@ try {
   const limits = sh('docker', 'inspect', '--format', '{{.HostConfig.NanoCpus}} {{.HostConfig.Memory}}', container).stdout.trim()
   check('…started with the limits its columns name', limits === `500000000 ${64 * 1024 * 1024}`)
   check('…and its health step asked the path', steps.some(s => /health/i.test(s.name) && s.status === 'success'))
+  check('…and the next heartbeat reports its container running',
+    await until(async () => (await runtimeOf())?.containers?.some(c => c.app_id === box.id && c.state === 'running' && !c.replaced), 45_000))
 
   const again = await released(box?.id, auth)
   const held  = sh('docker', 'ps', '-a', '--filter', `name=^${container}$`, '--format', '{{.ID}}').stdout.trim().split('\n').filter(Boolean)

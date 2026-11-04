@@ -20,7 +20,7 @@ import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
-import { declaredFor, gradeHub, gradePosture, gradeReplication, HUB_CONTROL_IDS, lastKnownControls, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
+import { declaredFor, gradeHub, gradePosture, gradeReplication, gradeRuntimeContainers, gradeRuntimeUnits, HUB_CONTROL_IDS, lastKnownControls, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
 import { HOST_SLUG, hubApp, placeHub } from '../src/domain/host/host-machine.ts'
 import type { HostDeclared, PostureReadings } from '../src/domain/host/posture.ts'
 import { componentById, matchGithub, rangeOf, versionOf } from '../src/domain/host/components.ts'
@@ -684,5 +684,68 @@ describe('component advisories', () => {
   test('a withdrawn advisory affects nothing', () => {
     const list = [{ ...advisory('GHSA-663w-cv8g-jj2p', [['bun', '< 1.4.4', '1.4.4']]), withdrawn_at: '2026-10-01T00:00:00Z' }]
     expect(ids(bun, list, '1.4.0')).toEqual([])
+  })
+})
+
+// ─── runtime ──────────────────────────────────────────────────────────────
+
+describe('runtime.containers and runtime.units, over the heartbeat\'s reading', () => {
+  const at   = (ms: number) => new Date(NOW - ms).toISOString()
+  const APPS = [{ id: 'a1', slug: 'shop' }, { id: 'a2', slug: 'blog' }]
+  const box  = (o: Record<string, unknown> = {}) => ({ app_id: 'a1', name: 'fjs--p-prod-shop-a1', image: 'shop:1',
+    state: 'running', status: 'Up 2 hours', restart_count: 0, started_at: at(7_200_000), oom_killed: false, exit_code: 0, replaced: false, ...o })
+  const unit = (name: string, active = 'active') => ({ unit: name, load: 'loaded', active, sub: active === 'active' ? 'running' : 'failed', since: at(60_000) })
+  const read = (o: Record<string, unknown> = {}) => ({ boot_id: 'b1',
+    containers: [box(), box({ app_id: 'a2', name: 'fjs--p-prod-blog-a2' })],
+    units: [unit('outpost'), unit('caddy-api'), unit('docker')], checked_at: at(30_000), ...o }) as any
+
+  test('a null reading is unknown, never ok', () => {
+    expect(gradeRuntimeContainers(null, APPS, NOW).ok).toBe('unknown')
+    expect(gradeRuntimeUnits(null, NOW).ok).toBe('unknown')
+    // A box that could not run docker ps or systemctl took no reading of that part.
+    expect(gradeRuntimeContainers(read({ containers: null }), APPS, NOW).ok).toBe('unknown')
+    expect(gradeRuntimeUnits(read({ units: null }), NOW).ok).toBe('unknown')
+  })
+
+  test('a stale checked_at is unknown, whatever the reading last said', () => {
+    expect(gradeRuntimeContainers(read({ checked_at: at(20 * 60_000) }), APPS, NOW).ok).toBe('unknown')
+    expect(gradeRuntimeUnits(read({ checked_at: at(20 * 60_000) }), NOW).ok).toBe('unknown')
+  })
+
+  test('a swap\'s set-aside that has exited is not graded (Q4 A)', () => {
+    const r = read({ containers: [...read().containers, box({ name: 'fjs--p-prod-shop-a1_replaced', state: 'exited', exit_code: 0, replaced: true })] })
+    expect(gradeRuntimeContainers(r, APPS, NOW).ok).toBe(true)
+  })
+
+  test('a live container restarting fails, naming the app', () => {
+    const c = gradeRuntimeContainers(read({ containers: [box({ state: 'restarting', restart_count: 4 }), box({ app_id: 'a2', name: 'b' })] }), APPS, NOW)
+    expect(c.ok).toBe(false)
+    expect(c.message).toContain('shop is restarting, 4 restart(s)')
+    expect(c.severity).toBe('high')
+  })
+
+  test('a restart stamped inside the hold window fails while the container runs (FJS-D1860)', () => {
+    const c = gradeRuntimeContainers(read({ containers: [box({ restart_count: 2, restartsSinceLast: 2, restartedAt: at(2 * 60_000) }), box({ app_id: 'a2', name: 'b' })] }), APPS, NOW)
+    expect(c.ok).toBe(false)
+    expect(c.message).toContain('shop restarted 2 time(s) 2 min ago')
+    // Past the window the same stamp says nothing: the box held.
+    expect(gradeRuntimeContainers(read({ containers: [box({ restart_count: 2, restartsSinceLast: 2, restartedAt: at(30 * 60_000) }), box({ app_id: 'a2', name: 'b' })] }), APPS, NOW).ok).toBe(true)
+  })
+
+  test('a live placement with no container fails, naming the app', () => {
+    expect(gradeRuntimeContainers(read({ containers: [box()] }), APPS, NOW).message).toContain('blog has no container')
+  })
+
+  test('a failed unit fails, naming the unit; one not installed here is not graded', () => {
+    const c = gradeRuntimeUnits(read({ units: [unit('outpost'), unit('caddy-api', 'failed')] }), NOW)
+    expect(c.ok).toBe(false)
+    expect(c.message).toContain('caddy-api is failed')
+    expect(gradeRuntimeUnits(read({ units: [unit('outpost'), { ...unit('basecamp-litestream', 'inactive'), load: 'not-found' }] }), NOW).ok).toBe(true)
+  })
+
+  test('every container running and every unit active is ok', () => {
+    expect(gradeRuntimeContainers(read(), APPS, NOW).ok).toBe(true)
+    expect(gradeRuntimeUnits(read(), NOW).ok).toBe(true)
+    expect(gradeRuntimeContainers(read({ containers: [] }), [], NOW).ok).toBe(true)
   })
 })

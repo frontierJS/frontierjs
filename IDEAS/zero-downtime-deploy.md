@@ -176,7 +176,7 @@ failure after the switch and for the stop-first path.
   paved road over the workaround), the verdict the only switch. The verdict
   reads only the schema, so a change in what a value means passes as an
   expand; stop-first stays the default and the verdict still has the last word.
-- **FJS-D1841 — How does an App's one stop grace reach the container and Junction: where the number lives, its env var, and the formula for the three budgets?** `FJS-D1839` ruled the relation but not the
+- ~~**FJS-D1841 — How does an App's one stop grace reach the container and Junction: where the number lives, its env var, and the formula for the three budgets?**~~ **Answered 2026-11-04 (`FJS-D1841`): A — the release's runtime config holds the grace beside `logs` (`runtimeFor`, `deployment-run.job.ts:354`; `deploy.*.logs` on the `fli deploy` path). Outpost passes it once as `docker run --stop-timeout N -e FRONTIER_STOP_GRACE=N`, and every `docker stop -t` and `STOP_GRACE_S` goes. Junction's config resolution (where `FRONTIER_PORT_BE` is read) derives the three budgets, for example whole = N − 1 s and drain ≤ whole / 3 with the plugins taking the rest. An explicit budget that does not fit is refused at boot. With no env var (`fli dev`) Docker's 10 s is assumed.** `FJS-D1839` ruled the relation but not the
   carrier (`FJS-3954`). Today Outpost's `STOP_GRACE_S = 10`
   (`docker.js:207`, used at `:641` and `:714`) and `_module.md:654`'s
   `docker stop -t 10` know nothing of Junction's fixed `http.drainTimeout` 5 s
@@ -309,7 +309,10 @@ Done when: a Basecamp release of an expand runs start-first and a contract runs 
   - `bun run test` passes 373 (4 new). `bun run verify:docker` passes 69, 3 new: whoami's binary on `oven/bun:1.4.4-slim` with this workspace's Litestone, built in the drive at v1 and v2. v1 → v2 overlapped as `expand`, v2 → v1 swapped stop-first as `contract`, and no `fjs-before-*` volume was left. The probe images from 0.2 gave `expand`, `contract` and `unchanged` the same way.
 - [ ] 2.2 `/deploy` carries `swap` for an App whose owner turned start-first on (`FJS-D1847`): an App setting, off by default, on the App's settings screen. An `exposesPort` App is always stop-first
   - Waits on 3.1 (`FJS-D1840`): this is the step that ships start-first.
-- [ ] 2.3 The Deployment row records the swap that ran and, for stop-first, the reason
+- [x] 2.3 The Deployment row records the swap that ran and, for stop-first, the reason
+  - `Deployment.swap` (`DeploySwap { startFirst stopFirst }`) and `swapReason`, both `@system`, migration `20261104061656_deployment_swap`. The deploy step reads `/deploy`'s `swap` and `swap_reason` (`swapOf` in `jobs/deployment-run.job.ts`) and `recordStep` writes them with the digest. A reply that names no swap, such as the stub's, writes neither rather than guessing stop-first. Until 2.2 sends `swap`, a real release records `stopFirst` with no reason.
+  - The deployment screen shows a Swap fact under Build, the reason beside a stop-first.
+  - `bun run test` in basecamp: 1162 pass, 2 fail. The two that failed (`audit-gate-parity-matrix`, `push`) ran past 5 s under the full run's load and pass alone (63/63). Two new cases in `rollback.test.ts`: a contract rollback records `stopFirst` with its reason; an overlap records no reason; a reply without `swap` records nothing. `bun run verify:build` 9/9. The screen with a swap set has not been seen in a browser.
 
 ## Phase 3 — `fli deploy` over SSH
 

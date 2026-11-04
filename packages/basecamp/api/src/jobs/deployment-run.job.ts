@@ -12,7 +12,7 @@
 // `digest`, and that is the whole of what makes a release addressable:
 //   POST /pull         { image }                          → { digest }
 //   POST /build        { app_id, source, image }          → { digest, commit_sha, exposed_port }; a git source, built on the machine that runs it
-//   POST /deploy      { deployment_id, image, digest, hosts, paths, … } → { digest }, once healthy;
+//   POST /deploy      { deployment_id, image, digest, hosts, paths, … } → { digest, swap, swap_reason }, once healthy;
 //                      a release that fails puts the previous container back (FJS-1765)
 //   POST /stop         { app_id }                          → container and route gone (sent by apps.remove, never by a release)
 //   POST /route        { app_id, hosts, paths?, port? }            → Caddy re-routed, no restart (sent by domain:dns;
@@ -65,7 +65,7 @@ import { releaseEnv } from '../domain/release/variables.ts'
 import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor, releaseCopyOf, restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from './app-backup-run.job.ts'
 import type { App }         from '@frontierjs/junction'
-import type { StepStatus } from '#db/schema.d.ts'
+import type { StepStatus, DeploySwap } from '#db/schema.d.ts'
 
 // Row shapes come from the schema now, not from hand-written mirrors of it.
 // The old DeploymentRow / ServiceRow / StepRow / ServiceServerRow interfaces
@@ -76,6 +76,15 @@ import type { StepStatus } from '#db/schema.d.ts'
 type DeploymentRow = any
 type StepRow       = any
 type ServiceRow    = any
+
+/** How `/deploy` replaced the live container. Nothing from a reply that names
+ *  no swap, such as the stub's, rather than a guess at stop-first. */
+type Swapped = { swap?: DeploySwap; swapReason?: string | null }
+function swapOf(data: Record<string, unknown> | undefined): Swapped {
+  const swap = data?.swap === 'start-first' ? 'startFirst' : data?.swap === 'stop-first' ? 'stopFirst' : null
+  if (!swap) return {}
+  return { swap, swapReason: typeof data?.swap_reason === 'string' ? data.swap_reason : null }
+}
 
 /** How the release's container starts — the snapshot's, falling back to the
  *  app's columns only for a release that recorded none. */
@@ -109,7 +118,7 @@ function runner(app: App) {
   // refusal at the call.
   async function step(
     deploymentId: string, stepId: string, status: StepStatus,
-    extra: { output?: string; digest?: string | null; commit?: string; containerPort?: number } = {},
+    extra: { output?: string; digest?: string | null; commit?: string; containerPort?: number } & Swapped = {},
   ): Promise<void> {
     await deployments.call('stepStatus', deploymentId, {
       stepId, status,
@@ -117,6 +126,7 @@ function runner(app: App) {
       ...(extra.digest ? { digest: extra.digest } : {}),
       ...(extra.commit ? { commit: extra.commit } : {}),
       ...(extra.containerPort != null ? { containerPort: extra.containerPort } : {}),
+      ...(extra.swap ? { swap: extra.swap, swapReason: extra.swapReason ?? null } : {}),
     })
   }
 
@@ -281,7 +291,10 @@ function runner(app: App) {
         // what RAN. It travels with the step write rather than as a second one.
         if (result.digest && result.digest !== digest) digest = result.digest
 
-        await step(deploymentId, s.id, 'success', { output: result.output, digest, commit: result.commit, containerPort: result.containerPort })
+        await step(deploymentId, s.id, 'success', {
+          output: result.output, digest, commit: result.commit, containerPort: result.containerPort,
+          swap: result.swap, swapReason: result.swapReason,
+        })
         current = undefined
       }
 
@@ -383,7 +396,7 @@ function runner(app: App) {
       digest:   string | null
       commit?:  string | null
     }
-  ): Promise<{ output?: string; digest: string | null; commit?: string; containerPort?: number }> {
+  ): Promise<{ output?: string; digest: string | null; commit?: string; containerPort?: number } & Swapped> {
     const { deploy, service, executor, digest } = ctx
     const name  = step.name.toLowerCase()
 
@@ -523,7 +536,7 @@ function runner(app: App) {
       const reply = await executor.call('/deploy', await startBody(deploy, ctx.config, service, image, digest),
         { timeoutMs: DEPLOY_TIMEOUT_MS })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
-      return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
+      return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest, ...swapOf(reply.data) }
 
     } else if (name.includes('health')) {
       // Poll up to 10 times with 3s between attempts. The path, where the app

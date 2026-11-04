@@ -23,6 +23,7 @@ import {
   rescaleUpdate,
 } from './migrate.js'
 import { quoteIdent } from './query.js'
+import { derivedOnce } from './schema-maps.js'
 import { resolveOperations, checkAgainstHistory, renameStatement, describeOperation, guessRenames } from './operations.js'
 import { generateDDLForDatabase, schemaForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
 
@@ -1020,6 +1021,32 @@ function onlyDrops(diffResult) {
   return true
 }
 
+// The DDL a schema generates, and the pristine schema built from it, are pure
+// functions of the parse. A tenant registry boots every tenant over one parse,
+// and rebuilding both per tenant is the whole cost of a miss that is not
+// SQLite (FJS-3819). Shared between callers, so the pristine side is frozen:
+// a diff that wrote into it would corrupt the next tenant's comparison.
+const autoDdl = (schema, dbName, pluralize) =>
+  derivedOnce(schema, `autoDdl:${dbName}:${pluralize}`, [], () =>
+    generateDDLForDatabase(schema, dbName, { foreignKeys: true, pluralize }))
+
+function deepFreeze(v) {
+  if (v && typeof v === 'object' && !Object.isFrozen(v)) {
+    Object.freeze(v)
+    for (const k of Object.keys(v)) deepFreeze(v[k])
+  }
+  return v
+}
+
+const pristineOf = (parseResult, dbName) =>
+  derivedOnce(parseResult.schema, `pristine:${dbName}`, [], () => {
+    const pristineDb = openDatabase(':memory:')
+    try {
+      pristineDb.run('PRAGMA foreign_keys = ON')
+      return deepFreeze(buildPristineForDatabase(pristineDb, parseResult, dbName, autoDdl(parseResult.schema, dbName, false)))
+    } finally { pristineDb.close() }
+  })
+
 export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force = false, acceptDataLoss = false, acceptResidue = false } = {}) {
   // Accept either a parseResult or pull it from db.$schema
   const parseResult = parseResultOrSchema ?? { schema: db.$schema, valid: true, errors: [] }
@@ -1042,7 +1069,7 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
     // the double introspection entirely — this is what makes "call on every
     // startup" actually free. Pass { force: true } to run the full diff anyway
     // (e.g. after out-of-band DDL changes to the live DB).
-    const ddlHash = checksum(generateDDLForDatabase(parseResult.schema, dbName, { foreignKeys: true, pluralize }) + `|pluralize=${pluralize}`)
+    const ddlHash = checksum(autoDdl(parseResult.schema, dbName, pluralize) + `|pluralize=${pluralize}`)
     if (!force && readAutoHash(rawDb) === ddlHash) {
       // Re-graded, not replayed. A residue recorded by an older reading stays
       // recorded while the schema hash holds still, so a comparison that learned
@@ -1069,243 +1096,236 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       continue
     }
 
-    const pristineDb = openDatabase(':memory:')
-    pristineDb.run('PRAGMA foreign_keys = ON')
+    const liveSchema     = introspect(rawDb)
+    const pristineSchema = pristineOf(parseResult, dbName)
+    const diffResult     = diffSchemas(pristineSchema, liveSchema, parseResult, dbName, { pluralize })
 
+    // Join tables (and @edge/@scoped side tables) are invisible to
+    // introspection — ensure they exist even when the model diff is in sync
+    // (e.g. an m2m or an @edge added to an existing DB).
     try {
-      const liveSchema     = introspect(rawDb)
-      const pristineSchema = buildPristineForDatabase(pristineDb, parseResult, dbName)
-      const diffResult     = diffSchemas(pristineSchema, liveSchema, parseResult, dbName, { pluralize })
-
-      // Join tables (and @edge/@scoped side tables) are invisible to
-      // introspection — ensure they exist even when the model diff is in sync
-      // (e.g. an m2m or an @edge added to an existing DB).
-      try {
-        const scoped = schemaForDatabase(parseResult.schema, dbName)
-        const m2mPairs = detectM2MPairs(scoped, pluralize)
-        // planEdgeStorage attaches @edge columns to their pairs and collects
-        // create-own side-table groups.
-        const { ownGroups } = planEdgeStorage(scoped, m2mPairs, pluralize)
-        for (const pair of m2mPairs) {
-          for (const stmt of splitStatements(generateJoinTableDDL(pair, true)))
-            if (stmt.trim()) rawDb.run(stmt)
-          // Add any @edge columns missing from an already-existing join table —
-          // CREATE IF NOT EXISTS is a no-op once the join exists.
-          if (pair.edgeColumns?.length) {
-            const have = new Set(rawDb.query(`PRAGMA table_info("${pair.joinTable}")`).all().map(c => c.name))
-            for (const colDef of pair.edgeColumns) {
-              const name = colDef.match(/"([^"]+)"/)?.[1]
-              if (name && !have.has(name)) rawDb.run(`ALTER TABLE "${pair.joinTable}" ADD COLUMN ${colDef.trim()}`)
-            }
+      const scoped = schemaForDatabase(parseResult.schema, dbName)
+      const m2mPairs = detectM2MPairs(scoped, pluralize)
+      // planEdgeStorage attaches @edge columns to their pairs and collects
+      // create-own side-table groups.
+      const { ownGroups } = planEdgeStorage(scoped, m2mPairs, pluralize)
+      for (const pair of m2mPairs) {
+        for (const stmt of splitStatements(generateJoinTableDDL(pair, true)))
+          if (stmt.trim()) rawDb.run(stmt)
+        // Add any @edge columns missing from an already-existing join table —
+        // CREATE IF NOT EXISTS is a no-op once the join exists.
+        if (pair.edgeColumns?.length) {
+          const have = new Set(rawDb.query(`PRAGMA table_info("${pair.joinTable}")`).all().map(c => c.name))
+          for (const colDef of pair.edgeColumns) {
+            const name = colDef.match(/"([^"]+)"/)?.[1]
+            if (name && !have.has(name)) rawDb.run(`ALTER TABLE "${pair.joinTable}" ADD COLUMN ${colDef.trim()}`)
           }
         }
-        for (const g of ownGroups) {
-          for (const stmt of splitStatements(generateEdgeSideTableDDL(g, true)))
-            if (stmt.trim()) rawDb.run(stmt)
-        }
-      } catch { /* advisory — migration files remain the source of truth */ }
+      }
+      for (const g of ownGroups) {
+        for (const stmt of splitStatements(generateEdgeSideTableDDL(g, true)))
+          if (stmt.trim()) rawDb.run(stmt)
+      }
+    } catch { /* advisory — migration files remain the source of truth */ }
 
-      if (!diffResult.hasChanges) {
-        writeAutoHash(rawDb, ddlHash)
-        const residue = acceptResidue ? [] : diffResult.residue
-        writeAutoResidue(rawDb, residue)
-        if (residue.length) {
-          announceResidue(dbName, residue)
-          results[dbName] = { state: 'in-sync', applied: 0, residue }
-          continue
-        }
-        results[dbName] = { state: 'in-sync', applied: 0 }
+    if (!diffResult.hasChanges) {
+      writeAutoHash(rawDb, ddlHash)
+      const residue = acceptResidue ? [] : diffResult.residue
+      writeAutoResidue(rawDb, residue)
+      if (residue.length) {
+        announceResidue(dbName, residue)
+        results[dbName] = { state: 'in-sync', applied: 0, residue }
         continue
       }
-
-      // Same rule as file migrations: a rebuild that adds a NOT NULL column
-      // with no DEFAULT has no value for existing rows. Refuse loudly instead
-      // of applying commented-out SQL and marking the db in-sync — the hash is
-      // NOT written, so this surfaces on every startup until the schema is fixed.
-      //
-      // BOTH paths, and for a long time only the rebuild one. A plain column
-      // add does not need a rebuild, so `blockedAdds` was collected by the diff
-      // and read by nobody: `generateMigrationSQL` wrote the ALTER out as a
-      // COMMENT, `executableStatements` correctly ran none of it, and this
-      // reported `state: 'migrated', applied: 0` — with the reason visible only
-      // inside a SQL string the caller usually discards. The application then
-      // ran against a table missing a column its own seed declares, and every
-      // write of that column was stripped by mass-assignment protection, so a
-      // required field read back `undefined` with nothing anywhere saying why
-      // (`FJS-604`).
-      const blockedCols = diffResult.tableDiffs.flatMap(d =>
-        (d.needsRebuild
-          ? (d.cols?.added ?? []).filter(c => c.notnull && c.default == null)
-          : (d.blockedAdds ?? [])
-        ).map(c => `${d.name}.${c.name}`))
-      if (blockedCols.length) {
-        const reason = `adds NOT NULL column(s) with no DEFAULT: ${blockedCols.join(', ')} — ` +
-                       `add a @default() or make the field optional (?)`
-        // Announced as well as returned. The state is honest and the hash is
-        // not written, so it surfaces on every startup — but only to a caller
-        // that reads the result, and the app that found this discards it, as
-        // most do. A schema and a table that disagree is exactly the class the
-        // directory announcement in `db-path.js` exists for.
-        console.warn(
-          `[litestone] Migration BLOCKED for database "${dbName}" — the schema and the table now disagree.\n` +
-          `            ${reason}\n` +
-          `            Nothing was applied and nothing else in this migration ran; a write to a blocked ` +
-          `column is silently dropped, so the value reads back as undefined.`)
-        results[dbName] = { state: 'blocked', reason }
-        continue
-      }
-
-      // The other half of the same rule (FJS-183). A rebuild drops the table,
-      // taking any trigger or index the APP created — litestone did not write
-      // them and cannot restate them, so applying the rebuild here would delete
-      // behavior with nothing recording that it had. The generated file blocks
-      // for this too; the hash is not written, so it surfaces on every startup
-      // until the schema or the database says what should happen.
-      const blockedObjects = diffResult.tableDiffs.flatMap(d => d.needsRebuild
-        ? [...(d.foreignTriggers ?? []).map(n => `trigger ${n}`),
-           ...(d.indexes?.foreign ?? []).map(i => `index ${i.name}`)]
-        : [])
-      if (blockedObjects.length) {
-        results[dbName] = {
-          state:  'blocked',
-          reason: `a rebuild would destroy ${blockedObjects.join(', ')} — litestone did not create ` +
-                  `these and cannot restate them. Move each into the schema, drop it by hand, or ` +
-                  `write the migration as a file and recreate it there`,
-        }
-        continue
-      }
-
-      // A rescale over rows: the rebuild would copy every stored integer as it
-      // is, so each would mean 10^k times more or less (`FJS-2140`). Here the
-      // table can be read, so an empty one goes on to rebuild and a full one
-      // is refused naming the statement. The statement is written in a file
-      // migration above the rebuild; run alone, the rows are still there and
-      // this refuses again.
-      const rescaled = diffResult.tableDiffs.filter(d => d.rescales?.length &&
-        rawDb.query(`SELECT 1 FROM ${quoteIdent(d.name)} LIMIT 1`).get())
-      if (rescaled.length) {
-        const updates = rescaled.flatMap(d => d.rescales.map(r => rescaleUpdate(d.name, r)))
-        const reason  = `changes @scale on a table with rows: ` +
-          rescaled.flatMap(d => d.rescales.map(r => `${d.name}.${r.column} @scale(${r.from}) → @scale(${r.to})`)).join(', ') +
-          ` — every stored value is minor units at the old scale. Write a file migration ` +
-          `(litestone migrate create) and put ${updates.join(' ')} above its rebuild`
-        console.warn(`[litestone] Migration BLOCKED for database ${quoteIdent(dbName)} — ${reason}. Nothing was applied.`)
-        results[dbName] = { state: 'blocked', reason }
-        continue
-      }
-
-      // The third blocked rule, and the one with the worst consequence: a
-      // column leaving the schema takes its values with it, and nothing said so.
-      // `acceptDataLoss: true` is the caller stating it — Prisma's `db push`
-      // demands `--accept-data-loss` for exactly this shape, and this mechanism
-      // is modeled on it. The hash is withheld like the other two, so a schema
-      // left this way re-announces on every boot rather than going quiet.
-      //
-      // The message names TWO readings because the diff cannot tell them apart
-      // and they want opposite actions. *You removed these* is the one the
-      // option is for. *Something else migrated this database forward and you
-      // are older than it* produces an identical drops-only diff — two
-      // processes on one file, which under `strategy database` is the ordinary
-      // shape: a long-running API, and a drive or a seed run from the app root
-      // after the schema moved (`FJS-566`). Taking the option there deletes the
-      // column the newer build is writing to. `only` is the tell and is stated
-      // rather than left to be noticed: a diff that ADDS nothing is not a
-      // schema being edited, it is a schema that is behind.
-      const dataLoss = describeDataLoss(diffResult)
-      if (dataLoss.length && !acceptDataLoss) {
-        const rename = dataLoss.find(l => l.renameTo)
-        const only   = onlyDrops(diffResult)
-        const reason = `drops column(s) or table(s) and the values in them: ${dataLoss.map(lossLine).join('; ')}`
-        console.warn(
-          `[litestone] Migration BLOCKED for database "${dbName}" — it would destroy data.\n` +
-          `            ${reason}\n` +
-          (rename
-            ? `            A rename is a drop plus an add here, so keep the values with a file migration:\n` +
-              `            ALTER TABLE "${rename.table}" RENAME COLUMN "${rename.columns[0]}" TO "${rename.renameTo}"\n`
-            : '') +
-          `            Nothing was applied.\n` +
-          (only
-            ? `            This diff only REMOVES things, so there are two readings and they want\n` +
-              `            opposite actions:\n` +
-              `              • you removed them from the schema  → { acceptDataLoss: true }\n` +
-              `              • this database was migrated by a NEWER schema than the one this\n` +
-              `                process holds → do not pass it; run the current build instead.\n` +
-              `            Two processes on one database file is the ordinary way to reach the second.`
-            : `            Pass { acceptDataLoss: true } to autoMigrate() to say the loss is intended.`))
-        results[dbName] = { state: 'blocked', reason, dataLoss, onlyDrops: only }
-        continue
-      }
-
-      const sql   = generateMigrationSQL(diffResult, parseResult, { pluralize })
-      const stmts = executableStatements(splitStatements(sql))
-
-      // A rebuild copies every surviving value through `INSERT … SELECT`, and
-      // SQLite is entitled to refuse one: a STRICT table takes no TEXT into an
-      // INTEGER column, so `String` → `Int` over a populated table threw
-      // `SQLITE_CONSTRAINT_DATATYPE` out of here and killed the app at boot,
-      // naming a temporary table nobody wrote (`FJS-645`). The transaction has
-      // already rolled back, so the database is untouched — what was missing is
-      // that the caller was told in the vocabulary of the other two refusals
-      // rather than in SQLite's.
-      let ran
-      try {
-        // The hash is stamped INSIDE this transaction, and re-read inside it
-        // too. Written after the commit, there is a window where the winner has
-        // applied its statements and not yet said so, and a second replica that
-        // takes the lock in that window applies them again. Both halves have to
-        // be in the transaction or the guard is guessing.
-        ran = runInTransaction(rawDb, stmts,
-          () => writeAutoHash(rawDb, ddlHash),
-          () => readAutoHash(rawDb) !== ddlHash)
-      } catch (err) {
-        const reason = `SQLite refused the rebuild: ${err?.message ?? err}`
-        // Two causes and the operator's next move is different for each, so the
-        // hint reads which one this was rather than naming the commoner one and
-        // leaving the other to be guessed at. A CHECK refusing the rebuild is a
-        // RULE the existing rows do not satisfy — `@required(where: …)`,
-        // `@@check`, `@@arc`, a scaled bound — and the answer is to correct the
-        // rows, not to convert a column that is already the right type.
-        const byCheck = /CHECK constraint failed/i.test(String(err?.message ?? err))
-        console.warn(
-          `[litestone] Migration FAILED for database "${dbName}" — nothing was applied and the ` +
-          `database is unchanged.\n            ${reason}\n` +
-          (byCheck
-            ? `            Existing rows do not satisfy a rule this schema declares. Nothing is wrong with the ` +
-              `column's type — find the rows the constraint names and correct them in a file migration first.`
-            : `            A type change is the usual cause: the existing values have to satisfy the new ` +
-              `column, so convert them in a file migration first.`))
-        results[dbName] = { state: 'failed', reason, error: err }
-        continue
-      }
-
-      // The guard declined: another process migrated this database while this
-      // one was diffing. Nothing was applied because nothing was left to apply,
-      // which is `in-sync` and not a failure — a second replica booting is the
-      // normal shape, not an error condition.
-      if (!ran) {
-        results[dbName] = { state: 'in-sync', applied: 0, note: 'another process migrated it first' }
-        continue
-      }
-
-      results[dbName] = { state: 'migrated', applied: stmts.length, sql }
-
-      // The residue is re-derived AFTER applying, not carried over from the
-      // diff that planned it: the statements just run are what the enumeration
-      // had to say, so what is left over is only knowable once they have. It
-      // costs one more introspection on the boot that migrated, which is the
-      // boot that was never the cheap one.
-      try {
-        const after = diffSchemas(pristineSchema, introspect(rawDb), parseResult, dbName, { pluralize })
-        const residue = acceptResidue ? [] : after.residue
-        writeAutoResidue(rawDb, residue)
-        if (residue.length) { announceResidue(dbName, residue); results[dbName].residue = residue }
-      } catch { /* advisory — the migration applied, and this only names leftovers */ }
-
-      // Auto-ANALYZE (bounded) — see migrations.apply() for rationale.
-      try { rawDb.run('PRAGMA analysis_limit=400'); rawDb.run('ANALYZE') } catch { /* advisory */ }
-    } finally {
-      pristineDb.close()
+      results[dbName] = { state: 'in-sync', applied: 0 }
+      continue
     }
+
+    // Same rule as file migrations: a rebuild that adds a NOT NULL column
+    // with no DEFAULT has no value for existing rows. Refuse loudly instead
+    // of applying commented-out SQL and marking the db in-sync — the hash is
+    // NOT written, so this surfaces on every startup until the schema is fixed.
+    //
+    // BOTH paths, and for a long time only the rebuild one. A plain column
+    // add does not need a rebuild, so `blockedAdds` was collected by the diff
+    // and read by nobody: `generateMigrationSQL` wrote the ALTER out as a
+    // COMMENT, `executableStatements` correctly ran none of it, and this
+    // reported `state: 'migrated', applied: 0` — with the reason visible only
+    // inside a SQL string the caller usually discards. The application then
+    // ran against a table missing a column its own seed declares, and every
+    // write of that column was stripped by mass-assignment protection, so a
+    // required field read back `undefined` with nothing anywhere saying why
+    // (`FJS-604`).
+    const blockedCols = diffResult.tableDiffs.flatMap(d =>
+      (d.needsRebuild
+        ? (d.cols?.added ?? []).filter(c => c.notnull && c.default == null)
+        : (d.blockedAdds ?? [])
+      ).map(c => `${d.name}.${c.name}`))
+    if (blockedCols.length) {
+      const reason = `adds NOT NULL column(s) with no DEFAULT: ${blockedCols.join(', ')} — ` +
+                     `add a @default() or make the field optional (?)`
+      // Announced as well as returned. The state is honest and the hash is
+      // not written, so it surfaces on every startup — but only to a caller
+      // that reads the result, and the app that found this discards it, as
+      // most do. A schema and a table that disagree is exactly the class the
+      // directory announcement in `db-path.js` exists for.
+      console.warn(
+        `[litestone] Migration BLOCKED for database "${dbName}" — the schema and the table now disagree.\n` +
+        `            ${reason}\n` +
+        `            Nothing was applied and nothing else in this migration ran; a write to a blocked ` +
+        `column is silently dropped, so the value reads back as undefined.`)
+      results[dbName] = { state: 'blocked', reason }
+      continue
+    }
+
+    // The other half of the same rule (FJS-183). A rebuild drops the table,
+    // taking any trigger or index the APP created — litestone did not write
+    // them and cannot restate them, so applying the rebuild here would delete
+    // behavior with nothing recording that it had. The generated file blocks
+    // for this too; the hash is not written, so it surfaces on every startup
+    // until the schema or the database says what should happen.
+    const blockedObjects = diffResult.tableDiffs.flatMap(d => d.needsRebuild
+      ? [...(d.foreignTriggers ?? []).map(n => `trigger ${n}`),
+         ...(d.indexes?.foreign ?? []).map(i => `index ${i.name}`)]
+      : [])
+    if (blockedObjects.length) {
+      results[dbName] = {
+        state:  'blocked',
+        reason: `a rebuild would destroy ${blockedObjects.join(', ')} — litestone did not create ` +
+                `these and cannot restate them. Move each into the schema, drop it by hand, or ` +
+                `write the migration as a file and recreate it there`,
+      }
+      continue
+    }
+
+    // A rescale over rows: the rebuild would copy every stored integer as it
+    // is, so each would mean 10^k times more or less (`FJS-2140`). Here the
+    // table can be read, so an empty one goes on to rebuild and a full one
+    // is refused naming the statement. The statement is written in a file
+    // migration above the rebuild; run alone, the rows are still there and
+    // this refuses again.
+    const rescaled = diffResult.tableDiffs.filter(d => d.rescales?.length &&
+      rawDb.query(`SELECT 1 FROM ${quoteIdent(d.name)} LIMIT 1`).get())
+    if (rescaled.length) {
+      const updates = rescaled.flatMap(d => d.rescales.map(r => rescaleUpdate(d.name, r)))
+      const reason  = `changes @scale on a table with rows: ` +
+        rescaled.flatMap(d => d.rescales.map(r => `${d.name}.${r.column} @scale(${r.from}) → @scale(${r.to})`)).join(', ') +
+        ` — every stored value is minor units at the old scale. Write a file migration ` +
+        `(litestone migrate create) and put ${updates.join(' ')} above its rebuild`
+      console.warn(`[litestone] Migration BLOCKED for database ${quoteIdent(dbName)} — ${reason}. Nothing was applied.`)
+      results[dbName] = { state: 'blocked', reason }
+      continue
+    }
+
+    // The third blocked rule, and the one with the worst consequence: a
+    // column leaving the schema takes its values with it, and nothing said so.
+    // `acceptDataLoss: true` is the caller stating it — Prisma's `db push`
+    // demands `--accept-data-loss` for exactly this shape, and this mechanism
+    // is modeled on it. The hash is withheld like the other two, so a schema
+    // left this way re-announces on every boot rather than going quiet.
+    //
+    // The message names TWO readings because the diff cannot tell them apart
+    // and they want opposite actions. *You removed these* is the one the
+    // option is for. *Something else migrated this database forward and you
+    // are older than it* produces an identical drops-only diff — two
+    // processes on one file, which under `strategy database` is the ordinary
+    // shape: a long-running API, and a drive or a seed run from the app root
+    // after the schema moved (`FJS-566`). Taking the option there deletes the
+    // column the newer build is writing to. `only` is the tell and is stated
+    // rather than left to be noticed: a diff that ADDS nothing is not a
+    // schema being edited, it is a schema that is behind.
+    const dataLoss = describeDataLoss(diffResult)
+    if (dataLoss.length && !acceptDataLoss) {
+      const rename = dataLoss.find(l => l.renameTo)
+      const only   = onlyDrops(diffResult)
+      const reason = `drops column(s) or table(s) and the values in them: ${dataLoss.map(lossLine).join('; ')}`
+      console.warn(
+        `[litestone] Migration BLOCKED for database "${dbName}" — it would destroy data.\n` +
+        `            ${reason}\n` +
+        (rename
+          ? `            A rename is a drop plus an add here, so keep the values with a file migration:\n` +
+            `            ALTER TABLE "${rename.table}" RENAME COLUMN "${rename.columns[0]}" TO "${rename.renameTo}"\n`
+          : '') +
+        `            Nothing was applied.\n` +
+        (only
+          ? `            This diff only REMOVES things, so there are two readings and they want\n` +
+            `            opposite actions:\n` +
+            `              • you removed them from the schema  → { acceptDataLoss: true }\n` +
+            `              • this database was migrated by a NEWER schema than the one this\n` +
+            `                process holds → do not pass it; run the current build instead.\n` +
+            `            Two processes on one database file is the ordinary way to reach the second.`
+          : `            Pass { acceptDataLoss: true } to autoMigrate() to say the loss is intended.`))
+      results[dbName] = { state: 'blocked', reason, dataLoss, onlyDrops: only }
+      continue
+    }
+
+    const sql   = generateMigrationSQL(diffResult, parseResult, { pluralize })
+    const stmts = executableStatements(splitStatements(sql))
+
+    // A rebuild copies every surviving value through `INSERT … SELECT`, and
+    // SQLite is entitled to refuse one: a STRICT table takes no TEXT into an
+    // INTEGER column, so `String` → `Int` over a populated table threw
+    // `SQLITE_CONSTRAINT_DATATYPE` out of here and killed the app at boot,
+    // naming a temporary table nobody wrote (`FJS-645`). The transaction has
+    // already rolled back, so the database is untouched — what was missing is
+    // that the caller was told in the vocabulary of the other two refusals
+    // rather than in SQLite's.
+    let ran
+    try {
+      // The hash is stamped INSIDE this transaction, and re-read inside it
+      // too. Written after the commit, there is a window where the winner has
+      // applied its statements and not yet said so, and a second replica that
+      // takes the lock in that window applies them again. Both halves have to
+      // be in the transaction or the guard is guessing.
+      ran = runInTransaction(rawDb, stmts,
+        () => writeAutoHash(rawDb, ddlHash),
+        () => readAutoHash(rawDb) !== ddlHash)
+    } catch (err) {
+      const reason = `SQLite refused the rebuild: ${err?.message ?? err}`
+      // Two causes and the operator's next move is different for each, so the
+      // hint reads which one this was rather than naming the commoner one and
+      // leaving the other to be guessed at. A CHECK refusing the rebuild is a
+      // RULE the existing rows do not satisfy — `@required(where: …)`,
+      // `@@check`, `@@arc`, a scaled bound — and the answer is to correct the
+      // rows, not to convert a column that is already the right type.
+      const byCheck = /CHECK constraint failed/i.test(String(err?.message ?? err))
+      console.warn(
+        `[litestone] Migration FAILED for database "${dbName}" — nothing was applied and the ` +
+        `database is unchanged.\n            ${reason}\n` +
+        (byCheck
+          ? `            Existing rows do not satisfy a rule this schema declares. Nothing is wrong with the ` +
+            `column's type — find the rows the constraint names and correct them in a file migration first.`
+          : `            A type change is the usual cause: the existing values have to satisfy the new ` +
+            `column, so convert them in a file migration first.`))
+      results[dbName] = { state: 'failed', reason, error: err }
+      continue
+    }
+
+    // The guard declined: another process migrated this database while this
+    // one was diffing. Nothing was applied because nothing was left to apply,
+    // which is `in-sync` and not a failure — a second replica booting is the
+    // normal shape, not an error condition.
+    if (!ran) {
+      results[dbName] = { state: 'in-sync', applied: 0, note: 'another process migrated it first' }
+      continue
+    }
+
+    results[dbName] = { state: 'migrated', applied: stmts.length, sql }
+
+    // The residue is re-derived AFTER applying, not carried over from the
+    // diff that planned it: the statements just run are what the enumeration
+    // had to say, so what is left over is only knowable once they have. It
+    // costs one more introspection on the boot that migrated, which is the
+    // boot that was never the cheap one.
+    try {
+      const after = diffSchemas(pristineSchema, introspect(rawDb), parseResult, dbName, { pluralize })
+      const residue = acceptResidue ? [] : after.residue
+      writeAutoResidue(rawDb, residue)
+      if (residue.length) { announceResidue(dbName, residue); results[dbName].residue = residue }
+    } catch { /* advisory — the migration applied, and this only names leftovers */ }
+
+    // Auto-ANALYZE (bounded) — see migrations.apply() for rationale.
+    try { rawDb.run('PRAGMA analysis_limit=400'); rawDb.run('ANALYZE') } catch { /* advisory */ }
   }
 
   return results

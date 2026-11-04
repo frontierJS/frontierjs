@@ -80,6 +80,24 @@ export function createReporter(config, {
     }
   }
 
+  /** The bottom two layers of the box: its boot, its containers and its
+   *  supervised units. Each is `null` when it could not be read, and none can
+   *  stop the heartbeat, which is also the machine's registration. */
+  async function runtime() {
+    const take = async (what, fn) => {
+      try { return (await fn()) ?? null } catch (err) {
+        log.warn?.(`outpost: ${what} not reported — ${err.message}`)
+        return null
+      }
+    }
+    const [boot_id, containers, units] = await Promise.all([
+      take('boot id',    () => vitals.bootId?.()),
+      take('containers', () => inspector.runtime()),
+      take('units',      () => inspector.units()),
+    ])
+    return { runtime: { boot_id, containers, units } }
+  }
+
   return {
     async heartbeat() {
       return post(`/servers/${config.serverId}`, 'heartbeat', {
@@ -87,6 +105,7 @@ export function createReporter(config, {
         outpost_url:     config.publicUrl,
         health:          await health(),
         ...deployKeys(),
+        ...(await runtime()),
         // Every heartbeat, so a stopped unit or a stalled bucket shows as lag
         // within one interval rather than at the next posture report.
         ...(replicator ? { replication: await replicator.status() } : {}),

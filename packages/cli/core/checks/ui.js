@@ -11,6 +11,7 @@ import { spawnSync }                                       from 'child_process'
 import { modelName, pluralize, camel }                     from '@frontierjs/toolbelt/inflect'
 import { ARIA, RELATIONSHIPS }                             from '@frontierjs/toolbelt/aria'
 import { appSchemaViews }                                  from '../app-schema.js'
+import { parseFile }                                       from '@frontierjs/litestone/parser'
 import {
   schemaFile, models, looksPlural, stripComments, readCode,
   lineOf, isAppRoot, SURFACES, sources, SCRIPT_EXT, CLIENT_SURFACES,
@@ -1159,7 +1160,12 @@ export const CHECKS = {
     const app      = code.filter((_, i) => !isTest(files[i]))
     const findings = []
 
+    // junction's bearer fills its `column:` on the caller's create from a
+    // `mintOnCreate()` hook (or `mint()`), so neither spelling names `system:`
+    // at the install site.
+    const mints   = app.some(src => /\.mint(OnCreate)?\s*\(/.test(src))
     const fills = (src, model, field) => {
+      if (mints && new RegExp(`\\bcolumn\\s*:\\s*['"\`]${field}['"\`]`).test(src)) return true
       const quoted = new RegExp(`['"\`]${field}['"\`]`)
       if (quoted.test(src) && /\bsystem\s*:|\.system\s*\.\s*add\s*\(/.test(src)) return true
       const accessor = model[0].toLowerCase() + model.slice(1)
@@ -1861,42 +1867,33 @@ function shippedTokens(root) {
 /**
  * Every column a create cannot leave out and no caller may supply — required,
  * `@system`, and nothing at the Data boundary that fills it. `{ model, field,
- * line }`, a line scan for `declaredTransitions`' reason.
+ * line }`, read off the parsed schema so a column a `@@trait` splices in counts
+ * (`FJS-3978`). `line` is the field's own line, else the model's: a spliced
+ * column has no line in this file.
  *
  * A scalar list is not one: its column is `NOT NULL DEFAULT '[]'`, so a create
  * that never names it succeeds (`FJS-2044`). `@updatedAt` stamps the create too.
- * Only depth-one lines of a model are fields, which keeps a `@system` move
- * inside `@@transitions( … )` out.
+ * Only models declared in this file are graded, so an imported model's gap is
+ * not reported against a line of this one.
  */
-function requiredSystemColumns({ text }) {
-  const out   = []
+function requiredSystemColumns({ path, text }) {
+  const parsed = parseFile(path)
+  if (!parsed.valid) return []
   const lines = text.split('\n')
-  let model   = null, depth = 0, inBlock = false
+  const has   = (f, ...kinds) => (f.attributes ?? []).some(a => kinds.includes(a.kind))
+  const out   = []
 
-  for (let i = 0; i < lines.length; i++) {
-    const [line, still] = withoutComments(lines[i], inBlock)
-    inBlock = still
-    const m = line.match(/^\s*model\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{/)
-    if (m && depth === 0) {
-      depth = (line.match(/[{(]/g) ?? []).length - (line.match(/[})]/g) ?? []).length
-      model = depth > 0 && !bodyOf(lines, i).includes('@@external') ? m[1] : null
-      if (depth < 0) depth = 0
-      continue
+  for (const m of parsed.schema.models ?? []) {
+    const start = lines.findIndex(l => new RegExp(`^\\s*model\\s+${m.name}\\s*\\{`).test(l))
+    if (start < 0 || has(m, 'external')) continue
+    let end = lines.findIndex((l, i) => i > start && /^\s*(model|view|enum|trait)\s/.test(l))
+    if (end < 0) end = lines.length
+    for (const f of m.fields ?? []) {
+      if (!has(f, 'system') || f.type?.optional || f.type?.array) continue
+      if (has(f, 'default', 'generated', 'sequence', 'updatedAt', 'computed', 'derived', 'from')) continue
+      const own = lines.findIndex((l, i) => i > start && i < end && new RegExp(`^\\s*${f.name}\\s+\\w`).test(l))
+      out.push({ model: m.name, field: f.name, line: (own < 0 ? start : own) + 1 })
     }
-    const atDepth = depth
-    for (const c of line) {
-      if (c === '{' || c === '(') depth++
-      if (c === '}' || c === ')') depth--
-    }
-    if (depth <= 0) { depth = 0; model = null; continue }
-    if (!model || atDepth !== 1) continue
-
-    const f = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)(\[\])?(\?)?(.*)$/)
-    if (!f || f[3] || f[4]) continue
-    const attrs = f[5]
-    if (!/@system\b/.test(attrs)) continue
-    if (/@(default|generated|sequence|updatedAt|computed|derived|from)\b/.test(attrs)) continue
-    out.push({ model, field: f[1], line: i + 1 })
   }
   return out
 }

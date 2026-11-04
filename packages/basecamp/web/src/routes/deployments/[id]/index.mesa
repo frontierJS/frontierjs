@@ -293,6 +293,14 @@ title: Deployment
             <span class="text-muted">not reported</span>
           {/if}
         </dd>
+        {#if deployment.swap}
+          <!-- Stop-first is a gap in service, so it carries its reason where one was given. -->
+          <dt>Swap</dt>
+          <dd id="deploy-swap">
+            {deployment.swap === 'startFirst' ? 'start-first' : 'stop-first'}
+            {#if deployment.swapReason}<span class="text-sm text-muted">— {deployment.swapReason}</span>{/if}
+          </dd>
+        {/if}
       </dl>
 
       <h2 class="h5">Source</h2>

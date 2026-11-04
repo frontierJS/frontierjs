@@ -78,7 +78,7 @@ src/
   tools/ — cli.js · cli-helpers.js (what the commands share) · studio.js (Studio's server) · studio-queries.js (its saved queries, a sidecar) · studio.html · repl.js · introspect.js · typegen.js · replicate.js (./replicate) ·
            assistant.js · eject.js · ddl-snapshot.js · jsonschema-snapshot.js · catalog-snapshot.js ·
            catalog-reference.js · principal.js (who `--as` names, for every tool that boots as somebody)
-           schema-layers.js (the Models view's Layers tab: foreign-key clusters, depths and floor positions as data)
+           schema-layers.js (the Models view's Clusters tab: foreign-key clusters, depths and floor positions as data)
   transform/ — the ./transform battery: framework.js · runner.js · run.js · split-worker.js · split-worker.source.js
   access.js — the declared access surface as data and prose
   release.js — the release surface; classifyPivot and classifyAccess

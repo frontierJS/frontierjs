@@ -707,6 +707,8 @@ rather than refusing the row.
 | `Deployment` | `commitSha` | `@system` |
 | `Deployment` | `branch` | `@system` |
 | `Deployment` | `builtImage` | `@system` |
+| `Deployment` | `swap` | `@system` |
+| `Deployment` | `swapReason` | `@system` |
 | `Deployment` | `platformVersion` | `@system` |
 | `Deployment` | `previousDeploymentId` | `@system` |
 | `Deployment` | `startedAt` | `@system` |

@@ -517,6 +517,16 @@ describe('swapContainer', () => {
     expect(run).toBeGreaterThan(stop)
   })
 
+  // FJS-3980: the grace is handed to the container once, so the stop of the
+  // replaced one reads the number it was started with, not a literal here.
+  test('the stop grace reaches the run command, and the replaced container is stopped by its own', () => {
+    const { runCmd, commands } = drive({ deployConf: {} })
+    expect(runCmd).toContain('--stop-timeout 40')
+    expect(runCmd).toContain('--env FRONTIER_STOP_GRACE=40')
+    expect(commands.find(c => c.includes('docker stop'))).not.toContain('docker stop -t')
+    expect(drive({ deployConf: { stopGrace: 25 } }).runCmd).toContain('--stop-timeout 25 --env FRONTIER_STOP_GRACE=25')
+  })
+
   test('the log driver reaches the run command', () => {
     const { runCmd } = drive({ deployConf: {} })
 

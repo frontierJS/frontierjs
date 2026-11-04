@@ -74,6 +74,7 @@ import { previewSettings, previewLabelRefusal, openPreview, freezePreview, thawP
   from '../../domain/workbench/workbench-preview.ts'
 import type { PreviewSettings, Opened } from '../../domain/workbench/workbench-preview.ts'
 import { replicaLag } from '../../domain/host/posture.ts'
+import { syncManagedMonitor } from '../../domain/monitor/managed.ts'
 import { outpostRouteId, trafficOf, unavailable, unavailableOf } from '../../domain/host/traffic.ts'
 
 const _WITH_ENV = { environment: true }
@@ -788,6 +789,8 @@ export default createService({
       const updated = await db().app.update({ where: { id: $.id as string }, data: patch })
       syncAppBackupSchedule($.app, updated)
       syncAppDrillSchedule($.app, updated)
+      // The managed Monitor's url carries the health path.
+      if ('healthCheck' in patch) await syncManagedMonitor($.app, $.db.asSystem(), current.id as string)
     }
     if ('replicaDestinationId' in patch) await syncReplicasOf($.app, [current.id])
 
@@ -802,6 +805,8 @@ export default createService({
     syncAppBackupSchedule($.app, { id: target.id, backupCron: null, deletedAt: null })
     syncAppDrillSchedule($.app, { id: target.id, drillCron: null, deletedAt: null })
     if (target.replicaDestinationId) await syncReplicasOf($.app, [target.id])
+    // The Monitor carries no relation to cascade through.
+    await syncManagedMonitor($.app, $.db.asSystem(), target.id as string)
     return { ...removed, machine }
   },
 
@@ -810,6 +815,7 @@ export default createService({
     syncAppBackupSchedule($.app, row)
     syncAppDrillSchedule($.app, row)
     if (row.replicaDestinationId) await syncReplicasOf($.app, [row.id])
+    await syncManagedMonitor($.app, $.db.asSystem(), row.id as string)
     return detail(row.id)
   },
 

@@ -17,6 +17,8 @@
 import { createHash } from 'node:crypto'
 import { headroomShort } from './db-disk.ts'
 import type { DatabaseDisk } from './db-disk.ts'
+import type { RuntimeReading } from './runtime.ts'
+import { RUNTIME_RESTART_HOLD_MS } from './runtime.ts'
 
 // ─── The wire ─────────────────────────────────────────────────────────────
 // snake_case: the Outpost's contract, not this app's model fields.
@@ -493,6 +495,76 @@ export function gradeReplication(
   return behind.length
     ? control({ ok: false, message: behind.join('; ') })
     : control({ ok: true,  message: `${what} replicating, at most ${Math.round(worst / 1000)}s behind` })
+}
+
+// ─── runtime ──────────────────────────────────────────────────────────────
+// Graded on READ from `Server.runtime`, which every heartbeat rewrites. A
+// container under `--restart unless-stopped` that keeps crashing still reads
+// `running` on `App.status`, which only a deploy moves (`FJS-3853`); this is
+// the observation that says otherwise.
+
+/** Older than this, the reading says nothing about the box now. */
+export const RUNTIME_MAX_AGE_MS = 5 * 60_000
+
+function runtimeAge(reading: RuntimeReading | null | undefined, what: string, now: number): Grade | null {
+  const checked = reading?.checked_at ? Date.parse(reading.checked_at) : NaN
+  if (!Number.isFinite(checked)) return unknown(`This machine has not reported its ${what} — an Outpost too old to read them, or no heartbeat yet`)
+  if (now - checked > RUNTIME_MAX_AGE_MS) return unknown(`The last ${what} reading is ${minutes(now - checked)} min old`)
+  return null
+}
+
+/** `runtime.containers`: every live placement here has a container, and every
+ *  one of theirs but a swap's set-aside (Q4 A) is running. `apps` is the
+ *  Server's live placements of a long-running kind, by id and slug. */
+export function gradeRuntimeContainers(
+  reading: RuntimeReading | null | undefined,
+  apps:    { id: string; slug: string }[],
+  now:     number,
+): Control {
+  const control = (g: Grade): Control => ({ id: 'runtime.containers', group: 'runtime', severity: 'high', ...g })
+  const stale = runtimeAge(reading, 'containers', now)
+  if (stale) return control(stale)
+  if (!reading?.containers) return control(unknown('The machine could not list its containers (docker ps failed)'))
+
+  const slug = new Map(apps.map(a => [a.id, a.slug]))
+  const live = reading.containers.filter(c => !c.replaced && !!c.app_id && slug.has(c.app_id))
+  const bad: string[] = []
+  for (const c of live) {
+    if (c.state === 'running') {
+      // A restart the receiver stamped inside the hold window (`FJS-D1860`):
+      // the container is up again, and the control still says it fell.
+      const seen = c.restartedAt ? Date.parse(c.restartedAt) : NaN
+      if (Number.isFinite(seen) && now - seen <= RUNTIME_RESTART_HOLD_MS)
+        bad.push(`${(c.app_id && slug.get(c.app_id)) ?? c.name} restarted ${c.restartsSinceLast ?? 1} time(s) ${minutes(now - seen)} min ago${c.oom_killed ? ', out of memory' : ''}`)
+      continue
+    }
+    const restarts = c.restart_count ? `, ${c.restart_count} restart(s)` : ''
+    const exit     = c.exit_code != null && c.state !== 'restarting' ? `, exit ${c.exit_code}` : ''
+    bad.push(`${(c.app_id && slug.get(c.app_id)) ?? c.name} is ${c.state ?? 'in an unknown state'}${restarts}${exit}${c.oom_killed ? ', out of memory' : ''}`)
+  }
+  for (const a of apps)
+    if (!live.some(c => c.app_id === a.id)) bad.push(`${a.slug} has no container on this machine`)
+
+  return bad.length
+    ? control({ ok: false, message: bad.join('; ') })
+    : control({ ok: true,  message: `${live.length} container(s) running` })
+}
+
+/** `runtime.units`: every supervised unit the machine has is `active`. A unit
+ *  systemd does not know (`load` not-found) is not installed here and is not
+ *  graded: `basecamp-litestream` exists only where something replicates. */
+export function gradeRuntimeUnits(reading: RuntimeReading | null | undefined, now: number): Control {
+  const control = (g: Grade): Control => ({ id: 'runtime.units', group: 'runtime', severity: 'high', ...g })
+  const stale = runtimeAge(reading, 'units', now)
+  if (stale) return control(stale)
+  if (!reading?.units) return control(unknown('The machine could not read its systemd units'))
+
+  const installed = reading.units.filter(u => u.load !== 'not-found')
+  const bad = installed.filter(u => u.active !== 'active')
+    .map(u => `${u.unit} is ${u.active ?? 'in an unknown state'}${u.sub ? ` (${u.sub})` : ''}`)
+  return bad.length
+    ? control({ ok: false, message: bad.join('; ') })
+    : control({ ok: true,  message: `${installed.length} unit(s) active` })
 }
 
 // ─── the box a Basecamp runs on ───────────────────────────────────────────

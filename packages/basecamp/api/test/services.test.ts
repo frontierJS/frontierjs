@@ -5038,6 +5038,87 @@ describe('monitors', () => {
   })
 })
 
+// FJS-D1859. An App with a primary Domain is probed without anyone creating a
+// Monitor: the system keeps one per App, its url follows the primary hostname,
+// and a person cannot edit what the next Domain write would overwrite.
+describe('the managed monitor follows an App\'s primary Domain', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let app: any
+
+  beforeAll(async () => {
+    const sys     = env.system as any
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Mm', slug: `mm-${tag()}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    app = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'mm', slug: `mm-${tag()}` } })
+  })
+
+  const managed = () => (env.system as any).monitor.findMany({ where: { appId: app.id, isManaged: true } })
+
+  test('a first Domain yields one managed Monitor the sweep would run', async () => {
+    const d = await env.as(owner).service('domains').create({ appId: app.id, hostname: `one-${tag()}.test` }) as any
+    const rows = await managed()
+    expect(rows.length).toBe(1)
+    expect(rows[0].url).toBe(`https://${d.hostname}/`)
+    expect(rows[0].workspaceId).toBe(ws.id)
+    // What the sweep selects: not paused, and due.
+    expect(rows[0].status).toBe('pending')
+    expect(rows[0].nextCheckAt).toBeNull()
+  })
+
+  test('a second Domain made primary regenerates the url rather than adding a row', async () => {
+    const d2 = await env.as(owner).service('domains').create({ appId: app.id, hostname: `two-${tag()}.test` }) as any
+    expect((await managed())[0].url).not.toBe(`https://${d2.hostname}/`)
+    await env.as(owner).service('domains').call('makePrimary', d2.id)
+    const rows = await managed()
+    expect(rows.length).toBe(1)
+    expect(rows[0].url).toBe(`https://${d2.hostname}/`)
+  })
+
+  test('the App\'s health path is the url\'s path', async () => {
+    await env.as(owner).service('apps').patch(app.id, { port: 3000, healthCheck: '/healthz' })
+    expect((await managed())[0].url).toMatch(/^https:\/\/two-.*\.test\/healthz$/)
+  })
+
+  test('a person\'s write to a managed url is refused by name; pausing is theirs', async () => {
+    const [m] = await managed()
+    await expect(env.as(owner).service('monitors').patch(m.id, { url: 'https://elsewhere.test/' }))
+      .rejects.toThrow(/url of an automatic Monitor/)
+    await expect(env.as(owner).service('monitors').update(m.id, { url: 'https://elsewhere.test/' }))
+      .rejects.toThrow(/url of an automatic Monitor/)
+    await expect(env.as(owner).service('monitors').remove(m.id)).rejects.toThrow(/automatic Monitor/)
+    const renamed = await env.as(owner).service('monitors').patch(m.id, { name: 'renamed' }) as any
+    expect(renamed.name).toBe('renamed')
+    const paused = await env.as(owner).service('monitors').call('pause', m.id) as any
+    expect(paused.status).toBe('paused')
+    await env.as(owner).service('monitors').call('resume', m.id)
+  })
+
+  test('a hand-made Monitor about the same App is untouched', async () => {
+    const own = await env.as(owner).service('monitors').create({ name: `own-${tag()}`, appId: app.id, url: 'https://own.test/' }) as any
+    expect(own.isManaged).toBe(false)
+    const changed = await env.as(owner).service('monitors').patch(own.id, { url: 'https://own2.test/' }) as any
+    expect(changed.url).toBe('https://own2.test/')
+    expect((await managed()).length).toBe(1)
+  })
+
+  test('removing the App\'s last Domain removes the managed Monitor', async () => {
+    const domains = await (env.system as any).domain.findMany({ where: { appId: app.id } })
+    // The primary goes last: removing it while a sibling stands is refused.
+    for (const d of [...domains].sort((a: any, b: any) => Number(a.isPrimary) - Number(b.isPrimary))) {
+      await env.as(owner).service('domains').remove(d.id)
+      expect((await managed()).length).toBe(d.isPrimary ? 0 : 1)
+    }
+  })
+  test('removing the App removes its managed Monitor, and restoring it brings one back', async () => {
+    await env.as(owner).service('domains').create({ appId: app.id, hostname: `three-${tag()}.test` })
+    expect((await managed()).length).toBe(1)
+    await env.as(owner).service('apps').remove(app.id)
+    expect((await managed()).length).toBe(0)
+    await env.as(owner).service('apps').restore(app.id)
+    expect((await managed()).length).toBe(1)
+  })
+})
+
 // FJS-1782. An app's data volume is archived on the machine that holds it, and
 // the row is a sibling of `Backup`, scoped through App (FJS-D965). The real
 // Outpost path is `verify:outpost`; here the stub executor stands in, and a

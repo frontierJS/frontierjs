@@ -115,7 +115,8 @@ recorded, not the outcome it asked for.
 
 - [ ] 2.1 Take Basecamp's own backup and wait for it to settle. The spelling is a
   new verb or a flag on `basecamp:backup`, whose default today is an App; settle it
-  through `decision-rules` at the step.
+  through `decision-rules` at the step. Settled by `FJS-D1848`: `fli basecamp:backup` is
+  Basecamp's own, built as `IDEAS/basecamp-reinstall.md` 1.2.
 - [ ] 2.2 `fli basecamp:restart` restarts the API container over ssh and waits
   until the health route answers.
 

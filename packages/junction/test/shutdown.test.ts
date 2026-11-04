@@ -22,6 +22,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp } from '../index.ts'
 import { channels } from '../src/transport/channels.ts'
+import { defaultConfig, shutdownBudgets } from '../src/config/index.ts'
 
 /**
  * An app on an OS-assigned port, so parallel suites cannot collide.
@@ -449,5 +450,62 @@ describe('a shutdown that abandoned work exits 1 (FJS-3944)', () => {
 
   test('the control: nothing outstanding exits 0', async () => {
     expect(await leave('clean')).toBe(0)
+  })
+})
+
+// ─── FJS-3954 · the budgets fit inside the container's stop grace ─────────
+//
+// Docker SIGKILLs at the grace (`FJS-D1839`, `FJS-D1841`), so a budget past it
+// is never reached, and one well inside it cuts a plugin that had the time.
+
+describe('the shutdown budgets derive from FRONTIER_STOP_GRACE (FJS-3954)', () => {
+  test('a 40 s grace gives a plugin room for caravan\'s 30 s drain, and the whole finishes first', async () => {
+    const b = shutdownBudgets({}, { FRONTIER_STOP_GRACE: '40' })
+    expect(b.pluginTimeout).toBeGreaterThanOrEqual(30_000)
+    expect(b.timeout).toBeLessThan(40_000)
+    expect(b.drainTimeout + b.pluginTimeout).toBeLessThanOrEqual(b.timeout)
+    expect(b.misfits).toEqual([])
+  })
+
+  test('with no grace handed, docker\'s 10 s is assumed', async () => {
+    const b = shutdownBudgets({}, {})
+    expect(b.graceMs).toBe(10_000)
+    expect(b.timeout).toBeLessThan(10_000)
+  })
+
+  test('an explicit budget that does not fit inside the grace is named', async () => {
+    const b = shutdownBudgets({ shutdown: { timeout: 15_000 } }, { FRONTIER_STOP_GRACE: '10' })
+    expect(b.misfits.join('\n')).toContain('shutdown.timeout')
+    expect(shutdownBudgets({}, { FRONTIER_STOP_GRACE: 'soon' }).misfits.join('\n')).toContain('FRONTIER_STOP_GRACE')
+  })
+
+  test('a boot with a budget past the grace is refused', async () => {
+    const was = process.env.FRONTIER_STOP_GRACE
+    process.env.FRONTIER_STOP_GRACE = '2'
+    try {
+      const app = createApp({ logLevel: 'silent', config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 5_000 } } })
+      await expect(app.start()).rejects.toThrow(/http\.drainTimeout/)
+      await app.stop().catch(() => {})
+    } finally {
+      if (was === undefined) delete process.env.FRONTIER_STOP_GRACE
+      else process.env.FRONTIER_STOP_GRACE = was
+    }
+  })
+
+  test('a real SIGTERM under a 1 s grace cuts a 2 s plugin and exits 1 before docker would', async () => {
+    const proc = Bun.spawn(['bun', 'run', `${import.meta.dir}/fixtures/shutdown-exit.ts`, 'derived'], {
+      stdout: 'pipe', stderr: 'ignore', env: { ...process.env, FRONTIER_STOP_GRACE: '1' },
+    })
+    const reader = proc.stdout.getReader()
+    let seen = ''
+    while (!seen.includes('READY')) {
+      const { value, done } = await reader.read()
+      if (done) break
+      seen += new TextDecoder().decode(value)
+    }
+    const t = Date.now()
+    proc.kill('SIGTERM')
+    expect(await proc.exited).toBe(1)
+    expect(Date.now() - t).toBeLessThan(1_000)
   })
 })

@@ -17,7 +17,7 @@ import { tmpdir }       from 'node:os'
 import { join }         from 'node:path'
 import { Database }     from 'bun:sqlite'
 import { tokenize }     from '@frontierjs/toolbelt/predicate'
-import { createClient, parseFile } from '../src/index.js'
+import { createClient, parseFile, autoMigrate } from '../src/index.js'
 import { GatePlugin }   from '../src/plugins/gate.js'
 import { main }         from '../../../scripts/bench-round.mjs'
 
@@ -101,6 +101,24 @@ export const cases = [
     },
     run: async ({ parsed, path }) => { await (await createClient({ parsed, db: path })).$close() },
     floor: ({ path }) => { new Database(path).close() },
+  },
+  {
+    // The boot of a tenant whose file carries no recorded hash (FJS-3819):
+    // `autoMigrate` introspects the live file, takes the pristine schema of the
+    // parse, and diffs. `force` stands in for the missing hash on a client that
+    // stays open, so the case times the miss and not the open. The pristine
+    // side is a function of the parse and is built once; what remains is
+    // reading the file's catalog, which is the floor. The ceiling sits between
+    // the memoized ratio (~40x) and the rebuilt one (~370x).
+    name: 'automigrate-miss', ceiling: 150, ops: 20,
+    async open() {
+      const parsed = parseFile(new URL('../test/fixtures/corpus/lago.lite', import.meta.url).pathname)
+      const db     = await createClient({ parsed, db: ':memory:' })
+      const raw    = db.$rawDbs.main.query('SELECT type, name, tbl_name, sql FROM sqlite_master')
+      return { db, parsed, raw, close: () => db.$close() }
+    },
+    run:   ({ db, parsed }) => autoMigrate(db, parsed, { force: true }),
+    floor: ({ raw }) => raw.all(),
   },
   {
     // The lexer every schema parse starts with (FJS-112 P4). Its floor is a

@@ -86,9 +86,16 @@ function fakeRunner(answers = {}) {
     // a container that never came up.
     // The settle read (FJS-3853): the same start and restart count on both
     // looks unless a case states `settled`, which may answer per call.
+    // One line per name asked, as `docker inspect` prints them; `states` names
+    // a container's fields, and `settled` the settle read's, per call.
     if (argv.some(a => String(a).includes('{{.State.StartedAt}}'))) {
-      const said = typeof answers.settled === 'function' ? answers.settled() : answers.settled
-      return { exitCode: 0, stdout: 'true 2026-11-02T00:00:00Z 0\n', stderr: '', ...said }
+      const said = (typeof answers.settled === 'function' ? answers.settled() : answers.settled) ?? {}
+      const { stdout, exitCode, stderr, ...fields } = said
+      const lines = argv.slice(argv.indexOf('--format') + 2).map(name => {
+        const f = { running: true, startedAt: '2026-11-02T00:00:00Z', restarts: 0, oom: false, exit: 0, ...fields, ...answers.states?.[name] }
+        return `/${name} ${f.running} ${f.startedAt} ${f.restarts} ${f.oom} ${f.exit}\n`
+      })
+      return { exitCode: exitCode ?? 0, stdout: stdout ?? lines.join(''), stderr: stderr ?? '' }
     }
     if (argv.includes('{{.State.Running}}')) return { exitCode: 0, stdout: 'true\n', stderr: '', ...answers.running }
     // An image that declares no USER runs as root and keeps it, so a case
@@ -259,8 +266,8 @@ describe('what the machine is asked to do', () => {
     // new one takes its name, and removed only once the new one is healthy.
     const at = (c) => argv.indexOf(c)
     expect(at('docker rename fjs--acme-prod-web-app-1 fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(-1)
-    expect(at('docker stop -t 10 fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(at('docker rename fjs--acme-prod-web-app-1 fjs--acme-prod-web-app-1_replaced'))
-    expect(argv.findIndex(c => c.startsWith('docker run'))).toBeGreaterThan(at('docker stop -t 10 fjs--acme-prod-web-app-1_replaced'))
+    expect(at('docker stop fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(at('docker rename fjs--acme-prod-web-app-1 fjs--acme-prod-web-app-1_replaced'))
+    expect(argv.findIndex(c => c.startsWith('docker run'))).toBeGreaterThan(at('docker stop fjs--acme-prod-web-app-1_replaced'))
     expect(argv.lastIndexOf('docker rm -f fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(argv.findIndex(c => c.startsWith('docker run')))
     expect(argv).not.toContain('docker rm -f fjs--acme-prod-web-app-1')
   })
@@ -285,7 +292,7 @@ describe('what the machine is asked to do', () => {
       const argv = m.fake.calls.map(c => c.join(' '))
       const [chown, app] = runs(m.fake)
       expect(chown).toBe(`docker run --rm --user 0:0 --entrypoint chown --mount type=bind,src=${APPS}/app-1/data,dst=/db ${DIGEST} -R 400000:400000 /db`)
-      expect(argv.indexOf(chown)).toBeGreaterThan(argv.indexOf('docker stop -t 10 fjs--acme-prod-web-app-1_replaced'))
+      expect(argv.indexOf(chown)).toBeGreaterThan(argv.indexOf('docker stop fjs--acme-prod-web-app-1_replaced'))
       expect(app).toContain('--user 400000:400000')
       expect(app).toContain(`--mount type=bind,src=${APPS}/app-1/data,dst=/db`)
     })
@@ -815,7 +822,7 @@ describe('what the machine is asked to do', () => {
     // already brought back from a crash.
     test('with no health path, a container that restarts in the settle window is not healthy', async () => {
       let looks = 0
-      const { sent, argv } = deployWith({ settled: () => ({ stdout: `true 2026-11-02T00:00:0${looks} ${looks++ ? 1 : 0}\n` }) })
+      const { sent, argv } = deployWith({ settled: () => ({ startedAt: `2026-11-02T00:00:0${looks}Z`, restarts: looks++ ? 1 : 0 }) })
       const res = await sent
       expect(res.status).toBe(500)
       const { error } = await res.json()
@@ -1862,6 +1869,18 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect(runArgv(bare.fake)).not.toContain('FRONTIER_TRUST_PROXY')
   })
 
+  test('the container carries its one stop grace, for docker and for Junction alike (FJS-D1841)', async () => {
+    // A grace docker and the app disagree on is a SIGKILL inside a budget the
+    // app thought it had, and every `docker stop` waits the container's own.
+    const stated = serverWith(fakeCaddy())
+    await deploy(stated.server, { config: { port: 7300, containerPort: 80, stopGrace: 25 } })
+    expect(runArgv(stated.fake)).toContain('--stop-timeout 25 -e FRONTIER_STOP_GRACE=25')
+
+    const bare = serverWith(fakeCaddy())
+    await deploy(bare.server)
+    expect(runArgv(bare.fake)).toContain('--stop-timeout 40 -e FRONTIER_STOP_GRACE=40')
+  })
+
   // FJS-2772: a published port is forwarded, so only the forward chain's
   // exposed set lets one through, and that set is rebuilt from these labels.
   test('a declared raw port is labeled and refilled into the firewall set; an undeclared one is not', async () => {
@@ -2105,7 +2124,7 @@ describe('the ingress — Caddy, through its admin API', () => {
 
       // The old one keeps serving until the route has moved, then drains.
       const order = [`docker rename ${LIVE} ${LIVE}_replaced`, `docker rename ${NEXT} ${LIVE}`,
-                     `docker stop -t 10 ${LIVE}_replaced`, `docker rm -f ${LIVE}_replaced`]
+                     `docker stop ${LIVE}_replaced`, `docker rm -f ${LIVE}_replaced`]
       const at = order.map(c => argv().indexOf(c))
       expect(at.every(i => i > firstRoute)).toBe(true)
       expect(at).toEqual([...at].sort((a, b) => a - b))
@@ -2164,7 +2183,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       expect(argv()[run]).toContain(`--name ${LIVE} `)
       expect(argv()[run]).toContain('-p 127.0.0.1:7300:80')
       expect(argv().findIndex(c => /^caddy (PATCH|POST|PUT) /.test(c))).toBeLessThan(run)
-      expect(argv().indexOf(`docker stop -t 10 ${LIVE}_replaced`)).toBeLessThan(run)
+      expect(argv().indexOf(`docker stop ${LIVE}_replaced`)).toBeLessThan(run)
     })
 
     test('start-first is refused, before anything runs, where the port it moves is the address', async () => {
@@ -2937,14 +2956,15 @@ describe('reading a container log', () => {
 
 describe('what this machine tells basecamp', () => {
 
-  function reporterWith(answers = {}) {
+  function reporterWith(answers = {}, extra = {}) {
     const sent = []
     const doFetch = async (url, init) => {
       sent.push({ url, init, body: JSON.parse(init.body) })
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }
-    const inspector = createInspector({ run: fakeRunner(answers).run, appsDir: mkdtempSync(join(tmpdir(), 'outpost-noapps-')) })
-    return { reporter: createReporter(CONFIG, { inspector, fetch: doFetch, log: { warn() {} } }), sent }
+    const fake = fakeRunner(answers)
+    const inspector = createInspector({ run: fake.run, appsDir: mkdtempSync(join(tmpdir(), 'outpost-noapps-')) })
+    return { reporter: createReporter(CONFIG, { inspector, fetch: doFetch, log: { warn() {} }, ...extra }), sent, calls: fake.calls }
   }
 
   test('a heartbeat is signed, and it carries the URL that registers this machine', async () => {
@@ -2958,6 +2978,110 @@ describe('what this machine tells basecamp', () => {
     // every release for it.
     expect(call.body.outpost_url).toBe('https://outpost.test:7180')
     expect(call.init.headers['X-Fjs-Signature']).toMatch(/^v1-ed25519=[A-Za-z0-9_-]{86}$/)
+  })
+
+  describe('the runtime reading (box-health 1.1–1.4)', () => {
+    const psLine = (name, appId) => JSON.stringify({ Names: name, Image: 'img:1', State: 'running', Status: 'Up 2 hours', Labels: `a=b,fjs.app=${appId}` })
+    const UNIT_BLOCKS = ['outpost.service', 'docker.service'].map(id =>
+      `Id=${id}\nLoadState=loaded\nActiveState=active\nSubState=running\nActiveEnterTimestamp=Mon 2026-11-02 00:00:00 UTC`).join('\n\n') + '\n'
+    const BOOT = '3f2a9c1e-0000-4000-8000-000000000001'
+    const osWith = (boot) => createVitals({
+      sampleMs: 0, statfs: async () => ({ blocks: 100, bfree: 20, bavail: 10 }),
+      readText: async (path) => {
+        if (path === '/proc/sys/kernel/random/boot_id') { if (boot === null) throw new Error('ENOENT'); return `${boot}\n` }
+        if (path === '/proc/stat') return STAT_A
+        if (path === '/proc/meminfo') return MEMINFO
+        if (path === '/proc/loadavg') return LOADAVG
+        throw new Error(`unexpected read ${path}`)
+      },
+      readDir: async () => { throw new Error('ENOENT') },
+    })
+    const containers = [psLine('fjs--acme-prod-web-app-1', 'app-1'), psLine('fjs--acme-prod-web-app-1_replaced', 'app-1'), psLine('fjs--acme-prod-api-app-2', 'app-2')]
+    const answers = {
+      'docker ps': { stdout: containers.join('\n') + '\n' },
+      'systemctl show': { stdout: UNIT_BLOCKS },
+      states: {
+        'fjs--acme-prod-web-app-1':          { restarts: 3, oom: true, exit: 137, startedAt: '2026-11-03T01:02:03.123456789Z' },
+        'fjs--acme-prod-web-app-1_replaced': { running: false, exit: 0 },
+      },
+    }
+
+    test('a heartbeat carries runtime: boot id, containers read with their history, units', async () => {
+      const { reporter, sent } = reporterWith(answers, { vitals: osWith(BOOT) })
+      await reporter.heartbeat()
+
+      const { runtime } = sent[0].body
+      expect(Object.keys(runtime)).toEqual(['boot_id', 'containers', 'units'])
+      expect(runtime.boot_id).toBe(BOOT)
+      expect(runtime.containers).toEqual([
+        { name: 'fjs--acme-prod-web-app-1', app_id: 'app-1', image: 'img:1', state: 'running', status: 'Up 2 hours',
+          restart_count: 3, started_at: '2026-11-03T01:02:03.123456789Z', oom_killed: true, exit_code: 137, replaced: false },
+        { name: 'fjs--acme-prod-web-app-1_replaced', app_id: 'app-1', image: 'img:1', state: 'running', status: 'Up 2 hours',
+          restart_count: 0, started_at: '2026-11-02T00:00:00Z', oom_killed: false, exit_code: 0, replaced: true },
+        { name: 'fjs--acme-prod-api-app-2', app_id: 'app-2', image: 'img:1', state: 'running', status: 'Up 2 hours',
+          restart_count: 0, started_at: '2026-11-02T00:00:00Z', oom_killed: false, exit_code: 0, replaced: false },
+      ])
+      expect(runtime.units).toEqual([
+        { unit: 'outpost.service', load: 'loaded', active: 'active', sub: 'running', since: 'Mon 2026-11-02 00:00:00 UTC' },
+        { unit: 'docker.service',  load: 'loaded', active: 'active', sub: 'running', since: 'Mon 2026-11-02 00:00:00 UTC' },
+      ])
+    })
+
+    test('N containers are inspected by ONE docker process', async () => {
+      const { reporter, calls } = reporterWith(answers, { vitals: osWith(BOOT) })
+      await reporter.heartbeat()
+
+      const inspects = calls.filter(c => c[0] === 'docker' && c[1] === 'inspect')
+      expect(inspects).toHaveLength(1)
+      expect(inspects[0].slice(4)).toEqual(['fjs--acme-prod-web-app-1', 'fjs--acme-prod-web-app-1_replaced', 'fjs--acme-prod-api-app-2'])
+    })
+
+    test('no containers costs no inspect', async () => {
+      const { reporter, sent, calls } = reporterWith({ 'docker ps': { stdout: '' } }, { vitals: osWith(BOOT) })
+      await reporter.heartbeat()
+      expect(sent[0].body.runtime.containers).toEqual([])
+      expect(calls.some(c => c[1] === 'inspect')).toBe(false)
+    })
+
+    test('a docker ps that fails is containers: null, and the beat still posts', async () => {
+      const { reporter, sent } = reporterWith({ ...answers, 'docker ps': { exitCode: 1, stderr: 'daemon down' } }, { vitals: osWith(BOOT) })
+      await reporter.heartbeat()
+
+      expect(sent).toHaveLength(1)
+      expect(sent[0].body.runtime.containers).toBeNull()
+      expect(sent[0].body.runtime.boot_id).toBe(BOOT)
+      expect(sent[0].body.runtime.units).toHaveLength(2)
+    })
+
+    test('an inspect that fails keeps the list and nulls the four fields, never zeros', async () => {
+      const { reporter, sent } = reporterWith({ ...answers, settled: { exitCode: 1, stdout: '', stderr: 'Cannot connect' } }, { vitals: osWith(BOOT) })
+      await reporter.heartbeat()
+
+      const rows = sent[0].body.runtime.containers
+      expect(rows).toHaveLength(3)
+      for (const r of rows) expect(r).toMatchObject({ restart_count: null, started_at: null, oom_killed: null, exit_code: null })
+      expect(rows.map(r => r.replaced)).toEqual([false, true, false])
+    })
+
+    test('an unreadable boot id is null, and systemctl failing is units: null', async () => {
+      const { reporter, sent } = reporterWith({ ...answers, 'systemctl show': { exitCode: 1 } }, { vitals: osWith(null) })
+      await reporter.heartbeat()
+
+      expect(sent).toHaveLength(1)
+      expect(sent[0].body.runtime.boot_id).toBeNull()
+      expect(sent[0].body.runtime.units).toBeNull()
+    })
+
+    test('a reader that throws leaves its key null and the heartbeat posts', async () => {
+      const inspector = { runtime: async () => { throw new Error('boom') }, units: async () => { throw new Error('boom') }, appContainers: async () => null }
+      const sent = []
+      const reporter = createReporter(CONFIG, {
+        inspector, vitals: osWith(BOOT), log: { warn() {} },
+        fetch: async (url, init) => { sent.push(JSON.parse(init.body)); return new Response('{}') },
+      })
+      await reporter.heartbeat()
+      expect(sent[0].runtime).toEqual({ boot_id: BOOT, containers: null, units: null })
+    })
   })
 
   test('a post to a control plane that never answers is abandoned (FJS-3867)', async () => {

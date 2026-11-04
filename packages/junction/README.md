@@ -1876,6 +1876,8 @@ const res = await request(app).options('/notes')
 expect(res.status).toBe(204)
 ```
 
+**Booting your own app for an HTTP test:** `await app._startForTest()` then `app.http.fetch(new Request(...))` answers every route, with no port. Export a `buildApp()` factory from `app.ts` and call it in each test file — a module-level `export const app` is cached by bun, so the second file in one `bun test` run gets the app the first stopped, and the start is refused (`FJS-D479`).
+
 `createTestApp` creates no database: `app.db` is `undefined` unless the test passes a client in. For a test that needs a real database, real factories and a principal bound into
 every call, `@frontierjs/testing` composes this with Litestone's `createTestEnv`
 — it sits above this package, so it can mount an app where Litestone cannot.

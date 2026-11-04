@@ -255,7 +255,7 @@ export const RULES = [
           if (f.attributes.some(a => a.kind === 'system' && a.generated === 'mirror')) continue
           out.push({
             model: model.name, field: f.name,
-            message: `${model.name}.${f.name} is @system and required. It is out of create-mode required, so a generated form will not ask for it — the application must name it on the write (system: ['${f.name}']) or the create fails.`,
+            message: `${model.name}.${f.name} is @system and required. It is out of create-mode required, so a generated form will not ask for it — the application must name it on the write (system: ['${f.name}']) or the create fails. This reads the schema alone: a hook that fills it (a bearer's mintOnCreate(), ctx.system.add) is invisible here, and \`fli check required-system-unfilled\` is the rule that reads the code and grades it.`,
           })
         }
       }

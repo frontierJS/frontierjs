@@ -65,16 +65,23 @@ function scanTo(sql, i, stop) {
 
 // A CREATE TABLE's column list, one top-level entry at a time. Table
 // constraints land in it too and simply never match a column's form.
+//
+// The four readers below take the same statement back to back, and the walk is
+// the cost of each, so the last answer is kept. Callers only iterate it.
+let lastParts = null
 function createTableParts(sql) {
+  if (lastParts?.sql === sql) return lastParts.parts
   const parts = []
   const open  = sql ? sql.indexOf('(') : -1
-  if (open === -1) return parts
-  for (let i = open + 1; i < sql.length; ) {
-    const end = scanTo(sql, i, ',)')
-    parts.push(sql.slice(i, end))
-    if (sql[end] !== ',') break
-    i = end + 1
+  if (open !== -1) {
+    for (let i = open + 1; i < sql.length; ) {
+      const end = scanTo(sql, i, ',)')
+      parts.push(sql.slice(i, end))
+      if (sql[end] !== ',') break
+      i = end + 1
+    }
   }
+  lastParts = { sql, parts }
   return parts
 }
 
@@ -181,12 +188,12 @@ export function parseScales(sql) {
 //
 // Sorted, so a constraint moving position in the CREATE TABLE is not a
 // constraint changing — the rule `parseChecks` already follows.
-function tableUniques(db, table) {
-  return db.prepare(`PRAGMA index_list("${table}")`).all()
+function tableUniques(listStmt, infoStmt, table) {
+  return listStmt.all(table)
     .filter(r => r.origin === 'u' || r.origin === 'pk')
     .map(r => ({
       origin: r.origin,
-      cols:   db.prepare(`PRAGMA index_info("${r.name}")`).all().map(c => c.name),
+      cols:   infoStmt.all(r.name).map(c => c.name),
     }))
     .sort((a, b) => uniqueKey(a).localeCompare(uniqueKey(b)))
 }
@@ -200,16 +207,30 @@ const constraintLabel = (u) => `${u.origin === 'pk' ? 'PRIMARY KEY' : 'UNIQUE'} 
 export function introspect(db) {
   const schema = {}
 
-  const tables = db
-    .prepare(`SELECT name FROM sqlite_master WHERE type='table'`)
-    .all()
-    .map(r => r.name)
-    .filter(n => !INTERNAL.test(n))
+  // One read of the catalog, bucketed here. A query per table on `tbl_name`
+  // scans sqlite_master each time, and a tenant boot that misses the hash
+  // introspects both sides of the diff (FJS-3819).
+  const master        = db.prepare(`SELECT type, name, tbl_name, sql FROM sqlite_master`).all()
+  const tableSql      = new Map()
+  const indexesByTbl  = new Map()
+  for (const r of master) {
+    if (r.type === 'table' && !tableSql.has(r.name)) tableSql.set(r.name, r.sql)
+    else if (r.type === 'index' && r.sql != null) {
+      const list = indexesByTbl.get(r.tbl_name)
+      if (list) list.push(r); else indexesByTbl.set(r.tbl_name, [r])
+    }
+  }
+  const tables = master.filter(r => r.type === 'table' && !INTERNAL.test(r.name)).map(r => r.name)
+
+  // The pragma table-functions take the name as a bound value, so one prepared
+  // statement serves every table instead of one compile per table.
+  const xinfoStmt   = db.prepare(`SELECT * FROM pragma_table_xinfo(?)`)
+  const fkStmt      = db.prepare(`SELECT * FROM pragma_foreign_key_list(?)`)
+  const idxListStmt = db.prepare(`SELECT * FROM pragma_index_list(?)`)
+  const idxInfoStmt = db.prepare(`SELECT * FROM pragma_index_info(?)`)
 
   for (const t of tables) {
-    const { sql: tblSql } = db.prepare(
-      `SELECT sql FROM sqlite_master WHERE type='table' AND name=?`
-    ).get(t) ?? { sql: '' }
+    const tblSql = tableSql.get(t) ?? ''
 
     // `PRAGMA table_info` OMITS generated columns, so a diff built on it is
     // blind to them in both directions: the schema declares one, the live
@@ -221,7 +242,7 @@ export function introspect(db) {
     const generated  = parseGeneratedColumns(tblSql)
     const collations = parseCollations(tblSql)
 
-    const columns = db.prepare(`PRAGMA table_xinfo("${t}")`).all()
+    const columns = xinfoStmt.all(t)
       .filter(r => r.hidden !== 1)
       .map(r => ({
         name:    r.name,
@@ -238,16 +259,14 @@ export function introspect(db) {
           : null,
       }))
 
-    const indexes = db.prepare(
-      `SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL`
-    ).all(t).map(r => {
+    const indexes = (indexesByTbl.get(t) ?? []).map(r => {
       const unique = /CREATE UNIQUE INDEX/i.test(r.sql)
       const cols   = parseIndexColumns(r.sql)
       const sorts  = parseIndexSorts(r.sql)
       return { name: r.name, cols, sorts, unique, where: indexPredicate(r.sql) }
     })
 
-    const fkRows = db.prepare(`PRAGMA foreign_key_list("${t}")`).all()
+    const fkRows = fkStmt.all(t)
     const fkMap  = new Map()
     for (const row of fkRows) {
       if (!fkMap.has(row.id))
@@ -269,14 +288,11 @@ export function introspect(db) {
     const checks = parseChecks(tblSql)
     const scales = parseScales(tblSql)
 
-    schema[t] = { columns, indexes, foreignKeys, strict, autoincrement, checks, scales, uniques: tableUniques(db, t) }
+    schema[t] = { columns, indexes, foreignKeys, strict, autoincrement, checks, scales, uniques: tableUniques(idxListStmt, idxInfoStmt, t) }
   }
 
   // Views — stored separately under __views (filtered out of table comparisons)
-  const viewRows = db
-    .prepare(`SELECT name, sql FROM sqlite_master WHERE type='view' AND sql IS NOT NULL`)
-    .all()
-    .filter(r => !INTERNAL.test(r.name))
+  const viewRows = master.filter(r => r.type === 'view' && r.sql != null && !INTERNAL.test(r.name))
 
   schema.__views = {}
   for (const v of viewRows) {
@@ -287,9 +303,7 @@ export function introspect(db) {
   // Nothing read them until the @@fts + @@softDelete pair had to be repaired:
   // both databases already had the wrong triggers, and a diff that cannot see a
   // trigger reports a schema in sync while every remove() on that model throws.
-  const trigRows = db
-    .prepare(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger' AND sql IS NOT NULL`)
-    .all()
+  const trigRows = master.filter(r => r.type === 'trigger' && r.sql != null)
 
   schema.__triggers = {}
   for (const t of trigRows) {
@@ -302,19 +316,15 @@ export function introspect(db) {
   // triggers alone, and every write to the model then failed on a table that
   // did not exist (FJS-1463).
   schema.__fts = {}
-  const ftsRows = db
-    .prepare(`SELECT name, sql FROM sqlite_master WHERE type='table' AND sql LIKE 'CREATE VIRTUAL TABLE%'`)
-    .all()
-    .filter(r => r.name.endsWith('_fts'))
+  const ftsRows = master.filter(r => r.type === 'table' && r.sql != null &&
+    /^CREATE VIRTUAL TABLE/i.test(r.sql) && r.name.endsWith('_fts'))
   for (const r of ftsRows) {
     schema.__fts[r.name] = { table: r.name.slice(0, -'_fts'.length), sql: r.sql }
   }
 
   // The shared search index (FJS-D970) — one table no model owns, so it is
   // neither in `__fts` nor in the table set INTERNAL hides it from.
-  const searchRow = db
-    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`)
-    .get(SEARCH_TABLE)
+  const searchRow = master.find(r => r.type === 'table' && r.name === SEARCH_TABLE)
   schema.__search = searchRow ? { sql: searchRow.sql } : null
 
   // Everything above reads a NAMED dimension. This reads the statements whole,
@@ -326,7 +336,7 @@ export function introspect(db) {
   // 188-model fixture, normalizing here costs 18 ms of a 75 ms introspection
   // and every object it touches is one that then compares equal anyway.
   schema.__sql = {}
-  for (const r of db.prepare(`SELECT type, name, tbl_name, sql FROM sqlite_master`).all()) {
+  for (const r of master) {
     if (INTERNAL.test(r.name) || r.sql == null) continue
     schema.__sql[`${r.type}:${r.name}`] = { table: r.tbl_name, sql: r.sql }
   }
@@ -693,8 +703,7 @@ export function buildPristine(db, parseResult) {
 
 // buildPristineForDatabase — same as buildPristine but scoped to a single named database.
 // Used by the per-database migration engine.
-export function buildPristineForDatabase(db, parseResult, dbName) {
-  const ddl = generateDDLForDatabase(parseResult.schema, dbName, { foreignKeys: true })
+export function buildPristineForDatabase(db, parseResult, dbName, ddl = generateDDLForDatabase(parseResult.schema, dbName, { foreignKeys: true })) {
 
   const cleanDDL = ddl
     .replace(/CREATE TABLE IF NOT EXISTS/gi,         'CREATE TABLE')

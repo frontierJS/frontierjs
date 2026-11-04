@@ -93,6 +93,13 @@ describe('required-system-unfilled', () => {
     expect(f[0].message).toContain("system: ['trackingCode']")
   })
 
+  // FJS-3981: advise reads the schema alone, so a column a bearer's mintOnCreate() or a hook fills
+  // still fires; the message names the rule that can see the code.
+  test('points at fli check, the half that reads the code that fills the column', () => {
+    const f = findings(`model Order { id Int @id  trackingCode String @system }`, 'required-system-unfilled')
+    expect(f[0].message).toContain('fli check required-system-unfilled')
+  })
+
   test('silent when it is optional or defaulted', () => {
     expect(findings(`model Order { id Int @id  t String? @system }`, 'required-system-unfilled')).toEqual([])
     expect(findings(`model Order { id Int @id  t String @system @default("") }`, 'required-system-unfilled')).toEqual([])

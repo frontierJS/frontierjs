@@ -519,7 +519,10 @@ function check(name, got, want) {
 }
 
 const path     = () => evaluate('location.pathname')
-const heading  = () => evaluate(`document.querySelector('h1')?.textContent ?? null`)
+// goto() sleeps a fixed 2.5 s for the guard to commit a route; under load
+// (other lanes running suites) the h1 is not there yet and a single read got
+// null (FJS-3975). A missing h1 is waited for; a wrong one is read as it is.
+const heading  = () => waitFor(`document.querySelector('h1')?.textContent ?? null`, t => t !== null)
 const _badges   = () => evaluate(`[...document.querySelectorAll('.badge')].map(e => e.textContent.trim()).join('|')`)
 const hasToken = () => evaluate(`!!localStorage.getItem('basecamp_token')`)
 // Who is signed in is the Account menu's label, and the menu is `{#if open}`,

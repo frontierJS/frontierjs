@@ -8,7 +8,7 @@
 // binary with the packages compiled in (desktop/sidecar/), beside this one as
 // a bundle.externalBin, with the app's files as bundle.resources under app/.
 // It is started on a free 127.0.0.1 port picked here at launch, its data in
-// the OS app-data directory, and the window is built only once its
+// the OS app-data directory (api/, api-debug/ in a debug build), and the window is built only once its
 // __API_PREFIX__/health answers. A port no build can know reaches the page as
 // `globalThis.__sierraApiUrl`, set by an initialization script before any page
 // script runs; sierra reads it ahead of the inlined FRONTIER_PUBLIC_API_URL.
@@ -169,8 +169,16 @@ fn sidecar_path() -> Result<PathBuf, String> {
     Ok(dir.join(format!("{SIDECAR}{}", std::env::consts::EXE_SUFFIX)))
 }
 
+// The app-data directory is the identifier's and the webview keeps its own
+// storage there, so the API's files go one level down, and a debug build gets
+// a directory of its own: its seed must never be a release build's data.
+fn api_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let base = app.path().app_data_dir().map_err(|e| format!("no app-data directory: {e}"))?;
+    Ok(base.join(if cfg!(debug_assertions) { "api-debug" } else { "api" }))
+}
+
 fn spawn_api(app: &AppHandle, port: u16, restart: bool) -> Result<Child, String> {
-    let data = app.path().app_data_dir().map_err(|e| format!("no app-data directory: {e}"))?;
+    let data = api_data_dir(app)?;
     std::fs::create_dir_all(&data).map_err(|e| format!("cannot create {}: {e}", data.display()))?;
     let mut files = app.path().resource_dir().map_err(|e| format!("no resource directory: {e}"))?.join("app");
     if restart && break_restarts() {

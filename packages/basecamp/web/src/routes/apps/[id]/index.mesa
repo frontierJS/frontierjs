@@ -98,6 +98,23 @@ title: App
     : r.lagMs === null ? 'Bucket: not synced yet'
     : `Bucket ${r.lagMs < 60_000 ? `${Math.round(r.lagMs / 1000)}s` : ago(r.lastSyncAt)} behind`
 
+  // What the machine's last heartbeat saw of THIS app's containers, beside
+  // `App.status` (which only a deploy moves). `null` is no reading: a server with
+  // no `runtime`, or one whose box could not take the container part. That is
+  // unknown, so it never reads as "stopped"; an empty array is a real reading of
+  // no live container.
+  const observedOf = (p) => {
+    const list = p.server?.runtime?.containers
+    return Array.isArray(list) ? list.filter(c => c.app_id === app.id && c.replaced === false) : null
+  }
+  // The same kinds the grader holds to a container (`domain/host/runtime.ts`
+  // LONG_RUNNING_KINDS): a static or cron App has none, and "not on the box" is
+  // not a warning for it.
+  const holdsContainer = ['container', 'worker', 'database', 'daemon'].includes(app.kind)
+  const stateTone = (c) => c.state === 'running' ? (c.restart_count > 0 ? 'warning' : 'success')
+    : c.state === 'restarting' || c.state === 'created' ? 'warning' : 'danger'
+  const sinceSays = (c) => c.started_at ? `since ${ago(c.started_at)}` : ''
+
   function write(name, value) { draft = { ...draft, [name]: value } }
   function writeCert(name, value) { certDraft = { ...certDraft, [name]: value } }
 
@@ -119,8 +136,21 @@ title: App
     return appRow.ready
   }
 
+  // The uptime card's row: the Monitor the system keeps from the primary
+  // hostname when there is one (`FJS-D1859`), else one a person made about this
+  // App. A failed read draws no card rather than a banner over the App.
+  let monitor = null
+  async function loadMonitor(appId) {
+    try {
+      const rows = await getClient().service('monitors').findData({ appId })
+      monitor = rows.find(m => m.isManaged) ?? rows[0] ?? null
+    } catch { monitor = null }
+  }
+
   async function load() {
     error = null; loadError = null
+    // A Domain write moves the managed Monitor, and the domain handler below calls this.
+    loadMonitor(page.params.id)
     try {
       await watchApp(page.params.id)
       // A record view settles on a failed read rather than rejecting, so a
@@ -767,6 +797,8 @@ title: App
     return d.author ? ` by ${d.author}` : ''
   }
 
+  const MONITOR_TONE = { up: 'success', down: 'danger', pending: 'info', paused: 'muted' }
+
   const STATUS_TONE = {
     running: 'success', deploying: 'info', starting: 'info',
     error: 'danger', stopped: 'muted', unknown: 'muted', stopping: 'warning',
@@ -1005,6 +1037,19 @@ title: App
                 <a href={`/servers/${p.serverId}/`}>{p.server?.name ?? p.serverId}</a>
                 <Badge tone="muted">replica {p.replicaIndex}</Badge>
                 <Pill>{p.status}</Pill>
+                {#if holdsContainer}
+                  {#if observedOf(p) === null}
+                    <Badge tone="muted" data-observed="none">Container: no reading yet</Badge>
+                  {:else if observedOf(p).length === 0}
+                    <Badge tone="warning" data-observed="absent">Container: not on the box</Badge>
+                  {:else}
+                    {#each observedOf(p) as c (c.name)}
+                      <Badge tone={stateTone(c)} data-observed={c.state}>
+                        Container: {c.state ?? 'unknown'} · {c.restart_count ?? 0} restart{c.restart_count === 1 ? '' : 's'}{sinceSays(c) ? ` · ${sinceSays(c)}` : ''}
+                      </Badge>
+                    {/each}
+                  {/if}
+                {/if}
                 {#if p.replication}
                   <!-- Litestream's word for how far the bucket is, read at the
                        machine's last heartbeat. -->
@@ -1035,6 +1080,22 @@ title: App
                   onclick={place}>Place</Button>
         </div>
       </Card>
+
+      {#if monitor}
+        <Card id="app-uptime">
+          <div class="section-header">
+            <h2 class="h4">Uptime</h2>
+            {#if monitor.isManaged}<Badge tone="muted" title="Kept from the primary hostname" data-monitor-managed>automatic</Badge>{/if}
+          </div>
+          <div class="cluster">
+            <Pill tone={MONITOR_TONE[monitor.status] ?? 'muted'} data-monitor-status>{monitor.status}</Pill>
+            <code>{monitor.url}</code>
+          </div>
+          <p class="text-sm text-muted">
+            Checked {ago(monitor.lastCheckedAt)}{monitor.lastLatencyMs != null ? ` · ${monitor.lastLatencyMs} ms` : ''}
+          </p>
+        </Card>
+      {/if}
 
       <Card>
         <h2 class="h4">Scheduled work</h2>
@@ -1327,6 +1388,7 @@ title: App
         <dt>Command</dt><dd><code>{app.command?.length ? app.command.join(' ') : "the image's own"}</code></dd>
         <dt>CPU</dt><dd>{app.cpuLimit ?? 'no limit'}</dd>
         <dt>Memory</dt><dd>{app.memLimitMb != null ? `${app.memLimitMb} MiB` : 'no limit'}</dd>
+        <dt>Stop grace</dt><dd>{app.stopGrace != null ? `${app.stopGrace} s` : "the machine's default"}</dd>
       </dl>
       <Button treatment="outlined" onclick={() => editing = true}>Edit</Button>
     </Card>

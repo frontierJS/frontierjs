@@ -882,7 +882,7 @@ circle.er-link-fam { fill: hsl(var(--er-family) 62% 52%); stroke: none }
 .log-line.dim   { color: var(--ink-mute) }
 .log-line.head  { color: var(--ink); font-weight: 600; margin-block-start: var(--space-sm) }
 
-/* ─── Models — Layers ──────────────────────────────────────────────────── */
+/* ─── Models — Clusters ──────────────────────────────────────────────────── */
 
 /* Each tab's body fills what the tablist leaves; the ER diagram's legend and
    controls are positioned against this box. */
@@ -1501,10 +1501,10 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
        #schema still opens it — so every existing link still lands. -->
   <article class="view relative" id="panelSchema" hidden>
     <div class="tablist" role="tablist" aria-label="Models views">
-      <button class="tab" role="tab" id="erTabDiagram" aria-selected="true" aria-controls="erView" onclick="erShowTab('diagram')">Diagram</button>
-      <button class="tab" role="tab" id="erTabLayers" tabindex="-1" aria-selected="false" aria-controls="lyView" onclick="erShowTab('layers')">Layers</button>
+      <button class="tab" role="tab" id="erTabClusters" aria-selected="true" aria-controls="lyView" onclick="erShowTab('clusters')">Clusters</button>
+      <button class="tab" role="tab" id="erTabDiagram" tabindex="-1" aria-selected="false" aria-controls="erView" onclick="erShowTab('diagram')">Diagram</button>
     </div>
-    <div class="schema-pane" id="erView" role="tabpanel" aria-labelledby="erTabDiagram">
+    <div class="schema-pane" id="erView" role="tabpanel" aria-labelledby="erTabDiagram" hidden>
     <div class="er-wrap" id="erWrap">
       <div class="er-canvas" id="erCanvas" onclick="if (event.target === this) erPin(null)">
         <svg class="er-svg" id="erSvg"></svg>
@@ -1530,9 +1530,9 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
     </div>
     </div>
 
-    <!-- Layers: the same models as floors of foreign-key clusters, depth as
+    <!-- Clusters: the same models as floors of foreign-key clusters, depth as
          height. Built by the Layers block in the script. -->
-    <div class="schema-pane ly" id="lyView" role="tabpanel" aria-labelledby="erTabLayers" hidden>
+    <div class="schema-pane ly" id="lyView" role="tabpanel" aria-labelledby="erTabClusters">
       <div class="ly-bar">
         <label class="ly-seg ly-find"><span>Find</span>
           <input class="field" id="lyFind" type="search" list="lyFindList" placeholder="Model name" autocomplete="off"></label>
@@ -1549,7 +1549,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
           </div></div>
         <label class="ly-seg"><span>Depth <output id="lyDepthOut"></output></span>
           <input id="lyDepth" type="range" min="0" step="1" value="0"></label>
-        <label class="ly-seg"><span>More per group <output id="lyReachOut"></output></span>
+        <label class="ly-seg"><span>More per cluster <output id="lyReachOut"></output></span>
           <input id="lyReach" type="range" min="0" step="1" value="0"></label>
         <label class="ly-check"><input id="lyFade" type="checkbox" checked> Fade links into hubs</label>
         <label class="ly-check"><input id="lyLabels" type="checkbox"> All names</label>
@@ -1559,7 +1559,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
       </div>
       <div class="ly-main">
         <section class="ly-stage" id="lyStage" aria-label="Schema layers">
-          <canvas id="lyCanvas" aria-label="Models in 3D: groups on the floor, dependency depth as height"></canvas>
+          <canvas id="lyCanvas" aria-label="Models in 3D: clusters on the floor, dependency depth as height"></canvas>
           <button class="btn outlined compact ly-reset" id="lyReset" type="button">Reset view</button>
         </section>
         <aside class="ly-panel" id="lyPanel" aria-live="polite"></aside>
@@ -5954,7 +5954,7 @@ function showTool(tool) {
   // every card on a fallback height and a 26-field model lands under the one
   // below it. The first reveal is the first moment a height is real.
   if (tool === 'overview')   loadIfMoved('overview', ovInit)
-  if (tool === 'schema')     erInit()
+  if (tool === 'schema')     erShowTab(_erTab); else Layers.hide()
   if (tool === 'explore')    exInit()
   if (tool === 'access')     acInit()
   if (tool === 'compare')    cmpInit()
@@ -8118,7 +8118,7 @@ function perfRenderPlan(res) {
 
   return html
 }
-// ─── Models — Layers ──────────────────────────────────────────────────────────
+// ─── Models — Clusters ──────────────────────────────────────────────────────────
 //
 // The schema as floors: foreign-key clusters laid on the ground, dependency depth
 // as height. /api/schema-layers does the grouping and every position (the page
@@ -8171,15 +8171,32 @@ const Layers = (() => {
     Object.assign(T, { bg: v('--surface-sunken'), ink: v('--ink'), mute: v('--ink-mute'), line: v('--rule-strong'),
       mono: v('--font-mono') || 'monospace', sans: v('--font-primary') || 'sans-serif' })
   }
-  // Group hues step around the wheel by the golden angle, so neighbors in the
-  // list never share one; the group with no keys is grey.
+  // The nine biggest clusters are fixed, largest first: the rainbow, then a hot
+  // pink and a teal. Every later band of seven repeats the rainbow as a variant
+  // (pastel, deep, muted), nudged around the wheel once the bands start to
+  // repeat. The group with no keys is grey.
+  const FIXED = [[0, 68, 60], [28, 68, 60], [52, 68, 60], [125, 68, 60], [205, 68, 60], [245, 68, 60], [285, 68, 60],
+    [325, 90, 58], [172, 70, 48]]
+  const RAINBOW = FIXED.slice(0, 7).map(([h]) => h)
+  const BANDS = [[68, 60], [52, 82], [78, 42], [32, 62]]
   function assignHues() {
     HUE = {}
-    D.groups.forEach((gr, i) => { HUE[gr.key] = gr.key === 'unlinked' ? null : (196 + i * 137.508) % 360 })
+    let rank = 0
+    for (const gr of D.groups) {
+      if (gr.key === 'unlinked') { HUE[gr.key] = null; continue }
+      if (rank < FIXED.length) {
+        const [h, s, l] = FIXED[rank]
+        HUE[gr.key] = { h, s, l }
+      } else {
+        const i = rank - FIXED.length, band = Math.floor(i / 7) + 1, [s, l] = BANDS[band % BANDS.length]
+        HUE[gr.key] = { h: (RAINBOW[i % 7] + 14 * Math.floor(band / BANDS.length)) % 360, s, l }
+      }
+      rank++
+    }
   }
   function color(k, a = 1) {
-    const h = HUE[k]
-    return h == null ? `hsla(190, 8%, 63%, ${a})` : `hsla(${h.toFixed(1)}, 62%, 63%, ${a})`
+    const c = HUE[k]
+    return c == null ? `hsla(190, 8%, 63%, ${a})` : `hsla(${c.h}, ${c.s}%, ${c.l}%, ${a})`
   }
 
   // ── selection ──────────────────────────────────────────────────────────────
@@ -8344,7 +8361,7 @@ const Layers = (() => {
       grad.addColorStop(0, color(g1, a)); grad.addColorStop(1, color(g2, a))
       ctx.beginPath(); ctx.moveTo(p1.X, p1.Y); ctx.lineTo(p2.X, p2.Y)
       ctx.strokeStyle = grad; ctx.lineWidth = Math.min(12, 1 + 2.2 * (n - 1)); ctx.lineCap = 'round'; ctx.stroke(); ctx.lineCap = 'butt'
-      if (lit && !touch) continue
+      if (n === 1 || (lit && !touch)) continue
       const mx = (p1.X + p2.X) / 2, my = (p1.Y + p2.Y) / 2
       ctx.font = `600 11px ${T.mono}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
       ctx.lineWidth = 4; ctx.strokeStyle = T.bg; ctx.strokeText(String(n), mx, my); ctx.fillStyle = T.ink; ctx.fillText(String(n), mx, my)
@@ -8475,14 +8492,14 @@ const Layers = (() => {
     if (s?.type === 'model') {
       const m = M[s.id]
       el.innerHTML = `
-        <button class="ly-back" type="button" data-back>← All groups</button>
+        <button class="ly-back" type="button" data-back>← All clusters</button>
         <div class="ly-sect"><p class="ly-eyebrow">Model</p><h2 class="ly-title mono">${esc(m.n)}</h2></div>
         <div class="ly-go">
           <button class="btn outlined compact" type="button" data-go="diagram">Diagram</button>
           <button class="btn outlined compact" type="button" data-go="browse">Browse rows</button>
           <button class="btn outlined compact" type="button" data-go="access">Access</button></div>
         <dl class="ly-stats">
-          <dt>Group</dt><dd>${esc(label(m.g))}</dd>
+          <dt>Cluster</dt><dd>${esc(label(m.g))}</dd>
           <dt>Depth</dt><dd>${m.d} ${m.d === 0 ? '(points at nothing)' : 'link' + (m.d > 1 ? 's' : '') + ' above the floor'}</dd>
           <dt>Fields</dt><dd>${m.f} plus ${m.out} foreign key${m.out === 1 ? '' : 's'}</dd>
         </dl>
@@ -8493,7 +8510,7 @@ const Layers = (() => {
     } else if (s?.type === 'link') {
       const [g1, g2] = s.id.split('\n'), keys = keysOf(s.id)
       el.innerHTML = `
-        <button class="ly-back" type="button" data-back>← All groups</button>
+        <button class="ly-back" type="button" data-back>← All clusters</button>
         <div class="ly-sect"><p class="ly-eyebrow">Link · ${keys.length} key${keys.length === 1 ? '' : 's'}</p>
           <h2 class="ly-title"><span style="color:${color(g1)}">${esc(label(g1))}</span> ↔ <span style="color:${color(g2)}">${esc(label(g2))}</span></h2></div>
         <ul class="ly-keys">${keys.map(([a, b, f]) => `<li>${chip(a)}<span>.${esc(f)} →</span>${chip(b)}</li>`).join('')}</ul>`
@@ -8501,8 +8518,8 @@ const Layers = (() => {
       const cross = D.edges.filter(([a, b]) => (groupOf(a) === s.id) !== (groupOf(b) === s.id)).length
       const inside = D.edges.filter(([a, b]) => groupOf(a) === s.id && groupOf(b) === s.id).length
       el.innerHTML = `
-        <button class="ly-back" type="button" data-back>← All groups</button>
-        <div class="ly-sect"><p class="ly-eyebrow">Group</p>
+        <button class="ly-back" type="button" data-back>← All clusters</button>
+        <div class="ly-sect"><p class="ly-eyebrow">Cluster</p>
           <h2 class="ly-title" style="color:${color(s.id)}">${esc(label(s.id))}</h2></div>
         <dl class="ly-stats">
           <dt>Models</dt><dd>${members(s.id).length}</dd>
@@ -8517,11 +8534,11 @@ const Layers = (() => {
     } else {
       const inside = D.edges.filter(([a, b]) => groupOf(a) === groupOf(b)).length
       el.innerHTML = `
-        <div class="ly-sect"><p class="ly-eyebrow">${D.groups.length} groups</p></div>
+        <div class="ly-sect"><p class="ly-eyebrow">${D.groups.length} clusters</p></div>
         <ul class="ly-glist">${D.groups.map(gr => `<li><button type="button" data-group="${esc(gr.key)}">
           <span class="ly-sw" style="background:${color(gr.key)}"></span>
           <span class="ly-gname">${esc(gr.label)}</span><span class="ly-gcount" title="Models · knots">${gr.members.length}${knotLine(gr.key) ? ' · ' + knots(gr.key) : ''}</span></button></li>`).join('')}</ul>
-        <div class="ly-sect"><p><b>${inside} of ${D.edges.length}</b> foreign keys stay inside a group; ${D.edges.length - inside} cross between groups.</p></div>`
+        <div class="ly-sect"><p><b>${inside} of ${D.edges.length}</b> foreign keys stay inside a cluster; ${D.edges.length - inside} cross between clusters.</p></div>`
     }
   }
   // A diamond is drawn as one: the key's model on top, the two routes down
@@ -8666,11 +8683,15 @@ const Layers = (() => {
   }
 })()
 
+// The tab the Models panel reopens on.
+let _erTab = 'clusters'
+
 // The selected tab is aria-selected, never a class: tabs.css styles the attribute.
 function erShowTab(tab) {
+  _erTab = tab
   for (const [name, tabId, viewId] of [
-    ['diagram', 'erTabDiagram', 'erView'],
-    ['layers',  'erTabLayers',  'lyView'],
+    ['clusters', 'erTabClusters', 'lyView'],
+    ['diagram',  'erTabDiagram',  'erView'],
   ]) {
     const on = name === tab
     const t  = document.getElementById(tabId)
@@ -8678,7 +8699,9 @@ function erShowTab(tab) {
     t.tabIndex = on ? 0 : -1
     document.getElementById(viewId).hidden = !on
   }
-  if (tab === 'layers') Layers.show(); else Layers.hide()
+  if (tab === 'clusters') Layers.show(); else Layers.hide()
+  // The cards pack by measured height, and a hidden tab measures 0.
+  if (tab === 'diagram') erInit()
 }
 </script>
 </body>

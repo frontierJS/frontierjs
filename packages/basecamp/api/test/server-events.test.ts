@@ -26,6 +26,7 @@ import { join } from 'node:path'
 import { createTestEnv } from '@frontierjs/testing'
 import { GatePlugin } from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
+import { runtimeEdges, stampRestarts } from '../src/domain/host/runtime.ts'
 
 const ROOT      = join(import.meta.dir, '..', '..')
 const SCHEMA    = join(ROOT, 'db', 'schema.lite')
@@ -164,5 +165,82 @@ describe('a machine\'s history is written in one vocabulary', () => {
     // And the other way: a value nothing writes is a vocabulary that outlived
     // its code, which is the state this enum was created out of.
     expect([...declared].filter(k => !written.has(k))).toEqual([])
+  })
+})
+
+describe('a runtime reading files an event on each edge, and only there', () => {
+  const box  = (o: Record<string, unknown> = {}) => ({ app_id: 'a1', name: 'fjs--p-prod-shop-a1', image: 'shop:1',
+    state: 'running', status: 'Up', restart_count: 0, started_at: null, oom_killed: false, exit_code: 0, replaced: false, ...o })
+  const unit = (active = 'active') => ({ unit: 'caddy-api', load: 'loaded', active, sub: null, since: null })
+  const read = (o: Record<string, unknown> = {}) => ({ boot_id: 'b1', containers: [box()], units: [unit()], ...o }) as any
+  const kinds = (a: any, b: any) => runtimeEdges(a, b, id => (id === 'a1' ? 'shop' : undefined)).map(e => e.kind)
+
+  test('a null reading on either side fires nothing', () => {
+    const down = read({ boot_id: 'b2', containers: [box({ state: 'restarting' })], units: [unit('failed')] })
+    expect(kinds(null, down)).toEqual([])
+    expect(kinds(down, null)).toEqual([])
+    // Nor a null part: a box that could not read docker is not a box whose containers recovered.
+    expect(kinds(read({ containers: null, units: null, boot_id: null }), down)).toEqual([])
+    expect(kinds(down, read({ containers: null, units: null, boot_id: null }))).toEqual([])
+  })
+
+  test('a rise in restart_count files containerCrashLooping once, and the next beat with the same count nothing', () => {
+    const first  = read()
+    const second = read({ containers: [box({ restart_count: 1 })] })
+    const edges  = runtimeEdges(first, second, () => 'shop')
+    expect(edges.map(e => e.kind)).toEqual(['containerCrashLooping'])
+    expect(edges[0].message).toContain('shop restarted 1 time(s)')
+    expect(edges[0].metadata).toMatchObject({ app_id: 'a1', restart_count: 1 })
+    expect(kinds(second, read({ containers: [box({ restart_count: 1 })] }))).toEqual([])
+  })
+
+  test('a live container stopping and coming back is the pair, and a set-aside is neither', () => {
+    const stopped = read({ containers: [box({ state: 'exited', exit_code: 137 })] })
+    expect(kinds(read(), stopped)).toEqual(['containerCrashLooping'])
+    expect(kinds(stopped, stopped)).toEqual([])
+    expect(kinds(stopped, read())).toEqual(['containerRecovered'])
+    expect(kinds(read(), read({ containers: [box(), box({ name: 'x_replaced', state: 'exited', replaced: true })] }))).toEqual([])
+  })
+
+  test('a unit leaving active files unitFailed, and coming back unitRestored', () => {
+    expect(kinds(read(), read({ units: [unit('failed')] }))).toEqual(['unitFailed'])
+    expect(kinds(read({ units: [unit('failed')] }), read())).toEqual(['unitRestored'])
+  })
+
+  test('a changed boot_id files rebooted', () => {
+    const edges = runtimeEdges(read(), read({ boot_id: 'b2' }))
+    expect(edges.map(e => e.kind)).toEqual(['rebooted'])
+    expect(edges[0].metadata).toEqual({ from: 'b1', to: 'b2' })
+  })
+})
+
+describe('stampRestarts — what the receiver stores (FJS-D1860)', () => {
+  const T0 = '2026-11-04T07:00:00.000Z', T1 = '2026-11-04T07:00:30.000Z', T2 = '2026-11-04T07:01:00.000Z'
+  const box = (o: Record<string, unknown> = {}) => ({ app_id: 'a1', name: 'c1', image: 'i', state: 'running', status: 'Up',
+    restart_count: 0, started_at: T0, oom_killed: false, exit_code: 0, replaced: false, ...o }) as any
+  const read = (containers: any[] | null) => ({ boot_id: 'b', containers, units: [] }) as any
+
+  test('no prior reading, or no count on either side, stamps null — unknown, never zero', () => {
+    expect(stampRestarts(null, read([box()]), T0).containers![0]).toMatchObject({ restartsSinceLast: null, restartedAt: null })
+    expect(stampRestarts(read([box({ restart_count: null })]), read([box()]), T1).containers![0]).toMatchObject({ restartsSinceLast: null, restartedAt: null })
+  })
+
+  test('a rise is stamped with its size and the beat that saw it', () => {
+    const stored = stampRestarts(read([box()]), read([box({ restart_count: 2 })]), T1).containers![0]
+    expect(stored).toMatchObject({ restartsSinceLast: 2, restartedAt: T1 })
+  })
+
+  test('the next quiet beat carries the stamp forward, so the hold window outlives one beat', () => {
+    const first  = stampRestarts(read([box()]), read([box({ restart_count: 2 })]), T1)
+    const second = stampRestarts(first, read([box({ restart_count: 2 })]), T2).containers![0]
+    expect(second).toMatchObject({ restartsSinceLast: 2, restartedAt: T1 })
+  })
+
+  test('a lower count under the same name is a swap, stamped as no restart', () => {
+    expect(stampRestarts(read([box({ restart_count: 5 })]), read([box({ restart_count: 0 })]), T1).containers![0]).toMatchObject({ restartsSinceLast: 0, restartedAt: null })
+  })
+
+  test('a reading with no container part is stored as it came', () => {
+    expect(stampRestarts(read([box()]), read(null), T1).containers).toBeNull()
   })
 })

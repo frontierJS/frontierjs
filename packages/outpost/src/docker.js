@@ -161,6 +161,8 @@ export function checkRunConfig(config = {}) {
     throw new Error(`memLimitMb must be a whole number of MiB, at least 6 — got '${config.memLimitMb}'`)
   if (config.command != null && !(Array.isArray(config.command) && config.command.every(arg => typeof arg === 'string')))
     throw new Error(`command must be a list of arguments, each a string — got '${JSON.stringify(config.command)}'`)
+  if (config.stopGrace != null && !(Number.isInteger(config.stopGrace) && config.stopGrace >= 2))
+    throw new Error(`stopGrace must be a whole number of seconds, at least 2 — got '${config.stopGrace}'`)
 }
 
 /**
@@ -217,9 +219,12 @@ const HEALTH = { attempts: 10, intervalMs: 3_000, settleMs: 5_000 }
  *  `--restart unless-stopped` then hides the crash loop as "running". */
 export const SETTLE_MS = HEALTH.settleMs
 
-/** The one stop grace (`FJS-D1839`): Junction's drain and plugin budgets are
- *  sized to finish inside it, and docker kills the old release when it runs out. */
-const STOP_GRACE_S = 10
+/** The stop grace a release gets when its run config states none (`FJS-D1839`,
+ *  `FJS-D1841`). Handed to the container once, as `--stop-timeout` and as
+ *  `FRONTIER_STOP_GRACE` for Junction to fit its budgets inside; every
+ *  `docker stop` then waits that, an operator's and the daemon's too. Above
+ *  15 s so the plugins' share holds Caravan's 30 s drain. */
+export const DEFAULT_STOP_GRACE_S = 40
 
 /** How long a SIGTERM waits for in-flight per-app work (`FJS-3865`). The unit
  *  sets no TimeoutStopSec, so systemd's default 90s is the hard kill; this
@@ -235,6 +240,29 @@ const EXPOSED_SET   = 'inet basecamp exposed'
  *  person can rename; this label carries the App's id, which cannot change, so
  *  every lookup asks for the label and a rename never orphans a container. */
 const APP_LABEL = 'fjs.app'
+
+/** What the daemon says of a container's life, in one format both readers use
+ *  (`FJS-3853`): whether the swap settled and whether the heartbeat reports a
+ *  crash. No field holds a space, so a line splits on whitespace. */
+const STATE_FORMAT = '{{.Name}} {{.State.Running}} {{.State.StartedAt}} {{.RestartCount}} {{.State.OOMKilled}} {{.State.ExitCode}}'
+
+/** `STATE_FORMAT` for every name in ONE `docker inspect`, so N containers cost
+ *  one process. Answers a Map of name to state, holding only the names the
+ *  daemon answered: a container removed since it was listed is absent, and a
+ *  failed inspect is an empty Map -- the caller's `null`, never a zero. */
+async function readStates(run, names) {
+  const states = new Map()
+  if (!names.length) return states
+  const r = await run(['docker', 'inspect', '--format', STATE_FORMAT, ...names])
+  for (const line of String(r.stdout ?? '').split('\n')) {
+    const [name, running, startedAt, restarts, oom, exit] = line.trim().split(/\s+/)
+    if (!name || exit === undefined) continue
+    states.set(name.replace(/^\//, ''), {
+      running: running === 'true', startedAt, restarts: Number(restarts), oomKilled: oom === 'true', exitCode: Number(exit),
+    })
+  }
+  return states
+}
 
 /** `fjs--<project>-<env>-<app>-<first 8 of the id>`, the shape `docker ps`
  *  reads at a glance. The double dash is where the user-chosen slugs begin; the
@@ -580,10 +608,7 @@ export function createDocker({
     const live = name ?? (await containersOf(appId)).live
     const look = async () => {
       if (!live) return null
-      const r = await run(['docker', 'inspect', '--format', '{{.State.Running}} {{.State.StartedAt}} {{.RestartCount}}', live])
-      if (r.exitCode !== 0) return null
-      const [running, startedAt, restarts] = r.stdout.trim().split(/\s+/)
-      return { running: running === 'true', startedAt, restarts }
+      return (await readStates(run, [live])).get(live) ?? null
     }
     const before = await look()
     if (settleMs > 0) await Bun.sleep(settleMs)
@@ -658,7 +683,7 @@ export function createDocker({
       await docker(['rename', live, held.replaced])
     }
     try {
-      await docker(['stop', '-t', String(STOP_GRACE_S), held.replaced])
+      await docker(['stop', held.replaced])
     } catch (err) {
       await run(['docker', 'rename', held.replaced, held.name])
       throw err
@@ -731,7 +756,7 @@ export function createDocker({
     await docker(['rename', next, name])
     if (live) {
       // Requests in flight finish inside the grace; new ones already reach the new release.
-      await run(['docker', 'stop', '-t', String(STOP_GRACE_S), `${live}_replaced`])
+      await run(['docker', 'stop', `${live}_replaced`])
       await run(['docker', 'rm', '-f', `${live}_replaced`])
     } else if (replaced) {
       await run(['docker', 'rm', '-f', replaced])
@@ -1128,6 +1153,8 @@ export function createDocker({
       // about or every caller shares Caddy's address in its rate limiter
       // (`FJS-D617`, `FJS-1841`). Before the caller's env, so a stated value wins.
       if (loopback) argv.push('-e', 'FRONTIER_TRUST_PROXY=1')
+      const grace = config.stopGrace ?? DEFAULT_STOP_GRACE_S
+      argv.push('--stop-timeout', String(grace), '-e', `FRONTIER_STOP_GRACE=${grace}`)
       // Values ride in the docker client's environment and argv names the key
       // alone: argv is readable by every user off /proc/*/cmdline. A name the
       // client reads itself (PATH, HOME, DOCKER_HOST) or this process already
@@ -1926,6 +1953,18 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
     }).filter(Boolean).flat()
   }
 
+  async function listContainers() {
+    const { exitCode, stdout } = await run(['docker', 'ps', '-a', '--filter', `label=${APP_LABEL}`, '--format', 'json'])
+    if (exitCode !== 0) return null
+    return lines(stdout).map(line => JSON.parse(line)).map(c => ({
+      name:   c.Names ?? null,
+      app_id: String(c.Labels ?? '').split(',').find(l => l.startsWith(`${APP_LABEL}=`))?.slice(APP_LABEL.length + 1) ?? null,
+      image:  c.Image ?? null,
+      state:  c.State ?? null,
+      status: c.Status ?? null,
+    }))
+  }
+
   const bytes = (value) => {
     // Docker's own human sizes — `4.13GB`, `927MB`, `12.3kB`, `0B`. Parsed
     // rather than asked for in bytes because `docker system df` has no byte
@@ -2059,16 +2098,30 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
     /** Every container an App has here, stopped ones too: a `_replaced` beside
      *  a live one is a swap's set-aside, and one alone is an unfinished swap's
      *  last good release (`FJS-1765`). By the `fjs.app` label, never the name. */
-    async containers() {
-      const { exitCode, stdout } = await run(['docker', 'ps', '-a', '--filter', `label=${APP_LABEL}`, '--format', 'json'])
-      if (exitCode !== 0) return null
-      return lines(stdout).map(line => JSON.parse(line)).map(c => ({
-        name:   c.Names ?? null,
-        app_id: String(c.Labels ?? '').split(',').find(l => l.startsWith(`${APP_LABEL}=`))?.slice(APP_LABEL.length + 1) ?? null,
-        image:  c.Image ?? null,
-        state:  c.State ?? null,
-        status: c.Status ?? null,
-      }))
+    containers: listContainers,
+
+    /** `containers()` with what each one has been through since it started --
+     *  the crash `--restart unless-stopped` hides as `running` (`FJS-3853`).
+     *  `null` when `docker ps` failed. When the inspect fails the four fields
+     *  are `null` on every row, never zeros: a container that restarted nine
+     *  times and one the box could not read must not look alike. `replaced` is
+     *  a swap's set-aside, which a stopped state is correct for. */
+    async runtime() {
+      const listed = await listContainers()
+      if (!listed) return null
+      const states = await readStates(run, listed.map(c => c.name).filter(Boolean)).catch(() => new Map())
+      return listed.map(c => {
+        const s = states.get(c.name)
+        return {
+          ...c,
+          restart_count: s ? s.restarts : null,
+          // Docker writes the zero time for a container that never started.
+          started_at:    s && !s.startedAt.startsWith('0001-') ? s.startedAt : null,
+          oom_killed:    s ? s.oomKilled : null,
+          exit_code:     s ? s.exitCode : null,
+          replaced:      String(c.name ?? '').endsWith('_replaced'),
+        }
+      })
     },
 
     /** Running containers' full ids, to the App each belongs to — what names a

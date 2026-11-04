@@ -28,6 +28,7 @@ import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, ch
   from '../../core/resource.ts'
 import domainDns from '../../jobs/domain-dns.job.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { syncManagedMonitor } from '../../domain/monitor/managed.ts'
 
 const DAY = 86_400_000
 
@@ -87,6 +88,11 @@ async function demoteSiblings(appId: string, keepId: string) {
 export const toZone = (domainId: string, version: number | string) =>
   $.app.jobs.dispatch(domainDns, { domainId }, { id: `dns:${domainId}:${version}` })
 
+/** The App's managed Monitor follows its primary hostname (`FJS-D1859`). Every
+ *  write that can move the primary calls this, or the Monitor probes a hostname
+ *  the App no longer answers on. */
+const toMonitor = (appId: string) => syncManagedMonitor($.app, $.db.asSystem(), appId)
+
 export default createService({
   name:  'domains',
   scope: keyScope('domains'),
@@ -133,6 +139,7 @@ export default createService({
     const created = await db().domain.create({ data })
     if (created.isPrimary) await demoteSiblings(created.appId, created.id)
     await toZone(created.id, created.version)
+    await toMonitor(created.appId)
     return decorate(created)
   },
 
@@ -155,6 +162,7 @@ export default createService({
     const updated = await db().domain.update({ where: { id: domain.id }, data: patch })
     if (updated.isPrimary) await demoteSiblings(updated.appId, updated.id)
     await toZone(updated.id, updated.version)
+    await toMonitor(updated.appId)
     return decorate(updated)
   },
 
@@ -168,6 +176,7 @@ export default createService({
 
     const removed = await removeScoped('domain', 'Domain')
     await toZone(domain.id, `${domain.version}:removed`)
+    await toMonitor(domain.appId)
     return removed
   },
 
@@ -176,6 +185,7 @@ export default createService({
   async restore() {
     const restored = await restoreScoped('domain', 'Domain')
     await toZone(restored.id, `${restored.version}:restored`)
+    await toMonitor(restored.appId)
     return decorate(restored)
   },
 
@@ -219,6 +229,7 @@ export default createService({
       where: { id: domain.id }, data: { isPrimary: true, version: domain.version },
     })
     await demoteSiblings(updated.appId, updated.id)
+    await toMonitor(updated.appId)
     return decorate(updated)
   },
 

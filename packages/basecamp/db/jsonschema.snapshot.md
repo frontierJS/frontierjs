@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-171 definitions · 74 models · 1 view · 39 types · 57 enums · 0 other
+172 definitions · 74 models · 1 view · 39 types · 58 enums · 0 other
 ```
 
 ## Definitions
@@ -133,6 +133,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppStatus` | enum |
 | `DeployStatus` | enum |
 | `DeployTrigger` | enum |
+| `DeploySwap` | enum |
 | `StepStatus` | enum |
 | `JobKind` | enum |
 | `JobStatus` | enum |
@@ -219,7 +220,7 @@ validates, and a select that silently drops an option.
 - `SecretKind` — `sshKey`, `providerKey`, `registryAuth`, `tlsCert`, `notification`, `backup`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
-- `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `cameOnline`, `unreachable`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `postureFailed`, `postureRestored`
+- `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `cameOnline`, `unreachable`, `rebooted`, `containerCrashLooping`, `containerRecovered`, `unitFailed`, `unitRestored`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `postureFailed`, `postureRestored`
 - `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`
 - `ComputeProvider` — `custom`, `hetzner`, `digitalocean`
 - `PlatformProvider` — `cloudflare`
@@ -235,6 +236,7 @@ validates, and a select that silently drops an option.
 - `AppStatus` — `unknown`, `stopped`, `starting`, `running`, `stopping`, `deploying`, `error`
 - `DeployStatus` — `pending`, `building`, `success`, `failed`, `cancelled`, `rolledBack`
 - `DeployTrigger` — `button`, `push`, `laptop`, `rollback`, `rebind`, `publish`, `freeze`, `observed`
+- `DeploySwap` — `startFirst`, `stopFirst`
 - `StepStatus` — `pending`, `running`, `success`, `failed`, `skipped`
 - `JobKind` — `oneShot`, `scheduled`, `triggered`, `workflow`
 - `JobStatus` — `pending`, `running`, `failed`, `cancelled`
@@ -768,6 +770,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `health` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `dockerState` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `replication` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `runtime` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `labels` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 
 **On create**: required — `name`, `slug` · not accepted — `id`
@@ -936,6 +939,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` `x-transforms` | `pattern` `regex` |
 | `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
 | `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
+| `stopGrace` | `integer`? | — | — | `minimum: 2` | — |
 | `command` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `hasExposedPort` | `boolean` = `false` | — | — | — | — |
 | `isDeployedOnPush` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
@@ -1169,6 +1173,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `branch` | `string`? | — | — | `x-litestone-kind` | — |
 | `author` | `string`? | — | — | — | — |
 | `builtImage` | `string`? | — | — | `x-litestone-kind` | — |
+| `swap` | `DeploySwap`? | — | — | `x-litestone-kind` | — |
+| `swapReason` | `string`? | — | — | `x-litestone-kind` | — |
 | `platformVersion` | `string`? | — | — | `x-litestone-kind` | — |
 | `previousDeploymentId` | `string`? | — | — | `x-litestone-kind` | — |
 | `configSnapshot` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
@@ -1525,6 +1531,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `appId` | `string`? | — | — | — | — |
+| `isManaged` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
 | `url` | `string` | yes | — | `format: "uri"` `x-transforms` | — |
 | `method` | `HttpMethod` = `"GET"` | — | — | — | — |
 | `headers` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |

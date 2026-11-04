@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 186**.
+Graded: **13 of 187**.
 
 ## data — 3 of 63
 
@@ -127,7 +127,7 @@ Graded: **13 of 186**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 69
+## api — 6 of 70
 
 ### `ctx` and the call
 
@@ -242,6 +242,7 @@ Graded: **13 of 186**.
 | A battery names a vendor in a comment and never in a call | **none** |
 | Nothing here mocks a module, and the reason is a design rule. | **none** |
 | A test may not name a port, and the reason is the runner. | `test-port-literal` |
+| The shutdown budgets live inside the container's stop grace, and a stated one that reaches it refuses the boot | **none** |
 
 ## ui — 4 of 54
 

@@ -193,8 +193,14 @@ export function applyWal(/** @type {any} */ db, /** @type {any} */ timeout) {
  * open, so `reclaimFreePages` would be a silent no-op for the life of the file.
  * A file that already exists keeps its mode; changing it is a full VACUUM,
  * which is a blocking rewrite and the operator's call.
+ *
+ * The mode is read first and written only when it is not already set: the
+ * assignment is a write transaction even on a file that has the mode, so a
+ * second process opening beside a writer waited out `busyTimeout` and threw
+ * SQLITE_BUSY out of `createClient` (`FJS-3914`). A read takes no lock.
  */
 export function applyIncrementalVacuum(/** @type {any} */ db) {
+  if (db.query('PRAGMA auto_vacuum').get()?.auto_vacuum === 2) return
   db.run('PRAGMA auto_vacuum = INCREMENTAL')
 }
 

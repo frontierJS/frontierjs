@@ -198,6 +198,13 @@ export function createVitals({
   }
 
   return {
+    /** The kernel's id for this boot, which changes exactly when the machine
+     *  restarts. `null` when unreadable: a box that cannot say is not a box
+     *  that did not reboot, and the caller must not treat the two alike. */
+    async bootId() {
+      try { return (await readText('/proc/sys/kernel/random/boot_id')).trim() || null } catch { return null }
+    },
+
     /**
      * One reading of each. Every value is asked for independently and a failure
      * is an ABSENT key rather than a zero — a machine whose `/proc` this build

@@ -1151,12 +1151,12 @@ export async function cmdStudio(cfg) {
           return json(deriveAccess(currentSchemaParse().schema))
         }
 
-        // The Models view's Layers tab: groups, depths and all three floors,
+        // The Models view's Clusters tab: groups, depths and all three floors,
         // computed here so the page carries no layout code of its own.
         if (path === '/api/schema-layers')
           return json(schemaLayers(currentSchemaParse().schema))
 
-        // Each model's measured size for the Layers tab, indexes and overflow
+        // Each model's measured size for the Clusters tab, indexes and overflow
         // pages included: a 100 KB text column lives almost wholly in overflow,
         // so leaf pages alone read it as 3 KB. Asked for only while the tab's
         // size toggle is on, since dbstat reads every page.

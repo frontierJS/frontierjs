@@ -13,6 +13,7 @@
 import type { App } from '@frontierjs/junction'
 import { announce } from '../../core/channels.ts'
 import { adoptContainerPort } from './runtime.ts'
+import type { DeploySwap } from '#db/schema.d.ts'
 
 /**
  * The step that replaces what is serving. A release that stopped at or before
@@ -129,11 +130,12 @@ export async function sweepStuckReleases(app: App, now = Date.now()): Promise<st
   return failed
 }
 
-/** One step's status. `digest` and `commit` are what the machine reported
- *  running; `containerPort` is what its Dockerfile said, for an App that
- *  stores none. */
-export async function recordStep(app: App, deploy: Row, { stepId, status, output, digest, commit, containerPort }:
-  { stepId: string, status: string, output?: string, digest?: string, commit?: string, containerPort?: number }) {
+/** One step's status. `digest`, `commit` and `swap` are what the machine
+ *  reported running; `containerPort` is what its Dockerfile said, for an App
+ *  that stores none. */
+export async function recordStep(app: App, deploy: Row, { stepId, status, output, digest, commit, containerPort, swap, swapReason }:
+  { stepId: string, status: string, output?: string, digest?: string, commit?: string, containerPort?: number,
+    swap?: DeploySwap, swapReason?: string | null }) {
   // Addressed by the deployment as well as the step, so a step id from
   // another release cannot be moved through here.
   await sys(app).deploymentStep.updateMany({
@@ -153,6 +155,7 @@ export async function recordStep(app: App, deploy: Row, { stepId, status, output
   const ran: Row = {}
   if (digest && digest !== deploy.builtImage) ran.builtImage = digest
   if (commit && commit !== deploy.commitSha)  ran.commitSha  = commit
+  if (swap) Object.assign(ran, { swap, swapReason: swapReason ?? null })
   if (Object.keys(ran).length) await sys(app).deployment.update({ where: { id: deploy.id }, data: ran })
   // On the App, never the snapshot, which is @immutable: a rollback to this
   // release reads the App's for a snapshot that holds none (`runtimeFor`).

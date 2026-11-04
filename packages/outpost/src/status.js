@@ -96,7 +96,7 @@ export async function readStatus({ env = process.env } = {}) {
 
   const [units, containers, routes, replication, vitals, disk, posture] = await Promise.all([
     take(() => inspector.units()),
-    take(() => inspector.containers()),
+    take(() => inspector.runtime()),
     take(() => ingress.routes()),
     take(() => replicator.status()),
     take(() => createVitals({ apps: () => inspector.appContainers() }).read()),

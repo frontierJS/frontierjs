@@ -172,6 +172,7 @@ const runCmd = [
   // Same cap as a real deploy. A test container that runs for a week is the
   // one nobody is watching the disk for.
   ...dockerLogArgs(frontierConfig?.deploy),
+  ...stopGraceArgs(frontierConfig?.deploy),
   tag,
 ].filter(Boolean).join(' ')
 

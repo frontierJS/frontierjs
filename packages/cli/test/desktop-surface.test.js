@@ -431,6 +431,11 @@ describe('--sidecar: the shell starts its own API', () => {
       'glib::set_application_name("shop")',           // FJS-3966: the tray's title
       '.title("shop")',
     ]) expect(main, piece).toContain(piece)
+    // FJS-3961: the API's files get their own directory per profile, never the
+    // identifier's directory itself, which the webview's storage shares.
+    expect(main).toContain('fn api_data_dir(')
+    expect(main).toMatch(/if cfg!\(debug_assertions\) \{ "api-debug" \} else \{ "api" \}/)
+    expect(main).not.toMatch(/let data = app\.path\(\)\.app_data_dir\(\)/)
     // Debug-only, as in the shell this was lifted from.
     expect(main).toMatch(/#\[cfg\(debug_assertions\)\]\n#\[tauri::command\]\nfn probe_close/)
     expect(main).toMatch(/fn break_restarts\(\) -> bool \{\n    cfg!\(debug_assertions\) &&/)
@@ -450,6 +455,17 @@ describe('--sidecar: the shell starts its own API', () => {
       const r = spawnSync('bun', ['build', '--no-bundle', join(root, 'desktop', f)], { encoding: 'utf8' })
       expect(r.status, `${f}: ${r.stderr}`).toBe(0)
     }
+  })
+
+  // FJS-3970: a fresh copy has no node_modules; the copy step named no cause.
+  test('a dependency that is not installed is refused by name, saying to install', () => {
+    const root = appRoot('side-noinstall', { ...API, 'package.json': JSON.stringify({ name: 'shop', dependencies: { 'jpeg-js': '^0.4.4' } }) })
+    scaffoldDesktopSurface({ root, appName: 'shop', wraps: 'web', sidecar: true })
+    const r = spawnSync('bun', [join(root, 'desktop', 'sidecar', 'make-sidecar.ts')], { cwd: root, encoding: 'utf8', timeout: 60000 })
+    expect(r.status).not.toBe(0)
+    expect(r.stderr).toContain("make-sidecar: 'jpeg-js' is not installed")
+    expect(r.stderr).toContain('bun install')
+    expect(r.stderr).not.toContain('ENOENT')
   })
 })
 

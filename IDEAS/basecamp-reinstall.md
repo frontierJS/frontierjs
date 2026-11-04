@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — back up, restore and reinstall Basecamp from one terminal
 
-**Status: PROPOSED. Ruled: `FJS-D1848`–`FJS-D1851`, Q1–Q4 as `FJS-D1852`–`FJS-D1855`; nothing is built.** Probed against
+**Status: PROPOSED. Ruled: `FJS-D1848`–`FJS-D1851`, Q1–Q4 as `FJS-D1852`–`FJS-D1855`; Phase 0, 1.1 and 1.2 done, 1.3 next.** Probed against
 the tree 2026-11-03. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): a `basecamp:reinstall` that does retire and install together and
@@ -54,15 +54,45 @@ so every restore-mode reinstall is also a restore drill.
 Goal: each command's reused half is named, and the archive check runs on a laptop.
 Done when: `archiveRefusals` refuses a pre-squash archive from a laptop, against HEAD's migrations.
 
-- [ ] 0.1 Name what `deploy:retire` and `basecamp:install` expose for reuse — steps called with
+- [x] 0.1 Name what `deploy:retire` and `basecamp:install` expose for reuse — steps called with
       answers, or the commands run as children — and which prompts each would ask that reinstall
       has already answered.
-- [ ] 0.2 A script fli runs by path (the `enroll-host.ts` precedent) over `archiveRefusals`:
+      **Retire runs as a child**, `runFli(['deploy:retire', '--production', '--server', dest,
+      '--approved'])` from `commands/basecamp/_module.md`: it lives in the `deploy` namespace,
+      `--server` is that namespace's flag, and its one prompt is the typed app id
+      (`_steps-retire/01-preflight.md`), which `--approved` skips. So reinstall declares
+      `confirm: human` itself, and its typed confirmation is what licenses that `--approved`.
+      **Install's helpers are already in-process**: `ringZero`, `adminThenFleet`, `zoneRefusal`,
+      `pointHost`, `turnOffUnneeded` and `offerProxy` are in the `basecamp` namespace module. Its
+      questions are inline in `install.md`'s body: admin email, password, Outpost, fwupd/multipathd,
+      the Cloudflare token paste inside `zoneRefusal`, and the proxy flip after. 3.2 lifts them into
+      an `askInstall` → answers / `runInstall(answers)` pair that `install.md` and `reinstall.md`
+      both call, rather than a second copy. **Restore mode skips `makeAdmin`**: `/setup` answers 409
+      once an admin exists, so the restore posts in its place and `joinFleet` runs after the restore.
+- [x] 0.2 A script fli runs by path (the `enroll-host.ts` precedent) over `archiveRefusals`:
       archive dir, key, migrations root in; reasons out. Confirm what `/setup`'s
       `stageHubArchive` passes for the key and the install id, since its opts carry only
       `migrationsRoot`.
-- [ ] 0.3 What `hub-backups.take` needs: the API key's scope, whether `basecamp:key --scopes admin`
+      `basecamp/api/src/domain/backup/check-archive.ts`: JSON argv `{ dir, keyFile, migrationsRoot }`,
+      with the last stdout line `{ ok, takenAt, installId }`, `{ refused }` or `{ error }`. It checks
+      a scratch copy, because `archiveRefusals` gives a database with no tracking table one, and
+      that write would make the backup fail its own sha256 the next time. `stageHubArchive` passes
+      neither: the key is the running process's `ENCRYPTION_KEY`, and the install id is unchecked.
+      That is right for a fresh box. Proved against the 2026-10-28 archive in `db/backups/`: refused
+      for `initial_schema.sql` as it read before it was rewritten, refused under the development key,
+      and the archive's `main.db` sha256 unchanged.
+- [x] 0.3 What `hub-backups.take` needs: the API key's scope, whether `basecamp:key --scopes admin`
       covers it, and where the archive lands on a hub with no backup destination.
+      `hubBackups:write` for `take`, and `hubBackups:read` for `find`, `get` and `download`. A key
+      is built through auth's `toContext` like a session, so it carries its holder's
+      `isSystemAdmin`, and `requireSystemAdmin()` answers 404 for a holder without it.
+      `basecamp:key` picks its holder among workspace owners and admins, not sysadmins, so 1.2
+      names the 404 as "the key's holder is not a sysadmin". The `/setup` admin is one. `take`
+      refuses with 400 when the hub has no App row, which only an enrolled box gets (`useHost` →
+      `placeHub`), so a `--no-outpost` Basecamp takes 1.3's ssh path. With no destination, the
+      archive lands in `backups/` beside the live database, and `download` answers a five-minute
+      signed `GET /backup-archive/{id}`. Retire without `--keep-data` deletes that directory, so
+      the copy must be on the laptop first.
 
 ### Phase 1 — `basecamp:backup` is Basecamp's
 
@@ -70,9 +100,19 @@ Goal: one command leaves Basecamp's current state on the laptop, checked.
 Done when: run against yuma, the archive is under `~/.local/share/fli/basecamp/yuma/<stamp>/` and its
 manifest's sha256 agree.
 
-- [ ] 1.1 `db:download` takes an App's archive alone (`FJS-D1848`): confirm it covers `--take`,
+- [x] 1.1 `db:download` takes an App's archive alone (`FJS-D1848`): confirm it covers `--take`,
       add it if not, and remove the App body from `basecamp:backup`.
-- [ ] 1.2 Take and fetch through the API — `hub-backups.take`, poll, `download` — and check sha256.
+      It did not: `db:download --take` passes `take` to `pullAppArchive`, and refuses with no
+      `BASECAMP_APP_ID`, since the ssh copy is already the live file. The App body and its
+      `--app`/`--take` flags are gone from `basecamp:backup`.
+- [x] 1.2 Take and fetch through the API — `hub-backups.take`, poll, `download` — and check sha256.
+      `pullHubArchive` in `cli/core/basecamp.js`: the destination from `hubConfig.current` (a 404
+      there is no settings saved, so the disk; a 404 from `hubBackups.find` first is the sysadmin
+      refusal), `take`, poll `get` until settled, `download`, and the tar's sha256 when the bucket
+      recorded one. A local archive is tarred as it streams and has none, so every unpacked file
+      is checked against `manifest.json`. Proved on yuma 2026-11-03: archive under
+      `~/.local/share/fli/basecamp/yuma/<stamp>/`, three files matching, and 0.2's script refuses
+      it only for the key.
 - [ ] 1.3 The ssh fallback when the API does not answer: the db directory, the audit trail and
       `.env.production`, marked raw so restore knows `/setup` cannot take it.
 - [ ] 1.4 The key, asked at each backup (`FJS-D1852`): a mode-600 file under
