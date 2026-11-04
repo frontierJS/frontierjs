@@ -203,15 +203,39 @@ Done when: yuma is reinstalled in fresh mode and a throwaway box built at HEAD i
       `restore.md`, and `backUpFirst` calls them. A raw fallback refuses restore mode. Fresh mode
       with no key copy refuses unless `--new-key`, which is also Q2's "a new one only when asked". It is
       refused with restore mode, since an archive opens only under the key it was taken with.
-      The run stops after 3.3 until 3.4 lands. Open: a run on yuma, which takes a real backup.
+      `takeBackup` also answers the key's value, so fresh mode carries a key that was only printed.
+      Open: a run on yuma, which takes a real backup.
 - [ ] 3.4 Retire with the bare Outpost uninstall. Purge only on its own flag, with the apps it
       removes named and typed.
+      Built: `retire` runs `deploy:retire --production --approved` as a child, licensed by the typed
+      box name. `--purge` lists every other container before the run and takes `purge` typed, then
+      runs `outpost-uninstall --purge --yes` after the retire; a box with no uninstaller warns and
+      the install goes on. Open: a run on a box.
 - [ ] 3.5 Install, with the key per Q2, and the Cloudflare token asked once for both jobs —
       Basecamp's own record, then the provider key and ingress zone per Q4, so the checklist's DNS
       step is done before login.
+      Built: `seedBoxKey` writes the carried key to `secrets/ENCRYPTION_KEY` between the retire and
+      `deploy:setup`, whose 03-directories leaves a key it finds: the old box's, the archive's in
+      restore mode, or a `--new-key` one filed off the box before the retire. Q4 is `askIngress` in
+      the module, asked before the run in fresh mode: `host-record.ts`'s check now answers the
+      token's zones, the hostname's is the default, and more than nine are typed by name. The writes
+      are `keepEdge` after the API key is minted — `POST /secrets` and `PATCH /workspaces/<id>` from
+      the box over ssh stdin, so the token sits in no argv. `runInstall` answers `{ code, installed }`,
+      so a failed record does not read as a failed install. Proved: the zone check against
+      Cloudflare answered 20 zones and `kobami.cloud` for the hostname. Open: `keepEdge` against a
+      real new Basecamp.
 - [ ] 3.6 Restore mode: Phase 2 on the new box.
+      Built: restore's `emptyOnBox`, `boxRunsKey`, `swapIn` and `reportFindings` moved into the
+      module, and `restoreOnto` runs them, then `deploy:outpost`. Found here: a restored host row
+      has heartbeated, so `enroll-host.ts` answered *in the fleet already* and installed nothing on
+      a box with no Outpost — `FJS-4010`, fixed by `fli deploy` reporting a missing `outpost.service`
+      and `useHost` re-issuing for it. Open: the throwaway box run (`FJS-D1883`).
 - [ ] 3.7 After: `basecamp:key` re-mints `BASECAMP_API_KEY`, the old App ids and names are printed
       for the owner to find (`FJS-D1854`), and `infra.launch`'s steps are printed.
+      Built: fresh mode mints with `adminKey` (which now answers the token), keeps the Cloudflare key,
+      and prints the old Apps; restore mode mints nothing, since the old key opens the restored hub
+      again, and reports what it hears. Both print `infra.launch` read through `deploy:repl`. Open:
+      both runs.
 
 ### Phase 4 — Runbook
 

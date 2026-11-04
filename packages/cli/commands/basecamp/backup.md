@@ -74,7 +74,6 @@ download cut short, is listed as unreadable rather than left out.
 <script>
 const { basename, join } = await import('node:path')
 const { existsSync, readdirSync } = await import('node:fs')
-const { ageOf }       = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
 const { formatBytes } = await import('@frontierjs/toolbelt/units')
 
 /** The boxes `--list` reads: `--out` alone, the one named, or every box with a directory. */

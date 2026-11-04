@@ -83,13 +83,12 @@ describe('the fragment', () => {
 
     await sys.release.create({ data: {
       id: 'rel_1', app: 'shop', environment: 'production',
-      configurationHash: 'bh1', generation: 1, schemaHash: 'sh1', pivot: 'expand',
+      configurationHash: 'bh1', generation: 1, schemaHash: 'sh1',
     } })
 
     const [row] = await sys.release.findMany()
     expect(row.id).toBe('rel_1')
     expect(row.audienceKey).toBe('everyone')   // the column that exists before its feature
-    expect(row.isPivotDeclared).toBe(false)
   })
 
   // Two constraints say one rule, and each refuses a different mistake: the

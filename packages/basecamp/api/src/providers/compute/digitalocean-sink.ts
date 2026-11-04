@@ -92,9 +92,25 @@ let nextId = 1000
  *  Absent is off, which is how a droplet created without `backups: true` is. */
 const BACKUPS = new Map<string, Record<string, unknown>>()
 
-/** A token scoped without `image:read`: the droplet reads, its backups 403. */
-let backupsRefused = false
-export function sinkRefuseBackups(on = true): void { backupsRefused = on }
+/** A custom-scoped token missing one scope: the requests that need it 403,
+ *  the rest answer. Null is a full-access token. */
+let missingScope: string | null = null
+export function sinkRefuseScope(scope: string | null): void { missingScope = scope }
+const DENIED = () => json({ id: 'forbidden', message: 'You are not authorized to perform this operation' }, 403)
+
+/** Droplet id → its actions, newest first, as `GET …/actions` lists them. */
+const ACTIONS = new Map<string, Record<string, unknown>[]>()
+let nextActionId = 1
+
+/** A real DO answers a backup change before it applies it. While held, one
+ *  is answered `in-progress` and the policy read keeps the old state until
+ *  `sinkSettleBackups()`. */
+let holding = false
+const unsettled: { action: Record<string, unknown>; apply: () => void }[] = []
+export function sinkHoldBackups(on = true): void { holding = on }
+export function sinkSettleBackups(): void {
+  for (const { action, apply } of unsettled.splice(0)) { apply(); action.status = 'completed' }
+}
 
 /** Reset between tests. A stand-in that accumulates state across a suite makes
  *  *how many machines did this create* unanswerable, which is the one question
@@ -104,8 +120,12 @@ export function resetSink(): void {
   KEYS.length    = 0
   RESERVED.clear()
   nextId = 1000
-  backupsRefused = false
+  missingScope = null
   BACKUPS.clear()
+  ACTIONS.clear()
+  nextActionId = 1
+  holding = false
+  unsettled.length = 0
   for (const id of [...DROPLETS.keys()]) if (id !== '901') DROPLETS.delete(id)
 }
 
@@ -262,7 +282,7 @@ export function startDoSink(port = PORT) {
       if (backups && req.method === 'GET') {
         const row = DROPLETS.get(decodeURIComponent(backups[1]))
         if (!row) return json({ id: 'not_found', message: 'The resource you requested could not be found.' }, 404)
-        if (backupsRefused) return json({ id: 'forbidden', message: 'You are not authorized to perform this operation' }, 403)
+        if (missingScope === (backups[2] ? 'droplet:read' : 'image:read')) return DENIED()
         const kept = BACKUPS.get(String(row.id))
         return backups[2]
           ? json({ policy: { droplet_id: row.id, backup_enabled: Boolean(kept), ...(kept && { backup_policy: kept }) } })
@@ -270,9 +290,17 @@ export function startDoSink(port = PORT) {
       }
 
       const action = url.pathname.match(/^\/v2\/droplets\/([^/]+)\/actions$/)
+      if (action && req.method === 'GET') {
+        const row = DROPLETS.get(decodeURIComponent(action[1]))
+        if (!row) return json({ id: 'not_found', message: 'The resource you requested could not be found.' }, 404)
+        if (missingScope === 'actions:read') return DENIED()
+        const listed = ACTIONS.get(String(row.id)) ?? []
+        return json({ actions: listed, links: {}, meta: { total: listed.length } })
+      }
       if (action && req.method === 'POST') {
         const row  = DROPLETS.get(decodeURIComponent(action[1]))
         if (!row) return json({ id: 'not_found', message: 'The resource you requested could not be found.' }, 404)
+        if (missingScope === 'droplet:update') return DENIED()
         const body = ((await req.json().catch(() => null)) ?? {}) as Record<string, unknown>
         const type = String(body.type ?? '')
         const id   = String(row.id)
@@ -286,16 +314,24 @@ export function startDoSink(port = PORT) {
         // has been read, and a connector sending the wrong action fails here.
         const refuse = (message: string) => json({ id: 'unprocessable_entity', message }, 422)
 
-        if (type === 'power_off') row.status = 'off'
+        if (unsettled.some(h => String(h.action.resource_id) === id)) return refuse('Droplet already has a pending event.')
+
+        let apply: () => void
+        if (type === 'power_off') apply = () => { row.status = 'off' }
         else if (type === 'enable_backups') {
           if (BACKUPS.has(id)) return refuse('Droplet already has backups enabled.')
-          keep()
+          apply = keep
         } else if (type === 'change_backup_policy') {
           if (!BACKUPS.has(id)) return refuse('Droplet does not have backups enabled.')
-          keep()
-        } else if (type === 'disable_backups') BACKUPS.delete(id)
+          apply = keep
+        } else if (type === 'disable_backups') apply = () => { BACKUPS.delete(id) }
         else return refuse(`action ${type} is not in this sink`)
-        return json({ action: { id: 3, type, status: 'in-progress' } }, 201)
+
+        const made = { id: nextActionId++, type, status: 'in-progress', resource_id: row.id, resource_type: 'droplet' }
+        ACTIONS.set(id, [made, ...(ACTIONS.get(id) ?? [])])
+        if (holding && type !== 'power_off') unsettled.push({ action: made, apply })
+        else { apply(); made.status = 'completed' }
+        return json({ action: { ...made } }, 201)
       }
 
       const droplet = url.pathname.match(/^\/v2\/droplets\/([^/]+)$/)

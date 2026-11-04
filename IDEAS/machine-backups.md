@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — a cloud's own whole-machine backups, seen and switched from Basecamp
 
-**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1–1.3 and 2.1 built; 2.2 next.** Probed against the tree 2026-11-03. Do not cite
+**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1–1.3, 2.1–2.3 and 2.2a built; 2.4 next.** Probed against the tree 2026-11-03. Do not cite
 this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): see in Basecamp whether a DigitalOcean droplet's backups are on,
@@ -166,14 +166,46 @@ back at the next sync with a `backupsRestored` event.
       never heard of the machine, as `powerOff`. Both sinks keep a policy per machine; DO's
       refuses an enable on an enabled droplet, which no real answer has shown. The write sends
       `weekday` and is unproven against DO until Phase 2's push on yuma.
-- [ ] 2.2 `servers.setBackups`, gated like `powerOff`, writes the desired policy, pushes it, re-reads,
+- [x] 2.2 `servers.setBackups`, gated like `powerOff`, writes the desired policy, pushes it, re-reads,
       and records an event naming the new policy. Setting it to *not managed* pushes nothing.
-- [ ] 2.2a `sync` pushes a managed policy back when the reading differs (`FJS-D1862`), and records
+      Built 2026-11-04. Input `ServerSetBackups { choice on|off|unmanaged, plan, hour, weekday }`;
+      Off leaves the machine not managed (`FJS-D1885`). At ADMINISTRATOR, the weight of
+      `provision` and `destroy`, since `powerOff` is no service method. The vendor is told
+      FIRST and the policy stored after it accepts, so a refused one is never what `sync`
+      pushes; `ComputeConnector.unheldBackups` answers the refusal as a 400 before anything
+      is sent. The column is written with `system: ['backupPolicy']`, not `asSystem()`, so
+      the gate and `@@capabilities` still hold. Event `backupsSet`, migration
+      `20261104182613_machine_backups_set`. The Server card has the switch (DO asks the hour,
+      Hetzner neither hour nor weekly); `verify:provision` turns it on weekly and off, read
+      back. A DO action not applied yet reads as the old state until the next sync, which
+      2.2a must not read as drift to push again.
+- [x] 2.2a `sync` pushes a managed policy back when the reading differs (`FJS-D1862`), and records
       an event naming what the vendor said and what was put back, so a console change is never
       undone silently. A push the vendor refuses is recorded once per sync and not retried within
       it. Hetzner has no hour or weekly plan, so a policy it cannot hold is refused when it is set.
       A null `hour` is the vendor's choice and is never compared.
-- [ ] 2.3 A vendor 403 names the missing scope (`droplet:update`); the cli's scope list gains it.
+      Built 2026-11-04. A change still applying is not drift (`FJS-D1888`): `MachineBackups.pending`
+      is a backup action running at the vendor, DO's `/actions` `in-progress` or Hetzner's
+      `/actions?status=running`, and `sync` neither compares nor pushes while it holds.
+      `keepsPolicy()` in `providers/compute/index.ts` is the one comparison. `restoreBackups`
+      records `backupsRestored` (*DigitalOcean had machine backups off; put back daily at 20:00
+      UTC*, `metadata.found` the vendor's word) or `backupsRestoreFailed`, migration
+      `20261104191248_machine_backups_restored`. Both sinks hold an action open
+      (`sinkHoldBackups` / `hzSinkHoldBackups`) and refuse a second ask meanwhile, DO's 422
+      *pending event* and Hetzner's 423 *locked*; the card says *a change is still applying*.
+      `verify:provision` turns backups off at the stand-in behind the app's back and a Sync puts
+      them back on the open page. The DO read needs `actions:read`, which 2.3's scope list
+      names beside `droplet:update`.
+- [x] 2.3 A vendor 403 names the missing scope (`droplet:update`, `actions:read`); the cli's scope list gains them.
+      Built 2026-11-04. DO's 403 says only *not authorized*, so each request names the scope it
+      needed: the policy read `droplet:read`, the taken list `image:read`, the action list
+      `actions:read`, a switch `droplet:update`. Hetzner has only Read and Read & Write, so a 403
+      on any write says the token needs Read & Write. `backupsReadFailed` and
+      `backupsRestoreFailed` end their sentence with the vendor's reason, and a refused
+      `setBackups` is a 502 carrying it (`apps`'s `BadGateway`), not a bare 500. The DO sink's
+      `sinkRefuseScope(scope)` refuses the requests that need one scope. `server/_module.md`
+      lists `droplet` update and `actions` read. Unproven: that a real scoped token's 403 is
+      the one the sink answers.
 - [ ] 2.4 Off asks before it acts, with the count of taken backups the vendor deletes with it.
 
 ### Phase 3 — Asked at create

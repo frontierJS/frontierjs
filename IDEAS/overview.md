@@ -734,6 +734,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `demo-box.md` — the demo box: one shared Basecamp + Outpost, a 24-hour demo Workspace per visitor, the site streams `fli basecamp:demo <name>`
 - `agent-client-ui.md` — a Resource rendered inside the agent's client: MCP Apps and A2UI as Mesa targets
 - `api-ontology.md` — the API realm's primitives: the words Junction spells and no register defines
+- `box-ssh-keys.md` — whose SSH key a new box carries: `fli` boxes get the runner's key, API-made boxes get none, and `sshKeyId` only grades; Q1 install it at create
 - `box-health.md` — the bottom two layers of a box reach Basecamp: container state and systemd units in the heartbeat, graded as posture controls, edges as events; a managed Monitor per App hostname
 - `basecamp-dogfood.md` — the last in-place schema rewrite, then append-only migrations (D1605); D1603–D1611 ruled; Q1 Account tier with the team, Phase 1 schema pass next
 - `browser-kit.md` — the ten browser APIs every app wraps by hand, wrapped once as signals; pure halves to toolbelt, signals to mesa

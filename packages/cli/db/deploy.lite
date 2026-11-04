@@ -30,7 +30,7 @@
 // models. The same line `auth.lite` and `outbox.lite` draw around machinery a
 // package owns and an application does not write.
 
-enum PivotKind        { expand contract unknown }
+enum PivotKind        { unchanged expand contract unknown }
 enum TransitionKind   { deploy revert pause unpause }
 enum TransitionStatus { planned running succeeded failed }
 enum StepStatus       { pending running succeeded failed skipped }
@@ -99,14 +99,6 @@ model Release {
 
   /// The release surface at this commit — what `db/release.snapshot.md` holds.
   schemaHash     String
-
-  pivot          PivotKind    @default(unknown)
-
-  /// Set when a person declared a pivot the schema cannot see, or overrode one
-  /// the classifier called. The second direction is the dangerous one and this
-  /// is where it is loud.
-  isPivotDeclared  Boolean      @default(false)
-  pivotFindings  Json         @default("[]")
 
   /// When this Release stops being a revert target. Every surveyed system put
   /// retention in a setting away from the object it bounds, so the promise
@@ -192,6 +184,16 @@ model Transition {
   /// than re-derived, because what matters afterwards is the answer the
   /// operator was shown and agreed to, not the answer a later classifier gives.
   isCrossingPivot  Boolean          @default(false)
+
+  /// Litestone's verdict on this transition's schema against the one the live
+  /// container migrated to, asked on the target once the image is built. On
+  /// the transition and not the Release: one content-addressed Release is an
+  /// expand after one predecessor and a contract after another, and a verdict
+  /// minted into the id against git HEAD named every deploy `unknown`
+  /// (`FJS-4004`). Null where nothing was asked or nothing was live.
+  pivot         PivotKind?
+  /// Why the verdict is null or `unknown`, in the classifier's words.
+  pivotReason   String?
 
   /// The steps as planned. `--plan` prints this and executes nothing, so the
   /// plan and the record are one object rather than two that can disagree.

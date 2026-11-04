@@ -8,9 +8,9 @@ description: Basecamp itself — make its box at a cloud, install it, point its 
 // `core/cloud.js`, shared with `fli server:*`; Basecamp's API and the Outpost
 // paste are `core/basecamp.js`, shared with `fli outpost:install`.
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, provisionScript, markHost,
-  cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine }
+  cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine, ageOf }
   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-const { basecamp, basecampAll, pullHubArchive, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, keyDirOf, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, pickArchive, checkArchive, asRootOn, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, pullHubArchive, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, keyDirOf, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, pickArchive, checkArchive, asRootOn, seedBoxKey, probeBox, putBoxKey, restartApi, probeUntil, stageOnBox, restoreFindings, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 
 // Basecamp's own hostname, the one `pointHost` points at the box.
@@ -38,17 +38,18 @@ const deployFiles = async (server) => {
 
 // Asked before the install, so a token that opens no zone holding the hostname
 // refuses before minutes of apt rather than after them. No token is not a
-// refusal — the record can come later. Answers `{ refusal, points }`, points
-// being the address Basecamp's record there holds now: null with none.
+// refusal — the record can come later. Answers `{ refusal, points, zone, zones }`,
+// points being the address Basecamp's record there holds now (null with none),
+// zone the one holding the hostname and zones every `{ id, name }` the token opens.
 const zoneRefusal = async ({ domain, log, echo, chalk }) => {
   if (!await cloudflareToken({ interactive: !!process.stdin.isTTY, say: (t) => log.warn(t) })) {
     log.warn(`No CLOUDFLARE_TOKEN: the install leaves ${domain} without a DNS record and prints the line that writes it`)
-    return { refusal: null, points: null }
+    return { refusal: null, points: null, zone: null, zones: [] }
   }
   const found = await hostRecord({ host: domain, check: true })
   if (found.error) return { refusal: `Cloudflare: ${found.error.replace(/^Cloudflare:\s*/, '')}`, points: null, rejected: /HTTP 40[13]|invalid access token/i.test(found.error) }
   echo(`  ${chalk.green('✓')} ${chalk.dim(`${found.zone} is at Cloudflare`)}\n`)
-  return { refusal: null, points: found.points ?? null }
+  return { refusal: null, points: found.points ?? null, zone: found.zone, zones: found.zones ?? [] }
 }
 
 // After a refusal that says the token itself is wrong: where it is read from
@@ -358,7 +359,7 @@ const keyName = async () =>
 // `create`'s key for the admin `/setup` just made, stored as `basecamp:key`
 // stores one. The token is printed only to a terminal: a run piped into a CI
 // log would keep a never-expiring admin credential in it. `yes` is create's
-// own, so `--yes` copies without asking. Answers false when none was minted.
+// own, so `--yes` copies without asking. Answers the token, or false when none was minted.
 const KEY_QUESTION = `Mint an admin API key for the first admin, stored as BASECAMP_API_KEY?`
 const adminKey = async ({ dest, admin, yes, log, echo, chalk }) => {
   const extra  = ['--server', dest]
@@ -373,14 +374,14 @@ const adminKey = async ({ dest, admin, yes, log, echo, chalk }) => {
   const { storeGlobal } = await import(new URL('file://' + global.fliRoot + '/core/global-env.js'))
   const file = storeGlobal('BASECAMP_API_KEY', made.token)
   echo`  {green ✓} {bold BASECAMP_API_KEY} {dim ${made.tokenHint ?? ''}} → ${file}`
-  if (!process.stdout.isTTY) return true
+  if (!process.stdout.isTTY) return made.token
 
   echo`  {dim api key } {bold ${made.token}}   {dim shown once — revoke it on the API keys screen if it leaks}\n`
-  if (!await yes('Copy it to the clipboard?', true)) return true
+  if (!await yes('Copy it to the clipboard?', true)) return made.token
   const { copyToClipboard, clipboardTools } = await import(new URL('file://' + global.fliRoot + '/core/clipboard.js'))
   if (copyToClipboard(made.token)) echo`  {green ✓} copied`
   else log.warn(`Could not copy — is ${clipboardTools() ?? 'a clipboard tool'} installed?`)
-  return true
+  return made.token
 }
 
 // ─── An install: the questions, then the run ──────────────────────────────────
@@ -391,9 +392,10 @@ const adminKey = async ({ dest, admin, yes, log, echo, chalk }) => {
 
 const questionLine = (chalk, q, hint) => `${chalk.cyan('?')} ${chalk.bold(q)}${hint ? chalk.dim(`  ${hint}`) : ''}`
 
-/** Answers `{ domain, configured, admin, password, outpost, unneeded }`, or
- *  `{ refusal, rejected }` before anything is installed. */
-const askInstall = async ({ flag, restore = false, asking = !!process.stdin.isTTY, tty, log, echo, chalk }) => {
+/** Answers `{ domain, configured, admin, password, outpost, unneeded, ingress }`,
+ *  or `{ refusal, rejected }` before anything is installed. `edge` asks Q4's
+ *  question (`FJS-D1855`); `ingress` is then the zone picked, or null. */
+const askInstall = async ({ flag, restore = false, edge = false, asking = !!process.stdin.isTTY, tty, log, echo, chalk }) => {
   const configured = (await webDomain()) || ''
   const asked = flag.domain || configured
   if (!asked) return { refusal: `Installing needs Basecamp's hostname: Caddy routes by it and fetches its certificate. Pass --domain` }
@@ -419,21 +421,50 @@ const askInstall = async ({ flag, restore = false, asking = !!process.stdin.isTT
   const unneeded = !asking || await yes(UNNEEDED_QUESTION)
   unneededKept(unneeded, outpost, log)
 
-  const { refusal, rejected } = await zoneRefusal({ domain, log, echo, chalk })
+  const { refusal, rejected, zone, zones } = await zoneRefusal({ domain, log, echo, chalk })
   if (refusal) return { refusal, rejected }
-  return { domain, configured, admin, password, outpost, unneeded }
+  if (!edge || restore) return { domain, configured, admin, password, outpost, unneeded }
+  const ingress = zones.length ? await askIngress({ zone, zones, asking, tty, echo, chalk }) : null
+  return { domain, configured, admin, password, outpost, unneeded, ingress }
+}
+
+// The install's token kept as Basecamp's own Cloudflare provider key, and a zone
+// it opens made the ingress zone, so the checklist's DNS step is done at the
+// first login. Yes and the hostname's zone are what Enter and --yes take; the
+// token may be scoped to Basecamp's zone alone, which is why it is asked.
+const INGRESS_QUESTION = `Keep the Cloudflare token as Basecamp's provider key, for app records?`
+const askIngress = async ({ zone, zones, asking, tty, echo, chalk }) => {
+  const named = zones.find(z => z.name === zone) ?? zones[0]
+  if (!asking) return { zoneId: named.id, zoneName: named.name }
+  if (await tty.keys(questionLine(chalk, INGRESS_QUESTION), { y: 'yes', n: 'no' }) !== 'y') return null
+  if (zones.length === 1) return { zoneId: named.id, zoneName: named.name }
+  const q = 'Which zone do app records go in?'
+  if (zones.length <= 9) {
+    const shown  = [named, ...zones.filter(z => z !== named)]
+    const picked = await tty.keys(questionLine(chalk, q), Object.fromEntries(shown.map((z, i) => [String(i + 1), z.name])))
+    const z = shown[Number(picked) - 1] ?? named
+    return { zoneId: z.id, zoneName: z.name }
+  }
+  for (;;) {
+    const typed = (await tty.line(`${questionLine(chalk, q, `Enter: ${named.name} · ${zones.length} zones open to the token`)}\n  ${chalk.cyan('›')}`)).trim().toLowerCase()
+    const z = typed ? zones.find(z => z.name === typed) : named
+    if (z) return { zoneId: z.id, zoneName: z.name }
+    echo(chalk`  {yellow ${typed}} {dim is not a zone the token opens}`)
+  }
 }
 
 /** The answers as `[label, value]` rows, for the summary before the run. */
-const installRows = ({ domain, admin, password, outpost, unneeded }, chalk, restore = false) => [
+const installRows = ({ domain, admin, password, outpost, unneeded, ingress }, chalk, restore = false) => [
   ['hostname', domain],
+  ingress !== undefined && ['ingress', ingress ? `${ingress.zoneName} ${chalk.dim('— the token kept as a provider key, app records there')}` : chalk.dim('no')],
   admin && ['admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`],
   ['outpost', !outpost ? chalk.dim('no') : `yes ${chalk.dim(restore ? '— enrolled into the restored workspace' : '— fli deploy:outpost once the admin is made')}`],
   ['services', unneededRow(unneeded, chalk)],
 ].filter(Boolean)
 
-/** Install Basecamp on `dest` as answered. Answers the exit code: 0, or the
- *  first failure's. A record or proxy that failed fails the run and lets it finish. */
+/** Install Basecamp on `dest` as answered. Answers `{ code, installed }`: the
+ *  exit code, 0 or the first failure's, and whether Basecamp runs on the box. A
+ *  record or proxy that failed fails the run and lets it finish. */
 const runInstall = async (dest, answers, { restore = false, tty, log, echo, chalk }) => {
   const { domain, configured, admin, password, outpost, unneeded } = answers
   const asking = !!process.stdin.isTTY
@@ -446,7 +477,7 @@ const runInstall = async (dest, answers, { restore = false, tty, log, echo, chal
   if (failed) {
     log.error(`fli ${failed.argv.join(' ')} exited ${failed.status}. Fix what it said and run this again`)
     stages.stop()
-    return failed.status || 1
+    return { code: failed.status || 1, installed: false }
   }
   echo(chalk`  {green ✓} {bold Basecamp is on ${dest}}`)
   if (unneeded) await turnOffUnneeded(dest, '', log)
@@ -462,14 +493,14 @@ const runInstall = async (dest, answers, { restore = false, tty, log, echo, chal
   A later deploy, from packages/basecamp:
     fli deploy --server ${dest}${named}
 `
-  if (restore) { stages.stop(); return code }
+  if (restore) { stages.stop(); return { code, installed: true } }
 
   // An alias names the workspace after the box; a bare address has no name to give.
   const host = dest.split('@').pop()
   const workspace = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? 'basecamp' : host
   if (!await adminThenFleet({ dest, workspace, admin, password, log, echo, chalk, outpost, domain, later: ` --server ${dest}${named}`, tty, stage: stages.at })) code = 1
   stages.stop()
-  return code
+  return { code, installed: true }
 }
 
 // ─── Basecamp's backup, taken ─────────────────────────────────────────────────
@@ -497,15 +528,16 @@ const keepKeyCopy = async ({ server, key, host, how, attest, tty, log, echo, cha
 
 /** After an API backup: the box's key, attested only when the archive was
  *  taken under it. A key changed on the box without a restart is not the one
- *  the API still runs, which is the one the archive needs. */
+ *  the API still runs, which is the one the archive needs. Answers `{ keyKept, key }`. */
 const keepArchiveKey = async ({ server, origin, key, taken, how, tty, log, echo, chalk }) => {
   const files = await deployFiles(server)
   const boxKey = await readBoxKey(files).catch(err => { log.warn(`${err.message} — no copy of the key was kept`); return undefined })
-  if (boxKey === undefined) return null
+  if (boxKey === undefined) return { keyKept: null, key: null }
   const same = !!boxKey && new Bun.CryptoHasher('sha256').update(boxKey).digest('hex') === taken
   if (boxKey && !same) log.warn(`The key on ${files.host} is not the ${taken.slice(0, 12)} this archive was taken under — the API has not restarted since it changed. This archive needs that key; keeping the one on the box, unattested`)
   const attest = same ? (fingerprint) => attestKeyCopy({ origin, key, fingerprint }) : null
-  return await keepKeyCopy({ server, key: boxKey, host: files.host, how, attest, tty, log, echo, chalk })
+  const keyKept = await keepKeyCopy({ server, key: boxKey, host: files.host, how, attest, tty, log, echo, chalk })
+  return { keyKept, key: keyKept ? boxKey : null }
 }
 
 /** The ssh path, printed as raw so nobody mistakes it for an archive. */
@@ -519,14 +551,14 @@ const copyRaw = async ({ server, out, say, how, dry, tty, log, echo, chalk }) =>
   echo(chalk`  {green ✓} {bold Copied ${got.record.takenAt}} {dim into} ${got.dir}`)
   echo(chalk`    {dim ·} ${plural(Object.keys(got.record.copiedWith).length, 'database')} {dim copied with} ${ways}${got.record.files.some(f => f.path === '.env.production') ? chalk` {dim and the env file}` : ''}`)
   const keyKept = await keepKeyCopy({ server, key: got.key, host: files.host, how, attest: null, tty, log, echo, chalk })
-  return { kind: 'raw', dir: got.dir, takenAt: got.record.takenAt, keyKept }
+  return { kind: 'raw', dir: got.dir, takenAt: got.record.takenAt, keyKept, key: keyKept ? got.key : null }
 }
 
 /**
  * Take Basecamp's backup through its API, or over ssh when the API cannot or
- * `raw` asks. Answers `{ kind: 'archive' | 'raw', dir, takenAt, keyKept }` —
- * `keyKept` the fingerprint of the key copy now off the box, null with none —
- * or null after printing why there is none.
+ * `raw` asks. Answers `{ kind: 'archive' | 'raw', dir, takenAt, keyKept, key }` —
+ * `keyKept` the fingerprint of the key copy now off the box and `key` that key,
+ * both null with none — or null after printing why there is none.
  */
 const takeBackup = async ({ server, out, url, raw, how, dry, tty, log, echo, chalk }) => {
   const say = (line) => echo(chalk`  {dim ${line}}`)
@@ -549,9 +581,9 @@ const takeBackup = async ({ server, out, url, raw, how, dry, tty, log, echo, cha
   echo(chalk`  {green ✓} {bold Archive taken ${got.manifest.takenAt}} {dim unpacked into} ${got.dir}`)
   echo(chalk`    {dim ·} ${plural(got.manifest.files.length, 'file')} {dim match manifest.json}`)
   const taken = got.manifest.encryptionKeyFingerprint
-  const done = { kind: 'archive', dir: got.dir, takenAt: got.manifest.takenAt, keyKept: null }
+  const done = { kind: 'archive', dir: got.dir, takenAt: got.manifest.takenAt, keyKept: null, key: null }
   if (!taken) { echo(chalk`    {dim ·} {dim key} the development placeholder {dim — nothing to keep a copy of}\n`); return done }
-  return { ...done, keyKept: await keepArchiveKey({ server, origin, key, taken, how, tty, log, echo, chalk }) }
+  return { ...done, ...await keepArchiveKey({ server, origin, key, taken, how, tty, log, echo, chalk }) }
 }
 
 // ─── An archive, checked on this machine ──────────────────────────────────────
@@ -581,6 +613,75 @@ const checkHere = async ({ picked, keyFile, log, echo, chalk }) => {
   echo(chalk`    {dim ·} {dim from} ${picked.dir}`)
   echo(chalk`    {dim ·} {dim key} ${keyFile}`)
   return true
+}
+
+// ─── An archive, onto a Basecamp with no admin ────────────────────────────────
+// `restore` runs these onto an empty install, and `reinstall`'s restore mode
+// onto the one it just made.
+
+const sha256 = (text) => new Bun.CryptoHasher('sha256').update(text).digest('hex')
+
+/** A box whose Basecamp has an admin already is never overwritten. */
+const emptyOnBox = async ({ host, port, log, echo, chalk }) => {
+  const probe = await probeBox({ host, port })
+  if (!probe.needs_setup) {
+    log.error(`Basecamp on ${host} is set up already (${plural(probe.users, 'user')}, ${plural(probe.workspaces, 'workspace')}) — an archive only fills an empty one, so retire it and install again first`)
+    return false
+  }
+  echo(chalk`  {green ✓} {bold Basecamp on ${host} is empty} {dim — /setup is waiting}`)
+  return true
+}
+
+/** The box must run the archive's key before `/setup` will take the archive. */
+const boxRunsKey = async ({ files, port, container, key, say, echo, chalk }) => {
+  const boxKey = await readBoxKey(files)
+  if (boxKey && sha256(boxKey) === sha256(key)) { echo(chalk`    {dim ·} {dim the box runs the archive's key already}`); return }
+  say(`Writing the archive's key to ${files.secretsDir}/ENCRYPTION_KEY and restarting ${container}`)
+  await putBoxKey({ ...files, key })
+  await restartApi({ host: files.host, container })
+  await probeUntil({ host: files.host, port, until: () => true })
+  echo(chalk`    {dim ·} {dim the API restarted on the archive's key} ${sha256(key).slice(0, 12)}`)
+}
+
+/** Stage the archive, restart, and wait for the boot that swaps it in. */
+const swapIn = async ({ files, port, container, tar, say }) => {
+  say('Sending the archive to /setup/restore, which checks it again and stages it')
+  await stageOnBox({ host: files.host, port, tar })
+  say(`Restarting ${container}, which swaps the staged archive in before any database opens`)
+  await restartApi({ host: files.host, container })
+  const probe = await probeUntil({ host: files.host, port, until: (p) => p.restore !== 'staged' })
+  if (probe.restore !== 'done') throw new Error(`the restore ${probe.restore ?? 'did not run'}: ${probe.restore_message ?? 'no reason given'}`)
+  return probe
+}
+
+/** Each machine, and whether the restored hub has heard it. */
+const machineRows = (machines, chalk) => machines.map(m => m.beat
+  ? chalk`{green ✓} ${m.name}  {dim heard} ${ageOf(m.lastHeartbeatAt)} {dim ago}`
+  : chalk`{yellow ·} ${m.name}  {dim ${m.lastHeartbeatAt ? `not heard since the archive; last ${ageOf(m.lastHeartbeatAt)} ago` : 'never heard'}}`)
+
+const foundRows = (found, takenAt, chalk) => [
+  ...found.replicas.map(r => chalk`{cyan ·} ${r.name}  {dim replica synced} ${r.syncedAt ?? '?'} {dim — its screen offers the restore}`),
+  found.hubReplica && (Date.parse(found.hubReplica.syncedAt ?? '') > Date.parse(takenAt)
+    ? chalk`{yellow ·} {bold Basecamp's own replica}  {dim synced} ${found.hubReplica.syncedAt} {dim — newer than this archive; /hub/backups/ names the runbook for it}`
+    : chalk`{cyan ·} {bold Basecamp's own replica}  {dim synced} ${found.hubReplica.syncedAt ?? '?'} {dim — no newer than this archive}`),
+  ...found.archives.map(a => chalk`{cyan ·} ${a.app}  {dim archive} ${a.location} {dim (${a.status})}`),
+]
+
+/** Read the restored hub for its fleet and findings; the restore stands whatever this reads. */
+const reportFindings = async ({ origin, takenAt, log, echo, chalk }) => {
+  const key = process.env.BASECAMP_API_KEY
+  if (!key || !origin) { echo(chalk`    {dim ·} {dim set BASECAMP_API_KEY and --url or BASECAMP_URL to read which machines the restored hub hears and what it found}\n`); return }
+  echo(chalk`  {dim Reading} ${origin} {dim for its machines and what the reconcile found — up to a minute and a half}`)
+  const found = await restoreFindings({ origin, key, takenAt }).catch(err => err)
+  if (found instanceof Error) { log.warn(`The restore stands; what the hub found could not be read: ${found.message}`); return }
+  const heard = found.machines.filter(m => m.beat).length
+  echo(chalk`\n  {bold Fleet}  {dim ${heard} of ${plural(found.machines.length, 'enrolled machine')} heard since the archive}`)
+  echo.lines(machineRows(found.machines, chalk), { indent: 4 })
+  const rows = foundRows(found, takenAt, chalk).filter(Boolean)
+  echo(chalk`\n  {bold Found}  {dim ${rows.length ? plural(rows.length, 'thing') + ' in the buckets so far' : 'nothing in the buckets so far'}}`)
+  echo.lines(rows, { indent: 4 })
+  if (found.hubReplica === undefined) echo(chalk`    {dim · the key cannot read hubConfig, so Basecamp's own replica is unknown}`)
+  echo('')
 }
 
 </script>

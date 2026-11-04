@@ -14,7 +14,7 @@ import { readdirSync, readFileSync } from 'fs'
 import { resolve } from 'path'
 import {
   PLAN_FORMAT, stepFilesIn, stepNameOf, skipDecision, planSteps,
-  transitionId, planTransition, formatPlan,
+  transitionId, planTransition, formatPlan, crossesPivot,
 } from '../core/deploy-plan.js'
 import { extractFrontmatter } from '../core/compiler.js'
 
@@ -22,7 +22,6 @@ const RELEASE = {
   id: 'a1b2c3d4e5f6', app: 'shop', environment: 'production',
   digest: null, imageRef: null,
   configurationHash: 'b'.repeat(64), schemaHash: 'c'.repeat(64),
-  pivot: 'expand',
 }
 
 const STEPS = [
@@ -239,12 +238,25 @@ describe('the journal rows', () => {
 
   // Recorded rather than re-derived: what matters afterwards is the answer the
   // operator was shown, not the one a classifier gives once the schema moved on.
+  // The verdict is the transition's, asked of the target against what serves.
   test.each([
-    ['expand',   'expand',   false],
-    ['contract', 'contract', true],
-    ['unknown',  'unknown',  true],   // unknown counts as a contract
-  ])('%s → isCrossingPivot %s', (_l, pivot, expected) => {
-    expect(build({ ...RELEASE, pivot }).transition.isCrossingPivot).toBe(expected)
+    ['unchanged',                'unchanged', 'r1', false],
+    ['expand',                   'expand',    'r1', false],
+    ['contract',                 'contract',  'r1', true],
+    ['unknown',                  'unknown',   'r1', true],   // unknown counts as a contract
+    ['no verdict, something live', null,      'r1', true],   // a classifier that did not run proved nothing
+    ['a first deploy',           null,        null, false],  // nothing earlier to revert to
+    ['a first deploy, contract', 'contract',  null, false],
+  ])('%s → isCrossingPivot', (_l, pivot, fromReleaseId, expected) => {
+    expect(crossesPivot({ pivot, fromReleaseId })).toBe(expected)
+    const { transition } = planTransition({ release: RELEASE, fromReleaseId, pivot, pivotReason: 'why', steps: [] })
+    expect(transition.isCrossingPivot).toBe(expected)
+    expect(transition).toMatchObject({ pivot, pivotReason: 'why' })
+  })
+
+  // A pause moves no schema; its caller states the answer instead.
+  test('a stated isCrossingPivot wins over the derivation', () => {
+    expect(planTransition({ release: RELEASE, fromReleaseId: 'r1', isCrossingPivot: false }).transition.isCrossingPivot).toBe(false)
   })
 
   // The plan blob has to stand alone: 1e stores it and 1f reads it back, by
@@ -264,9 +276,9 @@ describe('the journal rows', () => {
 
 // ─── the report ──────────────────────────────────────────────────────────────
 
-const render = (release, config = { doApi: true }, findings = []) => {
+const render = (release, config = { doApi: true }) => {
   const plan = planTransition({ release, steps: plannedWith(config) })
-  return formatPlan({ ...plan, release, findings })
+  return formatPlan({ ...plan, release })
 }
 
 describe('what a person reads', () => {
@@ -284,37 +296,13 @@ describe('what a person reads', () => {
     expect(out).not.toContain('term of this id')
   })
 
-  test('an expand says the deploy can be taken back', () => {
+  // A plan reaches no server, and the verdict is relative to the schema the
+  // live container runs, so a laptop guess is what printed `unknown` under
+  // every deploy (`FJS-4004`).
+  test('the pivot is left to the target rather than guessed', () => {
     const out = render(RELEASE)
-    expect(out).toContain('expand')
-    expect(out).toContain('taken back')
-    expect(out).not.toContain('only forward')
-  })
-
-  test('a contract says only forward, and lists what made it one', () => {
-    const out = render({ ...RELEASE, pivot: 'contract' }, { doApi: true },
-      [{ severity: 'contract', subject: 'model Order', detail: '`paidAt` is required with no default' }])
-    expect(out).toContain('only forward')
-    expect(out).toContain('model Order')
-  })
-
-  // A refusal carrying its own way out is advice; one that does not is a wall.
-  test('where the classifier offered the split, the plan prints it', () => {
-    const out = render({ ...RELEASE, pivot: 'contract' }, { doApi: true }, [{
-      severity: 'contract', subject: 'model Order', detail: 'x',
-      plan: ['expand:   declare it optional', 'backfill: fill it', 'contract: declare it required'],
-    }])
-    expect(out).toContain('backfill: fill it')
-  })
-
-  test('unknown is rendered as the contract it counts as', () => {
-    expect(render({ ...RELEASE, pivot: 'unknown' })).toContain('counts as a contract')
-  })
-
-  test('an expand-only finding list is not printed under a contract heading', () => {
-    const out = render({ ...RELEASE, pivot: 'contract' }, { doApi: true },
-      [{ severity: 'expand', subject: 'model Order', detail: 'a new optional column' }])
-    expect(out).not.toContain('a new optional column')
+    expect(out).toContain('decided on the target at deploy time')
+    expect(out).not.toMatch(/Pivot\s+(expand|contract|unknown)/)
   })
 
   // A tag is not an identity, so an absent digest says so rather than showing

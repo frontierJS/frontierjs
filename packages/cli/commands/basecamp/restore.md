@@ -58,80 +58,12 @@ box's file names and no manifest, so it is put back by hand
 (`packages/basecamp/docs/backups.md` § 7, *The hub, by hand*).
 
 <script>
-const { ageOf }        = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
 const { apiContainer } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
-const { probeBox, putBoxKey, restartApi, probeUntil, stageOnBox, restoreFindings } =
-  await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
-
-const sha256 = (text) => new Bun.CryptoHasher('sha256').update(text).digest('hex')
-
-/** A box whose Basecamp has an admin already is never overwritten. */
-const emptyOnBox = async ({ host, port, log, echo, chalk }) => {
-  const probe = await probeBox({ host, port })
-  if (!probe.needs_setup) {
-    log.error(`Basecamp on ${host} is set up already (${plural(probe.users, 'user')}, ${plural(probe.workspaces, 'workspace')}) — an archive only fills an empty one, so retire it and install again first`)
-    return false
-  }
-  echo(chalk`  {green ✓} {bold Basecamp on ${host} is empty} {dim — /setup is waiting}`)
-  return true
-}
 
 const confirmed = async ({ host, takenAt, yes, tty, log, chalk }) => {
   if (yes) return true
   if (!tty.interactive) { log.error('Pass --yes to restore without a terminal to confirm on'); return false }
   return await tty.keys(chalk`{cyan ?} {bold Make Basecamp on ${host} the hub archived ${takenAt}?}`, { n: 'no', y: 'yes' }) === 'y'
-}
-
-/** The box must run the archive's key before `/setup` will take the archive. */
-const boxRunsKey = async ({ files, port, container, key, say, echo, chalk }) => {
-  const boxKey = await readBoxKey(files)
-  if (boxKey && sha256(boxKey) === sha256(key)) { echo(chalk`    {dim ·} {dim the box runs the archive's key already}`); return }
-  say(`Writing the archive's key to ${files.secretsDir}/ENCRYPTION_KEY and restarting ${container}`)
-  await putBoxKey({ ...files, key })
-  await restartApi({ host: files.host, container })
-  await probeUntil({ host: files.host, port, until: () => true })
-  echo(chalk`    {dim ·} {dim the API restarted on the archive's key} ${sha256(key).slice(0, 12)}`)
-}
-
-/** Stage the archive, restart, and wait for the boot that swaps it in. */
-const swapIn = async ({ files, port, container, tar, say }) => {
-  say('Sending the archive to /setup/restore, which checks it again and stages it')
-  await stageOnBox({ host: files.host, port, tar })
-  say(`Restarting ${container}, which swaps the staged archive in before any database opens`)
-  await restartApi({ host: files.host, container })
-  const probe = await probeUntil({ host: files.host, port, until: (p) => p.restore !== 'staged' })
-  if (probe.restore !== 'done') throw new Error(`the restore ${probe.restore ?? 'did not run'}: ${probe.restore_message ?? 'no reason given'}`)
-  return probe
-}
-
-/** Each machine, and whether the restored hub has heard it. */
-const machineRows = (machines, chalk) => machines.map(m => m.beat
-  ? chalk`{green ✓} ${m.name}  {dim heard} ${ageOf(m.lastHeartbeatAt)} {dim ago}`
-  : chalk`{yellow ·} ${m.name}  {dim ${m.lastHeartbeatAt ? `not heard since the archive; last ${ageOf(m.lastHeartbeatAt)} ago` : 'never heard'}}`)
-
-const foundRows = (found, takenAt, chalk) => [
-  ...found.replicas.map(r => chalk`{cyan ·} ${r.name}  {dim replica synced} ${r.syncedAt ?? '?'} {dim — its screen offers the restore}`),
-  found.hubReplica && (Date.parse(found.hubReplica.syncedAt ?? '') > Date.parse(takenAt)
-    ? chalk`{yellow ·} {bold Basecamp's own replica}  {dim synced} ${found.hubReplica.syncedAt} {dim — newer than this archive; /hub/backups/ names the runbook for it}`
-    : chalk`{cyan ·} {bold Basecamp's own replica}  {dim synced} ${found.hubReplica.syncedAt ?? '?'} {dim — no newer than this archive}`),
-  ...found.archives.map(a => chalk`{cyan ·} ${a.app}  {dim archive} ${a.location} {dim (${a.status})}`),
-]
-
-/** Read the restored hub for its fleet and findings; the restore stands whatever this reads. */
-const reportFindings = async ({ origin, takenAt, log, echo, chalk }) => {
-  const key = process.env.BASECAMP_API_KEY
-  if (!key || !origin) { echo(chalk`    {dim ·} {dim set BASECAMP_API_KEY and --url or BASECAMP_URL to read which machines the restored hub hears and what it found}\n`); return }
-  echo(chalk`  {dim Reading} ${origin} {dim for its machines and what the reconcile found — up to a minute and a half}`)
-  const found = await restoreFindings({ origin, key, takenAt }).catch(err => err)
-  if (found instanceof Error) { log.warn(`The restore stands; what the hub found could not be read: ${found.message}`); return }
-  const heard = found.machines.filter(m => m.beat).length
-  echo(chalk`\n  {bold Fleet}  {dim ${heard} of ${plural(found.machines.length, 'enrolled machine')} heard since the archive}`)
-  echo.lines(machineRows(found.machines, chalk), { indent: 4 })
-  const rows = foundRows(found, takenAt, chalk).filter(Boolean)
-  echo(chalk`\n  {bold Found}  {dim ${rows.length ? plural(rows.length, 'thing') + ' in the buckets so far' : 'nothing in the buckets so far'}}`)
-  echo.lines(rows, { indent: 4 })
-  if (found.hubReplica === undefined) echo(chalk`    {dim · the key cannot read hubConfig, so Basecamp's own replica is unknown}`)
-  echo('')
 }
 </script>
 

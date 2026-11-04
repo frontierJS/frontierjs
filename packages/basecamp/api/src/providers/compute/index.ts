@@ -155,6 +155,10 @@ export interface MachineBackups {
   retentionDays: number | null
   /** Newest first, so `taken[0]` is *last taken*. */
   taken:         TakenBackup[]
+  /** A backup action is still running at the vendor, so the policy above may
+   *  be the one it is replacing. DigitalOcean answers a change before it
+   *  applies it, and `sync` comparing then would push the same change twice. */
+  pending:       boolean
 }
 
 export interface TakenBackup {
@@ -191,6 +195,15 @@ export function backupCost(
  *  listed it in — neither documents one. */
 export const newestFirst = (taken: TakenBackup[]): TakenBackup[] =>
   [...taken].sort((a, b) => b.at.localeCompare(a.at))
+
+/** Does the vendor keep this policy? A null `hour` is the vendor's to pick, so
+ *  whatever window it chose agrees; `custom_daily` is not `daily`. */
+export function keepsPolicy(reading: MachineBackups, policy: BackupPolicy): boolean {
+  return reading.enabled
+    && reading.plan === policy.plan
+    && (policy.hour == null || reading.hour === policy.hour)
+    && (policy.plan !== 'weekly' || reading.weekday === policy.weekday)
+}
 
 /**
  * What a caller asks for when it wants a machine.
@@ -302,7 +315,8 @@ export interface ComputeConnector {
   machine(send: AccountSend, providerServerId: string): Promise<ComputeMachine | null>
   /** Its machine backups, or null where the vendor says the machine is gone.
    *  Reading them needs `image:read` at DigitalOcean, which a scoped token may
-   *  lack, so a refusal throws rather than reading as *off*. */
+   *  lack, so a refusal throws rather than reading as *off*; `pending` reads
+   *  the machine's actions, `actions:read` there. */
   backups(send: AccountSend, providerServerId: string): Promise<MachineBackups | null>
   /** Plan → the percentage of the machine's price its backups add, from the
    *  vendor's pricing page. */

@@ -153,12 +153,14 @@ function publicIp(droplet: Row): string | null {
 
 /** A refusal as a sentence: the kind, the status, and the vendor's own reason.
  *  DO's envelope is `{ id, message }`, read off `data` because conduit fills
- *  `error.message` with the status line on a 4xx. */
-const said = (res: { error?: { kind: string; message?: string }; status?: number; data?: unknown }) => {
+ *  `error.message` with the status line on a 4xx. A custom-scoped token's 403
+ *  says only *not authorized*, so the request names the scope it needed. */
+const said = (res: { error?: { kind: string; message?: string }; status?: number; data?: unknown }, scope?: string) => {
   const reason = str((res.data as Row | null)?.message) || res.error?.message
   return `${res.error?.kind ?? 'error'}`
     + (res.status ? ` (HTTP ${res.status})` : '')
     + (reason ? ` — ${reason}` : '')
+    + (res.status === 403 && scope ? `; the token needs the ${scope} scope` : '')
 }
 
 // ─── Backups ─────────────────────────────────────────────────────────────
@@ -168,6 +170,7 @@ const said = (res: { error?: { kind: string; message?: string }; status?: number
 
 const DO_BACKUP_HOURS = [0, 4, 8, 12, 16, 20]
 const WEEKDAYS        = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+const BACKUP_ACTIONS  = ['enable_backups', 'change_backup_policy', 'disable_backups']
 
 /** Why DO cannot hold this policy, or null. */
 function unheld(policy: BackupPolicy): string | null {
@@ -372,15 +375,18 @@ export const digitalOcean: ComputeConnector = {
   },
 
   async backups(send, providerServerId): Promise<MachineBackups | null> {
-    const at = `/v2/droplets/${encodeURIComponent(providerServerId)}/backups`
-    const [policy, listed] = await Promise.all([
+    const droplet = `/v2/droplets/${encodeURIComponent(providerServerId)}`
+    const at      = `${droplet}/backups`
+    const [policy, listed, actions] = await Promise.all([
       send({ method: 'GET', path: `${at}/policy` }),
       send({ method: 'GET', path: `${at}?per_page=${PER_PAGE}` }),
+      send({ method: 'GET', path: `${droplet}/actions?per_page=${PER_PAGE}` }),
     ])
 
-    if (policy.status === 404 || listed.status === 404) return null
-    const failed = [policy, listed].find(r => r.error)
-    if (failed?.error) throw new Error(`DigitalOcean: ${said(failed)}`)
+    if ([policy, listed, actions].some(r => r.status === 404)) return null
+    const failed = ([[policy, 'droplet:read'], [listed, 'image:read'], [actions, 'actions:read']] as const)
+      .find(([r]) => r.error)
+    if (failed) throw new Error(`DigitalOcean: ${said(...failed)}`)
 
     // An off policy is `{ droplet_id, backup_enabled: false }` and nothing
     // else; a daily plan has no `weekday` key.
@@ -399,6 +405,8 @@ export const digitalOcean: ComputeConnector = {
         at:     str(b.created_at),
         sizeGb: numOrNull(b.size_gigabytes),
       })).filter(b => b.id && b.at)),
+      pending:       rows(actions.data, 'actions')
+        .some(a => str(a.status) === 'in-progress' && BACKUP_ACTIONS.includes(str(a.type))),
     }
   },
 
@@ -411,7 +419,7 @@ export const digitalOcean: ComputeConnector = {
     const at  = `/v2/droplets/${encodeURIComponent(providerServerId)}`
     const now = await send({ method: 'GET', path: `${at}/backups/policy` })
     if (now.status === 404) return false
-    if (now.error) throw new Error(`DigitalOcean: ${said(now)}`)
+    if (now.error) throw new Error(`DigitalOcean: ${said(now, 'droplet:read')}`)
 
     // DO has three actions where a caller states one policy, so the current
     // policy picks: enable where it keeps none, change where it keeps another.
@@ -430,7 +438,7 @@ export const digitalOcean: ComputeConnector = {
       } }),
     }})
     if (res.status === 404) return false
-    if (res.error) throw new Error(`DigitalOcean refused ${type}: ${said(res)}`)
+    if (res.error) throw new Error(`DigitalOcean refused ${type}: ${said(res, 'droplet:update')}`)
     return true
   },
 

@@ -57,7 +57,7 @@ if (!deployConf) {
   return
 }
 
-// ─── the four terms ──────────────────────────────────────────────────────────
+// ─── the three terms ─────────────────────────────────────────────────────────
 let configuration
 try {
   configuration = configurationSet(deployConf, target)
@@ -77,30 +77,6 @@ if (schema.missing) {
   log.info('`fli release:check` writes it')
 }
 
-// The pivot is litestone's answer, asked rather than re-derived — the same
-// walk `fli release:check` prints. A tree with no baseline to compare against
-// answers unknown, which is the fail-closed direction.
-let pivot = 'unknown', findings = []
-if (!schema.missing) {
-  // `stdio: 'pipe'` and not `capture: true` — exec spreads its options into
-  // execSync, whose default is `stdio: 'inherit'`, so an unknown key leaves the
-  // output on the terminal and returns null.
-  //
-  // `--json` alone: it emits the VERDICT and writes nothing. Adding `--stdout`
-  // prints the surface instead, which parses as JSON and is the wrong document.
-  const out = $.exec({
-    command: `${litestone($)} release --schema ${$.paths.db}/schema.lite --json`,
-    stdio:   'pipe',
-  })
-  try {
-    const verdict = JSON.parse(String(out ?? '').trim())
-    pivot    = verdict.verdict   ?? 'unknown'
-    findings = verdict.findings  ?? []
-  } catch {
-    log.warn('Could not read a pivot verdict — minting as unknown, which counts as a contract')
-  }
-}
-
 // ─── the Release ─────────────────────────────────────────────────────────────
 const release = mintRelease({
   app:           deployConf.app_id,
@@ -108,8 +84,6 @@ const release = mintRelease({
   digest:        flag.digest || null,
   configurationHash: configuration.hash,
   schemaHash:    schema.hash,
-  pivot,
-  pivotFindings: findings,
   createdBy:     $.git.user?.() ?? null,
 })
 
@@ -139,14 +113,19 @@ The journal is a different question. It lives on the target
 transition begins. Minting from a machine that cannot reach the target is the
 normal case, not an edge one.
 
-## The four terms
+## The three terms
 
 | Term | What it is | Where it comes from |
 | --- | --- | --- |
 | `digest` | the bytes | `--digest`, or absent |
 | `configurationHash` | the configuration **as declared** | `deploy.configuration` + `deploy.secrets` |
 | `schemaHash` | the data boundary | `db/release.snapshot.md`, hashed |
-| `pivot` | can N-1 still serve | `litestone release --json` |
+
+**Whether N-1 can still serve is not a term.** It is relative to what is serving,
+so one Release is an expand after one predecessor and a contract after another.
+`fli deploy` asks it on the target once the image is built and records it on the
+transition (`FJS-4004`); `fli release:check` previews the change against your
+committed baseline.
 
 **The environment is not in the id.** One artefact promotes from staging to
 production unchanged and only its configuration differs, so the environment is on

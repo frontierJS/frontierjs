@@ -539,7 +539,9 @@ enum ServerEventKind {
   syncRequested statusSynced statusSyncIgnored syncFailed
   syncNoAccount syncUnsupported syncUnrecognized
   // Its machine backups at the vendor: read on the same sync, or set by a person.
-  backupsReadFailed backupsSet
+  // `backupsRestored` is a sync putting a managed policy back over what the
+  // vendor said, so a console change is never undone silently.
+  backupsReadFailed backupsSet backupsRestored backupsRestoreFailed
   // The machine itself. `rebooted` is its boot id changing between two
   // heartbeats; `rebootRequested` above is a person's ask.
   cameOnline unreachable rebooted

@@ -113,10 +113,13 @@ const enrollOutpost = async (machine, { appId, deployConf, path, host, log }) =>
   // row with none is a machine no ingress record can name (`FJS-3515`). Behind
   // a cloud's NAT sshd sees the private side (a droplet's 10.x), so the address
   // this laptop dialed goes too, and the alias names the row.
+  // A box with no Outpost unit — retired, or Basecamp restored beside it —
+  // says so, or its row's old heartbeat answers `enrolled` and nothing installs.
   const { boxAddress } = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-  const alias  = host.split('@').pop()
-  const dialed = await boxAddress(host)
-  const [before, after] = JSON.stringify({ ip: 'SSH_IP', dialed: dialed ?? undefined, name: alias === dialed ? undefined : alias }).split('SSH_IP')
+  const alias   = host.split('@').pop()
+  const dialed  = await boxAddress(host)
+  const outpost = machine.capture('[ -f /etc/systemd/system/outpost.service ] && echo yes || echo no').trim() === 'yes'
+  const [before, after] = JSON.stringify({ ip: 'SSH_IP', dialed: dialed ?? undefined, name: alias === dialed ? undefined : alias, outpost }).split('SSH_IP')
   const quote  = (v) => `'${v.replace(/'/g, `'\\''`)}'`
   const enroll = [
     `IP=$(printf '%s' "$SSH_CONNECTION" | cut -d' ' -f3)`,
@@ -404,27 +407,10 @@ const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, digest = 
     return { error: e.message }
   }
 
+  // No pivot here. Whether N-1 can still serve is relative to the schema the
+  // live container migrated to, which only the target can read; `04c-journal`
+  // asks it there and the verdict goes on the transition (`FJS-4004`).
   const schema = schemaSurfaceHash($.paths.db)
-
-  // The pivot is litestone's answer, asked rather than re-derived — the same
-  // walk `fli release:check` prints. No baseline answers unknown, which counts
-  // as a contract.
-  let pivot = 'unknown', findings = []
-  if (!schema.missing) {
-    const out = $.exec({
-      command: `${$.bin('litestone')} release --schema ${$.paths.db}/schema.lite --json`,
-      cwd:     $.paths.root,
-      stdio:   'pipe', allowFailure: true,
-    })
-    try {
-      // Both paths in one read: on success `out` is the child's output, and on
-      // a non-zero exit `allowFailure` hands back the error, which carries the
-      // same bytes on `stdout`.
-      const verdict = JSON.parse(String(out?.stdout ?? out ?? '').trim())
-      pivot    = verdict.verdict  ?? 'unknown'
-      findings = verdict.findings ?? []
-    } catch {}
-  }
 
   const release = mintRelease({
     app:           appIdOf(deployConf),
@@ -435,8 +421,6 @@ const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, digest = 
     digest:        digest ?? flag.digest ?? null,
     configurationHash: configuration.hash,
     schemaHash:    schema.hash,
-    pivot,
-    pivotFindings: findings,
     createdBy:     $.git.user?.() ?? null,
   })
 
@@ -459,7 +443,7 @@ const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, digest = 
   })
 
   const plan = planTransition({ release, steps, actor: release.createdBy })
-  return { ...plan, release, configuration, findings, schema, text: formatPlan({ ...plan, release, configuration, findings }) }
+  return { ...plan, release, configuration, schema, text: formatPlan({ ...plan, release, configuration }) }
 }
 
 // ─── the deploy lock ──────────────────────────────────────────────────────────
@@ -631,7 +615,7 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // a revert it is a revert that could not land.
 const pauseCore = () => import(new URL('file://' + global.fliRoot + '/core/pause.js'))
 
-const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, serverPath = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, attempts = 10, intervalS = 2 }) => {
+const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, serverPath = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, attempts = 10, intervalS = 2, pivot = null }) => {
   const asked    = swapSetting(deployConf ?? {})
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
@@ -688,14 +672,7 @@ const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath
   ]
 
   const run  = sshRunner(machine)
-  const find = async () => {
-    const listed = await run(['docker', 'ps', '-a', '--filter', `name=${container}`, '--format', '{{.Names}}'])
-    if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${listed.stderr.trim()}`)
-    // The filter matches a substring, so another app's `<container>-x` is listed too.
-    const all = listed.stdout.split('\n').map(l => l.trim()).filter(n => [container, replaced, `${container}_next`].includes(n))
-    const named = (n) => all.includes(n) ? n : null
-    return { live: named(container), replaced: named(replaced), next: named(`${container}_next`), all }
-  }
+  const find = () => containersOf(run, container)
 
   // Every `$` and every nested quote below is the TARGET's — the script is piped
   // to its shell rather than interpolated into a command line, which is what
@@ -761,7 +738,7 @@ exit 1`)
   const routes    = asked === 'startFirst' || (priorPort && priorPort !== apiPort)
     ? await routeMover($, machine, { appId, serverPath, deployConf })
     : { move: null, reason: null }
-  const chosen    = await chooseSwap({ asked, routes, run, live: before.live, image, appId })
+  const chosen    = await chooseSwap({ asked, routes, run, live: before.live, image, appId, pivot })
   const verdict   = { swap: chosen.swap, swapReason: chosen.reason, pivot: chosen.pivot }
   if (chosen.reason) log.info(`Swapping stop-first: ${chosen.reason}`)
 
@@ -807,7 +784,7 @@ exit 1`)
 // over the pages already live, since `current/` is what Caddy serves until
 // `08-release-web` moves it; `07b-edge` writes them again over the new ones.
 const routeMover = async ($, machine, { appId, serverPath, deployConf }) => {
-  const { routeId, readConfigScript, parseConfigRead, INGRESS_SERVER, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+  const { holdsRoute, readConfigScript, parseConfigRead, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
   if (!serverPath) return { move: null, reason: 'this caller names no server path to read its pages from' }
   let edge
   try { edge = edgeNamesOf(deployConf) }
@@ -818,7 +795,7 @@ const routeMover = async ($, machine, { appId, serverPath, deployConf }) => {
   let present = false
   try {
     const read = parseConfigRead(machine.capture(readConfigScript()))
-    present = (read.config?.apps?.http?.servers?.[INGRESS_SERVER]?.routes ?? []).some(r => r['@id'] === routeId(appId))
+    present = holdsRoute(read.config, appId)
   } catch (e) {
     if (!(e instanceof EdgeError)) throw e
   }
@@ -839,11 +816,45 @@ const routeMover = async ($, machine, { appId, serverPath, deployConf }) => {
 // a contract, an unknown and a classifier that did not run each swap stop-first
 // with the reason; an app that did not ask is stop-first with none, as on
 // Basecamp, and the classifier is not run.
-const chooseSwap = async ({ asked, routes, run, live, image, appId }) => {
-  if (asked !== 'startFirst') return { swap: 'stop-first', reason: null, pivot: null }
-  if (!routes.move) return { swap: 'stop-first', reason: `a start-first swap moves the port, and ${routes.reason}`, pivot: null }
-  const pivot = await livePivot({ run, live, image, tag: appId })
-  return { ...swapFor(pivot), pivot: pivot.verdict }
+//
+// `pivot` is the verdict a deploy's transition already holds (`04c-journal`),
+// `{ verdict, reason }`. Asked a second time here, the swap could run on an
+// answer the journal never recorded; revert and rollback open no such
+// transition, so they still ask.
+const chooseSwap = async ({ asked, routes, run, live, image, appId, pivot = null }) => {
+  if (asked !== 'startFirst') return { swap: 'stop-first', reason: null, pivot: pivot?.verdict ?? null }
+  if (!routes.move) return { swap: 'stop-first', reason: `a start-first swap moves the port, and ${routes.reason}`, pivot: pivot?.verdict ?? null }
+  const verdict = pivot ?? await livePivot({ run, live, image, tag: appId })
+  return { ...swapFor(verdict), pivot: verdict.verdict }
+}
+
+// ─── containersOf ─────────────────────────────────────────────────────────────
+// The app's containers on the box, by role. One reading for the swap and for
+// `transitionPivot`, so the verdict a journal records is asked of the same
+// container the swap then replaces.
+const containersOf = async (run, container) => {
+  const replaced = `${container}_replaced`
+  const listed = await run(['docker', 'ps', '-a', '--filter', `name=${container}`, '--format', '{{.Names}}'])
+  if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${listed.stderr.trim()}`)
+  // The filter matches a substring, so another app's `<container>-x` is listed too.
+  const all = listed.stdout.split('\n').map(l => l.trim()).filter(n => [container, replaced, `${container}_next`].includes(n))
+  const named = (n) => all.includes(n) ? n : null
+  return { live: named(container), replaced: named(replaced), next: named(`${container}_next`), all }
+}
+
+// ─── transitionPivot ──────────────────────────────────────────────────────────
+// Outpost's classifier, on the target, for the image this deploy built against
+// the live container's own schema (`FJS-D1838`) — the verdict a transition
+// records. `{ verdict: null }` with nothing live. Never throws: a box the
+// lookup cannot read answers null with the reason, which reads as crossing.
+const transitionPivot = async ($, { host, container, image, appId }) => {
+  const run = sshRunner(machineFor($, host))
+  try {
+    const { live } = await containersOf(run, container)
+    return await livePivot({ run, live, image, tag: appId })
+  } catch (err) {
+    return { verdict: null, reason: `the live container could not be read — ${err.message}` }
+  }
 }
 
 // ─── livePort ─────────────────────────────────────────────────────────────────
@@ -916,14 +927,13 @@ const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge, html = ''
 //
 // Answers 'written' | 'unchanged' | 'absent', or `{ error }`.
 const writeEdge = async (machine, { appId, routes, plain = [], ifPresent = false }) => {
-  const { routeId, applyEdge, readConfigScript, parseConfigRead, writeConfigScript, parseConfigWrite, INGRESS_SERVER, EdgeError } =
+  const { holdsRoute, applyEdge, readConfigScript, parseConfigRead, writeConfigScript, parseConfigWrite, EdgeError } =
     await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
   for (let attempt = 1; attempt <= 3; attempt++) {
     let read, next
     try {
       read = parseConfigRead(machine.capture(readConfigScript()))
-      const present = (read.config?.apps?.http?.servers?.[INGRESS_SERVER]?.routes ?? []).some(r => r['@id'] === routeId(appId))
-      if (ifPresent && !present) return 'absent'
+      if (ifPresent && !holdsRoute(read.config, appId)) return 'absent'
       next = applyEdge(read.config, { appId, routes, plain })
     } catch (e) {
       if (!(e instanceof EdgeError)) throw e
@@ -1076,12 +1086,24 @@ const openDeployJournal = async ($, flag, opts) => {
     }
     const { attempt, resume } = await j.attempt(intent)
 
+    // ── the pivot, asked once, on the target ────────────────────────────────
+    // An adopted transition keeps the verdict it recorded: its swap has not run
+    // yet, and asking again could swap it on an answer the journal never held.
+    // A deploy with no API side moves no database, so it crosses nothing.
+    const pivot = held
+      ? { verdict: held.transition.pivot ?? null, reason: held.transition.pivotReason ?? null }
+      : opts.doApi && opts.classify
+        ? await opts.classify()
+        : { verdict: null, reason: 'this deploy has no API side, so no migration runs' }
+
     // Rebuilt against the real serving state and attempt number — the two terms
     // `--plan` states as provisional.
     const real = planTransition({
       release, steps: plan.steps.map((s, i) => ({ ...s, ordinal: i + 1 })),
       fromReleaseId: intent.fromReleaseId, generation: intent.generation, attempt,
       actor: release.createdBy,
+      pivot: pivot.verdict, pivotReason: pivot.reason,
+      ...(opts.doApi ? {} : { isCrossingPivot: false }),
     })
 
     const verdict = preconditionVerdict(
@@ -1103,6 +1125,11 @@ const openDeployJournal = async ($, flag, opts) => {
 
     const byName = new Map(begun.steps.map(r => [r.name, r]))
     const idFor  = (name) => occurrenceKey('deploy', real.transition.id, name)
+    // What the row holds wins over what this run asked, for the same reason an
+    // adopted transition's verdict does.
+    const recorded = begun.recorded
+      ? { verdict: begun.recorded.pivot ?? null, reason: begun.recorded.pivotReason ?? null, isCrossingPivot: !!begun.recorded.isCrossingPivot }
+      : { ...pivot, isCrossingPivot: real.transition.isCrossingPivot }
 
     // The steps that already ran are marked done here, because the journal opens
     // AFTER the build now (`04c-journal`) and nothing else will ever claim them.
@@ -1145,6 +1172,9 @@ const openDeployJournal = async ($, flag, opts) => {
       resumed: begun.resumed || !!held,
       adopted: !!held && held.release.id !== plan.release.id,
       attempt,
+      // `{ verdict, reason, isCrossingPivot }` — `06-swap` swaps on this rather
+      // than asking the classifier a second time.
+      pivot: recorded,
       serving: state.serving,
       // The recorder the step runner calls. It knows step NAMES, because that is
       // what the runner has — the ordinal it is handed is the file's position and
@@ -1192,8 +1222,8 @@ const openDeployJournal = async ($, flag, opts) => {
 // configuration to record and no pivot to classify: what moves is whether the bound
 // Release is answering, which is the kind on the row and never a column. So
 // `begin` is handed a null release and `isCrossingPivot` is stated false rather
-// than derived, or an `unknown` pivot on the serving Release would record a
-// crossing that nothing crossed.
+// than derived, or a pause — which asks no classifier — would have its missing
+// verdict read as a crossing that nothing crossed.
 //
 // It refuses on an empty journal rather than opening one. A pause with no
 // history behind it cannot name a Release, and a transition with no Release is

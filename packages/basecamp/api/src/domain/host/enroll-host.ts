@@ -5,6 +5,9 @@
 //
 //   docker exec <api container> bun api/src/domain/host/enroll-host.ts '{"ip":"10.17.0.5","dialed":"203.0.113.7","name":"ops"}'
 //
+// `outpost` is false when the box has no Outpost unit, which re-issues an
+// enrollment for a row that heartbeated before (`useHost`'s `outpostGone`).
+//
 // `ip` is the address sshd says it was reached at, and becomes the row's
 // `ipAddress` when it has none and is public (`FJS-3515`). Behind a cloud's NAT
 // that is the private side, so `dialed` — the address the laptop resolved the
@@ -55,6 +58,7 @@ try {
 
   const used = await useHost(sys, {
     workspaceId, actor: 'fli deploy', name, ipAddress: publicIp(facts.ip) ?? publicIp(facts.dialed),
+    outpostGone: facts.outpost === false,
   })
   answer(used.enrolled
     ? { enrolled: true, serverId: used.server.id }

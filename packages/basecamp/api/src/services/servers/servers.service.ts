@@ -40,14 +40,14 @@
 // The old parseServer()/parseEvent() JSON.parse helpers are gone — parsing an
 // already-parsed object is how you get "[object Object]" in a column.
 
-import { createService, NotFound, BadRequest, Conflict, seriesKey, isStale, parseWhere, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, BadGateway, Conflict, seriesKey, isStale, parseWhere, $ } from '@frontierjs/junction'
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS }                from '@frontierjs/litestone'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, findScoped, getScoped, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'
 import { HUB_SIGNING_REF }       from '../../core/credentials.ts'
 import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../domain/host/server-metrics.ts'
-import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions, backupCost } from '../../providers/compute/index.ts'
+import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions, backupCost, keepsPolicy } from '../../providers/compute/index.ts'
 import type { AccountSend, ComputeConnector, MachineBackups } from '../../providers/compute/index.ts'
 import { sendVia }               from '../../providers/compute/accounts.ts'
 import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
@@ -216,7 +216,8 @@ async function readBackups(
   } catch (err) {
     $.app.logger.error('conduit: backup read failed', { target: targetId, serverId, error: String(err) })
     await recordEvent(serverId, 'backupsReadFailed',
-      `Could not read this machine's backups from ${connector.label}`, { target: targetId })
+      `Could not read this machine's backups from ${connector.label}: ${reasonOf(err)}`,
+      { target: targetId, error: String(err) })
     return
   }
   if (!reading) return
@@ -228,12 +229,60 @@ async function readBackups(
       readAt: new Date().toISOString(),
     } },
   })
+  return reading
 }
+
+/**
+ * Put a managed policy back where the vendor's reading disagrees (`FJS-D1862`),
+ * once per sync: a push the vendor refuses is recorded and left for the next
+ * sync, not retried here. A reading with a backup action still running is the
+ * vendor partway through a change, the person's or this one's, and not drift.
+ */
+async function restoreBackups(
+  serverId:   string,
+  connector:  ComputeConnector,
+  send:       AccountSend,
+  providerId: string,
+  targetId:   string,
+  plan:       Record<string, unknown> | null,
+  policy:     BackupPolicy,
+  reading:    MachineBackups,
+) {
+  if (reading.pending || keepsPolicy(reading, policy)) return
+  const found  = { enabled: reading.enabled, plan: reading.plan, hour: reading.hour, weekday: reading.weekday }
+  const said   = describeReading(reading, connector.label)
+  const wanted = describePolicy(policy, connector.label)
+
+  try {
+    if (!await connector.setBackups(send, providerId, policy)) return
+  } catch (err) {
+    $.app.logger.error('conduit: backup restore failed', { target: targetId, serverId, error: String(err) })
+    await recordEvent(serverId, 'backupsRestoreFailed',
+      `${connector.label} has machine backups ${said}; could not put back ${wanted}: ${reasonOf(err)}`,
+      { target: targetId, found, policy, error: String(err) })
+    return
+  }
+  await recordEvent(serverId, 'backupsRestored',
+    `${connector.label} had machine backups ${said}; put back ${wanted}`, { found, policy })
+  await readBackups(serverId, connector, send, providerId, targetId, plan)
+}
+
+/** A vendor refusal as the trail's sentence ends it. The connector's message
+ *  carries the scope a 403 lacked, the one thing a person can act on, so it
+ *  is kept whole rather than summarized. */
+const reasonOf = (err: unknown) => err instanceof Error ? err.message : String(err)
 
 /** A policy as the trail says it: `daily at 20:00 UTC`, `weekly, SUN at 16:00 UTC`. */
 function describePolicy(policy: BackupPolicy, label: string): string {
   const hour = policy.hour == null ? `, at a window ${label} picks` : ` at ${String(policy.hour).padStart(2, '0')}:00 UTC`
   return policy.plan === 'weekly' ? `weekly, ${policy.weekday}${hour}` : `daily${hour}`
+}
+
+/** What the vendor keeps, as the trail says it: `off`, `on a custom_daily plan`. */
+function describeReading(reading: MachineBackups, label: string): string {
+  if (!reading.enabled) return 'off'
+  if (reading.plan !== 'daily' && reading.plan !== 'weekly') return `on a ${reading.plan ?? 'unnamed'} plan`
+  return describePolicy({ plan: reading.plan, hour: reading.hour, weekday: reading.weekday } as BackupPolicy, label)
 }
 
 /**
@@ -639,8 +688,11 @@ export default createService({
             data:  { ipAddress: reportedMachine.ipAddress, version: server.version },
           })
 
-        if (reportedMachine)
-          await readBackups(id, connector, send, String(server.providerServerId), targetId, server.plan)
+        const reading = reportedMachine
+          && await readBackups(id, connector, send, String(server.providerServerId), targetId, server.plan)
+        if (reading && server.backupPolicy)
+          await restoreBackups(id, connector, send, String(server.providerServerId), targetId,
+            server.plan, server.backupPolicy, reading)
       }
     }
 
@@ -676,9 +728,13 @@ export default createService({
     const targetId = targetFor(connector.kind, server.providerId)
     const send     = sendVia($.app, targetId)
 
-    if (choice !== 'unmanaged'
-        && !await connector.setBackups(send, String(server.providerServerId), policy))
-      throw new NotFound(`${connector.label} no longer has this machine`)
+    let held = true
+    try {
+      if (choice !== 'unmanaged') held = await connector.setBackups(send, String(server.providerServerId), policy)
+    } catch (err) {
+      throw new BadGateway(reasonOf(err))
+    }
+    if (!held) throw new NotFound(`${connector.label} no longer has this machine`)
 
     await db().server.update({ where: { id }, data: { backupPolicy: policy }, system: ['backupPolicy'] })
     // Read back rather than written from the ask: the screen shows the

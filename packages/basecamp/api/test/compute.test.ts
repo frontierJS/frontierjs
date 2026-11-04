@@ -43,8 +43,8 @@ import { createTestEnv, session } from '@frontierjs/testing'
 import { GatePlugin }    from '@frontierjs/litestone'
 import { basecampGateLevel }       from '../src/core/gate.ts'
 import { buildBasecampApp }        from '../src/app.ts'
-import { startDoSink }             from '../src/providers/compute/digitalocean-sink.ts'
-import { startHzSink }             from '../src/providers/compute/hetzner-sink.ts'
+import { startDoSink, sinkHoldBackups, sinkSettleBackups } from '../src/providers/compute/digitalocean-sink.ts'
+import { startHzSink, hzSinkHoldBackups, hzSinkSettleBackups } from '../src/providers/compute/hetzner-sink.ts'
 import { connectorFor, targetFor, markFor, fleetMark, priceIn, backupCost } from '../src/providers/compute/index.ts'
 import { registerAccount, sendVia } from '../src/providers/compute/accounts.ts'
 import type { ComputeProvider }    from '../../db/schema.d.ts'
@@ -238,16 +238,28 @@ describe('the DigitalOcean dialect', () => {
 
   // The policy and the list, as `GET /v2/droplets/<id>/backups[/policy]`
   // answered on the real account (`IDEAS/machine-backups.md` 0.1).
-  const backupsOf = (policy: unknown, backups: unknown[] = []) => digitalOcean.backups(canned({
+  const backupsOf = (policy: unknown, backups: unknown[] = [], actions: unknown[] = []) => digitalOcean.backups(canned({
     '/v2/droplets/1/backups/policy': { policy },
     '/v2/droplets/1/backups':        { backups, links: {}, meta: { total: backups.length } },
+    '/v2/droplets/1/actions':        { actions, links: {}, meta: { total: actions.length } },
   }), '1')
 
   test('backups off is the flag and nothing else, and reads as off', async () => {
     expect(await backupsOf({ droplet_id: 1, backup_enabled: false })).toEqual({
       enabled: false, plan: null, hour: null, weekday: null,
-      windowHours: null, retentionDays: null, taken: [],
+      windowHours: null, retentionDays: null, taken: [], pending: false,
     })
+  })
+
+  test('a backup action still in progress reads as pending; any other action does not', async () => {
+    const off = { droplet_id: 1, backup_enabled: false }
+    expect((await backupsOf(off, [], [
+      { id: 7, type: 'enable_backups', status: 'in-progress' },
+    ]))!.pending).toBe(true)
+    expect((await backupsOf(off, [], [
+      { id: 8, type: 'enable_backups', status: 'completed' },
+      { id: 9, type: 'reboot',         status: 'in-progress' },
+    ]))!.pending).toBe(false)
   })
 
   test('a weekly plan carries its weekday, a daily one has none, and hour 0 is midnight', async () => {
@@ -309,6 +321,15 @@ describe('the DigitalOcean dialect', () => {
       '1')).rejects.toThrow(/403.*not authorized/)
   })
 
+  test('a 403 names the scope the refused request needed, since DO names none', async () => {
+    const denied = { data: { id: 'forbidden', message: 'You are not authorized' }, status: 403, error: { kind: 'client_error' } }
+    for (const [path, scope] of [['/policy', 'droplet:read'], ['/backups?', 'image:read'], ['/actions', 'actions:read']]) {
+      await expect(digitalOcean.backups(async (req: { path: string }) =>
+        req.path.includes(path) ? denied : { data: {}, status: 200 }, '1'))
+        .rejects.toThrow(`the token needs the ${scope} scope`)
+    }
+  })
+
   // What `setBackups` sends, given the policy the droplet keeps now.
   const setOn = async (kept: unknown, policy: any) => {
     const sent: any[] = []
@@ -347,7 +368,7 @@ describe('the DigitalOcean dialect', () => {
     await expect(digitalOcean.setBackups(async (req: any) => req.method === 'POST'
       ? { data: { id: 'forbidden', message: 'You are not authorized' }, status: 403, error: { kind: 'client_error' } }
       : { data: { policy: OFF }, status: 200 },
-      '1', { plan: 'daily', hour: 20 })).rejects.toThrow(/refused enable_backups.*403/)
+      '1', { plan: 'daily', hour: 20 })).rejects.toThrow(/refused enable_backups.*403.*needs the droplet:update scope/)
   })
 })
 
@@ -1063,7 +1084,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
   })
 
   test('sync records the vendor’s backup reading, and a refused read keeps the last one', async () => {
-    const { sinkRefuseBackups } = await import('../src/providers/compute/digitalocean-sink.ts')
+    const { sinkRefuseScope } = await import('../src/providers/compute/digitalocean-sink.ts')
     const sys = env.system as any
     // A machine of its own: a sync moves status off the vendor's answer, and
     // `prod-web-01` is still at `installing` for the destroy below.
@@ -1088,11 +1109,12 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
 
     // A token without `image:read`. Writing *off* here would show a box that
     // has seven backups as having none.
-    sinkRefuseBackups()
-    try { await servers.call('sync', row.id) } finally { sinkRefuseBackups(false) }
+    sinkRefuseScope('image:read')
+    try { await servers.call('sync', row.id) } finally { sinkRefuseScope(null) }
     expect(await reading()).toEqual(first)
     const events = await sys.serverEvent.findMany({ where: { serverId: row.id, kind: 'backupsReadFailed' } })
     expect(events).toHaveLength(1)
+    expect(events[0].message).toMatch(/^Could not read this machine's backups from DigitalOcean: .*needs the image:read scope$/)
   })
 
   test('neither backup column is a person’s to patch, an owner included', async () => {
@@ -1139,6 +1161,86 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     await servers.call('sync', row.id)
     expect((await sys.server.findFirst({ where: { id: row.id } })).backupReading).toMatchObject({ enabled: true, plan: 'daily' })
     await servers.call('setBackups', row.id, { choice: 'off' })
+  })
+
+  test('sync puts a managed policy back over a console change, and says what it found', async () => {
+    const sys     = env.system as any
+    const row     = await sys.server.findFirst({ where: { name: 'backed-up' } })
+    const servers = env.as(owner).service('servers')
+    const console = sendVia(app, targetFor('digitalocean', account.id))
+    const restored = () => sys.serverEvent.findMany({ where: { serverId: row.id, kind: 'backupsRestored' } })
+    await servers.call('setBackups', row.id, { choice: 'on', plan: 'daily', hour: 20 })
+
+    await digitalOcean.setBackups(console, row.providerServerId, null)
+    await servers.call('sync', row.id)
+    expect((await sys.server.findFirst({ where: { id: row.id } })).backupReading)
+      .toMatchObject({ enabled: true, plan: 'daily', hour: 20, pending: false })
+    let [put] = await restored()
+    expect(put.message).toBe('DigitalOcean had machine backups off; put back daily at 20:00 UTC')
+    expect(put.metadata.found).toMatchObject({ enabled: false, plan: null })
+
+    // A sync that agrees sends nothing and records nothing.
+    await servers.call('sync', row.id)
+    expect(await restored()).toHaveLength(1)
+
+    await digitalOcean.setBackups(console, row.providerServerId, { plan: 'weekly', hour: 4, weekday: 'MON' })
+    await servers.call('sync', row.id)
+    put = (await restored()).find((e: any) => e.metadata.found.plan === 'weekly')
+    expect(put.message).toBe('DigitalOcean had machine backups weekly, MON at 04:00 UTC; put back daily at 20:00 UTC')
+    expect((await sys.server.findFirst({ where: { id: row.id } })).backupReading).toMatchObject({ plan: 'daily', hour: 20 })
+    await servers.call('setBackups', row.id, { choice: 'off' })
+  })
+
+  test('a change still applying is not drift, and a push that fails is recorded once a sync', async () => {
+    const { sinkHoldBackups, sinkSettleBackups } = await import('../src/providers/compute/digitalocean-sink.ts')
+    const sys     = env.system as any
+    const row     = await sys.server.findFirst({ where: { name: 'backed-up' } })
+    const servers = env.as(owner).service('servers')
+    const events  = (kind: string) => sys.serverEvent.findMany({ where: { serverId: row.id, kind } })
+    const before  = (await events('backupsRestored')).length
+
+    // DO answered the switch and has not applied it: the read after it, and a
+    // sync before it lands, both see *off* with the action running.
+    sinkHoldBackups()
+    try {
+      await servers.call('setBackups', row.id, { choice: 'on', plan: 'daily', hour: 20 })
+      await servers.call('sync', row.id)
+      expect((await sys.server.findFirst({ where: { id: row.id } })).backupReading)
+        .toMatchObject({ enabled: false, pending: true })
+    } finally { sinkHoldBackups(false); sinkSettleBackups() }
+    expect(await events('backupsRestored')).toHaveLength(before)
+    expect(await events('backupsRestoreFailed')).toHaveLength(0)
+    await servers.call('sync', row.id)
+    expect((await sys.server.findFirst({ where: { id: row.id } })).backupReading)
+      .toMatchObject({ enabled: true, pending: false })
+    expect(await events('backupsRestored')).toHaveLength(before)
+
+    // A stored policy the vendor will not take: each sync tries once and says so.
+    await sys.server.update({ where: { id: row.id }, data: { backupPolicy: { plan: 'daily', hour: 5 } } })
+    await servers.call('sync', row.id)
+    await servers.call('sync', row.id)
+    const failed = await events('backupsRestoreFailed')
+    expect(failed).toHaveLength(2)
+    expect(failed[0].message).toMatch(/^DigitalOcean has machine backups daily at 20:00 UTC; could not put back daily at 05:00 UTC: .*0, 4, 8/)
+    expect(failed[0].metadata.error).toMatch(/0, 4, 8/)
+    await servers.call('setBackups', row.id, { choice: 'off' })
+  })
+
+  test('a switch the token may not make is a 502 naming the scope, and nothing is stored', async () => {
+    const { sinkRefuseScope } = await import('../src/providers/compute/digitalocean-sink.ts')
+    const sys     = env.system as any
+    const row     = await sys.server.findFirst({ where: { name: 'backed-up' } })
+    const servers = env.as(owner).service('servers')
+    const sets    = (await sys.serverEvent.findMany({ where: { serverId: row.id, kind: 'backupsSet' } })).length
+
+    sinkRefuseScope('droplet:update')
+    try {
+      const err = await servers.call('setBackups', row.id, { choice: 'on', plan: 'daily', hour: 20 }).catch((e: any) => e)
+      expect(err.code).toBe(502)
+      expect(err.message).toMatch(/refused enable_backups.*needs the droplet:update scope/)
+    } finally { sinkRefuseScope(null) }
+    expect((await sys.server.findFirst({ where: { id: row.id } })).backupPolicy).toBeNull()
+    expect(await sys.serverEvent.findMany({ where: { serverId: row.id, kind: 'backupsSet' } })).toHaveLength(sets)
   })
 
   test('a policy the vendor cannot hold is refused before anything is sent or stored', async () => {
@@ -1877,9 +1979,11 @@ describe('the Hetzner dialect', () => {
     expect(paths.every(p => p.includes('per_page=50'))).toBe(true)
   })
 
-  const hzBackupsOf = (backup_window: string | null, images: unknown[] = []) => hetzner.backups(canned({
-    '/v1/servers/9': { server: { id: 9, status: 'running', backup_window } },
-    '/v1/images':    { images },
+  // Longest prefix first: `canned` takes the first key a path starts with.
+  const hzBackupsOf = (backup_window: string | null, images: unknown[] = [], actions: unknown[] = []) => hetzner.backups(canned({
+    '/v1/servers/9/actions': { actions },
+    '/v1/servers/9':         { server: { id: 9, status: 'running', backup_window } },
+    '/v1/images':            { images },
   }), '9')
 
   test("the server's window is the whole policy: daily, seven kept, and a window across midnight", async () => {
@@ -1890,8 +1994,18 @@ describe('the Hetzner dialect', () => {
     })
     expect(await hzBackupsOf(null)).toEqual({
       enabled: false, plan: null, hour: null, weekday: null,
-      windowHours: null, retentionDays: null, taken: [],
+      windowHours: null, retentionDays: null, taken: [], pending: false,
     })
+  })
+
+  test('a running enable or disable reads as pending, and only running actions are asked for', async () => {
+    const paths: string[] = []
+    const read  = canned({ '/v1/servers/9/actions': { actions: [{ id: 4, command: 'enable_backup', status: 'running' }] },
+                           '/v1/servers/9': { server: { id: 9, backup_window: null } }, '/v1/images': { images: [] } })
+    const b = await hetzner.backups(async (req: any) => { paths.push(req.path); return read(req) }, '9')
+    expect(b!.pending).toBe(true)
+    expect(paths.find(p => p.includes('/actions'))).toContain('status=running')
+    expect((await hzBackupsOf(null, [], [{ id: 5, command: 'poweroff', status: 'running' }]))!.pending).toBe(false)
   })
 
   test('taken backups are the images bound to the server, and one still creating is not taken', async () => {
@@ -1933,6 +2047,13 @@ describe('the Hetzner dialect', () => {
     const never = async () => { throw new Error('sent') }
     await expect(hetzner.setBackups(never, '9', { plan: 'weekly', hour: null, weekday: 'SUN' })).rejects.toThrow(/daily only/)
     await expect(hetzner.setBackups(never, '9', { plan: 'daily', hour: 4 })).rejects.toThrow(/leave the hour empty/)
+  })
+
+  test('a 403 on a write is a Read token, Hetzner having no finer scope to name', async () => {
+    await expect(hetzner.setBackups(async (req: any) => req.method === 'POST'
+      ? { data: { error: { code: 'forbidden', message: 'insufficient permissions' } }, status: 403, error: { kind: 'client_error' } }
+      : { data: { server: { id: 9, backup_window: null } }, status: 200 },
+      '9', { plan: 'daily', hour: null })).rejects.toThrow(/refused enable_backup.*403.*needs Read & Write/)
   })
 })
 
@@ -2080,11 +2201,13 @@ describe('two clouds, one vocabulary', () => {
     { kind: 'digitalocean' as ComputeProvider, connector: digitalOcean, account: () => account, address: SINK,
       region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64', currency: 'USD',
       backupPolicy: { plan: 'daily' as const, hour: 20 },
+      hold: sinkHoldBackups, settle: sinkSettleBackups,
       reset: async () => (await import('../src/providers/compute/digitalocean-sink.ts')).resetSink() },
     { kind: 'hetzner' as ComputeProvider, connector: hetzner, account: () => hzAccount, address: HZ_SINK,
       region: 'nbg1', size: 'cpx11', image: 'ubuntu-24.04', currency: 'EUR',
       // Hetzner picks the window, so the policy names no hour.
       backupPolicy: { plan: 'daily' as const, hour: null },
+      hold: hzSinkHoldBackups, settle: hzSinkSettleBackups,
       reset: async () => (await import('../src/providers/compute/hetzner-sink.ts')).resetHzSink() },
   ]
 
@@ -2182,8 +2305,21 @@ describe('two clouds, one vocabulary', () => {
       // asks at create; nothing sends the field yet).
       expect(await c.connector.backups(send, made.providerServerId)).toEqual({
         enabled: false, plan: null, hour: null, weekday: null,
-        windowHours: null, retentionDays: null, taken: [],
+        windowHours: null, retentionDays: null, taken: [], pending: false,
       })
+
+      // Accepted and not applied yet: the reading is the old state, and says
+      // so. A second ask meanwhile is refused, as both vendors refuse one.
+      c.hold()
+      try {
+        expect(await c.connector.setBackups(send, made.providerServerId, c.backupPolicy)).toBe(true)
+        expect(await c.connector.backups(send, made.providerServerId))
+          .toMatchObject({ enabled: false, pending: true })
+        await expect(c.connector.setBackups(send, made.providerServerId, c.backupPolicy)).rejects.toThrow(/pending|locked/)
+      } finally { c.hold(false); c.settle() }
+      expect(await c.connector.backups(send, made.providerServerId))
+        .toMatchObject({ enabled: true, pending: false })
+      expect(await c.connector.setBackups(send, made.providerServerId, null)).toBe(true)
 
       // On, then off, read back after each: the switch is what the vendor
       // then says, not what the call answered.

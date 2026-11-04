@@ -611,6 +611,7 @@ title: Server
         {#if backups}
           <p class="text-sm text-muted">
             Read {ago(backups.readAt)} from {server.providerKind}.
+            {#if backups.pending}<span id="backups-pending">A change is still applying there, so this may be the old state.</span>{/if}
             {#if !server.backupPolicy}Not managed: Basecamp shows what the vendor says and changes nothing.{/if}
           </p>
         {/if}

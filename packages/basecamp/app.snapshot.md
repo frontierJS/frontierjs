@@ -1309,10 +1309,11 @@ name when it declares none.
 
 ### `servers` · model `Server`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
-- **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `setBackups`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `setBackups`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
 - **input** — `provision` takes `ServerProvision`
 - **input** — `provisionStep` takes `ServerProvisionStep`
+- **input** — `setBackups` takes `ServerSetBackups`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `events` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -1324,6 +1325,7 @@ name when it declares none.
   - `drain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `undrain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `sync` — standing 4 or above — declared `gate: 4`
+  - `setBackups` — standing 5 or above — declared `gate: 5`
   - `catalog` — standing 4 or above — declared `gate: 4`
   - `providers` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `provision` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
@@ -1352,6 +1354,7 @@ name when it declares none.
 | before | `aggregate` | `autoFilter` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+| before | `setBackups` | `validateInput` |
 | before | `provision` | `validateInput` |
 
 ### `sessions`

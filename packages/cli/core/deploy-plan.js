@@ -124,12 +124,32 @@ export function transitionId({ kind, app, environment, fromReleaseId, releaseId,
 }
 
 /**
+ * Whether a deploy passes the point after which a revert cannot restore the
+ * database, from the verdict the target gave (`livePivot`, asked at `04c`).
+ *
+ * `unchanged` and `expand` leave N-1 able to serve, so no. **A contract, an
+ * unknown and a missing verdict all count as crossing** while something is
+ * serving: a classifier that did not run has not shown N-1 keeps working, and
+ * reading its silence as an expand is how `--past-pivot` stops refusing the one
+ * revert that would serve a migrated database to code that cannot read it. A
+ * first deploy crosses nothing — there is no earlier Release to revert to, so
+ * marking it would only make every later revert refuse on a pivot that never
+ * stood between two releases.
+ */
+export function crossesPivot({ pivot = null, fromReleaseId = null } = {}) {
+  if (!fromReleaseId) return false
+  return pivot !== 'unchanged' && pivot !== 'expand'
+}
+
+/**
  * Build the journal rows. Writes nothing — that is 1e.
  *
  * `isCrossingPivot` is recorded rather than re-derived later, because what matters
  * afterwards is the answer the operator was shown and agreed to, not the answer
- * a classifier gives once the schema has moved on. **Unknown counts as a
- * contract**, which is the fail-closed direction the whole Release design takes.
+ * a classifier gives once the schema has moved on. The verdict is the
+ * TRANSITION's, `pivot` and `pivotReason` as the target answered them — a
+ * Release cannot hold it, because the same bytes are an expand after one
+ * predecessor and a contract after another.
  */
 export function planTransition({
   kind = 'deploy',
@@ -139,6 +159,8 @@ export function planTransition({
   attempt       = 1,
   steps         = [],
   actor         = null,
+  pivot         = null,
+  pivotReason   = null,
   // Stated only where the derivation below would be a claim about the wrong
   // thing: a pause moves no schema, so *unknown counts as a contract* would
   // record a pivot crossing that nothing crossed.
@@ -183,7 +205,9 @@ export function planTransition({
       fromReleaseId,
       generation,
       status:        'planned',
-      isCrossingPivot:  isCrossingPivot ?? release.pivot !== 'expand',
+      isCrossingPivot:  isCrossingPivot ?? crossesPivot({ pivot, fromReleaseId }),
+      pivot,
+      pivotReason,
       plan: {
         formatVersion: PLAN_FORMAT,
         attempt,
@@ -209,7 +233,7 @@ const pad = (s, n) => String(s ?? '').padEnd(n)
  * two facts that decide whether to run it at all; the steps after, because they
  * are what it will do.
  */
-export function formatPlan({ transition, steps, release, configuration, findings = [] } = {}) {
+export function formatPlan({ transition, steps, release, configuration } = {}) {
   const out = []
   const row = (k, v) => out.push(`  ${pad(k, 14)}${v}`)
 
@@ -233,24 +257,13 @@ export function formatPlan({ transition, steps, release, configuration, findings
   row('status', `${transition.status} · attempt ${transition.plan.attempt} (provisional — the journal owns this count)`)
 
   // ── the pivot ──────────────────────────────────────────────────────────────
+  //
+  // Not classified here. The verdict is relative to the schema the live
+  // container migrated to, which is on the target; a laptop can only compare
+  // against a commit, and that answered `unknown` for every deploy (`FJS-4004`).
   out.push('')
-  if (release.pivot === 'expand') {
-    out.push('  Pivot         expand — Release N-1 can still serve, so this deploy can be taken back')
-  } else {
-    const why = release.pivot === 'unknown'
-      ? 'unknown, which counts as a contract — nothing here could prove N-1 keeps working'
-      : 'contract — Release N-1 cannot serve this database'
-    out.push(`  Pivot         ${why}`)
-    out.push('                After this deploy, only forward — a revert past it cannot restore the database.')
-    for (const f of findings.filter(x => x.severity === 'contract').slice(0, 12)) {
-      out.push(`                  · ${f.subject}: ${f.detail}`)
-      // Where litestone offered the three-step split, print it: a refusal that
-      // carries its own way out is advice, and one that does not is a wall.
-      for (const line of f.plan ?? []) out.push(`                      ${line}`)
-    }
-    const rest = findings.filter(x => x.severity === 'contract').length - 12
-    if (rest > 0) out.push(`                  · …and ${rest} more (fli release:check prints them all)`)
-  }
+  out.push('  Pivot         decided on the target at deploy time, against the schema the live release runs')
+  out.push('                A contract or an unknown is the pivot: after it, only forward. fli release:check previews the change.')
 
   // ── the steps ──────────────────────────────────────────────────────────────
   //

@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-174 definitions · 74 models · 1 view · 40 types · 59 enums · 0 other
+176 definitions · 74 models · 1 view · 41 types · 60 enums · 0 other
 ```
 
 ## Definitions
@@ -121,6 +121,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ProviderKind` | enum |
 | `ComputeProvider` | enum |
 | `MachineBackupPlan` | enum |
+| `MachineBackupChoice` | enum |
 | `PlatformProvider` | enum |
 | `PlatformBuild` | enum |
 | `RegisterMethod` | enum |
@@ -198,6 +199,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `FlagOverrideClear` | type |
 | `ServerProvision` | type |
 | `ServerProvisionStep` | type |
+| `ServerSetBackups` | type |
 | `BackupPolicy` | type |
 
 ## Enums
@@ -222,10 +224,11 @@ validates, and a select that silently drops an option.
 - `SecretKind` — `sshKey`, `providerKey`, `registryAuth`, `tlsCert`, `notification`, `backup`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
-- `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `backupsReadFailed`, `cameOnline`, `unreachable`, `rebooted`, `containerCrashLooping`, `containerRecovered`, `unitFailed`, `unitRestored`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `postureFailed`, `postureRestored`
+- `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `backupsReadFailed`, `backupsSet`, `backupsRestored`, `backupsRestoreFailed`, `cameOnline`, `unreachable`, `rebooted`, `containerCrashLooping`, `containerRecovered`, `unitFailed`, `unitRestored`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `postureFailed`, `postureRestored`
 - `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`
 - `ComputeProvider` — `custom`, `hetzner`, `digitalocean`
 - `MachineBackupPlan` — `daily`, `weekly`
+- `MachineBackupChoice` — `on`, `off`, `unmanaged`
 - `PlatformProvider` — `cloudflare`
 - `PlatformBuild` — `outpost`, `platform`
 - `RegisterMethod` — `imported`, `provisioned`
@@ -2329,6 +2332,19 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `enrollToken` | `string`? | — | — | — | — |
 
 **On create**: required — `step`
+
+### `ServerSetBackups`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `choice` | `MachineBackupChoice` | yes | — | — | — |
+| `plan` | `MachineBackupPlan`? | — | — | — | — |
+| `hour` | `integer`? | — | — | — | — |
+| `weekday` | `string`? | — | — | — | — |
+
+**On create**: required — `choice`
 
 ### `BackupPolicy`
 

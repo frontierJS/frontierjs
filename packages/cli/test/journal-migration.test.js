@@ -89,11 +89,11 @@ describe('migrationPlan', () => {
   test('every step ends by moving the format, guarded on the one it came from', () => {
     const plan = migrationPlan(1, { machine: MACHINE })
     const ends = plan.statements.filter(st => st.name.endsWith(':format'))
-    expect(ends.map(st => st.name)).toEqual(['1→2:format', '2→3:format', '3→4:format', '4→5:format'])
+    expect(ends.map(st => st.name)).toEqual(['1→2:format', '2→3:format', '3→4:format', '4→5:format', '5→6:format'])
     expect(plan.statements.at(-1)).toBe(ends.at(-1))
     for (const st of ends)
       expect(st.sql).toMatch(/UPDATE .* SET "formatVersion" = \? WHERE "id" = 'journal' AND "formatVersion" = \?/)
-    expect(ends.map(st => st.params)).toEqual([[2, 1], [3, 2], [4, 3], [5, 4]])
+    expect(ends.map(st => st.params)).toEqual([[2, 1], [3, 2], [4, 3], [5, 4], [6, 5]])
   })
 
   test('3 → 4 needs the machine it records, and refuses without one', () => {
@@ -150,7 +150,9 @@ describe('opening a journal that is behind', () => {
   test('with foreign keys ON the same rebuild deletes every step', async () => {
     const db = atFormat1(`${dir}/d.db`)
     const j  = clientFor(db)
-    await j.send(migrationPlan(1, { machine: MACHINE }).statements, { foreignKeys: true })
+    // To 2 only: the later release rebuild trips the transitions' key and refuses
+    // the whole walk, which would hide the cascade this control exists to show.
+    await j.send(migrationPlan(1, { to: 2, machine: MACHINE }).statements, { foreignKeys: true })
     expect(rows(db, `SELECT * FROM "${TABLE.transition}"`)).toHaveLength(1)
     expect(rows(db, `SELECT * FROM "${TABLE.step}"`)).toHaveLength(0)
   })

@@ -32,8 +32,9 @@ client's own account.
 ### DigitalOcean — `DIGITALOCEAN_TOKEN`
 
 - Made at https://cloud.digitalocean.com/account/api/tokens/new
-- **Full Access**, or **Custom Scopes**: `droplet` create/read/delete, `ssh_key` create/read, `tag` create, `regions` `sizes` `image` read, `reserved_ip` create/read/delete
+- **Full Access**, or **Custom Scopes**: `droplet` create/read/update/delete, `ssh_key` create/read, `tag` create, `regions` `sizes` `image` `actions` read, `reserved_ip` create/read/delete
 - **For Basecamp too** — the same token as a cloud account in Basecamp (Secrets, kind `provider_key`) — add `account` read: Basecamp's Verify reads `/v2/account`, and a token without it is refused there
+- `droplet` update switches a machine's backups and `actions` read tells a switch still applying from drift; a token without one answers 403, and Basecamp names the scope it lacked
 - A reserved IP bills $5/mo while no droplet holds it
 - `fli eset DIGITALOCEAN_TOKEN <token> --global`
 

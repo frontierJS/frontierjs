@@ -35,10 +35,10 @@ $.config.apiPort    = deployConf.api?.port ?? 3000
 $.config.healthPath = deployConf.api?.health ?? '/health'
 // The name the route is written for, which is what `03-verify` has to ask
 // through — a machine serving several apps answers the wrong one otherwise.
-$.config.edgeHost   = deployConf.web?.domain ?? null
+$.config.edgeHost   = deployConf.web?.domain ?? deployConf.api?.domain ?? null
 $.config.startTime  = Date.now()
 
-log.info(`Pausing ${$.config.appId} on ${target}`)
+echo(chalk`{dim Pausing} {bold ${$.config.appId}} {dim on} ${target}`)
 ```
 
 ## What a pause is

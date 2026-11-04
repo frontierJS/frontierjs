@@ -385,6 +385,17 @@ const documentHeaders = ({ scripts = [], styles = [], api = null } = {}) => ({
  * skipped, so an Outpost app logs exactly as much as before; each route gets a
  * file of its own, excluded from the default logger so it is not written twice.
  */
+/**
+ * Whether Caddy already routes this app. Either side's route counts: an app
+ * with `web: false` has only the API's, and asking for the web one alone read
+ * it as never set up, so its port never moved and its routes were never
+ * rewritten.
+ */
+export function holdsRoute(config, appId) {
+  const ours = new Set([routeId(appId), routeId(appId, 'api')])
+  return (config?.apps?.http?.servers?.[INGRESS_SERVER]?.routes ?? []).some(r => ours.has(r['@id']))
+}
+
 export function applyEdge(config, { appId, routes, plain = [] }) {
   const out    = structuredClone(config ?? {})
   const ours   = new Set([routeId(appId), routeId(appId, 'api')])

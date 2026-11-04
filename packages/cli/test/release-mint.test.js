@@ -17,7 +17,7 @@ import { configurationSet, schemaSurfaceHash, mintRelease, formatRelease,
 
 const base = (over = {}) => ({
   app: 'shop', environment: 'production',
-  configurationHash: 'bh', schemaHash: 'sh', pivot: 'expand', ...over,
+  configurationHash: 'bh', schemaHash: 'sh', ...over,
 })
 
 describe('the id is the terms and nothing else', () => {
@@ -42,7 +42,6 @@ describe('the id is the terms and nothing else', () => {
     ['the bytes',         { digest: 'sha256:aaa' }],
     ['the configuration', { configurationHash: 'other' }],
     ['the data boundary', { schemaHash: 'other' }],
-    ['the verdict',       { pivot: 'contract' }],
   ])('%s moves it', (_label, over) => {
     expect(mintRelease(base(over)).id).not.toBe(mintRelease(base()).id)
   })
@@ -154,41 +153,27 @@ describe('what it says', () => {
     expect(out).toContain('not built')
     expect(out).toContain('a name, not an identity')
   })
-
-  test('a contract says the pivot out loud', () => {
-    expect(formatRelease(mintRelease(base({ pivot: 'contract' })))).toContain('only forward')
-  })
 })
 
-// ─── the fourth rung ─────────────────────────────────────────────────────────
-// litestone ranks a pivot `unchanged < expand < unknown < contract` and answers
-// the first one when a release moved no schema. The journal stores three, so an
-// unmapped `unchanged` is dropped by `INSERT OR IGNORE` against the pivot CHECK
-// and the deploy dies one statement later on the transition's foreign key —
-// which names neither the column nor the value. Graded against the shipped DDL
-// rather than against the mapping, because a test that asserted the rewrite
-// alone would still pass if the CHECK gained a fourth value tomorrow.
+// ─── the pivot is not a term ─────────────────────────────────────────────────
+// Whether N-1 can still serve is relative to what is serving, so one Release is
+// an expand after one predecessor and a contract after another. Minted into the
+// id it was asked against git HEAD and every Release read `unknown`
+// (`FJS-4004`); it is the transition's verdict now, and the transition's CHECK
+// has to take every rung litestone answers or the insert is silently ignored.
 
-describe('a pivot the journal cannot store', () => {
-  test('unchanged is minted as expand — both say N-1 can still serve', () => {
-    expect(mintRelease(base({ pivot: 'unchanged' })).pivot).toBe('expand')
+describe('the pivot belongs to the transition', () => {
+  test('a pivot handed to the mint changes nothing about the Release', () => {
+    expect(mintRelease(base({ pivot: 'contract' })).id).toBe(mintRelease(base()).id)
+    expect(mintRelease(base({ pivot: 'contract' }))).not.toHaveProperty('pivot')
   })
 
-  test('and the id is the one expand would have minted, not a fourth', () => {
-    // The pivot is a term in the id hash. Normalizing after the hash would give
-    // one Release two ids depending on which word arrived.
-    expect(mintRelease(base({ pivot: 'unchanged' })).id)
-      .toBe(mintRelease(base({ pivot: 'expand' })).id)
-  })
-
-  test('every pivot mintRelease can answer is one the DDL accepts', () => {
+  test('every rung litestone answers is one the transition table accepts', () => {
     const ddl = readFileSync(join(import.meta.dirname, '..', 'db', 'ddl.snapshot.sql'), 'utf8')
-    const allowed = /CHECK \("pivot" IN \(([^)]*)\)\)/.exec(ddl)?.[1]
+    const transition = /CREATE TABLE IF NOT EXISTS "transition" \(([\s\S]*?)\) STRICT/.exec(ddl)?.[1] ?? ''
+    const allowed = /CHECK \("pivot" IN \(([^)]*)\)\)/.exec(transition)?.[1]
     expect(allowed).toBeTruthy()
-
-    // Every rung of litestone's ladder, put through the mint and checked against
-    // the constraint the target will actually apply.
     for (const rung of ['unchanged', 'expand', 'unknown', 'contract'])
-      expect(allowed).toContain(`'${mintRelease(base({ pivot: rung })).pivot}'`)
+      expect(allowed).toContain(`'${rung}'`)
   })
 })

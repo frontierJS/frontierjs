@@ -21,6 +21,19 @@ catch (e) {
   return
 }
 
+// A web side with nothing to build failed at 08-release-web, after the API was
+// already swapped (FJS-4003). 03-build-web runs `build:web` where the app names
+// one, else the build in web/.
+if ($.config.doWeb) {
+  const { existsSync, readFileSync } = await import('fs')
+  const scripts = JSON.parse(readFileSync(`${$.paths.root}/package.json`, 'utf8')).scripts ?? {}
+  if (!scripts['build:web'] && !existsSync(`${$.paths.root}/web`)) {
+    log.error('This app has no web/ to deploy. Set deploy.web = false in frontier.config.js, or pass --api.')
+    $.config.abort = true
+    return
+  }
+}
+
 $.config.host       = host
 $.config.appId      = appId
 $.config.apiPort    = apiPort

@@ -92,25 +92,18 @@ A skipped step is shown rather than dropped. An operator needs *the backup did
 not run* to be visible, and the ordinals have to stay stable so a resumed
 transition can find where it stopped even after a `skip:` has changed its answer.
 
-## The pivot is the first thing to read
+## The pivot is decided on the target
 
 ```
-Pivot         contract — Release N-1 cannot serve this database
-              After this deploy, only forward — a revert past it cannot restore the database.
+Pivot         decided on the target at deploy time, against the schema the live release runs
 ```
 
-Where the classifier offered the three-step way out, the plan prints it:
-
-```
-  · model Order: `paidAt` is required with no default — an N-1 write refuses
-      expand:   declare `paidAt` optional on `Order` and deploy — N-1 keeps serving
-      backfill: fill `paidAt` for the rows that predate it
-      contract: declare it required and deploy again — this deploy is the pivot
-```
-
-**Unknown counts as a contract.** A tree with no baseline to compare against has
-not shown that N-1 keeps working, and the fail-closed direction is the whole
-reason the classifier exists.
+Whether Release N-1 can still serve is relative to the schema the live container
+migrated to, and a plan reaches no server, so it does not guess. `fli deploy`
+asks Outpost's classifier on the target once the image is built (`04c-journal`)
+and records the verdict on the transition (`FJS-4004`): a contract, an unknown
+or a classifier that could not run is the pivot, after which only forward.
+`fli release:check` previews the change against your committed baseline.
 
 ## The transition id, and the one term a plan cannot answer
 
@@ -132,6 +125,6 @@ would resume a transition already marked `succeeded` and leave R1 serving.
 
 ## What it deliberately does not do
 
-It writes nothing, reaches no server, and exits 0 whatever the pivot says. There
+It writes nothing, reaches no server, and exits 0. There
 is nothing to refuse: a plan is a document. `fli release:check --strict` is the
 gate, and it belongs on the branch that deploys.

@@ -221,15 +221,19 @@ export async function findHost(client: any) {
  *
  * `name` is what the operator calls the box — the ssh alias `fli` dialed — and
  * names a new row only; a row already made keeps whatever it was renamed to.
+ *
+ * `outpostGone` is `fli deploy` finding no Outpost unit on the box. A retired
+ * box, or one Basecamp was restored beside, keeps a row that heartbeated, and
+ * without it that row answers `enrolled` while nothing on the box runs.
  */
-export async function useHost(client: any, { workspaceId, actor, ipAddress, name }: { workspaceId?: string; actor: string; ipAddress?: string; name?: string }) {
+export async function useHost(client: any, { workspaceId, actor, ipAddress, name, outpostGone = false }: { workspaceId?: string; actor: string; ipAddress?: string; name?: string; outpostGone?: boolean }) {
   const sys = client.asSystem()
   if (await hostServer(sys)) {
     let server = await findHost(client)
     if (!server) throw new Conflict('This Basecamp\'s box is a machine in another workspace; enroll it from there')
     if (ipAddress && !server.ipAddress)
       server = await client.server.update({ where: { id: server.id }, data: { ipAddress } })
-    if (server.lastHeartbeatAt) return { server, enrolled: true as const }
+    if (server.lastHeartbeatAt && !outpostGone) return { server, enrolled: true as const }
     return { server, enrolled: false as const, ...(await issueEnrollmentFor(client, server.id, actor)) }
   }
 

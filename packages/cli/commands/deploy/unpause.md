@@ -33,10 +33,10 @@ $.config.serverPath = api.path
 $.config.appId      = appId
 $.config.apiPort    = deployConf.api?.port ?? 3000
 $.config.healthPath = deployConf.api?.health ?? '/health'
-$.config.edgeHost   = deployConf.web?.domain ?? null
+$.config.edgeHost   = deployConf.web?.domain ?? deployConf.api?.domain ?? null
 $.config.startTime  = Date.now()
 
-log.info(`Unpausing ${$.config.appId} on ${target}`)
+echo(chalk`{dim Unpausing} {bold ${$.config.appId}} {dim on} ${target}`)
 ```
 
 ## The queues come back first

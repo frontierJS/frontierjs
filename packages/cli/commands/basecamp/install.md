@@ -85,5 +85,5 @@ if (process.stdin.isTTY) {
   echo.lines(['', ...rows, ''], { indent: 2 })
 }
 
-process.exitCode = await runInstall(dest, install, { tty, log, echo, chalk }) || process.exitCode
+process.exitCode = (await runInstall(dest, install, { tty, log, echo, chalk })).code || process.exitCode
 ```

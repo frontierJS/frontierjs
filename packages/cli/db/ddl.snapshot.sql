@@ -52,14 +52,10 @@ CREATE TABLE IF NOT EXISTS "release" (
   "configurationHash" TEXT NOT NULL,
   "generation" INTEGER NOT NULL,
   "schemaHash" TEXT NOT NULL,
-  "pivot" TEXT NOT NULL DEFAULT 'unknown',
-  "isPivotDeclared" INTEGER NOT NULL DEFAULT 0,
-  "pivotFindings" TEXT NOT NULL DEFAULT '[]',
   "retentionUntil" TEXT,
   "audienceKey" TEXT NOT NULL DEFAULT 'everyone',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "createdBy" TEXT,
-  CHECK ("pivot" IN ('expand', 'contract', 'unknown'))
+  "createdBy" TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_release_app_environment_createdAt" ON "release" ("app", "environment", "createdAt");
 CREATE INDEX IF NOT EXISTS "idx_release_retentionUntil" ON "release" ("retentionUntil");
@@ -101,12 +97,15 @@ CREATE TABLE IF NOT EXISTS "transition" (
   "generation" INTEGER NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'planned',
   "isCrossingPivot" INTEGER NOT NULL DEFAULT 0,
+  "pivot" TEXT,
+  "pivotReason" TEXT,
   "plan" TEXT NOT NULL DEFAULT '[]',
   "actor" TEXT,
   "startedAt" TEXT,
   "finishedAt" TEXT,
   CHECK ("kind" IN ('deploy', 'revert', 'pause', 'unpause')),
   CHECK ("status" IN ('planned', 'running', 'succeeded', 'failed')),
+  CHECK ("pivot" IN ('unchanged', 'expand', 'contract', 'unknown')),
   FOREIGN KEY ("releaseId") REFERENCES "release" ("id")
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_transition_app_environment_startedAt" ON "transition" ("app", "environment", "startedAt");

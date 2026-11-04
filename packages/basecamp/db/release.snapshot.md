@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-74 model(s) · 59 enum(s) · 2 database(s) · 1 value set(s)
+74 model(s) · 60 enum(s) · 2 database(s) · 1 value set(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -49,6 +49,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `HttpMethod` | `DELETE` · `GET` · `HEAD` · `PATCH` · `POST` · `PUT` |
 | `JobKind` | `oneShot` · `scheduled` · `triggered` · `workflow` |
 | `JobStatus` | `cancelled` · `failed` · `pending` · `running` |
+| `MachineBackupChoice` | `off` · `on` · `unmanaged` |
 | `MachineBackupPlan` | `daily` · `weekly` |
 | `MaintenanceKind` | `cleanup` · `patch` |
 | `MetricType` | `counter` · `gauge` · `histogram` |
@@ -66,7 +67,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `RegisterMethod` | `imported` · `provisioned` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `backup` · `generic` · `notification` · `providerKey` · `registryAuth` · `sshKey` · `tlsCert` |
-| `ServerEventKind` | `backupsReadFailed` · `cameOnline` · `cleanupFailed` · `cleanupQueued` · `cleanupRan` · `containerCrashLooping` · `containerRecovered` · `created` · `destroyFinished` · `destroyRequested` · `drainCancelled` · `drainStarted` · `enrollmentIssued` · `postureFailed` · `postureRestored` · `provisionCreated` · `provisionReady` · `provisionRequested` · `provisionTimeout` · `rebootRequested` · `rebooted` · `recipeFailed` · `recipeRan` · `removed` · `statusSyncIgnored` · `statusSynced` · `syncFailed` · `syncNoAccount` · `syncRequested` · `syncUnrecognized` · `syncUnsupported` · `unitFailed` · `unitRestored` · `unreachable` · `volumeRemoved` · `volumesPruned` |
+| `ServerEventKind` | `backupsReadFailed` · `backupsRestoreFailed` · `backupsRestored` · `backupsSet` · `cameOnline` · `cleanupFailed` · `cleanupQueued` · `cleanupRan` · `containerCrashLooping` · `containerRecovered` · `created` · `destroyFinished` · `destroyRequested` · `drainCancelled` · `drainStarted` · `enrollmentIssued` · `postureFailed` · `postureRestored` · `provisionCreated` · `provisionReady` · `provisionRequested` · `provisionTimeout` · `rebootRequested` · `rebooted` · `recipeFailed` · `recipeRan` · `removed` · `statusSyncIgnored` · `statusSynced` · `syncFailed` · `syncNoAccount` · `syncRequested` · `syncUnrecognized` · `syncUnsupported` · `unitFailed` · `unitRestored` · `unreachable` · `volumeRemoved` · `volumesPruned` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
 | `ServerStatus` | `destroyed` · `destroying` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
 | `SslMode` | `flexible` · `full` · `fullStrict` · `off` |

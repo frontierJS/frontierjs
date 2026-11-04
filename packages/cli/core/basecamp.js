@@ -755,6 +755,22 @@ mv "$tmp" "$key"
 `, 'write the key')
 }
 
+/**
+ * The key a reinstall carries, written where `deploy:setup` finds one and leaves
+ * it: setup otherwise seeds the laptop's `.env.production` key, which is not the
+ * one the archive or the old database was encrypted under.
+ */
+export async function seedBoxKey({ host, secretsDir, key }) {
+  await asRootOn(host, `set -eu
+umask 077
+mkdir -p ${shQuote(secretsDir)}
+tmp=$(mktemp ${shQuote(secretsDir)}/.key-XXXXXX)
+printf '%s\\n' ${shQuote(key)} > "$tmp"
+chmod 400 "$tmp"
+mv "$tmp" ${shQuote(`${secretsDir}/ENCRYPTION_KEY`)}
+`, 'place the key')
+}
+
 /** Restart the API container, so it boots on the key or the archive just staged. */
 export const restartApi = ({ host, container }) =>
   asRootOn(host, `set -eu\ndocker restart ${shQuote(container)} >/dev/null\n`, `restart ${container}`)

@@ -230,6 +230,11 @@ const said = (res: { error?: { kind: string; message?: string }; status?: number
     + (reason ? ` — ${reason}` : '')
 }
 
+/** A write's refusal. Hetzner's tokens are Read or Read & Write and nothing
+ *  finer, so a 403 on a write is a Read token. */
+const refusedWrite = (res: Parameters<typeof said>[0]) =>
+  said(res) + (res.status === 403 ? '; the token needs Read & Write' : '')
+
 /** Why Hetzner cannot hold this policy, or null. It sells one plan and picks
  *  the window itself, so an hour asked for would be one it never keeps. */
 function unheld(policy: BackupPolicy): string | null {
@@ -277,7 +282,7 @@ const reservedIps: ReservedIps = {
       auto_delete: false,
       labels:      { [FLEET]: '' },
     }})
-    if (res.error) throw new Error(`Hetzner refused the Primary IP — ${said(res)}`)
+    if (res.error) throw new Error(`Hetzner refused the Primary IP — ${refusedWrite(res)}`)
     const row = (res.data as Row | null)?.primary_ip as Row | undefined
     if (!row || !str(row.ip)) throw new Error('Hetzner made a Primary IP and answered no address')
     return toReserved(row)
@@ -364,13 +369,14 @@ export const hetzner: ComputeConnector = {
 
   async backups(send, providerServerId): Promise<MachineBackups | null> {
     const id = encodeURIComponent(providerServerId)
-    const [got, listed] = await Promise.all([
+    const [got, listed, running] = await Promise.all([
       send({ method: 'GET', path: `/v1/servers/${id}` }),
       send({ method: 'GET', path: `/v1/images?type=backup&bound_to=${id}&per_page=${PER_PAGE}` }),
+      send({ method: 'GET', path: `/v1/servers/${id}/actions?status=running&per_page=${PER_PAGE}` }),
     ])
 
-    if (got.status === 404) return null
-    const failed = [got, listed].find(r => r.error)
+    if (got.status === 404 || running.status === 404) return null
+    const failed = [got, listed, running].find(r => r.error)
     if (failed?.error) throw new Error(said(failed))
 
     const server = (got.data as Row | null)?.server as Row | undefined
@@ -398,6 +404,8 @@ export const hetzner: ComputeConnector = {
           at:     str(i.created),
           sizeGb: typeof i.image_size === 'number' && Number.isFinite(i.image_size) ? i.image_size : null,
         })).filter(b => b.id && b.at)),
+      pending:       rows(running.data, 'actions')
+        .some(a => ['enable_backup', 'disable_backup'].includes(str(a.command))),
     }
   },
 
@@ -420,7 +428,7 @@ export const hetzner: ComputeConnector = {
     const action = policy ? 'enable_backup' : 'disable_backup'
     const res    = await send({ method: 'POST', path: `${at}/actions/${action}` })
     if (res.status === 404) return false
-    if (res.error) throw new Error(`Hetzner refused ${action} — ${said(res)}`)
+    if (res.error) throw new Error(`Hetzner refused ${action} — ${refusedWrite(res)}`)
     return true
   },
 
@@ -442,7 +450,7 @@ export const hetzner: ComputeConnector = {
       start_after_create: true,
     }})
 
-    if (res.error) throw new Error(`Hetzner refused the create — ${said(res)}`)
+    if (res.error) throw new Error(`Hetzner refused the create — ${refusedWrite(res)}`)
 
     const server = (res.data as Row | null)?.server as Row | undefined
     // A 2xx with no id is the worst answer this call can give: the machine may
@@ -467,7 +475,7 @@ export const hetzner: ComputeConnector = {
     const made = await send({ method: 'POST', path: '/v1/ssh_keys', body: {
       name: key.name, public_key: key.publicKey.trim(),
     }})
-    if (made.error) throw new Error(`Hetzner refused the SSH key — ${said(made)}`)
+    if (made.error) throw new Error(`Hetzner refused the SSH key — ${refusedWrite(made)}`)
     const name = str(((made.data as Row | null)?.ssh_key as Row | undefined)?.name)
     if (!name) throw new Error('Hetzner accepted the SSH key and answered no name')
     return name
@@ -512,7 +520,7 @@ export const hetzner: ComputeConnector = {
     if (got.error) throw new Error(said(got))
     const labels = (((got.data as Row | null)?.server as Row | undefined)?.labels ?? {}) as Record<string, string>
     const res = await send({ method: 'PUT', path, body: { labels: { ...labels, ...markLabels(mark) } } })
-    if (res.error) throw new Error(`Hetzner refused the label — ${said(res)}`)
+    if (res.error) throw new Error(`Hetzner refused the label — ${refusedWrite(res)}`)
   },
 
   async verify(send): Promise<boolean> {

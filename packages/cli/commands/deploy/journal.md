@@ -80,7 +80,9 @@ const serving = rows.find(r => r.status === 'succeeded')
 for (const r of rows) {
   const here = r.id === serving?.id ? '  ← serving' : ''
   console.log(`  ${MARK[r.status] ?? '?'} ${pad(r.kind, 7)}${pad(r.releaseId, 14)}${pad(r.status, 10)}${pad(r.startedAt ?? '', 26)}${r.actor ?? ''}${here}`)
-  if (r.isCrossingPivot) console.log(`    ${pad('', 7)}crossed the pivot — nothing before this can be restored`)
+  // The verdict beside the crossing, so a pivot the classifier could not reach
+  // reads differently from a contract it found.
+  if (r.isCrossingPivot) console.log(`    ${pad('', 7)}crossed the pivot (${r.pivot ?? `not classified${r.pivotReason ? ` — ${r.pivotReason}` : ''}`}) — nothing before this can be restored`)
 }
 
 const which = flag.transition || (flag.steps ? rows[0]?.id : null)
@@ -121,7 +123,7 @@ situation somebody is reading it to get out of.
 
 ```
 ✗ deploy  a1b2c3d4e5f6  failed    2026-08-26T09:14:02.881Z  jordan
-  deploy  crossed the pivot — nothing before this can be restored
+  deploy  crossed the pivot (contract) — nothing before this can be restored
 ```
 
 That line is read off the transition, not recomputed. What matters afterwards is

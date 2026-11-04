@@ -32,15 +32,18 @@ const { container, replaced, healthy, none, untouched, unbound, reason, swap, sw
   configuration: configurationSet(deployConf, $.config.target).values,
   healthPath,
   log,
+  // The verdict `04c-journal` recorded on the transition, so the swap runs on
+  // the answer the journal holds. Absent when the journal is off, and then the
+  // swap asks for itself.
+  pivot: $.config.pivot ?? null,
 })
 
 $.config.container = container
 $.config.replaced  = replaced
 $.config.livePort  = port
 
-// The swap that ran, as Basecamp's Deployment row records it, kept beside the
-// Release's own `pivot=`: that one is the plan's verdict off the committed
-// baseline, this one the live database's.
+// The swap that ran, as Basecamp's Deployment row records it. `pivot` is the
+// transition's own verdict, repeated so this row reads alone.
 noteForJournal($, '06-swap', { swap, swapReason, pivot })
 echo(swapReason ? chalk`  {dim swap}  ${swap} {dim — ${swapReason}}` : chalk`  {dim swap}  ${swap}`)
 

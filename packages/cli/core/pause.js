@@ -43,9 +43,16 @@
  */
 export const guardId = (appId, side = 'web') => side === 'api' ? `fli-${appId}-api-pause` : `fli-${appId}-pause`
 
-/** Prints 200 when Caddy holds the guard, anything else when it does not. Run on the target. */
-export const guardProbeScript = (appId) =>
-  `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:2019/id/${guardId(appId)} 2>/dev/null || echo 000`
+/**
+ * Prints 200 when Caddy holds the guard, anything else when it does not. Run on the target.
+ *
+ * Either route's guard answers: an app with `web: false` has only the API's, and
+ * asking for the web one alone read that app as never set up.
+ */
+export const guardProbeScript = (appId) => {
+  const probe = (id) => `$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:2019/id/${id} 2>/dev/null)`
+  return `c=${probe(guardId(appId))}; [ "$c" = 200 ] || c=${probe(guardId(appId, 'api'))}; echo "\${c:-000}"`
+}
 
 /** fli's own state on a target. The journal is already here. */
 export const fliDir = (serverPath) => `${serverPath}/.fli`

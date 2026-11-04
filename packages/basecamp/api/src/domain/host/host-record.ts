@@ -26,7 +26,8 @@
 //
 // The last line of stdout is one JSON object, which is fli's whole contract:
 //   { host, ip, zone, record, proxied }
-//   { host, zone, points }              under check; points is null with no record
+//   { host, zone, points, zones }       under check; points is null with no record,
+//                                       zones every { id, name } the token opens
 //   { records: [{ zone, ip, name, id, proxied, marked }] }  under find
 //   { error: '<what>' }                 and the exit is non-zero
 
@@ -70,13 +71,14 @@ try {
 
   // The longest zone the name ends with, as the edge service picks one, so
   // `a.shop.example.com` lands in `shop.example.com` where both are open.
-  const zone = (await cloudflare.zones(send))
+  const zones = await cloudflare.zones(send)
+  const zone = zones
     .filter(z => host === z.name || host.endsWith(`.${z.name}`))
     .sort((a, b) => b.name.length - a.name.length)[0]
   if (!zone) fail(`no zone this token opens holds ${host}: give it Zone Read and DNS Edit on that zone`)
   if (input.check) {
     const ours = (await cloudflare.records(send, zone.id)).find(r => r.type === 'A' && r.name === host && r.mark)
-    answer({ host, zone: zone.name, points: ours?.content ?? null })
+    answer({ host, zone: zone.name, points: ours?.content ?? null, zones: zones.map(z => ({ id: z.id, name: z.name })) })
     process.exit(0)
   }
 

@@ -251,7 +251,7 @@ describe('the journal, through the runner that ships to the target', () => {
   const RELEASE = {
     id: 'r2aaaaaaaaaa', app: 'shop', environment: 'production',
     digest: null, configurationHash: 'b'.repeat(64), generation: 1,
-    schemaHash: 'c'.repeat(64), pivot: 'expand', createdBy: 'jordan',
+    schemaHash: 'c'.repeat(64), createdBy: 'jordan',
   }
   const NAMES = ['01-preflight', '02-ship', '04-build-api', '06-swap']
   const steps = (tid) => NAMES.map((name, i) => ({
@@ -515,8 +515,8 @@ describe('the journal, through the runner that ships to the target', () => {
     await begin('t1')
     await j.settle({ id: 't1', status: 'succeeded' })
     await j.begin({
-      release: { ...RELEASE, id: 'r3bbbbbbbbbb', pivot: 'contract' },
-      transition: { ...TRANSITION, id: 't2', releaseId: 'r3bbbbbbbbbb', fromReleaseId: RELEASE.id, isCrossingPivot: true },
+      release: { ...RELEASE, id: 'r3bbbbbbbbbb' },
+      transition: { ...TRANSITION, id: 't2', releaseId: 'r3bbbbbbbbbb', fromReleaseId: RELEASE.id, isCrossingPivot: true, pivot: 'contract' },
       steps: steps('t2'),
     })
     const rows = await j.history({ app: 'shop', environment: 'production' })

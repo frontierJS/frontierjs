@@ -762,7 +762,7 @@ CREATE TABLE IF NOT EXISTS "server_event" (
   "metadata" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "noticeOwedAt" TEXT,
-  CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'backupsReadFailed', 'cameOnline', 'unreachable', 'rebooted', 'containerCrashLooping', 'containerRecovered', 'unitFailed', 'unitRestored', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'postureFailed', 'postureRestored')),
+  CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'backupsReadFailed', 'backupsSet', 'backupsRestored', 'backupsRestoreFailed', 'cameOnline', 'unreachable', 'rebooted', 'containerCrashLooping', 'containerRecovered', 'unitFailed', 'unitRestored', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'postureFailed', 'postureRestored')),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_event_serverId" ON "server_event" ("serverId");

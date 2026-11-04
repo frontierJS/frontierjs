@@ -147,7 +147,7 @@ if (deployConf?.server) {
   const hosts = distinctHosts([api, web, builder])
   const split = api && web && (api.host !== web.host || api.path !== web.path)
 
-  const scope = siteOnly ? 'site only' : bothSides ? 'api + web' : doApi ? 'api only' : 'web only'
+  const scope = siteOnly ? 'site only' : doApi && web ? 'api + web' : doApi ? 'api only' : 'web only'
   log.info(`Deploying ${scope} to ${target}${branchStr}`)
   for (const h of hosts) log.info(`  ${h.host}:${h.path}`)
   if (builder && api && (builder.host !== api.host || builder.path !== api.path))

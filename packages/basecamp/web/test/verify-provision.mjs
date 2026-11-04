@@ -724,6 +724,24 @@ try {
     .catch(e => e.message)
   check('Save turns backups on, read back from the vendor, and the machine is managed now',
     /weekly, Sundays at 16:00 UTC/.test(onCard) && !/Not managed: Basecamp shows/.test(onCard), String(onCard).replace(/\s+/g, ' ').trim())
+
+  // Someone turns them off in the vendor's console. The next Sync puts the
+  // managed policy back, and the trail names what the vendor had.
+  const doAuth   = { authorization: `Bearer ${DO_TOKEN}`, 'content-type': 'application/json' }
+  const droplets = (await (await fetch(`${SINK}/v2/droplets`, { headers: doAuth })).json()).droplets ?? []
+  const droplet  = droplets.find(d => (d.tags ?? []).includes(`basecamp:server:${serverId}`))
+  const consoleOff = droplet && await fetch(`${SINK}/v2/droplets/${droplet.id}/actions`, {
+    method: 'POST', headers: doAuth, body: JSON.stringify({ type: 'disable_backups' }) })
+  check('backups are turned off at the stand-in behind the app\'s back', consoleOff?.status < 300, `${consoleOff?.status ?? 'no droplet tagged ' + serverId}`)
+  await evaluate(`[...document.querySelectorAll('#server-actions button')].find(b => /sync from provider/i.test(b.textContent)).click()`)
+  const putBack = await until(`document.getElementById('server-events')?.textContent ?? ''`,
+    t => /had machine backups off; put back weekly, SUN at 16:00 UTC/.test(t), 'the sync never put the policy back', 15_000)
+    .catch(e => e.message)
+  check('and the next Sync puts the policy back, naming what it found',
+    /had machine backups off; put back weekly/.test(putBack), String(putBack).replace(/\s+/g, ' ').slice(0, 200))
+  check('the card reads on again, from the vendor',
+    /On.*weekly, Sundays at 16:00 UTC/.test((await text('#server-backups') ?? '').replace(/\s+/g, ' ')))
+
   await fill({ 'backups-choice': 'off' })
   await click('#backups-save')
   const offCard = await until(`document.getElementById('server-backups')?.textContent ?? ''`,

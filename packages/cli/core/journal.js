@@ -40,7 +40,7 @@
  * A resumed transition replays rows an earlier version wrote, so a reader has to
  * be able to ask what wrote them before it parses any of them.
  */
-export const JOURNAL_FORMAT = 5
+export const JOURNAL_FORMAT = 6
 
 /**
  * The table names the DDL emits.
@@ -211,6 +211,60 @@ const TRANSITION_AT_2 = `CREATE TABLE "transition__new" (
 ) STRICT`
 
 /**
+ * `transition`, as it stands at format 6. Frozen — see above. Rebuilt rather
+ * than altered: `ADD COLUMN` appends after the table's constraints, so the
+ * migrated table would differ from a fresh one in text the oracle compares.
+ */
+const TRANSITION_AT_6 = `CREATE TABLE "transition__new" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "kind" TEXT NOT NULL,
+  "app" TEXT NOT NULL,
+  "environment" TEXT NOT NULL,
+  "releaseId" TEXT NOT NULL,
+  "fromReleaseId" TEXT,
+  "generation" INTEGER NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'planned',
+  "isCrossingPivot" INTEGER NOT NULL DEFAULT 0,
+  "pivot" TEXT,
+  "pivotReason" TEXT,
+  "plan" TEXT NOT NULL DEFAULT '[]',
+  "actor" TEXT,
+  "startedAt" TEXT,
+  "finishedAt" TEXT,
+  CHECK ("kind" IN ('deploy', 'revert', 'pause', 'unpause')),
+  CHECK ("status" IN ('planned', 'running', 'succeeded', 'failed')),
+  CHECK ("pivot" IN ('unchanged', 'expand', 'contract', 'unknown')),
+  FOREIGN KEY ("releaseId") REFERENCES "release" ("id")
+) STRICT`
+
+/**
+ * `release`, as it stands at format 6. Frozen — see above. Rebuilt because
+ * SQLite cannot drop the old `pivot` column while a table CHECK names it, and a
+ * migrated journal that kept it would differ from a fresh one.
+ */
+const RELEASE_AT_6 = `CREATE TABLE "release__new" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "app" TEXT NOT NULL,
+  "environment" TEXT NOT NULL,
+  "digest" TEXT,
+  "imageRef" TEXT,
+  "configurationHash" TEXT NOT NULL,
+  "generation" INTEGER NOT NULL,
+  "schemaHash" TEXT NOT NULL,
+  "retentionUntil" TEXT,
+  "audienceKey" TEXT NOT NULL DEFAULT 'everyone',
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "createdBy" TEXT
+) STRICT`
+
+/** The transition indexes, which a rebuild drops with the table. */
+const transitionIndexes = () => [
+  { name: 'idx1', sql: `CREATE INDEX IF NOT EXISTS "idx_transition_app_environment_startedAt" ON "${TABLE.transition}" ("app", "environment", "startedAt")`, params: [] },
+  { name: 'idx2', sql: `CREATE INDEX IF NOT EXISTS "idx_transition_releaseId" ON "${TABLE.transition}" ("releaseId")`, params: [] },
+  { name: 'idx3', sql: `CREATE INDEX IF NOT EXISTS "idx_transition_status" ON "${TABLE.transition}" ("status")`, params: [] },
+]
+
+/**
  * One format to the next. Keyed by the format it moves FROM.
  *
  * A constraint change is the SQLite table-rebuild recipe: build beside, copy,
@@ -236,9 +290,7 @@ const MIGRATIONS = {
     { name: 'copy',    sql: `INSERT INTO "transition__new" SELECT * FROM "${TABLE.transition}"`, params: [] },
     { name: 'drop',    sql: `DROP TABLE "${TABLE.transition}"`, params: [] },
     { name: 'rename',  sql: `ALTER TABLE "transition__new" RENAME TO "${TABLE.transition}"`, params: [] },
-    { name: 'idx1',    sql: `CREATE INDEX IF NOT EXISTS "idx_transition_app_environment_startedAt" ON "${TABLE.transition}" ("app", "environment", "startedAt")`, params: [] },
-    { name: 'idx2',    sql: `CREATE INDEX IF NOT EXISTS "idx_transition_releaseId" ON "${TABLE.transition}" ("releaseId")`, params: [] },
-    { name: 'idx3',    sql: `CREATE INDEX IF NOT EXISTS "idx_transition_status" ON "${TABLE.transition}" ("status")`, params: [] },
+    ...transitionIndexes(),
   ],
   2: () => [
     { name: 'copy',   sql: `INSERT INTO "configuration_set" ("id","app","environment","generation","hash","values","secretRefs","createdAt","createdBy")
@@ -258,6 +310,29 @@ const MIGRATIONS = {
   4: () => [
     { name: 'declared', sql: `ALTER TABLE "release" RENAME COLUMN "pivotDeclared" TO "isPivotDeclared"`, params: [] },
     { name: 'crossing', sql: `ALTER TABLE "${TABLE.transition}" RENAME COLUMN "crossesPivot" TO "isCrossingPivot"`, params: [] },
+  ],
+  // The pivot verdict moves from the Release to the transition (`FJS-4004`). A
+  // recorded transition gets no verdict: the one its Release held was asked
+  // against git HEAD and said `unknown` for every deploy, and copying it over
+  // would carry that answer into the column built to replace it.
+  5: () => [
+    { name: 'release-build',  sql: RELEASE_AT_6, params: [] },
+    { name: 'release-copy',   sql: `INSERT INTO "release__new"
+                                      ("id","app","environment","digest","imageRef","configurationHash","generation","schemaHash","retentionUntil","audienceKey","createdAt","createdBy")
+                                    SELECT "id","app","environment","digest","imageRef","configurationHash","generation","schemaHash","retentionUntil","audienceKey","createdAt","createdBy"
+                                      FROM "${TABLE.release}"`, params: [] },
+    { name: 'release-drop',   sql: `DROP TABLE "${TABLE.release}"`, params: [] },
+    { name: 'release-rename', sql: `ALTER TABLE "release__new" RENAME TO "${TABLE.release}"`, params: [] },
+    { name: 'release-idx1',   sql: `CREATE INDEX IF NOT EXISTS "idx_release_app_environment_createdAt" ON "${TABLE.release}" ("app", "environment", "createdAt")`, params: [] },
+    { name: 'release-idx2',   sql: `CREATE INDEX IF NOT EXISTS "idx_release_retentionUntil" ON "${TABLE.release}" ("retentionUntil")`, params: [] },
+    { name: 'build',  sql: TRANSITION_AT_6, params: [] },
+    { name: 'copy',   sql: `INSERT INTO "transition__new"
+                              ("id","kind","app","environment","releaseId","fromReleaseId","generation","status","isCrossingPivot","plan","actor","startedAt","finishedAt")
+                            SELECT "id","kind","app","environment","releaseId","fromReleaseId","generation","status","isCrossingPivot","plan","actor","startedAt","finishedAt"
+                              FROM "${TABLE.transition}"`, params: [] },
+    { name: 'drop',   sql: `DROP TABLE "${TABLE.transition}"`, params: [] },
+    { name: 'rename', sql: `ALTER TABLE "transition__new" RENAME TO "${TABLE.transition}"`, params: [] },
+    ...transitionIndexes(),
   ],
 }
 
@@ -300,7 +375,7 @@ export function readState({ app, environment }) {
   return [
     {
       name: 'serving',
-      sql: `SELECT t.*, r."schemaHash", r."pivot", r."configurationHash"
+      sql: `SELECT t.*, r."schemaHash", r."configurationHash"
               FROM "${TABLE.transition}" t
               JOIN "${TABLE.release}" r ON r."id" = t."releaseId"
              WHERE t."app" = ? AND t."environment" = ? AND t."status" = 'succeeded'
@@ -358,7 +433,6 @@ export function readLiveTransition({ kind = 'deploy', app, environment } = {}) {
     name: 'live',
     sql: `SELECT t.*, r."digest" AS "r_digest", r."imageRef" AS "r_imageRef",
                  r."configurationHash" AS "r_configurationHash", r."schemaHash" AS "r_schemaHash",
-                 r."pivot" AS "r_pivot", r."isPivotDeclared" AS "r_isPivotDeclared",
                  r."audienceKey" AS "r_audienceKey", r."createdBy" AS "r_createdBy"
             FROM "${TABLE.transition}" t
             JOIN "${TABLE.release}" r ON r."id" = t."releaseId"
@@ -399,9 +473,8 @@ export function recordRelease(release, { now } = {}) {
     name: 'release',
     sql: `INSERT OR IGNORE INTO "${TABLE.release}"
           ("id","app","environment","digest","imageRef","configurationHash","generation",
-           "schemaHash","pivot","isPivotDeclared","pivotFindings","retentionUntil",
-           "audienceKey","createdAt","createdBy")
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           "schemaHash","retentionUntil","audienceKey","createdAt","createdBy")
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     params: [
       release.id, release.app, release.environment,
       release.digest ?? null, release.imageRef ?? null,
@@ -409,9 +482,7 @@ export function recordRelease(release, { now } = {}) {
       // NOT NULL in the table. A Release minted with no release surface has no
       // data boundary in its id, which is a weaker claim and must not be stored
       // as though it were a hash.
-      release.schemaHash ?? '',
-      release.pivot ?? 'unknown', bool(release.isPivotDeclared),
-      json(release.pivotFindings ?? []), release.retentionUntil ?? null,
+      release.schemaHash ?? '', release.retentionUntil ?? null,
       release.audienceKey ?? 'everyone', stamp(now), release.createdBy ?? null,
     ],
   }]
@@ -442,12 +513,13 @@ export function openTransition({ transition, steps = [], now } = {}) {
     name: 'transition',
     sql: `INSERT OR IGNORE INTO "${TABLE.transition}"
           ("id","kind","app","environment","releaseId","fromReleaseId","generation",
-           "status","isCrossingPivot","plan","actor","startedAt")
-          VALUES (?,?,?,?,?,?,?,'running',?,?,?,?)`,
+           "status","isCrossingPivot","pivot","pivotReason","plan","actor","startedAt")
+          VALUES (?,?,?,?,?,?,?,'running',?,?,?,?,?,?)`,
     params: [
       transition.id, transition.kind, transition.app, transition.environment,
       transition.releaseId, transition.fromReleaseId ?? null, transition.generation,
-      bool(transition.isCrossingPivot), json(transition.plan), transition.actor ?? null, at,
+      bool(transition.isCrossingPivot), transition.pivot ?? null, transition.pivotReason ?? null,
+      json(transition.plan), transition.actor ?? null, at,
     ],
   }]
 
@@ -467,6 +539,15 @@ export function openTransition({ transition, steps = [], now } = {}) {
     name: 'reopen',
     sql: `UPDATE "${TABLE.transition}" SET "status" = 'running', "finishedAt" = NULL
            WHERE "id" = ? AND "status" IN ('planned','failed')`,
+    params: [transition.id],
+  })
+
+  // The verdict the row HOLDS, which on a resume is the one its first run was
+  // shown — the insert above ignored this run's, and a swap deciding on a fresh
+  // one would run a release differently from what its transition records.
+  out.push({
+    name: 'recorded',
+    sql: `SELECT "pivot","pivotReason","isCrossingPivot" FROM "${TABLE.transition}" WHERE "id" = ?`,
     params: [transition.id],
   })
 
@@ -593,8 +674,8 @@ export function readHistory({ app, environment, limit = 10 }) {
   return [{
     name: 'history',
     sql: `SELECT t."id", t."kind", t."status", t."releaseId", t."fromReleaseId",
-                 t."generation", t."isCrossingPivot", t."actor", t."startedAt", t."finishedAt",
-                 r."digest", r."pivot"
+                 t."generation", t."isCrossingPivot", t."pivot", t."pivotReason",
+                 t."actor", t."startedAt", t."finishedAt", r."digest"
             FROM "${TABLE.transition}" t
             LEFT JOIN "${TABLE.release}" r ON r."id" = t."releaseId"
            WHERE t."app" = ? AND t."environment" = ?
@@ -751,8 +832,7 @@ export function journalClient({ exec, db, ddl, machine = null, now = null } = {}
           id: row.releaseId, app: row.app, environment: row.environment,
           digest: row.r_digest ?? null, imageRef: row.r_imageRef ?? null,
           configurationHash: row.r_configurationHash, generation: row.generation ?? 1,
-          schemaHash: row.r_schemaHash ?? null, pivot: row.r_pivot ?? 'unknown',
-          isPivotDeclared: !!row.r_isPivotDeclared, pivotFindings: [],
+          schemaHash: row.r_schemaHash ?? null,
           audienceKey: row.r_audienceKey ?? 'everyone', createdBy: row.r_createdBy ?? null,
         },
       }
@@ -771,7 +851,7 @@ export function journalClient({ exec, db, ddl, machine = null, now = null } = {}
         ...(configuration ? recordConfiguration({ ...configuration, now }) : []),
         ...openTransition({ transition, steps, now }),
       ])
-      return { steps: r.steps?.rows ?? [], resumed: (r.transition?.changes ?? 0) === 0 }
+      return { steps: r.steps?.rows ?? [], resumed: (r.transition?.changes ?? 0) === 0, recorded: r.recorded?.rows?.[0] ?? null }
     },
 
     async claim({ id }) {

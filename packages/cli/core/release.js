@@ -13,12 +13,15 @@
 // there when a transition begins — which is 1e. Minting on a machine that
 // cannot reach the target is the normal case.
 //
-// Four terms, and each is a fact about a different realm:
+// Three terms, and each is a fact about a different realm:
 //
 //   digest             the bytes            — Deployment. Null until 2.3f builds once
 //   configurationHash  the configuration    — Deployment, per Environment
 //   schemaHash         the data boundary    — Data, off the committed release surface
-//   pivot              can N-1 still serve  — the verdict litestone already computes
+//
+// Whether N-1 can still serve is NOT a term. It is relative to what is serving,
+// so one Release is an expand after one predecessor and a contract after
+// another; it is the transition's verdict, asked on the target (`FJS-4004`).
 
 import { createHash }              from 'crypto'
 import { existsSync, readFileSync } from 'fs'
@@ -29,7 +32,7 @@ import { resolve }                 from 'path'
  * MEANS mints a different Release for the same tree — which is correct: two
  * ids that were computed by different rules are not the same claim.
  */
-export const RELEASE_FORMAT = 1
+export const RELEASE_FORMAT = 2
 
 const sha = (s) => createHash('sha256').update(s).digest('hex')
 
@@ -164,24 +167,11 @@ export function mintRelease({
   configurationHash,
   generation   = 1,
   schemaHash   = null,
-  pivot        = 'unknown',
-  isPivotDeclared = false,
-  pivotFindings = [],
   audienceKey  = 'everyone',
   createdBy    = null,
 } = {}) {
   if (!app)               throw new ConfigurationError('a Release needs an app id — set deploy.app_id in frontier.config.js', 'app_id')
   if (!configurationHash) throw new ConfigurationError('a Release needs a configuration hash', 'configuration')
-
-  // litestone's ladder has a fourth rung this journal does not store. `pivot`
-  // answers one question — can Release N-1 still serve this database — and
-  // `unchanged` and `expand` are both yes, so the two are one value here.
-  // Normalized where the id is computed, or the hashed term and the stored
-  // column disagree about the same Release. Without it a release with no schema
-  // findings is dropped by `INSERT OR IGNORE` against the pivot CHECK, and the
-  // deploy dies one statement later on the transition's foreign key, naming
-  // neither the column nor the value.
-  if (pivot === 'unchanged') pivot = 'expand'
 
   // Named terms rather than a positional join: a joined string is one field
   // moving away from silently hashing the same as a different Release.
@@ -191,7 +181,6 @@ export function mintRelease({
     `digest=${digest ?? ''}`,
     `configuration=${configurationHash}`,
     `schema=${schemaHash ?? ''}`,
-    `pivot=${pivot}`,
   ].join('\n')))
 
   return {
@@ -199,7 +188,6 @@ export function mintRelease({
     digest, imageRef,
     configurationHash, generation,
     schemaHash,
-    pivot, isPivotDeclared, pivotFindings,
     audienceKey,
     formatVersion: RELEASE_FORMAT,
     createdBy,
@@ -222,8 +210,5 @@ export function formatRelease(rel, { configuration } = {}) {
   row('configuration', `${short(rel.configurationHash)}  · generation ${rel.generation}` +
                        (configuration ? `  · ${configuration.count} key(s), ${Object.keys(configuration.secretRefs).length} secret ref(s)` : ''))
   row('schema',     rel.schemaHash ? short(rel.schemaHash) : '— no release.snapshot.md (run fli release:check)')
-  row('pivot',      rel.pivot + (rel.isPivotDeclared ? '  (declared)' : ''))
-  if (rel.pivot === 'contract')
-    lines.push('', '  This deploy is the pivot: after it, only forward.')
   return lines.join('\n')
 }

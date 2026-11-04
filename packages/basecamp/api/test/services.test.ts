@@ -5843,6 +5843,12 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect(back.enrolled).toBe(true)
       expect(back.server.ipAddress).toBe('174.138.116.80')
 
+      // A retired box, or one Basecamp was restored beside, is issued again.
+      const again = await useHost(sys, { workspaceId: ws.id, actor: 'test', outpostGone: true })
+      expect(again.enrolled).toBe(false)
+      expect(again.server.id).toBe(made.server.id)
+      expect(typeof again.command).toBe('string')
+
       await useHost(sys, { workspaceId: ws.id, actor: 'test', ipAddress: '203.0.113.9', name: 'other' })
       const kept = await sys.server.findFirst({ where: { id: made.server.id } })
       expect(kept.ipAddress).toBe('174.138.116.80')

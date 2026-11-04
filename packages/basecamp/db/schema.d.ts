@@ -60,7 +60,7 @@ export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' 
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
-export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'backupsReadFailed' | 'backupsSet' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
+export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'backupsReadFailed' | 'backupsSet' | 'backupsRestored' | 'backupsRestoreFailed' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
 
 export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github'
 

@@ -185,16 +185,24 @@ const { imageNeeds, CHROME_RUN, IMAGE_USER } =
 // namespace's own config reference, where one copy serves every app, and a
 // commented-out key here is a line to delete. A server or domain nobody named
 // is absent rather than a placeholder: `ssh your-server.com` reaches a stranger.
-const makeDeployBlock = (appId, server, domain, healthPath) => {
+//
+// An app with no web/ gets `web: false` and its domain on the API: a web block
+// sent the first deploy to build a web/ that does not exist, and it refused at
+// 08-release-web after the API was already live (FJS-4003).
+const makeDeployBlock = (appId, server, domain, healthPath, hasWeb) => {
   const serverLine = server ? `    server: '${server}',\n` : ''
   const domainLine = domain ? `      domain: '${domain}',\n` : ''
+  const apiDomain  = domain && !hasWeb ? `      domain:     '${domain}',\n` : ''
+  const web = hasWeb ? `    web: {
+${domainLine}      keep_releases: 3,
+    },` : `    web: false,`
 
   return `  deploy: {
 ${serverLine}    path: '/apps/${appId}',
     app_id: '${appId}',
 
     api: {
-      port:       3000,
+${apiDomain}      port:       3000,
       // Must include the app's apiPrefix. A wrong path here rolls back a good deploy.
       health:     '${healthPath}',
       dockerfile: 'deploy/Dockerfile',
@@ -202,9 +210,7 @@ ${serverLine}    path: '/apps/${appId}',
       envCheck:   true,
     },
 
-    web: {
-${domainLine}      keep_releases: 3,
-    },
+${web}
 
     db: {
       path:         '/apps/${appId}/db',
@@ -310,7 +316,7 @@ if (existsSync(dockerignorePath)) {
 // ─── 3. frontier.config.js deploy block ──────────────────────────────────────
 const configPath = resolve($.paths.root, 'frontier.config.js')
 const health      = resolveHealthPath($.paths.root)
-const deployBlock = makeDeployBlock(appId, server, domain, health.path)
+const deployBlock = makeDeployBlock(appId, server, domain, health.path, existsSync(resolve($.paths.root, 'web')))
 
 // Written when the caller says where it deploys. Without a server or a domain
 // the block would be a file of defaults an app already has, and a missing config

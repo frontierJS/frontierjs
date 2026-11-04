@@ -125,12 +125,29 @@ let nextId    = 8000
 let nextKeyId = 500
 let nextIpId  = 900
 
+/** Server id → its actions, as `GET …/actions` lists them. */
+const ACTIONS = new Map<string, Record<string, unknown>[]>()
+let nextActionId = 1
+
+/** While held, a backup action is answered `running` and the server keeps its
+ *  old `backup_window` until `hzSinkSettleBackups()`. */
+let holding = false
+const unsettled: { server: string; action: Record<string, unknown>; apply: () => void }[] = []
+export function hzSinkHoldBackups(on = true): void { holding = on }
+export function hzSinkSettleBackups(): void {
+  for (const { action, apply } of unsettled.splice(0)) { apply(); action.status = 'success' }
+}
+
 export function resetHzSink(): void {
   HZ_CREATED.length = 0
   nextId = 8000; nextKeyId = 500; nextIpId = 900
   KEYS.clear()
   PRIMARY_IPS.clear()
   HELD.clear()
+  ACTIONS.clear()
+  nextActionId = 1
+  holding = false
+  unsettled.length = 0
   for (const id of [...SERVERS.keys()]) if (id !== '7701') SERVERS.delete(id)
   SERVERS.get('7701')!.backup_window = null
 }
@@ -352,15 +369,30 @@ export function startHzSink(port = PORT) {
           : all })
       }
 
+      const actions = url.pathname.match(/^\/v1\/servers\/([^/]+)\/actions$/)
+      if (actions && req.method === 'GET') {
+        const id = decodeURIComponent(actions[1])
+        if (!SERVERS.has(id)) return fail('not_found', 'server not found', 404)
+        const status = url.searchParams.get('status')
+        return json({ actions: (ACTIONS.get(id) ?? []).filter(a => !status || a.status === status) })
+      }
+
       const action = url.pathname.match(/^\/v1\/servers\/([^/]+)\/actions\/(poweroff|enable_backup|disable_backup)$/)
       if (action && req.method === 'POST') {
-        const row = SERVERS.get(decodeURIComponent(action[1]))
+        const id  = decodeURIComponent(action[1])
+        const row = SERVERS.get(id)
         if (!row) return fail('not_found', 'server not found', 404)
-        if (action[2] === 'poweroff') row.status = 'off'
-        // Hetzner picks the window; this one is the slot `backups()`'s
-        // midnight case reads.
-        else row.backup_window = action[2] === 'enable_backup' ? '22-02' : null
-        return json({ action: { id: 3, command: action[2], status: 'running' } }, 201)
+        if (unsettled.some(h => h.server === id)) return fail('locked', 'server is locked', 423)
+        const apply = action[2] === 'poweroff'
+          ? () => { row.status = 'off' }
+          // Hetzner picks the window; this one is the slot `backups()`'s
+          // midnight case reads.
+          : () => { row.backup_window = action[2] === 'enable_backup' ? '22-02' : null }
+        const made = { id: nextActionId++, command: action[2], status: 'running', resources: [{ id: row.id, type: 'server' }] }
+        ACTIONS.set(id, [made, ...(ACTIONS.get(id) ?? [])])
+        if (holding && action[2] !== 'poweroff') unsettled.push({ server: id, action: made, apply })
+        else { apply(); made.status = 'success' }
+        return json({ action: { ...made } }, 201)
       }
 
       const one = url.pathname.match(/^\/v1\/servers\/([^/]+)$/)

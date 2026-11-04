@@ -33,6 +33,17 @@ const opened = await openDeployJournal($, $.flag, {
   // on this host and nowhere else — `core/image.js` keeps the two apart and
   // `describeIdentity` says which one it has.
   digest:     $.config.imageIdentity?.digest ?? $.config.imageAddress ?? null,
+  // Whether N-1 can still serve, asked HERE because this is the first moment
+  // both halves exist on the target: the image is built and the live container
+  // still runs. On the laptop the only baseline is a commit, and that answered
+  // `unknown` for every deploy, so every Release read as crossing the pivot
+  // (`FJS-4004`). `06-swap` reuses this answer.
+  classify:   () => transitionPivot($, {
+    host:      $.config.api?.host ?? host,
+    container: apiContainer($.config.appId, $.config.deployConf),
+    image:     $.config.imageAddress ?? $.config.imageTag,
+    appId:     $.config.appId,
+  }),
   host, serverPath, log,
 })
 
@@ -50,11 +61,13 @@ if (opened.error) {
 $.config.journal      = opened.recorder
 $.config.transitionId = opened.transition.id
 $.config.releaseId    = opened.release.id
+$.config.pivot        = opened.pivot
 
 log.done(`Journal opened → ${opened.release.app} · ${opened.release.environment}`)
 log.detail(`  release     ${opened.release.id}`)
 log.detail(`  serving     ${opened.serving ?? '— nothing recorded yet'}`)
 log.detail(`  transition  ${opened.transition.id}`)
+log.detail(`  pivot       ${opened.pivot.verdict ?? 'not classified'}${opened.pivot.isCrossingPivot ? ' — crosses the pivot' : ''}${opened.pivot.reason ? ` (${opened.pivot.reason})` : ''}`)
 
 if (opened.resumed) {
   log.warn(`  RESUMING attempt ${opened.attempt} — a previous run did not finish`)
