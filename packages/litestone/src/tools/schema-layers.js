@@ -268,6 +268,38 @@ function knotsOf(schema, members, core) {
 
 const round = n => Math.round(n * 10) / 10
 
+// Complexity is one number for how much a reader has to hold in their head. A
+// model counts 1, eight scalar fields count as much as one model, a foreign key
+// counts 1 and a key that crosses clusters counts 1 more. A declared rule counts
+// half. On a linear scale every app here would sit under 15 beside ERPNext, so
+// a log-logistic curve maps the weight onto 1–100. It is pinned so the ERPNext corpus fixture
+// scores 92 (FJS-D1871), which leaves a schema ten times that size room to sit
+// below 100. Plumbing such as @map, @default or an index is not a rule, and if
+// it counted, an imported schema would score on its column mapping.
+const COMPLEXITY_MID = 221
+const COMPLEXITY_SLOPE = 0.85
+const MODEL_PLUMBING = new Set(['index', 'uniqueIndex', 'db', 'map', 'id', 'labelField', 'fts', 'hasTemplates', 'export'])
+const FIELD_RULES = new Set(['guarded', 'encrypted', 'secret', 'hashed', 'personal', 'fieldAllow', 'immutable',
+  'computed', 'generated', 'check', 'sealed', 'derived', 'capability'])
+
+function complexityOf(schema, g, group) {
+  let rules = 0
+  for (const m of schema.models) {
+    for (const a of m.attributes ?? []) if (!MODEL_PLUMBING.has(a.kind)) rules++
+    for (const f of m.fields) for (const a of f.attributes ?? []) if (FIELD_RULES.has(a.kind)) rules++
+  }
+  const parts = {
+    models: g.names.length,
+    fields: Object.values(g.fields).reduce((s, n) => s + n, 0),
+    keys: g.edges.length,
+    cross: g.edges.filter(([a, b]) => group[a] !== group[b]).length,
+    rules,
+  }
+  const w = parts.models + parts.fields / 8 + parts.keys + parts.cross + parts.rules / 2
+  const score = w ? Math.max(1, Math.round(100 / (1 + (COMPLEXITY_MID / w) ** COMPLEXITY_SLOPE))) : 0
+  return { score, w: round(w), parts }
+}
+
 /**
  * @param {object} schema parsed schema (parseResult.schema)
  * @returns {{
@@ -277,6 +309,7 @@ const round = n => Math.round(n * 10) / 10
  *   hubs: string[],
  *   depth: number,
  *   floors: Record<'ring'|'hub', { centers: Record<string, { x: number, y: number }>, at: Record<string, [number, number]> }>,
+ *   complexity: { score: number, w: number, parts: { models: number, fields: number, keys: number, cross: number, rules: number } },
  * }}
  */
 export function schemaLayers(schema) {
@@ -376,5 +409,6 @@ export function schemaLayers(schema) {
     hubs,
     depth: settledDepth(g.edges, depth, group),
     floors,
+    complexity: complexityOf(schema, g, group),
   }
 }

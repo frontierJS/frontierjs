@@ -7,10 +7,13 @@
 // `basecamp:backup`, and each machine's stored grade for `basecamp:posture`.
 
 import { spawnSync }                from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir }                  from 'node:os'
 import { basename, join, relative, resolve } from 'node:path'
+import { fileValue }                from '@frontierjs/toolbelt/env'
 import { chalk }                    from './color.js'
 import { ageOf }                    from './cloud.js'
+import { pipeCommand, shQuote, transportFor } from './machine.js'
 
 // The dev API's port in basecamp's own CLAUDE.md, as `fli ws:deps --push` has it.
 export const LOCAL_BASECAMP = 'http://localhost:8120'
@@ -25,12 +28,12 @@ export async function basecamp(origin, key, path, { method = 'GET', body, header
       body: body ? JSON.stringify(body) : undefined,
     })
   } catch (err) {
-    throw new Error(`could not reach Basecamp at ${origin}: ${err.message}`)
+    throw Object.assign(new Error(`could not reach Basecamp at ${origin}: ${err.message}`), { unreachable: true })
   }
   // A path the proxy does not route reaches the SPA's file server: a GET
   // answers index.html with 200, a write a bare 405 that reads as a method bug.
   if (res.headers.get('content-type')?.includes('text/html'))
-    throw new Error(`Basecamp answered ${method} ${path} with HTML (${res.status}), not the API — is ${path} a path its proxy routes?`)
+    throw Object.assign(new Error(`Basecamp answered ${method} ${path} with HTML (${res.status}), not the API — is ${path} a path its proxy routes?`), { status: res.status })
   const answer = await res.json().catch(() => null)
   if (!res.ok) throw Object.assign(new Error(`Basecamp refused ${method} ${path} (${res.status}): ${answer?.message ?? answer?.error ?? res.statusText}`), { status: res.status })
   return answer?.data ?? answer
@@ -316,7 +319,9 @@ export async function pullAppArchive({ origin, key, appId, take = false, dbDir, 
 
 const HUB_SETTLED = ['success', 'failed', 'timeout']
 
-/** The hub's backup destination, null for the box's own disk. */
+/** The hub's backup destination, null for the box's own disk. Refuses, marked
+ *  `noHubApp`, for a Basecamp that is no machine of its own fleet, since `take`
+ *  would answer 400 for it. */
 async function hubDestination(origin, key) {
   // `find` answers a list even before the hub App exists, so a 404 from it is
   // `requireSystemAdmin`'s, where one from `current` is no settings saved yet.
@@ -326,7 +331,8 @@ async function hubDestination(origin, key) {
   })
   const config = await basecamp(origin, key, '/hub-config', { method: 'POST', headers: { 'x-service-method': 'current' }, body: {} })
     .catch(err => { if (err.status === 404) return null; throw err })
-  return config?.app?.backupDestinationId ?? null
+  if (!config?.app) throw Object.assign(new Error(`Basecamp at ${origin} has no hub App, so it cannot back itself up — it was installed --no-outpost, or Use this Basecamp server was never pressed`), { noHubApp: true })
+  return config.app.backupDestinationId ?? null
 }
 
 /** The row once `backup:run` has settled it. A job can retry, so the wait is
@@ -350,6 +356,12 @@ function hubEntries(file) {
   return top
 }
 
+async function sha256File(path) {
+  const hasher = new Bun.CryptoHasher('sha256')
+  for await (const chunk of Bun.file(path).stream()) hasher.update(chunk)
+  return hasher.digest('hex')
+}
+
 /** Each file `manifest.json` lists that is missing or whose bytes differ, as a sentence. */
 async function manifestMismatches(dir) {
   const path = join(dir, 'manifest.json')
@@ -360,9 +372,7 @@ async function manifestMismatches(dir) {
     const at = join(dir, f.path)
     if (relative(dir, at).startsWith('..')) { off.push(`manifest.json names ${f.path}, outside the archive`); continue }
     if (!existsSync(at)) { off.push(`${f.path} is listed and missing`); continue }
-    const hasher = new Bun.CryptoHasher('sha256')
-    for await (const chunk of Bun.file(at).stream()) hasher.update(chunk)
-    if (statSync(at).size !== f.bytes || hasher.digest('hex') !== f.sha256) off.push(`${f.path} does not match its sha256`)
+    if (statSync(at).size !== f.bytes || await sha256File(at) !== f.sha256) off.push(`${f.path} does not match its sha256`)
   }
   return { manifest, off }
 }
@@ -400,4 +410,144 @@ export async function pullHubArchive({ origin, key, out, dry = false, log, say =
   const { manifest, off } = await manifestMismatches(archive)
   if (off.length) throw new Error(`the archive in ${dir} does not match its manifest: ${off.join('; ')}`)
   return { dir, file, archive, manifest, row }
+}
+
+// ─── Basecamp's own files, copied over ssh ───────────────────────────────────
+// When the API cannot take a backup — it does not answer, or the Basecamp has
+// no hub App — `basecamp:backup` copies the db directory and `.env.production`
+// off the box itself. That is not an archive `/setup` takes: the files keep the
+// box's own names (`basecamp.db`, not `main.db`) and carry no manifest, so
+// `raw.json` marks the directory for restore to read first. The key is never
+// beside them (`FJS-D1852`): one copied folder is not both halves.
+
+/** Whether `pullHubArchive`'s refusal means the API cannot back Basecamp up at
+ *  all, so the files are copied instead; an auth refusal is the caller's to fix. */
+export const apiCannotBackUp = (err) => !!err.unreachable || !!err.noHubApp || err.status >= 500
+
+/** Where a box's key copy lives: its own tree, not the backups'. */
+export const keyDirOf = (server) =>
+  join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'fli', 'basecamp', server)
+
+// Run as root because the db directory is the App's user's and the env file
+// root's. `sqlite3 .backup` reads a database the API still writes as one
+// moment; without sqlite3 the file and its -wal are copied, which is only
+// whole when nothing writes. The box's `backups/` holds archives, not state.
+const rawScript = ({ dbDir, envFile, secretsDir }) => `set -eu
+db=${shQuote(dbDir)}; env=${shQuote(envFile)}; key=${shQuote(`${secretsDir}/ENCRYPTION_KEY`)}
+[ -d "$db" ] || { echo "there is no database directory $db on $(hostname)" >&2; exit 3; }
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+mkdir "$tmp/db"; : > "$tmp/copied-with"
+for f in "$db"/*.db; do
+  [ -f "$f" ] || continue
+  n=$(basename "$f")
+  if command -v sqlite3 >/dev/null 2>&1; then
+    sqlite3 "$f" ".backup '$tmp/db/$n'"
+    # A -wal or -shm root's sqlite3 made is one the App's user cannot open.
+    chown --reference="$f" "$f-wal" "$f-shm" 2>/dev/null || true
+    echo "$n sqlite3 .backup" >> "$tmp/copied-with"
+  else
+    cp "$f" "$tmp/db/"; [ ! -f "$f-wal" ] || cp "$f-wal" "$tmp/db/"
+    echo "$n cp" >> "$tmp/copied-with"
+  fi
+done
+[ ! -f "$env" ] || cp "$env" "$tmp/env"
+[ ! -f "$key" ] || cp "$key" "$tmp/key"
+(cd "$tmp" && find . -type f ! -name copied-with -exec sha256sum {} +) > "$tmp/sums"
+tar -czf - -C "$tmp" .
+`
+
+const RAW_ENTRY = /^(db\/[^/]+\.db(-wal)?|env|key|sums|copied-with|db)$/
+
+/** A raw tar's entries, refusing any but the names `rawScript` writes. */
+function rawEntries(file) {
+  const r = spawnSync('tar', ['-tzf', file], { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error(`${file} is not a tar.gz: ${r.stderr.trim()}`)
+  const entries = r.stdout.split('\n').map(e => e.replace(/^\.\/?/, '').replace(/\/$/, '')).filter(Boolean)
+  const odd = entries.find(e => !RAW_ENTRY.test(e) || e.includes('..'))
+  if (odd) throw new Error(`${file} holds ${odd}, which the copy does not write — not unpacked`)
+  return entries
+}
+
+/** An env file with its ENCRYPTION_KEY lines taken out, and the key they held. */
+function withoutKey(text) {
+  let key = null
+  const kept = text.split('\n').filter(line => {
+    const m = line.match(/^\s*(?:export\s+)?ENCRYPTION_KEY\s*=\s*(.*)$/)
+    if (!m) return true
+    key = m[1].trim().replace(/^(['"])(.*)\1$/, '$2')
+    return false
+  })
+  return { text: kept.join('\n'), key }
+}
+
+/** File the key under `keyDirOf(server)`, mode 600. A different key already
+ *  there is kept, since older backups need it, and this one is named apart. */
+function fileKey(server, key, fingerprint) {
+  const dir = keyDirOf(server)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  let path = join(dir, 'encryption.key')
+  if (existsSync(path) && fileValue(readFileSync(path, 'utf8')) !== key) path = join(dir, `encryption-${fingerprint.slice(0, 12)}.key`)
+  writeFileSync(path, key + '\n', { mode: 0o600 })
+  chmodSync(path, 0o600)
+  return path
+}
+
+/**
+ * Copy Basecamp's databases and env file off `host` over ssh into
+ * `<out>/<stamp>-raw/`, each checked against the sha256 the box took, and its
+ * key into `keyDirOf(server)`. Answers `{ dir, record, keyFile }` — `record`
+ * being what `raw.json` holds — or null on a dry run.
+ */
+export async function pullRawBackup({ server, host = server, dbDir, envFile, secretsDir, out, dry = false, log, say = () => {} }) {
+  const takenAt = new Date().toISOString()
+  const dir = resolve(out, `${takenAt.replace(/[:.]/g, '-')}-raw`)
+  if (dry) { log.dry(`copy ${dbDir} and ${envFile} off ${host} over ssh into ${dir}, the key into ${keyDirOf(server)}`); return null }
+
+  say(`Copying ${dbDir} and ${envFile} off ${host} over ssh`)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const tar = join(dir, 'raw.tar.gz')
+  const transport = transportFor(host)
+  const asRoot = 'if [ "$(id -u)" = 0 ]; then sh -s; else sudo -n sh -s; fi'
+  const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? asRoot : shQuote(asRoot))], {
+    stdin: new Blob([rawScript({ dbDir, envFile, secretsDir })]), stdout: Bun.file(tar), stderr: 'pipe',
+  })
+  const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
+  try {
+    if (code !== 0) throw new Error(`the copy on ${host} failed (exit ${code}): ${stderr.trim().split('\n').pop() || 'no reason given'}`)
+    const entries = rawEntries(tar)
+    const r = spawnSync('tar', ['-xzf', tar, '-C', dir, '--no-same-owner'], { encoding: 'utf8' })
+    if (r.status !== 0) throw new Error(`could not unpack ${tar}: ${r.stderr.trim()}`)
+
+    const sums = Object.fromEntries(readFileSync(join(dir, 'sums'), 'utf8').split('\n').filter(Boolean)
+      .map(line => line.match(/^([0-9a-f]{64})\s+\.\/(.+)$/)).filter(Boolean).map(m => [m[2], m[1]]))
+    const off = []
+    for (const e of entries.filter(e => e !== 'sums' && e !== 'copied-with' && e !== 'db'))
+      if (await sha256File(join(dir, e)) !== sums[e]) off.push(e)
+    if (off.length) throw new Error(`${off.join(', ')} did not arrive as the box hashed them — copy again`)
+    if (!entries.some(e => e.startsWith('db/'))) throw new Error(`${dbDir} on ${host} holds no database`)
+
+    let key = existsSync(join(dir, 'key')) ? fileValue(readFileSync(join(dir, 'key'), 'utf8')) ?? null : null
+    if (existsSync(join(dir, 'env'))) {
+      const env = withoutKey(readFileSync(join(dir, 'env'), 'utf8'))
+      key ??= env.key
+      writeFileSync(join(dir, '.env.production'), env.text, { mode: 0o600 })
+    }
+    const fingerprint = key ? new Bun.CryptoHasher('sha256').update(key).digest('hex') : null
+    const keyFile = key ? fileKey(server, key, fingerprint) : null
+
+    const copiedWith = Object.fromEntries(readFileSync(join(dir, 'copied-with'), 'utf8').split('\n').filter(Boolean)
+      .map(line => [line.slice(0, line.indexOf(' ')), line.slice(line.indexOf(' ') + 1)]))
+    const kept = [...readdirSync(join(dir, 'db')).map(n => `db/${n}`), ...existsSync(join(dir, '.env.production')) ? ['.env.production'] : []].sort()
+    const files = []
+    for (const path of kept) files.push({ path, bytes: statSync(join(dir, path)).size, sha256: await sha256File(join(dir, path)) })
+    const record = { raw: true, server, takenAt, dbDir, envFile, encryptionKeyFingerprint: fingerprint, copiedWith, files }
+    writeFileSync(join(dir, 'raw.json'), JSON.stringify(record, null, 2) + '\n')
+    return { dir, record, keyFile }
+  } catch (err) {
+    // A half copy left in place would list as a backup beside the whole ones.
+    rmSync(dir, { recursive: true, force: true })
+    throw err
+  } finally {
+    for (const n of ['raw.tar.gz', 'sums', 'copied-with', 'env', 'key']) rmSync(join(dir, n), { force: true })
+  }
 }

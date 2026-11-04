@@ -1,6 +1,6 @@
 ---
 title: 09-cleanup
-description: Remove _replaced container, prune old images, release deploy lock
+description: Prune old images, release deploy lock
 runOnAbort: true
 ---
 
@@ -31,20 +31,16 @@ if ($.config.abort) {
   return
 }
 
-const { replaced, imageTag, appId } = $.config
+const { imageTag, appId } = $.config
 const apiSide = $.config.api
 
-// ─── Remove _replaced container ───────────────────────────────────────────────
-// Containers and images live on the API host; a web-only or site-only run has none.
+// ─── Prune dangling images for this app ───────────────────────────────────────
+// Images live on the API host; a web-only or site-only run has none. The
+// `_replaced` container is gone already: the swap removes it once the new one
+// answers (`FJS-D1866`).
 if (apiSide && !$.config.siteOnly) {
 const machine = machineFor($, apiSide.host, apiSide.path)
 
-machine.run(`if docker inspect ${replaced} > /dev/null 2>&1; then
-  docker stop ${replaced} || true
-  docker rm   ${replaced}
-fi`)
-
-// ─── Prune dangling images for this app ───────────────────────────────────────
 // Removes untagged images — keeps the last deployed tag and any others in use.
 machine.run(`docker image prune -f --filter label=app=${appId} 2>/dev/null || true`)
 }

@@ -3,15 +3,22 @@ siteName: Workbench
 ---
 <script>
   import { page, goto } from '@frontierjs/sierra/router'
+  import { theme, setTheme, themes } from '@frontierjs/sierra/theme'
+  import { THEMES } from '@frontierjs/css/themes.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Toaster from '@frontierjs/ui/components/feedback/Toaster.mesa'
   import ConfirmProvider from '@frontierjs/ui/components/overlay/ConfirmProvider.mesa'
+  import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
+  import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore'
+  import { paletteItems } from '@frontierjs/ui/nav'
   import Bell from '../components/Bell.mesa'
   import { session, signOut } from '../lib/session.js'
   import { groups } from '../lib/nav.js'
+  import { pageCommands } from '../lib/commands.js'
 
   $: (page.pathname, page.title)
   $: (session.user)
+  $: commandPalette.open
 
   const entries = () => groups.filter(g => g.show({ user: session.user })).flatMap(g => g.entries)
   const current = (e) => e.exact ? page.pathname === e.href : page.pathname.startsWith(e.href)
@@ -19,6 +26,38 @@ siteName: Workbench
   async function leave() {
     await signOut()
     goto('/login/')
+  }
+
+  // ─── ⌘K ──────────────────────────────────────────────────────────────────
+  // The nav and the topbar's own behaviors reached a second way, plus what
+  // the screen on show offers (lib/commands.js). Navigate comes from
+  // lib/nav.js through the same `show`, so it cannot offer a screen the nav
+  // hides.
+  const themeName = (t) => THEMES[t]?.label ?? t.replace(/^theme-/, '')
+
+  function commands() {
+    return [
+      ...pageCommands(),
+      ...paletteItems(groups, { user: session.user }, goto),
+      { id: 'nav:/git-activity/local/', group: 'Navigate', label: 'Local repos', action: () => goto('/git-activity/local/') },
+      { id: 'nav:/settings/',           group: 'Navigate', label: 'Settings',    action: () => goto('/settings/') },
+      ...themes().map(t => ({
+        id: `theme:${t}`, group: 'Theme', label: themeName(t), sub: THEMES[t]?.blurb,
+        keywords: 'theme appearance color', badge: theme.preference === t ? 'Current' : undefined,
+        action: () => setTheme(t),
+      })),
+      { id: 'theme:system', group: 'Theme', label: 'Match system', keywords: 'theme appearance os light dark',
+        badge: theme.preference === 'system' ? 'Current' : undefined, action: () => setTheme('system') },
+      { id: 'sign-out', group: 'Session', label: 'Sign out', action: leave },
+    ]
+  }
+
+  // A shell in the Terminal pane reads Ctrl+K as kill-line.
+  function paletteKey(e) {
+    if (!(e.metaKey || e.ctrlKey) || e.key !== 'k' || !session.user) return
+    if (e.target?.closest?.('.xterm')) return
+    e.preventDefault()
+    commandPalette.toggle()
   }
 </script>
 
@@ -36,8 +75,12 @@ siteName: Workbench
     </span>
     {#if session.user}
       <span class="cluster">
+        <Button treatment="ghost" size="sm" id="palette-open" onclick={() => commandPalette.show()}>
+          Search <kbd class="kbd hide-sm">⌘K</kbd>
+        </Button>
         <Bell />
-        <span class="text-sm text-muted">{session.user.nick}</span>
+        <a href="/settings/" class="text-sm text-muted" title="Settings"
+           aria-current={page.pathname.startsWith('/settings/') ? 'page' : undefined}>{session.user.nick}</a>
         <Button treatment="ghost" size="sm" id="sign-out" onclick={leave}>Sign out</Button>
       </span>
     {/if}
@@ -50,11 +93,25 @@ siteName: Workbench
   </main>
 </div>
 
+<mesa:window onkeydown={paletteKey} />
+
+{#if commandPalette.open}
+  <CommandPalette
+    items={commands()}
+    groupOrder={['Checkouts', 'Workbench', 'Navigate', 'Theme', 'Session']}
+    placeholder="Search checkouts, screens, themes…"
+    onclose={() => commandPalette.hide()}
+  />
+{/if}
+
 <Toaster position="bottom-right" />
 <ConfirmProvider />
 
 <style>
-  /* The workbench is a working surface, not a reading column: let it take the
-     whole width the screen gives it. */
+  /* The workbench and Autopilot's town are working surfaces, not reading
+     columns: let them take the whole width the screen gives them. */
   .screen-body:has(:global(.workbench)) { max-inline-size: none; }
+  .screen-body:has(:global(.autopilot-screen)) { max-inline-size: none; }
+  /* The workbench page's Focus sets this, and clears it when the page goes. */
+  :global(html[data-workbench-focus]) .topbar { display: none; }
 </style>

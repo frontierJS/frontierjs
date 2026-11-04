@@ -14,9 +14,9 @@ have an owner somewhere else in the repo, and a copy here would drift from it:
 | Semantic color, tones, light/dark, the type ladder, components | `@frontierjs/css`, `packages/css/src/foundation/tokens.css` |
 
 What this file owns is what nothing else holds: the territory, the mark, the
-brand palette, the faces, and the voice. **Making a picture** (a painted
-landscape, a hero or social card, an AI image prompt) **starts at
-`IMAGERY.md`**: the master prompt, the realm lines, the negative prompt and the
+brand palette, the faces, and the voice. **Making an image** (a painted
+landscape, a hero or social card, a lettered poster, an AI image prompt)
+**starts at `IMAGERY.md`**: the master prompt, the realm lines, the negative prompt and the
 acceptance check.
 
 `assets/` holds committed, shippable files (logo SVGs, favicons, social cards).

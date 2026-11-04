@@ -370,7 +370,7 @@ The full hazard catalog for `@frontierjs/cli`, moved out of `CLAUDE.md`. The doz
   container. `05b-jobs-volume` asks the RUNNING container which file it has open
   before `06-swap` replaces it, and refuses only when a pause is in force — a
   refusal on pending jobs would block the very deploy that fixes the binding.
-  The refusal is on the NEW container: `healthOrRestore` asks the kernel which
+  The refusal is on the NEW container: `swapContainer`'s health check asks the kernel which
   SQLite files it opened (`unboundDatabases` in `core/pause.js`), and one
   outside the volume puts the old container back, as a failed health check does
   — basecamp's `DATABASE_URL=/data/…` opened every release on `/setup`
@@ -383,10 +383,15 @@ The full hazard catalog for `@frontierjs/cli`, moved out of `CLAUDE.md`. The doz
 - **A reader does not migrate.** `open({ migrate: false })` is what
   `deploy:status` uses: answering a question must not change the schema of the
   thing being asked. Every writer migrates.
-- **`swapContainer` and `healthOrRestore` live in `deploy/_module.md` and have
-  two callers each.** The going-back path is the one nobody exercises until the
-  day it matters, so `_steps-revert` calls the same functions `_steps-docker`
-  does rather than a copy of them.
+- **The container swap is Outpost's `createSwap` (`@frontierjs/outpost/swap`,
+  `FJS-D1866`), and `swapContainer` in `deploy/_module.md` drives it over ssh.**
+  Stop-first, the put-back and the leftover `_next`/`_replaced` handling are
+  the sequence a Basecamp release runs, pinned by one table
+  (`outpost/test/fixtures/swap-cases.js`) both suites run; the cli builds the
+  `docker run` line and says what healthy means. `06-swap`, revert's `03-swap`
+  and rollback's `02-rollback-api` all call it, so the going-back paths are the
+  deploy's. A healthy swap removes `_replaced` itself, so a later step's
+  failure leaves no `_replaced` for `deploy:rollback`'s fast path.
 - **`project:map` is one reading presented two ways** (`FJS-D223` one scope
   down, `FJS-1016`): the report, and `--json`. `buildProjectMap` in `_module.md`
   is the one reader, and the console's `:map` reaches it by spawning `--json`

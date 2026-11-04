@@ -255,7 +255,7 @@ title: Autopilot
   }
 </script>
 
-<div class="section-header">
+<div class="section-header autopilot-screen">
   <h1>Autopilot</h1>
   <span class="cluster">
     <Button href="/atlas/">Atlas</Button>
@@ -535,7 +535,16 @@ title: Autopilot
 {/if}
 
 <style>
-  .ap-layout { display: grid; gap: var(--space-lg); }
+  /* The map is drawn at 1100 x 730 and scales with its width, so a wide screen
+     would push it and the scrubber past the fold. --ap-map-w is the width at
+     which the map and the player fit the window's height; the place cards take
+     the width left beside it, or wrap below when there is none. */
+  .ap-layout {
+    --ap-map-w: calc(max(28rem, 100dvh - 22rem) * 1100 / 730);
+    display: flex; flex-wrap: wrap; gap: var(--space-lg); align-items: start;
+  }
+  .ap-main { flex: 1 1 min(100%, var(--ap-map-w)); max-inline-size: var(--ap-map-w); }
+  .ap-side { flex: 1 1 18rem; }
   .ap-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--grid-min, 16rem), 1fr)); gap: var(--space-sm); align-items: start; }
   .ap-main, .ap-side { min-inline-size: 0; }
   .ap-mapbox { overflow-x: auto; border: 1px solid var(--rule); border-radius: var(--card-radius); }

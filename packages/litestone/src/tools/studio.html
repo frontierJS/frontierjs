@@ -8128,6 +8128,10 @@ function perfRenderPlan(res) {
 
 const Layers = (() => {
   const LEVEL = 160
+  // Each level sits a little wider than the one below, or a tall schema's
+  // upper floors stack straight over the lower ones and hide them from the side.
+  const FLARE = 0.06
+  const widen = z => 1 + FLARE * z / LEVEL
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches
   const $ = id => document.getElementById(id)
   const cv = $('lyCanvas'), g2 = cv.getContext('2d')
@@ -8250,13 +8254,14 @@ const Layers = (() => {
   }
   function project(p) {
     const zMid = MAXD * LEVEL / 2
-    const x = p.x, y = p.y, z = p.z - zMid
+    const k = widen(p.z), x = p.x * k, y = p.y * k, z = p.z - zMid
     const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw)
     const x1 = x * cy - y * sy, y1 = x * sy + y * cy
     const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch)
     const ys = -z * cp - y1 * sp
     const dep = y1 * cp - z * sp
-    const fit = 0.86 * Math.min(W / (2 * SCENE_R + 200), H / (2 * SCENE_R * sp + MAXD * LEVEL * cp + 230))
+    const topR = SCENE_R * widen(MAXD * LEVEL)
+    const fit = 0.86 * Math.min(W / (2 * topR + 200), H / (2 * topR * sp + MAXD * LEVEL * cp + 230))
     // Perspective scales with the scene, or a wider floor bulges off the near edge.
     const f = 4 * SCENE_R, s = f / (f + dep) * fit * cam.zoom
     return { X: W / 2 + x1 * s, Y: H / 2 + ys * s - 34, s, dep }
@@ -8659,7 +8664,11 @@ const Layers = (() => {
     $('lyDepth').max = MAXD; $('lyDepth').value = state.depth; $('lyReach').value = 0
     assignHues(); layout()
     $('lyReach').max = REACH_MAX; showRanges()
+    const cx = D.complexity, cp = cx.parts, n = v => v.toLocaleString()
+    const cxWhy = `Complexity ${cx.score} of 100\n${n(cp.models)} models + ${n(cp.fields)} fields / 8 + ${n(cp.keys)} keys`
+      + ` + ${n(cp.cross)} cross-cluster + ${n(cp.rules)} rules / 2 = ${n(cx.w)}\nERPNext scores 92; a schema of ${n(221)} scores 50`
     $('lyFacts').innerHTML = `<b>${D.models.length}</b> models · <b>${D.edges.length}</b> foreign keys · <b>${MAXD}</b> levels deep`
+      + ` · <span title="${esc(cxWhy)}">complexity <b>${cx.score}</b></span>`
     $('lyFindList').innerHTML = D.models.map(m => `<option value="${esc(m.n)}">`).join('')
     SIZES = null; if (state.size) loadSizes()
     renderPanel(); draw()

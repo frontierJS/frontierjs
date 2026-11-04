@@ -1537,6 +1537,7 @@ transition status.markDown: pending, up → down @system
 transition status.markUp: down, pending → up @system
 transition status.pause: down, pending, up → paused @gate(5)
 transition status.resume: paused → pending @gate(5)
+transition status.retarget: down, up → pending @system
 ```
 
 ### `MonitorChannel`

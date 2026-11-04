@@ -35,6 +35,10 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1875"></a>2026-11-04 · `FJS-D1875` — What the Workbench screen's side column is called — the **wings**, beside the **stage**; a tile hidden from them is **backstage**, a folded list above *Pin a checkout*.
+
+Asked in chat. **Wings** was picked over keeping **Dock** and over **Roster**. *Dock* was already blessed for jetty's popup (`FJS-D1245`) and named Autopilot's patch shelf in the same app, so the screen held a third. The theater pair says what a tile is: a chat still running, waiting off the stage. Backstage is per browser, in `localStorage` beside the stage (`workbench.workbench.backstage`); putting a chat on the stage takes it out of backstage, so stepping off again lands it in the wings. *Next waiting* still reaches a backstage chat. Autopilot's Dock keeps its name. Enforcement: none.
+
 ### <a id="fjs-d1765"></a>2026-11-01 · `FJS-D1765` — The status for a paper that reads the tree is `reading`, not `assessment`, so *Assessment* names only the tier.
 
 Asked in chat, through the question tool. **Rename the status** was picked over **add a clause** (the recommendation), **rename the tier** and **leave it**; `reading` was picked over `survey` and `audit`, each of which already names something else. *Assessment* named the tier holding every IDEAS paper and also one status inside it, so a `proposed` paper was an assessment and was not one. `IDEA_STATUS` in `packages/cli/core/registers.js` carries the new word, every paper's frontmatter and `**Status:**` line moved with it, and `IDEAS/overview.md`'s status cells follow.
@@ -5144,6 +5148,14 @@ Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A
 
 The paper's recommendation, taken as written: a CSV extract is opened in a spreadsheet far more often than it is parsed back, a reader that needs fidelity already has `ndjson`, and one writer in toolbelt removes three copies of the rule instead of adding a fourth. *Ergonomics vs. strictness*: an evaluated formula is destructive and a stray `'` is cosmetic, so the guard is the default. *Paved road vs. the workaround*: Transit's copy measures the road, and B is the flag that widens the shoulder. Artefact: the red test above plus a toolbelt test over `= + - @`, tab, CR and numeric text; a fourth hand-rolled writer stays silent (`none`). Tier: Register (a `DECISIONS.md` ruling).
 
+### <a id="fjs-d1873"></a>2026-11-04 · `FJS-D1873` — How a plugin undoes what its before hook did outside the database when the write does not land — An Observer, `onWriteSettled(model, operation, args, error, ctx)`, fired once per `create`/`createMany`/`update`/`updateMany`/`upsertMany` call with the caller's args; and `tx.hold({ commit, rollback })`, which keeps such an effect until the outermost transaction ends.
+
+**Hook + hold** was picked over **hook only** (close `FJS-3991` as written and file the transaction half), asked while closing `FJS-3991`. The probe behind it: an update inside a `$transaction` that rolled back deleted its old object at once in `onAfterWrite`, and the rollback restored a row naming the deleted file; events (`FJS-D170`) and trail lines (`FJS-3712`) were already held to the outermost commit the same way. `commit` runs then, `rollback` when the frame it was held in rolls back, and a write outside a transaction its context owns runs `commit` at once; `exclusive()` awaits both. `hold` is the general form: a trail line (`queueLog`) is a commit-only hold kept on its own list because it fires synchronously, before any hold, and a further held effect joins `holds` rather than a fourth list. A held effect that rejects is swallowed there, so the holder reports its own failure — `_cleanupRef` warns by name.
+
+The hook carries the caller's args, not the row: `ExternalRefPlugin` keys what one write stored and replaced on `args.data`, which retires the per-flavor stash, one slot per `asSystem()` for every write in flight (`FJS-1872` separated principals and left one flavor shared). It was asked as `onWriteRefused` and carries the landed case too, so the success path needs no second key and `onAfterWrite`, which gets the row, cleans nothing. A refused write's payload is handed back as given, so an upsert retrying with the same object does not write a ref to a removed object.
+
+*Lives in:* `packages/litestone/src/core/plugin.js`, `transaction.js` (`hold`), `client.js` (`settlingWrites`), `src/plugins/external-ref.js`, `docs/file-storage.md` § Orphan prevention.
+
 ### <a id="fjs-d588"></a>2026-10-13 · `FJS-D588` — Does a copy derived from other rows (an inherited tree grant) get a write hook that hears every write with its rows inside the transaction, does the framework own the tree grant so no copy exists, or does the writing service keep the copy — Complete the hooks: `createMany`/`updateMany` fire `onAfterWrite` once per row (rows by `RETURNING *` only when a plugin listens, the `deleteMany` prefetch precedent), and nothing more yet: the in-transaction timing is not built, and it and B (the framework owns the tree grant) are decided after notion Q1's B is measured.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the framework owns the tree grant (notion PLAN Q1 spelling B, a `@@tree` closure table it maintains, or C, a recursive policy, or D, a materialized path). No copy exists, so nothing goes stale. B–D are not measured yet; Q1 parked them), **C** (neither: the copy is a convention the writing service keeps (what the stressor's passing run did), documented in the litestone hazards. No code, and every writer that forgets it fails open silently.).
@@ -8635,6 +8647,30 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1870"></a>2026-11-04 · `FJS-D1870` — Q12 — A soft-deleted App hard-deletes its managed Monitor — Pause the managed row on App remove and resume it on restore, keeping history.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **B** was picked over **A** (keep).
+
+The paper's recommendation, taken as written: soft delete exists so a restore brings everything back.
+
+### <a id="fjs-d1869"></a>2026-11-04 · `FJS-D1869` — Q11 — A hostname change keeps the row's grade — Move the row to `pending` on a url change, so the new address earns its own grade.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **B** was picked over **A** (keep: the row is about the App, and its history is the App's).
+
+The paper's recommendation, taken as written: a `down` carried onto a new hostname pages for an address nobody probed.
+
+### <a id="fjs-d1868"></a>2026-11-04 · `FJS-D1868` — Q10 — A Domain on a port other than 443 — Write `:<port>` into the url when it is not 443.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **B** was picked over **A** (keep).
+
+The paper's recommendation, taken as written: the row exists to probe the address people open.
+
+### <a id="fjs-d1867"></a>2026-11-04 · `FJS-D1867` — Q9 — The managed url's path — Always `/`: the internal health path may be unrouted or unauthenticated-only.
+
+Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **B** was picked over **A** (keep: the health path is what the App says is worth probing).
+
+The paper's recommendation, taken as written: the public probe is about the hostname answering, and a health path behind Caddy is not promised to be the one Outpost probes.
+
 ### <a id="fjs-d1865"></a>2026-11-04 · `FJS-D1865` — Q4 — How does a box Basecamp did not buy get its vendor link — As A, and the linked row carries `adopted`, which refuses Destroy: a box Basecamp did not buy is never deleted from Basecamp.
 
 Asked in [`IDEAS/machine-backups.md`](IDEAS/machine-backups.md) § Open questions. **B** was picked over **A** (adopt through the marks: `reconcile` already lists marked machines with no row, and the host mark `markHost` writes names the hub's droplet, so a person picks the marked machine and the three `@system` columns are written from it. A machine with no mark is matched by IP only after the person confirms its name, IP and region), **C** (only machines Basecamp bought get this feature).
@@ -8676,6 +8712,14 @@ The paper's recommendation, taken as written: the sweep, checks, uptime days and
 Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (units on the 6 h posture report, containers on the heartbeat), **C** (a fourth report on its own clock).
 
 The paper's recommendation, taken as written: a stopped Caddy or firewall unit is an outage, and 6 h is the wrong clock for one; `systemctl show` over five units is one process, the same cost `replication` already pays each beat. The grader stays one owner either way; A moves one object between two posts if it is wrong.
+
+### <a id="fjs-d1874"></a>2026-11-04 · `FJS-D1874` — How `basecamp:backup` copies a Basecamp the API cannot back up — Over ssh, on its own when the API cannot take one and with `--raw` when asked, into a `<stamp>-raw/` that `raw.json` marks; the key goes to its own tree, never the copy.
+
+**`--raw`** was picked over **no flag** (the fallback automatic only) and **`--ssh`**, ruled while building `IDEAS/basecamp-reinstall.md` 1.3. With no flag the path is reachable only by taking Basecamp down, so a healthy box could never prove it; `--ssh` names the wire, where what restore must know is the result, a copy `/setup` cannot take. The automatic fallback runs when the API does not answer, answers 5xx, or the Basecamp has no hub App (`--no-outpost`), and prints which path it took (`FJS-D1717`'s rule); a 401 or the sysadmin 404 refuses instead, since a fallback would hide a key the owner has to fix. `--raw` needs no `BASECAMP_API_KEY`.
+
+The databases are read with `sqlite3 .backup` on the box, one moment while the API still writes, and `cp` of each file and its `-wal` only where sqlite3 is absent; each file is checked against the sha256 the box took. The key, the box's `secrets/ENCRYPTION_KEY` or an `ENCRYPTION_KEY` line taken out of the copied env file, goes to `~/.config/fli/basecamp/<server>/encryption.key`, mode 600, so one copied folder is never both halves (`FJS-D1852`). The owner picked that over copying the env file whole and over no key file until 1.4. A different key already filed there is kept and the new one named by its fingerprint, since older backups need the old one.
+
+*Lives in:* `packages/cli/core/basecamp.js` (`pullRawBackup`, `apiCannotBackUp`, `keyDirOf`), `packages/cli/commands/basecamp/backup.md`.
 
 ### <a id="fjs-d1855"></a>2026-11-04 · `FJS-D1855` — Q4 — Is the install's Cloudflare token stored as the in-app provider key — Asked, yes by default, with the zone picked from the token's zones.
 
@@ -16381,6 +16425,20 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1871"></a>2026-11-04 · `FJS-D1871` — Does Studio's Clusters tab give a schema one complexity number — Yes: a 1–100 score on the facts line, with its inputs on hover, pinned so the ERPNext corpus fixture scores 92.
+
+Asked in chat, through the question tool. **Score + components** was picked over **components only** (the `decision-rules` recommendation) and **a score with no pin test**.
+
+`decision-rules` objected for three reasons. Nobody has defended the weights. A precise-looking number invites "61, so we are fine". And nothing catches drift. The owner wanted a number they can take in at a glance, so the hover shows every input and `test/schema-layers.test.ts` pins two anchors.
+
+- **Weight** — `W = models + scalarFields/8 + foreignKeys + crossClusterKeys + rules/2`. A rule is any model-level `@@` attribute except plumbing (`@@index`, `@@uniqueIndex`, `@@db`, `@@map`, `@@id`, `@@labelField`, `@@fts`), plus the field-level access and lifecycle attributes (`@guarded`, `@encrypted`, `@immutable`, `@computed`, …). Validators, `@map` and `@default` are not rules.
+- **Curve** — `score = 100 / (1 + (221 / W)^0.85)`, log-logistic. 221 is the weight that scores 50. The ERPNext fixture weighs 3,903 and scores 92, and a schema ten times its size still scores under 100.
+- **Where it lands on 2026-11-04** — openmrp 77, discourse 75, basecamp and ela 67, example 58, a typical 20–30-model prototype 36–51, saas-starter 31, a one-model schema 3.
+- **Known blind spots** — the score sees only what the schema declares. ERPNext's import carries none of its Frappe permissions, which would add about 2 points. Discourse is Rails with 21 declared keys across 356 models, so it scores on size alone.
+- **Reopen** when someone names a decision the number should drive. That decision is what would tell us how to defend the weights.
+
+*Lives in:* `packages/litestone/src/tools/schema-layers.js` (`complexityOf`), and `studio.html`'s `lyFacts` line.
+
 ### <a id="fjs-d1841"></a>2026-11-04 · `FJS-D1841` — How does an App's one stop grace reach the container and Junction: where the number lives, its env var, and the formula for the three budgets — The release's runtime config holds the grace beside `logs` (`runtimeFor`, `deployment-run.job.ts:354`; `deploy.*.logs` on the `fli deploy` path). Outpost passes it once as `docker run --stop-timeout N -e FRONTIER_STOP_GRACE=N`, and every `docker stop -t` and `STOP_GRACE_S` goes. Junction's config resolution (where `FRONTIER_PORT_BE` is read) derives the three budgets, for example whole = N − 1 s and drain ≤ whole / 3 with the plugins taking the rest. An explicit budget that does not fit is refused at boot. With no env var (`fli dev`) Docker's 10 s is assumed.
 
 Asked in [`IDEAS/zero-downtime-deploy.md`](IDEAS/zero-downtime-deploy.md) § Open questions. **A** was picked over **B** (the app's own Junction config holds `shutdown.grace`. The Dockerfile template writes it as an image label, and Outpost inspects the image for `docker stop -t`. That gives two origins: a hand-written Dockerfile drops the label silently, and changing the grace means a rebuild), **C** (one framework default for every App (e.g. 30 s), with Junction deriving from it and a per-App override later. Every stop-first release waits it out, which is the option `FJS-D1839` was picked over).
@@ -16419,7 +16477,7 @@ The paper's recommendation, taken as written: (confidence 3) — the registry al
 
 ### <a id="fjs-d1866"></a>2026-11-04 · `FJS-D1866` — What owns the container swap for both deploy paths (`FJS-D1840`) — A runner-shaped module, `@frontierjs/outpost/swap`: `createSwap({ run, health, find })` holds stop-first, start-first and the put-back, and `fli deploy`'s swap and health steps become one step.
 
-Asked in [`IDEAS/zero-downtime-deploy.md`](IDEAS/zero-downtime-deploy.md) step 3.1 through the question tool. Outpost's `docker.deploy` calls it over its local `spawnRun`, the cli over an ssh runner that quotes argv; each passes its own `find` (Outpost's `fjs.app` label, the cli's fixed container name) and `health` (a same-box fetch; curl piped to the target's shell plus the unbound-database check). The stop grace and log flags move into it, so `cli/core/stop-grace.js` and the cli's log-flag copy are deleted, the cli's first runtime import of Outpost beside `./dockerfile` (`FJS-D1560`). Each path still builds its own `docker run` line, because the two read different config (an env file and secrets dir; Basecamp's env and the uid table). Picked over the cli calling `createDocker({ run: ssh }).deploy()` (it reads a local uid table, makes the data dir and fetches health on the machine it runs on, which over ssh is the operator's) and the swap as a list of argv each caller interprets (the put-back is a branch, so each caller would own an interpreter). `06-swap` and `07-health` merge, as do revert's `03-swap` and `04-health`, because start-first's health check comes before the route moves; a resumed run re-enters the swap, and the swap's leftover handling clears a dead run's `_next` or `_replaced`. One contract test runs the same cases over a recording runner from both packages.
+Asked in [`IDEAS/zero-downtime-deploy.md`](IDEAS/zero-downtime-deploy.md) step 3.1 through the question tool. Outpost's `docker.deploy` calls it over its local `spawnRun`, the cli over an ssh runner that quotes argv; each passes its own `find` (Outpost's `fjs.app` label, the cli's fixed container name) and `health` (a same-box fetch; curl piped to the target's shell plus the unbound-database check). The stop grace and log flags move into it, so the cli's stop-grace module and its log-flag copy are deleted, the cli's first runtime import of Outpost beside `./dockerfile` (`FJS-D1560`). Each path still builds its own `docker run` line, because the two read different config (an env file and secrets dir; Basecamp's env and the uid table). Picked over the cli calling `createDocker({ run: ssh }).deploy()` (it reads a local uid table, makes the data dir and fetches health on the machine it runs on, which over ssh is the operator's) and the swap as a list of argv each caller interprets (the put-back is a branch, so each caller would own an interpreter). `06-swap` and `07-health` merge, as do revert's `03-swap` and `04-health`, because start-first's health check comes before the route moves; a resumed run re-enters the swap, and the swap's leftover handling clears a dead run's `_next` or `_replaced`. A healthy stop-first swap removes `_replaced` at once on both paths, as Outpost always did, so `09-cleanup` removes none and a failure after the swap rolls back through `deploy:rollback`'s image picker (asked through the question tool, over keeping it until cleanup on the cli alone). One contract test runs the same cases over a recording runner from both packages.
 *Lives in:* `outpost/src/swap.js`, `outpost/src/docker.js`, `cli/commands/deploy/_module.md`.
 
 ### <a id="fjs-d1847"></a>2026-11-03 · `FJS-D1847` — Q5 — Who opts an App into start-first — The App, by a setting that is off by default; the verdict still has the last word. Stop-first stays the paved road.
@@ -17068,6 +17126,10 @@ Raised by `FJS-D1516`. Picked over `views/<area>/` (the Rails and Laravel word, 
 thod's five documents stay in `domain/documents/`, and `Letterhead`, `PricedLines` and `Footing` move to `components/documents/`. example's order confirmation is rendered by `example/api/src/notifications/OrderConfirmation.notification.ts` and goes to `domain/orders/`.
 
 *Lives in:* `packages/cli/core/checks/app.js`, `README.md` § Project Structure.
+
+### <a id="fjs-d1872"></a>2026-11-04 · `FJS-D1872` — What the image kinds are called — Illustration, Poster, Mechanism and Chart stay as `FJS-D1861` left them; *picture* is retired as a second word for illustration, and *plate* means one numbered poster of the Field Series, so `brand/IMAGERY.md` § 4's texture is a *journal flat-lay*.
+
+**A** was picked over **B** (rename the kinds Vista, Plate, Diagram, Chart) and **C** (B plus named poster layouts, Survey and Index). In book arts a plate is a numbered image printed apart from the text (ODLIS; Audubon's 435, Haeckel's 100) and *illustration* is the generic word, so B would have demoted the term of art and overridden `FJS-D1861` a day after it. C named layouts from two instances; revisit it when a third plate repeats one. Enforcement: none.
 
 ### <a id="fjs-d1861"></a>2026-11-04 · `FJS-D1861` — Is an image that explains something with words a fourth kind of figure — Yes: a **poster**, owned by `brand/IMAGERY.md` § 9 and routed from `illustrate`'s kind table; an illustration stays wordless.
 

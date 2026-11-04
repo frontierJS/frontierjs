@@ -10046,7 +10046,7 @@ describe('FileStorage plugin', () => {
     expect(plugin._provider.puts).toHaveLength(0)
   })
 
-  test('onBeforeUpdate: uploads new file, stashes old key, deletes old on afterWrite', async () => {
+  test('onBeforeUpdate: uploads new file, notes the old key, deletes it once the write lands', async () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'r2', bucket: 'test', accessKeyId: 'a', secretAccessKey: 's' }) as any
     const schema = parse(FILE_SCHEMA).schema
@@ -10073,9 +10073,8 @@ describe('FileStorage plugin', () => {
     expect(ref.size).toBe(9)
     expect(mock.puts).toHaveLength(1)
 
-    // afterWrite triggers old key deletion (it internally unstashes and deletes)
-    await plugin.onAfterWrite('User', 'update', {}, ctx)
-    expect(mock.deletes).toContain('users/1/avatar/old.jpg')
+    await plugin.onWriteSettled('User', 'update', { where: { id: 1 }, data }, null, ctx)
+    expect(mock.deletes).toEqual(['users/1/avatar/old.jpg'])
   })
 
   test('onBeforeUpdate: keepVersions: true skips old key cleanup', async () => {
@@ -10095,31 +10094,33 @@ describe('FileStorage plugin', () => {
     const data: any = { resume: Buffer.from('new resume') }
     await plugin.onBeforeUpdate('User', { where: { id: 1 }, data }, ctx)
 
-    // File uploaded
     expect(mock.puts).toHaveLength(1)
-
-    // No stash — keepVersions skips it
-    const stashedKey = plugin._unstash(ctx, 'User', 'resume')
-    expect(stashedKey).toBeUndefined()
-
-    // afterWrite should not delete anything
-    await plugin.onAfterWrite('User', 'update', {}, ctx)
+    await plugin.onWriteSettled('User', 'update', { where: { id: 1 }, data }, null, ctx)
     expect(mock.deletes).toHaveLength(0)
   })
 
-  test('onAfterWrite: only runs for update operations', async () => {
+  test('onWriteSettled: a refused update deletes the object it stored, keeps the old one, and hands back the bytes', async () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
-    const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
+    const plugin = FileStorage({ provider: 'r2', bucket: 'test', accessKeyId: 'a', secretAccessKey: 's' }) as any
     const schema = parse(FILE_SCHEMA).schema
-    const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
+    const ctx: any = {
+      models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])),
+      readDb: { query: () => ({ get: () => ({ avatar: JSON.stringify({ key: 'users/1/avatar/old.jpg' }) }) }) },
+    }
     plugin.onInit(schema, ctx)
     const mock = makeMockProvider()
     plugin._provider = mock
 
-    // Manually stash a key to verify it's not deleted on create/delete ops
-    plugin._stash(ctx, 'User', 'avatar', 'some-old-key.jpg')
-    await plugin.onAfterWrite('User', 'create', {}, ctx)
-    expect(mock.deletes).toHaveLength(0)
+    const bytes = Buffer.from('new image')
+    const data: any = { avatar: bytes }
+    await plugin.onBeforeUpdate('User', { where: { id: 1 }, data }, ctx)
+    const stored = JSON.parse(data.avatar).key
+    await plugin.onWriteSettled('User', 'update', { where: { id: 1 }, data }, new Error('refused'), ctx)
+    expect(mock.deletes).toEqual([stored])
+    expect(data.avatar).toBe(bytes)
+    // Nothing left queued: a second settle of the same payload deletes nothing.
+    await plugin.onWriteSettled('User', 'update', { where: { id: 1 }, data }, null, ctx)
+    expect(mock.deletes).toEqual([stored])
   })
 
   test('onAfterDelete: deletes S3 objects for all @file fields', async () => {

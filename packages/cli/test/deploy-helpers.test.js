@@ -46,12 +46,12 @@ async function loadModuleHelpers() {
   const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
   const fn = new AsyncFunction(`
     ${scriptMatch[1]}
-    return { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, deployTargetFor, appIdOf, sshHost, swapContainer, healthOrRestore, litestreamInstall, aptIdle }
+    return { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, deployTargetFor, appIdOf, sshHost, swapContainer, litestreamInstall, aptIdle }
   `)
   return fn()
 }
 
-const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, deployTargetFor, swapContainer, healthOrRestore, aptIdle } = await loadModuleHelpers()
+const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, deployTargetFor, swapContainer, aptIdle } = await loadModuleHelpers()
 
 // ─── loadFrontierConfig ───────────────────────────────────────────────────────
 
@@ -421,253 +421,220 @@ describe('unexecdEntrypoint', () => {
 
 // ─── swapContainer ────────────────────────────────────────────────────────────
 //
-// The step that takes the old container down and puts the new one up. It threw
-// `ReferenceError: deployConf is not defined` on every real deploy for as long
-// as it existed — `dockerLogArgs(deployConf)` named a variable in no scope it
-// could see, and the throw landed AFTER the running container had been renamed
-// to `_replaced` and stopped and BEFORE `docker run`, so a deploy left the app
-// down (`FJS-726`).
+// The swap and its health check, over a recording ssh exec and the fake daemon
+// Outpost's contract table runs against (`FJS-D1866`). The script travels on
+// STDIN to `sh -s` (core/machine.js), so what a step actually sends is `input`
+// and never the command line; a `docker …` script is handed to the daemon, a
+// curl loop answers by the image the App's container is on.
 //
-// Nothing could see it. The parse sweep parses and does not resolve scopes, so
-// the file compiles; the two callers both had `deployConf` in their own scope,
-// so reading either one reads correctly; and `deployJournalCycle` is the only
-// thing in the repo that runs `fli deploy` at all.
-//
-// The machine is driven through an injected `$.exec`, which is what
-// `createMachine` takes — no daemon, no host.
+// `deployConf` is an option and not a free name: a free one threw after the
+// running container had been stopped (`FJS-726`), and nothing but a run of the
+// function could see it.
 
-describe('swapContainer', () => {
+const { CASES, fakeDaemon, imagesOn } = await import('../../outpost/test/fixtures/swap-cases.js')
 
-  const drive = (opts = {}) => {
-    // The script travels on STDIN to `sh -s` (core/machine.js), so what a step
-    // actually sends is `input` and never the command line. Capturing the
-    // command alone finds nothing but `sh -s`.
-    const commands = []
-    const context  = {
-      exec: ({ command, input }) => { commands.push(input ?? command); return '' },
-      config: {},
-    }
-    const result = swapContainer(context, {
-      host:      'localhost',
-      container: 'my-app-api',
-      image:     'sha256:abc',
-      apiPort:   7102,
-      dbPath:    '/srv/db',
-      envFile:   '/srv/.env.production',
-      log:       { info() {}, success() {}, warn() {}, error() {} },
-      ...opts,
+const words = (script) => (script.match(/'(?:[^']|'\\'')*'|\S+/g) ?? [])
+  .map(w => /^'.*'$/.test(w) ? w.slice(1, -1).replace(/'\\''/g, "'") : w)
+
+const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '' } = {}) => {
+  const d = fakeDaemon(before)
+  const commands = []
+  const context = {
+    config: {},
+    exec: ({ command, input }) => {
+      const body = String(input ?? command).replace(/^exec 2>&1\n/, '')
+      commands.push(body)
+      if (body.includes('id -u fjs-')) return ids
+      if (body.includes('ls -1A')) return ls
+      if (body.includes('grep -qs')) return inEnv
+      if (body.includes('/proc/')) return open
+      if (body.includes('curl')) {
+        if (d.healthOf('app').healthy) return 'ok'
+        throw new Error('fail')
+      }
+      if (body.startsWith('docker ')) {
+        const r = d.argv(words(body))
+        if (r.exitCode !== 0) throw Object.assign(new Error(r.stderr), { status: r.exitCode, stderr: r.stderr, stdout: '' })
+        return r.stdout
+      }
+      return ''
+    },
+  }
+  const go = (opts = {}) => swapContainer(context, {
+    host: 'localhost', container: 'app', image: 'img:new', apiPort: 7102,
+    dbPath: '/srv/db', envFile: '/srv/.env.production', deployConf: {}, healthPath: '/api/health',
+    attempts: 1, intervalS: 0,
+    log: { info() {}, success() {}, warn() {}, error() {} },
+    ...opts,
+  })
+  return { d, commands, go, runCmd: () => commands.find(c => c.startsWith('docker run')) }
+}
+
+const old = { image: 'img:old', running: true }
+
+describe('swapContainer — the swap Outpost runs', () => {
+  for (const c of CASES.filter(c => c.swap === 'stop-first')) {
+    test(c.case, async () => {
+      const t = onBox({ before: c.before })
+      const result = await t.go({ image: c.image })
+      expect(t.d.log).toEqual(c.log)
+      expect(imagesOn(t.d.box)).toEqual(c.after)
+      expect(result.healthy).toBe(!c.throws)
+      if (c.throws) expect(result.reason).toMatch(c.throws)
     })
-    return { commands, result, runCmd: commands.find(c => c.includes('docker run')) }
   }
 
-  test('starts the new container — it threw before reaching docker run', () => {
-    const { runCmd } = drive({ deployConf: {} })
+  test('a docker run line with a value the shell would read reaches the target quoted', async () => {
+    const t = onBox()
+    await t.go({ deployConf: { logs: { max_size: '10m; rm -rf /' } } })
+    expect(t.runCmd()).toContain(`--log-opt 'max-size=10m; rm -rf /'`)
+    expect(t.d.box.get('app').image).toBe('img:new')
+  })
+})
 
-    expect(runCmd).toBeDefined()
-    expect(runCmd).toContain('docker run -d')
-    expect(runCmd).toContain('--name my-app-api')
-    expect(runCmd).toContain('sha256:abc')
+describe('swapContainer — the docker run line', () => {
+  const runCmd = async (opts) => { const t = onBox(); await t.go(opts); return t.runCmd() }
+
+  test('starts the new container on the image it was given', async () => {
+    const line = await runCmd({ image: 'sha256:abc' })
+    expect(line).toContain('docker run -d')
+    expect(line).toContain('--name app')
+    expect(line).toContain('sha256:abc')
   })
 
   // FJS-D1484: on a box each app runs as its own host user, never the
   // image's uid every app would share.
-  const onBox = (ids) => {
-    const commands = []
-    const context  = {
-      exec: ({ command, input }) => {
-        const s = input ?? command
-        commands.push(s)
-        return s.includes('id -u fjs-my-app') ? ids : ''
-      },
-      config: {},
-    }
-    const go = () => swapContainer(context, {
-      host: 'root@203.0.113.7', appId: 'my-app', container: 'my-app-api', image: 'sha256:abc', apiPort: 7102,
-      dbPath: '/srv/db', envFile: '/srv/.env.production', deployConf: {},
-      log: { info() {}, success() {}, warn() {}, error() {} },
-    })
-    return { commands, go }
-  }
-
-  test('on a box the container starts as the app\'s own user', () => {
-    const t = onBox('998:998\n')
-    t.go()
-    expect(t.commands.find(c => c.includes('docker run'))).toContain('--user 998:998')
+  test('on a box the container starts as the app\'s own user', async () => {
+    const t = onBox({ ids: '998:998\n' })
+    await t.go({ host: 'root@203.0.113.7', appId: 'my-app' })
+    expect(t.runCmd()).toContain('--user 998:998')
   })
 
-  test('a box with no user for the app is refused before the running container is touched', () => {
-    const t = onBox('')
-    expect(() => t.go()).toThrow(/fjs-my-app is not a user on this box.*fli deploy:setup/)
-    expect(t.commands.some(c => c.includes('docker rename') || c.includes('docker stop'))).toBe(false)
+  test('a box with no user for the app is refused before the running container is touched', async () => {
+    const t = onBox({ before: { app: old } })
+    await expect(t.go({ host: 'root@203.0.113.7', appId: 'my-app' })).rejects.toThrow(/fjs-my-app is not a user on this box.*fli deploy:setup/)
+    expect(t.d.log).toEqual([])
   })
 
-  test('localhost passes no --user, so the image\'s user runs', () => {
-    expect(drive({ deployConf: {} }).runCmd).not.toContain('--user')
+  test('localhost passes no --user, so the image\'s user runs', async () => {
+    expect(await runCmd()).not.toContain('--user')
   })
 
-  test('the old container is renamed and stopped BEFORE the new one starts', () => {
-    const { commands } = drive({ deployConf: {} })
-
-    const rename = commands.findIndex(c => c.includes('docker rename'))
-    const stop   = commands.findIndex(c => c.includes('docker stop'))
-    const run    = commands.findIndex(c => c.includes('docker run'))
-
-    expect(rename).toBeGreaterThanOrEqual(0)
-    expect(stop).toBeGreaterThan(rename)
-    expect(run).toBeGreaterThan(stop)
+  test('the old container is renamed and stopped BEFORE the new one starts', async () => {
+    const t = onBox({ before: { app: old } })
+    await t.go()
+    expect(t.d.log.slice(0, 4)).toEqual(['rm app_replaced', 'rename app app_replaced', 'stop app_replaced', 'run app img:new'])
   })
 
   // FJS-3980: the grace is handed to the container once, so the stop of the
   // replaced one reads the number it was started with, not a literal here.
-  test('the stop grace reaches the run command, and the replaced container is stopped by its own', () => {
-    const { runCmd, commands } = drive({ deployConf: {} })
-    expect(runCmd).toContain('--stop-timeout 40')
-    expect(runCmd).toContain('--env FRONTIER_STOP_GRACE=40')
-    expect(commands.find(c => c.includes('docker stop'))).not.toContain('docker stop -t')
-    expect(drive({ deployConf: { stopGrace: 25 } }).runCmd).toContain('--stop-timeout 25 --env FRONTIER_STOP_GRACE=25')
+  test('the stop grace reaches the run command, and the replaced container is stopped by its own', async () => {
+    const t = onBox({ before: { app: old } })
+    await t.go()
+    expect(t.runCmd()).toContain('--stop-timeout 40 -e FRONTIER_STOP_GRACE=40')
+    expect(t.commands.find(c => c.startsWith('docker stop'))).toBe('docker stop app_replaced')
+    expect(await runCmd({ deployConf: { stopGrace: 25 } })).toContain('--stop-timeout 25 -e FRONTIER_STOP_GRACE=25')
   })
 
-  test('the log driver reaches the run command', () => {
-    const { runCmd } = drive({ deployConf: {} })
-
-    expect(runCmd).toContain('--log-driver json-file')
-    expect(runCmd).toContain('--log-opt max-size=10m')
+  test('a stop grace that leaves Junction no drain is refused before anything is touched', async () => {
+    const t = onBox({ before: { app: old } })
+    await expect(t.go({ deployConf: { stopGrace: 1 } })).rejects.toThrow(/stopGrace must be a whole number of seconds, at least 2/)
+    expect(t.d.log).toEqual([])
   })
 
-  test('a stated log driver is carried', () => {
-    const { runCmd } = drive({ deployConf: { logs: { driver: 'journald' } } })
-
-    expect(runCmd).toContain('--log-driver journald')
-    expect(runCmd).not.toContain('json-file')
+  test('the log driver reaches the run command; a stated one is carried; logs: false declines it', async () => {
+    expect(await runCmd()).toContain('--log-driver json-file --log-opt max-size=10m')
+    const journald = await runCmd({ deployConf: { logs: { driver: 'journald' } } })
+    expect(journald).toContain('--log-driver journald')
+    expect(journald).not.toContain('json-file')
+    const none = await runCmd({ deployConf: { logs: false } })
+    expect(none).toContain('docker run -d')
+    expect(none).not.toContain('--log-driver')
   })
 
-  test('logs: false declines them, and still starts the container', () => {
-    const { runCmd } = drive({ deployConf: { logs: false } })
-
-    expect(runCmd).toContain('docker run -d')
-    expect(runCmd).not.toContain('--log-driver')
+  test('an absent deployConf does not throw — the revert path passes less', async () => {
+    const line = await runCmd({ deployConf: undefined })
+    expect(line).toContain('docker run -d')
+    expect(line).toContain('--log-driver json-file')
   })
 
-  test('an absent deployConf does not throw — the revert path passes less', () => {
-    // `_steps-revert/03-swap` calls this without a build id, and a config that
-    // never declared `logs` is the ordinary case. Neither may be a crash.
-    const { runCmd } = drive({ deployConf: undefined })
-
-    expect(runCmd).toContain('docker run -d')
-    expect(runCmd).toContain('--log-driver json-file')
+  test('the build id is stamped when given and absent when not', async () => {
+    expect(await runCmd({ build: 'abc1234' })).toContain('--env FJS_BUILD=abc1234')
+    expect(await runCmd()).not.toContain('FJS_BUILD')
   })
 
-  test('the build id is stamped when given and absent when not', () => {
-    expect(drive({ deployConf: {}, build: 'abc1234' }).runCmd).toContain('--env FJS_BUILD=abc1234')
-    expect(drive({ deployConf: {} }).runCmd).not.toContain('FJS_BUILD')
-  })
-
-  test('the configuration values reach the process, after the env file so they win (FJS-585)', () => {
+  test('the configuration values reach the process, after the env file so they win (FJS-585)', async () => {
     // The Release hash names these values, so they are what the process runs on:
     // `--env K=V` after `--env-file`, never a file written on the target.
-    const { runCmd } = drive({ deployConf: {}, configuration: { A: '1', GREETING: "it's here" } })
-
-    expect(runCmd).toContain(`--env A='1'`)
-    expect(runCmd).toContain(`--env GREETING='it'\\''s here'`)
-    expect(runCmd.indexOf('--env A=')).toBeGreaterThan(runCmd.indexOf('--env-file'))
+    const line = await runCmd({ configuration: { A: '1', GREETING: "it's here" } })
+    expect(line).toContain('--env A=1')
+    expect(line).toContain(`--env 'GREETING=it'\\''s here'`)
+    expect(line.indexOf('--env A=')).toBeGreaterThan(line.indexOf('--env-file'))
   })
 
-  test('FRONTIER_PORT_BE and NODE_ENV still beat a configuration value of the same name', () => {
-    const { runCmd } = drive({ deployConf: {}, configuration: { FRONTIER_PORT_BE: '9999' } })
-
-    expect(runCmd.lastIndexOf('--env FRONTIER_PORT_BE=')).toBeGreaterThan(runCmd.indexOf(`--env FRONTIER_PORT_BE='9999'`))
-  })
-
-  test('no configuration adds no --env beyond the framework\'s own', () => {
-    const { runCmd } = drive({ deployConf: {} })
-
-    expect(runCmd).not.toContain(`='`)
+  test('FRONTIER_PORT_BE and NODE_ENV still beat a configuration value of the same name', async () => {
+    const line = await runCmd({ configuration: { FRONTIER_PORT_BE: '9999' } })
+    expect(line.lastIndexOf('--env FRONTIER_PORT_BE=3000')).toBeGreaterThan(line.indexOf('--env FRONTIER_PORT_BE=9999'))
+    expect(line.indexOf('--env FRONTIER_PORT_BE=3000')).toBeGreaterThan(line.indexOf('--env-file'))
   })
 
   test('the app is told the one proxy the edge puts in front of it (FJS-1841)', async () => {
     // Untold, every caller arrives from Caddy's address and shares one
     // rate-limit bucket, so one caller's failed logins lock out the site.
     const { EDGE_HOPS } = await import('../core/edge.js')
-    expect(drive({ deployConf: {} }).runCmd).toContain(`--env FRONTIER_TRUST_PROXY=${EDGE_HOPS}`)
+    expect(await runCmd()).toContain(`--env FRONTIER_TRUST_PROXY=${EDGE_HOPS}`)
   })
 
-  test('the derived cross-origin list reaches the container, and a same-origin app gets none (FJS-2655)', () => {
+  test('the derived cross-origin list reaches the container, and a same-origin app gets none (FJS-2655)', async () => {
     const origins = ['https://app.example.com', 'tauri://localhost']
-    expect(drive({ deployConf: {}, corsOrigins: origins }).runCmd)
-      .toContain(`--env FRONTIER_CORS_ORIGINS='${origins.join(',')}'`)
-    expect(drive({ deployConf: {} }).runCmd).not.toContain('FRONTIER_CORS_ORIGINS')
-  })
-
-  test('FRONTIER_PORT_BE is forced after the env file, so .env.production cannot move it', () => {
-    const { runCmd } = drive({ deployConf: {} })
-
-    expect(runCmd.indexOf('--env FRONTIER_PORT_BE=3000')).toBeGreaterThan(runCmd.indexOf('--env-file'))
+    expect(await runCmd({ corsOrigins: origins })).toContain(`--env FRONTIER_CORS_ORIGINS=${origins.join(',')}`)
+    expect(await runCmd()).not.toContain('FRONTIER_CORS_ORIGINS')
   })
 
   // ─── the secrets directory (FJS-3359) ──────────────────────────────────────
-  // The target answers the listing and the env-file grep; everything else ''.
-  const onTarget = ({ ls = '', inEnv = '' } = {}) => {
-    const commands = []
-    const context  = {
-      exec: ({ command, input }) => {
-        const s = input ?? command
-        commands.push(s)
-        if (s.includes('ls -1A')) return ls
-        if (s.includes('grep -qs')) return inEnv
-        return ''
-      },
-      config: {},
-    }
-    const go = (opts = {}) => swapContainer(context, {
-      host: 'localhost', container: 'my-app-api', image: 'sha256:abc', apiPort: 7102,
-      dbPath: '/srv/db', envFile: '/srv/.env.production', secretsDir: '/srv/secrets', deployConf: {},
-      log: { info() {}, success() {}, warn() {}, error() {} },
-      ...opts,
-    })
-    return { commands, go, runCmd: () => commands.find(c => c.includes('docker run')) }
-  }
+  const secretsDir = '/srv/secrets'
 
-  test('each key in the secrets directory is mounted read-only and passed as KEY_FILE, never as a value', () => {
-    const t = onTarget({ ls: 'ENCRYPTION_KEY\nSTRIPE_KEY\n' })
-    t.go()
+  test('each key in the secrets directory is mounted read-only and passed as KEY_FILE, never as a value', async () => {
+    const t = onBox({ ls: 'ENCRYPTION_KEY\nSTRIPE_KEY\n' })
+    await t.go({ secretsDir })
     expect(t.runCmd()).toContain('--volume /srv/secrets:/run/secrets:ro')
     expect(t.runCmd()).toContain('--env ENCRYPTION_KEY_FILE=/run/secrets/ENCRYPTION_KEY')
     expect(t.runCmd()).toContain('--env STRIPE_KEY_FILE=/run/secrets/STRIPE_KEY')
   })
 
-  test('no secrets directory, or an empty one, mounts nothing', () => {
-    const t = onTarget()
-    t.go()
+  test('no secrets directory, or an empty one, mounts nothing', async () => {
+    const t = onBox()
+    await t.go({ secretsDir })
     expect(t.runCmd()).not.toContain('/run/secrets')
     expect(t.runCmd()).not.toContain('_FILE=')
   })
 
-  test('a file not named like an env key never reaches the docker run line', () => {
-    const t = onTarget({ ls: 'ENCRYPTION_KEY\nnotes.txt\n$(reboot)\n' })
-    t.go()
+  test('a file not named like an env key never reaches the docker run line', async () => {
+    const t = onBox({ ls: 'ENCRYPTION_KEY\nnotes.txt\n$(reboot)\n' })
+    await t.go({ secretsDir })
     expect(t.runCmd()).toContain('ENCRYPTION_KEY_FILE=')
     expect(t.runCmd()).not.toContain('notes.txt')
     expect(t.runCmd()).not.toContain('reboot')
   })
 
-  test('a key also in the env file or the configuration set is refused before the running container is touched', () => {
-    const inFile = onTarget({ ls: 'ENCRYPTION_KEY\n', inEnv: 'ENCRYPTION_KEY\n' })
-    expect(() => inFile.go()).toThrow(/ENCRYPTION_KEY is in \/srv\/secrets and also in \/srv\/\.env\.production/)
-    expect(inFile.commands.some(c => c.includes('docker rename'))).toBe(false)
+  test('a key also in the env file or the configuration set is refused before the running container is touched', async () => {
+    const inFile = onBox({ before: { app: old }, ls: 'ENCRYPTION_KEY\n', inEnv: 'ENCRYPTION_KEY\n' })
+    await expect(inFile.go({ secretsDir })).rejects.toThrow(/ENCRYPTION_KEY is in \/srv\/secrets and also in \/srv\/\.env\.production/)
+    expect(inFile.d.log).toEqual([])
 
-    const inConfig = onTarget({ ls: 'API_TOKEN\n' })
-    expect(() => inConfig.go({ configuration: { API_TOKEN: 'x' } })).toThrow(/API_TOKEN/)
-    expect(inConfig.commands.some(c => c.includes('docker rename'))).toBe(false)
+    const inConfig = onBox({ before: { app: old }, ls: 'API_TOKEN\n' })
+    await expect(inConfig.go({ secretsDir, configuration: { API_TOKEN: 'x' } })).rejects.toThrow(/API_TOKEN/)
+    expect(inConfig.d.log).toEqual([])
   })
 
-  test('a secrets directory this login cannot list stops the swap rather than starting the API without its keys', () => {
-    const t = onTarget({ ls: '?unreadable\n' })
-    expect(() => t.go()).toThrow(/cannot list it/)
-    expect(t.commands.some(c => c.includes('docker rename'))).toBe(false)
+  test('a secrets directory this login cannot list stops the swap rather than starting the API without its keys', async () => {
+    const t = onBox({ before: { app: old }, ls: '?unreadable\n' })
+    await expect(t.go({ secretsDir })).rejects.toThrow(/cannot list it/)
+    expect(t.d.log).toEqual([])
   })
 })
 
-// ─── healthOrRestore ──────────────────────────────────────────────────────────
+// ─── the health check and the put-back ─────────────────────────────────────────
 //
 // `restored` is read by the revert as *the release that was serving is running
 // again*, and `docker start` answers the moment the process exists — before the
@@ -675,67 +642,42 @@ describe('swapContainer', () => {
 // deploy found the put-back release still booting (FJS-009), so the restore is
 // polled like the deploy was, and only an answer counts.
 
-describe('healthOrRestore', () => {
-  const drive = async ({ answersAfterRestore, answersFirst = false, open = '', previous = true }) => {
-    const commands = []
-    let restored = false
-    const context = {
-      config: {},
-      exec: ({ command, input }) => {
-        const body = input ?? command
-        commands.push(body)
-        if (body.includes('docker rename')) {
-          if (!previous) return 'no previous container to restore'
-          restored = true
-          return 'restored'
-        }
-        if (body.includes('/proc/')) return open
-        if (body.includes('curl')) {
-          if (restored ? answersAfterRestore : answersFirst) return 'ok'
-          throw new Error('fail')
-        }
-        return ''
-      },
-    }
-    const result = await healthOrRestore(context, {
-      host: 'localhost', container: 'my-app-api', replaced: 'my-app-api_replaced',
-      apiPort: 7102, healthPath: '/api/health', attempts: 1, intervalS: 0,
-      log: { info() {}, success() {}, warn() {}, error() {} },
-    })
-    return { commands, result }
-  }
-
+describe('swapContainer — health and the put-back', () => {
   test('the put-back container is polled before it is called restored', async () => {
-    const { commands } = await drive({ answersAfterRestore: true })
-    const rename = commands.findIndex(c => c.includes('docker rename'))
-    expect(rename).toBeGreaterThanOrEqual(0)
-    expect(commands.slice(rename + 1).some(c => c.includes('curl'))).toBe(true)
+    const t = onBox({ before: { app: old } })
+    const result = await t.go({ image: 'img:sick' })
+    const back = t.commands.indexOf('docker start app')
+    expect(back).toBeGreaterThan(0)
+    expect(t.commands.slice(back + 1).some(c => c.includes('curl'))).toBe(true)
+    expect(result).toMatchObject({ healthy: false, restored: true, none: false, unbound: [] })
   })
 
   test('a put-back container that never answers is not restored', async () => {
-    expect((await drive({ answersAfterRestore: false })).result).toEqual({ healthy: false, restored: false, none: false, unbound: [] })
-    expect((await drive({ answersAfterRestore: true })).result).toEqual({ healthy: false, restored: true, none: false, unbound: [] })
+    const t = onBox({ before: { app: { image: 'img:sick', running: true } } })
+    expect(await t.go({ image: 'img:sick' })).toMatchObject({ healthy: false, restored: false, none: false, unbound: [] })
   })
 
   // FJS-3586: a first deploy has no _replaced, and polling the name it just
   // removed reported a put-back that never happened.
-  test('a first deploy with nothing to put back answers none and polls nothing after the restore', async () => {
-    const { commands, result } = await drive({ answersAfterRestore: true, previous: false })
-    expect(result).toEqual({ healthy: false, restored: false, none: true, unbound: [] })
-    const restore = commands.findIndex(c => c.includes('docker rename'))
-    expect(commands.slice(restore + 1).some(c => c.includes('curl'))).toBe(false)
+  test('a first deploy with nothing to put back answers none and polls nothing after the removal', async () => {
+    const t = onBox()
+    const result = await t.go({ image: 'img:sick' })
+    expect(result).toMatchObject({ healthy: false, restored: false, none: true, unbound: [] })
+    const removed = t.commands.indexOf('docker rm -f app')
+    expect(removed).toBeGreaterThan(0)
+    expect(t.commands.slice(removed + 1).some(c => c.includes('curl'))).toBe(false)
   })
 
   // A 200 is not enough: a database in the container's own layer is empty after
   // the next swap, so the release that wrote it is put back like a sick one.
   test('a container answering with a database outside the volume is put back; one on the volume passes', async () => {
-    const outside = await drive({ answersFirst: true, answersAfterRestore: true, open: '/data/app.db\n/db/audit.db\n' })
-    expect(outside.result).toEqual({ healthy: false, restored: true, none: false, unbound: ['/data/app.db'] })
-    expect(outside.commands.some(c => c.includes('docker rename'))).toBe(true)
+    const outside = onBox({ before: { app: old }, open: '/data/app.db\n/db/audit.db\n' })
+    expect(await outside.go()).toMatchObject({ healthy: false, restored: true, none: false, unbound: ['/data/app.db'] })
+    expect(imagesOn(outside.d.box)).toEqual({ app: 'img:old' })
 
-    const inside = await drive({ answersFirst: true, answersAfterRestore: true, open: '/db/app.db\n' })
-    expect(inside.result).toEqual({ healthy: true, restored: false, unbound: [] })
-    expect(inside.commands.some(c => c.includes('docker rename'))).toBe(false)
+    const inside = onBox({ before: { app: old }, open: '/db/app.db\n' })
+    expect(await inside.go()).toMatchObject({ healthy: true, restored: false, unbound: [] })
+    expect(imagesOn(inside.d.box)).toEqual({ app: 'img:new' })
   })
 })
 

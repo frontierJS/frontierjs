@@ -47,6 +47,14 @@
 //     result is the written row; createMany and updateMany call it once per
 //     row they wrote. Not inside the write's transaction (FJS-D588).
 //
+//   async onWriteSettled(model, operation, args, error, ctx)
+//     Observer. Once per create/createMany/update/updateMany/upsertMany call,
+//     with the args the caller passed — `args.data` is the payload the before
+//     hook was handed. `error` is what refused the write, from a later plugin,
+//     @values, a constraint or SQLite, or null when it landed. A refused write
+//     reaches no onAfterWrite, so whatever a before hook did outside the
+//     database is undone here or never. A throw is swallowed.
+//
 //   buildReadFilter(model, ctx)
 //     Called during buildSQL to inject extra WHERE conditions.
 //     Return a where-object (same shape as findMany({ where: ... })) or null.
@@ -83,6 +91,7 @@ export class LitestonePlugin {
   async onAfterRead(model, rows, ctx, opts = {}) {}
   async onWriteResult(model, rows, ctx, opts = {}) {}
   async onAfterWrite(model, operation, result, ctx) {}
+  async onWriteSettled(model, operation, args, error, ctx) {}
 
   // Called after any delete completes — single or bulk.
   // rows = array of the rows that were deleted (fetched before the SQL ran).
@@ -191,6 +200,15 @@ export class PluginRunner {
 
   async afterDelete(model, rows, ctx) {
     for (const p of this._plugins) await p.onAfterDelete?.(model, rows, ctx)
+  }
+
+  // Every plugin hears it, whichever throws: the caller is owed the write's
+  // own refusal, not a cleanup's.
+  async writeSettled(model, operation, args, error, ctx) {
+    for (const p of this._plugins) {
+      try { await p.onWriteSettled?.(model, operation, args, error, ctx) }
+      catch (e) { console.warn(`${p?.name ?? 'plugin'}: onWriteSettled failed: ${e?.message ?? e}`) }
+    }
   }
 
   // Collect all plugin read filters for a model → array of where-objects

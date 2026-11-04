@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 74 models · 1 view · 75 gated · 0 unrestricted
-60 with row policies · 30 with protected fields · 35 declared moves · 15 @system · 0 @seals
+60 with row policies · 30 with protected fields · 36 declared moves · 16 @system · 0 @seals
 ```
 
 ## Gates
@@ -816,6 +816,7 @@ caller at once. Everything reachable from the target seals with it.
 | `Monitor` | `status` | `markDown` | pending, up → down | **application** | — | — |
 | `Monitor` | `status` | `pause` | pending, up, down → paused | caller | 5 ADMINISTRATOR | — |
 | `Monitor` | `status` | `resume` | paused → pending | caller | 5 ADMINISTRATOR | — |
+| `Monitor` | `status` | `retarget` | up, down → pending | **application** | — | — |
 | `Run` | `status` | `start` | pending → running | caller | — | — |
 | `Run` | `status` | `suspend` | pending, running → waiting | caller | — | — |
 | `Run` | `status` | `resume` | waiting → running | caller | — | — |

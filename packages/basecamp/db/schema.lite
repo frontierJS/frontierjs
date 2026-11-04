@@ -3148,7 +3148,10 @@ model Monitor {
     markUp:   [pending, down] -> up     @system,
     markDown: [pending, up]   -> down   @system,
     pause:    [pending, up, down] -> paused  @gate(5),
-    resume:   paused          -> pending @gate(5))
+    resume:   paused          -> pending @gate(5),
+    // The system's, for a managed row whose url was just regenerated: the
+    // grade it held was the old hostname's (`FJS-D1869`).
+    retarget: [up, down]      -> pending @system)
   @@gate(2.5)
   @@trail(audit)
   @@index([workspaceId])

@@ -6507,7 +6507,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem>
   readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations, never, '@@gate'>
   readonly alert: TableClient<Alert, AlertCreate, AlertUpdate, AlertWhere, AlertRelations, never, '@@gate'>
-  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume', 'isManaged' | 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'certExpiresAt' | 'certWarnedDays' | 'status' | '@@gate', MonitorSystem>
+  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume' | 'retarget', 'isManaged' | 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'certExpiresAt' | 'certWarnedDays' | 'status' | '@@gate', MonitorSystem>
   readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere, MonitorCheckRelations, never, '@@gate'>
   readonly monitorUptimeDay: TableClient<MonitorUptimeDay, MonitorUptimeDayCreate, MonitorUptimeDayUpdate, MonitorUptimeDayWhere, MonitorUptimeDayRelations, never, '@@gate'>
   readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere, MonitorEventRelations, never, 'noticeOwedAt' | '@@gate', MonitorEventSystem>

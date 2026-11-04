@@ -44,6 +44,7 @@ import { AsyncLocalStorage } from '#host'
  * @property {number}        xmark
  * @property {number}        wmark
  * @property {number}        lmark
+ * @property {number}        hmark
  * @property {boolean}       [settled]
  */
 
@@ -165,6 +166,30 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     return other?.model ?? null
   }
 
+  // ── Effects outside the files, held until the write is real ───────────────
+  //
+  // A plugin's object store is not rolled back with the rows. Deleting the old
+  // object when an update lands left a rolled-back row naming a deleted file,
+  // and the new object outlived the row that named it (FJS-3991). `commit` runs
+  // when the outermost transaction commits and `rollback` when the frame it was
+  // held in rolls back; outside a transaction this context owns, the write is
+  // already real and `commit` runs now. `exclusive` awaits what either started.
+  /** @typedef {{ commit?: () => any, rollback?: () => any }} Hold */
+  /** @type {Hold[]} */
+  const holds = []
+  /** @type {any[]} */
+  const settling = []
+  /** @param {Hold} h */
+  function hold(h) {
+    if (!ownsTx(state)) return h.commit?.()
+    holds.push(h)
+  }
+  /** @param {Hold[]} hs @param {'commit' | 'rollback'} side */
+  function fire(hs, side) {
+    for (const h of hs) { try { settling.push(h[side]?.()) } catch {} }
+  }
+  const drain = () => Promise.allSettled(settling.splice(0, settling.length))
+
   /** @returns {Frame} */
   function begin() {
     // BEGIN IMMEDIATE (matching the $transaction doc comment): take the write
@@ -180,7 +205,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     }
     else { spCount++; each(`SAVEPOINT sp_${spCount}`) }
     state.depth++
-    return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0, xmark: exclusions?.length ?? 0, wmark: wrote.length, lmark: logs.length }
+    return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0, xmark: exclusions?.length ?? 0, wmark: wrote.length, lmark: logs.length, hmark: holds.length }
   }
 
   /** @param {Frame} frame */
@@ -196,6 +221,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     if (sp != null) { each(`RELEASE sp_${sp}`); return }
     const held = heldEvents()
     const filed = logs.splice(0, logs.length)
+    const kept = holds.splice(0, holds.length)
     for (const p of held) p.record()
     const order = [...conns.slice(1), conns[0]]
     for (let i = 0; i < order.length; i++) {
@@ -206,6 +232,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
         frame.settled = true
         wrote.length = 0
         for (const c of order.slice(i)) { try { c.db.run('ROLLBACK') } catch {} }
+        fire(kept, 'rollback')
         if (conns.length === 1) throw e
         const names = (/** @type {{ name: string }[]} */ cs) => cs.map(c => c.name).join(', ') || 'none'
         throw Object.assign(new Error(
@@ -217,17 +244,19 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     }
     wrote.length = 0
     for (const p of held) p.dispatch?.()
-    for (const fire of filed) fire()
+    for (const log of filed) log()
+    fire(kept, 'commit')
   }
 
   /** @param {Frame} frame */
   function rollback(frame) {
     if (frame.settled) return
-    const { sp, mark, cmark, xmark, wmark, lmark } = frame
+    const { sp, mark, cmark, xmark, wmark, lmark, hmark } = frame
     state.depth--
     pending.length = mark
     wrote.length = wmark
     logs.length = lmark
+    fire(holds.splice(hmark, holds.length), 'rollback')
     if (ledger) ledger.truncate(cmark)
     if (exclusions) exclusions.truncate(xmark)
     // Every file is rolled back even when one refuses, then the first refusal
@@ -258,6 +287,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
       const frame = begin()
       try { const r = await fn(); commit(frame); return r }
       catch (e) { rollback(frame); throw e }
+      finally { await drain() }
     }
     const release = await acquire()
     try {
@@ -266,7 +296,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
         try { const r = await fn(); commit(frame); return r }
         catch (e) { rollback(frame); throw e }
       })
-    } finally { release() }
+    } finally { release(); await drain() }
   }
 
   // The sync-body entry point, for bulk writes. The BODY stays synchronous —
@@ -281,7 +311,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     finally { release() }
   }
 
-  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, queueEvent, queueLog, noteWrite, ledger, exclusions, owns: () => ownsTx(state), state }
+  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, queueEvent, queueLog, noteWrite, hold, ledger, exclusions, owns: () => ownsTx(state), state }
 }
 
 // ─── Read routing ─────────────────────────────────────────────────────────────

@@ -1,21 +1,21 @@
 # FrontierJS imagery
 
 The kit for making a FrontierJS image: a painted landscape, a hero or social
-card, a realm illustration, a texture plate, or an AI image prompt. Copy the
+card, a realm illustration, a journal flat-lay, a poster, or an AI image prompt. Copy the
 prompt blocks as written, add the realm line and the figure line when they
 apply, and judge the result against § 8 before it goes into `assets/`.
 
-**Scope: pictures, not the interface.** The logo, the icons and anything a page
+**Scope: images, not the interface.** The logo, the icons and anything a page
 renders follow `README.md` § 2–4 and `theme-field`. A logo has to read in one
 flat color at 16px, and this kit asks for painterly depth. Both are right,
 because they cover different things.
 
-**A picture or a poster: decide which before writing a prompt** (`FJS-D1861`).
-A picture is imagery, such as a vista, a hero or a texture, and carries no
-lettering because the page sets the type (§ 1–8). A poster is informational: a
-field-series plate that explains one subject at a glance, and its words are the
-point (§ 9). Strip every word from the image: a picture still does its job, a
-poster stops working.
+**An illustration or a poster: decide which before writing a prompt**
+(`FJS-D1861`, `FJS-D1872`). An illustration is imagery, such as a vista, a hero
+or a journal flat-lay, and carries no lettering because the page sets the type
+(§ 1–8). A poster is informational: it explains one subject at a glance, and
+its words are the point (§ 9). Strip every word from the image: an
+illustration still does its job, a poster stops working.
 
 The reference image is `fjs-backdrop-portrait.png` at the repo root. When a
 prompt and that image disagree, the image wins. `assets/moodboard.image-ref.png`
@@ -49,7 +49,7 @@ more than *rustic*, *outdoorsy* or *vintage* does.
 
 ## 3 · Scene base and master prompt
 
-**Paste the scene base first in any prompt for a single picture.** It anchors
+**Paste the scene base first in any prompt for a single illustration.** It anchors
 on 19th-century American landscape painting, which is what keeps the realism.
 
 ```text
@@ -121,7 +121,7 @@ pushes the image toward fantasy art.
 Name the hat's shape exactly as written above. Image models default to a cowboy
 hat when the prompt says only *hat* or *Western*.
 
-**Field-journal plate.** Use this for a texture, a background or a collage
+**Journal flat-lay.** Use this for a texture, a background or a collage
 panel rather than a vista.
 
 ```text
@@ -150,7 +150,7 @@ paper.
 
 ## 5 · Negative prompt
 
-Paste this into the tool's negative-prompt field for a picture; a poster uses
+Paste this into the tool's negative-prompt field for an illustration; a poster uses
 § 9's list. Where a tool has no such field, append it as `Avoid: …`.
 
 ```text
@@ -168,8 +168,8 @@ watermark, logo
 ```
 
 `text, lettering, watermark, logo` is there because type is set by the page and
-the mark comes from `assets/`. A model writes its own lettering badly, and a
-picture with lettering burned in cannot be reused at another size or in another
+the mark comes from `assets/`. A model writes its own lettering badly, and an
+illustration with lettering burned in cannot be reused at another size or in another
 language.
 
 ## 6 · Keyword bank
@@ -186,7 +186,7 @@ don't paste every row at once.
 | Visual language | vintage field guide · expedition journal · national-park heritage · antique cartography · engraved illustration · surveyor aesthetic · heritage craftsmanship · editorial collage · natural asymmetry · restrained ornament |
 | Composition | layered landscape · panoramic vista · framed illustration · torn-paper edge · overlapping material samples · balanced negative space · tactile collage · editorial layout · organic border · strong hierarchy |
 
-## 7 · Palette in pictures
+## 7 · Palette in images
 
 **A painted color is named, not given a hex value.** The words in § 6 steer a
 model better than a hex value does, and the brand has no hex value outside
@@ -194,20 +194,20 @@ model better than a hex value does, and the brand has no hex value outside
 theme or print, the samples go into `packages/css/src/themes/` as tokens, not
 into this file.
 
-Two rules connect pictures to the page:
+Two rules connect an image to the page:
 
 - **The darkest value in an image is warm charcoal or deep slate blue, and the
   lightest is parchment.** Charcoal matches `theme-field`'s near-black ground
   and parchment its sand ink, so an image sits on a page without a visible
   seam. Deep slate is for a ground that is meant to read as its own panel,
-  such as a topographic plate with pale contour lines.
+  such as a topographic flat-lay with pale contour lines.
 - **Leave negative space where the page's type will go**: sky, haze, or the
-  bare parchment of a journal plate. A hero image is a ground for a headline,
-  not a picture with the headline crowded beside it.
+  bare parchment of a journal flat-lay. A hero image is a ground for a headline,
+  not an image with the headline crowded beside it.
 
 ## 8 · Acceptance check
 
-A picture ships when every line is true, and a poster when § 9's lines are.
+An illustration ships when every line is true, and a poster when § 9's lines are.
 Judge it at the size it will be used at.
 
 - [ ] It has both halves of § 1: scale, and something handmade.
@@ -229,15 +229,28 @@ git (`README.md`, top).
 
 ## 9 · Field-series poster
 
-An informational plate: one subject explained at a glance, for the site, a
-deck or a README header, read by a developer and finished enough for
-marketing. The reference is `assets/field-series-04.image-ref.png`
-(plate 04, *One schema. One stack.*), gitignored like the moodboard. Plates are
-numbered in series and the panel prints the number as `FJS-04`, which reads as
-an `ISSUES.md` id to the register check, so prose cites one as *plate 04*. The
-next is plate 05.
+A poster explains one subject at a glance, for the site, a deck or a README
+header, read by a developer and finished enough for marketing. **Poster is the
+kind; a plate is one numbered poster of the Field Series** (`FJS-D1872`), the
+way a field guide numbers its plates. A plate may print its number as
+`FJS-04`, which reads as an `ISSUES.md` id to the register check, so prose
+cites one as *plate 04*.
 
-**Five zones, in reading order:**
+The references are gitignored like the moodboard, one per layout so far:
+
+- `assets/field-series-04.image-ref.png`, plate 04 (*One schema. One
+  stack.*): a painted scene with numbered callouts and a side panel.
+- `assets/field-series-05.image-ref.png`, plate 05 (*Six layers. One
+  outpost.*): a grid of six icon tiles. It reads faster, and it is what a
+  model returns when a prompt asks for more than a plate holds.
+
+**A plate holds about six tiles and four stats.** Asked for plate 04's full
+layout plus a second panel, the model dropped the scene and the panel on its
+own. Whatever does not fit goes on the page beside the plate, as HTML that can
+link to the docs.
+
+**Zones, in reading order** (plate 04's; plate 05 swaps the center panel for
+a 2-by-3 grid of tiles and has no right column):
 
 - **Header band.** The compass-rose mark, the wordmark `FrontierJS`, and
   `BUILT FOR THE WILD` between two rules; `EXPLORE / BUILD / SHIP / TOGETHER`
@@ -285,12 +298,19 @@ fantasy art, misspelled words, invented words, extra text, watermark
 **A poster ships when every line is true**, at the width it ships at:
 
 - [ ] § 8's light, palette, hat, painterly and restrained-ornament lines hold.
-- [ ] Every word matches the prompt letter for letter. Plate 04's reference
-      reads `SOLITE` where it means SQLite; a word that will not come out
-      right is set in HTML or Figma over a plate generated without it.
+- [ ] Every word matches the sidecar's prompt letter for letter. Plate 04's
+      reference reads `SOLITE` where it means SQLite; a word that will not
+      come out right is set in HTML or Figma over a plate generated without
+      it. A word the model changed and the owner keeps (plate 05's `SIGNAL`
+      for `GLUE`) is written back into the sidecar.
 - [ ] Every claim is true today: a number counted, a behavior a drive proves.
       The sidecar names the count or the drive behind each one, and a claim
       that waits on an unrun drill stays off the plate until it runs.
+- [ ] A claim about something an app opts into is worded as what you can do,
+      not as what always happens: plate 05's *Every write streamed offsite* is
+      true only for an app given a replica destination.
+- [ ] Each icon appears once. Plate 05 used its cylinder for both SQLite and
+      the stat beside it.
 - [ ] The headline states the claim, the way a caption does.
 - [ ] The smallest text, the stat labels, reads at the shipped width.
 

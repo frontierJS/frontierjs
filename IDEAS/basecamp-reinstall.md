@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — back up, restore and reinstall Basecamp from one terminal
 
-**Status: PROPOSED. Ruled: `FJS-D1848`–`FJS-D1851`, Q1–Q4 as `FJS-D1852`–`FJS-D1855`; Phase 0, 1.1 and 1.2 done, 1.3 next.** Probed against
+**Status: PROPOSED. Ruled: `FJS-D1848`–`FJS-D1851`, Q1–Q4 as `FJS-D1852`–`FJS-D1855`; Phase 0 and 1.1–1.3 done, 1.4 next.** Probed against
 the tree 2026-11-03. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): a `basecamp:reinstall` that does retire and install together and
@@ -113,8 +113,15 @@ manifest's sha256 agree.
       is checked against `manifest.json`. Proved on yuma 2026-11-03: archive under
       `~/.local/share/fli/basecamp/yuma/<stamp>/`, three files matching, and 0.2's script refuses
       it only for the key.
-- [ ] 1.3 The ssh fallback when the API does not answer: the db directory, the audit trail and
+- [x] 1.3 The ssh fallback when the API does not answer: the db directory, the audit trail and
       `.env.production`, marked raw so restore knows `/setup` cannot take it.
+      `pullRawBackup` in `cli/core/basecamp.js`, ruled `FJS-D1874`: automatic when the API is
+      unreachable, answers 5xx or has no hub App, and `--raw` when asked. `sqlite3 .backup` on the
+      box, then a tar over ssh into `<stamp>-raw/` with `db/`, `.env.production` and `raw.json`. The
+      key, which yuma keeps in `secrets/ENCRYPTION_KEY`, goes to
+      `~/.config/fli/basecamp/<server>/encryption.key` (1.4's file). Proved on yuma 2026-11-04:
+      three databases `integrity_check` ok, the key's fingerprint the same as 1.2's manifest, `/data`
+      still the App user's, and an unreachable `--url` falls back where a 401 refuses.
 - [ ] 1.4 The key, asked at each backup (`FJS-D1852`): a mode-600 file under
       `~/.config/fli/basecamp/<host>/`, printed once, or both; `attestEscrow` once a copy is off the box.
 - [ ] 1.5 `--list`: every local backup per host with size, age and manifest version; never pruned

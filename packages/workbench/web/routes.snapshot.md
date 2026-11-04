@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-8 routes · 1 layout · target spa · trailing slash always
+9 routes · 1 layout · target spa · trailing slash always
 ```
 
 ## Routes
@@ -29,6 +29,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/git-activity/local/` | `src/routes/git-activity/local.mesa` | `src/routes/_module.mesa` | — |
 | `/login/` | `src/routes/login/index.mesa` | `src/routes/_module.mesa` | — |
 | `/notifications/` | `src/routes/notifications/index.mesa` | `src/routes/_module.mesa` | — |
+| `/settings/` | `src/routes/settings/index.mesa` | `src/routes/_module.mesa` | — |
 | `/workbench/` | `src/routes/workbench/index.mesa` | `src/routes/_module.mesa` | — |
 
 ## Declared meta
@@ -45,6 +46,7 @@ this section exists to show.
 - `/git-activity/local/` — siteName: `Workbench` · title: `Local repositories`
 - `/login/` — siteName: `Workbench` · title: `Sign in`
 - `/notifications/` — siteName: `Workbench` · title: `Notifications`
+- `/settings/` — siteName: `Workbench` · title: `Settings`
 - `/workbench/` — siteName: `Workbench` · title: `Workbench`
 
 ## Layouts
@@ -52,4 +54,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 8 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/git-activity/local/`, `/login/`, `/notifications/`, `/workbench/`
+- `src/routes/_module.mesa` — 9 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/git-activity/local/`, `/login/`, `/notifications/`, `/settings/`, `/workbench/`

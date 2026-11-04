@@ -1523,7 +1523,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `events` — hasMany `MonitorEvent`
 - relation `uptimeDays` — hasMany `MonitorUptimeDay`
 - relation `channels` — hasMany `MonitorChannel`
-- transitions on `status` — `markUp`: pending|down → up @system · `markDown`: pending|up → down @system · `pause`: pending|up|down → paused @5 · `resume`: paused → pending @5
+- transitions on `status` — `markUp`: pending|down → up @system · `markDown`: pending|up → down @system · `pause`: pending|up|down → paused @5 · `resume`: paused → pending @5 · `retarget`: up|down → pending @system
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |

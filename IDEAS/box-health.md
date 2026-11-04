@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — the bottom two layers of a box reach Basecamp
 
-**Status: PROPOSED. Q1/Q3/Q5 ruled `FJS-D1858`–`D1860`; Q2/Q4/Q6–Q12 open; Phases 1–3 built and proven 2026-11-04 (committed in `4635ac29c`); 0.1 is the owner's ssh, Q9–Q12 before Phase 3 is called finished.**
+**Status: PROPOSED. Q1/Q3/Q5 and Q9–Q12 ruled `FJS-D1858`–`D1860`, `FJS-D1867`–`D1870`; Q2/Q4/Q6–Q8 open; Phases 1–3 built and proven 2026-11-04 (1–3.2 committed in `4635ac29c`, 3.3 uncommitted); 0.1 is the owner's ssh.**
 Probed against the tree 2026-11-03. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): of the six layers a box has — container runtime, Caddy, data
@@ -137,23 +137,23 @@ which is the gap `FJS-3853` found. None of them reads systemd.
    - **A** — keep.
    - **B** — grade `not-found` as a failure on a box whose install should have made it.
    - **Recommend A** — until the install records which units it made.
-9. **Q9 — The managed url's path?** `App.healthCheck` is a path asked of the container's
+9. ~~**Q9 — The managed url's path?**~~ **Answered 2026-11-04 (`FJS-D1867`): B — always `/`: the internal health path may be unrouted or unauthenticated-only.** `App.healthCheck` is a path asked of the container's
    published port, and 3.1 reuses it as the public url's path.
    - **A** — keep: the health path is what the App says is worth probing.
    - **B** — always `/`: the internal health path may be unrouted or unauthenticated-only.
    - **Recommend B** — the public probe is about the hostname answering, and a health path
      behind Caddy is not promised to be the one Outpost probes.
-10. **Q10 — A Domain on a port other than 443?** `Domain.port` is ignored and the url is
+10. ~~**Q10 — A Domain on a port other than 443?**~~ **Answered 2026-11-04 (`FJS-D1868`): B — write `:<port>` into the url when it is not 443.** `Domain.port` is ignored and the url is
     always `https://<hostname>/`.
     - **A** — keep.
     - **B** — write `:<port>` into the url when it is not 443.
     - **Recommend B** — the row exists to probe the address people open.
-11. **Q11 — A hostname change keeps the row's grade.** `status`, `failStreak` and the uptime days
+11. ~~**Q11 — A hostname change keeps the row's grade.**~~ **Answered 2026-11-04 (`FJS-D1869`): B — move the row to `pending` on a url change, so the new address earns its own grade.** `status`, `failStreak` and the uptime days
     survive a rewrite of `url`.
     - **A** — keep: the row is about the App, and its history is the App's.
     - **B** — move the row to `pending` on a url change, so the new address earns its own grade.
     - **Recommend B** — a `down` carried onto a new hostname pages for an address nobody probed.
-12. **Q12 — A soft-deleted App hard-deletes its managed Monitor** with its checks, events and
+12. ~~**Q12 — A soft-deleted App hard-deletes its managed Monitor**~~ **Answered 2026-11-04 (`FJS-D1870`): B — pause the managed row on App remove and resume it on restore, keeping history.** with its checks, events and
     channel links; restoring the App makes a fresh row.
     - **A** — keep.
     - **B** — pause the managed row on App remove and resume it on restore, keeping history.
@@ -260,12 +260,20 @@ removes the Monitor, under `bun run test`.
     (`#app-uptime`) carries no link; the tone map lives in the route file because no
     `resources/Monitor.mesa` exists. The managed row's `name` is the App's at creation and is
     not resynced.
+- [x] 3.3 Q9–Q12's rulings in `managed.ts`: the url is `https://<hostname>[:<port>]/`
+      (`FJS-D1867`, `FJS-D1868`), a url change moves a graded row to `pending` (`FJS-D1869`),
+      and an App's remove pauses the row where its restore resumes it (`FJS-D1870`).
+  - `Monitor` gains `retarget: [up, down] -> pending @system`; the rewrite resolves a down row
+    first, then zeroes `failStreak` and sets `nextCheckAt` now. The App's `healthCheck` no
+    longer reaches the url, so `apps.service.ts` patch stopped calling the sync; `Domain.port`
+    reaches it through the domains patch that already did. A restore cannot tell the person's
+    pause from its own, so it resumes either — pinned by a test as the known edge.
 
-**Done 2026-11-04.** `bun run test` 1188 pass with one timing failure, the gate-parity matrix
-case at the 5 s timeout under a load of 21–25 (`FJS-3992`: a HEAD worktree passed the same case
-3 of 3 under the same load, and no step touched the finds it makes). `verify:outpost` 59/59,
-`verify:build` 9/9, `fli done` 0 unfinished. Q9–Q12 came out of the build and are the owner's
-before this phase is finished; `FJS-3989` is the Domain PUT bypass it found.
+**Done 2026-11-04.** `bun run test` 1188 pass (1191 after 3.3) with one timing failure, the
+gate-parity matrix case at the 5 s timeout under a load of 12–25 (`FJS-3992`: a HEAD worktree
+passed the same case 3 of 3 under the same load, and no step touched the finds it makes).
+`verify:outpost` 59/59 twice, `verify:build` 9/9, `fli done` 0 unfinished. Q9–Q12 came out of
+the build and were ruled the same day; `FJS-3989` is the Domain PUT bypass it found.
 
 ## See also
 

@@ -34,7 +34,7 @@ slot. `api/index.ts` states 5501; `web/config/vite.config.js` states 5508 with
   `auth.ts` + `login.ts` are the door; `principal.ts` reads the member per call.
 - `api/src/core/env.ts` is the only reader of the environment.
 - `api/src/peer.ts` is this machine's Ed25519 key pair (`~/.config/workbench/peer.json`,
-  shown at `GET /door/peer` and in the dock's Peer block); `api/src/domain/peer/` dials
+  shown at `GET /door/peer` and in the wings' Peer block); `api/src/domain/peer/` dials
   Basecamp's `apps.preview` as a signed peer -- `BASECAMP_URL` and `BASECAMP_KEY_ID`, the
   id Basecamp's "Add a peer" form answers. `peer-call.ts` is one conduit target signed with
   conduit's `ed25519`.

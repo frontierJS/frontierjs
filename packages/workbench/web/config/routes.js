@@ -74,6 +74,16 @@ export const tree = {
       children: [],
     },
   {
+      id: "settings",
+      path: "/settings/",
+      file: "src/routes/settings/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: JSON.parse("{\"siteName\":\"Workbench\",\"title\":\"Settings\",\"isIndex\":true}"),
+      params: [],
+      children: [],
+    },
+  {
       id: "workbench",
       path: "/workbench/",
       file: "src/routes/workbench/index.mesa",
@@ -95,6 +105,7 @@ export const components = {
   'git-activity.local': () => import('../src/routes/git-activity/local.mesa'),
   'login': () => import('../src/routes/login/index.mesa'),
   'notifications': () => import('../src/routes/notifications/index.mesa'),
+  'settings': () => import('../src/routes/settings/index.mesa'),
   'workbench': () => import('../src/routes/workbench/index.mesa'),
 }
 
@@ -122,6 +133,7 @@ export const all = [
   "/git-activity/local/",
   "/login/",
   "/notifications/",
+  "/settings/",
   "/workbench/"
 ]
 
@@ -133,6 +145,7 @@ export const published = [
   "/git-activity/local/",
   "/login/",
   "/notifications/",
+  "/settings/",
   "/workbench/"
 ]
 
@@ -144,6 +157,7 @@ export const indexed = [
   "/git-activity/local/",
   "/login/",
   "/notifications/",
+  "/settings/",
   "/workbench/"
 ]
 

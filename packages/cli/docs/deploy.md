@@ -18,11 +18,10 @@ below is a summary, not the source of truth.
 | `04c-journal` | Open the deploy journal on the target and record the transition | yes, gated by `journal: false` or `--dry` |
 | `05-backup` | Hot backup of every declared database, inside the running container | yes, gated by `db.backup: false` |
 | `05b-jobs-volume` | Ask the running container where its jobs database is, before the swap discards it | yes, gated by `doApi` |
-| `06-swap` | Stop the old container, start the new one — migrations run in the entrypoint | yes, gated by `doApi` |
-| `07-health` | Health-check the new container, rolling back to `_replaced` on failure | yes, gated by `doApi` |
+| `06-swap` | Stop the old container, start the new one and health-check it, putting `_replaced` back on failure — migrations run in the entrypoint | yes, gated by `doApi` |
 | `08-release-web` | Point nginx at the new web release via symlink | yes, gated by `doWeb` |
 | `08b-outpost` | Enroll the API's box in the app's own fleet: `api/src/domain/host/enroll-host.ts` in the container, then the install it answers on the host; warns, never aborts (`FJS-D1202`) | yes, gated by `outpost: true`, `--no-outpost` or `--dry` |
-| `09-cleanup` | Remove `_replaced`, prune old images, release the deploy lock — also runs on abort (`runOnAbort: true`) | always |
+| `09-cleanup` | Prune old images, release the deploy lock — also runs on abort (`runOnAbort: true`) | always |
 
 ### Key design choices in deploy
 

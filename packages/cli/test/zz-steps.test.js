@@ -166,7 +166,7 @@ describe('_steps/ — execution scenarios', () => {
     // in runtime.js: existsSync check throws with a descriptive message.
 
     // 11. A step that THROWS still lets a runOnAbort step clean up.
-    // deploy's 07-health sets the abort flag and then throws; before the fix the
+    // deploy's 06-swap sets the abort flag and then throws; before the fix the
     // throw exited the group loop, 09-cleanup never ran, and the deploy lock was
     // left on the server for the next deploy to trip over. The command must still
     // fail — cleanup gets its turn, it does not swallow the error.

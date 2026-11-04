@@ -170,11 +170,13 @@ await storage.delete(user.avatar)                      // manual cleanup
 
 ## Orphan prevention
 
-Hook sequencing ensures no orphaned S3 objects:
+The object is stored before the row is written, so the plugin answers for both outcomes (`FJS-3991`):
 
-- `onBeforeCreate`/`onBeforeUpdate` — serializes file to S3, stores ref in SQLite; an update stashes the ref it is replacing, read in one SELECT for every file field
-- `onAfterWrite` — deletes the stashed old object only after the SQL succeeded (SQL failure = no cleanup)
+- `onBeforeCreate`/`onBeforeUpdate` — stores the bytes and puts the ref in the payload; an update notes the refs it replaces, read in one SELECT for every file field
+- `onWriteSettled` — a write refused after that (SQLite's unique or check, a taken id, a later field, another plugin) deletes the objects it stored and hands the caller's payload back as it was given. One that landed deletes the objects it replaced
 - `onAfterDelete` — deletes the objects the deleted rows named, after the SQL DELETE
+
+Inside `$transaction` both deletions wait for the outermost commit, and a rollback deletes the new objects instead — the restored row still names the old one.
 
 `@keepVersions` on a field skips the old object cleanup on update — useful for versioned assets or files with external references.
 

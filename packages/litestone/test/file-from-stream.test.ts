@@ -275,6 +275,46 @@ describe('@digest (FJS-D1292)', () => {
   })
 })
 
+// FJS-3991: the object is stored before SQLite or a later field can refuse the
+// write, and the rows a transaction rolls back are not the store's to restore.
+describe('a write the database does not keep keeps no object (FJS-3991)', () => {
+  test('a create refused by a taken id, or by a later field, stores nothing', async () => {
+    const { db, stored } = await client(`file File?\n second File? @accept("image/png")`)
+    await db.asSystem().doc.create({ data: { id: 1 } })
+    await expect(db.asSystem().doc.create({ data: { id: 1, file: png } })).rejects.toThrow(/taken/)
+    await expect(db.asSystem().doc.create({ data: { id: 2, file: png, second: new Uint8Array([1, 2, 3]) } })).rejects.toThrow()
+    expect(stored()).toEqual([])
+    db.$close()
+  })
+
+  test('an update refused by a unique keeps the old file through the next update', async () => {
+    const { db, dir, stored } = await client(`file File?\n tag String? @unique\n note String?`)
+    await db.asSystem().doc.create({ data: { id: 1, tag: 'a' } })
+    const row = await db.asSystem().doc.create({ data: { id: 2, file: png }, select: raw })
+    await expect(db.asSystem().doc.update({ where: { id: 2 }, data: { file: png, tag: 'a' } })).rejects.toThrow()
+    await db.asSystem().doc.update({ where: { id: 2 }, data: { note: 'x' } })
+    expect(stored().length).toBe(1)
+    expect(existsSync(join(dir, row.file.key))).toBe(true)
+    db.$close()
+  })
+
+  test('a transaction that rolls back keeps the old file and none of the new', async () => {
+    const { db, dir, stored } = await client(`file File?`)
+    const s = db.asSystem()
+    const row = await s.doc.create({ data: { id: 1, file: png }, select: raw })
+    const nope = (fn: (t: any) => Promise<unknown>) => s.$transaction(async (t: any) => { await fn(t); throw new Error('nope') }).catch(() => {})
+    await nope(t => t.doc.create({ data: { id: 2, file: png } }))
+    await nope(t => t.doc.update({ where: { id: 1 }, data: { file: png } }))
+    await nope(t => t.doc.delete({ where: { id: 1 } }))
+    expect(stored().length).toBe(1)
+    expect(existsSync(join(dir, row.file.key))).toBe(true)
+    await s.$transaction((t: any) => t.doc.update({ where: { id: 1 }, data: { file: png } }))
+    expect(stored().length).toBe(1)
+    expect(existsSync(join(dir, row.file.key))).toBe(false)
+    db.$close()
+  })
+})
+
 // FJS-3929: the write pass fills the column a File's @digest names, so the
 // generated Create type must not require it -- the documented write that
 // leaves it out has to typecheck.

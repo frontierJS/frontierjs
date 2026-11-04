@@ -37,9 +37,10 @@ title: Workbench
   // worktree of its own, drawn right after its parent, with Land and Archive
   // where the parent has Fork.
   //
-  // The screen is a STAGE, a grid of panes, and a DOCK of tiles for the rest.
+  // The screen is a STAGE, a grid of panes, and the WINGS, tiles for the rest.
   // A tile is the same chat, folded to what it is doing now; its run keeps
-  // going there. Layout (Alt+L) folds the stage's panes to cards and draws
+  // going there. One sent BACKSTAGE leaves the wings for a folded list until
+  // it is put back or staged. Layout (Alt+L) folds the stage's panes to cards and draws
   // the grid one column wider and one row taller: a tile dragged into a
   // box, or a checkout picked in one, takes that cell, and dropping into the
   // extra column or row grows the grid. The grid, which cell holds which
@@ -52,6 +53,7 @@ title: Workbench
   import { getClient } from '@frontierjs/sierra/resource'
   import { workbench } from '../../resources/Workbench.mesa'
   import { pastedImages, shrinkImage } from '../../lib/pasted-images.js'
+  import { providePageCommands } from '../../lib/commands.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -96,7 +98,28 @@ title: Workbench
   function onView(id) {
     if (id === 'claude') claudeSeen = true
     else afterDraw(place)
+    showFocus()
   }
+
+  // Focus (Alt+F) hides the app's nav, this page's title row and the view
+  // tabs, so the stage starts at the top of the window. The nav is the
+  // layout's, so the switch is an attribute on <html> that this page removes
+  // on leaving -- every other route keeps its nav. Off on the Claude Code tab:
+  // the button that turns it back off lives in the Checkouts panel.
+  const FOCUS_KEY = 'workbench.workbench.focus'
+  let focus = false
+  try { focus = localStorage.getItem(FOCUS_KEY) === '1' } catch {}
+
+  function showFocus() {
+    document.documentElement.toggleAttribute('data-workbench-focus', focus && pageTab === 'checkouts')
+  }
+  function toggleFocus() {
+    focus = !focus
+    try { localStorage.setItem(FOCUS_KEY, focus ? '1' : '0') } catch {}
+    showFocus()
+    afterDraw(place)
+  }
+  showFocus()
 
   // The revs the transcripts were fetched at; a poll answering another is the
   // cue to fetch again.
@@ -208,7 +231,7 @@ title: Workbench
   }
 
   // `#workbench-<id>` names a card — the Atlas screen links to the chat it
-  // sent to — and it may be docked, so the link puts it on stage.
+  // sent to — and it may be in the wings, so the link puts it on stage.
   function reveal() {
     const id = location.hash.startsWith('#workbench-') && decodeURIComponent(location.hash.slice('#workbench-'.length))
     if (id && pins.some(p => p.id === id)) stageOn(id)
@@ -224,12 +247,14 @@ title: Workbench
       // Accept is what the dev proxy routes on; without it the SPA shell answers.
       const res = await getClient().fetch('/door/peer', { headers: { accept: 'application/json' } })
       if (res.ok) peer = await res.json()
-    } catch { /* the dock shows no Peer block */ }
+    } catch { /* the wings show no Peer block */ }
   }
   window.addEventListener('keydown', onKey)
   window.addEventListener('resize', place)
   $.onDestroy(() => {
     destroyed = true; clearTimeout(timer); document.title = baseTitle
+    document.documentElement.removeAttribute('data-workbench-focus')
+    releaseCommands()
     window.removeEventListener('keydown', onKey)
     window.removeEventListener('resize', place)
   })
@@ -245,7 +270,7 @@ title: Workbench
     document.title = (working ? `● ${working} · ` : '') + (asking ? `? ${asking} · ` : '') + (unread ? `(${unread}) ` : '') + baseTitle
   }
 
-  // ─── the stage and the dock ──────────────────────────────────────────
+  // ─── the stage and the wings ─────────────────────────────────────────
 
   const STAGE_KEY = 'workbench.workbench.stage'
   // What a stage never chosen fills with, side by side.
@@ -263,6 +288,13 @@ title: Workbench
     }
   } catch {}
 
+  const BACKSTAGE_KEY = 'workbench.workbench.backstage'
+  let backstage = []
+  try {
+    const kept = JSON.parse(localStorage.getItem(BACKSTAGE_KEY))
+    if (Array.isArray(kept)) backstage = kept.filter(id => typeof id === 'string')
+  } catch {}
+
   // When each pane was last clicked; a chat with no empty cell to take sends
   // the stalest one back.
   const touched = {}
@@ -272,11 +304,13 @@ title: Workbench
   const rows    = () => Math.max(1, Math.ceil(cells().length / cols()))
   const cellOf  = (id) => { const i = cells().indexOf(id); return i < 0 ? null : { r: Math.floor(i / cols()), c: i % cols() } }
   const staged  = () => cells().map(id => pins.find(p => p.id === id)).filter(Boolean)
-  // Zoomed, one pane fills the stage and the others wait in the dock as
+  // Zoomed, one pane fills the stage and the others wait in the wings as
   // tiles. They are still staged, so un-zooming brings them back.
   const zoomed  = () => staged().length > 1 && cells().includes(zoom) ? zoom : null
   const visible = () => zoomed() ? staged().filter(p => p.id === zoom) : staged()
-  const docked  = () => ordered(pins).filter(p => !visible().some(v => v.id === p.id))
+  const offstage = () => ordered(pins).filter(p => !visible().some(v => v.id === p.id))
+  const inWings  = () => offstage().filter(p => !backstage.includes(p.id))
+  const behind   = () => offstage().filter(p => backstage.includes(p.id))
 
   function keep() {
     try { localStorage.setItem(STAGE_KEY, JSON.stringify({ ...stage, zoom })) } catch {}
@@ -298,8 +332,9 @@ title: Workbench
 
   // Puts a chat in a cell, growing the grid to reach it. One it already holds
   // moves; one it does not takes the cell, and whoever held it goes to the
-  // dock -- or, when the mover was on the stage, to the mover's old cell.
+  // wings -- or, when the mover was on the stage, to the mover's old cell.
   function put(id, r, c) {
+    if (backstage.includes(id)) fromBackstage(id)
     const g    = grid()
     const from = cellOf(id)
     if (from) g[from.r][from.c] = null
@@ -352,13 +387,27 @@ title: Workbench
     markSeen(p)
   }
 
-  function dock(p) {
+  function toWings(p) {
     const at = cellOf(p.id)
     if (!at) return
     const g = grid()
     g[at.r][at.c] = null
     zoom = null
     setGrid(g)
+  }
+
+  // A chat put on the stage leaves backstage, so stepping off again lands it
+  // in the wings rather than out of sight.
+  function toBackstage(id) {
+    backstage = [...backstage.filter(x => x !== id), id]
+    keepBackstage()
+  }
+  function fromBackstage(id) {
+    backstage = backstage.filter(x => x !== id)
+    keepBackstage()
+  }
+  function keepBackstage() {
+    try { localStorage.setItem(BACKSTAGE_KEY, JSON.stringify(backstage)) } catch {}
   }
 
   // The panes that stay are redrawn at their new size; the one coming back
@@ -438,7 +487,7 @@ title: Workbench
 
   // A box starts a NEW chat in a checkout not yet on the stage; one already
   // there has its pane.
-  const startable = () => docked()
+  const startable = () => offstage()
   async function startIn(cell, pid) {
     const p = pins.find(x => x.id === pid)
     asking = null
@@ -483,8 +532,34 @@ title: Workbench
       if (target && staged().length > 1) { e.preventDefault(); toggleZoom(target) }
     } else if (e.code === 'KeyL') {
       if (pins.length) { e.preventDefault(); arrange() }
+    } else if (e.code === 'KeyF') {
+      e.preventDefault(); toggleFocus()
     }
   }
+
+  // The ⌘K rows this screen adds (lib/commands.js): the same moves as the
+  // Alt keys and the bar's buttons.
+  function paletteRows() {
+    const showView = (id) => () => { pageTab = id; onView(id) }
+    if (pageTab !== 'checkouts')
+      return [{ id: 'wb:view-checkouts', group: 'Workbench', label: 'Checkouts', action: showView('checkouts') }]
+    const next = waiting()[0]
+    return [
+      ...ordered(pins).map(p => ({
+        id: `wb:pin:${p.id}`, group: 'Checkouts', label: p.name,
+        sub: [p.branch, status[p.id]?.state].filter(Boolean).join(' · ') || undefined,
+        kbd: keyOf(p) || undefined, keywords: 'checkout pane stage',
+        tone: needsYou(status[p.id]) ? 'warning' : undefined,
+        action: () => stageOn(p.id),
+      })),
+      ...(next ? [{ id: 'wb:next', group: 'Workbench', label: `Next waiting · ${next.name}`, kbd: 'Alt+J', action: () => openWaiting(next) }] : []),
+      { id: 'wb:focus',  group: 'Workbench', label: focus ? 'Leave focus' : 'Focus', sub: 'the nav, the title and the tabs', kbd: 'Alt+F', action: toggleFocus },
+      { id: 'wb:slim',   group: 'Workbench', label: slim ? 'Full panes' : 'Slim panes', action: toggleSlim },
+      ...(pins.length ? [{ id: 'wb:layout', group: 'Workbench', label: arranging ? 'Done arranging' : 'Arrange the layout', kbd: 'Alt+L', action: () => arrange() }] : []),
+      { id: 'wb:view-claude', group: 'Workbench', label: 'Claude Code', sub: 'settings, usage, MCP and sessions', action: showView('claude') },
+    ]
+  }
+  const releaseCommands = providePageCommands(paletteRows)
 
   // The stage fills the window under the header, so each pane scrolls its own
   // log; the document scrolls in this shell, so the top is measured.
@@ -1235,7 +1310,7 @@ title: Workbench
   }
 </script>
 
-<div class="section-header">
+<div class="section-header workbench-title">
   <h1>Workbench</h1>
   <span class="cluster">
     {#if spentToday() > 0}<span class="text-sm text-muted" id="workbench-today">today {money(spentToday())}</span>{/if}
@@ -1244,7 +1319,7 @@ title: Workbench
 </div>
 
 <Tabs bind:activeId={pageTab} onchange={onView}>
-<TabList label="What the workbench shows">
+<TabList label="What the workbench shows" class="workbench-views">
   <Tab id="checkouts">Checkouts</Tab>
   <Tab id="claude">Claude Code</Tab>
 </TabList>
@@ -1275,7 +1350,7 @@ title: Workbench
 
       {#if loaded && !pins.length}
         <EmptyState title="Nothing pinned">
-          Pin a checkout from the dock, or star one on <a href="/git-activity/local/">Local repos</a>.
+          Pin a checkout from the wings, or star one on <a href="/git-activity/local/">Local repos</a>.
         </EmptyState>
       {:else if loaded}
       <div class="cluster workbench-bar">
@@ -1284,6 +1359,8 @@ title: Workbench
                   title="Slim: every pane shrinks to its header; click a pane's header to flip just that one">{slim ? 'Full' : 'Slim'}</Button>
           <Button size="xs" treatment={arranging ? '' : 'outlined'} id="workbench-layout" onclick={() => arrange()} aria-pressed={arranging ? 'true' : 'false'}
                   title={arranging ? 'Back to the panes (Alt+L)' : 'Fold the panes to cards and arrange the grid: drag a tile into a box, or start a chat in one (Alt+L)'}>{arranging ? 'Done' : 'Layout'}</Button>
+          <Button size="xs" treatment="outlined" id="workbench-focus" onclick={toggleFocus} aria-pressed={focus ? 'true' : 'false'}
+                  title={focus ? 'Bring back the nav, the title and the tabs (Alt+F)' : 'Hide the nav, the title and the tabs (Alt+F)'}>{focus ? 'Unfocus' : 'Focus'}</Button>
         </span>
       </div>
       <div class="workbench-panes" data-arranging={arranging ? '' : null} style:--cols={String(shownCols())} style:--rows={String(shownRows())}>
@@ -1297,7 +1374,7 @@ title: Workbench
               <strong class="workbench-tile-name">{p.from ? '↳ ' : ''}{p.name}</strong>
               {#if needsYou(status[p.id])}<Badge tone="warning" class="workbench-needs">needs you</Badge>
               {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
-              <Button size="xs" treatment="ghost" onclick={() => dock(p)} aria-label={`Move ${p.name} to the dock`} title="To the dock — a run there keeps going">⇥</Button>
+              <Button size="xs" treatment="ghost" onclick={() => toWings(p)} aria-label={`Move ${p.name} to the wings`} title="To the wings — a run there keeps going">⇥</Button>
             </span>
             <span class="text-sm text-muted workbench-now">{doing(p.id)}</span>
           </div>
@@ -1336,10 +1413,10 @@ title: Workbench
                 {#if staged().length > 1}
                   <Button size="xs" treatment="ghost" onclick={() => toggleZoom(p.id)} aria-pressed={zoomed() === p.id ? 'true' : 'false'}
                           aria-label={zoomed() === p.id ? 'Show every pane' : `Zoom ${p.name} to the whole stage`}
-                          title={zoomed() === p.id ? 'Every pane (Alt+Z)' : 'The whole stage — the other panes wait in the dock (Alt+Z)'}>{zoomed() === p.id ? '⊟' : '⊞'}</Button>
+                          title={zoomed() === p.id ? 'Every pane (Alt+Z)' : 'The whole stage — the other panes wait in the wings (Alt+Z)'}>{zoomed() === p.id ? '⊟' : '⊞'}</Button>
                 {/if}
-                <Button size="xs" treatment="ghost" onclick={() => dock(p)}
-                        aria-label={`Move ${p.name} to the dock`} title="To the dock — a run there keeps going">⇥</Button>
+                <Button size="xs" treatment="ghost" onclick={() => toWings(p)}
+                        aria-label={`Move ${p.name} to the wings`} title="To the wings — a run there keeps going">⇥</Button>
               </span>
             </div>
 
@@ -1952,13 +2029,13 @@ title: Workbench
                 </form>
               {:else}
                 <div class="stack text-sm workbench-slot-pick">
-                  <span class="text-muted">Every pinned checkout is on the stage. Pin another from the dock.</span>
+                  <span class="text-muted">Every pinned checkout is on the stage. Pin another from the wings.</span>
                   <Button size="sm" treatment="ghost" onclick={() => asking = null}>Cancel</Button>
                 </div>
               {/if}
             {:else}
               <button type="button" class="workbench-slot-new" onclick={() => asking = cell.key}
-                      title="A new chat here, in a checkout you pick — or drop a tile from the dock">+ New Session</button>
+                      title="A new chat here, in a checkout you pick — or drop a tile from the wings">+ New Session</button>
             {/if}
           </div>
         {/each}
@@ -1966,12 +2043,12 @@ title: Workbench
       {/if}
     </div>
 
-    <aside class="workbench-dock" aria-label="Docked chats">
+    <aside class="workbench-wings" aria-label="The wings">
       {#if waiting().length}
         <Button size="sm" treatment="outlined" tone={needsYou(status[waiting()[0].id]) ? 'warning' : 'success'} id="workbench-next" onclick={() => openWaiting(waiting()[0])}
                 title="A plan's open question first, then the oldest finished chat nobody has looked at (Alt+J)">Next waiting · {waiting().length}</Button>
       {/if}
-      {#each docked() as p (p.id)}
+      {#each inWings() as p (p.id)}
         <div class="workbench-tile" id={`workbench-${p.id}`} data-state={status[p.id]?.state} data-branch={p.branch ?? null}
              draggable="true" ondragstart={(e) => dragStart(e, p.id)} ondragend={() => { dragging = null; over = null }}>
           <button type="button" class="workbench-tile-open" onclick={() => stageOn(p.id)}
@@ -1987,6 +2064,8 @@ title: Workbench
             </span>
             <span class="text-sm text-muted workbench-now">{doing(p.id)}</span>
           </button>
+          <button type="button" class="workbench-tile-hide" onclick={() => toBackstage(p.id)}
+                  aria-label={`Send ${p.name} backstage`} title="Backstage — out of the wings for now; a run there keeps going">⤓</button>
           {#if p.missing}
             <div class="cluster text-sm workbench-gone">
               <span class="text-danger">Folder is gone</span>
@@ -2000,6 +2079,30 @@ title: Workbench
           {/if}
         </div>
       {/each}
+
+      {#if behind().length}
+        <details class="text-sm workbench-backstage" id="workbench-backstage">
+          <summary>
+            Backstage · {behind().length}
+            {#if behind().some(p => needsYou(status[p.id]))}<Badge tone="warning">needs you</Badge>{/if}
+          </summary>
+          <ul class="workbench-backstage-list">
+            {#each behind() as p (p.id)}
+              <li class="cluster" data-state={status[p.id]?.state}>
+                <button type="button" class="workbench-backstage-open" onclick={() => stageOn(p.id)}
+                        title={`Put ${p.name} on the stage${keyOf(p) ? ` (${keyOf(p)})` : ''}`}>
+                  <Dot tone={dotTone(p.id)} pulse={status[p.id]?.state === 'working'} label={dotLabel(p.id)} />
+                  <span class="workbench-tile-name">{p.from ? '↳ ' : ''}{p.name}</span>
+                  {#if needsYou(status[p.id])}<Badge tone="warning" title={asksOf(p.id)}>needs you</Badge>
+                  {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+                </button>
+                <Button size="xs" treatment="ghost" onclick={() => fromBackstage(p.id)}
+                        aria-label={`Bring ${p.name} back to the wings`} title="Back to the wings">⤒</Button>
+              </li>
+            {/each}
+          </ul>
+        </details>
+      {/if}
 
       <details class="text-sm workbench-pin" open={loaded && !pins.length ? true : null}>
         <summary>Pin a checkout</summary>
@@ -2037,6 +2140,8 @@ title: Workbench
 
 <style>
   .workbench-peer-key { overflow-wrap: anywhere; }
+  :global(html[data-workbench-focus]) .workbench-title,
+  :global(html[data-workbench-focus]) :global(.workbench-views) { display: none; }
   /* The stage is the window under the header, so a long run scrolls inside
      its pane and the message box never leaves the screen. */
   .workbench {
@@ -2255,7 +2360,7 @@ title: Workbench
     padding-inline-end: var(--space-xs);
   }
 
-  .workbench-dock {
+  .workbench-wings {
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
@@ -2267,7 +2372,7 @@ title: Workbench
     border-radius: var(--card-radius);
     background: var(--tint-surface);
     box-shadow: var(--shadow-sm, none);
-    /* Little windows: the dock reads at a glance, so the type shrinks with them. */
+    /* Little windows: the wings read at a glance, so the type shrinks with them. */
     font-size: var(--text-2xs);
     line-height: 1.3;
   }
@@ -2293,16 +2398,54 @@ title: Workbench
   .workbench-tile kbd { margin-inline-start: auto; }
   .workbench-tile .workbench-now { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .workbench-tile .workbench-gone { padding: 0 var(--space-sm) var(--space-xs); }
+  .workbench-tile { position: relative; }
+  .workbench-tile-hide {
+    position: absolute;
+    inset-block-end: var(--space-xs);
+    inset-inline-end: var(--space-xs);
+    padding: 0 var(--space-xs);
+    border: 0;
+    background: none;
+    color: var(--ink-mute);
+    font: inherit;
+    cursor: pointer;
+    opacity: 0;
+  }
+  .workbench-tile:hover .workbench-tile-hide,
+  .workbench-tile-hide:focus-visible { opacity: 1; }
+  .workbench-tile-hide:hover { color: inherit; }
+  /* Backstage and the pin form sit together at the foot of the wings. */
+  .workbench-backstage { margin-block-start: auto; padding-block-start: var(--space-sm); border-block-start: var(--border-width) solid var(--tint-rule); }
+  .workbench-backstage + .workbench-pin { margin-block-start: 0; border-block-start: 0; }
+  .workbench-backstage > summary { cursor: pointer; }
+  .workbench-backstage-list { list-style: none; margin: var(--space-xs) 0 0; padding: 0; }
+  .workbench-backstage-list > li { justify-content: space-between; flex-wrap: nowrap; }
+  .workbench-backstage-open {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-inline-size: 0;
+    padding: var(--space-2xs) 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .workbench-backstage-open:hover .workbench-tile-name { text-decoration: underline; }
   .workbench-pin { margin-block-start: auto; padding-block-start: var(--space-sm); border-block-start: var(--border-width) solid var(--tint-rule); }
   .workbench-pin > summary { cursor: pointer; }
 
-  /* Too narrow for two panes and a dock: the dock goes on top as a strip and
+  /* Too narrow for two panes and the wings: the wings go on top as a strip and
      the panes stack, each its own height. */
   @media (max-width: 64rem) {
     .workbench { display: flex; flex-direction: column-reverse; block-size: auto; }
-    .workbench-dock { flex-direction: row; flex-wrap: wrap; overflow: visible; }
+    .workbench-wings { flex-direction: row; flex-wrap: wrap; overflow: visible; }
     .workbench-tile { flex: 1 1 var(--tile-min, 12rem); }
-    .workbench-pin { flex: 1 1 100%; }
+    .workbench-pin,
+    .workbench-backstage { flex: 1 1 100%; }
+    .workbench-tile-hide { opacity: 1; }
     /* One column: the cell each pane was given is an inline style, so only
        !important takes it back. */
     .workbench-panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }

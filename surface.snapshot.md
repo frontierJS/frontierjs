@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4211 source file(s) read
-251 entry point(s), 34 imported by nothing outside their package, 16 emitted
-1706 value export(s), 641 reached by nothing outside, 180 emitted
+27 package(s) · 4214 source file(s) read
+252 entry point(s), 34 imported by nothing outside their package, 16 emitted
+1711 value export(s), 643 reached by nothing outside, 180 emitted
 460 type export(s), 346 reached by nothing outside
 ```
 
@@ -42,8 +42,8 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `toolbelt` | 68 | 0 | 318 | 37 | 12 | 0 | 0 |
 | `ui` | 9 | 0 | 55 | 35 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
+| `outpost` | 10 | 2 | 36 | 17 | 2 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 60 | 41 |
-| `outpost` | 9 | 2 | 31 | 15 | 2 | 0 | 0 |
 | `site-kit` | 9 | 4 | 36 | 9 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 21 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
@@ -248,11 +248,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/outpost`
 
-`packages/outpost` · 9 entry point(s) · 31 value, 0 type export(s)
+`packages/outpost` · 10 entry point(s) · 36 value, 0 type export(s)
 
 **Entries imported by nothing outside (2):** `.` `./static`
 
-**Unreached values (15):** `BACKUP_SCRIPT` `checkRunConfig` `checkSwap` `containerName` `createInspector` `createStatic` `digestOfFiles` `DRAIN_MS` `followLines` `isDigest` `spawnRun` `spawnStream` `swapFor` `validName` `validRelativePath`
+**Unreached values (17):** `BACKUP_SCRIPT` `checkRunConfig` `checkStopGrace` `checkSwap` `containerName` `createInspector` `createStatic` `digestOfFiles` `DRAIN_MS` `followLines` `isDigest` `logArgs` `spawnRun` `spawnStream` `swapFor` `validName` `validRelativePath`
 
 **Emitted (2):** `MAX_BODY_BYTES` `ROOTS`
 

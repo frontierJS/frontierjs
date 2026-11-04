@@ -16,7 +16,7 @@ defaults:
 <script>
 const { loadFrontierConfig, dockerfileScripts, unexecdEntrypoint } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
-const { createMachine } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
+const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { createSwap, runFlags, sshRunner, shWord } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
 const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
@@ -1472,7 +1472,7 @@ the failure this is most likely to cause.
 08-release-web → atomic symlink swap; Caddy reads the root per request
 08b-outpost    → enroll the API's box in the app's fleet (if outpost: true; --no-outpost skips)
 08c-site       → production only: build site/ against a copy of the db and publish it, once its Worker has a deployment
-09-cleanup     → remove _replaced, prune images, release deploy lock
+09-cleanup     → prune images, release deploy lock
 ```
 
 Migrations run inside the new container's entrypoint before it starts serving

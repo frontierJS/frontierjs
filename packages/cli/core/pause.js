@@ -17,7 +17,7 @@
 // So it is the edge. Caddy serves the SPA from `current/` and proxies `/api/`,
 // which makes it the one place that can answer for both surfaces at once. The
 // deploy's own health poll goes to `http://localhost:<apiPort>` directly
-// (`_module.md`, `healthOrRestore`) and never through Caddy, so a paused app
+// (`_module.md`, `swapContainer`) and never through Caddy, so a paused app
 // still deploys, still migrates and still passes health — health reading 200
 // while the edge reads 503 is the correct pair of answers and not a
 // contradiction.

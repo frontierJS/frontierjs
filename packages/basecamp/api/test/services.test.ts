@@ -5074,9 +5074,33 @@ describe('the managed monitor follows an App\'s primary Domain', () => {
     expect(rows[0].url).toBe(`https://${d2.hostname}/`)
   })
 
-  test('the App\'s health path is the url\'s path', async () => {
+  test('the url is the hostname at `/`, never the App\'s health path (FJS-D1867)', async () => {
     await env.as(owner).service('apps').patch(app.id, { port: 3000, healthCheck: '/healthz' })
-    expect((await managed())[0].url).toMatch(/^https:\/\/two-.*\.test\/healthz$/)
+    expect((await managed())[0].url).toMatch(/^https:\/\/two-.*\.test\/$/)
+  })
+
+  test('a Domain off 443 puts its port in the url (FJS-D1868)', async () => {
+    const d = await env.as(owner).service('domains').create({ appId: app.id, hostname: `port-${tag()}.test`, port: 9443 }) as any
+    await env.as(owner).service('domains').call('makePrimary', d.id)
+    expect((await managed())[0].url).toBe(`https://${d.hostname}:9443/`)
+    const back = (await (env.system as any).domain.findMany({ where: { appId: app.id, isPrimary: false } }))[0]
+    await env.as(owner).service('domains').call('makePrimary', back.id)
+    await env.as(owner).service('domains').remove(d.id)
+    expect((await managed())[0].url).toBe(`https://${back.hostname}/`)
+  })
+
+  test('a url change puts a graded row back to pending, due at once (FJS-D1869)', async () => {
+    const sys = env.system as any
+    const [m] = await managed()
+    await sys.monitor.transition(m.id, 'markDown')
+    await sys.monitor.update({ where: { id: m.id }, data: { failStreak: 3 } })
+    const d = await env.as(owner).service('domains').create({ appId: app.id, hostname: `moved-${tag()}.test` }) as any
+    await env.as(owner).service('domains').call('makePrimary', d.id)
+    const [after] = await managed()
+    expect(after.url).toBe(`https://${d.hostname}/`)
+    expect(after.status).toBe('pending')
+    expect(after.failStreak).toBe(0)
+    expect(after.nextCheckAt).not.toBeNull()
   })
 
   test('a person\'s write to a managed url is refused by name; pausing is theirs', async () => {
@@ -5109,13 +5133,28 @@ describe('the managed monitor follows an App\'s primary Domain', () => {
       expect((await managed()).length).toBe(d.isPrimary ? 0 : 1)
     }
   })
-  test('removing the App removes its managed Monitor, and restoring it brings one back', async () => {
+  test('removing the App pauses its managed Monitor, and restoring it resumes the same row (FJS-D1870)', async () => {
     await env.as(owner).service('domains').create({ appId: app.id, hostname: `three-${tag()}.test` })
-    expect((await managed()).length).toBe(1)
+    const [before] = await managed()
     await env.as(owner).service('apps').remove(app.id)
-    expect((await managed()).length).toBe(0)
+    const [paused] = await managed()
+    expect(paused.id).toBe(before.id)
+    expect(paused.status).toBe('paused')
     await env.as(owner).service('apps').restore(app.id)
-    expect((await managed()).length).toBe(1)
+    const [resumed] = await managed()
+    expect(resumed.id).toBe(before.id)
+    expect(resumed.status).toBe('pending')
+    expect(resumed.nextCheckAt).not.toBeNull()
+  })
+
+  test('a row the person paused stays paused across remove and restore', async () => {
+    const [m] = await managed()
+    await env.as(owner).service('monitors').call('pause', m.id)
+    await env.as(owner).service('apps').remove(app.id)
+    expect((await managed())[0].status).toBe('paused')
+    await env.as(owner).service('apps').restore(app.id)
+    // The restore cannot tell the person's pause from its own, so it resumes.
+    expect((await managed())[0].status).toBe('pending')
   })
 })
 

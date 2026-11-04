@@ -602,43 +602,9 @@ class FileStoragePlugin extends ExternalRefPlugin {
       }
     }
     if (!fields || !args.data) return super.onBeforeCreate(model, args, ctx)
-    const raw     = this._rawDigested(fields, args.data)
-    const written = this._written(fields, args.data)
+    const raw = this._rawDigested(fields, args.data)
     await super.onBeforeCreate(model, args, ctx)
-    await this._followOrDrop(model, fields, args.data, raw, written, false, ctx)
-  }
-
-  // Each File value of each row this write hands bytes to, as [field, index],
-  // index null for a single File; read before serialize replaces it with a ref.
-  _written(fields, data) {
-    return [].concat(data ?? []).map(row => Object.entries(fields).flatMap(([field, opts]) =>
-      opts.isArray
-        ? [].concat(row?.[field] ?? []).flatMap((item, i) => isFileValue(item) ? [[field, i]] : [])
-        : isFileValue(row?.[field]) ? [[field, null]] : []))
-  }
-
-  // The objects are stored before the sibling can be compared, and a write
-  // that throws reaches no onAfterWrite: a refusal deletes what this write
-  // stored and forgets the old refs it queued for cleanup, or the bytes are
-  // orphaned and the next update's cleanup deletes the file the row still holds.
-  async _followOrDrop(model, fields, data, raw, written, isUpdate, ctx) {
-    try {
-      this._followBytes(model, fields, data, raw, isUpdate)
-    } catch (err) {
-      const rows = [].concat(data ?? [])
-      await Promise.all(written.flatMap((pairs, r) => pairs.map(([field, i]) =>
-        this._cleanupRef(i === null ? this._parseRef(rows[r]?.[field]) : rows[r]?.[field]?.[i], { field, model, ctx }))))
-      if (isUpdate) this._forgetStash(ctx, model, written.flat().map(([field]) => field))
-      throw err
-    }
-  }
-
-  _forgetStash(ctx, model, written) {
-    const stash = this._stashMap.get(ctx._flavor ?? ctx)
-    if (!stash) return
-    for (const field of new Set(written)) {
-      for (const k of stash.keys()) if (k === `${model}.${field}` || k.startsWith(`${model}.${field}[`)) stash.delete(k)
-    }
+    this._followBytes(model, fields, args.data, raw, false)
   }
 
   // ── @digest: the sibling column follows the bytes ──────────────────────────
@@ -682,15 +648,13 @@ class FileStoragePlugin extends ExternalRefPlugin {
   }
 
   // ── Override onBeforeUpdate to handle keepVersions ────────────────────────
-  // keepVersions: skip stashing old ref (so cleanup won't run in onAfterWrite)
 
   async onBeforeUpdate(model, args, ctx) {
     const fields = this._maps(ctx).fieldMap[model]
     if (!fields || !args.data) return
-    const raw     = this._rawDigested(fields, args.data)
-    const written = this._written(fields, args.data)
+    const raw = this._rawDigested(fields, args.data)
     await this._storeUpdate(model, args, ctx, fields)
-    await this._followOrDrop(model, fields, args.data, raw, written, true, ctx)
+    this._followBytes(model, fields, args.data, raw, true)
   }
 
   async _storeUpdate(model, args, ctx, fields) {
@@ -718,8 +682,8 @@ class FileStoragePlugin extends ExternalRefPlugin {
       opts.isArray ? args.data[field] != null : isFileValue(args.data[field]))
     if (!rawFields.length) return
 
-    // Stash old refs for cleanup after write — ONE combined SELECT for all
-    // fields that need it (keepVersions fields are excluded: no stash → no cleanup).
+    // The refs this write replaces, in ONE SELECT; a keepVersions field
+    // replaces nothing, so its old object is never cleaned up.
     const stashFields = rawFields.filter(([, opts]) => !opts.keepVersions)
     if (stashFields.length && ctx.readDb && args.where) {
       try {
@@ -737,35 +701,21 @@ class FileStoragePlugin extends ExternalRefPlugin {
                 .filter(item => item && !isFileValue(item) && item.key)
                 .map(item => item.key))
               for (const oldRef of this._parseRefArray(oldRow?.[field])) {
-                if (oldRef && !kept.has(oldRef.key)) this._stash(ctx, model, `${field}[${JSON.stringify(oldRef)}]`, oldRef)
+                if (oldRef && !kept.has(oldRef.key)) this._replaces(args.data, field, oldRef)
               }
             } else {
               const oldRef = this._parseRef(oldRow?.[field])
-              if (oldRef) this._stash(ctx, model, field, oldRef)
+              if (oldRef) this._replaces(args.data, field, oldRef)
             }
           }
         }
       } catch {}
     }
 
+    const id = args.where?.id ?? 'upd'
     for (const [field, opts] of rawFields) {
-      const value = args.data[field]
-      const id = args.where?.id ?? 'upd'
-      if (opts.isArray) {
-        const items = Array.isArray(value) ? value : [value]
-        if (!items.some(isFileValue)) continue
-        const refs = await Promise.all(
-          items.map((item, i) =>
-            isFileValue(item)
-              ? this.serialize(item, { field, model, id: `${id}-${i}`, ctx })
-              : Promise.resolve(item)
-          )
-        )
-        args.data[field] = refs
-        continue
-      }
-      const ref = await this.serialize(value, { field, model, id, ctx })
-      args.data[field] = JSON.stringify(ref)
+      if (opts.isArray && ![].concat(args.data[field]).some(isFileValue)) continue
+      await this._serializeField(model, args.data, field, opts, id, ctx)
     }
   }
 }

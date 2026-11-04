@@ -906,6 +906,7 @@ class MyPlugin extends LitestonePlugin {
   async onBeforeDelete(model, args, ctx) {}
   async onAfterRead(model, rows, ctx) {}
   async onAfterWrite(model, operation, result, ctx) {}   // operation: create|update|delete
+  async onWriteSettled(model, operation, args, error, ctx) {}  // once per write call; error null when it landed
   async onAfterDelete(model, rows, ctx) {}               // rows: all deleted rows
   buildReadFilter(model, ctx) { return { tenantId: ctx.auth?.tenantId } }
 }

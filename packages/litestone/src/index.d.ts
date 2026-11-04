@@ -1117,6 +1117,8 @@ export declare class LitestonePlugin {
   onAfterRead(model: string, rows: unknown[], ctx: LitestoneCtx): Promise<void>
   onWriteResult(model: string, rows: unknown[], ctx: LitestoneCtx): Promise<void>
   onAfterWrite(model: string, operation: string, result: unknown, ctx: LitestoneCtx): Promise<void>
+  /** Observer: once per write call, `error` null when it landed. */
+  onWriteSettled(model: string, operation: string, args: { data?: unknown; [key: string]: unknown }, error: unknown, ctx: LitestoneCtx): Promise<void>
   onAfterDelete(model: string, rows: unknown[], ctx: LitestoneCtx): Promise<void>
   buildReadFilter(model: string, ctx: LitestoneCtx): Record<string, unknown> | null
 }

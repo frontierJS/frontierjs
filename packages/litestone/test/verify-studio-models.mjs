@@ -216,6 +216,16 @@ t('models.opensOnClusters', await probe(`
   };
 `), { tab: 'Clusters', clusters: true, diagram: false })
 
+// The score alone is a number nobody can check; its inputs ride on the hover.
+t('clusters.complexityShowsItsInputs', await probe(`
+  const t0 = Date.now();
+  let facts;
+  while (Date.now() - t0 < 15000 && !(facts = document.getElementById('lyFacts')).textContent) await new Promise(r => setTimeout(r, 100));
+  const score = Number(facts.textContent.match(/complexity (\\d+)/)?.[1]);
+  const why = facts.querySelector('[title]')?.title ?? '';
+  return { inRange: score >= 1 && score <= 100, namesInputs: /models \\+ .* fields \\/ 8 \\+ .* keys .* rules \\/ 2 = /s.test(why) };
+`), { inRange: true, namesInputs: true })
+
 await evaluate(`
   erShowTab('diagram');
   const t0 = Date.now();

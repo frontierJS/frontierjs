@@ -319,7 +319,8 @@ Done when: a Basecamp release of an expand runs start-first and a contract runs 
 Goal: both deploy paths take the same swap for the same release.
 Done when: `swapContainer` runs start-first from the journal's `pivot=` under the same rules. This phase gates the plan's done (Q4).
 
-- [ ] 3.1 One owner of the swap for `swapContainer` and `docker.deploy` (`FJS-D1840`)
+- [x] 3.1 One owner of the swap for `swapContainer` and `docker.deploy` (`FJS-D1840`)
+  - Done 2026-11-04 (`FJS-D1866`): `outpost/src/swap.js` `createSwap` + `runFlags`, driven by `docker.deploy` and by the cli's `swapContainer` over `core/swap.js`'s ssh runner; 06-swap/07-health and revert's 03-swap/04-health merged; one table in `outpost/test/fixtures/swap-cases.js`. outpost `bun run test` 398 pass, `verify:docker` 69, cli `bun run test` 4309 pass.
 - [ ] 3.2 Start-first in `fli deploy`
 
 ## Phase 4 — Prove it on a real box

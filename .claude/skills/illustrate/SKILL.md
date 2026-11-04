@@ -18,7 +18,7 @@ Roam's question picks the kind: *what/who* is an illustration, *how*, *where* an
 | Kind | Answers | Renderer | Owner |
 | ---- | ------- | -------- | ----- |
 | **Illustration** | *what a thing is* — a Gate, a Surface, a Stressor | an image model, painted, no lettering | `brand/IMAGERY.md` § 1–8 |
-| **Poster** | *what a whole thing is and does, at a glance* — a field-series plate for the site or a deck, where the text is the point | an image model, painted and lettered | `brand/IMAGERY.md` § 9 |
+| **Poster** | *what a whole thing is and does, at a glance* — a numbered plate of the Field Series, for the site or a deck, where the text is the point | an image model, painted and lettered | `brand/IMAGERY.md` § 9 |
 | **Mechanism** | *how it works* — a call crossing the bridge, the hook pipeline, a write announced | hand SVG up to about eight parts, D2 compiled to SVG above that, committed as `.svg` beside the doc; a Mermaid fence only where the reader is GitHub's renderer, a `README.md` (`FJS-D1499`) | this skill, until `brand/README.md` § Diagrams exists (`FJS-D1500`) |
 | **Chart** | *how much* | SVG from data | the `dataviz` skill |
 

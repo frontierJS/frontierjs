@@ -836,7 +836,7 @@ export async function Command({ file, arg, flag, emit }) {
       // the loop, so the exit code and the message are unchanged.
       //
       // Without this, `runOnAbort` only covered a step that set the flag and
-      // returned — and deploy's 07-health sets the flag and then throws, which
+      // returned — and deploy's 06-swap sets the flag and then throws, which
       // skipped 09-cleanup and left `.deploy.lock` on the server. The next
       // deploy then refused, naming a deploy that had finished minutes earlier.
       let stepError = null

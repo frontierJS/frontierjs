@@ -789,8 +789,6 @@ export default createService({
       const updated = await db().app.update({ where: { id: $.id as string }, data: patch })
       syncAppBackupSchedule($.app, updated)
       syncAppDrillSchedule($.app, updated)
-      // The managed Monitor's url carries the health path.
-      if ('healthCheck' in patch) await syncManagedMonitor($.app, $.db.asSystem(), current.id as string)
     }
     if ('replicaDestinationId' in patch) await syncReplicasOf($.app, [current.id])
 

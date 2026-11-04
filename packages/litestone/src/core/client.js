@@ -4148,7 +4148,26 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     fireQuery, tableHasLogWork, emitLogs, trailImage, read, fireRowEvent,
   })
 
-  return installHooks({
+  // A write the plugins prepared is told how it ended, once per call: a before
+  // hook that stored an object outside the database is the one that can remove
+  // it, and a write refused after it ran reaches no onAfterWrite (FJS-3991).
+  // Wrapped on the raw table, so upsert's own create and update are heard.
+  function settlingWrites(table) {
+    if (!plugins?.hasPlugins) return table
+    for (const verb of ['create', 'createMany', 'update', 'updateMany', 'upsertMany']) {
+      const fn = table[verb]
+      table[verb] = async function (args = {}) {
+        let result
+        try { result = await fn.call(this, args) }
+        catch (e) { await plugins.writeSettled(modelName, verb, args, e, ctx); throw e }
+        await plugins.writeSettled(modelName, verb, args, null, ctx)
+        return result
+      }
+    }
+    return table
+  }
+
+  return installHooks(settlingWrites({
 
     // The plan a bulk write would run, without running it — the way `$checkWhere`
     // answers a where without querying. A test's view of a verb, keyed by the
@@ -5239,7 +5258,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       return { optimized: true, table: `${tableName}_fts` }
     },
 
-  }, ctx, modelName)
+  }), ctx, modelName)
 }
 
 // ─── Multi-database helpers ───────────────────────────────────────────────────

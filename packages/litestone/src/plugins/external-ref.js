@@ -96,7 +96,8 @@ export class ExternalRefPlugin extends LitestonePlugin {
     return ref  // default: return the ref as-is
   }
 
-  // Called when a ref is deleted (row delete or field update).
+  // Called when a ref is deleted (row delete or field update), once the write
+  // is real, and for an object stored by a write that was then refused.
   // Optional — default is a no-op.
   // eslint-disable-next-line no-unused-vars
   async cleanup(ref, { field, model, ctx }) {}
@@ -213,19 +214,65 @@ export class ExternalRefPlugin extends LitestonePlugin {
     }
   }
 
-  // ── Stash for update cleanup ──────────────────────────────────────────────
+  // ── What one write stored and replaced ────────────────────────────────────
+  //
+  // Keyed by the payload the before hook was handed, which onWriteSettled is
+  // handed back. A slot per flavor was one slot for every write in flight on
+  // it, and a refused update left its old ref there for the next update's
+  // cleanup, which deleted the file the row still held (FJS-3991).
 
-  _stashMap = new WeakMap()
+  _writes = new WeakMap()
 
-  _stash(ctx, model, field, ref) {
-    if (!this._stashMap.has(ctx._flavor ?? ctx)) this._stashMap.set(ctx._flavor ?? ctx, new Map())
-    this._stashMap.get(ctx._flavor ?? ctx).set(`${model}.${field}`, ref)
+  _writeOf(data) {
+    let w = this._writes.get(data)
+    if (!w) this._writes.set(data, w = { stored: [], replaced: [], given: new Map() })
+    return w
   }
 
-  _unstash(ctx, model, field) {
-    const ref = this._stashMap.get(ctx._flavor ?? ctx)?.get(`${model}.${field}`)
-    this._stashMap.get(ctx._flavor ?? ctx)?.delete(`${model}.${field}`)
-    return ref
+  _replaces(data, field, ref) {
+    this._writeOf(data).replaced.push({ field, ref })
+  }
+
+  // Serializes `data[field]` in place. Every object stored is noted before
+  // anything can throw, a sibling's rejection included, so a refusal removes
+  // all of them; the caller's value is kept to hand back if the write fails.
+  async _serializeField(model, data, field, opts, id, ctx) {
+    const w     = this._writeOf(data)
+    const value = data[field]
+    if (!w.given.has(field)) w.given.set(field, value)
+    if (!opts.isArray) {
+      const ref = await this.serialize(value, { field, model, id, ctx })
+      w.stored.push({ field, ref })
+      data[field] = JSON.stringify(ref)
+      return
+    }
+    const items   = Array.isArray(value) ? value : [value]
+    const settled = await Promise.allSettled(items.map((item, i) =>
+      this._isRawValue(item) ? this.serialize(item, { field, model, id: `${id}-${i}`, ctx }) : Promise.resolve(item)))
+    settled.forEach((s, i) => { if (this._isRawValue(items[i]) && s.status === 'fulfilled') w.stored.push({ field, ref: s.value }) })
+    const failed = settled.find(s => s.status === 'rejected')
+    if (failed) throw failed.reason
+    data[field] = settled.map(s => s.value)
+  }
+
+  // A refused write removes what it stored and leaves the caller's payload as
+  // it was handed: an upsert retrying as an update with the same object would
+  // otherwise write a ref to the object just removed. One that landed is held
+  // to the outermost transaction: its rollback restores the row naming the old
+  // object and drops the one naming the new.
+  async onWriteSettled(model, operation, args, error, ctx) {
+    const data = args?.data
+    const w    = data && typeof data === 'object' ? this._writes.get(data) : null
+    if (!w) return
+    this._writes.delete(data)
+    const clean = list => Promise.all(list.map(({ field, ref }) => this._cleanupRef(ref, { field, model, ctx })))
+    if (!error) return this._settle(ctx, { commit: () => clean(w.replaced), rollback: () => clean(w.stored) })
+    for (const [field, value] of w.given) data[field] = value
+    await clean(w.stored)
+  }
+
+  _settle(ctx, effects) {
+    return ctx.tx?.hold ? ctx.tx.hold(effects) : effects.commit?.()
   }
 
   // ── Create ────────────────────────────────────────────────────────────────
@@ -254,20 +301,8 @@ export class ExternalRefPlugin extends LitestonePlugin {
         if (!value) continue
         const items = Array.isArray(value) ? value : [value]
         if (!items.some(v => this._isRawValue(v))) continue
-        const refs = await Promise.all(
-          items.map((item, i) =>
-            this._isRawValue(item)
-              ? this.serialize(item, { field, model, id: `${id}-${i}`, ctx })
-              : Promise.resolve(item)
-          )
-        )
-        args.data[field] = refs
-        continue
-      }
-
-      if (!this._isRawValue(value)) continue
-      const ref = await this.serialize(value, { field, model, id, ctx })
-      args.data[field] = JSON.stringify(ref)
+      } else if (!this._isRawValue(value)) continue
+      await this._serializeField(model, args.data, field, opts, id, ctx)
     }
   }
 
@@ -281,8 +316,8 @@ export class ExternalRefPlugin extends LitestonePlugin {
     const rawFields = Object.entries(fields).filter(([field]) => this._isRawValue(args.data[field]))
     if (!rawFields.length) return
 
-    // Stash old refs for cleanup after write — ONE combined SELECT for all
-    // raw fields (previously: one dynamic import + one SELECT per field).
+    // The refs this write replaces, in ONE SELECT for every raw field, cleaned
+    // up once it lands.
     if (ctx.readDb && args.where) {
       try {
         const params = []
@@ -291,87 +326,33 @@ export class ExternalRefPlugin extends LitestonePlugin {
           const colSql = rawFields.map(([f]) => `"${f}"`).join(', ')
           const oldRow = ctx.readDb.query(`SELECT ${colSql} FROM "${model}" WHERE ${whereSql}`).get(...params)
           for (const [field, opts] of rawFields) {
-            if (opts.isArray) {
-              for (const oldRef of this._parseRefArray(oldRow?.[field])) {
-                if (oldRef) this._stash(ctx, model, `${field}[${JSON.stringify(oldRef)}]`, oldRef)
-              }
-            } else {
-              const oldRef = this._parseRef(oldRow?.[field])
-              if (oldRef) this._stash(ctx, model, field, oldRef)
-            }
+            const old = opts.isArray ? this._parseRefArray(oldRow?.[field]) : [this._parseRef(oldRow?.[field])]
+            for (const oldRef of old) if (oldRef) this._replaces(args.data, field, oldRef)
           }
         }
       } catch {}
     }
 
+    const id = args.where?.id ?? 'upd'
     for (const [field, opts] of rawFields) {
-      const value = args.data[field]
-      const id = args.where?.id ?? 'upd'
-
-      if (opts.isArray) {
-        const items = Array.isArray(value) ? value : [value]
-        if (!items.some(v => this._isRawValue(v))) continue
-        const refs = await Promise.all(
-          items.map((item, i) =>
-            this._isRawValue(item)
-              ? this.serialize(item, { field, model, id: `${id}-${i}`, ctx })
-              : Promise.resolve(item)
-          )
-        )
-        args.data[field] = refs
-        continue
-      }
-
-      const ref = await this.serialize(value, { field, model, id, ctx })
-      args.data[field] = JSON.stringify(ref)
+      if (opts.isArray && ![].concat(args.data[field]).some(v => this._isRawValue(v))) continue
+      await this._serializeField(model, args.data, field, opts, id, ctx)
     }
-  }
-
-  // ── After write (cleanup old refs on update) ──────────────────────────────
-
-  async onAfterWrite(model, operation, result, ctx) {
-    if (operation !== 'update') return
-    const fields = this._maps(ctx).fieldMap[model]
-    if (!fields) return
-
-    // Collect all stale refs first, then clean them up in PARALLEL —
-    // previously each S3 delete was awaited sequentially (N round trips).
-    const cleanups = []
-    for (const [field, opts] of Object.entries(fields)) {
-      if (opts.isArray) {
-        const stash = this._stashMap.get(ctx._flavor ?? ctx)
-        if (!stash) continue
-        const prefix = `${model}.${field}[`
-        for (const [k, ref] of stash.entries()) {
-          if (!k.startsWith(prefix)) continue
-          stash.delete(k)
-          cleanups.push(this._cleanupRef(ref, { field, model, ctx }))
-        }
-        continue
-      }
-      const oldRef = this._unstash(ctx, model, field)
-      if (oldRef) cleanups.push(this._cleanupRef(oldRef, { field, model, ctx }))
-    }
-    if (cleanups.length) await Promise.all(cleanups)
   }
 
   // ── After delete ──────────────────────────────────────────────────────────
 
+  // Held like an update's old refs: a delete inside a transaction that rolls
+  // back restores a row naming the object.
   async onAfterDelete(model, rows, ctx) {
     const fields = this._maps(ctx).fieldMap[model]
     if (!fields || !rows.length) return
 
-    await Promise.all(rows.flatMap(row =>
-      Object.entries(fields).flatMap(([field, opts]) => {
-        if (opts.isArray) {
-          return this._parseRefArray(row[field]).map(ref =>
-            this._cleanupRef(ref, { field, model, ctx })
-          )
-        }
-        const ref = this._parseRef(row[field])
-        return ref ? [this._cleanupRef(ref, { field, model, ctx })] : []
-      })
-    ))
+    const refs = rows.flatMap(row => Object.entries(fields).flatMap(([field, opts]) =>
+      (opts.isArray ? this._parseRefArray(row[field]) : [this._parseRef(row[field])])
+        .filter(Boolean).map(ref => ({ field, ref }))))
+    if (!refs.length) return
+    await this._settle(ctx, { commit: () => Promise.all(refs.map(({ field, ref }) => this._cleanupRef(ref, { field, model, ctx }))) })
   }
 
   // ── After read (auto-resolve if enabled) ──────────────────────────────────

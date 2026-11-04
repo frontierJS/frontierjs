@@ -109,7 +109,7 @@ for (const key of shadowed)
 // ─── A database the swap would not keep ───────────────────────────────────────
 // The file is read whole by the container, so a DATABASE_URL or *_PATH outside
 // the mount -- a relative one too, which lands under the WORKDIR -- is otherwise
-// found only by 07-health, after the build, and then rolled back (FJS-3175).
+// found only by 06-swap's health check, after the build, and then rolled back (FJS-3175).
 const { strayDatabasePaths } = await import(new URL('file://' + global.fliRoot + '/core/local-env.js'))
 const strays = strayDatabasePaths(serverEnv, CONTAINER_DB_DIR)
 if (strays.length) {

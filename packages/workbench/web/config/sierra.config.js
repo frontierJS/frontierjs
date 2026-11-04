@@ -9,9 +9,19 @@ export default {
   trailingSlash: 'always',
   siteName:      'Workbench',
 
+  // Every theme @frontierjs/css ships, picked at /settings/. theme-dark stays
+  // the default rather than 'system': a fresh install opens dark on any OS.
   theme: {
-    themes:  ['theme-dark', 'theme-default'],
+    themes: [
+      'theme-dark', 'theme-default', 'theme-midnight', 'theme-forest',
+      'theme-sunset', 'theme-elite', 'theme-dracula', 'theme-twilight',
+      'theme-notebook', 'theme-press', 'theme-field', 'theme-expedition',
+      'theme-catppuccin', 'theme-survey', 'theme-basecamp',
+    ],
     default: 'theme-dark',
+    // Unstated, the pair is the first two themes as light then dark, and this
+    // list leads with theme-dark: "Match system" would pick the inverse.
+    system:  { light: 'theme-default', dark: 'theme-dark' },
   },
 
   junction: {

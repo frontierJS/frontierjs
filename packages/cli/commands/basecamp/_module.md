@@ -10,7 +10,7 @@ description: Basecamp itself — make its box at a cloud, install it, point its 
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, provisionScript, markHost,
   cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine }
   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-const { basecamp, basecampAll, pullHubArchive, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, pullHubArchive, pullRawBackup, apiCannotBackUp, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 
 // Basecamp's own hostname, the one `pointHost` points at the box.
 const webDomain = async () =>
@@ -19,6 +19,14 @@ const webDomain = async () =>
 // The box `fli deploy` ships Basecamp to, as ssh reaches it.
 const deployServer = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.server
+
+// Basecamp's db directory, env file and secrets directory on its box, as the
+// deploy mounts them, and the login ssh uses there.
+const deployFiles = async (server) => {
+  const { apiFiles, sshHost } = await import(new URL('file://' + global.fliRoot + '/core/deploy-target.js'))
+  const deploy = (await import(provisionScript().root + 'frontier.config.js')).default.deploy
+  return { ...apiFiles(deploy, deploy.path), host: sshHost(deploy.user ?? null, server) }
+}
 
 // Asked before the install, so a token that opens no zone holding the hostname
 // refuses before minutes of apt rather than after them. No token is not a

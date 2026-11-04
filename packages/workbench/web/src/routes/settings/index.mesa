@@ -1,0 +1,49 @@
+---
+title: Settings
+---
+<script>
+  // The member's own settings. Only Appearance is here: the Member row is
+  // read-only to its owner (`@@allow(read, ...)` and nothing else), so the nick
+  // is shown, not edited, and a theme is a fact about this browser, not the
+  // member -- Sierra stores it under the app's prefix in localStorage.
+  //
+  // The picker reads `theme.preference`, not `theme.value`: under "Match
+  // system" the value is whichever of the OS pair is live, and a checked card
+  // would claim a pick nobody made.
+
+  import { theme, setTheme, themes } from '@frontierjs/sierra/theme'
+  import { session } from '../../lib/session.js'
+
+  import Card        from '@frontierjs/ui/components/layout/Card.mesa'
+  import Switch      from '@frontierjs/ui/components/forms/Switch.mesa'
+  import ThemePicker from '@frontierjs/ui/components/display/ThemePicker.mesa'
+
+  $: (theme.value, theme.preference)
+  $: (session.user)
+
+  const following = () => theme.preference === 'system'
+
+  // Leaving "Match system" keeps the theme on screen rather than jumping to the
+  // configured default.
+  function follow(checked) {
+    setTheme(checked ? 'system' : theme.value)
+  }
+</script>
+
+<header class="stack-sm">
+  <h1 class="h3">Settings</h1>
+  {#if session.user}
+    <p class="text-muted">Signed in as <strong>{session.user.nick}</strong>.</p>
+  {/if}
+</header>
+
+<Card id="settings-appearance">
+  <h2 class="h5">Appearance</h2>
+  <Switch id="settings-theme-system" label="Match system"
+          description="Follow the operating system's light or dark setting"
+          checked={following()} onchange={follow} />
+  <ThemePicker id="settings-theme" label="Theme"
+               themes={themes()} value={theme.preference}
+               onchange={setTheme} />
+  <p class="text-sm text-muted">Stored in this browser, not on your account.</p>
+</Card>
