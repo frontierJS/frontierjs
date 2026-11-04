@@ -21,8 +21,11 @@ import { tmpdir } from 'os'
 import {
   scaffoldDesktopSurface, desktopScripts, desktopNames, desktopAppName, desktopSurfaceDirs,
   desktopBinary, desktopApiTarget, desktopLauncher, desktopMainRs,
-  ensureServer, movedShellBuild, surfaceRow, desktopApiEnv,
+  ensureServer, movedShellBuild, surfaceRow, desktopApiEnv, desktopIcon, desktopIconIco,
 } from '../core/desktop-surface.js'
+import { frontierSpecifiers, bundledSource } from '../core/desktop-sidecar.js'
+import * as nodeFs from 'fs'
+import * as nodePath from 'path'
 import { runChecks } from '../core/checks.js'
 import { port, PROJECTS } from '../core/ports.js'
 
@@ -350,5 +353,128 @@ describe('the env desktop:run and dev:desktop start the API with', () => {
   test('an inherited list is kept first, and a page origin is added once', () => {
     const env = desktopApiEnv(8100, { inherited: 'https://app.example.com, tauri://localhost', pages: ['http://localhost:7300'] })
     expect(env.FRONTIER_CORS_ORIGINS).toBe('https://app.example.com,tauri://localhost,http://tauri.localhost,http://localhost:7300')
+  })
+})
+
+// FJS-D1815: `--sidecar` is the same surface with the shell starting its own
+// API. Off, nothing changes — the byte-for-byte example above is that proof.
+describe('--sidecar: the shell starts its own API', () => {
+  const API = {
+    'api/index.ts': "import app from './src/app.ts'\nawait app.start()\n",
+    'api/config/junction.config.js': "import { x } from '@frontierjs/caravan/config'\nexport default { app: { name: 'shop', apiPrefix: '/v1' } }\n",
+    'api/src/app.ts': [
+      "import { createApp,",
+      "  channels } from '@frontierjs/junction'",
+      "import type { Ctx } from '@frontierjs/junction/types'",
+      "import '@frontierjs/notifications'",
+      "export { thing } from '@frontierjs/litestone/storage'",
+      "// import { gone } from '@frontierjs/commented'",
+      "const lazy = () => import('@frontierjs/print-kit')",
+      "import schema from '@frontierjs/auth/schema.lite'",
+      "import jpeg from 'jpeg-js'",
+    ].join('\n') + '\n',
+    'api/src/services/a.service.ts': "import { $ } from '@frontierjs/junction'\n",
+    'api/test/a.test.ts': "import { t } from '@frontierjs/test-only'\n",
+    'api/src/b.test.ts': "import { t } from '@frontierjs/also-test'\n",
+  }
+
+  test('the compiled-in packages are derived from the API\'s own imports', () => {
+    const root = appRoot('derive', API)
+    expect(frontierSpecifiers(root, nodeFs, nodePath)).toEqual([
+      '@frontierjs/caravan/config',
+      '@frontierjs/junction',
+      '@frontierjs/litestone/storage',
+      '@frontierjs/notifications',
+      '@frontierjs/print-kit',
+    ])
+  })
+
+  test('off, no piece of it is written', () => {
+    const root = appRoot('plain', API)
+    const { written } = scaffoldDesktopSurface({ root, appName: 'shop', wraps: 'web' })
+    expect(written.some(f => f.includes('sidecar') || f.endsWith('default.json'))).toBe(false)
+    const main = readFileSync(join(root, 'desktop', 'shell', 'src', 'main.rs'), 'utf8')
+    expect(main).not.toContain('TrayIconBuilder')
+    expect(readFileSync(join(root, 'desktop', 'config', 'desktop.config.js'), 'utf8')).not.toContain('sidecar')
+  })
+
+  test('on, every piece is written, named for the app and never for immich', () => {
+    const root = appRoot('side', API)
+    const { written } = scaffoldDesktopSurface({ root, appName: '@acme/shop', wraps: 'web', sidecar: true })
+    for (const f of ['sidecar/launcher.ts', 'sidecar/make-sidecar.ts', 'sidecar/bundled.ts', 'shell/capabilities/default.json'])
+      expect(written).toContain(`desktop/${f}`)
+    const read = (f) => readFileSync(join(root, 'desktop', f), 'utf8')
+    for (const f of written.filter(f => f.startsWith('desktop/') && !f.endsWith('.png')))
+      expect(readFileSync(join(root, f), 'utf8'), f).not.toMatch(/immich|thod|__SLUG__|__PRODUCT__|__API_PREFIX__/)
+
+    expect(read('config/desktop.config.js')).toMatch(/\n  sidecar: true,\n/)
+    const conf = JSON.parse(read('shell/tauri.conf.json'))
+    expect(conf.bundle.externalBin).toEqual(['sidecar/shop-api'])
+    expect(conf.bundle.resources).toEqual({ 'sidecar/app/': 'app/' })
+    expect(conf.app.withGlobalTauri).toBe(true)
+    expect(JSON.parse(read('shell/capabilities/default.json')).permissions).toEqual(['dialog:allow-open'])
+    const cargo = read('shell/Cargo.toml')
+    for (const dep of ['features = ["tray-icon"]', 'tauri-plugin-autostart', 'tauri-plugin-dialog', 'tauri-plugin-single-instance'])
+      expect(cargo).toContain(dep)
+    expect(cargo).not.toContain('tauri-plugin-fs')
+    expect(read('shell/.gitignore')).toContain('/sidecar/')
+
+    const main = read('shell/src/main.rs')
+    for (const piece of [
+      'const SIDECAR: &str = "shop-api"',            // the binary Tauri copies beside the shell
+      'globalThis.__sierraApiUrl',                    // the run-time origin
+      '"FJS_SIDECAR_LIFELINE", "1"',                  // stdin lifeline
+      'fn supervise(', 'MAX_DEATHS',                  // restart on the same port, then give up
+      'TrayIconBuilder', '"Start at login"', 'tauri_plugin_single_instance::init',
+      'api.prevent_close()',                          // close to tray
+      'GET /v1/health',                               // the app's apiPrefix
+      'glib::set_application_name("shop")',           // FJS-3966: the tray's title
+      '.title("shop")',
+    ]) expect(main, piece).toContain(piece)
+    // Debug-only, as in the shell this was lifted from.
+    expect(main).toMatch(/#\[cfg\(debug_assertions\)\]\n#\[tauri::command\]\nfn probe_close/)
+    expect(main).toMatch(/fn break_restarts\(\) -> bool \{\n    cfg!\(debug_assertions\) &&/)
+
+    const build = read('deploy/build.mjs')
+    expect(build).toContain("join(DESKTOP, 'sidecar', 'make-sidecar.ts'), '--target', target]")
+    expect(build).toContain("bundleNames(dist, '__sierraApiUrl')")
+    expect(read('sidecar/make-sidecar.ts')).toContain(frontierSpecifiers.toString())
+    expect(read('sidecar/bundled.ts')).toBe(bundledSource(frontierSpecifiers(root, nodeFs, nodePath)))
+    expect(read('sidecar/launcher.ts')).toContain('shop-api: no API at')
+
+    for (const f of ['deploy/build.mjs', 'config/desktop.config.js']) {
+      const r = spawnSync('node', ['--check', join(root, 'desktop', f)], { encoding: 'utf8' })
+      expect(r.status, `${f}: ${r.stderr}`).toBe(0)
+    }
+    for (const f of ['sidecar/make-sidecar.ts', 'sidecar/launcher.ts', 'sidecar/bundled.ts']) {
+      const r = spawnSync('bun', ['build', '--no-bundle', join(root, 'desktop', f)], { encoding: 'utf8' })
+      expect(r.status, `${f}: ${r.stderr}`).toBe(0)
+    }
+  })
+})
+
+describe('the shell builds on Windows', () => {
+  // tauri-build refuses a Windows build with no .ico to embed in the exe; a
+  // Linux build never asks, so only this test notices it missing.
+  test('icon.ico is one icon entry holding the PNG as it is', () => {
+    const png = desktopIcon()
+    const ico = desktopIconIco(png)
+    expect([ico.readUInt16LE(0), ico.readUInt16LE(2), ico.readUInt16LE(4)]).toEqual([0, 1, 1])
+    expect([ico[6], ico[7], ico.readUInt16LE(12)]).toEqual([32, 32, 32])
+    expect(ico.readUInt32LE(14)).toBe(png.length)
+    expect(ico.subarray(ico.readUInt32LE(18)).equals(png)).toBe(true)
+  })
+
+  test('both shapes write it and list it after the PNG', () => {
+    for (const sidecar of [false, true]) {
+      const root = mkdtempSync(join(tmpdir(), 'fjs-desktop-ico-'))
+      mkdirSync(join(root, 'api'), { recursive: true })
+      try {
+        const { written } = scaffoldDesktopSurface({ root, appName: 'ico', wraps: 'web', sidecar })
+        expect(written).toContain('desktop/shell/icons/icon.ico')
+        const conf = JSON.parse(readFileSync(join(root, 'desktop', 'shell', 'tauri.conf.json'), 'utf8'))
+        expect(conf.bundle.icon).toEqual(['icons/icon.png', 'icons/icon.ico'])
+      } finally { rmSync(root, { recursive: true, force: true }) }
+    }
   })
 })

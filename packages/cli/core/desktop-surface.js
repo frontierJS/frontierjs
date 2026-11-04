@@ -50,6 +50,10 @@ import { appPorts, describeProcess, pidsOnPort, processCwd } from './ports.js'
 import { writeApiOrigin }                      from './app-config.js'
 import { SHELL_ORIGINS }                       from './shell-origins.js'
 import { scaffoldPort, writeAbsent, viteScript, surfaceViteConfig, surfaceIndexHtml } from './scaffold/surface.js'
+import {
+  apiPrefixOf, sidecarBuildScript, sidecarBundled, sidecarCapabilities, sidecarCargoToml, sidecarConfig,
+  sidecarLauncher, sidecarMainRs, sidecarMake, sidecarShellGitignore, sidecarTauriConf,
+} from './desktop-sidecar.js'
 
 // ─── names ────────────────────────────────────────────────────────────────────
 
@@ -324,7 +328,7 @@ export function desktopTauriConf({ productName = 'app', identifier = 'dev.app.de
     identifier,
     build:      { frontendDist: '../dist' },
     app:        { windows: [], security: { csp: null } },
-    bundle:     { active: false, icon: ['icons/icon.png'] },
+    bundle:     { active: false, icon: ['icons/icon.png', 'icons/icon.ico'] },
   }, null, 2)}
 `
 }
@@ -470,6 +474,19 @@ export function desktopIcon() {
   return encodePng(size, size, rgba, { stored: true })
 }
 
+// tauri-build on Windows embeds an .ico in the exe and refuses to build without
+// one; an ICO entry may hold a PNG's bytes as they are (Windows Vista on), so the
+// same square serves both.
+export function desktopIconIco(png = desktopIcon()) {
+  const head = Buffer.alloc(22)
+  head.writeUInt16LE(0, 0); head.writeUInt16LE(1, 2); head.writeUInt16LE(1, 4)   // reserved, type icon, one image
+  const w = png.readUInt32BE(16), h = png.readUInt32BE(20)                       // the PNG's IHDR
+  head.writeUInt8(w >= 256 ? 0 : w, 6); head.writeUInt8(h >= 256 ? 0 : h, 7)
+  head.writeUInt16LE(1, 10); head.writeUInt16LE(32, 12)                          // planes, bits per pixel
+  head.writeUInt32LE(png.length, 14); head.writeUInt32LE(22, 18)                 // bytes, offset
+  return Buffer.concat([head, png])
+}
+
 // ─── writing it ───────────────────────────────────────────────────────────────
 
 /**
@@ -480,6 +497,7 @@ export function desktopIcon() {
 export function scaffoldDesktopSurface({
   root, appName = 'app', wraps = null, hasApi = true,
   apiPort = scaffoldPort('be'), devPort = scaffoldPort('desktopDev'),
+  sidecar = false,
 } = {}) {
   const names = desktopNames(appName)
   const files = [
@@ -498,18 +516,48 @@ export function scaffoldDesktopSurface({
     ['shell/tauri.conf.json',     desktopTauriConf(names)],
     ['shell/src/main.rs',         desktopMainRs(names)],
     ['shell/icons/icon.png',      desktopIcon()],
+    ['shell/icons/icon.ico',      desktopIconIco()],
     // tauri-build tells cargo to rerun when `capabilities/` changes, and cargo
     // reads a missing path as changed — so without it every `cargo build`
     // recompiles the crate, 1.4s on a build that should take 0.2s.
     ['shell/capabilities/.gitkeep', ''],
   ]
 
-  const surface = writeAbsent(root, 'desktop', { dirs: desktopSurfaceDirs({ wraps }), files })
+  // --sidecar (FJS-D1815): the same surface, with the shell starting its own
+  // API. Each sidecar file replaces its default by path; the rest is shared.
+  if (sidecar) {
+    const sc = sidecarFiles(root, names)
+    for (const [rel, made] of sc) {
+      const at = files.findIndex(([r]) => r === rel)
+      const body = made ?? sidecarConfig(files[at][1])
+      if (at >= 0) files[at] = [rel, body]
+      else files.push([rel, body])
+    }
+  }
+
+  const dirs = [...desktopSurfaceDirs({ wraps }), ...(sidecar ? ['sidecar'] : [])]
+  const surface = writeAbsent(root, 'desktop', { dirs, files })
   // The app's, not this surface's: every surface's config reads the API port
   // through it, so a second checkout's FRONTIER_PORT_BE reaches the build.
   if (!hasApi) return surface
   const app = writeApiOrigin(root)
   return { written: [...surface.written, ...app.written], skipped: [...surface.skipped, ...app.skipped] }
+}
+
+function sidecarFiles(root, names) {
+  const full = { ...names, apiPrefix: apiPrefixOf(root) }
+  return [
+    ['config/desktop.config.js',          null],
+    ['deploy/build.mjs',                  sidecarBuildScript(desktopBuildScript())],
+    ['shell/.gitignore',                  sidecarShellGitignore()],
+    ['shell/Cargo.toml',                  sidecarCargoToml(names)],
+    ['shell/tauri.conf.json',             sidecarTauriConf(names)],
+    ['shell/src/main.rs',                 sidecarMainRs(full)],
+    ['shell/capabilities/default.json',   sidecarCapabilities()],
+    ['sidecar/launcher.ts',               sidecarLauncher(full)],
+    ['sidecar/make-sidecar.ts',           sidecarMake(full)],
+    ['sidecar/bundled.ts',                sidecarBundled(root)],
+  ]
 }
 
 // ─── running it ───────────────────────────────────────────────────────────────

@@ -4,11 +4,15 @@ description: Create the desktop/ surface — a native shell with its screens bun
 alias: mkd
 examples:
   - fli make:desktop --wraps web
+  - fli make:desktop --wraps web --sidecar
   - fli make:desktop
 flags:
   wraps:
     type: string
     description: Bundle another surface's screens (usually web) instead of desktop/src/
+  sidecar:
+    type: boolean
+    description: The installed app runs its own API — a compiled bun sidecar the shell starts, supervises and tray-hosts
 ---
 
 <script>
@@ -45,6 +49,39 @@ desktop/
   dist/                      the screens, compiled into the binary
 ```
 
+**`--sidecar`: the app carries its own API** (`FJS-D1815`). Without it the
+shell is a window onto an API somewhere else. With it the API is compiled into
+one bun binary (`desktop/sidecar/make-sidecar.ts`, run by `build:desktop`) and
+shipped beside the shell, which:
+
+- starts it on a free 127.0.0.1 port with its data in the OS app-data
+  directory, and builds the window only once `<apiPrefix>/health` answers;
+- hands the page that origin as `globalThis.__sierraApiUrl`, so no build
+  inlines one and `build.mjs` refuses a bundle whose sierra does not read it;
+- stops it by closing its stdin, which also ends it when the shell dies some
+  other way, `kill -9` included;
+- restarts one that dies on the same port with a backoff, and gives up with a
+  dialog after five deaths in a minute;
+- closes to a tray (Open, Start at login, Quit), and focuses the running copy
+  on a second launch;
+- puts the dialog plugin on `window.__TAURI__` and grants the page
+  `dialog:allow-open` and nothing else.
+
+The packages compiled in are derived from the API's own `@frontierjs/*` imports
+under `api/src` and `api/config`, again on every build, into
+`desktop/sidecar/bundled.ts`. Other dependencies ship whole beside the app's
+files (`FJS-3959`). `bun run build:desktop -- --release --target bun-windows-x64`
+cross-compiles the sidecar as `<app>-api-x86_64-pc-windows-msvc.exe`, where
+the Tauri bundle expects it; the shell itself still compiles on Windows.
+
+```
+desktop/
+  sidecar/launcher.ts        the sidecar's entry: the app's API, bound to 127.0.0.1
+  sidecar/make-sidecar.ts    stages app files and compiles shell/sidecar/<app>-api-<triple>
+  sidecar/bundled.ts         generated: the packages compiled in
+  shell/capabilities/        default.json — dialog:allow-open only
+```
+
 **The API is always another origin.** The page is served from
 `tauri://localhost`, so `api` is stated in `desktop.config.js` and
 `deploy/build.mjs` refuses a build that does not state it, or whose bundle does
@@ -60,6 +97,7 @@ const { addSurfaceToTsconfig } = await import(resolve(global.fliRoot, 'core/scaf
 const root    = $.paths.root
 const surface = resolve(root, 'desktop')
 const wraps   = flag.wraps || null
+const sidecar = Boolean(flag.sidecar)
 
 if (existsSync(join(surface, 'config/desktop.config.js'))) {
   log.error('desktop/ already exists — its config is desktop/config/desktop.config.js.')
@@ -73,8 +111,14 @@ if (wraps && !existsSync(join(root, wraps, 'config', 'vite.config.js'))) {
   return
 }
 
+// The sidecar is the app's own API; with no api/ there is nothing to compile.
+if (sidecar && !existsSync(join(root, 'api'))) {
+  log.error('--sidecar compiles this app\'s api/ into the shell, and there is no api/ here.')
+  return
+}
+
 if (flag.dry) {
-  log.dry(`Would create the desktop/ surface${wraps ? `, wrapping ${wraps}/` : ''}`)
+  log.dry(`Would create the desktop/ surface${wraps ? `, wrapping ${wraps}/` : ''}${sidecar ? ', with its own API sidecar' : ''}`)
   return
 }
 
@@ -86,7 +130,7 @@ const apiPort    = portFor('be',         { env: 'dev', projectId })
 const devPort    = portFor('desktopDev', { env: 'dev', projectId })
 const hasApi     = existsSync(join(root, 'api'))
 
-const { written, skipped } = scaffoldDesktopSurface({ root, appName, wraps, hasApi, apiPort, devPort })
+const { written, skipped } = scaffoldDesktopSurface({ root, appName, wraps, hasApi, apiPort, devPort, sidecar })
 
 for (const f of written) log.success(`Created ${f}`)
 if (skipped.length) log.info(`Kept ${skipped.length} existing file(s) — a scaffold never overwrites your config.`)
@@ -112,7 +156,7 @@ const { identifier } = desktopNames(appName)
 
 log.info('')
 if (!wraps) log.info(`  bun run dev:desktop     write the screens in a browser, at :${devPort}`)
-log.info(`  bun run build:desktop   → desktop/shell/target/debug/, the screens compiled in`)
+log.info(`  bun run build:desktop   → desktop/shell/target/debug/, the screens compiled in${sidecar ? ', the API beside them' : ''}`)
 log.info(`  fli desktop:run         build it, start the API if nothing answers, open the window`)
 log.info(`  fli dev:desktop         the window on the dev server, with HMR`)
 log.info(`  fli desktop:install     add it to this machine's app launcher (Linux)`)

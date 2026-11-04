@@ -8635,6 +8635,54 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1855"></a>2026-11-04 · `FJS-D1855` — Q4 — Is the install's Cloudflare token stored as the in-app provider key — Asked, yes by default, with the zone picked from the token's zones.
+
+Asked in [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md) § Open questions. **A** was picked over **B** (always), **C** (never).
+
+The paper's recommendation, taken as written: one keypress closes the step that was walked past, and a token scoped to one zone may not be the one apps should use.
+
+### <a id="fjs-d1854"></a>2026-11-04 · `FJS-D1854` — Q3 — Which repos are scanned for a stale `BASECAMP_APP_ID` — None; print the old App ids and names.
+
+Asked in [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md) § Open questions. **B** was picked over **A** (this workspace and `../fjs-prototypes/*`, read only).
+
+Against the recommendation (**A**): the owner finds the stale ids; reinstall prints the old App ids and names only.
+
+### <a id="fjs-d1853"></a>2026-11-04 · `FJS-D1853` — Q2 — Does fresh mode keep the old key — Carry it by default, a new one only when asked.
+
+Asked in [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md) § Open questions. **A** was picked over **B** (always a new key).
+
+The paper's recommendation, taken as written: every older archive stays restorable onto the new box, and the fleet's Outposts keep trusting the hub's derived signing key.
+
+### <a id="fjs-d1852"></a>2026-11-04 · `FJS-D1852` — Q1 — Where does the key copy go — Both, asked at each backup.
+
+Asked in [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md) § Open questions. **C** was picked over **A** (a mode-600 file in a separate tree, `~/.config/fli/basecamp/<host>/encryption.key`), **B** (printed once for a password manager, never written).
+
+Against the recommendation (**A**): the owner wants the choice at each backup: a file restore can read, a printed copy for a password manager, or both.
+
+### <a id="fjs-d1848"></a>2026-11-03 · `FJS-D1848` — `fli basecamp:backup` backs up Basecamp itself; an App's archive is `fli db:download` alone.
+
+Asked in chat through the question tool, while planning [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md). **Hub, apps to `db:download`** was picked over keeping an `--app` flag beside the hub backup and over a second name for the hub's.
+
+The command pulled one App's archive, which `db:download` already fetches when `BASECAMP_APP_ID` is set (`FJS-D1717`), while Basecamp's own archive had no command at all — only the `/hub/backups/` button. One verb per job: a `basecamp:` command that meant two things would be read as the wrong one at the moment a backup matters.
+*Lives in:* `cli/commands/basecamp/backup.md`, `cli/commands/db/`.
+
+### <a id="fjs-d1849"></a>2026-11-03 · `FJS-D1849` — `fli basecamp:reinstall` ships with both modes, fresh and restore, from the first build.
+
+Asked in chat through the question tool, while planning [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md). **Both modes now** was picked over fresh-only first and over restore-only.
+
+Hub restore through `/setup` has run only against SeaweedFS on a laptop (`IDEAS/backups.md` Phase 5 is open), so the first reinstall of a real box in restore mode is also that path's first real run. Accepted: the archive is checked on the laptop against HEAD's migrations before anything is retired, so a refusal costs nothing.
+*Lives in:* `IDEAS/basecamp-reinstall.md` until the commands are built.
+
+### <a id="fjs-d1850"></a>2026-11-03 · `FJS-D1850` — Basecamp's local backups go under `~/.local/share/fli/basecamp/<host>/<stamp>/`; `--out` overrides.
+
+Asked in chat through the question tool, while planning [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md). The XDG data directory was picked over the app's own `db/backups/` and over asking each time: outside every checkout, so nothing commits it and it survives the checkout being deleted.
+*Lives in:* `cli/commands/basecamp/backup.md`.
+
+### <a id="fjs-d1851"></a>2026-11-03 · `FJS-D1851` — Local Basecamp backups are never pruned; `basecamp:backup --list` shows them.
+
+Asked in chat through the question tool, while planning [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md). **Never prune, list them** was picked over keeping the newest N and over asking after each run. They are a few MB each and the only undo for a fresh reinstall.
+*Lives in:* `cli/commands/basecamp/backup.md`.
+
 ### <a id="fjs-d1836"></a>2026-11-03 · `FJS-D1836` — Basecamp has one setup checklist, `infra.launch`: home opens with it until every step is done and `/onboarding/` renders it always; `infra.onboarding`'s six counts are gone.
 
 Asked in chat through the question tool, after a reinstall walked past the DNS provider. **One list, top of home** was picked over adding a DNS step to the six-check page (two lists that drift) and leaving it as it was.

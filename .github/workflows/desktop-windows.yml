@@ -1,0 +1,115 @@
+# ============================================================
+# Desktop on Windows — a thin wrapper around scripts/desktop-sidecar.mjs
+#
+# A desktop app made with `fli make:desktop --sidecar` (FJS-D1815) runs its own
+# API on a person's PC. This builds one from a fresh scaffold, installs it the
+# way a person does (the NSIS installer) and asks it what scripts/
+# desktop-sidecar.mjs asks every shell: its own API on 127.0.0.1, /health, a
+# socket from http://tauri.localhost and none from elsewhere, nothing left
+# running once it is killed.
+#
+# Linux stages, because bun cross-compiles the sidecar and a Linux runner is
+# the fast one; Windows builds the shell, because Rust for MSVC and NSIS do
+# not cross-compile from here. Every check is in the script, and both halves
+# run on a laptop the same way:
+#
+#   bun scripts/desktop-sidecar.mjs stage --target bun-windows-x64 --dir <dir>
+#   bun scripts/desktop-sidecar.mjs smoke <probe_0.0.0_x64-setup.exe>
+#
+# Do not add a check here.
+# ============================================================
+
+name: Desktop on Windows
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/desktop-windows.yml
+      - scripts/desktop-sidecar.mjs
+      - packages/cli/core/desktop-*
+      - packages/cli/core/desktop-sidecar/**
+      - packages/cli/core/shell-origins.js
+      - packages/cli/commands/make/desktop.md
+      - packages/cli/commands/new/**
+      - packages/junction/src/**
+      - packages/sierra/src/**
+      - packages/litestone/src/**
+  pull_request:
+    paths:
+      - .github/workflows/desktop-windows.yml
+      - scripts/desktop-sidecar.mjs
+      - packages/cli/core/desktop-*
+      - packages/cli/core/desktop-sidecar/**
+      - packages/cli/core/shell-origins.js
+      - packages/cli/commands/make/desktop.md
+      - packages/cli/commands/new/**
+      - packages/junction/src/**
+      - packages/sierra/src/**
+      - packages/litestone/src/**
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Stage screens and a Windows sidecar
+        run: bun scripts/desktop-sidecar.mjs stage --target bun-windows-x64 --dir "$RUNNER_TEMP/desktop-sidecar"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-staged
+          path: ${{ runner.temp }}/desktop-sidecar/probe/desktop/
+          if-no-files-found: error
+          retention-days: 3
+
+  windows:
+    needs: stage
+    runs-on: windows-latest
+    # A cold Rust build of a Tauri shell is the long pole, ~10 min on a hosted
+    # runner; the cap leaves room for one without letting a hung webview sit.
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Only for the script; the app came from the stage job.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-staged
+          path: desktop
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/shell -> target
+
+      # The scaffold leaves bundling off (desktop:install is the dev loop's
+      # installer); a release turns it on for the one target a person runs.
+      - name: Build the NSIS installer
+        working-directory: desktop/shell
+        run: bunx @tauri-apps/cli@2.12.3 build --config '{"bundle":{"active":true,"targets":["nsis"]}}'
+
+      - name: Install it and smoke it
+        run: bun scripts/desktop-sidecar.mjs smoke desktop/shell/target/release/bundle/nsis/*-setup.exe

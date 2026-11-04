@@ -37,6 +37,7 @@ The origin is `api` in `desktop/config/desktop.config.js` — the one the build
 inlined — and it is started with the app's own `api` script on that port. One
 this command started is stopped when the window closes; one already running is
 left alone. A non-local `api` is never started here.
+With `sidecar: true` none is started or reused: the shell starts its own.
 
 **A port that answers is not proof it is this app's API** (`FJS-740`). One
 whose listener runs outside this app's directory is refused with its pid named.
@@ -75,7 +76,11 @@ let started = null
 const stopApi = () => { stopServer(started); started = null }
 process.on('exit', stopApi)
 
-if (!api) {
+if (config.sidecar) {
+  // The shell starts its own API on a port it picks (FJS-D1815); one started
+  // here would be a second server nobody's page calls.
+  log.info('API: the shell\'s own sidecar (desktop.config.js says sidecar: true)')
+} else if (!api) {
   log.info('API: none — desktop.config.js says api: null')
 } else if (!api.local || !flag.api) {
   log.info(`API: ${api.origin}`)

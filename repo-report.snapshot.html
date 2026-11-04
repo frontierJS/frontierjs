@@ -1905,6 +1905,15 @@ code[language] > span::before {
   border-color:    color-mix(in srgb, var(--rule) var(--glass-alpha), transparent);
 }
 
+
+:is(.btn, .pill, .badge).tinted {
+  --btn-ink:    var(--tint-ink, var(--ink-soft));
+  background:   var(--tint-surface, var(--surface-sunken));
+  border-color: var(--tint-rule, var(--rule));
+  color:        var(--btn-ink);
+  box-shadow:   none;
+}
+
 .btn.ghost:hover {
   background: color-mix(in srgb, var(--bg-mix, var(--ink)) 8%, transparent);
   
@@ -1928,7 +1937,7 @@ code[language] > span::before {
   box-shadow: inset 0 2px 4px color-mix(in srgb, black 35%, transparent);
   filter:     brightness(0.9);
 }
-.btn:is(.outlined, .ghost, .link, .glass)[aria-pressed="true"] {
+.btn:is(.outlined, .ghost, .link, .glass, .tinted)[aria-pressed="true"] {
   background: color-mix(in srgb, var(--btn-ink) 16%, var(--surface));
   box-shadow: none;
   filter:     none;
@@ -1953,7 +1962,7 @@ code[language] > span::before {
   animation:     fjs-spin var(--motion-spin) linear infinite;
 }
 
-.btn[aria-busy="true"]:is(.outlined, .link)::after {
+.btn[aria-busy="true"]:is(.outlined, .link, .tinted)::after {
   border-color: color-mix(in srgb, var(--btn-ink) 30%, transparent);
   border-block-start-color: var(--btn-ink);
 }
@@ -6064,7 +6073,7 @@ try {
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">onQuery — Production Query Logging</td>
-      <td class="m sub">onQuery sees every SQL statement Litestone executes.</td>
+      <td class="m sub">onQuery sees every ORM verb Litestone runs, and each include&#39;s own query.</td>
       <td class="m sub">packages/litestone/docs/onquery-logging.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
