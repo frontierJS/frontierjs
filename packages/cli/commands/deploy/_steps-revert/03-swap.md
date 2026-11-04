@@ -1,15 +1,14 @@
 ---
 title: 03-swap
-description: Put the container back onto the release being restored
+description: Put the container back onto the release being restored, and health-check it — puts the current one back if it does not answer
 ---
 
 ```js
-const { host, serverPath, deployConf, appId, apiPort, revertImage } = $.config
+const { host, serverPath, deployConf, appId, apiPort, revertImage, healthPath } = $.config
 
-// The same function `_steps-docker/06-swap` calls. One owner, because the
-// going-back path is the one nobody exercises until the day it matters, and a
-// copy that had drifted would be discovered mid-incident.
-const { container, replaced } = swapContainer($, {
+// The same function `_steps-docker/06-swap` calls, so a revert's safety net is
+// the deploy's safety net rather than a copy of it.
+const { container, replaced, healthy, restored } = await swapContainer($, {
   host,
   appId,
   container: apiContainer(appId, deployConf),
@@ -21,11 +20,23 @@ const { container, replaced } = swapContainer($, {
   deployConf,
   corsOrigins: derivedOrigins($, deployConf),
   configuration: $.config.revertConfiguration,
+  healthPath,
   log,
 })
 
 $.config.container = container
 $.config.replaced  = replaced
+
+if (!healthy) {
+  // Worth saying plainly: the release being restored did not come up, so the one
+  // that was serving is back. That is a revert which did not happen — not a
+  // deploy that failed — and the journal records it as such.
+  log.error(`Revert to ${revertImage} did not come up`)
+  if (restored) log.warn('  The release that was serving is running again.')
+  else          log.error('  Nothing is serving — restore by hand.')
+  $.config.abort = true
+  throw new Error(`Revert failed health check for ${revertImage}`)
+}
 
 // The bytes this revert put into service, in the same shape `04-build-api`
 // writes. Without it a revert transition records no image, so the release it
@@ -43,5 +54,4 @@ log.success(`Container started → ${container} on ${revertImage}`)
 // migrating FORWARD to a schema this code was written before. That is safe
 // exactly when the pivot said it was, which is why `--past-pivot` exists and why
 // it is a refusal rather than a warning.
-log.info('  Running migrations in entrypoint...')
 ```

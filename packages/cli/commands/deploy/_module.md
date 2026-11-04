@@ -16,9 +16,8 @@ defaults:
 <script>
 const { loadFrontierConfig, dockerfileScripts, unexecdEntrypoint } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
-const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
-const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))
-const { stopGraceArgs } = await import(new URL('file://' + global.fliRoot + '/core/stop-grace.js'))
+const { createMachine } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
+const { createSwap, runFlags, sshRunner, shWord } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
 const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
@@ -53,7 +52,7 @@ const runAs = (machine, appId) => {
   const ids  = String(machine.capture(appUserIds(user)) ?? '').trim()
   if (!/^\d+:\d+$/.test(ids)) throw new Error(
     `${user} is not a user on this box, so the API has no uid of its own to run as -- run fli deploy:setup, which makes it and hands it ${appId}'s db directory, then deploy again`)
-  return [`--user ${ids}`]
+  return ['--user', ids]
 }
 
 // Where the API container sees the secrets directory: Docker's own path for a
@@ -601,31 +600,34 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 }
 
 // ─── swapContainer ────────────────────────────────────────────────────────────
-// Put a named container onto a given image, keeping the one it replaced under
-// `_replaced` so there is a handle to go back to.
+// Put a named container onto a given image and answer once it is healthy, or
+// put back the one it replaced. The sequence is Outpost's `createSwap`
+// (`core/swap.js`, `FJS-D1866`), so the put-back here is the one a Basecamp
+// release runs; this side builds the `docker run` line and says what healthy
+// means over ssh. Three callers — `_steps-docker/06-swap`, `_steps-revert/03-swap`
+// and `_steps-rollback/02-rollback-api` — because the going-back paths are the
+// ones nobody exercises until the day it matters.
 //
-// Two callers — `_steps-docker/06-swap` deploying forward and
-// `_steps-revert/03-swap` going back — and it is one function because the going-
-// back path is the one nobody exercises until the day it matters. A copy of this
-// that had drifted would be discovered mid-incident.
-//
-// **Stopping `_replaced` before starting the new one is required by SQLite**, not
-// a tidy-up: only one writer at a time, and the new container's entrypoint opens
-// the database to migrate. That costs a 3–10s gap and it is the correct trade.
-// Litestream is unaffected — it checkpoints the WAL when `_replaced` stops.
-// `deployConf` is an OPTION rather than a read off `$.config`, like every
-// other value here — and it was neither for as long as this function existed:
-// `dockerLogArgs(deployConf)` below named a variable in no scope it can see, so
-// every real deploy threw `ReferenceError: deployConf is not defined` while
-// building the `docker run` line. By then the running container had been renamed
-// to `_replaced` and stopped, and the new one was never started (`FJS-726`).
+// `deployConf` is an OPTION rather than a read off `$.config`: a free name here
+// threw after the running container had been stopped (`FJS-726`).
 //
 // A key in `secretsDir` is mounted read-only and passed as `<KEY>_FILE`, so
 // `docker inspect` shows a path where it showed the value. The same key also in
 // the env file or the configuration set is refused by the app at boot, which
 // here would stop the running container and then restore it, so it is refused
 // before anything is touched.
-const swapContainer = ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, build, deployConf, configuration = {}, corsOrigins = [], log }) => {
+//
+// Healthy is `healthPath` answering 200 and no database open outside
+// CONTAINER_DB_DIR: one that is works until the next swap, which starts it empty.
+//
+// Answers `{ container, replaced, healthy, restored, none, unbound, reason }`;
+// only a refusal before the running container is touched throws. `restored` is
+// the previous container answering again, `none` a first deploy with nothing to
+// put back. The caller decides what a failure means: for a deploy it is a
+// rollback and for a revert it is a revert that could not land.
+const pauseCore = () => import(new URL('file://' + global.fliRoot + '/core/pause.js'))
+
+const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, attempts = 10, intervalS = 2 }) => {
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
 
@@ -642,73 +644,130 @@ const swapContainer = ($, { host, appId, container, image, apiPort, dbPath, envF
       `the app refuses both at boot. Delete it from one of them -- ${both.map(k => `sed -i '/^${k}=/d' ${envFile}`).join('; ')} -- then deploy again`)
   }
 
-  log.info('Renaming current container to _replaced...')
-  machine.run(`if docker inspect ${container} > /dev/null 2>&1; then
-  docker rename ${container} ${replaced}
-fi`)
-
-  log.info('Stopping _replaced container...')
-  // No `-t`: the container carries the grace it was started with
-  // (`--stop-timeout`, below), so this stop waits what an operator's would.
-  machine.run(`if docker inspect ${replaced} > /dev/null 2>&1; then
-  docker stop ${replaced}
-fi`)
-
-  log.info(`Starting ${image}...`)
-  const runCmd = [
-    'docker run -d',
-    `--name ${container}`,
-    '--restart unless-stopped',
+  const argv = [
+    'run', '-d',
+    '--name', container,
+    '--restart', 'unless-stopped',
     ...user,
-    `-p 127.0.0.1:${apiPort}:3000`,
-    `--volume ${dbPath}:${CONTAINER_DB_DIR}`,
-    `--env-file ${envFile}`,
-    ...(secrets.length ? [`--volume ${secretsDir}:${CONTAINER_SECRETS_DIR}:ro`] : []),
-    ...secrets.map(k => `--env ${k}_FILE=${CONTAINER_SECRETS_DIR}/${k}`),
+    '-p', `127.0.0.1:${apiPort}:3000`,
+    '--volume', `${dbPath}:${CONTAINER_DB_DIR}`,
+    '--env-file', envFile,
+    ...(secrets.length ? ['--volume', `${secretsDir}:${CONTAINER_SECRETS_DIR}:ro`] : []),
+    ...secrets.flatMap(k => ['--env', `${k}_FILE=${CONTAINER_SECRETS_DIR}/${k}`]),
     // The Release's plain configuration values, AFTER --env-file so a declared
     // value beats a stale line in the operator's file. Nothing is written on the
     // target (FJS-D1186); secrets stay in that file and never travel this way,
     // because these show in docker inspect (FJS-D1029).
-    ...Object.entries(configuration).map(([k, v]) => `--env ${k}=${shQuote(v)}`),
+    ...Object.entries(configuration).flatMap(([k, v]) => ['--env', `${k}=${v}`]),
     // AFTER --env-file and the values above so it wins: the mapping above targets 3000 inside the
     // container, and junction binds FRONTIER_PORT_BE before anything else. A port
     // in .env.production otherwise leaves the container listening where nothing
-    // forwards, which the health step then reports as a sick application.
-    `--env FRONTIER_PORT_BE=3000`,
-    `--env NODE_ENV=production`,
+    // forwards, which the health check then reports as a sick application.
+    '--env', 'FRONTIER_PORT_BE=3000',
+    '--env', 'NODE_ENV=production',
     // The proxy this deploy wrote into Caddy. Absent, every caller arrives from
     // the proxy's address and shares one rate-limit bucket, so one caller's
     // failed logins lock out the site (`FJS-1841`). A trustProxy the app
     // declares still wins.
-    `--env FRONTIER_TRUST_PROXY=${EDGE_HOPS}`,
+    '--env', `FRONTIER_TRUST_PROXY=${EDGE_HOPS}`,
     // The web domain and a wrapped shell's schemes, which the API's cors and
     // csrf lists would otherwise each have to spell by hand (`FJS-D912`).
-    ...(corsOrigins.length ? [`--env FRONTIER_CORS_ORIGINS=${shQuote(corsOrigins.join(','))}`] : []),
-    // Docker's default json-file driver caps nothing, so a chatty container
-    // fills the disk and the database stops writing before anybody reads a log.
-    // `deploy.logs` is the escape for a daemon already pointed somewhere.
-    ...dockerLogArgs(deployConf),
-    // The grace docker waits before SIGKILL, and the same number to Junction as
-    // FRONTIER_STOP_GRACE so its drain fits inside it (`FJS-D1841`).
-    ...stopGraceArgs(deployConf),
+    ...(corsOrigins.length ? ['--env', `FRONTIER_CORS_ORIGINS=${corsOrigins.join(',')}`] : []),
+    // The log cap and the stop grace, the same flags Outpost gives a release.
+    ...runFlags(deployConf ?? {}),
     // What this process states on every response, so a browser holding the
     // previous build can tell (`FJS-D160`). The same value the web build was
     // stamped with — one deploy is one build on both sides of the wire.
-    ...(build ? [`--env FJS_BUILD=${build}`] : []),
+    ...(build ? ['--env', `FJS_BUILD=${build}`] : []),
     image,
-  ].join(' ')
+  ]
 
-  machine.run(runCmd)
-  return { container, replaced }
+  const run  = sshRunner(machine)
+  const find = async () => {
+    const listed = await run(['docker', 'ps', '-a', '--filter', `name=${container}`, '--format', '{{.Names}}'])
+    if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${listed.stderr.trim()}`)
+    // The filter matches a substring, so another app's `<container>-x` is listed too.
+    const all = listed.stdout.split('\n').map(l => l.trim()).filter(n => [container, replaced, `${container}_next`].includes(n))
+    const named = (n) => all.includes(n) ? n : null
+    return { live: named(container), replaced: named(replaced), next: named(`${container}_next`), all }
+  }
+
+  // Every `$` and every nested quote below is the TARGET's — the script is piped
+  // to its shell rather than interpolated into a command line, which is what
+  // stops `$(curl …)` running here and polling the operator's own machine.
+  const answers = (port) => {
+    try {
+      machine.run(`for i in $(seq 1 ${attempts}); do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${port}${healthPath} 2>/dev/null)
+  if [ "$STATUS" = "200" ]; then
+    echo "ok"
+    exit 0
+  fi
+  sleep ${intervalS}
+done
+echo "fail"
+exit 1`)
+      return true
+    } catch { return false }
+  }
+
+  let unbound = []
+  let previousAnswers = false
+  const health = async ({ name, port, previous = false }) => {
+    const url = `http://localhost:${port}${healthPath}`
+    if (previous) {
+      // `docker start` returns while the app is still migrating, so a put-back
+      // release is restored when it ANSWERS — a slow machine made that a lie.
+      previousAnswers = answers(port)
+      if (previousAnswers) return { healthy: true }
+      log.error(`The previous container was put back and does not answer ${healthPath} either`)
+      showContainerTail(machine, name, log)
+      return { healthy: false, reason: `${url} did not answer` }
+    }
+    log.info(`Waiting for ${healthPath} (up to ${attempts * intervalS}s)...`)
+    if (!answers(port)) {
+      // Name the URL. The most common cause is not a sick app but a health path
+      // that omits the app's apiPrefix — health() registers through app.get(),
+      // which moves with the prefix, so an app serving /api/health polls 404 here.
+      log.error(`Health check failed after ${attempts * intervalS}s`)
+      log.error(`  polled: ${url}`)
+      log.info(`  if the API is healthy, check deploy.api.health includes your apiPrefix`)
+      // An app that REFUSED to start says why in its own output, and a stopped
+      // container still answers `docker logs` — the one that exited is the case
+      // that matters most. Read before the put-back removes it.
+      showContainerTail(machine, name, log)
+      return { healthy: false, reason: `${url} did not answer 200 in ${attempts * intervalS}s` }
+    }
+    const { openFilesScript, unboundDatabases } = await pauseCore()
+    unbound = unboundDatabases({ output: machine.capture(openFilesScript(name)), volume: CONTAINER_DB_DIR })
+    if (!unbound.length) return { healthy: true }
+    log.error(`${name} answers ${healthPath} but has a database open outside ${CONTAINER_DB_DIR}, the one directory a swap keeps:`)
+    for (const path of unbound) log.error(`  ${path}`)
+    log.info(`  the next swap would start each one empty — point its path under ${CONTAINER_DB_DIR} (DATABASE_URL, AUDIT_PATH, caravan({ db }))`)
+    return { healthy: false, reason: `it has ${unbound.join(', ')} open outside ${CONTAINER_DB_DIR}` }
+  }
+
+  log.info(`Starting ${image} as ${container}, the running one set aside as ${replaced}...`)
+  try {
+    await createSwap({ run, find, health }).stopFirst({ name: container, argv, port: apiPort, path: healthPath })
+  } catch (err) {
+    // A throw with no `restored` came before the running container stopped.
+    if (!('restored' in err)) throw err
+    log.error(err.message)
+    const restored = err.restored && previousAnswers
+    if (err.none) log.info(`${container} removed — this was its first deploy here, so there was no previous release to put back`)
+    else if (restored) log.warn('Restored the previous container, and it answers')
+    return { container, replaced, healthy: false, restored, none: Boolean(err.none), unbound, reason: err.message }
+  }
+  log.success('Health check passed')
+  return { container, replaced, healthy: true, restored: false, none: false, unbound, reason: null }
 }
 
 // ─── showContainerTail ────────────────────────────────────────────────────────
 // Print the last lines a container wrote, when a health check has just failed.
 //
-// Separate from healthOrRestore because the REVERT path shares that function and
-// wants this too: a revert whose health check fails is a target with no working
-// release on it, which is the worst moment to be told only that a URL did not
-// answer.
+// A revert whose health check fails is a target with no working release on
+// it, which is the worst moment to be told only that a URL did not answer.
 //
 // Never throws. This runs on a path that is already failing, and a deploy that
 // fell over because the log tail could not be read would be a worse bug than
@@ -729,118 +788,6 @@ const showContainerTail = (machine, container, log, lines = 40) => {
   log.info(`  last ${lines} lines from ${container} — the app's own words:`)
   for (const line of body.split('\n')) log.info(`  │ ${line}`)
   log.info('')
-}
-
-// ─── healthOrRestore ──────────────────────────────────────────────────────────
-// Poll the health endpoint and, if it never answers, put `_replaced` back.
-//
-// Shared by `_steps-docker/07-health` and `_steps-revert/04-health` for the same
-// reason `swapContainer` is: the restore branch is the one nobody exercises until
-// the day it matters, and a revert whose own safety net had drifted from the
-// deploy's would be discovered at the worst moment.
-//
-// A container that answers but holds a database outside CONTAINER_DB_DIR is
-// put back too: it works until the next swap, which starts that database empty.
-//
-// Answers `{ healthy, restored, none, unbound }` and throws nothing — `none` is a
-// first deploy, with no `_replaced` to put back. The caller decides
-// what a failure means, because for a deploy it is a rollback and for a revert it
-// is a revert that could not land.
-const pauseCore = () => import(new URL('file://' + global.fliRoot + '/core/pause.js'))
-
-const healthOrRestore = async ($, { host, container, replaced, apiPort, healthPath, log, attempts = 10, intervalS = 2 }) => {
-  const machine = machineFor($, host)
-  log.info(`Waiting for ${healthPath} (up to ${attempts * intervalS}s)...`)
-
-  // Every `$` and every nested quote below is the TARGET's — the script is piped
-  // to its shell rather than interpolated into a command line, which is what
-  // stops `$(curl …)` running here and polling the operator's own machine.
-  const healthCmd = `for i in $(seq 1 ${attempts}); do
-  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${apiPort}${healthPath} 2>/dev/null)
-  if [ "$STATUS" = "200" ]; then
-    echo "ok"
-    exit 0
-  fi
-  sleep ${intervalS}
-done
-echo "fail"
-exit 1`
-
-  const answers = () => { try { machine.run(healthCmd); return true } catch { return false } }
-
-  const answered = answers()
-  let unbound = []
-  if (answered) {
-    const { openFilesScript, unboundDatabases } = await pauseCore()
-    unbound = unboundDatabases({ output: machine.capture(openFilesScript(container)), volume: CONTAINER_DB_DIR })
-    if (!unbound.length) {
-      log.success('Health check passed')
-      return { healthy: true, restored: false, unbound }
-    }
-    log.error(`${container} answers ${healthPath} but has a database open outside ${CONTAINER_DB_DIR}, the one directory a swap keeps:`)
-    for (const path of unbound) log.error(`  ${path}`)
-    log.info(`  the next swap would start each one empty — point its path under ${CONTAINER_DB_DIR} (DATABASE_URL, AUDIT_PATH, caravan({ db }))`)
-  } else {
-    // Name the URL. The most common cause is not a sick app but a health path that
-    // omits the app's apiPrefix — health() registers through app.get(), which
-    // moves with the prefix, so an app serving /api/health polls 404 here and a
-    // working release gets taken down. Without the URL in the message that reads as
-    // the app's fault.
-    log.error(`Health check failed after ${attempts * intervalS}s`)
-    log.error(`  polled: http://localhost:${apiPort}${healthPath}`)
-    log.info(`  if the API is healthy, check deploy.api.health includes your apiPrefix`)
-
-    // ── The container's own last words ──────────────────────────────────────────
-    //
-    // An app that REFUSED to start says why, clearly, in its own output — an
-    // attachment nobody configured, a bad encryption key, a port already taken —
-    // and until this the operator saw none of it. All they got was "health check
-    // failed", a rollback, and a message about apiPrefix that is wrong whenever
-    // the app never came up at all. The refusal was sitting in `docker logs`,
-    // where nobody looks at 3am because nothing said to.
-    //
-    // Tailed rather than dumped: an app that started and is merely unwell has
-    // written thousands of lines, and burying the one that matters is the same
-    // failure one layer along. A stopped container still answers, which is the
-    // case that matters most — it is the one that exited.
-    showContainerTail(machine, container, log)
-  }
-
-  const restoreCmd = `docker stop ${container} || true
-docker rm   ${container} || true
-if docker inspect ${replaced} > /dev/null 2>&1; then
-  docker rename ${replaced} ${container}
-  docker start  ${container}
-  echo "restored"
-else
-  echo "no previous container to restore"
-fi`
-
-  let restoreOut
-  try {
-    restoreOut = machine.capture(restoreCmd)
-  } catch (err) {
-    log.error('Restore also failed: ' + err.message)
-    return { healthy: false, restored: false, none: false, unbound }
-  }
-
-  // Polled, a first deploy reports a put-back that never happened and shows
-  // "No such container" as that container's logs (FJS-3586).
-  if (restoreOut.includes('no previous container to restore')) {
-    log.info(`${container} removed — this was its first deploy here, so there was no previous release to put back`)
-    return { healthy: false, restored: false, none: true, unbound }
-  }
-
-  // `docker start` returns while the app is still migrating, so a put-back
-  // release is restored when it ANSWERS — the caller tells the operator the
-  // previous release is serving again, and a slow machine made that a lie.
-  if (!answers()) {
-    log.error(`The previous container was put back and does not answer ${healthPath} either`)
-    showContainerTail(machine, container, log)
-    return { healthy: false, restored: false, none: false, unbound }
-  }
-  log.warn('Restored the previous container, and it answers')
-  return { healthy: false, restored: true, none: false, unbound }
 }
 
 // ─── edgeRoutesFor / writeEdge ────────────────────────────────────────────────
@@ -1521,8 +1468,7 @@ the failure this is most likely to cause.
 03-build-web   → bun build on server, create versioned release
 04-build-api   → docker build on server (no registry needed)
 05-backup      → hot backup of the database before any changes
-06-swap        → stop old container, start new (migrations run in entrypoint)
-07-health      → poll deploy.api.health — rolls back to previous container on failure
+06-swap        → stop old container, start new (migrations run in entrypoint), poll deploy.api.health — puts the previous container back on failure
 08-release-web → atomic symlink swap; Caddy reads the root per request
 08b-outpost    → enroll the API's box in the app's fleet (if outpost: true; --no-outpost skips)
 08c-site       → production only: build site/ against a copy of the db and publish it, once its Worker has a deployment

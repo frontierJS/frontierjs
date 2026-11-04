@@ -135,7 +135,7 @@ failure after the switch and for the stop-first path.
 
 ## Open questions
 
-- **Q1 — The new container's address while the old one holds `App.port`.** **Ruled B, `FJS-D1837`.**
+- **Q1 — The new container's address while the old one holds `App.port`.** Ruled `FJS-D1837`: **B**.
   - **A** — A port pair: the App owns a second allocated port, and releases
     alternate between them. Moves the allocator, `portHolders` and every
     existing App.
@@ -149,7 +149,7 @@ failure after the switch and for the stop-first path.
     firewall's `exposesPort` set keep their meaning, and an ephemeral port sits
     above `HOST_PORT_BASE`. Reopen as A if a firewall rule ever needs the port
     known ahead.
-- **Q2 — Where the verdict is computed.** **Ruled A, `FJS-D1838`.** The "before" side is the schema the
+- **Q2 — Where the verdict is computed.** Ruled `FJS-D1838`: **A**. The "before" side is the schema the
   live container migrated to, taken from the last *deployed* release, never
   "the previous commit": a failed or skipped release is not what the database
   holds.
@@ -161,7 +161,7 @@ failure after the switch and for the stop-first path.
     it needs both schemas fetched from the repository first.
   - **Recommend A** — the checkout and both images are already on the machine,
     and `litestone release --json` is the classifier's existing command.
-- **Q3 — Drain.** **Ruled: one stop grace per App, Junction's budgets derived inside it, `FJS-D1839`.** Kamal drains 30 s; Dokku waits 60 s and then stops with
+- **Q3 — Drain.** Ruled `FJS-D1839`: **one stop grace per App, Junction's budgets derived inside it**. Kamal drains 30 s; Dokku waits 60 s and then stops with
   `-t 30`. 0.4 found Junction's own budgets are 5 s (HTTP drain, plugin
   shutdown) inside a 15 s whole-shutdown limit, all under Docker's `-t 10`.
   With start-first the old container gets no new traffic once the route
@@ -169,10 +169,10 @@ failure after the switch and for the stop-first path.
   - Lean: one number, the container's stop grace, that Junction's budgets are
     derived to fit inside, rather than three settings that do not know about
     each other (`FJS-3944`).
-- **Q4 — `fli deploy` over SSH.** **Ruled: both paths, one owner, `FJS-D1840`.** `swapContainer` is a second owner of the
+- **Q4 — `fli deploy` over SSH.** Ruled `FJS-D1840`: **both paths, one owner**. `swapContainer` is a second owner of the
   swap. Lean: start-first does not ship on one path only, so Phase 3 gates the
   plan's done, and 3.1 makes the two swaps one.
-- **Q5 — Opt out.** **Ruled: the App opts in, off by default, `FJS-D1847`** (against the lean). Lean was: nothing until two apps ask (`PHILOSOPHY.md`, the
+- **Q5 — Opt out.** Ruled `FJS-D1847`: **the App opts in, off by default** (against the lean). Lean was: nothing until two apps ask (`PHILOSOPHY.md`, the
   paved road over the workaround), the verdict the only switch. The verdict
   reads only the schema, so a change in what a value means passes as an
   expand; stop-first stays the default and the verdict still has the last word.

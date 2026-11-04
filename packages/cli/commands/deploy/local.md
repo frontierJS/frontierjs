@@ -171,8 +171,7 @@ const runCmd = [
   `--env NODE_ENV=production`,
   // Same cap as a real deploy. A test container that runs for a week is the
   // one nobody is watching the disk for.
-  ...dockerLogArgs(frontierConfig?.deploy),
-  ...stopGraceArgs(frontierConfig?.deploy),
+  ...runFlags(frontierConfig?.deploy ?? {}).map(shWord),
   tag,
 ].filter(Boolean).join(' ')
 

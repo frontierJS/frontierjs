@@ -10,6 +10,7 @@
     ".": "./src/index.js",
     "./server": "./src/server.js",
     "./docker": "./src/docker.js",
+    "./swap": "./src/swap.js",
     "./dockerfile": "./src/dockerfile.js",
     "./static": "./src/static.js",
     "./serve": "./src/serve.js",

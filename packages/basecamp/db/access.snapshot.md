@@ -729,6 +729,7 @@ rather than refusing the row.
 | `Job` | `lastRunAt` | `@system` |
 | `Job` | `lastRunStatus` | `@system` |
 | `LoginChallenge` | `value` | `@guarded` |
+| `Monitor` | `isManaged` | `@system` |
 | `Monitor` | `failStreak` | `@system` |
 | `Monitor` | `lastCheckedAt` | `@system` |
 | `Monitor` | `nextCheckAt` | `@system` |

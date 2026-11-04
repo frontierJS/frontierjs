@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — a cloud's own whole-machine backups, seen and switched from Basecamp
 
-**Status: PROPOSED. Q1–Q4 open; 0.1 next.** Probed against the tree 2026-11-03. Do not cite
+**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1 next.** Probed against the tree 2026-11-03. Do not cite
 this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): see in Basecamp whether a DigitalOcean droplet's backups are on,
@@ -48,11 +48,12 @@ certificate, Caddy's routes and certificates — at that vendor, at that instant
 | Turn on / off | `POST /v2/droplets/{id}/actions` `enable_backups` (+ `backup_policy`) / `disable_backups`; `change_backup_policy` | `POST /servers/{id}/actions/enable_backup` / `disable_backup` |
 | State | `GET /v2/droplets/{id}/backups/policy` → `backup_enabled`, `backup_policy`, `next_backup_window` | server's `backup_window` (null when off) |
 | Taken backups | `GET /v2/droplets/{id}/backups` | `GET /images?type=backup` filtered by `bound_to` |
-| Choices | `plan` daily or weekly, `hour` in 0/4/8/12/16/20, a weekday for weekly; `/v2/droplets/backups/supported_policies` gives window length and retention | daily only, seven slots |
+| Choices | `plan` daily or weekly (five per-GiB plans beside them, 0.1), `hour` in 0/4/8/12/16/20, a weekday for weekly; `/v2/droplets/backups/supported_policies` gives window length and retention | daily only, seven slots |
 | Price | 20% of the droplet weekly, 30% daily ([pricing](https://www.digitalocean.com/pricing/backups)) | +20% of the server |
 
 DO's spec disagrees with itself: the `droplet_backup_policy` schema names `weekday`, and its
-`change_backup_policy` example sends `day`. 0.1 settles it on a real droplet.
+`change_backup_policy` example sends `day`. 0.1 read `weekday` back; the write's spelling is 2.1's
+first push on yuma.
 
 **Prior art.** Terraform's `digitalocean_droplet` takes `backups` and `backup_policy` at create.
 Laravel Forge's DigitalOcean create form had an Enable Backups box (20%, weekly) and leaves turning
@@ -74,16 +75,30 @@ host Basecamp runs on is flagged on the setup checklist while its backups are of
 Goal: the shapes are recorded from real accounts, and the four questions are ruled.
 Done when: 0.1–0.3's output is recorded under each step and Q1–Q4 carry rulings.
 
-- [ ] 0.1 Read-only on yuma's droplet with the owner's token: `GET …/backups/policy`,
+- [x] 0.1 Read-only on yuma's droplet with the owner's token: `GET …/backups/policy`,
       `GET …/backups`, `GET /v2/droplets/backups/supported_policies`, and the droplet's
       `features`. Record which of `weekday` / `day` the policy carries.
-- [ ] 0.2 Hetzner: the same reads on a Hetzner server if one exists; otherwise record that
+      Read 2026-11-04. Yuma is droplet `615016604`, tags `basecamp`, `basecamp:host`; backups off:
+      the policy is `{ backup_enabled: false }` and nothing else, `backups` is empty, `features`
+      lacks `backups`, `backup_ids` is `[]`, `next_backup_window` null. An on policy, from the
+      account's other droplets: weekly `{ plan: "weekly", weekday: "SUN", hour: 16,
+      window_length_hours: 4, retention_period_days: 28 }`, daily `{ plan: "daily", hour: 20,
+      window_length_hours: 4, retention_period_days: 7 }` with no weekday key. **The read carries
+      `weekday`**, three capitals. A taken backup is `{ id, name, created_at, size_gigabytes,
+      min_disk_size, regions, type: "backup" }`. `GET /v2/droplets/backups/policies` answers every
+      droplet's policy keyed by id in one call, so `sync` need not ask per machine.
+      `supported_policies` names seven plans: `weekly` (0.2 per droplet) and `daily` (0.3), plus
+      `custom_weekly`, `custom_daily`, `intra_daily_12h`, `intra_daily_6h` and `intra_daily_4h`
+      priced per GiB, with retention ranges, and `intra_daily_6h` on 3-hour windows at
+      0/3/…/21. None of the account's droplets is on one.
+- [x] 0.2 Hetzner: the same reads on a Hetzner server if one exists; otherwise record that
       Phase 1's Hetzner half is built from the spec alone.
+      No `HETZNER_TOKEN` is stored (2026-11-04), so Phase 1's Hetzner half is built from the spec alone.
 - [x] 0.3 Yuma's `Server` row in Basecamp: `providerKind`, `providerId`, `providerServerId`.
       Read from the code rather than the box: `host-machine.ts` creates the hub row with name,
       slug, role, region `self` and the IP, and no provider, so it is `custom`. Q4 decides whether
       this plan reaches the one box it was asked for.
-- [ ] 0.4 `machine backup` into `VOCABULARY.md` beside `AppBackup` and `HubBackup`, once Q1–Q4
+- [x] 0.4 `machine backup` into `VOCABULARY.md` beside `AppBackup` and `HubBackup`, once Q1–Q4
       are ruled.
 
 ### Phase 1 — See it
@@ -93,22 +108,35 @@ Done when: `cd packages/basecamp/api && bun run test` is green with the connecto
 `compute.test.ts`, and yuma's Server screen shows what 0.1 read.
 
 - [ ] 1.1 `ComputeConnector.backups(send, id)` → `{ enabled, plan, hour, weekday, window, retentionDays, taken: [{ id, at, sizeGb }] }`
-      for both connectors, from 0.1's recorded answers.
-- [ ] 1.2 `servers.sync` reads it and stores it per Q1; a read failure records an event and keeps
-      the last answer, the way `syncFailed` does today.
+      for both connectors, from 0.1's recorded answers. A plan outside `weekly`/`daily` is read
+      and shown by its name; it is never a desired policy, since Basecamp offers neither its
+      per-GiB price nor its retention range. A `compute.test.ts` case feeds `custom_daily`: the
+      reading carries the name, `setBackups` refuses it, the estimate is null.
+- [ ] 1.2 Two columns on `Server` per Q1 (`FJS-D1862`): the desired policy a person sets, and the
+      vendor's last reading with its `readAt`, which `sync` writes. A null desired policy is
+      *not managed*: Basecamp shows the reading and pushes nothing, so linking a box (4.1) never
+      changes its backups by itself. A machine kept on a per-GiB plan stays unmanaged: on a
+      managed one, 2.2a puts the desired `weekly`/`daily` back over it, and the event names the
+      plan it replaced. A read failure records an event and keeps the last reading,
+      the way `syncFailed` does today.
 - [ ] 1.3 The Server screen's line, with the monthly cost from the catalog's size price × the
-      vendor's percentage, labeled as an estimate.
+      vendor's percentage, labeled as an estimate. A per-GiB plan prints *cost not estimated: custom plan*, never a blank.
 
 ### Phase 2 — Switch it
 
-Goal: a person turns a machine's backups on, off, or to another schedule from Basecamp.
+Goal: a person sets a machine's backups from Basecamp, and Basecamp's setting holds.
 Done when: on yuma, the switch turns backups on, a policy read after it agrees (the drive), the
-DO console agrees, and the audit trail has the event.
+DO console agrees, the audit trail has the event, and turning them off in the DO console is put
+back at the next sync with a `backupsRestored` event.
 
 - [ ] 2.1 `ComputeConnector.setBackups(send, id, policy | null)`; DO enable/change/disable,
       Hetzner enable/disable.
-- [ ] 2.2 `servers.setBackups`, gated like `powerOff`, re-reads after the vendor answers, and
-      records an event naming the new policy.
+- [ ] 2.2 `servers.setBackups`, gated like `powerOff`, writes the desired policy, pushes it, re-reads,
+      and records an event naming the new policy. Setting it to *not managed* pushes nothing.
+- [ ] 2.2a `sync` pushes a managed policy back when the reading differs (`FJS-D1862`), and records
+      an event naming what the vendor said and what was put back, so a console change is never
+      undone silently. A push the vendor refuses is recorded once per sync and not retried within
+      it. Hetzner has no hour or weekly plan, so a policy it cannot hold is refused when it is set.
 - [ ] 2.3 A vendor 403 names the missing scope (`droplet:update`); the cli's scope list gains it.
 - [ ] 2.4 Off asks before it acts, with the count of taken backups the vendor deletes with it.
 
@@ -126,8 +154,12 @@ Done when: a `provision` with backups on yields a droplet whose policy read says
 Goal: the box Basecamp runs on cannot have its backups off unnoticed.
 Done when: a fresh `basecamp:install` on a droplet with backups off shows the checklist item.
 
-- [ ] 4.1 Per Q4, the hub's own row is linked to its droplet.
-- [ ] 4.2 A setup-checklist item (`FJS-D1836`) while the hub host's backups are off, per Q3.
+- [ ] 4.1 Adopt per Q4 (`FJS-D1865`): pick a marked machine from `reconcile`'s list (IP match only
+      after the person confirms name, IP and region), write the three `@system` columns and
+      `adopted`, and refuse Destroy on an adopted row. The columns' schema comment stops naming
+      `provision` as their only writer.
+- [ ] 4.2 A setup-checklist item (`FJS-D1836`) while the hub host's backups are off or not
+      managed.
 
 ## Open questions
 

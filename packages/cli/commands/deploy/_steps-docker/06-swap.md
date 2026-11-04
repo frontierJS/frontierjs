@@ -1,11 +1,11 @@
 ---
 title: 06-swap
-description: Stop old container, start new one — migrations run in entrypoint
+description: Stop old container, start new one, health-check it — puts the old one back on failure; migrations run in entrypoint
 skip: "!$.config.doApi"
 ---
 
 ```js
-const { imageTag, appId, apiPort, deployConf } = $.config
+const { imageTag, appId, apiPort, deployConf, healthPath } = $.config
 const { host, path: serverPath } = $.config.api
 const { configurationSet } = await import(new URL('file://' + global.fliRoot + '/core/release.js'))
 
@@ -14,7 +14,7 @@ const { configurationSet } = await import(new URL('file://' + global.fliRoot + '
 // name is not unique across servers or across rebuilds — which is the whole of
 // what 2.3f is about. `imageAddress` is the tag when nothing could be read, and
 // step 04 has already said so out loud.
-const { container, replaced } = swapContainer($, {
+const { container, replaced, healthy, none, unbound, reason } = await swapContainer($, {
   host,
   appId,
   container: apiContainer(appId, deployConf),
@@ -29,11 +29,21 @@ const { container, replaced } = swapContainer($, {
   deployConf,
   corsOrigins: derivedOrigins($, deployConf),
   configuration: configurationSet(deployConf, $.config.target).values,
+  healthPath,
   log,
 })
 
 $.config.container = container
 $.config.replaced  = replaced
+
+if (!healthy) {
+  $.config.abort = true
+  const after = none ? 'removed, nothing was serving before it' : 'rolled back'
+  throw new Error(unbound.length
+    ? `${imageTag} opened ${unbound.join(', ')} outside the volume — ${after}`
+    : /did not start/.test(reason ?? '')
+      ? `${imageTag} did not start — ${after}`
+      : `Health check failed for ${imageTag} — ${after}`)
+}
 log.success(`Container started → ${container}`)
-log.info('  Running migrations in entrypoint...')
 ```

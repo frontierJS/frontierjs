@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — the bottom two layers of a box reach Basecamp
 
-**Status: PROPOSED. Q1/Q3/Q5 ruled `FJS-D1858`–`D1860`; Q2/Q4/Q6–Q12 open; Phases 1–3 built 2026-11-04, uncommitted; 0.1 is the owner's ssh.**
+**Status: PROPOSED. Q1/Q3/Q5 ruled `FJS-D1858`–`D1860`; Q2/Q4/Q6–Q12 open; Phases 1–3 built and proven 2026-11-04 (committed in `4635ac29c`); 0.1 is the owner's ssh, Q9–Q12 before Phase 3 is called finished.**
 Probed against the tree 2026-11-03. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): of the six layers a box has — container runtime, Caddy, data
@@ -260,6 +260,12 @@ removes the Monitor, under `bun run test`.
     (`#app-uptime`) carries no link; the tone map lives in the route file because no
     `resources/Monitor.mesa` exists. The managed row's `name` is the App's at creation and is
     not resynced.
+
+**Done 2026-11-04.** `bun run test` 1188 pass with one timing failure, the gate-parity matrix
+case at the 5 s timeout under a load of 21–25 (`FJS-3992`: a HEAD worktree passed the same case
+3 of 3 under the same load, and no step touched the finds it makes). `verify:outpost` 59/59,
+`verify:build` 9/9, `fli done` 0 unfinished. Q9–Q12 came out of the build and are the owner's
+before this phase is finished; `FJS-3989` is the Domain PUT bypass it found.
 
 ## See also
 

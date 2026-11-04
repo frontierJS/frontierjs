@@ -95,7 +95,7 @@ docker start  ${container}`, { dry: flag.dry })
   // had drifted to no secrets mount, so a rolled-back API came up without the
   // ENCRYPTION_KEY it reads from a file (`FJS-3476`).
   const { configurationSet } = await import(new URL('file://' + global.fliRoot + '/core/release.js'))
-  swapContainer($, {
+  const { healthy, restored } = await swapContainer($, {
     host,
     appId,
     container,
@@ -107,11 +107,8 @@ docker start  ${container}`, { dry: flag.dry })
     deployConf,
     corsOrigins: derivedOrigins($, deployConf),
     configuration: configurationSet(deployConf, $.config.target).values,
+    healthPath: deployConf.api?.health ?? '/health',
     log,
-  })
-
-  const { healthy, restored } = await healthOrRestore($, {
-    host, container, replaced, apiPort, healthPath: deployConf.api?.health ?? '/health', log,
   })
   if (!healthy) {
     log.error(`Rollback to ${previous.tag} did not come up`)
@@ -120,13 +117,6 @@ docker start  ${container}`, { dry: flag.dry })
     $.config.abort = true
     throw new Error(`Rollback failed health check for ${short(previousImage)}`)
   }
-
-  // A `_replaced` left behind is restored by the next rollback's fast path, and
-  // the next deploy's rename onto that name fails.
-  machine.run(`if docker inspect ${replaced} > /dev/null 2>&1; then
-  docker stop ${replaced} || true
-  docker rm   ${replaced}
-fi`)
   log.success(`API rolled back → ${previousImage}`)
 }
 ```

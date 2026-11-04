@@ -26,6 +26,7 @@ text, so a body that elevates through a helper is not listed.
 | `appBackups.take` | standing 5 or above — declared `gate: 5` |
 | `appBackups.download` | standing 5 or above — declared `gate: 5` |
 | `appBackups.upload` | standing 5 or above — declared `gate: 5` |
+| `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
 | `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded |
@@ -371,7 +372,7 @@ name when it declares none.
 - **input** — `restoreVolume` takes `AppVolumeRestore`
 - **input** — `unplace` takes `AppUnplace`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
   - `logs` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `analytics` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `liveCheck` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
