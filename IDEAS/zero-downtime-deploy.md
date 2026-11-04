@@ -332,4 +332,9 @@ Done when: `swapContainer` runs start-first from the same verdict Outpost comput
 Goal: zero failed requests across an expand release on yuma.
 Done when: 0.1's loop shows no non-2xx across an expand release, and a contract release prints its stop-first reason.
 
-- [ ] 4.1 Re-run 0.1 against an expand release and a contract release; record both
+- [x] 4.1 Re-run 0.1 against an expand release and a contract release; record both
+  - Run 2026-11-04 through `fli deploy --api` (the cli path, `FJS-D1884`), on a throwaway api-only app at `/apps/zdd-app` on yuma behind its live Caddy, with 1,000,000 seeded rows. The loop was 0.1's: 4 sequential callers through Cloudflare and Caddy, each timed out at 2 s. Afterward `deploy:retire` and a DNS delete left yuma with only Basecamp and kapp.
+  - **Expand** (a nullable `tag` column, an index on `body`): `swap start-first`, **0 of 2,082 requests failed**. The new container went live on Docker's port 32768 with the column served. The journal step recorded `{ swap: 'start-first', pivot: 'expand' }`.
+  - **Contract** (drop `tag`, data loss accepted in the migration): `swap stop-first — this release is a contract, so the live release cannot serve beside its migration — this deploy is the pivot`. **298 of 2,131 failed**, all 502, over 8.1 s while the table rebuilt. The routes moved back to `:3000`.
+  - Found: every journal Release stored `pivot = unknown`, because its classifier compares with git `HEAD` and not with what is serving (`FJS-4004`). An api-only scaffold fails its first `fli deploy` at `08-release-web` (`FJS-4003`), so the run used `--api`.
+  - Not covered: the Basecamp path on yuma, which is 0.5's hand run.

@@ -10,6 +10,7 @@ title: Server
   import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
   import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import NoRecord   from '../../../components/NoRecord.mesa'
@@ -52,7 +53,7 @@ title: Server
     rowView?.release()
     unwatch?.()
     rowView = servers.record(page.params.id)
-    unwatch = rowView.subscribe(v => { server = v })
+    unwatch = rowView.subscribe(v => { server = v; prefillBackups(v) })
     return rowView.ready
   }
 
@@ -369,6 +370,50 @@ title: Server
       : `${b.plan ?? 'on an unnamed plan'}${hour}`
   }
 
+  // What the switch asks for. Off leaves the machine not managed (`FJS-D1885`).
+  // The hours are DigitalOcean's four-hourly windows; Hetzner picks its own,
+  // so it is asked none. The service refuses anything the vendor cannot hold.
+  const BACKUP_CHOICES = [
+    { value: 'unmanaged', label: 'Not managed — Basecamp changes nothing' },
+    { value: 'off',       label: 'Off — the vendor deletes the backups it has taken' },
+    { value: 'daily',     label: 'On, daily' },
+    { value: 'weekly',    label: 'On, weekly' },
+  ]
+  const DO_HOURS = [0, 4, 8, 12, 16, 20].map(h => ({ value: String(h), label: `${String(h).padStart(2, '0')}:00 UTC` }))
+
+  let backupChoice = null, backupHour = '20', backupDay = 'SUN', backupFor = null
+
+  // Prefilled from what Basecamp holds, once per machine, so a heartbeat's
+  // push does not reset a choice half made.
+  function prefillBackups(row) {
+    if (!row || backupFor === row.id) return
+    backupFor    = row.id
+    backupChoice = row.backupPolicy?.plan ?? 'unmanaged'
+    backupHour   = row.backupPolicy?.hour == null ? '20' : String(row.backupPolicy.hour)
+    backupDay    = row.backupPolicy?.weekday ?? 'SUN'
+  }
+  $: picksHour = server?.providerKind === 'digitalocean'
+  $: weekdayOptions = Object.entries(WEEKDAYS).map(([value, label]) => ({ value, label }))
+  $: backupOptions = picksHour ? BACKUP_CHOICES : BACKUP_CHOICES.filter(c => c.value !== 'weekly')
+
+  async function saveBackups() {
+    error = null; busy = 'backups'
+    const on = backupChoice === 'daily' || backupChoice === 'weekly'
+    try {
+      await servers.service.invoke('setBackups', server.id, on
+        ? { choice: 'on', plan: backupChoice,
+            ...(picksHour && { hour: Number(backupHour) }),
+            ...(backupChoice === 'weekly' && { weekday: backupDay }) }
+        : { choice: backupChoice })
+      await loadEvents()
+      toasts.success('Machine backups saved')
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   function backupCost(c) {
     return c?.monthlyMinor != null
       ? `+${c.monthlyMinor.toMoney(c.currency)}/mo, estimated`
@@ -569,6 +614,24 @@ title: Server
             {#if !server.backupPolicy}Not managed: Basecamp shows what the vendor says and changes nothing.{/if}
           </p>
         {/if}
+        <div class="cluster" id="backups-switch">
+          <Select label="Basecamp keeps this machine" name="backupChoice" id="backups-choice" placeholder=""
+                  options={backupOptions} value={backupChoice}
+                  onchange={(e) => backupChoice = e.target.value} />
+          {#if picksHour && (backupChoice === 'daily' || backupChoice === 'weekly')}
+            <Select label="Window opens" name="backupHour" id="backups-hour" placeholder=""
+                    options={DO_HOURS} value={backupHour}
+                    onchange={(e) => backupHour = e.target.value} />
+          {/if}
+          {#if backupChoice === 'weekly'}
+            <Select label="On" name="backupDay" id="backups-day" placeholder=""
+                    options={weekdayOptions} value={backupDay}
+                    onchange={(e) => backupDay = e.target.value} />
+          {/if}
+          <Button treatment="outlined" id="backups-save" disabled={busy === 'backups'} onclick={saveBackups}>
+            {busy === 'backups' ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
       </article>
     {/if}
 

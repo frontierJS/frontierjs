@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — a cloud's own whole-machine backups, seen and switched from Basecamp
 
-**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1–1.3 built; 2.1 next.** Probed against the tree 2026-11-03. Do not cite
+**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1–1.3 and 2.1 built; 2.2 next.** Probed against the tree 2026-11-03. Do not cite
 this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): see in Basecamp whether a DigitalOcean droplet's backups are on,
@@ -154,14 +154,25 @@ Done when: on yuma, the switch turns backups on, a policy read after it agrees (
 DO console agrees, the audit trail has the event, and turning them off in the DO console is put
 back at the next sync with a `backupsRestored` event.
 
-- [ ] 2.1 `ComputeConnector.setBackups(send, id, policy | null)`; DO enable/change/disable,
+- [x] 2.1 `ComputeConnector.setBackups(send, id, policy | null)`; DO enable/change/disable,
       Hetzner enable/disable.
+      Built 2026-11-04. `BackupPolicy.hour` is now `Int?`, null meaning the vendor picks the
+      window (`decision-rules` passed it before the code; not yet an owner ruling): Hetzner
+      refuses an hour, a weekly plan and a day, and DO refuses a null hour, an hour outside
+      0/4/…/20, a weekly plan with no day and a daily one with one, all before anything is
+      sent. Each reads the current state first: DO picks `enable_backups`,
+      `change_backup_policy` or `disable_backups` from it, Hetzner `enable_backup` or
+      `disable_backup`, and a policy already kept sends nothing. False where the vendor has
+      never heard of the machine, as `powerOff`. Both sinks keep a policy per machine; DO's
+      refuses an enable on an enabled droplet, which no real answer has shown. The write sends
+      `weekday` and is unproven against DO until Phase 2's push on yuma.
 - [ ] 2.2 `servers.setBackups`, gated like `powerOff`, writes the desired policy, pushes it, re-reads,
       and records an event naming the new policy. Setting it to *not managed* pushes nothing.
 - [ ] 2.2a `sync` pushes a managed policy back when the reading differs (`FJS-D1862`), and records
       an event naming what the vendor said and what was put back, so a console change is never
       undone silently. A push the vendor refuses is recorded once per sync and not retried within
       it. Hetzner has no hour or weekly plan, so a policy it cannot hold is refused when it is set.
+      A null `hour` is the vendor's choice and is never compared.
 - [ ] 2.3 A vendor 403 names the missing scope (`droplet:update`); the cli's scope list gains it.
 - [ ] 2.4 Off asks before it acts, with the count of taken backups the vendor deletes with it.
 

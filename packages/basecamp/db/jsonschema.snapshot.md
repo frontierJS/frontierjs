@@ -2337,7 +2337,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `plan` | `MachineBackupPlan` | yes | — | — | — |
-| `hour` | `integer` | yes | — | — | — |
+| `hour` | `integer`? | — | — | — | — |
 | `weekday` | `string`? | — | — | — | — |
 
-**On create**: required — `plan`, `hour`
+**On create**: required — `plan`

@@ -24,6 +24,7 @@ import { minorUnits, roundMinor } from '@frontierjs/toolbelt/units'
 import { env }                    from '../../core/env.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
 import { FLEET, keyBody, newestFirst } from './index.ts'
+import type { BackupPolicy }      from '#db/schema.d.ts'
 import type {
   ComputeConnector, ComputeCatalog, ComputeMachine, MachineState, MachineBackups,
   ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark, ReservedIp, ReservedIps,
@@ -158,6 +159,27 @@ const said = (res: { error?: { kind: string; message?: string }; status?: number
   return `${res.error?.kind ?? 'error'}`
     + (res.status ? ` (HTTP ${res.status})` : '')
     + (reason ? ` — ${reason}` : '')
+}
+
+// ─── Backups ─────────────────────────────────────────────────────────────
+// DO's window opens every four hours, and a weekly plan names its day. The
+// `weekday` spelling is the one its policy read answers; the spec's own
+// `change_backup_policy` example sends `day`.
+
+const DO_BACKUP_HOURS = [0, 4, 8, 12, 16, 20]
+const WEEKDAYS        = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+
+/** Why DO cannot hold this policy, or null. */
+function unheld(policy: BackupPolicy): string | null {
+  if (policy.plan !== 'daily' && policy.plan !== 'weekly')
+    return `DigitalOcean is asked for daily or weekly backups from here, not ${policy.plan}`
+  if (policy.hour == null || !DO_BACKUP_HOURS.includes(policy.hour))
+    return `DigitalOcean opens a backup window at ${DO_BACKUP_HOURS.join(', ')} UTC, not ${policy.hour ?? 'no hour'}`
+  if (policy.plan === 'weekly' && !WEEKDAYS.includes(policy.weekday ?? ''))
+    return `a weekly DigitalOcean backup names its day, one of ${WEEKDAYS.join(' ')}`
+  if (policy.plan === 'daily' && policy.weekday)
+    return 'a daily DigitalOcean backup names no day'
+  return null
 }
 
 // ─── Reserved IPs ────────────────────────────────────────────────────────
@@ -378,6 +400,38 @@ export const digitalOcean: ComputeConnector = {
         sizeGb: numOrNull(b.size_gigabytes),
       })).filter(b => b.id && b.at)),
     }
+  },
+
+  unheldBackups: unheld,
+
+  async setBackups(send, providerServerId, policy): Promise<boolean> {
+    const why = policy && unheld(policy)
+    if (why) throw new Error(why)
+
+    const at  = `/v2/droplets/${encodeURIComponent(providerServerId)}`
+    const now = await send({ method: 'GET', path: `${at}/backups/policy` })
+    if (now.status === 404) return false
+    if (now.error) throw new Error(`DigitalOcean: ${said(now)}`)
+
+    // DO has three actions where a caller states one policy, so the current
+    // policy picks: enable where it keeps none, change where it keeps another.
+    const p    = ((now.data as Row | null)?.policy ?? {}) as Row
+    const kept = (p.backup_policy ?? {}) as Row
+    const on   = p.backup_enabled === true
+    if (!policy && !on) return true
+    if (policy && on && str(kept.plan) === policy.plan && kept.hour === policy.hour
+        && (str(kept.weekday) || null) === (policy.weekday || null)) return true
+
+    const type = !policy ? 'disable_backups' : on ? 'change_backup_policy' : 'enable_backups'
+    const res  = await send({ method: 'POST', path: `${at}/actions`, body: {
+      type,
+      ...(policy && { backup_policy: {
+        plan: policy.plan, hour: policy.hour, ...(policy.plan === 'weekly' && { weekday: policy.weekday }),
+      } }),
+    }})
+    if (res.status === 404) return false
+    if (res.error) throw new Error(`DigitalOcean refused ${type}: ${said(res)}`)
+    return true
   },
 
   async create(send, spec: MachineSpec): Promise<{ providerServerId: string }> {

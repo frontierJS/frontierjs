@@ -88,6 +88,10 @@ const RESERVED = new Map<string, Record<string, unknown>>()
 
 let nextId = 1000
 
+/** Droplet id → the backup policy it keeps, as DO's policy read answers it.
+ *  Absent is off, which is how a droplet created without `backups: true` is. */
+const BACKUPS = new Map<string, Record<string, unknown>>()
+
 /** A token scoped without `image:read`: the droplet reads, its backups 403. */
 let backupsRefused = false
 export function sinkRefuseBackups(on = true): void { backupsRefused = on }
@@ -101,6 +105,7 @@ export function resetSink(): void {
   RESERVED.clear()
   nextId = 1000
   backupsRefused = false
+  BACKUPS.clear()
   for (const id of [...DROPLETS.keys()]) if (id !== '901') DROPLETS.delete(id)
 }
 
@@ -252,15 +257,15 @@ export function startDoSink(port = PORT) {
         return json({ reserved_ip: row })
       }
 
-      // Off, as a droplet created without `backups: true` is: the policy then
-      // carries nothing but the flag, which is what yuma's read answered.
+      // Off is the flag and nothing else, which is what yuma's read answered.
       const backups = url.pathname.match(/^\/v2\/droplets\/([^/]+)\/backups(\/policy)?$/)
       if (backups && req.method === 'GET') {
         const row = DROPLETS.get(decodeURIComponent(backups[1]))
         if (!row) return json({ id: 'not_found', message: 'The resource you requested could not be found.' }, 404)
         if (backupsRefused) return json({ id: 'forbidden', message: 'You are not authorized to perform this operation' }, 403)
+        const kept = BACKUPS.get(String(row.id))
         return backups[2]
-          ? json({ policy: { droplet_id: row.id, backup_enabled: false } })
+          ? json({ policy: { droplet_id: row.id, backup_enabled: Boolean(kept), ...(kept && { backup_policy: kept }) } })
           : json({ backups: [], links: {}, meta: { total: 0 } })
       }
 
@@ -268,9 +273,28 @@ export function startDoSink(port = PORT) {
       if (action && req.method === 'POST') {
         const row  = DROPLETS.get(decodeURIComponent(action[1]))
         if (!row) return json({ id: 'not_found', message: 'The resource you requested could not be found.' }, 404)
-        const type = String(((await req.json().catch(() => null)) as Record<string, unknown> | null)?.type ?? '')
-        if (type !== 'power_off') return json({ id: 'unprocessable_entity', message: `action ${type} is not in this sink` }, 422)
-        row.status = 'off'
+        const body = ((await req.json().catch(() => null)) ?? {}) as Record<string, unknown>
+        const type = String(body.type ?? '')
+        const id   = String(row.id)
+        const ask  = (body.backup_policy ?? {}) as Record<string, unknown>
+        // Retention and window length are DO's, per plan (0.1's reads).
+        const keep = () => BACKUPS.set(id, {
+          plan: ask.plan, hour: ask.hour, ...(ask.plan === 'weekly' && { weekday: ask.weekday }),
+          window_length_hours: 4, retention_period_days: ask.plan === 'weekly' ? 28 : 7,
+        })
+        // Stricter than DO is known to be: no real enable on an enabled droplet
+        // has been read, and a connector sending the wrong action fails here.
+        const refuse = (message: string) => json({ id: 'unprocessable_entity', message }, 422)
+
+        if (type === 'power_off') row.status = 'off'
+        else if (type === 'enable_backups') {
+          if (BACKUPS.has(id)) return refuse('Droplet already has backups enabled.')
+          keep()
+        } else if (type === 'change_backup_policy') {
+          if (!BACKUPS.has(id)) return refuse('Droplet does not have backups enabled.')
+          keep()
+        } else if (type === 'disable_backups') BACKUPS.delete(id)
+        else return refuse(`action ${type} is not in this sink`)
         return json({ action: { id: 3, type, status: 'in-progress' } }, 201)
       }
 

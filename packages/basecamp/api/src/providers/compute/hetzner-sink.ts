@@ -132,6 +132,7 @@ export function resetHzSink(): void {
   PRIMARY_IPS.clear()
   HELD.clear()
   for (const id of [...SERVERS.keys()]) if (id !== '7701') SERVERS.delete(id)
+  SERVERS.get('7701')!.backup_window = null
 }
 
 const json = (body: unknown, status = 200) =>
@@ -351,12 +352,15 @@ export function startHzSink(port = PORT) {
           : all })
       }
 
-      const poweroff = url.pathname.match(/^\/v1\/servers\/([^/]+)\/actions\/poweroff$/)
-      if (poweroff && req.method === 'POST') {
-        const row = SERVERS.get(decodeURIComponent(poweroff[1]))
+      const action = url.pathname.match(/^\/v1\/servers\/([^/]+)\/actions\/(poweroff|enable_backup|disable_backup)$/)
+      if (action && req.method === 'POST') {
+        const row = SERVERS.get(decodeURIComponent(action[1]))
         if (!row) return fail('not_found', 'server not found', 404)
-        row.status = 'off'
-        return json({ action: { id: 3, command: 'stop_server', status: 'running' } }, 201)
+        if (action[2] === 'poweroff') row.status = 'off'
+        // Hetzner picks the window; this one is the slot `backups()`'s
+        // midnight case reads.
+        else row.backup_window = action[2] === 'enable_backup' ? '22-02' : null
+        return json({ action: { id: 3, command: action[2], status: 'running' } }, 201)
       }
 
       const one = url.pathname.match(/^\/v1\/servers\/([^/]+)$/)

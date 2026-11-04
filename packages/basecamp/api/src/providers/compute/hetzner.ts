@@ -32,6 +32,7 @@ import { minorUnits, roundMinor } from '@frontierjs/toolbelt/units'
 import { env }                    from '../../core/env.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
 import { FLEET, keyBody, newestFirst } from './index.ts'
+import type { BackupPolicy }      from '#db/schema.d.ts'
 import type {
   ComputeConnector, ComputeCatalog, ComputeMachine, MachineState, MachineBackups,
   ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark, ReservedIp, ReservedIps,
@@ -229,6 +230,15 @@ const said = (res: { error?: { kind: string; message?: string }; status?: number
     + (reason ? ` — ${reason}` : '')
 }
 
+/** Why Hetzner cannot hold this policy, or null. It sells one plan and picks
+ *  the window itself, so an hour asked for would be one it never keeps. */
+function unheld(policy: BackupPolicy): string | null {
+  if (policy.plan !== 'daily') return `Hetzner backs up daily only, not ${policy.plan}`
+  if (policy.hour != null)     return 'Hetzner picks its own backup window; leave the hour empty'
+  if (policy.weekday)          return 'a daily Hetzner backup names no day'
+  return null
+}
+
 // ─── Primary IPs ─────────────────────────────────────────────────────────
 // Bound to a LOCATION, and €0.50 a month whether or not a server holds it.
 // `auto_delete: false` is what makes it outlive the server; the address a
@@ -389,6 +399,29 @@ export const hetzner: ComputeConnector = {
           sizeGb: typeof i.image_size === 'number' && Number.isFinite(i.image_size) ? i.image_size : null,
         })).filter(b => b.id && b.at)),
     }
+  },
+
+  unheldBackups: unheld,
+
+  async setBackups(send, providerServerId, policy): Promise<boolean> {
+    const why = policy && unheld(policy)
+    if (why) throw new Error(why)
+
+    const at  = `/v1/servers/${encodeURIComponent(providerServerId)}`
+    const now = await send({ method: 'GET', path: at })
+    if (now.status === 404) return false
+    if (now.error) throw new Error(said(now))
+
+    // Daily at a window of Hetzner's choosing is the only policy there is, so
+    // a server backing up already keeps it.
+    const on = ((now.data as Row | null)?.server as Row | undefined)?.backup_window != null
+    if (Boolean(policy) === on) return true
+
+    const action = policy ? 'enable_backup' : 'disable_backup'
+    const res    = await send({ method: 'POST', path: `${at}/actions/${action}` })
+    if (res.status === 404) return false
+    if (res.error) throw new Error(`Hetzner refused ${action} — ${said(res)}`)
+    return true
   },
 
   async create(send, spec: MachineSpec): Promise<{ providerServerId: string }> {

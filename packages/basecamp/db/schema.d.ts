@@ -60,13 +60,15 @@ export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' 
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
-export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'backupsReadFailed' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
+export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'backupsReadFailed' | 'backupsSet' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
 
 export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github'
 
 export type ComputeProvider = 'custom' | 'hetzner' | 'digitalocean'
 
 export type MachineBackupPlan = 'daily' | 'weekly'
+
+export type MachineBackupChoice = 'on' | 'off' | 'unmanaged'
 
 export type PlatformProvider = 'cloudflare'
 
@@ -477,16 +479,24 @@ export interface ServerProvisionStep {
   enrollToken?: string | null
 }
 
+export interface ServerSetBackups {
+  choice: MachineBackupChoice
+  plan?: MachineBackupPlan | null
+  hour?: number | null
+  weekday?: string | null
+}
+
 /**
  * The machine backups a person asks a vendor to keep (`IDEAS/machine-backups.md`).
  * Only the two plans priced as a share of the machine: the per-GiB plans are read
  * and shown by name, never asked for, since Basecamp knows neither their price
- * nor their retention range. `hour` is UTC; `weekday` is DO's three capitals,
- * on `weekly` only. Which hours a vendor accepts is its connector's to refuse.
+ * nor their retention range. `hour` is UTC, and null is the vendor's choice:
+ * Hetzner picks its own window and takes none. `weekday` is DO's three capitals,
+ * on `weekly` only. What a vendor cannot hold, its connector refuses by name.
  */
 export interface BackupPolicy {
   plan: MachineBackupPlan
-  hour: number
+  hour?: number | null
   weekday?: string | null
 }
 
@@ -6317,6 +6327,7 @@ export interface SeedTypes {
   FlagOverrideClear: FlagOverrideClear
   ServerProvision: ServerProvision
   ServerProvisionStep: ServerProvisionStep
+  ServerSetBackups: ServerSetBackups
   BackupPolicy: BackupPolicy
 }
 

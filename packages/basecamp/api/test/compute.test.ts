@@ -270,6 +270,9 @@ describe('the DigitalOcean dialect', () => {
     expect(custom!.retentionDays).toBe(14)
     expect(backupCost(digitalOcean, custom!.plan!, { priceMinor: 600, currency: 'USD' }))
       .toEqual({ unestimated: 'custom plan' })
+    // And never asked for: Basecamp knows neither its price nor its retention range.
+    await expect(digitalOcean.setBackups(async () => { throw new Error('sent') }, '1',
+      { plan: custom!.plan as any, hour: 8 })).rejects.toThrow(/daily or weekly.*custom_daily/)
   })
 
   test('the cost estimate is the vendor’s share of the size price, and says why when there is none', () => {
@@ -304,6 +307,47 @@ describe('the DigitalOcean dialect', () => {
         ? { data: { policy: { backup_enabled: true } }, status: 200 }
         : { data: { id: 'forbidden', message: 'You are not authorized' }, status: 403, error: { kind: 'client_error' } },
       '1')).rejects.toThrow(/403.*not authorized/)
+  })
+
+  // What `setBackups` sends, given the policy the droplet keeps now.
+  const setOn = async (kept: unknown, policy: any) => {
+    const sent: any[] = []
+    const ok = await digitalOcean.setBackups(async (req: any) => {
+      if (req.method === 'POST') { sent.push(req.body); return { data: { action: {} }, status: 201 } }
+      return { data: { policy: kept }, status: 200 }
+    }, '1', policy)
+    return { ok, sent }
+  }
+  const OFF  = { droplet_id: 1, backup_enabled: false }
+  const KEPT = { droplet_id: 1, backup_enabled: true, backup_policy: {
+    plan: 'weekly', weekday: 'SUN', hour: 16, window_length_hours: 4, retention_period_days: 28 } }
+
+  test('the current policy picks the action: enable where none, change where another, nothing where the same', async () => {
+    expect((await setOn(OFF, { plan: 'daily', hour: 20 })).sent)
+      .toEqual([{ type: 'enable_backups', backup_policy: { plan: 'daily', hour: 20 } }])
+    // A weekly plan carries its day as `weekday`, the spelling the read answers.
+    expect((await setOn(KEPT, { plan: 'weekly', hour: 4, weekday: 'WED' })).sent)
+      .toEqual([{ type: 'change_backup_policy', backup_policy: { plan: 'weekly', hour: 4, weekday: 'WED' } }])
+    expect(await setOn(KEPT, { plan: 'weekly', hour: 16, weekday: 'SUN' })).toEqual({ ok: true, sent: [] })
+    expect((await setOn(KEPT, null)).sent).toEqual([{ type: 'disable_backups' }])
+    expect(await setOn(OFF, null)).toEqual({ ok: true, sent: [] })
+  })
+
+  test('a policy DigitalOcean cannot hold is refused by name, before anything is sent', async () => {
+    const never = async () => { throw new Error('sent') }
+    await expect(digitalOcean.setBackups(never, '1', { plan: 'daily', hour: 3 })).rejects.toThrow(/0, 4, 8.*not 3/)
+    await expect(digitalOcean.setBackups(never, '1', { plan: 'daily', hour: null })).rejects.toThrow(/not no hour/)
+    await expect(digitalOcean.setBackups(never, '1', { plan: 'weekly', hour: 4 })).rejects.toThrow(/names its day/)
+    await expect(digitalOcean.setBackups(never, '1', { plan: 'daily', hour: 4, weekday: 'SUN' })).rejects.toThrow(/names no day/)
+  })
+
+  test('a droplet DO no longer has answers false; a refused action throws with the action named', async () => {
+    expect(await digitalOcean.setBackups(
+      async () => ({ data: null, status: 404, error: { kind: 'client_error' } }), '1', null)).toBe(false)
+    await expect(digitalOcean.setBackups(async (req: any) => req.method === 'POST'
+      ? { data: { id: 'forbidden', message: 'You are not authorized' }, status: 403, error: { kind: 'client_error' } }
+      : { data: { policy: OFF }, status: 200 },
+      '1', { plan: 'daily', hour: 20 })).rejects.toThrow(/refused enable_backups.*403/)
   })
 })
 
@@ -1063,6 +1107,70 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     expect(after.backupReading.enabled).toBe(false)
   })
 
+  test('setBackups tells the vendor, stores the policy, reads it back and says so on the trail', async () => {
+    const sys     = env.system as any
+    const row     = await sys.server.findFirst({ where: { name: 'backed-up' } })
+    const servers = env.as(owner).service('servers')
+    const stored  = async () => sys.server.findFirst({ where: { id: row.id } })
+
+    await servers.call('setBackups', row.id, { choice: 'on', plan: 'weekly', hour: 16, weekday: 'SUN' })
+    let after = await stored()
+    expect(after.backupPolicy).toEqual({ plan: 'weekly', hour: 16, weekday: 'SUN' })
+    expect(after.backupReading).toMatchObject({ enabled: true, plan: 'weekly', hour: 16, weekday: 'SUN' })
+    const [set] = await sys.serverEvent.findMany({ where: { serverId: row.id, kind: 'backupsSet' } })
+    expect(set.message).toBe('Machine backups set weekly, SUN at 16:00 UTC')
+
+    // Off is not a managed state (`FJS-D1885`): the vendor stops, nothing is held.
+    await servers.call('setBackups', row.id, { choice: 'off' })
+    after = await stored()
+    expect(after.backupPolicy).toBeNull()
+    expect(after.backupReading.enabled).toBe(false)
+  })
+
+  test('unmanaged stops holding a policy and sends the vendor nothing', async () => {
+    const sys     = env.system as any
+    const row     = await sys.server.findFirst({ where: { name: 'backed-up' } })
+    const servers = env.as(owner).service('servers')
+    await servers.call('setBackups', row.id, { choice: 'on', plan: 'daily', hour: 20 })
+
+    await servers.call('setBackups', row.id, { choice: 'unmanaged' })
+    expect((await sys.server.findFirst({ where: { id: row.id } })).backupPolicy).toBeNull()
+    // Still on at the vendor: a sync reads it as the machine left it.
+    await servers.call('sync', row.id)
+    expect((await sys.server.findFirst({ where: { id: row.id } })).backupReading).toMatchObject({ enabled: true, plan: 'daily' })
+    await servers.call('setBackups', row.id, { choice: 'off' })
+  })
+
+  test('a policy the vendor cannot hold is refused before anything is sent or stored', async () => {
+    const sys     = env.system as any
+    const row     = await sys.server.findFirst({ where: { name: 'backed-up' } })
+    const servers = env.as(owner).service('servers')
+    for (const [data, said] of [
+      [{ choice: 'on', plan: 'daily', hour: 5 }, /opens a backup window at 0, 4/],
+      [{ choice: 'on', plan: 'weekly', hour: 4 }, /names its day/],
+      [{ choice: 'on' },                           /names a plan/],
+      [{ choice: 'off', plan: 'daily' },           /takes no plan/],
+    ] as const) {
+      await expect(servers.call('setBackups', row.id, data)).rejects.toThrow(said)
+    }
+    const after = await sys.server.findFirst({ where: { id: row.id } })
+    expect(after.backupPolicy).toBeNull()
+    expect(after.backupReading.enabled).toBe(false)
+  })
+
+  test('setBackups wants an administrator: a developer is refused', async () => {
+    const sys  = env.system as any
+    const row  = await sys.server.findFirst({ where: { name: 'backed-up' } })
+    const { grantsFor } = await import('../src/core/capabilities.ts')
+    const dev  = await sys.user.create({ data: { email: `d-${row.id.slice(0, 6)}@x.co`, accountId: ws.accountId } })
+    await sys.workspaceMember.create({ data: {
+      workspaceId: ws.id, userId: dev.id, role: 'developer', capabilities: grantsFor('developer'),
+    }})
+    await expect(env.as(session({ id: dev.id, workspaceId: ws.id })).service('servers')
+      .call('setBackups', row.id, { choice: 'on', plan: 'daily', hour: 20 })).rejects.toThrow(/Requires admin role/)
+    expect((await sys.server.findFirst({ where: { id: row.id } })).backupPolicy).toBeNull()
+  })
+
   test('a destroy without the typed name is REFUSED', async () => {
     // `docs/vision.md` constraint 5. The friction is the feature, and the thing
     // typed is the thing destroyed — so a stale screen cannot confirm the wrong
@@ -1804,6 +1912,28 @@ describe('the Hetzner dialect', () => {
       { id: '31', at: '2026-11-02T06:10:00+00:00', sizeGb: 2.4 },
     ])
   })
+
+  const hzSetOn = async (backup_window: string | null, policy: any) => {
+    const sent: string[] = []
+    const ok = await hetzner.setBackups(async (req: any) => {
+      if (req.method === 'POST') { sent.push(req.path); return { data: { action: {} }, status: 201 } }
+      return { data: { server: { id: 9, backup_window } }, status: 200 }
+    }, '9', policy)
+    return { ok, sent }
+  }
+
+  test('daily at a window of Hetzner’s choosing is the one policy, switched on and off', async () => {
+    expect((await hzSetOn(null, { plan: 'daily', hour: null })).sent).toEqual(['/v1/servers/9/actions/enable_backup'])
+    expect(await hzSetOn('22-02', { plan: 'daily', hour: null })).toEqual({ ok: true, sent: [] })
+    expect((await hzSetOn('22-02', null)).sent).toEqual(['/v1/servers/9/actions/disable_backup'])
+    expect(await hzSetOn(null, null)).toEqual({ ok: true, sent: [] })
+  })
+
+  test('a weekly plan or an hour is refused by name, since Hetzner would keep neither', async () => {
+    const never = async () => { throw new Error('sent') }
+    await expect(hetzner.setBackups(never, '9', { plan: 'weekly', hour: null, weekday: 'SUN' })).rejects.toThrow(/daily only/)
+    await expect(hetzner.setBackups(never, '9', { plan: 'daily', hour: 4 })).rejects.toThrow(/leave the hour empty/)
+  })
 })
 
 // ─── Hetzner, through the real seam ──────────────────────────────────────
@@ -1949,9 +2079,12 @@ describe('two clouds, one vocabulary', () => {
   const clouds = () => [
     { kind: 'digitalocean' as ComputeProvider, connector: digitalOcean, account: () => account, address: SINK,
       region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64', currency: 'USD',
+      backupPolicy: { plan: 'daily' as const, hour: 20 },
       reset: async () => (await import('../src/providers/compute/digitalocean-sink.ts')).resetSink() },
     { kind: 'hetzner' as ComputeProvider, connector: hetzner, account: () => hzAccount, address: HZ_SINK,
       region: 'nbg1', size: 'cpx11', image: 'ubuntu-24.04', currency: 'EUR',
+      // Hetzner picks the window, so the policy names no hour.
+      backupPolicy: { plan: 'daily' as const, hour: null },
       reset: async () => (await import('../src/providers/compute/hetzner-sink.ts')).resetHzSink() },
   ]
 
@@ -2052,9 +2185,18 @@ describe('two clouds, one vocabulary', () => {
         windowHours: null, retentionDays: null, taken: [],
       })
 
+      // On, then off, read back after each: the switch is what the vendor
+      // then says, not what the call answered.
+      expect(await c.connector.setBackups(send, made.providerServerId, c.backupPolicy)).toBe(true)
+      expect(await c.connector.backups(send, made.providerServerId))
+        .toMatchObject({ enabled: true, plan: 'daily', windowHours: 4, retentionDays: 7 })
+      expect(await c.connector.setBackups(send, made.providerServerId, null)).toBe(true)
+      expect((await c.connector.backups(send, made.providerServerId))!.enabled).toBe(false)
+
       expect(await c.connector.destroy(send, made.providerServerId)).toBe(true)
       expect(await c.connector.machine(send, made.providerServerId)).toBeNull()
       expect(await c.connector.backups(send, made.providerServerId)).toBeNull()
+      expect(await c.connector.setBackups(send, made.providerServerId, c.backupPolicy)).toBe(false)
       expect((await c.connector.marked(send, fleetMark()))
         .map((m: any) => m.providerServerId)).not.toContain(made.providerServerId)
     })

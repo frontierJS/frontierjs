@@ -13,7 +13,7 @@
 // Custom methods dispatch on the X-Service-Method HEADER, not a sub-path
 // (DECISIONS.md). `POST /servers/:id/drain` is a 404; the call is
 // `POST /servers/:id` with `X-Service-Method: drain`.
-//   events · reboot · drain · undrain · sync
+//   events · reboot · drain · undrain · sync · setBackups
 //   heartbeat — the outpost's, HMAC at the transport, exempted from sessionScope
 //
 // The wire contract is the SCHEMA's field names, because autoValidate strips
@@ -61,7 +61,7 @@ import { outbound, outpostFor } from '../../providers/outpost.ts'
 import { asPublicKey }           from '../apps/apps.service.ts'
 
 import type { TargetDescriptor } from '@frontierjs/conduit'
-import type { ProviderKind, ServerEventKind } from '#db/schema.d.ts'
+import type { BackupPolicy, ProviderKind, ServerEventKind } from '#db/schema.d.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { resolveServer } from '../../domain/notification/owed.ts'
 
@@ -230,6 +230,12 @@ async function readBackups(
   })
 }
 
+/** A policy as the trail says it: `daily at 20:00 UTC`, `weekly, SUN at 16:00 UTC`. */
+function describePolicy(policy: BackupPolicy, label: string): string {
+  const hour = policy.hour == null ? `, at a window ${label} picks` : ` at ${String(policy.hour).padStart(2, '0')}:00 UTC`
+  return policy.plan === 'weekly' ? `weekly, ${policy.weekday}${hour}` : `daily${hour}`
+}
+
 /**
  * Make a named move, then record it — the shape reboot/drain/undrain share.
  *
@@ -293,6 +299,8 @@ export default createService({
     // token, so a viewer refreshing a picker is somebody else's failed
     // deploy. No model's gate reaches them, so the level is stated here.
     { method: 'sync', gate: LEVELS.USER },
+    // A vendor write that bills, at the weight of buying a machine.
+    { method: 'setBackups', input: 'ServerSetBackups', gate: LEVELS.ADMINISTRATOR },
     { method: 'catalog', gate: LEVELS.USER },
     // `providers` reads rows this app owns and discloses account names, which
     // is the model's own read gate, never a token.
@@ -637,6 +645,55 @@ export default createService({
     }
 
     return getScoped('server', 'Server')
+  },
+
+  // ── setBackups — POST /servers/:id  X-Service-Method: setBackups ─
+  //
+  // The vendor is told FIRST and the policy stored after it answers, so a
+  // policy the vendor refused is never one `sync` keeps pushing. Off stores
+  // no policy (`FJS-D1885`): holding a machine off would mean a sync
+  // disabling a console re-enable, and a disable deletes the backups taken.
+  async setBackups() {
+    const id     = $.id as string
+    const server = await getScoped('server', 'Server', id)
+    const { choice, plan, hour, weekday } = ($.data ?? {}) as Record<string, any>
+
+    const connector = connectorFor(server.providerKind)
+    if (!connector || !server.providerId || !server.providerServerId)
+      throw new BadRequest('This machine has no vendor link, so it has no machine backups to set')
+    await refuseForeignAccount(server)
+
+    const policy: BackupPolicy | null = choice === 'on'
+      ? { plan, hour: hour ?? null, weekday: weekday ?? null }
+      : null
+    if (choice === 'on' && !plan)
+      throw new BadRequest('Turning backups on names a plan, daily or weekly')
+    if (choice !== 'on' && (plan || hour != null || weekday))
+      throw new BadRequest(`'${choice}' takes no plan, hour or day`)
+    const why = policy && connector.unheldBackups(policy)
+    if (why) throw new BadRequest(why)
+
+    const targetId = targetFor(connector.kind, server.providerId)
+    const send     = sendVia($.app, targetId)
+
+    if (choice !== 'unmanaged'
+        && !await connector.setBackups(send, String(server.providerServerId), policy))
+      throw new NotFound(`${connector.label} no longer has this machine`)
+
+    await db().server.update({ where: { id }, data: { backupPolicy: policy }, system: ['backupPolicy'] })
+    // Read back rather than written from the ask: the screen shows the
+    // vendor's word, and an action the vendor has not applied yet reads as
+    // the old state until the next sync.
+    if (choice !== 'unmanaged')
+      await readBackups(id, connector, send, String(server.providerServerId), targetId, server.plan)
+
+    await recordEvent(id, 'backupsSet',
+      policy  ? `Machine backups set ${describePolicy(policy, connector.label)}`
+      : choice === 'off' ? `Machine backups turned off at ${connector.label}; not managed`
+      : 'Machine backups no longer managed; nothing sent to the vendor',
+      { requested_by: actor(), choice, policy })
+
+    return getScoped('server', 'Server', id)
   },
 
   // ── provision — POST /servers  X-Service-Method: provision ───────

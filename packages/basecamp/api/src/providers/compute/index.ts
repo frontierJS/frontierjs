@@ -18,7 +18,7 @@
 // built and every caller goes through it.
 
 import type { TargetDescriptor } from '@frontierjs/conduit'
-import type { ComputeProvider, ProviderKind } from '#db/schema.d.ts'
+import type { BackupPolicy, ComputeProvider, ProviderKind } from '#db/schema.d.ts'
 import { digitalOcean }          from './digitalocean.ts'
 import { hetzner }               from './hetzner.ts'
 
@@ -307,6 +307,20 @@ export interface ComputeConnector {
   /** Plan → the percentage of the machine's price its backups add, from the
    *  vendor's pricing page. */
   backupShare: Record<string, number>
+  /**
+   * Make the vendor keep this policy, or no backups at all on null. Read
+   * first, so a policy the machine already keeps sends nothing and a set can be
+   * repeated. Answers whether the vendor accepted it — the reading is a later
+   * `backups()` — and false where the vendor has never heard of the machine.
+   * A policy the vendor cannot hold — a weekly plan at Hetzner, an hour it
+   * would not keep — is refused by name before anything is sent, rather than
+   * accepted and kept some other way.
+   */
+  setBackups(send: AccountSend, providerServerId: string, policy: BackupPolicy | null): Promise<boolean>
+  /** Why this vendor cannot hold the policy, or null — `setBackups`' own
+   *  refusal, asked before anything is stored, so a policy no vendor keeps is
+   *  never the one `sync` pushes. */
+  unheldBackups(policy: BackupPolicy): string | null
   /** Does this token work? The call is deliberately the cheapest read the
    *  vendor offers, because it runs when somebody presses Verify. */
   verify(send: AccountSend): Promise<boolean>

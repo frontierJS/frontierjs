@@ -496,6 +496,17 @@ type ServerProvisionStep {
   enrollToken String?
 }
 
+// `on` is a policy Basecamp then holds the vendor to; `off` tells the vendor
+// to stop and leaves the machine not managed, since holding it off would mean
+// disabling a console re-enable, which deletes the backups taken (`FJS-D1885`);
+// `unmanaged` stops holding it and tells the vendor nothing.
+type ServerSetBackups {
+  choice  MachineBackupChoice
+  plan    MachineBackupPlan?
+  hour    Int?
+  weekday String?
+}
+
 enum SecretKind     { sshKey providerKey registryAuth tlsCert notification backup generic }
 enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroying destroyed }
 enum ServerRole     { general build database gateway worker }
@@ -527,8 +538,8 @@ enum ServerEventKind {
   // that means a connector needs a new row.
   syncRequested statusSynced statusSyncIgnored syncFailed
   syncNoAccount syncUnsupported syncUnrecognized
-  // Its machine backups at the vendor, read on the same sync.
-  backupsReadFailed
+  // Its machine backups at the vendor: read on the same sync, or set by a person.
+  backupsReadFailed backupsSet
   // The machine itself. `rebooted` is its boot id changing between two
   // heartbeats; `rebootRequested` above is a person's ask.
   cameOnline unreachable rebooted
@@ -548,6 +559,8 @@ enum ProviderKind   { custom hetzner digitalocean cloudflare github }
 enum ComputeProvider { custom hetzner digitalocean }
 // The machine-backup plans Basecamp can ask for (`BackupPolicy`).
 enum MachineBackupPlan { daily weekly }
+// What a person asks of a machine's backups (`ServerSetBackups`).
+enum MachineBackupChoice { on off unmanaged }
 // The vendors that run an App with no machine of ours — a subset of
 // ProviderKind, as ComputeProvider is; adopting from an account whose
 // `providerKind` is not here is refused by name.
@@ -1361,11 +1374,12 @@ valueset SshKeys {
 /// The machine backups a person asks a vendor to keep (`IDEAS/machine-backups.md`).
 /// Only the two plans priced as a share of the machine: the per-GiB plans are read
 /// and shown by name, never asked for, since Basecamp knows neither their price
-/// nor their retention range. `hour` is UTC; `weekday` is DO's three capitals,
-/// on `weekly` only. Which hours a vendor accepts is its connector's to refuse.
+/// nor their retention range. `hour` is UTC, and null is the vendor's choice:
+/// Hetzner picks its own window and takes none. `weekday` is DO's three capitals,
+/// on `weekly` only. What a vendor cannot hold, its connector refuses by name.
 type BackupPolicy {
   plan    MachineBackupPlan
-  hour    Int
+  hour    Int?
   weekday String?
 }
 

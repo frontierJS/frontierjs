@@ -22,8 +22,13 @@ import { bundled } from './bundled.ts'
 
 void bundled
 
+// Tauri hands Windows paths over in verbatim form (\\?\C:\...). The fs calls
+// below accept one and Bun's import() does not: "Cannot find module" on a file
+// that exists.
+const plain = (p: string) => p.replace(/^\\\\\?\\UNC\\/, '\\\\').replace(/^\\\\\?\\/, '')
+
 const compiled = import.meta.dir.startsWith('/$bunfs')
-const appDir = process.env.FJS_SIDECAR_APP ?? join(compiled ? dirname(process.execPath) : import.meta.dir, 'app')
+const appDir = plain(process.env.FJS_SIDECAR_APP ?? join(compiled ? dirname(process.execPath) : import.meta.dir, 'app'))
 if (!existsSync(join(appDir, 'api', 'index.ts'))) {
   console.error(`__SLUG__-api: no API at ${appDir}/api/index.ts — FJS_SIDECAR_APP names the app's files.`)
   process.exit(1)

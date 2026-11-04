@@ -711,7 +711,25 @@ try {
     t => /read .* from digitalocean/i.test(t), 'the backup reading never reached the open page', 15_000)
     .catch(e => e.message)
   check('and after it, the vendor\'s word: off, and not managed',
-    /\bOff\b/.test(backupsCard) && /not managed/i.test(backupsCard), String(backupsCard).replace(/\s+/g, ' ').trim())
+    /\bOff\b/.test(backupsCard) && /Not managed: Basecamp shows/.test(backupsCard), String(backupsCard).replace(/\s+/g, ' ').trim())
+
+  // The switch: the vendor is told, the policy held, and the card redrawn from
+  // the reading taken after it, not from what was asked.
+  await fill({ 'backups-choice': 'weekly' })
+  await until(`!!document.getElementById('backups-day')`, v => v, 'a weekly choice never asked for its day')
+  await fill({ 'backups-hour': '16', 'backups-day': 'SUN' })
+  await click('#backups-save')
+  const onCard = await until(`document.getElementById('server-backups')?.textContent ?? ''`,
+    t => /On.*weekly, Sundays at 16:00 UTC/.test(t.replace(/\s+/g, ' ')), 'the switch never turned the card on', 15_000)
+    .catch(e => e.message)
+  check('Save turns backups on, read back from the vendor, and the machine is managed now',
+    /weekly, Sundays at 16:00 UTC/.test(onCard) && !/Not managed: Basecamp shows/.test(onCard), String(onCard).replace(/\s+/g, ' ').trim())
+  await fill({ 'backups-choice': 'off' })
+  await click('#backups-save')
+  const offCard = await until(`document.getElementById('server-backups')?.textContent ?? ''`,
+    t => /\bOff\b/.test(t) && /Not managed: Basecamp shows/.test(t), 'Off never reached the card', 15_000).catch(e => e.message)
+  check('and Off turns them off and leaves the machine not managed (FJS-D1885)',
+    /\bOff\b/.test(offCard) && /Not managed: Basecamp shows/.test(offCard), String(offCard).replace(/\s+/g, ' ').trim())
 
   // ─── The machine enrolls itself ────────────────────────────────────────
   // Over real HTTP at the real route, with no session, no signature and no
