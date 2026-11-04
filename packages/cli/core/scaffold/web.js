@@ -435,8 +435,8 @@ export function makeRouteIndex(appName, useApi = true) {
   return `---
 title: Home
 ---
-<script>
-${useApi ? `  import { status } from '@frontierjs/sierra/resource'
+${useApi ? `<script>
+  import { status } from '@frontierjs/sierra/resource'
 
   // The $: line is the subscription — without it this renders once at the
   // initial false and never changes.
@@ -456,39 +456,19 @@ ${useApi ? `  import { status } from '@frontierjs/sierra/resource'
     if (!r.ok) throw new Error('API answered ' + r.status)
     return r.json()
   })
-` : ''}
-  // ─── the tour ──────────────────────────────────────────────────────
-  // Everything from here down is a worked example of the language this file
-  // is written in, placed so it can be read beside what it renders. Delete it
-  // when you write your own home page; nothing else imports any of it.
-
-  let count = 0
-  let name  = ''
-
-  // A $: line re-runs when anything it READ changes. Nothing is declared as a
-  // dependency, and nothing has to be.
-  $: greeting = name ? 'Hello, ' + name : 'Hello'
-
-  const realms = [
-${useApi ? `    { noun: 'Model',    realm: 'Data', where: 'db/schema.lite' },
-    { noun: 'Service',  realm: 'API',  where: 'api/src/services/' },
-    { noun: 'Resource', realm: 'UI',   where: 'web/src/resources/' },
-` : `    { noun: 'Route',     realm: 'UI', where: 'web/src/routes/' },
-    { noun: 'Component', realm: 'UI', where: 'web/src/components/' },
-`}  ]
 </script>
+` : ''}
 
 <!--
   Every class on this page is a word from @frontierjs/css — what a thing IS
-  (card, badge, btn) and what is true about it (primary, success, muted). The
-  <style> block at the bottom holds one grid and no color, because a color
+  (badge, alert, step) and what is true about it (success, danger, muted). The
+  <style> block at the bottom holds spacing and no color, because a color
   written here is one no theme can reach.
 -->
 <header class="stack gap-sm">
   <h1>Welcome to ${appName}</h1>
   <p class="text-lg text-muted">
-    This page is <code>web/src/routes/index.mesa</code>, and the tour below is
-    running rather than quoted — every point does the thing it describes.
+    This page is <code>web/src/routes/index.mesa</code>. Replace it with your own.
   </p>
 
 ${useApi ? `  <div class="cluster">
@@ -512,61 +492,6 @@ ${useApi ? `  <div class="cluster">
     </div>
   {/await}
 ` : ''}</header>
-
-<section class="tour stack gap-md">
-  <h2>Mesa in a minute</h2>
-
-  <div class="grid">
-    <article class="card stack gap-sm">
-      <h3>1 · State is a variable</h3>
-      <p>No store, no hook, no setter. Assign to it, and the markup that read it
-         is what updates.</p>
-      <div class="cluster">
-        <button class="btn primary" onclick={() => count++}>Press me</button>
-        <span class="pill" class:muted={count === 0} class:success={count > 0}>pressed {count} times</span>
-      </div>
-    </article>
-
-    <article class="card stack gap-sm">
-      <h3>2 · A <code>$:</code> line re-runs when what it read changes</h3>
-      <p>The subscription is the line itself — there is no dependency array to
-         keep in step with the body.</p>
-      <input class="field" bind:value={name} placeholder="your name" aria-label="your name" />
-      <p class="text-lg">{greeting}</p>
-    </article>
-
-    <article class="card stack gap-sm">
-      <h3>3 · Blocks are markup</h3>
-      <p><code>&#123;#each&#125;</code> and <code>&#123;#if&#125;</code> are
-         compiled to DOM operations rather than re-run as functions. Both are
-         below, over ${useApi ? 'the three nouns this framework has' : 'the folders this app has'}.</p>
-      <dl class="facts divided">
-        {#each realms as r}
-          <dt>{r.noun}</dt>
-          <dd>the {r.realm} realm, in <code>{r.where}</code></dd>
-        {/each}
-      </dl>
-      {#if count > 2}
-        <p class="text-sm text-muted">…and the button in card 1 has been pressed {count} times.</p>
-      {/if}
-    </article>
-
-    <article class="card stack gap-sm">
-      <h3>4 · Styles are scoped to the file</h3>
-      <p>The <code>&lt;style&gt;</code> block at the bottom cannot leak out of
-         this component, and cannot reach into a child one. To cross that line
-         you write <code>:global(…)</code>, which is a thing you can grep for.</p>
-    </article>
-
-    <article class="card stack gap-sm">
-      <h3>5 · Everything the runtime offers is on <code>$</code></h3>
-      <p><code>$.onMount</code>, <code>$.emit</code>, <code>$.tick</code>. Five
-         members keep a bare spelling because they are read as a bag in the
-         middle of markup: <code>$props</code>, <code>$attributes</code>,
-         <code>$slots</code>, <code>$context</code>, <code>$async</code>.</p>
-    </article>
-  </div>
-</section>
 
 <section class="next stack gap-md">
   <h2>Where to go next</h2>
@@ -614,9 +539,8 @@ ${useApi ? `    <li class="step">
 </section>
 
 <style>
-  .tour, .next { margin-top: var(--space-3xl) }
-  h3 { margin: 0 }
-  p  { margin: 0 }
+  .next { margin-top: var(--space-3xl) }
+  p { margin: 0 }
 </style>
 `
 }

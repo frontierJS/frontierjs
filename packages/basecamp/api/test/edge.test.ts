@@ -570,9 +570,9 @@ describe('sync', () => {
   test('an app running nowhere, and a developer, are each refused', async () => {
     const quiet = await (env.system as any).domain.create({ data: { workspaceId: site.id, appId: idle.id, hostname: 'idle.example.test' } })
     await expect(edge(admin).call('sync', quiet.id, {}))
-      .rejects.toMatchObject({ code: 409, message: expect.stringContaining('runs on no online server') })
+      .rejects.toMatchObject({ code: 409, message: expect.stringContaining('no release has landed on') })
     const { missing } = await edge(developer).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
-    expect(missing.find((d: any) => d.id === quiet.id).why).toBe('no-machine')
+    expect(missing.find((d: any) => d.id === quiet.id)).toMatchObject({ why: 'no-machine', detail: expect.stringContaining('no release has landed on') })
 
     await expect(edge(developer).call('sync', api.id, {})).rejects.toMatchObject({ code: 403 })
   })

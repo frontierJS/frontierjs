@@ -337,7 +337,16 @@ title: DNS & edge
       <Table id="route-rows" columns={ROUTE_COLUMNS} rows={routeRows} striped>
         {#snippet row(r)}
           <tr>
-            <td><code>{hostnameOf(r.domainId) ?? r.domainId}</code></td>
+            <td>
+              <code>{hostnameOf(r.domainId) ?? r.hostname ?? r.domainId}</code>
+              {#if !hostnameOf(r.domainId) && r.domainDeletedAt}
+                <Pill tone="muted" data-route-dormant>hostname deleted</Pill>
+                <div class="text-sm text-muted">
+                  Answers nothing until the hostname is restored from <a href="/trash/">Trash</a>.
+                  A hostname added again is a new one and needs its own routes.
+                </div>
+              {/if}
+            </td>
             <td><code>{r.pathPrefix}</code></td>
             <td>
               {#if appById.get(r.appId)}
@@ -351,7 +360,7 @@ title: DNS & edge
                 <Button treatment="ghost" aria-label={`Edit ${r.pathPrefix}`} onclick={() => routing = r}>Edit</Button>
                 <Button treatment="ghost" disabled={removingId === r.id}
                         aria-label={`Delete ${r.pathPrefix}`}
-                        data-confirm={`${r.pathPrefix} on ${hostnameOf(r.domainId) ?? 'that hostname'} goes back to the hostname's own app.`}
+                        data-confirm={`${r.pathPrefix} on ${hostnameOf(r.domainId) ?? r.hostname ?? 'that hostname'} goes back to the hostname's own app.`}
                         data-confirm-title="Delete this route?" data-confirm-label="Delete"
                         onclick={() => removeRoute(r)}>Delete</Button>
               </span>
@@ -416,7 +425,7 @@ title: DNS & edge
                   {#if d.why === 'no-ingress'}
                     this workspace has no ingress zone; choose the zone its apps' records go in with <em>Use for ingress</em> below
                   {:else if d.why === 'no-machine'}
-                    {appById.get(d.appId)?.name ?? 'its app'} runs on no online server — deploy it
+                    {appById.get(d.appId)?.name ?? 'its app'}: {d.detail}
                   {:else}
                     not pushed yet
                     <Button treatment="ghost" disabled={pushingId === d.id} aria-label={`Push ${d.hostname}`}

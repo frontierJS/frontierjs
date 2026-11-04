@@ -91,6 +91,17 @@ leave. Read the row, not the status, before trusting that a machine can burn.
 `basecamp-<stamp>.tar.gz`: a remote one by a pre-signed GET straight from the
 bucket, a local one through the hub by a link that lasts five minutes.
 
+*Download* on an app's backups does the same for an app archive. One in the
+bucket is the bucket's own pre-signed GET. One **kept on its machine** (a
+path in `location`, no destination or a failed upload) is **pulled through the
+hub** (`FJS-D1833`): the hub mints a PUT to `/app-archive-pull/`, the
+machine's Outpost sends the file there (`POST /backup/send`, only a
+`<appId>-*.tar.gz` under its backup directory), and the button receives a
+five-minute GET that serves the copy once and deletes it. Any such temp copy
+older than ten minutes is swept, and at start. It is refused above 128 MB (Bun
+refuses a larger body, `FJS-3090`) and when the machine is not online; the
+refusal says to give the app a backup destination or `scp` it off the machine.
+
 The hub holds a whole archive in memory to send it; above 1 GiB the job refuses
 rather than discovering the limit in the heap.
 

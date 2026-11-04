@@ -117,6 +117,8 @@ try {
   console.log('\n— a hub archive download is a navigation to a file')
   const archive = await get('/backup-archive/b1?expires=1&sig=x', HTML)
   check('GET /backup-archive/<id> as a document reaches the API', archive.headers.get('x-upstream') === 'api', `status ${archive.status}`)
+  const pulled = await get('/app-archive-pull/b1?name=a.tar.gz&expires=1&sig=x', HTML)
+  check('GET /app-archive-pull/<id> as a document reaches the API', pulled.headers.get('x-upstream') === 'api', `status ${pulled.status}`)
 
   console.log('\n— the exclusion is narrow')
   for (const path of ['/projects', '/projects/', '/servers/', '/auth/login']) {

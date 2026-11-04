@@ -86,13 +86,20 @@
   // both `download` and `restoreVolume` refuse it.
   const inBucket = (b) => b.status === 'success' && !!b.destinationId && !b.error && !!b.location
 
+  // A success row the machine still holds: `location` is a path there, with no
+  // destination or with the failed upload in `error`. Download pulls it through
+  // the hub (`FJS-D1833`); Restore by id still refuses it.
+  const onMachine = (b) => b.status === 'success' && !inBucket(b) && !!b.location?.startsWith('/')
+
   // The machine fetches the archive by a link the hub signs and refuses one
   // whose sha256 is not the recorded one (`FJS-D1521`), so only a row in the
   // bucket with a hash offers Restore.
   const restorable = (b) => inBucket(b) && !!b.sha256
 
-  // The server answers the bucket's pre-signed GET, signed to answer as an
-  // attachment named for the app, so the screen stays where it is.
+  // The server answers a link that saves as an attachment named for the app,
+  // so the screen stays where it is. For a bucket row that is the bucket's
+  // pre-signed GET at once; for a machine-kept one the call WAITS while the
+  // machine sends the file to the hub, so the button says it is fetching.
   async function download(b) {
     error = null; busy = b.id
     try {
@@ -134,7 +141,9 @@
   }
 
   // Bun refuses a request body over 128 MB before the route reads it
-  // (`FJS-3090`), so the control refuses one first and says so.
+  // (`FJS-3090`), so Upload refuses one first and says so, and the hub refuses
+  // to pull a machine-kept archive past it (`BODY_CEILING_BYTES`, the API's
+  // one copy of this number).
   const UPLOAD_MB = 128
 
   // Two hops: `upload` grades the caller and signs a link, and the bytes go to
@@ -251,9 +260,9 @@
           <td class="text-sm">{b.sizeBytes ? size(b.sizeBytes) : '—'}</td>
           <td class="text-sm text-muted"><code>{b.location ?? '—'}</code></td>
           <td>
-            {#if inBucket(b)}
+            {#if inBucket(b) || onMachine(b)}
               <Button treatment="ghost" disabled={!!busy} aria-label={`Download the backup taken ${when(b)}`}
-                      onclick={() => download(b)}>Download</Button>
+                      onclick={() => download(b)}>{busy === b.id && onMachine(b) ? 'Fetching…' : 'Download'}</Button>
             {/if}
             {#if restorable(b)}
               <Button treatment="ghost" disabled={!machine || !!busy} aria-label={`Restore the backup taken ${when(b)}`}
@@ -269,8 +278,8 @@
       {/snippet}
     </Table>
     <p class="text-sm text-muted">
-      <em>Download</em> fetches an archive in the bucket as <code>{app.slug}-&lt;stamp&gt;.tar.gz</code>.
-      One kept on the machine downloads once it is in a bucket — give the app a backup destination.
+      <em>Download</em> saves an archive as <code>{app.slug}-&lt;stamp&gt;.tar.gz</code>; one kept on the machine is
+      fetched through the hub first, up to {UPLOAD_MB} MB.
     </p>
   {/if}
 </div>

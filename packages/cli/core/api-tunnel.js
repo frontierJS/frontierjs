@@ -9,11 +9,19 @@
 // deploy block exactly as `fli deploy` resolves it — or an ssh destination
 // (an alias or `user@host`), with an optional `:port`. A named target wins over
 // an alias spelled the same.
+//
+// An App Basecamp placed (`BASECAMP_APP_ID`) publishes the host port Basecamp
+// allocated it, from 10000 up, and nothing on the box reads `deploy.api.port`:
+// forwarding to that one reached an empty port (`FJS-3938`). A named target on
+// such an App takes its port and health path off the App.
 
 import { spawn } from 'child_process'
-import { resolveSide } from './deploy-target.js'
+import { resolveSide, sshHost } from './deploy-target.js'
 
 export const TARGETS = { production: 'production', prod: 'production', stage: 'stage', staging: 'stage' }
+
+// A named target as Basecamp's `EnvironmentTier` spells it.
+const TIERS = { production: 'production', stage: 'staging' }
 
 const DEFAULT_PORT   = 3000
 const DEFAULT_HEALTH = '/health'
@@ -24,10 +32,11 @@ const DEFAULT_HEALTH = '/health'
  *
  * @param {string} value
  * @param {object|null} deployConf  the app's `deploy` block, or null
- * @returns {{ ok: true, host: string, port: number, health: string, target: string|null }
+ * @param {object|null} [app]       the Basecamp App `BASECAMP_APP_ID` names, or null
+ * @returns {{ ok: true, host: string, port: number, health: string, target: string|null, sshPort?: number }
  *         | { ok: false, reason: string }}
  */
-export function resolveApiTarget(value, deployConf) {
+export function resolveApiTarget(value, deployConf, app = null) {
   const raw    = String(value ?? '').trim()
   const port   = Number(deployConf?.api?.port ?? DEFAULT_PORT)
   const health = deployConf?.api?.health ?? DEFAULT_HEALTH
@@ -35,6 +44,7 @@ export function resolveApiTarget(value, deployConf) {
   if (value === true || raw === 'true' || !raw) return { ok: false, reason: '--api needs a target: production, stage, or an ssh destination' }
 
   const target = TARGETS[raw.toLowerCase()]
+  if (target && app) return appTarget(raw, target, app, deployConf)
   if (target) {
     if (!deployConf) return { ok: false, reason: `--api ${raw} reads the deploy block, and frontier.config.js has none — pass an ssh destination instead` }
     const side = resolveSide(deployConf, target, 'api')
@@ -50,14 +60,39 @@ export function resolveApiTarget(value, deployConf) {
 }
 
 /**
+ * A named target on an App Basecamp placed. The machine is the deploy block's
+ * ssh destination where it names one, since that is the alias this laptop holds
+ * a key for; otherwise the machine Basecamp placed the App on. One App is one
+ * environment, so a target in another is refused, as `fli deploy` refuses it.
+ */
+function appTarget(raw, target, app, deployConf) {
+  const tier = app.environment?.tier
+  if (tier && tier !== TIERS[target])
+    return { ok: false, reason: `BASECAMP_APP_ID names App '${app.name}' in ${tier}, and --api ${raw} is ${TIERS[target]} — another environment is another App: run BASECAMP_APP_ID=<id> fli dev --api ${raw}` }
+  if (app.port == null)
+    return { ok: false, reason: `App '${app.name}' publishes no port on its machine, so there is nothing to forward to` }
+
+  const health = app.healthCheck ?? deployConf?.api?.health ?? DEFAULT_HEALTH
+  const side   = deployConf ? resolveSide(deployConf, target, 'api') : null
+  if (side) return { ok: true, host: side.host, port: app.port, health, target }
+
+  const placed = (app.placement ?? []).find(p => p.status === 'running') ?? app.placement?.[0]
+  const server = placed?.server
+  if (!server) return { ok: false, reason: `App '${app.name}' is placed on no machine — pass an ssh destination instead` }
+  const host = sshHost(server.sshUser, server.ipAddress ?? server.name)
+  return { ok: true, host, port: app.port, health, target, ...(server.sshPort && server.sshPort !== 22 ? { sshPort: server.sshPort } : {}) }
+}
+
+/**
  * The ssh arguments for the forward. `-n` because the forward reads nothing,
  * and a prompt (a passphrase, an unknown host key) still reaches the person on
  * /dev/tty. `ExitOnForwardFailure` turns a taken local port into an exit rather
  * than a connection with no forward.
  */
-export function sshArgs({ host, port, localPort }) {
+export function sshArgs({ host, port, localPort, sshPort }) {
   return [
     '-N', '-n',
+    ...(sshPort ? ['-p', String(sshPort)] : []),
     '-o', 'ExitOnForwardFailure=yes',
     '-o', 'ServerAliveInterval=30',
     '-o', 'ServerAliveCountMax=3',
@@ -73,8 +108,8 @@ export function sshArgs({ host, port, localPort }) {
  * with any status — a 404 still proves the forward reaches a server — or
  * rejects with what ssh said when it exits first, or on the timeout.
  */
-export async function openTunnel({ host, port, localPort, health, timeoutMs = 20000, spawnImpl = spawn, fetchImpl = fetch }) {
-  const child = spawnImpl('ssh', sshArgs({ host, port, localPort }), { stdio: ['ignore', 'ignore', 'pipe'] })
+export async function openTunnel({ host, port, localPort, sshPort, health, timeoutMs = 20000, spawnImpl = spawn, fetchImpl = fetch }) {
+  const child = spawnImpl('ssh', sshArgs({ host, port, localPort, sshPort }), { stdio: ['ignore', 'ignore', 'pipe'] })
   let stderr = ''
   child.stderr?.on('data', d => { stderr += d })
   let exited = null

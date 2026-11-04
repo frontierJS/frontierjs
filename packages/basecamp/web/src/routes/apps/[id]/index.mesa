@@ -19,6 +19,7 @@ title: App
   import { getClient } from '@frontierjs/sierra/resource'
   import App, { apps, importDockerfile, dockerfileTemplate, mintDeployKey } from '../../../resources/App.mesa'
   import { domains } from '../../../resources/Domain.mesa'
+  import { edge } from '../../../resources/Edge.mesa'
   import { servers } from '../../../resources/Server.mesa'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
   import { session } from '../../../lib/session.js'
@@ -153,8 +154,9 @@ title: App
 
   async function addDomain() {
     error = null; busy = 'domain'
+    let added = null
     try {
-      await domains.service.create({ ...draft, appId: app.id })
+      added = await domains.service.create({ ...draft, appId: app.id })
       toasts.success(`${draft.hostname} added`)
       draft = domains.make()
       adding = false
@@ -164,6 +166,30 @@ title: App
     } finally {
       busy = null
     }
+    if (added?.id) publishDns(added)
+  }
+
+  // The write's own push is a background job whose refusal reaches only the
+  // API log, so a hostname added here was never published and nothing said
+  // why. The screen pushes too and keeps the answer on the card. The job and
+  // this push can race: both read the zone, the second batch is refused as a
+  // duplicate (a 502), and a second read finds the record written.
+  let dnsOf = {}
+  async function publishDns(d) {
+    dnsOf = { ...dnsOf, [d.id]: { busy: true } }
+    let answer
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const out = await edge.service.invoke('sync', d.id)
+        answer = { ok: true, text: `CNAME ${out.hostname} → ${out.ingress?.name ?? 'its ingress record'}` }
+        break
+      } catch (e) {
+        answer = { ok: false, text: e.message }
+        if (e.code !== 502) break
+        await new Promise(r => setTimeout(r, 1500))
+      }
+    }
+    dnsOf = { ...dnsOf, [d.id]: answer }
   }
 
   async function makePrimary(domain) {
@@ -1105,6 +1131,18 @@ title: App
               </dd>
             </dl>
 
+            {#if dnsOf[d.id] && !dnsOf[d.id].busy}
+              {#if dnsOf[d.id].ok}
+                <Callout tone="success" title="DNS published" data-dns-result="ok">
+                  <code>{dnsOf[d.id].text}</code>
+                </Callout>
+              {:else}
+                <Callout tone="warning" title="DNS not published" data-dns-result="refused">
+                  {dnsOf[d.id].text}. <a href="/dns/">Open DNS</a>
+                </Callout>
+              {/if}
+            {/if}
+
             {#if certFor === d.id}
               <Card>
                 <!-- Fixed ids, not per-domain ones: only one upload form is
@@ -1123,6 +1161,8 @@ title: App
               </Card>
             {:else}
               <div class="cluster">
+                <Button treatment="outlined" disabled={dnsOf[d.id]?.busy} data-publish-dns
+                        onclick={() => publishDns(d)}>{dnsOf[d.id]?.busy ? 'Publishing…' : 'Publish DNS'}</Button>
                 <Button treatment="outlined" onclick={() => certFor = d.id}>
                   {d.cert_status === 'none' ? 'Upload certificate' : 'Replace certificate'}
                 </Button>

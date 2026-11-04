@@ -116,7 +116,7 @@ export function appArchivePull(app: App) {
     // left behind however the browser ends the transfer.
     const file = createReadStream(path)
     file.once('open', () => rmSync(path, { force: true }))
-    return new Response(Readable.toWeb(file) as ReadableStream, { headers: {
+    return new Response(Readable.toWeb(file) as unknown as ReadableStream, { headers: {
       'content-type':        'application/gzip',
       'content-length':      String(size),
       'content-disposition': `attachment; filename="${name.replace(/[^A-Za-z0-9._-]/g, '-')}"`,

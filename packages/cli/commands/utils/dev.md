@@ -126,7 +126,11 @@ fli opens `ssh -L` from this app's own API port to it and starts the rest: the
 proxies already point at that port, so nothing else changes. `production` and
 `stage` resolve off the deploy block the way `fli deploy` does, and the box's
 port is `deploy.api.port`; anything else is an ssh destination, with `:port` to
-name another. The surfaces start only once the health path answers through the
+name another. With `BASECAMP_APP_ID` set, a named target is that App's: the
+port is the one Basecamp allocated it and the health path its `healthCheck`,
+and a target in another environment is refused, since another environment is
+another App (`FJS-3938`). The machine stays the deploy block's ssh destination
+where it names one, else the one Basecamp placed the App on. The surfaces start only once the health path answers through the
 tunnel, and the summary names the target, because every write goes to that
 API's database. The key and database preflights are skipped: neither is the
 one being used.
@@ -139,6 +143,18 @@ package in a bun monorepo, and then ran the wrong runner.
 <script>
 import { readFileSync, copyFileSync } from 'fs'
 import { resolve } from 'path'
+
+// The App `BASECAMP_APP_ID` names, whose port is the one Basecamp allocated
+// on its machine; null for an app Basecamp does not hold.
+async function placedApp() {
+  const appId = process.env.BASECAMP_APP_ID
+  if (!appId) return null
+  const key = process.env.BASECAMP_API_KEY
+  if (!key) throw new Error('BASECAMP_APP_ID is set and BASECAMP_API_KEY is not — the App\'s port is Basecamp\'s to say; set the key, or pass --api <ssh alias>:<port>')
+  const { basecamp, LOCAL_BASECAMP } = await import(resolve(global.fliRoot, 'core/basecamp.js'))
+  const origin = (process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
+  return basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
+}
 </script>
 
 ```js
@@ -174,10 +190,11 @@ try {
 // `--api`: where the tunnel goes, and the local port it takes from the API surface.
 let remote = null
 if (flag.api) {
-  const { resolveApiTarget } = await import(resolve(global.fliRoot, 'core/api-tunnel.js'))
+  const { resolveApiTarget, TARGETS } = await import(resolve(global.fliRoot, 'core/api-tunnel.js'))
   const { loadFrontierConfig } = await import(resolve(global.fliRoot, 'core/utils.js'))
   const { PLACEHOLDER_SERVER } = await import(resolve(global.fliRoot, 'core/deploy-target.js'))
-  const resolved = resolveApiTarget(flag.api, (await loadFrontierConfig(root))?.deploy ?? null)
+  const app = TARGETS[String(flag.api).trim().toLowerCase()] ? await placedApp() : null
+  const resolved = resolveApiTarget(flag.api, (await loadFrontierConfig(root))?.deploy ?? null, app)
   if (!resolved.ok) { log.error(resolved.reason); process.exit(1) }
   if (resolved.host.endsWith(PLACEHOLDER_SERVER)) {
     log.error(`deploy.server is still the placeholder '${PLACEHOLDER_SERVER}' — set it, or pass --api <ssh alias>`)

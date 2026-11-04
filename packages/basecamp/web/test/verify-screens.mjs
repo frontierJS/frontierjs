@@ -580,11 +580,20 @@ try {
   // Download navigates to the bucket's pre-signed GET, and the seeded bucket
   // is Backblaze's real host — so that one request is answered here, with the
   // disposition the link was signed to ask for, as a bucket answers it. The
-  // kept archive offers no Download: the server refuses it by name.
+  // kept archive is pulled through the hub first (FJS-D1833), so its Download
+  // is answered by the machine, which here runs no Outpost.
   const downloads = await evaluate(`document.querySelectorAll('#app-backups-history [aria-label^="Download "]').length`)
-  check('only the archive in the bucket offers Download',
-    downloads === 1 && !!(await evaluate(`!!document.querySelector('tr[data-backup="${foundArchive?.id}"] [aria-label^="Download "]')`)),
+  check('the archive in the bucket and the one its machine kept both offer Download',
+    downloads === 2 && !!(await evaluate(`!!document.querySelector('tr[data-backup="${foundArchive?.id}"] [aria-label^="Download "]')`)),
     `${downloads} Download buttons`)
+  await evaluate(`document.querySelector('tr[data-backup]:not([data-backup="${foundArchive?.id}"]) [aria-label^="Download "]').click()`)
+  const pullRefused = await until(`document.getElementById('app-backups-error')?.textContent ?? ''`,
+    t => t.length > 0, 'Download of the kept archive said nothing').catch(() => '')
+  check('Download of the kept archive asks its machine, and the machine\'s refusal is shown',
+    /No outpost is registered|so its archive cannot be fetched/.test(pullRefused), pullRefused.trim().slice(0, 160))
+  await goto(`/apps/${foundArchive?.appId}/?tab=backups`)
+  await until(`!!document.querySelector('tr[data-backup="${foundArchive?.id}"] [aria-label^="Download "]')`, v => v,
+    'the found archive lost its Download')
   await send('Fetch.enable', { patterns: [{ urlPattern: 'https://s3.us-west-000.backblazeb2.com/*', requestStage: 'Request' }] })
   let signed = null
   const stopBucket = browser.on('Fetch.requestPaused', ({ requestId, request }) => {

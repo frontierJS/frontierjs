@@ -24,12 +24,12 @@ export const primary = { label: null, show: member, entries: [
 // wall and ⌘K reaches every one of them without a group to open.
 export const groups = [
   { label: 'Work', icon: 'work', open: true, show: member, entries: [
-    { href: '/dashboards/',         label: 'Dashboards',      icon: 'dashboards',    sub: 'saved views' },
     { href: '/projects/',           label: 'Projects',        icon: 'projects' },
     { href: '/sites/',              label: 'Sites',           icon: 'pages',         sub: 'the static sites you may edit, and their drafts' },
     { href: '/jobs/',               label: 'Jobs',            icon: 'jobs' },
     { href: '/flags/',              label: 'Flags',           icon: 'flags',         sub: 'feature flags' },
     { href: '/activity/',           label: 'Activity',        icon: 'activity',      sub: 'what happened here' },
+    { href: '/dashboards/',         label: 'Dashboards',      icon: 'dashboards',    sub: 'saved views' },
     { href: '/trash/',              label: 'Trash',           icon: 'trash',         sub: 'deleted, and restorable' },
   ] },
   { label: 'Infrastructure', icon: 'servers', show: member, entries: [

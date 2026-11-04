@@ -111,6 +111,24 @@ export async function servingAddresses(db: any, appId: string): Promise<string[]
 }
 
 /**
+ * Why `servingAddresses` is empty, as the one condition that is missing.
+ * Four rows have to line up and a person fixes each in a different place, so
+ * "runs on no online server" for all four sent someone looking at a machine
+ * that was up while its IP address was the thing unset.
+ */
+export async function servingRefusal(db: any, appId: string): Promise<string> {
+  const rows = await db.asSystem().appServer.findMany({ where: { appId }, include: { server: true } }) as any[]
+  const named = (ps: any[]) => [...new Set(ps.map(p => `'${p.server?.name ?? p.serverId}'`))].join(', ')
+  if (!rows.length) return 'the app is placed on no server — place it on one, then deploy'
+  const online = rows.filter(p => p.server?.status === 'online')
+  if (!online.length)
+    return `the app's servers are not online (${rows.map(p => `'${p.server?.name ?? p.serverId}' ${p.server?.status ?? 'missing'}`).join(', ')})`
+  const running = online.filter(p => p.status === 'running')
+  if (!running.length) return `no release has landed on ${named(online)} — deploy it`
+  return `${named(running)} has no IP address recorded, so there is nothing to point a record at`
+}
+
+/**
  * The container port a build read off the Dockerfile it shipped, taken by an
  * App that stores none (`FJS-D1567`): Basecamp cannot read a private
  * repository's file before the machine clones it. A number a person typed, or

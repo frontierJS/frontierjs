@@ -36,7 +36,7 @@ import { createService, NotFound, BadRequest, BadGateway, Conflict, $ } from '@f
 import { LEVELS }                 from '@frontierjs/litestone'
 import { sessionScope, internalOnly, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws }                 from '../../core/resource.ts'
-import { servingAddresses }       from '../../domain/release/runtime.ts'
+import { servingAddresses, servingRefusal } from '../../domain/release/runtime.ts'
 import { actsAsApp }              from '../../core/gate.ts'
 import { edgeConnectorFor, edgeProviders, appMark, domainMark } from '../../providers/edge/index.ts'
 import { targetFor }              from '../../providers/compute/index.ts'
@@ -215,7 +215,7 @@ async function push(domain: DomainRow) {
     // does not exist, cached as such after the machine is back.
     addresses = await servingAddresses($.app.db!, domain.appId)
     if (!addresses.length)
-      throw new NotYet(`${domain.hostname}'s app runs on no online server — deploy it; a record already there is kept where it last ran`)
+      throw new NotYet(`${domain.hostname} is not published: ${await servingRefusal($.app.db!, domain.appId)}. A record already there is kept where it last ran`)
     home = await zoneOf(accounts, host)
     if (!home) throw new NotYet(`No connected zone holds ${domain.hostname} — connect the account that has it`)
     present = await home.connector.records(home.send, home.zone.id)
@@ -313,8 +313,8 @@ export default createService({
   //              a hostname this app means to answer on that resolves nowhere,
   //              with `why` a push would refuse it: `no-ingress` (no ingress
   //              zone, or one naming an account that is gone), `no-machine`
-  //              (its App runs on no online server), or null when a push
-  //              would write it
+  //              (its App runs on no online server, `detail` saying which
+  //              condition is missing), or null when a push would write it
   //   conflicts  a Domain whose name holds a serving record this app did not
   //              mark — `sync` refuses it (`FJS-D560`), so it is named here
   //   orphans    a record this app marked for a Domain or App that is gone
@@ -380,7 +380,7 @@ export default createService({
       const why = noIngress ? 'no-ingress'
         : !(await servingAddresses($.app.db!, d.appId)).length ? 'no-machine'
         : null
-      missing.push({ ...d, why })
+      missing.push({ ...d, why, detail: why === 'no-machine' ? await servingRefusal($.app.db!, d.appId) : null })
     }
 
     return {

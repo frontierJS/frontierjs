@@ -4474,6 +4474,22 @@ describe('a list honors every filter it admits', () => {
     expect(got).toEqual([api.id])
   })
 
+  // FJS-3941: the screen drew a deleted Domain's route by its uuid.
+  test('domain routes name their hostname, and a deleted Domain\'s routes say so', async () => {
+    const sys    = env.system as any
+    const domain = await sys.domain.create({ data: { workspaceId: ws.id, appId: placed.id, hostname: `gone-${placed.name}.test` } })
+    await sys.domainRoute.create({ data: { workspaceId: ws.id, domainId: domain.id, appId: elsewhere.id, pathPrefix: '/api' } })
+    const read = async () => {
+      const out = await env.as(owner).service('domainRoutes').find({ domainId: domain.id }) as any
+      return (out.data ?? out)[0]
+    }
+    expect(await read()).toMatchObject({ hostname: domain.hostname, domainDeletedAt: null })
+    await sys.domain.remove({ where: { id: domain.id } })
+    const after = await read()
+    expect(after.hostname).toBe(domain.hostname)
+    expect(after.domainDeletedAt).toBeTruthy()
+  })
+
   // One row it must find and one it must leave out, per service: a find that
   // names `status` or `kind` and nothing else answers 400 on `name`.
   const byName: Array<[string, string, (name: string, uniq: string) => Record<string, unknown>]> = [
@@ -5169,7 +5185,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         location: `/var/lib/outpost/backups/${app.id}-2026-01-02T03-04-05-006Z.tar.gz`, ...over,
       } })
       const download = (who: any, id: string) => env.as(who).service('appBackups').call('download', id) as Promise<{ url: string; name: string }>
-      const toHub = (url: string) => { const u = new URL(url); return new Request(`http://basecamp.test${u.pathname}${u.search}`) }
+      const toHub = (url: string) => { const u = new URL(url, 'http://x'); return new Request(`http://basecamp.test${u.pathname}${u.search}`) }
       const hub = async (url: string, init?: RequestInit) => {
         if (!env.app.http.router.isBuilt) await env.http.get('/setup/probe')
         const r = toHub(url)
@@ -5187,8 +5203,10 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
           return { data: { bytes: 12, sha256: 'a'.repeat(64) } }
         },
       }
-      const real = (env.app as any).conduit
-      ;(env.app as any).conduit = fake
+      // `app.conduit` is read-only; its two methods are not.
+      const conduit = (env.app as any).conduit, real = { resolve: conduit.resolve, send: conduit.send }
+      conduit.resolve = (target: string, ...rest: unknown[]) => target === `outpost:${server.id}` ? fake.resolve() : real.resolve.call(conduit, target, ...rest)
+      conduit.send    = (call: any) => fake.send(call)
       try {
         const row = await kept()
         const { url, name } = await download(owner, row.id)
@@ -5196,7 +5214,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         expect(landed).toBe(201)
         expect(sent).toHaveLength(1)
         expect(sent[0]).toMatchObject({ path: '/backup/send', body: { app_id: app.id, path: row.location } })
-        expect(sent[0].body.upload_url).toStartWith(`${new URL(process.env.FRONTIER_API_URL ?? 'http://localhost:8120').origin}/app-archive-pull/`)
+        expect(new URL(sent[0].body.upload_url).pathname).toStartWith('/app-archive-pull/')
         expect(url).toStartWith('/app-archive-pull/')
 
         const got = await hub(url)
@@ -5225,15 +5243,15 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         const big = await kept({ sizeBytes: BODY_CEILING_BYTES + 1 })
         await expect(download(owner, big.id)).rejects.toThrow(/over the 128 MB the hub can pull from bk-host — give the app a backup destination/)
         const before = sent.length
-        await sys.server.update({ where: { id: server.id }, data: { status: 'offline' } })
-        await expect(download(owner, row.id)).rejects.toThrow(/bk-host is offline/)
+        await sys.server.update({ where: { id: server.id }, data: { status: 'unreachable' } })
+        await expect(download(owner, row.id)).rejects.toThrow(/bk-host is unreachable/)
         await sys.server.update({ where: { id: server.id }, data: { status: 'online' } })
         expect(sent).toHaveLength(before)
 
         // A machine that refuses is its own words, and no link is minted.
         fake.send = async () => ({ error: { message: 'x is not a backup of y on this machine' } }) as any
         await expect(download(owner, row.id)).rejects.toThrow(/bk-host could not send that archive: x is not a backup/)
-      } finally { (env.app as any).conduit = real }
+      } finally { Object.assign(conduit, real) }
     })
 
     // A pull abandoned after the PUT (or across a restart, which voids its

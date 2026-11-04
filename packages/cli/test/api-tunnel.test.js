@@ -38,8 +38,36 @@ describe('resolveApiTarget', () => {
   })
 })
 
+describe('resolveApiTarget on an App Basecamp placed', () => {
+  const server = { name: 'yuma', ipAddress: null, sshUser: 'root', sshPort: 22 }
+  const app = { name: 'api', port: 10001, healthCheck: '/api/health', environment: { tier: 'production' }, placement: [{ status: 'running', server }] }
+
+  test('a named target forwards to the port Basecamp allocated, not deploy.api.port', () => {
+    expect(resolveApiTarget('production', deploy, app)).toEqual({ ok: true, host: 'box', port: 10001, health: '/api/health', target: 'production' })
+  })
+
+  test('with no deploy block the machine is the one the App is placed on', () => {
+    expect(resolveApiTarget('prod', null, app)).toMatchObject({ host: 'root@yuma', port: 10001 })
+    const far = { ...app, placement: [{ status: 'running', server: { ...server, ipAddress: '10.0.0.9', sshPort: 2222 } }] }
+    const resolved = resolveApiTarget('production', null, far)
+    expect(resolved).toMatchObject({ host: 'root@10.0.0.9', sshPort: 2222 })
+    expect(sshArgs({ ...resolved, localPort: 8100 })).toEqual(expect.arrayContaining(['-p', '2222']))
+  })
+
+  test('refuses a target in another environment, and an App with no port', () => {
+    expect(resolveApiTarget('stage', deploy, app)).toMatchObject({ ok: false, reason: expect.stringContaining('another environment is another App') })
+    expect(resolveApiTarget('production', deploy, { ...app, port: null }).ok).toBe(false)
+    expect(resolveApiTarget('production', null, { ...app, placement: [] }).ok).toBe(false)
+  })
+
+  test('an ssh destination ignores the App', () => {
+    expect(resolveApiTarget('yuma:10001', deploy, app)).toMatchObject({ host: 'yuma', port: 10001, target: null })
+  })
+})
+
 test('sshArgs forwards loopback to loopback', () => {
   expect(sshArgs({ host: 'box', port: 3000, localPort: 8100 })).toContain('127.0.0.1:8100:127.0.0.1:3000')
+  expect(sshArgs({ host: 'box', port: 3000, localPort: 8100 })).not.toContain('-p')
 })
 
 const fakeSsh = () => {

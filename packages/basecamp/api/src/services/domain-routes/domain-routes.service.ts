@@ -49,13 +49,29 @@ export default createService({
   channel: workspaceChannel,
   reservedQuery: WORKSPACE_QUERY,
 
+  // Each row names its Domain's hostname, the deleted ones too: deleting a
+  // Domain soft-deletes it and keeps its routes, so a restore brings them back,
+  // and until then the route answers nothing (`routedPaths` reads live Domains
+  // only). A list that read live Domains alone drew such a route by uuid,
+  // beside a re-added hostname that had no route at all.
   async find() {
     const { limit, offset } = getPagination()
-    return findScoped('domainRoute', {
+    const result = await findScoped('domainRoute', {
       where:   parseWhere($.query),
       orderBy: { pathPrefix: 'asc' },
       limit, offset,
     })
+    const rows = result.data as { domainId?: string }[]
+    const ids  = [...new Set(rows.map(r => r.domainId).filter(Boolean))] as string[]
+    const held = ids.length ? await db().domain.findMany({
+      where: { id: { in: ids }, workspaceId: ws() }, withDeleted: true,
+      select: { id: true, hostname: true, deletedAt: true },
+    }) as { id: string; hostname: string; deletedAt: string | null }[] : []
+    const byId = new Map(held.map(d => [d.id, d]))
+    return { ...result, data: rows.map(r => {
+      const d = r.domainId ? byId.get(r.domainId) : undefined
+      return { ...r, hostname: d?.hostname ?? null, domainDeletedAt: d?.deletedAt ?? null }
+    }) }
   },
 
   get: () => getScoped('domainRoute', 'Domain route'),
