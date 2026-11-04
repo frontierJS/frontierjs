@@ -58,7 +58,7 @@ if (flag.dry) {
 // ─── Launch editor (blocks until closed) ─────────────────────────────────────
 try {
   execSync(`${editor} "${filePath}"`, { stdio: 'inherit' })
-  log.success('Editor closed')
+  log.done('Editor closed')
 } catch (err) {
   // Exit code 1 is normal for some editors (vi on :q!)
   if (err.status !== 1) {

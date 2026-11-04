@@ -1389,6 +1389,15 @@ title: App
         <dt>CPU</dt><dd>{app.cpuLimit ?? 'no limit'}</dd>
         <dt>Memory</dt><dd>{app.memLimitMb != null ? `${app.memLimitMb} MiB` : 'no limit'}</dd>
         <dt>Stop grace</dt><dd>{app.stopGrace != null ? `${app.stopGrace} s` : "the machine's default"}</dd>
+        <dt>Swap order</dt>
+        <dd id="app-swap">
+          {app.swap === 'startFirst' ? 'Start the new release before stopping the old one' : 'Stop the old release, then start the new one'}
+          {#if app.swap === 'startFirst'}
+            <span class="text-sm text-muted">
+              — only when the schema change is an expand{#if app.hasExposedPort}; this app exposes its port, so it swaps stop-first{/if}
+            </span>
+          {/if}
+        </dd>
       </dl>
       <Button treatment="outlined" onclick={() => editing = true}>Edit</Button>
     </Card>

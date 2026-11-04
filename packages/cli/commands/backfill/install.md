@@ -171,7 +171,7 @@ if (flag.dry) {
   log.dry(`Would append ${importLine} to ${schemaPath}`)
 } else {
   writeFileSync(schemaPath, schemaContents + schemaBlock(flag.db), 'utf8')
-  log.success(`Appended ${importLine} to schema.lite`)
+  log.done(`Appended ${importLine} to schema.lite`)
 }
 
 // ─── 4. Push the schema ───────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ if (flag.dry) {
 } else {
   log.info(apply.kind === 'migrate' ? 'Writing and applying the migration...' : 'Pushing schema to database...')
   $.exec({ command: `cd ${$.paths.root} && bun run litestone ${apply.argv}` })
-  log.success(apply.done)
+  log.done(apply.done)
 }
 
 // ─── 5. What to wire ──────────────────────────────────────────────────────────

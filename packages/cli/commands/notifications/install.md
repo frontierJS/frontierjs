@@ -147,14 +147,14 @@ if (flag.dry) {
 }
 
 writeFileSync(schemaPath, schemaContents.replace(/\s*$/, '\n') + block, 'utf8')
-log.success('Appended models Notification and PushSubscription to schema.lite')
+log.done('Appended models Notification and PushSubscription to schema.lite')
 
 if (flag.push) {
   // No announcement here: `db:push` opens with the same line, and the two
   // printed one after the other read as two pushes.
   try {
     $.exec({ command: `${$.fli} db:push`, cwd: $.paths.root })
-    log.success('Schema pushed')
+    log.done('Schema pushed')
   } catch (e) {
     log.warn(`db:push failed: ${e.message} — run it yourself once the schema parses`)
   }

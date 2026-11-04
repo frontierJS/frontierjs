@@ -51,7 +51,7 @@ $.config.journal      = opened.recorder
 $.config.transitionId = opened.transition.id
 $.config.releaseId    = opened.release.id
 
-log.success(`Journal opened → ${opened.release.app} · ${opened.release.environment}`)
+log.done(`Journal opened → ${opened.release.app} · ${opened.release.environment}`)
 log.detail(`  release     ${opened.release.id}`)
 log.detail(`  serving     ${opened.serving ?? '— nothing recorded yet'}`)
 log.detail(`  transition  ${opened.transition.id}`)

@@ -85,7 +85,7 @@ try {
 
 const suffix = bound.port === 80 ? '' : `:${bound.port}`
 echo('')
-log.success(`serving ${table.size} name(s) on :${bound.port}`)
+log.done(`serving ${table.size} name(s) on :${bound.port}`)
 if (!bound.privileged) {
   // Expected, not an error: 80 is a privileged bind on a project whose pitch is
   // that everything runs as a plain user process.

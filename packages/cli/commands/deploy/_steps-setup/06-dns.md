@@ -99,7 +99,7 @@ for (const p of writes) {
     if (p.create) await createRecord(profile, p.zone.id, { type: 'A', name: p.name, content: ip, ttl: 1, proxied: false })
     else await updateRecord(profile, p.zone.id, p.move.id, { content: ip })
     pointed.push(p.name)
-    log.success(`${p.name} → ${ip}`)
+    log.done(`${p.name} → ${ip}`)
   } catch (err) {
     if (!(err instanceof CloudflareError)) throw err
     log.warn(`${p.name}: ${err.message}`)

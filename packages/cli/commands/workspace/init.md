@@ -68,5 +68,5 @@ mkdirSync(resolve(wsRoot, 'packages'), { recursive: true })
 writeFileSync(resolve(wsRoot, 'package.json'), JSON.stringify(pkgJson, null, 2) + '\n', 'utf8')
 writeFileSync(resolve(wsRoot, '.gitignore'), gitignore, 'utf8')
 
-log.success(`Workspace created at ${wsRoot}`)
+log.done(`Workspace created at ${wsRoot}`)
 ```

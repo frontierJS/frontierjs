@@ -102,6 +102,6 @@ if (flag.dry) {
 }
 
 writeFileSync(target, content, 'utf8')
-log.success(`Wrote home page  ${target}`)
+log.done(`Wrote home page  ${target}`)
 echo(`  ${chalk.dim('Areas:')} ${areas.map(a => a.model).join(', ')}`)
 ```

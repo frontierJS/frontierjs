@@ -2437,6 +2437,23 @@ try {
     t => t.includes('Stop grace'), 'the Config tab never drew the runtime').catch(() => '')
   check('its Config tab shows the stop grace in seconds', /Stop grace\s*90 s/.test(gracedRuntime), gracedRuntime)
 
+  // The swap an app asks for (FJS-D1882): stop-first until the owner says otherwise.
+  check('…and says the old release is stopped first while no swap is asked for',
+    bpApp?.swap === 'stopFirst' && /Swap order\s*Stop the old release, then start the new one/.test(gracedRuntime), gracedRuntime)
+  const swapped = await asOwner('PATCH', `/apps/${bpAppId}`, { swap: 'startFirst', version: graced.body?.version })
+  check('an app takes start-first', swapped.status < 300 && swapped.body?.swap === 'startFirst', JSON.stringify(swapped).slice(0, 160))
+  await goto(`/apps/${bpAppId}/?tab=config`)
+  const swappedRuntime = await until(`document.getElementById('app-swap')?.textContent ?? ''`,
+    t => t.includes('Start the new release'), 'the Config tab never drew the swap').catch(() => '')
+  check('its Config tab says the new release starts first, and only for an expand',
+    /Start the new release before stopping the old one\s*— only when the schema change is an expand/.test(swappedRuntime), swappedRuntime)
+  await click('#app-more')
+  await until(`!!document.getElementById('app-edit')`, v => v, 'the app menu never opened')
+  await click('#app-edit')
+  await until(`!!document.getElementById('app-edit-save')`, v => v, 'the app form never opened')
+  check('the edit form offers the swap order, set to what the app asks',
+    await evaluate(`document.querySelector('dialog[open] [name=swap]')?.value ?? ''`) === 'startFirst')
+
   // ─── Deploy on push (FJS-3393) ─────────────────────────────────────────
   console.log('\n  app detail — deploy on push')
   const gitApp = ((await apiGet('/apps')).body?.data ?? []).find(a => a.source?.kind === 'git')

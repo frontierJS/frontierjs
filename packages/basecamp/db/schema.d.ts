@@ -60,11 +60,13 @@ export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' 
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
-export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
+export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'backupsReadFailed' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
 
 export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github'
 
 export type ComputeProvider = 'custom' | 'hetzner' | 'digitalocean'
+
+export type MachineBackupPlan = 'daily' | 'weekly'
 
 export type PlatformProvider = 'cloudflare'
 
@@ -473,6 +475,19 @@ export interface ServerProvision {
 export interface ServerProvisionStep {
   step: ProvisionStepName
   enrollToken?: string | null
+}
+
+/**
+ * The machine backups a person asks a vendor to keep (`IDEAS/machine-backups.md`).
+ * Only the two plans priced as a share of the machine: the per-GiB plans are read
+ * and shown by name, never asked for, since Basecamp knows neither their price
+ * nor their retention range. `hour` is UTC; `weekday` is DO's three capitals,
+ * on `weekly` only. Which hours a vendor accepts is its connector's to refuse.
+ */
+export interface BackupPolicy {
+  plan: MachineBackupPlan
+  hour: number
+  weekday?: string | null
 }
 
 // ── Models ───────────────────────────────────────────────────────────────────
@@ -2448,6 +2463,8 @@ export interface Server {
   dockerState?: unknown | null
   replication?: unknown | null
   runtime?: unknown | null
+  backupPolicy?: BackupPolicy | null
+  backupReading?: unknown | null
   labels: unknown
   createdAt: string
   updatedAt: string
@@ -2535,6 +2552,8 @@ export interface ServerSystem {
   providerServerId?: string | null
   outpostPublicKey?: string | null
   outpostCert?: string | null
+  backupPolicy?: BackupPolicy | null
+  backupReading?: unknown | null
 }
 
 export interface ServerWhere extends WhereBase {
@@ -2566,6 +2585,8 @@ export interface ServerWhere extends WhereBase {
   dockerState?: unknown | WhereOp<unknown> | null
   replication?: unknown | WhereOp<unknown> | null
   runtime?: unknown | WhereOp<unknown> | null
+  backupPolicy?: BackupPolicy | WhereOp<BackupPolicy> | null
+  backupReading?: unknown | WhereOp<unknown> | null
   labels?: unknown | WhereOp<unknown> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -3014,6 +3035,7 @@ export interface App {
   stopGrace?: number | null
   command: string[]
   hasExposedPort: boolean
+  swap: DeploySwap
   isDeployedOnPush: boolean
   /** @encrypted */
   pushSecret?: string | null
@@ -3050,6 +3072,7 @@ export interface AppCreate {
   stopGrace?: number | null
   command?: string[]
   hasExposedPort?: boolean
+  swap?: DeploySwap
   backupCron?: string | null
   backupDestinationId?: string | null
   replicaDestinationId?: string | null
@@ -3073,6 +3096,7 @@ export interface AppUpdate {
   stopGrace?: number | null
   command?: string[]
   hasExposedPort?: boolean
+  swap?: DeploySwap
   backupCron?: string | null
   backupDestinationId?: string | null
   replicaDestinationId?: string | null
@@ -3109,6 +3133,7 @@ export interface AppWhere extends WhereBase {
   stopGrace?: number | WhereOp<number> | null
   command?: string[] | WhereOp<string[]> | null
   hasExposedPort?: boolean | WhereOp<boolean> | null
+  swap?: DeploySwap | WhereOp<DeploySwap> | null
   isDeployedOnPush?: boolean | WhereOp<boolean> | null
   pushSecret?: string | WhereOp<string> | null
   pushTokenHash?: string | WhereOp<string> | null
@@ -6292,6 +6317,7 @@ export interface SeedTypes {
   FlagOverrideClear: FlagOverrideClear
   ServerProvision: ServerProvision
   ServerProvisionStep: ServerProvisionStep
+  BackupPolicy: BackupPolicy
 }
 
 // ── Cursor pagination result ─────────────────────────────────────────────────
@@ -6473,7 +6499,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem>
   readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'publicKey' | 'tokenHint' | 'revokedAt' | 'lastUsedAt' | 'totalUses' | 'usageDate' | 'usesOnDate' | '@@gate', ApiKeySystem>
-  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerId' | 'providerServerId' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'status' | '@@gate', ServerSystem>
+  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerId' | 'providerServerId' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'backupPolicy' | 'backupReading' | 'status' | '@@gate', ServerSystem>
   readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, 'noticeOwedAt' | '@@gate', ServerEventSystem>
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>
   readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere, VolumeRelations, never, '@@gate'>

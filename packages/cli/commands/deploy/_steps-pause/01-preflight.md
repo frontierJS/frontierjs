@@ -69,7 +69,7 @@ $.config.journal      = opened.recorder
 $.config.transitionId = opened.transition.id
 $.config.servingState = opened.state
 
-log.success(`Journal opened → ${appId} · ${target}`)
+log.done(`Journal opened → ${appId} · ${target}`)
 log.info(`  serving     ${opened.state.serving}`)
 log.info(`  transition  ${opened.transition.id}`)
 ```

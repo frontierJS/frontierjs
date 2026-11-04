@@ -52,7 +52,7 @@ if (!existsSync(target) && existsSync(example)) {
   if (flag.dry) log.dry(`Would copy .env.example to ${file}`)
   else {
     copyFileSync(example, target)
-    log.success(`Created ${file} from .env.example`)
+    log.done(`Created ${file} from .env.example`)
   }
 }
 

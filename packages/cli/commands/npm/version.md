@@ -56,6 +56,6 @@ if (flag.dry) {
 
 $.exec({ command: cmd })
 const after = getVersion(root)
-log.success(`${before} → ${after}`)
+log.done(`${before} → ${after}`)
 if (flag.git) log.info('Git commit and tag created')
 ```

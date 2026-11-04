@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-172 definitions · 74 models · 1 view · 39 types · 58 enums · 0 other
+174 definitions · 74 models · 1 view · 40 types · 59 enums · 0 other
 ```
 
 ## Definitions
@@ -120,6 +120,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ServerEventKind` | enum |
 | `ProviderKind` | enum |
 | `ComputeProvider` | enum |
+| `MachineBackupPlan` | enum |
 | `PlatformProvider` | enum |
 | `PlatformBuild` | enum |
 | `RegisterMethod` | enum |
@@ -197,6 +198,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `FlagOverrideClear` | type |
 | `ServerProvision` | type |
 | `ServerProvisionStep` | type |
+| `BackupPolicy` | type |
 
 ## Enums
 
@@ -220,9 +222,10 @@ validates, and a select that silently drops an option.
 - `SecretKind` — `sshKey`, `providerKey`, `registryAuth`, `tlsCert`, `notification`, `backup`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
-- `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `cameOnline`, `unreachable`, `rebooted`, `containerCrashLooping`, `containerRecovered`, `unitFailed`, `unitRestored`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `postureFailed`, `postureRestored`
+- `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `backupsReadFailed`, `cameOnline`, `unreachable`, `rebooted`, `containerCrashLooping`, `containerRecovered`, `unitFailed`, `unitRestored`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `postureFailed`, `postureRestored`
 - `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`
 - `ComputeProvider` — `custom`, `hetzner`, `digitalocean`
+- `MachineBackupPlan` — `daily`, `weekly`
 - `PlatformProvider` — `cloudflare`
 - `PlatformBuild` — `outpost`, `platform`
 - `RegisterMethod` — `imported`, `provisioned`
@@ -771,6 +774,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `dockerState` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `replication` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `runtime` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `backupPolicy` | `BackupPolicy`? | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
+| `backupReading` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
 | `labels` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 
 **On create**: required — `name`, `slug` · not accepted — `id`
@@ -942,6 +947,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `stopGrace` | `integer`? | — | — | `minimum: 2` | — |
 | `command` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `hasExposedPort` | `boolean` = `false` | — | — | — | — |
+| `swap` | `DeploySwap` = `"stopFirst"` | — | Swap order | — | — |
 | `isDeployedOnPush` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
 | `pushSecret` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` `x-litestone-kind` | — |
 | `pushActorId` | `string`? | — | — | `x-litestone-kind` | — |
@@ -2323,3 +2329,15 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `enrollToken` | `string`? | — | — | — | — |
 
 **On create**: required — `step`
+
+### `BackupPolicy`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `plan` | `MachineBackupPlan` | yes | — | — | — |
+| `hour` | `integer` | yes | — | — | — |
+| `weekday` | `string`? | — | — | — | — |
+
+**On create**: required — `plan`, `hour`

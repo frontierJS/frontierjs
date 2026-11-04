@@ -38,9 +38,18 @@ two rows.
 
 ## A verdict
 
-`log.info/success/warn/error/dry` color the level prefix and nothing else; use
-them for events ("Deleting record…"), not for a result. A result a person
-scans — a list, a report, a ranking — is `echo` with the above.
+`log.info/done/success/warn/error/dry` are for events, not for a result. A
+result a person scans — a list, a report, a ranking — is `echo` with the above.
+
+| Level | Prints | For |
+| ----- | ------ | --- |
+| `info` | dim `·`, plain text | work starting — "Building image…" |
+| `done` | blue `✓` and text | work that finished — "Shipped → abef3c2", "Container started" |
+| `success` | green `✓` and text | a check that passed — "Preflight passed", "Health check passed" |
+| `warn` / `error` | yellow `⚠` / red `✗` and text | to stderr |
+
+Green is a verdict. A line that only reports that something happened is
+`done`, so the lines that were tested stand out from the ones that were not.
 
 A `✓`/`✗` verdict line: glyph green or red, subject plain, message dim when it
 only restates the subject.

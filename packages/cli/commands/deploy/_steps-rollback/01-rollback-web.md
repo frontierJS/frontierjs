@@ -38,5 +38,5 @@ log.info(`Rolling web back: ${currName} → ${prevName}`)
 machine.run(`ln -sfn ${previous} ${serverPath}/current`, { dry: flag.dry })
 
 $.config.webRolledBack = true
-log.success(`Web rolled back → releases/${prevName}`)
+log.done(`Web rolled back → releases/${prevName}`)
 ```

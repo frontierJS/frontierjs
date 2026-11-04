@@ -184,8 +184,8 @@ if (flag.dry) {
   if (tenancyExtension) log.dry('Would append extend model OutboxMessage { @@tenant(none) } (row tenancy)')
 } else {
   writeFileSync(schemaPath, schemaContents + schemaBlock(flag.db) + tenancyExtension, 'utf8')
-  log.success(`Appended ${importLine} to schema.lite`)
-  if (tenancyExtension) log.success('Appended extend model OutboxMessage { @@tenant(none) } — row tenancy')
+  log.done(`Appended ${importLine} to schema.lite`)
+  if (tenancyExtension) log.done('Appended extend model OutboxMessage { @@tenant(none) } — row tenancy')
 }
 
 // ─── 4. Push the schema ───────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ if (flag.dry) {
 } else {
   log.info(apply.kind === 'migrate' ? 'Writing and applying the migration...' : 'Pushing schema to database...')
   $.exec({ command: `cd ${$.paths.root} && bun run litestone ${apply.argv}` })
-  log.success(apply.done)
+  log.done(apply.done)
 }
 
 // ─── 5. What to wire ──────────────────────────────────────────────────────────

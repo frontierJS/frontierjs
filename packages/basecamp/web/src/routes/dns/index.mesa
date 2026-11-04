@@ -17,6 +17,7 @@ title: DNS & edge
   import { portal } from '../../resources/Portal.mesa'
   import { edge } from '../../resources/Edge.mesa'
   import { workspaces } from '../../resources/Workspace.mesa'
+  import { rank, segments } from '@frontierjs/toolbelt/search'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -25,6 +26,7 @@ title: DNS & edge
   import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Skeleton   from '@frontierjs/ui/components/feedback/Skeleton.mesa'
   import Table      from '@frontierjs/ui/components/display/Table.mesa'
@@ -93,6 +95,21 @@ title: DNS & edge
     } finally {
       zoneBusy = false
     }
+  }
+
+  // One query across every account, so a zone is found without knowing which
+  // token opens it. An empty query answers every zone in the provider's order.
+  let zoneQuery = ''
+  $: totalZones = accounts.reduce((n, a) => n + (a.zones?.length ?? 0), 0)
+  $: zonesShown = new Map(accounts.map(a => [a.id, rank(a.zones ?? [], zoneQuery, { keys: ['name'] })]))
+  $: zoneMatches = [...zonesShown.values()].reduce((n, hits) => n + hits.length, 0)
+
+  function onZoneKey(e) {
+    if (e.key === 'Escape') { zoneQuery = ''; return }
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    const account = accounts.find(a => zonesShown.get(a.id)?.length)
+    if (account) readZone(account.id, zonesShown.get(account.id)[0].item.id)
   }
 
   // The pair is written together, the schema's `@@check`; the Workspace's
@@ -378,6 +395,17 @@ title: DNS & edge
     </div>
 
     {#if adapter?.configured}
+      {#if totalZones > 1}
+        <div class="cluster">
+          <label class="visually-hidden" for="zone-search">Filter zones</label>
+          <Input id="zone-search" type="search" placeholder="Filter zones…"
+                 value={zoneQuery} oninput={(e) => zoneQuery = e.target.value}
+                 onkeydown={onZoneKey} />
+          {#if zoneQuery.trim()}
+            <span class="text-sm text-muted" id="zone-search-count">{zoneMatches} of {totalZones}</span>
+          {/if}
+        </div>
+      {/if}
       {#each accounts as account}
         <section class="stack" id={`edge-account-${account.id}`}>
           <h3 class="h5">{account.name} <span class="text-sm text-muted">· {account.label}</span></h3>
@@ -388,17 +416,19 @@ title: DNS & edge
             </Callout>
           {:else if account.zones.length === 0}
             <p class="text-sm text-muted">This token opens no zone.</p>
+          {:else if !zonesShown.get(account.id)?.length}
+            <p class="text-sm text-muted">No zone here matches “{zoneQuery}”.</p>
           {:else}
             <!-- Status only when not active: twenty identical "active" pills
                  hid the one zone that was pending. -->
             <ul class="grid zone-list" style="--grid-min: 14rem" id="edge-zones">
-              {#each account.zones as z}
+              {#each zonesShown.get(account.id) as hit}
                 <li>
                   <Button
-                    treatment={picked?.zoneId === z.id ? 'outlined' : 'ghost'}
-                    aria-pressed={picked?.zoneId === z.id ? 'true' : 'false'}
-                    onclick={() => readZone(account.id, z.id)}
-                  ><span class="zone-name">{z.name}</span>{#if z.status !== 'active'} <Pill tone={ZONE_TONE[z.status] ?? 'muted'}>{z.status}</Pill>{/if}{#if ingress?.accountId === account.id && ingress?.zoneId === z.id} <Badge tone="success">ingress</Badge>{/if}</Button>
+                    treatment={picked?.zoneId === hit.item.id ? 'outlined' : 'ghost'}
+                    aria-pressed={picked?.zoneId === hit.item.id ? 'true' : 'false'}
+                    onclick={() => readZone(account.id, hit.item.id)}
+                  ><span class="zone-name">{#each segments(hit.item.name, hit.ranges) as part}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>{#if hit.item.status !== 'active'} <Pill tone={ZONE_TONE[hit.item.status] ?? 'muted'}>{hit.item.status}</Pill>{/if}{#if ingress?.accountId === account.id && ingress?.zoneId === hit.item.id} <Badge tone="success">ingress</Badge>{/if}</Button>
                 </li>
               {/each}
             </ul>

@@ -120,7 +120,7 @@ for (const { name, dir, newVersion, tarball } of released) {
     try {
       execSync(parts.join(' '), { cwd: dir, stdio: 'inherit' })
       published.push(`${name}@${newVersion}`)
-      log.success(`  ✓ ${name}@${newVersion} → npm`)
+      log.done(`  ✓ ${name}@${newVersion} → npm`)
     } catch (err) {
       failures.push(name)
       log.error(`  ✗ ${name}: ${err.message}`)
@@ -140,7 +140,7 @@ for (const { name, dir, newVersion, tarball } of released) {
     try {
       execSync(release.join(' '), { cwd: ghCwd, stdio: 'inherit' })
       uploaded.push(`${name}@${newVersion}`)
-      log.success(`  ✓ ${name}@${newVersion} → release ${tagName}`)
+      log.done(`  ✓ ${name}@${newVersion} → release ${tagName}`)
     } catch (err) {
       failures.push(name)
       log.error(`  ✗ ${name}: release ${tagName} not created: ${err.message}`)
@@ -174,5 +174,5 @@ if (failures.length) {
 }
 
 prompts?.close()
-if (!flag.dry) log.success(`Published ${released.length} package(s) in ${((Date.now() - $.config.startTime) / 1000).toFixed(1)}s`)
+if (!flag.dry) log.done(`Published ${released.length} package(s) in ${((Date.now() - $.config.startTime) / 1000).toFixed(1)}s`)
 ```

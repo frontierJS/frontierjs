@@ -84,7 +84,7 @@ if (flag.apply) {
     return
   }
   appendFileSync(rcFile, `\n# Added by fli setup\n${line}\n`, 'utf8')
-  log.success(`Added to ${rcFile}`)
+  log.done(`Added to ${rcFile}`)
   log.info(`Run:  source ${rcFile}`)
   return
 }

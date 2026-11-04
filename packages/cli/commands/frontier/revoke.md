@@ -103,7 +103,7 @@ if (answer.status !== 200) {
 writeOwnChain(next)
 const self = target.machine === member.keys.publicKey
 if (!self) writeKeys({ ...member.keys, sealing, retired: [member.keys.sealing, ...(member.keys.retired ?? [])] })
-log.success(`Revoked ${target.print} from ${member.nick} — ${plural(chain.machines.length - 1, 'machine')} left, and a new sealing key.`)
+log.done(`Revoked ${target.print} from ${member.nick} — ${plural(chain.machines.length - 1, 'machine')} left, and a new sealing key.`)
 if (self) log.warn(`That was this machine: ${KEY_FILE} speaks for nobody now, and the new sealing key was not kept here.`)
 if (unreached.length) {
   log.warn(`The post holds no box key for ${unreached.join(', ')}, so the new sealing key was not sealed to it, and letters sealed from now will not open there. Revoke it too, and link it again with a new key.`)

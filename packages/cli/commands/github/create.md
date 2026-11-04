@@ -127,7 +127,7 @@ try {
     include_all_branches: false,
   })
 
-  log.success(`Repository created`)
+  log.done(`Repository created`)
   echo('')
   echo(chalk.bold.cyan(`  ${repo.html_url}`))
   echo('')

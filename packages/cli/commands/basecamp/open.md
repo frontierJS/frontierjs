@@ -42,5 +42,5 @@ if (flag.dry) { log.dry(`open ${url}`); return }
 const { resolve } = await import('node:path')
 const { openUrl } = await import(resolve(global.fliRoot, 'core/open-url.js'))
 openUrl(url)
-log.success(`Opened ${url}`)
+log.done(`Opened ${url}`)
 ```

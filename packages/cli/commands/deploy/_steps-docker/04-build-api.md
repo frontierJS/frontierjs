@@ -88,7 +88,7 @@ $.config.imageAddress  = addressOf(identity, imageTag).address
 // The image is addressed by ID rather than tag: a tag on the builder is a name
 // the target has never heard, and after a load the ID is what both ends agree on.
 const shipped = machine.shipTo(target, $.config.imageAddress ?? imageTag)
-if (shipped) log.success(`Image shipped → ${target.describe()}`)
+if (shipped) log.done(`Image shipped → ${target.describe()}`)
 
 noteForJournal($, '04-build-api', {
   image: $.config.imageAddress ?? imageTag,
@@ -97,7 +97,7 @@ noteForJournal($, '04-build-api', {
   built: shipped ? machine.describe() : null,
 })
 
-log.success(`Image built → ${imageTag}`)
+log.done(`Image built → ${imageTag}`)
 log.detail(`  bytes: ${describeIdentity(identity)}`)
 if (!identity) log.warn('  no digest — this deploy cannot say which bytes it ran')
 ```

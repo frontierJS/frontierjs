@@ -88,6 +88,10 @@ const RESERVED = new Map<string, Record<string, unknown>>()
 
 let nextId = 1000
 
+/** A token scoped without `image:read`: the droplet reads, its backups 403. */
+let backupsRefused = false
+export function sinkRefuseBackups(on = true): void { backupsRefused = on }
+
 /** Reset between tests. A stand-in that accumulates state across a suite makes
  *  *how many machines did this create* unanswerable, which is the one question
  *  a provisioning test exists to ask. */
@@ -96,6 +100,7 @@ export function resetSink(): void {
   KEYS.length    = 0
   RESERVED.clear()
   nextId = 1000
+  backupsRefused = false
   for (const id of [...DROPLETS.keys()]) if (id !== '901') DROPLETS.delete(id)
 }
 
@@ -245,6 +250,18 @@ export function startDoSink(port = PORT) {
           return new Response(null, { status: 204 })
         }
         return json({ reserved_ip: row })
+      }
+
+      // Off, as a droplet created without `backups: true` is: the policy then
+      // carries nothing but the flag, which is what yuma's read answered.
+      const backups = url.pathname.match(/^\/v2\/droplets\/([^/]+)\/backups(\/policy)?$/)
+      if (backups && req.method === 'GET') {
+        const row = DROPLETS.get(decodeURIComponent(backups[1]))
+        if (!row) return json({ id: 'not_found', message: 'The resource you requested could not be found.' }, 404)
+        if (backupsRefused) return json({ id: 'forbidden', message: 'You are not authorized to perform this operation' }, 403)
+        return backups[2]
+          ? json({ policy: { droplet_id: row.id, backup_enabled: false } })
+          : json({ backups: [], links: {}, meta: { total: 0 } })
       }
 
       const action = url.pathname.match(/^\/v2\/droplets\/([^/]+)\/actions$/)

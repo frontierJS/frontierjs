@@ -311,7 +311,7 @@ if (failed) {
   process.exitCode = failed.status || 1
   return
 }
-log.success(`Basecamp is on ${made.name} (${made.ip})`)
+log.done(`Basecamp is on ${made.name} (${made.ip})`)
 if (unneeded) await turnOffUnneeded(dest, identity, log)
 stages.at('dns')
 await markHost({ cloud, id: made.id, log })

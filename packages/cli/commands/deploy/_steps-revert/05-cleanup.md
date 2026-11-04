@@ -45,6 +45,6 @@ fi`)
 await dropLocks()
 
 const elapsed = ((Date.now() - $.config.startTime) / 1000).toFixed(1)
-log.success(`Reverted ${$.config.appId} to ${$.config.revertTo?.id} in ${elapsed}s`)
+log.done(`Reverted ${$.config.appId} to ${$.config.revertTo?.id} in ${elapsed}s`)
 log.info(`  fli deploy:journal --steps   shows what this wrote`)
 ```

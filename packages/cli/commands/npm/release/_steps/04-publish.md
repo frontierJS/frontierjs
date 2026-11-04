@@ -11,5 +11,5 @@ if (otp) parts.push(`--otp ${otp}`)
 
 log.info(`Publishing ${pkg.name}@${newVersion} → ${tag}`)
 $.exec({ command: parts.join(' '), dry: flag.dry })
-if (!flag.dry) log.success(`Published to npm`)
+if (!flag.dry) log.done(`Published to npm`)
 ```

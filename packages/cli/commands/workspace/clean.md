@@ -76,7 +76,7 @@ if (flag.dry) return
 if (!totalRemoved) {
   log.info('Nothing to clean — all packages already clean')
 } else {
-  log.success(`Cleaned ${totalRemoved} director${totalRemoved === 1 ? 'y' : 'ies'} across ${packages.length} package(s)`)
+  log.done(`Cleaned ${totalRemoved} director${totalRemoved === 1 ? 'y' : 'ies'} across ${packages.length} package(s)`)
   if (flag.deps) log.info('Run `fli ws:install` to restore node_modules')
 }
 ```

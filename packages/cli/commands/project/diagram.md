@@ -145,7 +145,7 @@ if (!page) {
 
 mkdirSync(dirname(out), { recursive: true })
 writeFileSync(out, page + '\n')
-log.success(`Wrote ${relative(root, out)} (${kb(page.length)})`)
+log.done(`Wrote ${relative(root, out)} (${kb(page.length)})`)
 if (restarted(text)) log.warn('The reply started the page over after reaching the output limit; the last whole page was kept')
 if (result?.cost != null) log.info(chalk.dim(`$${result.cost.toFixed(3)} · ${result.turns} turn(s)`))
 if (flag.open) {

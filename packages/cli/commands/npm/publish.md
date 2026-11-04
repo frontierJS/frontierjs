@@ -63,5 +63,5 @@ if (flag.dry) {
 }
 
 $.exec({ command: cmd })
-log.success(`Published ${pkg.name}@${pkg.version} → ${flag.tag}`)
+log.done(`Published ${pkg.name}@${pkg.version} → ${flag.tag}`)
 ```

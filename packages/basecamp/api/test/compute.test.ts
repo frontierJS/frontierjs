@@ -235,6 +235,64 @@ describe('the DigitalOcean dialect', () => {
         : { data: { regions: [], images: [] }, status: 200 }
     )).rejects.toThrow(/auth_failed/)
   })
+
+  // The policy and the list, as `GET /v2/droplets/<id>/backups[/policy]`
+  // answered on the real account (`IDEAS/machine-backups.md` 0.1).
+  const backupsOf = (policy: unknown, backups: unknown[] = []) => digitalOcean.backups(canned({
+    '/v2/droplets/1/backups/policy': { policy },
+    '/v2/droplets/1/backups':        { backups, links: {}, meta: { total: backups.length } },
+  }), '1')
+
+  test('backups off is the flag and nothing else, and reads as off', async () => {
+    expect(await backupsOf({ droplet_id: 1, backup_enabled: false })).toEqual({
+      enabled: false, plan: null, hour: null, weekday: null,
+      windowHours: null, retentionDays: null, taken: [],
+    })
+  })
+
+  test('a weekly plan carries its weekday, a daily one has none, and hour 0 is midnight', async () => {
+    const weekly = await backupsOf({ droplet_id: 1, backup_enabled: true, backup_policy: {
+      plan: 'weekly', weekday: 'SUN', hour: 16, window_length_hours: 4, retention_period_days: 28 } })
+    expect(weekly).toMatchObject({ enabled: true, plan: 'weekly', weekday: 'SUN', hour: 16,
+                                   windowHours: 4, retentionDays: 28 })
+
+    const daily = await backupsOf({ droplet_id: 1, backup_enabled: true, backup_policy: {
+      plan: 'daily', hour: 0, window_length_hours: 4, retention_period_days: 7 } })
+    expect(daily).toMatchObject({ plan: 'daily', weekday: null, hour: 0 })
+  })
+
+  test('a per-GiB plan is read by its own name, never as the nearest one Basecamp offers', async () => {
+    // `custom_daily` read as `daily` would put 30% of the droplet on the cost
+    // line for a plan DigitalOcean prices per GiB of disk.
+    const custom = await backupsOf({ droplet_id: 1, backup_enabled: true, backup_policy: {
+      plan: 'custom_daily', hour: 8, window_length_hours: 4, retention_period_days: 14 } })
+    expect(custom!.plan).toBe('custom_daily')
+    expect(custom!.retentionDays).toBe(14)
+  })
+
+  test('taken backups are newest first, whatever order DO listed them in', async () => {
+    const b = await backupsOf({ droplet_id: 1, backup_enabled: true, backup_policy: { plan: 'daily', hour: 20 } }, [
+      { id: 11, name: 'a', created_at: '2026-11-02T20:08:16Z', size_gigabytes: 61.5, type: 'backup' },
+      { id: 12, name: 'b', created_at: '2026-11-03T20:08:16Z', size_gigabytes: 61.96, type: 'backup' },
+    ])
+    expect(b!.taken).toEqual([
+      { id: '12', at: '2026-11-03T20:08:16Z', sizeGb: 61.96 },
+      { id: '11', at: '2026-11-02T20:08:16Z', sizeGb: 61.5 },
+    ])
+  })
+
+  test('a droplet DO no longer has is null; a refused read throws rather than reading as off', async () => {
+    expect(await digitalOcean.backups(
+      async () => ({ data: null, status: 404, error: { kind: 'client_error' } }), '1')).toBeNull()
+
+    // A token without `image:read` is refused the list. *Off* there would tell
+    // a person their box has no backups when it may have seven.
+    await expect(digitalOcean.backups(async (req: { path: string }) =>
+      req.path.includes('/policy')
+        ? { data: { policy: { backup_enabled: true } }, status: 200 }
+        : { data: { id: 'forbidden', message: 'You are not authorized' }, status: 403, error: { kind: 'client_error' } },
+      '1')).rejects.toThrow(/403.*not authorized/)
+  })
 })
 
 // ─── The seam ────────────────────────────────────────────────────────────
@@ -948,6 +1006,51 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     expect(seen.ipAddress).toBe('203.0.113.90')
   })
 
+  test('sync records the vendor’s backup reading, and a refused read keeps the last one', async () => {
+    const { sinkRefuseBackups } = await import('../src/providers/compute/digitalocean-sink.ts')
+    const sys = env.system as any
+    // A machine of its own: a sync moves status off the vendor's answer, and
+    // `prod-web-01` is still at `installing` for the destroy below.
+    const base = await sys.server.findFirst({ where: { name: 'prod-web-01' } })
+    const made = await digitalOcean.create(sendVia(app, targetFor('digitalocean', account.id)), {
+      name: 'backed-up', region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64',
+      userData: '#!/bin/bash\ntrue', mark: markFor('backed-up'),
+    })
+    const row = await sys.server.create({ data: {
+      workspaceId: base.workspaceId, name: 'backed-up', slug: 'backed-up',
+      providerKind: 'digitalocean', providerId: account.id, providerServerId: made.providerServerId,
+    } })
+    const servers = env.as(owner).service('servers')
+    const reading = async () => (await sys.server.findFirst({ where: { id: row.id } })).backupReading
+
+    await servers.call('sync', row.id)
+    const first = await reading()
+    expect(first).toMatchObject({ enabled: false, plan: null, taken: [] })
+    expect(first.readAt).toBeTruthy()
+    // Not managed until a person sets it: a sync only reads.
+    expect((await sys.server.findFirst({ where: { id: row.id } })).backupPolicy).toBeNull()
+
+    // A token without `image:read`. Writing *off* here would show a box that
+    // has seven backups as having none.
+    sinkRefuseBackups()
+    try { await servers.call('sync', row.id) } finally { sinkRefuseBackups(false) }
+    expect(await reading()).toEqual(first)
+    const events = await sys.serverEvent.findMany({ where: { serverId: row.id, kind: 'backupsReadFailed' } })
+    expect(events).toHaveLength(1)
+  })
+
+  test('neither backup column is a person’s to patch, an owner included', async () => {
+    const row     = await (env.system as any).server.findFirst({ where: { name: 'backed-up' } })
+    const servers = env.as(owner).service('servers')
+    // One key per patch, so each refusal is that column's and not its neighbor's.
+    for (const data of [{ backupPolicy: { plan: 'daily', hour: 4 } }, { backupReading: { enabled: true } }]) {
+      await expect(servers.patch(row.id, data)).rejects.toThrow(/is @system/)
+    }
+    const after = await (env.system as any).server.findFirst({ where: { id: row.id } })
+    expect(after.backupPolicy).toBeNull()
+    expect(after.backupReading.enabled).toBe(false)
+  })
+
   test('a destroy without the typed name is REFUSED', async () => {
     // `docs/vision.md` constraint 5. The friction is the feature, and the thing
     // typed is the thing destroyed — so a stale screen cannot confirm the wrong
@@ -1653,6 +1756,42 @@ describe('the Hetzner dialect', () => {
     // which is a list that looks complete and is not.
     expect(paths.every(p => p.includes('per_page=50'))).toBe(true)
   })
+
+  const hzBackupsOf = (backup_window: string | null, images: unknown[] = []) => hetzner.backups(canned({
+    '/v1/servers/9': { server: { id: 9, status: 'running', backup_window } },
+    '/v1/images':    { images },
+  }), '9')
+
+  test("the server's window is the whole policy: daily, seven kept, and a window across midnight", async () => {
+    // Hetzner has no policy endpoint and one plan. `"22-02"` is four hours,
+    // not minus twenty.
+    expect(await hzBackupsOf('22-02')).toMatchObject({
+      enabled: true, plan: 'daily', hour: 22, weekday: null, windowHours: 4, retentionDays: 7,
+    })
+    expect(await hzBackupsOf(null)).toEqual({
+      enabled: false, plan: null, hour: null, weekday: null,
+      windowHours: null, retentionDays: null, taken: [],
+    })
+  })
+
+  test('taken backups are the images bound to the server, and one still creating is not taken', async () => {
+    const paths: string[] = []
+    const b = await hetzner.backups(async (req: any) => {
+      paths.push(req.path)
+      return req.path.startsWith('/v1/servers/')
+        ? { data: { server: { id: 9, backup_window: '06-10' } }, status: 200 }
+        : { data: { images: [
+            { id: 31, type: 'backup', status: 'available', created: '2026-11-02T06:10:00+00:00', image_size: 2.4, bound_to: 9 },
+            { id: 32, type: 'backup', status: 'available', created: '2026-11-03T06:10:00+00:00', image_size: null, bound_to: 9 },
+            { id: 33, type: 'backup', status: 'creating',  created: '2026-11-04T06:01:00+00:00', image_size: null, bound_to: 9 },
+          ] }, status: 200 }
+    }, '9')
+    expect(paths.find(p => p.startsWith('/v1/images'))).toContain('type=backup&bound_to=9')
+    expect(b!.taken).toEqual([
+      { id: '32', at: '2026-11-03T06:10:00+00:00', sizeGb: null },
+      { id: '31', at: '2026-11-02T06:10:00+00:00', sizeGb: 2.4 },
+    ])
+  })
 })
 
 // ─── Hetzner, through the real seam ──────────────────────────────────────
@@ -1894,8 +2033,16 @@ describe('two clouds, one vocabulary', () => {
         .map((m: any) => m.providerServerId)).toContain(made.providerServerId)
       expect(await c.connector.marked(send, markFor(serial))).toHaveLength(1)
 
+      // A machine is bought with its backups off, at both vendors (`FJS-D1864`
+      // asks at create; nothing sends the field yet).
+      expect(await c.connector.backups(send, made.providerServerId)).toEqual({
+        enabled: false, plan: null, hour: null, weekday: null,
+        windowHours: null, retentionDays: null, taken: [],
+      })
+
       expect(await c.connector.destroy(send, made.providerServerId)).toBe(true)
       expect(await c.connector.machine(send, made.providerServerId)).toBeNull()
+      expect(await c.connector.backups(send, made.providerServerId)).toBeNull()
       expect((await c.connector.marked(send, fleetMark()))
         .map((m: any) => m.providerServerId)).not.toContain(made.providerServerId)
     })

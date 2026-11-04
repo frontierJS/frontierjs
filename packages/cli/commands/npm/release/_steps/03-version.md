@@ -27,5 +27,5 @@ if (flag.dry) {
 $.exec({ command: cmd })
 const after = getVer(root)
 $.config.newVersion = after
-log.success(`${before} → ${after}`)
+log.done(`${before} → ${after}`)
 ```

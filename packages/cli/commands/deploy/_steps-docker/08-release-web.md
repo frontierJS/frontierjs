@@ -24,5 +24,5 @@ if (!releaseDir) {
 log.info('Updating web release symlink...')
 machineFor($, host, serverPath).run(`ln -sfn ${releaseDir} ${currentLink}`)
 
-log.success(`Web live → current → releases/${$.config.commit}`)
+log.done(`Web live → current → releases/${$.config.commit}`)
 ```

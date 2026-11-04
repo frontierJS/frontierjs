@@ -140,7 +140,7 @@ if (failed) {
   process.exitCode = failed.status || 1
   return
 }
-log.success(`Basecamp is on ${dest}`)
+log.done(`Basecamp is on ${dest}`)
 if (unneeded) await turnOffUnneeded(dest, '', log)
 stages.at('dns')
 const ip = await boxAddress(dest)

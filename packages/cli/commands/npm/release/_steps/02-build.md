@@ -24,5 +24,5 @@ if (!hasScript($.config.root, 'build')) {
 
 log.info('Building...')
 $.exec({ command: `npm run build --prefix ${$.config.root}`, dry: flag.dry })
-log.success('Build complete')
+log.done('Build complete')
 ```

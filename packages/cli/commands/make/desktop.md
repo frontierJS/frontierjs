@@ -134,7 +134,7 @@ const hasApi     = existsSync(join(root, 'api'))
 
 const { written, skipped } = scaffoldDesktopSurface({ root, appName, wraps, hasApi, apiPort, devPort, sidecar })
 
-for (const f of written) log.success(`Created ${f}`)
+for (const f of written) log.done(`Created ${f}`)
 if (skipped.length) log.info(`Kept ${skipped.length} existing file(s) — a scaffold never overwrites your config.`)
 
 // Only added when absent: an app that renamed one meant to.
@@ -148,7 +148,7 @@ if (appPkg) {
   }
   if (added.length) {
     writeFileSync(appPkgPath, `${JSON.stringify(appPkg, null, 2)}\n`, 'utf8')
-    log.success(`Added scripts: ${added.join(', ')}`)
+    log.done(`Added scripts: ${added.join(', ')}`)
   }
 }
 

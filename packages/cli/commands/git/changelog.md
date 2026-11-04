@@ -121,5 +121,5 @@ const outPath    = resolve(cwd, flag.output)
 const existing   = existsSync(outPath) ? readFileSync(outPath, 'utf8') : ''
 const newContent = md + (existing ? '\n---\n\n' + existing : '')
 writeFileSync(outPath, newContent, 'utf8')
-log.success(`Updated ${flag.output} with ${commits.length} commit(s)${lastTag ? ` since ${lastTag}` : ''}`)
+log.done(`Updated ${flag.output} with ${commits.length} commit(s)${lastTag ? ` since ${lastTag}` : ''}`)
 ```

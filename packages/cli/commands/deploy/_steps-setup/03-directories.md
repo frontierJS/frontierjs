@@ -102,7 +102,7 @@ $.config.envSeeded = !present && existsSync(localEnv)
 // above, which the login writes as itself.
 machine.run(`chown -R ${owner} ${secretsDir} 2>/dev/null || sudo chown -R ${owner} ${secretsDir}`)
 
-log.success('Directories ready')
+log.done('Directories ready')
 log.info(`  ${serverPath}/db          ← SQLite database, owned by ${owner.split(':')[0]}`)
 log.info(`  ${serverPath}/releases/   ← web release history`)
 log.info(`  ${serverPath}/src/        ← the app as committed, written by each deploy`)

@@ -177,7 +177,7 @@ for (let i = 0; i < (flag.times ?? 1); i++) {
   echo(greeting)
 }
 
-log.success(`Greeted ${arg.name} ${flag.times} time(s)`)
+log.done(`Greeted ${arg.name} ${flag.times} time(s)`)
 ```
 ````
 
@@ -342,7 +342,7 @@ Mesa's is the component runtime, so knowing one teaches the next.
 // Destructured from $ at the top of the body:
 arg             // positional args        → arg.name, arg.path
 flag            // flags                  → flag.dry, flag.force
-log             // the styled logger      → log.info/success/warn/error/dry/detail
+log             // the styled logger      → log.info/done/success/warn/error/dry/detail
 tty             // the terminal, held     → tty.keys/line/live/aside/onExit/title/wrap
 echo            // one output line (stdout, or the GUI's event stream); a call or a tag, echo`  ● ${name}`
                 //   echo.lines(rows, { indent, style }) — a block; false/null rows are dropped

@@ -757,6 +757,8 @@ rather than refusing the row.
 | `Server` | `enrollTokenHash` | `@guarded` |
 | `Server` | `outpostPublicKey` | `@system` |
 | `Server` | `outpostCert` | `@system` |
+| `Server` | `backupPolicy` | `@system` |
+| `Server` | `backupReading` | `@system` |
 | `ServerEvent` | `noticeOwedAt` | `@system` |
 | `Session` | `token` | `@guarded` |
 | `User` | `email` | `@allow(write, auth().isSystemAdmin)` |

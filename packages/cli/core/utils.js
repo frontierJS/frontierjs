@@ -95,8 +95,13 @@ export const logger = (msg, level = 'log') => {
     case 'dry':
       console.log(chalk.cyan('~') + ' ' + chalk.dim(msg))
       break
+    // success is a check that passed and done is an action that finished.
+    // Both green read every shipped/built/started line as a verdict.
     case 'success':
       console.log(chalk.green('✓') + ' ' + chalk.green(msg))
+      break
+    case 'done':
+      console.log(chalk.blue('✓') + ' ' + chalk.blue(msg))
       break
     case 'info':
       console.log(chalk.dim('·') + ' ' + msg)

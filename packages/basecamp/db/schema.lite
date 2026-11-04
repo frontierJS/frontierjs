@@ -527,6 +527,8 @@ enum ServerEventKind {
   // that means a connector needs a new row.
   syncRequested statusSynced statusSyncIgnored syncFailed
   syncNoAccount syncUnsupported syncUnrecognized
+  // Its machine backups at the vendor, read on the same sync.
+  backupsReadFailed
   // The machine itself. `rebooted` is its boot id changing between two
   // heartbeats; `rebootRequested` above is a person's ask.
   cameOnline unreachable rebooted
@@ -544,6 +546,8 @@ enum ProviderKind   { custom hetzner digitalocean cloudflare github }
 // The vendors that sell machines — what a Server can run on. Every member is a
 // `ProviderKind` member too (FJS-D1607); an edge or a forge is not one.
 enum ComputeProvider { custom hetzner digitalocean }
+// The machine-backup plans Basecamp can ask for (`BackupPolicy`).
+enum MachineBackupPlan { daily weekly }
 // The vendors that run an App with no machine of ours — a subset of
 // ProviderKind, as ComputeProvider is; adopting from an account whose
 // `providerKind` is not here is refused by name.
@@ -1354,6 +1358,17 @@ valueset SshKeys {
   where  "kind = 'sshKey'"
 }
 
+/// The machine backups a person asks a vendor to keep (`IDEAS/machine-backups.md`).
+/// Only the two plans priced as a share of the machine: the per-GiB plans are read
+/// and shown by name, never asked for, since Basecamp knows neither their price
+/// nor their retention range. `hour` is UTC; `weekday` is DO's three capitals,
+/// on `weekly` only. Which hours a vendor accepts is its connector's to refuse.
+type BackupPolicy {
+  plan    MachineBackupPlan
+  hour    Int
+  weekday String?
+}
+
 model Server {
   id               String       @id @default(uuid())
   workspaceId      String
@@ -1463,6 +1478,18 @@ model Server {
   // on `App.status`, which only a deploy moves; this is the observation beside it.
   // `checked_at` is when it was read, and a null part is one the box could not take.
   runtime          Json?
+  // The machine's backups at its vendor (`FJS-D1862`). `backupPolicy` is what a
+  // person set and `sync` puts the vendor back to; null is NOT MANAGED, and
+  // Basecamp then shows the reading and pushes nothing, so linking a box never
+  // changes its backups by itself. `@system` because the push spends the
+  // workspace's token: a column any developer could patch would be a vendor
+  // write past `setBackups`' gate.
+  //
+  // `backupReading` is the vendor's last answer (`MachineBackups` in
+  // `providers/compute/index.ts`) with its `readAt`, written by `sync`. A read
+  // that fails records `backupsReadFailed` and leaves the last reading standing.
+  backupPolicy     Json?        @type(BackupPolicy) @system
+  backupReading    Json?        @system
   labels           Json         @default("{}")
 
   createdAt        DateTime     @default(now())
@@ -1875,6 +1902,10 @@ model App {
   // only through Caddy by hostname (`FJS-D930`). The posture grader reads it:
   // a public listener no app declares is `net.unexpected-listener`.
   hasExposedPort Boolean     @default(false)
+  // The swap this app asks for when a release lands (`FJS-D1882`). startFirst is
+  // a request: Outpost overlaps only for an expand, and never for an app that
+  // exposes its port. Read off the live app, rollbacks included.
+  swap          DeploySwap  @default(stopFirst) @label("Swap order")
 
   // Deploy on push (`FJS-D884`): a forge's push event releases this app through
   // the `git` Receiver. `pushSecret` is the HMAC key a forge signs with and

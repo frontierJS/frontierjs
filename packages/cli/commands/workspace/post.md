@@ -114,6 +114,6 @@ writeMemberConfig({ nick: me.nick })
 if (me.root !== await ownRoot(keys)) writeMemberConfig({ root: null })
 const published = await publishOwn(POST_ORIGIN, keys).catch(e => e.message)
 if (published) log.warn(`The post did not take ${published} — the next \`fli tell\` verb tries again.`)
-log.success(`The post is up at ${POST_ORIGIN}, and ${me.nick} is ${members.length === 1 ? 'its one member' : `one of ${members.length} members`}.`)
+log.done(`The post is up at ${POST_ORIGIN}, and ${me.nick} is ${members.length === 1 ? 'its one member' : `one of ${members.length} members`}.`)
 echo(`  saved as frontier.nick in ${CONFIG_FILE}`)
 ```

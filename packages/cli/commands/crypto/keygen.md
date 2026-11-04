@@ -102,19 +102,19 @@ const writeToEnv = (envPath, name, value, dry, log) => {
       // Key already exists — update it
       if (dry) return log.dry(`Would update ${name} in ${envPath}`)
       writeFileSync(envPath, contents.replace(varRegex, () => line))
-      log.success(`Updated ${name} in ${envPath}`)
+      log.done(`Updated ${name} in ${envPath}`)
     } else {
       // Append to end
       if (dry) return log.dry(`Would append ${name} to ${envPath}`)
       const suffix = contents.endsWith('\n') ? '' : '\n'
       appendFileSync(envPath, `${suffix}${line}\n`)
-      log.success(`Appended ${name} to ${envPath}`)
+      log.done(`Appended ${name} to ${envPath}`)
     }
   } else {
     // Create new .env file
     if (dry) return log.dry(`Would create ${envPath} with ${name}`)
     writeFileSync(envPath, `${line}\n`)
-    log.success(`Created ${envPath} with ${name}`)
+    log.done(`Created ${envPath} with ${name}`)
   }
 }
 
@@ -213,7 +213,7 @@ if (arg.type === 'vapid') {
       log.dry('Would copy the pair to clipboard')
     } else {
       const { copyToClipboard, clipboardTools } = await import(resolve(global.fliRoot, 'core/clipboard.js'))
-      if (copyToClipboard(lines)) log.success('Copied to clipboard')
+      if (copyToClipboard(lines)) log.done('Copied to clipboard')
       else log.warn(`Could not copy to clipboard — is ${clipboardTools() ?? 'a clipboard tool'} installed?`)
     }
   }
@@ -278,7 +278,7 @@ if (flag.copy) {
     log.dry('Would copy key to clipboard')
   } else {
     const { copyToClipboard, clipboardTools } = await import(resolve(global.fliRoot, 'core/clipboard.js'))
-    if (copyToClipboard(key)) log.success('Copied to clipboard')
+    if (copyToClipboard(key)) log.done('Copied to clipboard')
     else log.warn(`Could not copy to clipboard — is ${clipboardTools() ?? 'a clipboard tool'} installed?`)
   }
 }

@@ -60,7 +60,7 @@ for (const dep of missingDeps) {
   log.info(`Installing ${dep.name}...`)
   try {
     machine.run(`sudo sh -c '${dep.install}'`)
-    log.success(`${dep.name} installed`)
+    log.done(`${dep.name} installed`)
   } catch (err) {
     log.warn(`${dep.name} install failed: ${err.message}`)
     log.info(`Install manually: ${dep.install}`)

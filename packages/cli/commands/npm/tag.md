@@ -47,5 +47,5 @@ if (!arg.package.includes('@')) { log.error('Include a version — e.g. my-pkg@1
 
 log.info(`Setting ${arg.package} → ${arg.tag}`)
 $.exec({ command: `npm dist-tag add ${arg.package} ${arg.tag}`, dry: flag.dry })
-if (!flag.dry) log.success(`Tagged ${arg.package} as ${arg.tag}`)
+if (!flag.dry) log.done(`Tagged ${arg.package} as ${arg.tag}`)
 ```

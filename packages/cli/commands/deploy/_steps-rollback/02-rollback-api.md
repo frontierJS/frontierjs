@@ -39,7 +39,7 @@ if (hasReplaced) {
 docker rm    ${container} || true
 docker rename ${replaced} ${container}
 docker start  ${container}`, { dry: flag.dry })
-  log.success(`API restored → ${container} (from _replaced)`)
+  log.done(`API restored → ${container} (from _replaced)`)
 
 } else {
   // No _replaced — list available images for this app and let user choose
@@ -117,6 +117,6 @@ docker start  ${container}`, { dry: flag.dry })
     $.config.abort = true
     throw new Error(`Rollback failed health check for ${short(previousImage)}`)
   }
-  log.success(`API rolled back → ${previousImage}`)
+  log.done(`API rolled back → ${previousImage}`)
 }
 ```

@@ -33,7 +33,7 @@ await dropLocks()
 const { appId, target, pauseKind } = $.config
 const elapsed = ((Date.now() - $.config.startTime) / 1000).toFixed(1)
 
-log.success(`${pauseKind === 'pause' ? 'Paused' : 'Unpaused'} ${appId} on ${target} in ${elapsed}s`)
+log.done(`${pauseKind === 'pause' ? 'Paused' : 'Unpaused'} ${appId} on ${target} in ${elapsed}s`)
 if (pauseKind === 'pause') log.info(`  fli deploy:unpause${target === 'production' ? ' --production' : ''}   lifts it`)
 log.info(`  fli deploy:status   shows what the journal and the edge each say`)
 ```

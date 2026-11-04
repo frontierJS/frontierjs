@@ -42,5 +42,5 @@ if (!flag.force) {
 }
 
 $.exec({ command: `npm unpublish ${arg.package} --force` })
-log.success(`Unpublished ${arg.package}`)
+log.done(`Unpublished ${arg.package}`)
 ```

@@ -72,7 +72,7 @@ if (!target) {
     } else {
       for (const pid of pids) log.info(`port ${port} → pid ${pid}  ${describe(pid)}`)
       if (sh(`kill ${signal} ${pids.join(' ')}`, flag.dry, log) && !flag.dry) {
-        log.success(`killed ${pids.length} process${pids.length === 1 ? '' : 'es'} on port ${port}`)
+        log.done(`killed ${pids.length} process${pids.length === 1 ? '' : 'es'} on port ${port}`)
       }
     }
   }

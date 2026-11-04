@@ -478,6 +478,8 @@ CREATE TABLE IF NOT EXISTS "server" (
   "dockerState" TEXT,
   "replication" TEXT,
   "runtime" TEXT,
+  "backupPolicy" TEXT,
+  "backupReading" TEXT,
   "labels" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -760,7 +762,7 @@ CREATE TABLE IF NOT EXISTS "server_event" (
   "metadata" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "noticeOwedAt" TEXT,
-  CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'cameOnline', 'unreachable', 'rebooted', 'containerCrashLooping', 'containerRecovered', 'unitFailed', 'unitRestored', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'postureFailed', 'postureRestored')),
+  CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'backupsReadFailed', 'cameOnline', 'unreachable', 'rebooted', 'containerCrashLooping', 'containerRecovered', 'unitFailed', 'unitRestored', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'postureFailed', 'postureRestored')),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_event_serverId" ON "server_event" ("serverId");
@@ -1032,6 +1034,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   "stopGrace" INTEGER,
   "command" TEXT NOT NULL DEFAULT '[]' CHECK (json_valid("command") AND json_type("command") = 'array'),
   "hasExposedPort" INTEGER NOT NULL DEFAULT 0,
+  "swap" TEXT NOT NULL DEFAULT 'stopFirst',
   "isDeployedOnPush" INTEGER NOT NULL DEFAULT 0,
   "pushSecret" TEXT,
   "pushTokenHash" TEXT,
@@ -1049,6 +1052,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   "deletedAt" TEXT,
   CHECK ("kind" IN ('container', 'worker', 'database', 'daemon', 'cron', 'static', 'function')),
   CHECK ("status" IN ('unknown', 'stopped', 'starting', 'running', 'stopping', 'deploying', 'error')),
+  CHECK ("swap" IN ('startFirst', 'stopFirst')),
   UNIQUE ("environmentId", "slug"),
   FOREIGN KEY ("environmentId") REFERENCES "environment" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("blueprintId") REFERENCES "blueprint" ("id") ON DELETE SET NULL,

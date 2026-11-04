@@ -86,9 +86,9 @@ if (!stats) return refuse($, 'Rotation failed — the reason is above', 'ENCRYPT
 
 fs.writeFileSync(envPath, updateEnvKey(fs.readFileSync(envPath, 'utf8'), newKey), 'utf8')
 
-log.success('Key rotated')
+log.done('Key rotated')
 echo.lines(Object.entries(stats).map(([model, { rows, fields }]) =>
   chalk`${model.padEnd(20)} {dim ${plural(rows, 'row')}, ${plural(fields, 'column')} re-encrypted}`), { indent: 2 })
-log.success('.env: ENCRYPTION_KEY is the new key, ENCRYPTION_KEY_NEW removed')
+log.done('.env: ENCRYPTION_KEY is the new key, ENCRYPTION_KEY_NEW removed')
 log.info('Restart the API server to pick up the new key')
 ```

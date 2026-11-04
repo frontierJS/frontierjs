@@ -19,6 +19,6 @@ for (const host of new Set(sides.map(s => s.host))) {
     return
   }
   if (written === 'absent') log.info(`  Caddy on ${host} holds no route for ${appId}`)
-  else                      log.success(`  Routes dropped → ${host}`)
+  else                      log.done(`  Routes dropped → ${host}`)
 }
 ```

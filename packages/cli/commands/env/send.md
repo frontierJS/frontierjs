@@ -103,12 +103,12 @@ try {
   return
 }
 
-log.success(`${count} var(s) · ${flag['max-access']} read(s) · until ${sent.until.slice(0, 16).replace('T', ' ')} UTC`)
+log.done(`${count} var(s) · ${flag['max-access']} read(s) · until ${sent.until.slice(0, 16).replace('T', ' ')} UTC`)
 echo(sent.link)
 
 if (tty.interactive && await tty.keys('Copy the link to the clipboard?', { y: 'copy', n: 'no' }) === 'y') {
   const { copyToClipboard, clipboardTools } = await import(resolve(global.fliRoot, 'core/clipboard.js'))
-  if (copyToClipboard(sent.link)) log.success('Copied')
+  if (copyToClipboard(sent.link)) log.done('Copied')
   else log.warn(`Could not copy — is ${clipboardTools() ?? 'a clipboard tool'} installed?`)
 }
 ```

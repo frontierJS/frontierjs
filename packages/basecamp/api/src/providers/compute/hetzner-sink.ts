@@ -100,7 +100,7 @@ const IMAGES = [
 const SERVERS = new Map<string, Record<string, unknown>>([
   ['7701', {
     id: 7701, name: 'legacy-01', status: 'running', labels: {},
-    created: '2026-01-05T12:00:00+00:00',
+    created: '2026-01-05T12:00:00+00:00', backup_window: null,
     public_net: { ipv4: { id: 1, ip: '198.51.100.7', blocked: false } },
     datacenter: { name: 'nbg1-dc3', location: { name: 'nbg1', description: 'Nuremberg DC Park 1' } },
   }],
@@ -200,6 +200,8 @@ async function createServer(req: Request): Promise<Response> {
     status:     'initializing',
     labels,
     created:    new Date().toISOString(),
+    // Hetzner takes no backup field at create; a new server's are off.
+    backup_window: null,
     // Still building, so there is no address yet. A caller waiting for one is
     // the behavior a real provision has to have.
     public_net: { ipv4: null },
@@ -330,11 +332,13 @@ export function startHzSink(port = PORT) {
       if (url.pathname === '/v1/server_types') return json({ server_types: SERVER_TYPES })
 
       if (url.pathname === '/v1/images') {
-        const type   = url.searchParams.get('type')
-        const status = url.searchParams.get('status')
+        const type    = url.searchParams.get('type')
+        const status  = url.searchParams.get('status')
+        const boundTo = url.searchParams.get('bound_to')
         return json({ images: IMAGES
-          .filter(i => !type   || i.type   === type)
-          .filter(i => !status || i.status === status) })
+          .filter(i => !type    || i.type   === type)
+          .filter(i => !status  || i.status === status)
+          .filter(i => !boundTo || String((i as Record<string, unknown>).bound_to) === boundTo) })
       }
 
       if (url.pathname === '/v1/servers') {

@@ -67,6 +67,6 @@ if (machine.capture(guardProbeScript(appId)).trim() !== '200') {
   $.config.abort = true
   return
 }
-log.success('Routes written; Caddy fetches each certificate on the first request it serves')
+log.done('Routes written; Caddy fetches each certificate on the first request it serves')
 $.config.edgeWritten = true
 ```

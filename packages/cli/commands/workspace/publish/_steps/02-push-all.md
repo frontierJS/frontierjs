@@ -22,7 +22,7 @@ for (const { cwd, sha, tags } of graded) {
     if (flag.dry) { log.dry(`  Would tag ${tag} at ${sha.slice(0, 12)}`); continue }
     if (git(cwd, `tag --list ${JSON.stringify(tag)}`) === tag) continue
     git(cwd, `tag ${JSON.stringify(tag)} ${sha}`)
-    log.success(`  tagged ${tag} at ${sha.slice(0, 12)}`)
+    log.done(`  tagged ${tag} at ${sha.slice(0, 12)}`)
   }
 }
 
@@ -81,7 +81,7 @@ for (const g of graded) {
   log.info(`  Pushing ${label}...`)
   try {
     execSync(`git ${pushArgs(g)}`, { cwd: g.cwd, stdio: 'inherit' })
-    log.success(`  ✓ ${label}`)
+    log.done(`  ✓ ${label}`)
   } catch (err) {
     failed.push(label)
     log.error(`  ✗ ${label} push failed: ${err.message}`)

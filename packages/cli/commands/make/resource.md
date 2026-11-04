@@ -72,7 +72,7 @@ if (existsSync(filePath)) {
 
 mkdirSync($.paths.webResources, { recursive: true })
 writeFileSync(filePath, resourceFile(model, service), 'utf8')
-log.success(`Created ${filePath}`)
+log.done(`Created ${filePath}`)
 
 echo('')
 echo(chalk.dim(`  Import it from a route through the @/ alias, which is the surface's src/:`))

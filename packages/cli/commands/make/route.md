@@ -208,7 +208,7 @@ if (flag.dry) {
 } else {
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, content, 'utf8')
-  log.success(`Created route:     ${file}`)
+  log.done(`Created route:     ${file}`)
   created.push(file)
 }
 
@@ -224,7 +224,7 @@ if (wired?.kind === 'list') {
     else if (existsSync(target)) log.info(`${sibling.file} already exists — skipping`)
     else {
       writeFileSync(target, sibling.content, 'utf8')
-      log.success(`Created route:     ${target}`)
+      log.done(`Created route:     ${target}`)
       created.push(target)
     }
   }
@@ -243,7 +243,7 @@ if (flag.component) {
   } else {
     mkdirSync(dirname(compPath), { recursive: true })
     writeFileSync(compPath, makeComponent(cname), 'utf8')
-    log.success(`Created component: ${compPath}`)
+    log.done(`Created component: ${compPath}`)
     created.push(compPath)
   }
 }

@@ -361,6 +361,6 @@ function writeManifest(path, manifest) {
 export const vendorApp = (root, log) => {
   const result = vendorWorkspacePackages({ appRoot: root, log: (m) => log.detail(m) })
   const n = result.vendored.length
-  if (n) log.success(`Vendored ${n} workspace ${n === 1 ? 'dependency' : 'dependencies'} from ${result.packagesDir}`)
+  if (n) log.done(`Vendored ${n} workspace ${n === 1 ? 'dependency' : 'dependencies'} from ${result.packagesDir}`)
   return result
 }

@@ -75,7 +75,7 @@ if (existsSync(filePath)) {
 
 mkdirSync(dirname(filePath), { recursive: true })
 writeFileSync(filePath, makeComponent(name), 'utf8')
-log.success(`Created ${filePath}`)
+log.done(`Created ${filePath}`)
 
 if (flag.open) {
   const editor = process.env.EDITOR || 'vi'

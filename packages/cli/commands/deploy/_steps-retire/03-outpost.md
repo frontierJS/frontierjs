@@ -14,7 +14,7 @@ const machine = machineFor($, host, path)
 try {
   const said = String(machine.run(`command -v sudo >/dev/null 2>&1 || sudo() { "$@"; }
 sudo /usr/local/sbin/outpost-uninstall`) ?? '')
-  log.success(`  Outpost removed → ${host}`)
+  log.done(`  Outpost removed → ${host}`)
   log.info('    sudo outpost-uninstall --purge on the box removes the apps it placed, Docker and Caddy')
   // The run's output is held, and the uninstall's own list is where the
   // firewall going and the Basecamp Server row left behind are said.

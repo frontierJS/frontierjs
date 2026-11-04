@@ -56,8 +56,8 @@ if (!existsSync(envPath)) {
     return
   }
   writeFileSync(envPath, `${arg.key}=${arg.value}\n`, 'utf8')
-  log.success(`Created ${envPath}`)
-  log.success(`Set ${arg.key}`)
+  log.done(`Created ${envPath}`)
+  log.done(`Set ${arg.key}`)
   return
 }
 
@@ -70,5 +70,5 @@ if (flag.dry) {
 }
 
 writeFileSync(envPath, updated, 'utf8')
-log.success(`Set ${arg.key} in ${flag.file}`)
+log.done(`Set ${arg.key} in ${flag.file}`)
 ```

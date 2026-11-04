@@ -16,5 +16,5 @@ if (!seeder) {
 
 log.info(`Seeding from ${seeder.describe}`)
 $.exec({ command: seeder.command, dry: flag.dry })
-log.success('Seed complete')
+log.done('Seed complete')
 ```

@@ -134,7 +134,7 @@ const { written, skipped } = scaffoldWidgetSurface({
   root, dir, name, prefix, appName, devPort, servePort,
 })
 
-for (const f of written) log.success(`Created ${f}`)
+for (const f of written) log.done(`Created ${f}`)
 if (skipped.length) log.info(`Kept ${skipped.length} existing file(s) — a scaffold never overwrites your config.`)
 
 // The scripts, merged into the app's package.json. Only added when absent: an
@@ -152,7 +152,7 @@ if (fresh) {
     }
     if (added.length) {
       writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
-      log.success(`Added scripts: ${added.join(', ')}`)
+      log.done(`Added scripts: ${added.join(', ')}`)
     }
   }
 }

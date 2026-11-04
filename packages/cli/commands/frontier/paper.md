@@ -110,7 +110,7 @@ if (!saved.nick) {
   writeMemberConfig({ nick, root: linked.root })
   const boxed = await publishOwn(api, kept).catch(e => e.message)
   if (boxed) log.warn(`The post did not take ${boxed} — the next \`fli tell\` verb tries again.`)
-  log.success(`The paper key signed this machine into ${nick} at ${api} — ${plural(linked.machines.length, 'machine')} now.`)
+  log.done(`The paper key signed this machine into ${nick} at ${api} — ${plural(linked.machines.length, 'machine')} now.`)
   echo(chalk`\n  {bold ${nick}} {dim · ${rootPrint(linked.root)}}`)
   echo(chalk`    {cyan ${await safetyWords(linked.root)}}\n`)
   if (!sealing) log.warn('A revoke since the paper key was made did not reach it, so this machine has no sealing key and opens no sealed letter. `fli frontier:revoke` of any machine you lost makes a new one here.')
@@ -159,7 +159,7 @@ if (boxed?.status !== 201) {
   return
 }
 
-log.success(`Made a paper key for ${member.nick} — ${plural(synced.chain.machines.length + 1, 'machine')} now, and your words are unchanged.`)
+log.done(`Made a paper key for ${member.nick} — ${plural(synced.chain.machines.length + 1, 'machine')} now, and your words are unchanged.`)
 echo(chalk`\n  {bold paper key} {dim · ${print}}`)
 const words = (await hexWords(hex)).split(' ')
 echo(chalk`    {cyan ${words.slice(0, 8).join(' ')}}`)

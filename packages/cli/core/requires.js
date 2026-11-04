@@ -82,7 +82,7 @@ export async function acquireMissing(ns, missing, {
       const value = r.secret ? await secret(q) : await p.ask(`${q} `)
       if (!value) { left.push(r); continue }
       env[r.key] = value
-      if (write) { storeGlobal(r.key, value, { home }); await say(`  Saved ${r.key} to ${file}`, 'success') }
+      if (write) { storeGlobal(r.key, value, { home }); await say(`  Saved ${r.key} to ${file}`, 'done') }
     }
   } finally { p.close() }
   return left

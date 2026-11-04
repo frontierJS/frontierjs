@@ -227,5 +227,5 @@ if (dbs.length) {
   }
 }
 
-log.success(`Created ${outPath}  (${human(statSync(outPath).size)})`)
+log.done(`Created ${outPath}  (${human(statSync(outPath).size)})`)
 ```

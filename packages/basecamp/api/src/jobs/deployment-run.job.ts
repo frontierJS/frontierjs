@@ -98,6 +98,15 @@ function runtimeFor(snapshot: Record<string, unknown>, service: Record<string, u
     ? { ...runtime, containerPort: service.containerPort as number } : runtime
 }
 
+// Whether a release may ask Outpost for start-first. Mirrors the conditions of
+// its `checkSwap`: a route in front of a published port, and no exposed port.
+function wantsStartFirst(
+  service: Record<string, unknown>, runtime: Runtime, hosts: unknown[], paths: unknown[],
+): boolean {
+  return service.swap === 'startFirst' && service.hasExposedPort !== true
+    && Boolean(runtime.port) && (hosts.length > 0 || paths.length > 0)
+}
+
 function runner(app: App) {
 
   // No client here (`FJS-384`). A deploy runs as whoever asked for it, so the
@@ -346,6 +355,9 @@ function runner(app: App) {
     rel: DeploymentRow, config: Record<string, unknown>, service: ServiceRow,
     image: string, digest: string | null,
   ): Promise<Record<string, unknown>> {
+    const runtime = runtimeFor(config, service)
+    const hosts   = await routedHosts(app.db, rel.appId)
+    const paths   = await routedPaths(app.db, rel.appId)
     return {
       deployment_id: rel.id,
       // The container is found by the APP, and this line is what makes that
@@ -365,17 +377,22 @@ function runner(app: App) {
       // Secrets become values here and nowhere earlier: the snapshot keeps
       // their ids, so a release record never holds the credential it shipped with.
       config: {
-        ...runtimeFor(config, service),
+        ...runtime,
         env: await releaseEnv(app.db as never, config as never),
       },
       source:        config.source ?? service.source ?? {},
-      hosts:         await routedHosts(app.db, rel.appId),
-      paths:         await routedPaths(app.db, rel.appId),
+      hosts,
+      paths,
       redirects:     await routedRedirects(app.db, rel.appId),
       // The live App, as the hosts are: a rollback puts back old bytes, never
       // an exposure somebody has since withdrawn. The machine's firewall
       // drops a forwarded port this does not declare (FJS-D930).
       exposes_port:  service.hasExposedPort === true,
+      // The live App's ask, as `exposes_port` is (`FJS-D1882`). It is sent only
+      // where Outpost would accept it: `checkSwap` refuses a start-first that
+      // has no route to follow the port, and a release is not failed for a
+      // setting. Outpost still reads the pivot and may answer stop-first.
+      swap:          wantsStartFirst(service, runtime, hosts, paths) ? 'start-first' : 'stop-first',
     }
   }
 

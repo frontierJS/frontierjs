@@ -54,5 +54,5 @@ if (flag.dry) {
 // $.exec throws on a non-zero exit, so reaching the next line means the
 // seeder actually finished — the old version announced success unconditionally.
 $.exec({ command: seeder.command })
-log.success('Seed complete')
+log.done('Seed complete')
 ```

@@ -128,5 +128,5 @@ log.info(`Merged previous release assets from ${assetDir}/ (stale client protect
 machine.run(`ls -1dt ${serverPath}/releases/* 2>/dev/null | tail -n +${keepReleases + 1} | xargs rm -rf --`)
 
 $.config.releaseDir = releaseDir
-log.success(`Web release ready → releases/${commit} (keeping ${keepReleases})`)
+log.done(`Web release ready → releases/${commit} (keeping ${keepReleases})`)
 ```

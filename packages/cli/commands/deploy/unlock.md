@@ -67,6 +67,6 @@ if (!flag.force) {
 }
 
 machine.run(releaseScript(lockFile))
-log.success(`Dropped ${lockFile}`)
+log.done(`Dropped ${lockFile}`)
 log.info('  The journal is untouched — a transition that run left open is still resumable.')
 ```

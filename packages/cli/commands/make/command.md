@@ -178,7 +178,7 @@ if (flag._spec) {
       return
     }
     writeCommand(spec.title, spec.description, spec.args || [], spec.flags || {}, outputPath)
-    log.success(`Created ${outputPath}`)
+    log.done(`Created ${outputPath}`)
     echo(`\n${chalk.dim('Run it with:')}  ${chalk.cyan(`fli ${spec.title}`)}`)
   }
   return
@@ -229,7 +229,7 @@ if (flag.dry) {
     return
   }
   writeCommand(arg.title, description, newArgs, newFlags, outputPath)
-  log.success(`Created ${outputPath}`)
+  log.done(`Created ${outputPath}`)
   echo(`\n${chalk.dim('Run it with:')}  ${chalk.cyan(`fli ${arg.title}`)}`)
 }
 ```

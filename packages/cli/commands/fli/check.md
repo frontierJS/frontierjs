@@ -187,7 +187,7 @@ if (grade) {
 
   if (written) {
     const total = Object.values(written).reduce((a, b) => a + b, 0)
-    log.success(flag.adopt
+    log.done(flag.adopt
       ? `${BASELINE_FILE} written — ${total} finding(s) across ${Object.keys(written).length} rule(s). ` +
         `The number may never rise.`
       : `${BASELINE_FILE} lowered — ${grade.improvements.map(i => `${i.rule} ${i.ceiling}→${i.count}`).join(', ')}`)

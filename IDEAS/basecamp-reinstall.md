@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — back up, restore and reinstall Basecamp from one terminal
 
-**Status: PROPOSED. Ruled: `FJS-D1848`–`FJS-D1851`, Q1–Q4 as `FJS-D1852`–`FJS-D1855`; Phase 0 and 1.1–1.4 done, 1.5 next.** Probed against
+**Status: PROPOSED. Ruled: `FJS-D1848`–`FJS-D1851`, Q1–Q4 as `FJS-D1852`–`FJS-D1855`, Q5 as `FJS-D1883`; Phase 0, Phase 1, 2.1 and 2.3 done; 2.2 built, its box run open.** Probed against
 the tree 2026-11-03. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): a `basecamp:reinstall` that does retire and install together and
@@ -129,8 +129,13 @@ manifest's sha256 agree.
       API backup whose manifest names that key attests. Proved on yuma 2026-11-04: a terminal-less
       `--raw` found it already filed and attested nothing; an API backup answered *both* printed it,
       found it filed, and `hubConfig.current` then read `6b6520fafe6f`, the manifest's.
-- [ ] 1.5 `--list`: every local backup per host with size, age and manifest version; never pruned
+- [x] 1.5 `--list`: every local backup per host with size, age and manifest version; never pruned
       (`FJS-D1851`).
+      `localBackups` and `filedKeys` in `cli/core/basecamp.js`, beside `backupsOf`, which moved there
+      for restore. Each row is read from `manifest.json` or `raw.json` and not hashed, and also says
+      whether a filed key opens it, since that is what a restore would stop on. A directory with
+      neither marker is listed as unreadable. Proved 2026-11-04: yuma's three backups, two archives
+      and one raw, with the key filed; in a scratch tree, an unreadable and a not-filed row.
 
 ### Phase 2 — `basecamp:restore`
 
@@ -138,17 +143,40 @@ Goal: a freshly installed Basecamp becomes the archived one, refused before the 
 it cannot.
 Done when: `verify:hub-restore` stays green and an archive from 1.2 restores onto yuma.
 
-- [ ] 2.1 Local preflight with 0.2's script: sha256, key fingerprint, migrations against HEAD.
-- [ ] 2.2 On the box: `ENCRYPTION_KEY` into `.env.production`, the archive to `POST /setup/restore`
-      over ssh (the way `--admin` posts `/setup`), restart, poll `/setup/probe` until `done`.
-- [ ] 2.3 Report: found replicas and archives, and which fleet machines still heartbeat — the same
+- [x] 2.1 Local preflight with 0.2's script: sha256, key fingerprint, migrations against HEAD.
+      `pickArchive` and `checkArchive` in `cli/core/basecamp.js`; `fli basecamp:restore --dry` stops
+      after it. The key is `--key`, else the filed one whose fingerprint the manifest names (`filedKeys`
+      now answers fingerprint → file). A raw copy is refused, and so is a development-key archive.
+      Proved 2026-11-04: every yuma archive is refused for `initial_schema.sql` as it read before the
+      squash; an archive built from the dev databases under a minted key passes; a missing filed key,
+      a wrong `--key` and a raw `--from` are each refused before the box is asked anything.
+- [ ] 2.2 On the box: the archive's key into `secrets/ENCRYPTION_KEY`, which the container reads as
+      `ENCRYPTION_KEY_FILE` (not `.env.production`, whose lines a restart does not re-read), the
+      archive to `POST /setup/restore` over ssh (the way `--admin` posts `/setup`), restart, poll
+      `/setup/probe` until `done`.
+      Built: `probeBox`, `putBoxKey`, `restartApi`, `probeUntil`, `stageOnBox`; `apiContainer` moved
+      to `cli/core/ports.js` so restore names the container the deploy does. A Basecamp that is set
+      up is refused before the confirmation. Proved against a scratch API on 7120 over the local
+      transport: staged 202, restart, `done` with the archive's `takenAt`, a second stage 409. Open:
+      `putBoxKey` and `docker restart` on a real box with a fresh, unclaimed Basecamp.
+- [x] 2.3 Report: found replicas and archives, and which fleet machines still heartbeat — the same
       key derives the same hub signing key (`FJS-D1646`), so one at the same URL needs nothing.
+      `restoreFindings` in `cli/core/basecamp.js`, read with `BASECAMP_API_KEY` at `--url` (the
+      archive's key rows come back with it): a machine is heard when its `lastHeartbeatAt` is newer
+      than the archive, which only the restored hub could record; waits up to 90s for every enrolled
+      machine. The reconcile marks no end, so later findings are left to `/hub/backups/` and the App
+      screen. `hubConfig` is not a scopable service, so a scoped key reports the hub's own replica as
+      unknown; `appBackups.find` refuses `kind` as a filter, so found rows are picked client-side.
+      Proved 2026-11-04 on a scratch API restored from a built archive, a whole key minted through
+      `app:repl`: a machine heard after the archive read heard, one silent read not, one never
+      enrolled left out.
 
 ### Phase 3 — `basecamp:reinstall`
 
 Goal: one command, every question first, both modes.
-Done when: yuma is reinstalled once in each mode and the first screen after login is the setup
-checklist (fresh) or the old fleet (restore).
+Done when: yuma is reinstalled in fresh mode and a throwaway box built at HEAD in restore mode
+(`FJS-D1883`), and the first screen after login is the setup checklist (fresh) or the old fleet
+(restore).
 
 - [ ] 3.1 Preflight reads: HEAD against the dirty tree under `packages/basecamp/`, the deployed sha,
       and from the old Basecamp its fleet machines, the apps on this box, its hostname and the
@@ -198,6 +226,16 @@ clean.
    - **C** — never.
    - **Recommend A** — one keypress closes the step that was walked past, and a token scoped to one
      zone may not be the one apps should use.
+5. ~~**Q5 — How does yuma get past its pre-squash history?**~~ **Answered 2026-11-04 (`FJS-D1883`): A — reinstall yuma fresh only, keeping its archive as insurance; restore mode is proved on a throwaway box built at HEAD.** Every yuma archive is refused by HEAD:
+   its `main.db` applied `initial_schema.sql` as it read before the 11-04 squash rewrote it (2.1's
+   proof), so Phase 3's restore-mode reinstall of yuma cannot pass.
+   - **A** — reinstall yuma fresh only, keeping its archive as insurance; restore mode is proved on
+     a throwaway box built at HEAD.
+   - **B** — rewrite yuma's tracking row for the initial migration to the squashed file's, then
+     back up again, so restore mode runs on yuma itself.
+   - **C** — `archiveRefusals` accepts a squashed initial whose schema matches.
+   - **Recommend A** — migrations are not frozen before alpha, so a pre-squash database will keep
+     turning up, and B is a hand edit to a live database.
 
 ## See also
 

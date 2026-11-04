@@ -98,5 +98,5 @@ if (flag.dry) {
 }
 
 execSync(`git commit -m ${JSON.stringify(fullMsg)}`, { stdio: 'inherit' })
-log.success('Committed')
+log.done('Committed')
 ```

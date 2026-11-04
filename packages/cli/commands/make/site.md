@@ -107,7 +107,7 @@ const { written, skipped } = scaffoldSiteSurface({
   root, dir, appName, hasApi, devPort, servePort, apiPort,
 })
 
-for (const f of written) log.success(`Created ${f}`)
+for (const f of written) log.done(`Created ${f}`)
 if (skipped.length) log.info(`Kept ${skipped.length} existing file(s) — a scaffold never overwrites your config.`)
 
 if (!hasApi) {
@@ -141,8 +141,8 @@ if (fresh) {
     }
     if (added.length || tools.length) {
       writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
-      if (added.length) log.success(`Added scripts: ${added.join(', ')}`)
-      if (tools.length) log.success(`Added devDependencies: ${tools.join(', ')} — run bun install before building.`)
+      if (added.length) log.done(`Added scripts: ${added.join(', ')}`)
+      if (tools.length) log.done(`Added devDependencies: ${tools.join(', ')} — run bun install before building.`)
     }
   }
 }

@@ -256,5 +256,5 @@ if (flag.merge && existsSync(destPath)) {
 }
 
 writeFileSync(destPath, finalContent, 'utf8')
-log.success(`Pulled ${remoteLines.length} var(s) → ${destPath}`)
+log.done(`Pulled ${remoteLines.length} var(s) → ${destPath}`)
 ```

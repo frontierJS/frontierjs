@@ -9,7 +9,7 @@
 import { spawnSync }                from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir }                  from 'node:os'
-import { basename, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileValue }                from '@frontierjs/toolbelt/env'
 import { chalk }                    from './color.js'
 import { ageOf }                    from './cloud.js'
@@ -65,7 +65,7 @@ export function installOutpost(machine, command, { host, log }) {
   log.info('Installing the Outpost — on a fresh box its security updates take several minutes')
   try {
     machine.run(`${SUDO}\n${command}`)
-    log.success('Outpost installed — the box joins the fleet at its first heartbeat')
+    log.done('Outpost installed — the box joins the fleet at its first heartbeat')
     return { outcome: 'installed' }
   } catch (err) {
     // The attributed message quotes the script, and the script holds a live
@@ -428,6 +428,53 @@ export const apiCannotBackUp = (err) => !!err.unreachable || !!err.noHubApp || e
 export const keyDirOf = (server) =>
   join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'fli', 'basecamp', server)
 
+/** Where every box's backups land, one directory per box, never pruned (`FJS-D1851`). */
+export const backupsRoot = () =>
+  join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'fli', 'basecamp')
+
+export const backupsOf = (server) => join(backupsRoot(), server)
+
+const bytesUnder = (path) => {
+  const s = statSync(path)
+  return s.isDirectory() ? readdirSync(path).reduce((n, e) => n + bytesUnder(join(path, e)), 0) : s.size
+}
+
+const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
+
+/**
+ * Every backup under one box's directory, oldest first, read from its marker
+ * and never hashed: `{ name, dir, kind, takenAt, version, fingerprint, bytes }`,
+ * `kind` being `archive`, `raw`, or `unreadable` for a directory with neither
+ * marker — a download cut short — which is listed rather than hidden.
+ */
+export function localBackups(dir) {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => {
+    const at = join(dir, e.name)
+    const raw = readJson(join(at, 'raw.json'))
+    const top = raw ? null : readdirSync(at, { withFileTypes: true }).find(d => d.isDirectory() && existsSync(join(at, d.name, 'manifest.json')))
+    const manifest = top ? readJson(join(at, top.name, 'manifest.json')) : null
+    const marker = raw ?? manifest
+    return {
+      name: e.name, dir: at,
+      kind: raw?.raw ? 'raw' : manifest ? 'archive' : 'unreadable',
+      takenAt: marker?.takenAt ?? null,
+      version: manifest?.basecamp ?? null,
+      fingerprint: marker?.encryptionKeyFingerprint ?? null,
+      bytes: bytesUnder(at),
+    }
+  }).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** The keys filed for `server` as fingerprint → file; each opens the backups taken under it. */
+export function filedKeys(server) {
+  const dir = keyDirOf(server)
+  if (!existsSync(dir)) return new Map()
+  return new Map(readdirSync(dir).filter(f => /^encryption(-[0-9a-f]+)?\.key$/.test(f))
+    .map(f => [fileValue(readFileSync(join(dir, f), 'utf8')), join(dir, f)])
+    .filter(([key]) => key).map(([key, path]) => [sha256Of(key), path]))
+}
+
 // Run as root because the db directory is the App's user's and the env file
 // root's. `sqlite3 .backup` reads a database the API still writes as one
 // moment; without sqlite3 the file and its -wal are copied, which is only
@@ -600,5 +647,164 @@ export async function pullRawBackup({ server, host = server, dbDir, envFile, sec
     throw err
   } finally {
     for (const n of ['raw.tar.gz', 'sums', 'copied-with', 'env', 'key']) rmSync(join(dir, n), { force: true })
+  }
+}
+
+// ─── Restore onto a fresh Basecamp ───────────────────────────────────────────
+// `basecamp:restore` hands an archive from `pullHubArchive` to a Basecamp nobody
+// has set up, the way `/setup`'s restore form does, after grading it on the
+// laptop first: `/setup` grades it only on the new box, which in a reinstall is
+// after the old one is gone. The box half is `POST /setup/restore` with the tar
+// as the body, then a restart, which is when `restoreStaged` swaps it in.
+
+const MANIFEST_FILE = 'manifest.json'
+const ARCHIVE_TAR   = /^basecamp-.+\.tar\.gz$/
+
+/**
+ * The archive `from` names — a `<stamp>/` directory, the `basecamp-<stamp>/`
+ * in it, or its `.tar.gz` — else the newest archive under `backupsOf(server)`.
+ * Answers `{ dir, archive, tar, manifest }`; a raw copy is refused, since it
+ * carries the box's file names and no manifest for `/setup` to check.
+ */
+export function pickArchive({ from, server }) {
+  let dir = from ? resolve(from) : null
+  if (!dir) {
+    const newest = localBackups(backupsOf(server)).filter(b => b.kind === 'archive').at(-1)
+    if (!newest) throw new Error(`no archive under ${backupsOf(server)} — fli basecamp:backup ${server} takes one, or pass --from`)
+    dir = newest.dir
+  }
+  if (!existsSync(dir)) throw new Error(`${from} does not exist`)
+  if (statSync(dir).isFile()) dir = dirname(dir)
+  if (existsSync(join(dir, MANIFEST_FILE)) && existsSync(`${dir}.tar.gz`)) dir = dirname(dir)
+  if (existsSync(join(dir, 'raw.json')))
+    throw new Error(`${dir} is a raw copy, which /setup cannot take — it is put back by hand (packages/basecamp/docs/backups.md § 7, The hub, by hand)`)
+  const tar = readdirSync(dir).find(f => ARCHIVE_TAR.test(f))
+  if (!tar) throw new Error(`${dir} holds no basecamp-<stamp>.tar.gz — not a directory basecamp:backup wrote`)
+  const archive = join(dir, tar.replace(/\.tar\.gz$/, ''))
+  const manifest = existsSync(join(archive, MANIFEST_FILE)) ? JSON.parse(readFileSync(join(archive, MANIFEST_FILE), 'utf8')) : null
+  if (!manifest) throw new Error(`${archive} is not unpacked beside its tar, so there is no manifest.json to check — not a directory basecamp:backup wrote`)
+  return { dir, archive, tar: join(dir, tar), manifest }
+}
+
+/**
+ * Grade an unpacked archive against this checkout's migrations under `keyFile`,
+ * with Basecamp's own `check-archive.ts` run by path. Answers `{ ok, takenAt }`
+ * or `{ refused: [...] }`; a script that could not answer throws.
+ */
+export async function checkArchive({ archive, keyFile, basecampRoot }) {
+  const input = JSON.stringify({ dir: archive, keyFile, migrationsRoot: join(basecampRoot, 'db', 'migrations') })
+  const proc = Bun.spawn([process.execPath, join(basecampRoot, 'api/src/domain/backup/check-archive.ts'), input],
+    { cwd: basecampRoot, stdout: 'pipe', stderr: 'pipe' })
+  const [, out, err] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()])
+  const last = out.trim().split('\n').pop()
+  let answer
+  try { answer = JSON.parse(last) } catch { throw new Error(`check-archive.ts answered no verdict: ${(err.trim() || out.trim()).split('\n').pop() || 'nothing'}`) }
+  if (answer.error) throw new Error(`check-archive.ts: ${answer.error}`)
+  return answer
+}
+
+/** Run `script` on `host` as root, answering its stdout; a non-zero exit throws with its last stderr line. */
+async function asRootOn(host, script, what) {
+  const transport = transportFor(host)
+  const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? AS_ROOT : shQuote(AS_ROOT))],
+    { stdin: new Blob([script]), stdout: 'pipe', stderr: 'pipe' })
+  const [code, out, err] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()])
+  if (code !== 0) throw new Error(`could not ${what} on ${host} (exit ${code}): ${err.trim().split('\n').pop() || 'no reason given'}`)
+  return out
+}
+
+/** A curl on the box against its own API, since `/setup` is only ever asked from there. */
+async function boxApi(host, port, path, { method = 'GET', body = null, type = null } = {}) {
+  const transport = transportFor(host)
+  const curl = `curl -sS -w '\\n%{http_code}' -X ${method}${type ? ` -H 'content-type: ${type}'` : ''}${body ? ' --data-binary @-' : ''} http://localhost:${port}${path}`
+  const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? curl : shQuote(curl))],
+    { stdin: body ?? 'ignore', stdout: 'pipe', stderr: 'pipe' })
+  const [, out, err] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()])
+  const [code, ...rest] = out.trimEnd().split('\n').reverse()
+  const text = rest.reverse().join('\n')
+  let json = null
+  try { json = JSON.parse(text) } catch {}
+  return { status: Number(code) || 0, json, said: json?.message ?? (text.trim() || err.trim().split('\n').pop() || '') }
+}
+
+/** `/setup/probe` on the box, or why it did not answer. */
+export async function probeBox({ host, port }) {
+  const r = await boxApi(host, port, '/setup/probe')
+  if (r.status !== 200) throw new Error(`Basecamp on ${host} did not answer /setup/probe (${r.status || 'no answer'}${r.said ? `: ${r.said}` : ''})`)
+  return r.json
+}
+
+/**
+ * Put `key` where the box's API reads it, `secrets/ENCRYPTION_KEY`, keeping the
+ * file's owner and mode. A key in the env file instead is in the container's
+ * environment from when it was made, which a restart does not change, so that
+ * box is refused.
+ */
+export async function putBoxKey({ host, envFile, secretsDir, key }) {
+  const at = `${secretsDir}/ENCRYPTION_KEY`
+  await asRootOn(host, `set -eu
+key=${shQuote(at)}; env=${shQuote(envFile)}
+if [ ! -f "$key" ] && grep -qsE '^[[:space:]]*(export[[:space:]]+)?ENCRYPTION_KEY[[:space:]]*=' "$env"; then
+  echo "the key is in $env, which a restart does not re-read; move it to $key and redeploy first" >&2; exit 3
+fi
+[ -d ${shQuote(secretsDir)} ] || { echo "there is no ${secretsDir} on $(hostname)" >&2; exit 3; }
+tmp=$(mktemp ${shQuote(secretsDir)}/.key-XXXXXX)
+printf '%s\\n' ${shQuote(key)} > "$tmp"
+if [ -f "$key" ]; then chown --reference="$key" "$tmp"; chmod --reference="$key" "$tmp"; else chmod 400 "$tmp"; fi
+mv "$tmp" "$key"
+`, 'write the key')
+}
+
+/** Restart the API container, so it boots on the key or the archive just staged. */
+export const restartApi = ({ host, container }) =>
+  asRootOn(host, `set -eu\ndocker restart ${shQuote(container)} >/dev/null\n`, `restart ${container}`)
+
+/** Wait for `/setup/probe` to answer after a restart, `until` it says what is wanted. */
+export async function probeUntil({ host, port, until, everyMs = 2_000, forMs = 3 * 60_000 }) {
+  let last = null
+  for (const end = Date.now() + forMs; Date.now() < end; await Bun.sleep(everyMs)) {
+    last = await probeBox({ host, port }).catch(err => err)
+    if (!(last instanceof Error) && until(last)) return last
+  }
+  throw new Error(`Basecamp on ${host} had not come back after ${forMs / 60_000} minutes${last instanceof Error ? `: ${last.message}` : ''}`)
+}
+
+/** Send the tar to `POST /setup/restore`, which checks it and stages it for the next boot. */
+export async function stageOnBox({ host, port, tar }) {
+  const r = await boxApi(host, port, '/setup/restore', { method: 'POST', body: Bun.file(tar), type: 'application/gzip' })
+  if (r.status === 202) return r.json
+  const reasons = r.json?.reasons?.length ? r.json.reasons : [r.said || 'no reason given']
+  throw new Error(`POST /setup/restore answered ${r.status || 'nothing'}: ${reasons.join('; ')}`)
+}
+
+/**
+ * What the restored hub has found once it is back: each enrolled machine and
+ * whether it has heartbeat since `takenAt` — a heartbeat newer than the
+ * archive can only have landed on the restored hub, and the same key derives
+ * the same signing key (`FJS-D1646`), so one at the same URL needs nothing —
+ * the Apps whose replica the reconcile found, Basecamp's own, and the App
+ * archives found newer than the hub's. Waits up to `forMs` for every machine;
+ * the reconcile is a queued job that marks no end, so what it has not reached
+ * by then is not here.
+ */
+export async function restoreFindings({ origin, key, takenAt, forMs = 90_000, everyMs = 5_000 }) {
+  const since = Date.parse(takenAt)
+  const beat = (s) => Date.parse(s.lastHeartbeatAt ?? '') > since
+  let servers
+  for (const end = Date.now() + forMs; ; await Bun.sleep(everyMs)) {
+    servers = (await basecampAll(origin, key, '/servers')).filter(s => s.outpostVersion)
+    if (servers.every(beat) || Date.now() >= end) break
+  }
+  // A key without hubConfig:read still reads the rest; the hub's own replica is then unknown.
+  const hub  = await basecamp(origin, key, '/hub-config', { method: 'POST', headers: { 'x-service-method': 'current' }, body: {} }).catch(() => null)
+  const apps = await basecampAll(origin, key, '/apps')
+  const named = new Map(apps.map(a => [a.id, a.name]))
+  return {
+    machines:   servers.map(s => ({ name: s.name, beat: beat(s), lastHeartbeatAt: s.lastHeartbeatAt ?? null })),
+    replicas:   apps.filter(a => a.replicaFoundAt).map(a => ({ name: a.name, syncedAt: a.replicaSyncedAt })),
+    hubReplica: hub?.app?.replicaFoundAt ? { syncedAt: hub.app.replicaSyncedAt } : hub ? null : undefined,
+    // appBackups.find refuses `kind` as a filter, so the found rows are picked here.
+    archives:   (await basecampAll(origin, key, '/app-backups')).filter(r => r.kind === 'found')
+      .map(r => ({ app: named.get(r.appId) ?? r.appId, location: r.location, status: r.status })),
   }
 }

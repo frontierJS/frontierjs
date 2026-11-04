@@ -68,7 +68,7 @@ if (flag.create) {
   log.info(`Repo:   ${flag.repo}  ·  branch: ${flag.branch}`)
   if (flag.dry) { log.dry(`cf pages projects create --body '${JSON.stringify(body)}'`); return }
   const project = await createPagesProject(profile, acct, body)
-  log.success(`Created: ${project.name}`)
+  log.done(`Created: ${project.name}`)
   echo(`  ${chalk.dim('subdomain:')} ${project.subdomain}`)
   if (acct) echo(`  ${chalk.dim('dashboard:')} https://dash.cloudflare.com/${acct}/pages/view/${project.name}`)
   return
@@ -79,7 +79,7 @@ if (flag.deploy) {
   log.info(`Triggering deployment for: ${flag.deploy}`)
   if (flag.dry) { log.dry(`cf pages projects deployments create ${flag.deploy}`); return }
   const deployment = await deployPages(profile, acct, flag.deploy)
-  log.success(`Deployment triggered: ${deployment.id}`)
+  log.done(`Deployment triggered: ${deployment.id}`)
   echo(`  ${chalk.dim('url:   ')} ${deployment.url || 'pending…'}`)
   echo(`  ${chalk.dim('status:')} ${deployment.latest_stage?.name || 'queued'}`)
   return

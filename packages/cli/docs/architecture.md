@@ -69,7 +69,7 @@ Available as top-level locals in every `js` block:
 ```js fragment
 arg          // positional args by name
 flag         // named flags (--dry always present, --debug hidden but present)
-log          // log.info / .success / .warn / .error / .dry
+log          // log.info / .done / .success / .warn / .error / .dry
 context      // full context — .paths .env .exec .execute .config .echo .git .vars
 echo()       // one output line — stdout, or the GUI's event stream
 tty.line()   // one typed line; tty.keys() one key

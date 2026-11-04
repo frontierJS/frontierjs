@@ -59,7 +59,8 @@ for (const r of rows) echo(r.line)
 showWarnings($, push.warnings)
 
 const took = `${(performance.now() - t0).toFixed(0)}ms`
-log.success(changed ? `Schema applied  ${chalk.dim(took)}` : `Schema already in sync  ${chalk.dim(took)}`)
+if (changed) log.done(`Schema applied  ${chalk.dim(took)}`)
+else log.success(`Schema already in sync  ${chalk.dim(took)}`)
 if (changed) log.info(chalk.dim('Applied directly, no migration file. For a deploy: fli db:migrate'))
 
 // `<db>/.json/schema.json`, not beside the .lite. It is a DERIVED document

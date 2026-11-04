@@ -138,7 +138,7 @@ const user = runAppScript($, 'create-user', SCRIPT, {
 })
 if (!user) return refuse($, `Creating ${arg.email} failed — the reason is above`)
 
-log.success('Created user')
+log.done('Created user')
 echo`  id     ${user.id}
   email  ${user.email}
   role   ${user.role}

@@ -306,6 +306,7 @@ export async function Command({ file, arg, flag, emit }) {
         warn:    (text) => emit({ type: 'log', level: 'warn',    text }),
         info:    (text) => emit({ type: 'log', level: 'info',    text }),
         success: (text) => emit({ type: 'log', level: 'success', text }),
+        done:    (text) => emit({ type: 'log', level: 'done',    text }),
         dry:     (text) => emit({ type: 'log', level: 'dry',     text }),
         detail:  (text) => emit({ type: 'log', level: 'detail',  text }),
       }
@@ -1293,6 +1294,7 @@ const terminalLog = {
   warn:    (text) => logger(text, 'warn'),
   info:    (text) => logger(text, 'info'),
   success: (text) => logger(text, 'success'),
+  done:    (text) => logger(text, 'done'),
   dry:     (text) => logger(text, 'dry'),
   detail:  (text) => logger(text, 'detail'),
 }

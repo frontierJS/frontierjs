@@ -78,7 +78,7 @@ if (flag.remove) {
   }
   if (flag.dry) return log.dry(`rm ${entry.file}`)
   rmSync(entry.file)
-  log.success(`Removed ${entry.file}`)
+  log.done(`Removed ${entry.file}`)
   return
 }
 
@@ -108,6 +108,6 @@ if (!check.error && check.status !== 0) {
 }
 spawnSync('update-desktop-database', [join(entry.file, '..')])
 
-log.success(`${replaced ? 'Replaced' : 'Wrote'} ${entry.file}`)
+log.done(`${replaced ? 'Replaced' : 'Wrote'} ${entry.file}`)
 log.info('Search for it in the app launcher. fli desktop:install --remove takes it out.')
 ```

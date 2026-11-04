@@ -55,5 +55,5 @@ if (flag.dry) { log.dry(`A ${host} → ${ip}, ${flag.proxied ? 'proxied, Full (s
 
 const done = await hostRecord({ host, ip, ...(flag.proxied ? { proxied: true } : {}) })
 if (done.error) { log.error(done.error); process.exitCode = 1; return }
-log.success(`${done.host} → ${done.ip} in ${done.zone}, ${done.proxied ? 'behind the proxy, Full (strict) for this host' : 'DNS-only'}`)
+log.done(`${done.host} → ${done.ip} in ${done.zone}, ${done.proxied ? 'behind the proxy, Full (strict) for this host' : 'DNS-only'}`)
 ```

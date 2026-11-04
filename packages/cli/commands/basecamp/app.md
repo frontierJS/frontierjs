@@ -120,11 +120,11 @@ try {
     .catch(e => log.warn(`Project '${slug}' (${project.id}) is half-made and was not archived: ${e.message}`))
   throw err
 }
-log.success(`Made App '${name}' (${app.id}) in project '${slug}', placed on ${server.name}`)
+log.done(`Made App '${name}' (${app.id}) in project '${slug}', placed on ${server.name}`)
 
 writeFileSync(envPath, existsSync(envPath)
   ? setEnvLine(readFileSync(envPath, 'utf8'), 'BASECAMP_APP_ID', app.id)
   : `BASECAMP_APP_ID=${app.id}\n`, 'utf8')
-log.success(`Set BASECAMP_APP_ID in ${flag.file}`)
+log.done(`Set BASECAMP_APP_ID in ${flag.file}`)
 log.info('Next: fli deploy --dry shows the first release\'s setup, and fli deploy applies it and releases')
 ```

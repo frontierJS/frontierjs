@@ -65,7 +65,7 @@ if (flag['apply-only']) {
   }
   log.info('Applying pending migrations...')
   $.exec({ command: `${ls} migrate apply --schema ${schema}` })
-  log.success('Migrations applied')
+  log.done('Migrations applied')
   return
 }
 
@@ -78,7 +78,7 @@ if (flag['create-only']) {
   const before = new Set(migrationFiles($))
   $.exec({ command: `${ls} migrate create${named} --schema ${schema}${withOps}` })
   const written = migrationFiles($).filter(f => !before.has(f))
-  if (written.length) log.success(`Migration file created: ${written.map(f => path.relative($.paths.root, f)).join(', ')}`)
+  if (written.length) log.done(`Migration file created: ${written.map(f => path.relative($.paths.root, f)).join(', ')}`)
   else log.info('No migration file written')
   return
 }
@@ -99,7 +99,7 @@ log.info('Creating and applying the migration...')
 const before = new Set(migrationFiles($))
 $.exec({ command: `${ls} migrate dev${named} --schema ${schema}${withOps}` })
 const written = migrationFiles($).filter(f => !before.has(f))
-if (written.length) log.success(`Migration created and applied: ${written.map(f => path.relative($.paths.root, f)).join(', ')}`)
+if (written.length) log.done(`Migration created and applied: ${written.map(f => path.relative($.paths.root, f)).join(', ')}`)
 else log.info('No migration file written - the schema change needs no DDL')
 
 // The derived path `db:push` and `db:jsonschema` write. With no `--out` the
@@ -108,5 +108,5 @@ else log.info('No migration file written - the schema change needs no DDL')
 log.info('Regenerating JSON Schema...')
 const { jsonSchemaPath } = await import(path.resolve(global.fliRoot, 'core/derived-paths.js'))
 $.exec({ command: `${ls} jsonschema --schema ${schema} --out ${jsonSchemaPath(path.dirname(schema))}` })
-log.success('JSON Schema updated')
+log.done('JSON Schema updated')
 ```

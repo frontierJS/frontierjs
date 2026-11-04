@@ -38,5 +38,5 @@ const cmd = arg.package
 
 log.info(arg.package ? `Linking ${arg.package} into current project` : 'Linking current package globally')
 $.exec({ command: cmd, dry: flag.dry })
-if (!flag.dry) log.success('Linked')
+if (!flag.dry) log.done('Linked')
 ```

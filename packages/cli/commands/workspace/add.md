@@ -103,7 +103,7 @@ if (oldName !== newName) {
   setPkg(destPath, pkg)
 }
 
-log.success(`Added ${newName} to workspace`)
+log.done(`Added ${newName} to workspace`)
 echo('')
 echo(`Next: cd ${wsRoot} && bun install`)
 ```

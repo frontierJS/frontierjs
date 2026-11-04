@@ -58,5 +58,5 @@ if (flag.dry) {
 }
 
 writeFileSync(destPath, output, 'utf8')
-log.success(`Created ${flag.to} with ${plural(varCount, 'variable')} (values ${flag['keep-values'] ? 'kept' : 'stripped'})`)
+log.done(`Created ${flag.to} with ${plural(varCount, 'variable')} (values ${flag['keep-values'] ? 'kept' : 'stripped'})`)
 ```

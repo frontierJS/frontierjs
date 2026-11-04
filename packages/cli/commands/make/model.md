@@ -135,7 +135,7 @@ if (declared) {
   log.dry(`Would append model ${model} to schema.lite`)
 } else {
   writeFileSync(schemaPath, existing + makeLiteModel(model, flag['soft-delete']), 'utf8')
-  log.success(`Appended model ${model} to schema.lite`)
+  log.done(`Appended model ${model} to schema.lite`)
   created.push(schemaPath)
   log.info(`Run ${schemaApplyStep($.paths.db, model).command} to apply the schema change`)
 }
@@ -153,7 +153,7 @@ if (flag.service) {
   } else {
     mkdirSync(servicesDir, { recursive: true })
     writeFileSync(servicePath, makeServiceFile(model, plural), 'utf8')
-    log.success(`Created ${servicePath}`)
+    log.done(`Created ${servicePath}`)
     created.push(servicePath)
   }
 }
@@ -174,7 +174,7 @@ if (flag.resource) {
     mkdirSync(resourcesDir, { recursive: true })
     // make:resource's template, so the file carries the model's default form.
     writeFileSync(resourcePath, resourceFile(model, plural), 'utf8')
-    log.success(`Created ${resourcePath}`)
+    log.done(`Created ${resourcePath}`)
     created.push(resourcePath)
   }
 }

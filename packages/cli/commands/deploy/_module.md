@@ -18,7 +18,7 @@ const { loadFrontierConfig, dockerfileScripts, unexecdEntrypoint } = await impor
 const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { createSwap, runFlags, sshRunner, shWord } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
-const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
+const { apiContainer } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { crossOrigins } = await import(new URL('file://' + global.fliRoot + '/core/shell-origins.js'))
@@ -29,18 +29,6 @@ const { PLACEHOLDER_SERVER, resolveTarget, sshHost, resolveDeployConf, resolveSi
 // `corsOrigins`. Asked by the forward swap and the revert alike, so a revert
 // does not restart the container without the list the deploy gave it.
 const derivedOrigins = ($, deployConf) => crossOrigins(edgeNamesOf(deployConf), $.paths.root)
-
-// The container this deploy's API runs in. One reading of the name, shared by
-// the pipeline and by every standalone command that has to find it again —
-// `deploy:logs`, `deploy:status`, `deploy:run`, the revert and the rollback.
-// Nine hand-written copies is how the name came to ignore the port tier.
-// The app that runs the fleet (`outpost: true`) is the box's platform, named
-// `frontier-<app>` beside outpost's served `fjs--…` containers, so `docker ps`
-// tells the control plane from what it serves.
-const apiContainer = (appId, deployConf) => {
-  const name = apiContainerName(appId, deployConf?.api?.port)
-  return deployConf?.outpost === true ? name.replace(`${appId}-api`, `frontier-${appId}`) : name
-}
 
 // The `--user` an app's container starts with: its own user on a box
 // (`FJS-D1484`), made by `deploy:setup`, and nothing on localhost, where the

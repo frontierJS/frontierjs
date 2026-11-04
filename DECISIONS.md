@@ -8647,6 +8647,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1883"></a>2026-11-04 · `FJS-D1883` — Q5 — How does yuma get past its pre-squash history — Reinstall yuma fresh only, keeping its archive as insurance; restore mode is proved on a throwaway box built at HEAD.
+
+Asked in [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md) § Open questions. **A** was picked over **B** (rewrite yuma's tracking row for the initial migration to the squashed file's, then back up again, so restore mode runs on yuma itself), **C** (`archiveRefusals` accepts a squashed initial whose schema matches).
+
+The paper's recommendation, taken as written: migrations are not frozen before alpha, so a pre-squash database will keep turning up, and B is a hand edit to a live database.
+
 ### <a id="fjs-d1881"></a>2026-11-04 · `FJS-D1881` — Q8 — Units the box lacks — Keep.
 
 Asked in [`IDEAS/box-health.md`](IDEAS/box-health.md) § Open questions. **A** was picked over **B** (grade `not-found` as a failure on a box whose install should have made it).
@@ -16517,6 +16523,11 @@ The paper's recommendation, taken as written: it is Q1, Q4 and Q5's recommendati
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a `FlowTemplate` model in `orion.lite`: authored and shared by people, needs its own row policy and a copy-on-use path, and coins a noun beside `Flow`), **C** (a flow flagged `isTemplate`: no new noun, "use" is a copy of its current version, but visibility across owners rides on a row policy that today reads only the owner and an administrator (`FJS-D296`)).
 
 The paper's recommendation, taken as written: (confidence 3) — the registry already is how a host adds what orion lists (`FJS-D269`), a template is a flow that must compile before anyone sees it, and it adds neither a table nor a policy; B or C is the later step if people need to author them. GitHub and n8n both treat templates as a curated catalog outside the user-authored workflows. - **Prior art** (read 2026-11-01) — GitHub's organization workflow templates are `.yml` files in a `workflow-templates` directory of the `.github` repo, each with a `.properties.json` carrying name, description and categories ([docs](https://docs.github.com/en/actions/sharing-automations/creating-workflow-templates-for-your-organization)). n8n serves templates from a separate template library API, set by `N8N_TEMPLATES_HOST` ([docs](https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/configuration-examples/configure-a-custom-workflow-templates-library)). Neither flags a user's own workflow as a template, so C has no precedent.
+
+### <a id="fjs-d1882"></a>2026-11-04 · `FJS-D1882` — How an App asks for start-first (`FJS-D1847`) — `App.swap DeploySwap @default(stopFirst)`, the enum `Deployment.swap` records, read off the live App on every release, rollbacks included.
+
+Asked in [`IDEAS/zero-downtime-deploy.md`](IDEAS/zero-downtime-deploy.md) step 2.2 through the question tool. `App.swap` is the swap asked for and `Deployment.swap` the one that ran, one noun and one enum, picked over `isStartFirst Boolean` (`FJS-D1749`'s predicate), which would be a second spelling of the choice the Deployment row already names. Read live, as `exposes_port` is, over the release's config snapshot: turning start-first off takes effect on the next release, a rollback included. The verdict still has the last word either way (`FJS-D1846`), so a rollback across a contract runs stop-first, and an `exposesPort` App is sent stop-first whatever it asks.
+*Lives in:* `basecamp/db/schema.lite`, `basecamp/api/src/jobs/deployment-run.job.ts`.
 
 ### <a id="fjs-d1866"></a>2026-11-04 · `FJS-D1866` — What owns the container swap for both deploy paths (`FJS-D1840`) — A runner-shaped module, `@frontierjs/outpost/swap`: `createSwap({ run, health, find })` holds stop-first, start-first and the put-back, and `fli deploy`'s swap and health steps become one step.
 

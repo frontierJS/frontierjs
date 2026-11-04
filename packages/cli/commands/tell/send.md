@@ -151,5 +151,5 @@ try {
   }
 } catch (e) { log.error(`${member.api} did not answer (${e.message}).`); process.exitCode = 1; return }
 if (answer.status !== 201) return refused(answer)
-log.success(`Left for ${to}${onlySealed ? ` — ${what}` : ''}${sealed ? ', sealed' : ''}.`)
+log.done(`Left for ${to}${onlySealed ? ` — ${what}` : ''}${sealed ? ', sealed' : ''}.`)
 ```

@@ -84,7 +84,7 @@ machine.run(`ls -1dt ${backupDir}/pre-deploy-* 2>/dev/null |
   xargs rm -rf --`)
 
 $.config.backupDir = destHost
-log.success(`Backup complete → ${destHost}`)
+log.done(`Backup complete → ${destHost}`)
 if ($.config.litestreamRunning) {
   log.info('  Litestream is also replicating continuously to your remote replica')
 }

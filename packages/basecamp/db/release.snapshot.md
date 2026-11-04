@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-74 model(s) · 58 enum(s) · 2 database(s) · 1 value set(s)
+74 model(s) · 59 enum(s) · 2 database(s) · 1 value set(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -49,6 +49,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `HttpMethod` | `DELETE` · `GET` · `HEAD` · `PATCH` · `POST` · `PUT` |
 | `JobKind` | `oneShot` · `scheduled` · `triggered` · `workflow` |
 | `JobStatus` | `cancelled` · `failed` · `pending` · `running` |
+| `MachineBackupPlan` | `daily` · `weekly` |
 | `MaintenanceKind` | `cleanup` · `patch` |
 | `MetricType` | `counter` · `gauge` · `histogram` |
 | `MonitorStatus` | `down` · `paused` · `pending` · `up` |
@@ -65,7 +66,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `RegisterMethod` | `imported` · `provisioned` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `backup` · `generic` · `notification` · `providerKey` · `registryAuth` · `sshKey` · `tlsCert` |
-| `ServerEventKind` | `cameOnline` · `cleanupFailed` · `cleanupQueued` · `cleanupRan` · `containerCrashLooping` · `containerRecovered` · `created` · `destroyFinished` · `destroyRequested` · `drainCancelled` · `drainStarted` · `enrollmentIssued` · `postureFailed` · `postureRestored` · `provisionCreated` · `provisionReady` · `provisionRequested` · `provisionTimeout` · `rebootRequested` · `rebooted` · `recipeFailed` · `recipeRan` · `removed` · `statusSyncIgnored` · `statusSynced` · `syncFailed` · `syncNoAccount` · `syncRequested` · `syncUnrecognized` · `syncUnsupported` · `unitFailed` · `unitRestored` · `unreachable` · `volumeRemoved` · `volumesPruned` |
+| `ServerEventKind` | `backupsReadFailed` · `cameOnline` · `cleanupFailed` · `cleanupQueued` · `cleanupRan` · `containerCrashLooping` · `containerRecovered` · `created` · `destroyFinished` · `destroyRequested` · `drainCancelled` · `drainStarted` · `enrollmentIssued` · `postureFailed` · `postureRestored` · `provisionCreated` · `provisionReady` · `provisionRequested` · `provisionTimeout` · `rebootRequested` · `rebooted` · `recipeFailed` · `recipeRan` · `removed` · `statusSyncIgnored` · `statusSynced` · `syncFailed` · `syncNoAccount` · `syncRequested` · `syncUnrecognized` · `syncUnsupported` · `unitFailed` · `unitRestored` · `unreachable` · `volumeRemoved` · `volumesPruned` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
 | `ServerStatus` | `destroyed` · `destroying` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
 | `SslMode` | `flexible` · `full` · `fullStrict` · `off` |
@@ -288,6 +289,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `source` | `Json` | no | `'{}'` | — |
 | `status` | `AppStatus` | no | `'unknown'` | @system |
 | `stopGrace` | `Int` | yes | — | — |
+| `swap` | `DeploySwap` | no | `'stopFirst'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `variables` | `Variable[]` | — | — | relation |
 | `volumePath` | `String` | yes | — | — |
@@ -2030,6 +2032,8 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | --- | --- | --- | --- | --- |
 | `actualSpecs` | `Json` | yes | — | — |
 | `appServers` | `AppServer[]` | — | — | relation |
+| `backupPolicy` | `Json` | yes | — | @system |
+| `backupReading` | `Json` | yes | — | @system |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `dockerState` | `Json` | yes | — | — |

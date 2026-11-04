@@ -194,7 +194,7 @@ const showWarnings = ($, warnings) => {
 // commands that write it.
 const jsonSchemaDone = ($, json, out) => {
   const counts = json.body.find((r) => /\d+ models/.test(r.plain))?.plain.trim().replace(/, mode=.*/, '')
-  $.log.success(`JSON Schema  ${$.chalk.dim(path.relative(process.cwd(), out))}${counts ? $.chalk.dim(` · ${counts}`) : ''}`)
+  $.log.done(`JSON Schema  ${$.chalk.dim(path.relative(process.cwd(), out))}${counts ? $.chalk.dim(` · ${counts}`) : ''}`)
 }
 
 // ─── Through Basecamp ────────────────────────────────────────────────────────

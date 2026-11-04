@@ -133,7 +133,7 @@ try {
   }
 
   execSync(`git clone ${useUrl} "${destDir}"`, { stdio: 'inherit' })
-  log.success(`Cloned to ${destDir}`)
+  log.done(`Cloned to ${destDir}`)
 
   if (flag.ws) {
     // Run ws:add to register it in the workspace

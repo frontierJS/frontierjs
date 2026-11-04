@@ -62,10 +62,10 @@ const result = vendorApp(root, log)
 
 echo('')
 if (result.vendored.length) {
-  log.success(`${GENERATED_DIR}/ written — ${result.packed.length} tarball(s), ${result.vendored.length} spec(s) rewritten`)
+  log.done(`${GENERATED_DIR}/ written — ${result.packed.length} tarball(s), ${result.vendored.length} spec(s) rewritten`)
   for (const name of result.vendored) echo(chalk.dim(`    ${name}`))
 } else {
-  log.success(`${GENERATED_DIR}/ written — nothing linked, manifest copied verbatim`)
+  log.done(`${GENERATED_DIR}/ written — nothing linked, manifest copied verbatim`)
 }
 echo('')
 log.info('Next:  fli deploy:local')

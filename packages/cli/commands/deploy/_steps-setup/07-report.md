@@ -6,7 +6,7 @@ description: Final setup health report and next steps
 ```js
 const { host, serverPath, appId, edge, edgeWritten } = $.config
 
-log.success(`\nSetup complete for ${appId}`)
+log.done(`\nSetup complete for ${appId}`)
 // Said again here because 01's line scrolls away under the installs, and a
 // caller like basecamp:create runs a deploy after it.
 if ($.config.fliSkipped) log.warn($.config.fliSkipped)

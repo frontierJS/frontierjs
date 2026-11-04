@@ -27,5 +27,5 @@ ${DEFAULT_PAGE}FLIPAGEEOF`)
 // Caddy stats this per request, so there is nothing to reload and no window in
 // which the guard is half applied.
 machine.run(`touch ${pausedFile(serverPath)}`)
-log.success(`Paused → ${pausedFile(serverPath)}`)
+log.done(`Paused → ${pausedFile(serverPath)}`)
 ```

@@ -84,7 +84,7 @@ if (shell === 'fish') {
 
   mkdirSync(fishDir, { recursive: true })
   $.exec({ command: `${$.fli} completion:generate --shell fish > "${fishFile}"` })
-  log.success(`Fish completions written → ${fishFile}`)
+  log.done(`Fish completions written → ${fishFile}`)
   log.info(`Completions are active in new fish sessions automatically.`)
   return
 }
@@ -113,7 +113,7 @@ const block = `\n${MARKER}\n${sourceLine}\n`
 try {
   const existing = existsSync(configFile) ? readFileSync(configFile, 'utf8') : ''
   writeFileSync(configFile, existing + block, 'utf8')
-  log.success(`Completion installed → ${configFile}`)
+  log.done(`Completion installed → ${configFile}`)
   log.info('')
   log.info(`Activate now:  source ${configFile}`)
   log.info(`Or restart your shell.`)

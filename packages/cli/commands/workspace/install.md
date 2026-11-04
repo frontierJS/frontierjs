@@ -17,5 +17,5 @@ const wsRoot = await $.wsRoot()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 log.info(`Installing all workspace deps at ${wsRoot}`)
 $.exec({ command: `bun install --cwd ${wsRoot}`, dry: flag.dry })
-if (!flag.dry) log.success('All workspace deps installed')
+if (!flag.dry) log.done('All workspace deps installed')
 ```

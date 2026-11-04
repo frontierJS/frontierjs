@@ -109,7 +109,7 @@ if (!saved.nick) {
   // A revoke seals the next sealing key to this machine's box key, so the post holds the claim from the start.
   const boxed = await publishOwn(api, { ...keys, sealing }).catch(e => e.message)
   if (boxed) log.warn(`The post did not take ${boxed} — the next \`fli tell\` verb tries again.`)
-  log.success(`This machine is ${offer.nick} at ${api} — ${plural(chain.machines.length, 'machine')} now.`)
+  log.done(`This machine is ${offer.nick} at ${api} — ${plural(chain.machines.length, 'machine')} now.`)
   echo(chalk`\n  {bold ${offer.nick}} {dim · ${rootPrint(chain.root)}}`)
   echo(chalk`    {cyan ${await safetyWords(chain.root)}}\n`)
   log.info('These match `fli frontier:who` on the machine that linked this one, or this is not your member.')
@@ -172,7 +172,7 @@ for (let i = 0; i < 40; i++) {
   await poll(1500)
   const now = await syncChain(member).catch(() => null)
   if (now?.chain?.machines.includes(machine)) {
-    log.success(`Linked — ${member.nick} is ${plural(now.chain.machines.length, 'machine')} now, and your words are unchanged.`)
+    log.done(`Linked — ${member.nick} is ${plural(now.chain.machines.length, 'machine')} now, and your words are unchanged.`)
     return
   }
   if (now?.refused) { log.error(`The post's chain moved wrong: ${now.refused}.`); process.exitCode = 1; return }

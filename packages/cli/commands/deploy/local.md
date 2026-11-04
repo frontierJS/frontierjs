@@ -133,7 +133,7 @@ if (!bcFindings.length) {
 // failed, which reads as *the Dockerfile was written and docker cannot read it*.
 log.info(`Building ${tag} from ${dockerfile}...`)
 $.exec({ command: `docker build -t ${tag} -f ${dockerfilePath} ${$.paths.root}` })
-log.success(`Image built → ${tag}`)
+log.done(`Image built → ${tag}`)
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
 log.info(`Starting ${container} on port ${port}...`)
@@ -176,7 +176,7 @@ const runCmd = [
 ].filter(Boolean).join(' ')
 
 $.exec({ command: runCmd })
-log.success(`Container started → ${container}`)
+log.done(`Container started → ${container}`)
 log.info('  Migrations running in entrypoint...')
 
 // ─── Health check ─────────────────────────────────────────────────────────────

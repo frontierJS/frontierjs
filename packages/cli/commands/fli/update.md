@@ -117,7 +117,7 @@ if (!repoRoot) {
   // Said either way round: an upgrade that changed nothing must not read as one
   // that worked.
   const after = installedVersion(fliRoot)
-  if (after && after !== before) log.success(`fli ${before || '?'} → ${after}`)
+  if (after && after !== before) log.done(`fli ${before || '?'} → ${after}`)
   else log.info(`Already the latest — still ${after || before || '(unknown)'}`)
   return
 }
@@ -184,7 +184,7 @@ if (flag.link === false) {
 }
 
 if (!flag.dry) {
-  log.success('fli updated')
+  log.done('fli updated')
   if (!wasLinked && flag.link !== false) {
     log.info('run `fli list` to see all commands')
   }

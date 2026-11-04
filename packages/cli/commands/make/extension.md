@@ -84,7 +84,7 @@ if (flag.dry) {
 
 const { written, skipped } = scaffoldExtensionSurface({ root, dir, appName, devPort, apiPort })
 
-for (const f of written) log.success(`Created ${f}`)
+for (const f of written) log.done(`Created ${f}`)
 if (skipped.length) log.info(`Kept ${skipped.length} existing file(s) — a scaffold never overwrites your config.`)
 
 // jetty is a dependency of the app, not of the CLI: the build binaries come
@@ -116,8 +116,8 @@ if (existsSync(pkgPath)) {
   }
   if (added.length || !hasJetty || tools.length) {
     writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
-    if (added.length) log.success(`Added scripts: ${added.join(', ')}`)
-    if (tools.length) log.success(`Added devDependencies: ${tools.join(', ')}`)
+    if (added.length) log.done(`Added scripts: ${added.join(', ')}`)
+    if (tools.length) log.done(`Added devDependencies: ${tools.join(', ')}`)
   }
 }
 

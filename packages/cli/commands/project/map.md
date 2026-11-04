@@ -75,7 +75,7 @@ if (error) { log.error(error); return }
 if (flag.out) {
   const outPath = resolve($.paths.root, flag.out)
   writeFileSync(outPath, JSON.stringify(map, null, 2))
-  log.success(`Written to ${flag.out}`)
+  log.done(`Written to ${flag.out}`)
   return
 }
 
@@ -261,5 +261,5 @@ if (missingSecrets.length) {
   log.warn(`${missingSecrets.length} required secret(s) not set: ${missingSecrets.map(v => v.key).join(', ')}`)
 }
 
-log.success('Map complete')
+log.done('Map complete')
 ```

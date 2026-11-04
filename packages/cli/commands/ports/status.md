@@ -194,7 +194,7 @@ if (clean) {
   }
   for (const s of picked) {
     releaseSession(s.root)
-    log.success(`Forgot the slot of ${s.name}`)
+    log.done(`Forgot the slot of ${s.name}`)
   }
 }
 ```

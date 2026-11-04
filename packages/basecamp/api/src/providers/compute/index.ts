@@ -132,6 +132,44 @@ export interface ComputeMachine {
 }
 
 /**
+ * What a vendor says about a machine's OWN backups — its image of the whole
+ * disk, taken on its schedule (`VOCABULARY.md` § Machine backup). Not an
+ * `AppBackup`: that is this app's archive of one database.
+ *
+ * `plan` is the vendor's word and is passed through, never mapped to the
+ * nearest one Basecamp offers. DigitalOcean has seven plans and five are priced
+ * per GiB of disk; a reading that called `custom_daily` *daily* would print
+ * 30% of the droplet on the cost line for a plan that does not cost that.
+ * Null when backups are off.
+ */
+export interface MachineBackups {
+  enabled:       boolean
+  plan:          string | null
+  /** The hour of day the window opens, UTC. */
+  hour:          number | null
+  /** Three capitals, `SUN`, on a weekly plan only; DO's spelling and Hetzner
+   *  has no weekly plan. */
+  weekday:       string | null
+  /** How long the window stays open from `hour` — a length, not its end. */
+  windowHours:   number | null
+  retentionDays: number | null
+  /** Newest first, so `taken[0]` is *last taken*. */
+  taken:         TakenBackup[]
+}
+
+export interface TakenBackup {
+  id:     string
+  /** When the vendor took it, ISO 8601. */
+  at:     string
+  sizeGb: number | null
+}
+
+/** A taken backup is ordered by when it was taken, whatever order the vendor
+ *  listed it in — neither documents one. */
+export const newestFirst = (taken: TakenBackup[]): TakenBackup[] =>
+  [...taken].sort((a, b) => b.at.localeCompare(a.at))
+
+/**
  * What a caller asks for when it wants a machine.
  *
  * `userData` is the whole install — cloud-init, carrying the enrollment token.
@@ -239,6 +277,10 @@ export interface ComputeConnector {
   catalog(send: AccountSend): Promise<ComputeCatalog>
   /** One machine, or null where the vendor says it is gone. */
   machine(send: AccountSend, providerServerId: string): Promise<ComputeMachine | null>
+  /** Its machine backups, or null where the vendor says the machine is gone.
+   *  Reading them needs `image:read` at DigitalOcean, which a scoped token may
+   *  lack, so a refusal throws rather than reading as *off*. */
+  backups(send: AccountSend, providerServerId: string): Promise<MachineBackups | null>
   /** Does this token work? The call is deliberately the cheapest read the
    *  vendor offers, because it runs when somebody presses Verify. */
   verify(send: AccountSend): Promise<boolean>

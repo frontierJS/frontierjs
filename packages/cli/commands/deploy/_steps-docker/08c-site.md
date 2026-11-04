@@ -68,7 +68,7 @@ try {
   // A shell variable wins over site:build's --env-file, so the build reads the copy.
   $.exec({ command: `${$.fli} site:build`, cwd: $.paths.root, env: { ...process.env, DATABASE_URL: join(copied, db) }, dry: $.flag.dry })
   $.exec({ command: `${$.fli} site:deploy`, cwd: $.paths.root, dry: $.flag.dry })
-  log.success('Site published')
+  log.done('Site published')
 } catch (err) {
   log.error(`Site not published — the API is deployed and the last site is still serving`)
   throw err

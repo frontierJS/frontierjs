@@ -28,7 +28,7 @@ const html    = machine.capture(`find ${docRoot}/ -name '*.html' -type f -exec c
 const { routes, plain, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
 const written = error ? { error } : await writeEdge(machine, { appId, routes, plain, ifPresent: true })
 
-if (written === 'written') log.success('Routes rewritten — the API mounts paths it did not at the last write')
+if (written === 'written') log.done('Routes rewritten — the API mounts paths it did not at the last write')
 else if (written === 'unchanged') log.info('Routes unchanged')
 else if (written === 'absent') log.info('No routes for this app in Caddy — fli deploy:setup writes them')
 else log.warn(`Routes not rewritten: ${written.error}`)

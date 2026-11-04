@@ -137,7 +137,7 @@ if (existsSync(file) && !flag.force) {
 mkdirSync(dir, { recursive: true })
 writeFileSync(file, makeFactoryFile(model, states))
 
-log.success(`Created db/factories/${model}Factory.js`)
+log.done(`Created db/factories/${model}Factory.js`)
 if (states.length) log.info(`States stubbed: ${states.join(', ')}`)
 log.info(`Use it: makeTestClient(schema, { factories: { ${accessorOf(model)}: ${model}Factory } })`)
 

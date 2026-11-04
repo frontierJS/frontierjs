@@ -62,6 +62,6 @@ if (!id) {
 const done = await runProvision({ cloud, action: 'off', id })
 if (done.error) { log.error(done.error); process.exitCode = 1; return }
 if (done.pending) { log.warn(`Box ${done.off} was asked to power off and is not off yet — fli server shows when it is`); return }
-log.success(`Box ${done.off} is off at ${cloudLabel(cloud)}`)
+log.done(`Box ${done.off} is off at ${cloudLabel(cloud)}`)
 echo(`  To remove it: ${chalk.red(`fli server:destroy ${done.off}`)}`)
 ```

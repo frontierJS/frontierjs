@@ -54,6 +54,6 @@ const { name: stem, ext } = parse(name)
 let out = name
 for (let n = 1; existsSync(out); n++) out = `${stem} (${n})${ext}`
 writeFileSync(out, file.bytes, { flag: 'wx' })
-log.success(`Saved ${out} (${file.bytes.length} bytes).`)
+log.done(`Saved ${out} (${file.bytes.length} bytes).`)
 if (left !== null) log.info(left === '0' ? 'The link is spent.' : `${left} download${left === '1' ? '' : 's'} left on the link.`)
 ```

@@ -85,6 +85,6 @@ const taken = await takeRow(answer.json)
 if (taken.refused) log.warn(`The post's row for you was not kept: ${taken.refused}. The background check fetches it again.`)
 const boxed = await publishOwn(api, keys).catch(e => e.message)
 if (boxed) log.warn(`The post did not take ${boxed} — the next \`fli tell\` verb tries again.`)
-log.success(`You are #${answer.json.number} ${answer.json.nick} at ${api}, invited by ${answer.json.invitedBy}.`)
+log.done(`You are #${answer.json.number} ${answer.json.nick} at ${api}, invited by ${answer.json.invitedBy}.`)
 echo(`  saved as frontier.nick in ${CONFIG_FILE}`)
 ```

@@ -87,12 +87,12 @@ if (flag.dry) {
 }
 
 execSync(tagCmd, { cwd: root, stdio: 'inherit' })
-log.success(`Created tag ${tagName}`)
+log.done(`Created tag ${tagName}`)
 
 // ─── Push ────────────────────────────────────────────────────────────────────
 if (flag.push) {
   // Branch and tags together: two pushes run a pre-push hook twice.
   execSync('git push origin HEAD --tags', { cwd: root, stdio: 'inherit' })
-  log.success(`Pushed ${tagName} to remote`)
+  log.done(`Pushed ${tagName} to remote`)
 }
 ```

@@ -135,7 +135,7 @@ if (seeder && !custom) {
   log.info(`Running the app's own dev-admin seeder: ${seeder.describe}`)
   if (flag.dry) return log.dry(seeder.command)
   $.exec({ command: seeder.command, cwd: $.paths.root })
-  return log.success(`${DEFAULT_EMAIL} / ${DEFAULT_PASSWORD}`)
+  return log.done(`${DEFAULT_EMAIL} / ${DEFAULT_PASSWORD}`)
 }
 if (seeder) log.info(`The app's ${seeder.describe} seeds only its own login — using the generic upsert for ${flag.email}`)
 
@@ -153,7 +153,7 @@ const out = runAppScript($, 'dev-admin', SCRIPT, {
 })
 if (!out) return refuse($, `Upserting ${flag.email} failed — the reason is above`)
 
-log.success(`${out.email} / ${flag.password}`)
+log.done(`${out.email} / ${flag.password}`)
 echo(chalk`  {dim ${out.done.length ? out.done.join(', ') : 'password already current'} · set ${out.set.join(', ')}}`)
 if (!out.set.includes('isSystemAdmin')) log.info('User has no isSystemAdmin column — standing comes from role alone')
 log.info('No tenant or membership link made — add a db:seed:admin script if the app needs one')

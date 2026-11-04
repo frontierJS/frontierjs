@@ -504,7 +504,7 @@ if (inline) {
           log.info('Left as it is — nothing was written')
         } else {
           const { web } = await applyPlan({ origin, key, app, plan })
-          log.success(`Set up App '${app.name}'${web ? ` and its static App '${web.name}' (${web.id})` : ''}`)
+          log.done(`Set up App '${app.name}'${web ? ` and its static App '${web.name}' (${web.id})` : ''}`)
           app = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
           ;({ findings } = await preflight({ origin, key, app, root, dockerfile }))
           log.info('Preflight again, on what Basecamp now holds:')
@@ -533,7 +533,7 @@ if (inline) {
     $.exec({ command: `docker build -t ${tag} -f ${dockerfilePath} ${root}` })
     const imageId = String($.exec({ command: `docker image inspect --format '{{.Id}}' ${tag}`, stdio: ['ignore', 'pipe', 'inherit'] }) ?? '').trim()
     if (!/^sha256:[0-9a-f]{64}$/.test(imageId)) throw new Error(`docker named no image id for ${tag} — got '${imageId}'`)
-    log.success(`Built ${tag} → ${imageId.slice(0, 19)}`)
+    log.done(`Built ${tag} → ${imageId.slice(0, 19)}`)
 
     const machineFor = (host, transport = null) => createMachine({ host, exec: $.exec, transport })
     const here = machineFor('localhost', 'local')
@@ -573,7 +573,7 @@ echo('')
 for (const s of row?.steps ?? []) echo(`    ${String(s.status).padEnd(8)} ${s.name}${s.output ? `  ${s.output}` : ''}`)
 echo('')
 if (row?.status === 'success') {
-  log.success(`Released ${named}`)
+  log.done(`Released ${named}`)
   echo(chalk`  {dim Deployment} ${origin}/deployments/${release.id}/\n`)
   return
 }

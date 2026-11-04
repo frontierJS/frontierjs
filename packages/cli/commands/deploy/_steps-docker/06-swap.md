@@ -45,5 +45,5 @@ if (!healthy) {
       ? `${imageTag} did not start — ${after}`
       : `Health check failed for ${imageTag} — ${after}`)
 }
-log.success(`Container started → ${container}`)
+log.done(`Container started → ${container}`)
 ```

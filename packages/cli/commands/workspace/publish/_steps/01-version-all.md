@@ -61,7 +61,7 @@ if (pinFile && existsSync(pinFile)) {
   else if (moved.length) {
     writeFileSync(pinFile, text, 'utf8')
     execSync('git add core/app-config.js', { cwd: cliMember.dir })
-    log.success(`  raised ${moved.length} scaffold pin(s) in core/app-config.js`)
+    log.done(`  raised ${moved.length} scaffold pin(s) in core/app-config.js`)
   }
 }
 
@@ -125,7 +125,7 @@ if (repo) {
   const moved = snapshotFiles(repo).filter(f => !alreadyEdited.has(f))
   for (const f of moved) execSync(`git add ${JSON.stringify(f)}`, { cwd: repo })
 
-  if (moved.length)         log.success(`  regenerated ${moved.length} snapshot(s): ${moved.join(', ')}`)
+  if (moved.length)         log.done(`  regenerated ${moved.length} snapshot(s): ${moved.join(', ')}`)
   if (alreadyEdited.size)   log.warn(`  left alone, already edited: ${[...alreadyEdited].join(', ')}`)
 }
 
@@ -151,5 +151,5 @@ if (repo) {
     $.config.graded.push({ cwd: dir, sha: git(dir, 'rev-parse HEAD'), tags: [tag] })
   }
 }
-log.success(`  committed ${$.config.graded.length} release commit(s) -- tags wait for CI`)
+log.done(`  committed ${$.config.graded.length} release commit(s) -- tags wait for CI`)
 ```

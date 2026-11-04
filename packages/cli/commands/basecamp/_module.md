@@ -10,11 +10,18 @@ description: Basecamp itself — make its box at a cloud, install it, point its 
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, provisionScript, markHost,
   cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine }
   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-const { basecamp, basecampAll, pullHubArchive, pullRawBackup, apiCannotBackUp, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, pullHubArchive, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 
 // Basecamp's own hostname, the one `pointHost` points at the box.
 const webDomain = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
+
+// `--url`, then `BASECAMP_URL`, then Basecamp's hostname; never the dev API,
+// since backup and restore name the box.
+const apiOrigin = async (url) => {
+  const domain = await webDomain()
+  return (url || process.env.BASECAMP_URL || (domain ? `https://${domain}` : '')).replace(/\/+$/, '')
+}
 
 // The box `fli deploy` ships Basecamp to, as ssh reaches it.
 const deployServer = async () =>
@@ -71,7 +78,7 @@ const pointHost = async ({ host, ip, configured, log }) => {
   if (!process.env.CLOUDFLARE_TOKEN) { log.warn(`  ${host} has no DNS record. Once you have a CLOUDFLARE_TOKEN: ${manual}`); return null }
   const done = await hostRecord({ host, ip })
   if (done.error) { log.error(`  ${done.error}. Then: ${manual}`); return null }
-  log.success(`${done.host} → ${done.ip} in ${done.zone}, ${done.proxied ? 'behind the proxy' : 'DNS-only'}`)
+  log.done(`${done.host} → ${done.ip} in ${done.zone}, ${done.proxied ? 'behind the proxy' : 'DNS-only'}`)
   return done
 }
 
@@ -108,7 +115,7 @@ const offerProxy = async ({ record, configured, log, yes }) => {
   }
   const done = await hostRecord({ host, ip, proxied: true })
   if (done.error) { log.error(`  ${done.error}. Left DNS-only; then: ${later}`); return false }
-  log.success(`${host} is behind Cloudflare's proxy, Full (strict) for this host`)
+  log.done(`${host} is behind Cloudflare's proxy, Full (strict) for this host`)
   return true
 }
 
@@ -239,7 +246,7 @@ const turnOffUnneeded = async (dest, identity, log) => {
     encoding: 'utf8',
     input: `${SUDO}\nsudo sh -s <<'FLI_UNNEEDED_EOF'\n${UNNEEDED_SERVICES_OFF}\nFLI_UNNEEDED_EOF\n`,
   })
-  if (run.status === 0) log.success('fwupd and multipathd are off')
+  if (run.status === 0) log.done('fwupd and multipathd are off')
   else log.warn(`Could not turn off fwupd and multipathd on ${dest}${run.stderr.trim() ? `: ${run.stderr.trim()}` : ''}. As root there: ${UNNEEDED_SERVICES_OFF.split('\n').join('; ')}`)
 }
 
@@ -422,7 +429,8 @@ once the install is done.
 
 `fli basecamp:backup` takes a backup of Basecamp itself and brings it to this
 machine, checked against its manifest. An App's archive is `fli db:download`'s
-(`FJS-D1848`).
+(`FJS-D1848`). `fli basecamp:restore` puts one back onto a Basecamp nobody has
+set up, checked against this checkout before the box is touched.
 
 `fli basecamp:live` says why a released App is not answering — its release,
 its machine, then each hostname's zone, DNS and HTTPS — and `--retry` reloads

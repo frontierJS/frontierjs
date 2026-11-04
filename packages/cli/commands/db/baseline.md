@@ -22,5 +22,5 @@ const { schema } = resolveDb($, flag)
 
 log.info('Recording migrations as applied...')
 $.exec({ command: `${litestone($)} migrate baseline --schema ${schema}` })
-log.success('Baselined — nothing was run')
+log.done('Baselined — nothing was run')
 ```

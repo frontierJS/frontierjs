@@ -22,5 +22,5 @@ log.info(held ? `Dropped ${held} cached command(s) — ${path}` : 'No cache was 
 
 // Rebuild now so the next Tab press pays nothing
 const commands = await loadCompletions()
-log.success(`Rebuilt — ${commands.length} command(s) cached.`)
+log.done(`Rebuilt — ${commands.length} command(s) cached.`)
 ```

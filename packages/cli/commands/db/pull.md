@@ -11,6 +11,6 @@ const { schema } = resolveDb($, flag)
 
 log.info('Introspecting database...')
 $.exec({ command: `${litestone($)} introspect --schema ${schema}` })
-log.success('schema.lite updated')
+log.done('schema.lite updated')
 log.warn('Review the generated schema — introspection cannot recover @@gate, @@allow, @secret, or policy rules')
 ```

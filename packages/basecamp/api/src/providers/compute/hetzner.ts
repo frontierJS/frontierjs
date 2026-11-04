@@ -31,9 +31,9 @@
 import { minorUnits, roundMinor } from '@frontierjs/toolbelt/units'
 import { env }                    from '../../core/env.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
-import { FLEET, keyBody }         from './index.ts'
+import { FLEET, keyBody, newestFirst } from './index.ts'
 import type {
-  ComputeConnector, ComputeCatalog, ComputeMachine, MachineState,
+  ComputeConnector, ComputeCatalog, ComputeMachine, MachineState, MachineBackups,
   ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark, ReservedIp, ReservedIps,
 } from './index.ts'
 
@@ -46,6 +46,10 @@ const HZ_API = 'https://api.hetzner.cloud'
 const PER_PAGE = 50
 
 const CURRENCY = 'EUR'
+
+/** Hetzner keeps seven backups and rotates the oldest out; it is not a
+ *  setting and its API states it nowhere. */
+const HZ_BACKUPS_KEPT = 7
 
 // ─── Reading Hetzner's answers ───────────────────────────────────────────
 
@@ -344,6 +348,45 @@ export const hetzner: ComputeConnector = {
 
     const server = (res.data as Row | null)?.server as Row | undefined
     return server ? toMachine(server, providerServerId) : null
+  },
+
+  async backups(send, providerServerId): Promise<MachineBackups | null> {
+    const id = encodeURIComponent(providerServerId)
+    const [got, listed] = await Promise.all([
+      send({ method: 'GET', path: `/v1/servers/${id}` }),
+      send({ method: 'GET', path: `/v1/images?type=backup&bound_to=${id}&per_page=${PER_PAGE}` }),
+    ])
+
+    if (got.status === 404) return null
+    const failed = [got, listed].find(r => r.error)
+    if (failed?.error) throw new Error(said(failed))
+
+    const server = (got.data as Row | null)?.server as Row | undefined
+    if (!server) return null
+
+    // The server's `backup_window` is the whole policy — `"22-02"`, UTC, or
+    // null when off. Hetzner sells one plan: daily, seven kept.
+    const window  = str(server.backup_window).match(/^(\d{1,2})-(\d{1,2})$/)
+    const enabled = server.backup_window != null
+    const start   = window ? Number(window[1]) : null
+    const span    = window ? ((Number(window[2]) - Number(window[1]) + 24) % 24) || 24 : null
+
+    return {
+      enabled,
+      plan:          enabled ? 'daily' : null,
+      hour:          start,
+      weekday:       null,
+      windowHours:   span,
+      retentionDays: enabled ? HZ_BACKUPS_KEPT : null,
+      // A backup still `creating` has not been taken yet.
+      taken:         newestFirst(rows(listed.data, 'images')
+        .filter(i => str(i.status) === 'available')
+        .map(i => ({
+          id:     String(i.id ?? ''),
+          at:     str(i.created),
+          sizeGb: typeof i.image_size === 'number' && Number.isFinite(i.image_size) ? i.image_size : null,
+        })).filter(b => b.id && b.at)),
+    }
   },
 
   async create(send, spec: MachineSpec): Promise<{ providerServerId: string }> {

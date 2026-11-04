@@ -262,7 +262,7 @@ if (existsSync(dockerfilePath)) {
     mkdirSync(dockerfileDir, { recursive: true })
     writeFileSync(dockerfilePath, makeDockerfile(appId, needs), 'utf8')
   }
-  log.success(`Created: deploy/Dockerfile`)
+  log.done(`Created: deploy/Dockerfile`)
   if (needs.chrome) log.info(`  with Chromium: the app uses ${needs.chrome}`)
   if (needs.webSrc) log.info('  with web/src: the API reads a template from it')
   created.push(dockerfilePath)
@@ -303,7 +303,7 @@ if (existsSync(dockerignorePath)) {
   ].join('\n') + '\n'
 
   if (!flag.dry) writeFileSync(dockerignorePath, dockerignore, 'utf8')
-  log.success(`Created: .dockerignore`)
+  log.done(`Created: .dockerignore`)
   created.push(dockerignorePath)
 }
 
@@ -321,7 +321,7 @@ if (!server && !domain) {
   // Create a minimal frontier.config.js
   const content = `export default {\n\n${deployBlock}\n}\n`
   if (!flag.dry) writeFileSync(configPath, content, 'utf8')
-  log.success(`Created: frontier.config.js (with deploy block)`)
+  log.done(`Created: frontier.config.js (with deploy block)`)
   created.push(configPath)
 } else {
   const existing = readFileSync(configPath, 'utf8')
@@ -331,7 +331,7 @@ if (!server && !domain) {
     const updated = injectDeployBlock(existing, deployBlock)
     if (updated) {
       if (!flag.dry) writeFileSync(configPath, updated, 'utf8')
-      log.success(`Updated: frontier.config.js (deploy block added)`)
+      log.done(`Updated: frontier.config.js (deploy block added)`)
       created.push(configPath)
     } else {
       log.warn(`Could not inject deploy block into frontier.config.js — add it manually`)
@@ -367,7 +367,7 @@ if (declared.clash) {
   log.info(`  Junction refuses both at start(). Keep one: the config, unless you pass checks or authFn.`)
 } else if (declared.declared) {
   const where = declared.sources.map(s => s.file).join(', ')
-  log.success(`Health endpoint: declared in ${where} — the deploy will poll ${health.path}`)
+  log.done(`Health endpoint: declared in ${where} — the deploy will poll ${health.path}`)
 } else {
   log.warn(`Nothing found that answers ${health.path}`)
   log.info(`  Declare it:  plugins: { health: true }  in api/config/junction.config.js`)
@@ -378,7 +378,7 @@ if (declared.clash) {
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 echo('')
-log.success('Done. Next steps:')
+log.done('Done. Next steps:')
 echo('')
 echo('  1. Review deploy/Dockerfile and adjust for your app')
 echo(server || domain ? '  2. Review the deploy block in frontier.config.js' : '  2. Write the deploy block:  fli make:deploy --server <host> --domain <domain>')

@@ -458,24 +458,30 @@ describe('a rollback and the volume', () => {
 
 describe('how the machine swapped, on the row', () => {
 
-  /** A rollback whose one step starts the container, against a machine that answers `/deploy` with `deployed`. */
-  async function startAgainst(deployed: Record<string, unknown>) {
+  /** A rollback whose one step starts the container, against a machine that answers `/deploy` with `deployed`.
+   *  `live` is what the App says now; `shipped` is the runtime the release's snapshot holds. */
+  async function startAgainst(deployed: Record<string, unknown>, live: Record<string, unknown> = {}, shipped: Record<string, unknown> = {}, hostname?: string) {
     const { app, first, current } = await anAppWithHistory()
     const sys = env.system as any
+    if (Object.keys(live).length) await sys.app.update({ where: { id: app.id }, data: live })
+    if (hostname) await sys.domain.create({ data: { workspaceId: ws.id, appId: app.id, hostname } })
     const replacement = await sys.deployment.create({ data: {
       appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
-      previousDeploymentId: current.id, configSnapshot: first.configSnapshot } })
+      previousDeploymentId: current.id,
+      configSnapshot: { ...(first.configSnapshot as any), runtime: { ...(first.configSnapshot as any).runtime, ...shipped } } } })
     await sys.deploymentStep.create({ data: { deploymentId: replacement.id, position: 0, name: 'Start container' } })
 
+    const sent: any[] = []
     const conduit = {
       resolve: async () => ({ pinned_cert: true }),
-      send: async (call: any) => ({ data: call.path === '/deploy' ? deployed : {} }),
+      send: async (call: any) => { sent.push(call); return { data: call.path === '/deploy' ? deployed : {} } },
     }
     const via = new Proxy(env.app, { get: (t, k) =>
       k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
     await env.app.runAs(admin.id, { tenant: ws.id }, () =>
       (deploymentRun as any).handler({ app: via, data: { deployment_id: replacement.id } }))
-    return sys.deployment.findUnique({ where: { id: replacement.id } })
+    const row = await sys.deployment.findUnique({ where: { id: replacement.id } })
+    return Object.assign(row, { asked: sent.find(c => c.path === '/deploy')?.body?.swap })
   }
 
   test('a rollback onto the older schema is stop-first, and the row says why', async () => {
@@ -488,5 +494,37 @@ describe('how the machine swapped, on the row', () => {
   test('an overlap records no reason, and a machine that names no swap records none', async () => {
     expect(await startAgainst({ swap: 'start-first', swap_reason: null })).toMatchObject({ swap: 'startFirst', swapReason: null })
     expect(await startAgainst({})).toMatchObject({ swap: null, swapReason: null })
+  })
+
+  describe('what the App asks for (FJS-D1882)', () => {
+    const host = () => `swap-${uniq()}.example.test`
+
+    test('start-first goes out for an App that asked, with a host and a published port', async () => {
+      const row = await startAgainst({}, { swap: 'startFirst' }, { port: 4100 }, host())
+      expect(row.asked).toBe('start-first')
+    })
+
+    test('an App that asked for nothing is sent stop-first', async () => {
+      const row = await startAgainst({}, {}, { port: 4100 }, host())
+      expect(row.asked).toBe('stop-first')
+    })
+
+    test('an App that exposes its port is sent stop-first whatever it asks', async () => {
+      const row = await startAgainst({}, { swap: 'startFirst', hasExposedPort: true }, { port: 4100 }, host())
+      expect(row.asked).toBe('stop-first')
+    })
+
+    test('an App with nothing to route to is sent stop-first, so Outpost does not refuse the release', async () => {
+      expect((await startAgainst({}, { swap: 'startFirst' }, { port: 4100 })).asked).toBe('stop-first')
+      expect((await startAgainst({}, { swap: 'startFirst' }, {}, host())).asked).toBe('stop-first')
+    })
+
+    test('a rollback reads the live App, not what the release shipped with', async () => {
+      // The snapshot says nothing of swap, and turning it off since is honored.
+      const off = await startAgainst({}, { swap: 'stopFirst' }, { port: 4100, swap: 'startFirst' }, host())
+      expect(off.asked).toBe('stop-first')
+      const on = await startAgainst({}, { swap: 'startFirst' }, { port: 4100, swap: 'stopFirst' }, host())
+      expect(on.asked).toBe('start-first')
+    })
   })
 })

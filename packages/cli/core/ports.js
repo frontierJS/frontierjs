@@ -1161,3 +1161,15 @@ export function apiContainerName(appId, port) {
   const tier = Number.isFinite(port) ? decode(Number(port)).env : null
   return tier === 'test' ? `${appId}-api-test` : `${appId}-api`
 }
+
+// The container a deployed API runs in. One reading of the name, shared by the
+// deploy pipeline and every standalone command that has to find it again —
+// `deploy:logs`, the revert, `basecamp:restore`. Nine hand-written copies is
+// how the name came to ignore the port tier. The app that runs the fleet
+// (`outpost: true`) is the box's platform, named
+// `frontier-<app>` beside outpost's served `fjs--…` containers, so `docker ps`
+// tells the control plane from what it serves.
+export function apiContainer(appId, deployConf) {
+  const name = apiContainerName(appId, deployConf?.api?.port)
+  return deployConf?.outpost === true ? name.replace(`${appId}-api`, `frontier-${appId}`) : name
+}

@@ -178,5 +178,5 @@ $.config.revertConfiguration = recorded?.values
   : configurationSet(deployConf, target).values
 $.config.revertFrom    = chosen.serving
 
-log.success(`Revert transition opened → ${planned.transition.id}`)
+log.done(`Revert transition opened → ${planned.transition.id}`)
 ```

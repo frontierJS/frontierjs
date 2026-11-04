@@ -607,7 +607,7 @@ for (const [relPath, content] of filesToWrite) {
   written.push(relPath)
 }
 
-log.success(`Wrote ${written.length} base files`)
+log.done(`Wrote ${written.length} base files`)
 
 // ─── 9b. The widgets/ surface ─────────────────────────────────────────────────
 //
@@ -620,7 +620,7 @@ if (useWidgets) {
   const { written: widgetFiles } = scaffoldWidgetSurface({
     root: finalTarget, name: 'HelloWidget', appName,
   })
-  log.success(`Wrote ${widgetFiles.length} files in widgets/`)
+  log.done(`Wrote ${widgetFiles.length} files in widgets/`)
 }
 
 // ─── 9c. The site/ surface ────────────────────────────────────────────────────
@@ -634,12 +634,12 @@ if (useSite) {
   const { written: siteFiles } = scaffoldSiteSurface({
     root: finalTarget, appName, hasApi: useApi,
   })
-  log.success(`Wrote ${siteFiles.length} files in site/`)
+  log.done(`Wrote ${siteFiles.length} files in site/`)
 }
 
 if (useExtension) {
   const { written: extFiles } = scaffoldExtensionSurface({ root: finalTarget, appName })
-  log.success(`Wrote ${extFiles.length} files in extension/`)
+  log.done(`Wrote ${extFiles.length} files in extension/`)
 }
 
 // ─── 9d. Link local packages, then install ────────────────────────────────────
@@ -832,7 +832,7 @@ if (useGit) {
     $.exec({ command: 'git init', cwd: finalTarget, stdio: 'pipe' })
     $.exec({ command: 'git add .', cwd: finalTarget, stdio: 'pipe' })
     $.exec({ command: 'git commit -m "init"', cwd: finalTarget, stdio: 'pipe' })
-    log.success('Git repository initialized')
+    log.done('Git repository initialized')
   } catch (e) {
     log.warn(`git init step failed: ${e.message} — skipping`)
   }
@@ -846,7 +846,7 @@ if (useGit) {
 // and the two lines that matter (`cd`, `fli dev`) were in the middle of it.
 
 echo('')
-log.success(`${appName} created`)
+log.done(`${appName} created`)
 echo('')
 echo(chalk`  {cyan cd ${useHere ? '.' : (useWorkspace ? finalTarget : name)}}`)
 if (!useInstall) echo(chalk.cyan('  bun install'))

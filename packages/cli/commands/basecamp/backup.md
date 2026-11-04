@@ -7,10 +7,11 @@ examples:
   - fli basecamp:backup yuma
   - fli basecamp:backup --out ./snapshot
   - fli basecamp:backup yuma --raw
+  - fli basecamp:backup --list
 args:
   -
     name: server
-    description: The box Basecamp runs on, which names the directory the archive lands in (default deploy.server in packages/basecamp/frontier.config.js)
+    description: The box Basecamp runs on, which names the directory the archive lands in (default deploy.server in packages/basecamp/frontier.config.js; with --list, every box)
 flags:
   url:
     type: string
@@ -21,6 +22,9 @@ flags:
   raw:
     type: boolean
     description: Copy the db directory and env file over ssh instead of asking the API — what runs on its own when the API cannot back up. /setup cannot take the copy
+  list:
+    type: boolean
+    description: List the backups already on this machine, per box, with size, age, manifest version and whether a filed key opens each — takes nothing, asks nothing
 ---
 
 Basecamp's own state on this machine, the way the Take a backup button on
@@ -60,20 +64,54 @@ not copied. The directory is `<stamp>-raw/`: `db/`, `.env.production` and the
 `raw.json` that marks it, with box names, not an archive's, so `/setup` cannot
 take it. An `ENCRYPTION_KEY` line in the env file is taken out of the copy.
 
+**`--list`** reads what is already here and touches no box: every box's
+directory, or the one named, each backup with its kind, when it was taken,
+its size on disk, the Basecamp version its manifest names, and whether a key
+filed under `~/.config/fli/basecamp/<server>/` opens it. Read from the marker,
+not hashed — restore checks each file. A directory with neither marker, a
+download cut short, is listed as unreadable rather than left out.
+
 <script>
-const { join }    = await import('node:path')
-const { homedir } = await import('node:os')
-const { plural }  = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
+const { basename, join } = await import('node:path')
+const { existsSync, readdirSync } = await import('node:fs')
+const { plural }      = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
+const { ageOf }       = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
+const { formatBytes } = await import('@frontierjs/toolbelt/units')
 
-/** Where a box's backups land: one directory per box, never pruned. */
-const backupsOf = (server) =>
-  join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'fli', 'basecamp', server)
+/** The boxes `--list` reads: `--out` alone, the one named, or every box with a directory. */
+const listedBoxes = (server, out) => {
+  if (out) return [{ server: basename(out), dir: out }]
+  if (server) return [{ server, dir: backupsOf(server) }]
+  const root = backupsRoot()
+  return existsSync(root)
+    ? readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => ({ server: e.name, dir: join(root, e.name) }))
+    : []
+}
 
-/** `--url`, then `BASECAMP_URL`, then Basecamp's hostname; never the dev API,
- *  since the directory is named for the box. */
-const apiOrigin = async (url) => {
-  const domain = await webDomain()
-  return (url || process.env.BASECAMP_URL || (domain ? `https://${domain}` : '')).replace(/\/+$/, '')
+/** One backup's row; a key not filed is what a restore of it would stop on. */
+const backupRow = (b, width, keys, chalk) => {
+  if (b.kind === 'unreadable') return chalk`{yellow ${b.name.padEnd(width)}}  {dim no manifest.json or raw.json — a download cut short, not a backup restore can read}`
+  const key = !b.fingerprint ? chalk`{dim key} the development placeholder`
+    : keys.has(b.fingerprint) ? chalk`{dim key} ${b.fingerprint.slice(0, 12)} {green filed}`
+    : chalk`{dim key} ${b.fingerprint.slice(0, 12)} {yellow not filed}`
+  return chalk`${b.name.padEnd(width)}  {dim ${ageOf(b.takenAt).padStart(4)}}  ${b.kind.padEnd(7)} ${(b.version ?? '—').padEnd(7)} ${formatBytes(b.bytes).padStart(7)}  ${key}`
+}
+
+/** Every backup on this machine, one block per box, oldest first. */
+const listBackups = ({ server, out, echo, chalk }) => {
+  const boxes = listedBoxes(server, out).map(box => ({ ...box, backups: localBackups(box.dir) })).filter(box => box.backups.length)
+  if (!boxes.length) { echo(chalk`
+  {dim No backups under} ${out || (server ? backupsOf(server) : backupsRoot())}
+`); return }
+  for (const box of boxes) {
+    const keys = filedKeys(box.server)
+    const bytes = box.backups.reduce((n, b) => n + b.bytes, 0)
+    echo(chalk`
+  {bold ${box.server}}  {dim ${plural(box.backups.length, 'backup')} · ${formatBytes(bytes)} ·} ${box.dir}`)
+    const width = Math.max(...box.backups.map(b => b.name.length))
+    echo.lines(box.backups.map(b => backupRow(b, width, keys, chalk)), { indent: 4 })
+  }
+  echo('')
 }
 
 /** Where the key's copy goes, asked at every backup; a run with no terminal files it. */
@@ -120,6 +158,8 @@ const copyRaw = async ({ server, out, say, dry, tty, log, echo, chalk }) => {
 </script>
 
 ```js
+if (flag.list) { listBackups({ server: String(arg.server ?? '').trim(), out: flag.out, echo, chalk }); return }
+
 const server = String(arg.server ?? '').trim() || await deployServer()
 if (!server) { log.error('Pass the box: fli basecamp:backup <server>, or set deploy.server in packages/basecamp/frontier.config.js'); process.exitCode = 1; return }
 const out = flag.out || backupsOf(server)

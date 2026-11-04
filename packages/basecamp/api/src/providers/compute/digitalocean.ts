@@ -23,9 +23,9 @@
 import { minorUnits, roundMinor } from '@frontierjs/toolbelt/units'
 import { env }                    from '../../core/env.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
-import { FLEET, keyBody }         from './index.ts'
+import { FLEET, keyBody, newestFirst } from './index.ts'
 import type {
-  ComputeConnector, ComputeCatalog, ComputeMachine, MachineState,
+  ComputeConnector, ComputeCatalog, ComputeMachine, MachineState, MachineBackups,
   ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark, ReservedIp, ReservedIps,
 } from './index.ts'
 
@@ -56,6 +56,9 @@ const rows = (body: unknown, key: string): Row[] => {
 
 const str = (v: unknown): string   => typeof v === 'string' ? v : ''
 const num = (v: unknown): number   => typeof v === 'number' && Number.isFinite(v) ? v : 0
+/** Where an absent number is *not stated* rather than zero — a backup window
+ *  opening at hour 0 is midnight. */
+const numOrNull = (v: unknown): number | null => typeof v === 'number' && Number.isFinite(v) ? v : null
 
 function toRegion(r: Row): ComputeRegion {
   return { slug: str(r.slug), label: str(r.name) || str(r.slug), available: r.available !== false }
@@ -341,6 +344,37 @@ export const digitalOcean: ComputeConnector = {
       basecampHost:     tagsOf(droplet).includes(hostTag(FLEET)),
       app:              tagsOf(droplet).includes(appTag(FLEET)),
       createdAt:        str(droplet.created_at) || null,
+    }
+  },
+
+  async backups(send, providerServerId): Promise<MachineBackups | null> {
+    const at = `/v2/droplets/${encodeURIComponent(providerServerId)}/backups`
+    const [policy, listed] = await Promise.all([
+      send({ method: 'GET', path: `${at}/policy` }),
+      send({ method: 'GET', path: `${at}?per_page=${PER_PAGE}` }),
+    ])
+
+    if (policy.status === 404 || listed.status === 404) return null
+    const failed = [policy, listed].find(r => r.error)
+    if (failed?.error) throw new Error(`DigitalOcean: ${said(failed)}`)
+
+    // An off policy is `{ droplet_id, backup_enabled: false }` and nothing
+    // else; a daily plan has no `weekday` key.
+    const p    = ((policy.data as Row | null)?.policy ?? {}) as Row
+    const plan = (p.backup_policy ?? {}) as Row
+
+    return {
+      enabled:       p.backup_enabled === true,
+      plan:          str(plan.plan) || null,
+      hour:          numOrNull(plan.hour),
+      weekday:       str(plan.weekday) || null,
+      windowHours:   numOrNull(plan.window_length_hours),
+      retentionDays: numOrNull(plan.retention_period_days),
+      taken:         newestFirst(rows(listed.data, 'backups').map(b => ({
+        id:     String(b.id ?? ''),
+        at:     str(b.created_at),
+        sizeGb: numOrNull(b.size_gigabytes),
+      })).filter(b => b.id && b.at)),
     }
   },
 

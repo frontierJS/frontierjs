@@ -72,5 +72,5 @@ try {
 $.config.commit   = sha
 $.config.imageTag = `${$.config.appId}:${sha}`
 
-log.success(`Shipped → ${sha}`)
+log.done(`Shipped → ${sha}`)
 ```

@@ -76,4 +76,7 @@ stopped.
 It deletes a production database, so a person confirms each run: at a
 terminal by typing the app's id, anywhere else with `--approved` once a
 person has approved that exact command line. Nothing is backed up first:
-copy the database off the box, or pass `--keep-data`.
+copy the database off the box, or pass `--keep-data`. Preflight names the
+newest copy on this machine — Basecamp's under `fli basecamp:backup`'s
+directory for the box, an App's newest entry in `db/backups/` — in red when
+there is none, and the box's pre-deploy snapshots that go with the database.

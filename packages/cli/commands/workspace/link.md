@@ -96,7 +96,7 @@ toPkg[depKey][fromPkg.name] = 'workspace:*'
 toPkg[depKey] = Object.fromEntries(Object.entries(toPkg[depKey]).sort())
 
 setPkg(toDir, toPkg)
-log.success(`Updated ${toPkg.name}/package.json`)
+log.done(`Updated ${toPkg.name}/package.json`)
 
 echo('')
 echo(`Run: cd ${wsRoot} && bun install`)

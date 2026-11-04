@@ -11,5 +11,5 @@ log.info('Pushing to git...')
 $.exec({ command: 'git push origin HEAD --tags' })
 
 const elapsed = ((Date.now() - $.config.startTime) / 1000).toFixed(1)
-log.success(`Released ${$.config.pkg.name}@${$.config.newVersion} in ${elapsed}s`)
+log.done(`Released ${$.config.pkg.name}@${$.config.newVersion} in ${elapsed}s`)
 ```

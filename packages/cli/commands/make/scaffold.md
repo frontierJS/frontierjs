@@ -258,7 +258,7 @@ const write = (path, content, label) => {
   }
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, content, 'utf8')
-  log.success(`Created ${label.padEnd(12)}  ${path}`)
+  log.done(`Created ${label.padEnd(12)}  ${path}`)
   created.push(path)
   return true
 }
@@ -287,7 +287,7 @@ if (flag['skip-schema']) {
     log.dry(`Would append model ${modelName} to schema.lite`)
   } else {
     writeFileSync(schemaPath, existing + makeSchemaStanza(modelName, fields, flag['soft-delete']), 'utf8')
-    log.success(`Appended model        schema.lite`)
+    log.done(`Appended model        schema.lite`)
     created.push(schemaPath)
   }
 }
@@ -344,7 +344,7 @@ if (!skipRoutes) {
   else if (flag.dry) log.dry(`Would add /${routeSegment(plural)}/ to the nav table:  ${navPath}`)
   else {
     writeFileSync(navPath, next, 'utf8')
-    log.success(`Linked ${'nav'.padEnd(13)}  ${navPath}`)
+    log.done(`Linked ${'nav'.padEnd(13)}  ${navPath}`)
     linked = true
   }
 }

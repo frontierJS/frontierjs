@@ -71,5 +71,5 @@ const out = runAppScript($, 'revoke-sessions', SCRIPT, { schemaPath, email: arg.
 if (!out) return refuse($, `Revoking sessions for ${target} failed — the reason is above`)
 
 if (out.revoked === 0) log.info(`No active sessions for ${target}`)
-else log.success(`Revoked ${plural(out.revoked, 'session')} for ${target}`)
+else log.done(`Revoked ${plural(out.revoked, 'session')} for ${target}`)
 ```

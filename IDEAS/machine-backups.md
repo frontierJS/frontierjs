@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — a cloud's own whole-machine backups, seen and switched from Basecamp
 
-**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1 next.** Probed against the tree 2026-11-03. Do not cite
+**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1 built; 1.2 next.** Probed against the tree 2026-11-03. Do not cite
 this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): see in Basecamp whether a DigitalOcean droplet's backups are on,
@@ -107,11 +107,18 @@ Goal: every vendor-linked machine shows its backup state on the Server screen.
 Done when: `cd packages/basecamp/api && bun run test` is green with the connector cases in
 `compute.test.ts`, and yuma's Server screen shows what 0.1 read.
 
-- [ ] 1.1 `ComputeConnector.backups(send, id)` → `{ enabled, plan, hour, weekday, window, retentionDays, taken: [{ id, at, sizeGb }] }`
+- [x] 1.1 `ComputeConnector.backups(send, id)` → `{ enabled, plan, hour, weekday, windowHours, retentionDays, taken: [{ id, at, sizeGb }] }`
       for both connectors, from 0.1's recorded answers. A plan outside `weekly`/`daily` is read
       and shown by its name; it is never a desired policy, since Basecamp offers neither its
       per-GiB price nor its retention range. A `compute.test.ts` case feeds `custom_daily`: the
       reading carries the name, `setBackups` refuses it, the estimate is null.
+      Built 2026-11-04. `windowHours` rather than `window`, which reads as the next window's
+      time. Null where the vendor no longer has the machine, as `machine()` is; a refused list
+      (DO's `image:read`) throws rather than reading as off. `taken` is newest first. Hetzner's
+      reading is the server's `backup_window` (`"22-02"` is four hours) and the images
+      `type=backup&bound_to=<id>`, a `creating` one excluded. Both sinks answer *off*, and the
+      two-clouds lifecycle case reads it at both. The `custom_daily` case asserts the reading;
+      its `setBackups` refusal lands with 2.1 and its null estimate with 1.3, in the same test.
 - [ ] 1.2 Two columns on `Server` per Q1 (`FJS-D1862`): the desired policy a person sets, and the
       vendor's last reading with its `readAt`, which `sync` writes. A null desired policy is
       *not managed*: Basecamp shows the reading and pushes nothing, so linking a box (4.1) never

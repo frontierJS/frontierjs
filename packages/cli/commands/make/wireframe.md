@@ -94,8 +94,8 @@ if (existsSync(draftAt)) { log.error(`${draftAt} already exists — delete it or
 mkdirSync(outDir, { recursive: true })
 for (const [f, src] of Object.entries(files)) writeFileSync(join(outDir, f), src, 'utf8')
 writeFileSync(draftAt, draft, 'utf8')
-log.success(`Created ${Object.keys(files).length} files in ${outDir}`)
-log.success(`Created ${draftAt}`)
+log.done(`Created ${Object.keys(files).length} files in ${outDir}`)
+log.done(`Created ${draftAt}`)
 
 // ─── grade what was written ──────────────────────────────────────────────
 // With the APP's mesa and litestone, read out of their own exports maps, since

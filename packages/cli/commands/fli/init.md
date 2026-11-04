@@ -83,7 +83,7 @@ if (flag.dry) {
 mkdirSync(nsDir, { recursive: true })
 writeFileSync(sampleFile, sampleCommand(ns), 'utf8')
 
-log.success(`Created ${ROUTES_DIR}/${ns}/hello.md`)
+log.done(`Created ${ROUTES_DIR}/${ns}/hello.md`)
 echo('')
 echo(chalk.bold('Next steps:'))
 echo(`  ${chalk.cyan('fli list')}                        ${chalk.dim('— see all available commands')}`)

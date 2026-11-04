@@ -334,7 +334,7 @@ export const buyBox = async ({ cloud, name, size, region, image, keyPath, reserv
       if (had == null) { mkdirSync(`${home}/.ssh`, { recursive: true, mode: 0o700 }); writeFileSync(sshConfig, '', { mode: 0o600 }) }
       appendFileSync(sshConfig, (had && !had.endsWith('\n') ? '\n' : '') + (had ? '\n' : '') + block)
       added = true
-      log.success(`  Added Host ${made.name} to ~/.ssh/config — ssh ${made.name}`)
+      log.done(`  Added Host ${made.name} to ~/.ssh/config — ssh ${made.name}`)
     }
   }
   if (!added) echo`  Add to ~/.ssh/config:

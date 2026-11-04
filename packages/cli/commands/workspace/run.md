@@ -116,6 +116,6 @@ if (flag.parallel) {
     }
   }
   if (failed) log.error(`${failed} package(s) failed`)
-  else log.success(`All done`)
+  else log.done(`All done`)
 }
 ```

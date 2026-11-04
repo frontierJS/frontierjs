@@ -42,11 +42,11 @@ if (flag.urls) {
   const chunks = []
   for (let i = 0; i < urls.length; i += 30) chunks.push(urls.slice(i, i + 30))
   for (const chunk of chunks) await purge(profile, zone.id, { files: chunk })
-  log.success(`Purged ${urls.length} URL(s)`)
+  log.done(`Purged ${urls.length} URL(s)`)
 } else {
   log.info(`Purging ALL cache for ${zone.name}`)
   if (flag.dry) { log.dry('Would purge all cache'); return }
   await purge(profile, zone.id, { purge_everything: true })
-  log.success('Cache purged')
+  log.done('Cache purged')
 }
 ```

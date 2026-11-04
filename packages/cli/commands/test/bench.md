@@ -114,7 +114,7 @@ if (verdict.regressions.length && !flag.adopt) {
   log.error(`${verdict.regressions.length} metric(s) above baseline`)
   process.exitCode = 1
 } else if (flag.adopt || flag.update) {
-  log.success(`${bench.BASELINE_FILE} written`)
+  log.done(`${bench.BASELINE_FILE} written`)
 } else {
   log.success('within baseline')
 }

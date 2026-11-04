@@ -96,11 +96,11 @@ for (const { dir, pkg, newVersion } of planned) {
   const raw = JSON.parse(readFileSync(pkgPath, 'utf8'))
   raw.version = newVersion
   writeFileSync(pkgPath, JSON.stringify(raw, null, 2) + '\n', 'utf8')
-  log.success(`${pkg.name}  ${pkg.version} → ${newVersion}`)
+  log.done(`${pkg.name}  ${pkg.version} → ${newVersion}`)
 }
 
 if (!flag.commit) {
-  log.success(`Bumped ${planned.length} package(s) — nothing committed`)
+  log.done(`Bumped ${planned.length} package(s) — nothing committed`)
   return
 }
 
@@ -126,5 +126,5 @@ if (repo) {
   }
 }
 
-log.success(`Bumped ${planned.length} package(s) — run \`fli ws:pub\` to publish`)
+log.done(`Bumped ${planned.length} package(s) — run \`fli ws:pub\` to publish`)
 ```

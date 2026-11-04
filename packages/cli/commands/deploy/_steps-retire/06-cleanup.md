@@ -14,7 +14,7 @@ if ($.config.abort) return
 
 const { appId, target, outpostPresent } = $.config
 const elapsed = ((Date.now() - $.config.startTime) / 1000).toFixed(1)
-log.success(`Retired ${appId} from ${target} in ${elapsed}s`)
+log.done(`Retired ${appId} from ${target} in ${elapsed}s`)
 if ($.flag['keep-data']) log.info(`  ${$.config.dbDir} and ${$.config.envFile} are still on the server`)
 
 // What deploy:setup put on the machine for EVERY app. Removing it here would

@@ -91,7 +91,7 @@ const { addresses: page, held } = CLOUDS[cloud]
 
 const done = await runProvision({ cloud, action: 'destroy', id })
 if (done.error) { log.error(done.error); process.exitCode = 1; return }
-log.success(`Destroyed box ${done.destroyed} at ${cloudLabel(cloud)}`)
+log.done(`Destroyed box ${done.destroyed} at ${cloudLabel(cloud)}`)
 
 // Released, the address goes back to the cloud's pool and is anybody's, so it
 // joins the leftovers; kept, nothing naming it is stale.
@@ -102,7 +102,7 @@ if (reserved && (flag['release-ip'] || process.stdin.isTTY)) {
   if (pick === 'r') {
     const gone = await runProvision({ cloud, action: 'release', ip: reserved })
     if (gone.error) log.error(`${gone.error}. Release it in the ${cloudLabel(cloud)} console: ${page}`)
-    else { kept = false; log.success(`Released ${reserved}`) }
+    else { kept = false; log.done(`Released ${reserved}`) }
   }
 }
 if (kept) log.info(`  Kept ${reserved} — the next fli basecamp:create reuses it when the hostname's record holds it, so the A record and Host block naming it stay. Releasing it later: ${page}, or --release-ip on the next destroy`)

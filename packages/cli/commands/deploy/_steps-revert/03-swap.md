@@ -48,7 +48,7 @@ noteForJournal($, '03-swap', {
   scope: $.config.revertTo?.id ? 'restored' : null,
 })
 
-log.success(`Container started → ${container} on ${revertImage}`)
+log.done(`Container started → ${container} on ${revertImage}`)
 
 // The entrypoint runs `db:migrate` before it serves, and on a revert that is
 // migrating FORWARD to a schema this code was written before. That is safe

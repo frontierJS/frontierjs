@@ -48,6 +48,7 @@ import { db, ws, actor, findScoped, getScoped, deriveSlug, narrowPatch, changesN
 import { HUB_SIGNING_REF }       from '../../core/credentials.ts'
 import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../domain/host/server-metrics.ts'
 import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
+import type { AccountSend, ComputeConnector, MachineBackups } from '../../providers/compute/index.ts'
 import { sendVia }               from '../../providers/compute/accounts.ts'
 import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
 import { mintEnrollToken, cloudInit, outpostUnpublished, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
@@ -190,6 +191,36 @@ async function recordEvent(
   metadata: Record<string, unknown> = {}
 ) {
   await db().serverEvent.create({ data: { serverId, kind, message, metadata } })
+}
+
+/**
+ * The vendor's word on a machine's own backups, onto `Server.backupReading`.
+ * A refused read — DO's `image:read` missing from a scoped token — keeps the
+ * last reading: writing *off* over it would show a box with seven backups as
+ * having none. Null from the vendor is the machine gone, which the status
+ * read beside this already answers, so nothing is written for it.
+ */
+async function readBackups(
+  serverId:   string,
+  connector:  ComputeConnector,
+  send:       AccountSend,
+  providerId: string,
+  targetId:   string,
+) {
+  let reading: MachineBackups | null
+  try {
+    reading = await connector.backups(send, providerId)
+  } catch (err) {
+    $.app.logger.error('conduit: backup read failed', { target: targetId, serverId, error: String(err) })
+    await recordEvent(serverId, 'backupsReadFailed',
+      `Could not read this machine's backups from ${connector.label}`, { target: targetId })
+    return
+  }
+  if (!reading) return
+  await db().asSystem().server.update({
+    where: { id: serverId },
+    data:  { backupReading: { ...reading, readAt: new Date().toISOString() } },
+  })
 }
 
 /**
@@ -592,6 +623,8 @@ export default createService({
             where: { id },
             data:  { ipAddress: reportedMachine.ipAddress, version: server.version },
           })
+
+        if (reportedMachine) await readBackups(id, connector, send, String(server.providerServerId), targetId)
       }
     }
 

@@ -17,5 +17,5 @@ $.exec({
   cwd: $.config.root,
   dry: flag.dry
 })
-log.success('Database reset complete')
+log.done('Database reset complete')
 ```

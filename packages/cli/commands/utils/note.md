@@ -47,7 +47,7 @@ if (flag.dry) {
   log.dry(`Would create: ${filePath}`)
 } else {
   writeFileSync(filePath, meta, 'utf8')
-  log.success(`Created: ${file}`)
+  log.done(`Created: ${file}`)
 }
 
 if (flag.open && !flag.dry) {

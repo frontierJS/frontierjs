@@ -12,5 +12,5 @@ const { pausedFile } = await import(new URL('file://' + global.fliRoot + '/core/
 // hand must still record that the app is serving — that row is the whole of how
 // `paused by hand` stops being the answer.
 machineFor($, host, serverPath).run(`rm -f ${pausedFile(serverPath)}`)
-log.success('Unpaused — the edge is serving again')
+log.done('Unpaused — the edge is serving again')
 ```

@@ -216,7 +216,7 @@ button[data-health] {
   cursor:        pointer;
 }
 .gui-line:hover { background: var(--surface); }
-.gui-line.done::before { content: '─ '; }
+.gui-line.end::before { content: '─ '; }
 
 /* Claude's reply is prose, set apart from the output it answers. */
 .gui-line.claude {
@@ -1622,7 +1622,7 @@ function handleEvent(event) {
     case 'output': appendOutput(stripAnsi(event.text).trimEnd(), 'output'); break
     case 'log':    appendOutput(stripAnsi(event.text), event.level || 'info'); break
     case 'done':
-      appendOutput('done', 'done')
+      appendOutput('done', 'end')
       refreshSidebar()   // a run may have created a command
       break
     case 'error':  appendOutput(`error: ${event.text}`, 'error'); break
@@ -1641,7 +1641,8 @@ const LEVEL_TONE = {
   info:    'text-info',
   dry:     'text-primary',
   detail:  'text-muted',
-  done:    'text-muted',
+  done:    'text-info',
+  end:     'text-muted',
   claude:  '',
 }
 

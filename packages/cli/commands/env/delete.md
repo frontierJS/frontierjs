@@ -53,5 +53,5 @@ if (flag.dry) {
 }
 
 writeFileSync(envPath, updated.join('\n'), 'utf8')
-log.success(`Removed ${arg.key} from ${flag.file}`)
+log.done(`Removed ${arg.key} from ${flag.file}`)
 ```

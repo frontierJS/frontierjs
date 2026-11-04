@@ -496,7 +496,7 @@ const write = (filePath, content, label) => {
 
   mkdirSync(dirname(filePath), { recursive: true })
   writeFileSync(filePath, content, 'utf8')
-  log.success(`${label.padEnd(22)} ${shown}`)
+  log.done(`${label.padEnd(22)} ${shown}`)
   created.push(shown)
 }
 
@@ -535,7 +535,7 @@ const resources = allModels.map((m) => {
     } else {
       mkdirSync(resourcesDir, { recursive: true })
       writeFileSync(file, resourceFile(m.name, m.key, exportNameFor(m)), 'utf8')
-      log.success(`${`resources/${m.name}.mesa`.padEnd(22)} ${file.replace(root + '/', '')}`)
+      log.done(`${`resources/${m.name}.mesa`.padEnd(22)} ${file.replace(root + '/', '')}`)
       created.push(file.replace(root + '/', ''))
     }
     return { ...row, name: exportNameFor(m), existed: false }

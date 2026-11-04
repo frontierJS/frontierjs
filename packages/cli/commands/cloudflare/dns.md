@@ -96,7 +96,7 @@ if (flag.delete) {
   log.info(`Deleting record ${flag.delete} from ${zone.name}`)
   if (flag.dry) { log.dry(`cf dns records delete ${flag.delete} -z ${zone.id}`); return }
   await deleteRecord(profile, zone.id, flag.delete)
-  log.success('Record deleted')
+  log.done('Record deleted')
   return
 }
 
@@ -111,7 +111,7 @@ if (flag.update) {
   log.info(`Updating record ${flag.update}`)
   if (flag.dry) { log.dry(`cf dns records edit ${flag.update} -z ${zone.id} --body '${JSON.stringify(changes)}'`); return }
   const updated = await updateRecord(profile, zone.id, flag.update, changes)
-  log.success(`Updated: ${updated.type} ${updated.name} → ${updated.content}`)
+  log.done(`Updated: ${updated.type} ${updated.name} → ${updated.content}`)
   return
 }
 
@@ -132,7 +132,7 @@ if (flag.add) {
   log.info(`Adding ${flag.type} record: ${flag.name} → ${flag.content}`)
   if (flag.dry) { log.dry(`cf dns records create -z ${zone.id} --body '${JSON.stringify(body)}'`); return }
   const record = await createRecord(profile, zone.id, body)
-  log.success(`Created: ${record.id}  ${record.type} ${record.name} → ${record.content}`)
+  log.done(`Created: ${record.id}  ${record.type} ${record.name} → ${record.content}`)
   return
 }
 

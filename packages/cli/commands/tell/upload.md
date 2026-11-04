@@ -138,10 +138,10 @@ if (to) {
   try { sent = await tellFetch(member.api, member.keys, 'POST', '/send', { to, sealed: await sealLetter(member.keys, ready.own.chain, ready.met.chain, { text: `${link}\n${name} — ${limits}` }) }) }
   catch (e) { log.error(`The file is up, and the letter to ${to} did not go (${e.message}). Send them the link above.`); process.exitCode = 1; return }
   if (sent.status !== 201) { log.error(`The file is up, and the post refused the letter to ${to} (${sent.status}): ${sent.json?.message ?? 'no reason given'}. Send them the link above.`); process.exitCode = 1; return }
-  log.success(`Sent the link to ${to}, sealed.`)
+  log.done(`Sent the link to ${to}, sealed.`)
 } else if (tty.interactive && await tty.keys('Copy the link to the clipboard?', { y: 'copy', n: 'no' }) === 'y') {
   const { copyToClipboard, clipboardTools } = await import(resolve(global.fliRoot, 'core/clipboard.js'))
-  if (copyToClipboard(link)) log.success('Copied')
+  if (copyToClipboard(link)) log.done('Copied')
   else log.warn(`Could not copy — is ${clipboardTools() ?? 'a clipboard tool'} installed?`)
 }
 ```

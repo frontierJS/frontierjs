@@ -141,7 +141,7 @@ if (flag.auto) {
       }
       mkdirSync(servicesDir, { recursive: true })
       writeFileSync(servicePath, makeServiceFile(model, serviceName), 'utf8')
-      log.success(`  Created ${file}`)
+      log.done(`  Created ${file}`)
       created.push(servicePath)
     }
   } finally {
@@ -149,7 +149,7 @@ if (flag.auto) {
   }
 
   echo('')
-  log.success(`${created.length} service(s) created · ${skipped} skipped`)
+  log.done(`${created.length} service(s) created · ${skipped} skipped`)
   if (created.length) {
     echo(chalk.dim('Services autoload from api/src/services/ (see api/config/junction.config.js).'))
   }
@@ -182,7 +182,7 @@ if (flag.dry) {
 
 mkdirSync(servicesDir, { recursive: true })
 writeFileSync(servicePath, makeServiceFile(arg.model, serviceName), 'utf8')
-log.success(`Created ${servicePath}`)
+log.done(`Created ${servicePath}`)
 log.info(`Served as '${serviceName}' — autoloaded from api/src/services/, nothing to register.`)
 
 if (flag.open) $.exec({ command: `${editor} "${servicePath}"` })

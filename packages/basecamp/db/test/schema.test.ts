@@ -2511,7 +2511,7 @@ describe('a protected environment — a developer deploys to it and does not res
 describe('App runtime columns', () => {
   // Every other scalar App column, each one a thing a release does not hand to `docker run`.
   const NOT_RUNTIME = [
-    'id', 'workspaceId', 'environmentId', 'name', 'slug', 'kind', 'status', 'source', 'hasExposedPort',
+    'id', 'workspaceId', 'environmentId', 'name', 'slug', 'kind', 'status', 'source', 'hasExposedPort', 'swap',
     'isDeployedOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId', 'deployPublicKey', 'blueprintId',
     'backupCron', 'backupDestinationId', 'replicaDestinationId', 'drillCron', 'replicaFoundAt',
     'replicaSyncedAt', 'createdAt', 'updatedAt', 'deletedAt',
