@@ -66,7 +66,7 @@ import { compare as benchCompare, format as benchFormat } from './bench-ab.mjs'
 // because the mechanism needs more explaining than the phase does.
 import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, pauseEdgeCycle, pauseQueueCycle, daemonBlindHint, ciWorkBase, portFree } from './scaffold-build.mjs'
 import { fenceThisProcess }                  from '../packages/cli/core/bun-fence.js'
-import { workspaceMembers }                  from '../packages/cli/core/workspace-members.js'
+import { workspaceMembers, isHeldOut }      from '../packages/cli/core/workspace-members.js'
 import { sourceBytes, kb }                   from './package-size.mjs'
 
 // The deploy and tutor phases scaffold with `--source local`, which `bun link`s
@@ -207,14 +207,14 @@ let lastFile     = LAST_FILE
 // learn to stop running CI at all.
 const PHASES = {
   hygiene, lint, structure, registers, snapshots, access, coverage,
-  registry, advisories, scaffold, typecheck, deploy, mutate, tutor, perf, tests,
+  registry, advisories, scaffold, typecheck, deploy, mutate, tutor, perf, tests, conduits,
 }
 
 // Which tier a phase belongs to, and the ONLY statement of it. The order above
 // and the tier here are what `main()` and `--help` both read, so a phase cannot
 // be added to the run and left out of the printed list, or described in help as
 // something the tier it is in does not do.
-const FULL_ONLY = new Set(['deploy', 'mutate', 'tutor', 'perf', 'tests'])
+const FULL_ONLY = new Set(['deploy', 'mutate', 'tutor', 'perf', 'tests', 'conduits'])
 
 async function main() {
   if (args.includes('--help') || args.includes('-h')) { usage(); return }
@@ -237,7 +237,7 @@ async function main() {
   }
 
   const planned = Object.keys(PHASES).filter(name =>
-    !(testsOnly && name !== 'tests') && !(fast && FULL_ONLY.has(name)))
+    !(testsOnly && name !== 'tests' && name !== 'conduits') && !(fast && FULL_ONLY.has(name)))
   startRunLog(planned, only ? 'partial' : testsOnly ? 'tests-only' : fast ? 'fast' : 'full')
   for (const name of planned) await runPhase(name)
   report()
@@ -1829,7 +1829,7 @@ async function tests() {
     fail(`${dir} test exited ${run.code}`, run.output, meta)
   }
 
-  const dirs = selectedDirs().filter(dir => readPackage(dir)?.scripts?.test)
+  const dirs = selectedDirs().filter(dir => !isConnector(dir) && readPackage(dir)?.scripts?.test)
   await inLanes(dirs.filter(dir => !(dir in SOLO_SUITES)), LANES, dir => runScriptAsync(dir, 'test'), settle)
   await inLanes(dirs.filter(dir => dir in SOLO_SUITES), 1, dir => runScriptAsync(dir, 'test'), settle)
 
@@ -1847,6 +1847,49 @@ async function tests() {
 
   if (update && fixed.length) saveAllowances()
   ok(`${passed.length} suite(s) green`)
+}
+
+// ─── phase 8a · conduits ────────────────────────────────────
+// The connectors are set apart (FJS-D1913): held out of releases, and their own
+// lane. A connector's suite IS its drive (`bun run drive`) -- no credential, no
+// network -- so this runs each one, and only when a path under the connector
+// group or the engine they sit on changed against the base ref. The `tests`
+// phase leaves the group out, so a change nowhere near them does not pay for
+// 26 drives, and a change to `packages/conduit/` cannot ship without them.
+const CONDUIT_PATHS = [/^packages\/conduits?\//]
+
+const isConnector = (dir) => isHeldOut({ path: dir })
+
+async function conduits() {
+  phase('conduits')
+
+  const skip = conduitsSkip()
+  if (skip) {
+    note(`conduits skipped -- ${skip}. \`fli ci --phase conduits\` runs it anyway.`)
+    ok(`skipped: ${skip}`)
+    return
+  }
+
+  const dirs = selectedDirs().filter(dir => isConnector(dir) && readPackage(dir)?.scripts?.drive)
+  const settle = (dir, run) => run.code === 0
+    ? ok(dir, run.ms, { key: dir, ms: run.ms, counts: run.counts })
+    : fail(`${dir} drive exited ${run.code}`, run.output, { key: dir, ms: run.ms, counts: run.counts })
+
+  await inLanes(dirs, LANES, dir => runScriptAsync(dir, 'drive'), settle)
+  ok(`${dirs.length} connector drive(s) run`)
+}
+
+function conduitsSkip() {
+  if (wantedPhases.includes('conduits')) return null
+  const ref = resolveRef(baseRef)
+  if (!ref) return null
+  const changed = [
+    ...git(['diff', '--name-only', ref]).split('\n'),
+    ...git(['ls-files', '--others', '--exclude-standard']).split('\n'),
+  ].filter(Boolean)
+  return changed.some(path => CONDUIT_PATHS.some(re => re.test(path)))
+    ? null
+    : `no path under packages/conduits/ or packages/conduit/ changed against ${ref.slice(0, 8)}`
 }
 
 // ─── phase 8b · mutate ──────────────────────────────────────

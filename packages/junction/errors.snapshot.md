@@ -20,6 +20,11 @@ retryable means *the row moved, re-read and re-apply*; a 409 that is not means
 *this is not a legal move*. A client that cannot tell them apart has to phrase
 both as the weaker one.
 
+Every 401 carries `WWW-Authenticate: Bearer` (RFC 9110 § 11.6.1).
+`Unauthorized`'s `challenge` adds quoted auth-params to it and never reaches
+the body (`FJS-D1936`); an MCP client starts a sign-in only from
+`resource_metadata` there.
+
 ## The classes
 
 Throw one of these anywhere and the transport serializes it. Status is set in

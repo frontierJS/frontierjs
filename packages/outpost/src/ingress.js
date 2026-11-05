@@ -24,8 +24,16 @@ import { ROOTS } from './layout.js'
 import { repointRoutes, STREAM_CLOSE_DELAY } from './swap.js'
 
 const SERVER = 'ingress'
-/** Reads a guarded write may repeat when another writer got in between. */
-const WRITE_ATTEMPTS = 3
+/** Reads a guarded write may repeat when another writer got in between: three
+ *  were exhausted by `fli deploy` landing routes back to back (`FJS-4030`). */
+const WRITE_ATTEMPTS = 10
+/** After a 412, random so two writers do not fall into step; the other one's
+ *  write and Caddy's load of it fit in the gap. */
+const backoff = (attempt) => sleep(Math.random() * 10 * attempt)
+/** Sends of one admin call reset by Caddy swapping its admin listener. */
+const RESET_SENDS = 3
+const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+const isReset = (err) => err?.code === 'ECONNRESET' || /ECONNRESET/.test(err?.message ?? '')
 /** A DNS name, lowercased. No wildcard: a wildcard certificate is DNS-01, which
  *  would put a DNS vendor's token on every machine (`IDEAS/fleet-ingress.md` D6). */
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/
@@ -204,25 +212,40 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
 
   /** One admin call. Answers the status and Caddy's own words; throws only
    *  when nothing answered, with the address, because *connection refused* on
-   *  its own does not say it was Caddy that was missing. */
+   *  its own does not say it was Caddy that was missing.
+   *
+   *  Every config load replaces Caddy's admin listener and shuts the old one
+   *  down behind it, so with another writer on the box a call is sometimes
+   *  reset (ECONNRESET, `FJS-4025`, `FJS-4030`): a pooled socket the old
+   *  server closed, or a fresh connection left in its backlog. No socket is
+   *  reused, and a reset call is sent again when a repeat is harmless: a
+   *  read, a PATCH or DELETE by id, a PUT, or a write carrying `If-Match`,
+   *  which answers 412 if the first one landed. A bare POST appends, so its
+   *  reset is thrown with `reset` set and `put` settles it by id. */
   async function caddy(method, path, body, headers = {}) {
-    let res
-    try {
-      res = await fetchFn(`${admin}${path}`, {
-        method,
-        headers: body === undefined ? headers : { 'content-type': 'application/json', ...headers },
-        body:    body === undefined ? undefined : JSON.stringify(body),
-        signal:  AbortSignal.timeout(10_000),
-      })
-    } catch (err) {
-      const unreachable = new Error(`caddy's admin API at ${admin} did not answer: ${err.message}`)
-      unreachable.unreachable = true
-      throw unreachable
+    const repeatable = method !== 'POST' || 'if-match' in headers
+    for (let sent = 1; ; sent++) {
+      let res
+      try {
+        res = await fetchFn(`${admin}${path}`, {
+          method,
+          headers:   body === undefined ? headers : { 'content-type': 'application/json', ...headers },
+          body:      body === undefined ? undefined : JSON.stringify(body),
+          signal:    AbortSignal.timeout(10_000),
+          keepalive: false,
+        })
+      } catch (err) {
+        if (isReset(err) && repeatable && sent < RESET_SENDS) { await sleep(20 * sent); continue }
+        const unreachable = new Error(`caddy's admin API at ${admin} did not answer: ${err.message}`)
+        unreachable.unreachable = true
+        unreachable.reset = isReset(err)
+        throw unreachable
+      }
+      const text = await res.text()
+      let data = null
+      try { data = text ? JSON.parse(text) : null } catch {}
+      return { status: res.status, data, said: data?.error ?? text.trim(), etag: res.headers?.get('etag') ?? null }
     }
-    const text = await res.text()
-    let data = null
-    try { data = text ? JSON.parse(text) : null } catch {}
-    return { status: res.status, data, said: data?.error ?? text.trim(), etag: res.headers?.get('etag') ?? null }
   }
 
   const must = (reply, doing) => {
@@ -247,7 +270,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
       const reply = await caddy(write.method, write.path, write.body, {
         ...write.headers, ...(read.etag ? { 'if-match': read.etag } : {}),
       })
-      if (reply.status === 412) continue
+      if (reply.status === 412) { await backoff(attempt); continue }
       must(reply, write.doing)
       return true
     }
@@ -357,13 +380,18 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
         }), 'creating the ingress server')
 
         // PATCH by id replaces in place; Caddy answers 404 for an id it has not
-        // seen, which is a first deploy.
+        // seen, which is a first deploy. An append reset on the way back may
+        // have landed, so the next send starts over at the PATCH.
         const put = async (route) => {
-          const replaced = await caddy('PATCH', `/id/${route['@id']}`, route)
-          if (replaced.status === 404)
-            must(await caddy('POST', `/config/apps/http/servers/${SERVER}/routes`, route), `adding ${route['@id']}`)
-          else
-            must(replaced, `replacing ${route['@id']}`)
+          for (let sent = 1; ; sent++) {
+            const replaced = await caddy('PATCH', `/id/${route['@id']}`, route)
+            if (replaced.status !== 404) return must(replaced, `replacing ${route['@id']}`)
+            try {
+              return must(await caddy('POST', `/config/apps/http/servers/${SERVER}/routes`, route), `adding ${route['@id']}`)
+            } catch (err) {
+              if (!(err.reset && sent < RESET_SENDS)) throw err
+            }
+          }
         }
         const drop = async (dropId) => {
           const reply = await caddy('DELETE', `/id/${dropId}`)

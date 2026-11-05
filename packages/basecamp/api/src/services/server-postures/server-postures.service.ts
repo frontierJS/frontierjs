@@ -241,7 +241,7 @@ export default createService({
     const deps = await db().dependency.findMany({ include: { uses: true } })
     const vulnerable = deps.filter((d: any) => statusOf({
       installed:  [...new Set(d.uses.map((u: any) => u.installed).filter(Boolean))] as string[],
-      latest:     d.latest, deprecated: d.deprecated,
+      latest:     d.latest, deprecated: d.deprecation,
       advisories: d.advisories ?? {}, checkedAt: d.checkedAt,
     }).status === 'vulnerable').length
 

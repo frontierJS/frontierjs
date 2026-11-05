@@ -54,11 +54,11 @@ export async function observePlatforms(app: App, opts: PlatformObserveOptions = 
   })
 
   for (const row of rows) {
-    const connector = platformConnectorFor(row.provider)
+    const connector = platformConnectorFor(row.providerKind)
     if (!connector) continue
     let live: PlatformDeployment | undefined
     try {
-      live = (await connector.deployments(sendVia(app, targetFor(connector.kind, row.accountId)), row.providerAccountId, row.name))[0]
+      live = (await connector.deployments(sendVia(app, targetFor(connector.kind, row.providerSecretId)), row.providerAccountId, row.name))[0]
     } catch (err) {
       result.failed++
       log.warn('vendor not asked', { appPlatformId: row.id, error: err instanceof Error ? err.message : String(err) })
@@ -87,7 +87,7 @@ export async function observePlatforms(app: App, opts: PlatformObserveOptions = 
 
     const deploy = await db.deployment.create({ data: {
       appId: row.appId, workspaceId: row.workspaceId, trigger: 'observed',
-      platformVersion: version, author: live.author, commitMessage: live.message,
+      platformVersion: version, commitAuthor: live.author, commitMessage: live.message,
       queuedAt: live.createdAt || observedAt,
       configSnapshot: { observed: { deploymentId: live.id, source: live.source, versions: live.versions } },
     } })

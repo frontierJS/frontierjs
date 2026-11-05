@@ -23,7 +23,7 @@ import {
   desktopBinary, desktopApiTarget, desktopLauncher, desktopMainRs,
   ensureServer, movedShellBuild, surfaceRow, desktopApiEnv, desktopIcon, desktopIconIco,
 } from '../core/desktop-surface.js'
-import { frontierSpecifiers, bundledSource } from '../core/desktop-sidecar.js'
+import { importSpecifiers, frontierSpecifiers, npmImports, bundledSource } from '../core/desktop-sidecar.js'
 import * as nodeFs from 'fs'
 import * as nodePath from 'path'
 import { runChecks } from '../core/checks.js'
@@ -380,7 +380,7 @@ describe('--sidecar: the shell starts its own API', () => {
 
   test('the compiled-in packages are derived from the API\'s own imports', () => {
     const root = appRoot('derive', API)
-    expect(frontierSpecifiers(root, nodeFs, nodePath)).toEqual([
+    expect(frontierSpecifiers(importSpecifiers(root, nodeFs, nodePath))).toEqual([
       '@frontierjs/caravan/config',
       '@frontierjs/junction',
       '@frontierjs/litestone/storage',
@@ -443,8 +443,8 @@ describe('--sidecar: the shell starts its own API', () => {
     const build = read('deploy/build.mjs')
     expect(build).toContain("join(DESKTOP, 'sidecar', 'make-sidecar.ts'), '--target', target]")
     expect(build).toContain("bundleNames(dist, '__sierraApiUrl')")
-    expect(read('sidecar/make-sidecar.ts')).toContain(frontierSpecifiers.toString())
-    expect(read('sidecar/bundled.ts')).toBe(bundledSource(frontierSpecifiers(root, nodeFs, nodePath)))
+    for (const fn of [importSpecifiers, frontierSpecifiers, npmImports]) expect(read('sidecar/make-sidecar.ts')).toContain(fn.toString())
+    expect(read('sidecar/bundled.ts')).toBe(bundledSource(frontierSpecifiers(importSpecifiers(root, nodeFs, nodePath))))
     expect(read('sidecar/launcher.ts')).toContain('shop-api: no API at')
 
     for (const f of ['deploy/build.mjs', 'config/desktop.config.js']) {
@@ -455,6 +455,34 @@ describe('--sidecar: the shell starts its own API', () => {
       const r = spawnSync('bun', ['build', '--no-bundle', join(root, 'desktop', f)], { encoding: 'utf8' })
       expect(r.status, `${f}: ${r.stderr}`).toBe(0)
     }
+  })
+
+  test('the npm packages are derived from imports, declared or not', () => {
+    const root = appRoot('npm-derive', API)
+    const specs = importSpecifiers(root, nodeFs, nodePath)
+    expect(npmImports(specs, ['jpeg-js', 'vite', '@scope/pkg'])).toEqual(['jpeg-js'])
+    expect(npmImports(['@scope/pkg/sub', 'lodash/fp'], ['@scope/pkg', 'lodash'])).toEqual(['@scope/pkg', 'lodash'])
+  })
+
+  // FJS-3959: copying every declared dependency whole shipped the web-only ones
+  // and none of an imported package's own dependencies.
+  test('staging copies what the API imports and its dependencies, not the rest', () => {
+    const root = appRoot('side-npm', {
+      'api/index.ts': "import jpeg from 'jpeg-js'\nconsole.log(jpeg)\n",
+      'package.json': JSON.stringify({ name: 'shop', dependencies: { 'jpeg-js': '^1', vite: '^5' } }),
+      'node_modules/jpeg-js/package.json': JSON.stringify({ name: 'jpeg-js', dependencies: { 'inner-dep': '^1' }, optionalDependencies: { 'absent-opt': '^1' } }),
+      'node_modules/jpeg-js/index.js': 'module.exports = {}\n',
+      'node_modules/inner-dep/package.json': JSON.stringify({ name: 'inner-dep', dependencies: { '@sc/leaf': '^1' } }),
+      'node_modules/inner-dep/index.js': 'module.exports = {}\n',
+      'node_modules/@sc/leaf/package.json': JSON.stringify({ name: '@sc/leaf' }),
+      'node_modules/vite/package.json': JSON.stringify({ name: 'vite' }),
+    })
+    scaffoldDesktopSurface({ root, appName: 'shop', wraps: 'web', sidecar: true })
+    const r = spawnSync('bun', [join(root, 'desktop', 'sidecar', 'make-sidecar.ts')], { cwd: root, encoding: 'utf8', timeout: 120000 })
+    expect(r.status, r.stderr).toBe(0)
+    const nm = join(root, 'desktop', 'shell', 'sidecar', 'app', 'node_modules')
+    for (const p of ['jpeg-js', 'inner-dep', '@sc/leaf']) expect(nodeFs.existsSync(join(nm, p, 'package.json')), p).toBe(true)
+    expect(nodeFs.existsSync(join(nm, 'vite'))).toBe(false)
   })
 
   // FJS-3970: a fresh copy has no node_modules; the copy step named no cause.

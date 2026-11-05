@@ -14,12 +14,12 @@
 //     db/schema.lite, db/migrations/
 //     node_modules/@frontierjs/*  stubs over the compiled-in packages, plus
 //                               each package's non-code exports (.lite)
-//     node_modules/<npm dep>    the app's plain npm dependencies, copied whole
+//     node_modules/<npm dep>    the npm packages the API imports and what they depend on, copied whole
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 const { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } = fs
-const { dirname, join, resolve } = path
+const { basename, dirname, join, resolve } = path
 
 const HERE = import.meta.dir
 const APP = resolve(HERE, '../..')
@@ -45,11 +45,14 @@ if (!triple) {
 
 // The packages compiled in are the ones the API's own files import. Derived on
 // every run, so an import added to a service is compiled in by the next build.
-// The same two functions are @frontierjs/cli's core/desktop-sidecar.js, which
+// The same functions are @frontierjs/cli's core/desktop-sidecar.js, which
 // writes them here.
+/*__IMPORTS_FN__*/
 /*__SPECIFIERS_FN__*/
+/*__NPM_FN__*/
 /*__BUNDLED_FN__*/
-const specs = frontierSpecifiers(APP, fs, path)
+const imports = importSpecifiers(APP, fs, path)
+const specs = frontierSpecifiers(imports)
 const bundledFile = join(HERE, 'bundled.ts')
 const bundled = bundledSource(specs)
 if (!existsSync(bundledFile) || readFileSync(bundledFile, 'utf8') !== bundled) writeFileSync(bundledFile, bundled)
@@ -62,17 +65,41 @@ cpSync(join(APP, 'db', 'schema.lite'), join(app, 'db', 'schema.lite'))
 if (existsSync(join(APP, 'db', 'migrations'))) cpSync(join(APP, 'db', 'migrations'), join(app, 'db', 'migrations'), { recursive: true })
 
 // The app's plain npm dependencies are not compiled in: the on-disk files
-// import them through node resolution, so each package is copied whole — its
-// own dependencies are not followed (FJS-3959).
+// import them through node resolution. The rule (FJS-3959): the packages the
+// API's own files import, plus every dependency those declare, each copied
+// whole. A declared dependency no API file imports (a web-only one) is left out.
 const pkg = JSON.parse(readFileSync(join(APP, 'package.json'), 'utf8'))
-for (const dep of Object.keys(pkg.dependencies ?? {})) {
-  if (dep.startsWith('@frontierjs/')) continue
-  if (!existsSync(join(APP, 'node_modules', dep))) {
-    console.error(`make-sidecar: '${dep}' is not installed in ${join(APP, 'node_modules')}; run bun install in ${APP} first`)
+const copied = new Map<string, string>()
+const nodeModulesAt = (from: string, dep: string): string | undefined => {
+  for (let d = from; ; d = dirname(d)) {
+    const hit = basename(d) === 'node_modules' ? join(d, dep) : join(d, 'node_modules', dep)
+    if (existsSync(hit)) return hit
+    if (dirname(d) === d) return undefined
+  }
+}
+const copyPackage = (dep: string, from: string, via?: string) => {
+  const src = nodeModulesAt(from, dep)
+  if (!src) {
+    console.error(
+      `make-sidecar: '${dep}'${via ? ` (a dependency of '${via}')` : ''} is not installed in ${join(APP, 'node_modules')}; run bun install in ${APP} first`)
     process.exit(1)
   }
-  cpSync(realpathSync(join(APP, 'node_modules', dep)), join(app, 'node_modules', dep), { recursive: true, dereference: true })
+  const real = realpathSync(src)
+  if (copied.has(dep)) {
+    if (copied.get(dep) !== real) console.warn(`make-sidecar: '${dep}' resolves to two installs; the first is shipped`)
+    return
+  }
+  copied.set(dep, real)
+  cpSync(real, join(app, 'node_modules', dep), { recursive: true, dereference: true })
+  const own = JSON.parse(readFileSync(join(real, 'package.json'), 'utf8'))
+  for (const sub of Object.keys({ ...own.dependencies, ...own.optionalDependencies })) {
+    if (existsSync(join(real, 'node_modules', sub))) continue // copied with it
+    const hit = nodeModulesAt(real, sub)
+    if (!hit && own.optionalDependencies?.[sub]) continue
+    copyPackage(sub, real, dep)
+  }
 }
+for (const dep of npmImports(imports, Object.keys(pkg.dependencies ?? {}))) copyPackage(dep, APP)
 
 // A stub per bundled specifier, and every non-code export (a schema fragment)
 // copied from the real package under its exports map.

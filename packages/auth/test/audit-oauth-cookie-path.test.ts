@@ -26,12 +26,12 @@ beforeAll(async () => {
   h = await makeAuth({
     oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' }) },
   })
-  app = await createTestApp({ auth: h.auth as any })
+  app = await createTestApp({ auth: h.auth as any, config: { publicUrl: 'https://shop.test' } as any })
   app.setAuth(h.auth as any)
   app.configure(auth({
     auth: h.auth,
     cookieAuth: true,
-    oauth: { publicUrl: 'https://shop.test', errorRedirect: '/sign-in', rateLimit: { max: 10_000, window: '15 minutes' } },
+    oauth: { errorRedirect: '/sign-in', rateLimit: { max: 10_000, window: '15 minutes' } },
   }))
 })
 afterAll(() => h.cleanup())

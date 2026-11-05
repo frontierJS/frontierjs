@@ -109,12 +109,12 @@ ddl.snapshot.sql decide.js decide-walk.js decisions.js DECISIONS.md deploy-image
 deploy-plan.js deploy-target.js deps.js desktop-sidecar.js desktop-surface.js dev-run.js diagnose.js docker-context.js doctor.js 
 done.js edge.js effects.js env-health.js env-preflight.js export-pairs.js exports.snapshot.md 
 extension-surface.js file.js file-kind.js file-tree.js find.js flags.js fli.js fli.json 
-frontier-member.js fs.js functions.js git.js git-history.js git-status.js global-env.js guarded-write.js 
+frontier-member.js fs.js functions.js git-history.js git-status.js git.js global-env.js guarded-write.js 
 guarded-write.mjs guard.js HANDOFF.md hazards.md health-target.js image.js index.html index.js 
 install-preflight.js intent.js intent-recognizer.md ISSUES_ARCHIVE.md ISSUES.md journal.js 
 journal-runner.mjs junction.config.js latency.js lib.js live-view.js lock.js machine.js 
 loop-log.js autopilot.js map-model.js map-reference.js map-view.js _module.md new.md next.js one-console.md open-url.js 
-outline-hint.mjs outline.js package.json parser.js pause.js pgp-words.js pin-bump.js plan.js PLAN.md png.js 
+outline-hint.mjs outline.js package-table.js package.json parser.js pause.js pgp-words.js pin-bump.js plan.js PLAN.md png.js 
 ports.js preflight.js preview.js proofs.js prose.js prove.js proxy.js publish-hosts.js publish-view.js 
 register-atlas.js register-check.js registers.js registry.js release.js release-preflight.js release-view.js repo.js 
 repo-map.js repo-rings.js repo-terms.html repo-work.js repro.js requires.js revert.js runnables.js 

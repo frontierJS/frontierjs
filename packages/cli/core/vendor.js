@@ -42,7 +42,7 @@ import { spawnSync }                                             from 'node:chil
 import { existsSync, readFileSync, writeFileSync, copyFileSync, statSync,
          readdirSync, mkdirSync, rmSync, realpathSync }           from 'node:fs'
 import { join, resolve, dirname, relative }                       from 'node:path'
-import { packageMembers, memberByName }                         from './workspace-members.js'
+import { releasableMembers, memberByName }                    from './workspace-members.js'
 
 // Where the generated build context lands, relative to the app root. The
 // Dockerfile `fli make:deploy` writes names the same path, and the `file:` specs
@@ -153,7 +153,7 @@ function workspaceRootsAbove(dir) {
 function sourceOfRoot(root, names) {
   const found = new Map()
   const add   = (m) => { if (m.manifest.name && !found.has(m.dir)) found.set(m.dir, { name: m.manifest.name, dir: m.dir, private: !!m.manifest.private }) }
-  for (const m of packageMembers(root)) add(m)
+  for (const m of releasableMembers(root)) add(m)
   for (const name of names) { const m = memberByName(root, name); if (m) add(m) }
   return found.size ? { dir: join(root, 'packages'), packages: [...found.values()] } : null
 }

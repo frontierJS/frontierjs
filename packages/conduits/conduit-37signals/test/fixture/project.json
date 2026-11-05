@@ -1,0 +1,124 @@
+{
+  "id": 1000161,
+  "status": "active",
+  "created_at": "2026-10-14T17:54:02.272Z",
+  "updated_at": "2026-10-16T21:30:10.064Z",
+  "name": "Name 13",
+  "description": "Description 2",
+  "purpose": "topic",
+  "clients_enabled": true,
+  "timesheet_enabled": false,
+  "color": null,
+  "bookmark_url": "https://3.basecampapi.com/999/my/bookmarks/BAhfixture--0000000000000000000000000000000000000000.json",
+  "star_url": "https://3.basecampapi.com/999/buckets/1000161/stars.json",
+  "url": "https://3.basecampapi.com/999/projects/1000161.json",
+  "app_url": "https://app.basecamp.com/999/projects/1000161",
+  "dock": [
+    {
+      "id": 1000413,
+      "title": "Title 19",
+      "name": "message_board",
+      "enabled": false,
+      "position": null,
+      "url": "https://3.basecampapi.com/999/buckets/1000161/message_boards/1000413.json",
+      "app_url": "https://app.basecamp.com/999/buckets/1000161/message_boards/1000413"
+    },
+    {
+      "id": 1000420,
+      "title": "Title 20",
+      "name": "todoset",
+      "enabled": true,
+      "position": 2,
+      "url": "https://3.basecampapi.com/999/buckets/1000161/todosets/1000420.json",
+      "app_url": "https://app.basecamp.com/999/buckets/1000161/todosets/1000420"
+    },
+    {
+      "id": 1000441,
+      "title": "Title 21",
+      "name": "vault",
+      "enabled": true,
+      "position": 3,
+      "url": "https://3.basecampapi.com/999/buckets/1000161/vaults/1000441.json",
+      "app_url": "https://app.basecamp.com/999/buckets/1000161/vaults/1000441"
+    },
+    {
+      "id": 1000448,
+      "title": "Title 22",
+      "name": "chat",
+      "enabled": true,
+      "position": 1,
+      "url": "https://3.basecampapi.com/999/buckets/1000161/chats/1000448.json",
+      "app_url": "https://app.basecamp.com/999/buckets/1000161/chats/1000448"
+    },
+    {
+      "id": 1000455,
+      "title": "Title 23",
+      "name": "schedule",
+      "enabled": false,
+      "position": null,
+      "url": "https://3.basecampapi.com/999/buckets/1000161/schedules/1000455.json",
+      "app_url": "https://app.basecamp.com/999/buckets/1000161/schedules/1000455"
+    },
+    {
+      "id": 1000462,
+      "title": "Title 24",
+      "name": "questionnaire",
+      "enabled": true,
+      "position": 5,
+      "url": "https://3.basecampapi.com/999/buckets/1000161/questionnaires/1000462.json",
+      "app_url": "https://app.basecamp.com/999/buckets/1000161/questionnaires/1000462"
+    },
+    {
+      "id": 1000469,
+      "title": "Title 25",
+      "name": "inbox",
+      "enabled": false,
+      "position": null,
+      "url": "https://3.basecampapi.com/999/buckets/1000161/inboxes/1000469.json",
+      "app_url": "https://app.basecamp.com/999/buckets/1000161/inboxes/1000469"
+    },
+    {
+      "id": 1000476,
+      "title": "Title 26",
+      "name": "kanban_board",
+      "enabled": false,
+      "position": null,
+      "url": "https://3.basecampapi.com/999/buckets/1000161/card_tables/1000476.json",
+      "app_url": "https://app.basecamp.com/999/buckets/1000161/card_tables/1000476"
+    },
+    {
+      "id": 1000483,
+      "title": "Title 27",
+      "name": "todoset",
+      "enabled": false,
+      "position": null,
+      "url": "https://3.basecampapi.com/999/buckets/1000161/todosets/1000483.json",
+      "app_url": "https://app.basecamp.com/999/buckets/1000161/todosets/1000483"
+    }
+  ],
+  "people": {
+    "team": {
+      "count": 3,
+      "sample": [
+        {
+          "id": 1000189,
+          "name": "Name 14",
+          "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png"
+        },
+        {
+          "id": 1000133,
+          "name": "Name 15",
+          "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png"
+        },
+        {
+          "id": 1000126,
+          "name": "Name 16",
+          "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png"
+        }
+      ]
+    }
+  },
+  "all_access": false,
+  "bookmarked": true,
+  "starred": false
+}

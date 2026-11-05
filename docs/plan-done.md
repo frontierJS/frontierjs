@@ -724,3 +724,137 @@ Answered questions:
   - **B** — Not built: escrow is the answer, and a lost key is lost data.
   - **Recommend A.** `$rotateKey` exists; the CLI is the small half, and it is
     the one thing B's config export offered that A did not. Confidence 2.
+
+
+## IDEAS/conduits-move.md
+
+Records of the finished phases, moved verbatim 2026-11-05; the plan keeps each step's line and the phase **Done** paragraph.
+
+### Phase 0 — Inventory and Phase 1 — The sibling is committed, then the owner lands
+
+#### 0.1
+  - **W — 27 walkers that enumerate `packages/` one level** (file:line):
+    `cli/core/checks/repo.js` 286 (`test-files-run`), 414 (`doc-examples-run`),
+    458 (`package-root-md`), 520 (`docs-index`), 597 (`connector-contract`,
+    filters `^conduit-`) · `repo-map.js:284` `packages()` (atlas, rings, live)
+    · `runnables.js:42` `workspaceDeps` and `:57` `appDirs` · `publish-view.js:98`
+    `workspaceMembers` · `runtime.js:490` `config.wsPackages` (feeds 12
+    `workspace/*` commands and `surface.js`; its comment says *reads packages/*
+    only, not the globs*) · `signatures.js:42` · `seams.js:124` and `:280`
+    (recursive walk, attributes by `parts[1]`) · `ask.js:420` · `tutorial.js:32`
+    · `terms.js:994` · `doc-audit.js:186` and `:204` · `proofs.js:504` ·
+    `register-check.js:110` · `vendor.js:132` `namesIn` · `done.js:135, 197`
+    (existence gate only) · `scripts/typecheck.mjs:117` · `scripts/bench-ab.mjs:44, 65`
+    · `scripts/scaffold-build.mjs:1328` `_publishablePackages` ·
+    `basecamp/api/src/domain/release/dockerfile-template.ts:51` (shell glob in
+    the image) · `cli/commands/workspace/link.md:42` `findPkg`.
+  - **R — about 31 clusters that build `packages/<folder>` or derive a folder
+    from `parts[1]`**: `scripts/ci.mjs` 1523 `localVersion` (folder = name minus
+    scope, the strongest assumption), 1752 (bench regex `packages/[^/]+/bench`),
+    2246, 399/497/1781 (path-keyed maps) · `bench-ab.mjs:135` · `fix-loop.mjs:351`
+    · `scaffold-build.mjs:274` (passes `packagesDir`), 1666 · `vendor.js:103, 110`
+    · `repo-map.js:159` · `git-status.js:32` · `terms.js:150, 890, 919` ·
+    `done.js:363` · `surface.js:222, 246` · `repo-live.js:40` ·
+    `repo-atlas.js:189, 243, 1257` · `seams.js:214` · `register-check.js:144, 153,
+    180` · `proofs.js:173` · `ask.js:352, 435` · `assets.js:61, 87` ·
+    `repro.js:105` · `utils.js:380, 421` (root finders, stay valid) · path-keyed
+    configs `biome.json:24-41`, `scripts/mutate-baselines.json`,
+    `scripts/ci-allowances.json` · commands that CREATE at `packages/<name>`
+    (`workspace/add`, `project/new`, `github/clone`, `workspace/init`) stay as
+    they are.
+  - **G — 5 already glob- or lock-driven, none a general owner**:
+    `scripts/ci.mjs:2254` `workspaceDirs` (understands `X/*` and literals only;
+    `packages/*` would still emit the bare `packages/conduits` folder) and
+    `:2286` `nestedPackageDirs` (the `FJS-026` note) · `snapshots.js:176`
+    `workspaceMember` (`X/*` or literal, bin lookup only) · `deps.js:69`
+    `collectDeps` (lockfile `workspaces` keys, nesting-proof once installed) ·
+    `vendor.js:99` (tests for a `workspaces` key, then hard-codes `packages`).
+  - **D — docs and tests that encode the layout**: `docs/CI.md:15, 23`,
+    `packages/conduits/README.md`, `workspace/surface.md:100`, `exports.md:157`;
+    fixtures writing `workspaces: ['packages/*']` in `cli/test/` `vendor` (41–320,
+    incl. `FJS_PACKAGES_DIR`), `publish-view` 48/103, `deps:24`, `project-root`,
+    `runnables:289`, `register-check` 897/969, `terms`, `next:29`, `server:720`,
+    `framework-checkout:30`, `checks:6124` (`connector-contract`), `advisories:75`.
+  - **Not walkers**: `packages/outpost`, `packages/testing` (only
+    `repository.directory`), `.github/workflows` (path filters on `packages/cli`).
+    `tsconfig.base.json` has no path-keyed references; `typecheck-baselines.json`
+    is keyed by folder BASENAME (`scripts/typecheck.mjs:48`, `repo-map.js:473`)
+    and holds only comment keys today.
+  - **Top five files by blast radius**: `checks/repo.js` (five walkers, one
+    silent after the move), `vendor.js` (+ `scaffold-build.mjs:274`,
+    `basecamp/deploy/build.mjs:100`), `runtime.js` `wsPackages` (largest fan-out),
+    `scripts/ci.mjs` (`workspaceDirs`, `nestedPackageDirs`, `localVersion`),
+    `repo-map.js` (shared model for atlas, rings, live).
+
+#### 0.2
+  - `fli check`: 28 rules, 1 error, 118 warnings; the error is `drive-holds` on
+    `packages/outpost/test/verify-docker.mjs`, from the uncommitted outpost work
+    in this tree, not this plan. `connector-contract` reports *nothing to check*.
+    Atlas report exit 0. Both saved in the session scratchpad; `bun run ci` was
+    not rerun, `.cache/ci-last.txt` from `92b1a6fa6` stands.
+
+#### 1.1
+  - Owner said go 2026-11-05. Five commits `c165e64`…`3157182` in the sibling
+    (no remote; local only). Nothing secret in the three untracked packages;
+    the one secret-looking string is microsoft's sink stand-in.
+
+#### 1.1a
+  - 2026-11-05, done: tax → stripe `src/tax.ts` as `export * as tax`, one sink
+    with `taxExpiresInSeconds`, 26 drive rows (`c1f2472`); shipping → easypost
+    (`6bef653`); google-maps → google with `src/maps/` and a `./maps` subpath
+    export, README states the credential line (`1a23348`); 37signals
+    description, keywords, README title (`FJS-D1919`). Module-level names
+    (`googleMapsTargets`, `GOOGLE_MAPS_API_KEY`, target ids) kept. All three
+    drives green from the main thread.
+  - Push split done 2026-11-05 (`6887a18`, `e0ace4e`): `conduit-apns` (14 rows)
+    and `conduit-google` `src/fcm/` with a `./fcm` subpath, the google sink
+    split into `sink/maps.ts` + `sink/fcm.ts` behind one `sink.ts` with
+    per-module `/maps/_sink/*` and `/fcm/_sink/*` controls (32 rows). The
+    `provider` field is dropped from results and failures: the caller knows
+    which package it called. Owed: the b64url/PEM/DER and `decodeJwt` helpers
+    are duplicated in apns and google's `jwt.ts`; toolbelt is their home when
+    a third copy appears. No `tsc` run in the sibling (`link.sh` says `bunx
+    tsc` triggers an install); `fli typecheck` after 2.2 is the proof. Sibling
+    at 26 packages, clean, drives green from the main thread.
+
+#### 1.2
+  - Done 2026-11-05. `core/workspace-members.js` owns it: `workspaceMembers`
+    (literal and one-level `X/*` globs; a dir with no manifest is skipped; no
+    `workspaces` yields `[]`; another pattern shape throws), `memberByName`,
+    `memberByPath`, `packageMembers` (under `packages/`, not nested in another
+    member — the view the old `packages/*` callers get, so `example`,
+    `website` and `sierra/example` stay out of `ws:pub`, the atlas and `next`)
+    and `memberOfFile` (longest-prefix attribution, which replaced the four
+    `parts[1]` reads). Every W walker calls it: runnables, publish-view,
+    repo-map (`packages()` and `trackedFileCounts`), runtime `wsPackages`,
+    signatures, seams `packageDirs`, ask, tutorial, terms `ownerOf` (product
+    names come from member folders now), doc-audit, register-check
+    (`workspaceNames` returns `{names, dirs, members}`), `link.md` `findPkg`,
+    git-status (`zoneOf(path, memberPaths)`, its two callers pass
+    `packageMembers`). `scripts/ci.mjs` `workspaceDirs()` is the owner's paths
+    sorted, so a manifest-less folder no longer needs an allowance — the
+    `packages/conduits` row in `ci-allowances.json` is dead and 2.2 drops it.
+    Test `test/workspace-members.test.js`, listed in the cli test script. Full
+    cli suite 4361 green; three 5 s timeouts at load average 24–29 pass alone
+    under a second.
+
+#### 1.3
+  - Done 2026-11-05. `resolvePackageSource(appRoot, names)` returns `{dir,
+    packages: [{name, dir, private}]}` from the owner; `FJS_PACKAGES_DIR` and
+    `packagesDir` stay a one-directory override. `vendor.test` packs a nested
+    member, 30 pass. The basecamp Dockerfile template keeps a shell loop —
+    over `packages/*/ packages/*/*/`, keeping a dir with a manifest whose
+    parent has none — because the template is emitted before the repo it
+    builds is checked out, so the list cannot be read at emit time;
+    `api/test/from-repo.test.ts` 42 pass.
+
+#### 1.4
+  - Done 2026-11-05. The five `checks/repo.js` walkers read `packageMembers`;
+    `connector-contract` keeps a member whose manifest name starts
+    `@frontierjs/conduit-` or whose folder starts `conduit-`, and with none
+    skips as "no conduit-* connector package" (`checks.test` 555 pass). The
+    only R cluster that still builds a path is `ci.mjs` `localVersion`, which
+    joins `packages/<name>` for a published name — a connector is held out of
+    releases (2.4), so it moves when 2.4 touches that phase, and 2.6's lane
+    uses `workspaceDirs()`. `docs/CI.md` has no connector-contract row to
+    update; its `FJS-026` allowance is untouched.

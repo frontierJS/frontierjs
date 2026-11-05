@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/conduit-n8n",
+  "version": "0.0.1",
+  "description": "n8n over @frontierjs/conduit — the public REST API (workflows, executions) and the webhook trigger, one self-hosted address.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/n8n.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

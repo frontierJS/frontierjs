@@ -462,7 +462,7 @@ title: Server
   async function findCandidates() {
     adoptError = null; adoptSweep = null; adoptPicked = null; adoptBusy = 'find'
     try {
-      adoptSweep = await servers.service.invoke('reconcile', null, { accountId: adoptAccountId })
+      adoptSweep = await servers.service.invoke('reconcile', null, { providerSecretId: adoptAccountId })
     } catch (e) {
       adoptError = e.message
     } finally {
@@ -483,7 +483,7 @@ title: Server
     try {
       const { providerServerId, name, ipAddress, region } = adoptPicked
       await servers.service.invoke('adopt', server.id, {
-        accountId: adoptAccountId, providerServerId,
+        providerSecretId: adoptAccountId, providerServerId,
         shown: { name: name ?? null, ipAddress: ipAddress ?? null, region: region ?? null },
       })
       adoptOpen = false; adoptSweep = null; adoptPicked = null
@@ -499,7 +499,7 @@ title: Server
 
   // Remove deletes the ROW. On a machine a cloud still bills for, that is the
   // orphan `reconcile` exists to find, so the confirmation says so.
-  $: removeWarning = server?.adopted && server.status !== 'destroyed'
+  $: removeWarning = server?.registerMethod === 'adopted' && server.status !== 'destroyed'
     ? `This removes ${server.name} from Basecamp only. The machine keeps running — and billing — at ${server.providerKind}, and Basecamp will not destroy it: delete it in ${server.providerKind}'s console.`
     : cloudMade && server.status !== 'destroyed'
     ? `This removes ${server.name} from Basecamp only. The machine keeps running — and billing — at ${server.providerKind}. Destroy it instead to delete it there.`
@@ -920,7 +920,7 @@ title: Server
     {/if}
   </article>
 
-  {#if server.adopted}
+  {#if server.registerMethod === 'adopted'}
     <article class="card outlined stack" id="server-adopted">
       <p class="text-sm">
         Basecamp did not buy this machine and will not destroy it. Delete it in {server.providerKind}'s

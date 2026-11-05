@@ -122,7 +122,10 @@
       "types": "./src/typo/typo.d.ts",
       "default": "./src/typo/typo.js"
     },
-    "./units": "./src/units/units.js"
+    "./units": {
+      "types": "./src/units/units.d.ts",
+      "default": "./src/units/units.js"
+    }
   },
   "files": [
     "src",

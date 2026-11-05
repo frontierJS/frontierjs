@@ -1,0 +1,28 @@
+{
+  "name": "@frontierjs/conduit-dataforseo",
+  "version": "0.0.1",
+  "description": "DataForSEO over @frontierjs/conduit — HTTP Basic per account, a task array per POST, every accepted task billed, each task answered on its own.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "drive": "bun test/dataforseo.drive.ts",
+    "test": "bun run drive",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "@frontierjs/conduit": "workspace:*",
+    "bun-types": "^1.3.14"
+  }
+}

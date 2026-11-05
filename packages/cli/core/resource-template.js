@@ -15,7 +15,7 @@
 // read back off the schema at runtime as `fields`, `relations` and `gate`, so a
 // column added to `schema.lite` appears with no edit to the generated file.
 
-import { readdirSync }  from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join }         from 'node:path'
 import { pluralize }    from '@frontierjs/toolbelt/inflect'
 
@@ -134,4 +134,31 @@ export function existingServiceFile(servicesDir, serviceName) {
     return stem && stem.replace(/[-_]+([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()) === serviceName
   })
   return found ? join(servicesDir, found) : null
+}
+
+/**
+ * What a Resource written over `serviceName` will call: the file that answers
+ * to that name, or — where none does — the services that state `model` under
+ * another name, so a hand-named `groups.service.ts` over `MatchGroup` is
+ * offered as `--service groups` instead of a 404 at the first screen load
+ * (`FJS-3919`). The channel, not the file, is the name the Resource calls, and
+ * `existingServiceFile` folds the file's spelling onto it.
+ */
+export function resourceService(servicesDir, serviceName, model) {
+  const file = existingServiceFile(servicesDir, serviceName)
+  if (file) return { file, others: [] }
+  let names = []
+  try { names = readdirSync(servicesDir).sort() } catch { /* no services directory yet */ }
+  const others = []
+  for (const name of names) {
+    const stem = name.match(/^(.+)\.service\.(ts|js|mts|mjs)$/)?.[1]
+    if (!stem) continue
+    let src = ''
+    try { src = readFileSync(join(servicesDir, name), 'utf8') } catch { continue }
+    if (new RegExp(`model\\s*:\\s*['"]${model}['"]`).test(src)) {
+      const channel = src.match(/channel\s*:\s*['"]([^'"]+)['"]/)?.[1]
+      others.push({ file: name, name: channel ?? stem.replace(/[-_]+([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()) })
+    }
+  }
+  return { file: null, others }
 }

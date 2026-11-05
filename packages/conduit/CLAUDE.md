@@ -88,6 +88,10 @@ a transport.
   same connector against a target with `encoding` removed. Starts and stops its
   own API and its own Stripe, on the test port row.
 
+The vendor connectors built on this package live in `packages/conduits/`, and
+`docs/CONTRACT.md` is the shape each follows. A transport change reruns their
+drives: `bun run --filter './packages/conduits/*' test`.
+
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
 conduit.ts credentials.ts encode.ts http.ts index.ts junction-integration.test.ts mint.test.ts 
 mirror.ts observe.ts per-caller.test.ts plugin.ts receive.ts resilience.ts router.ts signers.ts 

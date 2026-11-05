@@ -3,7 +3,7 @@
 // writes.
 //
 // `account.get('me')` is auth's and answers the SESSION, which is what a request
-// is graded as and not the row: it has no `displayName` or `username`, and
+// is graded as and not the row: it has no `nickname` or `username`, and
 // nothing written to it would reach the table. This is the row.
 //
 //   get    GET   /users/me

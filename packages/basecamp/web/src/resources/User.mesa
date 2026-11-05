@@ -11,8 +11,8 @@
   /** What a person edits about themselves. Most other columns are dropped at
    *  the Data boundary for this caller (`email`, `accountId`, the three the
    *  gate grades on), and a box over one saves nothing. `name` is auth's, set
-   *  at registration, and every screen shows `displayName` ahead of it. */
-  export const PROFILE_FIELDS = ['displayName', 'username']
+   *  at registration, and every screen shows `nickname` ahead of it. */
+  export const PROFILE_FIELDS = ['nickname', 'username']
 </script>
 
 <script>

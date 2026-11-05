@@ -32,6 +32,7 @@ import { gitOut }                                from './git.js'
 import { existsSync, readdirSync, statSync }              from 'node:fs'
 import { join }                                  from 'node:path'
 import { read, readJson }                        from './fs.js'
+import { packageMembers }                        from './workspace-members.js'
 
 import { kindOf }                                from './file-kind.js'
 
@@ -97,7 +98,8 @@ export function resolveRun(runText, { root, rows = [] } = {}) {
     for (;;) {
       const t = rest.match(/^\s*`([^`]+)`/)
       if (!t) break
-      out.push(target(t[1], dir, m[1], root, rows))
+      if (isGroup(m[1])) out.push(...groupTargets(t[1], m[1], root, rows))
+      else out.push(target(t[1], dir, m[1], root, rows))
       rest = rest.slice(t[0].length)
       const j = rest.match(JOIN)
       if (!j) break
@@ -109,6 +111,33 @@ export function resolveRun(runText, { root, rows = [] } = {}) {
   }
 
   return out
+}
+
+// ─── a group `where` (`FJS-D1912`) ───────────────────────────────────────────
+//
+// `packages/conduits/*` is one row for 26 packages. It is expanded here, against
+// the workspace members, into one target per member that declares the script,
+// so `fli proves` and `proof-target` name `conduit-stripe` and never the folder.
+// A group nobody declares the script in is ONE unknown target with no directory:
+// a row naming a script every member has dropped must read as a defect, not as
+// an empty expansion that passes.
+
+/** `X/*`: the one-level form the workspace list itself uses (`workspace-members.js`). */
+export function isGroup(where) {
+  return /\/\*$/.test(where)
+}
+
+/** The member directories (root-relative) directly under a group's folder. */
+export function groupMembers(where, root) {
+  const prefix = where.slice(0, -1)
+  return packageMembers(root).filter(m => m.path.startsWith(prefix) && !m.path.slice(prefix.length).includes('/'))
+}
+
+function groupTargets(name, where, root, rows) {
+  const script  = name.split(/\s+/)[0]
+  const holders = groupMembers(where, root).filter(m => m.manifest?.scripts?.[script])
+  if (!holders.length) return [target(name, null, where, root, rows)]
+  return holders.map(m => target(name, m.path, m.path, root, rows))
 }
 
 /**

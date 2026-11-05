@@ -324,7 +324,7 @@ const keepEdge = async ({ host, port, key, ingress, log, echo, chalk }) => {
       body: { name: 'Cloudflare', kind: 'providerKey', providerKind: 'cloudflare', data: token } })
     const [ws] = [await onBox({ host, port, key, path: '/workspaces' })].flat()
     await onBox({ host, port, key, method: 'PATCH', path: `/workspaces/${ws.id}`,
-      body: { ingressAccountId: secret.id, ingressZoneId: ingress.zoneId, version: ws.version } })
+      body: { ingressSecretId: secret.id, ingressZoneId: ingress.zoneId, version: ws.version } })
     echo(chalk`  {green ✓} {bold Cloudflare kept as a provider key} {dim — app records go in} ${ingress.zoneName}`)
   } catch (err) { log.warn(`The Cloudflare token was not kept: ${err.message} — add it on /secrets/ and pick the zone on /dns/`) }
 }

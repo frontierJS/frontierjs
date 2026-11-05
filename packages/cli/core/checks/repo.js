@@ -26,6 +26,7 @@ import { seamOwnership, SKILL as SEAM_SKILL, keyLiteral, unlisted }             
 import { readRegisters, splitRow }                                                                                                                            from '../registers.js'
 import { kindOf }                                                                                                                                             from '../file-kind.js'
 import { packageMembers }  from '../workspace-members.js'
+import { packageTable }    from '../package-table.js'
 import { safeRead, walk }                                                                                                                                     from '../fs.js'
 
 export const CHECKS = {
@@ -492,6 +493,25 @@ export const CHECKS = {
                  `it is an allowance under "structure", same as a fifth file.`,
       })
     }
+    return { findings }
+  },
+
+  // The table is parsed for realm, state and ring (`repo-map.js`), and a member it
+  // forgets is not an error there -- it is a package with no ring, drawn as
+  // unplaced. Twenty-six connectors moving in made the silence expensive.
+  'package-row': ({ root }) => {
+    const rows = packageTable(root)
+    if (!rows.length) return { skipped: 'no package table in CLAUDE.md' }
+
+    const named = new Set(rows.map(r => r.name))
+    const findings = packageMembers(root)
+      .filter(m => !named.has(m.name) && !named.has(m.folder))
+      .map(m => ({
+        file: m.path,
+        message: `${m.name} is a workspace member with no row in the package table in the root CLAUDE.md. ` +
+                 `The row is where its realm, state and ring are written, so without one it is drawn ` +
+                 `as unplaced. The first cell is the folder name (${m.folder}) or the package name.`,
+      }))
     return { findings }
   },
 

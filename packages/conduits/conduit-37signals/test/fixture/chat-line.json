@@ -1,0 +1,56 @@
+{
+  "id": 1000490,
+  "status": "active",
+  "visible_to_clients": true,
+  "created_at": "2026-10-15T19:35:57.038Z",
+  "updated_at": "2026-10-15T19:35:57.038Z",
+  "title": "Title 39",
+  "inherits_status": true,
+  "type": "Chat::Lines::RichText",
+  "url": "https://3.basecampapi.com/999/buckets/1000161/chats/1000448/lines/1000490.json",
+  "app_url": "https://app.basecamp.com/999/buckets/1000161/chats/1000448@1000490",
+  "bookmark_url": "https://3.basecampapi.com/999/my/bookmarks/BAhfixture--0000000000000000000000000000000000000000.json",
+  "boosts_count": 0,
+  "boosts_url": "https://3.basecampapi.com/999/buckets/1000161/recordings/1000490/boosts.json",
+  "parent": {
+    "id": 1000448,
+    "title": "Title 40",
+    "type": "Chat::Transcript",
+    "url": "https://3.basecampapi.com/999/buckets/1000161/chats/1000448.json",
+    "app_url": "https://app.basecamp.com/999/buckets/1000161/chats/1000448"
+  },
+  "bucket": {
+    "id": 1000161,
+    "name": "Name 28",
+    "type": "Project"
+  },
+  "creator": {
+    "id": 1000133,
+    "attachable_sgid": "BAhfixture--0000000000000000000000000000000000000000",
+    "name": "Person 6",
+    "personable_type": "User",
+    "title": "Title 41",
+    "tagline": null,
+    "location": null,
+    "created_at": "2022-10-25T05:08:45.801Z",
+    "updated_at": "2026-02-05T17:33:13.190Z",
+    "email_address": "person-1@example.com",
+    "bio": null,
+    "admin": true,
+    "owner": false,
+    "client": false,
+    "employee": true,
+    "time_zone": "America/Phoenix",
+    "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png",
+    "company": {
+      "id": 1000077,
+      "name": "Name 29"
+    },
+    "can_ping": true,
+    "can_manage_projects": true,
+    "can_manage_people": true,
+    "can_access_timesheet": false,
+    "can_access_hill_charts": true
+  },
+  "content": "<div>Content 4.</div>"
+}

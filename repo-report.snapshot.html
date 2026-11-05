@@ -100,6 +100,10 @@ html {
   --btn-letter-spacing: normal;
 
   
+  --btn-hover-mix: 8%;
+  --btn-press-mix: 12%;
+
+  
   --pill-font-weight:    600;
   --pill-text-transform: none;
   --pill-letter-spacing: normal;
@@ -1074,6 +1078,130 @@ html {
   --code-punct:   #9399b2;
 }
 }
+@layer themes {
+.theme-shadcn {
+  
+  --color-primary:   #18181b; 
+  --color-secondary: #52525b; 
+  --color-muted:     #71717a; 
+  --color-info:      #0369a1;
+  --color-success:   #16a34a;
+  --color-warning:   #d97706;
+  --color-danger:    #dc2626;
+
+  
+  --app-bg:         #ffffff;
+  --surface:        #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f4f4f5; 
+
+  --ink:      #09090b; 
+  --ink-soft: #3f3f46; 
+  --ink-mute: #71717a; 
+
+  --rule:        #e4e4e7; 
+  --rule-strong: #d4d4d8; 
+
+  
+  --btn-radius:   6px;
+  --field-radius: 6px;
+  --card-radius:  12px;
+
+  --surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm:      0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md:      0 4px 6px -1px rgba(0, 0, 0, 0.10), 0 2px 4px -2px rgba(0, 0, 0, 0.10);
+  --shadow-lg:      0 10px 15px -3px rgba(0, 0, 0, 0.10), 0 4px 6px -4px rgba(0, 0, 0, 0.10);
+
+  --ring:       #a1a1aa; 
+  --ring-width: 3px;
+
+  
+  
+  --font-primary: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --btn-font-weight:      500;
+  --heading-font-weight:  600;
+  --heading-letter-spacing: -0.025em;
+  --label-font-weight:    500;
+
+  --badge-radius:         6px;
+  --badge-text-transform: none;
+  --badge-letter-spacing: 0;
+
+  --motion-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+}
+@layer themes {
+.theme-material {
+  
+  --color-primary:   #6750a4; 
+  --color-secondary: #625b71; 
+  --color-muted:     #79747e; 
+  --color-info:      #006a6a;
+  --color-success:   #386a20;
+  --color-warning:   #7d5700;
+  --color-danger:    #b3261c; 
+
+  
+  --app-bg:         #fef7ff; 
+  --surface:        #fef7ff;
+  --surface-raised: #f3edf7; 
+  --surface-sunken: #f7f2fa; 
+
+  --topbar-bg:  #f3edf7;
+  --sidebar-bg: #f7f2fa;
+  --dialog-bg:  #ece6f0; 
+
+  --ink:      #1d1b20; 
+  --ink-soft: #49454f; 
+  --ink-mute: #625b71; 
+
+  --rule:        #cac4d0; 
+  --rule-strong: #79747e; 
+
+  
+  --btn-radius:   9999px;
+  --pill-radius:  8px;
+  --field-radius: 4px;
+  --card-radius:  12px;
+
+  
+  --surface-shadow: none;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.30), 0 2px 6px 2px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.30), 0 4px 8px 3px rgba(0, 0, 0, 0.15);
+
+  --ring:        #6750a4;
+  --ring-width:  2px;
+  --ring-offset: 2px;
+
+  
+  --font-primary: Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --btn-font-weight:    500;
+  --btn-letter-spacing: 0.00625em;
+
+  
+  --btn-hover-mix: 8%;
+  --btn-press-mix: 10%;
+  --heading-font-weight: 400;
+  --label-font-weight:   500;
+
+  --badge-radius:         8px;
+  --badge-text-transform: none;
+  --badge-letter-spacing: 0.03125em;
+
+  
+  --motion-fast:  100ms;
+  --motion-base:  200ms;
+  --motion-enter: 300ms;
+  --motion-slow:  400ms;
+
+  --motion-ease:       cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-out:   cubic-bezier(0.05, 0.7, 0.1, 1);
+  --motion-ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1);
+}
+}
 @layer tones {
 @property --bg-mix {
   syntax:   "*";
@@ -1847,7 +1975,9 @@ code[language] > span::before {
 
   
   --tone-fill:    var(--bg-mix, var(--color-primary));
-  background:     var(--_fill, var(--tone-fill));
+  --_base:        var(--_fill, var(--tone-fill));
+  --_layer-ink:   oklch(from var(--_on-fill, white) calc(1 - l) 0 0);
+  background:     var(--_base);
   color:          var(--_on-fill, white);
   border:         var(--border-width) solid transparent;
   font-family:    var(--font-primary);
@@ -1856,8 +1986,6 @@ code[language] > span::before {
   letter-spacing: var(--btn-letter-spacing);
   box-shadow:     var(--shadow-sm);
 }
-
-.btn:hover { filter: brightness(1.05); }
 
 
 
@@ -1878,7 +2006,9 @@ code[language] > span::before {
 }
 
 .btn.outlined {
-  background:   var(--surface);
+  --_base:      var(--surface);
+  --_layer-ink: var(--btn-ink);
+  background:   var(--_base);
   color:        var(--btn-ink);
   border-color: var(--btn-ink);
   box-shadow:   none;
@@ -1891,7 +2021,9 @@ code[language] > span::before {
 
 
 .btn.ghost {
-  background:   transparent;
+  --_base:      transparent;
+  --_layer-ink: var(--btn-ink);
+  background:   var(--_base);
   color:        var(--btn-ink);
   border-color: transparent;
   box-shadow:   none;
@@ -1900,7 +2032,9 @@ code[language] > span::before {
 
 .btn.glass {
   --btn-ink:       var(--tint-ink, var(--ink));
-  background:      color-mix(in srgb, var(--surface) var(--glass-alpha), transparent);
+  --_base:         color-mix(in srgb, var(--surface) var(--glass-alpha), transparent);
+  --_layer-ink:    var(--btn-ink);
+  background:      var(--_base);
   color:           var(--btn-ink);
   border-color:    color-mix(in srgb, var(--rule) var(--glass-alpha), transparent);
 }
@@ -1908,16 +2042,20 @@ code[language] > span::before {
 
 :is(.btn, .pill, .badge).tinted {
   --btn-ink:    var(--tint-ink, var(--ink-soft));
-  background:   var(--tint-surface, var(--surface-sunken));
+  --_base:      var(--tint-surface, var(--surface-sunken));
+  --_layer-ink: var(--btn-ink);
+  background:   var(--_base);
   border-color: var(--tint-rule, var(--rule));
   color:        var(--btn-ink);
   box-shadow:   none;
 }
 
-.btn.ghost:hover {
-  background: color-mix(in srgb, var(--bg-mix, var(--ink)) 8%, transparent);
-  
-  filter: none;
+
+.btn:hover:where(:not(.link, :disabled, .disabled)) {
+  background: color-mix(in srgb, var(--_layer-ink) var(--btn-hover-mix), var(--_base));
+}
+.btn:active:where(:not(.link, :disabled, .disabled)) {
+  background: color-mix(in srgb, var(--_layer-ink) var(--btn-press-mix), var(--_base));
 }
 
 .btn.link {
@@ -1929,7 +2067,6 @@ code[language] > span::before {
 }
 .btn.link:hover {
   text-decoration: underline;
-  filter:          none;
 }
 
 
@@ -4692,7 +4829,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
 try {
   var saved = localStorage.getItem('fli.theme')
   var wants = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-  document.documentElement.className = 'theme-' + (["basecamp","catppuccin","dark","default","dracula","elite","expedition","field","forest","midnight","notebook","press","sunset","survey","twilight"].indexOf(saved) >= 0 ? saved : wants ? 'field' : 'press')
+  document.documentElement.className = 'theme-' + (["basecamp","catppuccin","dark","default","dracula","elite","expedition","field","forest","material","midnight","notebook","press","shadcn","sunset","survey","twilight"].indexOf(saved) >= 0 ? saved : wants ? 'field' : 'press')
 } catch (e) {}
 </script>
 </head><body class="app">
@@ -4702,7 +4839,7 @@ try {
   <div class="kicker">frontierjs · generated by fli ws:atlas --as=report</div>
   <h1>Repo map</h1>
   <p class="lede">Every row on this page was read out of the tree it describes — the snapshot walker, <code>main()</code> in the CI script, each package.json and the port registry. Regenerate it rather than editing it.</p>
-  <div class="counters"><div class="counter"><b>27</b><span>packages</span></div><div class="counter"><b>43</b><span>snapshots</span></div><div class="counter"><b>16</b><span>ci phases</span></div><div class="counter"><b>97</b><span>drives</span></div><div class="counter"><b>268</b><span>commands</span></div></div>
+  <div class="counters"><div class="counter"><b>55</b><span>packages</span></div><div class="counter"><b>43</b><span>snapshots</span></div><div class="counter"><b>17</b><span>ci phases</span></div><div class="counter"><b>97</b><span>drives</span></div><div class="counter"><b>268</b><span>commands</span></div></div>
 </header>
 <section id="run">
   <div class="head"><h2>Run it</h2><div class="rule"></div><span class="kicker">scripts declared at the workspace root</span></div>
@@ -5021,6 +5158,12 @@ try {
       <div class="phase-name"><b>tests</b><span class="chip c-warn">full run</span></div>
       
     </div>
+  </div><div class="phase" data-row>
+    <div class="ord">17</div>
+    <div>
+      <div class="phase-name"><b>conduits</b><span class="chip c-warn">full run</span></div>
+      
+    </div>
   </div></div>
 </section>
 <section id="packages">
@@ -5049,6 +5192,146 @@ try {
         <td class="m">@frontierjs/conduit</td>
         <td class="m sub">0.1.8</td>
         <td class="m sub">junction · toolbelt</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-37signals</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-anthropic</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-apns</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-cloudflare</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-dataforseo</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-digitalocean</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit · toolbelt</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-easypost</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit · toolbelt</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-gmail</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit · conduit-oidc</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-google</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-hetzner</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit · toolbelt</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-mailgun</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit · toolbelt</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-mattermost</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-microsoft</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-n8n</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-oidc</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-openai</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-plausible</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-postmark</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit · toolbelt</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-quo</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-resend</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-s3</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit · toolbelt</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-sendgrid</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-slack</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-stripe</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-telnyx</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-turnstile</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-twilio</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-zapier</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/config</td>
@@ -5151,10 +5434,6 @@ try {
         <td class="m sub">caravan · conduit · css · junction · litestone · mesa · notifications · sierra · toolbelt · ui</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
-        <td class="m">conduits</td>
-        <td><span class="chip c-warn">claimed</span></td>
-        <td class="sub" colspan="2">No package.json — does not install, test, or count as a workspace member</td>
-      </tr><tr data-row>
         <td class="m">create-frontier</td>
         <td class="m sub">0.1.6</td>
         <td class="m sub">cli</td>
@@ -5167,7 +5446,7 @@ try {
       </tr></tbody></table></div>
 </section>
 <section id="features">
-  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">377 across 28 packages · read, never invented</span></div>
+  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">497 across 55 packages · read, never invented</span></div>
   <p class="note">One row per file under a package's <code>docs/</code> and per <code>##</code> heading in its README — the two places a capability is already written down. A package that documents itself in one README contributes headings; one that writes a file per feature contributes files; a package with neither contributes a finding.</p><div class="panel scroll"><table><thead><tr><th>Package</th><th>Capability</th><th>The first thing it says</th><th>Where</th></tr></thead><tbody><tr data-row>
       <td class="m">@frontierjs/auth</td>
       <td class="m">auth — hazards</td>
@@ -5460,6 +5739,11 @@ try {
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m">@frontierjs/conduit</td>
+      <td class="m">The connector contract</td>
+      <td class="m sub">Written after Tier A, from what eight dialects disagree about: Stripe (bearer</td>
+      <td class="m sub">packages/conduit/docs/CONTRACT.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
       <td class="m">conduit — what bites here</td>
       <td class="m sub">The full hazard catalog for @frontierjs/conduit, moved out of CLAUDE.md.</td>
       <td class="m sub">packages/conduit/docs/hazards.md</td>
@@ -5522,6 +5806,601 @@ try {
       <td class="m"></td>
       <td class="m">File layout</td>
       <td class="m sub">@frontierjs/conduit</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-37signals</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Limits</td>
+      <td class="m sub">gone means gone to this principal: a deleted recording and a project</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-anthropic</td>
+      <td class="m">What it covers</td>
+      <td class="m sub">send is bindSend(conduit): the connector never holds an app.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">The 403 and the 404 are read off the status, since conduit folds each into a</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Streaming</td>
+      <td class="m sub">streamMessage posts through conduit.stream(), which reads the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">/sink/arm with { lost }, { rateLimit: { retryAfter } }, { overloaded },</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Traps</td>
+      <td class="m sub">- Never put stream: true on createMessage — refused locally; the events</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-apns</td>
+      <td class="m">What it covers</td>
+      <td class="m sub">createConduit({ signers: { ...apnsSigners }, credentials: byRef({ APNS_KEY:…</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">A push is never keyed and never replayable: APNs collapses nothing by</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">/sink/arm with { lost }, { rateLimit: { retryAfter } }, { failNext },</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Traps</td>
+      <td class="m sub">- Apple says 403 for an expired provider token, and a 403 is otherwise the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-cloudflare</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The rule this connector is about</td>
+      <td class="m sub">A write is one batch and Cloudflare honors no idempotency key on it.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-dataforseo</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Lost posts</td>
+      <td class="m sub">A post is unkeyed and the vendor collapses nothing, so a lost answer is</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">What stays the app&#39;s</td>
+      <td class="m sub">The pace (2,000 calls a minute per login, serpgrid&#39;s per-agency slot), the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">{ lost }, { rateLimit }, { failNext }, { refuseWith: 40200 } (a 200</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-digitalocean</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">DO ignores Idempotency-Key, so create sends none; a lost response is a</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-easypost</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The rules this connector is about</td>
+      <td class="m sub">Verification changes the address you print.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-gmail</td>
+      <td class="m">What it covers</td>
+      <td class="m sub">send is bindSend(conduit): the connector never holds an app.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The rules the drive proves</td>
+      <td class="m sub">- Discovery by query, ingestion by thread.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">Google&#39;s envelope is { error: { code, message, status, errors: [{ reason }],</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Idempotency (C5, C6)</td>
+      <td class="m sub">sendMessage is unkeyed and unreplayable: Gmail collapses nothing, a 429</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The push&#39;s bearer</td>
+      <td class="m sub">Pub/Sub signs the push with an OIDC token for the subscription&#39;s service</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">/sink/arm with { lost }, { rateLimit: { status: 429 | 403, retryAfter?,</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Refused before the send (C9)</td>
+      <td class="m sub">A header value with a line break (injection; refused, never stripped); a to</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Not built</td>
+      <td class="m sub">The batch endpoint (POST /batch/gmail/v1, multipart/mixed — conduit has one</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Traps</td>
+      <td class="m sub">- A 403 is not the credential&#39;s.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-google</td>
+      <td class="m">Maps</td>
+      <td class="m sub">Google Maps Platform over @frontierjs/conduit: geocode an address, read a</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">What it covers</td>
+      <td class="m sub">maps is bindGoogleMaps(conduit, targets), one Send per target: the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Three targets from one builder</td>
+      <td class="m sub">Places (New) is places.googleapis.com, Routes is routes.googleapis.com and</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The field mask</td>
+      <td class="m sub">Every Places and Routes request carries X-Goog-FieldMask, per REQUEST, and</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Answers that are not errors</td>
+      <td class="m sub">- geocode → { answer: &#39;zeroresults&#39; } when the address is not on the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">A Google 429 is a per-minute quota and almost never carries Retry-After;</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Cost, replay, and the cache</td>
+      <td class="m sub">Every call is a READ that Google charges per request.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Not built, and why</td>
+      <td class="m sub">- Nominatim (OpenStreetMap) is the free fallback: the same geocode()</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">/maps/sink/arm with { lost }, { rateLimit: { retryAfter?, times? } },</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">FCM</td>
+      <td class="m sub">Firebase Cloud Messaging (HTTP v1) over @frontierjs/conduit, authenticated</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-hetzner</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">Money: pricemonthly.gross per location, a decimal string, becomes minor</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-mailgun</td>
+      <td class="m">What it covers</td>
+      <td class="m sub">Not built: event webhooks (bounces, complaints — a different, JSON-signed</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">SendResult.id is the Message-ID Mailgun stamped, angle brackets included — a</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-mattermost</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The claim</td>
+      <td class="m sub">A row&#39;s relation columns hold the Provider&#39;s ids under &lt;relation&gt;ExternalId</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Idempotency</td>
+      <td class="m sub">Mattermost honors no Idempotency-Key.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Receiving</td>
+      <td class="m sub">Mattermost makes two HTTP deliveries to an app and signs neither: the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Not built, with the reason</td>
+      <td class="m sub">- Socket resume (connectionid and sequencenumber on the redial, the server replaying its queue) — a reconnect is a new connection and its gap is the…</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-microsoft</td>
+      <td class="m">What it covers</td>
+      <td class="m sub">ms is bindMicrosoft(conduit, targets, { who?, grant? }) → { graph, mime,</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The rules the drive proves</td>
+      <td class="m sub">- The grant row carries the lock.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Receiving</td>
+      <td class="m sub">Conduit&#39;s receiver answers its own body, so Graph&#39;s validationToken handshake</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Sink</td>
+      <td class="m sub">startMicrosoftSink({ port: 0, mailboxes, accessTokenTtl, batchMs }): the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-n8n</td>
+      <td class="m">What it covers</td>
+      <td class="m sub">import { n8nTargets, bindN8n, trigger, executions } from &#39;@frontierjs/conduit-n8n&#39;</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The rules this connector is about</td>
+      <td class="m sub">Two listeners, two descriptors, one key that never crosses.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Not built</td>
+      <td class="m sub">Webhook node JWT Auth (no caller).</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-oidc</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The target is the issuer&#39;s origin</td>
+      <td class="m sub">Microsoft&#39;s issuer is https://login.microsoftonline.com/&lt;tenant&gt;/v2.0 and</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Who spends what</td>
+      <td class="m sub">A bearer target whose resolver is oidcTokenResolver is how an app calls a</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">An idtoken failure is never a kind: verifyIdToken answers { ok: false,</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">What the verifier refuses</td>
+      <td class="m sub">alg: none; every HS (a shared-secret algorithm against a public key set);</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">What stays the app&#39;s (C12)</td>
+      <td class="m sub">The refresh token row: grants.refreshTokenFor(ref) reads it,</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Measured: expiresin cannot reach withCache (FJS-2245)</td>
+      <td class="m sub">The drive&#39;s expiresIn.droppedByWithCache row: the sink says the token lives</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-openai</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">A vendor&#39;s extension (OpenAI responseformat, Ollama options) rides</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-plausible</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The rule this connector is about</td>
+      <td class="m sub">A read is replayable. The only POST in this workspace that is: a lost</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-postmark</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">SendResult.id is Postmark&#39;s MessageID, a GUID — the second mailer&#39;s</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-quo</td>
+      <td class="m">conduit-quo — plan</td>
+      <td class="m sub">---</td>
+      <td class="m sub">packages/conduits/conduit-quo/docs/PLAN.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Two generations, one origin</td>
+      <td class="m sub">The dated API (Quo-Api-Version: 2026-03-30) covers reads, webhooks and the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">The body&#39;s code decides before the status does.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Webhooks</td>
+      <td class="m sub">- The generation is fixed per subscription.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Not built</td>
+      <td class="m sub">Every step of docs/PLAN.md is built.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">{ lost }, { rateLimit }, { failNext }, { deliverTwice },</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-resend</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The rule this connector is about</td>
+      <td class="m sub">A send is not idempotent and Resend honors no idempotency header.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">{ lost }, { rateLimit: { retryAfter } }, { quota }, { failNext },</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-s3</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">A HEAD carries no body and therefore no &lt;Code&gt;: a HEAD refusal is the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">{ lost }, { slowDown: { retryAfter } }, { skew: seconds } (moves the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-sendgrid</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Lost sends</td>
+      <td class="m sub">SendGrid collapses nothing and answers no idempotency key.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Sending domains</td>
+      <td class="m sub">authenticateDomain → apply the three CNAMEs (conduit-cloudflare, never</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">{ lost }, { rateLimit }, { failNext }, { deliverTwice }; a from-address</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-slack</td>
+      <td class="m">What it covers</td>
+      <td class="m sub">slack is bindSlack(conduit, targets), one Send per role; postMessage(slack, …) goes through slack.api and postWebhook(slack, …) through slack.webhook,…</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">destinations is off in production</td>
+      <td class="m sub">A webhook URL is pasted by somebody else, so conduit grades it against private</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">The Web API answers HTTP 200 whether or not it worked; okEnvelope turns an</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Inbound</td>
+      <td class="m sub">X-Slack-Signature: v0=&lt;hex HMAC-SHA256&gt; over v0:&lt;X-Slack-Request-Timestamp&gt;:&lt;raw body&gt;,</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">/sink/arm with { lost }, { rateLimit: { retryAfter } }, { failNext }</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-stripe</td>
+      <td class="m">What it covers</td>
+      <td class="m sub">send is bindSend(conduit): the connector never holds an app.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">/sink/arm with { failNext }, { lost }, { rateLimit: { retryAfter } },</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Traps</td>
+      <td class="m sub">- An unkeyed intent is replayable: true — it moves no money, and after a</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Tax</td>
+      <td class="m sub">Stripe Tax is a module of this package, not a second connector: import { tax } from &#39;@frontierjs/conduit-stripe&#39;.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-telnyx</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Two columns</td>
+      <td class="m sub">sent and delivered are separate.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Chaos the sink owns</td>
+      <td class="m sub">{ lost }, { rateLimit }, { failNext }, { deliverTwice },</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-turnstile</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">Turnstile answers 200 for every verdict; the kind is read off error-codes.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The rule this connector is about</td>
+      <td class="m sub">A token is spent on first use, and Turnstile&#39;s own idempotencykey is</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-twilio</td>
+      <td class="m">What it covers</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Two things an operator must know</td>
+      <td class="m sub">The verifier takes the public URL.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-zapier</td>
+      <td class="m">What it covers</td>
+      <td class="m sub">import { zapierTarget, bindSend, postHook, unsubscribe, subscriptionFrom } from…</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The rules this connector is about</td>
+      <td class="m sub">The URL is the credential and the app&#39;s row holds it.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Not built</td>
+      <td class="m sub">The Actions API (api.zapier.com/actions/v1/, stored actions run</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m">@frontierjs/config</td>
@@ -7009,9 +7888,6 @@ try {
       <td class="m sub">The file-by-file map. CLAUDE.md keeps the owners and the traps. Paths under</td>
       <td class="m sub">packages/workbench/docs/layout.md</td>
     </tr>,<tr data-row>
-        <td class="m">conduits</td>
-        <td class="m sub" colspan="3"><span class="chip c-stop">no docs/ and no README headings</span></td>
-      </tr>,<tr data-row>
       <td class="m">create-frontier</td>
       <td class="m">What it is</td>
       <td class="m sub">An entry point, and deliberately nothing else.</td>
@@ -7451,7 +8327,7 @@ try {
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">177 rows · 296 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">178 rows · 324 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>the app prompt — junction/tools/call.ts, litestone/src/tools/repl.js, fli app:repl / deploy:repl, runAs(null, { operator }), or what an app declares as createApp({ system })</td>
       <td>example: verify:repl — the only thing that runs the prompt over a real app&#39;s gate; junction&#39;s call-tool.test.ts asks a fixture</td>
@@ -8160,6 +9036,10 @@ try {
       <td>the post&#39;s files — core/tell-worker.js&#39;s /file routes or download page, TellPost&#39;s files table or its alarm, ws:post&#39;s r2buckets, commands/tell/{upload,download}.md, or the file seal in @frontierjs/toolbelt/frontier</td>
       <td>packages/cli: test:post-files — the only thing that runs the store in workerd, over R2 and the object&#39;s alarm, which a fake would stand in for</td>
       <td><span class="tally"><b>packages/cli</b>test:post-files</span></td>
+    </tr><tr data-row>
+      <td>a vendor connector — anything under packages/conduits/, the shared harness included</td>
+      <td>packages/conduits/: drive — one connector&#39;s drive over the shared harness (lib/drive.ts in that folder), so the row names the connector you touched. Each is the vendor stood up as a stub: nothing a real vendor would answer is proved here</td>
+      <td><span class="tally"><b>packages/conduits/conduit-37signals</b>drive</span><span class="tally"><b>packages/conduits/conduit-anthropic</b>drive</span><span class="tally"><b>packages/conduits/conduit-apns</b>drive</span><span class="tally"><b>packages/conduits/conduit-cloudflare</b>drive</span><span class="tally"><b>packages/conduits/conduit-dataforseo</b>drive</span><span class="tally"><b>packages/conduits/conduit-digitalocean</b>drive</span><span class="tally"><b>packages/conduits/conduit-easypost</b>drive</span><span class="tally"><b>packages/conduits/conduit-gmail</b>drive</span><span class="tally"><b>packages/conduits/conduit-google</b>drive</span><span class="tally"><b>packages/conduits/conduit-hetzner</b>drive</span><span class="tally"><b>packages/conduits/conduit-mailgun</b>drive</span><span class="tally"><b>packages/conduits/conduit-mattermost</b>drive</span><span class="tally"><b>packages/conduits/conduit-microsoft</b>drive</span><span class="tally"><b>packages/conduits/conduit-n8n</b>drive</span><span class="tally"><b>packages/conduits/conduit-oidc</b>drive</span><span class="tally"><b>packages/conduits/conduit-openai</b>drive</span><span class="tally"><b>packages/conduits/conduit-plausible</b>drive</span><span class="tally"><b>packages/conduits/conduit-postmark</b>drive</span><span class="tally"><b>packages/conduits/conduit-quo</b>drive</span><span class="tally"><b>packages/conduits/conduit-resend</b>drive</span><span class="tally"><b>packages/conduits/conduit-s3</b>drive</span><span class="tally"><b>packages/conduits/conduit-sendgrid</b>drive</span><span class="tally"><b>packages/conduits/conduit-slack</b>drive</span><span class="tally"><b>packages/conduits/conduit-stripe</b>drive</span><span class="tally"><b>packages/conduits/conduit-telnyx</b>drive</span><span class="tally"><b>packages/conduits/conduit-turnstile</b>drive</span><span class="tally"><b>packages/conduits/conduit-twilio</b>drive</span><span class="tally"><b>packages/conduits/conduit-zapier</b>drive</span></td>
     </tr></tbody></table></div>
 </section>
 <section id="ports">

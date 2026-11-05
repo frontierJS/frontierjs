@@ -612,3 +612,12 @@ describe('POST /auth/email/verify', () => {
     expect((await request(app).post('/auth/email/verify').send({ token })).status).toBe(400)
   })
 })
+
+describe('the plugin\'s name', () => {
+  // `mcp` cannot import auth, so it reads this exact string in `app._plugins`
+  // to decide that `/mcp` answers a stranger 401 (FJS-D1924). A rename here
+  // would quietly bring back anonymous tool lists.
+  test('is the one mcp looks for', () => {
+    expect(authPlugin({ auth: h.auth }).name).toBe('@frontierjs/auth')
+  })
+})

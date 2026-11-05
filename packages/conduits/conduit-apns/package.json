@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/conduit-apns",
+  "version": "0.0.1",
+  "description": "Apple Push Notification service over @frontierjs/conduit — a minted ES256 provider token, the send, and the unregistered-device reading.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/apns.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

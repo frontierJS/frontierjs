@@ -14,7 +14,8 @@
 // which is what keeps the outbox in main (`FJS-D35`).
 
 import { describe, it, expect, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, chmodSync, readFileSync, rmSync } from 'fs'
+import { Database } from 'bun:sqlite'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createClient } from '../src/core/client.js'
@@ -172,5 +173,52 @@ describe('strategy database — a tenant file holds every sqlite database', () =
     expect(await db.hit.count()).toBe(1)
 
     await reg.close()
+  })
+})
+
+// A name opened `readonly` never opens a writer, so it neither switches the
+// file to WAL nor needs the file or its directory writable (`FJS-4033`).
+describe('access readonly opens the file read-only', () => {
+  const RO = `database main { path "./app.db" }\nmodel Widget {\n  id   Int    @id @default(autoincrement())\n  name String\n  @@gate(0)\n}\n`
+
+  it('leaves a rollback-journal file in that mode, byte for byte', async () => {
+    const d = tmp()
+    const file = join(d, 'app.db')
+    const seed = new Database(file)
+    seed.run('PRAGMA journal_mode = DELETE')
+    seed.run('CREATE TABLE "Widget" (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)')
+    seed.run(`INSERT INTO "Widget" (name) VALUES ('w')`)
+    seed.close()
+    const before = readFileSync(file)
+
+    const db: any = await createClient({ schema: RO, resolveFrom: d, access: { main: 'readonly' } })
+    expect(await db.widget.count()).toBe(1)
+    await db.$close()
+
+    const probe = new Database(file, { readonly: true })
+    expect((probe.query('PRAGMA journal_mode').get() as any).journal_mode).toBe('delete')
+    probe.close()
+    expect(readFileSync(file).equals(before)).toBe(true)
+  })
+
+  it('opens a file and directory it may not write', async () => {
+    if (process.getuid?.() === 0) return
+    const d = tmp()
+    const sub = join(d, 'ro')
+    mkdirSync(sub)
+    const file = join(sub, 'app.db')
+    const seed = new Database(file)
+    seed.run('PRAGMA journal_mode = DELETE')
+    seed.run('CREATE TABLE "Widget" (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)')
+    seed.close()
+    chmodSync(file, 0o444)
+    chmodSync(sub, 0o555)
+    try {
+      const db: any = await createClient({ schema: RO, resolveFrom: sub, access: { main: 'readonly' } })
+      expect(await db.widget.count()).toBe(0)
+      await db.$close()
+    } finally {
+      chmodSync(sub, 0o755)
+    }
   })
 })

@@ -233,7 +233,7 @@ validates, and a select that silently drops an option.
 - `MachineBackupChoice` — `on`, `off`, `unmanaged`
 - `PlatformProvider` — `cloudflare`
 - `PlatformBuild` — `outpost`, `platform`
-- `RegisterMethod` — `imported`, `provisioned`
+- `RegisterMethod` — `imported`, `provisioned`, `adopted`
 - `CertKind` — `acme`, `originCa`, `uploaded`
 - `SslMode` — `off`, `flexible`, `full`, `fullStrict`
 - `ProjectStatus` — `active`, `archived`
@@ -246,7 +246,7 @@ validates, and a select that silently drops an option.
 - `DeployTrigger` — `button`, `push`, `laptop`, `rollback`, `rebind`, `publish`, `freeze`, `observed`
 - `DeploySwap` — `startFirst`, `stopFirst`
 - `StepStatus` — `pending`, `running`, `success`, `failed`, `skipped`
-- `JobKind` — `oneShot`, `scheduled`, `triggered`, `workflow`
+- `JobKind` — `oneShot`, `scheduled`
 - `JobStatus` — `pending`, `running`, `failed`, `cancelled`
 - `RunStatus` — `pending`, `running`, `success`, `failed`, `timeout`
 - `MaintenanceKind` — `cleanup`, `patch`
@@ -600,7 +600,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `kind` | `UserKind` = `"user"` | — | — | `x-litestone-kind` | — |
 | `status` | `UserStatus` = `"pendingVerification"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `username` | `string`? | — | — | `x-transforms` | — |
-| `displayName` | `string`? | — | — | `x-transforms` | — |
+| `nickname` | `string`? | — | — | `x-transforms` | — |
 | `avatarUrl` | `string`? | — | — | — | — |
 | `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 
@@ -652,7 +652,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `settings` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `status` | `WorkspaceStatus` = `"active"` | — | — | — | — |
 | `expiresAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
-| `ingressAccountId` | `string`? | — | — | — | — |
+| `ingressSecretId` | `string`? | — | — | — | — |
 | `ingressZoneId` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -759,10 +759,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `status` | `ServerStatus` = `"pending"` | — | — | — | — |
 | `role` | `ServerRole` = `"general"` | — | — | — | — |
 | `providerKind` | `ComputeProvider` = `"custom"` | — | — | `x-litestone-kind` | — |
-| `providerId` | `string`? | — | — | `x-litestone-kind` | — |
+| `providerSecretId` | `string`? | — | — | `x-litestone-kind` | — |
 | `providerServerId` | `string`? | — | — | `x-litestone-kind` | — |
-| `adopted` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
-| `registerMethod` | `RegisterMethod` = `"imported"` | — | — | — | — |
+| `registerMethod` | `RegisterMethod` = `"imported"` | — | — | `x-litestone-kind` | — |
 | `region` | `string` = `"custom"` | — | — | — | — |
 | `ipAddress` | `string`? | — | — | — | — |
 | `ipv6Address` | `string`? | — | — | — | — |
@@ -829,7 +828,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `sizeBytes` | `integer` = `0` | — | — | — | — |
 | `isInUse` | `boolean` = `false` | — | — | — | — |
 | `containers` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
-| `createdOnServer` | `string`? | — | — | `format: "date-time"` | — |
+| `dockerCreatedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `discoveredAt` | `string` | — | — | `format: "date-time"` | — |
 | `lastSeenAt` | `string` | — | — | `format: "date-time"` | — |
 
@@ -849,7 +848,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `x-transforms` | — |
 | `kind` | `NetworkKind` = `"mesh"` | — | — | — | — |
 | `cidr` | `string` = `"10.0.0.0/16"` | — | — | — | — |
-| `provider` | `NetworkProvider` = `"netbird"` | — | — | — | — |
+| `providerKind` | `NetworkProvider` = `"netbird"` | — | — | — | — |
 | `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -886,7 +885,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
 | `description` | `string`? | — | — | — | — |
 | `status` | `ProjectStatus` = `"active"` | — | — | — | — |
-| `tags` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `tags` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `metadata` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -950,8 +949,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` `x-transforms` | `pattern` `regex` |
 | `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
 | `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
-| `stopGrace` | `integer`? | — | — | `minimum: 2` | — |
-| `healthTimeout` | `integer`? | — | — | `minimum: 5` `maximum: 600` | — |
+| `stopGraceSeconds` | `integer`? | — | — | `minimum: 2` | — |
+| `healthTimeoutSeconds` | `integer`? | — | — | `minimum: 5` `maximum: 600` | — |
 | `command` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `hasExposedPort` | `boolean` = `false` | — | — | — | — |
 | `swap` | `DeploySwap` = `"stopFirst"` | — | Swap order | — | — |
@@ -1076,8 +1075,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `appId` | `string` | yes | — | — | — |
-| `accountId` | `string` | yes | — | — | — |
-| `provider` | `PlatformProvider` | yes | — | — | — |
+| `providerSecretId` | `string` | yes | — | — | — |
+| `providerKind` | `PlatformProvider` | yes | — | — | — |
 | `providerAccountId` | `string` | yes | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `build` | `PlatformBuild` = `"outpost"` | — | — | — | — |
@@ -1088,7 +1087,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `liveVersion` | `string`? | — | — | `x-litestone-kind` | — |
 | `observedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
-**On create**: required — `appId`, `accountId`, `provider`, `providerAccountId`, `name` · not accepted — `id`
+**On create**: required — `appId`, `providerSecretId`, `providerKind`, `providerAccountId`, `name` · not accepted — `id`
 
 ### `AppBackup`
 
@@ -1184,7 +1183,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `commitSha` | `string`? | — | — | `x-litestone-kind` | — |
 | `commitMessage` | `string`? | — | — | — | — |
 | `branch` | `string`? | — | — | `x-litestone-kind` | — |
-| `author` | `string`? | — | — | — | — |
+| `commitAuthor` | `string`? | — | — | — | — |
 | `builtImage` | `string`? | — | — | `x-litestone-kind` | — |
 | `swap` | `DeploySwap`? | — | — | `x-litestone-kind` | — |
 | `swapReason` | `string`? | — | — | `x-litestone-kind` | — |
@@ -1236,13 +1235,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `status` | `JobStatus` = `"pending"` | — | — | — | — |
 | `command` | `string`? | — | — | — | — |
 | `cronExpression` | `string`? | — | — | — | — |
-| `trigger` | `string` = `"manual"` | — | — | — | — |
-| `triggerConfig` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `timeoutSeconds` | `integer` = `300` | — | — | `minimum: 5` `maximum: 3600` | — |
 | `retryLimit` | `integer` = `3` | — | — | — | — |
 | `retryCount` | `integer` = `0` | — | — | `x-litestone-kind` | — |
 | `lastRunAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
-| `lastRunStatus` | `string`? | — | — | `x-litestone-kind` | — |
+| `lastRunStatus` | `RunStatus`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name` · not accepted — `id`
 
@@ -1558,7 +1555,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `isTlsIgnored` | `boolean` = `false` | — | — | — | — |
 | `isInverted` | `boolean` = `false` | — | — | — | — |
 | `resendEvery` | `integer` = `0` | — | — | `minimum: 0` | — |
-| `tags` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `tags` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `status` | `MonitorStatus` = `"pending"` | — | — | — | — |
 | `failStreak` | `integer` = `0` | — | — | `x-litestone-kind` | — |
 | `lastCheckedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
@@ -1776,7 +1773,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 214` `x-transforms` | — |
 | `latest` | `string`? | — | — | `x-litestone-kind` | — |
-| `deprecated` | `string`? | — | — | `x-litestone-kind` | — |
+| `deprecation` | `string`? | — | — | `x-litestone-kind` | — |
 | `advisories` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
 | `checkedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `checkError` | `string`? | — | — | `x-litestone-kind` | — |
@@ -2319,13 +2316,13 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
 | `role` | `ServerRole`? | — | — | — | — |
-| `accountId` | `string` | yes | — | — | — |
+| `providerSecretId` | `string` | yes | — | — | — |
 | `region` | `string` | yes | — | — | — |
 | `size` | `string` | yes | — | — | — |
 | `image` | `string` | yes | — | — | — |
 | `backups` | `BackupPolicy`? | — | — | — | — |
 
-**On create**: required — `name`, `accountId`, `region`, `size`, `image`
+**On create**: required — `name`, `providerSecretId`, `region`, `size`, `image`
 
 ### `ServerProvisionStep`
 
@@ -2371,11 +2368,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
-| `accountId` | `string` | yes | — | — | — |
+| `providerSecretId` | `string` | yes | — | — | — |
 | `providerServerId` | `string` | yes | — | — | — |
 | `shown` | `ServerAdoptShown` | yes | — | — | — |
 
-**On create**: required — `accountId`, `providerServerId`, `shown`
+**On create**: required — `providerSecretId`, `providerServerId`, `shown`
 
 ### `BackupPolicy`
 

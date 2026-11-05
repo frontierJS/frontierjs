@@ -25,7 +25,7 @@ import { resolve }                              from 'node:path'
 
 import { spawnStep }                       from './release-view.js'
 import { DESTINATIONS, DEFAULT_TO, hosts } from './publish-hosts.js'
-import { packageMembers }                  from './workspace-members.js'
+import { releasableMembers }               from './workspace-members.js'
 
 export const BUMPS = ['patch', 'minor', 'major', 'prerelease']
 
@@ -95,7 +95,7 @@ export const PUBLISH_STEPS = [
 
 /** The `packages/` members with a name — the ones `ws:pub` reads, and nothing else. */
 export function workspaceMembers(root) {
-  return packageMembers(root)
+  return releasableMembers(root)
     .filter(m => m.manifest.name)
     .map(m => ({ name: m.name, folder: m.folder, version: m.manifest.version ?? null, private: Boolean(m.manifest.private) }))
     .sort((a, b) => a.name.localeCompare(b.name))

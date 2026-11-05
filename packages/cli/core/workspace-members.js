@@ -69,7 +69,7 @@ export function memberByPath(root, path)  { return workspaceMembers(root).find(m
 
 /**
  * The members that live under `packages/` and are not nested inside another
- * member -- the releasable set, without the apps (`example`, `website`) and the
+ * member -- every package, without the apps (`example`, `website`) and the
  * examples a package carries (`packages/sierra/example`) that the root
  * `workspaces` list also names.
  */
@@ -77,6 +77,22 @@ export function packageMembers(root) {
   const all = workspaceMembers(root)
   return all.filter(m => m.path.startsWith('packages/') && !all.some(o => o !== m && m.path.startsWith(`${o.path}/`)))
 }
+
+// The connectors are set apart (`FJS-D1913`): not released with the framework
+// until a later ruling adds one, so they carry no `private` flag -- they will be
+// published, and `private` would also hide them from `fli ws:exports`.
+const HELD_OUT = ['packages/conduits/']
+
+/** True for a member held out of every release list. */
+export function isHeldOut(member) { return HELD_OUT.some(prefix => member.path.startsWith(prefix)) }
+
+/**
+ * The members a release names: `packageMembers` less the held-out ones. The
+ * publishable predicate lives here and nowhere else -- a release caller reads
+ * this, a caller that wants every package (a register, a doc audit) reads
+ * `packageMembers`.
+ */
+export function releasableMembers(root) { return packageMembers(root).filter(m => !isHeldOut(m)) }
 
 /**
  * The member a root-relative file belongs to: the one whose `path` is the

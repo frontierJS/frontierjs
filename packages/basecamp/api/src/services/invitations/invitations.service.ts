@@ -114,7 +114,7 @@ async function deliver(
 async function inviterName(userId: string): Promise<string | null> {
   if (!userId || userId === 'system') return null
   const user = await sys().user.findUnique({ where: { id: userId } })
-  return (user?.displayName as string) ?? (user?.name as string) ?? null
+  return (user?.nickname as string) ?? (user?.name as string) ?? null
 }
 
 /**
@@ -342,8 +342,7 @@ export default createService({
       // /auth/register left behind.
       await sys().user.update({
         where: { id: userId },
-        data:  { accountId: workspace.accountId, status: 'active',
-                 displayName: name, isEmailVerified: true },
+        data:  { accountId: workspace.accountId, status: 'active', isEmailVerified: true },
       })
       const issued = await auth.login(email, password)
       // The account was created above with a password and nothing else, so it

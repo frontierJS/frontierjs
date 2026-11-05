@@ -1,0 +1,66 @@
+{
+  "id": 1000280,
+  "status": "active",
+  "visible_to_clients": true,
+  "created_at": "2025-09-03T14:32:34.467Z",
+  "updated_at": "2026-08-18T22:29:32.615Z",
+  "title": "Title 34",
+  "inherits_status": true,
+  "type": "Message",
+  "url": "https://3.basecampapi.com/999/buckets/1000119/messages/1000280.json",
+  "app_url": "https://app.basecamp.com/999/buckets/1000119/messages/1000280",
+  "bookmark_url": "https://app.basecamp.com/999/my/bookmarks/BAhfixture--0000000000000000000000000000000000000000",
+  "subscription_url": "https://app.basecamp.com/999/buckets/1000119/recordings/1000280/subscription",
+  "comments_count": 12,
+  "comments_url": "https://3.basecampapi.com/999/buckets/1000119/recordings/1000280/comments.json",
+  "boosts_count": 0,
+  "boosts_url": "https://3.basecampapi.com/999/buckets/1000119/recordings/1000280/boosts.json",
+  "parent": {
+    "id": 1000273,
+    "title": "Title 35",
+    "type": "Message::Board",
+    "url": "https://3.basecampapi.com/999/buckets/1000119/message_boards/1000273.json",
+    "app_url": "https://app.basecamp.com/999/buckets/1000119/message_boards/1000273"
+  },
+  "bucket": {
+    "id": 1000119,
+    "name": "Name 23",
+    "type": "Project"
+  },
+  "creator": {
+    "id": 1000133,
+    "attachable_sgid": "BAhfixture--0000000000000000000000000000000000000000",
+    "name": "Person 4",
+    "personable_type": "User",
+    "title": "Title 36",
+    "tagline": null,
+    "location": null,
+    "created_at": "2022-10-25T05:08:45.801Z",
+    "updated_at": "2026-02-05T17:33:13.190Z",
+    "email_address": "person-1@example.com",
+    "bio": null,
+    "admin": true,
+    "owner": false,
+    "client": false,
+    "employee": true,
+    "time_zone": "America/Phoenix",
+    "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png",
+    "company": {
+      "id": 1000077,
+      "name": "Name 24"
+    },
+    "can_ping": true,
+    "can_manage_projects": true,
+    "can_manage_people": true,
+    "can_access_timesheet": false,
+    "can_access_hill_charts": true
+  },
+  "content": "<div>Content 2.</div>",
+  "content_attachments": [],
+  "category": {
+    "id": 1000224,
+    "name": "Name 25",
+    "icon": "👋"
+  },
+  "subject": "Subject 1"
+}

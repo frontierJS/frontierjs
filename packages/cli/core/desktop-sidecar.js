@@ -26,16 +26,17 @@ const TEMPLATES = join(dirname(fileURLToPath(import.meta.url)), 'desktop-sidecar
 export const sidecarName = (slug) => `${slug}-api`
 
 /**
- * Every `@frontierjs/*` specifier the API's own code imports, sorted — what the
- * sidecar compiles in (portable-install Phase 2.2). Scans api/index.*, api/src
- * and api/config; skips test/, type-only imports and data subpaths (a `.lite`
- * or `.css` is copied, not compiled).
+ * Every bare specifier the API's own code imports, sorted — what the sidecar
+ * compiles in (the `@frontierjs/*` ones, `frontierSpecifiers`) or copies (the
+ * app's npm dependencies, `npmImports`; portable-install Phase 2.2). Scans
+ * api/index.*, api/src and api/config; skips test/, type-only imports,
+ * relative and `#` paths and `node:`/`bun:` builtins.
  *
- * Self-contained on purpose: make-sidecar.ts carries this function's source
- * (`Function#toString`), so the build derives the list the same way the
+ * Self-contained on purpose: make-sidecar.ts carries these functions' source
+ * (`Function#toString`), so the build derives the lists the same way the
  * scaffold does. Take `fs` and `path` as arguments and close over nothing.
  */
-export function frontierSpecifiers(root, fs, path) {
+export function importSpecifiers(root, fs, path) {
   const api = path.join(root, 'api')
   const files = []
   const walk = (dir) => {
@@ -51,22 +52,42 @@ export function frontierSpecifiers(root, fs, path) {
   walk(path.join(api, 'config'))
   const found = new Set()
   const patterns = [
-    /(?:^|[\n;])\s*(?:import|export)\s+(type\s+)?[^'";]*?\bfrom\s*['"](@frontierjs\/[^'"]+)['"]/g,
-    /(?:^|[\n;])\s*import\s*()['"](@frontierjs\/[^'"]+)['"]/g,
-    /\bimport\s*\(\s*()['"](@frontierjs\/[^'"]+)['"]\s*\)/g,
+    /(?:^|[\n;])\s*(?:import|export)\s+(type\s+)?[^'";]*?\bfrom\s*['"]([^'"]+)['"]/g,
+    /(?:^|[\n;])\s*import\s*()['"]([^'"]+)['"]/g,
+    /\bimport\s*\(\s*()['"]([^'"]+)['"]\s*\)/g,
   ]
   for (const f of files) {
     // Line comments only: a block-comment strip would eat a glob like 'src/**/*.ts'.
     const src = fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '')
     for (const re of patterns) {
       for (const m of src.matchAll(re)) {
-        if (m[1]) continue
-        if (/\.(lite|css|json|md)$/.test(m[2])) continue
+        if (m[1] || /^([./#]|node:|bun:)/.test(m[2])) continue
         found.add(m[2])
       }
     }
   }
   return [...found].sort()
+}
+
+/** The `@frontierjs/*` specifiers among `specs`: a `.lite` or `.css` is copied, not compiled. Self-contained. */
+export function frontierSpecifiers(specs) {
+  return specs.filter((s) => s.startsWith('@frontierjs/') && !/\.(lite|css|json|md)$/.test(s))
+}
+
+/**
+ * The package names among `specs` that the app declares in `dependencies`, sorted:
+ * the npm packages the sidecar copies. A declared dependency no API file imports
+ * (a web-only one) ships nowhere. Self-contained.
+ */
+export function npmImports(specs, declared) {
+  const names = new Set()
+  for (const s of specs) {
+    if (s.startsWith('@frontierjs/')) continue
+    const parts = s.split('/')
+    const name = s.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]
+    if (declared.includes(name)) names.add(name)
+  }
+  return [...names].sort()
 }
 
 /** desktop/sidecar/bundled.ts for these specifiers. Self-contained, like the above. */
@@ -113,15 +134,19 @@ export function sidecarLauncher(names) { return fill('launcher.ts', names) }
 export function sidecarMake(names) {
   return fill('make-sidecar.ts', names)
     // A function replacer: the sources hold `$` sequences a string replacement reads.
+    .replace('/*__IMPORTS_FN__*/', () =>
+      `const importSpecifiers: (root: string, fs: any, path: any) => string[] = ${importSpecifiers.toString()}`)
     .replace('/*__SPECIFIERS_FN__*/', () =>
-      `const frontierSpecifiers: (root: string, fs: any, path: any) => string[] = ${frontierSpecifiers.toString()}`)
+      `const frontierSpecifiers: (specs: string[]) => string[] = ${frontierSpecifiers.toString()}`)
+    .replace('/*__NPM_FN__*/', () =>
+      `const npmImports: (specs: string[], declared: string[]) => string[] = ${npmImports.toString()}`)
     .replace('/*__BUNDLED_FN__*/', () =>
       `const bundledSource: (specs: string[]) => string = ${bundledSource.toString()}`)
 }
 
 /** bundled.ts as the scaffold first writes it; make-sidecar.ts rewrites it per build. */
 export function sidecarBundled(root) {
-  return bundledSource(frontierSpecifiers(root, fs, path))
+  return bundledSource(frontierSpecifiers(importSpecifiers(root, fs, path)))
 }
 
 // ─── the shell, sidecar shape ─────────────────────────────────────────────────

@@ -26,6 +26,17 @@ export interface AppConfig {
   // Default '' → routes at /{service} and /{service}/{id}
   // Set to '/api' or '/api/v1' for versioned APIs.
   apiPrefix?: string
+  /**
+   * The origin a client reaches this API at — `https://api.shop.test`, a bare
+   * origin with no path and no trailing slash. Absent, `FRONTIER_API_URL`.
+   *
+   * Stated rather than derived: behind a proxy the server sees neither its own
+   * host nor its scheme, and the readers compare it as an exact string — a
+   * provider's redirect URI, an OAuth issuer, an MCP `resource`. A wrong
+   * derived value fails at the far end, never in this log. Every URL built on
+   * it appends `apiPrefix` itself, so a value with a path is refused at start.
+   */
+  publicUrl?: string
   // The page size of every model service that declares no `paginate` of its
   // own. Absent, `{ default: 20, max: 100 }`.
   paginate?:  PageBounds
@@ -459,7 +470,7 @@ export function unknownKeys(
 
 /** `null` is an app with no root: defaults and the environment, no file. */
 export async function loadConfig(configDir: string | null): Promise<AppConfig & { _junction?: JunctionConfig }> {
-  if (configDir === null) return { ...deepClone(defaultConfig) as AppConfig, ...envOverrides() }
+  if (configDir === null) return { ...deepClone(defaultConfig) as AppConfig, ...envOverrides(), ...envDefaults({}) }
 
   // Absolute, because dynamic import() resolves against this file, not the app.
   const absConfigDir = resolve(process.cwd(), configDir)
@@ -482,7 +493,7 @@ export async function loadConfig(configDir: string | null): Promise<AppConfig & 
       `[Junction] no config directory at '${absConfigDir}' — booting on defaults. ` +
       `Create it with a junction.config.js, or pass the directory this app actually uses.`
     )
-    return { ...deepClone(defaultConfig) as AppConfig, ...envOverrides() }
+    return { ...deepClone(defaultConfig) as AppConfig, ...envOverrides(), ...envDefaults({}) }
   }
 
   // Load default
@@ -525,7 +536,7 @@ export async function loadConfig(configDir: string | null): Promise<AppConfig & 
   const envOverride = await tryImport(join(absConfigDir, `${env}.ts`))
   if (envOverride) config = deepMerge(config, envOverride) as typeof config
 
-  return { ...config, ...envOverrides() }
+  return { ...config, ...envOverrides(), ...envDefaults(config) }
 }
 
 /**
@@ -533,6 +544,31 @@ export async function loadConfig(configDir: string | null): Promise<AppConfig & 
  * for a missing directory takes them too, or pointing at a directory that is
  * not there would also silently drop the port.
  */
+/** The env vars a file may still state over, so they fill only what it left out. */
+function envDefaults(config: Partial<AppConfig>): Partial<AppConfig> {
+  const out: Partial<AppConfig> = {}
+  if (config.publicUrl === undefined && process.env.FRONTIER_API_URL) out.publicUrl = process.env.FRONTIER_API_URL
+  return out
+}
+
+/**
+ * Why `publicUrl` cannot be used, or null. Compared against the parsed
+ * origin, so a path, a trailing slash, a query, credentials and an upper-case
+ * host are one refusal: each would make a URL built on it differ from the one
+ * the far end holds.
+ */
+export function publicUrlMisfit(value: unknown): string | null {
+  if (value === undefined) return null
+  let origin: string | null = null
+  try {
+    const url = new URL(String(value))
+    if (url.protocol === 'http:' || url.protocol === 'https:') origin = url.origin
+  } catch { /* not a URL */ }
+  if (origin === null) return `publicUrl must be an http(s) origin — got '${value}'`
+  if (origin !== value) return `publicUrl must be a bare origin with no path or trailing slash — got '${value}', write '${origin}'`
+  return null
+}
+
 function envOverrides(): Partial<AppConfig> {
   const out: Partial<AppConfig> = {}
   // FRONTIER_PORT_BE is the slot `fli dev` and `fli deploy` hand the API; PORT

@@ -212,7 +212,7 @@ title: Dependencies
                         {a.severity ? `· ${a.severity.toLowerCase()}` : ''} {a.summary ? `· ${a.summary}` : ''}
                       </div>
                     {/each}
-                    {#if p.deprecated}<div class="text-sm text-muted">{p.deprecated}</div>{/if}
+                    {#if p.deprecation}<div class="text-sm text-muted">{p.deprecation}</div>{/if}
                     {#if p.checkError}<div class="text-sm text-muted">{p.checkError}</div>{/if}
                   </td>
                   <td class="text-sm text-muted">

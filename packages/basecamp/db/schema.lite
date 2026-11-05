@@ -483,15 +483,15 @@ type FlagOverrideClear {
 enum ProvisionStepName { start create poll timeout }
 
 type ServerProvision {
-  name      String @trim @length(1, 80)
-  role      ServerRole?
-  accountId String
-  region    String
-  size      String
-  image     String
+  name             String @trim @length(1, 80)
+  role             ServerRole?
+  providerSecretId String
+  region           String
+  size             String
+  image            String
   // The machine backups it starts with, which `sync` then holds it to; absent
   // is none (`FJS-D1864`).
-  backups   Json?   @type(BackupPolicy)
+  backups          Json?   @type(BackupPolicy)
 }
 
 type ServerProvisionStep {
@@ -525,7 +525,7 @@ type ServerAdoptShown {
 
 // Link a row to a machine at a vendor account that Basecamp did not buy.
 type ServerAdopt {
-  accountId        String
+  providerSecretId String
   providerServerId String
   shown            ServerAdoptShown
 }
@@ -595,9 +595,11 @@ enum PlatformProvider { cloudflare }
 // Where a platform App is built: `outpost` builds on `builderServerId` and
 // uploads the result, `platform` asks the vendor to build from git.
 enum PlatformBuild    { outpost platform }
-// How a Server row came to be: bought through a ComputeProvider, or an
-// existing machine registered by hand.
-enum RegisterMethod { imported provisioned }
+// How a Server row came to be: bought through a ComputeProvider, an existing
+// machine registered by hand, or one registered by hand and then linked to a
+// vendor machine Basecamp did not buy (`servers.adopt`). `destroy` deletes
+// only what was provisioned (`FJS-D1865`).
+enum RegisterMethod { imported provisioned adopted }
 // Where a Domain's certificate comes from (`IDEAS/fleet-ingress.md` D5):
 // Caddy's own ACME, a Cloudflare Origin CA cert Basecamp mints, or one an
 // operator uploads.
@@ -617,13 +619,13 @@ enum DeployStatus   { pending building success failed cancelled rolledBack }
 // git Receiver, `laptop` `fli basecamp:deploy`, `rollback` and `rebind` the
 // service's own, `publish` an owner's draft, `freeze` a workbench preview.
 // `observed` is a release a platform ran that Basecamp did not start.
-// `Job.trigger` is another noun (manual/scheduled) and stays a String.
+// `JobRun.trigger` is another noun (manual/scheduled) and stays a String.
 enum DeployTrigger  { button push laptop rollback rebind publish freeze observed }
 // How a release's container replaced the live one, as Outpost answered:
 // `startFirst` overlapped the two, `stopFirst` left a gap (`FJS-D1846`).
 enum DeploySwap     { startFirst stopFirst }
 enum StepStatus     { pending running success failed skipped }
-enum JobKind        { oneShot scheduled triggered workflow }
+enum JobKind        { oneShot scheduled }
 enum JobStatus      { pending running failed cancelled }
 // One run of anything a machine does on an operator's behalf — a job, a recipe
 // on a server, a reclaim sweep. Three models, one set of five states, because
@@ -813,7 +815,7 @@ model User {
   kind           UserKind   @default(user) @system @immutable
   status         UserStatus @default(pendingVerification) @allow(write, auth().isSystemAdmin)
   username       String?    @trim
-  displayName    String?    @trim
+  nickname       String?    @trim
   avatarUrl      String?
 
   // The hub tier — who may read across workspaces and suspend a tenant.
@@ -1038,8 +1040,8 @@ model Workspace {
   // — a `providerKey` Secret — and a zone it opens. A pair, because a zone id
   // names nothing without the token that can reach it, and one set without the
   // other is a workspace that looks configured and pushes nowhere.
-  ingressAccountId String?
-  ingressZoneId    String?
+  ingressSecretId String?
+  ingressZoneId   String?
 
   // The ntfy topic every critical kind is published to, once per event
   // (`FJS-D1586`): `<slug>-critical-<12 random chars>`, minted on first use by
@@ -1074,7 +1076,7 @@ model Workspace {
   @@softDelete(cascade)
   @@trail(audit)
   @@index([accountId])
-  @@check("(ingressAccountId IS NULL) = (ingressZoneId IS NULL)", "an ingress zone names its account and its zone together")
+  @@check("(ingressSecretId IS NULL) = (ingressZoneId IS NULL)", "an ingress zone names its account and its zone together")
   @@check("(kind = 'demo') = (expiresAt IS NOT NULL)", "a demo workspace has an end date and no other kind does")
 
   // @@tenant(none) — the tenant itself. Scoping a workspace by the workspace claim
@@ -1426,31 +1428,29 @@ model Server {
   // Server cannot claim to run at an edge or a forge (FJS-D1607). Add a member
   // when a compute provider is added.
   //
-  // `providerId` is the `Secret` holding this workspace's token for that cloud —
+  // `providerSecretId` is the `Secret` holding this workspace's token for that cloud —
   // a bare id, no @relation, the same shape as `Domain.certSecretId`, because
   // `Secret` is @@softDelete and a machine whose key was retired should say so
   // rather than vanish with it. It is what makes the Conduit target address an
-  // ACCOUNT (`provider:<kind>:<providerId>`) instead of a vendor, so two
+  // ACCOUNT (`provider:<kind>:<providerSecretId>`) instead of a vendor, so two
   // workspaces can each hold their own DigitalOcean without sharing a token
   // (`FJS-1020`).
   //
   // `providerServerId` is the machine's id at the vendor, which means something
   // only THERE: no key to point at and nothing to cascade.
   //
-  // All three are `@system`: `sync` and `destroy` spend `providerId` as the
-  // application, so a caller who could write it would point a machine at
-  // another workspace's token (`FJS-3845`). `provision` and `adopt` write them;
-  // the provision job records `providerServerId` the moment the vendor
-  // answers, and `adopt` writes all three from an account and a machine it
-  // has just read.
+  // All four are `@system`: `sync` and `destroy` spend `providerSecretId` as
+  // the application, so a caller who could write it would point a machine at
+  // another workspace's token (`FJS-3845`), and `destroy` deletes only a
+  // `provisioned` machine, so one who could write `registerMethod` could have
+  // Basecamp delete a machine a person only pointed at. `provision` and
+  // `adopt` write them; the provision job records `providerServerId` the
+  // moment the vendor answers, and `adopt` writes all four from an account and
+  // a machine it has just read.
   providerKind     ComputeProvider @default(custom) @system
-  providerId       String?         @system
+  providerSecretId String?         @system
   providerServerId String?         @system
-  // The vendor link was made by `adopt`, not by buying: Basecamp did not make
-  // this machine, so `destroy` refuses it rather than delete something a
-  // person only pointed at (`FJS-D1865`).
-  adopted          Boolean         @default(false) @system
-  registerMethod   RegisterMethod @default(imported)
+  registerMethod   RegisterMethod  @default(imported) @system
 
   region           String       @default("custom")
   ipAddress        String?
@@ -1756,12 +1756,12 @@ model Volume {
   isInUse      Boolean   @default(false)
   containers   String[]  @default([])
 
-  // Three different times, and they are not interchangeable. `createdOnServer`
+  // Three different times, and they are not interchangeable. `dockerCreatedAt`
   // is Docker's, and is the only one that answers "how long has this been
   // lying around"; `discoveredAt` is when this row appeared; `lastSeenAt` is
   // how stale the picture is, which is the difference between "no volumes" and
   // "no outpost".
-  createdOnServer DateTime?
+  dockerCreatedAt DateTime?
   discoveredAt    DateTime @default(now())
   lastSeenAt      DateTime @default(now())
 
@@ -1783,7 +1783,7 @@ model Network {
   slug        String   @trim @immutable
   kind        NetworkKind @default(mesh)
   cidr        String   @default("10.0.0.0/16")
-  provider    NetworkProvider @default(netbird) @immutable
+  providerKind NetworkProvider @default(netbird) @immutable
   config      Json     @default("{}")
 
   version     Int      @version
@@ -1826,7 +1826,7 @@ model Project {
   slug        String    @trim @length(1, 64) @immutable
   description String?
   status      ProjectStatus @default(active)
-  tags        Json      @default([])
+  tags        String[]  @default([])
   metadata    Json      @default("{}")
 
   version     Int       @version
@@ -1940,11 +1940,11 @@ model App {
   // in the release's runtime; Outpost hands it on as `--stop-timeout` and
   // `FRONTIER_STOP_GRACE` for Junction's drain to fit inside (`FJS-D1841`).
   // Null is Outpost's default (50). App-only, as `containerPort` is.
-  stopGrace     Int?        @gte(2)
+  stopGraceSeconds     Int?        @gte(2)
   // Seconds a new release has to answer `healthCheck` before the swap puts the
   // old one back; a migration on boot runs inside it (`FJS-4015`). Null is
   // Outpost's default (30). A stop-first app is down for as long as it waits.
-  healthTimeout Int?        @gte(5) @lte(600)
+  healthTimeoutSeconds Int?        @gte(5) @lte(600)
   // The arguments after the image, replacing its CMD as compose's `command:`
   // does; empty runs the image's own (`FJS-D1585`). Argv, not `Job.command`'s
   // shell line.
@@ -2252,10 +2252,10 @@ model AppPlatform {
   workspaceId       String
   appId             String           @immutable
   app               App              @relation(fields: [appId], references: [id], onDelete: Cascade)
-  // The `providerKey` Secret — a bare id, as `Server.providerId` is, so a
-  // retired key leaves the row saying so rather than vanishing with it.
-  accountId         String           @immutable
-  provider          PlatformProvider @immutable
+  // The `providerKey` Secret — a bare id, as `Server.providerSecretId` is, so
+  // a retired key leaves the row saying so rather than vanishing with it.
+  providerSecretId  String           @immutable
+  providerKind      PlatformProvider @immutable
   // The account at the VENDOR, as `Server.providerServerId` is the machine
   // there: one token can open several, and every project path is under one.
   providerAccountId String           @immutable
@@ -2278,7 +2278,7 @@ model AppPlatform {
   // Binding an App to a vendor account spends that account's token, which is
   // the Secret's own write level.
   @@gate(2.5)
-  @@unique([provider, providerAccountId, name], global: true)
+  @@unique([providerKind, providerAccountId, name], global: true)
   @@trail(audit)
   @@index([appId])
   @@index([workspaceId])
@@ -2432,7 +2432,7 @@ model Deployment {
   commitSha            String?      @system
   commitMessage        String?      @immutable
   branch               String?      @system
-  author               String?      @immutable
+  commitAuthor         String?      @immutable
   builtImage           String?      @system
   // Null on a release that started no container. `swapReason` is why a
   // stop-first release could not overlap; null on one nobody asked to.
@@ -2529,14 +2529,12 @@ model Job {
   status         JobStatus    @default(pending)
   command        String?
   cronExpression String?
-  trigger        String       @default("manual")
-  triggerConfig  Json         @default("{}")
   timeoutSeconds Int          @default(300) @gte(5) @lte(3600)
   retryLimit     Int          @default(3)
   // The engine's record of the last run, written by `startRun`/`finishRun`.
   retryCount     Int          @default(0) @system
   lastRunAt      DateTime?    @system
-  lastRunStatus  String?      @system
+  lastRunStatus  RunStatus?   @system
 
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @default(now()) @updatedAt
@@ -3201,7 +3199,7 @@ model Monitor {
   isInverted       Boolean @default(false)
   // Re-page every N checks while down. 0 pages once.
   resendEvery      Int  @default(0)     @gte(0)
-  tags             Json @default([])
+  tags             String[] @default([])
 
   status        MonitorStatus @default(pending)
   failStreak    Int       @default(0) @system
@@ -3683,7 +3681,7 @@ model Dependency {
   // push names a package and nothing more, so no manifest can claim one current.
   latest      String?   @system
   // npm's deprecation message on `latest`; null when it is not deprecated.
-  deprecated  String?   @system
+  deprecation String?   @system
   // Advisories per INSTALLED version — `{ "4.17.15": [{ id, summary, severity }] }`.
   // Keyed by version because an advisory is about a version and two projects
   // can install two of them.

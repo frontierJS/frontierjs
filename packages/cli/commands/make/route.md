@@ -265,7 +265,7 @@ if (flag.resource && !existsSync(resolve($.paths.webResources, `${model}.mesa`))
 }
 
 echo('')
-echo(chalk.dim('  Sierra rescans src/routes on the next build — restart the dev server if it is running.'))
+echo(chalk`  {dim A running dev server picks the new page up on its own; no restart needed.}`)
 echo('')
 
 if (flag.open && created.length && !flag.dry) {

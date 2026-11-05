@@ -1110,7 +1110,7 @@ try {
   // ─── Link it to a machine Basecamp did not buy ─────────────────────────
   // The imported box has no vendor link, and the droplet planted behind the
   // app's back is a marked machine no row holds. Picking it from the card
-  // links the two and sets `adopted`: the backups card appears, and Destroy is
+  // links the two and sets `registerMethod` to adopted: the backups card appears, and Destroy is
   // replaced by the line that says Basecamp will not delete it.
   console.log('\n  linking the imported machine to the planted droplet')
   check('an unlinked machine offers the link card, and a vendor machine does not',
@@ -1144,9 +1144,9 @@ try {
       accept: 'application/json',
       authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
       'x-workspace-id': localStorage.getItem('basecamp_workspace') } }).then(r => r.json())`)
-  check('the row stores the link and `adopted`',
-    linked?.adopted === true && linked?.providerKind === 'digitalocean' && !!linked?.providerServerId,
-    JSON.stringify({ adopted: linked?.adopted, kind: linked?.providerKind }))
+  check('the row stores the link and `registerMethod`',
+    linked?.registerMethod === 'adopted' && linked?.providerKind === 'digitalocean' && !!linked?.providerServerId,
+    JSON.stringify({ registerMethod: linked?.registerMethod, kind: linked?.providerKind }))
 
   // ─── The console ───────────────────────────────────────────────────────
   console.log('\n  the console')

@@ -13,7 +13,7 @@
 // measures each fire's delay on it — so advancing the client past a due time
 // is a fire with no delay, which is what lets a test run in milliseconds.
 
-import { describe, it, expect, afterEach } from 'bun:test'
+import { describe, it, expect, afterEach, spyOn } from 'bun:test'
 
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir }        from 'node:os'
@@ -431,6 +431,36 @@ describe('a hook runs in the move\'s transaction', () => {
     expect(await status(order.id)).toBe('pending')
     expect(await db.asSystem().receipt.count()).toBe(0)
     expect(fires(queue)).toHaveLength(1)
+  })
+
+  it('a fire that fails is printed to the log, not only held in the queue row (FJS-3996)', async () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { app, db, advance } = await started(RECEIPTS, { hooks: {
+        'Order.abandon': defineCommitment({ after: async () => { throw new Error('the hook refused here') } }),
+      } })
+      await db.order.create({ data: {} })
+
+      advance(14 * DAY)
+      await app.commitments.sweep()
+      await until('the fire to be attempted', () => metrics(app).failed >= 1)
+      const line = warn.mock.calls.map(c => c.map(String).join(' ')).find(l => l.includes('abandon') && l.includes('the hook refused here'))
+      expect(line).toBeDefined()
+    } finally { warn.mockRestore() }
+  })
+
+  it('a hook writes a gate-8 child through ctx.db.asSystem(), inside the move\'s transaction (FJS-3996)', async () => {
+    const { app, db, advance, status } = await started(RECEIPTS, { hooks: {
+      'Order.abandon': defineCommitment({ after: async ({ db: tx, record }) => {
+        await tx.asSystem().receipt.create({ data: { orderId: record.id } })
+      } }),
+    } })
+    const order = await db.order.create({ data: {} })
+
+    advance(14 * DAY)
+    await app.commitments.sweep()
+    await until('the move', async () => (await status(order.id)) === 'cancelled')
+    expect(await db.asSystem().receipt.count({ where: { orderId: order.id } })).toBe(1)
   })
 
   it('a key naming no declared commitment is refused at start', async () => {

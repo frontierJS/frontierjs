@@ -472,7 +472,7 @@ async function detail(id: string) {
       where:   { appId: row.id },
       select:  { id: true, status: true, trigger: true, queuedAt: true, finishedAt: true,
                  durationMs: true, commitSha: true, commitMessage: true, branch: true,
-                 author: true, builtImage: true, toImage: true, previousDeploymentId: true },
+                 commitAuthor: true, builtImage: true, toImage: true, previousDeploymentId: true },
       orderBy: { queuedAt: 'desc' },
       limit:   10,
     }),

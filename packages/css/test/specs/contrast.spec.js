@@ -21,7 +21,7 @@
  */
 
 var TONES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger'];
-var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'notebook', 'press', 'field', 'dracula', 'twilight', 'expedition', 'catppuccin', 'survey'];
+var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'notebook', 'press', 'field', 'dracula', 'twilight', 'expedition', 'catppuccin', 'survey', 'shadcn', 'material'];
 
 /* The chip lineage — everything that renders a tone as a solid fill. */
 var FILLED = [
@@ -79,6 +79,54 @@ FILLED.forEach(function (subject) {
         );
         cleanup();
       });
+    });
+  });
+});
+
+/*
+ * Hover and press. :hover cannot be forced from a page, so the declaration
+ * the rule carries is read out of the CSSOM and set inline on a fresh node:
+ * the test grades what the rule says, not a copy of it. The label keeps the
+ * color it has at rest, and a translucent result is laid over the ground it
+ * sits on.
+ */
+function contrastStateBackground(state) {
+  var rule = allRules().filter(function (r) {
+    return r.selectorText && r.selectorText.indexOf('.btn:' + state) === 0;
+  })[0];
+  assert.ok(rule, 'no .btn:' + state + ' rule found');
+  return rule.style.getPropertyValue('background');
+}
+
+function contrastOverSurface(node, state) {
+  node.style.background = contrastStateBackground(state);
+  var cs = getComputedStyle(node);
+  var layered = toRGB(cs.backgroundColor);
+  var ground = toRGB(getComputedStyle(node).getPropertyValue('--surface').trim());
+  var a = layered[3];
+  return 'rgb(' + [0, 1, 2].map(function (i) {
+    return Math.round(layered[i] * a + ground[i] * (1 - a));
+  }).join(',') + ')';
+}
+
+THEMES.forEach(function (theme) {
+  ['hover', 'active'].forEach(function (state) {
+    test('contrast: a ' + state + ' button clears AA in ' + theme, function () {
+      var failures = [];
+      var cases = TONES.map(function (t) { return { name: t, html: '<button class="btn ' + t + '">Save</button>' }; })
+        .concat(['outlined', 'ghost', 'tinted'].map(function (v) {
+          return { name: v, html: '<button class="btn ' + v + '">Save</button>' };
+        }));
+
+      cases.forEach(function (c) {
+        var node = themed(theme, c.html);
+        var label = getComputedStyle(node).color;
+        var ratio = contrast(label, contrastOverSurface(node, state));
+        if (ratio < AA) failures.push(c.name + ' ' + ratio.toFixed(2) + ':1');
+        cleanup();
+      });
+
+      assert.equal(failures.length, 0, state + ' in theme-' + theme + ' is below AA: ' + failures.join(', '));
     });
   });
 });

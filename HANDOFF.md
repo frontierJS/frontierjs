@@ -14,6 +14,30 @@ finished.
 
 ---
 
+# Handoff — 2026-11-05 (the 26 connectors come home)
+
+The conduit connectors prototyped in the sibling `conduit-connectors/` repo
+since 2026-10-11 moved into `packages/conduits/conduit-<x>/` as workspace
+members (`FJS-D1559`; plan `IDEAS/conduits-move.md`, every box closed). The
+order mattered: the sibling was committed first and renamed there (tax into
+stripe, shipping to easypost, push split into apns and google's fcm module,
+google-maps to google — `FJS-D1915`–`D1919`), then one workspace-membership
+owner (`packages/cli/core/workspace-members.js`) replaced 27 one-level
+`packages/*` walkers so a member two levels down is seen everywhere, and only
+then was the code copied. They are set apart (`FJS-D1913`): ring `conduits`
+in the atlas, one group row per drives table that `fli proves` expands to 28,
+held out of `ws:pub` and every `ws:*` list, typecheck-ratcheted, and a CI lane
+that runs only when a connector path changes (its skip path fires first after
+the commit). A connector's suite is its drive; all 26 are green
+from this tree with `bun run --filter './packages/conduits/*' test`. The three
+prototypes that linked the sibling (chat, chatwoot, serpgrid) follow the new
+path. Later the same day the group grew to 28: `conduit-sendgrid` (14 rows) and
+`conduit-dataforseo` (12 rows) built as stubs from their callers
+(`IDEAS/conduit-connectors.md` rows 14–15), and `toolbelt/units` gained the
+declaration three baselines were waiting on. Neither new connector is adopted.
+
+---
+
 # Handoff — 2026-10-31 (a 19-package release, then a red CI holds the next one)
 
 > **10-30 shipped 19 packages (cli 0.1.11, litestone 1.1.13, sierra 0.1.10)

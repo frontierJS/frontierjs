@@ -34,11 +34,10 @@
  * 403 — never an escalation.
  */
 
-import { CLIENT_CAPABILITIES_META_KEY, McpServer, WebStandardStreamableHTTPServerTransport, fromJsonSchema } from '@modelcontextprotocol/server'
-import { RESOURCE_MIME_TYPE, getUiCapability, registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server'
+import type { McpServer } from '@modelcontextprotocol/server'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
-import { BadRequest, CALL_OPTIONS_AT, LEVELS, errorBody, principalGateLevel, scopeRefusal, toDataPrincipal, withholdProtected, setCallDb } from '@frontierjs/junction'
+import { BadRequest, CALL_OPTIONS_AT, LEVELS, Unauthorized, errorBody, normalizePrefix, principalGateLevel, scopeRefusal, toDataPrincipal, withholdProtected, setCallDb } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
 import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
 import { BREADCRUMBS_META, answersOneRow, breadcrumbsFor, describeBreadcrumbs } from './breadcrumbs.ts'
@@ -112,6 +111,7 @@ export function mcp(opts: McpOptions = {}): Plugin {
   let shapes:    ServiceShape[]         = []
   let trail:     string | null          = null
   let documents: Map<string, string> | null = null
+  let signIn = false
 
   return {
     name: 'mcp',
@@ -119,6 +119,16 @@ export function mcp(opts: McpOptions = {}): Plugin {
     register(app: App) {
       const handler = async (ctx: RouteCtx<typeof app>) => {
         if (!views) return ctx.json({ error: 'The MCP surface is not ready yet.' }, 503)
+        // A connector starts a sign-in only on a 401, and refreshes an expired
+        // token only on one, so a Bearer that did not verify is answered the
+        // same as none (`FJS-D1924`).
+        if (signIn && !ctx.user) {
+          const request = (ctx.$raw as { $req: Request }).$req
+          throw new Unauthorized('Sign in to use this App over MCP.', null, null, {
+            resource_metadata: resourceMetadataUrl(app, request, path),
+            ...(ctx.headers.authorization ? { error: 'invalid_token' } : {}),
+          })
+        }
         return answer(app, (ctx.$raw as { $req: Request }).$req, ctx.rawBody, ctx.user ?? null, views, shapes, opts, trail, documents)
       }
 
@@ -152,6 +162,9 @@ export function mcp(opts: McpOptions = {}): Plugin {
     // — so a projection built in `register()` would be built over an empty
     // registry and answer an empty tool list with nothing failing.
     async boot(app: App) {
+      // An App with accounts has nothing for a stranger, and an App without
+      // them has no sign-in to start.
+      signIn    = app._plugins.includes(AUTH_PLUGIN)
       views     = await buildViews(app)
       shapes    = describeAll(app)
       trail     = trailOf((app as { db?: unknown }).db, (await import('@frontierjs/litestone/ddl')).modelToAccessor)
@@ -222,6 +235,35 @@ function describeAll(app: App): ServiceShape[] {
   return out
 }
 
+// ─── where a connector signs in ───────────────────────────────────────────────
+
+/** `@frontierjs/auth`'s plugin name; `mcp` may not import the package. */
+const AUTH_PLUGIN = '@frontierjs/auth'
+
+/**
+ * Where the protected-resource document is served, on the API's stated origin
+ * (`FJS-D1935`); an App that states none is a dev run, answered on the origin
+ * it was asked on. Under `apiPrefix` rather than at the root, because a web
+ * surface that proxies only the prefix sends the root to its static host, and
+ * a connector follows this header before any root probe.
+ */
+function resourceMetadataUrl(app: App, request: Request, path: string): string {
+  const origin = app.config.publicUrl ?? new URL(request.url).origin
+  return `${origin}${normalizePrefix(app.config.apiPrefix)}/.well-known/oauth-protected-resource${path}`
+}
+
+// ─── the SDK ──────────────────────────────────────────────────────────────────
+
+// The SDK and the zod it carries are about a hundred modules, resident for the
+// life of every App that mounts this whether or not an agent ever calls, so
+// they load on the first request instead of at import.
+type Sdk = typeof import('@modelcontextprotocol/server') & typeof import('@modelcontextprotocol/ext-apps/server')
+let sdkLoad: Promise<Sdk> | null = null
+const loadSdk = (): Promise<Sdk> => sdkLoad ??= Promise.all([
+  import('@modelcontextprotocol/server'),
+  import('@modelcontextprotocol/ext-apps/server'),
+]).then(([server, apps]) => ({ ...server, ...apps }))
+
 // ─── one request ──────────────────────────────────────────────────────────────
 
 async function answer(
@@ -235,12 +277,13 @@ async function answer(
   trail:  string | null,
   documents: Map<string, string> | null,
 ): Promise<Response> {
+  const sdk   = await loadSdk()
   const level = await standingOf(app, user)
   // Read HERE, in the route, where the request scope is certainly the one the
   // tool call's service calls run in — it is what Caravan stamped on every job
   // they dispatched, and what `--await` looks the jobs up by (`FJS-D406`).
   const correlationId = (app as { correlationId?: () => string | null }).correlationId?.() ?? null
-  const { awaiting, renders } = readRequest(rawBody)
+  const { awaiting, renders } = readRequest(sdk, rawBody)
 
   // A key's scopes withhold what the call would refuse, from junction's own
   // reading of them (`FJS-D916`); `narrow` is for a rule the app holds beyond it.
@@ -249,7 +292,7 @@ async function answer(
   const tools  = opts.narrow ? await narrowTo(scoped, user, opts.narrow) : scoped
 
   const name   = opts.name ?? app.config.name
-  const server = new McpServer({ name, version: opts.version ?? '0.0.0' })
+  const server = new sdk.McpServer({ name, version: opts.version ?? '0.0.0' })
 
   // One answer to *which models have a view here*, read by the resource list
   // and by the tool stamp alike, so a pointer never names a view the same
@@ -258,11 +301,11 @@ async function answer(
   const call   = { correlationId, awaitMs: opts.awaitMs ?? DEFAULT_AWAIT_MS, offered: tools, defs: views.full, trail, renders }
   for (const tool of tools) {
     const view = answersOneRow(tool) && viewed.has(tool.model as string) ? viewUri(name, tool.model as string) : null
-    register(server, app, tool, user, call, view)
+    register(sdk, server, app, tool, user, call, view)
   }
-  if (documents) offerViews(server, name, viewed, documents)
+  if (documents) offerViews(sdk, server, name, viewed, documents)
 
-  const transport = new WebStandardStreamableHTTPServerTransport({
+  const transport = new sdk.WebStandardStreamableHTTPServerTransport({
     // Stateless: the standing is re-read on every request, so there is nothing
     // worth keeping between two of them. A session here would be a second
     // lifetime beside the app's own, outliving a sign-out.
@@ -444,14 +487,14 @@ function viewedModels(tools: Tool[], documents: Map<string, string>): Set<string
  * with the first registration and nowhere else; declaring the capability
  * without the handler would tell a host to call what then fails.
  */
-function offerViews(server: McpServer, name: string, viewed: Set<string>, documents: Map<string, string>): void {
+function offerViews(sdk: Sdk, server: McpServer, name: string, viewed: Set<string>, documents: Map<string, string>): void {
   for (const model of viewed) {
     const html = documents.get(model) as string
     const uri  = viewUri(name, model)
-    registerAppResource(
+    sdk.registerAppResource(
       server, model, uri,
       { description: `One ${model}, as its form.`, _meta: { ui: { csp: { connectDomains: [] } } } },
-      async () => ({ contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: html }] }),
+      async () => ({ contents: [{ uri, mimeType: sdk.RESOURCE_MIME_TYPE, text: html }] }),
     )
   }
 }
@@ -486,15 +529,15 @@ interface CallScope {
  * older era. A host that declares its capabilities and names no view, or no
  * mime type this server emits, is read as asked.
  */
-function readRequest(rawBody: string | undefined): { awaiting: boolean; renders: boolean } {
+function readRequest(sdk: Sdk, rawBody: string | undefined): { awaiting: boolean; renders: boolean } {
   try {
     const body = JSON.parse(rawBody ?? '') as { method?: string; params?: { _meta?: Record<string, unknown> } }
     const meta = body.params?._meta
-    const declared = meta?.[CLIENT_CAPABILITIES_META_KEY] as Parameters<typeof getUiCapability>[0] | undefined
-    const ui = declared === undefined ? undefined : getUiCapability(declared)
+    const declared = meta?.[sdk.CLIENT_CAPABILITIES_META_KEY] as Parameters<Sdk['getUiCapability']>[0] | undefined
+    const ui = declared === undefined ? undefined : sdk.getUiCapability(declared)
     return {
       awaiting: body.method === 'tools/call' && meta?.[AWAIT_META] === true,
-      renders:  declared === undefined || (ui !== undefined && (ui.mimeTypes?.includes(RESOURCE_MIME_TYPE) ?? true)),
+      renders:  declared === undefined || (ui !== undefined && (ui.mimeTypes?.includes(sdk.RESOURCE_MIME_TYPE) ?? true)),
     }
   } catch { return { awaiting: false, renders: true } }
 }
@@ -506,7 +549,7 @@ function readRequest(rawBody: string | undefined): { awaiting: boolean; renders:
  * stays the default: the verbs a view calls back (`patch`) are the model's,
  * offered to the agent as well.
  */
-function register(server: McpServer, app: App, tool: Tool, user: unknown, call: CallScope, view: string | null): void {
+function register(sdk: Sdk, server: McpServer, app: App, tool: Tool, user: unknown, call: CallScope, view: string | null): void {
   const config = {
     description: describeTool(tool),
     // `fromJsonSchema` installs its own default validator when none is passed,
@@ -517,11 +560,11 @@ function register(server: McpServer, app: App, tool: Tool, user: unknown, call: 
     // which costs a turn and admits nothing — and the message names the field,
     // so an agent corrects and retries. Passing a pass-through validator is
     // the one-owner answer and is an open question, not an oversight.
-    ...(tool.input.schema ? { inputSchema: fromJsonSchema(tool.input.schema as never) } : {}),
+    ...(tool.input.schema ? { inputSchema: sdk.fromJsonSchema(tool.input.schema as never) } : {}),
   }
   const handler = async (args: unknown, ctx: HandlerCtx) => run(app, tool, args, user, call, ctx)
   if (view === null) server.registerTool(tool.name, config, handler as never)
-  else registerAppTool(server, tool.name, { ...config, _meta: { ui: { resourceUri: view } } }, handler as never)
+  else sdk.registerAppTool(server, tool.name, { ...config, _meta: { ui: { resourceUri: view } } }, handler as never)
 }
 
 function describeTool(tool: Tool): string {

@@ -216,6 +216,10 @@ export async function buildBasecampApp(
     // junction's own read (FRONTIER_PORT_BE, else PORT, else the file's 8120),
     // already in `loadedConfig`.
     host:     env.HOST,
+    // env.ts defaults it for dev, where junction's own FRONTIER_API_URL read
+    // finds nothing set. A provider sign-in's callback is built on it, so in
+    // dev, where the SPA is another port, it ends on the API's port.
+    publicUrl: env.FRONTIER_API_URL,
   }
 
   // ── Framework app ─────────────────────────────────────────────────────
@@ -740,9 +744,7 @@ export async function buildBasecampApp(
     services: { apiKeys: false, standingLevel: basecampGateLevel },
     canStartSupport: supportGuard,
     cookieAuth: sso.length > 0,
-    // The callback lands on the origin the browser sees, which is the web
-    // origin: the proxy forwards /auth, and the state cookie is scoped to it.
-    ...(sso.length ? { oauth: { publicUrl: env.FRONTIER_APP_URL, errorRedirect: '/login/' } } : {}),
+    ...(sso.length ? { oauth: { errorRedirect: '/login/' } } : {}),
   }))
 
   app.configure(function setupRoutes(a) {
@@ -861,7 +863,7 @@ export async function buildBasecampApp(
         // granted from /hub/users/ by someone who already holds it.
         const user    = await tx.user.update({
           where: { id: session.id },
-          data:  { accountId: account.id, status: 'active', displayName: name.trim(),
+          data:  { accountId: account.id, status: 'active',
                    isEmailVerified: true, isSystemAdmin: true },
         })
         const workspace = await tx.workspace.create({

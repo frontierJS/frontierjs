@@ -1,0 +1,30 @@
+{
+  "name": "@frontierjs/conduit-google",
+  "version": "0.0.1",
+  "description": "Google products reached with a project credential over @frontierjs/conduit — Maps Platform (Places New, Routes, Geocoding) and Firebase Cloud Messaging (service-account token, HTTP v1 send).",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./maps": "./src/maps/index.ts",
+    "./fcm": "./src/fcm/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/google.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

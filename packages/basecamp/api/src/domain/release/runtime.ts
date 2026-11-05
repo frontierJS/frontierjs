@@ -17,22 +17,30 @@ export const CONTAINER_KINDS: ReadonlySet<string> = new Set(['container', 'funct
  *  The declared residual of `restated-fields` (`FJS-D1438`): `db/test/schema.test.ts`
  *  'App runtime columns' fails on a name that is no column and on an App column neither here nor
  *  named exempt there. */
-export const RUNTIME_COLUMNS = ['port', 'containerPort', 'volumePath', 'healthCheck', 'cpuLimit', 'memLimitMb', 'stopGrace', 'healthTimeout', 'command'] as const
+export const RUNTIME_COLUMNS = ['port', 'containerPort', 'volumePath', 'healthCheck', 'cpuLimit', 'memLimitMb', 'stopGraceSeconds', 'healthTimeoutSeconds', 'command'] as const
 
-export type Runtime = Partial<Record<(typeof RUNTIME_COLUMNS)[number], string | number | string[]>>
+/** The two columns that carry their unit in the name. The release runtime is what Outpost reads and
+ *  keeps its own spelling, so the column maps onto it here and nowhere else. */
+const WIRE_KEY = { stopGraceSeconds: 'stopGrace', healthTimeoutSeconds: 'healthTimeout' } as const
+
+type Column = (typeof RUNTIME_COLUMNS)[number]
+type Wire<C> = C extends keyof typeof WIRE_KEY ? (typeof WIRE_KEY)[C] : C
+
+export type Runtime = Partial<Record<Wire<Column>, string | number | string[]>>
 
 /**
- * The settings a row states, nulls and an empty `command` left out. Read off an `App` when a release
- * is made, and off a `Blueprint` when an app is made from one — the names are
- * the same on both, which is what makes that a copy.
+ * The settings a row states, nulls and an empty `command` left out, under the release runtime's
+ * keys. Read off an `App` when a release is made, and off a `Blueprint` when an app is made from
+ * one — the names are the same on both, which is what makes that a copy.
  */
 export function runtimeOf(row: Record<string, unknown>): Runtime {
-  const out: Runtime = {}
+  const out: Record<string, string | number | string[]> = {}
   for (const key of RUNTIME_COLUMNS) {
     const value = row[key]
-    if (value != null && !(Array.isArray(value) && !value.length)) out[key] = value as string | number | string[]
+    if (value != null && !(Array.isArray(value) && !value.length))
+      out[(WIRE_KEY as Record<string, string>)[key] ?? key] = value as string | number | string[]
   }
-  return out
+  return out as Runtime
 }
 
 /**

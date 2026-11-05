@@ -122,14 +122,14 @@ export const tokenDialect: Dialect<string, PushEvent> = {
 // ─── What a push does ──────────────────────────────────────────────────
 
 /** What the push says about itself; the build step reports the sha it really built. */
-export interface PushHints { branch: string | null, commitSha?: string, author?: string, commitMessage?: string }
+export interface PushHints { branch: string | null, commitSha?: string, commitAuthor?: string, commitMessage?: string }
 
 function pushHints(ev: PushEvent, source: { branch?: string }): PushHints {
   const { after, author, message } = ev.payload
   return {
     branch: branchOf(ev, source),
     ...(after && !/^0+$/.test(after) ? { commitSha: after } : {}),
-    ...(author  ? { author } : {}),
+    ...(author  ? { commitAuthor: author } : {}),
     ...(message ? { commitMessage: message } : {}),
   }
 }

@@ -512,9 +512,45 @@ const isRelativeStated = (stated) => !!stated && stated !== ':memory:' && !isAbs
  * @param {unknown} busyTimeout
  * @param {boolean} [shrinks]
  * @param {boolean} [relative] the stated path was relative
+ * @param {boolean} [wantsWrite] some name opened on this file writes
  * @returns {{ rawWriteDb: RawDb | null, rawReadDb: RawDb, writeDb: DbHandle | null, readDb: DbHandle }}
  */
-function openSqliteConnections(absPath, busyTimeout, shrinks, relative = false) {
+function openSqliteConnections(absPath, busyTimeout, shrinks, relative = false, wantsWrite = true) {
+  return (!wantsWrite && openReaderOnly(absPath, busyTimeout)) || openWriterAndReader(absPath, busyTimeout, shrinks, relative)
+}
+
+// A file no name here writes is opened by a read-only connection alone. A
+// writer would run `PRAGMA journal_mode = WAL`, which rewrites the header of a
+// file the caller only meant to read and refuses outright when the file or its
+// directory is not writable (`FJS-4033`). A missing file falls through to the
+// writer, which creates it; an engine with one shared connection needs the
+// writer too.
+/**
+ * @param {string} absPath
+ * @param {unknown} busyTimeout
+ * @returns {{ rawWriteDb: null, rawReadDb: RawDb, writeDb: null, readDb: DbHandle } | null}
+ */
+function openReaderOnly(absPath, busyTimeout) {
+  if (absPath === ':memory:' || !existsSync(absPath) || currentEngine()?.singleConnection === true) return null
+  const foreignKeys = currentEngine()?.foreignKeys === false ? 'OFF' : 'ON'
+  const rawReadDb = openDatabase(absPath, { readonly: true })
+  applyBusyTimeout(rawReadDb, busyTimeout)
+  rawReadDb.run(`PRAGMA foreign_keys = ${foreignKeys}`)
+  rawReadDb.run('PRAGMA query_only = ON')
+  rawReadDb.run('PRAGMA cache_size = -32768')
+  rawReadDb.run('PRAGMA temp_store = MEMORY')
+  rawReadDb.run('PRAGMA mmap_size = 268435456')
+  return { rawWriteDb: null, rawReadDb, writeDb: null, readDb: wrapDb(rawReadDb, { label: `read ${absPath}` }) }
+}
+
+/**
+ * @param {string} absPath
+ * @param {unknown} busyTimeout
+ * @param {boolean} [shrinks]
+ * @param {boolean} [relative]
+ * @returns {{ rawWriteDb: RawDb | null, rawReadDb: RawDb, writeDb: DbHandle | null, readDb: DbHandle }}
+ */
+function openWriterAndReader(absPath, busyTimeout, shrinks, relative = false) {
   // SQLite can create a DB file but not its parent directory. If the configured
   // path points into a directory that doesn't exist yet, pre-create it so the
   // first `litestone repl`/`studio`/`createClient` call doesn't fail with a
@@ -706,7 +742,7 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
   function connectionsFor(absPath, name, wantsWrite, shrinks, relative = false) {
     const shared = absPath === ':memory:' ? null : opened.get(absPath)
     if (shared) return shared
-    const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, name), shrinks, relative)
+    const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, name), shrinks, relative, wantsWrite)
     if (!wantsWrite) {
       conns.rawWriteDb?.close()
       conns.rawWriteDb = null

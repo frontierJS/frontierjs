@@ -177,7 +177,7 @@ title: Servers
   async function reconcile() {
     sweepError = null; sweep = null; busySweep = true
     try {
-      sweep = await servers.service.invoke('reconcile', null, { accountId })
+      sweep = await servers.service.invoke('reconcile', null, { providerSecretId: accountId })
     } catch (e) {
       sweepError = e.message
     } finally {

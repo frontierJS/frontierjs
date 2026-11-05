@@ -174,7 +174,7 @@ describe('a release is put back', () => {
   })
 
   test('a release records how its container starts, and a later edit leaves it alone', async () => {
-    const { app: target } = await anAppWithHistory({ port: 8080, containerPort: 80, healthCheck: '/up', memLimitMb: 128, stopGrace: 25 })
+    const { app: target } = await anAppWithHistory({ port: 8080, containerPort: 80, healthCheck: '/up', memLimitMb: 128, stopGraceSeconds: 25 })
     const made: any = await env.as(developer).service('deployments').create({ appId: target.id, toImage: `${target.slug}:v3` })
     const snap = async () => (await (env.system as any).deployment.findUnique({ where: { id: made.id } })).configSnapshot
     const shipped = { port: 8080, containerPort: 80, healthCheck: '/up', memLimitMb: 128, stopGrace: 25 }

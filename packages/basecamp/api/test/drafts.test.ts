@@ -674,7 +674,7 @@ describe('publishing a draft', () => {
     const merged = await mergeDraft(g, opened.name, { name: 'Kim', email: 'kim@x.co' }, 'Publish hours', before)
     await advanceBase(g, merged)
     const row = await sys.deployment.create({ data: {
-      workspaceId: site.workspaceId, appId: site.id, environmentId: site.environmentId, trigger: 'publish', author: 'Kim',
+      workspaceId: site.workspaceId, appId: site.id, environmentId: site.environmentId, trigger: 'publish', commitAuthor: 'Kim',
       commitSha: merged.commit, configSnapshot: { source: site.source, draft: 'hours', publisher: { userId: 'u', name: 'Kim', email: 'kim@x.co' } } } })
     await sys.deployment.update({ where: { id: row.id }, data: { status: 'building' } })
     await sys.deployment.update({ where: { id: row.id }, data: { status: 'success', finishedAt: new Date(Date.now() + 1000).toISOString() } })

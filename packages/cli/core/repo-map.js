@@ -46,6 +46,7 @@ import { SKIP, safeRead, isDir, readJson, read }                    from './fs.j
 import { driveRows, readCommands, runnables, workspaceDeps }      from './runnables.js'
 import { packageMembers, memberOfFile }                          from './workspace-members.js'
 import { readProofs, resolveRun } from './proofs.js'
+import { packageTable }         from './package-table.js'
 // The one owner of *what does a register record look like*. This module used
 // to carry a regex per register, and a row it failed to match rendered a
 // SMALLER register rather than an error — which is what happened: every ruling
@@ -441,24 +442,9 @@ function countFiles(dir) {
 // visibly missing rather than quietly labeled.
 
 function packageNotes(root) {
-  const src = read(join(root, 'CLAUDE.md'))
-  if (!src) return {}
-
   const notes = {}
-  let inTable = false
 
-  for (const line of src.split('\n')) {
-    if (/^\|\s*Package\s*\|\s*Realm/i.test(line)) { inTable = true; continue }
-    if (inTable && !line.startsWith('|')) { inTable = false; continue }
-    if (!inTable || /^\|\s*-+/.test(line)) continue
-
-    const cells = splitRow(line)
-    if (cells.length < 4) continue
-
-    // `cli (\`fli\`)` names the folder and its binary; the folder is the key.
-    const name = plain(cells[0]).replace(/\s*\(.*\)$/, '').trim()
-    if (!name) continue
-
+  for (const { name, cells } of packageTable(root)) {
     notes[name] = {
       realm: plain(cells[1]),
       what:  firstSentence(plain(cells[2]), 200),

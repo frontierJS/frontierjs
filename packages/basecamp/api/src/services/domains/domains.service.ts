@@ -93,6 +93,29 @@ export const toZone = (domainId: string, version: number | string) =>
  *  the App no longer answers on. */
 const toMonitor = (appId: string) => syncManagedMonitor($.app, $.db.asSystem(), appId)
 
+async function patchDomain() {
+  const domain = await getScoped('domain', 'Domain')
+  // appId is immutable — moving a hostname to another app is a delete and a
+  // create, and doing it as a patch would carry the certificate with it.
+  // So is the hostname, for the same reason twice over: a certificate is
+  // FOR a hostname, and the CNAME pushed for the old one would stay in its
+  // zone marked as this row's, which no drift reports as wrong. Refused
+  // rather than dropped, or a save that changed nothing looks like one
+  // that renamed it. A form resending the same hostname is not a change.
+  const asked = ($.data ?? {}) as Record<string, unknown>
+  if ('hostname' in asked && String(asked.hostname).trim().toLowerCase() !== domain.hostname.toLowerCase())
+    throw new BadRequest('A hostname is fixed once added — add the new one, then delete this one')
+  const patch = narrowPatch($.data as Record<string, unknown>)
+
+  if (changesNothing(patch)) return decorate(domain)
+
+  const updated = await db().domain.update({ where: { id: domain.id }, data: patch })
+  if (updated.isPrimary) await demoteSiblings(updated.appId, updated.id)
+  await toZone(updated.id, updated.version)
+  await toMonitor(updated.appId)
+  return decorate(updated)
+}
+
 export default createService({
   name:  'domains',
   scope: keyScope('domains'),
@@ -143,27 +166,14 @@ export default createService({
     return decorate(created)
   },
 
+  // `update` is `patch` with an id required; left out, the base CRUD answers a
+  // PUT and it skips the primary demotion, the zone push and the Monitor sync.
+  async update() {
+    return patchDomain()
+  },
+
   async patch() {
-    const domain = await getScoped('domain', 'Domain')
-    // appId is immutable — moving a hostname to another app is a delete and a
-    // create, and doing it as a patch would carry the certificate with it.
-    // So is the hostname, for the same reason twice over: a certificate is
-    // FOR a hostname, and the CNAME pushed for the old one would stay in its
-    // zone marked as this row's, which no drift reports as wrong. Refused
-    // rather than dropped, or a save that changed nothing looks like one
-    // that renamed it. A form resending the same hostname is not a change.
-    const asked = ($.data ?? {}) as Record<string, unknown>
-    if ('hostname' in asked && String(asked.hostname).trim().toLowerCase() !== domain.hostname.toLowerCase())
-      throw new BadRequest('A hostname is fixed once added — add the new one, then delete this one')
-    const patch = narrowPatch($.data as Record<string, unknown>)
-
-    if (changesNothing(patch)) return decorate(domain)
-
-    const updated = await db().domain.update({ where: { id: domain.id }, data: patch })
-    if (updated.isPrimary) await demoteSiblings(updated.appId, updated.id)
-    await toZone(updated.id, updated.version)
-    await toMonitor(updated.appId)
-    return decorate(updated)
+    return patchDomain()
   },
 
   async remove() {

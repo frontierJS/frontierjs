@@ -100,7 +100,7 @@ describe('a push releases the App', () => {
     expect(made).toHaveLength(1)
     expect(made[0].triggeredBy).toBe(userId)
     // The door and the payload's commit, as the Releases tab reads them back.
-    expect(made[0]).toMatchObject({ trigger: 'push', commitSha: sha, branch: 'main', author: 'Kim', commitMessage: 'Cache the manifest' })
+    expect(made[0]).toMatchObject({ trigger: 'push', commitSha: sha, branch: 'main', commitAuthor: 'Kim', commitMessage: 'Cache the manifest' })
   })
 
   test('the per-App token URL reaches the same apply, for a sender that signs nothing', async () => {

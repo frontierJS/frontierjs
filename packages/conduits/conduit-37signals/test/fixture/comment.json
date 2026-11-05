@@ -1,0 +1,75 @@
+{
+  "id": 1000497,
+  "status": "active",
+  "visible_to_clients": false,
+  "created_at": "2026-10-16T21:30:08.201Z",
+  "updated_at": "2026-10-16T21:30:08.241Z",
+  "title": "Title 37",
+  "inherits_status": true,
+  "type": "Comment",
+  "url": "https://3.basecampapi.com/999/buckets/1000161/comments/1000497.json",
+  "app_url": "https://app.basecamp.com/999/buckets/1000161/todos/1000434#__recording_1000497",
+  "bookmark_url": "https://3.basecampapi.com/999/my/bookmarks/BAhfixture--0000000000000000000000000000000000000000.json",
+  "boosts_count": 0,
+  "boosts_url": "https://3.basecampapi.com/999/buckets/1000161/recordings/1000497/boosts.json",
+  "parent": {
+    "id": 1000434,
+    "title": "Title 38",
+    "type": "Todo",
+    "url": "https://3.basecampapi.com/999/buckets/1000161/todos/1000434.json",
+    "app_url": "https://app.basecamp.com/999/buckets/1000161/todos/1000434"
+  },
+  "bucket": {
+    "id": 1000161,
+    "name": "Name 26",
+    "type": "Project"
+  },
+  "creator": {
+    "id": 1000189,
+    "attachable_sgid": "BAhfixture--0000000000000000000000000000000000000000",
+    "name": "Person 5",
+    "personable_type": "User",
+    "title": "",
+    "tagline": null,
+    "location": null,
+    "created_at": "2026-08-17T21:32:54.182Z",
+    "updated_at": "2026-08-17T21:35:48.580Z",
+    "email_address": "person-2@example.com",
+    "bio": null,
+    "admin": false,
+    "owner": false,
+    "client": false,
+    "employee": true,
+    "time_zone": "America/New_York",
+    "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png",
+    "company": {
+      "id": 1000077,
+      "name": "Name 27"
+    },
+    "can_ping": true,
+    "can_manage_projects": true,
+    "can_manage_people": false,
+    "can_access_timesheet": false,
+    "can_access_hill_charts": true
+  },
+  "content": "<div>Content 3.</div>",
+  "content_attachments": [
+    {
+      "id": 1000252,
+      "attachable_sgid": "BAhfixture--0000000000000000000000000000000000000000",
+      "sgid": "BAhfixture--0000000000000000000000000000000000000000",
+      "status_url": "https://3.basecampapi.com/999/attachments/BAhfixture--0000000000000000000000000000000000000000.json",
+      "caption": null,
+      "byte_size": 52045,
+      "content_type": "image/png",
+      "width": 1267,
+      "height": 608,
+      "key": "00000000-0000-0000-0000-000000000000",
+      "filename": "file-2.png",
+      "download_url": "https://3.basecampapi.com/999/fixture/download.png",
+      "previewable": true,
+      "preview_url": "https://preview.app.basecamp.com/999/fixture/preview.png",
+      "thumbnail_url": "https://preview.app.basecamp.com/999/fixture/thumbnail.png"
+    }
+  ]
+}

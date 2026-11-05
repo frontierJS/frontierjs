@@ -776,7 +776,7 @@ try {
 
   // The profile form. Read back through the API, never off the form, which
   // shows what was typed whether or not the write landed.
-  const nameBox = `document.querySelector('#settings-profile [name=displayName]')`
+  const nameBox = `document.querySelector('#settings-profile [name=nickname]')`
   await until(`!!${nameBox}`, v => v, 'the profile form never rendered')
   check('the form offers no address box — a new address is proven first, and that is auth\'s',
     !(await evaluate(`!!document.querySelector('#settings-profile [name=email]')`)))
@@ -785,7 +785,7 @@ try {
   await click('#profile-save')
   await until(`document.body.textContent`, t => t.includes('Profile saved'), 'the profile save never reported')
   const mine = (await apiGet('/users/me')).body
-  check('a profile save lands on the caller\'s own row', mine?.displayName === 'Sam Drive',
+  check('a profile save lands on the caller\'s own row', mine?.nickname === 'Sam Drive',
     JSON.stringify(mine)?.slice(0, 120))
   await goto('/settings/')
   await until(`${nameBox}?.value ?? ''`, v => v === 'Sam Drive', 'the name did not survive a reload')
@@ -2434,13 +2434,13 @@ try {
     runtime)
   // The grace was settable by API patch alone, with nowhere to read it back (FJS-3984).
   check('…and says the grace is the machine\'s default while none is set',
-    bpApp?.stopGrace == null && /Stop grace\s*the machine's default/.test(runtime), runtime)
+    bpApp?.stopGraceSeconds == null && /Stop grace\s*the machine's default/.test(runtime), runtime)
   check('…and the same of the health wait (FJS-4015)',
-    bpApp?.healthTimeout == null && /Health wait\s*the machine's default/.test(runtime), runtime)
-  const tooLong = await asOwner('PATCH', `/apps/${bpAppId}`, { healthTimeout: 900, version: bpApp?.version })
+    bpApp?.healthTimeoutSeconds == null && /Health wait\s*the machine's default/.test(runtime), runtime)
+  const tooLong = await asOwner('PATCH', `/apps/${bpAppId}`, { healthTimeoutSeconds: 900, version: bpApp?.version })
   check('a health wait past 600 s is refused', tooLong.status === 400 || tooLong.status === 422, JSON.stringify(tooLong).slice(0, 160))
-  const graced = await asOwner('PATCH', `/apps/${bpAppId}`, { stopGrace: 90, healthTimeout: 120, version: bpApp?.version })
-  check('an app takes a stop grace and a health wait', graced.status < 300 && graced.body?.stopGrace === 90 && graced.body?.healthTimeout === 120, JSON.stringify(graced).slice(0, 160))
+  const graced = await asOwner('PATCH', `/apps/${bpAppId}`, { stopGraceSeconds: 90, healthTimeoutSeconds: 120, version: bpApp?.version })
+  check('an app takes a stop grace and a health wait', graced.status < 300 && graced.body?.stopGraceSeconds === 90 && graced.body?.healthTimeoutSeconds === 120, JSON.stringify(graced).slice(0, 160))
   await goto(`/apps/${bpAppId}/?tab=config`)
   const gracedRuntime = await until(`document.getElementById('app-runtime')?.textContent ?? ''`,
     t => t.includes('Stop grace'), 'the Config tab never drew the runtime').catch(() => '')

@@ -1,5 +1,5 @@
 // src/services/jobs/jobs.service.ts
-// Jobs — one-shot commands, scheduled cron jobs, triggered workflows.
+// Jobs — one-shot commands and scheduled cron jobs.
 // Each run is recorded as a JobRun with exit code and output.
 //
 // Mounted at /jobs. Custom methods dispatch on X-Service-Method:

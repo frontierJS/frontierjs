@@ -124,15 +124,16 @@ function memory(initial: ProfileFile = { profiles: {} }): ProfileStore & { file:
   return m
 }
 
-// An app that reads a good key as the owner and anything else as nobody — which
-// is what junction does with a Bearer it cannot verify.
+// An app that reads a good key as the owner and answers anything else 401, as
+// an App with auth() does a Bearer it cannot verify (`FJS-D1924`). The SDK
+// carries the status on its error.
 function app(goodKey: string) {
   const seen: Array<Record<string, string>> = []
   const connect = async (_: URL, headers: Record<string, string>): Promise<Connection> => {
     seen.push(headers)
-    const signedIn = headers.authorization === `Bearer ${goodKey}`
+    if (headers.authorization !== `Bearer ${goodKey}`) throw Object.assign(new Error('Unauthorized'), { status: 401 })
     return {
-      listTools: async () => signedIn ? TOOLS : TOOLS.slice(0, 3),
+      listTools: async () => TOOLS,
       callTool:  async () => ({ text: JSON.stringify({ kind: 'list', object: 'sites', data: [], errors: [] }) }),
       close:     async () => {},
     }
@@ -180,11 +181,11 @@ describe('profiles', () => {
     expect(store.file.profiles.default.token).toBe('fjs_goodkey_0123')
   })
 
-  test('a key the app reads as nobody is refused, and nothing is saved', async () => {
+  test('a key the app refuses is refused, and nothing is saved', async () => {
     const store = memory()
     const h = base(store, app('the-real-one').connect)
     expect(await h.go(['login', '--api-key', 'fjs_typo', '--url', 'http://app.test/mcp'])).toBe(EXIT.refused)
-    expect(h.err.join()).toMatch(/read this key as nobody/)
+    expect(h.err.join()).toMatch(/the app refused this key/)
     expect(store.file.profiles).toEqual({})
   })
 

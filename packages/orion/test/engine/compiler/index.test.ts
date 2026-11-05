@@ -874,23 +874,25 @@ describe("Plan metadata", () => {
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.plan.hasBranching).toBe(true)
-      expect(result.plan.hasFanOut).toBe(false)
     }
   })
 
-  test("correctly flags hasFanOut", () => {
+  // FJS-3942: no stage iterates an edge, so a stored definition that says it is refused by name
+  test("refuses an edge carrying fanOut, naming the edge", () => {
     const flow: Flow = {
       ...baseFlow(),
       nodes: { "start": triggerNode(), "process": node("process") },
       edges: [edge("e1", "start", "process", {
         fanOut: { iterate: { type: "ref", path: "$.trigger.items" }, parallelism: 5 },
-      })],
+      } as Partial<Edge>)],
     }
     const result = compiler.compile(flow)
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.plan.hasFanOut).toBe(true)
-      expect(result.plan.hasBranching).toBe(false)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      const err = result.errors.find(e => e.code === "UNSUPPORTED_EDGE_FIELD")
+      expect(err?.edgeId).toBe("e1")
+      expect(err?.message).toContain("fanOut")
+      expect(err?.message).toContain("flow.each")
     }
   })
 })
@@ -1258,7 +1260,6 @@ describe("Integration — Lead Qualifier", () => {
 
       // Metadata
       expect(plan.hasBranching).toBe(true)
-      expect(plan.hasFanOut).toBe(false)
       expect(plan.nodeCount).toBe(5)
       expect(plan.stageCount).toBe(4)
     }

@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/conduit-zapier",
+  "version": "0.0.1",
+  "description": "Zapier over @frontierjs/conduit — a pasted hook URL (Webhooks by Zapier Catch Hook, a REST Hook target_url) posted to, the reverse unsubscribe, and the subscribe body read with its target_url refused off-host.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/zapier.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

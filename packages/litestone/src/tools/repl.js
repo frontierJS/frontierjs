@@ -245,16 +245,21 @@ export async function evalOnce({ code, binds, commands = {}, tenant = null, comm
 //
 // Wrapped in an async function so top-level await works and a bare expression
 // still answers its value. A single expression is parenthesized so `db.x.count()`
-// returns rather than being a statement; anything with a newline or a `;` or a
-// leading keyword is a body, where a `return` is the caller's to write.
+// returns rather than being a statement; a leading keyword, or anything that does
+// not parse as one expression, is a body, where a `return` is the caller's to
+// write. A `;` inside a block-bodied arrow does not make the line a body, so the
+// expression parse decides rather than a scan for the character.
 
 const BODY = /^(const|let|var|if|for|while|function|class|try|switch|do|return|import|throw)\b/
 
 function evaluate(/** @type {string} */ code, /** @type {any} */ binds) {
-  const body = code.includes('\n') || code.includes(';') || BODY.test(code)
-  const src  = body ? `return (async () => { ${code} })()`
-                    : `return (async () => (${code}))()`
-  return new Function(...Object.keys(binds), src)(...Object.values(binds))
+  const names = Object.keys(binds)
+  let run
+  if (!BODY.test(code)) {
+    try { run = new Function(...names, `return (async () => (\n${code}\n))()`) } catch {}
+  }
+  run ??= new Function(...names, `return (async () => { ${code} })()`)
+  return run(...Object.values(binds))
 }
 
 // A row is the thing being looked at, so it is printed whole. `JSON.stringify`

@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/conduit-anthropic",
+  "version": "0.0.1",
+  "description": "Anthropic Messages API over conduit: messages, token counting, a tool loop, and SSE streaming past the seam",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/anthropic.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

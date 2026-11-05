@@ -76,7 +76,7 @@ title: Provision a machine
 
     loadingCat = true
     try {
-      catalog = await servers.service.invoke('catalog', null, { accountId: id })
+      catalog = await servers.service.invoke('catalog', null, { providerSecretId: id })
       // Nothing is preselected. A region and a size are a place and a price,
       // and a default there is a choice made on somebody's behalf that they
       // then have to notice.
@@ -133,7 +133,7 @@ title: Provision a machine
     try {
       const created = await servers.service.invoke('provision', null, {
         name: draft.name, role: draft.role,
-        accountId, region: draft.region, size, image,
+        providerSecretId: accountId, region: draft.region, size, image,
         ...(backups && { backups: catalog.backups.policy }),
       })
       goto(`/servers/${created.id}/`)

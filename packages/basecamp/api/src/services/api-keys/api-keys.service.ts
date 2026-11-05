@@ -250,7 +250,7 @@ async function enrollPeer(input: Record<string, unknown>): Promise<{ id: string,
   const peer = await sys.$transaction(async (tx: any) => {
     const user = await tx.user.create({ data: {
       email: `${slugify(name) || 'peer'}-${crypto.randomUUID().slice(0, 8)}@${PEER_EMAIL_DOMAIN}`,
-      name, displayName: name, kind: 'peer', status: 'active', accountId: workspace?.accountId ?? null,
+      name, kind: 'peer', status: 'active', accountId: workspace?.accountId ?? null,
       // No password Credential, here or anywhere: a peer signs each request
       // with its own key and has no way to sign in.
       isEmailVerified: false, isSystemAdmin: false,
@@ -423,12 +423,12 @@ export default createService({
     $.dispatch = false
     const rows = await ($.db.asSystem() as any).workspaceMember.findMany({
       where:   { workspaceId: ws() },
-      include: { user: { select: { kind: true, name: true, displayName: true, email: true } } },
+      include: { user: { select: { kind: true, name: true, nickname: true, email: true } } },
       orderBy: { createdAt: 'asc' },
     })
     const data = rows
       .filter((m: any) => m.user?.kind === 'bot' && !outranksCaller(m.role))
-      .map((m: any) => ({ userId: m.userId, role: m.role, name: m.user.displayName ?? m.user.name ?? m.user.email }))
+      .map((m: any) => ({ userId: m.userId, role: m.role, name: m.user.nickname ?? m.user.name ?? m.user.email }))
     return { data }
   },
 

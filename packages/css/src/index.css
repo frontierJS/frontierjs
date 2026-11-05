@@ -82,6 +82,8 @@
 @import './themes/expedition.css' layer(themes);
 @import './themes/catppuccin.css' layer(themes);
 @import './themes/survey.css'   layer(themes);
+@import './themes/shadcn.css'   layer(themes);
+@import './themes/material.css' layer(themes);
 
 /* Foundation — the rest of it; tokens.css is imported above */
 @import './foundation/tones.css'   layer(tones);

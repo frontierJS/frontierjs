@@ -83,6 +83,21 @@ export function useStorage(/** @type {any} */ config) {
       return provider.get(ref.key)
     },
 
+    // The file bytes as a ReadableStream, for an object too large to hold whole
+    async stream(/** @type {any} */ value) {
+      const ref = parseRef(value)
+      if (!ref) throw new Error('useStorage.stream: invalid file reference')
+      return provider.stream(ref.key)
+    },
+
+    // The file's absolute path on the local provider, null on any other, for a
+    // tool that reads a file by name
+    path(/** @type {any} */ value) {
+      const ref = parseRef(value)
+      if (!ref) throw new Error('useStorage.path: invalid file reference')
+      return provider.path ? provider.path(ref.key) : null
+    },
+
     // Delete by reference (use carefully — prefer letting the plugin handle this)
     async delete(/** @type {any} */ value) {
       const ref = parseRef(value)

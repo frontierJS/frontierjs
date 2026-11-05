@@ -188,7 +188,7 @@ class DeploymentFactory extends Factory {
       commitMessage: ['Bump dependencies', 'Fix null check on login', 'Add health endpoint',
                       'Cache the manifest', 'Revert "Cache the manifest"'][seq % 5],
       branch:        'main',
-      author:        'dev@knight.works',
+      commitAuthor:  'dev@knight.works',
       toImage:       `zot.local/acme/app:${sha}`,
       durationMs:    rng ? rng.int(20_000, 240_000) : 60_000,
       startedAt:     new Date(Date.now() - seq * 3_600_000).toISOString(),
@@ -211,7 +211,6 @@ class JobFactory extends Factory {
       command:        ['/usr/local/bin/backup.sh', 'docker image prune -af',
                        'logrotate -f /etc/logrotate.conf', 'basecamp dns sync'][seq % 4],
       cronExpression: scheduled ? '0 3 * * *' : null,
-      trigger:        scheduled ? 'schedule' : 'manual',
       timeoutSeconds: 900,
     }
   }
@@ -285,7 +284,7 @@ class VolumeFactory extends Factory {
       // Container NAMES, not App ids — mapping a container back to an App is a
       // guess, and a wrong join puts a volume under the wrong app.
       containers: inUse ? [`${names[n % names.length]}-svc`] : [],
-      createdOnServer: new Date(Date.now() - (n % 90) * 86_400_000).toISOString(),
+      dockerCreatedAt: new Date(Date.now() - (n % 90) * 86_400_000).toISOString(),
       lastSeenAt:      new Date(Date.now() - 4 * 60_000).toISOString(),
     }
   }
@@ -337,7 +336,7 @@ export class BasecampSeeder extends Seeder {
 
       // ── People ────────────────────────────────────────────────────────
       // auth.createUser() writes User + a bcrypt Credential. The Basecamp
-      // columns it does not know about (accountId, status, displayName) are
+      // columns it does not know about (accountId, status) are
       // patched after — every one of them is nullable or defaulted precisely
       // so this two-step works.
       const people = [
@@ -357,7 +356,6 @@ export class BasecampSeeder extends Seeder {
           data: {
             accountId:     account.id,
             status:        'active',
-            displayName:   person.name,
             isEmailVerified: true,
             // The hub tier, on the first person only — the same rule /setup
             // follows. A seeded fleet where everyone can suspend everyone else
@@ -378,7 +376,7 @@ export class BasecampSeeder extends Seeder {
       // schema once already).
       const bot = await sys.user.create({
         data: {
-          email: 'ci-deploy@bots.invalid', name: 'CI deploy', displayName: 'CI deploy',
+          email: 'ci-deploy@bots.invalid', name: 'CI deploy',
           kind: 'bot', status: 'active', accountId: account.id, isEmailVerified: false,
         },
       })
@@ -700,7 +698,7 @@ export class BasecampSeeder extends Seeder {
                 const at  = new Date(Date.now() - 1_800_000)
                 const [laptop] = await new DeploymentFactory(sys).create(1, {
                   appId: app.id, workspaceId: ws.id, triggeredBy: owner.id,
-                  status: 'success', trigger: 'laptop', commitSha: sha, branch: 'main', author: 'dev@knight.works',
+                  status: 'success', trigger: 'laptop', commitSha: sha, branch: 'main', commitAuthor: 'dev@knight.works',
                   commitMessage: 'Try the new checkout flow', toImage: `fjs-${app.id}:${sha.slice(0, 12)}`,
                   builtImage: `sha256:${(sha + sha).slice(0, 64)}`, durationMs: 40_000,
                   startedAt: at.toISOString(), finishedAt: new Date(at.getTime() + 40_000).toISOString(),
@@ -935,7 +933,7 @@ export class BasecampSeeder extends Seeder {
         } })
         const client = await auth.createUser({ email: 'lee@example.com', name: 'Lee Carter', password: PASSWORD })
         await sys.user.update({ where: { id: client.id },
-          data: { status: 'active', displayName: 'Lee Carter', isEmailVerified: true } })
+          data: { status: 'active', isEmailVerified: true } })
         await sys.appEditor.create({ data: { appId: site.id, userId: client.id, role: 'edit' } })
         await sys.appEditor.create({ data: { appId: site.id, userId: users[1].id, role: 'publish' } })
       }
@@ -1125,7 +1123,7 @@ async function seedDependencies(sys, workspaceId, projectId) {
   ]
   for (const r of rows) {
     const dep = await sys.dependency.create({ data: {
-      workspaceId, name: r.name, latest: r.latest, deprecated: r.deprecated ?? null,
+      workspaceId, name: r.name, latest: r.latest, deprecation: r.deprecated ?? null,
       advisories: r.advisories ?? {}, checkedAt,
     } })
     await sys.dependencyUse.create({ data: {
@@ -1177,7 +1175,7 @@ async function seedRuns(db, job) {
       data: {
         jobId:      job.id,
         status:     failed ? 'failed' : 'success',
-        trigger:    job.trigger,
+        trigger:    job.kind === 'scheduled' ? 'schedule' : 'manual',
         startedAt:  new Date(Date.now() - (i + 1) * 86_400_000).toISOString(),
         finishedAt: new Date(Date.now() - (i + 1) * 86_400_000 + 12_000).toISOString(),
         durationMs: 12_000,

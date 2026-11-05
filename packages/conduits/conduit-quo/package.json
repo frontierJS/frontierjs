@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/conduit-quo",
+  "version": "0.0.1",
+  "description": "Quo (formerly OpenPhone) over @frontierjs/conduit — send texts on v1, read and manage webhooks on the dated API, verify both webhook generations.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/quo.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

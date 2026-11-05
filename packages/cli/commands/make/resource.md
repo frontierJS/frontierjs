@@ -27,12 +27,29 @@ flags:
 
 <script>
 import { mkdirSync, writeFileSync, existsSync } from 'fs'
-import { resolve } from 'path'
+import { resolve, basename } from 'path'
 
 // One owner for what a generated Resource IS — `core/resource-template.js`,
 // shared with `fli make:scaffold` (Invariant 4).
-const { resourceFile, servicePlural } =
+const { resourceFile, servicePlural, resourceService } =
   await import(resolve(global.fliRoot, 'core/resource-template.js'))
+
+// The Resource calls `service` by name and nothing else checks it is registered,
+// so a hand-named service file leaves the page on a 404 until the screen loads
+// (`FJS-3919`). The line names the file that answers, or the way to get one.
+const announceService = ({ $, log, echo, chalk }, service, model) => {
+  const { file, others } = resourceService(resolve($.paths.api, 'src/services'), service, model)
+  if (file) {
+    echo(chalk.dim(`  It calls the '${service}' service, served by api/src/services/${basename(file)}.`))
+  } else {
+    log.warn(`There is no service named '${service}' — the Resource would call a 404.`)
+    for (const o of others) {
+      log.warn(`${o.file} serves ${model} as '${o.name}' — rerun with --service ${o.name}`)
+    }
+    if (!others.length) log.warn(`Create it with: fli make:service ${model}`)
+  }
+  echo('')
+}
 </script>
 
 Creates the Resource for one model — a `.mesa` file whose data half is `<script module>`. It is the
@@ -78,8 +95,7 @@ echo('')
 echo(chalk.dim(`  Import it from a route through the @/ alias, which is the surface's src/:`))
 echo(chalk.cyan(`    import { ${service} } from '@/resources/${model}.mesa'`))
 echo('')
-echo(chalk.dim(`  It calls the '${service}' service, so api/src/services/${service}.service.ts must register it.`))
-echo('')
+announceService({ $, log, echo, chalk }, service, model)
 
 if (flag.open) { const e = process.env.EDITOR || 'vi'; $.exec({ command: `${e} "${filePath}"` }) }
 ```

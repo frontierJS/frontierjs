@@ -260,7 +260,7 @@ async function refreshOnce(app: App, db: any, opts: { workspaceId?: string }) {
     // standing answer and announce every advisory again when OSV came back.
     const advisories = r.advisoriesUnknown ? wanted[i].before : r.advisories
     await db.dependency.update({ where: { id: wanted[i].id }, data: {
-      latest: r.latest, deprecated: r.deprecated, advisories,
+      latest: r.latest, deprecation: r.deprecated, advisories,
       checkedAt: now, checkError: r.error,
     } })
 

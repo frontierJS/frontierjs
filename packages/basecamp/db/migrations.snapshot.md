@@ -6,11 +6,5 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 
 | File | Checksum |
 | --- | --- |
-| `migrations/main/20260801000000_initial_schema.sql` | `2fdf59f09a111134` |
+| `migrations/main/20260801000000_initial_schema.sql` | `8fc9e7337b8ea9cc` |
 | `migrations/audit/20260801000000_audit_trail.sql` | `d4c529a254e2ac9b` |
-| `migrations/main/20261104164308_app_swap.sql` | `9e317eb6c0ea37f6` |
-| `migrations/main/20261104165708_machine_backups.sql` | `03e551a46e2eb679` |
-| `migrations/main/20261104182613_machine_backups_set.sql` | `88ee572d5846e8be` |
-| `migrations/main/20261104191248_machine_backups_restored.sql` | `7356f07fc2bbd20b` |
-| `migrations/main/20261104212635_machine_backups_adopted.sql` | `150251336c47f52f` |
-| `migrations/main/20261104235350_health_timeout.sql` | `6de90ce94236b3c5` |

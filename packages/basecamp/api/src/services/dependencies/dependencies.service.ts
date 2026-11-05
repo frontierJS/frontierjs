@@ -125,14 +125,14 @@ export default createService({
       }))
       const installed = [...new Set(declared.map((u: any) => u.installed).filter(Boolean))] as string[]
       const verdict   = statusOf({
-        installed, latest: d.latest, deprecated: d.deprecated,
+        installed, latest: d.latest, deprecated: d.deprecation,
         advisories: d.advisories ?? {}, checkedAt: d.checkedAt,
       })
       // Would a reinstall reach latest, or does a manifest need an edit. A
       // peer range is a statement about consumers and is not counted.
       const ranges = declared.filter((u: any) => u.kind !== 'peer').map((u: any) => admits(u.declared, d.latest))
       return {
-        id: d.id, name: d.name, latest: d.latest, deprecated: d.deprecated,
+        id: d.id, name: d.name, latest: d.latest, deprecation: d.deprecation,
         checkedAt: d.checkedAt, checkError: d.checkError,
         installed, ...verdict,
         inRange:   ranges.length && ranges.every((r: boolean | null) => r === true),

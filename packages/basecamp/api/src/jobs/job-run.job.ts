@@ -1,6 +1,6 @@
 
 // src/jobs/job-run.job.ts
-// Executes one Job row — one-shot or triggered — through its server's outpost.
+// Executes one Job row — one-shot or scheduled — through its server's outpost.
 // Caravan handles scheduling, retry backoff and crash recovery; this file is
 // the execution logic for a single run.
 //

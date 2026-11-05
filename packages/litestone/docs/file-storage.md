@@ -165,6 +165,8 @@ storage.url(user.avatar)   // → 'https://cdn.example.com/User/avatar/<uuid>.pn
 await storage.sign(user.avatar, { expiresIn: 3600 })  // presigned URL; the local provider answers its public URL
 const bytes = await storage.download(user.avatar)      // → Buffer
 if (bytes.length !== 70) throw new Error('expected the uploaded bytes back')
+// await storage.stream(user.avatar)  → ReadableStream, any provider: an object too large to hold whole
+// storage.path(user.avatar)          → absolute file path under provider 'local', null otherwise (ffmpeg)
 await storage.delete(user.avatar)                      // manual cleanup
 ```
 
@@ -216,7 +218,7 @@ The `cacheKey` method enables per-field response caching — return `null` to di
 
 `fromStream(readable, { name, type, size })` stores a request body without holding it: the head (4096 bytes) is read first, the type is sniffed and `@accept` answers before anything is written, and the rest is piped to the provider. A refusal cancels the stream and stores nothing. `type` is a claim, as it is for a `File`; the bytes' head wins. `readable` is a web `ReadableStream` (a Bun request's `req.body`) or a Node `Readable`.
 
-`size` is what the sender says it will send. The local provider needs none. An S3-compatible provider sends one PUT with `Content-Length`, so it refuses a stream with no `size` by name, and over plain `http://` it refuses a stream outright, since a signed payload would buffer the file. A byte count that disagrees with a stated `size` is refused and the partial object deleted, as is any stream that fails part-way. An object past S3's 5 GB single-PUT ceiling, or of unknown length, is not stored remotely (`FJS-3905`).
+`size` is what the sender says it will send. The local provider needs none. An S3-compatible provider sends a stream of stated `size` up to S3's 5 GB single-PUT ceiling, over https, as one PUT with `Content-Length`. Any other stream — no `size`, a larger one, or plain `http://` — is a multipart upload holding one 8 MB part in memory at a time, aborted if anything fails; a stream that ends inside its first part is one ordinary PUT. Ten thousand parts is S3's limit, so an unsized stream tops out near 78 GB and a stated `size` raises the part size to fit. A byte count that disagrees with a stated `size` is refused and the object deleted, as is any stream that fails part-way.
 
 Every stored ref records `sha256`, the lowercase hex SHA-256 of its bytes, taken in the pass that writes them, whichever way they arrived. `@digest(column)` on a `File` field names a `String` column beside it that follows that hash:
 

@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/conduit-openai",
+  "version": "0.0.1",
+  "description": "The OpenAI chat-completions protocol over conduit: chat, embeddings, models, a tool loop, and SSE streaming past the seam — one target per implementation (OpenAI, Ollama, llama.cpp, Groq, vLLM)",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/openai.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

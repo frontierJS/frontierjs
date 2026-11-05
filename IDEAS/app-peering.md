@@ -6,9 +6,36 @@ dated: 2026-10-16
 
 # Idea — app peering: FJS apps that recognize each other's calls
 
-**Status: PROPOSED.** Dated 2026-10-16. Nothing in § Phases is built. Do not
-cite this file as behavior — see `VERIFYING.md`. Claims about the tree were
-grepped on the date above, not run.
+**Status: PROPOSED.** Dated 2026-10-16. Do not cite this file as behavior —
+see `VERIFYING.md`. Claims about the tree were grepped, not run; § Where it
+stands is the latest read.
+
+## Where it stands (read 2026-11-05)
+
+The boxes below lag the tree. Basecamp's receiving half of Q4 is built:
+
+- **Basecamp hears a peer.** `peerCredential` reads the key id from
+  `x-fjs-key`, refuses a key whose account is not `kind: 'peer'` or is
+  suspended, and passes the call on as that account, `userType: 'peer'`
+  (`packages/basecamp/api/src/core/hooks.ts:666`). The account is bound to
+  one workspace (`hooks.ts:99`) and graded by the gate under its key's scopes.
+- **The key row holds only the public half** (`ApiKey.publicKey`,
+  `FJS-D1604`), entered from "Add a peer" on
+  `packages/basecamp/web/src/routes/api-keys/index.mesa`.
+- **Workbench is the one dialer**: conduit's `ed25519` signer in
+  `packages/workbench/api/src/domain/peer/peer-call.ts`.
+
+**One Basecamp passing something to another** rides on this door and is not
+built. Basecamp B can enroll Basecamp A as a peer today by pasting A's public
+key; what is missing is A's side, a dialer for a remote Basecamp shaped like
+Workbench's `createPeer`, and Phase 4's consent handshake in place of the
+paste. What crosses decides the route:
+
+- **An event or a request** — a signed peer call, graded by B's gate.
+- **An app or its data** — never the bytes over the API. The call carries a
+  link: A mints a signed download of the archive (`IDEAS/app-archives.md`) and
+  B's Outpost restores from it (`POST /volume/restore` takes `url` + `sha256`).
+- **A secret** — unruled; it needs its own hearing.
 
 ---
 
@@ -168,9 +195,9 @@ the fleet.
 Done when: a new app enrolled in Basecamp reaches chat with no hand-copied
 secret, and a rotation started in Basecamp lands on both ends.
 
-- [ ] 2.1 Hearing on Q4 — what Basecamp hands out: a shared secret per pair, or a
+- [x] 2.1 Hearing on Q4 — what Basecamp hands out: a shared secret per pair, or a
   keypair per app with peers' public keys distributed, as Nebula's certificate
-  authority does.
+  authority does. **B, a keypair per app** (`FJS-D1604`).
 - [ ] 2.2 Enrollment mints the identity; `FJS-D557` is the precedent.
 - [ ] 2.3 Rotation, started from Basecamp.
 
@@ -192,6 +219,9 @@ each side approves.
 - [ ] 4.1 Waits for a real pair of apps with different owners. The shape is a
   consent handshake whose grant becomes a principal: OAuth client credentials,
   Tailscale's sharing between tailnets, Slack Connect.
+  - 2026-11-05: the receiving door exists (§ Where it stands). A Basecamp →
+    Basecamp pair is a candidate first pair once a reason to pass something
+    names what crosses.
 
 ---
 

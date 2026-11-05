@@ -264,6 +264,55 @@ describe('retryable survives the boundary and the wire', () => {
   })
 })
 
+// ─── a 401's challenge ────────────────────────────────────────────────────
+//
+// A connector reads `resource_metadata` off the header and nowhere else, so a
+// header missing or misquoted is a client that silently shows "not signed in".
+
+describe('a 401 carries WWW-Authenticate', () => {
+
+  async function answer(err: Error) {
+    const app = await createTestApp()
+    app.services.register(createService({ name: 'gated', async find() { throw err } }))
+    return request(app).get('/gated')
+  }
+
+  it('as a bare Bearer when no challenge is given', async () => {
+    const res = await answer(new Unauthorized())
+    expect(res.status).toBe(401)
+    expect(res.headers['www-authenticate']).toBe('Bearer')
+  })
+
+  it('with each param quoted, and the body carries none of it', async () => {
+    const res = await answer(new Unauthorized('Sign in', null, null, {
+      resource_metadata: 'https://shop.test/api/.well-known/oauth-protected-resource/api/mcp',
+      error:             'invalid_token',
+    }))
+    expect(res.headers['www-authenticate']).toBe(
+      'Bearer resource_metadata="https://shop.test/api/.well-known/oauth-protected-resource/api/mcp", error="invalid_token"'
+    )
+    expect(JSON.stringify(res.body)).not.toContain('resource_metadata')
+  })
+
+  it('escapes a quote and a backslash in a value', async () => {
+    const res = await answer(new Unauthorized(undefined, null, null, { realm: 'a "b" \\ c' }))
+    expect(res.headers['www-authenticate']).toBe('Bearer realm="a \\"b\\" \\\\ c"')
+  })
+
+  it('refuses at the throw a value with a line break, or a name that is no token', () => {
+    expect(() => new Unauthorized(undefined, null, null, { realm: 'a\r\nSet-Cookie: x=1' })).toThrow(/cannot be written in a header/)
+    expect(() => new Unauthorized(undefined, null, null, { 'two words': 'x' })).toThrow(/not an auth-param name/)
+  })
+
+  // The control: a mapper that stamped the header on every error passes every
+  // row above.
+  it('is not written on a 403', async () => {
+    const res = await answer(new Forbidden())
+    expect(res.status).toBe(403)
+    expect(res.headers['www-authenticate']).toBeUndefined()
+  })
+})
+
 // ─── a declared payload ───────────────────────────────────────────────────────
 //
 // An error class that sets `data` is declaring something for the client, which

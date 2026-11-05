@@ -94,7 +94,7 @@ too demanding.
 | Toasts | ~15 lines — the exit is a transition on `hidden`, so the JS sets the attribute and reclaims the node afterwards |
 | Density | **~4 lines.** One `--density` on the Pane; the table, its cells, the bar above it and every badge in that bar follow, because it inherits |
 | Routing + `aria-current` | ~20 lines |
-| Theme switching | 1 line |
+| Theme switching | 1 line, plus ~12 to build the picker from `themes.js` |
 | Form validation | **0 lines.** `.field:user-invalid` is the whole implementation |
 
 That last row is the strongest result in the demo. The form is `novalidate`,

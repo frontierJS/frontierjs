@@ -397,23 +397,19 @@ async function local(words: string[], g: Globals, name: string, file: ProfileFil
       if (!key) { opts.err('login: the key is empty'); return EXIT.usage }
       const tenant = g.workspace ?? file.profiles[name]?.tenant
 
-      // A Bearer the app cannot verify is read as NOBODY rather than refused, so
-      // a mistyped key would sign in and answer a stranger's list forever. The
-      // honest check is the comparison: with the key, and with nothing.
-      let withKey: ToolListing[], without: ToolListing[]
+      // An App with accounts answers a key it cannot verify 401 (`FJS-D1924`),
+      // so the refusal is the app's own and needs no second list to compare.
+      let withKey: ToolListing[]
       try {
-        const base = withTenant(opts, tenant, {})
-        withKey = await listOnce(opts, url, { ...base, authorization: `Bearer ${key}` })
-        without = await listOnce(opts, url, base)
+        withKey = await listOnce(opts, url, { ...withTenant(opts, tenant, {}), authorization: `Bearer ${key}` })
       } catch (e) {
         if (e instanceof ArgvError) { opts.err(e.message); return EXIT.usage }
+        if ((e as { status?: unknown }).status === 401) {
+          opts.err('the app refused this key — it is mistyped, revoked or expired. Nothing was saved.')
+          return EXIT.refused
+        }
         opts.err(`could not reach ${url}: ${(e as Error).message}`)
         return EXIT.unreachable
-      }
-      const names = (ts: ToolListing[]) => ts.map(t => t.name).sort().join()
-      if (names(withKey) === names(without)) {
-        opts.err('the app read this key as nobody — it is mistyped, revoked or expired. Nothing was saved.')
-        return EXIT.refused
       }
 
       save({ current: file.current ?? name, profiles: { ...file.profiles, [name]: { url, token: key, ...(tenant ? { tenant } : {}) } } })

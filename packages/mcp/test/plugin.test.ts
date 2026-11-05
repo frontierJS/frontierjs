@@ -896,3 +896,60 @@ describe('searchService is not reported as graded by nothing', () => {
     expect(p.tools.map(t => t.name)).toContain('search_find')
   })
 })
+
+// ─── an App with accounts answers a stranger 401 ──────────────────────────────
+
+// A connector starts a sign-in only on a 401 carrying `resource_metadata`, so a
+// header missing or misquoted is a client that silently shows "not signed in"
+// (`FJS-D1924`, `FJS-D1936`). The plugin below stands in for `@frontierjs/auth`
+// by name, which is all `mcp` reads of it; `example`'s `verify:mcp` runs the
+// real one.
+describe('an App that installs auth() answers /mcp 401 to a caller it cannot name', () => {
+  let own: App & { start(): Promise<void>; stop(): Promise<void>; http: { port: number } }
+  let url = ''
+
+  beforeAll(async () => {
+    const db = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: '0'.repeat(64) }) as Record<string, never>
+    own = createApp({
+      db, auth: createStubAuth({ users: [{ id: 'staff', isAdmin: true }] }),
+      config:   { port: 0, apiPrefix: '/api', publicUrl: 'https://shop.test' },
+      logLevel: 'silent',
+    }) as never
+    own.services.register(createService({ name: 'orders', model: 'Order', methods: ['find'] }))
+    own.configure({ name: '@frontierjs/auth' } as never)
+    own.configure(mcp({ name: 'shop' }))
+    await own.start()
+    url = `http://localhost:${own.http.port}/api/mcp`
+  })
+  afterAll(async () => { await own?.stop?.() })
+
+  const post = (authorization?: string) => fetch(url, {
+    method:  'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream',
+               ...(authorization ? { authorization } : {}) },
+    body:    JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+  })
+
+  test('no Bearer is a 401 naming the metadata on the stated origin, under the prefix', async () => {
+    const res = await post()
+    expect(res.status).toBe(401)
+    expect(res.headers.get('www-authenticate')).toBe(
+      'Bearer resource_metadata="https://shop.test/api/.well-known/oauth-protected-resource/mcp"'
+    )
+  })
+
+  test('a Bearer that does not verify is the same 401, marked invalid_token', async () => {
+    const res = await post('Bearer test-token-nobody')
+    expect(res.status).toBe(401)
+    expect(res.headers.get('www-authenticate')).toBe(
+      'Bearer resource_metadata="https://shop.test/api/.well-known/oauth-protected-resource/mcp", error="invalid_token"'
+    )
+  })
+
+  // The control: a route that refused everyone passes both rows above.
+  test('a signed-in caller is answered its tools', async () => {
+    const res = await post('Bearer test-token-staff')
+    expect(res.status).toBe(200)
+    expect(await res.text()).toContain('orders_find')
+  })
+})

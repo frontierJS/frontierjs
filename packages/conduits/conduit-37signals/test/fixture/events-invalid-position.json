@@ -1,0 +1,4 @@
+{
+  "error": "Unrecognized position. Resume with since=<id> or since=now.",
+  "reason": "invalid_position"
+}

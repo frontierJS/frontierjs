@@ -313,7 +313,7 @@ export default createService({
         // Docker's own creation time, and the only one that answers "how long
         // has this been lying around" — `discoveredAt` is when Basecamp first
         // saw it, which for an old disk on a new install is today.
-        createdOnServer: reported.created_at ?? null,
+        dockerCreatedAt:  reported.created_at ?? null,
         lastSeenAt:      now,
       }
       if (found) {

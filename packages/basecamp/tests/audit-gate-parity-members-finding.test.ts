@@ -14,7 +14,7 @@ beforeAll(async () => {
   fx = await build(); d = new Driver(fx)
   const sys = fx.env.system as any
   for (const role of ['developer', 'owner']) {
-    const u = await sys.user.create({ data: { email: `bot-${role}-${Date.now()}@bots.invalid`, displayName: `Bot ${role}`, kind: 'bot', status: 'active' } })
+    const u = await sys.user.create({ data: { email: `bot-${role}-${Date.now()}@bots.invalid`, name: `Bot ${role}`, kind: 'bot', status: 'active' } })
     await sys.workspaceMember.create({ data: { workspaceId: fx.ws.id, userId: u.id, role, capabilities: grantsFor(role), acceptedAt: new Date().toISOString() } })
     bots[role] = u.id
   }
@@ -34,7 +34,7 @@ test('a viewer reading the roster is shown a colleague\'s name, address and avat
   const rows: any[] = (await r.json() as any).data
   const others = rows.filter(m => m.userId !== fx.ids.viewer)
   expect(others.length).toBeGreaterThan(0)
-  const allowed = ['id', 'name', 'displayName', 'email', 'avatarUrl']
+  const allowed = ['id', 'name', 'nickname', 'email', 'avatarUrl']
   expect(others.flatMap(m => Object.keys(m.user ?? {}).filter(k => !allowed.includes(k)))).toEqual([])
   expect(others.every(m => typeof m.user?.email === 'string')).toBe(true)
 })

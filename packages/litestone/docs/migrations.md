@@ -162,7 +162,9 @@ litestone migrate baseline         # record it as applied — your database alre
 
 `baseline` refuses when the database does not actually hold what those files
 build, because one wrong baseline is a database that reports a complete history
-and is missing a column. The other way out is to reset the development database
+and is missing a column. When a later file has not been run anywhere, name the last file the database
+already holds — `litestone migrate baseline 20261103092702_phase_1a.sql` records
+through that file and leaves the rest for `migrate apply`. The other way out is to reset the development database
 and let `migrate dev` build it, which is what Prisma does; a development
 database is disposable, and this is the option that keeps the data.
 

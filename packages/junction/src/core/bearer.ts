@@ -224,6 +224,14 @@ export interface RedeemOptions {
   path?:     string
   sameSite?: 'strict' | 'lax' | 'none'
   secure?:   boolean
+  /**
+   * A second factor held in the one lookup: a filter over the grant's other
+   * columns, merged beside the token's digest, which it cannot replace. The
+   * body arrives with its string fields only, so `{ passwordHash: body.password
+   * ?? null }` cannot be handed an operator object. A grant the filter misses
+   * answers the dead link's one 401 and is not rotated (`FJS-D696`).
+   */
+  where?: (body: Record<string, string>) => Record<string, unknown>
 }
 
 /** The slice of a raw route's context the redeem reads and answers through. */
@@ -473,7 +481,10 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
       // context carries the same headers a call's does.
       const key   = keyFor(ctx as unknown as ServiceContext)
       const clock = (db as { $now?: () => Date } | undefined)?.$now ?? (() => new Date())
-      const row   = await table.findFirst({ where: { [opts.column]: await fingerprint(token, { key, purpose: linkPurpose }) } }) as Record<string, unknown> | null
+      const factor = ro.where?.(Object.fromEntries(
+        Object.entries(ctx.body as Record<string, unknown>).filter(([, v]) => typeof v === 'string'),
+      ) as Record<string, string>) ?? {}
+      const row   = await table.findFirst({ where: { ...factor, [opts.column]: await fingerprint(token, { key, purpose: linkPurpose }) } }) as Record<string, unknown> | null
       // One sentence for forged, expired, revoked and already redeemed, the
       // resolver's own (`FJS-D696`).
       if (!row || !isLive(row, clock)) return ctx.json({ message: 'This link does not work. It may have expired or been withdrawn.' }, 401)

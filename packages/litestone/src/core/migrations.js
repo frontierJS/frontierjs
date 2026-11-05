@@ -306,20 +306,38 @@ export function driftAgainstLive(rawDb, parseResult, dir = './migrations', { plu
 // complete history and is missing a column, which is the exact failure this
 // ruling exists to make impossible.
 
-export function baseline(rawDb, parseResult, dir = './migrations', { pluralize = false, dbName = 'main' } = {}) {
+export function baseline(rawDb, parseResult, dir = './migrations', { pluralize = false, dbName = 'main', through = null } = {}) {
   const shadow = buildShadow(dir)
   if (!shadow.ok) return { ok: false, blocked: true, message: shadowRefusal(shadow) }
   if (!shadow.files.length) return { ok: false, message: 'there are no migration files to baseline' }
 
   const applied = new Set(appliedMigrations(rawDb).map(m => m.name))
-  const pending = shadow.files.filter(f => !applied.has(f))
+  let   pending = shadow.files.filter(f => !applied.has(f))
+
+  // `through` states how far the database is ahead: the files up to and
+  // including it, not the ones written after (`FJS-4000`). Without it, a pushed
+  // file followed by one nothing has run can be neither applied (the pushed
+  // file replays over its own columns) nor baselined (the unrun file makes the
+  // whole claim false).
+  if (through) {
+    const named = shadow.files.filter(f => f === through || f.startsWith(through))
+    if (named.length !== 1) return {
+      ok: false,
+      message: named.length
+        ? `"${through}" names ${named.length} migration files (${named.join(', ')}) — give the whole file name`
+        : `there is no migration file "${through}" in ${dir}`,
+    }
+    pending = pending.filter(f => f <= named[0])
+  }
   if (!pending.length) return { ok: true, recorded: [], message: 'every migration is already recorded as applied' }
 
-  // The claim being recorded, checked before it is recorded.
-  const drift = driftAgainstLive(rawDb, parseResult, dir, { pluralize, dbName })
-  if (drift.unknown) return { ok: false, blocked: true, message: drift.message }
-  if (!drift.ok) return {
-    ok: false, blocked: true, diff: drift.diff, summary: drift.summary,
+  // The claim being recorded, checked before it is recorded: the files already
+  // recorded plus the ones about to be, against the database.
+  const claim = buildShadow(dir, new Set([...applied, ...pending]))
+  if (!claim.ok) return { ok: false, blocked: true, message: shadowRefusal(claim) }
+  const diff = diffSchemas(claim.schema, introspect(rawDb), parseResult, dbName, { pluralize })
+  if (diff.hasChanges) return {
+    ok: false, blocked: true, diff, summary: summarizeDiff(diff),
     message: 'this database does not hold what those migrations build, so recording them as applied would record a lie',
   }
 
@@ -891,19 +909,24 @@ const AUTO_META_TABLE  = '_litestone_meta'
 const AUTO_HASH_KEY    = 'autoMigrate.ddlHash'
 const AUTO_RESIDUE_KEY = 'autoMigrate.residue'
 
-function readAutoHash(rawDb) {
+// Keyed by database name, because under `strategy database` every sqlite
+// database of a tenant is one file: a shared key let each name read the
+// other's hash and run the full diff on every boot.
+const autoKey = (key, dbName) => dbName === 'main' ? key : `${key}:${dbName}`
+
+function readAutoHash(rawDb, dbName) {
   try {
-    return rawDb.query(`SELECT value FROM "${AUTO_META_TABLE}" WHERE key = ?`).get(AUTO_HASH_KEY)?.value ?? null
+    return rawDb.query(`SELECT value FROM "${AUTO_META_TABLE}" WHERE key = ?`).get(autoKey(AUTO_HASH_KEY, dbName))?.value ?? null
   } catch { return null }   // meta table doesn't exist yet
 }
 
-function writeAutoHash(rawDb, hash) {
+function writeAutoHash(rawDb, dbName, hash) {
   try {
     rawDb.run(`CREATE TABLE IF NOT EXISTS "${AUTO_META_TABLE}" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
     rawDb.run(
       `INSERT INTO "${AUTO_META_TABLE}" (key, value) VALUES (?, ?)
        ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-      AUTO_HASH_KEY, hash
+      autoKey(AUTO_HASH_KEY, dbName), hash
     )
   } catch { /* advisory — a read-only DB just skips the fast path next time */ }
 }
@@ -914,24 +937,49 @@ function writeAutoHash(rawDb, hash) {
 // double migration. Recorded, the fast path can re-announce for the price of
 // one SELECT — which is what a difference nothing can migrate needs: saying it
 // once and going quiet is how it stops being known.
-function readAutoResidue(rawDb) {
+function readAutoResidue(rawDb, dbName) {
   try {
-    const v = rawDb.query(`SELECT value FROM "${AUTO_META_TABLE}" WHERE key = ?`).get(AUTO_RESIDUE_KEY)?.value
+    const v = rawDb.query(`SELECT value FROM "${AUTO_META_TABLE}" WHERE key = ?`).get(autoKey(AUTO_RESIDUE_KEY, dbName))?.value
     const parsed = v ? JSON.parse(v) : null
     return Array.isArray(parsed) && parsed.length ? parsed : null
   } catch { return null }
 }
 
-function writeAutoResidue(rawDb, residue) {
+function writeAutoResidue(rawDb, dbName, residue) {
+  const key = autoKey(AUTO_RESIDUE_KEY, dbName)
   try {
     rawDb.run(`CREATE TABLE IF NOT EXISTS "${AUTO_META_TABLE}" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
-    if (!residue?.length) { rawDb.run(`DELETE FROM "${AUTO_META_TABLE}" WHERE key = ?`, AUTO_RESIDUE_KEY); return }
+    if (!residue?.length) { rawDb.run(`DELETE FROM "${AUTO_META_TABLE}" WHERE key = ?`, key); return }
     rawDb.run(
       `INSERT INTO "${AUTO_META_TABLE}" (key, value) VALUES (?, ?)
        ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-      AUTO_RESIDUE_KEY, JSON.stringify(residue)
+      key, JSON.stringify(residue)
     )
   } catch { /* advisory */ }
+}
+
+// Under `strategy database` every sqlite database of a tenant is one file and
+// one handle, so each name's live schema holds its siblings' tables, and a
+// diff against its own slice alone planned to drop every one of them
+// (`FJS-4034`). What a sibling's pristine declares and this name's does not is
+// taken out of the live side before the diff sees it.
+function withoutSiblings(live, own, siblings) {
+  const theirs = new Set(), views = new Set()
+  let search = false
+  for (const p of siblings) {
+    for (const k of Object.keys(p)) if (!k.startsWith('__') && !(k in own)) theirs.add(k)
+    for (const v of Object.keys(p.__views ?? {})) if (!own.__views?.[v]) views.add(v)
+    for (const [n, f] of Object.entries(p.__fts ?? {})) if (!own.__fts?.[n]) theirs.add(f.table)
+    if (p.__search && !own.__search) search = true
+  }
+  const keep = (o, test) => Object.fromEntries(Object.entries(o ?? {}).filter(test))
+  const out  = keep(live, ([k]) => !theirs.has(k))
+  out.__views    = keep(live.__views,    ([n]) => !views.has(n))
+  out.__triggers = keep(live.__triggers, ([, t]) => !theirs.has(t.table))
+  out.__fts      = keep(live.__fts,      ([, f]) => !theirs.has(f.table))
+  out.__search   = search ? null : live.__search
+  out.__sql      = keep(live.__sql,      ([k, s]) => !theirs.has(s.table) && !(k.startsWith('view:') && views.has(k.slice(5))))
+  return out
 }
 
 // One owner of the sentence, because the fast path and the full diff both say
@@ -1057,6 +1105,12 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
 
   const results = {}
 
+  const liveOf = (dbName, rawDb, own) => {
+    const siblings = Object.entries(rawDbs).filter(([n, r]) => r === rawDb && n !== dbName)
+    const live = introspect(rawDb)
+    return siblings.length ? withoutSiblings(live, own, siblings.map(([n]) => pristineOf(parseResult, n))) : live
+  }
+
   for (const [dbName, rawDb] of Object.entries(rawDbs)) {
     // Skip non-sqlite databases (jsonl) and disabled databases (access: false)
     if (!rawDb) {
@@ -1070,7 +1124,7 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
     // startup" actually free. Pass { force: true } to run the full diff anyway
     // (e.g. after out-of-band DDL changes to the live DB).
     const ddlHash = checksum(autoDdl(parseResult.schema, dbName, pluralize) + `|pluralize=${pluralize}`)
-    if (!force && readAutoHash(rawDb) === ddlHash) {
+    if (!force && readAutoHash(rawDb, dbName) === ddlHash) {
       // Re-graded, not replayed. A residue recorded by an older reading stays
       // recorded while the schema hash holds still, so a comparison that learned
       // better (`FJS-1092`: column POSITION) would go on announcing the old
@@ -1081,7 +1135,7 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       // tables without changing this hash, so the one that fixed a residue went
       // on hearing it announced on every boot — measured on an app whose
       // AUTOINCREMENT rebuild had landed. One SELECT per held object.
-      const stored = acceptResidue ? null : readAutoResidue(rawDb)
+      const stored = acceptResidue ? null : readAutoResidue(rawDb, dbName)
       const held   = (stored ?? []).filter(r => {
         const now = r.type === 'table' || r.type === 'index' || r.type === 'trigger'
           ? (rawDb.query(`SELECT sql FROM sqlite_master WHERE type = ? AND name = ?`).get(r.type, r.name)?.sql ?? null)
@@ -1090,14 +1144,14 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
         const same = (live) => r.pristine && live && norm(r.pristine) === norm(live)
         return !(same(r.live) || same(now))
       })
-      if (acceptResidue || (stored && held.length !== stored.length)) writeAutoResidue(rawDb, held)
+      if (acceptResidue || (stored && held.length !== stored.length)) writeAutoResidue(rawDb, dbName, held)
       if (held.length) announceResidue(dbName, held)
       results[dbName] = held.length ? { state: 'in-sync', applied: 0, residue: held } : { state: 'in-sync', applied: 0 }
       continue
     }
 
-    const liveSchema     = introspect(rawDb)
     const pristineSchema = pristineOf(parseResult, dbName)
+    const liveSchema     = liveOf(dbName, rawDb, pristineSchema)
     const diffResult     = diffSchemas(pristineSchema, liveSchema, parseResult, dbName, { pluralize })
 
     // Join tables (and @edge/@scoped side tables) are invisible to
@@ -1129,9 +1183,9 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
     } catch { /* advisory — migration files remain the source of truth */ }
 
     if (!diffResult.hasChanges) {
-      writeAutoHash(rawDb, ddlHash)
+      writeAutoHash(rawDb, dbName, ddlHash)
       const residue = acceptResidue ? [] : diffResult.residue
-      writeAutoResidue(rawDb, residue)
+      writeAutoResidue(rawDb, dbName, residue)
       if (residue.length) {
         announceResidue(dbName, residue)
         results[dbName] = { state: 'in-sync', applied: 0, residue }
@@ -1278,8 +1332,8 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       // takes the lock in that window applies them again. Both halves have to
       // be in the transaction or the guard is guessing.
       ran = runInTransaction(rawDb, stmts,
-        () => writeAutoHash(rawDb, ddlHash),
-        () => readAutoHash(rawDb) !== ddlHash)
+        () => writeAutoHash(rawDb, dbName, ddlHash),
+        () => readAutoHash(rawDb, dbName) !== ddlHash)
     } catch (err) {
       const reason = `SQLite refused the rebuild: ${err?.message ?? err}`
       // Two causes and the operator's next move is different for each, so the
@@ -1318,9 +1372,9 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
     // costs one more introspection on the boot that migrated, which is the
     // boot that was never the cheap one.
     try {
-      const after = diffSchemas(pristineSchema, introspect(rawDb), parseResult, dbName, { pluralize })
+      const after = diffSchemas(pristineSchema, liveOf(dbName, rawDb, pristineSchema), parseResult, dbName, { pluralize })
       const residue = acceptResidue ? [] : after.residue
-      writeAutoResidue(rawDb, residue)
+      writeAutoResidue(rawDb, dbName, residue)
       if (residue.length) { announceResidue(dbName, residue); results[dbName].residue = residue }
     } catch { /* advisory — the migration applied, and this only names leftovers */ }
 

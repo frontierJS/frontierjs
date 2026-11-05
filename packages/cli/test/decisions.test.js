@@ -331,6 +331,27 @@ describe('the pick', () => {
     } finally { cleanup() }
   })
 
+  test('a question whose lead names an FJS-D id is ruled by that id, the name fli decisions prints (FJS-3835)', () => {
+    const paper = [
+      '---', 'id: views', 'status: proposed', '---', '', '## Open questions', '',
+      '- **FJS-D1054 — Does the write re-scope?** Prose.',
+      '  - **A** — yes', '  - **B** — no', '  - **Recommend A** — the guard',
+      '- **FJS-D1055 — Is it cached?** Prose.',
+      '  - **A** — yes', '  - **B** — no', '  - **Recommend A** — cheap',
+      '',
+    ].join('\n')
+    const { root, cleanup } = fixture({ paper })
+    try {
+      expect(decide({ root, id: 'FJS-D9999', pick: 'A', section: 'Naming & vocabulary', today: TODAY }).reason).toBe('no question has the id FJS-D9999')
+      const out = decide({ root, id: 'FJS-D1054', pick: 'A', section: 'Naming & vocabulary', today: TODAY })
+      expect(out.ok).toBe(true)
+      const text = readFileSync(join(root, 'IDEAS', 'views.md'), 'utf8')
+      expect(text).toContain('~~**FJS-D1054 — Does the write re-scope?**~~')
+      expect(text).toContain('- **FJS-D1055 — Is it cached?**')
+      expect(decide({ root, id: 'fjs-d1054', pick: 'A', section: 'Naming & vocabulary', today: TODAY }).reason).toBe('fjs-d1054 is already ruled')
+    } finally { cleanup() }
+  })
+
   test('the next id is past every one issued anywhere, a paper included', () => {
     const { root, cleanup } = fixture()
     try {

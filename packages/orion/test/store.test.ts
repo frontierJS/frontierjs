@@ -58,7 +58,6 @@ function linearPlan(types: string[]): ExecutionPlan {
     nodeCount:    types.length,
     stageCount:   types.length,
     hasBranching: false,
-    hasFanOut:    false,
   }
 }
 

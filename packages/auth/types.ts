@@ -597,17 +597,6 @@ export interface AuthPluginOptions {
 
 export interface OAuthRouteOptions {
   /**
-   * This app's public origin — `https://shop.test`, no trailing slash.
-   *
-   * Stated rather than derived, and there is no way around that: behind a proxy
-   * the server sees neither its own hostname nor its scheme, and a provider
-   * matches the redirect URI as an EXACT string — RFC 9700 removed pattern
-   * matching from the acceptable set. A derived value that is wrong fails 100%
-   * of the time and is visible only at the provider, never in these logs.
-   */
-  publicUrl: string
-
-  /**
    * Where a FAILED callback sends the browser. Default `/`.
    *
    * The callback is a browser navigation, not an XHR — every other route in

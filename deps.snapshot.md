@@ -10,14 +10,14 @@ left out. The latest version and any advisory are NOT here: they change with
 no commit, so they live in Basecamp, which `fli ws:deps --push` feeds.
 
 ```
-52 package(s) · 22 runtime · 30 dev only · 113 declaration(s) · 31 member(s) · 0 finding(s)
+54 package(s) · 23 runtime · 31 dev only · 143 declaration(s) · 59 member(s) · 0 finding(s)
 ```
 
 ## Findings
 
 None — one installed copy and one range per package, and every declaration installed.
 
-## Runtime (22)
+## Runtime (23)
 
 Installed by anyone who installs the declaring package — a dependency, a
 required peer or an optionalDependency. A package also declared as dev or as
@@ -37,6 +37,7 @@ others.
 | `acorn` | `8.18.0` | @frontierjs/mesa `^8.0.0`<br>@frontierjs/site-kit (dev) `^8.0.0`<br>@frontierjs/ui (dev) `^8.0.0` |
 | `css-tree` | `2.3.1` | @frontierjs/email-kit (dev) `^2.0.0`<br>@frontierjs/email-kit (peer) `^2.0.0`<br>@frontierjs/mesa (dev) `^2.0.0`<br>@frontierjs/mesa (optional peer) `^2.0.0` |
 | `happy-dom` | `20.11.6` | @frontierjs/email-kit (dev) `^20.11.6`<br>@frontierjs/email-kit (peer) `^20.11.6`<br>@frontierjs/jetty (dev) `^20.11.6`<br>@frontierjs/mesa (dev) `^20.11.6`<br>@frontierjs/mesa (optional peer) `^20.11.6`<br>@frontierjs/sierra (dev) `^20.11.6`<br>@frontierjs/site-kit `^20.11.6` |
+| `postal-mime` | `4.0.5` | @frontierjs/conduit-mailgun `4.0.5` |
 | `rehype-slug` | `6.0.0` | @frontierjs/mesa (dev) `^6.0.0`<br>@frontierjs/mesa (optional peer) `^6.0.0`<br>@frontierjs/site-kit `^6.0.0` |
 | `rehype-stringify` | `10.0.1` | @frontierjs/mesa (dev) `^10.0.1`<br>@frontierjs/mesa (optional peer) `^10.0.1`<br>@frontierjs/site-kit `^10.0.1` |
 | `remark-gfm` | `4.0.1` | @frontierjs/mesa (dev) `^4.0.1`<br>@frontierjs/mesa (optional peer) `^4.0.1`<br>@frontierjs/site-kit `^4.0.1` |
@@ -49,7 +50,7 @@ others.
 | `vscode-languageserver` | `9.0.1` | vscode-frontierjs `^9.0.1` |
 | `vscode-languageserver-textdocument` | `1.0.12` | vscode-frontierjs `^1.0.11` |
 
-## Dev only (30)
+## Dev only (31)
 
 Every declaration is a devDependency or an optional peer: building, testing
 and tooling, or something a consumer brings only if it wants the feature.
@@ -76,10 +77,11 @@ Never installed for a consumer.
 | `@types/node` | `18.19.130` | vscode-frontierjs (dev) `^18.19.0` |
 | `@types/vscode` | `1.125.0` | vscode-frontierjs (dev) `^1.85.0` |
 | `@vscode/vsce` | `2.32.0` | vscode-frontierjs (dev) `^2.24.0` |
-| `bun-types` | `1.3.14` | @frontierjs/auth (dev) `^1.3.14`<br>@frontierjs/basecamp (dev) `^1.3.14`<br>@frontierjs/caravan (dev) `^1.3.14`<br>@frontierjs/conduit (dev) `^1.3.14`<br>@frontierjs/haven (dev) `^1.3.14`<br>@frontierjs/mcp (dev) `^1.3.14`<br>@frontierjs/notifications (dev) `^1.3.14`<br>@frontierjs/orion (dev) `^1.3.14`<br>@frontierjs/testing (dev) `^1.3.14`<br>@frontierjs/workbench (dev) `^1.3.14`<br>frontierjs (dev) `^1.3.14` |
+| `bun-types` | `1.3.14` | @frontierjs/auth (dev) `^1.3.14`<br>@frontierjs/basecamp (dev) `^1.3.14`<br>@frontierjs/caravan (dev) `^1.3.14`<br>@frontierjs/conduit (dev) `^1.3.14`<br>@frontierjs/conduit-37signals (dev) `^1.3.14`<br>@frontierjs/conduit-anthropic (dev) `^1.3.14`<br>@frontierjs/conduit-apns (dev) `^1.3.14`<br>@frontierjs/conduit-cloudflare (dev) `^1.3.14`<br>@frontierjs/conduit-dataforseo (dev) `^1.3.14`<br>@frontierjs/conduit-digitalocean (dev) `^1.3.14`<br>@frontierjs/conduit-easypost (dev) `^1.3.14`<br>@frontierjs/conduit-gmail (dev) `^1.3.14`<br>@frontierjs/conduit-google (dev) `^1.3.14`<br>@frontierjs/conduit-hetzner (dev) `^1.3.14`<br>@frontierjs/conduit-mailgun (dev) `^1.3.14`<br>@frontierjs/conduit-mattermost (dev) `^1.3.14`<br>@frontierjs/conduit-microsoft (dev) `^1.3.14`<br>@frontierjs/conduit-n8n (dev) `^1.3.14`<br>@frontierjs/conduit-oidc (dev) `^1.3.14`<br>@frontierjs/conduit-openai (dev) `^1.3.14`<br>@frontierjs/conduit-plausible (dev) `^1.3.14`<br>@frontierjs/conduit-postmark (dev) `^1.3.14`<br>@frontierjs/conduit-quo (dev) `^1.3.14`<br>@frontierjs/conduit-resend (dev) `^1.3.14`<br>@frontierjs/conduit-s3 (dev) `^1.3.14`<br>@frontierjs/conduit-sendgrid (dev) `^1.3.14`<br>@frontierjs/conduit-slack (dev) `^1.3.14`<br>@frontierjs/conduit-stripe (dev) `^1.3.14`<br>@frontierjs/conduit-telnyx (dev) `^1.3.14`<br>@frontierjs/conduit-turnstile (dev) `^1.3.14`<br>@frontierjs/conduit-twilio (dev) `^1.3.14`<br>@frontierjs/conduit-zapier (dev) `^1.3.14`<br>@frontierjs/haven (dev) `^1.3.14`<br>@frontierjs/mcp (dev) `^1.3.14`<br>@frontierjs/notifications (dev) `^1.3.14`<br>@frontierjs/orion (dev) `^1.3.14`<br>@frontierjs/testing (dev) `^1.3.14`<br>@frontierjs/workbench (dev) `^1.3.14`<br>frontierjs (dev) `^1.3.14` |
 | `concurrently` | `8.2.2` | vscode-frontierjs (dev) `^8.2.0` |
 | `esbuild` | `0.28.2` | vscode-frontierjs (dev) `^0.28.2` |
 | `fake-indexeddb` | `6.2.5` | @frontierjs/jetty (dev) `^6.2.5` |
+| `oidc-provider` | `9.13.3` | @frontierjs/conduit-oidc (dev) `^9.12.2` |
 | `playwright-core` | `1.62.1` | @frontierjs/sierra (dev) `1.62.1` |
 | `typescript` | `5.9.3` | @frontierjs/config (optional peer) `>=5.0.0`<br>frontierjs (dev) `^5.9.3`<br>vscode-frontierjs (dev) `^5.9.3` |
 | `vitest` | `5.0.3` | @frontierjs/email-kit (dev) `^5.0.3`<br>@frontierjs/mesa (dev) `^5.0.3`<br>@frontierjs/sierra (dev) `^5.0.3` |

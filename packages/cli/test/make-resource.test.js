@@ -135,3 +135,51 @@ describe('fli make:resource', () => {
     expect(findings).toEqual([])
   })
 })
+
+// FJS-3919 — the Resource calls a service by name; a hand-named service file
+// (`groups` over MatchGroup, `asset-files.service.ts` for `assetFiles`) left
+// the page on a 404 nothing reported until the screen loaded.
+describe('fli make:resource — the service it names', () => {
+  const generate = async (model, files, flag = {}) => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-make-resource-svc-'))
+    const all = { ...APP, ...files }
+    for (const [path, body] of Object.entries(all)) {
+      const full = join(root, path)
+      mkdirSync(dirname(full), { recursive: true })
+      writeFileSync(full, body)
+    }
+    global.projectRoot = root
+    const { Command } = await import('../core/runtime.js')
+    const out = []
+    const run = await Command({ file: CMD, arg: [model], flag, emit: (e) => out.push(e) })
+    await run()
+    rmSync(root, { recursive: true, force: true })
+    return JSON.stringify(out)
+  }
+
+  test('a service answering to another name is named, with the flag that points at it', async () => {
+    const text = await generate('MatchGroup', {
+      'api/src/services/groups.service.ts':
+        "export default createService({ model: 'MatchGroup', channel: 'groups' })\n",
+    })
+    expect(text).toContain('no service named')
+    expect(text).toContain('groups.service.ts')
+    expect(text).toContain('--service groups')
+  })
+
+  test('with no service at all, it says so and points at make:service', async () => {
+    const text = await generate('Widget', {})
+    expect(text).toContain('no service named')
+    expect(text).toContain('fli make:service Widget')
+  })
+
+  test('a service under a kebab filename is found, and the file named is the real one', async () => {
+    const text = await generate('AssetFile', {
+      'api/src/services/asset-files.service.ts':
+        "export default createService({ model: 'AssetFile' })\n",
+    })
+    expect(text).not.toContain('no service named')
+    expect(text).toContain('asset-files.service.ts')
+    expect(text).not.toContain('assetFiles.service.ts')
+  })
+})

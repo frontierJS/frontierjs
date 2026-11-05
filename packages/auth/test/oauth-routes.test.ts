@@ -27,13 +27,12 @@ beforeAll(async () => {
     },
     oauthReturnToAllow: ['/dashboard'],
   })
-  app = await createTestApp({ auth: h.auth as any })
+  app = await createTestApp({ auth: h.auth as any, config: { publicUrl: PUBLIC_URL } as any })
   app.setAuth(h.auth as any)
   app.configure(auth({
     auth: h.auth,
     cookieAuth: true,
     oauth: {
-      publicUrl:     PUBLIC_URL,
       errorRedirect: '/sign-in',
       rateLimit:     { max: 10_000, window: '15 minutes' },
     },
@@ -59,17 +58,34 @@ describe('oauth without cookie mode', () => {
     // page that will not say why.
     const bare = await makeAuth({ oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' }) } })
     try {
-      const broken = await createTestApp({ auth: bare.auth as any })
+      const broken = await createTestApp({ auth: bare.auth as any, config: { publicUrl: PUBLIC_URL } as any })
       broken.setAuth(bare.auth as any)
       broken.configure(auth({
         auth: bare.auth,
-        oauth: { publicUrl: PUBLIC_URL, rateLimit: { max: 10_000, window: '15 minutes' } },
+        oauth: { rateLimit: { max: 10_000, window: '15 minutes' } },
       }))
       // The start phases run lazily on the first request, not at
       // createTestApp — configure() may still be called after it returns.
       let err: unknown = null
       try { await request(broken).get('/auth/oauth/google') } catch (e) { err = e }
       expect(String(err)).toContain('cookieAuth')
+    } finally { bare.cleanup() }
+  })
+})
+
+describe('oauth without the API origin', () => {
+
+  // A provider matches the redirect URI as an exact string, so a guessed
+  // origin fails every sign-in, visible only on the provider's error page.
+  test('is refused at boot, naming FRONTIER_API_URL', async () => {
+    const bare = await makeAuth({ oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' }) } })
+    try {
+      const broken = await createTestApp({ auth: bare.auth as any })
+      broken.setAuth(bare.auth as any)
+      broken.configure(auth({ auth: bare.auth, cookieAuth: true, oauth: {} }))
+      let err: unknown = null
+      try { await request(broken).get('/auth/oauth/google') } catch (e) { err = e }
+      expect(String(err)).toContain('FRONTIER_API_URL')
     } finally { bare.cleanup() }
   })
 })

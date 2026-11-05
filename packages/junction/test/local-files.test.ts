@@ -3,7 +3,7 @@
 // A File column on a client with no provider bound stores under <db dir>/files
 // (FJS-D1549), and the URL a read answers must reach those bytes: junction
 // serves the directory read-only under apiPrefix, and the client's publicBase
-// names that route on the app's own origin.
+// names that route on the API's origin (`FJS-D1935`).
 
 import { describe, test, expect, afterEach, setSystemTime } from 'bun:test'
 import { join } from 'node:path'
@@ -24,12 +24,12 @@ afterEach(() => {
   for (const n of ENV) before[n] == null ? delete process.env[n] : process.env[n] = before[n]
 })
 
-async function appWith(apiPrefix?: string) {
+async function appWith(apiPrefix?: string, publicUrl?: string) {
   const dir = tempDir('jn-local-files-')
   const db = await createClient({ schema: SCHEMA, db: join(dir, 'app.db') } as never) as any
   await autoMigrate(db)
   const app = createApp({
-    config: { name: 'files', debug: false, ...(apiPrefix ? { apiPrefix } : {}) } as never,
+    config: { name: 'files', debug: false, ...(apiPrefix ? { apiPrefix } : {}), ...(publicUrl ? { publicUrl } : {}) } as never,
     auth: createStubAuth({ users: [] }),
     db,
   } as never)
@@ -39,15 +39,17 @@ async function appWith(apiPrefix?: string) {
 const upload = () => new File([new Uint8Array([1, 2, 3])], 'cv.pdf', { type: 'application/pdf' })
 
 describe('a local FileStorage is served by junction', () => {
-  test('the URL a read answers is a route that returns the bytes', async () => {
+  // The SPA's origin is set beside the API's and differs from it, so a URL
+  // built on the SPA's would fail the match.
+  test('the URL a read answers is a route on the API origin that returns the bytes', async () => {
     process.env.FRONTIER_APP_URL = 'https://app.example'
-    const { app, db } = await appWith('/api')
+    const { app, db } = await appWith('/api', 'https://api.example')
     await db.asSystem().doc.create({ data: { id: 1, resume: upload() } })
     // The route registers when the app boots, and a read resolves its URL after.
     const first = await request(app).get('/api/files/none/nothing.pdf')
     expect(first.status).toBe(403)
     const row = await db.asSystem().doc.findUnique({ where: { id: 1 } })
-    expect(row.resume).toMatch(/^https:\/\/app\.example\/api\/files\/Doc\/resume\/.+\.pdf\?exp=\d+&sig=[\w-]+$/)
+    expect(row.resume).toMatch(/^https:\/\/api\.example\/api\/files\/Doc\/resume\/.+\.pdf\?exp=\d+&sig=[\w-]+$/)
     const url = new URL(row.resume)
     const res = await request(app).get(url.pathname + url.search)
     expect(res.status).toBe(200)

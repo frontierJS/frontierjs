@@ -60,7 +60,6 @@ function makePlan(overrides: {
     nodeCount:   nodeIds.length,
     stageCount:  builtStages.length,
     hasBranching: false,
-    hasFanOut:    false,
   }
 }
 

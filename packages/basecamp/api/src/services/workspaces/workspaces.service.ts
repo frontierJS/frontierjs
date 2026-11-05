@@ -229,7 +229,7 @@ export default createService({
 
     const rows = await members().findMany({
       where:   { workspaceId: $.id as string },
-      include: { user: { select: { id: true, name: true, displayName: true, email: true, avatarUrl: true } } },
+      include: { user: { select: { id: true, name: true, nickname: true, email: true, avatarUrl: true } } },
       orderBy: { createdAt: 'asc' },
     })
     return { total: rows.length, data: rows }

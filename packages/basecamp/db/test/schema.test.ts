@@ -612,7 +612,7 @@ describe('the gate ladder', () => {
     const dev = db.$setAuth(as('developer'))
     expect((await dev.user.findMany({ limit: 10 })).map((u: any) => u.id)).toEqual(['u1'])
     expect(await dev.user.findUnique({ where: { id: other.id } })).toBeNull()
-    expect((await dev.user.update({ where: { id: 'u1' }, data: { displayName: 'mine' } })).displayName)
+    expect((await dev.user.update({ where: { id: 'u1' }, data: { nickname: 'mine' } })).nickname)
       .toBe('mine')
 
     // A policy FILTERS where a gate refuses, so the cross-row write matches no
@@ -636,7 +636,7 @@ describe('the gate ladder', () => {
       const me = db.$setAuth(who)
       expect((await me.user.findMany({ limit: 10 })).map((u: any) => u.id)).toEqual(['u1'])
       expect(await me.user.findUnique({ where: { id: other.id } })).toBeNull()
-      expect((await me.user.update({ where: { id: 'u1' }, data: { displayName: `as ${label}` } })).displayName)
+      expect((await me.user.update({ where: { id: 'u1' }, data: { nickname: `as ${label}` } })).nickname)
         .toBe(`as ${label}`)
     }
     db.$close()
@@ -676,7 +676,7 @@ describe('the gate ladder', () => {
     await expect(dev.user.update({ where: { id: 'u1' }, data: { kind: 'bot' } }))
       .rejects.toThrow(/"kind" is @system/)
     await dev.user.update({ where: { id: 'u1' }, data: {
-      isSystemAdmin: true, status: 'active', displayName: 'ok',
+      isSystemAdmin: true, status: 'active', nickname: 'ok',
     } })
     const row = await sys.user.findUnique({ where: { id: 'u1' } })
     expect(row.isSystemAdmin).toBe(false)
@@ -684,7 +684,7 @@ describe('the gate ladder', () => {
     expect(row.kind).toBe('user')
     // A field write policy DROPS the field; the rest of the write lands, which
     // is why the assertion above is the one that matters.
-    expect(row.displayName).toBe('ok')
+    expect(row.nickname).toBe('ok')
 
     // The hub's own path — asSystem() — is above all of it. That is how the
     // first system administrator is made in /setup and every later one granted
@@ -2523,8 +2523,8 @@ describe('App runtime columns', () => {
   test('every runtime column is an App column, and a Blueprint one but containerPort', () => {
     const app = columns('App'), blueprint = columns('Blueprint')
     expect(RUNTIME_COLUMNS.filter(c => !app.includes(c))).toEqual([])
-    // `containerPort`, `stopGrace` and `healthTimeout` are App-only: a blueprint's `port` is both until a person splits them.
-    expect(RUNTIME_COLUMNS.filter(c => !blueprint.includes(c))).toEqual(['containerPort', 'stopGrace', 'healthTimeout'])
+    // `containerPort`, `stopGraceSeconds` and `healthTimeoutSeconds` are App-only: a blueprint's `port` is both until a person splits them.
+    expect(RUNTIME_COLUMNS.filter(c => !blueprint.includes(c))).toEqual(['containerPort', 'stopGraceSeconds', 'healthTimeoutSeconds'])
   })
 
   test('a new App column is either a runtime column or named exempt', () => {

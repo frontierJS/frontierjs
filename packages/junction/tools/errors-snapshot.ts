@@ -181,6 +181,11 @@ export async function renderErrorsSnapshot(): Promise<string> {
   out.push('*this is not a legal move*. A client that cannot tell them apart has to phrase')
   out.push('both as the weaker one.')
   out.push('')
+  out.push('Every 401 carries `WWW-Authenticate: Bearer` (RFC 9110 § 11.6.1).')
+  out.push('`Unauthorized`\'s `challenge` adds quoted auth-params to it and never reaches')
+  out.push('the body (`FJS-D1936`); an MCP client starts a sign-in only from')
+  out.push('`resource_metadata` there.')
+  out.push('')
 
   // ── The classes ──
   const classes = Object.keys(errors)

@@ -223,16 +223,16 @@ try {
   // a verb apiKeyGuard would refuse (FJS-1349).
   const BOT = new Database(DB_PATH, { readonly: true })
     .query(`select id from user where email = 'ci-deploy@bots.invalid'`).get()?.id
-  const minted = await cli(['api-keys', 'create', '--userId', String(BOT), '--name', 'verify-mcp',
+  const minted = await cli(['apiKeys', 'create', '--userId', String(BOT), '--name', 'verify-mcp',
     '--scopes', '["servers:read"]', '--json'], { token: tokens[OWNER], tenant: WS })
   const key = minted.json?.data?.token
-  check('the owner mints a bot key through `api-keys create`, and the plaintext comes back once',
+  check('the owner mints a bot key through `apiKeys create`, and the plaintext comes back once',
     minted.code === 0 && typeof key === 'string' && key.length > 20, `exit ${minted.code} ${minted.err}${minted.out}`.slice(0, 300))
 
   // `login` reads the key off stdin, so it is in no argv and no shell history.
   const badKey = await cli(['--workspace', WS, 'login', '--api-key', '-', '--url', `${API}/mcp`], { stdin: 'fjs_not_a_real_key_000000000000', signedIn: true })
-  check('a key the app reads as nobody is refused at login, and nothing is saved',
-    badKey.code === 1 && /read this key as nobody/.test(badKey.err) && !existsSync(join(CONFIG_HOME, cliConfig.name, 'profiles.json')),
+  check('a key the app refuses is refused at login, and nothing is saved',
+    badKey.code === 1 && /the app refused this key/.test(badKey.err) && !existsSync(join(CONFIG_HOME, cliConfig.name, 'profiles.json')),
     `exit ${badKey.code} ${badKey.err}`)
 
   const signIn = await cli(['--workspace', WS, 'login', '--api-key', '-', '--url', `${API}/mcp`], { stdin: `${key}\n`, signedIn: true })

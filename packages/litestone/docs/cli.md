@@ -18,7 +18,7 @@ litestone migrate status
 litestone migrate verify
 litestone migrate check                                  # does the history build the schema? no database opened
 litestone migrate lock [--check]                         # freeze applied files: an edit fails, an append passes
-litestone migrate baseline                               # record the files as applied, running none
+litestone migrate baseline [file]                        # record the files (through `file`) as applied, running none
 litestone db push [--accept-data-loss]                   # apply the schema directly, no file written (dev)
 litestone studio [--port=5502] [--no-open] [--gate <path[#export]>] [--host <addr> --token <secret>] [--readonly]
 litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>] [--tenant <id>] [--eval '<expr>']
@@ -96,9 +96,9 @@ litestone migrate lock [--check]
 Freeze the history once a real database has applied it. Writes `migrations.snapshot.md` beside the migrations directory: each file with the checksum `migrate apply` records for it. `--check` exits 1 when a listed file was edited or removed, and passes a newer file that is not listed yet. A write only appends — it refuses a changed or missing listed file rather than rehashing it, so `fli check --fix` cannot bless the edit. The header names the command, so `fli test:snapshots` and the CI `snapshots` phase run it.
 
 ```bash
-litestone migrate baseline
+litestone migrate baseline [file]
 ```
-Record the migration files as applied without running them, for a database that already holds what they build: an app developed through `db push`, or your own database the moment `migrate create` writes a delta you had already pushed.
+Record the migration files as applied without running them, for a database that already holds what they build: an app developed through `db push`, or your own database the moment `migrate create` writes a delta you had already pushed. With a `file` (the whole name or its timestamp), it records the pending files through that one and leaves the later ones pending for `migrate apply` — for a database pushed level with some files while another, written after, has run nowhere. It refuses, naming the difference, when the database does not hold what the recorded files build.
 
 ```bash
 litestone migrate status

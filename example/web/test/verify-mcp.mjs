@@ -12,7 +12,8 @@
  *   • against a shop with `tenancy { strategy database }`, so there is no
  *     `app.db` at all and the schema comes off the tenant registry — the shape
  *     that made the first draft of the plugin serve a permanent 503.
- *   • with the app's OWN gate ladder, four standings deep. The counts in
+ *   • with the app's OWN gate ladder, three standings deep, and a stranger
+ *     answered 401 with the header a connector signs in from (`FJS-D1924`). The counts in
  *     `packages/mcp/CHANGES.md` were hand measurements until this file, which
  *     is what made them the kind of number that goes quietly stale.
  *   • serving the MCP App views THIS tree built (`FJS-D955`): `fli mcp:build`
@@ -137,27 +138,45 @@ const shopperToken = await login(SHOPPER)
 
 // ─── A client connects at all ──────────────────────────────────────────────
 
-console.log('\na real MCP client, against a real shop')
-let stranger, shopper, staff, admin
+// A connector starts a sign-in only from this header (`FJS-D1924`), so the
+// string is compared whole: one missing or misquoted reads as "not signed in".
+console.log('\na stranger is asked to sign in')
 {
-  stranger = await open(null)
-  check('the handshake completes with no credential', true, true)
+  const METADATA = `${API}/api/.well-known/oauth-protected-resource/mcp`
+  const initialize = (headers = {}) => fetch(MCP, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'verify-mcp', version: '1.0.0' } } }),
+  })
+  const none = await initialize()
+  check('no credential is a 401 naming the protected-resource metadata',
+        [none.status, none.headers.get('www-authenticate')], [401, `Bearer resource_metadata="${METADATA}"`])
+  const bad = await initialize({ authorization: 'Bearer not-a-session' })
+  check('a Bearer that does not verify is the same 401, marked invalid_token',
+        [bad.status, bad.headers.get('www-authenticate')], [401, `Bearer resource_metadata="${METADATA}", error="invalid_token"`])
+  let refused = null
+  try { await (await open(null)).close() } catch (err) { refused = err?.status ?? String(err) }
+  check('and a real client with no credential is refused at the handshake', refused, 401)
+}
 
-  const info = stranger.getServerVersion?.() ?? {}
-  check('and the server names itself', [info.name, info.version], ['shop', '1.0.0'])
-
+console.log('\na real MCP client, against a real shop')
+let shopper, staff, admin
+{
   shopper = await open(shopperToken)
   staff   = await open(staffToken)
   admin   = await open(adminToken)
-  check('and once per standing', true, true)
+  check('the handshake completes once per standing', true, true)
+
+  const info = shopper.getServerVersion?.() ?? {}
+  check('and the server names itself', [info.name, info.version], ['shop', '1.0.0'])
 }
 
 // ─── The ladder ────────────────────────────────────────────────────────────
 
 console.log('\nthe tool list is the caller\'s')
-let strangerTools = [], staffTools = []
+let staffTools = []
 {
-  strangerTools      = await names(stranger)
   const shopperTools = await names(shopper)
   staffTools         = await names(staff)
 
@@ -165,8 +184,7 @@ let strangerTools = [], staffTools = []
 
   // Both halves stated. A surface answering nobody satisfies every refusal
   // below on its own; one answering everybody satisfies every affordance.
-  check('a stranger is offered tools, and not none', strangerTools.length, n => n > 0)
-  check('a shopper is offered strictly more', shopperTools.length, n => n > strangerTools.length)
+  check('a shopper is offered tools, and not none', shopperTools.length, n => n > 0)
   check('an administrator more again', adminTools.length, n => n > shopperTools.length)
 
   // **The list is the LADDER's and the rows are the POLICY's**, which are two
@@ -180,17 +198,13 @@ let strangerTools = [], staffTools = []
 
   // Monotonic: climbing a rung never LOSES a tool. A rule written the wrong way
   // round shows up here and in no single count.
-  check('and nothing a stranger may reach is withheld from a shopper',
-        strangerTools.every(n => shopperTools.includes(n)), true)
-  check('nor from staff', shopperTools.every(n => staffTools.includes(n)), true)
+  check('and nothing a shopper may reach is withheld from staff', shopperTools.every(n => staffTools.includes(n)), true)
 }
 
 console.log('\nthe gate decides, one tool at a time')
 {
   const shopperTools = await names(shopper)
-  // `Order` reads at 1, so the whole service appears one rung up from nobody.
-  check('a stranger is not offered the order list', strangerTools.includes('orders_find'), false)
-  check('a shopper is', shopperTools.includes('orders_find'), true)
+  check('a shopper is offered the order list', shopperTools.includes('orders_find'), true)
 
   // `refund` is `@gate 5` over an update of 4 — a floor, not a replacement —
   // and the rung that clears it is the ADMIN, not `sam`. In this seed `sam` is
@@ -223,12 +237,12 @@ console.log('\nthe views are the caller\'s, and serve what this tree built')
   const stamped = async (client) => [...new Set((await client.listTools()).tools
     .map(t => t._meta?.ui?.resourceUri).filter(Boolean))].sort()
   const views = {}
-  for (const [who, client] of Object.entries({ stranger, shopper, staff, admin })) views[who] = await uris(client)
+  for (const [who, client] of Object.entries({ shopper, staff, admin })) views[who] = await uris(client)
 
   // Each rung's list is the one its tools point at: a pointer to a view the
   // caller is not listed, or a listed view no tool of theirs opens, fails here
   // by rung. The derived half, so a model the seed grows needs no edit.
-  for (const [who, client] of Object.entries({ stranger, shopper, staff, admin })) {
+  for (const [who, client] of Object.entries({ shopper, staff, admin })) {
     check(`${who}: the views listed are exactly the ones its tools point at`, views[who], await stamped(client))
   }
   check('every view listed is one the build wrote',
@@ -236,10 +250,9 @@ console.log('\nthe views are the caller\'s, and serve what this tree built')
 
   // The ladder's half, written out: a sweep answering one list everywhere
   // passes the agreement above and fails these.
-  check('a stranger is shown the catalog\'s views and not an order\'s',
-        [views.stranger.includes('ui://shop/Product'), views.stranger.includes('ui://shop/Order')], [true, false])
-  check('a shopper is shown the order\'s, and not an employee\'s',
-        [views.shopper.includes('ui://shop/Order'), views.shopper.includes('ui://shop/Employee')], [true, false])
+  check('a shopper is shown the catalog\'s and the order\'s, and not an employee\'s',
+        [views.shopper.includes('ui://shop/Product'), views.shopper.includes('ui://shop/Order'), views.shopper.includes('ui://shop/Employee')],
+        [true, true, false])
   check('staff are shown what a shopper is, as their tool lists are identical', views.staff, views.shopper)
   check('the administrator is shown the employee\'s', views.admin.includes('ui://shop/Employee'), true)
 
@@ -254,16 +267,14 @@ console.log('\nthe views are the caller\'s, and serve what this tree built')
         doc?.text === readFileSync(join(DIST, 'Order.html'), 'utf8'), true)
 
   // The refusal. A view is a screen over a row the caller may not reach, so a
-  // URI that is guessable must not be readable: the stranger is listed no
-  // Order and the shopper no Employee, and asking by name anyway is refused
-  // without the page in the answer.
+  // URI that is guessable must not be readable: the shopper is listed no
+  // Employee, and asking by name anyway is refused without the page in the
+  // answer.
   const refusal = async (client, uri) => {
     try { const r = await client.readResource({ uri }); return { read: true, leaked: /<html/i.test(JSON.stringify(r)) } }
     catch (err) { return { read: false, leaked: /<html/i.test(String(err?.message ?? err)) } }
   }
-  check('a stranger reading the Order view by name is refused, with no page in the refusal',
-        await refusal(stranger, 'ui://shop/Order'), { read: false, leaked: false })
-  check('as are a shopper and staff reading the administrator\'s Employee view',
+  check('a shopper and staff reading the administrator\'s Employee view by name are refused, with no page in the refusal',
         [await refusal(shopper, 'ui://shop/Employee'), await refusal(staff, 'ui://shop/Employee')],
         [{ read: false, leaked: false }, { read: false, leaked: false }])
   const adminRead = await admin.readResource({ uri: 'ui://shop/Employee' })
@@ -385,6 +396,6 @@ console.log('\nno credential column reaches a tool schema')
 // ─── Result ────────────────────────────────────────────────────────────────
 
 console.log(`\n${fail === 0 ? '✓' : '✗'} ${pass}/${pass + fail} checks passed\n`)
-for (const c of [stranger, shopper, staff, admin]) { try { await c?.close() } catch {} }
+for (const c of [shopper, staff, admin]) { try { await c?.close() } catch {} }
 stopAll()
 process.exit(fail === 0 ? 0 : 1)

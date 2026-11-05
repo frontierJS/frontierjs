@@ -109,8 +109,15 @@ export interface CommitmentsPluginOptions {
   hooks?:       Record<string, CommitmentSpec>
 }
 
-/** What a hook is handed. `db` is the fire's client inside the transaction. */
+/** What a hook is handed. */
 export interface CommitmentHookContext {
+  /**
+   * The fire's client inside the move's transaction, at the standing of
+   * `createApp({ system })` -- the app's own principal graded by its gate, so a
+   * model gated above that principal's level refuses the write ("requires
+   * SYSTEM access (use asSystem())"). `db.asSystem()` taken here stays in the
+   * transaction and is the way to such a model.
+   */
   db:          Record<string, any>
   /**
    * The row the move is made on — at its from-state in `before` and in
@@ -381,6 +388,9 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
       else lapsed++
     } catch (err) {
       failed++
+      // The queue keeps the error in its row and retries; nothing else says a
+      // hook is throwing and the move never happens.
+      console.warn(`[Junction] commitments(): the fire of ${job.accessor}.${job.transition} ${String(job.id)} failed and will be retried:`, err)
       throw err
     }
   }

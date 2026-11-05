@@ -40,7 +40,21 @@ export class FrameworkError extends Error {
 }
 
 export class BadRequest       extends FrameworkError { constructor(m?: string, d?: unknown, c?: unknown) { super(m ?? 'Bad Request',                d, c); this.code = 400 } }
-export class Unauthorized     extends FrameworkError { constructor(m?: string, d?: unknown, c?: unknown) { super(m ?? 'Unauthorized',               d, c); this.code = 401 } }
+/**
+ * A 401. `challenge` is the auth-params of the `WWW-Authenticate: Bearer`
+ * every 401 carries (RFC 9110 § 11.6.1): an MCP client starts a sign-in only
+ * from `resource_metadata` there (`FJS-D1936`). It is header-only and never
+ * reaches the body. Names and values are refused here, at the throw, when they
+ * could not be written as a header.
+ */
+export class Unauthorized extends FrameworkError {
+  challenge?: Readonly<Record<string, string>>
+  constructor(m?: string, d?: unknown, c?: unknown, challenge?: Record<string, string>) {
+    super(m ?? 'Unauthorized', d, c)
+    this.code = 401
+    if (challenge) this.challenge = Object.freeze(checkedChallenge(challenge))
+  }
+}
 export class PaymentRequired  extends FrameworkError { constructor(m?: string, d?: unknown, c?: unknown) { super(m ?? 'Payment Required',           d, c); this.code = 402 } }
 export class Forbidden        extends FrameworkError { constructor(m?: string, d?: unknown, c?: unknown) { super(m ?? 'Forbidden',                  d, c); this.code = 403 } }
 export class NotFound         extends FrameworkError { constructor(m?: string, d?: unknown, c?: unknown) { super(m ?? 'Not Found',                  d, c); this.code = 404 } }
@@ -54,6 +68,26 @@ export class NotImplemented   extends FrameworkError { constructor(m?: string, d
 export class BadGateway       extends FrameworkError { constructor(m?: string, d?: unknown, c?: unknown) { super(m ?? 'Bad Gateway',                d, c); this.code = 502 } }
 export class Unavailable      extends FrameworkError { constructor(m?: string, d?: unknown, c?: unknown) { super(m ?? 'Service Unavailable',        d, c); this.code = 503 } }
 export class Timeout          extends FrameworkError { constructor(m?: string, d?: unknown, c?: unknown) { super(m ?? 'Gateway Timeout',            d, c); this.code = 504 } }
+
+const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
+
+function checkedChallenge(params: Record<string, string>): Record<string, string> {
+  for (const [name, value] of Object.entries(params)) {
+    if (!TOKEN.test(name)) throw new TypeError(`Unauthorized: '${name}' is not an auth-param name`)
+    if (typeof value !== 'string' || /[\u0000-\u001f\u007f]/.test(value)) {
+      throw new TypeError(`Unauthorized: the value of '${name}' cannot be written in a header`)
+    }
+  }
+  return { ...params }
+}
+
+/** The `WWW-Authenticate` value of a 401: `Bearer`, then each param quoted. */
+export function bearerChallenge(fe: FrameworkError): string {
+  const params = (fe as Unauthorized).challenge
+  if (!params) return 'Bearer'
+  const quoted = Object.entries(params).map(([k, v]) => `${k}="${v.replace(/[\\"]/g, '\\$&')}"`)
+  return quoted.length ? `Bearer ${quoted.join(', ')}` : 'Bearer'
+}
 
 // ─── The error boundary ────────────────────────────────────────────────────
 //

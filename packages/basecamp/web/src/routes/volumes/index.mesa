@@ -209,7 +209,7 @@ title: Volumes
           <!-- Docker's own timestamp, not discoveredAt: the question this
                answers is how long the disk has been lying around, and on a
                fresh install every row was discovered today. -->
-          <span class="text-sm text-muted">created {ago(v.createdOnServer, 'unknown')}</span>
+          <span class="text-sm text-muted">created {ago(v.dockerCreatedAt, 'unknown')}</span>
           <span class="text-sm text-muted">last seen {ago(v.lastSeenAt, 'unknown')}</span>
         </div>
 

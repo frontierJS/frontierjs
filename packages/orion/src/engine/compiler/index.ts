@@ -120,7 +120,6 @@ export class Compiler {
         nodeCount:   Object.keys(flow.nodes).length,
         stageCount:  ctx.stages.length,
         hasBranching: flow.edges.some(e => e.condition != null),
-        hasFanOut:    flow.edges.some(e => e.fanOut    != null),
       },
     }
   }
@@ -187,6 +186,15 @@ function validateEdges(ctx: PipelineContext): void {
       errors.push({
         code:    "INVALID_EDGE_TARGET",
         message: `Edge "${edge.id}" references unknown target node: "${edge.to}"`,
+        edgeId:  edge.id,
+      })
+    }
+    // A stored definition is JSON, so the type cannot keep a field out. Left alone it runs the
+    // target once over the whole array and the author sees a plausible run.
+    if ("fanOut" in edge) {
+      errors.push({
+        code:    "UNSUPPORTED_EDGE_FIELD",
+        message: `Edge "${edge.id}" carries "fanOut", which no stage runs — iterate with a flow.each node`,
         edgeId:  edge.id,
       })
     }

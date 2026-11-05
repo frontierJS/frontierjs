@@ -147,6 +147,15 @@ export function auth(opts: AuthPluginOptions): Plugin {
             `Check apiPrefix and auth's prefix.`
           )
         }
+        // A provider matches the redirect URI as an exact string, and behind a
+        // proxy the server sees neither its host nor its scheme, so the origin
+        // is stated, never derived (`FJS-D1935`).
+        if (!app.config.publicUrl) {
+          throw new Error(
+            `[auth] { oauth } needs the API's public origin to build the redirect URI it ` +
+            `gives each provider. Set FRONTIER_API_URL, or app.publicUrl in junction.config.js.`
+          )
+        }
         // ── OAuth needs cookie mode, and the alternative is silent ────
         //
         // The callback is a browser REDIRECT. It can hand back a cookie, and it
@@ -591,7 +600,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
             // `?link=` is the mailed oauthLink invitation. The visit only
             // starts a flow, so a scanner prefetching the mail spends nothing.
             const { authorizeUrl, state } = await oauthAuth.oauthBegin(provider, {
-              redirectUri: callbackUri(app, prefix, oauth.publicUrl, provider),
+              redirectUri: callbackUri(app, prefix, provider),
               returnTo:    ctx.query?.returnTo ? String(ctx.query.returnTo) : null,
               link:        ctx.query?.link     ? String(ctx.query.link)     : null,
             })
@@ -650,7 +659,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
               code,
               state,
               cookieState: ctx.cookies?.[OAUTH_STATE_COOKIE] ?? null,
-              redirectUri: callbackUri(app, prefix, oauth.publicUrl, provider),
+              redirectUri: callbackUri(app, prefix, provider),
             })
             identity = done.identity
             returnTo = done.returnTo
@@ -887,11 +896,10 @@ function callbackPath(app: App, prefix: string, provider: string): string {
   return `${apiPrefix}${prefix}/oauth/${provider}/callback`
 }
 
-function callbackUri(app: App, prefix: string, publicUrl: string, provider: string): string {
-  // String concatenation and deliberately not `new URL(...).pathname`: the boot
-  // check asks this for the literal `{provider}`, and URL percent-encodes the
-  // braces into %7B…%7D, so the comparison it exists to make never matched.
-  return `${publicUrl.replace(/\/+$/, '')}${callbackPath(app, prefix, provider)}`
+function callbackUri(app: App, prefix: string, provider: string): string {
+  // String concatenation and not `new URL(...).pathname`: the boot check asks
+  // this for the literal `{provider}`, and URL percent-encodes the braces.
+  return `${app.config.publicUrl}${callbackPath(app, prefix, provider)}`
 }
 
 /**

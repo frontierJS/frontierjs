@@ -6212,12 +6212,17 @@ export async function createClient({
   // One entry per write CONNECTION a table can reach: a second declaration on
   // main's file is main's entry, and a readonly or `access: false` name has no
   // write handle to hold (`FJS-1459`).
-  const txConns = [{ name: 'main', db: writeDb }]
+  // A readonly main's writeDb is the throwing stub, so BEGIN on it would refuse
+  // every transaction, including ones over a writable sibling file; main is
+  // an entry only when it holds a write handle, and the stub stands alone only
+  // when nothing is writable (`FJS-4035`).
+  const txConns = rawWriteDb ? [{ name: 'main', db: writeDb, raw: rawWriteDb }] : []
   for (const [name, conn] of Object.entries(dbRegistry)) {
     if (!conn.rawWriteDb || conn.rawWriteDb === rawWriteDb) continue
     if (txConns.some(c => c.raw === conn.rawWriteDb)) continue
     txConns.push({ name, db: conn.writeDb, raw: conn.rawWriteDb })
   }
+  if (!txConns.length) txConns.push({ name: 'main', db: writeDb })
   const tx = makeTxManager(txConns, txState, cardinalityLedger, exclusionLedger)
 
   // Normalize global filters: { tableName: whereObject | (ctx) => whereObject }

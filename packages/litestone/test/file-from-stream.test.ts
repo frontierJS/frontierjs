@@ -19,6 +19,7 @@ import { tempDir } from '../src/tmp-dirs.js'
 const root = tempDir('file-from-stream')
 afterAll(() => rmSync(root, { recursive: true, force: true }))
 
+const PART_BYTES = 8 * 1024 * 1024
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex')
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Uint8Array(20_000).map((_, i) => i % 251)])
 
@@ -122,22 +123,92 @@ describe('the S3 provider and a stream (FJS-D1808)', () => {
   }
   const provider = (endpoint: string) => new S3Provider({ provider: 'minio', bucket: 'b', endpoint, accessKeyId: 'k', secretAccessKey: 's' })
 
-  test('a stream with no size is refused by name, before any request', async () => {
-    const g = guard()
+  // A fake S3 that keeps what multipart sends, so the object it assembles is read back.
+  const fakeS3 = (opts: { failPart?: number } = {}) => {
+    const real = globalThis.fetch
+    const log: string[] = []
+    const parts: Record<number, Uint8Array> = {}
+    let completed: Uint8Array | null = null
+    let aborted = false
+    globalThis.fetch = (async (url: string, init: any) => {
+      const u = new URL(url)
+      const body = init.body ? new Uint8Array(await new Response(init.body).arrayBuffer()) : null
+      log.push(`${init.method} ${u.search || '(whole)'}`)
+      if (init.method === 'POST' && u.searchParams.has('uploads')) return new Response('<InitiateMultipartUploadResult><UploadId>up/1</UploadId></InitiateMultipartUploadResult>')
+      if (init.method === 'PUT' && u.searchParams.has('partNumber')) {
+        const n = Number(u.searchParams.get('partNumber'))
+        if (n === opts.failPart) return new Response('boom', { status: 500 })
+        parts[n] = body!
+        return new Response('', { headers: { etag: `"e${n}"` } })
+      }
+      if (init.method === 'POST' && u.searchParams.has('uploadId')) {
+        expect(u.searchParams.get('uploadId')).toBe('up/1')
+        const xml = new TextDecoder().decode(body!)
+        const order = [...xml.matchAll(/<PartNumber>(\d+)<\/PartNumber><ETag>"e(\d+)"<\/ETag>/g)].map(m => [m[1], m[2]])
+        expect(order.every(([a, b]) => a === b)).toBe(true)
+        completed = Buffer.concat(order.map(([n]) => parts[Number(n)]))
+        return new Response('<CompleteMultipartUploadResult/>')
+      }
+      if (init.method === 'DELETE' && u.searchParams.has('uploadId')) { aborted = true; return new Response('', { status: 204 }) }
+      if (init.method === 'PUT') { completed = body; return new Response('') }
+      return new Response('', { status: 400 })
+    }) as any
+    return { log, parts, get completed() { return completed }, get aborted() { return aborted }, restore: () => { globalThis.fetch = real } }
+  }
+  const big = new Uint8Array(PART_BYTES * 2 + 12_345).map((_, i) => (i * 7) % 251)
+
+  test('a stream with no size is a multipart upload that reassembles to its bytes', async () => {
+    const s3 = fakeS3()
     try {
-      await expect(provider('https://s3.example.com').put('k', streamOf(png), { contentType: 'image/png' }))
-        .rejects.toThrow(/fromStream to provider minio needs size -- an S3 PUT carries Content-Length/)
-      expect(g.calls).toEqual([])
-    } finally { g.restore() }
+      await provider('https://s3.example.com').put('k', streamOf(big, 1_000_003), { contentType: 'video/mp4' })
+      expect(s3.log).toEqual(['POST ?uploads', 'PUT ?partNumber=1&uploadId=up%2F1', 'PUT ?partNumber=2&uploadId=up%2F1', 'PUT ?partNumber=3&uploadId=up%2F1', 'POST ?uploadId=up%2F1'])
+      expect(Object.values(s3.parts).map(p => p.length)).toEqual([PART_BYTES, PART_BYTES, 12_345])
+      expect(sha(s3.completed!)).toBe(sha(big))
+    } finally { s3.restore() }
   })
 
-  test('a stream over plain http is refused by name, before any request', async () => {
-    const g = guard()
+  test('a stream over plain http is multipart too, since a part is buffered and can be signed', async () => {
+    const s3 = fakeS3()
     try {
-      await expect(provider('http://localhost:9000').put('k', streamOf(png), { contentType: 'image/png', size: png.length }))
-        .rejects.toThrow(/fromStream to provider minio needs https/)
-      expect(g.calls).toEqual([])
-    } finally { g.restore() }
+      await provider('http://localhost:9000').put('k', streamOf(big, 1_000_003), { contentType: 'video/mp4', size: big.length })
+      expect(s3.log[0]).toBe('POST ?uploads')
+      expect(sha(s3.completed!)).toBe(sha(big))
+    } finally { s3.restore() }
+  })
+
+  test('an unsized stream that ends inside one part is one ordinary PUT, and an empty one too', async () => {
+    const s3 = fakeS3()
+    try {
+      await provider('https://s3.example.com').put('k', streamOf(png), { contentType: 'image/png' })
+      expect(s3.log).toEqual(['PUT (whole)'])
+      expect(sha(s3.completed!)).toBe(sha(png))
+      await provider('https://s3.example.com').put('k', streamOf(new Uint8Array(0)), { contentType: 'image/png' })
+      expect(s3.completed!.length).toBe(0)
+    } finally { s3.restore() }
+  })
+
+  test('a part that fails aborts the upload and the error surfaces', async () => {
+    const s3 = fakeS3({ failPart: 2 })
+    try {
+      await expect(provider('https://s3.example.com').put('k', streamOf(big, 1_000_003), { contentType: 'video/mp4' }))
+        .rejects.toThrow(/multipart part 2 failed \(500\)/)
+      expect(s3.aborted).toBe(true)
+      expect(s3.completed).toBeNull()
+    } finally { s3.restore() }
+  })
+
+  test('through FileStorage an unsized stream stores, with the hash and count taken in the one pass', async () => {
+    const s3 = fakeS3()
+    try {
+      const files = FileStorage({ provider: 'minio', bucket: 'b', endpoint: 'https://s3.example.com', accessKeyId: 'k', secretAccessKey: 's' }) as any
+      const db: any = await createClient({ schema: `model Doc {\n id Int @id\n file File?\n @@allow(all, true)\n}`, db: ':memory:', plugins: [files] })
+      await autoMigrate(db)
+      const row = await db.asSystem().doc.create({ data: { id: 1, file: fromStream(streamOf(big, 1_000_003)) }, select: raw })
+      expect(row.file.size).toBe(big.length)
+      expect(row.file.sha256).toBe(sha(big))
+      expect(sha(s3.completed!)).toBe(sha(big))
+      db.$close()
+    } finally { s3.restore() }
   })
 
   test('with a size over https it is one PUT carrying Content-Length and an unsigned payload', async () => {
@@ -167,13 +238,14 @@ describe('the S3 provider and a stream (FJS-D1808)', () => {
     } finally { globalThis.fetch = real }
   })
 
-  test('through FileStorage a refusal before the first byte makes no delete request either', async () => {
+  test('through FileStorage a stream that fails before its first byte makes no request, delete included', async () => {
     const g = guard()
     try {
       const files = FileStorage({ provider: 'minio', bucket: 'b', endpoint: 'https://s3.example.com', accessKeyId: 'k', secretAccessKey: 's' }) as any
       const db: any = await createClient({ schema: `model Doc {\n id Int @id\n file File?\n @@allow(all, true)\n}`, db: ':memory:', plugins: [files] })
       await autoMigrate(db)
-      await expect(db.asSystem().doc.create({ data: { id: 1, file: fromStream(streamOf(png)) } })).rejects.toThrow(/needs size/)
+      const broken = new ReadableStream({ pull() { throw new Error('socket reset') } })
+      await expect(db.asSystem().doc.create({ data: { id: 1, file: fromStream(broken) } })).rejects.toThrow(/socket reset/)
       expect(g.calls).toEqual([])
       db.$close()
     } finally { g.restore() }

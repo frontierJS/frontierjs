@@ -256,7 +256,7 @@ export default createService({
       return {
         ...w, members, servers, projects,
         owners: owners.filter((m: any) => m.user)
-          .map(({ user: u }: any) => ({ id: u.id, email: u.email, name: u.displayName ?? u.name })),
+          .map(({ user: u }: any) => ({ id: u.id, email: u.email, name: u.nickname ?? u.name })),
       }
     }))
 
@@ -305,7 +305,7 @@ export default createService({
         where: { userId: u.id }, include: { workspace: true },
       })
       return {
-        id: u.id, email: u.email, name: u.displayName ?? u.name,
+        id: u.id, email: u.email, name: u.nickname ?? u.name,
         kind: u.kind, status: u.status, isSystemAdmin: !!u.isSystemAdmin,
         isEmailVerified: !!u.isEmailVerified, createdAt: u.createdAt,
         // Never the Credential rows themselves — `value` is @guarded and
@@ -545,7 +545,7 @@ export default createService({
     return sys().$transaction(async (tx: any) => {
       const bot = await tx.user.create({
         data: {
-          email, name: label, displayName: label,
+          email, name: label,
           kind: 'bot', status: 'active', accountId: ws.accountId,
           // No password Credential is written, here or anywhere: a bot has
           // no way to sign in, and an API key is issued to it separately

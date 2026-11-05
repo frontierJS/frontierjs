@@ -219,6 +219,10 @@
   --btn-text-transform: none;
   --btn-letter-spacing: normal;
 
+  /* ── Button states: how much of the button's ink is mixed in ─ */
+  --btn-hover-mix: 8%;
+  --btn-press-mix: 12%;
+
   /* ── Pill typography ──────────────────────────────────────── */
   --pill-font-weight:    600;
   --pill-text-transform: none;

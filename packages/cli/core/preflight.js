@@ -34,7 +34,7 @@
 import { join }         from 'node:path'
 import { read }         from './fs.js'
 
-import { DRIVES_FILE, resolveWhere, splitRow } from './proofs.js'
+import { DRIVES_FILE, resolveWhere, isGroup, groupMembers, splitRow } from './proofs.js'
 
 // ─── the parse ────────────────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ import { DRIVES_FILE, resolveWhere, splitRow } from './proofs.js'
  * The rows of `DRIVES.md`'s drive table, as written.
  *
  * `[]` where the file or the table is absent, which is correct for any project
- * that is not this one. Each row is `{ dir, script, cell, line, needs }`, and
+ * that is not this one. Each row is `{ dir, script, cell, line, needs }` (a group row is one per member), and
  * `needs` is an ordered list of `{ script, run }` — the SCRIPT this drive's
  * directory must run first, in the order the cell states it.
  */
@@ -63,10 +63,9 @@ export function readPreambles(root) {
     const cells = splitRow(line)
     if (cells.length < 2) continue
 
-    const drive = parseDrive(cells[0], root)
-    if (!drive) continue
-
-    out.push({ ...drive, cell: cells[1].trim(), line: lineNo, needs: parseNeeds(cells[1]) })
+    for (const drive of parseDrive(cells[0], root)) {
+      out.push({ ...drive, cell: cells[1].trim(), line: lineNo, needs: parseNeeds(cells[1]) })
+    }
   }
 
   return out
@@ -81,10 +80,17 @@ export function readPreambles(root) {
  */
 function parseDrive(cell, root) {
   const m = cell.match(/`([^`]+)`\s*:\s*`([^`]+)`/)
-  if (!m) return null
+  if (!m) return []
+  const script = m[2].replace(/^bun run /, '').trim()
+
+  // A group row (`packages/conduits/*`) is one line for every member that
+  // declares the script, so each member has a preamble of its own.
+  if (isGroup(m[1])) {
+    return groupMembers(m[1], root).filter(g => g.manifest?.scripts?.[script]).map(g => ({ dir: g.path, script }))
+  }
+
   const dir = resolveWhere(m[1], root)
-  if (dir === null) return null
-  return { dir, script: m[2].replace(/^bun run /, '').trim() }
+  return dir === null ? [] : [{ dir, script }]
 }
 
 /**

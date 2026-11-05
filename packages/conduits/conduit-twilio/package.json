@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/conduit-twilio",
+  "version": "0.0.1",
+  "description": "Twilio messaging over @frontierjs/conduit — Basic through the signer seam, form bodies, E.164, STOP, and the X-Twilio-Signature.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/twilio.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

@@ -123,13 +123,13 @@ export async function cloudflareFor(app: App, workspaceId: string):
   Promise<{ token: string, accountId: string } | { refused: string }> {
   const sys = (app.db as any).asSystem()
   const ws  = await sys.workspace.findFirst({
-    where: { id: workspaceId }, select: { ingressAccountId: true, ingressZoneId: true },
-  }) as { ingressAccountId: string | null, ingressZoneId: string | null } | null
+    where: { id: workspaceId }, select: { ingressSecretId: true, ingressZoneId: true },
+  }) as { ingressSecretId: string | null, ingressZoneId: string | null } | null
   const accounts = await sys.secret.findMany({
     where: { workspaceId, kind: 'providerKey', providerKind: 'cloudflare' }, select: { id: true, name: true },
   }) as { id: string, name: string }[]
 
-  const chosen = accounts.find(a => a.id === ws?.ingressAccountId) ?? (accounts.length === 1 ? accounts[0] : null)
+  const chosen = accounts.find(a => a.id === ws?.ingressSecretId) ?? (accounts.length === 1 ? accounts[0] : null)
   if (!chosen) return {
     refused: accounts.length
       ? `this workspace holds ${accounts.length} Cloudflare accounts and its ingress zone names none of them — set the ingress zone on /dns/`
@@ -140,7 +140,7 @@ export async function cloudflareFor(app: App, workspaceId: string):
   const send = sendVia(app, targetFor('cloudflare', chosen.id))
   let accountId: string | null
   try {
-    const zone = ws?.ingressAccountId === chosen.id && ws.ingressZoneId
+    const zone = ws?.ingressSecretId === chosen.id && ws.ingressZoneId
       ? await connector.zone(send, ws.ingressZoneId)
       : (await connector.zones(send))[0]
     accountId = zone?.account ?? null

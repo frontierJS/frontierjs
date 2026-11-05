@@ -137,10 +137,10 @@ const sendFor = (a: EdgeAccount) => {
  *  developer reads the drift, and the Workspace row is not what they guard. */
 async function ingressPair(): Promise<{ accountId: string; zoneId: string } | null> {
   const row = await db().asSystem().workspace.findFirst({
-    where: { id: ws() }, select: { ingressAccountId: true, ingressZoneId: true },
-  }) as { ingressAccountId: string | null; ingressZoneId: string | null } | null
-  if (!row?.ingressAccountId || !row.ingressZoneId) return null
-  return { accountId: row.ingressAccountId, zoneId: row.ingressZoneId }
+    where: { id: ws() }, select: { ingressSecretId: true, ingressZoneId: true },
+  }) as { ingressSecretId: string | null; ingressZoneId: string | null } | null
+  if (!row?.ingressSecretId || !row.ingressZoneId) return null
+  return { accountId: row.ingressSecretId, zoneId: row.ingressZoneId }
 }
 
 /** The refusal for a workspace with no ingress pair — one sentence, said by

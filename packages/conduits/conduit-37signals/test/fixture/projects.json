@@ -1,0 +1,246 @@
+[
+  {
+    "id": 1000161,
+    "status": "active",
+    "created_at": "2026-10-14T17:54:02.272Z",
+    "updated_at": "2026-10-16T21:30:10.064Z",
+    "name": "Name 4",
+    "description": "Description 1",
+    "purpose": "topic",
+    "clients_enabled": true,
+    "timesheet_enabled": false,
+    "color": null,
+    "bookmark_url": "https://3.basecampapi.com/999/my/bookmarks/BAhfixture--0000000000000000000000000000000000000000.json",
+    "star_url": "https://3.basecampapi.com/999/buckets/1000161/stars.json",
+    "url": "https://3.basecampapi.com/999/projects/1000161.json",
+    "app_url": "https://app.basecamp.com/999/projects/1000161",
+    "dock": [
+      {
+        "id": 1000413,
+        "title": "Title 2",
+        "name": "message_board",
+        "enabled": false,
+        "position": null,
+        "url": "https://3.basecampapi.com/999/buckets/1000161/message_boards/1000413.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000161/message_boards/1000413"
+      },
+      {
+        "id": 1000420,
+        "title": "Title 3",
+        "name": "todoset",
+        "enabled": true,
+        "position": 2,
+        "url": "https://3.basecampapi.com/999/buckets/1000161/todosets/1000420.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000161/todosets/1000420"
+      },
+      {
+        "id": 1000441,
+        "title": "Title 4",
+        "name": "vault",
+        "enabled": true,
+        "position": 3,
+        "url": "https://3.basecampapi.com/999/buckets/1000161/vaults/1000441.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000161/vaults/1000441"
+      },
+      {
+        "id": 1000448,
+        "title": "Title 5",
+        "name": "chat",
+        "enabled": true,
+        "position": 1,
+        "url": "https://3.basecampapi.com/999/buckets/1000161/chats/1000448.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000161/chats/1000448"
+      },
+      {
+        "id": 1000455,
+        "title": "Title 6",
+        "name": "schedule",
+        "enabled": false,
+        "position": null,
+        "url": "https://3.basecampapi.com/999/buckets/1000161/schedules/1000455.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000161/schedules/1000455"
+      },
+      {
+        "id": 1000462,
+        "title": "Title 7",
+        "name": "questionnaire",
+        "enabled": true,
+        "position": 5,
+        "url": "https://3.basecampapi.com/999/buckets/1000161/questionnaires/1000462.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000161/questionnaires/1000462"
+      },
+      {
+        "id": 1000469,
+        "title": "Title 8",
+        "name": "inbox",
+        "enabled": false,
+        "position": null,
+        "url": "https://3.basecampapi.com/999/buckets/1000161/inboxes/1000469.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000161/inboxes/1000469"
+      },
+      {
+        "id": 1000476,
+        "title": "Title 9",
+        "name": "kanban_board",
+        "enabled": false,
+        "position": null,
+        "url": "https://3.basecampapi.com/999/buckets/1000161/card_tables/1000476.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000161/card_tables/1000476"
+      },
+      {
+        "id": 1000483,
+        "title": "Title 10",
+        "name": "todoset",
+        "enabled": false,
+        "position": null,
+        "url": "https://3.basecampapi.com/999/buckets/1000161/todosets/1000483.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000161/todosets/1000483"
+      }
+    ],
+    "people": {
+      "team": {
+        "count": 3,
+        "sample": [
+          {
+            "id": 1000189,
+            "name": "Name 5",
+            "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png"
+          },
+          {
+            "id": 1000133,
+            "name": "Name 6",
+            "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png"
+          },
+          {
+            "id": 1000126,
+            "name": "Name 7",
+            "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png"
+          }
+        ]
+      }
+    },
+    "all_access": false,
+    "bookmarked": true,
+    "starred": false
+  },
+  {
+    "id": 1000154,
+    "status": "active",
+    "created_at": "2026-09-02T19:36:10.125Z",
+    "updated_at": "2026-10-14T02:46:53.514Z",
+    "name": "Name 8",
+    "description": "",
+    "purpose": "topic",
+    "clients_enabled": false,
+    "timesheet_enabled": false,
+    "color": null,
+    "bookmark_url": "https://3.basecampapi.com/999/my/bookmarks/BAhfixture--0000000000000000000000000000000000000000.json",
+    "star_url": "https://3.basecampapi.com/999/buckets/1000154/stars.json",
+    "url": "https://3.basecampapi.com/999/projects/1000154.json",
+    "app_url": "https://app.basecamp.com/999/projects/1000154",
+    "dock": [
+      {
+        "id": 1000287,
+        "title": "Title 11",
+        "name": "message_board",
+        "enabled": false,
+        "position": null,
+        "url": "https://3.basecampapi.com/999/buckets/1000154/message_boards/1000287.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000154/message_boards/1000287"
+      },
+      {
+        "id": 1000294,
+        "title": "Title 12",
+        "name": "todoset",
+        "enabled": true,
+        "position": 2,
+        "url": "https://3.basecampapi.com/999/buckets/1000154/todosets/1000294.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000154/todosets/1000294"
+      },
+      {
+        "id": 1000301,
+        "title": "Title 13",
+        "name": "vault",
+        "enabled": true,
+        "position": 3,
+        "url": "https://3.basecampapi.com/999/buckets/1000154/vaults/1000301.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000154/vaults/1000301"
+      },
+      {
+        "id": 1000308,
+        "title": "Title 14",
+        "name": "schedule",
+        "enabled": false,
+        "position": null,
+        "url": "https://3.basecampapi.com/999/buckets/1000154/schedules/1000308.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000154/schedules/1000308"
+      },
+      {
+        "id": 1000315,
+        "title": "Title 15",
+        "name": "chat",
+        "enabled": true,
+        "position": 1,
+        "url": "https://3.basecampapi.com/999/buckets/1000154/chats/1000315.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000154/chats/1000315"
+      },
+      {
+        "id": 1000322,
+        "title": "Title 16",
+        "name": "kanban_board",
+        "enabled": false,
+        "position": null,
+        "url": "https://3.basecampapi.com/999/buckets/1000154/card_tables/1000322.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000154/card_tables/1000322"
+      },
+      {
+        "id": 1000329,
+        "title": "Title 17",
+        "name": "questionnaire",
+        "enabled": false,
+        "position": null,
+        "url": "https://3.basecampapi.com/999/buckets/1000154/questionnaires/1000329.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000154/questionnaires/1000329"
+      },
+      {
+        "id": 1000336,
+        "title": "Title 18",
+        "name": "inbox",
+        "enabled": false,
+        "position": null,
+        "url": "https://3.basecampapi.com/999/buckets/1000154/inboxes/1000336.json",
+        "app_url": "https://app.basecamp.com/999/buckets/1000154/inboxes/1000336"
+      }
+    ],
+    "people": {
+      "team": {
+        "count": 4,
+        "sample": [
+          {
+            "id": 1000196,
+            "name": "Name 9",
+            "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png"
+          },
+          {
+            "id": 1000189,
+            "name": "Name 10",
+            "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png"
+          },
+          {
+            "id": 1000133,
+            "name": "Name 11",
+            "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png"
+          },
+          {
+            "id": 1000126,
+            "name": "Name 12",
+            "avatar_url": "https://bc3-production-assets-cdn.basecamp-static.com/999/fixture/avatar.png"
+          }
+        ]
+      }
+    },
+    "all_access": false,
+    "bookmarked": false,
+    "starred": false
+  }
+]

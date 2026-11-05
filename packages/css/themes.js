@@ -30,4 +30,6 @@ export const THEMES = {
   'theme-expedition': { label: 'Expedition', blurb: 'Sunset colors on black and white', scheme: 'dark'  },
   'theme-catppuccin': { label: 'Catppuccin', blurb: 'Pastels on blue-violet charcoal',  scheme: 'dark'  },
   'theme-survey':     { label: 'Survey',     blurb: 'Instrument panel in Mocha purples', scheme: 'dark' },
+  'theme-shadcn':     { label: 'shadcn',     blurb: 'Zinc neutrals, ink primary',       scheme: 'light' },
+  'theme-material':   { label: 'Material',   blurb: 'Violet, tinted surfaces, pill buttons', scheme: 'light' },
 }

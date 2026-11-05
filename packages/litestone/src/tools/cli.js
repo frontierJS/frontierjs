@@ -920,7 +920,7 @@ async function cmdLock(cfg) {
 // name`. Reset is the other way out and is what Prisma does; this is the one
 // that keeps the data (`FJS-D123`).
 
-async function cmdBaseline(cfg) {
+async function cmdBaseline(through, cfg) {
   header('litestone migrate baseline')
 
   const parseResult = loadSchema(cfg.schema)
@@ -932,7 +932,7 @@ async function cmdBaseline(cfg) {
   try {
     for (const { name, rawDb, migrationsDir } of dbs) {
       if (multi) console.log(`  ${dim(`database: ${cyan(name)}`)}`)
-      const result = baseline(rawDb, parseResult, migrationsDir, { pluralize: cfg.pluralize, dbName: name })
+      const result = baseline(rawDb, parseResult, migrationsDir, { pluralize: cfg.pluralize, dbName: name, through })
 
       if (result.ok && result.recorded?.length) {
         anyRecorded = true
@@ -949,7 +949,8 @@ async function cmdBaseline(cfg) {
         `     ${dim('Baselining states that this database already holds what those files build.')}` +
         `\n     ${dim('It is checked before it is recorded, because one wrong baseline is a database')}` +
         `\n     ${dim('that reports a complete history and is missing a column.')}` +
-        `\n\n     Bring it up to date:  ${cyan('litestone migrate apply')}\n`
+        `\n\n     Bring it up to date:  ${cyan('litestone migrate apply')}` +
+        `\n     Ahead by some files only:  ${cyan('litestone migrate baseline <file>')}${dim(' records through that file')}\n`
       )
     }
   } finally {
@@ -5616,7 +5617,7 @@ async function main() {
       case 'create':   await cmdCreate(rest[0], cfg);  break
       case 'dry-run':  await cmdDryRun(rest[0], cfg);  break
       case 'apply':    await cmdApply(cfg);            break
-      case 'baseline': await cmdBaseline(cfg);         break
+      case 'baseline': await cmdBaseline(rest[0] ?? null, cfg); break
       case 'check':    await cmdCheck(cfg);            break
       case 'lock':     await cmdLock(cfg);             break
       case 'status':   await cmdStatus(cfg);           break

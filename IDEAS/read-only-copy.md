@@ -276,9 +276,9 @@ numbers through MCP at the copy's address.
 
 Goal: with the App's machine down, users reach their data at the App's own
 address.
-Done when: a drill stops the App's machine, presses the button, and a connector
-set up before the outage keeps answering with the read-only header and an as-of
-time. The drill also records which users had to sign in again and how long the
+Done when: a drill stops the App's machine, presses the button, and a connection
+made before the outage keeps answering with the read-only header and an as-of
+time, or asks its person to sign in again once its access token expires. The drill also records which users had to sign in again and how long the
 first certificate took.
 
 - [ ] 3.1 "Serve at the main address" is a declared column on the App that
@@ -295,9 +295,11 @@ first certificate took.
       reporting copy.
 - [ ] 3.4 The same steps from `fli` on a laptop, for when Basecamp is the thing
       that is down.
-- [ ] 3.5 A connector signed in on the live App keeps answering on the copy:
-      the copy accepts access tokens the live App signed, and a refresh rotates
-      in the `sessions` block. Waits on Q9's sign-in.
+- [ ] 3.5 A connection made on the live App keeps answering on the copy until
+      its access token expires, because the copy accepts tokens the live App
+      signed. A refresh the copy cannot match signs the person in again there,
+      into the `sessions` block. Built as `mcp-oauth.md` Phase 6, which waits
+      on that paper's Q6.
 
 ### Phase 4 — Who gets what
 

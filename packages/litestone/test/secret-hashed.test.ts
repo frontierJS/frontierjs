@@ -189,3 +189,31 @@ model Vault {
     expect(system.token.format).toBe('password')
   })
 })
+
+// FJS-4007 — "is it set" on a column nobody can read is a @derived Boolean:
+// the expression runs in SQL, so the digest never reaches the row.
+describe('@hashed beside a @derived is-set Boolean', () => {
+  const SCHEMA = `
+    model Share {
+      id           Int      @id
+      token        String?  @secret @hashed
+      passwordHash String?  @hashed
+      hasPassword  Boolean  @derived(passwordHash != null)
+      hasToken     Boolean  @derived(token != null)
+      @@allow(read, true)
+    }
+  `
+  test('a reader who is not the system sees the bit, filters on it, and never the digest', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: KEY })
+    await db.asSystem().share.create({ data: { id: 1, passwordHash: 'pw', token: 't' } })
+    await db.asSystem().share.create({ data: { id: 2 } })
+    const rows = await db.share.findMany({ orderBy: { id: 'asc' } })
+    expect(rows).toEqual([
+      { id: 1, hasPassword: true, hasToken: true },
+      { id: 2, hasPassword: false, hasToken: false },
+    ])
+    expect((await db.share.findMany({ where: { hasPassword: true } })).map((r: any) => r.id)).toEqual([1])
+    expect((await db.share.findMany({ where: { hasPassword: false } })).map((r: any) => r.id)).toEqual([2])
+    db.$close()
+  })
+})

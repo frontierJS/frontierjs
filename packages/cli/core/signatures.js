@@ -14,7 +14,7 @@
 
 import { existsSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
-import { packageMembers } from './workspace-members.js'
+import { releasableMembers } from './workspace-members.js'
 
 const CODE = /\.([cm]?[jt]sx?)$/
 
@@ -41,7 +41,7 @@ export function entryPoints(pkg) {
 /** `[{ name, dir, entries: [{ subpath, file }] }]` for every package that declares a code entry point. */
 export function publishedPackages(root) {
   const found = []
-  for (const m of [...packageMembers(root)].sort((a, b) => (a.folder < b.folder ? -1 : a.folder > b.folder ? 1 : 0))) {
+  for (const m of [...releasableMembers(root)].sort((a, b) => (a.folder < b.folder ? -1 : a.folder > b.folder ? 1 : 0))) {
     const pkg = m.manifest
     if (pkg.private || !pkg.name) continue
     const entries = entryPoints(pkg)

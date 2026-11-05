@@ -96,7 +96,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./utilities.css` | `src/utilities.css` | yes |
 | exports | `./print.css` | `src/print.css` | yes |
 | exports | `./foundation/*.css` | `src/foundation/*.css` | 6 files |
-| exports | `./themes/*.css` | `src/themes/*.css` | 15 files |
+| exports | `./themes/*.css` | `src/themes/*.css` | 17 files |
 | exports | `./components/*.css` | `src/components/*.css` | 20 files |
 | exports | `./patterns/*.css` | `src/patterns/*.css` | 12 files |
 | exports | `./a11y/*.css` | `src/a11y/*.css` | 2 files |
@@ -431,7 +431,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./tty` | `src/tty/tty.js` | yes |
 | exports | `./typo (types)` | `src/typo/typo.d.ts` | yes |
 | exports | `./typo (default)` | `src/typo/typo.js` | yes |
-| exports | `./units` | `src/units/units.js` | yes |
+| exports | `./units (types)` | `src/units/units.d.ts` | yes |
+| exports | `./units (default)` | `src/units/units.js` | yes |
 
 ## `@frontierjs/ui`
 

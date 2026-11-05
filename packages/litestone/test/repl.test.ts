@@ -102,6 +102,11 @@ describe('evaluating', () => {
     expect(out).toContain('2')
   })
 
+  it('an expression holding a block-bodied arrow answers its value (FJS-3999)', async () => {
+    const out = await session(['(async () => { const a = 1; return a + 40 })()'])
+    expect(out).toContain('41')
+  })
+
   it('top-level await works', async () => {
     const out = await session(['await db.count()'], { db: { count: async () => 7 } })
     expect(out).toContain('7')

@@ -1,12 +1,12 @@
 ---
 id: conduits-move
-status: proposed
+status: shipped
 dated: 2026-11-04
 ---
 
 # Idea — moving the 27 connectors into `packages/conduits/`
 
-**Status: PROPOSED. Phase 0 done; Q1–Q11 ruled 2026-11-04/05; 1.1 next and it is the owner's, 1.1a the renames follow.**
+**Status: DONE 2026-11-05, uncommitted. Every box closed; Q1–Q11 ruled 2026-11-04/05. Owed after the commit: the CI lane's skip-path proof and the toolbelt `units` declaration.**
 Probed against the tree 2026-11-04. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-04): the gameplan for executing `FJS-D1559` — every
@@ -198,65 +198,10 @@ Done when: the walker table below names every hit with a path and a line, and
 
 - [x] 0.1 Inventory the walkers in cli, scripts, outpost, basecamp and testing;
   classify each as walker, named-package resolver, already glob-driven or doc.
-  - **W — 27 walkers that enumerate `packages/` one level** (file:line):
-    `cli/core/checks/repo.js` 286 (`test-files-run`), 414 (`doc-examples-run`),
-    458 (`package-root-md`), 520 (`docs-index`), 597 (`connector-contract`,
-    filters `^conduit-`) · `repo-map.js:284` `packages()` (atlas, rings, live)
-    · `runnables.js:42` `workspaceDeps` and `:57` `appDirs` · `publish-view.js:98`
-    `workspaceMembers` · `runtime.js:490` `config.wsPackages` (feeds 12
-    `workspace/*` commands and `surface.js`; its comment says *reads packages/*
-    only, not the globs*) · `signatures.js:42` · `seams.js:124` and `:280`
-    (recursive walk, attributes by `parts[1]`) · `ask.js:420` · `tutorial.js:32`
-    · `terms.js:994` · `doc-audit.js:186` and `:204` · `proofs.js:504` ·
-    `register-check.js:110` · `vendor.js:132` `namesIn` · `done.js:135, 197`
-    (existence gate only) · `scripts/typecheck.mjs:117` · `scripts/bench-ab.mjs:44, 65`
-    · `scripts/scaffold-build.mjs:1328` `_publishablePackages` ·
-    `basecamp/api/src/domain/release/dockerfile-template.ts:51` (shell glob in
-    the image) · `cli/commands/workspace/link.md:42` `findPkg`.
-  - **R — about 31 clusters that build `packages/<folder>` or derive a folder
-    from `parts[1]`**: `scripts/ci.mjs` 1523 `localVersion` (folder = name minus
-    scope, the strongest assumption), 1752 (bench regex `packages/[^/]+/bench`),
-    2246, 399/497/1781 (path-keyed maps) · `bench-ab.mjs:135` · `fix-loop.mjs:351`
-    · `scaffold-build.mjs:274` (passes `packagesDir`), 1666 · `vendor.js:103, 110`
-    · `repo-map.js:159` · `git-status.js:32` · `terms.js:150, 890, 919` ·
-    `done.js:363` · `surface.js:222, 246` · `repo-live.js:40` ·
-    `repo-atlas.js:189, 243, 1257` · `seams.js:214` · `register-check.js:144, 153,
-    180` · `proofs.js:173` · `ask.js:352, 435` · `assets.js:61, 87` ·
-    `repro.js:105` · `utils.js:380, 421` (root finders, stay valid) · path-keyed
-    configs `biome.json:24-41`, `scripts/mutate-baselines.json`,
-    `scripts/ci-allowances.json` · commands that CREATE at `packages/<name>`
-    (`workspace/add`, `project/new`, `github/clone`, `workspace/init`) stay as
-    they are.
-  - **G — 5 already glob- or lock-driven, none a general owner**:
-    `scripts/ci.mjs:2254` `workspaceDirs` (understands `X/*` and literals only;
-    `packages/*` would still emit the bare `packages/conduits` folder) and
-    `:2286` `nestedPackageDirs` (the `FJS-026` note) · `snapshots.js:176`
-    `workspaceMember` (`X/*` or literal, bin lookup only) · `deps.js:69`
-    `collectDeps` (lockfile `workspaces` keys, nesting-proof once installed) ·
-    `vendor.js:99` (tests for a `workspaces` key, then hard-codes `packages`).
-  - **D — docs and tests that encode the layout**: `docs/CI.md:15, 23`,
-    `packages/conduits/README.md`, `workspace/surface.md:100`, `exports.md:157`;
-    fixtures writing `workspaces: ['packages/*']` in `cli/test/` `vendor` (41–320,
-    incl. `FJS_PACKAGES_DIR`), `publish-view` 48/103, `deps:24`, `project-root`,
-    `runnables:289`, `register-check` 897/969, `terms`, `next:29`, `server:720`,
-    `framework-checkout:30`, `checks:6124` (`connector-contract`), `advisories:75`.
-  - **Not walkers**: `packages/outpost`, `packages/testing` (only
-    `repository.directory`), `.github/workflows` (path filters on `packages/cli`).
-    `tsconfig.base.json` has no path-keyed references; `typecheck-baselines.json`
-    is keyed by folder BASENAME (`scripts/typecheck.mjs:48`, `repo-map.js:473`)
-    and holds only comment keys today.
-  - **Top five files by blast radius**: `checks/repo.js` (five walkers, one
-    silent after the move), `vendor.js` (+ `scaffold-build.mjs:274`,
-    `basecamp/deploy/build.mjs:100`), `runtime.js` `wsPackages` (largest fan-out),
-    `scripts/ci.mjs` (`workspaceDirs`, `nestedPackageDirs`, `localVersion`),
-    `repo-map.js` (shared model for atlas, rings, live).
+  - The record moved to [`docs/plan-done.md`](../docs/plan-done.md#ideasconduits-movemd).
 - [x] 0.2 Record the baseline: `fli check` and `fli ws:atlas --as=report` on this
   tree.
-  - `fli check`: 28 rules, 1 error, 118 warnings; the error is `drive-holds` on
-    `packages/outpost/test/verify-docker.mjs`, from the uncommitted outpost work
-    in this tree, not this plan. `connector-contract` reports *nothing to check*.
-    Atlas report exit 0. Both saved in the session scratchpad; `bun run ci` was
-    not rerun, `.cache/ci-last.txt` from `92b1a6fa6` stands.
+  - The record moved to [`docs/plan-done.md`](../docs/plan-done.md#ideasconduits-movemd).
 
 **Done 2026-11-04.** 27 walkers, about 31 path builders, 5 glob readers, no
 owner. The two conditions are real and `runnables.js` is the one that would
@@ -272,9 +217,7 @@ fails when any walker misses a member of a two-level fixture workspace.
 - [x] 1.1 Commit the sibling: the three untracked connectors and the 37signals
   Phase 4.1 diff as their own commits; the rest as one. The owner commits, or
   says to.
-  - Owner said go 2026-11-05. Five commits `c165e64`…`3157182` in the sibling
-    (no remote; local only). Nothing secret in the three untracked packages;
-    the one secret-looking string is microsoft's sink stand-in.
+  - The record moved to [`docs/plan-done.md`](../docs/plan-done.md#ideasconduits-movemd).
 - [x] 1.1a Renames in the sibling, before any copy (Q7–Q11): tax folds into
   stripe as a module; shipping → easypost; google-maps → google with maps as
   its first module; push splits into apns and an fcm module of google, each keeping its own
@@ -283,47 +226,24 @@ fails when any walker misses a member of a two-level fixture workspace.
   37signals keeps its name and gains Basecamp in its description and keywords.
   Each rename moves its sink, drive, README, CLAUDE.md and PROJECT_STATE.md;
   every drive green after. 27 packages become 26.
-  - 2026-11-05, done: tax → stripe `src/tax.ts` as `export * as tax`, one sink
-    with `taxExpiresInSeconds`, 26 drive rows (`c1f2472`); shipping → easypost
-    (`6bef653`); google-maps → google with `src/maps/` and a `./maps` subpath
-    export, README states the credential line (`1a23348`); 37signals
-    description, keywords, README title (`FJS-D1919`). Module-level names
-    (`googleMapsTargets`, `GOOGLE_MAPS_API_KEY`, target ids) kept. All three
-    drives green from the main thread.
-  - Push split done 2026-11-05 (`6887a18`, `e0ace4e`): `conduit-apns` (14 rows)
-    and `conduit-google` `src/fcm/` with a `./fcm` subpath, the google sink
-    split into `sink/maps.ts` + `sink/fcm.ts` behind one `sink.ts` with
-    per-module `/maps/_sink/*` and `/fcm/_sink/*` controls (32 rows). The
-    `provider` field is dropped from results and failures: the caller knows
-    which package it called. Owed: the b64url/PEM/DER and `decodeJwt` helpers
-    are duplicated in apns and google's `jwt.ts`; toolbelt is their home when
-    a third copy appears. No `tsc` run in the sibling (`link.sh` says `bunx
-    tsc` triggers an install); `fli typecheck` after 2.2 is the proof. Sibling
-    at 26 packages, clean, drives green from the main thread.
-- [ ] 1.2 One owner for workspace membership in `packages/cli/core/` that reads
+  - The record moved to [`docs/plan-done.md`](../docs/plan-done.md#ideasconduits-movemd).
+- [x] 1.2 One owner for workspace membership in `packages/cli/core/` that reads
   the root `workspaces` globs (literal and `X/*`, which is all the root uses)
   and returns per Q5; every W walker calls it and `scripts/ci.mjs` imports it
   by path as `fix-loop.mjs` already imports `core/*.js`. The test is a fixture
   workspace with `packages/a` and `packages/group/b`, asserting each walker
   reaches `b` — `runnables.js` first.
-  - 2026-11-05, in progress: `core/workspace-members.js` built with
-    `workspaceMembers`, `memberByName`, `memberByPath` and `packageMembers`
-    (members under `packages/` not nested in another member — the view the
-    old `packages/*` callers get, so `example`, `website` and `sierra/example`
-    stay out of `ws:pub`, the atlas and `next`). A root with no `workspaces`
-    yields `[]`; six test fixtures gained the list. Moved: `runnables.js`,
-    `publish-view.js`, `repo-map.js` `packages()`, `runtime.js` `wsPackages`
-    (its `path` is now the owner's). On this tree the owner returns the same
-    27 as before, the bare `packages/conduits` correctly absent. Full cli
-    suite 4356 pass / 0 fail from the main thread. Left: signatures, seams,
-    ask, tutorial, terms, doc-audit, register-check, link.md, and the
-    `parts[1]` attributions in seams, terms, git-status, repo-map.
-- [ ] 1.3 `vendor.js` packs a dependency from whichever member directory holds
+  - The record moved to [`docs/plan-done.md`](../docs/plan-done.md#ideasconduits-movemd).
+- [x] 1.3 `vendor.js` packs a dependency from whichever member directory holds
   it, through the same owner; its test packs a nested member; the emitted
   Dockerfile `bun link` loop iterates the member list, not `packages/*/`.
-- [ ] 1.4 `connector-contract` and the `coverage` note read members from the
+  - The record moved to [`docs/plan-done.md`](../docs/plan-done.md#ideasconduits-movemd).
+- [x] 1.4 `connector-contract` and the `coverage` note read members from the
   owner; `docs/CI.md` row updated and `FJS-026`'s allowance kept. The R
   clusters that BUILD a path (`ci.mjs:1523` first) take `path` from the owner.
+  - The record moved to [`docs/plan-done.md`](../docs/plan-done.md#ideasconduits-movemd).
+
+**Done 2026-11-05.** The sibling is frozen at e0ace4e with 26 packages after the renames; one membership owner, `core/workspace-members.js`, replaced every walker, `vendor.js` packs from any member directory, and the connector-contract check reads members. All of it is in the owner's 00:58 commit; the move itself did not start until it was.
 
 ### Phase 2 — The move
 
@@ -332,14 +252,40 @@ Done when: `bun install` is clean, `bun run --filter './packages/conduits/*'
 test` and `drive` are green, `fli check` reports no `connector-contract` or
 `package-root-md` finding, and the snapshots phase is clean.
 
-- [ ] 2.1 Copy the 26 (after 1.1a) into `packages/conduits/`; `CONTRACT.md` to
+- [x] 2.1 Copy the 26 (after 1.1a) into `packages/conduits/`; `CONTRACT.md` to
   `packages/conduit/docs/`; the sibling-only `link.sh` and `REPORT.md` stay
   behind. `peerDependencies` stays; tax → stripe and gmail → oidc become
   `workspace:*`.
-- [ ] 2.2 Root `workspaces` per Q2; `bun install`; the 27 drives run from this
+  - Done 2026-11-05. `git archive HEAD packages` from the sibling at e0ace4e,
+    so committed content only: 26 folders, no `node_modules`, lockfile or
+    `.env`. The sibling's shared drive harness `lib/drive.ts` lands at
+    `packages/conduits/lib/drive.ts` — a folder with no manifest, which the
+    membership owner skips — and the 20 drives that import it drop one
+    `../`. `CONTRACT.md` is `packages/conduit/docs/CONTRACT.md`, indexed in
+    that folder's README. Dependency shapes as found: a peer range on
+    `@frontierjs/conduit` (`^0.1.0`) in every connector, toolbelt peers in
+    s3, mailgun, postmark, hetzner, digitalocean; gmail's peer on
+    `conduit-oidc` is `workspace:*`. Easypost imported
+    `@frontierjs/toolbelt/units` with no toolbelt in its manifest — it only
+    resolved through the sibling's `link.sh` — and now peers on `^0.1.10`.
+- [x] 2.2 Root `workspaces` per Q2; `bun install`; the 27 drives run from this
   tree with their `test` script unchanged; `scripts/ci-allowances.json` drops
   the `packages/conduits` folder exemption.
-- [ ] 2.3 Registers: 27 rows in the commented package table per Q1 with ring
+  - Done 2026-11-05. `"packages/conduits/*"` is the last root `workspaces`
+    entry; `bun install` added 34 packages and every nested
+    `node_modules/@frontierjs/*` under a connector is a symlink into this
+    tree — the published-copy shadow `link.sh` warned of did not happen,
+    because every peer range is satisfied by the workspace version. The
+    `packages/conduits` allowance is gone. The `test` script was `bun test`
+    in 22 connectors and absent in 4, and `bun test` exits 1 with no test
+    files: a connector's suite IS its drive (`test/<x>.drive.ts`, the
+    harness above), so every `test` now runs `bun run drive`, as 37signals
+    and mattermost already did. `bun run --filter './packages/conduits/*'
+    test` exits 0 with 26 "all green" (the drives need no credential or
+    network). `fli check` has no `connector-contract`, `package-root-md` or
+    `test-files-run` finding; it does warn `doc-map-narration` ×4 and
+    `doc-examples-run` for three connector READMEs — 2.3 answers them.
+- [x] 2.3 Registers: 27 rows in the commented package table per Q1 with ring
   `conduits` (added to `repo-rings.js` below `batteries`, Q6) plus a check that
   a member without a row is a finding; ONE `DRIVES.md` row per table for the
   group and `resolveRun` in `proofs.js` expands it to the 27 drives so
@@ -347,14 +293,74 @@ test` and `drive` are green, `fli check` reports no `connector-contract` or
   `docs/TESTING.md` row for the group; `packages/conduit/CLAUDE.md` and
   `packages/conduits/README.md` point at the live home. Then `fli ws:exports`,
   `fli ws:deps`, `fli ws:atlas` and `--as=report`, diffed against 0.2.
-- [ ] 2.4 Publishing: `fli release check` shows the 27 held out until each is
+  - Done 2026-11-05. 26 rows in the commented table (first cell is the
+    folder, `conduit-<x>`; repo-map pairs a row by member name then folder),
+    State "Prototyped. <n> drive rows green from this tree", ring `conduits`
+    below `batteries` in `repo-rings.js` (its tone is a teal mix of info and
+    success — every named tone was taken). The table parse moved to a leaf,
+    `core/package-table.js`, because `repo-map.js` imports `checks.js` and the
+    new `package-row` warning (a member with no row) could not reach it
+    without a cycle. DRIVES.md carries one group row per table spelled
+    `packages/conduits/*`: `drive`; `proofs.js` expands a `X/*` where into one
+    target per member whose manifest has the script (none → one unknown
+    target, so `proof-target` still fires) and `preflight.js` expands the
+    same way; `fli proves` on one connector names all 26 — narrowing to the
+    touched connector is a matcher change left for when the group is slow.
+    `docs/TESTING.md` row; `packages/conduits/README.md` names the 26 as the
+    live home; `packages/conduit/CLAUDE.md` points at it. The seven
+    warnings: four dated sentences moved to each package's PROJECT_STATE.md,
+    three sketch fences marked `ts fragment`. Atlas report: 27 → 53
+    packages, snapshots regenerated; `fli ws:exports` now counts 47
+    publishable, which 2.4 corrects. Two `ask.test` misses came from writing
+    the harness path beside the word "drive" in DRIVES.md and TESTING.md —
+    reworded. 616 pass in the touched test files.
+- [x] 2.4 Publishing: `fli release check` shows the 27 held out until each is
   on npm; a connector enters the release list by a later ruling, not by moving.
-- [ ] 2.5 Typecheck: a connector enters `scripts/typecheck-baselines.json` only
+  - Done 2026-11-05. There was no single publishable predicate — every release
+    caller applied `!manifest.private` over `packageMembers`, which the atlas,
+    registers, proofs and doc-audit also read — so the holdout is one
+    `HELD_OUT = ['packages/conduits/']` prefix in `workspace-members.js`
+    behind `releasableMembers(root)`, and the four release callers
+    (`runtime.js` `wsPackages`, `publish-view.js`, `signatures.js`
+    `publishedPackages`, `vendor.js` `sourceOfRoot`) read that view. Every
+    `ws:*` command that shares `wsPackages` (`ws:list`, `ws:run`, `ws:exec`,
+    `ws:status`) therefore leaves the connectors out too, which is the
+    set-apart reading of `FJS-D1913`; the atlas and `fli check` still see all
+    26. `fli ws:exports` 47 → 21 publishable; `fli ws:pub --dry` names no
+    connector (before this, a never-tagged package counted as affected and a
+    plain run would have shipped 26 at 0.0.2). `fli release check` is the
+    schema release classifier, not a package list — the step's wording was
+    wrong. Ruling a connector INTO releases later means narrowing the prefix,
+    which is coarse; a per-connector list waits for that day.
+- [x] 2.5 Typecheck: a connector enters `scripts/typecheck-baselines.json` only
   if red; absent means 0 and a ratchet only goes down.
-- [ ] 2.6 Own CI lane (Q6): a `conduits` phase in `scripts/ci.mjs` that runs the
+  - Done 2026-11-05. Every connector has `"typecheck": "node
+    ../../../scripts/typecheck.mjs"` and joins root `bun run --filter '*'
+    typecheck`. mailgun and postmark extended `../../tsconfig.base.json`, a
+    path one level short since the move, and went from 85 and 76 errors to
+    clean once it read `../../../`. Thirteen are seeded in
+    `typecheck-baselines.json` by hand (`--update` only lowers): microsoft
+    42, oidc 12, gmail 6, apns 3, google 3, n8n 2, openai 2, and 1 each in
+    digitalocean, easypost, hetzner, mattermost, s3, telnyx — four of the
+    ones are a missing declaration for `@frontierjs/toolbelt/units`. Root
+    typecheck is red only on haven (2) and basecamp (1), as before.
+- [x] 2.6 Own CI lane (Q6): a `conduits` phase in `scripts/ci.mjs` that runs the
   group's tests and drives only when a path under `packages/conduits/` or
   `packages/conduit/` changed against the base ref, and is skipped otherwise;
   the default `test` phase excludes the prefix. `docs/CI.md` gets the row.
+
+  - Done 2026-11-05. `conduits` phase after `tests` in `PHASES` and in
+    `FULL_ONLY`; it runs `bun run drive` per connector in lanes when a changed
+    or untracked path matches `^packages/conduits?/` against the base ref and
+    is otherwise skipped in `mutate`'s words; `fli ci --phase conduits` runs
+    it anyway. The `tests` phase excludes `isConnector` directories, and the
+    prefix is `isHeldOut` from the membership owner. `--phase conduits`: 26
+    drives, 41 s; `--tests-only --only conduit-stripe`: tests 0 suites,
+    conduits 1 drive. `docs/CI.md` row added, sixteen phases → seventeen.
+    Owed: the skip path has not fired, because this tree has the connectors
+    untracked — the first `fli ci` after the commit on a change outside the
+    group demonstrates it.
+**Done 2026-11-05.** 26 members, every drive green from this tree, registers and atlas carry them in their own ring, `ws:pub` cannot reach them, typecheck ratchets them, and CI drives them only when they change. One owed proof: the CI lane's skip path, after the commit.
 
 ### Phase 3 — The callers follow
 
@@ -362,11 +368,21 @@ Goal: nothing points at the sibling.
 Done when: `rg 'conduit-connectors'` across `fjs-prototypes/*`, `IDEAS/`, the
 skills and the memory files hits only history.
 
-- [ ] 3.1 `fjs-prototypes/chat`, `chatwoot`, `serpgrid`: `link:` to the new path;
+- [x] 3.1 `fjs-prototypes/chat`, `chatwoot`, `serpgrid`: `link:` to the new path;
   each app's own drive green.
-- [ ] 3.2 Sibling repo: a `README.md` saying where the code went and that nothing
+  - Done 2026-11-05. chat and chatwoot link by NAME (`link:@frontierjs/conduit-<x>`,
+    bun's global link registry), so `bun link` run from the three new folders
+    re-pointed the registry and a `bun install` in each prototype followed it;
+    serpgrid's absolute `link:` path now names `frontierjs/packages/conduits/conduit-gmail`.
+    All four resolve into the new home and import (gmail 64 exports,
+    mattermost 43, mailgun 14, postmark 13). Prototype repos left uncommitted,
+    as their other work is.
+- [x] 3.2 Sibling repo: a `README.md` saying where the code went and that nothing
   is committed there again, as its last commit; no deletion.
-- [ ] 3.3 Docs: `conduit-connectors.md` § Prototyped points here, `IDEAS/overview.md`
+  - Done 2026-11-05. Sibling commit 490bdae: a README saying the code is in
+    `frontierjs/packages/conduits/`, the harness and contract paths, and that
+    nothing lands there again; e0ace4e named as the last commit before the move.
+- [x] 3.3 Docs: `conduit-connectors.md` § Prototyped points here, `IDEAS/overview.md`
   row 3.9 gets the landed date, `HANDOFF.md` and `packages/conduit/CLAUDE.md`
   name the home. `fli done`.
 
@@ -376,3 +392,10 @@ skills and the memory files hits only history.
   basecamp Phases 2–3.
 - `packages/conduits/README.md` — the home, with the 27 by area.
 - `FJS-D1559`, `FJS-D1185`, `FJS-D889`/`D890` (the connector shape), `FJS-026`.
+
+  - Done 2026-11-05. `conduit-connectors.md` status and § Prototyped name
+    `packages/conduits/`; `IDEAS/overview.md` 3.9 is `partial`, landed
+    2026-11-05, held out of releases; `HANDOFF.md` has the dated entry;
+    `packages/conduit/CLAUDE.md` was pointed in 2.3. `fli done` below.
+
+**Done 2026-11-05.** The three prototypes import from the new home, the sibling is history with a README saying so, and the papers point here. Later the same day: the toolbelt `units` declaration landed (`src/units/units.d.ts`, three baselines to zero) and `conduit-sendgrid` + `conduit-dataforseo` were built as stubs (`conduit-connectors.md` rows 14–15), so the group is 28. Owed after the owner's commit: the CI skip-path proof (2.6).

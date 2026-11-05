@@ -69,7 +69,7 @@ exists. Analytics is a GraphQL endpoint at Cloudflare, a step of its own.
 **`records` is the plan and `sync` the apply.** A Domain is a CNAME to its App's
 INGRESS RECORD, `<appId>.<ingress zone>`, holding an A per machine the App runs
 on — `running` and `online` (`servingAddresses`, `FJS-D561`). The ingress zone is
-`Workspace.ingressAccountId` + `ingressZoneId`, set through `workspaces.patch`
+`Workspace.ingressSecretId` + `ingressZoneId`, set through `workspaces.patch`
 (no screen yet). `sync` refuses with a 409 before writing anything when there is
 no ingress zone, the App runs nowhere, no connected zone holds the hostname,
 or an unmarked A/AAAA/CNAME sits at the name.

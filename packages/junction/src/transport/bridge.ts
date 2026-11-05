@@ -4,7 +4,7 @@
 // Nothing below the bridge touches the service layer.
 
 import type { TransportContext } from './types.ts'
-import { toFrameworkError, FrameworkError, BadRequest, MethodNotAllowed, sanitizeError, type ErrorMapperHost } from '../core/errors.ts'
+import { toFrameworkError, FrameworkError, BadRequest, MethodNotAllowed, sanitizeError, bearerChallenge, type ErrorMapperHost } from '../core/errors.ts'
 import { accessorCandidates } from '../core/litestone.ts'
 import { omitBy } from '@frontierjs/toolbelt/redact'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
@@ -648,10 +648,9 @@ export function errorResponse(err: unknown, ctx?: ServiceContext, host?: ErrorMa
   const status = fe.code ?? 500
 
   const text   = JSON.stringify(fe.toJSON())
-  return own(new Response(text, {
-    status,
-    headers: JSON_HEADERS
-  }), text)
+  // Fresh headers: JSON_HEADERS is shared by every answer.
+  const headers = status === 401 ? { ...JSON_HEADERS, 'www-authenticate': bearerChallenge(fe) } : JSON_HEADERS
+  return own(new Response(text, { status, headers }), text)
 }
 
 export function redirectResponse(url: string, status = 302): Response {

@@ -7,9 +7,12 @@ reranked: 2026-10-10
 
 # Idea — which Conduit connectors FrontierJS should maintain, and in which order
 
-**Status: PROPOSAL, prototyped.** All twenty are built as prototypes in the
-sibling workspace `../conduit-connectors/`; postmark and mailgun are shaped as `packages/` members (2026-10-16) but held in the sibling workspace until the owner commits them, the rest not —
-§ *Prototyped 2026-10-11* is the state of each (21 built, all 10 conduit rows closed). Dated 2026-08-29. `FJS-D153` settled
+**Status: PROPOSAL, built.** The connectors live in the monorepo at
+`packages/conduits/conduit-<x>/`, 26 workspace members since 2026-11-05 (`FJS-D1559`;
+the move is `conduits-move.md`, which also records the renames — tax is a stripe
+module, shipping is `conduit-easypost`, push is `conduit-apns` plus google's fcm
+module, google-maps is `conduit-google`) — § *Prototyped 2026-10-11* is the state
+of each as built. Dated 2026-08-29. `FJS-D153` settled
 *where* an official connector lives — its own package, `@frontierjs/conduit-<vendor>`,
 promoted out of `example/` once a second one exists to argue with the first. It did
 not settle **which ones**, and it did not settle what a connector package actually
@@ -174,7 +177,7 @@ needs building first.
 | 5   | `conduit-cloudflare`    | `packages/basecamp/api/src/providers/edge/cloudflare.ts`, 264 lines, no longer a stub | basecamp `/dns/`; ELA and maid.tech both sit behind Cloudflare; `cloudflare-edge.md` holds promotion until a second caller, and `deploy-plane.md` is that caller |
 | 6   | `conduit-digitalocean`  | `packages/basecamp/api/src/providers/compute/digitalocean.ts`                      | basecamp provisioning; `fli deploy` for anyone whose fleet is Droplets    |
 | 7   | `conduit-hetzner`       | `packages/basecamp/api/src/providers/compute/hetzner.ts`                           | basecamp provisioning; the second compute dialect, which is what makes `ComputeConnector` an interface rather than one vendor's shape |
-| 14  | `conduit-dataforseo` | `fjs-prototypes/serpgrid/api/src/providers/dataforseo/`, `kos/api/src/domain/links/dataforseo.ts` | **Owner's override 2026-11-05, as rows 12–13 were.** The row said *serpgrid only, fails test one (an SEO vendor is a vertical), stays in the app*; test one still fails and the owner promoted it anyway because kos is the second app (backlink-gap intersection, local competitors) and the shape is test two's: HTTP Basic, a POST of a task array, and every task is paid spend, so the idempotency key and *a send that costs money* from `third-party-credentials.md` are the sink's job. serpgrid's provider is the source; kos's raw fetch is the second caller |
+| 14  | `conduit-dataforseo` | `fjs-prototypes/serpgrid/api/src/providers/dataforseo/`, `kos/api/src/domain/links/dataforseo.ts` | **Built as a stub 2026-11-05, `packages/conduits/conduit-dataforseo`, 12 rows green**: target with `accountId`/`perCaller` (cloudflare's and gmail's spellings; C7 and C8 amended in `CONTRACT.md`), `postTasks`/`live`/`tasksReady`/`getTask`, the envelope validator (C4), cost in micros; a lost post is found by the caller's `tag` (C6). Parsers, pacing and the Labs endpoints stay the apps'; neither caller is adopted. **Owner's override 2026-11-05, as rows 12–13 were.** The row said *serpgrid only, fails test one (an SEO vendor is a vertical), stays in the app*; test one still fails and the owner promoted it anyway because kos is the second app (backlink-gap intersection, local competitors) and the shape is test two's: HTTP Basic, a POST of a task array, and every task is paid spend, so the idempotency key and *a send that costs money* from `third-party-credentials.md` are the sink's job. serpgrid's provider is the source; kos's raw fetch is the second caller |
 
 ### Tier B — a port needs it, nobody has written it
 
@@ -188,7 +191,7 @@ needs building first.
 | —   | QuickBooks                      | maid.tech. Accounting is the named sync-engine exclusion. Its own noun when wanted; not a connector |
 | 12  | `conduit-n8n`                   | **Built (`FJS-D1489`), in the connectors workspace — the owner's override of this row, which said *not a connector*.** The decision-rules run stands in the ruling: outbound to n8n is junction's webhooks battery, the `N8N_URL`/`N8N_API_KEY` pair is `attachments`' own example, and the REST client is one header. What the package is for is the other direction — an app that READS its n8n (workflows, executions) or starts one and wants the reply: `n8nTargets({ address, hook? })` → `{ api, hook }`, two listeners on one origin, the key never on the hook. Proved against n8n 2.44.6 in docker, which found `no_trigger`, `unpublishing` and that activate is idempotent. No runtime caller yet; intake's `tools/n8n-deploy.mjs` is a deploy script and stays one |
 | 13  | `conduit-zapier`                | **Built (`FJS-D1528`), in the connectors workspace — the owner's override of this row, which said *not a connector*.** The decision-rules run reshaped it: not a host-pinned target but slack's incoming-webhook shape, because the field maid.tech's `Form.svelte` and ELA's `Integrations.svelte` ship is GENERIC ("Zapier, IFTTT, or any other webhook") and posts to a pasted URL with a raw `fetch` — which `plugins/webhooks` cannot do, since a Catch Hook is unsigned and the row is the app's. What is Zapier's: 404 `off`, 410 `gone`, the reverse `DELETE <target_url>`, and `subscriptionFrom` with the host pinned. The `third-party/zapier/` app maid.tech ships is a Zapier CLI integration (Zapier calls the app's API, which junction serves) and stays one; the Actions API is a partner contract and the reopen path for a vendor address. **Open, not built (2026-10-26):** (a) no Zapier app — triggers, actions and searches with the app's subscribe, unsubscribe, sample and auth-test routes; maid.tech's `third-party/zapier/` is the prior art, and a schema-derived one needs a paper and `decision-rules` first; (b) a lost post is lost — no job-queued retry and no event id in the payload for the Zap to dedupe on, so a 5xx or 429 drops a form's lead; (c) nothing acts on `off` or `gone` — no owner notice, no row delete, no refusal count before the reverse unsubscribe, and no last-delivered, last-error or test-send on ELA's `webhook` model; (d) unadopted, since both apps still use raw `fetch`, and never run against live Zapier |
-| 15  | `conduit-sendgrid` | **Two apps, from the 2026-11-05 kos survey.** kos sends on `/v3/mail/send` and verifies event webhooks by hand (ECDSA P-256 over timestamp + raw body, `node:crypto`); the maid.tech port inherits the legacy CRM's per-tenant SENDING-DOMAIN lifecycle at `my.maid.tech/api/src/services/integrations/sendgrid/` and `mailer/transports/sendgrid.js`, which is the reference: `POST whitelabel/domains` with `automatic_security` → three CNAMEs that must stay `proxied:false` or DKIM never resolves → `validate` polled with backoff until DNS propagates → the from-address promoted only then; `mail_settings.sandbox_mode` as the test mode that still 400s a bad sender; `custom_args.messageId` so a webhook finds its row; a `reply_to` without an address is a 400. The fourth `IMail` adapter beside resend, postmark and mailgun. The verbs RETURN the CNAMEs and `conduit-cloudflare` applies them (`cloudflare-edge.md` already reports SendGrid CNAMEs as drift); a sendgrid-private DNS writer breaks Invariants 4 and 5. Whether *sending domain* becomes a shared verb across the four mail connectors is a question for the second one that grows it |
+| 15  | `conduit-sendgrid` | **Built as a stub 2026-11-05, `packages/conduits/conduit-sendgrid`, 14 rows green**: send with `custom_args.messageId` and sandbox, the `IMail` adapter, the ECDSA P-256 verifier over an event ARRAY, and the domain verbs returning three `proxied: false` CNAMEs; the Email Activity read is named, not built, and neither caller is adopted. **Two apps, from the 2026-11-05 kos survey.** kos sends on `/v3/mail/send` and verifies event webhooks by hand (ECDSA P-256 over timestamp + raw body, `node:crypto`); the maid.tech port inherits the legacy CRM's per-tenant SENDING-DOMAIN lifecycle at `my.maid.tech/api/src/services/integrations/sendgrid/` and `mailer/transports/sendgrid.js`, which is the reference: `POST whitelabel/domains` with `automatic_security` → three CNAMEs that must stay `proxied:false` or DKIM never resolves → `validate` polled with backoff until DNS propagates → the from-address promoted only then; `mail_settings.sandbox_mode` as the test mode that still 400s a bad sender; `custom_args.messageId` so a webhook finds its row; a `reply_to` without an address is a 400. The fourth `IMail` adapter beside resend, postmark and mailgun. The verbs RETURN the CNAMEs and `conduit-cloudflare` applies them (`cloudflare-edge.md` already reports SendGrid CNAMEs as drift); a sendgrid-private DNS writer breaks Invariants 4 and 5. Whether *sending domain* becomes a shared verb across the four mail connectors is a question for the second one that grows it |
 | —   | PageSpeed Insights | **A module of `conduit-google`, not a package** (`FJS-D1917`: the project-credential Google products; the workspace package is still named `conduit-google-maps`, rename owed as `conduits-move.md` 1.1a). One GET with an API key, which fails test two on its own; it rides because it costs nothing as a module. Caller: kos's planned `pagespeed_check` tool |
 | —   | 3CX, Attentive.ai, Radar, Cloudinary, ATTOM | One app each. App-owned `providers/` files, following the Stripe shape. Named so the next audit does not count them as gaps |
 
@@ -233,13 +236,15 @@ Ruled 2026-10-10, before step A:
 
 ## Prototyped 2026-10-11
 
-Every connector in the order above exists as a prototype package in the sibling
-workspace `conduit-connectors/` (its own git repo, beside `frontierjs/`; nothing
-is under `packages/` here, `FJS-D1185`). Each follows `FJS-D890` — target builder,
+Every connector in the order above was built as a prototype package in the
+sibling workspace `conduit-connectors/` (its own git repo, beside `frontierjs/`)
+and moved into `packages/conduits/` on 2026-11-05 (`conduits-move.md`); the
+sibling is history and nothing lands there again. Each follows `FJS-D890` — target builder,
 payload types, error mapping, sink, drive, verifier where the vendor sends
-webhooks — against a `CONTRACT.md` written after Tier A and amended by Tier B and C.
-**The state of each — drive rows, fixtures, open gaps — is that workspace's
-`PROJECT_STATE.md`**, and `bun run drive` at its root re-proves it.
+webhooks — against `packages/conduit/docs/CONTRACT.md`, written after Tier A and
+amended by Tier B and C. **The state of each — drive rows, fixtures, open gaps —
+is its own `PROJECT_STATE.md`**, and `cd packages/conduits/conduit-<x> && bun run
+drive` re-proves it; `bun run --filter './packages/conduits/*' test` runs them all.
 
 **What the prototypes found in conduit** — ten rows, `FJS-2721`–`FJS-2730`.
 Eight are closed by rulings of 2026-10-12/13: `FJS-D933` (Basic is the one

@@ -23,6 +23,7 @@ import { parse } from '../src/core/parser.js'
 import { createClient } from '../src/core/client.js'
 import { resolveTenancy, tenantFrom, tenantAdmission } from '../src/core/tenancy.js'
 import { createTenantRegistry } from '../src/tenant.js'
+import { autoMigrate } from '../src/core/migrations.js'
 
 const ROW_SCHEMA = `
 tenancy {
@@ -1133,5 +1134,41 @@ model Note {
     await expect(guest(db, 1).note.create({ data: { name: 'x' } })).rejects.toThrow()
     await expect(guest(db, 1).note.create({ data: { workspaceId: 2, name: 'x' } })).rejects.toThrow()
     await guest(db, 1).note.create({ data: { workspaceId: 1, name: 'x' } })
+  })
+})
+
+// Every sqlite database of a tenant is one file under `strategy database`, so
+// each name's live schema holds its siblings' tables, and a diff against its
+// own slice alone planned to drop all of them (`FJS-4034`).
+describe('strategy database — autoMigrate over two sqlite databases in one file', () => {
+  it('diffs each name against its own tables, and holds still on the next boot', async () => {
+    const dir  = tmp()
+    await Bun.write(join(dir, 'schema.lite'), `
+      tenancy { strategy database  dir "./fleet"  registry "./fleet-index.db" }
+      database main     { path "./main.db" }
+      database sessions { path "./sessions.db" }
+      model Thing { id Int @id  name String? }
+      model Sess  { id Int @id  token String?  @@db(sessions) }
+    `)
+    const tenants: any = await createTenantRegistry({ path: join(dir, 'schema.lite') })
+    await tenants.create('acme')
+    const db: any = await tenants.get('acme')
+    await db.thing.create({ data: { id: 1, name: 'a' } })
+    await db.sess.create({ data: { id: 1, token: 't' } })
+
+    const first = autoMigrate(db)
+    expect(first.main.state).not.toBe('blocked')
+    expect(first.sessions.state).not.toBe('blocked')
+    expect(await db.thing.count()).toBe(1)
+    expect(await db.sess.count()).toBe(1)
+
+    // The fast path's hash is per name: one shared key meant each name read the
+    // other's and ran the full diff on every boot, which answers in-sync too.
+    const keys = db.$rawDbs.main.query(`SELECT key FROM _litestone_meta WHERE key LIKE 'autoMigrate.ddlHash%' ORDER BY key`).all()
+    expect(keys.map((r: any) => r.key)).toEqual(['autoMigrate.ddlHash', 'autoMigrate.ddlHash:sessions'])
+    const second = autoMigrate(db)
+    expect(second.main).toEqual({ state: 'in-sync', applied: 0 })
+    expect(second.sessions).toEqual({ state: 'in-sync', applied: 0 })
+    tenants.close()
   })
 })

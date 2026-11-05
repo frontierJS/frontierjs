@@ -1,0 +1,177 @@
+[
+  {
+    "capture": "projects-p1",
+    "request": "GET /{account}/projects.json",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "56809",
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-1\"",
+      "link": "<https://3.basecampapi.com/999/projects.json?page=2>; rel=\"next\"",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}",
+      "x-total-count": "97"
+    }
+  },
+  {
+    "capture": "projects-p3",
+    "request": "GET /{account}/projects.json?page=3",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "207807",
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-2\"",
+      "link": "<https://3.basecampapi.com/999/projects.json?page=4>; rel=\"next\"",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}",
+      "x-total-count": "97"
+    }
+  },
+  {
+    "capture": "projects-last",
+    "request": "GET /{account}/projects.json?page=7 (empty, past the end)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "2",
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-3\"",
+      "link": "<https://3.basecampapi.com/999/projects.json?page=8>; rel=\"next\"",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}",
+      "x-total-count": "97"
+    }
+  },
+  {
+    "capture": "projects-304",
+    "request": "GET /{account}/projects.json, If-None-Match: page 1 etag",
+    "status": 304,
+    "headers": {
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-1\"",
+      "link": "<https://3.basecampapi.com/999/projects.json?page=2>; rel=\"next\"",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}",
+      "x-total-count": "97"
+    }
+  },
+  {
+    "capture": "profile",
+    "request": "GET /{account}/my/profile.json",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "836",
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-4\"",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}"
+    }
+  },
+  {
+    "capture": "profile-304",
+    "request": "GET /{account}/my/profile.json, If-None-Match: its etag",
+    "status": 304,
+    "headers": {
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-4\"",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}"
+    }
+  },
+  {
+    "capture": "profile-strong",
+    "request": "GET /{account}/my/profile.json, If-None-Match: its etag without W/",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "836",
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-4\"",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":48,\"until\":\"2026-10-17T00:00:10Z\"}"
+    }
+  },
+  {
+    "capture": "events-head",
+    "request": "GET /{account}/events.json (no cursor)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "181",
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-5\"",
+      "x-feed-position": "BAhfixture--001",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}"
+    }
+  },
+  {
+    "capture": "events-304",
+    "request": "GET /{account}/events.json, If-None-Match: its etag",
+    "status": 304,
+    "headers": {
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-5\"",
+      "x-feed-position": "BAhfixture--001",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}"
+    }
+  },
+  {
+    "capture": "events-replay",
+    "request": "GET /{account}/events.json?since=0",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "24011",
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-6\"",
+      "link": "<https://3.basecampapi.com/999/events.json?position=BAhfixture--002>; rel=\"next\"",
+      "x-feed-position": "BAhfixture--003",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}"
+    }
+  },
+  {
+    "capture": "feed-tail",
+    "request": "page 29 of the since=0 walk (54 events, the tail)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "12561",
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-7\"",
+      "x-feed-position": "BAhfixture--001",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}"
+    }
+  },
+  {
+    "capture": "poll-tail",
+    "request": "GET /{account}/events.json?position={tail}",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "181",
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-5\"",
+      "x-feed-position": "BAhfixture--001",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}"
+    }
+  },
+  {
+    "capture": "poll-tail-304",
+    "request": "the same, If-None-Match: its etag",
+    "status": 304,
+    "headers": {
+      "cache-control": "max-age=0, private, must-revalidate",
+      "etag": "W/\"fixture-5\"",
+      "x-feed-position": "BAhfixture--001",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":49,\"until\":\"2026-10-17T00:00:10Z\"}"
+    }
+  },
+  {
+    "capture": "no-ua",
+    "request": "GET /{account}/projects.json with no User-Agent",
+    "status": 400,
+    "headers": {
+      "content-type": "text/plain; charset=utf-8",
+      "content-length": "87",
+      "cache-control": "no-cache",
+      "x-ratelimit": "{\"name\":\"API\",\"period\":10,\"limit\":50,\"remaining\":48,\"until\":\"2026-10-17T00:00:10Z\"}"
+    },
+    "body": "Provide a User-Agent header in the following format: My App (https://example.com/myapp)"
+  }
+]

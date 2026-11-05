@@ -1,0 +1,20 @@
+{
+  "identity": {
+    "id": 1000098,
+    "first_name": "First name 1",
+    "last_name": "Last name 1",
+    "email_address": "person-1@example.com"
+  },
+  "accounts": [
+    {
+      "product": "bc3",
+      "id": 999,
+      "name": "Name 1",
+      "href": "https://3.basecampapi.com/999",
+      "app_href": "https://app.basecamp.com/999",
+      "resource": "urn:bc:account:999"
+    }
+  ],
+  "scope": "full",
+  "expires_at": "2026-10-17T02:03:55.410Z"
+}

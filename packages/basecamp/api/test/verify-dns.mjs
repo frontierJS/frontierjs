@@ -197,7 +197,7 @@ try {
 
   const ws = (await call(`/workspaces/${chosen.w.id}`)).body
   const set = await call(`/workspaces/${chosen.w.id}`, { method: 'PATCH',
-    body: { ingressAccountId: secret?.id, ingressZoneId: 'zone-shop', version: ws?.version } })
+    body: { ingressSecretId: secret?.id, ingressZoneId: 'zone-shop', version: ws?.version } })
   check('the ingress zone is set through /workspaces', set.status === 200 && set.body?.ingressZoneId === 'zone-shop',
     JSON.stringify(set))
 

@@ -864,3 +864,77 @@ describe('a grant admits to the tenant and is no member of it', () => {
     expect(rows.map((r: any) => r.name)).toEqual(['shared'])
   })
 })
+
+// ─── A second factor on the redeem (FJS-3998) ─────────────────────────────────
+//
+// A share link with a password: the token's digest and the password are one
+// lookup, so the URL carries the token alone and every refusal is the one
+// sentence of FJS-D696.
+describe('redeem({ where }) holds a second factor in the one lookup', () => {
+  const SHARES = `
+    model ShareLink {
+      id           Int       @id @default(autoincrement())
+      albumId      Int
+      tokenHash    String    @unique @guarded @system
+      passwordHash String?   @secret @hashed @system
+      expiresAt    DateTime?
+      @@gate(4)
+    }
+  `
+  const share = bearerClaim({
+    from: cookie('share'), model: 'shareLink', column: 'tokenHash', key: KEY,
+    claims: { shareAlbumId: 'albumId' }, subject: 'albumId',
+  })
+  const SELLER = { id: 7, role: 'member' }
+  const DEAD = 'This link does not work. It may have expired or been withdrawn.'
+  // The callback is handed string fields only, so an object password is `undefined` here.
+  const byPassword = (body: Record<string, string>) => ({ passwordHash: body.password ?? null })
+
+  async function opened(password: string | null) {
+    const db: any = await createClient({
+      db: ':memory:', schema: SHARES, claims: ['shareAlbumId'], encryptionKey: 'a'.repeat(64),
+    })
+    const { token } = await share.mint(db.$setAuth(SELLER), { albumId: 3, ...(password ? { passwordHash: password } : {}) }, password ? { system: ['passwordHash'] } : undefined)
+    return { db, token }
+  }
+  function routeCtx(body: unknown) {
+    const cookies: string[] = []
+    const ctx = {
+      body,
+      setCookie: (_n: string, v: string) => { cookies.push(v) },
+      json: (data: unknown, status = 200) => new Response(JSON.stringify(data), { status }),
+    }
+    return { ctx, cookies }
+  }
+  const answer = async (res: Response) => ({ status: res.status, body: await res.json() as any })
+
+  test('a link with a password redeems on the right one and refuses every other with the one sentence', async () => {
+    const { db, token } = await opened('open-sesame')
+    const redeem = share.redeem(db, { where: byPassword })
+
+    for (const password of [undefined, 'wrong', { not: null }, ['open-sesame']]) {
+      const { ctx, cookies } = routeCtx({ token, password })
+      const r = await answer(await redeem(ctx as never))
+      expect(r.status).toBe(401)
+      expect(r.body.message).toBe(DEAD)
+      expect(cookies).toEqual([])
+    }
+
+    // The refusals left the link unspent.
+    const { ctx, cookies } = routeCtx({ token, password: 'open-sesame' })
+    const ok = await answer(await redeem(ctx as never))
+    expect(ok).toEqual({ status: 200, body: { subject: 3 } })
+    expect(cookies).toHaveLength(1)
+    expect((await answer(await redeem(routeCtx({ token, password: 'open-sesame' }).ctx as never))).status).toBe(401)
+  })
+
+  test('a link with no password redeems on a body with none, and the callback cannot drop the token', async () => {
+    const { db, token } = await opened(null)
+    const redeem = share.redeem(db, { where: byPassword })
+    expect((await answer(await redeem(routeCtx({ token: 'forged' }).ctx as never))).status).toBe(401)
+    // A callback naming the token column cannot widen the lookup past the token's own digest.
+    const greedy = share.redeem(db, { where: () => ({ tokenHash: { not: null } }) })
+    expect((await answer(await greedy(routeCtx({ token: 'forged' }).ctx as never))).status).toBe(401)
+    expect((await answer(await redeem(routeCtx({ token }).ctx as never))).status).toBe(200)
+  })
+})

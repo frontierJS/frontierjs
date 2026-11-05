@@ -65,8 +65,9 @@
 
 ## What is not
 
-- **An edge's `fanOut`** is declared in the type and run by nothing
-  ([`FJS-3942`](../../ISSUES.md#fjs-3942)), so the inspector does not offer it.
+- **An edge does not iterate.** A stored edge carrying `fanOut` is refused
+  (`UNSUPPORTED_EDGE_FIELD`, [`FJS-3942`](../../ISSUES.md#fjs-3942)); iteration
+  is `flow.each` and `flow.loop`.
   The run preview beside the runs list was struck with
   [`FJS-1196`](../../ISSUES.md#fjs-1196): the run page is where a run is read.
 - **The expression text grammar is a subset of what the engine runs** — a

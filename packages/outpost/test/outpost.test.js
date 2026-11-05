@@ -2134,12 +2134,12 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect(caddy.loads[0].body.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-app-1', 'fli-other'])
   })
 
-  test('a config that keeps changing is refused after three reads, never written unguarded (FJS-4017)', async () => {
+  test('a config that keeps changing is refused after ten reads, never written unguarded (FJS-4017, FJS-4030)', async () => {
     const caddy = fakeCaddy()
     const { server } = serverWith(caddy)
     await deploy(server, { hosts: ['shop.example.com'] })
     let n = 0
-    caddy.interleave((config) => { config.apps.http.servers.ingress.routes.push({ ...fliRoute, '@id': `fli-${n++}` }) }, 9)
+    caddy.interleave((config) => { config.apps.http.servers.ingress.routes.push({ ...fliRoute, '@id': `fli-${n++}` }) }, 99)
     const res = await send(server, 'POST', '/ingress/reload', {})
     expect(res.status).toBe(500)
     expect(await res.text()).toContain('kept changing')
@@ -4258,5 +4258,61 @@ describe('/replicate — every app this machine replicates, each with its own ke
     expect(status).toBe(500)
     expect(body.error).toContain('is written but basecamp-litestream.service did not restart')
     expect(body.error).toContain('Unit not found.')
+  })
+})
+
+// FJS-4025, FJS-4030: every config load swaps Caddy's admin listener, which resets a pooled
+// socket the old one closed and a fresh connection left in its backlog, and Outpost's caddy()
+// surfaced both as "did not answer: ECONNRESET".
+describe('the Caddy admin client opens a connection per call', () => {
+  const reset = () => Object.assign(new Error('ECONNRESET: The socket connection was closed unexpectedly'), { code: 'ECONNRESET' })
+  const answering = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json', etag: '"/config/ 1"' } })
+
+  test('a read reset by the listener swap is sent again', async () => {
+    const sent = []
+    const ingress = createIngress({ admin: 'http://caddy', fetch: async (url, init) => {
+      sent.push(init.method)
+      if (sent.length === 1) throw reset()
+      return answering({ ingress: { listen: [':443'], routes: [] } })
+    } })
+    expect((await ingress.routes()).caddy).toBe(true)
+    expect(sent).toEqual(['GET', 'GET'])
+  })
+
+  test('a guarded write reset on the way back is sent again with its etag', async () => {
+    const config = { apps: { http: { servers: { ingress: { listen: [':443'], routes: [] } } } } }
+    const sent = []
+    const ingress = createIngress({ admin: 'http://caddy', fetch: async (url, init) => {
+      sent.push(init.method)
+      if (init.method === 'POST' && sent.filter(m => m === 'POST').length === 1) throw reset()
+      return answering(config)
+    } })
+    expect(await ingress.reload()).toEqual({ reloaded: true })
+    expect(sent).toEqual(['GET', 'POST', 'POST'])
+  })
+
+  test('a reset that keeps coming is thrown with the address', async () => {
+    const ingress = createIngress({ admin: 'http://caddy', fetch: async () => { throw reset() } })
+    expect((await ingress.routes()).said).toContain('http://caddy did not answer: ECONNRESET')
+  })
+
+  test('two calls reach the admin API on two connections', async () => {
+    const { createServer } = await import('node:net')
+    let connections = 0
+    const server = createServer((socket) => {
+      connections++
+      socket.on('error', () => {})
+      socket.on('data', () => {
+        const body = '{}'
+        socket.write(`HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: ${body.length}\r\nconnection: keep-alive\r\n\r\n${body}`)
+      })
+    })
+    await new Promise(r => server.listen(0, '127.0.0.1', r))
+    try {
+      const ingress = createIngress({ admin: `http://127.0.0.1:${server.address().port}` })
+      await ingress.routes()
+      await ingress.routes()
+      expect(connections).toBe(2)
+    } finally { server.close() }
   })
 })

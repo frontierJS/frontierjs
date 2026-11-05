@@ -425,3 +425,42 @@ describe('routeDials (FJS-D1890)', () => {
     expect(routeDials(undefined, 'shop')).toEqual([])
   })
 })
+
+// FJS-4026: a release copied every asset its predecessor held, merged ones
+// included, so release N carried release 1's files and pruning freed none.
+// Runs the step's own merge and prune scripts against a directory, three deploys.
+describe('the web release merge (FJS-4026)', () => {
+  const { execFileSync } = require('child_process')
+  const { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, utimesSync, rmSync } = require('fs')
+  const { tmpdir } = require('os')
+  const { join } = require('path')
+
+  const step    = src('_steps-docker/03-build-web.md')
+  const merge   = step.match(/machine\.run\(`(\[ -d "\$\{releaseDir\}[^`]*)`\)/)[1]
+  const prune   = step.match(/machine\.run\(`(ls -1dt [^`]*xargs rm -rf --)`\)/)[1]
+  const render  = (script, vars) => new Function(...Object.keys(vars), `return \`${script}\``)(...Object.values(vars))
+
+  test('a kept release holds the files of the releases kept with it, and no older one', () => {
+    const serverPath = mkdtempSync(join(tmpdir(), 'fjs-4026-'))
+    const assetDir = 'assets'
+    const keepReleases = 2
+    try {
+      let tick = 1_000_000
+      const deploy = (commit) => {
+        const releaseDir = `${serverPath}/releases/${commit}`
+        mkdirSync(`${releaseDir}/${assetDir}`, { recursive: true })
+        writeFileSync(`${releaseDir}/index.html`, commit)
+        writeFileSync(`${releaseDir}/${assetDir}/${commit}.js`, commit)
+        utimesSync(releaseDir, tick, tick++)
+        const vars = { serverPath, releaseDir, assetDir, keepReleases }
+        execFileSync('bash', ['-c', render(merge, vars)])
+        execFileSync('bash', ['-c', render(prune, vars)])
+      }
+      deploy('aaaaaaa'); deploy('bbbbbbb'); deploy('ccccccc')
+      expect(readdirSync(`${serverPath}/releases`).sort()).toEqual(['bbbbbbb', 'ccccccc'])
+      const held = readdirSync(`${serverPath}/releases/ccccccc/${assetDir}`).sort()
+      expect(held).toEqual(['bbbbbbb.js', 'ccccccc.js'])
+      expect(existsSync(`${serverPath}/releases/ccccccc/${assetDir}/aaaaaaa.js`)).toBe(false)
+    } finally { rmSync(serverPath, { recursive: true, force: true }) }
+  })
+})

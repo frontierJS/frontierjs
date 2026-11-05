@@ -65,10 +65,10 @@ import type { BackupPolicy, ProviderKind, ServerEventKind } from '#db/schema.d.t
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { resolveServer } from '../../domain/notification/owed.ts'
 
-// A Server names its cloud account (`providerId`) and its key (`sshKeyId`) by
+// A Server names its cloud account (`providerSecretId`) and its key (`sshKeyId`) by
 // Secret id, and sync, destroy and the posture read spend that id asSystem —
 // so an id copied from another workspace had Basecamp call that workspace's
-// cloud with its token, or grade against its key (`FJS-3845`). `providerId` is
+// cloud with its token, or grade against its key (`FJS-3845`). `providerSecretId` is
 // `@system` now, written by `provision` from an account it just read in the
 // caller's workspace; `sshKeyId` is still the caller's, so this refuses a
 // REFERENCE the caller supplied that does not resolve in its own workspace.
@@ -87,7 +87,7 @@ async function refuseForeignSecrets(data: Record<string, unknown>): Promise<void
 
 // The use-site half: a row written before the check above, or by any path that
 // skips it, still may not spend a Secret outside the Server's own workspace.
-async function refuseForeignAccount(server: Record<string, unknown>, field: 'providerId' | 'sshKeyId' = 'providerId'): Promise<void> {
+async function refuseForeignAccount(server: Record<string, unknown>, field: 'providerSecretId' | 'sshKeyId' = 'providerSecretId'): Promise<void> {
   if (server[field] == null) return
   const found = await ($.db.asSystem() as any).secret.findFirst({
     where: { id: String(server[field]), workspaceId: server.workspaceId }, select: { id: true },
@@ -206,13 +206,13 @@ async function readBackups(
   serverId:   string,
   connector:  ComputeConnector,
   send:       AccountSend,
-  providerId: string,
+  providerSecretId: string,
   targetId:   string,
   plan:       Record<string, unknown> | null,
 ) {
   let reading: MachineBackups | null
   try {
-    reading = await connector.backups(send, providerId)
+    reading = await connector.backups(send, providerSecretId)
   } catch (err) {
     $.app.logger.error('conduit: backup read failed', { target: targetId, serverId, error: String(err) })
     await recordEvent(serverId, 'backupsReadFailed',
@@ -290,7 +290,7 @@ async function restoreBackups(
   serverId:   string,
   connector:  ComputeConnector,
   send:       AccountSend,
-  providerId: string,
+  providerSecretId: string,
   targetId:   string,
   plan:       Record<string, unknown> | null,
   policy:     BackupPolicy,
@@ -302,7 +302,7 @@ async function restoreBackups(
   const wanted = describePolicy(policy, connector.label)
 
   try {
-    if (!await connector.setBackups(send, providerId, policy)) return
+    if (!await connector.setBackups(send, providerSecretId, policy)) return
   } catch (err) {
     $.app.logger.error('conduit: backup restore failed', { target: targetId, serverId, error: String(err) })
     await recordEvent(serverId, 'backupsRestoreFailed',
@@ -312,7 +312,7 @@ async function restoreBackups(
   }
   await recordEvent(serverId, 'backupsRestored',
     `${connector.label} had machine backups ${said}; put back ${wanted}`, { found, policy })
-  await readBackups(serverId, connector, send, providerId, targetId, plan)
+  await readBackups(serverId, connector, send, providerSecretId, targetId, plan)
 }
 
 /**
@@ -329,14 +329,14 @@ async function startBackups(
   serverId:   string,
   connector:  ComputeConnector,
   send:       AccountSend,
-  providerId: string,
+  providerSecretId: string,
   targetId:   string,
   plan:       Record<string, unknown> | null,
   policy:     BackupPolicy,
 ) {
   const wanted = describePolicy(policy, connector.label)
   try {
-    if (!await connector.setBackups(send, providerId, policy)) return
+    if (!await connector.setBackups(send, providerSecretId, policy)) return
   } catch (err) {
     $.app.logger.error('conduit: backup start failed', { target: targetId, serverId, error: String(err) })
     await recordEvent(serverId, 'backupsRestoreFailed',
@@ -345,7 +345,7 @@ async function startBackups(
     return
   }
   await recordEvent(serverId, 'backupsSet', `Machine backups set ${wanted} on the new machine`, { policy, at: 'create' })
-  await readBackups(serverId, connector, send, providerId, targetId, plan)
+  await readBackups(serverId, connector, send, providerSecretId, targetId, plan)
 }
 
 /** A vendor refusal as the trail's sentence ends it. The connector's message
@@ -698,12 +698,12 @@ export default createService({
       if (server.providerKind && server.providerKind !== 'custom')
         await recordEvent(id, 'syncUnsupported',
           `Basecamp has no connector for ${server.providerKind}`, {})
-    } else if (!server.providerId) {
+    } else if (!server.providerSecretId) {
       await recordEvent(id, 'syncNoAccount',
         'This machine names no provider account, so there is no token to ask with', {})
     } else {
       await refuseForeignAccount(server)
-      const targetId = targetFor(connector.kind, server.providerId as string)
+      const targetId = targetFor(connector.kind, server.providerSecretId as string)
       const send     = sendVia($.app, targetId)
 
       let reportedMachine: Awaited<ReturnType<typeof connector.machine>> = null
@@ -796,7 +796,7 @@ export default createService({
     const { choice, plan, hour, weekday, deletes, confirm } = ($.data ?? {}) as Record<string, any>
 
     const connector = connectorFor(server.providerKind)
-    if (!connector || !server.providerId || !server.providerServerId)
+    if (!connector || !server.providerSecretId || !server.providerServerId)
       throw new BadRequest('This machine has no vendor link, so it has no machine backups to set')
     await refuseForeignAccount(server)
 
@@ -812,7 +812,7 @@ export default createService({
     const why = policy && connector.unheldBackups(policy)
     if (why) throw new BadRequest(why)
 
-    const targetId = targetFor(connector.kind, server.providerId)
+    const targetId = targetFor(connector.kind, server.providerSecretId)
     const send     = sendVia($.app, targetId)
 
     const deleted = choice === 'off' ? await confirmOff(server, connector, send, deletes, confirm) : 0
@@ -852,24 +852,24 @@ export default createService({
   // `backupPolicy` stays as it was: null is *not managed*, so linking changes
   // nothing about the machine's backups.
   //
-  // `adopted` is what `destroy` reads: this app never deletes a machine it did
-  // not buy.
+  // `registerMethod: 'adopted'` is what `destroy` reads: this app never deletes
+  // a machine it did not buy.
   async adopt() {
     const id     = $.id as string
     const server = await getScoped('server', 'Server', id)
-    const { accountId, providerServerId, shown } = ($.data ?? {}) as Record<string, any>
+    const { providerSecretId, providerServerId, shown } = ($.data ?? {}) as Record<string, any>
 
     if (server.status === 'destroyed' || server.status === 'destroying')
       throw new Conflict(`'${server.name}' is ${server.status}, so there is no machine to link`)
     if (server.providerServerId || server.providerKind !== 'custom')
       throw new Conflict(`'${server.name}' is already linked to a machine at ${server.providerKind}`)
 
-    const account = await db().secret.findFirst({ where: { id: String(accountId) } })
-    if (!account) throw new NotFound(`Provider account '${accountId}' not found`)
+    const account = await db().secret.findFirst({ where: { id: String(providerSecretId) } })
+    if (!account) throw new NotFound(`Provider account '${providerSecretId}' not found`)
     const connector = connectorFor(account.providerKind as ProviderKind | null)
     if (!connector)
       throw new BadRequest(`'${account.name}' is not an account at a cloud Basecamp can speak to`)
-    await refuseForeignAccount({ providerId: account.id, workspaceId: server.workspaceId })
+    await refuseForeignAccount({ providerSecretId: account.id, workspaceId: server.workspaceId })
 
     const send = sendVia($.app, targetFor(connector.kind, account.id as string))
     let machine
@@ -888,7 +888,7 @@ export default createService({
         + 'not what the screen showed; look again and confirm the machine you mean')
 
     const held = await db().server.findFirst({
-      where: { providerId: account.id, providerServerId: machine.providerServerId, status: { not: 'destroyed' } },
+      where: { providerSecretId: account.id, providerServerId: machine.providerServerId, status: { not: 'destroyed' } },
     })
     if (held)
       throw new Conflict(`'${held.name}' already holds ${connector.label} machine ${machine.providerServerId}`)
@@ -900,8 +900,8 @@ export default createService({
 
     await db().server.update({
       where: { id },
-      data:  { providerKind: connector.kind, providerId: account.id, providerServerId: machine.providerServerId, adopted: true },
-      system: ['providerKind', 'providerId', 'providerServerId', 'adopted'],
+      data:  { providerKind: connector.kind, providerSecretId: account.id, providerServerId: machine.providerServerId, registerMethod: 'adopted' },
+      system: ['providerKind', 'providerSecretId', 'providerServerId', 'registerMethod'],
     })
     await recordEvent(id, 'adopted',
       `Linked to ${connector.label} machine ${machine.name ?? machine.providerServerId} (${machine.providerServerId}). `
@@ -926,15 +926,15 @@ export default createService({
   // place `db/access.snapshot.md` prints.
   async provision() {
     const data = ($.data ?? {}) as Record<string, unknown>
-    const { name, role, accountId, region, size, image } = data as Record<string, string>
+    const { name, role, providerSecretId, region, size, image } = data as Record<string, string>
     const backups = (data.backups ?? null) as BackupPolicy | null
 
     // First, before the vendor is asked anything: a machine bought now could
     // only enroll against a key anyone can compute (`FJS-D1798`).
     refusePlaceholderKey()
 
-    const account = await db().secret.findFirst({ where: { id: accountId } })
-    if (!account) throw new NotFound(`Provider account '${accountId}' not found`)
+    const account = await db().secret.findFirst({ where: { id: providerSecretId } })
+    if (!account) throw new NotFound(`Provider account '${providerSecretId}' not found`)
 
     const connector = connectorFor(account.providerKind as ProviderKind | null)
     if (!connector)
@@ -1011,17 +1011,17 @@ export default createService({
         priceMinor,
         currency:   chosen.currency,
       },
-    }})
+    }, system: ['registerMethod'] })
 
     // The credential artifact and the account, written AS THE APPLICATION. A
     // second statement rather than a wider first one: what is being written
     // here is not the caller's data at all, and the refusal above is the
     // schema saying so. The account is the Secret read above in the caller's
-    // own workspace, so `providerId` (`@system`) can never name another's
+    // own workspace, so `providerSecretId` (`@system`) can never name another's
     // (`FJS-3845`).
     await db().asSystem().server.update({
       where: { id: server.id },
-      data:  { providerKind: account.providerKind, providerId: account.id,
+      data:  { providerKind: account.providerKind, providerSecretId: account.id,
                enrollTokenHash: enroll.hash, enrollExpiresAt: enroll.expiresAt,
                backupPolicy: backups },
     })
@@ -1058,7 +1058,7 @@ export default createService({
 
     const connector = connectorFor(server.providerKind)
     if (!connector) throw new BadRequest('This machine names no cloud Basecamp can speak to')
-    const send = sendVia($.app, targetFor(connector.kind, String(server.providerId)))
+    const send = sendVia($.app, targetFor(connector.kind, String(server.providerSecretId)))
 
     if (step === 'start') return server
 
@@ -1111,7 +1111,7 @@ export default createService({
             { ip_address: seen.ipAddress })
           if (server.backupPolicy)
             await startBackups(id, connector, send, String(server.providerServerId),
-              targetFor(connector.kind, String(server.providerId)), server.plan, server.backupPolicy)
+              targetFor(connector.kind, String(server.providerSecretId)), server.plan, server.backupPolicy)
         }
       }
       return getScoped('server', 'Server', id)
@@ -1155,7 +1155,7 @@ export default createService({
     if (!connector)
       throw new BadRequest('This machine was imported, not provisioned — remove it instead')
     // Before the transition: a refused destroy must not move the row.
-    if (server.adopted)
+    if (server.registerMethod === 'adopted')
       throw new BadRequest(
         `Basecamp did not buy this machine, so it does not destroy it: delete it in ${connector.label}'s console, `
         + 'then remove it here')
@@ -1190,7 +1190,7 @@ export default createService({
     }
 
     await refuseForeignAccount(server)
-    const send = sendVia($.app, targetFor(connector.kind, String(server.providerId)))
+    const send = sendVia($.app, targetFor(connector.kind, String(server.providerSecretId)))
     await connector.destroy(send, String(server.providerServerId))
 
     await db().server.transition(id, 'reportDestroyed', { system: true })
@@ -1255,11 +1255,11 @@ export default createService({
   },
 
   async reconcile() {
-    const accountId = ($.data as Record<string, unknown> | null)?.accountId ?? $.query.accountId
-    if (!accountId) throw new BadRequest('accountId is required — which provider account to sweep')
+    const providerSecretId = ($.data as Record<string, unknown> | null)?.providerSecretId ?? $.query.providerSecretId
+    if (!providerSecretId) throw new BadRequest('providerSecretId is required — which provider account to sweep')
 
-    const account = await db().secret.findFirst({ where: { id: String(accountId) } })
-    if (!account) throw new NotFound(`Provider account '${accountId}' not found`)
+    const account = await db().secret.findFirst({ where: { id: String(providerSecretId) } })
+    if (!account) throw new NotFound(`Provider account '${providerSecretId}' not found`)
 
     const connector = connectorFor(account.providerKind as ProviderKind | null)
     if (!connector)
@@ -1271,7 +1271,7 @@ export default createService({
     // destroyed row is deliberately not here: its machine SHOULD be gone, so
     // one still standing is exactly what this is looking for.
     const rows = await db().server.findMany({
-      where: { providerId: account.id, status: { not: 'destroyed' } },
+      where: { providerSecretId: account.id, status: { not: 'destroyed' } },
     })
     const known = new Map(
       (rows as Record<string, unknown>[])
@@ -1320,12 +1320,12 @@ export default createService({
   // `getScoped` on the secret runs at the caller's own standing, so an account
   // in another workspace answers 404 before a vendor is touched.
   async catalog() {
-    const accountId = ($.data as Record<string, unknown> | null)?.accountId
-                   ?? $.query.accountId
-    if (!accountId) throw new BadRequest('accountId is required — which provider account to ask')
+    const providerSecretId = ($.data as Record<string, unknown> | null)?.providerSecretId
+                          ?? $.query.providerSecretId
+    if (!providerSecretId) throw new BadRequest('providerSecretId is required — which provider account to ask')
 
-    const account = await db().secret.findFirst({ where: { id: String(accountId) } })
-    if (!account) throw new NotFound(`Provider account '${accountId}' not found`)
+    const account = await db().secret.findFirst({ where: { id: String(providerSecretId) } })
+    if (!account) throw new NotFound(`Provider account '${providerSecretId}' not found`)
 
     const connector = connectorFor(account.providerKind as ProviderKind | null)
     if (!connector)

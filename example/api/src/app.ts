@@ -260,6 +260,9 @@ const app = createApp({
 
   config: {
     name: 'shop', port: PORT, apiPrefix: '/api',
+    // The origin auth's provider redirect is built on. `fli dev` sets no
+    // FRONTIER_API_URL, so a dev run falls back to this process's own port.
+    publicUrl: process.env.FRONTIER_API_URL ?? `http://localhost:${PORT}`,
 
     // The FLOOR for every shop. A shop whose registry meta names neither reads
     // exactly these, which is what makes adopting per-shop config free for a
@@ -445,10 +448,7 @@ app.configure(authPlugin({
   // otherwise — a flow that completes and signs nobody in is the failure it
   // exists to prevent.
   ...(COOKIE_AUTH ? {
-    oauth: {
-      publicUrl:     process.env.SHOP_PUBLIC_URL ?? `http://localhost:${PORT}`,
-      errorRedirect: '/sign-in',
-    },
+    oauth: { errorRedirect: '/sign-in' },
   } : {}),
 }))
 

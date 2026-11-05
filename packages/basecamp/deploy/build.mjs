@@ -100,12 +100,12 @@ const { vendorWorkspacePackages } = await import(
   join(ROOT, 'packages', 'cli', 'core', 'vendor.js')
 )
 
-// The image runs `bun run start` and `bun run build:web`; nothing in it needs
+// The image runs `bun run build:web` and starts
+// api/index.ts directly (see the Dockerfile's CMD); nothing in it needs
 // the dev server, the drives, or the reset scripts, and `stop` shelling out to
 // pkill inside a container is actively wrong.
 const trimForImage = (manifest) => {
   manifest.scripts = {
-    start:       manifest.scripts.start,
     'build:db':  manifest.scripts['build:db'],
     'build:web': manifest.scripts['build:web'],
   }

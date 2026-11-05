@@ -2426,6 +2426,39 @@ describe('the repo scope', () => {
 })
 
 
+describe('package-row', () => {
+
+  // A workspace member the root CLAUDE.md table forgets is not an error where
+  // the table is read (it is drawn unplaced), so this is the rule that says so.
+  const table = (...names) => '# Map\n\n<!--\n| Package | Realm/Domain | What it is | State | Ring |\n' +
+    names.map(n => `| ${n} | API / D4 | thing | Working. | conduits |`).join('\n') + '\n-->\n'
+  const files = (claude) => ({
+    'package.json':                          JSON.stringify({ name: 'ws', workspaces: ['packages/*', 'packages/conduits/*'] }),
+    'CLAUDE.md':                             claude,
+    'packages/a/package.json':               '{"name":"@x/a"}',
+    'packages/conduits/conduit-b/package.json': '{"name":"@x/conduit-b"}',
+  })
+  const ids = (root) => runChecks({ root, scope: 'repo' }).findings.filter(f => f.rule === 'package-row')
+
+  test('a member with no row is a finding that names it and its path', () => {
+    const root = tree('row-missing', files(table('a')))
+    const found = ids(root)
+    expect(found).toHaveLength(1)
+    expect(found[0].message).toMatch(/@x\/conduit-b is a workspace member with no row/)
+    expect(found[0].file).toBe('packages/conduits/conduit-b')
+  })
+
+  test('a row by folder name or by package name pairs the member', () => {
+    expect(ids(tree('row-both', files(table('a', 'conduit-b'))))).toEqual([])
+    expect(ids(tree('row-pkgname', files(table('a', '@x/conduit-b'))))).toEqual([])
+  })
+
+  test('a project with no package table is skipped, not flagged', () => {
+    expect(ids(tree('row-none', files('# no table here\n')))).toEqual([])
+  })
+})
+
+
 describe('drive-preamble', () => {
 
   // `DRIVES.md`'s *Start first* column is now read: `runnables.js` puts it on the

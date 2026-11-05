@@ -27,7 +27,7 @@ import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { NotFound, toFrameworkError, type ErrorMapper } from './errors.ts'
 import { helmet, cors, csrf, bodyLimit, correlationId, requestLogger, rateLimit } from '../transport/middleware.ts'
 import type { HelmetOptions } from '../transport/middleware.ts'
-import { defaultConfig, deepMerge, loadConfig, shutdownBudgets, unknownKeys, unknownSections } from '../config/index.ts'
+import { defaultConfig, deepMerge, loadConfig, publicUrlMisfit, shutdownBudgets, unknownKeys, unknownSections } from '../config/index.ts'
 import type { DeepPartial }                     from '../config/index.ts'
 import { createLogger }             from './logger.ts'
 import type { ILogger }          from './logger.ts'
@@ -1690,6 +1690,8 @@ export function createApp(opts: AppOptions = {}): App {
       rebasePrefix()
       http.reconfigure(httpOptionsFromConfig())
       const { misfits } = shutdownBudgets(config)
+      const urlMisfit   = publicUrlMisfit(config.publicUrl)
+      if (urlMisfit) misfits.push(`${urlMisfit} (FRONTIER_API_URL or app.publicUrl)`)
       if (misfits.length) throw new Error(`[Junction] ${misfits.join('; ')}`)
     },
 

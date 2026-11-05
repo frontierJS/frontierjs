@@ -35,6 +35,39 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1937"></a>2026-11-05 · `FJS-D1937` — Basecamp's schema before the first dogfood db: a vendor-account Secret pointer is `providerSecretId`, an adopted machine is `RegisterMethod.adopted`, and a provider enum column is `providerKind` everywhere.
+
+Asked in chat, through the question tool, as four questions in a naming review before the yuma reinstall. After the reinstall, migrations are append-only (`FJS-D1605`). Each change is folded into the squashed initial.
+
+- **Secret pointers**
+  - **Ruling:** `Server.providerId`, `AppPlatform.accountId` and `Workspace.ingressAccountId` become `providerSecretId`, `providerSecretId` and `ingressSecretId`, and the `ServerProvision`/`ServerAdopt` inputs follow.
+  - **Rejected:** `providerKeyId`, `accountId` everywhere, and leaving the three spellings.
+  - **Recommendation:** As recommended.
+  - **Why:** `accountId` already names the `Account` model, and every other Secret pointer is `*SecretId`.
+- **Adopted**
+  - **Ruling:** the `Server.adopted` Boolean is dropped, `RegisterMethod` gains `adopted`, and `registerMethod` becomes `@system`.
+  - **Rejected:** renaming the Boolean to `isAdopted`.
+  - **Recommendation:** As recommended.
+  - **Why:** one column says how a machine came to Basecamp. `@system` keeps `FJS-D1865`'s guard that no caller can make `destroy` delete a machine Basecamp did not buy.
+- **Provider enum**
+  - **Ruling:** `AppPlatform.provider` and `Network.provider` become `providerKind`, as on `Server` and `Secret`.
+  - **Rejected:** `provider` everywhere, and leaving both names.
+  - **Recommendation:** As recommended.
+- **Unread columns**
+  - **The question:** a pick-any list with no recommendation.
+  - **Dropped:** `Job.trigger`/`triggerConfig` and `JobKind`'s `triggered`/`workflow`.
+  - **Not ruled from the list:** the other options. For the fourth, fold `User.displayName` into `name`, the owner wrote in their own answer: `User.displayName` becomes `nickname`, beside auth's `name`. `Account.displayName` is unchanged.
+  - **The unread Json columns stay.** `Project.tags` and `Monitor.tags` become `String[]`, as `Flag.tags` is.
+- **Renames without a question**
+  - These match their siblings' spelling:
+    - `App.stopGrace`/`healthTimeout` become `*Seconds` (`FJS-D1750`). Outpost's wire keys keep their names.
+    - `Job.lastRunStatus` becomes the `RunStatus` enum that `JobRun.status` uses.
+    - `Deployment.author` becomes `commitAuthor`, beside `commitSha`/`commitMessage`.
+    - `Volume.createdOnServer` becomes `dockerCreatedAt`, as every other timestamp ends in `At`.
+    - `Dependency.deprecated` becomes `deprecation`. It holds a message, and the old name read as a Boolean.
+
+Enforcement: `api/test/compute.test.ts` refuses a patch of `registerMethod`. The renames are not enforced.
+
 ### <a id="fjs-d1875"></a>2026-11-04 · `FJS-D1875` — What the Workbench screen's side column is called — the **wings**, beside the **stage**; a tile hidden from them is **backstage**, a folded list above *Pin a checkout*.
 
 Asked in chat. **Wings** was picked over keeping **Dock** and over **Roster**. *Dock* was already blessed for jetty's popup (`FJS-D1245`) and named Autopilot's patch shelf in the same app, so the screen held a third. The theater pair says what a tile is: a chat still running, waiting off the stage. Backstage is per browser, in `localStorage` beside the stage (`workbench.workbench.backstage`); putting a chat on the stage takes it out of backstage, so stepping off again lands it in the wings. *Next waiting* still reaches a backstage chat. Autopilot's Dock keeps its name. Enforcement: none.
@@ -1817,6 +1850,80 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1936"></a>2026-11-05 · `FJS-D1936` — Q10 — How does a 401 carry its challenge — `Unauthorized` takes a narrow `challenge` of auth-params. `errorResponse` writes `WWW-Authenticate: Bearer` on every 401, with the params quoted when a challenge is given, on fresh headers rather than the shared `JSON_HEADERS`. The challenge never reaches `toJSON()`.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (`FrameworkError` takes generic `headers` that the mapper copies), **C** (`mcp` builds its own 401 `Response`).
+
+The paper's recommendation, taken as written: `errorResponse` stays the one place a thrown value becomes a status and its headers (Invariant 4), and every 401 meets RFC 9110. B lets any throw set `Set-Cookie`, `Location` or `Cache-Control` (`FJS-1662`). C is a second 401 beside the owner and leaves every other one bare. A second header-carrying error, `Retry-After` on a 429, would be added the same narrow way.
+
+### <a id="fjs-d1935"></a>2026-11-05 · `FJS-D1935` — Q9 — Who states the API's public origin — Junction config: one `publicUrl`, defaulting from `FRONTIER_API_URL`, refused at startup when it carries a path or a trailing slash. auth's issuer and provider callback, mcp's `resource` and local-files' `publicBase` read it, and `oauth.publicUrl` is removed with every caller moved.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (`auth()` takes a top-level `publicUrl`, owns it through `app.own`, and `mcp` reads it there. local-files keeps its own reading), **C** (each package states its own, two values that must agree exactly).
+
+The paper's recommendation, taken as written: junction already owns config and `apiPrefix`, and `FJS-D1102` named `FRONTIER_API_URL` as where a client reaches the API. B makes `mcp` read a value from `auth` that is not `auth`'s, and leaves local-files reading the SPA's origin. C fails only at the client. Prior art states one base URL: Better Auth's `baseURL` (`BETTER_AUTH_URL`), Laravel's `APP_URL`, Supabase's `API_EXTERNAL_URL`. Moving local-files off `FRONTIER_APP_URL` changes file URLs for an App whose SPA and API origins differ, so that move carries its own test.
+
+### <a id="fjs-d1934"></a>2026-11-05 · `FJS-D1934` — The `/authorize` page is `Authorize.mesa`, compiled `target: 'server'` and committed as a self-contained `authorize-page.snapshot.js` in `auth` that `fli mesa:pack` writes and the `snapshots` phase rechecks. `auth` takes no dependency on `mesa` or `css`, not even a dev one.
+
+Found pricing step 0.3 of [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md), under `FJS-D1925`. Checked by `decision-rules` before anything was built, and passed. The numbers are 0.3's, measured on a prototype page.
+
+- **A committed bundle, not a dependency.** The compiled output imports `@frontierjs/mesa/runtime` and `runtime/server`, so shipping it raw is a runtime dependency on Mesa. Bundled, it is 13.5 KB minified and byte-identical across builds (Invariant 12), so the `snapshots` phase's `--check` keeps it equal to its source. The header is `/* generated by: fli mesa:pack … */`, which `GENERATOR` in `cli/core/snapshots.js` already reads, and `fli` is already in `SNAPSHOT_BINS`. Rejected: `auth` devDepends on `mesa` with a build script and a freshness check of its own, which would be a second snapshot gate.
+- **The render is Mesa's own, lifted.** Bundling `renderToHTML` brings in happy-dom: 908 KB instead of 13.5 KB. So the synchronous core of `render.js`'s `_renderString` (`createRoot`, `Component(out, props)`, `out.join('')`) becomes a Mesa export that does not import `render.js`, and `_renderString` calls it. Rejected: a generator entry that writes that core out again, which would be a second string render.
+- **The verb is general.** `fli mesa:pack <file.mesa> --css <partials>` packs any component, and the partial list sits in the header where it can be seen. Rejected: `fli auth:page`, a verb for one file.
+- **Styled by `@frontierjs/css` partials, inlined.** reset, tokens, the default and dark themes, tones, chip, surface, layout, typography, buttons, alerts, cards, form-core and `a11y/focus` come to 31 KB minified (6.4 KB gzipped), and the subset is reproducible. The page carries no script, and `style-src` is the sha256 of that style, computed by the generator.
+- **The policy names the redirect.** Chromium 1234 refused a form post that ends in a `302` to another origin under `form-action 'self'`, and Firefox 1538 followed it. So the page sets `form-action 'self' <the checked redirect's origin>` per request, the way `openapi` sets its hash per page (`docsCsp`). That is one header on one answer, not a second policy owner. The transport stamps helmet's default only when the answer has none (`http.ts`, `_withSecurityHeaders` and the finalize path), so it replaces the default and is never added beside it. v1 accepts only `https` and loopback `http` redirects (2.2), so no opaque origin reaches the header.
+
+What has no check yet, owed by 2.1: the style hash equals the inlined style; `form-action` names no origin but the checked redirect's; a hostile `client_name` or host renders escaped.
+
+Owner: `auth`'s `Authorize.mesa`, its snapshot, and the Mesa export.
+
+### <a id="fjs-d1931"></a>2026-11-05 · `FJS-D1931` — Q5 — What happens when a rotated refresh token is presented again — A 30-second grace window, then revoke (Better Auth's MCP default).
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **B** was picked over **A** (strict: the connection is revoked at once).
+
+The paper's recommendation, taken as written: Anthropic times a refresh out at 30 s, so a client that retries after a timeout presents the token the server just rotated. Under A that retry signs the person out. The cost is a stolen refresh token replayed inside the window, which Better Auth's page names.
+
+### <a id="fjs-d1930"></a>2026-11-05 · `FJS-D1930` — Q8 — Does a token carry scopes — No: the token is the person, graded by the schema's gates like any session.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (a `read` scope a person can pick at consent, refused at the tool call).
+
+The paper's recommendation, taken as written: access is declared in the schema (Invariant 6), and a scope is a second place that narrows it. Under A a connection writes to the live database at the person's level, which the owner wants kept open (2026-11-05); only credential writes are refused (3.3). B is the first thing to add if people ask to connect Claude read-only, and it would need one owner for the refusal.
+
+### <a id="fjs-d1929"></a>2026-11-05 · `FJS-D1929` — Q7 — How does the App know the client — CIMD only, fetched with guards.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (CIMD, and DCR as a fallback), **C** (an allowlist of client ids the App declares).
+
+The paper's recommendation, taken as written: every Claude client supports CIMD, and the MCP spec deprecates DCR, which lets anyone register a name and logo (Better Auth's warning). C is an option every App must keep current. The fetch is the risky part, so 2.2 refuses a private address. A shuts out a client that supports only DCR (Cursor, ChatGPT and the MCP inspector may be among them, unchecked), and B can follow for one. "Every Claude client supports CIMD" is read from Anthropic's page; 0.1 observes it.
+
+### <a id="fjs-d1928"></a>2026-11-05 · `FJS-D1928` — Q6 — On the copy, how does a connection refresh — The refresh is refused, the connector asks the person to sign in again, and the sign-in writes a connection in the copy's `sessions` block. After the switch back, the live App does not know that connection either, so the person signs in once more.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (signed refresh tokens carrying a generation the copy honors when it is newer than its own row).
+
+The paper's recommendation, taken as written: the copy's sign-in already works (`FJS-D1920`). The lifeboat banner says people sign in again (`read-only-copy.md` 3.2a). B is a second rotation scheme for a mode that runs during outages only. An unknown token is refused, not treated as reuse, so A revokes nothing.
+
+### <a id="fjs-d1927"></a>2026-11-05 · `FJS-D1927` — Q4 — Where does a connection live — A `Session` row: a new nullable `clientId`, `token` made nullable (a connection has no session token, and `findFirst({ where: { token } })` never matches a null), and two `@guarded` refresh columns, the current hash and the previous one with its `rotatedAt` for Q5.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (its own model, `OauthConnection`, in `auth.lite`).
+
+The paper's recommendation, taken as written: listing, revoking, ending on a credential change, the sweep, and the copy's move to `sessions` (`FJS-D1921`) all come with the row. B rebuilds each of them, and Better Auth's seven tables are what B grows into. The hazard A brings is that a refresh token must never pass `verifySession` as a session token, so it lives in its own column with its own prefix, and the session lookup never reads those columns. 3.4 has a test for it. "Grant row" is already the Bearer's (`VOCABULARY.md`), so this paper says connection.
+
+### <a id="fjs-d1926"></a>2026-11-05 · `FJS-D1926` — Q3 — What is the access token — A prefixed HMAC token in `crypto.ts`'s style, signed with a key derived from the App's `encryptionKey` and domain-separated the way `hashHandoff` is (`access:` + …). The prefix cannot start with `fjs_`, because `verifySession` tests `API_KEY_PREFIX` first and would read it as an API key. `fja_`, say. An App that turns sign-in on without an `encryptionKey` is refused at construction, as `requireSecondFactor` is.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (a JWT signed HS256 with the same key), **C** (a JWT signed with an asymmetric key, plus a JWKS endpoint (Better Auth, Supabase)).
+
+The paper's recommendation, taken as written: the issuer and the only verifier are the same App, so a public key buys nothing until a separate server verifies tokens. A routes in `verifySession` by prefix the way an API key does, and needs no JOSE dependency. C is the answer when a second verifier appears. Rotating `encryptionKey` ends every access token at once, and each connection refreshes into a new one. One hour is the default lifetime because a revoke or a password change takes effect only at the next refresh. Fifteen minutes would narrow that, at four refreshes an hour.
+
+### <a id="fjs-d1925"></a>2026-11-05 · `FJS-D1925` — Q2 — Where does the person sign in and consent — One page `@frontierjs/auth` serves at `/authorize`: the password, the TOTP code, consent. It needs no web surface for the factors that finish on the page; a magic link and a provider click are outside v1 (2.1).
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (redirect to the App's web surface's own sign-in and consent screens, as Better Auth and Supabase do).
+
+The paper's recommendation, taken as written: an API-only App and the read-only copy have no web surface, and the copy is where this matters most. B can follow as a skin for an App that has one. 0.3 prices A as Mesa output shipped inside `auth` (`FJS-D38`), with plain HTML only as the fallback.
+
+### <a id="fjs-d1924"></a>2026-11-05 · `FJS-D1924` — Q1 — Does an unauthenticated `/mcp` call answer `401` — Yes, whenever the App installs `auth()`. Anonymous level-0 tools end for that App.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (only when the App turns connector sign-in on), **C** (two paths: `/mcp` stays anonymous, and a second path is the signed-in one).
+
+The paper's recommendation, taken as written: a connector starts sign-in only on a 401, so an App with accounts that answers 200 cannot be connected. B is an option every App with auth would set. C is two URLs for one surface, and a person pastes the wrong one. 0.2 says what A ends.
 
 ### <a id="fjs-d1922"></a>2026-11-05 · `FJS-D1922` — Q9 — How does a user's claude.ai connector sign in to an App's MCP — B, in its own paper.
 
@@ -16490,6 +16597,24 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1940"></a>2026-11-05 · `FJS-D1940` — Q3 — Which keys default to secret — Secret when the name looks like a credential (`KEY|SECRET|TOKEN|PASSWORD`), plain otherwise.
+
+Asked in [`IDEAS/expected-variables.md`](IDEAS/expected-variables.md) § Open questions. **B** was picked over **A** (Secret unless the spec or the name marks it plain), **C** (No default; each row makes the owner pick).
+
+Against the recommendation (**A**): it is the guess the preflight's env-required hint already makes, and the secret switch is on the row before it saves.
+
+### <a id="fjs-d1939"></a>2026-11-05 · `FJS-D1939` — Q2 — When the list is written — On every `basecamp:deploy`.
+
+Asked in [`IDEAS/expected-variables.md`](IDEAS/expected-variables.md) § Open questions. **A** was picked over **B** (Also when `basecamp:app` makes the App).
+
+The paper's recommendation, taken as written: `FJS-D1599` completes the App on every run and keeps `basecamp:app` bare; a key added later shows up after the next deploy.
+
+### <a id="fjs-d1938"></a>2026-11-05 · `FJS-D1938` — Q1 — Where the key names come from — Both the `defineEnv` spec and the key names in `.env.production`, each labeled with its source.
+
+Asked in [`IDEAS/expected-variables.md`](IDEAS/expected-variables.md) § Open questions. **A** was picked over **B** (The spec only), **C** (`.env.production` only).
+
+The paper's recommendation, taken as written: the spec gives required and defaults, the file catches a key read straight from `process.env`, and the label says which is which.
 
 ### <a id="fjs-d1920"></a>2026-11-05 · `FJS-D1920` — Q1 — Where do sessions live while the data is read-only — Only on the copy: normal boot is unchanged and `Session` stays in `main`. The read-only boot flag retargets `Session` alone to a writable `sessions` block as the schema is read, and opens every other block `access: 'readonly'`. Under `strategy database` that block is the staged shop file; in a single-database app it is a scratch file beside the copy. Either way it is discarded at refresh.
 

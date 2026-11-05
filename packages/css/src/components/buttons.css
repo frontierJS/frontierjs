@@ -21,7 +21,9 @@
   /* Skin. --_fill is the effective background; chip.css derives readable
      text from it. See the auto-contrast note there. */
   --tone-fill:    var(--bg-mix, var(--color-primary));
-  background:     var(--_fill, var(--tone-fill));
+  --_base:        var(--_fill, var(--tone-fill));
+  --_layer-ink:   oklch(from var(--_on-fill, white) calc(1 - l) 0 0);
+  background:     var(--_base);
   color:          var(--_on-fill, white);
   border:         var(--border-width) solid transparent;
   font-family:    var(--font-primary);
@@ -30,8 +32,6 @@
   letter-spacing: var(--btn-letter-spacing);
   box-shadow:     var(--shadow-sm);
 }
-
-.btn:hover { filter: brightness(1.05); }
 
 /* Focus ring: focus.css. It is not written here on purpose — a ring in
    box-shadow was erased by `.btn.outlined { box-shadow: none }` below. */
@@ -78,7 +78,9 @@
 }
 
 .btn.outlined {
-  background:   var(--surface);
+  --_base:      var(--surface);
+  --_layer-ink: var(--btn-ink);
+  background:   var(--_base);
   color:        var(--btn-ink);
   border-color: var(--btn-ink);
   box-shadow:   none;
@@ -100,7 +102,9 @@
  * .field-hint and .tile-delta — and gets it through the window above.
  */
 .btn.ghost {
-  background:   transparent;
+  --_base:      transparent;
+  --_layer-ink: var(--btn-ink);
+  background:   var(--_base);
   color:        var(--btn-ink);
   border-color: transparent;
   box-shadow:   none;
@@ -116,7 +120,9 @@
  */
 .btn.glass {
   --btn-ink:       var(--tint-ink, var(--ink));
-  background:      color-mix(in srgb, var(--surface) var(--glass-alpha), transparent);
+  --_base:         color-mix(in srgb, var(--surface) var(--glass-alpha), transparent);
+  --_layer-ink:    var(--btn-ink);
+  background:      var(--_base);
   color:           var(--btn-ink);
   border-color:    color-mix(in srgb, var(--rule) var(--glass-alpha), transparent);
 }
@@ -139,17 +145,30 @@
  */
 :is(.btn, .pill, .badge).tinted {
   --btn-ink:    var(--tint-ink, var(--ink-soft));
-  background:   var(--tint-surface, var(--surface-sunken));
+  --_base:      var(--tint-surface, var(--surface-sunken));
+  --_layer-ink: var(--btn-ink);
+  background:   var(--_base);
   border-color: var(--tint-rule, var(--rule));
   color:        var(--btn-ink);
   box-shadow:   none;
 }
 
-.btn.ghost:hover {
-  background: color-mix(in srgb, var(--bg-mix, var(--ink)) 8%, transparent);
-  /* The brightness filter is for solid fills; on transparent it does nothing
-     but wash out the label. */
-  filter: none;
+/*
+ * ── Hover and press — a layer of the button's own ink ──────────
+ *
+ * A layer mixed over the button's base at --btn-hover-mix and --btn-press-mix.
+ * A solid fill is capped to just clear 4.5:1 with its label, so a layer toward
+ * the label's color drops it under AA; the layer there is the OPPOSITE of the
+ * label, which raises the ratio. Every other variant mixes its own ink.
+ * A background-color, so it still transitions. After every variant so their
+ * `background` cannot erase it, before Pressed so a toggle's wash wins.
+ * A link underlines instead, and a disabled button has no state.
+ */
+.btn:hover:where(:not(.link, :disabled, .disabled)) {
+  background: color-mix(in srgb, var(--_layer-ink) var(--btn-hover-mix), var(--_base));
+}
+.btn:active:where(:not(.link, :disabled, .disabled)) {
+  background: color-mix(in srgb, var(--_layer-ink) var(--btn-press-mix), var(--_base));
 }
 
 .btn.link {
@@ -161,7 +180,6 @@
 }
 .btn.link:hover {
   text-decoration: underline;
-  filter:          none;
 }
 
 /*

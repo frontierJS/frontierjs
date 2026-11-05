@@ -157,6 +157,44 @@ describe('resolving the run column', () => {
 
 })
 
+describe('a group where (FJS-D1912)', () => {
+
+  function groupRoot() {
+    const root = mkdtempSync(join(tmpdir(), 'fli-proofs-group-'))
+    const w = (rel, body) => {
+      mkdirSync(dirname(join(root, rel)), { recursive: true })
+      writeFileSync(join(root, rel), body)
+    }
+    w('package.json', JSON.stringify({ name: 'ws', workspaces: ['packages/conduits/*'] }))
+    w('packages/conduits/conduit-a/package.json', JSON.stringify({ name: 'conduit-a', scripts: { drive: 'bun x.ts' } }))
+    w('packages/conduits/conduit-b/package.json', JSON.stringify({ name: 'conduit-b', scripts: { drive: 'bun x.ts', test: 'bun run drive' } }))
+    w('packages/conduits/conduit-c/package.json', JSON.stringify({ name: 'conduit-c', scripts: { test: 'bun test' } }))
+    w('packages/conduits/lib/drive.ts', '')
+    return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+  }
+
+  test('one row expands to one target per member that declares the script', () => {
+    const { root, cleanup } = groupRoot()
+    try {
+      const targets = resolveRun('`packages/conduits/*`: `drive` — the shared harness', { root, rows: [] })
+      expect(targets.map(t => t.dir)).toEqual(['packages/conduits/conduit-a', 'packages/conduits/conduit-b'])
+      // A target names the connector, never the folder.
+      expect(targets.map(t => t.where)).toEqual(targets.map(t => t.dir))
+      expect(targets.every(t => t.kind === 'script' && t.command === 'bun run drive')).toBe(true)
+    } finally { cleanup() }
+  })
+
+  test('a group no member declares the script in is one unknown target, not an empty pass', () => {
+    const { root, cleanup } = groupRoot()
+    try {
+      const targets = resolveRun('`packages/conduits/*`: `verify`', { root, rows: [] })
+      expect(targets).toHaveLength(1)
+      expect(targets[0].kind).toBe('unknown')
+    } finally { cleanup() }
+  })
+
+})
+
 describe('matching the changed column', () => {
 
   const pkgs = [{ name: 'sierra', dir: 'packages/sierra' }]

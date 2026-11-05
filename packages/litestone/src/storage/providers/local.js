@@ -3,7 +3,7 @@
 // Stores files in a directory; junction serves it, and only to a URL this
 // provider signed (FJS-D1703).
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, createWriteStream } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, createWriteStream, createReadStream } from 'fs'
 import { rename, copyFile, unlink } from 'fs/promises'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { join, resolve, dirname } from 'path'
@@ -64,6 +64,18 @@ export class LocalProvider {
     const path = this._filePath(/** @type {string} */ key)
     if (!existsSync(path)) throw new Error(`File not found: ${key}`)
     return readFileSync(path)
+  }
+
+  // The bytes as a stream, so a large object is never held whole in heap.
+  async stream(/** @type {string} */ key) {
+    const path = this._filePath(key)
+    if (!existsSync(path)) throw new Error(`File not found: ${key}`)
+    return /** @type {ReadableStream<Uint8Array>} */ (Readable.toWeb(createReadStream(path)))
+  }
+
+  // The file's absolute path, for a tool that reads a file by name (ffmpeg).
+  path(/** @type {string} */ key) {
+    return this._filePath(key)
   }
 
   async delete(/** @type {string} */ key) {

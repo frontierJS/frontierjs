@@ -1,0 +1,148 @@
+{
+  "events": [
+    {
+      "id": 1000504,
+      "kind": "chat_lines_rich_text_created",
+      "action": "created",
+      "created_at": "2026-09-16T12:06:13.567Z",
+      "event_type": "chat.line.created",
+      "bucket_id": 1000147,
+      "creator_id": 1000182,
+      "performed_by_id": null,
+      "recording_id": 1000364
+    },
+    {
+      "id": 1000511,
+      "kind": "comment_created",
+      "action": "created",
+      "created_at": "2026-09-16T12:43:12.633Z",
+      "event_type": "comment.created",
+      "bucket_id": 1000140,
+      "creator_id": 1000175,
+      "performed_by_id": null,
+      "recording_id": 1000371
+    },
+    {
+      "id": 1000518,
+      "kind": "chat_lines_upload_created",
+      "action": "created",
+      "created_at": "2026-09-16T13:53:34.690Z",
+      "event_type": "chat.line.created",
+      "bucket_id": 1000105,
+      "creator_id": 1000189,
+      "performed_by_id": null,
+      "recording_id": 1000378
+    },
+    {
+      "id": 1000525,
+      "kind": "chat_lines_rich_text_created",
+      "action": "created",
+      "created_at": "2026-09-16T13:53:34.738Z",
+      "event_type": "chat.line.created",
+      "bucket_id": 1000105,
+      "creator_id": 1000189,
+      "performed_by_id": null,
+      "recording_id": 1000385
+    },
+    {
+      "id": 1000532,
+      "kind": "todo_created",
+      "action": "created",
+      "created_at": "2026-09-16T14:02:28.971Z",
+      "event_type": "todo.created",
+      "bucket_id": 1000147,
+      "creator_id": 1000189,
+      "performed_by_id": null,
+      "recording_id": 1000392
+    },
+    {
+      "id": 1000539,
+      "kind": "todo_assignment_changed",
+      "action": "assignment_changed",
+      "created_at": "2026-09-16T14:02:29.113Z",
+      "event_type": "todo.assignment_changed",
+      "bucket_id": 1000147,
+      "creator_id": 1000189,
+      "performed_by_id": null,
+      "recording_id": 1000392
+    },
+    {
+      "id": 1000546,
+      "kind": "todo_completed",
+      "action": "completed",
+      "created_at": "2026-09-16T14:03:29.064Z",
+      "event_type": "todo.completed",
+      "bucket_id": 1000147,
+      "creator_id": 1000189,
+      "performed_by_id": null,
+      "recording_id": 1000350
+    },
+    {
+      "id": 1000553,
+      "kind": "chat_lines_rich_text_boosted",
+      "action": "boosted",
+      "created_at": "2026-09-16T14:07:33.002Z",
+      "event_type": "boost.created",
+      "bucket_id": 1000147,
+      "creator_id": 1000189,
+      "performed_by_id": null,
+      "recording_id": 1000357,
+      "details": {
+        "boost_id": 1000231,
+        "boosted_event_id": null,
+        "boosted_event_type": null
+      }
+    },
+    {
+      "id": 1000560,
+      "kind": "chat_lines_rich_text_boosted",
+      "action": "boosted",
+      "created_at": "2026-09-16T14:07:38.594Z",
+      "event_type": "boost.created",
+      "bucket_id": 1000147,
+      "creator_id": 1000189,
+      "performed_by_id": null,
+      "recording_id": 1000364,
+      "details": {
+        "boost_id": 1000238,
+        "boosted_event_id": null,
+        "boosted_event_type": null
+      }
+    },
+    {
+      "id": 1000567,
+      "kind": "comment_created",
+      "action": "created",
+      "created_at": "2026-09-16T14:46:05.961Z",
+      "event_type": "comment.created",
+      "bucket_id": 1000147,
+      "creator_id": 1000189,
+      "performed_by_id": null,
+      "recording_id": 1000399
+    },
+    {
+      "id": 1000574,
+      "kind": "todo_completed",
+      "action": "completed",
+      "created_at": "2026-09-16T14:46:25.566Z",
+      "event_type": "todo.completed",
+      "bucket_id": 1000147,
+      "creator_id": 1000189,
+      "performed_by_id": null,
+      "recording_id": 1000343
+    },
+    {
+      "id": 1000581,
+      "kind": "chat_lines_upload_created",
+      "action": "created",
+      "created_at": "2026-09-16T15:06:08.596Z",
+      "event_type": "chat.line.created",
+      "bucket_id": 1000147,
+      "creator_id": 1000189,
+      "performed_by_id": null,
+      "recording_id": 1000406
+    }
+  ],
+  "position": "BAhfixture--0000000000000000000000000000000000000000",
+  "next": "https://3.basecampapi.com/999/events.json?position=BAhfixture--0000000000000000000000000000000000000000"
+}

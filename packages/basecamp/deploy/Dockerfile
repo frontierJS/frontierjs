@@ -95,5 +95,7 @@ EXPOSE 8120
 # a separate `db:migrate` step, and deliberately not junction's migrate(), which
 # globs one level and reports success for a directory it cannot read (FJS-193).
 # A failed migration throws, the container exits non-zero, and the health check
-# never comes up.
-CMD ["bun", "run", "start"]
+# never comes up. The CMD runs the entry file itself: `bun run start` would keep
+# a second bun process alive for the container's life (about 9 MB) only to
+# launch this one.
+CMD ["bun", "api/index.ts"]

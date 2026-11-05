@@ -44,7 +44,7 @@ title: Networking
   let editing   = null
 
   // The edit form's `only=` leaves out `slug`, refused on a patch — every join row points at the handle — and
-  // `provider` is which mesh runs it, which a rename does not move.
+  // `providerKind` is which mesh runs it, which a rename does not move.
 
   function saved() {
     editing = null

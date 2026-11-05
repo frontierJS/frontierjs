@@ -105,23 +105,30 @@ rm -rf "${releaseDir}.next" && cp -a "$out" "${releaseDir}.next" && rm -rf "${re
 // (e.g. app-x9y8z7.js) after a deploy. Those files no longer exist in the new
 // release → 404s until the client reloads.
 //
-// Fix: copy any asset files from the previous release that are NOT already
-// present in the new one. Because Bun uses content-hash filenames, there are
-// zero collisions — new files always win, old-but-still-referenced files survive.
+// Fix: copy the asset files each of the previous keep_releases-1 releases BUILT
+// that are not already present in the new one. Content-hash filenames mean no
+// collisions — new files always win, old-but-still-referenced files survive.
 //
-// Safety window: clients running stale HTML are covered for keep_releases
-// deploys. After that the old assets are pruned — the right tradeoff.
+// What a release built is listed in `.built-assets`, written before the merge.
+// Copying a predecessor's whole assets/ would carry what IT merged, so release
+// N would hold release 1's files and pruning release 1 would free none of them.
+// A predecessor with no list (built before the list existed) is copied whole once.
 //
-// cp -rn = recursive, no-overwrite. `$prev` and the quotes below are the
-// target's — `machine.run` pipes the script to its shell, so nothing here needs
-// escaping and a temp file on the server would buy nothing.
+// `$prev` and the quotes below are the target's — `machine.run` pipes the
+// script to its shell, so nothing here needs escaping and a temp file on the
+// server would buy nothing. xargs -d and cp --parents are GNU's.
 const assetDir = deployConf.web?.assets_dir ?? 'assets'
 
-machine.run(`prev=$(ls -1dt ${serverPath}/releases/* 2>/dev/null | grep -v "${releaseDir}" | head -1)
-if [ -n "$prev" ] && [ -d "$prev/${assetDir}" ]; then
-  cp -rn "$prev/${assetDir}/." "${releaseDir}/${assetDir}/" 2>/dev/null || true
-fi`)
-log.info(`Merged previous release assets from ${assetDir}/ (stale client protection)`)
+machine.run(`[ -d "${releaseDir}/${assetDir}" ] && (cd "${releaseDir}/${assetDir}" && find . -type f) > "${releaseDir}/.built-assets" || : > "${releaseDir}/.built-assets"
+for prev in $(ls -1dt ${serverPath}/releases/* 2>/dev/null | grep -vxF "${releaseDir}" | head -n ${keepReleases - 1}); do
+  [ -d "$prev/${assetDir}" ] || continue
+  if [ -f "$prev/.built-assets" ]; then
+    (cd "$prev/${assetDir}" && xargs -r -d '\\n' -a "$prev/.built-assets" cp -n --parents -t "${releaseDir}/${assetDir}/") 2>/dev/null || true
+  else
+    cp -rn "$prev/${assetDir}/." "${releaseDir}/${assetDir}/" 2>/dev/null || true
+  fi
+done`)
+log.info(`Merged the assets of the last ${keepReleases - 1} release(s) from ${assetDir}/ (stale client protection)`)
 
 // ─── Prune old releases ───────────────────────────────────────────────────────
 // Keep the last N releases on disk for rollback and the asset merge window above.

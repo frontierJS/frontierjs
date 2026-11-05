@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/conduit-mattermost",
+  "version": "0.0.1",
+  "description": "Mattermost over @frontierjs/conduit — a service and a per-user bearer target, the human's post, and the mirror claim for the nouns a chat surface lists.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/mattermost.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

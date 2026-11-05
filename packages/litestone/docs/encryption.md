@@ -145,6 +145,30 @@ try {
 // read back. If this field has to be readable, it wants @encrypted(deterministic: true)
 ```
 
+**Whether it is SET is a different question from what it holds**, and a `@derived`
+Boolean answers it: the expression runs in SQL, so the digest never leaves the
+database and the row carries one bit. It reads, and filters, for any caller the
+model's gate admits.
+
+```lite
+model ShareLink {
+  id           Int     @id
+  passwordHash String? @hashed
+  hasPassword  Boolean @derived(passwordHash != null)
+}
+```
+
+```js
+const sys = db.asSystem()
+await sys.shareLink.create({ data: { id: 1, passwordHash: 'open-sesame' } })
+await sys.shareLink.create({ data: { id: 2 } })
+const rows = await sys.shareLink.findMany({ orderBy: { id: 'asc' } })
+if (rows[0].hasPassword !== true || rows[1].hasPassword !== false) throw new Error('expected is-set to read')
+if ('passwordHash' in rows[0]) throw new Error('the digest still never comes back')
+const locked = await sys.shareLink.findMany({ where: { hasPassword: true } })  // → link 1
+if (locked.length !== 1) throw new Error('expected the filter to agree with the read')
+```
+
 `@hashed` is not an option on `@encrypted` because an option inherits its parent's
 promise, and `@encrypted` promises the value comes back. It does not compose with
 `@encrypted`, `@guarded` or `@allow` — each of those describes a readable value — and

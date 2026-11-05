@@ -1,0 +1,58 @@
+/*
+ * shadcn.css
+ * shadcn/ui "new-york" zinc, light — near-black primary, hairline zinc borders,
+ * a 0.5rem radius scale and a quiet one-pixel shadow. Palette follows upstream's
+ * zinc base color; the semantic tokens map its roles onto ours.
+ */
+
+.theme-shadcn {
+  /* ── Tones: primary is ink, not a hue ────────────────────────────── */
+  --color-primary:   #18181b; /* zinc-900 */
+  --color-secondary: #52525b; /* zinc-600; upstream's secondary is a pale fill, ours is a tone */
+  --color-muted:     #71717a; /* zinc-500 */
+  --color-info:      #0369a1;
+  --color-success:   #16a34a;
+  --color-warning:   #d97706;
+  --color-danger:    #dc2626;
+
+  /* ── Surfaces ────────────────────────────────────────────────────── */
+  --app-bg:         #ffffff;
+  --surface:        #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f4f4f5; /* zinc-100 */
+
+  --ink:      #09090b; /* zinc-950 */
+  --ink-soft: #3f3f46; /* zinc-700 */
+  --ink-mute: #71717a; /* zinc-500, 4.8:1 on white */
+
+  --rule:        #e4e4e7; /* zinc-200 */
+  --rule-strong: #d4d4d8; /* zinc-300 */
+
+  /* ── Shape ───────────────────────────────────────────────────────── */
+  --btn-radius:   6px;
+  --field-radius: 6px;
+  --card-radius:  12px;
+
+  --surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm:      0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md:      0 4px 6px -1px rgba(0, 0, 0, 0.10), 0 2px 4px -2px rgba(0, 0, 0, 0.10);
+  --shadow-lg:      0 10px 15px -3px rgba(0, 0, 0, 0.10), 0 4px 6px -4px rgba(0, 0, 0, 0.10);
+
+  --ring:       #a1a1aa; /* zinc-400 */
+  --ring-width: 3px;
+
+  /* ── Type ────────────────────────────────────────────────────────── */
+  /* Upstream sets Inter; the package ships no @font-face, so this is the platform stack. */
+  --font-primary: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --btn-font-weight:      500;
+  --heading-font-weight:  600;
+  --heading-letter-spacing: -0.025em;
+  --label-font-weight:    500;
+
+  --badge-radius:         6px;
+  --badge-text-transform: none;
+  --badge-letter-spacing: 0;
+
+  --motion-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}

@@ -491,7 +491,7 @@ describe('sync', () => {
       .rejects.toThrow(/an ingress zone names its account and its zone together/)
     const before = await edge(developer).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
     expect(before.missing.find((d: any) => d.id === api.id).why).toBe('no-ingress')
-    await workspaces.patch(site.id, { ingressAccountId: good.id, ingressZoneId: 'zone-shop', version: await version() })
+    await workspaces.patch(site.id, { ingressSecretId: good.id, ingressZoneId: 'zone-shop', version: await version() })
   })
 
   test('zones names the ingress zone, and a missing hostname a push would write carries no cause', async () => {
@@ -613,6 +613,27 @@ describe('sync', () => {
     await expect(env.as(admin).service('domains').patch(made.id, { hostname: 'moved.example.test', version: fresh.version }))
       .rejects.toMatchObject({ code: 400, message: expect.stringContaining('fixed once added') })
     await env.as(admin).service('domains').patch(made.id, { hostname: 'shop.example.test', port: 8443, version: fresh.version })
+  })
+
+  test('a PUT runs the same refusal and the same push as a patch (FJS-3989)', async () => {
+    const fresh = await (env.system as any).domain.findFirst({ where: { id: made.id } })
+    await expect(env.as(admin).service('domains').update(made.id, { hostname: 'moved.example.test', version: fresh.version }))
+      .rejects.toMatchObject({ code: 400, message: expect.stringContaining('fixed once added') })
+    await env.as(admin).service('domains').update(made.id, { isProxied: false, version: fresh.version })
+    expect(await until(() => cnameAt('shop.example.test'), (r: any) => r?.proxied === false))
+      .toMatchObject({ proxied: false })
+  })
+
+  test('…and promoting through a PUT demotes the old primary (FJS-3989)', async () => {
+    const other = await env.as(admin).service('domains').create({ appId: web.id, hostname: 'second.example.test' })
+    await env.as(admin).service('domains').call('makePrimary', made.id)
+    const fresh = await (env.system as any).domain.findFirst({ where: { id: other.id } })
+    await env.as(admin).service('domains').update(other.id, { isPrimary: true, version: fresh.version })
+    const old = await (env.system as any).domain.findFirst({ where: { id: made.id } })
+    expect(old.isPrimary).toBe(false)
+    // The later tests delete `made`, which a primary with siblings cannot be.
+    await (env.system as any).domain.updateMany({ where: { id: other.id }, data: { isPrimary: false } })
+    await env.as(admin).service('domains').remove(other.id)
   })
 
   test('a deleted Domain takes its CNAME with it, and leaves the App\'s ingress record', async () => {

@@ -106,6 +106,34 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 | workbench | desk / app | **The developer's own machine as a private app** — workbench chats, atlas, decide, autopilot, the Claude tab and local git, out of basecamp (`IDEAS/workbench-package.md`, `FJS-D1785`–`D1788`; outside the World's domains, `FJS-D1790`) | Working, uncommitted 2026-11-03. One member behind a door (`FJS-D1786`); dials basecamp's `apps.preview` as a signed peer (`FJS-D1188`) and imports nothing of it. | frontier |
 | haven | D7 / app | **A place in the terminal** — `fli haven` walks into a hosted FJS app; the first one with strangers on it (`FJS-D976`–`FJS-D979`) | Schema only (`IDEAS/haven.md` 1.1). **A ban is a row policy, so a banned member reads an empty room** rather than a 403 — a refusal would tell a spammer when to mint a new key. | frontier |
 | oracle | Data / modeling | The step before `db/schema.lite`: a catalog of canonical entities, the checks a model's answer must pass, and an emitter from that answer to `.lite` — no model inside (`FJS-D601`) | Working, private. **Access is derived, never written**: a row policy is assembled from who the answer says reaches a row, so a signed-in level with no policy cannot be emitted by accident. `mockup/` is the old React recognizer, kept as reference. | tooling |
+| conduit-37signals | API / D4 | Basecamp: the account API target, token endpoint, reads, verbs, event feed and mirror claim | Prototyped. 72 drive rows green from this tree. | conduits |
+| conduit-anthropic | API / D4 | Anthropic Messages API: messages, token counting, a tool loop, SSE streaming | Prototyped. 22 drive rows green from this tree. | conduits |
+| conduit-apns | API / D4 | Apple Push Notification service: a minted ES256 provider token, the send, the unregistered-device reading | Prototyped. 14 drive rows green from this tree. | conduits |
+| conduit-cloudflare | API / D4 | Cloudflare DNS: zones, records, one all-or-nothing batch | Prototyped. 12 drive rows green from this tree. | conduits |
+| conduit-dataforseo | API / D4 | DataForSEO: HTTP Basic per account, a task array per post, the standard queue and live endpoints, cost in micros | Stub from two callers. 12 drive rows green from this tree. | conduits |
+| conduit-digitalocean | API / D4 | DigitalOcean compute: catalog, droplets, money as minor units | Prototyped. 13 drive rows green from this tree. | conduits |
+| conduit-easypost | API / D4 | EasyPost: address verification, rates, label purchase, trackers, webhook signature | Prototyped. 15 drive rows green from this tree. | conduits |
+| conduit-gmail | API / D4 | Gmail: read, watch, send | Prototyped. 41 drive rows green from this tree. | conduits |
+| conduit-google | API / D4 | Google project-credential products: Maps Platform and Firebase Cloud Messaging | Prototyped. 32 drive rows green from this tree. | conduits |
+| conduit-hetzner | API / D4 | Hetzner Cloud compute: catalog, servers, per-location prices as minor units | Prototyped. 14 drive rows green from this tree. | conduits |
+| conduit-mailgun | API / D4 | Mailgun: send, an IMail adapter, the raw-MIME inbound route | Prototyped. 13 drive rows green from this tree. | conduits |
+| conduit-mattermost | API / D4 | Mattermost: a service and per-user bearer target, the human post, the mirror claim | Prototyped. 57 drive rows green from this tree. | conduits |
+| conduit-microsoft | API / D4 | Microsoft identity platform + Graph mail: delegated grant, delta sync, change notifications, send | Prototyped. 33 drive rows green from this tree. | conduits |
+| conduit-n8n | API / D4 | n8n: the public REST API (workflows, executions) and the webhook trigger | Prototyped. 52 drive rows green from this tree. | conduits |
+| conduit-oidc | API / D4 | OpenID Connect: discovery, JWKS, token (code+PKCE, refresh), userinfo, the id_token verifier | Prototyped. 38 drive rows green from this tree. | conduits |
+| conduit-openai | API / D4 | The OpenAI chat-completions protocol: chat, embeddings, models, a tool loop, SSE streaming | Prototyped. 23 drive rows green from this tree. | conduits |
+| conduit-plausible | API / D4 | Plausible Analytics: the read-only, rate-limited stats query | Prototyped. 8 drive rows green from this tree. | conduits |
+| conduit-postmark | API / D4 | Postmark: send, batch, an IMail adapter, the unsigned inbound webhook | Prototyped. 11 drive rows green from this tree. | conduits |
+| conduit-quo | API / D4 | Quo (formerly OpenPhone): texts on v1, webhooks on the dated API, both webhook signatures | Prototyped. 115 drive rows green from this tree. | conduits |
+| conduit-resend | API / D4 | Resend: send, batch, an IMail adapter, the Svix webhook signature | Prototyped. 12 drive rows green from this tree. | conduits |
+| conduit-s3 | API / D4 | The S3 protocol: put, get, head, delete, list, presign; SigV4 through the signer seam | Prototyped. 14 drive rows green from this tree. | conduits |
+| conduit-sendgrid | API / D4 | SendGrid: v3 mail send, an IMail adapter, the ECDSA event-webhook verifier, sending domains as CNAMEs | Stub from two callers. 14 drive rows green from this tree. | conduits |
+| conduit-slack | API / D4 | Slack: chat.postMessage with a bot token, incoming webhooks, the Events API signature | Prototyped. 26 drive rows green from this tree. | conduits |
+| conduit-stripe | API / D4 | Stripe: payment intents, refunds, tax, the webhook signature | Prototyped. 26 drive rows green from this tree. | conduits |
+| conduit-telnyx | API / D4 | Telnyx messaging: SMS/MMS send, E.164, STOP/HELP classification, Ed25519 webhooks | Prototyped. 10 drive rows green from this tree. | conduits |
+| conduit-turnstile | API / D4 | Cloudflare Turnstile: siteverify with the secret in the body | Prototyped. 12 drive rows green from this tree. | conduits |
+| conduit-twilio | API / D4 | Twilio messaging: Basic through the signer seam, form bodies, E.164, STOP, the signature | Prototyped. 12 drive rows green from this tree. | conduits |
+| conduit-zapier | API / D4 | Zapier: a pasted hook URL posted to, the reverse unsubscribe, the subscribe body with target_url refused off-host | Prototyped. 17 drive rows green from this tree. | conduits |
 -->
 
 ---

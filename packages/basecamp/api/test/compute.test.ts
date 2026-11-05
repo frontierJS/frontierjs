@@ -990,12 +990,12 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     await registerAtSink(account)
 
     const server = await env.as(owner).service('servers').call('provision', null, {
-      name: 'prod-web-01', role: 'general', accountId: account.id,
+      name: 'prod-web-01', role: 'general', providerSecretId: account.id,
       region: 'nyc3', size: 's-2vcpu-4gb', image: 'ubuntu-24-04-x64',
     }) as any
 
     expect(server.status).toBe('provisioning')
-    expect(server.providerId).toBe(account.id)
+    expect(server.providerSecretId).toBe(account.id)
     expect(server.registerMethod).toBe('provisioned')
     // Nothing has been created yet — the job has not run.
     expect(server.providerServerId).toBeNull()
@@ -1023,7 +1023,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     // Refusing inside the job leaves a row stuck at `provisioning` and the
     // vendor's own wording in a log nobody reads.
     await expect(env.as(owner).service('servers').call('provision', null, {
-      name: 'imaginary', role: 'general', accountId: account.id,
+      name: 'imaginary', role: 'general', providerSecretId: account.id,
       region: 'nyc3', size: 's-99vcpu-1tb', image: 'ubuntu-24-04-x64',
     })).rejects.toThrow(/not a size/)
 
@@ -1033,7 +1033,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
 
   test('a size the vendor does not offer IN THAT REGION is refused too', async () => {
     await expect(env.as(owner).service('servers').call('provision', null, {
-      name: 'wrong-place', role: 'general', accountId: account.id,
+      name: 'wrong-place', role: 'general', providerSecretId: account.id,
       region: 'ams2', size: 's-2vcpu-4gb', image: 'ubuntu-24-04-x64',
     })).rejects.toThrow(/does not offer/)
   })
@@ -1042,12 +1042,12 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     // DigitalOcean takes no backups without an hour; refused inside the job,
     // the machine would be bought without the backups the person asked for.
     await expect(env.as(owner).service('servers').call('provision', null, {
-      name: 'no-hour', accountId: account.id, region: 'nyc3', size: 's-2vcpu-4gb',
+      name: 'no-hour', providerSecretId: account.id, region: 'nyc3', size: 's-2vcpu-4gb',
       image: 'ubuntu-24-04-x64', backups: { plan: 'daily' },
     })).rejects.toThrow(/hour/)
     // A plan no vendor is asked for is the schema's refusal, before the vendor's.
     await expect(env.as(owner).service('servers').call('provision', null, {
-      name: 'no-hour', accountId: account.id, region: 'nyc3', size: 's-2vcpu-4gb',
+      name: 'no-hour', providerSecretId: account.id, region: 'nyc3', size: 's-2vcpu-4gb',
       image: 'ubuntu-24-04-x64', backups: { plan: 'hourly', hour: 4 },
     })).rejects.toThrow(/plan/)
     expect(await (env.system as any).server.findFirst({ where: { name: 'no-hour' } })).toBeNull()
@@ -1110,7 +1110,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     })
     const row = await sys.server.create({ data: {
       workspaceId: base.workspaceId, name: 'backed-up', slug: 'backed-up',
-      providerKind: 'digitalocean', providerId: account.id, providerServerId: made.providerServerId,
+      providerKind: 'digitalocean', providerSecretId: account.id, providerServerId: made.providerServerId,
     } })
     const servers = env.as(owner).service('servers')
     const reading = async () => (await sys.server.findFirst({ where: { id: row.id } })).backupReading
@@ -1380,7 +1380,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     // The other direction: somebody destroyed it in the provider's own console.
     // One count alone says nothing about whether the comparison runs both ways.
     const server = await env.as(owner).service('servers').call('provision', null, {
-      name: 'vanished', role: 'general', accountId: account.id,
+      name: 'vanished', role: 'general', providerSecretId: account.id,
       region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64',
     }) as any
     await (env.system as any).server.update({
@@ -1402,7 +1402,7 @@ describe('adopt links an imported row to a machine, and Basecamp never destroys 
   const servers = () => env.as(owner).service('servers')
   const send    = () => sendVia(app, targetFor('digitalocean', account.id))
 
-  test('a marked machine no row holds is linked, `adopted` is set and the trail says so', async () => {
+  test('a marked machine no row holds is linked, `registerMethod` is set to adopted and the trail says so', async () => {
     const { resetSink } = await import('../src/providers/compute/digitalocean-sink.ts')
     resetSink()
     await registerAtSink(account)
@@ -1422,9 +1422,9 @@ describe('adopt links an imported row to a machine, and Basecamp never destroys 
     shown = { name: m.name, ipAddress: m.ipAddress, region: m.region }
 
     const linked = await servers().call('adopt', imported.id,
-      { accountId: account.id, providerServerId: ghost.providerServerId, shown }) as any
+      { providerSecretId: account.id, providerServerId: ghost.providerServerId, shown }) as any
     expect(linked).toMatchObject({
-      providerKind: 'digitalocean', providerId: account.id, providerServerId: ghost.providerServerId, adopted: true,
+      providerKind: 'digitalocean', providerSecretId: account.id, providerServerId: ghost.providerServerId, registerMethod: 'adopted',
     })
     // Linking touches no backups: null is *not managed*.
     expect(linked.backupPolicy).toBeNull()
@@ -1432,19 +1432,19 @@ describe('adopt links an imported row to a machine, and Basecamp never destroys 
     expect(event.message).toMatch(/^Linked to DigitalOcean machine hub-box \(.+\)\. Basecamp did not buy it/)
     expect(event.metadata.provider_server_id).toBe(ghost.providerServerId)
     // No longer an orphan, and the vendor machine is untouched.
-    const report = await servers().call('reconcile', null, { accountId: account.id }) as any
+    const report = await servers().call('reconcile', null, { providerSecretId: account.id }) as any
     expect(report.orphans).toHaveLength(0)
   })
 
   test('a second adopt on the linked row is refused', async () => {
     await expect(servers().call('adopt', imported.id,
-      { accountId: account.id, providerServerId: ghost.providerServerId, shown }))
+      { providerSecretId: account.id, providerServerId: ghost.providerServerId, shown }))
       .rejects.toThrow(/already linked/)
   })
 
   test('a machine another row holds is refused', async () => {
     await expect(servers().call('adopt', other.id,
-      { accountId: account.id, providerServerId: ghost.providerServerId, shown }))
+      { providerSecretId: account.id, providerServerId: ghost.providerServerId, shown }))
       .rejects.toThrow(/already holds DigitalOcean machine/)
     expect((await sys().server.findFirst({ where: { id: other.id } })).providerServerId).toBeNull()
   })
@@ -1456,11 +1456,11 @@ describe('adopt links an imported row to a machine, and Basecamp never destroys 
     })
     const m = await digitalOcean.machine(send(), claimed.providerServerId) as any
     await expect(servers().call('adopt', other.id, {
-      accountId: account.id, providerServerId: claimed.providerServerId,
+      providerSecretId: account.id, providerServerId: claimed.providerServerId,
       shown: { name: m.name, ipAddress: m.ipAddress, region: m.region },
     })).rejects.toThrow(/marks this machine as 'hub-box-row'/)
     await expect(servers().call('adopt', other.id,
-      { accountId: account.id, providerServerId: '99999999', shown }))
+      { providerSecretId: account.id, providerServerId: '99999999', shown }))
       .rejects.toThrow(/has no machine/)
   })
 
@@ -1470,12 +1470,12 @@ describe('adopt links an imported row to a machine, and Basecamp never destroys 
       userData: '#!/bin/bash\ntrue', mark: markFor('also-never-recorded'),
     })
     const err = await servers().call('adopt', other.id, {
-      accountId: account.id, providerServerId: fresh.providerServerId,
+      providerSecretId: account.id, providerServerId: fresh.providerServerId,
       shown: { ...shown, name: 'something-else' },
     }).catch((e: any) => e)
     expect(err.code).toBe(409)
     expect(err.message).toMatch(/now shows this machine as name 'renamed'/)
-    expect((await sys().server.findFirst({ where: { id: other.id } })).adopted).toBe(false)
+    expect((await sys().server.findFirst({ where: { id: other.id } })).registerMethod).not.toBe('adopted')
   })
 
   test('destroy on an adopted row is refused, the row does not move and the machine stands', async () => {
@@ -1485,8 +1485,8 @@ describe('adopt links an imported row to a machine, and Basecamp never destroys 
     expect(await digitalOcean.machine(send(), ghost.providerServerId)).not.toBeNull()
   })
 
-  test('nobody may write `adopted` by patch, an owner included', async () => {
-    await expect(servers().patch(other.id, { adopted: true })).rejects.toThrow(/is @system/)
+  test('nobody may write `registerMethod` by patch, an owner included', async () => {
+    await expect(servers().patch(other.id, { registerMethod: 'adopted' })).rejects.toThrow(/is @system/)
   })
 
   // FJS-D1895: the hub host's backups are a checklist step outside the count,
@@ -1545,7 +1545,7 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     await registerAtSink(account)
 
     const server = await env.as(owner).service('servers').call('provision', null, {
-      name: 'enrollee', role: 'general', accountId: account.id,
+      name: 'enrollee', role: 'general', providerSecretId: account.id,
       region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64',
     }) as any
 
@@ -1606,7 +1606,7 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     // it. A read-then-write passes every row above and fails this one.
     const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
     const server = await env.as(owner).service('servers').call('provision', null, {
-      name: 'raced', role: 'general', accountId: account.id,
+      name: 'raced', role: 'general', providerSecretId: account.id,
       region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64',
     }) as any
     const token = mintEnrollToken().token
@@ -1638,7 +1638,7 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
 
     const expired = await env.as(owner).service('servers').call('provision', null, {
-      name: 'too-late', role: 'general', accountId: account.id,
+      name: 'too-late', role: 'general', providerSecretId: account.id,
       region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64',
     }) as any
     const stale = mintEnrollToken().token
@@ -1765,7 +1765,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
       await expect(env.as(owner).service('servers').call('issueEnrollment', m.id))
         .rejects.toThrow(/development placeholder.*before enrolling a machine/)
       await expect(env.as(owner).service('servers').call('provision', null, {
-        name: 'no-key', role: 'general', accountId: account.id, region: 'nyc3', size: 's-2vcpu-4gb', image: 'ubuntu-24-04-x64' }))
+        name: 'no-key', role: 'general', providerSecretId: account.id, region: 'nyc3', size: 's-2vcpu-4gb', image: 'ubuntu-24-04-x64' }))
         .rejects.toThrow(/development placeholder/)
     } finally {
       ;(process_env as any).ENCRYPTION_KEY = real
@@ -2529,7 +2529,7 @@ describe('two clouds, one vocabulary', () => {
       const sys     = env.system as any
 
       const row = await servers.call('provision', null, {
-        name: `kept-${c.kind}`, accountId: c.account().id,
+        name: `kept-${c.kind}`, providerSecretId: c.account().id,
         region: c.region, size: c.size, image: c.image, backups: policy,
       }) as any
       expect((await sys.server.findFirst({ where: { id: row.id } })).backupPolicy)
@@ -2560,7 +2560,7 @@ describe('two clouds, one vocabulary', () => {
     const servers = env.as(owner).service('servers')
     const sys     = env.system as any
     const row = await servers.call('provision', null, {
-      name: 'kept-refused', accountId: account.id, region: 'nyc3', size: 's-1vcpu-1gb',
+      name: 'kept-refused', providerSecretId: account.id, region: 'nyc3', size: 's-1vcpu-1gb',
       image: 'ubuntu-24-04-x64', backups: { plan: 'daily', hour: 20 },
     }) as any
     await servers.call('provisionStep', row.id, { step: 'create', enrollToken: 'bcen_test' })

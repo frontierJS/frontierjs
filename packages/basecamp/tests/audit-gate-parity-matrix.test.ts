@@ -113,10 +113,10 @@ describe('User (1.8.1.5): own row at every standing and no other, created and de
       expect(summarize(got).rows![0].id).toBe(me)
       const before = await sys.user.findFirst({ where: { id: me } })
       expect((await d.call(path, w, 'users', 'patch', 'me', { kind: 'bot' })).ok).toBe(false)
-      await d.call(path, w, 'users', 'patch', 'me', { displayName: 'dn-' + uniq(), isSystemAdmin: true, status: 'suspended', isEmailVerified: !before.isEmailVerified })
+      await d.call(path, w, 'users', 'patch', 'me', { nickname: 'dn-' + uniq(), isSystemAdmin: true, status: 'suspended', isEmailVerified: !before.isEmailVerified })
       const after = await sys.user.findFirst({ where: { id: me } })
       for (const k of ['isSystemAdmin', 'status', 'kind', 'isEmailVerified']) expect([k, after[k]]).toEqual([k, before[k]])
-      expect(after.displayName).not.toBe(before.displayName)
+      expect(after.nickname).not.toBe(before.nickname)
     }
   }, 60_000)
   test('at the Data boundary: at every level one reads only oneself; nobody updates another; create needs SYSTEM; delete needs 5', async () => {
@@ -125,8 +125,8 @@ describe('User (1.8.1.5): own row at every standing and no other, created and de
     for (const w of ['outsider', 'viewer', 'developer', 'admin', 'owner'] as Who2[]) expect([w, await n(w)]).toEqual([w, 1])
     const victim = fx.ids.outsider!
     for (const w of ['developer', 'owner'] as Who2[]) {
-      await d.call('job-caller-db', w, 'users', 'patch', victim, { displayName: 'pwn-' + uniq() })
-      expect(String((await sys.user.findFirst({ where: { id: victim } })).displayName)).not.toMatch(/^pwn-/)
+      await d.call('job-caller-db', w, 'users', 'patch', victim, { nickname: 'pwn-' + uniq() })
+      expect(String((await sys.user.findFirst({ where: { id: victim } })).nickname)).not.toMatch(/^pwn-/)
       expect((await d.call('job-caller-db', w, 'users', 'create', undefined, { email: `n-${uniq()}@x.co` })).ok).toBe(false)
     }
     const t = await sys.user.create({ data: { email: `t-${uniq()}@x.co` } })

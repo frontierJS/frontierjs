@@ -3269,7 +3269,7 @@ describe('accepting an invitation puts somebody in the workspace', () => {
     // has no password memory must land inside the app rather than at a form.
     expect(res.sessionToken).toBeTruthy()
     const made = await env.system.user.findFirst({ where: { email } })
-    expect(made.displayName).toBe('Fresh Person')
+    expect(made.name).toBe('Fresh Person')
   })
 
   // Over the wire, which an in-process call is not: the transport drops every
@@ -4226,7 +4226,7 @@ describe('infra.launch walks to the screen each step happens on', () => {
       workspaceId: w.id, name: 'cf', kind: 'providerKey', providerKind: 'cloudflare', data: JSON.stringify({ token: 't' }),
     } })
     expect((await me.call('launch')).steps.find((s: any) => s.id === 'dns')).toMatchObject({ done: false, href: '/dns/' })
-    await sys.workspace.update({ where: { id: w.id }, data: { ingressAccountId: cf.id, ingressZoneId: 'zone-1' } })
+    await sys.workspace.update({ where: { id: w.id }, data: { ingressSecretId: cf.id, ingressZoneId: 'zone-1' } })
 
     const all = await me.call('launch')
     expect(all.done).toBe(all.total)
@@ -4306,23 +4306,23 @@ describe('users — a person edits their own profile, at any standing', () => {
   test('a viewer reads and edits their own row through me', async () => {
     const users = env.as(viewer).service('users')
     expect((await users.get('me')).id).toBe(viewer.id)
-    const out = await users.patch('me', { displayName: 'Vee', username: 'vee' })
-    expect(out.displayName).toBe('Vee')
+    const out = await users.patch('me', { nickname: 'Vee', username: 'vee' })
+    expect(out.nickname).toBe('Vee')
     const row = await sys().user.findUnique({ where: { id: viewer.id } })
-    expect([row.displayName, row.username]).toEqual(['Vee', 'vee'])
+    expect([row.nickname, row.username]).toEqual(['Vee', 'vee'])
   })
 
   test('a caller naming no workspace edits theirs too', async () => {
     const bare = session({ id: viewer.id })
-    const out = await env.as(bare).service('users').patch(viewer.id, { displayName: 'Vee 2' })
-    expect(out.displayName).toBe('Vee 2')
+    const out = await env.as(bare).service('users').patch(viewer.id, { nickname: 'Vee 2' })
+    expect(out.nickname).toBe('Vee 2')
   })
 
   test('nobody reads or edits somebody else\'s, the owner of the workspace included', async () => {
     await expect(env.as(owner).service('users').get(viewer.id)).rejects.toThrow(/No user/)
-    await expect(env.as(owner).service('users').patch(viewer.id, { displayName: 'forged' }))
+    await expect(env.as(owner).service('users').patch(viewer.id, { nickname: 'forged' }))
       .rejects.toThrow(/No user/)
-    expect((await sys().user.findUnique({ where: { id: viewer.id } })).displayName).not.toBe('forged')
+    expect((await sys().user.findUnique({ where: { id: viewer.id } })).nickname).not.toBe('forged')
   })
 
   // Which columns is the schema's, and the service names none of them. Each of
@@ -4331,7 +4331,7 @@ describe('users — a person edits their own profile, at any standing', () => {
     const before = await sys().user.findUnique({ where: { id: developer.id } })
     await env.as(developer).service('users').patch('me', {
       email: 'taken@x.co', accountId: null, isEmailVerified: true,
-      isSystemAdmin: true, status: 'suspended', displayName: 'Dev',
+      isSystemAdmin: true, status: 'suspended', nickname: 'Dev',
       deletedAt: new Date().toISOString(), id: 'hijack', createdAt: '2000-01-01T00:00:00.000Z',
     })
     // `kind` is @system: named by a caller it is refused, not dropped.
@@ -4342,7 +4342,7 @@ describe('users — a person edits their own profile, at any standing', () => {
     expect(row.accountId).toBe(before.accountId)
     expect(row.isEmailVerified).toBe(before.isEmailVerified)
     expect([row.isSystemAdmin, row.status, row.kind]).toEqual([before.isSystemAdmin, before.status, before.kind])
-    expect(row.displayName).toBe('Dev')
+    expect(row.nickname).toBe('Dev')
     expect(row.deletedAt).toBeNull()
     expect(row.createdAt).toBe(before.createdAt)
   })
@@ -4487,9 +4487,9 @@ describe('a list honors every filter it admits', () => {
   })
 
   test('a hand patch of a release drops its set-once columns and refuses what it recorded (FJS-3863)', async () => {
-    const patched = await env.as(owner).service('deployments').patch(d1.id, { trigger: 'rollback', author: 'someone else' })
+    const patched = await env.as(owner).service('deployments').patch(d1.id, { trigger: 'rollback', commitAuthor: 'someone else' })
     expect(patched.trigger).toBe('button')
-    expect(patched.author).toBeNull()
+    expect(patched.commitAuthor).toBeNull()
     for (const data of [{ durationMs: 42 }, { builtImage: 'sha256:' + 'f'.repeat(64) }, { commitSha: 'abc' }, { branch: 'main' }, { finishedAt: '2026-01-01T00:00:00.000Z' }])
       await expect(env.as(owner).service('deployments').patch(d1.id, data)).rejects.toThrow(/@system/)
     const after = await (env.system as any).deployment.findFirst({ where: { id: d1.id } })
@@ -4611,7 +4611,7 @@ describe('a server names only its own workspace\'s secrets', () => {
 
   test('a create or patch naming a provider column is refused by name, and no row is made', async () => {
     const slug = `foreign-${uniq()}`
-    await expect(env.as(owner).service('servers').create({ name: slug, slug, providerKind: 'digitalocean', providerId: theirs.id }))
+    await expect(env.as(owner).service('servers').create({ name: slug, slug, providerKind: 'digitalocean', providerSecretId: theirs.id }))
       .rejects.toThrow(/@system/)
     await expect(env.as(owner).service('servers').create({ name: slug, slug, providerServerId: '42' }))
       .rejects.toThrow(/@system/)
@@ -4623,13 +4623,13 @@ describe('a server names only its own workspace\'s secrets', () => {
   test('a patch cannot move a machine onto another workspace\'s secret, or onto a key of the caller\'s own', async () => {
     const slug = `patched-${uniq()}`
     const box: any = await (env.system as any).server.create({ data: {
-      workspaceId: ws.id, name: slug, slug, providerKind: 'digitalocean', providerId: mine.id } })
-    await expect(env.as(owner).service('servers').patch(box.id, { providerId: theirs.id }))
+      workspaceId: ws.id, name: slug, slug, providerKind: 'digitalocean', providerSecretId: mine.id } })
+    await expect(env.as(owner).service('servers').patch(box.id, { providerSecretId: theirs.id }))
       .rejects.toThrow(/@system/)
     await expect(env.as(owner).service('servers').patch(box.id, { outpostPublicKey: 'AAAA', outpostCert: 'x' }))
       .rejects.toThrow(/@system/)
     const after = await (env.system as any).server.findFirst({ where: { id: box.id } })
-    expect(after.providerId).toBe(mine.id)
+    expect(after.providerSecretId).toBe(mine.id)
     expect(after.outpostPublicKey).toBeNull()
     expect(after.outpostCert).toBeNull()
     await expect(env.as(owner).service('servers').patch(box.id, { sshKeyId: theirs.id }))
@@ -4663,7 +4663,7 @@ describe('a server names only its own workspace\'s secrets', () => {
   test('a row already holding a foreign account is refused at sync and destroy, before any call goes out', async () => {
     const slug = `held-${uniq()}`
     const box: any = await (env.system as any).server.create({ data: {
-      workspaceId: ws.id, name: slug, slug, providerKind: 'digitalocean', providerId: theirs.id, providerServerId: '42' } })
+      workspaceId: ws.id, name: slug, slug, providerKind: 'digitalocean', providerSecretId: theirs.id, providerServerId: '42' } })
     await expect(env.as(owner).service('servers').call('sync', box.id, {}))
       .rejects.toThrow(/outside its workspace/)
     await expect(env.as(owner).service('servers').call('destroy', box.id, { confirm: slug }))
@@ -4795,7 +4795,7 @@ describe('server provisioning declares its input', () => {
   })
 
   test('a missing field and a role outside the enum are refused naming the field', async () => {
-    const full = { name: 'x', accountId: 'a', region: 'nyc3', size: 's', image: 'i' }
+    const full = { name: 'x', providerSecretId: 'a', region: 'nyc3', size: 's', image: 'i' }
     const { size: _size, ...noSize } = full
     await expect(env.as(owner).service('servers').call('provision', undefined, noSize))
       .rejects.toThrow(/size/)
@@ -5845,7 +5845,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
 
       // A retired box, or one Basecamp was restored beside, is issued again.
       const again = await useHost(sys, { workspaceId: ws.id, actor: 'test', outpostGone: true })
-      expect(again.enrolled).toBe(false)
+      if (again.enrolled) throw new Error('a gone outpost must be issued again')
       expect(again.server.id).toBe(made.server.id)
       expect(typeof again.command).toBe('string')
 

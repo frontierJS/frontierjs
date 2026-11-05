@@ -191,7 +191,7 @@ function settleUnguarded({ root, id, by, why = '', file, dry = false, today = ne
 // Every register source, or the one file named — refused when that file is not
 // a markdown file inside the root, since the strike writes it.
 function findQuestion(root, id, file) {
-  if (file == null || file === '') return readDecisions(root).find(d => d.id === id) ?? null
+  if (file == null || file === '') return named(readDecisions(root), id)
   const rel = String(file).trim()
   const abs = resolve(root, rel)
   if (!abs.startsWith(resolve(root) + sep) || !rel.endsWith('.md')) return refuse(`${rel} is not a markdown file inside ${root}`)
@@ -200,7 +200,19 @@ function findQuestion(root, id, file) {
   const at    = relative(root, abs)
   const meta  = extractFrontmatter(text, abs)
   const paper = { id: meta.id || basename(abs).replace(/\.md$/, ''), status: meta.status || '', file: at }
-  return paperQuestions(text, { paper, rel: at }).find(d => d.id === id) ?? null
+  return named(paperQuestions(text, { paper, rel: at }), id)
+}
+
+// A paper question's id is a slug, but `fli decisions` prints the FJS-D a lead
+// names as its heading, so that name finds it too. The slug wins; of several
+// leads naming one id, a question still open is the one meant.
+function named(questions, id) {
+  const exact = questions.find(q => q.id === id)
+  if (exact) return exact
+  const want = String(id ?? '').trim().toUpperCase()
+  if (!want) return null
+  const leads = questions.filter(q => q.source === 'idea' && q.question.match(/^`?([A-Z][A-Z0-9]*-D\d+)`?\s*[—–:-]/)?.[1] === want)
+  return leads.find(q => q.state !== 'ruled') ?? leads[0] ?? null
 }
 
 // ─── the row a question answers ────────────────────────────────────────────────

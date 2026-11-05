@@ -45,7 +45,7 @@ is already this app's way of speaking to a cloud; adding an `ICompute` to
 connector is a conduit target and the interface list does not grow (§ D1).
 
 **Concept budget?** Grows by one idea — **which account a machine was made with** —
-and that idea already has a column holding nothing, `Server.providerId`. No new
+and that idea already has a column holding nothing, `Server.providerSecretId`. No new
 model. The wizard's progress, the credential and the catalog all reuse nouns this
 app has: `ServerEvent`, `Secret`, the workspace channel.
 
@@ -135,7 +135,7 @@ only ever name one DigitalOcean account for the whole install, so two workspaces
 that both connect DO share one registration and **one workspace's token is used to
 read the other's machines**. Nothing has registered such a target yet, so it is
 latent — file it before building on the line. `accountId` is the id of the
-`Secret` holding the vendor token, and `Server.providerId` is where it is recorded:
+`Secret` holding the vendor token, and `Server.providerSecretId` is where it is recorded:
 the column exists and holds nothing today.
 
 **D3 — the catalog is read, never listed here.** One service method,

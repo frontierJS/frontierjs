@@ -18,7 +18,7 @@ import { commandContext } from './shell.js'
 import { binCommand, SNAPSHOT_BINS } from './snapshots.js'
 import { shQuote } from './machine.js'
 import { missingRequires, acquireMissing } from './requires.js'
-import { packageMembers } from './workspace-members.js'
+import { releasableMembers } from './workspace-members.js'
 
 const env = process.env
 
@@ -484,11 +484,12 @@ export async function Command({ file, arg, flag, emit }) {
   // inside a single-repo monorepo. Membership is `workspace-members.js`'s, so a
   // package two levels down (`packages/conduits/conduit-x`) is here with its
   // real `path`; the apps and examples the root `workspaces` list also names
-  // are not releasable members and stay out.
+  // are not releasable members and stay out, and neither are the held-out
+  // connectors (`releasableMembers`).
   config.wsPackages = async () => {
     const wsRoot = await config.wsRoot()
     if (!wsRoot) return { wsRoot: null, packages: [] }
-    const packages = packageMembers(wsRoot).map(m => ({ dir: m.dir, folder: m.folder, path: m.path, pkg: m.manifest }))
+    const packages = releasableMembers(wsRoot).map(m => ({ dir: m.dir, folder: m.folder, path: m.path, pkg: m.manifest }))
     return { wsRoot, packages }
   }
 

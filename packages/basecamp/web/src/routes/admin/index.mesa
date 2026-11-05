@@ -250,7 +250,7 @@ title: Members
     <Table id="member-rows" columns={MEMBER_COLUMNS} rows={members} striped hover={false}>
       {#snippet row(member)}
         <tr>
-          <td>{member.user?.displayName ?? member.user?.name ?? '—'}</td>
+          <td>{member.user?.nickname ?? member.user?.name ?? '—'}</td>
           <td>{member.user?.email ?? '—'}</td>
           <td>
             <label class="visually-hidden" for={`role-${member.id}`}>Role</label>
@@ -265,7 +265,7 @@ title: Members
           <td>
             {#if member.userId !== session.user?.id}
               <Button treatment="ghost" tone="danger" disabled={busy === member.id}
-                      data-confirm={`${member.user?.displayName ?? member.user?.email ?? 'This person'} loses access to this workspace.`}
+                      data-confirm={`${member.user?.nickname ?? member.user?.email ?? 'This person'} loses access to this workspace.`}
                       data-confirm-title="Remove this member?" data-confirm-label="Remove"
                       onclick={() => remove(member)}>Remove</Button>
             {:else}

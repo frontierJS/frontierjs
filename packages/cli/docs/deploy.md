@@ -29,7 +29,7 @@ below is a summary, not the source of truth.
 - Versioned web releases via symlinks for atomic cutover
 - SQLite single-writer respected — old container stopped before new starts; ~3-10s gap during migrations
 - Auto-rollback on health failure (rename `_replaced` back, start it)
-- Stale client protection — previous release's hashed assets merged into new release with `cp -rn` so cached HTML clients can still load `app-x9y8z7.js`
+- Stale client protection — the hashed assets each of the last `keep_releases - 1` releases built (listed in its `.built-assets`) are copied into the new release without overwriting, so cached HTML clients can still load `app-x9y8z7.js`
 - Deploy lock at `${path}/.deploy.lock` prevents concurrent deploys to same server
 - What the target prints (bun install, vite, docker build, `docker run`) is held unless `--verbose`; a failed command's error ends with its last 40 lines. The closing line names the three slowest steps
 

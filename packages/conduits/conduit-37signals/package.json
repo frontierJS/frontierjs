@@ -1,0 +1,33 @@
+{
+  "name": "@frontierjs/conduit-37signals",
+  "version": "0.0.1",
+  "description": "Basecamp over @frontierjs/conduit — the account's API target and its token endpoint; reads, verbs, the event feed and the mirror claim as the plan builds them.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/37signals.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  },
+  "keywords": [
+    "37signals",
+    "basecamp",
+    "conduit",
+    "frontierjs"
+  ]
+}

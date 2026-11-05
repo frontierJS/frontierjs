@@ -74,7 +74,7 @@ export type PlatformProvider = 'cloudflare'
 
 export type PlatformBuild = 'outpost' | 'platform'
 
-export type RegisterMethod = 'imported' | 'provisioned'
+export type RegisterMethod = 'imported' | 'provisioned' | 'adopted'
 
 export type CertKind = 'acme' | 'originCa' | 'uploaded'
 
@@ -100,7 +100,7 @@ export type DeploySwap = 'startFirst' | 'stopFirst'
 
 export type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
 
-export type JobKind = 'oneShot' | 'scheduled' | 'triggered' | 'workflow'
+export type JobKind = 'oneShot' | 'scheduled'
 
 export type JobStatus = 'pending' | 'running' | 'failed' | 'cancelled'
 
@@ -468,7 +468,7 @@ export interface FlagOverrideClear {
 export interface ServerProvision {
   name: string
   role?: ServerRole | null
-  accountId: string
+  providerSecretId: string
   region: string
   size: string
   image: string
@@ -496,7 +496,7 @@ export interface ServerAdoptShown {
 }
 
 export interface ServerAdopt {
-  accountId: string
+  providerSecretId: string
   providerServerId: string
   shown: ServerAdoptShown
 }
@@ -1846,7 +1846,7 @@ export interface User {
   kind: UserKind
   status: UserStatus
   username?: string | null
-  displayName?: string | null
+  nickname?: string | null
   avatarUrl?: string | null
   isSystemAdmin: boolean
   createdAt: string
@@ -1862,7 +1862,7 @@ export interface UserCreate {
   accountId?: string | null
   status?: UserStatus
   username?: string | null
-  displayName?: string | null
+  nickname?: string | null
   avatarUrl?: string | null
   isSystemAdmin?: boolean
 }
@@ -1875,7 +1875,7 @@ export interface UserUpdate {
   accountId?: string | null
   status?: UserStatus
   username?: string | null
-  displayName?: string | null
+  nickname?: string | null
   avatarUrl?: string | null
   isSystemAdmin?: boolean
 }
@@ -1893,7 +1893,7 @@ export interface UserWhere extends WhereBase {
   kind?: UserKind | WhereOp<UserKind> | null
   status?: UserStatus | WhereOp<UserStatus> | null
   username?: string | WhereOp<string> | null
-  displayName?: string | WhereOp<string> | null
+  nickname?: string | WhereOp<string> | null
   avatarUrl?: string | WhereOp<string> | null
   isSystemAdmin?: boolean | WhereOp<boolean> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -1983,7 +1983,7 @@ export interface Workspace {
   settings: unknown
   status: WorkspaceStatus
   expiresAt?: string | null
-  ingressAccountId?: string | null
+  ingressSecretId?: string | null
   ingressZoneId?: string | null
   /** @guarded @encrypted @secret */
   pushTopic?: string | null
@@ -2002,7 +2002,7 @@ export interface WorkspaceCreate {
   kind?: WorkspaceKind
   settings?: unknown
   status?: WorkspaceStatus
-  ingressAccountId?: string | null
+  ingressSecretId?: string | null
   ingressZoneId?: string | null
   pushTopic?: string | null
 }
@@ -2015,7 +2015,7 @@ export interface WorkspaceUpdate {
   kind?: WorkspaceKind
   settings?: unknown
   status?: WorkspaceStatus
-  ingressAccountId?: string | null
+  ingressSecretId?: string | null
   ingressZoneId?: string | null
   pushTopic?: string | null
   version: number
@@ -2034,7 +2034,7 @@ export interface WorkspaceWhere extends WhereBase {
   settings?: unknown | WhereOp<unknown> | null
   status?: WorkspaceStatus | WhereOp<WorkspaceStatus> | null
   expiresAt?: string | Date | WhereOp<string | Date> | null
-  ingressAccountId?: string | WhereOp<string> | null
+  ingressSecretId?: string | WhereOp<string> | null
   ingressZoneId?: string | WhereOp<string> | null
   pushTopic?: string | WhereOp<string> | null
   version?: number | WhereOp<number> | null
@@ -2422,9 +2422,8 @@ export interface Server {
   status: ServerStatus
   role: ServerRole
   providerKind: ComputeProvider
-  providerId?: string | null
+  providerSecretId?: string | null
   providerServerId?: string | null
-  adopted: boolean
   registerMethod: RegisterMethod
   region: string
   ipAddress?: string | null
@@ -2504,7 +2503,6 @@ export interface ServerCreate {
   slug: string
   status?: ServerStatus
   role?: ServerRole
-  registerMethod?: RegisterMethod
   region?: string
   ipAddress?: string | null
   ipv6Address?: string | null
@@ -2552,7 +2550,6 @@ export interface ServerUpdate {
   slug?: string
   status?: ServerStatus
   role?: ServerRole
-  registerMethod?: RegisterMethod
   region?: string
   ipAddress?: string | null
   ipv6Address?: string | null
@@ -2574,9 +2571,9 @@ export interface ServerUpdate {
 
 export interface ServerSystem {
   providerKind?: ComputeProvider
-  providerId?: string | null
+  providerSecretId?: string | null
   providerServerId?: string | null
-  adopted?: boolean
+  registerMethod?: RegisterMethod
   outpostPublicKey?: string | null
   outpostCert?: string | null
   backupPolicy?: BackupPolicy | null
@@ -2591,9 +2588,8 @@ export interface ServerWhere extends WhereBase {
   status?: ServerStatus | WhereOp<ServerStatus> | null
   role?: ServerRole | WhereOp<ServerRole> | null
   providerKind?: ComputeProvider | WhereOp<ComputeProvider> | null
-  providerId?: string | WhereOp<string> | null
+  providerSecretId?: string | WhereOp<string> | null
   providerServerId?: string | WhereOp<string> | null
-  adopted?: boolean | WhereOp<boolean> | null
   registerMethod?: RegisterMethod | WhereOp<RegisterMethod> | null
   region?: string | WhereOp<string> | null
   ipAddress?: string | WhereOp<string> | null
@@ -2733,7 +2729,7 @@ export interface Volume {
   sizeBytes: number
   isInUse: boolean
   containers: string[]
-  createdOnServer?: string | null
+  dockerCreatedAt?: string | null
   discoveredAt: string
   lastSeenAt: string
 }
@@ -2748,7 +2744,7 @@ export interface VolumeCreate {
   sizeBytes?: number
   isInUse?: boolean
   containers?: string[]
-  createdOnServer?: string | Date | null
+  dockerCreatedAt?: string | Date | null
   discoveredAt?: string | Date
   lastSeenAt?: string | Date
 }
@@ -2763,7 +2759,7 @@ export interface VolumeUpdate {
   sizeBytes?: number
   isInUse?: boolean
   containers?: string[]
-  createdOnServer?: string | Date | null
+  dockerCreatedAt?: string | Date | null
   discoveredAt?: string | Date
   lastSeenAt?: string | Date
 }
@@ -2778,7 +2774,7 @@ export interface VolumeWhere extends WhereBase {
   sizeBytes?: number | WhereOp<number> | null
   isInUse?: boolean | WhereOp<boolean> | null
   containers?: string[] | WhereOp<string[]> | null
-  createdOnServer?: string | Date | WhereOp<string | Date> | null
+  dockerCreatedAt?: string | Date | WhereOp<string | Date> | null
   discoveredAt?: string | Date | WhereOp<string | Date> | null
   lastSeenAt?: string | Date | WhereOp<string | Date> | null
   AND?: VolumeWhere[]
@@ -2803,7 +2799,7 @@ export interface Network {
   slug: string
   kind: NetworkKind
   cidr: string
-  provider: NetworkProvider
+  providerKind: NetworkProvider
   config: unknown
   /** @version */
   version: number
@@ -2819,7 +2815,7 @@ export interface NetworkCreate {
   slug: string
   kind?: NetworkKind
   cidr?: string
-  provider?: NetworkProvider
+  providerKind?: NetworkProvider
   config?: unknown
 }
 
@@ -2830,7 +2826,7 @@ export interface NetworkUpdate {
   slug?: string
   kind?: NetworkKind
   cidr?: string
-  provider?: NetworkProvider
+  providerKind?: NetworkProvider
   config?: unknown
   version: number
 }
@@ -2842,7 +2838,7 @@ export interface NetworkWhere extends WhereBase {
   slug?: string | WhereOp<string> | null
   kind?: NetworkKind | WhereOp<NetworkKind> | null
   cidr?: string | WhereOp<string> | null
-  provider?: NetworkProvider | WhereOp<NetworkProvider> | null
+  providerKind?: NetworkProvider | WhereOp<NetworkProvider> | null
   config?: unknown | WhereOp<unknown> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -2917,7 +2913,7 @@ export interface Project {
   slug: string
   description?: string | null
   status: ProjectStatus
-  tags: unknown
+  tags: string[]
   metadata: unknown
   /** @version */
   version: number
@@ -2933,7 +2929,7 @@ export interface ProjectCreate {
   slug: string
   description?: string | null
   status?: ProjectStatus
-  tags?: unknown
+  tags?: string[]
   metadata?: unknown
 }
 
@@ -2944,7 +2940,7 @@ export interface ProjectUpdate {
   slug?: string
   description?: string | null
   status?: ProjectStatus
-  tags?: unknown
+  tags?: string[]
   metadata?: unknown
   version: number
 }
@@ -2956,7 +2952,7 @@ export interface ProjectWhere extends WhereBase {
   slug?: string | WhereOp<string> | null
   description?: string | WhereOp<string> | null
   status?: ProjectStatus | WhereOp<ProjectStatus> | null
-  tags?: unknown | WhereOp<unknown> | null
+  tags?: string[] | WhereOp<string[]> | null
   metadata?: unknown | WhereOp<unknown> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -3060,8 +3056,8 @@ export interface App {
   healthCheck?: string | null
   cpuLimit?: number | null
   memLimitMb?: number | null
-  stopGrace?: number | null
-  healthTimeout?: number | null
+  stopGraceSeconds?: number | null
+  healthTimeoutSeconds?: number | null
   command: string[]
   hasExposedPort: boolean
   swap: DeploySwap
@@ -3098,8 +3094,8 @@ export interface AppCreate {
   healthCheck?: string | null
   cpuLimit?: number | null
   memLimitMb?: number | null
-  stopGrace?: number | null
-  healthTimeout?: number | null
+  stopGraceSeconds?: number | null
+  healthTimeoutSeconds?: number | null
   command?: string[]
   hasExposedPort?: boolean
   swap?: DeploySwap
@@ -3123,8 +3119,8 @@ export interface AppUpdate {
   healthCheck?: string | null
   cpuLimit?: number | null
   memLimitMb?: number | null
-  stopGrace?: number | null
-  healthTimeout?: number | null
+  stopGraceSeconds?: number | null
+  healthTimeoutSeconds?: number | null
   command?: string[]
   hasExposedPort?: boolean
   swap?: DeploySwap
@@ -3161,8 +3157,8 @@ export interface AppWhere extends WhereBase {
   healthCheck?: string | WhereOp<string> | null
   cpuLimit?: number | WhereOp<number> | null
   memLimitMb?: number | WhereOp<number> | null
-  stopGrace?: number | WhereOp<number> | null
-  healthTimeout?: number | WhereOp<number> | null
+  stopGraceSeconds?: number | WhereOp<number> | null
+  healthTimeoutSeconds?: number | WhereOp<number> | null
   command?: string[] | WhereOp<string[]> | null
   hasExposedPort?: boolean | WhereOp<boolean> | null
   swap?: DeploySwap | WhereOp<DeploySwap> | null
@@ -3529,8 +3525,8 @@ export interface AppPlatform {
   id: string
   workspaceId: string
   appId: string
-  accountId: string
-  provider: PlatformProvider
+  providerSecretId: string
+  providerKind: PlatformProvider
   providerAccountId: string
   name: string
   build: PlatformBuild
@@ -3550,8 +3546,8 @@ export interface AppPlatformCreate {
   id?: string
   workspaceId: string
   appId: string
-  accountId: string
-  provider: PlatformProvider
+  providerSecretId: string
+  providerKind: PlatformProvider
   providerAccountId: string
   name: string
   build?: PlatformBuild
@@ -3563,8 +3559,8 @@ export interface AppPlatformUpdate {
   id?: string
   workspaceId?: string
   appId?: string
-  accountId?: string
-  provider?: PlatformProvider
+  providerSecretId?: string
+  providerKind?: PlatformProvider
   providerAccountId?: string
   name?: string
   build?: PlatformBuild
@@ -3583,8 +3579,8 @@ export interface AppPlatformWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
-  accountId?: string | WhereOp<string> | null
-  provider?: PlatformProvider | WhereOp<PlatformProvider> | null
+  providerSecretId?: string | WhereOp<string> | null
+  providerKind?: PlatformProvider | WhereOp<PlatformProvider> | null
   providerAccountId?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
   build?: PlatformBuild | WhereOp<PlatformBuild> | null
@@ -3851,7 +3847,7 @@ export interface Deployment {
   commitSha?: string | null
   commitMessage?: string | null
   branch?: string | null
-  author?: string | null
+  commitAuthor?: string | null
   builtImage?: string | null
   swap?: DeploySwap | null
   swapReason?: string | null
@@ -3876,7 +3872,7 @@ export interface DeploymentCreate {
   fromImage?: string | null
   toImage?: string | null
   commitMessage?: string | null
-  author?: string | null
+  commitAuthor?: string | null
   configSnapshot?: unknown
   triggeredBy?: string | null
   queuedAt?: string | Date
@@ -3891,7 +3887,7 @@ export interface DeploymentUpdate {
   fromImage?: string | null
   toImage?: string | null
   commitMessage?: string | null
-  author?: string | null
+  commitAuthor?: string | null
   configSnapshot?: unknown
   triggeredBy?: string | null
   queuedAt?: string | Date
@@ -3921,7 +3917,7 @@ export interface DeploymentWhere extends WhereBase {
   commitSha?: string | WhereOp<string> | null
   commitMessage?: string | WhereOp<string> | null
   branch?: string | WhereOp<string> | null
-  author?: string | WhereOp<string> | null
+  commitAuthor?: string | WhereOp<string> | null
   builtImage?: string | WhereOp<string> | null
   swap?: DeploySwap | WhereOp<DeploySwap> | null
   swapReason?: string | WhereOp<string> | null
@@ -4024,13 +4020,11 @@ export interface Job {
   status: JobStatus
   command?: string | null
   cronExpression?: string | null
-  trigger: string
-  triggerConfig: unknown
   timeoutSeconds: number
   retryLimit: number
   retryCount: number
   lastRunAt?: string | null
-  lastRunStatus?: string | null
+  lastRunStatus?: RunStatus | null
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -4045,8 +4039,6 @@ export interface JobCreate {
   status?: JobStatus
   command?: string | null
   cronExpression?: string | null
-  trigger?: string
-  triggerConfig?: unknown
   timeoutSeconds?: number
   retryLimit?: number
 }
@@ -4060,8 +4052,6 @@ export interface JobUpdate {
   status?: JobStatus
   command?: string | null
   cronExpression?: string | null
-  trigger?: string
-  triggerConfig?: unknown
   timeoutSeconds?: number
   retryLimit?: number
 }
@@ -4069,7 +4059,7 @@ export interface JobUpdate {
 export interface JobSystem {
   retryCount?: number
   lastRunAt?: string | Date | null
-  lastRunStatus?: string | null
+  lastRunStatus?: RunStatus | null
 }
 
 export interface JobWhere extends WhereBase {
@@ -4081,13 +4071,11 @@ export interface JobWhere extends WhereBase {
   status?: JobStatus | WhereOp<JobStatus> | null
   command?: string | WhereOp<string> | null
   cronExpression?: string | WhereOp<string> | null
-  trigger?: string | WhereOp<string> | null
-  triggerConfig?: unknown | WhereOp<unknown> | null
   timeoutSeconds?: number | WhereOp<number> | null
   retryLimit?: number | WhereOp<number> | null
   retryCount?: number | WhereOp<number> | null
   lastRunAt?: string | Date | WhereOp<string | Date> | null
-  lastRunStatus?: string | WhereOp<string> | null
+  lastRunStatus?: RunStatus | WhereOp<RunStatus> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
@@ -5070,7 +5058,7 @@ export interface Monitor {
   isTlsIgnored: boolean
   isInverted: boolean
   resendEvery: number
-  tags: unknown
+  tags: string[]
   status: MonitorStatus
   failStreak: number
   lastCheckedAt?: string | null
@@ -5100,7 +5088,7 @@ export interface MonitorCreate {
   isTlsIgnored?: boolean
   isInverted?: boolean
   resendEvery?: number
-  tags?: unknown
+  tags?: string[]
   status?: MonitorStatus
 }
 
@@ -5122,7 +5110,7 @@ export interface MonitorUpdate {
   isTlsIgnored?: boolean
   isInverted?: boolean
   resendEvery?: number
-  tags?: unknown
+  tags?: string[]
   status?: MonitorStatus
 }
 
@@ -5155,7 +5143,7 @@ export interface MonitorWhere extends WhereBase {
   isTlsIgnored?: boolean | WhereOp<boolean> | null
   isInverted?: boolean | WhereOp<boolean> | null
   resendEvery?: number | WhereOp<number> | null
-  tags?: unknown | WhereOp<unknown> | null
+  tags?: string[] | WhereOp<string[]> | null
   status?: MonitorStatus | WhereOp<MonitorStatus> | null
   failStreak?: number | WhereOp<number> | null
   lastCheckedAt?: string | Date | WhereOp<string | Date> | null
@@ -5846,7 +5834,7 @@ export interface Dependency {
   workspaceId: string
   name: string
   latest?: string | null
-  deprecated?: string | null
+  deprecation?: string | null
   advisories: unknown
   checkedAt?: string | null
   checkError?: string | null
@@ -5868,7 +5856,7 @@ export interface DependencyUpdate {
 
 export interface DependencySystem {
   latest?: string | null
-  deprecated?: string | null
+  deprecation?: string | null
   advisories?: unknown
   checkedAt?: string | Date | null
   checkError?: string | null
@@ -5879,7 +5867,7 @@ export interface DependencyWhere extends WhereBase {
   workspaceId?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
   latest?: string | WhereOp<string> | null
-  deprecated?: string | WhereOp<string> | null
+  deprecation?: string | WhereOp<string> | null
   advisories?: unknown | WhereOp<unknown> | null
   checkedAt?: string | Date | WhereOp<string | Date> | null
   checkError?: string | WhereOp<string> | null
@@ -6534,7 +6522,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem>
   readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'publicKey' | 'tokenHint' | 'revokedAt' | 'lastUsedAt' | 'totalUses' | 'usageDate' | 'usesOnDate' | '@@gate', ApiKeySystem>
-  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerId' | 'providerServerId' | 'adopted' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'backupPolicy' | 'backupReading' | 'status' | '@@gate', ServerSystem>
+  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerSecretId' | 'providerServerId' | 'registerMethod' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'backupPolicy' | 'backupReading' | 'status' | '@@gate', ServerSystem>
   readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, 'noticeOwedAt' | '@@gate', ServerEventSystem>
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>
   readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere, VolumeRelations, never, '@@gate'>
@@ -6579,7 +6567,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly blueprint: TableClient<Blueprint, BlueprintCreate, BlueprintUpdate, BlueprintWhere, BlueprintRelations, never, '@@gate'>
   readonly blueprintParam: TableClient<BlueprintParam, BlueprintParamCreate, BlueprintParamUpdate, BlueprintParamWhere, BlueprintParamRelations, never, '@@gate'>
   readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere, RegistryImageRelations, never, '@@gate'>
-  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecated' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem>
+  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecation' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem>
   readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate'>
   readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'installId' | 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'appId' | '@@gate', HubConfigSystem>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>

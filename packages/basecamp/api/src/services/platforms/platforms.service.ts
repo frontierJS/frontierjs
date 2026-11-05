@@ -81,13 +81,13 @@ export default createService({
       platformAccounts(),
       db().appPlatform.findMany({
         where:  { workspaceId: ws() },
-        select: { appId: true, provider: true, providerAccountId: true, name: true },
-      }) as Promise<{ appId: string; provider: string; providerAccountId: string; name: string }[]>,
+        select: { appId: true, providerKind: true, providerAccountId: true, name: true },
+      }) as Promise<{ appId: string; providerKind: string; providerAccountId: string; name: string }[]>,
     ])
     // By the vendor's account and not the Secret: two keys to one account see
     // one Worker.
     const owner = (provider: string, vendor: string, name: string) =>
-      adopted.find(r => r.provider === provider && r.providerAccountId === vendor && r.name === name)?.appId ?? null
+      adopted.find(r => r.providerKind === provider && r.providerAccountId === vendor && r.name === name)?.appId ?? null
 
     const out = await Promise.all(accounts.map(async a => {
       const { connector, send } = sendFor(a)
@@ -107,27 +107,27 @@ export default createService({
 
   // ── adopt ──────────────────────────────────────────────────────────
   //
-  // `{ accountId, providerAccountId, name, environmentId }` — the Secret, the
+  // `{ providerSecretId, providerAccountId, name, environmentId }` — the Secret, the
   // vendor account it opens, the project's name there, and where the App
   // lives. A site becomes a `static` App and anything with code a `worker`.
   // Every refusal is decided before anything is written. The App starts
   // `unknown` with no source: what serves and what shipped it are the vendor's
   // to say, and `platform:observe` is what reads them.
   async adopt() {
-    const data          = ($.data ?? {}) as Record<string, unknown>
-    const accountId     = field(data, 'accountId', 'which platform account to read')
-    const vendor        = field(data, 'providerAccountId', 'which account at the vendor the project is in')
-    const name          = field(data, 'name', "the project's name at the vendor")
-    const environmentId = field(data, 'environmentId', 'which environment the App joins')
+    const data             = ($.data ?? {}) as Record<string, unknown>
+    const providerSecretId = field(data, 'providerSecretId', 'which platform account to read')
+    const vendor           = field(data, 'providerAccountId', 'which account at the vendor the project is in')
+    const name             = field(data, 'name', "the project's name at the vendor")
+    const environmentId    = field(data, 'environmentId', 'which environment the App joins')
 
-    const account = (await platformAccounts()).find(a => a.id === accountId)
-    if (!account) throw new NotFound(`Platform account '${accountId}' not found`)
+    const account = (await platformAccounts()).find(a => a.id === providerSecretId)
+    if (!account) throw new NotFound(`Platform account '${providerSecretId}' not found`)
 
     const environment = await db().environment.findFirst({ where: { id: environmentId, workspaceId: ws() }, select: { id: true } })
     if (!environment) throw new NotFound(`Environment '${environmentId}' not found`)
 
     const taken = await db().appPlatform.findFirst({
-      where:  { workspaceId: ws(), provider: account.providerKind, providerAccountId: vendor, name },
+      where:  { workspaceId: ws(), providerKind: account.providerKind, providerAccountId: vendor, name },
       select: { appId: true },
     }) as { appId: string } | null
     if (taken) throw new Conflict(`${name} is already App '${taken.appId}'`)
@@ -151,7 +151,7 @@ export default createService({
         environmentId, name: project.name, slug, kind: project.kind === 'site' ? 'static' : 'worker',
       } })
       const platform = await tx.appPlatform.create({ data: {
-        appId: app.id, accountId, provider: account.providerKind, providerAccountId: vendor, name: project.name,
+        appId: app.id, providerSecretId, providerKind: account.providerKind, providerAccountId: vendor, name: project.name,
       } })
       return { app, platform }
     })

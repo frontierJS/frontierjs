@@ -1,0 +1,25 @@
+{
+  "resource": "https://3.basecampapi.com",
+  "scopes_supported": [
+    "full",
+    "read",
+    "mcp",
+    "offline_access"
+  ],
+  "bearer_methods_supported": [
+    "header"
+  ],
+  "dpop_signing_alg_values_supported": [
+    "ES256",
+    "ES384",
+    "ES512",
+    "RS256",
+    "RS384",
+    "RS512"
+  ],
+  "resource_documentation": "https://github.com/basecamp/bc-api",
+  "authorization_servers": [
+    "https://app.basecamp.com",
+    "https://launchpad.37signals.com"
+  ]
+}

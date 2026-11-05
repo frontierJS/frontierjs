@@ -178,3 +178,19 @@ describe('every write verb that takes a payload', () => {
     expect(after.name).toBe('q')
   })
 })
+
+// A list column is NOT NULL DEFAULT '[]' whether or not it says `?`, so the
+// `?` cannot make `null` a clear (FJS-4032).
+describe('an explicit null on an optional list', () => {
+  test('is refused by name, and [] is the clear', async () => {
+    const d = await createClient({
+      schema: 'model P {\n  id Int @id @default(autoincrement())\n  tags String[]?\n}',
+      db: ':memory:',
+    })
+    const p = await d.p.create({ data: { tags: ['a'] } })
+    const err = await refusal(() => d.p.update({ where: { id: p.id }, data: { tags: null } }))
+    expect(err).toBeInstanceOf(ValidationError)
+    expect(err.errors[0].path).toEqual(['tags'])
+    expect((await d.p.update({ where: { id: p.id }, data: { tags: [] } })).tags).toEqual([])
+  })
+})

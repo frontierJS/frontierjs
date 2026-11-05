@@ -700,7 +700,7 @@ rather than refusing the row.
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
 | `Dependency` | `latest` | `@system` |
-| `Dependency` | `deprecated` | `@system` |
+| `Dependency` | `deprecation` | `@system` |
 | `Dependency` | `advisories` | `@system` |
 | `Dependency` | `checkedAt` | `@system` |
 | `Dependency` | `checkError` | `@system` |
@@ -752,9 +752,9 @@ rather than refusing the row.
 | `Secret` | `verifiedAt` | `@system` |
 | `Secret` | `verifyError` | `@system` |
 | `Server` | `providerKind` | `@system` |
-| `Server` | `providerId` | `@system` |
+| `Server` | `providerSecretId` | `@system` |
 | `Server` | `providerServerId` | `@system` |
-| `Server` | `adopted` | `@system` |
+| `Server` | `registerMethod` | `@system` |
 | `Server` | `enrollTokenHash` | `@guarded` |
 | `Server` | `outpostPublicKey` | `@system` |
 | `Server` | `outpostCert` | `@system` |

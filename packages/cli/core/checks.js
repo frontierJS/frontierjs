@@ -213,6 +213,8 @@ export const RULES = [
     title: 'a PLAN.md stays small enough to read whole: finished phases live in docs/plan-done.md' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
     title: 'three markdown files are the standard at a package root' },
+  { id: 'package-row',           scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'every workspace member has a row in the root CLAUDE.md package table' },
   { id: 'test-files-run',       scope: 'repo', severity: 'error', invariant: null,
     title: 'a hand-listed test script names every test file beside it' },
   { id: 'docs-index',           scope: 'repo', severity: 'warn',  invariant: 17,

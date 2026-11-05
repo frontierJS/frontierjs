@@ -1491,7 +1491,7 @@
             }
           ]
         },
-        "displayName": {
+        "nickname": {
           "anyOf": [
             {
               "type": "string",
@@ -1706,7 +1706,7 @@
           "readOnly": true,
           "x-litestone-kind": "system"
         },
-        "ingressAccountId": {
+        "ingressSecretId": {
           "type": [
             "string",
             "null"
@@ -2169,6 +2169,14 @@
           "readOnly": true,
           "x-litestone-kind": "system"
         },
+        "publicKey": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
         "name": {
           "type": "string",
           "x-transforms": [
@@ -2332,23 +2340,31 @@
         },
         "providerKind": {
           "$ref": "#/$defs/ComputeProvider",
-          "default": "custom"
+          "default": "custom",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
-        "providerId": {
+        "providerSecretId": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "providerServerId": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "registerMethod": {
           "$ref": "#/$defs/RegisterMethod",
-          "default": "imported"
+          "default": "imported",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "region": {
           "type": "string",
@@ -2378,7 +2394,18 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "title": "SSH key",
+          "x-values": {
+            "set": "SshKeys",
+            "strength": "required",
+            "model": "Secret",
+            "value": "id",
+            "label": "id",
+            "scopes": [
+              "SshKeys"
+            ]
+          }
         },
         "outpostVersion": {
           "type": [
@@ -2413,14 +2440,18 @@
             "string",
             "null"
           ],
-          "description": "The public half of the Ed25519 pair THIS machine made at enrollment, base64url (`FJS-D1604`). The private half never leaves the machine, so the column is public by nature: nothing here can sign as it.  Null means the machine has not enrolled, and every signed request about it is refused (`outpostKeyFor` in `core/hooks.ts`). Nullable because the row exists before the machine does: provisioned or imported, it is created first and enrolls after."
+          "description": "The public half of the Ed25519 pair THIS machine made at enrollment, base64url (`FJS-D1604`). The private half never leaves the machine, so the column is public by nature: nothing here can sign as it.  Null means the machine has not enrolled, and every signed request about it is refused (`outpostKeyFor` in `core/hooks.ts`). Nullable because the row exists before the machine does: provisioned or imported, it is created first and enrolls after.  `@system`: a caller who could write it would sign as `outpost:<id>` with a key of their own, without enrolling (`FJS-3904`). Enrollment is the writer.",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "outpostCert": {
           "type": [
             "string",
             "null"
           ],
-          "description": "The certificate this machine's command port answers with, PEM, handed over in the enrollment exchange and pinned on its Conduit target — the one certificate a command to it will accept (`FJS-1603`). Public by nature, so no protection. Null means no command can reach the machine: no target is registered without it, and the only way to change it is to enroll again."
+          "description": "The certificate this machine's command port answers with, PEM, handed over in the enrollment exchange and pinned on its Conduit target — the one certificate a command to it will accept (`FJS-1603`). Public by nature, so no protection. Null means no command can reach the machine: no target is registered without it, and the only way to change it is to enroll again.  `@system` for the reason `outpostPublicKey` is.",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "plan": {
           "default": {},
@@ -2464,6 +2495,42 @@
               "type": "null"
             }
           ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "runtime": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "backupPolicy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BackupPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system",
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "backupReading": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system",
           "x-aggregatable": "json",
           "x-sortable": "json"
         },
@@ -2696,6 +2763,19 @@
           "default": {},
           "x-aggregatable": "json",
           "x-sortable": "json"
+        },
+        "noticeOwedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,
@@ -2751,254 +2831,6 @@
         "delete": 8
       }
     },
-    "ClaudeTranscript": {
-      "type": "object",
-      "title": "ClaudeTranscript",
-      "x-litestone-kind": "model",
-      "properties": {
-        "path": {
-          "type": "string"
-        },
-        "sessionId": {
-          "type": "string"
-        },
-        "cwd": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "isSubagent": {
-          "type": "boolean",
-          "default": false
-        },
-        "agent": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "isHeadless": {
-          "type": "boolean",
-          "default": false
-        },
-        "title": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "firstPrompt": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "offset": {
-          "type": "integer",
-          "default": 0
-        },
-        "turnSkills": {
-          "type": "string",
-          "default": ""
-        },
-        "size": {
-          "type": "integer",
-          "default": 0
-        },
-        "startedAt": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "date-time"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "lastAt": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "date-time"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "isGone": {
-          "type": "boolean",
-          "default": false
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "path",
-        "sessionId"
-      ],
-      "x-identify": [
-        "path"
-      ],
-      "x-gate": {
-        "read": 5,
-        "create": 8,
-        "update": 8,
-        "delete": 8
-      }
-    },
-    "ClaudeMessage": {
-      "type": "object",
-      "title": "ClaudeMessage",
-      "x-litestone-kind": "model",
-      "properties": {
-        "messageId": {
-          "type": "string"
-        },
-        "sessionId": {
-          "type": "string"
-        },
-        "cwd": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "model": {
-          "type": "string"
-        },
-        "at": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "input": {
-          "type": "integer"
-        },
-        "cacheWrite": {
-          "type": "integer"
-        },
-        "cacheWrite1h": {
-          "type": "integer",
-          "default": 0
-        },
-        "cacheRead": {
-          "type": "integer"
-        },
-        "output": {
-          "type": "integer"
-        },
-        "tools": {
-          "type": "string",
-          "default": ""
-        },
-        "skills": {
-          "type": "string",
-          "default": ""
-        },
-        "isSubagent": {
-          "type": "boolean",
-          "default": false
-        },
-        "agent": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "messageId",
-        "sessionId",
-        "model",
-        "at",
-        "input",
-        "cacheWrite",
-        "cacheRead",
-        "output"
-      ],
-      "x-identify": [
-        "messageId"
-      ],
-      "x-gate": {
-        "read": 5,
-        "create": 8,
-        "update": 8,
-        "delete": 8
-      }
-    },
-    "ClaudeWrite": {
-      "type": "object",
-      "title": "ClaudeWrite",
-      "x-litestone-kind": "model",
-      "properties": {
-        "action": {
-          "type": "string"
-        },
-        "target": {
-          "type": "string"
-        },
-        "project": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "scope": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "keys": {
-          "type": "string",
-          "default": ""
-        },
-        "before": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "password"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "x-aggregatable": "encrypted",
-          "x-sortable": "encrypted",
-          "x-filterable": "encrypted"
-        },
-        "digest": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "undoneAt": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "date-time"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "action",
-        "target"
-      ],
-      "x-gate": {
-        "read": 5,
-        "create": 8,
-        "update": 8,
-        "delete": 8
-      }
-    },
     "Volume": {
       "type": "object",
       "title": "Volume",
@@ -3046,7 +2878,7 @@
           "x-aggregatable": "array",
           "x-sortable": "array"
         },
-        "createdOnServer": {
+        "dockerCreatedAt": {
           "anyOf": [
             {
               "type": "string",
@@ -3127,7 +2959,7 @@
           "type": "string",
           "default": "10.0.0.0/16"
         },
-        "provider": {
+        "providerKind": {
           "$ref": "#/$defs/NetworkProvider",
           "default": "netbird"
         },
@@ -3274,9 +3106,13 @@
           "default": "active"
         },
         "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
           "default": [],
-          "x-aggregatable": "json",
-          "x-sortable": "json"
+          "x-aggregatable": "array",
+          "x-sortable": "array"
         },
         "metadata": {
           "default": {},
@@ -3568,6 +3404,29 @@
             }
           ]
         },
+        "stopGraceSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 2
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "healthTimeoutSeconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 600
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "command": {
           "type": "array",
           "items": {
@@ -3580,6 +3439,11 @@
         "hasExposedPort": {
           "type": "boolean",
           "default": false
+        },
+        "swap": {
+          "$ref": "#/$defs/DeploySwap",
+          "default": "stopFirst",
+          "title": "Swap order"
         },
         "isDeployedOnPush": {
           "type": "boolean",
@@ -4363,10 +4227,10 @@
         "appId": {
           "type": "string"
         },
-        "accountId": {
+        "providerSecretId": {
           "type": "string"
         },
-        "provider": {
+        "providerKind": {
           "$ref": "#/$defs/PlatformProvider"
         },
         "providerAccountId": {
@@ -4451,14 +4315,14 @@
       "additionalProperties": false,
       "required": [
         "appId",
-        "accountId",
-        "provider",
+        "providerSecretId",
+        "providerKind",
         "providerAccountId",
         "name"
       ],
       "x-litestone-policies": true,
       "x-identify": [
-        "provider",
+        "providerKind",
         "providerAccountId",
         "name"
       ],
@@ -4626,7 +4490,7 @@
           "references": [
             "id"
           ],
-          "onDelete": "Cascade",
+          "onDelete": "Restrict",
           "optional": false
         },
         {
@@ -4639,7 +4503,7 @@
           "references": [
             "id"
           ],
-          "onDelete": "Cascade",
+          "onDelete": "Restrict",
           "optional": true
         },
         {
@@ -4933,7 +4797,9 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "commitMessage": {
           "type": [
@@ -4945,9 +4811,11 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
-        "author": {
+        "commitAuthor": {
           "type": [
             "string",
             "null"
@@ -4957,7 +4825,29 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "swap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeploySwap"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "swapReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "platformVersion": {
           "type": [
@@ -4971,7 +4861,9 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "configSnapshot": {
           "default": {},
@@ -4997,7 +4889,9 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "finishedAt": {
           "anyOf": [
@@ -5008,13 +4902,17 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "durationMs": {
           "type": [
             "integer",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,
@@ -5256,15 +5154,6 @@
             "null"
           ]
         },
-        "trigger": {
-          "type": "string",
-          "default": "manual"
-        },
-        "triggerConfig": {
-          "default": {},
-          "x-aggregatable": "json",
-          "x-sortable": "json"
-        },
         "timeoutSeconds": {
           "type": "integer",
           "minimum": 5,
@@ -5295,9 +5184,13 @@
           "x-litestone-kind": "system"
         },
         "lastRunStatus": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunStatus"
+            },
+            {
+              "type": "null"
+            }
           ],
           "readOnly": true,
           "x-litestone-kind": "system"
@@ -6187,6 +6080,10 @@
           "type": "boolean",
           "default": true
         },
+        "isPagedForFleet": {
+          "type": "boolean",
+          "default": true
+        },
         "lastTestAt": {
           "anyOf": [
             {
@@ -6201,6 +6098,27 @@
           "x-litestone-kind": "system"
         },
         "lastDeliveryAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "lastError": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "lastErrorAt": {
           "anyOf": [
             {
               "type": "string",
@@ -6360,6 +6278,27 @@
           "readOnly": true,
           "x-litestone-kind": "system"
         },
+        "lockDays": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "lockAttestedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
         "createdBy": {
           "type": [
             "string",
@@ -6475,6 +6414,18 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1440,
+          "default": 0
+        },
+        "clearForMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1440,
+          "default": 0
+        },
+        "refireAfterMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10080,
           "default": 0
         },
         "isActive": {
@@ -6712,6 +6663,12 @@
             "null"
           ]
         },
+        "isManaged": {
+          "type": "boolean",
+          "default": false,
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
         "url": {
           "type": "string",
           "x-transforms": [
@@ -6786,9 +6743,13 @@
           "default": 0
         },
         "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
           "default": [],
-          "x-aggregatable": "json",
-          "x-sortable": "json"
+          "x-aggregatable": "array",
+          "x-sortable": "array"
         },
         "status": {
           "$ref": "#/$defs/MonitorStatus",
@@ -6827,6 +6788,27 @@
           "x-litestone-kind": "system"
         },
         "lastLatencyMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "certExpiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "certWarnedDays": {
           "type": [
             "integer",
             "null"
@@ -6884,6 +6866,15 @@
             "to": "pending",
             "gate": 5,
             "system": false
+          },
+          "retarget": {
+            "from": [
+              "up",
+              "down"
+            ],
+            "to": "pending",
+            "gate": null,
+            "system": true
           }
         }
       },
@@ -6913,6 +6904,15 @@
         {
           "field": "events",
           "model": "MonitorEvent",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "uptimeDays",
+          "model": "MonitorUptimeDay",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -6990,6 +6990,70 @@
         }
       ]
     },
+    "MonitorUptimeDay": {
+      "type": "object",
+      "title": "MonitorUptimeDay",
+      "x-litestone-kind": "model",
+      "properties": {
+        "monitorId": {
+          "type": "string"
+        },
+        "day": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checks": {
+          "type": "integer"
+        },
+        "okChecks": {
+          "type": "integer"
+        },
+        "avgLatencyMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxLatencyMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "monitorId",
+        "day",
+        "checks",
+        "okChecks"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "day"
+      ],
+      "x-gate": {
+        "read": 2,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "monitor",
+          "model": "Monitor",
+          "type": "belongsTo",
+          "fields": [
+            "monitorId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
     "MonitorEvent": {
       "type": "object",
       "title": "MonitorEvent",
@@ -7010,6 +7074,19 @@
         },
         "message": {
           "type": "string"
+        },
+        "noticeOwedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,
@@ -7834,7 +7911,7 @@
           "readOnly": true,
           "x-litestone-kind": "system"
         },
-        "deprecated": {
+        "deprecation": {
           "type": [
             "string",
             "null"
@@ -8031,6 +8108,11 @@
       "title": "HubConfig",
       "x-litestone-kind": "model",
       "properties": {
+        "installId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
         "heartbeatTimeoutSeconds": {
           "type": "integer",
           "minimum": 30,
@@ -8084,6 +8166,30 @@
               "type": "null"
             }
           ]
+        },
+        "retentionCheckDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650,
+          "default": 30
+        },
+        "retentionEventDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650,
+          "default": 90
+        },
+        "retentionAlertDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650,
+          "default": 90
+        },
+        "retentionNotificationDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650,
+          "default": 90
         },
         "encryptionKeyEscrowedAt": {
           "anyOf": [
@@ -8510,8 +8616,18 @@
         "syncNoAccount",
         "syncUnsupported",
         "syncUnrecognized",
+        "backupsReadFailed",
+        "backupsSet",
+        "backupsRestored",
+        "backupsRestoreFailed",
+        "adopted",
         "cameOnline",
         "unreachable",
+        "rebooted",
+        "containerCrashLooping",
+        "containerRecovered",
+        "unitFailed",
+        "unitRestored",
         "recipeRan",
         "recipeFailed",
         "cleanupQueued",
@@ -8544,6 +8660,23 @@
       ],
       "title": "ComputeProvider"
     },
+    "MachineBackupPlan": {
+      "type": "string",
+      "enum": [
+        "daily",
+        "weekly"
+      ],
+      "title": "MachineBackupPlan"
+    },
+    "MachineBackupChoice": {
+      "type": "string",
+      "enum": [
+        "on",
+        "off",
+        "unmanaged"
+      ],
+      "title": "MachineBackupChoice"
+    },
     "PlatformProvider": {
       "type": "string",
       "enum": [
@@ -8563,7 +8696,8 @@
       "type": "string",
       "enum": [
         "imported",
-        "provisioned"
+        "provisioned",
+        "adopted"
       ],
       "title": "RegisterMethod"
     },
@@ -8674,6 +8808,14 @@
       ],
       "title": "DeployTrigger"
     },
+    "DeploySwap": {
+      "type": "string",
+      "enum": [
+        "startFirst",
+        "stopFirst"
+      ],
+      "title": "DeploySwap"
+    },
     "StepStatus": {
       "type": "string",
       "enum": [
@@ -8689,9 +8831,7 @@
       "type": "string",
       "enum": [
         "oneShot",
-        "scheduled",
-        "triggered",
-        "workflow"
+        "scheduled"
       ],
       "title": "JobKind"
     },
@@ -8892,7 +9032,8 @@
         "JobFailed",
         "WeeklyDigest",
         "ReplicaFound",
-        "AutopilotReport"
+        "MonitorCertExpiring",
+        "AppBackupFailed"
       ],
       "title": "NotificationKind"
     },
@@ -9591,6 +9732,20 @@
         "serverId"
       ]
     },
+    "DeploymentRollback": {
+      "type": "object",
+      "title": "DeploymentRollback",
+      "x-litestone-kind": "type",
+      "properties": {
+        "isRestoringVolume": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "AppReplicaRestore": {
       "type": "object",
       "title": "AppReplicaRestore",
@@ -9822,7 +9977,7 @@
             }
           ]
         },
-        "accountId": {
+        "providerSecretId": {
           "type": "string"
         },
         "region": {
@@ -9833,12 +9988,22 @@
         },
         "image": {
           "type": "string"
+        },
+        "backups": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BackupPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "name",
-        "accountId",
+        "providerSecretId",
         "region",
         "size",
         "image"
@@ -9862,6 +10027,128 @@
       "additionalProperties": false,
       "required": [
         "step"
+      ]
+    },
+    "ServerSetBackups": {
+      "type": "object",
+      "title": "ServerSetBackups",
+      "x-litestone-kind": "type",
+      "properties": {
+        "choice": {
+          "$ref": "#/$defs/MachineBackupChoice"
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineBackupPlan"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hour": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "weekday": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deletes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "confirm": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "choice"
+      ]
+    },
+    "ServerAdoptShown": {
+      "type": "object",
+      "title": "ServerAdoptShown",
+      "x-litestone-kind": "type",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ipAddress": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ServerAdopt": {
+      "type": "object",
+      "title": "ServerAdopt",
+      "x-litestone-kind": "type",
+      "properties": {
+        "providerSecretId": {
+          "type": "string"
+        },
+        "providerServerId": {
+          "type": "string"
+        },
+        "shown": {
+          "$ref": "#/$defs/ServerAdoptShown"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "providerSecretId",
+        "providerServerId",
+        "shown"
+      ]
+    },
+    "BackupPolicy": {
+      "type": "object",
+      "title": "BackupPolicy",
+      "x-litestone-kind": "type",
+      "properties": {
+        "plan": {
+          "$ref": "#/$defs/MachineBackupPlan"
+        },
+        "hour": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "weekday": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "plan"
       ]
     }
   }

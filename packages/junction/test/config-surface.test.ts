@@ -326,3 +326,39 @@ describe('a plugin has one owner', () => {
     expect((await fetch(`http://127.0.0.1:${port}/health`)).status).toBe(200)
   })
 })
+
+// ─── app.publicUrl ────────────────────────────────────────────────────────
+// axis: host. Read by local-files, auth's provider callback, and the MCP
+// sign-in documents, each comparing it as an exact string (`FJS-D1935`).
+
+describe('app.publicUrl is the API origin, stated once', () => {
+  const saved = process.env.FRONTIER_API_URL
+  afterEach(() => { saved == null ? delete process.env.FRONTIER_API_URL : process.env.FRONTIER_API_URL = saved })
+
+  test('FRONTIER_API_URL fills it, and the file states over it', async () => {
+    process.env.FRONTIER_API_URL = 'https://env.shop.test'
+    const fromEnv = await serve({})
+    expect(fromEnv.app.config.publicUrl).toBe('https://env.shop.test')
+    const fromFile = await serve({ app: { publicUrl: 'https://file.shop.test' } })
+    expect(fromFile.app.config.publicUrl).toBe('https://file.shop.test')
+  })
+
+  test('a path, a trailing slash or a non-URL is refused at start, naming the origin to write', async () => {
+    delete process.env.FRONTIER_API_URL
+    for (const [bad, said] of [
+      ['https://shop.test/',    /write 'https:\/\/shop\.test'/],
+      ['https://shop.test/api', /write 'https:\/\/shop\.test'/],
+      ['shop.test',             /must be an http\(s\) origin/],
+    ] as const) {
+      const app = createApp({ root: configDir({ app: { publicUrl: bad } }), config: { port: 0 } as never, logLevel: 'silent' })
+      await expect(app.start(), bad).rejects.toThrow(said)
+    }
+  })
+
+  // The control: a checker that refused every value passes the row above.
+  test('a bare origin, with a port, starts', async () => {
+    delete process.env.FRONTIER_API_URL
+    const ok = await serve({ app: { publicUrl: 'http://localhost:8100' } })
+    expect(ok.app.config.publicUrl).toBe('http://localhost:8100')
+  })
+})

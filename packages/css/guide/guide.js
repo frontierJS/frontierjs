@@ -181,6 +181,8 @@ const BTN_VARS = [
   ["--_on-fill", "Text color, derived from the fill's luminance. Override per tone or theme with --on-bg-mix."],
   ["--btn-radius", "Border radius. Themable — Elite sets it to 0."],
   ["--btn-font-weight", "Default 600. Themes can override (e.g. Elite uses 700)."],
+  ["--btn-hover-mix", "Default 8%. How much of the state layer is mixed over the button on hover. A solid fill mixes toward the opposite of its label, which keeps AA."],
+  ["--btn-press-mix", "Default 12%. The same, while the button is pressed."],
 ];
 
 /*
@@ -960,7 +962,7 @@ function compositionPage() {
     {
       name: "btn",
       role: "Interactive control",
-      adds: "bold, hover brightness, shadow, full padding",
+      adds: "bold, hover and press layers, shadow, full padding",
       preview: `<button class="btn primary">Save</button>`,
       extra: `
         <button class="btn">Default</button>
@@ -5513,7 +5515,7 @@ function cheatSheetPage() {
     ],
     [
       'btn contract',
-      ['--btn-radius', '--btn-font-weight', '--btn-text-transform', '--btn-letter-spacing']
+      ['--btn-radius', '--btn-font-weight', '--btn-text-transform', '--btn-letter-spacing', '--btn-hover-mix', '--btn-press-mix']
     ],
     [
       'pill / badge',

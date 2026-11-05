@@ -255,6 +255,82 @@ describe('baseline — record as applied without running', () => {
   })
 })
 
+describe('baseline <file> — a database that is ahead by some files, not all (FJS-4000)', () => {
+  // `db push` brought the live database level with file A while file B, written
+  // after, has not been applied anywhere. Baselining everything is a lie about
+  // B and refuses; applying replays A over its own columns and fails with
+  // `duplicate column name`. The claim wanted is "through A".
+  const S3 = `
+model User {
+  id    Int     @id
+  email String  @unique
+  name  String?
+  age   Int?
+}
+`
+  function history() {
+    const p  = project(S3)
+    const db = p.db()
+    create(null, parse(S1), 'init', p.migrations)
+    apply(db, p.migrations)
+    const a = create(null, parse(S2), 'name', p.migrations)
+    const b = create(null, parse(S3), 'age', p.migrations)
+    return { p, db, a: a.file ?? a.name, b: b.file ?? b.name }
+  }
+
+  it('records the files through the named one and leaves the later ones pending', () => {
+    const { p, db } = history()
+    const files = (p.migrations && require('node:fs').readdirSync(p.migrations)).sort()
+    const [, a, b] = files
+    db.run('ALTER TABLE "user" ADD COLUMN "name" TEXT')   // the push of file A
+
+    const r = baseline(db, p.parsed(), p.migrations, { through: a })
+    expect(r.ok).toBe(true)
+    expect(r.recorded).toEqual([a])
+
+    const applied = apply(db, p.migrations)
+    expect(applied.ok ?? true).toBe(true)
+    expect(appliedMigrations(db).map((m: any) => m.name)).toEqual([files[0], a, b])
+    db.close(); p.cleanup()
+  })
+
+  it('records the checksum apply would have', () => {
+    const { p, db } = history()
+    const files = require('node:fs').readdirSync(p.migrations).sort()
+    db.run('ALTER TABLE "user" ADD COLUMN "name" TEXT')
+    baseline(db, p.parsed(), p.migrations, { through: files[1] })
+    const viaBaseline = appliedMigrations(db).find((m: any) => m.name === files[1]).checksum
+
+    const fresh = new Database(':memory:')
+    apply(fresh, p.migrations)
+    const viaApply = appliedMigrations(fresh).find((m: any) => m.name === files[1]).checksum
+    expect(viaBaseline).toBe(viaApply)
+    db.close(); fresh.close(); p.cleanup()
+  })
+
+  it('refuses when the database lacks what the named file builds', () => {
+    const { p, db } = history()
+    const files = require('node:fs').readdirSync(p.migrations).sort()
+    const r = baseline(db, p.parsed(), p.migrations, { through: files[1] })   // nothing pushed
+    expect(r.ok).toBe(false)
+    expect(r.blocked).toBe(true)
+    expect(appliedMigrations(db).map((m: any) => m.name)).toEqual([files[0]])
+    db.close(); p.cleanup()
+  })
+
+  it('names a file that is not in the history, and one already applied', () => {
+    const { p, db } = history()
+    const files = require('node:fs').readdirSync(p.migrations).sort()
+    const missing = baseline(db, p.parsed(), p.migrations, { through: '20990101000000_nope.sql' })
+    expect(missing.ok).toBe(false)
+    expect(missing.message).toContain('20990101000000_nope.sql')
+    const done = baseline(db, p.parsed(), p.migrations, { through: files[0] })
+    expect(done.ok).toBe(true)
+    expect(done.recorded).toEqual([])
+    db.close(); p.cleanup()
+  })
+})
+
 describe('a generated migration builds what the schema builds', () => {
   // `generateMigrationSQL`'s new-table branch emitted the table plus
   // `generateIndexDDL(model, false, …)`, and the explicit `false` defeated that

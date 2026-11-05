@@ -2050,6 +2050,8 @@ fileUrls(user2.photos)                            // → ['https://...', 'https:
 const storage = useStorage(config)
 await storage.sign(user.avatar, { expiresIn: 3600 })  // presigned URL
 await storage.download(user.avatar)              // → Buffer
+await storage.stream(user.avatar)                // → ReadableStream, for an object too large to hold whole
+storage.path(user.avatar)                        // → file path under provider 'local', null otherwise
 ```
 
 `@accept` validates MIME type before upload — supports wildcards (`image/*`, `video/*`) and comma-separated lists. Throws `ValidationError` with a clear message if the type doesn't match.

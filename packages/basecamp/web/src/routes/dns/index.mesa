@@ -120,7 +120,7 @@ title: DNS & edge
     ingressBusy = true; ingressError = null
     try {
       const ws = await workspaces.service.get(session.workspaceId)
-      await workspaces.service.patch(ws.id, { ingressAccountId: accountId, ingressZoneId: zoneId, version: ws.version })
+      await workspaces.service.patch(ws.id, { ingressSecretId: accountId, ingressZoneId: zoneId, version: ws.version })
       ingress = { accountId, zoneId }
       toasts.success('Ingress zone set')
       readZone(accountId, zoneId)

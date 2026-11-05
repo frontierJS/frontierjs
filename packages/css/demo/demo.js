@@ -24,6 +24,8 @@
  * hand-written list that was wrong on the first day.
  */
 
+import { THEMES } from '../themes.js';
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -334,7 +336,24 @@ $('#profile-form')?.addEventListener('submit', (e) => {
 
 /* ── Theme ───────────────────────────────────────────────────────────
  * One class on an ancestor. That is the entire theming API.
+ *
+ * The options are themes.js, the list the guide's picker reads, so a theme
+ * the package ships is here without this file being told.
  */
+['light', 'dark'].forEach((scheme) => {
+  const group = document.createElement('optgroup');
+  group.label = scheme === 'light' ? 'Light' : 'Dark';
+  Object.entries(THEMES)
+    .filter(([, t]) => t.scheme === scheme)
+    .forEach(([cls, t]) => {
+      const option = new Option(t.label, cls.replace(/^theme-/, ''));
+      option.title = t.blurb;
+      group.append(option);
+    });
+  $('#theme').append(group);
+});
+$('#theme').value = 'default';
+
 $('#theme').addEventListener('change', (e) => {
   document.body.className = `app theme-${e.target.value}`;
 });

@@ -1,0 +1,28 @@
+{
+  "name": "@frontierjs/conduit-microsoft",
+  "version": "0.0.1",
+  "description": "Microsoft identity platform + Graph mail over @frontierjs/conduit — delegated grant with rotating refresh, delta sync, change notifications, drafts/replies/send, MIME send.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun run drive",
+    "drive": "bun test/microsoft.drive.ts",
+    "sink": "bun sink.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

@@ -169,7 +169,7 @@ async function lastPublish(appId: string) {
   const steps = await sys().deploymentStep.findMany({ where: { deploymentId: row.id }, orderBy: { position: 'asc' } })
   return {
     id: row.id, status: row.status, draft: (row.configSnapshot as PublishSnapshot).draft, commit: row.commitSha,
-    author: row.author, at: row.finishedAt ?? row.startedAt ?? row.queuedAt,
+    author: row.commitAuthor, at: row.finishedAt ?? row.startedAt ?? row.queuedAt,
     steps: steps.map((s: { name: string, status: string, output: string | null }) => ({ name: s.name, status: s.status, output: s.output })),
   }
 }
@@ -289,7 +289,7 @@ export default createService({
     const release = await sys().deployment.create({ data: {
       workspaceId: app.workspaceId, appId: site.id, environmentId: app.environmentId,
       trigger: 'publish', branch: site.source.branch ?? null, commitMessage: `Publish ${found.name}`,
-      author: publisher.name, triggeredBy: publisher.userId, previousDeploymentId: previous?.id ?? null,
+      commitAuthor: publisher.name, triggeredBy: publisher.userId, previousDeploymentId: previous?.id ?? null,
       configSnapshot: snapshot,
     } })
     await sys().deploymentStep.createMany({
@@ -309,7 +309,7 @@ export default createService({
     return {
       releases: rows.slice(0, HISTORY).map((r: any, i: number) => ({
         id: r.id, trigger: r.trigger, draft: r.trigger === 'publish' ? (r.configSnapshot as PublishSnapshot).draft : null,
-        by: r.author, at: r.finishedAt, commit: r.commitSha, ...changes[i], revertable: r.trigger === 'publish',
+        by: r.commitAuthor, at: r.finishedAt, commit: r.commitSha, ...changes[i], revertable: r.trigger === 'publish',
       })),
     }
   },

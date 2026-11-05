@@ -148,3 +148,19 @@ describe('the commit is per file', () => {
     expect(log.slice(3)).toEqual(['one:COMMIT', 'two:ROLLBACK', 'main:ROLLBACK'])
   })
 })
+
+// A readonly main has no write handle to BEGIN on (`FJS-4035`).
+describe('a readonly main does not refuse a writable sibling', () => {
+  it('creates, updates and deletes in the writable database', async () => {
+    const dir = tmp()
+    const first: any = await createClient({ schema: SCHEMA, resolveFrom: dir })
+    await first.$close()
+    const db: any = await createClient({ schema: SCHEMA, resolveFrom: dir, access: { main: 'readonly' } })
+    const row = await db.b.create({ data: { tag: 'x' } })
+    await db.b.update({ where: { id: row.id }, data: { tag: 'y' } })
+    await db.b.delete({ where: { id: row.id } })
+    expect(await db.b.count()).toBe(0)
+    await expect(db.a.create({ data: { tag: 'z' } })).rejects.toThrow(/readonly/)
+    await db.$close()
+  })
+})

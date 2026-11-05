@@ -25,12 +25,12 @@ async function appWithPrefix(apiPrefix: string) {
     oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'cid', clientSecret: 'sec' }) },
   })
   cleanups.push(() => h.cleanup())
-  const app: any = await createTestApp({ auth: h.auth as any, config: { apiPrefix } as any })
+  const app: any = await createTestApp({ auth: h.auth as any, config: { apiPrefix, publicUrl: PUBLIC_URL } as any })
   app.setAuth(h.auth as any)
   app.configure(auth({
     auth: h.auth,
     cookieAuth: true,
-    oauth: { publicUrl: PUBLIC_URL, rateLimit: { max: 10_000, window: '15 minutes' } },
+    oauth: { rateLimit: { max: 10_000, window: '15 minutes' } },
   }))
   return app
 }

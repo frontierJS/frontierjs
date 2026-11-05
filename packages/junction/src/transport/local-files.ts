@@ -36,7 +36,9 @@ export function mountLocalFiles(app: App, prefix: string, port: number): void {
   const root  = store?.localRoot
   if (!store || !root) return
 
-  const origin = (process.env.FRONTIER_APP_URL || `http://localhost:${port}`).replace(/\/+$/, '')
+  // The API's origin and not the SPA's: the route is the API's, and a web
+  // surface on another origin need not proxy it.
+  const origin = app.config.publicUrl ?? `http://localhost:${port}`
   store.config.publicBase ??= `${origin}${prefix}${FILES_ROUTE}`
   // One per process: a restart ends every URL already printed, and a page
   // reading the row again gets a fresh one.

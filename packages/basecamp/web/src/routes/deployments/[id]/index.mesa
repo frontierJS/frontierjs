@@ -129,7 +129,7 @@ title: Deployment
   $: finished = deployment?.finishedAt
     ? (day(deployment.finishedAt) === day(deployment.startedAt) ? clock(deployment.finishedAt) : at(deployment.finishedAt))
     : null
-  $: hasSource = !!(deployment && (deployment.commitSha || deployment.branch || deployment.author))
+  $: hasSource = !!(deployment && (deployment.commitSha || deployment.branch || deployment.commitAuthor))
 
   // What this release may do next, read off `@@transitions(status, …)` on the
   // model rather than off a copy of the terminal-state list. The old copy was
@@ -311,7 +311,7 @@ title: Deployment
             <dd><code title={deployment.commitSha}>{shortSha(deployment.commitSha)}</code> {deployment.commitMessage ?? ''}</dd>
           {/if}
           {#if deployment.branch}<dt>Branch</dt> <dd><code>{deployment.branch}</code></dd>{/if}
-          {#if deployment.author}<dt>Author</dt> <dd>{deployment.author}</dd>{/if}
+          {#if deployment.commitAuthor}<dt>Author</dt> <dd>{deployment.commitAuthor}</dd>{/if}
         </dl>
       {:else}
         <p class="text-sm text-muted">No commit recorded for this release.</p>

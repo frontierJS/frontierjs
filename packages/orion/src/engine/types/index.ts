@@ -164,10 +164,6 @@ export interface Edge {
   to:         string
   condition?: Expression
   transform?: Expression
-  fanOut?: {
-    iterate:     Expression
-    parallelism: number
-  }
   label?: string   // UI only — human readable label
 
   // Controls when this edge is traversed:
@@ -269,7 +265,6 @@ export interface ExecutionPlan {
   nodeCount:    number
   stageCount:   number
   hasBranching: boolean
-  hasFanOut:    boolean
 }
 
 // ─────────────────────────────────────────────
@@ -281,6 +276,7 @@ export type ErrorCode =
   | "UNKNOWN_NODE_TYPE"
   | "INVALID_EDGE_SOURCE"
   | "INVALID_EDGE_TARGET"
+  | "UNSUPPORTED_EDGE_FIELD"   // a stored edge carrying a field the engine does not run (fanOut)
   | "CYCLE_DETECTED"
   | "INVALID_ENTRY_NODE"
   | "INVALID_REF"              // valid structure, path doesn't resolve

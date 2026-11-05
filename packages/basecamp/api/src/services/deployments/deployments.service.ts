@@ -352,7 +352,7 @@ export default createService({
       appId, trigger: 'rebind',
       toImage: live.toImage ?? null, builtImage: live.builtImage,
       commitSha: live.commitSha ?? null, commitMessage: live.commitMessage ?? null,
-      branch: live.branch ?? null, author: live.author ?? null,
+      branch: live.branch ?? null, commitAuthor: live.commitAuthor ?? null,
     }, { built: true })
   },
 
@@ -525,7 +525,7 @@ export default createService({
       commitSha:      target.commitSha ?? null,
       commitMessage:  target.commitMessage ?? null,
       branch:         target.branch ?? null,
-      author:         target.author ?? null,
+      commitAuthor:   target.commitAuthor ?? null,
       // The release this one replaces, which is `create`'s own meaning for
       // the column: the one that was current before it.
       previousDeploymentId: being.id,

@@ -185,6 +185,88 @@ released when the component that made it is torn down — not when a `$:` that
 made it runs again. Write the handle as a `let` assigned on its own line, as
 above — the reason is a language rule and lives in Mesa's AGENTS file.
 
+### A public page — no Resource, no shell
+
+A page a stranger opens from a link (a share, an invite, a receipt) has no
+session, so it imports **no Resource** (a Resource is a signed-in client) and
+sits in **no layout** (`reset: true`). It reads with a plain same-origin `fetch`
+the page owns, and a credential in the link rides in the **fragment**, which the
+browser never sends, and is read in `$.onMount` — never in `load()`, which a
+static build runs without a `location`.
+
+```html
+---
+title: Shared album
+reset: true
+---
+<script>
+  import { page } from '@frontierjs/sierra/router'
+
+  $: page.params
+  const id = page.params.id
+
+  // checking | open | refused | broken
+  let phase = 'checking'
+  let password = ''
+  let album = null
+
+  async function api(path, init) {
+    const r = await fetch('/api' + path, { credentials: 'same-origin', ...init })
+    const body = await r.json().catch(() => ({}))
+    if (!r.ok) throw Object.assign(new Error(body?.message ?? 'Status ' + r.status), { status: r.status })
+    return body
+  }
+
+  async function redeem(token) {
+    try {
+      const r = await api('/shares/' + encodeURIComponent(id) + '/redeem', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(password ? { token, password } : { token }),
+      })
+      album = await api('/albums/' + encodeURIComponent(r.subject))   // now under the bearer's policy
+      phase = 'open'
+    } catch (e) { phase = e.status === 401 ? 'refused' : 'broken' }
+  }
+
+  $.onMount(() => {
+    const token = decodeURIComponent(location.hash.replace(/^#/, ''))
+    if (!token) { phase = 'broken'; return }
+    redeem(token)
+  })
+</script>
+
+<main>
+  {#if phase === 'checking'}
+    <p aria-live="polite">Opening the link…</p>
+  {:else if phase === 'refused'}
+    <p>This link did not open. It may need a password.</p>
+    <form onsubmit|preventDefault={() => redeem(decodeURIComponent(location.hash.replace(/^#/, '')))}>
+      <input type="password" bind:value={password} />
+      <button type="submit" disabled={!password}>Open</button>
+    </form>
+  {:else if phase === 'broken'}
+    <p>This link did not open.</p>
+  {:else}
+    <h1>{album.name}</h1>
+  {/if}
+</main>
+```
+
+- **`reset: true` is the whole opt-out**: no `_module.mesa` above it renders, so the
+  page draws its own `<main>`, header and footer, and a nav a signed-in screen
+  gets does not appear.
+- **The server answers one status for a forged, expired, revoked or reused link
+  and for a wrong password**, so the page cannot know a password is wanted: it
+  tries bare, and offers the field only after a `401`. Never offer it first.
+- **Redeem sets a cookie, and the cookie is the credential from then on.** The
+  reads that follow are plain `fetch` under that bearer's policy, which is
+  enforced at the Data boundary (Invariant 6) — the page hides nothing itself.
+- **A signed-in visitor carrying the cookie is treated as themselves**, not as
+  the bearer; say so (a `signedin` phase) rather than render a blank page.
+- Do not give the route a `.meta.js` `load()` for any of it: `load` runs before the
+  page, has no fragment, and its `fetch` attaches the session you do not have.
+
 ---
 
 ## Writes and forms
