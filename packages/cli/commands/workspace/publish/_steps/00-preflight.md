@@ -4,23 +4,67 @@ description: Every reason this release must not go to npm, before a version is s
 ---
 
 <script>
-import { resolve } from 'path'
+import { resolve, relative } from 'path'
 import { execSync } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, realpathSync } from 'fs'
+
+// The manifests each npm-bound tarball will be packed from. A release in flight
+// packs its tag's checkout, so its siblings are read on that commit; a fresh
+// bump packs the bump commit, which is the tree with this run's versions.
+function packedFrom(shipping, members, { resume, releaseTag }) {
+  const git  = (cwd, args) => execSync(`git ${args}`, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  const tree = new Map(members.map(m => [m.pkg.name, m.pkg]))
+  for (const p of shipping) tree.set(p.pkg.name, { ...p.pkg, version: p.newVersion })
+  if (!resume) return shipping.map(p => ({ name: p.pkg.name, version: p.newVersion, pkg: tree.get(p.pkg.name), siblings: tree }))
+
+  const commits = new Map()
+  return shipping.map(p => {
+    const repo = git(p.dir, 'rev-parse --show-toplevel')
+    const sha  = git(repo, `rev-parse ${JSON.stringify(`refs/tags/${releaseTag(p.pkg.name, p.newVersion)}^{commit}`)}`)
+    const key  = `${repo}\0${sha}`
+    if (!commits.has(key)) commits.set(key, new Map(members.flatMap(m => {
+      const rel = relative(repo, realpathSync(m.dir))
+      if (rel.startsWith('..')) return [[m.pkg.name, m.pkg]]
+      try { return [[m.pkg.name, JSON.parse(git(repo, `show ${JSON.stringify(`${sha}:${rel ? rel + '/' : ''}package.json`)}`))]] }
+      catch { return [] }
+    })))
+    const siblings = commits.get(key)
+    return { name: p.pkg.name, version: p.newVersion, pkg: siblings.get(p.pkg.name) ?? p.pkg, siblings }
+  })
+}
+
+// npm's answer for each pinned version this run does not publish itself.
+async function npmHolds(pins, received, hosts) {
+  const keys = [...new Set(pins.map(p => `${p.dep}@${p.version}`))].filter(k => !received.has(k))
+  const npm  = hosts().npm
+  return new Map(await Promise.all(keys.map(async k => {
+    const at = k.lastIndexOf('@')
+    return [k, await npm(k.slice(0, at), k.slice(at + 1))]
+  })))
+}
 </script>
 
 ```js
 const { planned, members } = $.config
 if (!planned?.length) return
 
-const { peerDrift, movedDependencies, publishOrder, publishRefusals, formatRefusals } =
+const { peerDrift, movedDependencies, siblingPins, unheldPins, publishOrder, publishRefusals, formatRefusals } =
   await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
+const { hosts } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 
 const stateOf = (name, dir) => $.git.pkgState(name, dir)
 const drift  = peerDrift((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })), planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
 const moved  = movedDependencies(planned.map(p => ({ name: p.pkg.name, pkg: p.pkg })),
                                  (members ?? []).map(m => ({ name: m.pkg.name, dir: m.dir, pkg: m.pkg })), stateOf)
 const sorted = publishOrder(planned.map(p => ({ ...p, name: p.pkg.name })))
+
+// A tarball npm installs resolves its exact sibling pins from npm alone; the
+// release host is exempt because a URL-source app overrides every framework
+// package to one source.
+const toNpm    = planned.filter(p => ($.config.missing?.[p.pkg.name] ?? $.config.to ?? []).includes('npm'))
+const received = new Set(toNpm.map(p => `${p.pkg.name}@${p.newVersion}`))
+const pins     = siblingPins(packedFrom(toNpm, members ?? [], $.config))
+const unheld   = unheldPins(pins, received, await npmHolds(pins, received, hosts))
 
 // The website's list of packages it holds back, read where it lives. Absent
 // outside this workspace, where there is no site to fall behind.
@@ -32,7 +76,7 @@ if (existsSync(siteData)) {
 }
 
 const refusals = publishRefusals({
-  drift, moved, cycles: sorted.cycles, heldBack,
+  drift, moved, unheld, cycles: sorted.cycles, heldBack,
   force: { peers: flag['allow-peer-drift'] },
 })
 

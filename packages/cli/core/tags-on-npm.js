@@ -48,6 +48,41 @@ export async function latestOn(name) {
   } catch { return null }
 }
 
+/** Each install pin with the version its source names; a pin whose file or
+ *  constant is gone is left out. */
+export function readInstallPins(root) {
+  return INSTALL_PINS.flatMap(({ file, name, constant, pattern }) => {
+    const path    = join(root, file)
+    const version = existsSync(path) ? pattern.exec(readFileSync(path, 'utf8'))?.[1] : null
+    return version ? [{ file, name, constant, version }] : []
+  })
+}
+
+/**
+ * Each install pin a publish to npm left behind: the run shipped `name@shipped`
+ * and the pin names another version. The pin is moved by hand after the publish,
+ * never in it (`FJS-D1773`), and this is what says the move is owed (`FJS-D1941`): the
+ * 2026-11-04 release shipped outpost@0.1.11 with the pin still at 0.1.9.
+ *
+ * @param {string[]} published `<name>@<version>` the run put on npm
+ */
+export function pinsToMove(root, published = []) {
+  const shipped = new Map(published.map(e => [e.slice(0, e.lastIndexOf('@')), e.slice(e.lastIndexOf('@') + 1)]))
+  return readInstallPins(root)
+    .filter(pin => shipped.has(pin.name) && shipped.get(pin.name) !== pin.version)
+    .map(pin => ({ ...pin, shipped: shipped.get(pin.name) }))
+}
+
+/** Each install pin older than npm's `latest`, for a release whose own reminder
+ *  went unread. A registry that cannot be asked says nothing. */
+export async function pinsBehindLatest(root, { latest = latestOn } = {}) {
+  const pins = readInstallPins(root)
+  const answers = await Promise.all(pins.map(pin => latest(pin.name)))
+  return pins
+    .map((pin, i) => ({ ...pin, latest: answers[i] }))
+    .filter(pin => pin.latest && Bun.semver.order(pin.version, pin.latest) < 0)
+}
+
 /**
  * Every `<name>@<version>` tag on a member's current version that neither npm
  * nor the release host holds, and every install pin npm does not hold. A tag
@@ -63,11 +98,7 @@ export async function tagsNpmLacks(root, { ask = onRegistry, askRelease = hosts(
     .filter(m => !m.private && m.version && tags.has(`${m.name}@${m.version}`))
     .map(m => ({ name: m.name, version: m.version, from: 'tag' }))
 
-  for (const pin of INSTALL_PINS) {
-    const path = join(root, pin.file)
-    const version = existsSync(path) ? pin.pattern.exec(readFileSync(path, 'utf8'))?.[1] : null
-    if (version) wanted.push({ name: pin.name, version, from: pin.file, constant: pin.constant })
-  }
+  for (const pin of readInstallPins(root)) wanted.push({ ...pin, from: pin.file })
 
   const answers = new Map()
   const key = (w) => `${w.name}@${w.version}`

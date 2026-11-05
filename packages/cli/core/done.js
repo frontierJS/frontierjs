@@ -32,7 +32,7 @@ import { runRegisterCheck }                 from './register-check.js'
 import { registerSources }                  from './registers.js'
 import { provesFor, changedTree }           from './proofs.js'
 import { runnables }                        from './runnables.js'
-import { tagsNpmLacks }                     from './tags-on-npm.js'
+import { tagsNpmLacks, pinsBehindLatest }   from './tags-on-npm.js'
 
 const CODE        = new Set(['.js', '.mjs', '.ts', '.mesa'])
 const SIBLING_MIN = 3
@@ -203,6 +203,10 @@ export async function engineItems(root) {
       check: 'npm', subject: `${w.name}@${w.version}`, ok: false, message: w.from === 'tag'
         ? `${w.name}@${w.version} is tagged and neither npm nor its GitHub Release has it — fli ws:pub finishes the release`
         : `${w.from} pins ${w.constant} = ${w.version} and npm has no ${w.name}@${w.version}, so every machine installed from it fails — publish it, or move the pin back`,
+    })
+    for (const p of await pinsBehindLatest(root)) out.push({
+      check: 'npm', subject: p.constant, ok: false,
+      message: `${p.file} pins ${p.constant} = ${p.version} and npm's latest ${p.name} is ${p.latest}, so a machine enrolled now gets the older one — move the pin by hand (FJS-D1941)`,
     })
   }
 

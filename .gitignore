@@ -25,6 +25,8 @@ routes.build.js
 .sierra/
 # site-kit shots: the accepted before-shots and the diff pairs (FJS-2265).
 .site-kit/
+# jetty's generated dock and island entries — the fixture's, beside its dist/.
+.jetty-cache/
 
 # TypeScript
 *.tsbuildinfo

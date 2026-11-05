@@ -13,7 +13,7 @@ import { tmpdir }        from 'os'
 import { execFileSync }  from 'child_process'
 
 import { layoutNamed, moduleNamed, collectChanges, runDone, doneReport, treeFingerprint, stopVerdict, itemKey, editedIn, checkItems, ignoreHides } from '../core/done.js'
-import { tagsNpmLacks } from '../core/tags-on-npm.js'
+import { tagsNpmLacks, pinsToMove, pinsBehindLatest } from '../core/tags-on-npm.js'
 
 function tree(files) {
   const root = mkdtempSync(join(tmpdir(), 'fli-done-'))
@@ -283,6 +283,24 @@ describe('a tagged version npm does not hold', () => {
 
       const offline = await tagsNpmLacks(root, { ask: async () => null, askRelease: async () => null })
       expect([offline.lacking.length, offline.unknown.length]).toEqual([0, 4])
+    } finally { cleanup() }
+  })
+
+  // FJS-D1773 keeps the move by hand; the 2026-11-04 release left the pin two behind with nothing saying so
+  test('names a pin a publish to npm left behind, and one older than npm latest', async () => {
+    const { root, cleanup } = tree({ [pin]: "export const OUTPOST_VERSION = '0.1.9'\n" })
+    try {
+      expect(pinsToMove(root, ['@frontierjs/toolbelt@0.1.10', '@frontierjs/outpost@0.1.11']))
+        .toEqual([{ file: pin, name: '@frontierjs/outpost', constant: 'OUTPOST_VERSION', version: '0.1.9', shipped: '0.1.11' }])
+      expect(pinsToMove(root, ['@frontierjs/outpost@0.1.9'])).toEqual([])
+      expect(pinsToMove(root, [])).toEqual([])
+
+      const behind = await pinsBehindLatest(root, { latest: async () => '0.1.11' })
+      expect(behind.map(p => [p.version, p.latest])).toEqual([['0.1.9', '0.1.11']])
+      // 0.1.10 sorts after 0.1.9: a string compare would call the pin current
+      expect(await pinsBehindLatest(root, { latest: async () => '0.1.10' })).toHaveLength(1)
+      expect(await pinsBehindLatest(root, { latest: async () => '0.1.9' })).toEqual([])
+      expect(await pinsBehindLatest(root, { latest: async () => null })).toEqual([])
     } finally { cleanup() }
   })
 })

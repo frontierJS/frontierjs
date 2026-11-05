@@ -148,6 +148,57 @@ export function movedDependencies(planned = [], members = [], stateOf = () => ({
 }
 
 /**
+ * The exact sibling versions each tarball will pin, as `bun pm pack` writes
+ * them from the commit it packs.
+ *
+ * `workspace:*` becomes the sibling's version ON THAT COMMIT, and a release in
+ * flight is packed from its tag, so the pin can name a version the working tree
+ * left behind and the registry never received (`FJS-4044`: ui@0.1.10 pinned
+ * toolbelt 0.1.9 while the run shipped toolbelt 0.1.10). A range is not a pin and
+ * is `peerDrift`'s question; devDependencies are dropped by the packer.
+ *
+ * @param shipping  [{ name, version, pkg, siblings }] -- `pkg` is the manifest
+ *                  packed, `siblings` a Map name → manifest on the same commit
+ * @returns [{ by, dep, version }]
+ */
+export function siblingPins(shipping = []) {
+  const out = []
+  for (const s of shipping) {
+    const deps = { ...s.pkg?.optionalDependencies, ...s.pkg?.dependencies, ...s.pkg?.peerDependencies }
+    for (const [dep, spec] of Object.entries(deps)) {
+      const sibling = s.siblings?.get(dep)
+      if (!sibling) continue
+      const version = pinnedVersion(spec, sibling.version)
+      if (version) out.push({ by: `${s.name}@${s.version}`, dep, version })
+    }
+  }
+  return out
+}
+
+function pinnedVersion(spec, siblingVersion) {
+  const s = String(spec ?? '').trim()
+  const w = s.startsWith('workspace:') ? s.slice('workspace:'.length) : null
+  const exact = w === '*' || w === '' ? String(siblingVersion ?? '') : (w ?? s)
+  return parseVersion(exact) ? exact.trim() : null
+}
+
+/**
+ * The pins a destination will not hold once this run is done: neither held
+ * already nor received from this run. `held` is the destination's answer per
+ * `name@version` -- true, false, or NULL where it could not be asked, which is
+ * returned rather than guessed.
+ *
+ * @param pins      [{ by, dep, version }]  from `siblingPins`
+ * @param received  Set of `name@version` this run ships there
+ * @param held      Map `name@version` → true | false | null
+ */
+export function unheldPins(pins = [], received = new Set(), held = new Map()) {
+  return pins
+    .filter(p => !received.has(`${p.dep}@${p.version}`) && held.get(`${p.dep}@${p.version}`) !== true)
+    .map(p => ({ ...p, held: held.get(`${p.dep}@${p.version}`) ?? null }))
+}
+
+/**
  * The release set, ordered so a package is published after everything it
  * depends on.
  *
@@ -188,8 +239,22 @@ export function publishOrder(planned = []) {
  * an operator should usually do, and the override is what is available when
  * they know better. Printing only the override teaches everyone to reach for it.
  */
-export function publishRefusals({ drift = [], moved = [], cycles = [], heldBack = [], force = {} } = {}) {
+export function publishRefusals({ drift = [], moved = [], unheld = [], cycles = [], heldBack = [], force = {} } = {}) {
   const out = []
+
+  if (unheld.length) {
+    // No override: every install of the tarball fails resolving the pin, and
+    // the npm versions spent before anyone notices cannot be taken back.
+    const missing = [...new Set(unheld.map(u => `${u.dep}@${u.version}`))]
+    out.push({
+      check:   'pin-not-on-npm',
+      message: `${missing.length} exact sibling pin(s) name a version npm does not hold and this run does not publish: ${missing.join(', ')}`,
+      because: 'bun pm pack writes workspace:* as the version on the commit it packs, and a release in flight packs its tag',
+      fix:     'publish each named version to npm first -- `gh release download <name>@<version>` then `npm publish <tgz>` -- and run again',
+      override: null,
+      detail:  unheld.map(u => `${u.by} pins ${u.dep} ${u.version}${u.held === null ? ' -- npm could not say whether it holds it' : ''}`),
+    })
+  }
 
   if (moved.length) {
     // No override: what it would ship is a package that fails at its first

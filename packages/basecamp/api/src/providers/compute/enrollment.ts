@@ -36,7 +36,8 @@ import { litestreamInstall } from '@frontierjs/litestone/replicate'
 /** What the install runs on a machine, held here so two machines provisioned a
  *  week apart run the same thing. The Outpost is pinned to a version npm HOLDS
  *  and moved by hand after a publish, never to the tree's (`FJS-D1773`: that is
- *  the one version npm lacks at every graded commit); Docker and Caddy come
+ *  the one version npm lacks at every graded commit), and `fli ws:pub` prints
+ *  the move once npm holds the new one (`FJS-D1941`); Docker and Caddy come
  *  from signed apt repositories. */
 export const BUN_VERSION     = '1.4.4'
 export const OUTPOST_VERSION = '0.1.9'

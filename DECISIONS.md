@@ -16598,6 +16598,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1941"></a>2026-11-05 · `FJS-D1941` — Q7 — The pin nobody moved — Keep the hand move. 04 prints `move the pin` with the file and the two versions after any run that put a pinned package on npm, before a failure is thrown, and `fli done` lists a pin older than npm's `latest` for the release whose line went unread.
+
+Asked in [`IDEAS/green-and-ship.md`](IDEAS/green-and-ship.md) § Open questions. **B** was picked over **A** (04 rewrites every `INSTALL_PINS` entry and commits once it has proved npm serves the shipped version. Nothing to remember, but it adds a second writer and a commit after the tags, and it does nothing on a tarballs-only run, which is the default `--to` (`FJS-D1613`)), **C** (enroll npm's `latest`, resolved once and written exact into the install script, with the posture check graded against the same number. A newer Outpost then reaches an already-deployed Basecamp built against older code).
+
+The paper's recommendation, taken as written: it adds no writer and no convention. It reuses `INSTALL_PINS` and `latestOn`, and amends only `FJS-D1773`'s *what is lost* clause. If the line is still missed, A is the reopen path, and only for a run that shipped to npm.
+
 ### <a id="fjs-d1940"></a>2026-11-05 · `FJS-D1940` — Q3 — Which keys default to secret — Secret when the name looks like a credential (`KEY|SECRET|TOKEN|PASSWORD`), plain otherwise.
 
 Asked in [`IDEAS/expected-variables.md`](IDEAS/expected-variables.md) § Open questions. **B** was picked over **A** (Secret unless the spec or the name marks it plain), **C** (No default; each row makes the owner pick).

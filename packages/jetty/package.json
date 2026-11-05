@@ -85,10 +85,6 @@
       "optional": true
     }
   },
-  "optionalDependencies": {
-    "@frontierjs/mesa": "file:../mesa",
-    "@frontierjs/junction": "file:../junction"
-  },
   "engines": {
     "node": ">=24"
   },

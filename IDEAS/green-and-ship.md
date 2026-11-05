@@ -156,6 +156,27 @@ This paper is the order between them, and the release at the end.
     the one version that is unpublished at every graded commit, which is
     the hazard the runtime guard was built against. B adds a rule for what
     a pin may be; C is what `FJS-D1772` ruled out.
+- ~~**`FJS-D1941` — Q7 — The pin nobody moved.**~~ **Answered 2026-11-05 (`FJS-D1941`): B — keep the hand move. 04 prints `move the pin` with the file and the two versions after any run that put a pinned package on npm, before a failure is thrown, and `fli done` lists a pin older than npm's `latest` for the release whose line went unread.** `FJS-D1773` accepted that
+  nothing forces the pin forward, and the 2026-11-04 release shipped
+  `outpost@0.1.11` with `OUTPOST_VERSION` at `0.1.9` and nothing saying so.
+  `fli done` returns early on a clean tree, so right after a release it says
+  nothing either.
+  - **A** — 04 rewrites every `INSTALL_PINS` entry and commits once it has
+    proved npm serves the shipped version. Nothing to remember, but it adds a
+    second writer and a commit after the tags, and it does nothing on a
+    tarballs-only run, which is the default `--to` (`FJS-D1613`).
+  - **B** — keep the hand move. 04 prints `move the pin` with the file and the
+    two versions after any run that put a pinned package on npm, before a
+    failure is thrown, and `fli done` lists a pin older than npm's `latest`
+    for the release whose line went unread.
+  - **C** — enroll npm's `latest`, resolved once and written exact into the
+    install script, with the posture check graded against the same number.
+    A newer Outpost then reaches an already-deployed Basecamp built against
+    older code.
+  - **Recommend B** — it adds no writer and no convention. It reuses
+    `INSTALL_PINS` and `latestOn`, and amends only `FJS-D1773`'s *what is
+    lost* clause. If the line is still missed, A is the reopen path, and only
+    for a run that shipped to npm.
 
 
 ## Phase 0 — Know what dev is

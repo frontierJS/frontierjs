@@ -9,7 +9,8 @@
 import { describe, test, expect } from 'bun:test'
 
 import { satisfiesRange, peerDrift, movedDependencies, publishOrder, writePins,
-         publishRefusals, formatRefusals, matchesSelector, unpublished, untaggedBumps } from '../core/publish-preflight.js'
+         publishRefusals, formatRefusals, matchesSelector, unpublished, untaggedBumps,
+         siblingPins, unheldPins } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
   // The trap this whole check exists for. Below 1.0 a caret pins the MINOR, so
@@ -126,6 +127,54 @@ describe('a workspace dependency that moved past its tag', () => {
   test('a registry range is not a workspace dependency', () => {
     const pinned = { name: '@frontierjs/outpost', pkg: { dependencies: { '@frontierjs/litestone': '^1.1.10' } } }
     expect(movedDependencies([pinned], members, state({ commits: [{}] }))).toEqual([])
+  })
+})
+
+describe('an exact sibling pin npm will not hold', () => {
+  // FJS-4044: ui@0.1.10 resumed from its tag, where toolbelt was 0.1.9, while
+  // the tree and the run had moved on to toolbelt 0.1.10.
+  const atTag = new Map([
+    ['@frontierjs/toolbelt', { version: '0.1.9' }],
+    ['@frontierjs/ui',       { version: '0.1.10' }],
+  ])
+  const ui = (deps) => ({ name: '@frontierjs/ui', version: '0.1.10', pkg: { dependencies: deps }, siblings: atTag })
+
+  test('workspace:* pins the sibling version on the packed commit', () => {
+    expect(siblingPins([ui({ '@frontierjs/toolbelt': 'workspace:*' })]))
+      .toEqual([{ by: '@frontierjs/ui@0.1.10', dep: '@frontierjs/toolbelt', version: '0.1.9' }])
+  })
+
+  test('a pin npm lacks and the run does not ship is refused with no override', () => {
+    const pins   = siblingPins([ui({ '@frontierjs/toolbelt': 'workspace:*' })])
+    const unheld = unheldPins(pins, new Set(['@frontierjs/toolbelt@0.1.10']), new Map([['@frontierjs/toolbelt@0.1.9', false]]))
+    const [r] = publishRefusals({ unheld })
+    expect(r).toMatchObject({ check: 'pin-not-on-npm', override: null })
+    expect(r.message).toContain('@frontierjs/toolbelt@0.1.9')
+    expect(r.detail[0]).toBe('@frontierjs/ui@0.1.10 pins @frontierjs/toolbelt 0.1.9')
+  })
+
+  test('npm that cannot answer is refused, not guessed', () => {
+    const pins = siblingPins([ui({ '@frontierjs/toolbelt': 'workspace:*' })])
+    expect(unheldPins(pins, new Set(), new Map([['@frontierjs/toolbelt@0.1.9', null]]))[0].held).toBe(null)
+  })
+
+  test('a pin npm holds, or this run ships, is allowed', () => {
+    const pins = siblingPins([ui({ '@frontierjs/toolbelt': 'workspace:*' })])
+    expect(unheldPins(pins, new Set(), new Map([['@frontierjs/toolbelt@0.1.9', true]]))).toEqual([])
+    expect(unheldPins(pins, new Set(['@frontierjs/toolbelt@0.1.9']), new Map())).toEqual([])
+  })
+
+  test('a range, a devDependency or a non-member is not a pin', () => {
+    expect(siblingPins([ui({ '@frontierjs/toolbelt': 'workspace:^' })])).toEqual([])
+    expect(siblingPins([ui({ '@frontierjs/toolbelt': '^0.1.9' })])).toEqual([])
+    expect(siblingPins([ui({ 'left-pad': '1.3.0' })])).toEqual([])
+    const dev = { ...ui({}), pkg: { devDependencies: { '@frontierjs/toolbelt': 'workspace:*' } } }
+    expect(siblingPins([dev])).toEqual([])
+  })
+
+  test('a hand-typed exact version, or workspace: with one, is a pin', () => {
+    expect(siblingPins([ui({ '@frontierjs/toolbelt': '0.1.8' })])[0].version).toBe('0.1.8')
+    expect(siblingPins([ui({ '@frontierjs/toolbelt': 'workspace:0.1.7' })])[0].version).toBe('0.1.7')
   })
 })
 

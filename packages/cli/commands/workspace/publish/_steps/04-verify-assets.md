@@ -37,6 +37,7 @@ const config = $.config
 if (!config.released?.length) return
 
 const { freshAppChecks, installFreshApp, pinsBehind, REGISTRY_LAG } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
+const { pinsToMove } = await import(new URL('file://' + global.fliRoot + '/core/tags-on-npm.js'))
 const { FJS_PACKAGES, APP_DEV_DEPS, FJS_TRANSITIVE } = await import(new URL('file://' + global.fliRoot + '/core/app-config.js'))
 
 // Step 01 raises the scaffold pins to versions no host holds until this run has
@@ -54,6 +55,7 @@ const owed   = freshAppChecks({
 
 const bad    = flag.dry ? [] : await assetsNotServed()
 const failed = installFreshApps()
+remindPinsToMove()
 
 if (bad.length)    throw new Error(`${bad.length} asset(s) not served as uploaded: ${bad.join(', ')} — the release shipped; the package host does not answer with it`)
 if (failed.length) throw new Error(`a fresh app did not install from ${failed.join(' + ')} — the release shipped; the host does not give an app what it published`)
@@ -74,6 +76,16 @@ async function assetsNotServed() {
     }
   }
   return bad
+}
+
+// Printed before a failure is thrown: npm holds the version either way, and the
+// pin is the owner's hand move (`FJS-D1773`), which this line asks for (`FJS-D1941`).
+function remindPinsToMove() {
+  for (const p of pinsToMove(config.wsRoot, shippedTo('npm', config, flag.dry))) {
+    const line = `${p.file}: ${p.constant} = '${p.version}' → '${p.shipped}', by hand now npm holds it (FJS-D1941)`
+    if (flag.dry) log.dry(`  A real run leaves a pin to move: ${line}`)
+    else echo(chalk`  {yellow move the pin} ${line}`)
+  }
 }
 
 function installFreshApps() {

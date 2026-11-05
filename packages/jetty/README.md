@@ -74,9 +74,8 @@ reaches for (when present):
 - `packages/junction/` — WebSocket service client. Optional — jetty falls back
   to its built-in default WS adapter if missing.
 
-Both are `optionalDependencies` (`file:../mesa`, `file:../junction`) with the
-published ranges declared as peers, so an install succeeds whether the siblings
-are in the tree or come from the registry. Re-install when one shows up.
+Both are optional peers. In this repo they are workspace devDependencies, so
+the siblings are linked; an app that wants one installs it beside jetty.
 
 **An app installs neither.** A surface has one `package.json`, at the app root,
 so `@frontierjs/mesa` lives at `<app>/node_modules` and jetty's compiler lookup
