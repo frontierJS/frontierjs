@@ -508,6 +508,7 @@ describe('relativeApiCalls', () => {
 })
 
 describe('buildIslandBundle', () => {
+  // A real vite build: past 5 s under the full suite's lanes.
   test('warns, naming the file and line, for an island fetching /api by a relative path', async () => {
     // Inside the package, not /tmp: the generated entry imports
     // @frontierjs/sierra/islands, which only resolves from beneath it.
@@ -534,5 +535,5 @@ describe('buildIslandBundle', () => {
     const text = warned.join('\n')
     expect(text).toContain('src/islands/Slots.js:1')
     expect(text).toContain('relative path')
-  })
+  }, 30_000)
 })

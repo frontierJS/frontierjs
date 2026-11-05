@@ -62,12 +62,13 @@ const parses = (js) =>
 // ─── resolution ───────────────────────────────────────────────────────────────
 
 describe('finding the compiler', () => {
+  // The first fresh plugin imports the compiler cold, seconds under the full suite's lanes (FJS-3777).
   test('the sibling is found with no configuration at all', async () => {
     const plugin = await freshPlugin({ hmr: false })
     const { code } = await transform(plugin, '<script>\nlet a = 1\n</script><p>{a}</p>')
 
     expect(code).toContain('$$runtime.template')
-  })
+  }, 30_000)
 
   test('compilerPath wins over the sibling', async () => {
     const plugin   = await freshPlugin({ compilerPath: STUB, hmr: false })

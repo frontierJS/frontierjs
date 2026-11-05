@@ -143,6 +143,7 @@ describe('REPL examples compile', () => {
   const compileLikeRepl = (src, filename) =>
     compileSource(src, { filename, css: false, debug: false })
 
+  // Every example in one test is seconds of compiling, which the full suite's lanes stretch past 5 s (FJS-3777).
   it(`all ${entries.length} examples compile without errors or warnings`, async () => {
     const bad = []
     for (const [key, ex] of entries) {
@@ -159,7 +160,7 @@ describe('REPL examples compile', () => {
       }
     }
     expect(bad).toEqual([])
-  })
+  }, 30_000)
 
   it('compiled output is valid JavaScript', async () => {
     // Compiling without errors is not the same as emitting code that parses.
@@ -181,7 +182,7 @@ describe('REPL examples compile', () => {
       }
     }
     expect(bad).toEqual([])
-  })
+  }, 30_000)
 })
 
 describe('REPL examples run', () => {
@@ -242,7 +243,7 @@ describe('REPL examples run', () => {
       if (proto && !hadAnimate) delete proto.animate
     }
     expect(bad).toEqual([])
-  })
+  }, 30_000)
 
   it('an indexed {#each} row is given both item and index getters', async () => {
     // The narrow pin on the bug above — compiled emission calls i() and the

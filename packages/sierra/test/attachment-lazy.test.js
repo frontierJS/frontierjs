@@ -4,6 +4,7 @@
 import { test, expect } from 'vitest'
 import { build } from 'vite'
 
+// A real vite build: 2 s alone, past 5 s under the full suite's lanes (FJS-3807).
 test('resource.js keeps the blob queue out of its entry chunk', async () => {
   const warnings = []
   const result = await build({
@@ -25,4 +26,4 @@ test('resource.js keeps the blob queue out of its entry chunk', async () => {
   expect(entry.code).not.toContain('fjs-attachments')
   expect(outputs.some((o) => o.type === 'chunk' && !o.isEntry && o.code.includes('fjs-attachments'))).toBe(true)
   expect(warnings).not.toContain('INEFFECTIVE_DYNAMIC_IMPORT')
-})
+}, 30_000)

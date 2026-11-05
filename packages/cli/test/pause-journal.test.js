@@ -83,6 +83,7 @@ const kinds = async (j) => (await j.history({ app: APP, environment: ENV, limit:
 
 // ─── accepting ───────────────────────────────────────────────────────────────
 
+// Every test opens a real journal over litestone: seconds under the full suite's lanes, past bun's 5 s.
 describe('a pause through the journal', () => {
   test('opens a pause transition over the Release already serving, and mints none', async () => {
     const j = await deployed()
@@ -95,7 +96,7 @@ describe('a pause through the journal', () => {
     await complete(opened)
     const state = await j.state({ app: APP, environment: ENV })
     expect(state).toMatchObject({ serving: 'r1', paused: true, kind: 'pause', actor: 'tester' })
-  })
+  }, 30_000)
 
   test('the step rows it writes are the directory the runner reads', async () => {
     await deployed()
@@ -103,7 +104,7 @@ describe('a pause through the journal', () => {
     const j = await journal()
     const names = (await j.stepsOf(opened.transition.id)).map(s => s.name)
     expect(names).toEqual(['01-preflight', '02-pause', '02a-queues-resume', '02b-unpause', '03-verify', '03b-queues-pause', '04-cleanup'])
-  })
+  }, 30_000)
 
   test('an unpause after it puts the app back to serving, and the same Release', async () => {
     const j = await deployed()
@@ -112,7 +113,7 @@ describe('a pause through the journal', () => {
 
     expect(await j.state({ app: APP, environment: ENV })).toMatchObject({ serving: 'r1', paused: false, kind: 'unpause' })
     expect(await kinds(j)).toEqual(['unpause', 'pause', 'deploy'])
-  })
+  }, 30_000)
 
   // The history a revert reads. Two pause rows sit on top of the deploy; the
   // Release the revert offers must not become the one already serving.
@@ -131,7 +132,7 @@ describe('a pause through the journal', () => {
     const history = await j.history({ app: APP, environment: ENV, limit: 50 })
     expect(chooseTarget(history)).toMatchObject({ targetId: 'r1' })
     expect(chooseTarget(history).serving.releaseId).toBe('r2')
-  })
+  }, 30_000)
 })
 
 // ─── refusing, and writing nothing for it ────────────────────────────────────
@@ -142,7 +143,7 @@ describe('what a pause refuses, against a real journal', () => {
     const opened = await pause('pause', { edgeHasGuard: false })
     expect(opened.refused?.map(r => r.code)).toEqual(['no-guard'])
     expect(await kinds(j)).toEqual(['deploy'])
-  })
+  }, 30_000)
 
   test('a journal nothing has been deployed through', async () => {
     const j = await journal()
@@ -150,7 +151,7 @@ describe('what a pause refuses, against a real journal', () => {
     const opened = await pause('pause')
     expect(opened.refused?.map(r => r.code)).toEqual(['no-journal'])
     expect(await kinds(j)).toEqual([])
-  })
+  }, 30_000)
 
   test('a pause over a pause', async () => {
     const j = await deployed()
@@ -158,7 +159,7 @@ describe('what a pause refuses, against a real journal', () => {
     const again = await pause('pause', { filePresent: true })
     expect(again.refused?.map(r => r.code)).toEqual(['already'])
     expect(await kinds(j)).toEqual(['pause', 'deploy'])
-  })
+  }, 30_000)
 
   // The pair for the row above, and the case `already` exists NOT to refuse: the
   // journal says paused and somebody removed the file.
@@ -168,7 +169,7 @@ describe('what a pause refuses, against a real journal', () => {
     const again = await pause('pause', { filePresent: false })
     expect(again.refused).toBeUndefined()
     expect(again.transition.kind).toBe('pause')
-  })
+  }, 30_000)
 
   // And the other direction: the journal says serving and the edge is refusing.
   test('an unpause over a target paused by hand goes ahead', async () => {
@@ -176,14 +177,14 @@ describe('what a pause refuses, against a real journal', () => {
     const opened = await pause('unpause', { filePresent: true })
     expect(opened.refused).toBeUndefined()
     expect(opened.transition.kind).toBe('unpause')
-  })
+  }, 30_000)
 
   test('while an unpause over a target nobody paused is refused', async () => {
     const j = await deployed()
     const opened = await pause('unpause', { filePresent: false })
     expect(opened.refused?.map(r => r.code)).toEqual(['already'])
     expect(await kinds(j)).toEqual(['deploy'])
-  })
+  }, 30_000)
 
   test('a deploy still open', async () => {
     const j = await deployed()
@@ -196,5 +197,5 @@ describe('what a pause refuses, against a real journal', () => {
     const opened = await pause('pause')
     expect(opened.refused?.map(r => r.code)).toEqual(['in-flight'])
     expect(opened.refused[0].fix).toContain('t-open')
-  })
+  }, 30_000)
 })

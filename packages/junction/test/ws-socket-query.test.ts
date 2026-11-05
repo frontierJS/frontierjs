@@ -48,14 +48,19 @@ beforeAll(async () => {
 
 afterAll(async () => { await app?.stop() })
 
-/** Every URL a client opened a socket on, in order. */
+/**
+ * Every URL a client opened a socket on THIS app, in order. A client an earlier
+ * file left connected to an app since stopped retries for the rest of the run,
+ * and one of its opens landing in this window read as a reconnect with no query.
+ */
 function recordOpens(): { urls: string[], restore: () => void } {
   const Real = globalThis.WebSocket
   const urls: string[] = []
+  const mine = `${URL_.replace('http', 'ws')}/ws`
   ;(globalThis as any).WebSocket = class extends Real {
     constructor(url: string | URL, protocols?: string | string[]) {
       super(url, protocols)
-      urls.push(String(url))
+      if (String(url).startsWith(mine)) urls.push(String(url))
     }
   }
   return { urls, restore: () => { (globalThis as any).WebSocket = Real } }
@@ -161,7 +166,8 @@ describe('the visibility frame', () => {
       let up = nextConnect(client)
       client.connect()
       await up
-      const conn = () => [...app.channels.connections.values()].find((c: any) => c.user?.id === ALICE.id)
+      // The newest: a connection a failed test left open reported nothing, and reads as hidden forever.
+      const conn = () => [...app.channels.connections.values()].findLast((c: any) => c.user?.id === ALICE.id)
       expect(await settle(() => conn()?.visible === false)).toBe(true)
       expect(app.channels.hasVisibleConnection(ALICE.id)).toBe(false)
 

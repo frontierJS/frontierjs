@@ -525,6 +525,7 @@ describe('renderComponent — tmpDir', () => {
 // all 34 of its tests failing while this suite stayed green. `FJS-100`.
 
 describe('renderComponent from another working directory', () => {
+  // Spawns a second node that imports the runtime cold: seconds under the full suite's lanes, past 5 s.
   it('resolves the runtime regardless of cwd', async () => {
     const { execFile } = await import('child_process')
     const { promisify } = await import('util')
@@ -549,7 +550,7 @@ describe('renderComponent from another working directory', () => {
     } finally {
       await unlink(script).catch(() => {})
     }
-  })
+  }, 30_000)
 })
 
 // ── Import aliases ────────────────────────────────────────────────────────────
@@ -708,7 +709,7 @@ describe('renderComponent — temp module lifetime', () => {
 
     const left = (await readdir(scratch)).filter((f) => f.startsWith('__mesa_render_'))
     expect(left).toEqual([])
-  })
+  }, 30_000)
 
   it('sweeps a leftover a killed process left, and spares one still in use', async () => {
     // Nothing covers SIGKILL, so leftovers accumulate in the default tmpDir and

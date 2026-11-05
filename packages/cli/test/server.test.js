@@ -821,6 +821,7 @@ describe('GET /api/check', () => {
 
 describe('GET /api/doctor', () => {
 
+  // A doctor run and a page render are seconds of real work, past bun's 5 s under the full suite's lanes.
   test('answers the machine`s own report', async () => {
     const body = await (await fetch(`${base}/api/doctor`)).json()
     expect(body.error).toBeUndefined()
@@ -828,7 +829,7 @@ describe('GET /api/doctor', () => {
     expect(Array.isArray(body.config)).toBe(true)
     expect(typeof body.checks).toBe('number')
     expect(typeof body.blocked).toBe('number')
-  })
+  }, 30_000)
 
   test('and it is the same engine the command renders', async () => {
     const body = await (await fetch(`${base}/api/doctor`)).json()
@@ -837,7 +838,7 @@ describe('GET /api/doctor', () => {
     // The endpoint adds namespaces off the registry, so the SYSTEM half is what
     // must agree — and it must, because there is one implementation of it.
     expect(body.system.map(b => `${b.name}:${b.ok}`)).toEqual(direct.system.map(b => `${b.name}:${b.ok}`))
-  })
+  }, 30_000)
 
 })
 
@@ -878,7 +879,7 @@ describe('GET /api/page/:id', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/html')
     expect(await res.text()).toContain('the page')
-  })
+  }, 30_000)
 
   test('a snapshot that is not a page is refused, though its row is real', async () => {
     const res = await fetch(`${base}/api/page/${encodeURIComponent('snapshot:thing.snapshot.md')}`)

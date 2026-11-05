@@ -403,7 +403,7 @@ describe('Command() closes the tty', () => {
   // byte, and in cooked mode the terminal signals every process on it, fli and
   // its child both. Either way onExit has to be reached through the runtime.
   const hasScript = spawnSync('script', ['--version']).status === 0
-  const inPty = (name, body, env = {}) => {
+  const inPty = (name, body, env = {}, after = null) => {
     const file   = command(name, body.join('\n'))
     const runner = join(dir, `${name}.mjs`)
     writeFileSync(runner, [
@@ -412,12 +412,18 @@ describe('Command() closes the tty', () => {
       `const { Command } = await import(${JSON.stringify(join(global.fliRoot, 'core/runtime.js'))})`,
       `await (await Command({ file: ${JSON.stringify(file)}, arg: [], flag: {} }))()`,
     ].join('\n'))
-    // The byte waits a second for the command to get going; `-e` returns its status.
+    // The byte waits a second for the command to get going, or for `after` to
+    // exist when the test must land it INSIDE something: with five lanes running
+    // a second was not always enough to reach the aside, and a byte before it is
+    // the runtime's own, exit 130 (FJS-3273). `-e` returns its status.
     // The runner's own color switches are dropped: CI sets CI=1 and FORCE_COLOR=0,
     // chalk honors both, and *without NO_COLOR chalk colors* then fails for CI's reason.
     const inherited = { ...process.env }
     for (const key of ['CI', 'FORCE_COLOR', 'NO_COLOR']) delete inherited[key]
-    return spawnSync('sh', ['-c', `(sleep 1; printf '\\003'; sleep 2) | script -qec "${process.execPath} ${runner}" /dev/null`],
+    const wait = after
+      ? `i=0; while [ ! -e ${JSON.stringify(after)} ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done`
+      : 'sleep 1'
+    return spawnSync('sh', ['-c', `(${wait}; printf '\\003'; sleep 2) | script -qec "${process.execPath} ${runner}" /dev/null`],
       { encoding: 'utf8', timeout: 15000, env: { ...inherited, TERM: 'xterm-256color', COLORTERM: 'truecolor', ...env } })
   }
   const away = (mark) => `tty.onExit(async () => { await Bun.sleep(50); fs.writeFileSync(${JSON.stringify(mark)}, 'away') })`
@@ -468,12 +474,14 @@ describe('Command() closes the tty', () => {
   })
 
   test.skipIf(!hasScript)('Ctrl-C inside aside is the child\'s, and the command carries on', () => {
+    // The child itself writes the mark, so the byte cannot arrive before the aside holds the screen.
+    const mark = join(dir, 'in-aside')
     const r = inPty('aside', [
-      `try { await tty.aside(() => $.stream({ command: 'sleep 5' })) } catch (e) { echo('caught ' + e.message) }`,
+      `try { await tty.aside(() => $.stream({ command: 'touch ${mark}; sleep 5' })) } catch (e) { echo('caught ' + e.message) }`,
       `echo('carried on')`,
-    ])
+    ], {}, mark)
     expect(r.status).toBe(0)
-    expect(r.stdout).toContain('caught interrupted: sleep 5')
+    expect(r.stdout).toContain('caught interrupted: touch')
     expect(r.stdout).toContain('carried on')
   })
 })

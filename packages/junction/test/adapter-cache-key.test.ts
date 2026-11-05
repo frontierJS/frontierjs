@@ -129,8 +129,11 @@ describe('the key is the schema, not the client', () => {
       for (let i = 0; i < n; i++) await svc.create({ title: 'w', ownerId: 1 }, { user: mk() })
       return (Bun.nanoseconds() - t0) / n / 1e6
     }
-    const fresh  = await time(() => ({ id: 1, isAdmin: true }), 20)
-    const reused = await time(() => admin, 20)
+    // 60 writes a side: with 20, one scheduler stall under the full suite's
+    // lanes moved the ratio past the bound, and the bound sits where the
+    // measured 1.3x of the fix and the 6.6x of its reversal both stay clear.
+    const fresh  = await time(() => ({ id: 1, isAdmin: true }), 60)
+    const reused = await time(() => admin, 60)
 
     // A RATIO, not a budget: absolute numbers move with the machine and the
     // schema; what must stay true is that the two are the SAME WORK. Measured
@@ -149,6 +152,6 @@ describe('the key is the schema, not the client', () => {
     for (let i = 0; i < 10; i++) derive()
     const miss = (Bun.nanoseconds() - t0) / 10 / 1e6
     expect(miss / reused).toBeGreaterThan(5)
-    expect(fresh / reused).toBeLessThan(3)
+    expect(fresh / reused).toBeLessThan(4)
   })
 })
