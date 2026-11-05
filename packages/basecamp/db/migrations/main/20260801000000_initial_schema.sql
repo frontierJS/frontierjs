@@ -1,5 +1,5 @@
 -- Litestone migration
--- Created:   2026-11-05T09:49:16.580Z
+-- Created:   2026-11-05T20:24:07.678Z
 -- Changes:
 --     + Credential  (new table)
 --     + Session  (new table)
@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS "credential" (
   "scope" TEXT,
   "totpLastStep" INTEGER,
   "isLinked" INTEGER,
+  "clientId" TEXT,
+  "redirectUri" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -103,7 +105,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_credential_type_value" ON "credential" (
 CREATE TABLE IF NOT EXISTS "session" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "userId" TEXT NOT NULL,
-  "token" TEXT NOT NULL UNIQUE,
+  "token" TEXT UNIQUE,
   "expiresAt" TEXT NOT NULL,
   "ipAddress" TEXT,
   "userAgent" TEXT,
@@ -113,6 +115,10 @@ CREATE TABLE IF NOT EXISTS "session" (
   "impersonatingUserId" TEXT,
   "impersonationReason" TEXT,
   "impersonationEndsAt" TEXT,
+  "clientId" TEXT,
+  "refreshToken" TEXT UNIQUE,
+  "previousRefreshToken" TEXT,
+  "rotatedAt" TEXT,
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_session_userId" ON "session" ("userId");
@@ -390,6 +396,7 @@ CREATE TABLE IF NOT EXISTS "workspace" (
   "expiresAt" TEXT,
   "ingressSecretId" TEXT,
   "ingressZoneId" TEXT,
+  "ingressZone" TEXT,
   "pushTopic" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -398,6 +405,7 @@ CREATE TABLE IF NOT EXISTS "workspace" (
   CHECK ("kind" IN ('personal', 'team', 'enterprise', 'demo')),
   CHECK ("status" IN ('active', 'suspended')),
   CHECK ((ingressSecretId IS NULL) = (ingressZoneId IS NULL)),
+  CHECK ((ingressSecretId IS NULL) = (ingressZone IS NULL)),
   CHECK ((kind = 'demo') = (expiresAt IS NOT NULL)),
   FOREIGN KEY ("accountId") REFERENCES "account" ("id")
 ) STRICT;

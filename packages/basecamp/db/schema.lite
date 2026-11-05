@@ -1042,6 +1042,11 @@ model Workspace {
   // other is a workspace that looks configured and pushes nowhere.
   ingressSecretId String?
   ingressZoneId   String?
+  // The zone's NAME as the vendor answered when the pair was set (`FJS-D1962`),
+  // so a release reads it and calls no vendor. A Cloudflare zone id never
+  // changes name. @system: derived by the `patch` hook from a vendor probe, so a
+  // client that names it is refused.
+  ingressZone     String? @system
 
   // The ntfy topic every critical kind is published to, once per event
   // (`FJS-D1586`): `<slug>-critical-<12 random chars>`, minted on first use by
@@ -1077,6 +1082,7 @@ model Workspace {
   @@trail(audit)
   @@index([accountId])
   @@check("(ingressSecretId IS NULL) = (ingressZoneId IS NULL)", "an ingress zone names its account and its zone together")
+  @@check("(ingressSecretId IS NULL) = (ingressZone IS NULL)", "an ingress zone is stored with its name")
   @@check("(kind = 'demo') = (expiresAt IS NOT NULL)", "a demo workspace has an end date and no other kind does")
 
   // @@tenant(none) — the tenant itself. Scoping a workspace by the workspace claim

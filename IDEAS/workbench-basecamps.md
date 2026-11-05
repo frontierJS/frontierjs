@@ -281,7 +281,7 @@ box (0.3) and the first purchase from the page.
   - **B** — Previews keep their own env pair.
   - **Recommend A** — one list of Basecamps on this laptop, not two. The peer key
     id joins the entry.
-- **Q5 — Whether the screen edits the index.** The owner minted a `chartered`
+- ~~**Q5 — Whether the screen edits the index.**~~ **Answered 2026-11-05 (`FJS-D1961`): A — Verbs only. Entries are read; a key is minted by `basecamp:key` over ssh and an entry is written by `create`, `install`, `key` or a hand edit.** The owner minted a `chartered`
   entry by hand on 2026-11-05 and asked whether `/basecamps/` should cover
   enrolling and keys as well as the verbs.
   - **A** — Verbs only. Entries are read; a key is minted by `basecamp:key` over

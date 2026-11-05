@@ -14,6 +14,7 @@ title: Settings
   import { theme, setTheme, themes } from '@frontierjs/sierra/theme'
   import { session } from '../../lib/session.js'
   import { textSize, setTextSize, resetTextSize, TEXT_SIZE } from '../../lib/text-size.js'
+  var { min, max, step, fallback } = TEXT_SIZE
 
   import Card        from '@frontierjs/ui/components/layout/Card.mesa'
   import Switch      from '@frontierjs/ui/components/forms/Switch.mesa'
@@ -50,10 +51,10 @@ title: Settings
                themes={themes()} value={theme.preference}
                onchange={setTheme} />
   <Slider id="settings-text-size" label="Font size"
-          min={TEXT_SIZE.min} max={TEXT_SIZE.max} step={TEXT_SIZE.step}
+          {min} {max} {step}
           value={textSize()} format={(v) => `${v}px`} onchange={setTextSize} />
   <div>
-    <Button size="xs" treatment="outlined" onclick={resetTextSize}>Reset to {TEXT_SIZE.fallback}px</Button>
+    <Button size="xs" treatment="outlined" onclick={resetTextSize}>Reset to {fallback}px</Button>
   </div>
   <p class="text-sm text-muted">Stored in this browser, not on your account. The terminal picks it up when it opens.</p>
 </Card>

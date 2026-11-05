@@ -26,6 +26,7 @@ import type { WorkspaceRole }  from '#db/schema.d.ts'
 // that cannot grade it.
 import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { zoneNameFor } from '../edge/edge.service.ts'
 import { pushTopicFor } from '../../domain/notification/push-topic.ts'
 import pushTest from '../../domain/notification/push-test.ts'
 import { env } from '../../core/env.ts'
@@ -58,6 +59,30 @@ function stampOwnership(): void {
   // send one. The browser sends one, which is why nothing caught it.
   data.slug ??= slugify(String(data.name ?? ''))
   $.data = data
+}
+
+/**
+ * The ingress zone's NAME, asked of the vendor once, as the pair is set
+ * (`FJS-D1962`). Key presence on `ingressZoneId`, not truthiness: an explicit
+ * null clears the pair, and the name with it.
+ *
+ * `ingressZone` is `@system`, and a hook shapes `$.data` while the write happens
+ * downstream on the caller's client, so the column is named in `$.system` --
+ * which `patch()` hands the write -- or the Data boundary refuses the app's own
+ * value. A client that names `ingressZone` itself never reaches this line
+ * without `ingressZoneId`, and is refused there.
+ */
+async function resolveIngressZone(): Promise<void> {
+  const data = ($.data ?? {}) as Record<string, unknown>
+  if (!('ingressZoneId' in data) && !('ingressSecretId' in data)) return
+  // One half alone would leave the stored name describing the other pair.
+  if (!('ingressZoneId' in data) || !('ingressSecretId' in data))
+    throw new BadRequest('an ingress zone names its account and its zone together')
+  data.ingressZone = data.ingressZoneId === null
+    ? null
+    : await zoneNameFor($.id as string, String(data.ingressSecretId ?? ''), String(data.ingressZoneId))
+  $.data = data
+  $.system.add('ingressZone')
 }
 
 function sessionOf() {
@@ -196,7 +221,7 @@ export default createService({
     // tenants, which does not belong on a general PATCH.
     const patch = narrowPatch(data)
     if (changesNothing(patch)) return ws
-    return db().workspace.update({ where: { id: $.id as string }, data: patch })
+    return db().workspace.update({ where: { id: $.id as string }, data: patch, system: [...$.system] })
   },
 
   async remove() {
@@ -368,6 +393,11 @@ export default createService({
       // it an admin still mints an owner, on somebody else's row.
       addMember:     [refuseGrantAboveOwn()],
       setMemberRole: [refuseGrantAboveOwn()],
+    },
+    // `validated`, not `before`: it runs after the gate, so a caller the gate
+    // refuses never makes the app ask a vendor with the workspace's token.
+    validated: {
+      patch: [resolveIngressZone],
     },
   },
 })

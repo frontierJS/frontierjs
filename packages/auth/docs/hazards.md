@@ -242,7 +242,9 @@ Every hazard in this package, the full `What bites here`; `CLAUDE.md` keeps the 
   the `oauth.*` events (`oauth.signin`, `oauth.registered`, `oauth.refused`,
   `oauth.link.refused`), `magiclink.registered`, the `support.*` pair (`support.started`,
   `support.ended`) and the authorization code's `authcode.issued` and
-  `authcode.refused` — `@@trail` covers writes, so it covered the sign-in (`create:session`, with
+  `authcode.refused`, and the authorized app's `app.authorized`, `app.refreshed`,
+  `app.reuse-refused` and `app.revoked` (written instead of `session.revoked`
+  for one, and once per app any other path ends, account removal included) — `@@trail` covers writes, so it covered the sign-in (`create:session`, with
   `actorId: null`, because an `asSystem()` write names no principal) and missed
   the failed attempt entirely, which is the one an app rate-limits on
   (`FJS-276`, `FJS-277`). The `create:session` row records the WRITE and cannot

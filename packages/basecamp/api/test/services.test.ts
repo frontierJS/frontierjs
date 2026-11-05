@@ -4226,7 +4226,7 @@ describe('infra.launch walks to the screen each step happens on', () => {
       workspaceId: w.id, name: 'cf', kind: 'providerKey', providerKind: 'cloudflare', data: JSON.stringify({ token: 't' }),
     } })
     expect((await me.call('launch')).steps.find((s: any) => s.id === 'dns')).toMatchObject({ done: false, href: '/dns/' })
-    await sys.workspace.update({ where: { id: w.id }, data: { ingressSecretId: cf.id, ingressZoneId: 'zone-1' } })
+    await sys.workspace.update({ where: { id: w.id }, data: { ingressSecretId: cf.id, ingressZoneId: 'zone-1', ingressZone: 'one.test' } })
 
     const all = await me.call('launch')
     expect(all.done).toBe(all.total)

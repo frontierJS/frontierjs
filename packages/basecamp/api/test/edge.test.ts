@@ -494,8 +494,31 @@ describe('sync', () => {
     await workspaces.patch(site.id, { ingressSecretId: good.id, ingressZoneId: 'zone-shop', version: await version() })
   })
 
+  test('the pair stores the zone name the vendor gave, so a release calls no vendor (FJS-D1962)', async () => {
+    const stored = async () => await (env.system as any).workspace.findFirst({ where: { id: site.id } })
+    const workspaces = env.as(admin).service('workspaces')
+    expect((await stored()).ingressZone).toBe('shop.test')
+
+    // A zone the account does not open: refused with the vendor's words, row unchanged.
+    const was = await stored()
+    await expect(workspaces.patch(site.id, { ingressSecretId: good.id, ingressZoneId: 'zone-nowhere', version: was.version }))
+      .rejects.toMatchObject({ code: 409, message: expect.stringContaining('zone-nowhere') })
+    expect(await stored()).toMatchObject({ ingressZoneId: 'zone-shop', ingressZone: 'shop.test', version: was.version })
+
+    // `ingressZone` is the app's: a client naming it alone is refused.
+    await expect(workspaces.patch(site.id, { ingressZone: 'evil.test', version: was.version }))
+      .rejects.toThrow(/ingressZone/)
+    expect((await stored()).ingressZone).toBe('shop.test')
+
+    // An explicit null clears the pair and the name; setting it again names it again.
+    await workspaces.patch(site.id, { ingressSecretId: null, ingressZoneId: null, version: was.version })
+    expect(await stored()).toMatchObject({ ingressSecretId: null, ingressZoneId: null, ingressZone: null })
+    await workspaces.patch(site.id, { ingressSecretId: good.id, ingressZoneId: 'zone-shop', version: (await stored()).version })
+    expect((await stored()).ingressZone).toBe('shop.test')
+  })
+
   test('zones names the ingress zone, and a missing hostname a push would write carries no cause', async () => {
-    expect((await edge(developer).call('zones', null, {}) as any).ingress).toEqual({ providerSecretId: good.id, zoneId: 'zone-shop' })
+    expect((await edge(developer).call('zones', null, {}) as any).ingress).toEqual({ providerSecretId: good.id, zoneId: 'zone-shop', zoneName: 'shop.test' })
     const { missing } = await edge(developer).call('records', null, { providerSecretId: good.id, zoneId: 'zone-example' }) as any
     expect(missing.find((d: any) => d.id === api.id).why).toBeNull()
   })

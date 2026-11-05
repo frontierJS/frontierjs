@@ -75,7 +75,7 @@
   /* A posture failure's body is every failing control joined; unclamped it
      fills the screen. The row's title attribute carries the whole text. */
   .bell-note { min-width: 0; }
-  .bell-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; }
+  .bell-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-lg); }
   .bell-when { flex: none; white-space: nowrap; }
   .bell-body {
     display: -webkit-box;

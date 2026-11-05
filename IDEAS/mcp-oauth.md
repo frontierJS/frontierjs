@@ -456,8 +456,20 @@ Goal: a code becomes a token the one door accepts.
 Done when: a test trades a code for tokens, calls `/mcp` with the access token
 at the person's gate level, refreshes, and shows the old refresh token refused.
 
-- [ ] 3.1 `/token`, `authorization_code` grant: verify PKCE, client and
+- [x] 3.1 `/token`, `authorization_code` grant: verify PKCE, client and
       redirect; refuse a `resource` that is not the MCP URL.
+  **Built 2026-11-05.** `auth`'s `token.ts` (`mountToken`, beside
+  `mountAuthorize`, behind `encryptionKey`): form body only, a JSON body or
+  a repeated parameter `invalid_request`, an absent `resource`
+  `invalid_request` and a wrong one `invalid_target` (RFC 8707; `authorize.ts`
+  splits the same way), a missing `client_id` `invalid_client`, a wrong one
+  `invalid_grant`; `answerRefusal` is the one place a refusal becomes a 400
+  JSON `{ error, error_description }`, every answer `no-store`, a success
+  `pragma: no-cache`; `loginLimiter` keeps junction's 429. The verb is
+  `authorizeApp` on the auth object (`AuthorizedAppVerbs`, not `IAuth`): it
+  loads the person, runs the app's `onLogin` veto through the same `appVeto`
+  `issueSession` runs (a lockout that held at sign-in and not at an approval
+  was the gap), writes the row, audits `app.authorized`.
 - [x] 3.2 The access token per Q3, one hour by default. It carries the user, the
       client, the audience and the expiry, and nothing a gate reads, so the
       level is graded at call time as for any session.
@@ -486,10 +498,28 @@ at the person's gate level, refreshes, and shows the old refresh token refused.
   auth 766, junction 3531, mcp 195, `verify:oauth` 28, `verify:mcp` 42. The
   `/mcp` write with a live client's token waits for 3.1. `authorize.ts` now
   answers `invalid_target` for a wrong `resource`.
-- [ ] 3.4 The authorized app per Q4 (Q16's noun), created when the code is spent. It holds the
+- [x] 3.4 The authorized app per Q4 (Q16's noun), created when the code is spent. It holds the
       refresh token hashed and `@guarded`. Test: its refresh token presented as
       a Bearer is anonymous.
-- [ ] 3.5 `refresh_token` grant: rotate, and handle reuse per Q5.
+  **Built 2026-11-05.** `Session` gains `clientId`, `refreshToken` (unique,
+  `@guarded`, the HMAC under `refresh:`), `previousRefreshToken`, `rotatedAt`;
+  `token` is nullable. `sessionByToken` is the one lookup by a presented
+  token and refuses an empty string or an `fjr_` prefix before the query
+  (`verifySession`, `startSupport`, `endSupport`, `logout` share it). Option
+  `refreshTokenTtl = '30 days'`, fixed from approval (Q17, `FJS-D1963`).
+  Six db snapshots regenerated.
+- [x] 3.5 `refresh_token` grant: rotate, and handle reuse per Q5.
+  **Built 2026-11-05.** `refreshAuthorizedApp`: rotate and audit
+  `app.refreshed`; the previous token inside 30 s answers a fresh pair whose
+  refresh token replaces the current one (only a hash is stored, so the
+  current one cannot be handed back; the window still runs from the first
+  rotation, nothing audited); outside it the row is purged, `app.reuse-refused`
+  written with the user in `meta` (no actor: the presenter is unknown).
+  Proved by `token-route.test.ts` 15 (incl. `changePassword` ending the
+  app's next refresh, which is 4.2), auth 780, `verify:oauth` 30, `verify`
+  72, `verify:mcp` 42, `verify:users` 106; `fli done` 0 unfinished. Owed:
+  the `/mcp` write with a live client's token (mcp's test app is a stand-in
+  auth, and mcp takes no dependency on auth), which 5.2/5.3 prove.
 
 ### Phase 4 — Living with it
 
@@ -499,14 +529,31 @@ Done when: revoking an authorized app from the sessions list, or a password chan
 stops its next refresh. An access token already minted answers until it
 expires.
 
-- [ ] 4.1 Authorized apps show in `listSessions` with the client's name, and
+- [x] 4.1 Authorized apps show in `listSessions` with the client's name, and
       `revokeSession` ends one. `AuthSessionInfo` grows a `client` field.
-- [ ] 4.2 A credential change ends authorized apps through `endOtherSessions`.
-- [ ] 4.3 Audit entries `app.authorized`, `app.refreshed`, `app.reuse-refused`
+  **Built 2026-11-05.** `client: { id, host } | null` (the CIMD URL and its
+  host, `clientHost`); a browser session is `null`. No screen in the repo
+  renders the list (`sessions.find` and `people.get` are its readers), so no
+  UI changed.
+- [x] 4.2 A credential change ends authorized apps through `endOtherSessions`.
+  **Proved 2026-11-05** in `token-route.test.ts` (`changePassword`) and
+  `authorized-apps.test.ts` (`confirmTotp`): the app's next refresh is
+  `invalid_grant`.
+- [x] 4.3 Audit entries `app.authorized`, `app.refreshed`, `app.reuse-refused`
       and `app.revoked` (Q16).
       The tokens are `@guarded` columns, so Invariant 7 redacts them.
-- [ ] 4.4 The sweep removes expired authorized apps and codes (`@@expires`,
+  **Built 2026-11-05.** `deleteSessions(where, actorId)` is the one owner
+  of ending sessions: one `deleteMany` with `PURGE`, then `app.revoked` per
+  app row it removed (`meta.clientId`). `revokeSession` on an app writes
+  `app.revoked` instead of `session.revoked`, so one query on `operation`
+  tells a sign-out from a revocation; `endOtherSessions`, `revokeSessions`
+  and every other path that ends a person's sessions go through it. Proved
+  by `authorized-apps.test.ts` (no entry holds a token or a hash; an image
+  shows `[redacted]`; another person cannot revoke the row).
+- [x] 4.4 The sweep removes expired authorized apps and codes (`@@expires`,
       `PURGE`).
+  **Proved 2026-11-05** with `sweepNow()`: an expired app row goes, a live
+  one stays, every unspent `authCode` goes and trades as `invalid_grant`.
 
 ### Phase 5 — Proved with a real connector
 
@@ -515,9 +562,18 @@ Done when: the owner adds example's `/mcp` to claude.ai over a tunnel, signs
 in, and a tool call answers at their level. Claude Code's loopback flow passes
 the same run.
 
-- [ ] 5.1 A conformance test against § What a Claude client needs, item by item:
+- [x] 5.1 A conformance test against § What a Claude client needs, item by item:
       the 401 header, the exact `resource`, S256 only, form-encoded `/token`,
       rotation.
+  **Built 2026-11-05** as one checklist across two files whose headers name
+  each other: `example/web/test/verify-oauth.mjs` § what a Claude client
+  needs (the 401 header, both metadata documents, form-only `/token`, the
+  `client_credentials` refusal, answers under 2 s) against the real example
+  App, and `auth`'s `conformance.test.ts` for the bullets that need a client
+  document (CIMD, S256 only — `plain` is `invalid_request` with no code —
+  claude.ai's callback and a loopback on any port on both hosts, rotation
+  refused after the grace). `verify:oauth` 39. No option or env hook seeds a
+  client document into the example App; the live runs are 5.2/5.3.
 - [ ] 5.2 The claude.ai run (owner's: it needs their account and a public URL).
 - [ ] 5.3 The Claude Code run.
 
@@ -527,10 +583,19 @@ Goal: `read-only-copy.md` 3.5.
 Done when: a connector signed in on the live App answers on a copy staged before
 it signed in, until its access token expires, and then handles refresh per Q6.
 
-- [ ] 6.1 The copy accepts access tokens the live App signed: same key, no row.
+- [x] 6.1 The copy accepts access tokens the live App signed: same key, no row.
+  **Proved 2026-11-05** in `conformance.test.ts`: a second auth over a fresh
+  database with the same key and user accepts the first's access token with
+  `authorizedApp` set and no `Session` row.
 - [ ] 6.2 Authorized apps move with `Session` into the copy's `sessions` block
       (`FJS-D1921`), so a sign-in on the copy can write one.
-- [ ] 6.3 Refresh on the copy per Q6.
+  - **Waits on `read-only-copy.md`** Phase 1's `sessions` block, which is not
+    built; an authorized app is a `Session` row, so it moves with the model
+    and nothing here is owed beyond that.
+- [x] 6.3 Refresh on the copy per Q6.
+  **Proved 2026-11-05** in `conformance.test.ts`: the live App's refresh token
+  on the copy is `invalid_grant`, the copy writes no `app.reuse-refused`, and
+  the same token still refreshes on the live App.
 
 ---
 
@@ -767,3 +832,20 @@ it signed in, until its access token expires, and then handles refresh per Q6.
   - **Recommend B** — both words then have the precedent their users already
     know, and no live route moves. A renames a working surface for a word
     the industry also uses for providers. C is the collision kept.
+- ~~**Q17 — Does a refresh extend an authorized app's expiry?**~~ **Answered 2026-11-05 (`FJS-D1963`): A — fixed: 30 days from approval however often it refreshes, and the person approves the connector again (the connector re-runs the flow on `invalid_grant`). A forgotten or leaked token ends by itself.** Its `Session`
+  row's `expiresAt` is `refreshTokenTtl` (30 days) from approval, and every
+  other expiry in `auth` is fixed from issuance; a refresh already writes
+  (the rotation), so the no-write reason sessions do not slide is not the
+  reason here. Auth0 and Okta cap a refresh chain by an absolute and an
+  inactivity lifetime; Google and GitHub refresh tokens last while used.
+  - **A** — fixed: 30 days from approval however often it refreshes, and the
+    person approves the connector again (the connector re-runs the flow on
+    `invalid_grant`). A forgotten or leaked token ends by itself.
+  - **B** — sliding: each refresh pushes `expiresAt` forward by
+    `refreshTokenTtl`, so an app in use never ends until a revoke, a
+    credential change or the sweep.
+  - **C** — sliding under an absolute ceiling (Auth0's shape): a second TTL
+    and a column or constant.
+  - **Recommend A** — one origin for the expiry (`@@expires` sweeps it), and
+    the failure mode is a visible re-consent, not a connector that never
+    ends. C is the reopen path if monthly re-approval proves to grate.

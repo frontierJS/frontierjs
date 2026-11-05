@@ -39,7 +39,7 @@ import {
 } from './oauth.ts'
 import type { OAuthIdentity, TokenSet, AuthOAuth, OAuthResolution } from './oauth.ts'
 import { createAuthCleanupJobs } from './cleanup.ts'
-import { ClientCache, type ClientFetchOptions } from './clients.ts'
+import { ClientCache, clientHost, type ClientFetchOptions } from './clients.ts'
 import { userTenancy }          from './tenancy.ts'
 import type { AuthCleanupHandle } from './cleanup.ts'
 import {
@@ -309,6 +309,25 @@ export function createLitestoneAuth(
   // — a hook that fires for passwords alone is a lockout that OAuth walks past,
   // which is the whole of what `onLogin` exists to prevent.
   //
+  // The app's veto, before the row it can refuse exists, so a refusal leaves
+  // nothing behind and the hook has no session id to be given. An authorized
+  // app's row is minted at /token and not here, so it runs the same veto: a
+  // lockout that holds at sign-in and not at an approval is the gap onLogin
+  // exists to close.
+  async function appVeto(user: any, authMethod: SessionContext['authMethod'], meta: Record<string, unknown>): Promise<void> {
+    if (!onLogin) return
+    try {
+      await onLogin({ user: toContext(user, authMethod) })
+    } catch (err) {
+      // A veto that leaves no trace is the class of defect FJS-277 was.
+      await audit('login.failed', {
+        model: personModel, records: [user.id], actorId: user.id,
+        meta:  { ...meta, reason: 'refused-by-app', email: user.email, message: (err as Error)?.message },
+      })
+      throw err
+    }
+  }
+
   // What a caller must have done BEFORE reaching here is prove who this is.
   // Nothing in this function proves anything.
   async function issueSession(
@@ -318,22 +337,7 @@ export function createLitestoneAuth(
     held        = false,
   ): Promise<{ token: string; user: SessionContext }> {
     await refuseUnlessPerson(user, meta)
-
-    // Before the session is issued, so a refusal leaves nothing behind. The hook
-    // therefore has no session id to be given — what happened after this point
-    // is the trail's to report, not the gate's.
-    if (onLogin) {
-      try {
-        await onLogin({ user: toContext(user, authMethod) })
-      } catch (err) {
-        // A veto that leaves no trace is the class of defect FJS-277 was.
-        await audit('login.failed', {
-          model: personModel, records: [user.id], actorId: user.id,
-          meta:  { ...meta, reason: 'refused-by-app', email: user.email, message: (err as Error)?.message },
-        })
-        throw err
-      }
-    }
+    await appVeto(user, authMethod, meta)
 
     const token = generateSessionToken()
 
@@ -755,8 +759,22 @@ export function createLitestoneAuth(
   async function endOtherSessions(userId: string, keep?: string): Promise<number> {
     const where: Record<string, unknown> = { userId }
     if (keep) where.id = { not: keep }
+    return (await deleteSessions(where, userId)).count
+  }
+
+  // Every delete of sessions a person may have handed to an app goes through
+  // here, so an ended authorized app is one `app.revoked` entry each and the
+  // trail tells an app revocation from a browser sign-out by operation alone
+  // (`FJS-D1950`). The apps are read before the delete because a `deleteMany`
+  // entry names no rows; an expired one is not read and not announced.
+  async function deleteSessions(where: Record<string, unknown>, actorId: string): Promise<{ count: number, apps: number }> {
+    const apps = await sys.session.findMany({ where: { ...where, clientId: { not: null } } })
     const { count } = await sys.session.deleteMany({ where, ...PURGE })
-    return count
+    for (const app of apps) await audit('app.revoked', {
+      model: 'Session', records: [String(app.id)], actorId, actorType: 'user',
+      meta:  { clientId: app.clientId },
+    })
+    return { count, apps: apps.length }
   }
 
   // Registration where the app can mail (`FJS-D1310`). The answer is the same
@@ -1187,6 +1205,11 @@ export function createLitestoneAuth(
     const secret = requireEncryptionKey('authorizeApp')
     for (const key of ['userId', 'clientId', 'audience'] as const)
       if (typeof opts?.[key] !== 'string' || !opts[key]) throw new AuthConfigError(`authorizeApp needs ${key}`)
+    // The person was proven at /authorize; a code spent after the account went
+    // is a grant with nobody behind it.
+    const user = await sys[person].findUnique({ where: { id: opts.userId } })
+    if (!user) throw new InvalidGrantError('The approving account no longer exists')
+    await appVeto(user, 'accessToken', { clientId: opts.clientId })
     const refreshToken = generateRefreshToken()
     const row = await sys.session.create({ data: {
       userId:       opts.userId,
@@ -1646,7 +1669,7 @@ export function createLitestoneAuth(
       await sys.credential.deleteMany({ where: { userId, type: TOTP_PENDING } })
       await sys.credential.deleteMany({ where: { userId, type: RECOVERY } })
       await sys.loginChallenge.deleteMany({ where: { userId }, ...PURGE })
-      const { count } = await sys.session.deleteMany({ where: { userId }, ...PURGE })
+      const { count } = await deleteSessions({ userId }, String(opts.actorId))
 
       await credentialChanged('totp.reset', userId, {
         model: 'Credential', records: [String(cred.id)],
@@ -2058,7 +2081,7 @@ export function createLitestoneAuth(
 
       if (wasUnverified) {
         await sys.credential.deleteMany({ where: { userId: user.id } })
-        await sys.session.deleteMany({ where: { userId: user.id }, ...PURGE })
+        await deleteSessions({ userId: user.id }, String(user.id))
       }
 
       // Already on this account and not evicted above: nothing to attach.
@@ -2237,7 +2260,7 @@ export function createLitestoneAuth(
       const user = await sys[person].findUnique({ where: { id: userId } })
 
       await sys.credential.deleteMany({ where: { userId } })
-      await sys.session.deleteMany({ where: { userId }, ...PURGE })
+      await deleteSessions({ userId }, opts?.actorId ?? userId)
 
       // Clean up any pending password-reset / email-verify tokens for this
       // address. An exact match now the identifier IS the address — it used to
@@ -2356,7 +2379,7 @@ export function createLitestoneAuth(
       await sys.verification.delete({ where: { id: verification.id } })
 
       // Revoke all sessions — force re-login after password change
-      const { count } = await sys.session.deleteMany({ where: { userId: user.id }, ...PURGE })
+      const { count } = await deleteSessions({ userId: user.id }, String(user.id))
 
       // The change a person most needs to hear about and the one that recorded
       // nothing: whoever holds the inbox holds the account, and a reset nobody
@@ -2712,6 +2735,7 @@ export function createLitestoneAuth(
         createdAt: s.createdAt ?? null,
         expiresAt: s.expiresAt ?? null,
         current:   false,
+        client:    s.clientId ? { id: String(s.clientId), host: clientHost(String(s.clientId)) } : null,
       }))
     },
 
@@ -2721,11 +2745,12 @@ export function createLitestoneAuth(
       // userId in the where, not checked after the read: a delete keyed on the
       // id alone ends anyone's session whose id is guessable, and the id is
       // what a UI hands back from listSessions.
-      const { count } = await sys.session.deleteMany({ where: { id: sessionId, userId }, ...PURGE })
+      const actorId = opts?.actorId ?? userId
+      const { count, apps } = await deleteSessions({ id: sessionId, userId }, actorId)
       if (!count) throw new InvalidTokenError(`No session with id ${sessionId}`)
 
-      await audit('session.revoked', {
-        model: 'Session', records: [String(sessionId)], actorId: opts?.actorId ?? userId, actorType: 'user',
+      if (!apps) await audit('session.revoked', {
+        model: 'Session', records: [String(sessionId)], actorId, actorType: 'user',
       })
     },
 
@@ -2735,7 +2760,7 @@ export function createLitestoneAuth(
       const where: Record<string, unknown> = { userId }
       if (opts?.exceptSessionId) where.id = { not: opts.exceptSessionId }
 
-      const { count } = await sys.session.deleteMany({ where, ...PURGE })
+      const { count } = await deleteSessions(where, opts?.actorId ?? userId)
 
       await audit('session.revoked', {
         model: 'Session', records: [], actorId: opts?.actorId ?? userId, actorType: 'user',

@@ -64,22 +64,38 @@ Read off the owner's own CapRover screen, 2026-11-03:
   Domain*, and offers *HTTP Basic Auth* per app. Its dashboard is
   `captain.<root>`, a sibling of every app.
 
-From memory, not re-read for this paper (step 0.4 re-reads each with a source):
+Re-read 2026-11-05 (step 0.4), each with its source:
 
-- **Cloudflare** — `workers.dev` and `pages.dev` are on the Public Suffix List, so
-  browsers treat each project as its own site and one cannot set a cookie for
-  another. Pages also serves `<deployment hash>.<project>.pages.dev`, a fixed URL
-  for one build. A Worker's `workers.dev` route can be turned off once a custom
-  domain is attached.
-- **Coolify** defaults to `<app>.<ip>.sslip.io`, a third-party wildcard resolver.
-- **Vercel, Render, Fly** each serve every project under a platform-owned
-  registrable domain (`vercel.app`, `onrender.com`, `fly.dev`), never under the
-  platform's own `vercel.com`. GitHub Pages moved to `github.io` from
-  `github.com` for the same reason.
+- **The Public Suffix List** holds `workers.dev`, `pages.dev`, `vercel.app`,
+  `onrender.com`, `fly.dev`, `github.io`, `netlify.app` and `herokuapp.com`, so a
+  browser treats each project under them as its own site and one cannot set a
+  cookie for another. It does not hold `sslip.io` or `nip.io`
+  ([public_suffix_list.dat](https://publicsuffix.org/list/public_suffix_list.dat)).
+- **Cloudflare Pages** gives every deployment a "unique, hash-based address",
+  `<hash>.<project>.pages.dev`, and every branch an alias
+  `<branch>.<project>.pages.dev`
+  ([preview deployments](https://developers.cloudflare.com/pages/configuration/preview-deployments/)).
+- **Cloudflare Workers** turns `workers.dev` off with `workers_dev = false`, and
+  infers `false` on the next deploy once `routes` are set without it. A custom
+  domain alone does not turn it off, and turning it off "does not disable Version
+  URLs, Preview URLs, or Deployment URLs"
+  ([workers.dev](https://developers.cloudflare.com/workers/configuration/routing/workers-dev/)).
+- **Coolify** generates `<random>.<wildcard>` from a server's *Wildcard Domain*,
+  and with none set `<random>.<ip>.sslip.io`. It serves the sslip name over
+  `http://` only, because Let's Encrypt rate-limits the shared `sslip.io` zone
+  ([domains](https://coolify.io/docs/core/networking/domains),
+  [server](https://coolify.io/docs/knowledge-base/server/introduction)).
+- **GitHub Pages** moved to `github.io` in 2013 "aimed at removing potential
+  vectors for cross domain attacks targeting the main github.com session", and
+  against phishing that relies on the `github.com` name
+  ([GitHub blog](https://github.blog/news-insights/new-github-pages-domain-github-io/)).
 
-The pattern every one of them shares: **user apps live under a registrable domain
-the control plane does not.** The hash in `pages.dev` is a deployment id, not a
-secret.
+The pattern the hosted platforms share: **user apps live under a registrable
+domain the control plane does not, and that domain is a public suffix.** The
+self-hosted ones (CapRover, Coolify) do not: their apps share a registrable
+domain with each other, and with the dashboard when it sits in the same zone.
+That is the gap § Security 1 and `FJS-D1955` weigh. The hash in `pages.dev` is a
+deployment id, not a secret.
 
 ## Security
 
@@ -157,13 +173,22 @@ Done when: Q1–Q6 are ruled, and 0.1's probe is written under its step.
       `EXPOSE`, so the Domain was 502 until `containerPort` was set by hand) and
       `FJS-D1951` (the run key cannot run `basecamp:deploy`'s set-up). The probe
       App stays on the box for Phase 2's drive.
-- [ ] 0.2 Where the zone's name comes from. `routedHosts` cannot call a vendor on
-      every release; recommend storing the name beside `ingressZoneId` when the
-      pair is set, under the same `@@check`.
+- [x] 0.2 Where the zone's name comes from. `routedHosts` cannot call a vendor on
+      every release. **Ruled 2026-11-05 (`FJS-D1962`, Q7 = B), built the same
+      day:** a `@system` column `Workspace.ingressZone`, written by
+      `resolveIngressZone` on the workspaces `validated.patch` (after the gate,
+      so a refused caller never makes a vendor call) through
+      `zoneNameFor()` in `edge.service.ts`. A zone the account does not open is a
+      409, and one half of the pair alone is a 400. Proved by `edge.test.ts`,
+      `verify:dns` 27/27 and `verify:screens` 338/338.
 - [x] 0.3 Rule Q1–Q6. **Ruled 2026-11-05:** `FJS-D1952`–`FJS-D1957`. Q3 = B put
       the wildcard first, so it is Phase 1 and serving is Phase 2; Q4 = C made
       the 409 a grader finding (3.1).
-- [ ] 0.4 Re-read the prior art above with a source per claim.
+- [x] 0.4 Re-read the prior art above with a source per claim. **Done
+      2026-11-05.** Two claims were wrong: a Worker's custom domain does not
+      turn `workers.dev` off, and Coolify's name is `<random>.<ip>.sslip.io`
+      over `http://` only. `sslip.io` is not a public suffix, so the
+      self-hosted tools share the gap this paper warns about.
 
 ### Phase 1 — One wildcard certificate
 
@@ -263,6 +288,18 @@ sees `__Host-session` under `secure` and `session` without it.
   - **Recommend A** — host-only stops a cookie being read across Apps but not
     being set; only the prefix stops a sibling replacing it. It is a junction
     change and holds for every app, not Basecamp alone.
+- ~~**Q7 — Where a release reads the zone's name.**~~ **Answered 2026-11-05 (`FJS-D1962`): B — A `@system` column beside the pair, written by a workspaces `patch` hook that asks `connector.zone()` whenever `ingressZoneId` is in the patch, and refuses a zone the account does not open.** Step 0.2; serving and the
+  `*.<zone>` wildcard both need the name, and a release calls no vendor.
+  - **A** — A column beside the pair, sent by `/dns/` in the patch that sets it.
+  - **B** — A `@system` column beside the pair, written by a workspaces `patch`
+    hook that asks `connector.zone()` whenever `ingressZoneId` is in the patch,
+    and refuses a zone the account does not open.
+  - **C** — No column; resolve on the first release and keep it in memory.
+  - **Recommend B** — the vendor stays the one origin of the name and a wrong
+    one cannot be typed, as `Secret.verifiedAt` stores a probe's answer. A's
+    name is checked against nothing, and a wrong one is an A record and a
+    certificate request for a host the workspace does not own. A Cloudflare
+    zone id never changes name, so the copy cannot go stale.
 
 ## Out of scope
 

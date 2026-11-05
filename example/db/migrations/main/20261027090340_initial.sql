@@ -1,5 +1,5 @@
 -- Litestone migration
--- Created:   2026-11-01T18:58:44.969Z
+-- Created:   2026-11-05T20:24:07.248Z
 -- Changes:
 --     + Credential  (new table)
 --     + Session  (new table)
@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS "credential" (
   "scope" TEXT,
   "totpLastStep" INTEGER,
   "isLinked" INTEGER,
+  "clientId" TEXT,
+  "redirectUri" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_credential_userId_type" ON "credential" ("userId", "type");
@@ -95,7 +97,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_credential_type_value" ON "credential" (
 CREATE TABLE IF NOT EXISTS "session" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "userId" TEXT NOT NULL,
-  "token" TEXT NOT NULL UNIQUE,
+  "token" TEXT UNIQUE,
   "expiresAt" TEXT NOT NULL,
   "ipAddress" TEXT,
   "userAgent" TEXT,
@@ -104,7 +106,11 @@ CREATE TABLE IF NOT EXISTS "session" (
   "reauthenticatedAt" TEXT,
   "impersonatingUserId" TEXT,
   "impersonationReason" TEXT,
-  "impersonationEndsAt" TEXT
+  "impersonationEndsAt" TEXT,
+  "clientId" TEXT,
+  "refreshToken" TEXT UNIQUE,
+  "previousRefreshToken" TEXT,
+  "rotatedAt" TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_session_userId" ON "session" ("userId");
 CREATE INDEX IF NOT EXISTS "idx_session_expiresAt" ON "session" ("expiresAt");

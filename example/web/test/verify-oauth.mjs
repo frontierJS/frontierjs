@@ -29,6 +29,12 @@
  *     after a password (FJS-D915)
  *
  * Every one of those is a refusal. The happy path is three of eighteen.
+ *
+ * ─── And the other direction ───────────────────────────────────────────────
+ *
+ * Its last section is this App as the OAuth server a Claude connector signs in
+ * to, as IDEAS/mcp-oauth.md § What a Claude client needs lists it; the bullets
+ * that need a client document are packages/auth/test/conformance.test.ts.
  */
 
 // What `fli prove` queues on: this checkout's ports.
@@ -399,25 +405,92 @@ console.log('\nan account with a second factor')
      String(again.callback.headers.get('location')))
 }
 
-// ─── /auth/token ───────────────────────────────────────────────────────────
+// ─── What a Claude client needs ────────────────────────────────────────────
 //
-// The connector's code-for-token trade (`FJS-D1927`). The drive holds no
-// client document, so it proves only the refusals a stranger can reach:
-// RFC 6749 § 5.2's JSON, and never a cached answer.
+// IDEAS/mcp-oauth.md § What a Claude client needs, bullet by bullet in its
+// order: the App as the OAuth server for its own /mcp (`FJS-D1922`). The
+// drive holds no client document and the App is given no way to load one, so
+// the bullets that need one (a loopback redirect on both hosts, rotation) are
+// `packages/auth/test/conformance.test.ts`; the two files are one checklist.
+console.log('\nwhat a Claude client needs')
 {
-  const token = (fields) => fetch(`${API}/api/auth/token`, {
+  const MCP      = `${API}/api/mcp`
+  const METADATA = `${API}/api/.well-known/oauth-protected-resource/mcp`
+  const timed    = async (fn) => { const t = Date.now(); const r = await fn(); return { r, ms: Date.now() - t } }
+  const slowest  = []
+
+  // 1. A 401 naming the metadata: a header on a 200 is ignored, so no 401 is no sign-in.
+  const initialize = (headers = {}) => fetch(MCP, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'verify-oauth', version: '1.0.0' } } }),
+  })
+  const none = await initialize()
+  ok('a call with no credential is a 401 with WWW-Authenticate: Bearer resource_metadata',
+     none.status === 401 && none.headers.get('www-authenticate') === `Bearer resource_metadata="${METADATA}"`,
+     `${none.status} ${none.headers.get('www-authenticate')}`)
+
+  // 2. Protected-resource metadata: `resource` is the MCP URL exactly, and
+  // only the first authorization server is read.
+  const prm = await timed(() => fetch(METADATA))
+  slowest.push(prm.ms)
+  const resource = await prm.r.json().catch(() => null)
+  ok('the protected-resource metadata names the MCP URL exactly as its resource',
+     resource?.resource === MCP, JSON.stringify(resource))
+  ok('…and the App\'s origin first among its authorization servers',
+     resource?.authorization_servers?.[0] === API, JSON.stringify(resource?.authorization_servers))
+
+  // 3. Authorization-server metadata, at RFC 8414's path on the issuer. The
+  // egress range is the host's to allow and is not reachable from here.
+  const asm = await timed(() => fetch(`${resource?.authorization_servers?.[0] ?? API}/.well-known/oauth-authorization-server`))
+  slowest.push(asm.ms)
+  const server = await asm.r.json().catch(() => null)
+  ok('the authorization-server metadata is served and states the same issuer',
+     asm.r.status === 200 && server?.issuer === resource?.authorization_servers?.[0], `${asm.r.status} ${server?.issuer}`)
+
+  // 4. Client identity by CIMD, which a client uses only with both of these.
+  ok('it advertises client ID metadata documents and the "none" token auth method',
+     server?.client_id_metadata_document_supported === true &&
+     JSON.stringify(server?.token_endpoint_auth_methods_supported) === '["none"]', JSON.stringify(server))
+
+  // 5. S256 only, and a form-encoded /token.
+  ok('it advertises S256 and nothing else', JSON.stringify(server?.code_challenge_methods_supported) === '["S256"]',
+     JSON.stringify(server?.code_challenge_methods_supported))
+  ok('its two endpoints sit under the API prefix',
+     server?.authorization_endpoint === `${API}/api/auth/authorize` && server?.token_endpoint === `${API}/api/auth/token`,
+     `${server?.authorization_endpoint} ${server?.token_endpoint}`)
+
+  const token = (fields) => fetch(server?.token_endpoint ?? `${API}/api/auth/token`, {
     method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields),
   })
-  const bad = await token({ grant_type: 'authorization_code', code: 'nope', code_verifier: 'v'.repeat(43),
+  const trade = { grant_type: 'authorization_code', code: 'nope', code_verifier: 'v'.repeat(43),
     client_id: 'https://claude.ai/oauth/claude-code-client-metadata', redirect_uri: 'http://localhost:51234/callback',
-    resource: `${API}/api/mcp` })
-  const badBody = await bad.json().catch(() => null)
+    resource: MCP }
+  const bad = await timed(() => token(trade))
+  slowest.push(bad.ms)
+  const badBody = await bad.r.json().catch(() => null)
   ok('/api/auth/token refuses an unknown code as 400 invalid_grant, not stored',
-     bad.status === 400 && badBody?.error === 'invalid_grant' && bad.headers.get('cache-control') === 'no-store',
-     `${bad.status} ${JSON.stringify(badBody)} ${bad.headers.get('cache-control')}`)
+     bad.r.status === 400 && badBody?.error === 'invalid_grant' && bad.r.headers.get('cache-control') === 'no-store',
+     `${bad.r.status} ${JSON.stringify(badBody)} ${bad.r.headers.get('cache-control')}`)
+  const json = await fetch(server?.token_endpoint ?? `${API}/api/auth/token`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(trade),
+  })
+  const jsonBody = await json.json().catch(() => null)
+  ok('/api/auth/token refuses the same trade as a JSON body: invalid_request',
+     json.status === 400 && jsonBody?.error === 'invalid_request', `${json.status} ${JSON.stringify(jsonBody)}`)
+
+  // 6. Redirects and 7. rotation: conformance.test.ts.
+
+  // 8. Timeouts: 10 s on discovery and token. A local answer near it would
+  // be a remote one past it.
+  ok('discovery and the token endpoint each answer well inside 10 s',
+     Math.max(...slowest) < 2_000, `slowest ${Math.max(...slowest)} ms`)
+
+  // 9. No client_credentials: it names no person.
   const other = await token({ grant_type: 'client_credentials', client_id: 'x' })
   const otherBody = await other.json().catch(() => null)
-  ok('/api/auth/token answers a grant it does not serve with unsupported_grant_type',
+  ok('/api/auth/token answers client_credentials with unsupported_grant_type',
      other.status === 400 && otherBody?.error === 'unsupported_grant_type', `${other.status} ${JSON.stringify(otherBody)}`)
 }
 

@@ -1857,6 +1857,18 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1963"></a>2026-11-05 · `FJS-D1963` — Q17 — Does a refresh extend an authorized app's expiry — Fixed: 30 days from approval however often it refreshes, and the person approves the connector again (the connector re-runs the flow on `invalid_grant`). A forgotten or leaked token ends by itself.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (sliding: each refresh pushes `expiresAt` forward by `refreshTokenTtl`, so an app in use never ends until a revoke, a credential change or the sweep), **C** (sliding under an absolute ceiling (Auth0's shape): a second TTL and a column or constant).
+
+The paper's recommendation, taken as written: one origin for the expiry (`@@expires` sweeps it), and the failure mode is a visible re-consent, not a connector that never ends. C is the reopen path if monthly re-approval proves to grate.
+
+### <a id="fjs-d1962"></a>2026-11-05 · `FJS-D1962` — Q7 — Where a release reads the zone's name — A `@system` column beside the pair, written by a workspaces `patch` hook that asks `connector.zone()` whenever `ingressZoneId` is in the patch, and refuses a zone the account does not open.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **B** was picked over **A** (A column beside the pair, sent by `/dns/` in the patch that sets it), **C** (No column; resolve on the first release and keep it in memory).
+
+The paper's recommendation, taken as written: the vendor stays the one origin of the name and a wrong one cannot be typed, as `Secret.verifiedAt` stores a probe's answer. A's name is checked against nothing, and a wrong one is an A record and a certificate request for a host the workspace does not own. A Cloudflare zone id never changes name, so the copy cannot go stale.
+
 ### <a id="fjs-d1957"></a>2026-11-05 · `FJS-D1957` — Q6 — `__Host-` on the session cookie — Junction names the cookie `__Host-session` whenever it is `Secure`.
 
 Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **A** was picked over **B** (Leave it host-only and unprefixed).
@@ -16681,6 +16693,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1961"></a>2026-11-05 · `FJS-D1961` — Q5 — Whether the screen edits the index — Verbs only. Entries are read; a key is minted by `basecamp:key` over ssh and an entry is written by `create`, `install`, `key` or a hand edit.
+
+Asked in [`IDEAS/workbench-basecamps.md`](IDEAS/workbench-basecamps.md) § Open questions. **A** was picked over **B** (A form that adds, renames and forgets an entry (url, Host, cloud, box id), with no key field; keys stay ssh-minted), **C** (B plus a key field, so a key from Basecamp's API keys screen can be pasted in).
+
+The paper's recommendation, taken as written: `core/basecamps.js` stays the one writer (`FJS-D1828`), and a key typed into a browser is a second way to hold a credential `FJS-D1827` ruled ssh the root of. A re-mint by `basecamp:key` would also silently replace a pasted key. The reopen is a Forget button over `removeBasecamp` if a stale entry ever needs clearing from the screen.
 
 ### <a id="fjs-d1960"></a>2026-11-05 · `FJS-D1960` — Q2 — Do groups get a color — A, then B if groups do not stand out.
 

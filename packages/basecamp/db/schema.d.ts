@@ -551,6 +551,14 @@ export interface Credential {
    * and one the mailbox made keeps the mailbox as a way in (`FJS-D1011`).
    */
   isLinked?: boolean | null
+  /**
+   * Authorization code only — the client and the redirect the code was issued
+   * to (`FJS-D1949`); `label` is the resource. A code redeemed with any of the
+   * three different is refused, so a code that leaks through a redirect is
+   * worthless to any other client.
+   */
+  clientId?: string | null
+  redirectUri?: string | null
   createdAt: string
 }
 
@@ -583,6 +591,14 @@ export interface CredentialCreate {
    * and one the mailbox made keeps the mailbox as a way in (`FJS-D1011`).
    */
   isLinked?: boolean | null
+  /**
+   * Authorization code only — the client and the redirect the code was issued
+   * to (`FJS-D1949`); `label` is the resource. A code redeemed with any of the
+   * three different is refused, so a code that leaks through a redirect is
+   * worthless to any other client.
+   */
+  clientId?: string | null
+  redirectUri?: string | null
 }
 
 export interface CredentialUpdate {
@@ -597,6 +613,8 @@ export interface CredentialUpdate {
   scope?: string | null
   totpLastStep?: number | null
   isLinked?: boolean | null
+  clientId?: string | null
+  redirectUri?: string | null
 }
 
 export interface CredentialWhere extends WhereBase {
@@ -611,6 +629,8 @@ export interface CredentialWhere extends WhereBase {
   scope?: string | WhereOp<string> | null
   totpLastStep?: number | WhereOp<number> | null
   isLinked?: boolean | WhereOp<boolean> | null
+  clientId?: string | WhereOp<string> | null
+  redirectUri?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   AND?: CredentialWhere[]
   OR?:  CredentialWhere[]
@@ -630,8 +650,11 @@ export interface CredentialRelations {
 export interface Session {
   id: string
   userId: string
-  /** @guarded */
-  token: string
+  /**
+   * Null on an authorized app's row, which no cookie or Bearer names.
+   * @guarded
+   */
+  token?: string | null
   expiresAt: string
   ipAddress?: string | null
   userAgent?: string | null
@@ -669,12 +692,32 @@ export interface Session {
   impersonatingUserId?: string | null
   impersonationReason?: string | null
   impersonationEndsAt?: string | null
+  /**
+   * AN AUTHORIZED APP (`FJS-D1927`, `FJS-D1950`) — set where a person approved
+   * an OAuth client at `/authorize`; the client's metadata-document URL. The
+   * row is how the app is listed, revoked and ended by a credential change,
+   * exactly as a sign-in is.
+   */
+  clientId?: string | null
+  /**
+   * The HMAC of the current refresh token, and of the one it replaced. Only
+   * the hash is kept, so a copy of this table refreshes nothing. The previous
+   * one answers for 30 seconds after `rotatedAt` -- a client whose refresh
+   * timed out retries with it -- and after that it is a stolen token, and
+   * presenting it deletes the row (`FJS-D1931`).
+   * @guarded
+   */
+  refreshToken?: string | null
+  /** @guarded */
+  previousRefreshToken?: string | null
+  rotatedAt?: string | null
 }
 
 export interface SessionCreate {
   id?: string
   userId: string
-  token: string
+  /** Null on an authorized app's row, which no cookie or Bearer names. */
+  token?: string | null
   expiresAt: string | Date
   ipAddress?: string | null
   userAgent?: string | null
@@ -711,12 +754,29 @@ export interface SessionCreate {
   impersonatingUserId?: string | null
   impersonationReason?: string | null
   impersonationEndsAt?: string | Date | null
+  /**
+   * AN AUTHORIZED APP (`FJS-D1927`, `FJS-D1950`) — set where a person approved
+   * an OAuth client at `/authorize`; the client's metadata-document URL. The
+   * row is how the app is listed, revoked and ended by a credential change,
+   * exactly as a sign-in is.
+   */
+  clientId?: string | null
+  /**
+   * The HMAC of the current refresh token, and of the one it replaced. Only
+   * the hash is kept, so a copy of this table refreshes nothing. The previous
+   * one answers for 30 seconds after `rotatedAt` -- a client whose refresh
+   * timed out retries with it -- and after that it is a stolen token, and
+   * presenting it deletes the row (`FJS-D1931`).
+   */
+  refreshToken?: string | null
+  previousRefreshToken?: string | null
+  rotatedAt?: string | Date | null
 }
 
 export interface SessionUpdate {
   id?: string
   userId?: string
-  token?: string
+  token?: string | null
   expiresAt?: string | Date
   ipAddress?: string | null
   userAgent?: string | null
@@ -725,6 +785,10 @@ export interface SessionUpdate {
   impersonatingUserId?: string | null
   impersonationReason?: string | null
   impersonationEndsAt?: string | Date | null
+  clientId?: string | null
+  refreshToken?: string | null
+  previousRefreshToken?: string | null
+  rotatedAt?: string | Date | null
 }
 
 export interface SessionWhere extends WhereBase {
@@ -740,6 +804,10 @@ export interface SessionWhere extends WhereBase {
   impersonatingUserId?: string | WhereOp<string> | null
   impersonationReason?: string | WhereOp<string> | null
   impersonationEndsAt?: string | Date | WhereOp<string | Date> | null
+  clientId?: string | WhereOp<string> | null
+  refreshToken?: string | WhereOp<string> | null
+  previousRefreshToken?: string | WhereOp<string> | null
+  rotatedAt?: string | Date | WhereOp<string | Date> | null
   AND?: SessionWhere[]
   OR?:  SessionWhere[]
   NOT?: SessionWhere
@@ -1985,6 +2053,7 @@ export interface Workspace {
   expiresAt?: string | null
   ingressSecretId?: string | null
   ingressZoneId?: string | null
+  ingressZone?: string | null
   /** @guarded @encrypted @secret */
   pushTopic?: string | null
   /** @version */
@@ -2023,6 +2092,7 @@ export interface WorkspaceUpdate {
 
 export interface WorkspaceSystem {
   expiresAt?: string | Date | null
+  ingressZone?: string | null
 }
 
 export interface WorkspaceWhere extends WhereBase {
@@ -2036,6 +2106,7 @@ export interface WorkspaceWhere extends WhereBase {
   expiresAt?: string | Date | WhereOp<string | Date> | null
   ingressSecretId?: string | WhereOp<string> | null
   ingressZoneId?: string | WhereOp<string> | null
+  ingressZone?: string | WhereOp<string> | null
   pushTopic?: string | WhereOp<string> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -6499,7 +6570,7 @@ type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
   'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'flag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alert' | 'monitor' | 'monitorCheck' | 'monitorUptimeDay' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
-  readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | '@@gate'>
+  readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | 'refreshToken' | 'previousRefreshToken' | '@@gate'>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
   readonly loginChallenge: TableClient<LoginChallenge, LoginChallengeCreate, LoginChallengeUpdate, LoginChallengeWhere, LoginChallengeRelations, never, 'value' | '@@gate'>
   readonly oauthFlow: TableClient<OauthFlow, OauthFlowCreate, OauthFlowUpdate, OauthFlowWhere, OauthFlowRelations, never, 'state' | 'verifier' | 'invitation' | '@@gate'>
@@ -6517,7 +6588,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate'>
   readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, 'kind' | '@@gate', UserSystem>
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, '@@gate'>
-  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'expiresAt' | 'pushTopic' | '@@gate', WorkspaceSystem>
+  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'expiresAt' | 'ingressZone' | 'pushTopic' | '@@gate', WorkspaceSystem>
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem>
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem>

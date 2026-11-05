@@ -5,78 +5,33 @@
 // grace, and every RFC 6749 § 5.2 refusal. The client document is Claude
 // Code's fixture, served by a stub `fetch` on the auth's `clients`. The clock
 // is the client's, so the grace window and the row's expiry move with
-// `offset` rather than with real time.
+// `offset` rather than with real time. The connector itself is `connector.ts`,
+// shared with `authorized-apps.test.ts` and `conformance.test.ts`.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { makeAuth, TEST_KEY, type Harness } from './harness.ts'
-import { appWith, raw, form } from './audit-routes-http.ts'
-import { pkceChallenge } from '../crypto.ts'
-
-const CODE_ID  = 'https://claude.ai/oauth/claude-code-client-metadata'
-const OTHER_ID = 'https://claude.ai/oauth/mcp-oauth-client-metadata'
-const LOOPBACK = 'http://localhost:51234/callback'
-const RESOURCE = 'http://localhost/mcp'
-const PASSWORD = 'pw-token-1'
-const DOC      = readFileSync(join(import.meta.dir, 'fixtures/cimd/claude-code.json'), 'utf8')
-
-const stubFetch = (async (url: string) => String(url) === CODE_ID
-  ? new Response(DOC, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=60' } })
-  : new Response('not found', { status: 404 })) as unknown as typeof fetch
+import { raw } from './audit-routes-http.ts'
+import { connector, refusedWith, CODE_ID, OTHER_ID, LOOPBACK, RESOURCE, PASSWORD, type Connector } from './connector.ts'
 
 let offset = 0
 const clock = { now: () => new Date(Date.now() + offset) }
 
+let c: Connector
 let h: Harness
 let app: any
-let seq = 0
 
 beforeAll(async () => {
-  h = await makeAuth({ encryptionKey: TEST_KEY }, clock)
-  Object.assign((h.auth as any).clients, { fetch: stubFetch, allowPrivate: true })
-  app = await appWith(h.auth, {}, { name: 'Acme' })
+  c   = await connector(clock)
+  h   = c.h
+  app = c.app
 })
 afterAll(() => h.cleanup())
 
-function hidden(html: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const m of html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"/g))
-    out[m[1]!] = m[2]!.replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-  return out
-}
-
-/** A person, through `/authorize` to Allow: the code, its verifier and who approved it. */
-async function approve() {
-  const email = `token-${seq++}@example.com`
-  const u: any = await h.auth.createUser({ email, password: PASSWORD })
-  const verifier = randomBytes(32).toString('base64url')
-  const params = {
-    response_type: 'code', client_id: CODE_ID, redirect_uri: LOOPBACK, state: `st-${seq++}`,
-    code_challenge: pkceChallenge(verifier), code_challenge_method: 'S256', resource: RESOURCE,
-  }
-  const page    = await raw(app, 'GET', `/auth/authorize?${new URLSearchParams(params)}`)
-  const consent = await form(app, '/auth/authorize', { ...hidden(page.text), email, password: PASSWORD })
-  const done    = await form(app, '/auth/authorize', { ...hidden(consent.text), decision: 'allow' })
-  expect(done.status).toBe(302)
-  return { userId: String(u.id), code: new URL(done.headers.location!).searchParams.get('code')!, verifier }
-}
-
-const token = (fields: Record<string, string>) => form(app, '/auth/token', fields)
-const exchange = (a: { code: string, verifier: string }, over: Record<string, string> = {}) => token({
-  grant_type: 'authorization_code', code: a.code, code_verifier: a.verifier,
-  client_id: CODE_ID, redirect_uri: LOOPBACK, resource: RESOURCE, ...over,
-})
-const refresh = (refreshToken: string, over: Record<string, string> = {}) =>
-  token({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: CODE_ID, ...over })
-
-const refusedWith = (res: any, error: string) => {
-  expect(res.status).toBe(400)
-  expect(res.body.error).toBe(error)
-  expect(typeof res.body.error_description).toBe('string')
-  expect(res.headers['cache-control']).toBe('no-store')
-}
+const approve  = () => c.approve()
+const token    = (fields: Record<string, string>) => c.token(fields)
+const exchange = (a: { code: string, verifier: string }, over: Record<string, string> = {}) => c.exchange(a, over)
+const refresh  = (refreshToken: string, over: Record<string, string> = {}) => c.refresh(refreshToken, over)
 
 describe('authorization_code', () => {
   test('a code from /authorize trades for an access token naming a new authorized app', async () => {
@@ -240,5 +195,37 @@ describe('refresh_token', () => {
     const first = (await exchange(a)).body
     await h.auth.changePassword!(a.userId, 'pw-token-2')
     refusedWith(await refresh(first.refresh_token), 'invalid_grant')
+  })
+})
+
+describe('the app veto', () => {
+  test('onLogin refuses an approval the way it refuses a sign-in, and no authorized app is written', async () => {
+    const h2 = await makeAuth({ encryptionKey: TEST_KEY, onLogin: () => { throw new Error('locked out') } }, clock)
+    try {
+      const u: any = await h2.auth.createUser({ email: 'veto@example.com', password: PASSWORD })
+      await expect((h2.auth as any).authorizeApp({ userId: String(u.id), clientId: CODE_ID, audience: RESOURCE }))
+        .rejects.toThrow('locked out')
+      expect(await h2.sys.session.findFirst({ where: { userId: String(u.id) } })).toBeNull()
+      await new Promise((r) => setImmediate(r))
+      const failed = await h2.sys.auditTrail.findMany({ where: { operation: 'login.failed' } })
+      expect(failed.some((e: any) => e.meta?.reason === 'refused-by-app' && e.meta?.clientId === CODE_ID)).toBe(true)
+    } finally { await h2.cleanup() }
+  })
+})
+
+describe('expiry (FJS-D1963)', () => {
+  test('a refresh does not move expiresAt: day 29 refreshes, day 31 is invalid_grant', async () => {
+    const a     = await approve()
+    const first = (await exchange(a)).body
+    const sid   = ((await h.auth.verifySession(first.access_token)) as any).authorizedApp.sessionId
+    const was   = (await h.sys.session.findFirst({ where: { id: sid } })).expiresAt
+    const start = offset
+    offset = start + 29 * 86_400_000
+    const late = await refresh(first.refresh_token)
+    expect(late.status).toBe(200)
+    expect(String((await h.sys.session.findFirst({ where: { id: sid } })).expiresAt)).toBe(String(was))
+    offset = start + 31 * 86_400_000
+    refusedWith(await refresh(late.body.refresh_token), 'invalid_grant')
+    offset = start
   })
 })

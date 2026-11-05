@@ -73,12 +73,12 @@ interface ZoneAt { account: EdgeAccount; connector: EdgeConnector; send: Account
  * entry share, so *is edge configured* and *which zones are there* cannot
  * disagree about which rows count.
  */
-export async function edgeAccounts(): Promise<EdgeAccount[]> {
+export async function edgeAccounts(workspaceId: string = ws()): Promise<EdgeAccount[]> {
   const kinds = edgeProviders().map(p => p.kind)
   // The REQUEST's client elevated, not the app's: it keeps the caller's
   // tenant, where the app client's bypass would read every tenant.
   const rows  = await db().asSystem().secret.findMany({
-    where:   { workspaceId: ws(), kind: 'providerKey', providerKind: { in: kinds } },
+    where:   { workspaceId, kind: 'providerKey', providerKind: { in: kinds } },
     select:  { id: true, name: true, providerKind: true, verifiedAt: true },
     orderBy: { name: 'asc' },
   })
@@ -132,15 +132,31 @@ const sendFor = (a: EdgeAccount) => {
   return { connector, send: sendVia($.app, targetFor(connector.kind, a.id)) }
 }
 
+/** The name of a zone an edge account opens, as the vendor answers it -- what
+ *  `Workspace.ingressZone` stores when the pair is set (`FJS-D1962`). A pair is
+ *  checked as it is written: an account the workspace does not hold is a 409,
+ *  and a zone the account does not open is a 409 carrying the vendor's words. */
+export async function zoneNameFor(workspaceId: string, providerSecretId: string, zoneId: string): Promise<string> {
+  const held = (await edgeAccounts(workspaceId)).find(a => a.id === providerSecretId)
+  if (!held)
+    throw new Conflict(`This workspace holds no edge account '${providerSecretId}' -- connect it before naming a zone it opens`)
+  const { connector, send } = sendFor(held)
+  try {
+    return fqdn((await connector.zone(send, zoneId)).name)
+  } catch (err) {
+    throw new Conflict(`Edge account '${held.name}' does not open zone '${zoneId}': ${why(err)}`)
+  }
+}
+
 /** The workspace's ingress pair as stored, or null when none is set. Read
  *  `asSystem()` confined to the workspace, for `edgeAccounts`' reason: a
  *  developer reads the drift, and the Workspace row is not what they guard. */
-async function ingressPair(): Promise<{ providerSecretId: string; zoneId: string } | null> {
+async function ingressPair(): Promise<{ providerSecretId: string; zoneId: string; zoneName: string | null } | null> {
   const row = await db().asSystem().workspace.findFirst({
-    where: { id: ws() }, select: { ingressSecretId: true, ingressZoneId: true },
-  }) as { ingressSecretId: string | null; ingressZoneId: string | null } | null
+    where: { id: ws() }, select: { ingressSecretId: true, ingressZoneId: true, ingressZone: true },
+  }) as { ingressSecretId: string | null; ingressZoneId: string | null; ingressZone: string | null } | null
   if (!row?.ingressSecretId || !row.ingressZoneId) return null
-  return { providerSecretId: row.ingressSecretId, zoneId: row.ingressZoneId }
+  return { providerSecretId: row.ingressSecretId, zoneId: row.ingressZoneId, zoneName: row.ingressZone }
 }
 
 /** The refusal for a workspace with no ingress pair — one sentence, said by

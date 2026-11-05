@@ -479,6 +479,13 @@ export interface AuthSessionInfo {
   expiresAt?: Date | string | null
   /** True for the session that made this request — the one a UI must not offer to revoke without saying so. */
   current:    boolean
+  /**
+   * The app a person authorized, for a row that is one (`FJS-D1950`): `id` is
+   * its client id, the URL of its metadata document, and `host` is that URL's
+   * host, the name a screen shows instead of the one the document chose. Null
+   * for a browser session.
+   */
+  client?:    { id: string, host: string } | null
 }
 
 export interface ApiKeyInfo {
