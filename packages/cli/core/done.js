@@ -21,7 +21,8 @@
 // Zero dependencies beyond its neighbors, plain ESM, node or bun.
 
 import { gitOut }                                         from './git.js'
-import { existsSync, readFileSync, statSync }             from 'node:fs'
+import { createHash }                                     from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join, resolve, sep }  from 'node:path'
 import { safeRead, rel }                    from './fs.js'
 
@@ -246,6 +247,70 @@ export async function runDone(root, { changes = null, engines = true } = {}) {
   }
 
   return { root, changed: c.changed.length, items, drives, unfinished: items.filter(i => !i.ok).length }
+}
+
+// ─── the report, kept ─────────────────────────────────────────────────────────
+//
+// A report is a function of the tree, and agents asked for it again with
+// nothing edited between (`FJS-D1907`), 45 s each time. The last one is kept
+// under the git dir, keyed on HEAD and the tree's fingerprint, so the Stop hook
+// and the command answer each other's run. npm is the one input outside the
+// tree, so a kept report expires. A tree that moved while the report was built
+// is not kept: what it graded matches neither fingerprint.
+
+const KEEP_REPORT_MS = 30 * 60 * 1000
+
+/**
+ * The working tree's identity apart from HEAD: the diff against it, and each
+ * untracked file by size and mtime, since its content is in no diff. null
+ * outside a checkout.
+ */
+export function treeFingerprint(root) {
+  const git = argv => gitOut(root, argv)
+  const [status, diff, untracked] = [git(['status', '--porcelain']), git(['diff', 'HEAD']), git(['ls-files', '--others', '--exclude-standard'])]
+  if (status === null || diff === null || untracked === null) return null
+  const stamps = untracked.split('\n').filter(Boolean)
+    .map(f => { try { const s = statSync(join(root, f)); return `${f}:${s.size}:${s.mtimeMs}` } catch { return f } })
+  return createHash('sha1').update(status).update(diff).update(stamps.join('\n')).digest('hex')
+}
+
+/**
+ * `runDone` over the working tree, answered from the last run while HEAD and
+ * the tree are as they were then. `fresh` builds it regardless. A kept answer
+ * carries `kept`, the time its run started.
+ */
+export async function doneReport(root, { fresh = false } = {}) {
+  root = resolve(root)
+  const file = keptFile(root)
+  const key  = file ? reportKey(root) : null
+  if (key && !fresh) {
+    try {
+      const kept = JSON.parse(readFileSync(file, 'utf8'))
+      if (kept.key === key && Date.now() - Date.parse(kept.at) < KEEP_REPORT_MS) return { ...kept.report, kept: kept.at }
+    } catch { /* none kept */ }
+  }
+
+  const at     = new Date().toISOString()
+  const report = await runDone(root)
+  if (key && reportKey(root) === key) {
+    try {
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(`${file}.${process.pid}`, JSON.stringify({ key, at, report }))
+      renameSync(`${file}.${process.pid}`, file)
+    } catch { /* unkept costs the next caller a run */ }
+  }
+  return report
+}
+
+function reportKey(root) {
+  const head = gitOut(root, ['rev-parse', 'HEAD'])?.trim()
+  const tree = head ? treeFingerprint(root) : null
+  return tree ? `${root}:${head}:${tree}` : null
+}
+
+function keptFile(root) {
+  const dir = gitOut(root, ['rev-parse', '--git-dir'])?.trim()
+  return dir ? join(resolve(root, dir), 'fli-done', 'report.json') : null
 }
 
 /** An item's identity across runs, which the Stop hook keys what it has shown on. */

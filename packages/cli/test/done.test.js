@@ -12,7 +12,7 @@ import { join, dirname } from 'path'
 import { tmpdir }        from 'os'
 import { execFileSync }  from 'child_process'
 
-import { layoutNamed, moduleNamed, collectChanges, runDone, stopVerdict, itemKey, editedIn, checkItems, ignoreHides } from '../core/done.js'
+import { layoutNamed, moduleNamed, collectChanges, runDone, doneReport, treeFingerprint, stopVerdict, itemKey, editedIn, checkItems, ignoreHides } from '../core/done.js'
 import { tagsNpmLacks } from '../core/tags-on-npm.js'
 
 function tree(files) {
@@ -143,6 +143,28 @@ describe('the diff', () => {
       expect(c.added).toEqual(['b.js', 'c.js'])
       // An untracked file's content is in the diff the drives are read from.
       expect(c.diff).toContain('+const fresh = 1')
+    } finally { cleanup() }
+  })
+
+  test('a kept report answers while the tree stands still, and an edit, an untracked file or --fresh builds it again', async () => {
+    const { root, cleanup } = tree({ 'a.js': 'one\n' })
+    const git = (...a) => execFileSync('git', ['-C', root, ...a], { stdio: 'ignore' })
+    try {
+      git('init', '-q'); git('add', '.'); git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'x')
+      const still = treeFingerprint(root)
+      expect((await doneReport(root)).kept).toBeUndefined()
+      expect((await doneReport(root)).kept).toBeString()
+      expect(treeFingerprint(root)).toBe(still)
+      expect((await doneReport(root, { fresh: true })).kept).toBeUndefined()
+
+      writeFileSync(join(root, 'a.js'), 'two\n')
+      expect(treeFingerprint(root)).not.toBe(still)
+      const edited = await doneReport(root)
+      expect([edited.kept, edited.changed]).toEqual([undefined, 1])
+      expect((await doneReport(root)).kept).toBeString()
+
+      writeFileSync(join(root, 'b.js'), '')
+      expect((await doneReport(root)).kept).toBeUndefined()
     } finally { cleanup() }
   })
 })

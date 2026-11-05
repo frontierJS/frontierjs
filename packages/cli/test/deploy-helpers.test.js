@@ -431,17 +431,18 @@ describe('unexecdEntrypoint', () => {
 // running container had been stopped (`FJS-726`), and nothing but a run of the
 // function could see it.
 
-const { CASES, fakeDaemon, imagesOn } = await import('../../outpost/test/fixtures/swap-cases.js')
+const { CASES, fakeDaemon, imagesOn, dockerOnly, routesOf } = await import('../../outpost/test/fixtures/swap-cases.js')
 const edgeModule = await import('../core/edge.js')
 
 const words = (script) => (script.match(/'(?:[^']|'\\'')*'|\S+/g) ?? [])
   .map(w => /^'.*'$/.test(w) ? w.slice(1, -1).replace(/'\\''/g, "'") : w)
 
 // `caddy` is the admin API's config, null for a box Caddy fronts nothing on;
-// `dials` collects the API port every write pointed the routes at. `verdict` is
+// `dials` collects the API port every write pointed the routes at, and each
+// write is a `route <port>` in the daemon's log, where the table states it. `verdict` is
 // what the new image's `litestone release --json` answers.
-const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '', caddy = null, verdict = null } = {}) => {
-  const d = fakeDaemon(before)
+const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '', caddy = null, verdict = null, refuses = [] } = {}) => {
+  const d = fakeDaemon(before, { refuses })
   const commands = []
   const dials = []
   let config = caddy
@@ -459,6 +460,7 @@ const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '', caddy = 
       if (body.includes('/config/')) {
         config = JSON.parse(body.split('\n').slice(1, -1).join('\n'))
         dials.push(Number(/127\.0\.0\.1:(\d+)/.exec(JSON.stringify(config))[1]))
+        d.log.push(`route ${dials.at(-1)}`)
         return '\n200'
       }
       if (body.includes('litestone release')) return verdict ? JSON.stringify({ verdict }) : 'bun: command not found'
@@ -490,11 +492,15 @@ const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '', caddy = 
 const old = { image: 'img:old', running: true }
 
 describe('swapContainer — the swap Outpost runs', () => {
+  const routed = (port) => edgeModule.applyEdge({}, {
+    appId: 'app1',
+    routes: edgeModule.edgeRoutes({ appId: 'app1', serverPath: '/srv', apiPort: port, web: { domain: 'app.test' }, api: { domain: null } }),
+  })
   for (const c of CASES.filter(c => c.swap === 'stop-first')) {
     test(c.case, async () => {
-      const t = onBox({ before: c.before })
-      const result = await t.go({ image: c.image })
-      expect(t.d.log).toEqual(c.log)
+      const t = onBox({ before: c.before, refuses: c.refuses, caddy: c.dials ? routed(c.dials) : null })
+      const result = await t.go({ image: c.image, appId: 'app1' })
+      expect(t.d.log).toEqual(dockerOnly(c.log))
       expect(imagesOn(t.d.box)).toEqual(c.after)
       expect(result.healthy).toBe(!c.throws)
       if (c.throws) expect(result.reason).toMatch(c.throws)
@@ -506,6 +512,21 @@ describe('swapContainer — the swap Outpost runs', () => {
     await t.go({ deployConf: { logs: { max_size: '10m; rm -rf /' } } })
     expect(t.runCmd()).toContain(`--log-opt 'max-size=10m; rm -rf /'`)
     expect(t.d.box.get('app').image).toBe('img:new')
+  })
+
+  // FJS-4019: Outpost's probe, so one release is healthy on both paths alike,
+  // and a hung health path is given up on rather than holding the loop.
+  test('the health poll asks Outpost\'s status and timeout, until a deadline at the budget', async () => {
+    const { HEALTHY_STATUS, HEALTH_CHECK_TIMEOUT_S } = await import('../core/swap.js')
+    const t = onBox()
+    await t.go({ deployConf: { healthTimeout: 12 } })
+    const poll = t.commands.find(c => c.includes('%{http_code}'))
+    expect(poll).toContain(`--max-time ${HEALTH_CHECK_TIMEOUT_S} `)
+    expect(poll).toContain(`[ "$STATUS" = "${HEALTHY_STATUS}" ]`)
+    // FJS-4029: a count of polls overran the budget by the hung ask each cost.
+    expect(poll).toContain('DEADLINE=$(( $(date +%s) + 12 ))')
+    expect(poll).toContain('[ "$(date +%s)" -lt "$DEADLINE" ] || break')
+    expect(poll).not.toContain('seq 1')
   })
 })
 
@@ -522,13 +543,22 @@ describe('swapContainer — start-first', () => {
   const startFirst = { swap: 'startFirst', web: { domain: 'app.test' } }
   const go = (t, opts = {}) => t.go({ appId: 'app1', serverPath: '/srv', deployConf: startFirst, ...opts })
 
-  for (const c of CASES.filter(c => c.swap === 'start-first')) {
+  // With no live container there is no schema to classify against, so the cli
+  // swaps stop-first (`livePivot`): the rows that start from one run on Outpost alone.
+  for (const c of CASES.filter(c => c.swap === 'start-first' && !(c.dials && !('app' in c.before)))) {
     test(c.case, async () => {
-      const t = onBox({ before: c.before, caddy: routed(), verdict: 'expand' })
+      const t = onBox({ before: c.before, refuses: c.refuses, caddy: routed(c.dials ?? 7300), verdict: 'expand' })
+      if (c.refuses) {
+        // Past the route, with no `restored` or `untouched`: the error is thrown, the new release serving.
+        await expect(go(t, { image: c.image })).rejects.toThrow(c.throws)
+        expect(t.d.log).toEqual(c.log)
+        expect(imagesOn(t.d.box)).toEqual(c.after)
+        return
+      }
       const result = await go(t, { image: c.image })
       expect(t.d.log).toEqual(c.log)
       expect(imagesOn(t.d.box)).toEqual(c.after)
-      expect(t.dials).toEqual(c.routes)
+      expect(t.dials).toEqual(routesOf(c.log))
       expect(result).toMatchObject({ swap: 'start-first', pivot: 'expand', swapReason: null, healthy: !c.throws })
       if (c.throws) expect(result).toMatchObject({ untouched: true, restored: true, port: 7300 })
       else          expect(result.port).toBe(c.port)
@@ -542,6 +572,23 @@ describe('swapContainer — start-first', () => {
     expect(result.swapReason).toMatch(/this deploy is the pivot/)
     expect(t.d.log).toContain('run app img:new')
     expect(t.dials).toEqual([7102])
+  })
+
+  // FJS-4018: the live release a start-first left is on a port Docker picked,
+  // so the routes stay on it until the stop-first's new container answers.
+  const overlapped = { image: 'img:old', running: true, port: 49153, picked: true }
+
+  test('a stop-first after a start-first moves the routes once the new one answers', async () => {
+    const t = onBox({ before: { app: overlapped }, caddy: routed(49153), verdict: 'contract' })
+    expect(await go(t)).toMatchObject({ healthy: true, swap: 'stop-first', port: 7102 })
+    expect(t.d.log).toEqual(['rm app_replaced', 'rename app app_replaced', 'stop app_replaced', 'run app img:new', 'route 7102', 'rm app_replaced'])
+  })
+
+  test('a stop-first after a start-first that is put back moves the routes to the port it came back on', async () => {
+    const t = onBox({ before: { app: overlapped }, caddy: routed(49153), verdict: 'contract' })
+    expect(await go(t, { image: 'img:sick' })).toMatchObject({ healthy: false, restored: true, port: 49154 })
+    expect(t.d.log.slice(-4)).toEqual(['rm app', 'rename app_replaced app', 'start app', 'route 49154'])
+    expect(t.dials).toEqual([49154])
   })
 
   test('an image without the classifier swaps stop-first', async () => {

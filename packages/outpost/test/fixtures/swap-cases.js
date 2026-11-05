@@ -6,13 +6,19 @@
 // runs the stop-first ones through the cli's swap. A caller whose sequence
 // drifted from this table is the put-back nobody sees until it is needed.
 //
-// The daemon is a map of name → { image, running }. Only the commands that
-// change it are recorded; `ps` and `inspect` are reads.
+// The daemon is a map of name → { image, running, port, picked }. Only the
+// commands that change it are recorded; `ps` and `inspect` are reads. A case's
+// `log` also holds `route <port>` where the swap moves the route, since WHEN it
+// moves is the contract (`FJS-4018`); `route` records it into the same log.
+// `picked` is a port Docker chose, which a `docker start` chooses again.
+// `dials` is the port the route dials before the swap moves it (7300, the
+// App's own, unless a case states it) and `refuses` the commands the daemon
+// fails, as they are logged.
 
 export const NAME = 'app'
 
 /** A fake daemon answering argv. `healthy(image)` decides a health check. */
-export function fakeDaemon(initial = {}) {
+export function fakeDaemon(initial = {}, { dials = 7300, refuses = [] } = {}) {
   const box = new Map(Object.entries(initial).map(([name, c]) => [name, { ...c }]))
   const log = []
   const ok  = (stdout = '') => ({ exitCode: 0, stdout, stderr: '' })
@@ -26,8 +32,7 @@ export function fakeDaemon(initial = {}) {
       const c = box.get(name)
       if (!c) return no(`Error: No such object: ${name}`)
       if (rest.includes('{{.State.Running}}')) return ok(String(c.running))
-      const port = name.endsWith('_next') ? 49153 : 7300
-      return ok(JSON.stringify({ '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(port) }] }))
+      return ok(JSON.stringify({ '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(c.port ?? 7300) }] }))
     }
     if (verb === 'rm') {
       const names = rest.filter(a => a !== '-f')
@@ -38,6 +43,7 @@ export function fakeDaemon(initial = {}) {
     if (verb === 'rename') {
       const [from, to] = rest
       log.push(`rename ${from} ${to}`)
+      if (refuses.includes(`rename ${from} ${to}`)) return no('Error response from daemon: rename refused')
       if (!box.has(from)) return no(`Error: No such container: ${from}`)
       if (box.has(to)) return no(`Error: Conflict. The container name "/${to}" is already in use`)
       box.set(to, box.get(from)); box.delete(from)
@@ -49,6 +55,7 @@ export function fakeDaemon(initial = {}) {
       const c = box.get(name)
       if (!c) return no(`Error: No such container: ${name}`)
       c.running = verb === 'start'
+      if (verb === 'start' && c.picked) c.port += 1
       return ok(name)
     }
     if (verb === 'run') {
@@ -57,7 +64,8 @@ export function fakeDaemon(initial = {}) {
       log.push(`run ${name} ${image}`)
       if (image === 'img:broken') return no('docker: Error response from daemon: invalid reference format')
       if (box.has(name)) return no(`docker: Error response from daemon: Conflict. The container name "/${name}" is already in use`)
-      box.set(name, { image, running: true })
+      const next = name.endsWith('_next')
+      box.set(name, { image, running: true, port: next ? 49153 : 7300, picked: next })
       return ok(`id-${image}`)
     }
     return no(`unknown verb ${verb}`)
@@ -80,32 +88,60 @@ export function fakeDaemon(initial = {}) {
     return c.image === 'img:sick' ? { healthy: false, reason: 'answered 500' } : { healthy: true }
   }
 
-  return { argv, find, healthOf, log, box }
+  let dialing = dials
+  const route  = async (port) => { dialing = port; log.push(`route ${port}`) }
+  const routed = async () => [dialing]
+
+  return { argv, find, healthOf, route, routed, log, box }
 }
+
+/** A case's log without its route moves: what a caller fronting nothing runs. */
+export const dockerOnly = (log) => log.filter(s => !s.startsWith('route '))
+/** The ports a case's swap routes to, in order. */
+export const routesOf = (log) => log.filter(s => s.startsWith('route ')).map(s => Number(s.slice('route '.length)))
 
 /** The `docker run` argv after `docker`, as a caller would build it. */
 export const runArgv = (name, image) => ['run', '-d', '--name', name, '--restart', 'unless-stopped', image]
 
 const old = { image: 'img:old', running: true }
+// The live release a start-first left: on a port Docker picked.
+const overlapped = { image: 'img:old', running: true, port: 49153, picked: true }
 
 export const CASES = [
   {
     case: 'first deploy',
     swap: 'stop-first', image: 'img:new', before: {},
-    log: ['run app img:new'],
+    log: ['run app img:new', 'route 7300'],
     after: { app: 'img:new' },
   },
   {
     case: 'healthy replace',
     swap: 'stop-first', image: 'img:new', before: { app: old },
-    log: ['rm app_replaced', 'rename app app_replaced', 'stop app_replaced', 'run app img:new', 'rm app_replaced'],
+    log: ['rm app_replaced', 'rename app app_replaced', 'stop app_replaced', 'run app img:new', 'route 7300', 'rm app_replaced'],
     after: { app: 'img:new' },
+  },
+  {
+    // The route dials the old release until the new one answers on the App's
+    // port: moved before the stop, it sent the live release's traffic to nothing.
+    case: 'stop-first after a start-first',
+    swap: 'stop-first', image: 'img:new', before: { app: overlapped },
+    log: ['rm app_replaced', 'rename app app_replaced', 'stop app_replaced', 'run app img:new', 'route 7300', 'rm app_replaced'],
+    after: { app: 'img:new' },
+  },
+  {
+    case: 'stop-first after a start-first, unhealthy → put back on a new port',
+    swap: 'stop-first', image: 'img:sick', before: { app: overlapped },
+    log: ['rm app_replaced', 'rename app app_replaced', 'stop app_replaced', 'run app img:sick',
+          'rm app', 'rename app_replaced app', 'start app', 'route 49154'],
+    throws: /not healthy — .*; the previous container is serving again/,
+    restored: true,
+    after: { app: 'img:old' },
   },
   {
     case: 'unhealthy → put back',
     swap: 'stop-first', image: 'img:sick', before: { app: old },
     log: ['rm app_replaced', 'rename app app_replaced', 'stop app_replaced', 'run app img:sick',
-          'rm app', 'rename app_replaced app', 'start app'],
+          'rm app', 'rename app_replaced app', 'start app', 'route 7300'],
     throws: /the new container started and is not healthy — .*; the previous container is serving again/,
     restored: true,
     after: { app: 'img:old' },
@@ -114,7 +150,7 @@ export const CASES = [
     case: 'start fails → put back',
     swap: 'stop-first', image: 'img:broken', before: { app: old },
     log: ['rm app_replaced', 'rename app app_replaced', 'stop app_replaced', 'run app img:broken',
-          'rm app', 'rename app_replaced app', 'start app'],
+          'rm app', 'rename app_replaced app', 'start app', 'route 7300'],
     throws: /the new container did not start — docker run failed \(exit 1\): .*invalid reference format; the previous container is serving again/,
     restored: true,
     after: { app: 'img:old' },
@@ -130,15 +166,14 @@ export const CASES = [
   {
     case: 'stale _next and orphan _replaced, stop-first',
     swap: 'stop-first', image: 'img:new',
-    before: { app_next: { image: 'img:half', running: true }, app_replaced: { image: 'img:old', running: false } },
-    log: ['rm app_next', 'stop app_replaced', 'run app img:new', 'rm app_replaced'],
+    before: { app_next: { image: 'img:half', running: true, port: 49200 }, app_replaced: { image: 'img:old', running: false } },
+    log: ['rm app_next', 'stop app_replaced', 'run app img:new', 'route 7300', 'rm app_replaced'],
     after: { app: 'img:new' },
   },
   {
     case: 'start-first happy',
     swap: 'start-first', image: 'img:new', before: { app: old },
-    log: ['run app_next img:new', 'rename app app_replaced', 'rename app_next app', 'stop app_replaced', 'rm app_replaced'],
-    routes: [49153],
+    log: ['run app_next img:new', 'route 49153', 'rename app app_replaced', 'rename app_next app', 'stop app_replaced', 'rm app_replaced'],
     port: 49153,
     after: { app: 'img:new' },
   },
@@ -147,17 +182,59 @@ export const CASES = [
     swap: 'start-first', image: 'img:sick', before: { app: old },
     log: ['run app_next img:sick', 'rm app_next'],
     throws: /not healthy — .*; the previous container was not touched and is still serving/,
-    routes: [],
     after: { app: 'img:old' },
   },
   {
     case: 'stale _next and finished _replaced, start-first',
     swap: 'start-first', image: 'img:new',
-    before: { app: old, app_next: { image: 'img:half', running: true }, app_replaced: { image: 'img:older', running: false } },
-    log: ['rm app_next app_replaced', 'run app_next img:new', 'rename app app_replaced', 'rename app_next app', 'stop app_replaced', 'rm app_replaced'],
-    routes: [49153],
+    before: { app: old, app_next: { image: 'img:half', running: true, port: 49200 }, app_replaced: { image: 'img:older', running: false } },
+    log: ['rm app_next app_replaced', 'run app_next img:new', 'route 49153', 'rename app app_replaced', 'rename app_next app', 'stop app_replaced', 'rm app_replaced'],
     port: 49153,
     after: { app: 'img:new' },
+  },
+  {
+    // The route moved to `_next`, then the rename into place failed: the new
+    // release serves under a name the next swap removes.
+    case: 'start-first, naming the new container fails after the route moved → _next keeps serving',
+    swap: 'start-first', image: 'img:new', before: { app: old }, refuses: ['rename app_next app'],
+    log: ['run app_next img:new', 'route 49153', 'rename app app_replaced', 'rename app_next app'],
+    throws: /the route moved to it, but naming it app failed — docker rename failed \(exit 1\): .*rename refused; it keeps serving as app_next/,
+    after: { app_replaced: 'img:old', app_next: 'img:new' },
+  },
+  {
+    case: 'start-first adopts the serving _next it finds, and the set-aside one goes',
+    swap: 'start-first', image: 'img:newer', dials: 49153,
+    before: { app_replaced: { image: 'img:old', running: true }, app_next: { image: 'img:new', running: true, port: 49153, picked: true } },
+    log: ['rename app_next app', 'stop app_replaced', 'rm app_replaced',
+          'run app_next img:newer', 'route 49153', 'rename app app_replaced', 'rename app_next app', 'stop app_replaced', 'rm app_replaced'],
+    port: 49153,
+    after: { app: 'img:newer' },
+  },
+  {
+    // The first rename failed: the old release still holds its own name.
+    case: 'start-first adopts the serving _next beside the old release still named for it',
+    swap: 'start-first', image: 'img:newer', dials: 49153,
+    before: { app: old, app_next: { image: 'img:new', running: true, port: 49153, picked: true } },
+    log: ['rm app_replaced', 'rename app app_replaced', 'rename app_next app', 'stop app_replaced', 'rm app_replaced',
+          'run app_next img:newer', 'route 49153', 'rename app app_replaced', 'rename app_next app', 'stop app_replaced', 'rm app_replaced'],
+    port: 49153,
+    after: { app: 'img:newer' },
+  },
+  {
+    case: 'start-first whose adoption cannot name the serving _next leaves it running',
+    swap: 'start-first', image: 'img:newer', dials: 49153, refuses: ['rename app_next app'],
+    before: { app_replaced: { image: 'img:old', running: true }, app_next: { image: 'img:new', running: true, port: 49153, picked: true } },
+    log: ['rename app_next app'],
+    throws: /app_next is the release serving \(the route dials it\) and could not be named app, so it is left running — docker rename failed/,
+    after: { app_replaced: 'img:old', app_next: 'img:new' },
+  },
+  {
+    case: 'stop-first adopts the serving _next it finds before setting anything aside',
+    swap: 'stop-first', image: 'img:newer', dials: 49153,
+    before: { app_replaced: { image: 'img:old', running: true }, app_next: { image: 'img:new', running: true, port: 49153, picked: true } },
+    log: ['rename app_next app', 'stop app_replaced', 'rm app_replaced',
+          'rm app_replaced', 'rename app app_replaced', 'stop app_replaced', 'run app img:newer', 'route 7300', 'rm app_replaced'],
+    after: { app: 'img:newer' },
   },
 ]
 

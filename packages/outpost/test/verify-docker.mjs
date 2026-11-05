@@ -45,10 +45,17 @@
  *   (`FJS-D1837`). A sick one is refused with the old container serving and
  *   its route untouched, and one with no health path is refused before
  *   anything runs. A contract asks for start-first and is swapped
- *   stop-first, by the release's own Litestone (`FJS-D1838`), and a stop-first
- *   release after takes the App's port back. These releases are whoami's
+ *   stop-first, by the release's own Litestone (`FJS-D1838`), its route
+ *   dialing the old container on Docker's port until that one stops
+ *   (`FJS-4018`), and a stop-first release after takes the App's port back. These releases are whoami's
  *   binary on `oven/bun` with this workspace's Litestone and a `db/` at v1 or
  *   v2, built here: whoami alone has no schema to classify.
+ *
+ *   `healthTimeout.*` and `healthCheck.*` — a busybox release that answers
+ *   after 35 s goes live under its own healthTimeout (`FJS-4015`), and one
+ *   whose first health answer is held open past the whole budget goes live
+ *   inside it, on the next ask after the per-check timeout drops the first
+ *   (`FJS-4019`).
  *
  *   `volume.*` — `/volume/restore` extracts an archive from the restore
  *   directory into the stopped app's data directory, read back as plain files
@@ -90,6 +97,7 @@ import { signRequest, verifyRequest, generateSigningKeys } from '@frontierjs/too
 import { ensureCert }   from '../src/cert.js'
 import { routeId, createIngress } from '../src/ingress.js'
 import { createDocker } from '../src/docker.js'
+import { DEFAULT_HEALTH_TIMEOUT_S, DEFAULT_STOP_GRACE_S } from '../src/swap.js'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PORT     = 7180
@@ -498,6 +506,60 @@ try {
   if (!heldOpen || ws.closed != null) console.error('socket:', ws ? `closed ${ws.closed}` : 'the upgrade was refused')
   ws?.close()
 
+  // `fli deploy` writes this same Caddy from the same box, read-modify-write
+  // with If-Match (FJS-4017). Outpost's route-order PATCH, access-log write and
+  // reload each carried the whole of an earlier read, so a route the other
+  // writer landed in between was gone after them. This writer lands routes back
+  // to back for as long as Outpost routes 12 apps and reloads three times; every
+  // one must be there. A write queued behind Outpost's read is the one that
+  // lands before Outpost's own, which the back-to-back loop keeps happening.
+  const APPS_RACED = 12
+  let racing = true
+  // A reset on a pooled admin connection is retried here: the drive is the
+  // writer under test, not Bun's fetch (FJS-4025).
+  const fliWrite = async (n) => {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      try {
+        const read = await admin('/config/')
+        const next = await read.json()
+        const mine = next.apps.http.servers.ingress.routes
+        if (mine.some(r => r['@id'] === `fli-race-${n}`)) return true
+        mine.push({
+          '@id': `fli-race-${n}`, match: [{ header: { 'X-Fli-Race': [String(n)] } }],
+          handle: [{ handler: 'static_response', status_code: 200 }], terminal: true,
+        })
+        const wrote = await admin('/config/', { method: 'POST', headers: { 'content-type': 'application/json', 'if-match': read.headers.get('etag') }, body: JSON.stringify(next) })
+        if (wrote.status !== 412) return wrote.ok
+      } catch (err) {
+        if (err?.code !== 'ECONNRESET') throw err
+      }
+    }
+    return false
+  }
+  const fliWrites = (async () => {
+    const ok = []
+    for (let n = 0; racing || n < 10; n++) { ok.push(await fliWrite(n)); await sleep(8) }
+    return ok
+  })()
+  const outposts = (async () => {
+    const answers = []
+    for (let i = 0; i < APPS_RACED; i++) {
+      answers.push((await call('/route', { app_id: `race-${i}`, port: 7199, hosts: [`race-${i}.${HOST}`], paths: [{ host: HOST, prefix: `/race${i}` }] })).status)
+      if (i % 4 === 3) answers.push((await call('/ingress/reload', {})).status)
+    }
+    racing = false
+    return answers
+  })()
+  const [fliOk, outpostStatus] = await Promise.all([fliWrites, outposts])
+  const raced = (await admin('/config/apps/http/servers/ingress/routes').then(r => r.json(), () => [])).map(r => r['@id'])
+  const lost  = Array.from({ length: fliOk.length }, (_, n) => `fli-race-${n}`).filter(id => !raced.includes(id))
+  const heads = raced.filter(id => id.startsWith('fjs-race-') && id.includes('-path-'))
+  t('race.anotherWritersRoutesSurviveOutposts', fliOk.every(Boolean) && outpostStatus.every(c => c === 200) && lost.length === 0
+    && heads.length === APPS_RACED && raced.indexOf(ROUTE) > raced.indexOf(heads.at(-1)))
+  if (lost.length) console.error(`race: ${lost.length} of ${fliOk.length} routes lost:`, lost.join(', '))
+  for (let i = 0; i < APPS_RACED; i++) await call('/stop', { app_id: `race-${i}` })
+  for (let n = 0; n < fliOk.length; n++) await admin(`/id/fli-race-${n}`, { method: 'DELETE' })
+
   // ─── start-first (FJS-D1837, FJS-D1838) ─────────────────────────────────
 
   buildPivotImages(join(scratch, 'pivot'))
@@ -538,6 +600,29 @@ try {
   t('startFirst.refusesNoHealthPath', unasked.status >= 400 && /needs a health path/.test(unasked.body?.error ?? '')
     && inspect('{{.Id}}') === serving && await dial() === `127.0.0.1:${moved}`)
 
+  // A container that is not the App's holds `<name>_replaced`, so the rename of
+  // the live one fails AFTER the route moved: the new release serves as `_next`
+  // (FJS-4020). The next release must name it into place, not remove it.
+  const appName = `fjs--verify-drive-docker-${APP.slice(0, 8)}`
+  sh('docker', 'create', '--name', `${appName}_replaced`, `${PIVOT_IMAGE}:v1`)
+  const stuck    = await release('v2')
+  const stuckNext = sh('docker', 'inspect', '-f', '{{.Id}}', `${appName}_next`).stdout.trim()
+  const stuckDial = await dial()
+  t('startFirst.aFailedRenameLeavesTheNewReleaseServing', stuck.status === 500 && /naming it .* failed/.test(stuck.body?.error ?? '')
+    && stuckNext.length > 0 && stuckDial !== `127.0.0.1:${moved}` && await untilHttps())
+  sh('docker', 'rm', '-f', `${appName}_replaced`)
+  const adoptLoop = Bun.spawn(['sh', '-c', `while :; do curl -s -o /dev/null -w '%{http_code}\\n' --max-time 5 --resolve ${HOST}:${CADDY_HTTPS}:127.0.0.1 --cacert ${rootPath} https://${HOST}:${CADDY_HTTPS}/; done`], { stdout: 'pipe' })
+  await sleep(500)
+  const adopted = await release('v2')
+  await sleep(500)
+  adoptLoop.kill()
+  const adoptCodes = (await new Response(adoptLoop.stdout).text()).trim().split('\n')
+  if (adopted.status !== 200) console.log(adopted.body)
+  if (adoptCodes.some(c => c !== '200')) console.log('adopting a serving _next:', Object.groupBy(adoptCodes, c => c))
+  t('startFirst.theNextReleaseNamesAServingNextInsteadOfRemovingIt', adopted.status === 200 && adoptCodes.length > 5 && adoptCodes.every(c => c === '200')
+    && appContainers().join() === appName && inspect('{{.Id}}') === adopted.body?.containerId && inspect('{{.Id}}') !== stuckNext
+    && await untilHttps())
+
   // A restart gives a `127.0.0.1::80` container a new host port and nothing
   // the daemon does tells Caddy; the running Outpost's heartbeat pass moves the
   // route (FJS-D1890). Its 1 s clock can win the race against a read here, so
@@ -551,8 +636,21 @@ try {
   t('startFirst.aRestartMovesThePublishedPort', restartedOn > 0 && restartedOn !== moved)
   t('startFirst.theHeartbeatRepointsTheRoute',  followed === `127.0.0.1:${restartedOn}` && await untilHttps() && status('/') === '200')
 
+  // The contract below is a stop-first after a start-first, so the live one is
+  // on restartedOn, not APP_PORT. Each sample reads the route's dial, then
+  // whether the old container still runs: a route moved onto APP_PORT before
+  // the stop shows as a dial off restartedOn with the old one up (FJS-4018).
+  const oldId   = inspect('{{.Id}}')
+  const sampler = Bun.spawn(['sh', '-c', `while :; do d=$(curl -s --max-time 2 ${ADMIN}/id/${ROUTE}/handle/0/upstreams/0/dial); r=$(docker inspect -f '{{.State.Running}}' ${oldId} 2>/dev/null || echo gone); echo "$d $r"; done`], { stdout: 'pipe' })
+  await sleep(300)
   const contract = await release('v1')
+  sampler.kill()
+  const samples  = (await new Response(sampler.stdout).text()).trim().split('\n').map(l => l.split(' '))
+  const whileUp  = samples.filter(([, running]) => running === 'true')
   if (contract.status !== 200) console.log(contract.body)
+  if (whileUp.some(([d]) => d !== `"127.0.0.1:${restartedOn}"`)) console.log('stop-first after start-first:', Object.groupBy(samples, ([d, r]) => `${d} ${r}`))
+  t('startFirst.aStopFirstAfterItRoutesToTheLiveOneUntilItStops', whileUp.length > 0 && whileUp.every(([d]) => d === `"127.0.0.1:${restartedOn}"`)
+    && samples.some(([d]) => d === `"127.0.0.1:${APP_PORT}"`) && status('/') === '200')
   t('startFirst.aContractSwapsStopFirst', contract.status === 200 && contract.body?.swap === 'stop-first' && contract.body?.pivot === 'contract'
     && /this deploy is the pivot/.test(contract.body?.swap_reason ?? '') && await dial() === `127.0.0.1:${APP_PORT}` && await untilHttps())
   t('startFirst.leavesNoVolumeBehind', ![...volumeNames()].some(v => v.startsWith('fjs-before-')))
@@ -573,6 +671,30 @@ try {
   if (slow.status !== 200) console.log(slow.body)
   t('healthTimeout.aSlowBootInsideItsBudgetGoesLive', slow.status === 200
     && /slow-ok/.test(await fetch(`http://127.0.0.1:${APP_PORT}/`).then(r => r.text(), () => '')))
+
+  // ─── a hung health check (FJS-4019) ──────────────────────────────────────
+  // The first ask of the health path is held open for 600 s, far past the
+  // budget. Without a per-check timeout that one ask is the whole wait and the
+  // release wedges; with it the ask is dropped and the next one answers.
+
+  const hungCgi = [
+    '#!/bin/sh',
+    '[ -e /tmp/asked ] || { touch /tmp/asked; sleep 600; }',
+    'printf "Content-Type: text/plain\\r\\n\\r\\nhung-ok"',
+  ].join('\n')
+  const hungAt = Date.now()
+  const hung = await call('/deploy', {
+    app_id: APP, ...SLUGS, image: BUSYBOX, hosts: [HOST],
+    config: { port: APP_PORT, containerPort: 80, healthCheck: '/cgi-bin/h',
+              command: ['sh', '-c', `mkdir -p /w/cgi-bin && cat > /w/cgi-bin/h <<'CGI'\n${hungCgi}\nCGI\nchmod +x /w/cgi-bin/h && exec httpd -f -p 80 -h /w`] },
+  })
+  const hungTook = Date.now() - hungAt
+  if (hung.status !== 200) console.log(hung.body)
+  // The slow release before it is busybox httpd as PID 1, which ignores
+  // SIGTERM, so its stop waits the whole stop grace inside this deploy.
+  if (hungTook >= (DEFAULT_STOP_GRACE_S + DEFAULT_HEALTH_TIMEOUT_S) * 1000) console.log(`the hung release took ${hungTook} ms`)
+  t('healthCheck.aHungAskIsDroppedAndAskedAgain', hung.status === 200 && hungTook < (DEFAULT_STOP_GRACE_S + DEFAULT_HEALTH_TIMEOUT_S) * 1000
+    && /hung-ok/.test(await fetch(`http://127.0.0.1:${APP_PORT}/cgi-bin/h`).then(r => r.text(), () => '')))
 
   // ─── stop ───────────────────────────────────────────────────────────────
 
@@ -714,13 +836,15 @@ const expected = [
   'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
   'redirect.answers308WithTheRequestUri', 'redirect.droppedWithTheLastOne',
   'path.sitsAheadOfTheWholeHost', 'path.prefixGoesToItsApp', 'path.restStaysWithTheHost', 'path.stopTakesEveryPrefix',
-  'socket.outlivesAnotherAppsWrite',
+  'socket.outlivesAnotherAppsWrite', 'race.anotherWritersRoutesSurviveOutposts',
   'startFirst.anExpandOverlaps', 'startFirst.answersOnAPortDockerPicked', 'startFirst.routeDialsTheNewPort', 'startFirst.leavesOneContainerUnderItsName',
   'startFirst.bindsLoopbackOnly', 'startFirst.dropsNoRequest', 'startFirst.refusesASickRelease', 'startFirst.leavesTheOldOneAlone',
   'startFirst.refusesNoHealthPath',
+  'startFirst.aFailedRenameLeavesTheNewReleaseServing', 'startFirst.theNextReleaseNamesAServingNextInsteadOfRemovingIt',
   'startFirst.aRestartMovesThePublishedPort', 'startFirst.theHeartbeatRepointsTheRoute',
+  'startFirst.aStopFirstAfterItRoutesToTheLiveOneUntilItStops',
   'startFirst.aContractSwapsStopFirst', 'startFirst.leavesNoVolumeBehind', 'startFirst.stopFirstTakesTheAppPortBack',
-  'healthTimeout.aSlowBootInsideItsBudgetGoesLive',
+  'healthTimeout.aSlowBootInsideItsBudgetGoesLive', 'healthCheck.aHungAskIsDroppedAndAskedAgain',
   'stop.removesTheContainer', 'stop.takesTheRoute', 'health.saysNotRunning', 'logs.sayNoSuchContainer',
   'route.unknownIs404',
   'volume.restoresIntoTheVolume', 'volume.refusesANonEmptyOne', 'volume.refusesAPathOffTheRoot',

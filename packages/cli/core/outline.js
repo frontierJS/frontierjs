@@ -408,8 +408,8 @@ export function readRefusal(path, lines, outline) {
 // open box, an `rg` over `packages/` for where an export lives. Each has a
 // command that answers in a line — `fli find`, `fli plan`, `fli sig` — and the
 // read is made because nothing at the moment of the read names it. This names
-// it, as context beside the read and never a refusal: a hint that is wrong
-// costs a line, a refusal that is wrong costs the turn.
+// it, as context beside the read: a hint that is wrong costs a line, a refusal
+// that is wrong costs the turn. A register read is the one exception, below.
 
 const REGISTER = new RegExp(`(?:^|[\\s'"/])(${REGISTER_FILES.filter(f => f.endsWith('.md')).map(f => f.replace('.', '\\.')).join('|')})(?=$|[\\s'":])`)
 const PLAN     = /(?:^|[\s'"])(\/?(?:[\w.-]+\/)*(?:IDEAS\/[\w.-]+\.md|PLAN\.md))(?=$|[\s'":])/
@@ -465,4 +465,69 @@ export function readHint(hint) {
   const id    = hint.terms.find(t => ID.test(t))
   const ask   = id ? `\`fli find ${id} --show\` prints that row whole` : terms.length ? `\`fli find ${terms.join(' ')}\` lists every row and ruling holding those words, open first` : '`fli find <terms>` lists every row and ruling holding the words, open first'
   return `${ask}; \`fli find <id> --show\` is one row, so no row is read by line number. An rg over a register costs thousands of chars a hit.`
+}
+
+// ─── a register is read through fli find ──────────────────────────────────────
+//
+// The hint above is context, and a register read beside it went ahead anyway
+// four times in five (`FJS-D1904`). So a command that reads a register AS A
+// FILE is refused. One that only names it — a heredoc, a script, git, a
+// filter on the name, an in-place sed — keeps the hint, because refusing it
+// would be wrong. A Read with a limit is the way past and is never refused.
+
+const REGISTER_NAMES = new Set(REGISTER_FILES.filter(f => f.endsWith('.md')))
+const HEREDOC        = /<</
+// The flags that take the next word as their value, per reader; a value taken
+// for a file can only make a register look like a pattern, which refuses less.
+const VALUED = {
+  rg:   ['-e', '-f', '-g', '-t', '-T', '-A', '-B', '-C', '-m', '-M', '--glob', '--type', '--regexp', '--file', '--max-count'],
+  grep: ['-e', '-f', '-A', '-B', '-C', '-m', '--regexp', '--file', '--max-count'],
+  sed:  ['-e', '-f'],
+  awk:  ['-F', '-v', '-f'],
+  cat:  [],
+  head: ['-n', '-c'],
+  tail: ['-n', '-c'],
+}
+// The readers whose first operand is a program — a pattern or a script — not a file.
+const PROGRAM = new Set(['rg', 'grep', 'sed', 'awk'])
+
+const wordsOf = segment => [...segment.matchAll(/'([^']*)'|"([^"]*)"|(\S+)/g)].map(m => m[1] ?? m[2] ?? m[3])
+
+/**
+ * The register a Bash command reads as a file, `{ bin, path }` — `rg x
+ * ISSUES.md`, `sed -n 5p DECISIONS.md` — or null.
+ */
+export function registerRead({ tool_name, tool_input } = {}) {
+  if (tool_name !== 'Bash') return null
+  const command = String(tool_input?.command ?? '')
+  if (HEREDOC.test(command)) return null
+  for (const segment of command.split(/&&|\|\||[;|\n]/)) {
+    const [bin, ...args] = wordsOf(segment.trim())
+    const valued = VALUED[bin]
+    if (!valued || (bin === 'sed' && args.some(a => /^-[a-z]*i/.test(a)))) continue
+    let program = PROGRAM.has(bin)
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i]
+      if (arg.startsWith('-') && arg.length > 1) {
+        if (['-e', '--regexp', '-f', '--file'].includes(arg) && bin !== 'awk') program = false
+        if (valued.includes(arg)) i++
+        continue
+      }
+      if (program) { program = false; continue }
+      if (REGISTER_NAMES.has(arg.split('/').pop())) return { bin, path: arg }
+    }
+  }
+  return null
+}
+
+/**
+ * The refusal of a register read. `next` is `{ issue, decision }`, the ids
+ * `fli file` and `fli decide` would mint now, which the hook asks them for.
+ */
+export function registerRefusal(read, hint, next) {
+  return [
+    `${read.path} is a register, read through \`fli find\` rather than ${read.bin}: ${readHint(hint)}`,
+    `The next free ids are ${next.issue} and ${next.decision}. They are advisory: \`fli file\` and \`fli decide\` mint at write time, and another session may take them first.`,
+    'To read its lines anyway, Read it with offset and limit; that is never refused.',
+  ].join('\n')
 }

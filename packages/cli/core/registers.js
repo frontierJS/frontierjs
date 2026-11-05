@@ -39,10 +39,11 @@
 // prefix reads every issue row and ruling as unparsed, which `register:check`
 // refuses by name, rather than guessing one.
 
-import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve }      from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { splitFrontmatter } from './compiler.js'
 import { withGuard } from './guard.js'
@@ -219,10 +220,13 @@ export function issuesTitled(doc, title) {
 const fold = s => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
 
 export function readRegisters(root) {
-  const layout    = registerLayout(root)
-  const issues    = readIssues(layout)
-  const decisions = readDecisions(layout)
-  const ideas     = readIdeas(layout)
+  const layout = registerLayout(root)
+  const { issues, decisions, ideas, unparsed } = cachedParse(layout, () => {
+    const issues    = readIssues(layout)
+    const decisions = readDecisions(layout)
+    const ideas     = readIdeas(layout)
+    return { issues, decisions, ideas, unparsed: unparsedRecords(layout, [...issues, ...decisions]) }
+  })
 
   return {
     version: REGISTERS_VERSION,
@@ -235,8 +239,50 @@ export function readRegisters(root) {
     decisions,
     ideas,
     ids: indexById([...issues, ...decisions, ...ideas]),
-    unparsed: unparsedRecords(layout, [...issues, ...decisions]),
+    unparsed,
   }
+}
+
+// ─── the parse cache ──────────────────────────────────────────────────────────
+//
+// This repo's registers take over a second to parse and are read on every
+// `fli find`, `fli done` and refused register read. The parse is kept under
+// `~/.fli/registers/` and is valid while every file it read, and this reader's
+// own source, has the size and mtime it had. Below `CACHE_FROM` bytes a parse
+// is quicker than loading the cache, and a test's temp register leaves nothing
+// behind. A cache that cannot be read or written is a parse, never an error.
+
+export const CACHE_FROM = 512 * 1024
+
+const READER_SOURCES = ['registers.js', 'compiler.js'].map(n => fileURLToPath(new URL(n, import.meta.url)))
+
+function cachedParse(layout, parse) {
+  const files = registerFiles(layout)
+  const stats = files.map(f => { try { const s = statSync(f); return [f, s.size, s.mtimeMs] } catch { return [f, -1, 0] } })
+  if (stats.reduce((n, [, size]) => n + Math.max(size, 0), 0) < CACHE_FROM) return parse()
+
+  const stamp = JSON.stringify([REGISTERS_VERSION, ...stats, ...READER_SOURCES.map(f => { const s = statSync(f); return [s.size, s.mtimeMs] })])
+  const file  = join(homedir(), '.fli', 'registers', `${createHash('sha1').update(resolve(layout.root)).digest('hex').slice(0, 16)}.json`)
+  try {
+    const hit = JSON.parse(readFileSync(file, 'utf8'))
+    if (hit.stamp === stamp) return hit.parsed
+  } catch {}
+
+  const parsed = parse()
+  try {
+    mkdirSync(dirname(file), { recursive: true })
+    // Renamed into place, so a session reading as another writes never sees half a file.
+    writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify({ stamp, parsed }))
+    renameSync(`${file}.${process.pid}.tmp`, file)
+  } catch {}
+  return parsed
+}
+
+/** Every file the readers above open, so a change to any of them is a new parse. */
+function registerFiles({ root, dir }) {
+  const ideas   = join(dir, 'IDEAS')
+  const listed  = d => { try { return readdirSync(d).filter(n => n.endsWith('.md')).sort().map(n => join(d, n)) } catch { return [] } }
+  return [join(root, 'package.json'), ...['ISSUES.md', 'ISSUES_ARCHIVE.md', 'DECISIONS.md'].map(n => join(dir, n)), ...listed(ideas), ...listed(join(ideas, 'shipped'))]
 }
 
 /**

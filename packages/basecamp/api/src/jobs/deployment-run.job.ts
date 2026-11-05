@@ -58,7 +58,7 @@ import domainDns                from './domain-dns.job.ts'
 import { syncReplicasOn }       from './replicate-sync.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../domain/release/app-source.ts'
 import { siteBranch } from '../domain/site/site-checkout.ts'
-import { healthAttempts } from '@frontierjs/outpost/swap'
+import { healthBudgetS, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } from '@frontierjs/outpost/swap'
 import { releaseSite } from '../domain/site/site-publish.ts'
 import { cloudflareFor } from '../domain/site/site-preview.ts'
 import { SITE_STEP, releaseStatus } from '../domain/release/release-record.ts'
@@ -558,21 +558,26 @@ function runner(app: App) {
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest, ...swapOf(reply.data) }
 
     } else if (name.includes('health')) {
-      // Polled every 3s for the release's healthTimeout, the budget Outpost's
-      // swap waited. The path, where the app names one, is asked of the port
-      // the release published.
+      // Polled at Outpost's interval until the release's healthTimeout, the
+      // budget Outpost's swap waited, has passed: a deadline, not a count, or
+      // an Outpost that hangs on each call stretches the wait by the call's
+      // timeout every poll. The path, where the app names one, is asked of the
+      // port the release published. The call outlives Outpost's own per-check
+      // timeout, or a hung path reads as an unreachable machine.
       const { port, healthCheck, healthTimeout } = runtimeFor(ctx.config, service)
-      const attempts = healthAttempts((healthTimeout as number | undefined) ?? null, 3_000)
+      const deadline = Date.now() + healthBudgetS((healthTimeout as number | undefined) ?? null) * 1000
       let last: { data?: Record<string, unknown> } = {}
-      for (let i = 0; i < attempts; i++) {
+      let polls = 0
+      do {
         const reply = await executor.call('/health-check',
-          { app_id: deploy.appId, digest, port, path: healthCheck }, { timeoutMs: 5_000 })
+          { app_id: deploy.appId, digest, port, path: healthCheck }, { timeoutMs: HEALTH_CHECK_TIMEOUT_S * 1000 + 5_000 })
         last = reply
+        polls++
         if (!reply.error && reply.data?.healthy) return { output: note(reply), digest }
-        await new Promise(r => setTimeout(r, 3_000))
-      }
+        await new Promise(r => setTimeout(r, HEALTH_INTERVAL_S * 1000))
+      } while (Date.now() < deadline)
       const why = last.data?.stubbed ? ' (stub executor)' : last.data?.reason ? ` — ${last.data.reason}` : ''
-      throw new Error(`Health check failed after ${attempts} attempts${why}`)
+      throw new Error(`Health check failed after ${polls} polls${why}`)
 
     } else {
       // Build, migration, CDN steps etc. — forwarded as a generic step.

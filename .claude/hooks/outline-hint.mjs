@@ -4,9 +4,10 @@
 // is refused with the file's outline; a narrow window on a very long one gets
 // the hint. A read a command answers in a line — an `rg` over a register, any
 // read of a plan, an `rg` for one identifier over the tree — gets that
-// command named beside it (`FJS-3461`). Which calls count, the thresholds and
-// every text are in `packages/cli/core/outline.js`, where they are tested;
-// this file counts lines.
+// command named beside it (`FJS-3461`), and a register read as a file is
+// refused toward `fli find` (`FJS-D1904`). Which calls count, the thresholds
+// and every text are in `packages/cli/core/outline.js`, where they are tested;
+// this file counts lines and asks the register for its next ids.
 //
 // Registered twice: by this project, and with `--global` by the user's settings
 // so every other project gets it. A project carrying its own copy answers for
@@ -26,11 +27,25 @@ try {
   const project = process.env.CLAUDE_PROJECT_DIR
   if (process.argv.includes('--global') && project && existsSync(join(project, '.claude', 'hooks', 'outline-hint.mjs'))) process.exit(0)
   const input = JSON.parse(readFileSync(0, 'utf8') || '{}')
-  const { wideRead, readVerdict, readRefusal, outlineHint, outlineFile, renderOutline, hintedRead, readHint } =
-    await import(pathToFileURL(join(REPO, 'packages', 'cli', 'core', 'outline.js')).href)
+  const core = name => import(pathToFileURL(join(REPO, 'packages', 'cli', 'core', name)).href)
+  const { wideRead, readVerdict, readRefusal, outlineHint, outlineFile, renderOutline, hintedRead, readHint, registerRead, registerRefusal } =
+    await core('outline.js')
   const read   = wideRead(input)
   const hinted = hintedRead(input)
   const road   = hinted ? readHint(hinted) : null
+  const named  = registerRead(input)
+  if (named) {
+    // Only where `fli find` answers: elsewhere a file named ISSUES.md is not a register.
+    const { findRegisterRoot, readRegisters } = await core('registers.js')
+    const root = findRegisterRoot(isAbsolute(named.path) ? dirname(named.path) : input.cwd || project || process.cwd())
+    const doc  = root ? readRegisters(root) : null
+    if (doc?.prefix) {
+      const [{ nextId }, { nextDecisionNumber }] = await Promise.all([core('file.js'), core('decide.js')])
+      const next = { issue: nextId(doc), decision: `${doc.prefix}-D${nextDecisionNumber(root)}` }
+      say({ permissionDecision: 'deny', permissionDecisionReason: registerRefusal(named, hinted ?? { kind: 'register', terms: [] }, next) })
+      process.exit(0)
+    }
+  }
   if (!read) { if (road) say({ additionalContext: road }); process.exit(0) }
   const file = isAbsolute(read.path) ? read.path : join(input.cwd || project || process.cwd(), read.path)
   if (!existsSync(file)) process.exit(0)

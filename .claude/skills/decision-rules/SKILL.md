@@ -2,15 +2,18 @@
 name: decision-rules
 description: Run FrontierJS doctrine against a design choice. Use when adding an option, flag or config key; coining a noun or concept; choosing between two designs; when the code and a document disagree; or before writing a ruling into `DECISIONS.md` or a proposal into `IDEAS/`. Pass the choice, its options and the files it touches as the argument.
 context: fork
+allowed-tools: Bash(fli outline:*)
 ---
 
 # Decision rules
 
 The choice to grade: $ARGUMENTS
 
-**The doctrine is `PHILOSOPHY.md` and it is not repeated here.** Read § V (the nine questions) every time. Read § IV (the standing adjudications) only when two goods are in tension, and § VII (the four tiers) only when the answer is going into a document.
+**The doctrine is `PHILOSOPHY.md` and it is not repeated here.** § V (the nine questions) is printed below from that file as this skill loads, so do not open it for § V. Read § IV (the standing adjudications) only when two goods are in tension, and § VII (the four tiers) only when the answer is going into a document.
 
 Stop within 15 tool calls and return what you have.
+
+!`fli outline ${CLAUDE_SKILL_DIR}/../../../PHILOSOPHY.md "V. Frontier decision rules"`
 
 ## Run it
 

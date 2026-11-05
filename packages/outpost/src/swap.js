@@ -5,15 +5,21 @@
  * Outpost's `docker.deploy` and `fli deploy` over ssh each swapped by their own
  * hand, and the put-back is the branch nobody exercises until the day it
  * matters: two copies of it drift, and the drift is found mid-incident. So the
- * sequence lives here once and each caller hands in the three things that do
+ * sequence lives here once and each caller hands in the things that do
  * differ between a machine agent and a laptop driving a box over ssh:
  *
  *   run(argv, opts)              → { exitCode, stdout, stderr }   one command there
  *   find(name)                   → { live, replaced, next, all }  the App's containers
  *   health({ name, port, path, previous }) → { healthy, reason }  polled until it settles
+ *   route(port)                  → moves the App's route; per swap, below
+ *   routed()                     → the ports the App's route dials; per swap
  *
  * `previous` is true when the container asked about is the set-aside one put
  * back, so a caller whose port moves between releases can ask the daemon.
+ * The route moves here and nowhere else (`FJS-4018`): after a start-first the
+ * live container is on a port Docker picked, so a caller that moved the route
+ * to the App's port before a stop-first sent its traffic to nothing while the
+ * old release was still up.
  * Each caller still builds its own `docker run` argv, because the two read
  * different config; the flags both must agree on are `runFlags` below.
  */
@@ -58,11 +64,29 @@ export function checkHealthTimeout(healthTimeout) {
  *  sockets at SIGTERM. Caddy 2.12's `stream_detached` replaces it. */
 export const STREAM_CLOSE_DELAY = '24h'
 
-/** The polls a health wait gets, one every `intervalMs`, so each path keeps
- *  its own interval and every path waits the one budget. */
-export function healthAttempts(healthTimeout, intervalMs) {
+/** One health probe for every deploy path (`FJS-4019`), Kamal's: a release is
+ *  healthy when its health path answers exactly 200, asked once a second, each
+ *  ask given 5 s. The paths disagreed (any 2xx in 3 s on Outpost, 200 with no
+ *  limit on `fli deploy`), so one release could go live on one path and be put
+ *  back on the other, and a health path that hung held `fli deploy`'s curl, and
+ *  the stop-first outage with it, for as long as the app kept the socket open.
+ *  `fli deploy` asks with curl over ssh, so it reads the status and the
+ *  timeout as numbers rather than through `healthyStatus`. */
+export const HEALTHY_STATUS = 200
+export const HEALTH_INTERVAL_S = 1
+export const HEALTH_CHECK_TIMEOUT_S = 5
+
+export function healthyStatus(status) {
+  return Number(status) === HEALTHY_STATUS
+}
+
+/** The seconds a new release has to answer, refused when out of range. Both
+ *  deploy paths wait this on a deadline, not a count of polls: a count assumes
+ *  each poll returns at once, and one that hangs costs `HEALTH_CHECK_TIMEOUT_S`
+ *  plus the interval, so thirty polls ran about three minutes (`FJS-4029`). */
+export function healthBudgetS(healthTimeout) {
   checkHealthTimeout(healthTimeout)
-  return Math.max(1, Math.ceil((healthTimeout ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000 / intervalMs))
+  return healthTimeout ?? DEFAULT_HEALTH_TIMEOUT_S
 }
 
 /**
@@ -245,6 +269,37 @@ export function createSwap({ run, health, find }) {
     return String(result.stdout ?? '').trim()
   }
 
+  /** Finish a start-first swap that died after its route moved. The route
+   *  dials `_next` while it is still named that, and the sequences below remove
+   *  any `_next` before they start: removed then, it is the serving release that
+   *  goes down. So a `_next` the route dials is named into place first, the
+   *  rename a swap could not make, and the container it replaces stops. Nothing
+   *  is removed while a rename can still fail. `routed()` answers the loopback
+   *  ports the App's route dials, `[]` when it has none. */
+  async function adoptServing({ name, routed }) {
+    if (!routed) return
+    const { live, replaced, next } = await find(name)
+    if (!next) return
+    const at = (await portOf(run, next))?.port
+    if (!at || !(await routed()).includes(at)) return
+    const old = live ? `${live}_replaced` : replaced
+    try {
+      if (live) {
+        // A `_replaced` beside a live container is a finished swap's leftover.
+        const leftovers = [...new Set([old, replaced].filter(Boolean))]
+        await run(['docker', 'rm', '-f', ...leftovers])
+        await docker(['rename', live, old])
+      }
+      await docker(['rename', next, name])
+    } catch (err) {
+      throw new Error(`${next} is the release serving (the route dials it) and could not be named ${name}, so it is left running — ${err.message}`)
+    }
+    if (old) {
+      await run(['docker', 'stop', old])
+      await run(['docker', 'rm', '-f', old])
+    }
+  }
+
   /** Set the live container aside, under whatever name it carries. Answers the
    *  handle to go back to, or `null` when there is nothing. A `_replaced` with
    *  nothing live beside it is the last good container of a swap that did not
@@ -274,10 +329,11 @@ export function createSwap({ run, health, find }) {
     return held
   }
 
-  /** Take the failed container away and start the set-aside one again. Answers
-   *  the error to throw: `restored` says whether the old container is back,
-   *  which is what tells a route to follow it, and `none` that there was none. */
-  async function putBack({ name, held, port, path, why }) {
+  /** Take the failed container away and start the set-aside one again, the
+   *  route following it: one a start-first published comes back on a new port.
+   *  Answers the error to throw: `restored` says whether the old container is
+   *  back, and `none` that there was none. */
+  async function putBack({ name, held, port, path, why, route }) {
     const fail = (said, restored) => Object.assign(new Error(`the new container ${why}; ${said}`), { restored, none: !held })
     await run(['docker', 'rm', '-f', name])
     if (!held) return fail('there was no previous container to put back', false)
@@ -290,9 +346,18 @@ export function createSwap({ run, health, find }) {
     // `docker start` returns while the app is still booting, so the old release
     // is back when it ANSWERS — saying so sooner is what a slow machine makes a lie.
     const back = await health({ name: held.name, port, path, previous: true })
+    let unrouted = ''
+    if (route) {
+      try {
+        const at = (await portOf(run, held.name))?.port
+        if (at) await route(at)
+      } catch (err) {
+        unrouted = `, and moving the route back to it failed — ${err.message}`
+      }
+    }
     return back.healthy
-      ? fail('the previous container is serving again', true)
-      : fail(`the previous container is back and is not healthy either — ${back.reason}`, true)
+      ? fail(`the previous container is serving again${unrouted}`, true)
+      : fail(`the previous container is back and is not healthy either — ${back.reason}${unrouted}`, true)
   }
 
   return {
@@ -300,10 +365,16 @@ export function createSwap({ run, health, find }) {
      * `argv` is the whole `docker run` line after `docker`, naming `name`.
      * `before` is a docker command run once the old container has stopped and
      * before the new one starts — Outpost's chown of the data directory, which
-     * the old release still writes as its own uid. Answers `{ containerId }`;
-     * throws the put-back's error, with `restored` and `none`, otherwise.
+     * the old release still writes as its own uid. `route(port)` moves the
+     * App's route once the new one answers, and onto the old one when it is
+     * put back; until then the route dials the old container, draining or
+     * stopped. `routed()` says which container that is when a start-first left
+     * a `_next` serving; without it no `_next` is taken for one. Answers
+     * `{ containerId }`; throws the put-back's error, with `restored` and
+     * `none`, otherwise.
      */
-    async stopFirst({ name, argv, opts, before = null, port = null, path = null }) {
+    async stopFirst({ name, argv, opts, before = null, port = null, path = null, route = null, routed = null }) {
+      await adoptServing({ name, routed })
       const held = await setAside(name)
       let containerId
       try {
@@ -312,11 +383,20 @@ export function createSwap({ run, health, find }) {
       } catch (err) {
         // A port another process holds, a bad env value, an image the daemon
         // cannot resolve — docker's own refusals, after the old one stopped.
-        throw await putBack({ name, held, port, path, why: `did not start — ${err.message}` })
+        throw await putBack({ name, held, port, path, route, why: `did not start — ${err.message}` })
       }
       const fresh = await health({ name, port, path })
       if (!fresh.healthy)
-        throw await putBack({ name, held, port, path, why: `started and is not healthy — ${fresh.reason}` })
+        throw await putBack({ name, held, port, path, route, why: `started and is not healthy — ${fresh.reason}` })
+      if (route) {
+        try {
+          await route(port)
+        } catch (err) {
+          // The release is live and the route still dials the stopped one, so
+          // `_replaced` stays for an operator to go back to.
+          throw new Error(`the new container answers on :${port} and moving the route to it failed — ${err.message}`)
+        }
+      }
       if (held) await run(['docker', 'rm', '-f', held.replaced])
       return { containerId }
     },
@@ -325,11 +405,15 @@ export function createSwap({ run, health, find }) {
      * `argv` names `<name>_next` and publishes on a port Docker picks;
      * `route(port)` moves the App's route once that one answers. The old
      * container is untouched until then, so every failure before it removes
-     * `_next` and refuses the release with the old one still serving.
-     * Answers `{ containerId, port }`.
+     * `_next` and refuses the release with the old one still serving. A
+     * failure after it leaves `_next` serving, and the next swap names it into
+     * place (`routed()` tells it the route dials it). Answers
+     * `{ containerId, port }`.
      */
-    async startFirst({ name, argv, opts, before = null, path = null, route }) {
+    async startFirst({ name, argv, opts, before = null, path = null, route, routed }) {
+      if (typeof routed !== 'function') throw new Error('a start-first swap needs routed(), to tell a leftover _next the route dials from one it does not')
       const next = `${name}_next`
+      await adoptServing({ name, routed })
       const { live, replaced, next: stale } = await find(name)
       // A `_replaced` beside a live container is a finished swap's leftover; with
       // nothing live it is the last good one, kept until this release answers.
@@ -367,8 +451,12 @@ export function createSwap({ run, health, find }) {
 
       // Renamed before the stop: a deploy that dies mid-drain leaves the routed
       // container live and the old one as `_replaced`, which the next swap clears.
-      if (live) await docker(['rename', live, `${live}_replaced`])
-      await docker(['rename', next, name])
+      try {
+        if (live) await docker(['rename', live, `${live}_replaced`])
+        await docker(['rename', next, name])
+      } catch (err) {
+        throw new Error(`the new container answers and the route moved to it, but naming it ${name} failed — ${err.message}; it keeps serving as ${next} and the next release names it into place`)
+      }
       if (live) {
         // Requests in flight finish inside the grace; new ones already reach the new release.
         await run(['docker', 'stop', `${live}_replaced`])

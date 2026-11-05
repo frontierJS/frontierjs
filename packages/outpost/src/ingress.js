@@ -24,6 +24,8 @@ import { ROOTS } from './layout.js'
 import { repointRoutes, STREAM_CLOSE_DELAY } from './swap.js'
 
 const SERVER = 'ingress'
+/** Reads a guarded write may repeat when another writer got in between. */
+const WRITE_ATTEMPTS = 3
 /** A DNS name, lowercased. No wildcard: a wildcard certificate is DNS-01, which
  *  would put a DNS vendor's token on every machine (`IDEAS/fleet-ingress.md` D6). */
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/
@@ -220,7 +222,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
     const text = await res.text()
     let data = null
     try { data = text ? JSON.parse(text) : null } catch {}
-    return { status: res.status, data, said: data?.error ?? text.trim() }
+    return { status: res.status, data, said: data?.error ?? text.trim(), etag: res.headers?.get('etag') ?? null }
   }
 
   const must = (reply, doing) => {
@@ -228,18 +230,45 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
     return reply.data
   }
 
-  /** Writes only what differs, so a redeploy that moved nothing asks Caddy
-   *  for nothing. POST on an object key replaces it; PUT would refuse a key
-   *  that exists. */
-  async function logAccess(config, id, hosts) {
-    const want = accessLogFor(config, id, hosts)
-    const live = { logs: config?.apps?.http?.servers?.[SERVER]?.logs ?? null, logging: config?.logging ?? null }
-    if (!hosts.length && !live.logs) return
-    if (JSON.stringify(want.logging) !== JSON.stringify(live.logging))
-      must(await caddy('POST', '/config/logging', want.logging), `setting ${id}'s access log`)
-    if (JSON.stringify(want.logs) !== JSON.stringify(live.logs))
-      must(await caddy('POST', `/config/apps/http/servers/${SERVER}/logs`, want.logs), `logging ${id}'s hostnames`)
+  /**
+   * Read `readPath`, let `change(data)` say what to write (null for nothing),
+   * and send it with `If-Match` on the read's etag. `fli deploy` writes this
+   * same Caddy from the same box, so a write that landed between the read and
+   * this one answers 412 and the step is read and decided again: without the
+   * header, the array or config built from the old read overwrites the other
+   * writer's routes. `change` returns `{ method, path, body, headers, doing }`.
+   * Answers whether a write was made.
+   */
+  async function guarded(readPath, reading, change) {
+    for (let attempt = 1; attempt <= WRITE_ATTEMPTS; attempt++) {
+      const read  = await caddy('GET', readPath)
+      const write = change(must(read, reading))
+      if (!write) return false
+      const reply = await caddy(write.method, write.path, write.body, {
+        ...write.headers, ...(read.etag ? { 'if-match': read.etag } : {}),
+      })
+      if (reply.status === 412) continue
+      must(reply, write.doing)
+      return true
+    }
+    throw new Error(`caddy's config kept changing under ${reading} — ${WRITE_ATTEMPTS} reads, ${WRITE_ATTEMPTS} 412s`)
   }
+
+  /** Writes only what differs, so a redeploy that moved nothing asks Caddy
+   *  for nothing. Both halves go in one write of the whole config: they are
+   *  two paths, and a second guarded write would carry an etag the first had
+   *  already spent. `/config/logging` is also a 400 until something sets it. */
+  const logAccess = (id, hosts) => guarded('/config/', 'its config', (config) => {
+    const server = config?.apps?.http?.servers?.[SERVER]
+    const want   = accessLogFor(config, id, hosts)
+    const live   = { logs: server?.logs ?? null, logging: config?.logging ?? null }
+    if (!server || (!hosts.length && !live.logs)) return null
+    if (JSON.stringify(want) === JSON.stringify(live)) return null
+    const next = structuredClone(config)
+    next.logging = want.logging
+    next.apps.http.servers[SERVER].logs = want.logs
+    return { method: 'POST', path: '/config/', body: next, doing: `setting ${id}'s access log` }
+  })
 
   return {
     /**
@@ -382,11 +411,14 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
 
         // Appended routes land behind a whole-host route that would answer
         // their prefix, so the order is read back and settled after every write.
-        const now  = must(await caddy('GET', `/config/apps/http/servers/${SERVER}/routes`), 'reading its routes') ?? []
-        const sort = ordered(now)
-        if (sort.some((r, i) => r !== now[i]))
-          must(await caddy('PATCH', `/config/apps/http/servers/${SERVER}/routes`, sort), 'ordering its routes')
-        await logAccess(config, id, hosts)
+        await guarded(`/config/apps/http/servers/${SERVER}/routes`, 'its routes', (read) => {
+          const now  = read ?? []
+          const sort = ordered(now)
+          return sort.some((r, i) => r !== now[i])
+            ? { method: 'PATCH', path: `/config/apps/http/servers/${SERVER}/routes`, body: sort, doing: 'ordering its routes' }
+            : null
+        })
+        await logAccess(id, hosts)
         return { hosts, paths, redirects }
       })
     },
@@ -397,7 +429,9 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
      * answers on now (`FJS-D1890`). Answers `{ moved: [{ id, from, to }] }`,
      * empty when nothing dialed another port. A machine with no Caddy, or an
      * app with no route, moves nothing and is not an error: this runs for every
-     * App on the box.
+     * App on the box. Each PATCH is by `@id` and carries one `fjs-` route that
+     * only this process writes, so it holds no etag: `fli deploy` writes `fli-`
+     * ids and cannot have changed the object it replaces.
      */
     repoint({ appId, port }) {
       return serially(async () => {
@@ -422,15 +456,40 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
     },
 
     /**
+     * The loopback ports the app's own routes dial now, `[]` with none or no
+     * Caddy. A swap asks it before removing a leftover `_next`: one the route
+     * dials is serving, and removing it takes the app down.
+     */
+    dialed({ appId }) {
+      return serially(async () => {
+        checkRouteAppId(appId)
+        let reply
+        try {
+          reply = await caddy('GET', `/config/apps/http/servers/${SERVER}/routes`)
+        } catch (err) {
+          if (!err.unreachable) throw err
+          return []
+        }
+        const own = (reply.status < 300 ? reply.data ?? [] : [])
+          .filter(r => r['@id'] === routeId(appId) || isPathRouteOf(appId, r['@id']))
+        // A port no route dials is not one: moving every loopback upstream to 0 reads them all.
+        return [...new Set(repointRoutes(own, 0).moved.map(m => m.from))]
+      })
+    },
+
+    /**
      * Caddy's config loaded again as it stands, so a certificate waiting out
      * its ACME backoff is asked for now (`FJS-D1715`). Caddy skips a load
      * whose config is byte-identical — the case here — unless told
-     * `must-revalidate`; without the header this does nothing.
+     * `must-revalidate`; without the header this does nothing. Posted to
+     * `/config/` and not `/load`, because `/load` ignores `If-Match`.
      */
     reload() {
       return serially(async () => {
-        const config = must(await caddy('GET', '/config/'), 'reading its config')
-        must(await caddy('POST', '/load', config ?? {}, { 'cache-control': 'must-revalidate' }), 'reloading its config')
+        await guarded('/config/', 'its config', (config) => ({
+          method: 'POST', path: '/config/', body: config ?? {},
+          headers: { 'cache-control': 'must-revalidate' }, doing: 'reloading its config',
+        }))
         return { reloaded: true }
       })
     },
@@ -466,7 +525,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
           must(reply, `removing ${id}`)
           removed = true
         }
-        if (removed) await logAccess(must(await caddy('GET', '/config/'), 'reading its config'), routeId(appId), [])
+        if (removed) await logAccess(routeId(appId), [])
         return { removed }
       })
     },

@@ -13,7 +13,7 @@ import { join, resolve }           from 'node:path'
 import { typeScriptAt }            from '../core/functions.js'
 import {
   outlineCode, outlineMarkdown, outlineLite, outlineMesa, renderOutline, findRows, renderBody, pathOf, typeScriptFor,
-  wideRead, readVerdict, readRefusal, outlineHint, hintedRead, readHint, BLOCK_AT, WINDOW_AT, HINT_AT, SHOWN,
+  wideRead, readVerdict, readRefusal, outlineHint, hintedRead, readHint, registerRead, registerRefusal, BLOCK_AT, WINDOW_AT, HINT_AT, SHOWN,
 } from '../core/outline.js'
 
 const REPO = resolve(import.meta.dir, '../../..')
@@ -331,6 +331,32 @@ describe('the gate in front of a wide read', () => {
     expect(readHint({ kind: 'register', terms: ['junction', 'idempotency'] })).toContain('`fli find junction idempotency`')
     expect(readHint({ kind: 'plan', path: 'PLAN.md' })).toContain('`fli plan PLAN.md`')
     expect(readHint({ kind: 'symbol', name: 'bearerClaim' })).toContain('`fli sig bearerClaim`')
+  })
+
+  test('a register read as a file is refused; a command that only names one is not', () => {
+    const bash = command => registerRead({ tool_name: 'Bash', tool_input: { command } })
+    expect(bash("rg -n 'idempotency' ISSUES.md")).toEqual({ bin: 'rg', path: 'ISSUES.md' })
+    expect(bash('cd /x && grep -n "FJS-D927" ./DECISIONS.md | head -3')).toEqual({ bin: 'grep', path: './DECISIONS.md' })
+    expect(bash('rg -n -e foo -g x ISSUES_ARCHIVE.md')).toEqual({ bin: 'rg', path: 'ISSUES_ARCHIVE.md' })
+    expect(bash('sed -n 89,90p /abs/ISSUES.md')).toEqual({ bin: 'sed', path: '/abs/ISSUES.md' })
+    expect(bash('head -n 40 DECISIONS.md')).toEqual({ bin: 'head', path: 'DECISIONS.md' })
+    expect(bash("awk '/FJS-D197/' DECISIONS.md")).toEqual({ bin: 'awk', path: 'DECISIONS.md' })
+    expect(bash('rg -n git ISSUES.md')).toEqual({ bin: 'rg', path: 'ISSUES.md' })
+    // A pattern, a filter on the name, a write, git, a script, a heredoc and a glob are not reads of it.
+    expect(bash("rg -n 'ISSUES.md' packages")).toBe(null)
+    expect(bash('rg -n foo packages | grep -v ISSUES.md')).toBe(null)
+    expect(bash("rg -n foo . --glob '!ISSUES*'")).toBe(null)
+    expect(bash("sed -i 's/a/b/' ISSUES.md")).toBe(null)
+    expect(bash('echo x >> ISSUES.md')).toBe(null)
+    expect(bash('git diff -- ISSUES.md | head -40')).toBe(null)
+    expect(bash("python3 -c 'open(\"ISSUES.md\")'")).toBe(null)
+    expect(bash("python3 - <<'EOF'\nprint(open('ISSUES.md').read()[:9])\nEOF")).toBe(null)
+    expect(bash('fli find FJS-1546 --show')).toBe(null)
+    expect(registerRead({ tool_name: 'Read', tool_input: { file_path: 'ISSUES.md', offset: 9, limit: 20 } })).toBe(null)
+    const said = registerRefusal({ bin: 'rg', path: 'ISSUES.md' }, { kind: 'register', terms: ['FJS-3460'] }, { issue: 'FJS-4029', decision: 'FJS-D1904' })
+    expect(said).toContain('`fli find FJS-3460 --show`')
+    expect(said).toContain('FJS-4029 and FJS-D1904')
+    expect(said).toContain('Read it with offset and limit')
   })
 
   test('a whole or wide read is refused at BLOCK_AT; a narrow one is hinted at HINT_AT', () => {

@@ -4,8 +4,9 @@
 // when the tree holds an unfinished item of its own it has not been shown yet.
 // The verdict — when to build the report, when to block, what counts as shown
 // and whose an item is — is `stopVerdict` in `packages/cli/core/done.js`, where
-// it is tested; this file only gathers the tree's identity, the files the
-// session edited (`editedIn`, off its own transcript), and writes the state.
+// it is tested, beside the tree's identity (`treeFingerprint`) and the kept
+// report the command shares (`doneReport`); this file only gathers the files
+// the session edited (`editedIn`, off its own transcript) and writes the state.
 //
 // The state is one file per session, `<git dir>/fli-done-stop/<session>.json`.
 // The tree is shared by every session in it, so one file shared by all let a
@@ -32,7 +33,6 @@
 // `fli done` itself at the end of a step.
 
 import { execFileSync }                                                     from 'node:child_process'
-import { createHash }                                                       from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join }                                                 from 'node:path'
 import { pathToFileURL }                                                    from 'node:url'
@@ -65,7 +65,7 @@ try {
   const done = join(root, 'packages', 'cli', 'core', 'done.js')
   if (!existsSync(done)) process.exit(0)
 
-  const { runDone, stopVerdict, editedIn } = await import(pathToFileURL(done).href)
+  const { doneReport, treeFingerprint, stopVerdict, editedIn } = await import(pathToFileURL(done).href)
 
   // An unreadable transcript is null: every unfinished item blocks, as before.
   let edited = null
@@ -78,12 +78,8 @@ try {
   const session  = String(input.session_id ?? '').replace(/[^\w-]/g, '') || 'unknown'
   const stateFile = join(stateDir, `${session}.json`)
 
-  // An untracked file's content is in no diff, so its size and mtime stand in.
-  const untracked = git('ls-files', '--others', '--exclude-standard').split('\n').filter(Boolean)
-    .map(f => { try { const s = statSync(join(root, f)); return `${f}:${s.size}:${s.mtimeMs}` } catch { return f } })
-  const fingerprint = createHash('sha1')
-    .update(git('status', '--porcelain')).update(git('diff', 'HEAD')).update(untracked.join('\n'))
-    .digest('hex')
+  const fingerprint = treeFingerprint(root)
+  if (!fingerprint) process.exit(0)
 
   let state = {}
   try { state = JSON.parse(readFileSync(stateFile, 'utf8')) } catch {}
@@ -94,7 +90,7 @@ try {
   const lock = join(stateDir, '.lock')
   if (!takeLock(lock)) process.exit(0)
   let report
-  try { report = await runDone(root) } finally { try { rmSync(lock) } catch {} }
+  try { report = await doneReport(root) } finally { try { rmSync(lock) } catch {} }
   const verdict = stopVerdict({ state, head, fingerprint, edited, report })
   writeFileSync(stateFile, JSON.stringify(verdict.state))
   for (const name of readdirSync(stateDir)) {

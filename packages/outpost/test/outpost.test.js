@@ -15,7 +15,7 @@ import { test, expect, describe } from 'bun:test'
 import { signRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer, MAX_BODY_BYTES } from '../src/server.js'
 import { createDocker, createInspector, containerName, isDigest, BACKUP_SCRIPT, swapFor } from '../src/docker.js'
-import { STREAM_CLOSE_DELAY } from '../src/swap.js'
+import { STREAM_CLOSE_DELAY, HEALTH_CHECK_TIMEOUT_S } from '../src/swap.js'
 import { createReporter }         from '../src/report.js'
 import { createIngress }          from '../src/ingress.js'
 import { createVitals }           from '../src/vitals.js'
@@ -762,6 +762,34 @@ describe('what the machine is asked to do', () => {
       expect(argv().slice(run)).not.toContain('docker rm -f fjs--acme-prod-web-app-1_replaced')
     })
 
+    // FJS-4029: the wait is a deadline. Counting polls let a health path that
+    // hangs cost HEALTH_CHECK_TIMEOUT_S plus the interval each, 180 s of a 30 s
+    // budget. The clock is virtual: a hung ask spends its whole timeout.
+    test('a health path that hangs ends the wait at the budget plus one check, not at budget times check', async () => {
+      const clock = { t: 0 }
+      const asked = []
+      const fetch = async () => { asked.push(clock.t); clock.t += HEALTH_CHECK_TIMEOUT_S * 1000; throw new Error('timed out') }
+      const fake  = fakeRunner({
+        'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'container-new\n' },
+        'docker inspect': { stdout: '{"80/tcp":[{"HostIp":"","HostPort":"7300"}]}\n' },
+      })
+      const docker = createDocker({
+        appsDir: APPS, run: fake.run, fetch,
+        health: { intervalMs: 1_000, settleMs: 0, now: () => clock.t, sleep: async (ms) => { clock.t += ms } },
+      })
+      const server = createOutpostServer(CONFIG, { docker, inspector: createInspector({ run: fake.run }), log: { warn() {}, error() {} } })
+      const res = await send(server, 'POST', '/deploy', { ...SLUGS,
+        deployment_id: 'dep-9', app_id: 'app-1', image: 'acme-web', digest: DIGEST,
+        config: { port: 7300, containerPort: 80, healthCheck: '/healthz', healthTimeout: 30 },
+      })
+      expect(res.status).toBe(500)
+      // Asks at 0, 6, 12, 18 and 24 s; the next would start at 30 s, the deadline.
+      const newRelease = asked.filter(t => t < 30_000)
+      expect(newRelease).toEqual([0, 6_000, 12_000, 18_000, 24_000])
+      // The put-back is a wait of its own, begun within one check of the budget.
+      expect(asked[newRelease.length]).toBeLessThanOrEqual((30 + HEALTH_CHECK_TIMEOUT_S) * 1000)
+    })
+
     test('a container that is not running after the start is the same failure', async () => {
       const { sent, argv } = deployWith({ 'docker run': { stdout: 'c\n' }, running: { stdout: 'false\n' } })
       const res = await sent
@@ -1029,8 +1057,32 @@ describe('what the machine is asked to do', () => {
     expect(down.reason).toContain('503')
     expect(asked).toEqual(['http://127.0.0.1:5678/healthz'])
 
+    // FJS-4019: fli deploy's curl takes 200 alone, so a 204 here would go live
+    // on Outpost and be put back by fli deploy.
+    status = 204
+    const empty = await (await send(server, 'POST', '/health-check', { app_id: 'app-1', port: 5678, path: '/healthz' })).json()
+    expect(empty).toMatchObject({ healthy: false })
+    expect(empty.reason).toContain('204')
+
     status = 200
     expect((await (await send(server, 'POST', '/health-check', { app_id: 'app-1', port: 5678, path: '/healthz' })).json()).healthy).toBe(true)
+  })
+
+  test('a health path that hangs is given up on at the per-check timeout', async () => {
+    const fake    = fakeRunner({ 'docker inspect': { stdout: 'true\n' } })
+    const signals = []
+    const fetch   = async (url, { signal }) => { signals.push(signal); return new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason))) }
+    const docker  = createDocker({ appsDir: APPS, health: FAST, run: fake.run, fetch })
+    const timeouts    = []
+    const realTimeout = AbortSignal.timeout
+    AbortSignal.timeout = (ms) => { timeouts.push(ms); return realTimeout.call(AbortSignal, 1) }
+    try {
+      const hung = await docker.healthCheck({ appId: 'app-1', name: 'app', port: 5678, path: '/healthz' })
+      expect(hung).toMatchObject({ healthy: false })
+      expect(hung.reason).toContain('did not answer')
+    } finally { AbortSignal.timeout = realTimeout }
+    expect(timeouts).toEqual([HEALTH_CHECK_TIMEOUT_S * 1000])
+    expect(signals).toHaveLength(1)
   })
 
   test('a health port is an integer in 1-65535, or no request is made', async () => {
@@ -1780,14 +1832,33 @@ describe('the ingress — Caddy, through its admin API', () => {
 
   /** Caddy's admin API as a real one answered it (`verify-docker.mjs` drives
    *  the real one): a path that does not exist yet is a 400, an `@id` it has
-   *  not seen is a 404, and PUT creates the levels above it. */
+   *  not seen is a 404, and PUT creates the levels above it. Every GET answers
+   *  an `Etag` and every write is refused 412 when its `If-Match` is not the
+   *  etag of the config as it stands (a counter here, a hash there; Caddy's is
+   *  per path, so this one refuses a superset). `interleave(fn, times)` runs
+   *  `fn(config)` as another writer's write just before each of the next
+   *  `times` guarded writes is judged. */
   function fakeCaddy(initial = null) {
     let config = structuredClone(initial)
+    let rev    = 0
+    let racer  = null
     const asked = []
     const loads = []
     const routes = () => config?.apps?.http?.servers?.ingress?.routes
     const answer = (status, body) => new Response(body === undefined ? '' : JSON.stringify(body), { status })
-    const fetch = async (url, { method = 'GET', body, headers = {} } = {}) => {
+    const fetch = async (url, init = {}) => {
+      const { method = 'GET', headers = {} } = init
+      const path = new URL(url).pathname
+      if (method !== 'GET' && headers['if-match'] !== undefined && racer?.times > 0) { racer.times--; racer.fn(config); rev++ }
+      if (headers['if-match'] !== undefined && !headers['if-match'].endsWith(` ${rev}"`)) {
+        asked.push(`${method} ${path} 412`)
+        return answer(412, { error: 'If-Match header did not match' })
+      }
+      const reply = await handle(url, init)
+      if (method !== 'GET') { if (reply.status < 300) rev++; return reply }
+      return new Response(await reply.text(), { status: reply.status, headers: { etag: `"${path} ${rev}"` } })
+    }
+    const handle = async (url, { method = 'GET', body, headers = {} } = {}) => {
       const path = new URL(url).pathname
       asked.push(`${method} ${path}`)
       const data = body ? JSON.parse(body) : undefined
@@ -1806,7 +1877,7 @@ describe('the ingress — Caddy, through its admin API', () => {
         routes().push(data)
         return answer(200)
       }
-      if (method === 'POST' && path === '/load') { loads.push({ body: data, revalidate: headers['cache-control'] === 'must-revalidate' }); config = data; return answer(200) }
+      if (method === 'POST' && path === '/config/') { if (headers['cache-control'] === 'must-revalidate') loads.push({ body: data, revalidate: true }); config = data; return answer(200) }
       if (method === 'POST' && path === '/config/logging') { config.logging = data; return answer(200) }
       if (method === 'POST' && path === '/config/apps/http/servers/ingress/logs') {
         if (!config?.apps?.http?.servers?.ingress) return answer(400, { error: 'invalid traversal path' })
@@ -1818,7 +1889,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       if (method === 'DELETE') { routes().splice(at, 1); return answer(200) }
       return answer(400, { error: `unexpected ${method} ${path}` })
     }
-    return { fetch, asked, loads, get config() { return config } }
+    return { fetch, asked, loads, interleave: (fn, times = 1) => { racer = { fn, times } }, get config() { return config } }
   }
 
   const serverWith = (caddy, fake = fakeRunner({ 'docker run': { stdout: 'container-1\n' } })) => ({
@@ -1943,7 +2014,7 @@ describe('the ingress — Caddy, through its admin API', () => {
 
     // A redeploy to other hostnames moves the logger with them, and writes the exclusion once.
     await deploy(server, { hosts: ['store.example.com'] })
-    expect(ingress.logs.logger_names).toEqual({ 'store.example.com': ['fjs-app-1'] })
+    expect(caddy.config.apps.http.servers.ingress.logs.logger_names).toEqual({ 'store.example.com': ['fjs-app-1'] })
     expect(caddy.config.logging.logs.default.exclude).toEqual(['http.log.access.fli-other', 'http.log.access.fjs-app-1'])
 
     await send(server, 'POST', '/stop', { app_id: 'app-1' })
@@ -2005,6 +2076,10 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect(caddy.config.apps.http.servers.ingress.listen).toEqual([':7185'])
   })
 
+  // The route a stop-first writes first dials the live container, which a
+  // read of the daemon finds; nothing is started, stopped or renamed.
+  const changed = (fake) => fake.calls.filter(c => !['ps', 'inspect'].includes(c[1]))
+
   test('a hostname another app holds is refused, and nothing is started', async () => {
     const caddy = fakeCaddy()
     const { server } = serverWith(caddy)
@@ -2014,7 +2089,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     const res = await deploy(other, { app_id: 'app-2', hosts: ['shop.example.com'] })
     expect(res.status).toBe(500)
     expect((await res.json()).error).toContain('shop.example.com is already routed to fjs-app-1')
-    expect(fake.calls).toEqual([])
+    expect(changed(fake)).toEqual([])
   })
 
   test('a hostname Caddy cannot route is refused before anything runs', async () => {
@@ -2026,6 +2101,45 @@ describe('the ingress — Caddy, through its admin API', () => {
       expect(fake.calls).toEqual([])
       expect(caddy.asked).toEqual([])
     }
+  })
+
+  const fliRoute = { '@id': 'fli-other', match: [{ host: ['other.example.com'] }], handle: [{ handler: 'static_response', status_code: 200 }], terminal: true }
+  const addFli   = (config) => { config.apps.http.servers.ingress.routes.push(structuredClone(fliRoute)) }
+
+  test('a write landing between Outpost\'s read and its write is merged, not reverted (FJS-4017)', async () => {
+    // Order PATCH and the access-log write each carried the whole of a read:
+    // a `fli deploy` route written in between was gone after them.
+    const caddy = fakeCaddy()
+    const { server } = serverWith(caddy)
+    await deploy(server, { hosts: ['shop.example.com'], paths: [{ host: 'shop.example.com', prefix: '/api' }] })
+    caddy.interleave(addFli)
+    await deploy(server, { hosts: ['shop.example.com'], paths: [{ host: 'shop.example.com', prefix: '/v2' }] })
+    const ids = caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])
+    expect(ids).toContain('fli-other')
+    expect(ids.indexOf('fjs-app-1-path-0')).toBeLessThan(ids.indexOf('fjs-app-1'))
+    expect(caddy.asked.filter(a => a.endsWith(' 412'))).toHaveLength(1)
+  })
+
+  test('a reload that lost a race reads again and loads what the other writer added (FJS-4017)', async () => {
+    const caddy = fakeCaddy()
+    const { server } = serverWith(caddy)
+    await deploy(server, { hosts: ['shop.example.com'] })
+    caddy.interleave(addFli)
+    expect((await send(server, 'POST', '/ingress/reload', {})).status).toBe(200)
+    expect(caddy.loads).toHaveLength(1)
+    expect(caddy.loads[0].body.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-app-1', 'fli-other'])
+  })
+
+  test('a config that keeps changing is refused after three reads, never written unguarded (FJS-4017)', async () => {
+    const caddy = fakeCaddy()
+    const { server } = serverWith(caddy)
+    await deploy(server, { hosts: ['shop.example.com'] })
+    let n = 0
+    caddy.interleave((config) => { config.apps.http.servers.ingress.routes.push({ ...fliRoute, '@id': `fli-${n++}` }) }, 9)
+    const res = await send(server, 'POST', '/ingress/reload', {})
+    expect(res.status).toBe(500)
+    expect(await res.text()).toContain('kept changing')
+    expect(caddy.loads).toHaveLength(0)
   })
 
   test('a reload loads the config Caddy holds, forced, so a certificate in backoff is asked for now', async () => {
@@ -2057,7 +2171,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     const refused = await deploy(server, { hosts: ['shop.example.com'] })
     expect(refused.status).toBe(500)
     expect((await refused.json()).error).toContain("caddy's admin API at http://127.0.0.1:1 did not answer")
-    expect(fake.calls).toEqual([])
+    expect(changed(fake)).toEqual([])
 
     const plain = await deploy(server)
     expect(plain.status).toBe(200)
@@ -2182,7 +2296,57 @@ describe('the ingress — Caddy, through its admin API', () => {
       }
     })
 
-    test('an absent swap is stop-first: the route moves before the run, onto the App\'s own port', async () => {
+    // FJS-4020: the route moved to `_next` and the rename into place failed.
+    test('a _next the route dials is named into place by the next release, either swap, never removed', async () => {
+      const dialing = { '@id': 'fjs-app-1', match: [{ host: ['shop.example.com'] }], handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: '127.0.0.1:49153' }] }], terminal: true }
+      for (const swap of ['start-first', 'stop-first']) {
+        const caddy = fakeCaddy({ apps: { http: { servers: { ingress: { listen: [':443'], routes: [dialing] } } } } })
+        // Each write's dial, with how many commands had run when it landed.
+        let argv = () => []
+        const dials = []
+        const watched = { fetch: async (url, opts = {}) => {
+          const reply = await caddy.fetch(url, opts)
+          const route = caddy.config.apps.http.servers.ingress.routes.find(r => r['@id'] === 'fjs-app-1')
+          if ((opts.method ?? 'GET') !== 'GET' && route) dials.push({ at: argv().length, dial: route.handle[0].upstreams[0].dial })
+          return reply
+        } }
+        const made = overlapWith(watched, { answers: { containers: [`${LIVE}_replaced`, NEXT] } })
+        argv = made.argv
+        const res = await release(made.server, { swap })
+        expect(res.status).toBe(200)
+        const at = argv().indexOf(`docker rename ${NEXT} ${LIVE}`)
+        expect(argv()).not.toContain(`docker rm -f ${NEXT}`)
+        expect(at).toBeGreaterThan(-1)
+        expect(at).toBeLessThan(argv().findIndex(c => c.startsWith('docker run -d')))
+        // Nothing wrote the route off the serving container before it was named.
+        expect(dials.filter(d => d.at <= at).every(d => d.dial === '127.0.0.1:49153')).toBe(true)
+      }
+    })
+
+    test('a stop-first after a start-first keeps the route on the live container until the new one answers (FJS-4018)', async () => {
+      const caddy = fakeCaddy()
+      await release(overlapWith(caddy).server)
+      // Each write's dial, with how many commands had run when it landed.
+      let argv = () => []
+      const dials = []
+      const watched = { fetch: async (url, opts = {}) => {
+        const reply = await caddy.fetch(url, opts)
+        if ((opts.method ?? 'GET') !== 'GET') dials.push({ at: argv().length, dial: caddy.config.apps.http.servers.ingress.routes[0].handle[0].upstreams[0].dial })
+        return reply
+      } }
+      const second = overlapWith(watched, { ports: { [LIVE]: 49153 } })
+      argv = second.argv
+      const res = await deploy(second.server, { hosts: ['shop.example.com'], config: { port: 7300, containerPort: 80, healthCheck: '/healthz' } })
+      expect((await res.json()).swap).toBe('stop-first')
+      const stop = argv().indexOf(`docker stop ${LIVE}_replaced`)
+      const run  = argv().findIndex(c => c.startsWith('docker run -d'))
+      expect(stop).toBeGreaterThan(-1)
+      const dialed = (writes) => [...new Set(writes.map(d => d.dial))]
+      expect(dialed(dials.filter(d => d.at <= run))).toEqual(['127.0.0.1:49153'])
+      expect(dialed(dials.filter(d => d.at > run))).toEqual(['127.0.0.1:7300'])
+    })
+
+    test('an absent swap is stop-first: the route is written before the run, onto the App\'s own port where the live one is', async () => {
       const caddy = fakeCaddy()
       const { server, argv } = overlapWith(caddy)
       const res = await deploy(server, { hosts: ['shop.example.com'] })

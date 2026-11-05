@@ -17,7 +17,7 @@ defaults:
 const { loadFrontierConfig, dockerfileScripts, unexecdEntrypoint } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
-const { createSwap, runFlags, sshRunner, shWord, portOf, livePivot, swapFor, swapSetting, healthAttempts, checkHealthTimeout } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
+const { createSwap, runFlags, sshRunner, shWord, portOf, livePivot, swapFor, swapSetting, healthBudgetS, checkHealthTimeout, HEALTHY_STATUS, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
 const { apiContainer } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
@@ -596,7 +596,8 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // here would stop the running container and then restore it, so it is refused
 // before anything is touched.
 //
-// Healthy is `healthPath` answering 200 and no database open outside
+// Healthy is `healthPath` answering Outpost's probe (`HEALTHY_STATUS` within
+// `HEALTH_CHECK_TIMEOUT_S`, `FJS-4019`) and no database open outside
 // CONTAINER_DB_DIR: one that is works until the next swap, which starts it empty.
 //
 // `deploy.swap: 'startFirst'` asks for the overlap (`FJS-D1847`), and the
@@ -605,6 +606,7 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // Docker picks (`FJS-D1837`), so it needs this app's Caddy routes to follow it,
 // and every swap after one re-points them: a stop-first back onto `apiPort`, or
 // a put-back container that came up on a new port, leaves Caddy dialing nothing.
+// `createSwap` calls `follow` at the moment each swap moves the live port.
 //
 // Answers `{ container, replaced, healthy, restored, untouched, none, unbound,
 // reason, swap, swapReason, pivot, port }`; only a refusal before the running
@@ -615,9 +617,9 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // a revert it is a revert that could not land.
 const pauseCore = () => import(new URL('file://' + global.fliRoot + '/core/pause.js'))
 
-const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, serverPath = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, intervalS = 2, pivot = null }) => {
+const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, serverPath = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, intervalS = HEALTH_INTERVAL_S, pivot = null }) => {
   const asked    = swapSetting(deployConf ?? {})
-  const attempts = healthAttempts(deployConf?.healthTimeout, intervalS * 1000)
+  const budgetS  = healthBudgetS(deployConf?.healthTimeout)
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
 
@@ -678,15 +680,21 @@ const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath
   // Every `$` and every nested quote below is the TARGET's — the script is piped
   // to its shell rather than interpolated into a command line, which is what
   // stops `$(curl …)` running here and polling the operator's own machine.
+  // Without --max-time a health path that accepts and never answers holds the
+  // loop, and a stop-first outage with it. The wait is a deadline, not a count
+  // of polls: a hung one costs --max-time plus the interval, so a count ran
+  // several budgets (`FJS-4029`). No poll starts at or after the deadline.
   const answers = (port) => {
     try {
-      machine.run(`for i in $(seq 1 ${attempts}); do
-  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${port}${healthPath} 2>/dev/null)
-  if [ "$STATUS" = "200" ]; then
+      machine.run(`DEADLINE=$(( $(date +%s) + ${budgetS} ))
+while :; do
+  STATUS=$(curl -s -o /dev/null --max-time ${HEALTH_CHECK_TIMEOUT_S} -w "%{http_code}" http://localhost:${port}${healthPath} 2>/dev/null)
+  if [ "$STATUS" = "${HEALTHY_STATUS}" ]; then
     echo "ok"
     exit 0
   fi
   sleep ${intervalS}
+  [ "$(date +%s)" -lt "$DEADLINE" ] || break
 done
 echo "fail"
 exit 1`)
@@ -709,19 +717,19 @@ exit 1`)
       showContainerTail(machine, name, log)
       return { healthy: false, reason: `${url} did not answer` }
     }
-    log.info(`Waiting for ${healthPath} (up to ${attempts * intervalS}s)...`)
+    log.info(`Waiting for ${healthPath} (up to ${budgetS}s)...`)
     if (!answers(port)) {
       // Name the URL. The most common cause is not a sick app but a health path
       // that omits the app's apiPrefix — health() registers through app.get(),
       // which moves with the prefix, so an app serving /api/health polls 404 here.
-      log.error(`Health check failed after ${attempts * intervalS}s`)
+      log.error(`Health check failed after ${budgetS}s`)
       log.error(`  polled: ${url}`)
       log.info(`  if the API is healthy, check deploy.api.health includes your apiPrefix`)
       // An app that REFUSED to start says why in its own output, and a stopped
       // container still answers `docker logs` — the one that exited is the case
       // that matters most. Read before the put-back removes it.
       showContainerTail(machine, name, log)
-      return { healthy: false, reason: `${url} did not answer 200 in ${attempts * intervalS}s` }
+      return { healthy: false, reason: `${url} did not answer ${HEALTHY_STATUS} in ${budgetS}s` }
     }
     const { openFilesScript, unboundDatabases } = await pauseCore()
     unbound = unboundDatabases({ output: machine.capture(openFilesScript(name)), volume: CONTAINER_DB_DIR })
@@ -743,24 +751,25 @@ exit 1`)
   const verdict   = { swap: chosen.swap, swapReason: chosen.reason, pivot: chosen.pivot }
   if (chosen.reason) log.info(`Swapping stop-first: ${chosen.reason}`)
 
-  // Caddy re-pointed after a swap that moved the live port. Warned rather than
-  // thrown: the container is settled by now, and `07b-edge` writes them again.
+  // Caddy re-pointed when a stop-first or a put-back moved the live port. Warned
+  // rather than thrown: the container is settled by now, and `07b-edge` writes
+  // them again.
   const follow = async (port) => {
     if (!routes.move || !port || port === priorPort) return
     try { await routes.move(port); log.info(`Routes moved to :${port}`) }
     catch (e) { log.warn(`${container} answers on :${port} and moving its routes there failed — ${e.message}; fli deploy:setup rewrites them`) }
   }
 
-  const swap = createSwap({ run, find, health })
-  let port   = apiPort
+  const swap   = createSwap({ run, find, health })
+  const routed = () => routeDialed(machine, appId)
+  let port     = apiPort
   try {
     if (chosen.swap === 'start-first') {
       log.info(`Starting ${image} as ${container}_next beside the running one, the routes moving once it answers...`)
-      port = (await swap.startFirst({ name: container, argv: argvFor(`${container}_next`, '127.0.0.1::3000'), path: healthPath, route: routes.move })).port
+      port = (await swap.startFirst({ name: container, argv: argvFor(`${container}_next`, '127.0.0.1::3000'), path: healthPath, route: routes.move, routed })).port
     } else {
       log.info(`Starting ${image} as ${container}, the running one set aside as ${replaced}...`)
-      await swap.stopFirst({ name: container, argv: argvFor(container, `127.0.0.1:${apiPort}:3000`), port: apiPort, path: healthPath })
-      await follow(apiPort)
+      await swap.stopFirst({ name: container, argv: argvFor(container, `127.0.0.1:${apiPort}:3000`), port: apiPort, path: healthPath, route: follow, routed })
     }
   } catch (err) {
     // A throw with neither came after the route moved, or before anything was touched.
@@ -771,7 +780,6 @@ exit 1`)
     if (err.none) log.info(`${container} removed — this was its first deploy here, so there was no previous release to put back`)
     else if (restored) log.warn('Restored the previous container, and it answers')
     const back = restored ? await portNow() : null
-    if (restored) await follow(back)
     return { container, replaced, healthy: false, restored, untouched: false, none: Boolean(err.none), unbound, reason: err.message, ...verdict, port: back }
   }
   log.success('Health check passed')
@@ -810,6 +818,21 @@ const routeMover = async ($, machine, { appId, serverPath, deployConf }) => {
     if (written?.error) throw new Error(written.error)
   }
   return { move, reason: null }
+}
+
+// ─── routeDialed ──────────────────────────────────────────────────────────────
+// The loopback ports this app's Caddy routes dial, `[]` when Caddy holds none.
+// A swap asks it before removing a leftover `_next`: one the route dials is the
+// release serving, and removing it takes the app down.
+const routeDialed = async (machine, appId) => {
+  const { routeDials, parseConfigRead, readConfigScript, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+  try {
+    const { config } = parseConfigRead(machine.capture(readConfigScript()))
+    return [...new Set(routeDials(config, appId).map(d => d.port))]
+  } catch (e) {
+    if (!(e instanceof EdgeError)) throw e
+    return []
+  }
 }
 
 // ─── chooseSwap ───────────────────────────────────────────────────────────────

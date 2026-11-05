@@ -162,10 +162,11 @@ export function createOutpostServer(config, {
     // comes back from here rather than being stated by the caller.
     //
     // `hosts` are the app's hostnames, and naming any puts Caddy in front of it
-    // (`FJS-D564`) and its port on loopback (`FJS-D565`). The route is pushed
-    // before the container starts: a hostname another app holds, or a Caddy
-    // that is down, then fails the release rather than leaving a container on
-    // loopback that nothing can reach.
+    // (`FJS-D564`) and its port on loopback (`FJS-D565`). A stop-first writes
+    // the route before the swap, dialing the container serving now: a hostname
+    // another app holds, or a Caddy that is down, then fails the release before
+    // the old container is touched. The swap moves the dial itself once the
+    // new one answers (`FJS-4018`).
     //
     // Every refusal comes before the old container is touched, and Basecamp
     // sends no `/stop` ahead of this for that reason (`FJS-1682`): a release
@@ -211,12 +212,25 @@ export function createOutpostServer(config, {
         const pivot = asked === 'start-first' ? await docker.pivot({ appId, image, digest: built.digest ?? body.digest }) : null
         const { swap, reason } = pivot ? swapFor(pivot) : { swap: 'stop-first', reason: null }
 
-        // A release that dropped its last hostname drops its route too.
-        // Start-first moves the route itself, once the new container answers.
+        // A release that dropped its last hostname drops its route too. The
+        // live port is Docker's after a start-first, and a route dialing the
+        // App's port before the new container holds it answers 502.
+        const routed = () => ingress.dialed({ appId })
+        let dialing = null
         if (swap === 'stop-first') {
-          if (fronted || redirects.length) await routeTo(port)
-          else await ingress.unroute({ appId })
+          if (fronted || redirects.length) {
+            // With no live container, the one container the route already dials
+            // is the serving one: a start-first that died after its route moved
+            // leaves it as `_next`, and a route written off it takes it down
+            // before the swap can name it into place.
+            const dialed = fronted ? await routed().catch(() => []) : []
+            dialing = fronted ? (await docker.published({ appId }).catch(() => null))?.port ?? (dialed.length === 1 ? dialed[0] : port) : port
+            await routeTo(dialing)
+          } else await ingress.unroute({ appId })
         }
+        const route = !fronted ? null
+          : swap === 'start-first' ? routeTo
+          : async (to) => { if (to !== dialing) await routeTo(to) }
 
         let started
         try {
@@ -232,19 +246,12 @@ export function createOutpostServer(config, {
             loopback:    fronted,
             exposesPort: body.exposes_port === true,
             swap,
-            route:       swap === 'start-first' ? routeTo : null,
+            route,
+            routed,
             held:        true,
           })
         } catch (err) {
           await syncExposed()
-          // The route already moved to the new port. A put-back container
-          // answers on the port IT published, so a route left dialing the new
-          // one sends the restored app's hostnames a 502.
-          if (err.restored && fronted) {
-            const live = await docker.published({ appId }).catch(() => null)
-            if (live?.port && live.port !== port)
-              await routeTo(live.port).catch(e => log.error?.(`outpost: re-routing app ${appId} to the restored container failed — ${e.message}`))
-          }
           throw err
         }
         await syncExposed()

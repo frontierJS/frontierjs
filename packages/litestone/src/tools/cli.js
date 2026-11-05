@@ -5454,9 +5454,12 @@ async function main() {
 
   // litestone spec
   //
-  // A working draft of the specification, collected from the code. Not gated:
-  // no --check, because nothing about it is a claim anyone relies on yet.
+  // A working draft of the specification, collected from the code. Not gated,
+  // because nothing about it is a claim anyone relies on yet — but the snapshot
+  // engine runs every header's generator with --check, and a write there
+  // changed the tree on every `fli done`, so its Stop hook never saw it settle.
   if (cmd === 'spec') {
+    if (flag('check')) return
     const { renderSpecDraft } = await import('./spec-draft.js')
     const body    = renderSpecDraft()
     const outPath = resolve(getFlag('out') ?? resolve(import.meta.dirname, '../../docs/spec.snapshot.md'))

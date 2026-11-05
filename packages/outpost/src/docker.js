@@ -24,7 +24,7 @@ import { pipeline }                from 'node:stream/promises'
 import { validRelativePath, validName } from './static.js'
 import { ensureDeployKey }         from './deploy-key.js'
 import { chooseDockerfile, needsGenerated, exposedPort } from './dockerfile.js'
-import { createSwap, portOf as portIn, runFlags, checkStopGrace, checkHealthTimeout, healthAttempts, livePivot, swapFor } from './swap.js'
+import { createSwap, portOf as portIn, runFlags, checkStopGrace, checkHealthTimeout, healthBudgetS, healthyStatus, livePivot, swapFor, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } from './swap.js'
 
 export { swapFor }
 import { layout }                  from './layout.js'
@@ -182,10 +182,12 @@ export function checkSwap({ swap = 'stop-first', loopback = false, exposesPort =
   if (path == null) throw new Error('a start-first swap moves the route once the new container answers, so it needs a health path (healthCheck) to ask — it swaps stop-first')
 }
 
-/** How often `deploy` asks a new container, and for how long an app with no
- *  health path must stay up. How many times is the release's `healthTimeout`
- *  (`healthAttempts`); an `attempts` given here wins, for a test. */
-const HEALTH = { intervalMs: 3_000, settleMs: 5_000 }
+/** How often `deploy` asks a new container (`swap.js`'s one probe), and for
+ *  how long an app with no health path must stay up. How long it keeps asking
+ *  is the release's `healthTimeout`, a deadline (`healthBudgetS`); `now` and
+ *  `sleep` are the clock a test replaces, and an `attempts` given here stops
+ *  the asking sooner, for a test. */
+const HEALTH = { intervalMs: HEALTH_INTERVAL_S * 1000, settleMs: 5_000 }
 
 /** How long an app with no health path must stay up, unrestarted, before its
  *  `_replaced` is removed (`FJS-3853`). One `State.Running` read the instant
@@ -526,17 +528,27 @@ export function createDocker({
       return { healthy: false, reason: `a health path needs a published port (1-65535) and a path beginning with '/' — got port ${port}, path '${path}'` }
     const url = `http://127.0.0.1:${Number(port)}${path}`
     try {
-      const res = await fetchFn(url, { signal: AbortSignal.timeout(3_000) })
-      return res.ok ? { healthy: true } : { healthy: false, reason: `${url} answered ${res.status}` }
+      const res = await fetchFn(url, { signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_S * 1000) })
+      return healthyStatus(res.status) ? { healthy: true } : { healthy: false, reason: `${url} answered ${res.status}` }
     } catch (err) {
       return { healthy: false, reason: `${url} did not answer: ${err.message}` }
     }
   }
 
-  async function untilHealthy(target, attempts) {
+  /** Asks until healthy or until `budgetS` has passed. A check that hangs costs
+   *  `HEALTH_CHECK_TIMEOUT_S`, so a count of checks overran the budget by that
+   *  much per check (`FJS-4029`); no check starts at or after the deadline, so
+   *  the wait ends within the budget plus one check. */
+  async function untilHealthy(target, budgetS) {
+    const now      = health.now ?? Date.now
+    const sleep    = health.sleep ?? Bun.sleep
+    const deadline = now() + budgetS * 1000
     let last
-    for (let i = 0; i < attempts; i++) {
-      if (i) await Bun.sleep(health.intervalMs)
+    for (let asked = 0; asked < (health.attempts ?? Infinity); asked++) {
+      if (asked) {
+        await sleep(health.intervalMs)
+        if (now() >= deadline) break
+      }
       last = await healthCheck(target)
       if (last.healthy) break
     }
@@ -606,14 +618,14 @@ export function createDocker({
   /** The swap for one App. The put-back container is asked about on the port
    *  it published, which an edited App row may not match. */
   function swapOf(appId, healthTimeout = null) {
-    const attempts = health.attempts ?? healthAttempts(healthTimeout, health.intervalMs)
+    const budgetS = healthBudgetS(healthTimeout)
     return createSwap({
       run,
       find: () => containersOf(appId),
       health: async ({ name, port, path, previous }) => untilHealthy({
         appId, name, path,
         port: previous ? (await published({ appId }).catch(() => null))?.port : port,
-      }, attempts),
+      }, budgetS),
     })
   }
 
@@ -935,15 +947,17 @@ export function createDocker({
      * old one waits as `<its name>_replaced` until then, and comes back under
      * its own name if the new one does not start or does not answer.
      *
-     * `swap: 'start-first'` keeps the old one serving instead, and calls
-     * `route(port)` once the new one answers; see `swap.js`.
+     * `swap: 'start-first'` keeps the old one serving instead. Either swap
+     * calls `route(port)` when the live container moves, and `routed()` says
+     * which container the route dials; see `swap.js`.
      */
-    async deploy({ appId, project, environment, appSlug, image, digest, config = {}, port, loopback = false, exposesPort = false, swap = 'stop-first', route = null }) {
+    async deploy({ appId, project, environment, appSlug, image, digest, config = {}, port, loopback = false, exposesPort = false, swap = 'stop-first', route = null, routed = null }) {
       const name = containerName({ appId, project, environment, appSlug })
       checkRunConfig(config)
       checkSwap({ swap, loopback, exposesPort, port, path: config.healthCheck ?? null })
       const startFirst = swap === 'start-first'
-      if (startFirst && typeof route !== 'function') throw new Error('a start-first swap needs the route it moves once the new container answers')
+      if (startFirst && (typeof route !== 'function' || typeof routed !== 'function'))
+        throw new Error('a start-first swap needs the route it moves once the new container answers, and routed() to say which container the route dials')
 
       const argv = ['run', '-d', '--name', startFirst ? `${name}_next` : name, '--restart', 'unless-stopped']
       argv.push('--label', `${APP_LABEL}=${appId}`, '--label', `${APP_LABEL}.slug=${appSlug}`,
@@ -1001,10 +1015,10 @@ export function createDocker({
       const path = config.healthCheck ?? null
       const swapper = swapOf(appId, config.healthTimeout ?? null)
       if (startFirst) {
-        const started = await swapper.startFirst({ name, argv, opts, before: chown, path, route })
+        const started = await swapper.startFirst({ name, argv, opts, before: chown, path, route, routed })
         return { ...started, digest: digest ?? await digestOf(image), swap }
       }
-      const { containerId } = await swapper.stopFirst({ name, argv, opts, before: chown, port, path })
+      const { containerId } = await swapper.stopFirst({ name, argv, opts, before: chown, port, path, route, routed })
       return { containerId, digest: digest ?? await digestOf(image), swap }
     },
 
