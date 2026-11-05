@@ -15,8 +15,8 @@
  */
 
 import { stripVTControlCharacters } from 'node:util'
-import { dirname }              from 'node:path'
-import { mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
+import { dirname, relative }    from 'node:path'
+import { mkdir, readdir, readFile, realpath, rename, rm, stat, symlink } from 'node:fs/promises'
 import { existsSync, readFileSync, writeFileSync, renameSync, createWriteStream } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { Readable }                from 'node:stream'
@@ -360,7 +360,7 @@ function checkUploadUrl(uploadUrl) {
 
 export function createDocker({
   run = spawnRun, stream = spawnStream, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/builds', health = HEALTH,
-  appsDir = layout().apps,
+  appsDir = layout().apps, namesDir = `${appsDir.replace(/\/+$/, '')}/../names`,
   restoreDir = '/var/lib/outpost/restore', backupDir = '/var/lib/outpost/backups',
   uidFile = '/var/lib/outpost/uids.json', deployKeyDir = '/var/lib/outpost/deploy-keys',
 } = {}) {
@@ -393,6 +393,19 @@ export function createDocker({
     if (/[,:]/.test(dir)) throw new Error(`'${dir}' has a ':' or ',' that a mount cannot carry`)
     if (make) await mkdir(dir, { recursive: true, mode: 0o700 })
     return dir
+  }
+
+  /** `names/<slug>-<id8> -> ../apps/<app>`, the readable way to an app's data
+   *  directory, whose own name is a uuid. Cosmetic: the uuid stays the key, so a
+   *  link that cannot be made never fails a release. */
+  async function nameLink(appId, appSlug) {
+    try {
+      const part = String(appSlug).toLowerCase().replace(/[^a-z0-9-]/g, '-')
+      const link = `${namesDir}/${part}-${appId.slice(0, 8)}`
+      await mkdir(namesDir, { recursive: true })
+      await rm(link, { force: true })
+      await symlink(`${relative(namesDir, appsDir)}/${appId}`, link)
+    } catch { /* the directory is there either way */ }
   }
 
   /** PUT one file to a pre-signed URL, streamed. Answered, never thrown: the
@@ -1000,6 +1013,7 @@ export function createDocker({
       // docker would read as anything but a mount point was refused above,
       // before the old container was touched.
       const data = config.volumePath != null ? await dataDir(appId, { make: true }) : null
+      if (data) await nameLink(appId, appSlug)
       if (data) argv.push('--mount', `type=bind,src=${data},dst=${config.volumePath}`)
       if (config.cpuLimit   != null) argv.push('--cpus', String(config.cpuLimit))
       if (config.memLimitMb != null) argv.push('--memory', `${config.memLimitMb}m`)

@@ -58,6 +58,7 @@ import { createServer }  from 'http'
 import { requiresOf }                    from './requires.js'
 import { globalEnvPath, GLOBAL_ENV_HEADER } from './global-env.js'
 import { gitOut }        from './git.js'
+import { packageMembers } from './workspace-members.js'
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { basename } from 'path'
 import { resolve, dirname } from 'path'
@@ -731,6 +732,7 @@ async function handleStatus(req, res) {
       staged:    git(['diff', '--no-color', '--numstat', '--cached']),
       branch:    git(['rev-parse', '--abbrev-ref', 'HEAD']).trim() || null,
       blastOf:   blastReader(usedByIndex(root)),
+      memberPaths: packageMembers(root).map(m => m.path),
     })
 
     json(res, 200, { at: new Date().toISOString(), ...model })

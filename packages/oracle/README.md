@@ -59,17 +59,6 @@ The emitter assembles each op's row policy from the answer:
 
 A signed-in level with no row policy, the shape behind most of the freehand run's cross-tenant reads, is emitted only when an answer says `shared`. Every public read, unauthenticated write and shared table is listed as a finding at the head of the emitted section.
 
-## Running the old mockup
-
-`mockup/oracle.jsx` is the React recognizer this package replaces: one 6,471-line component that ended at a paragraph of markdown. It is not a workspace member, and it is kept as reference for its screens.
-
-```sh
-cd packages/oracle/mockup
-npm install
-export ANTHROPIC_API_KEY=sk-ant-...
-npm run dev                            # http://localhost:8070
-```
-
 ## What it does not do yet
 
 - **Behavior.** A pattern is cited and written as a comment beside its model. Turning `audit` into `@@trail(audit)` is the only pattern that becomes a declaration today. Hooks, jobs and notifications are the next step (`fjs-prototypes/charter` Phase 4).

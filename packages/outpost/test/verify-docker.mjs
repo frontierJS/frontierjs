@@ -544,8 +544,14 @@ try {
   const outposts = (async () => {
     const answers = []
     for (let i = 0; i < APPS_RACED; i++) {
-      answers.push((await call('/route', { app_id: `race-${i}`, port: 7199, hosts: [`race-${i}.${HOST}`], paths: [{ host: HOST, prefix: `/race${i}` }] })).status)
-      if (i % 4 === 3) answers.push((await call('/ingress/reload', {})).status)
+      const routed = await call('/route', { app_id: `race-${i}`, port: 7199, hosts: [`race-${i}.${HOST}`], paths: [{ host: HOST, prefix: `/race${i}` }] })
+      answers.push(routed.status)
+      if (routed.status !== 200) console.error(`race: /route race-${i} answered ${routed.status}:`, JSON.stringify(routed.body))
+      if (i % 4 === 3) {
+        const reloaded = await call('/ingress/reload', {})
+        answers.push(reloaded.status)
+        if (reloaded.status !== 200) console.error(`race: /ingress/reload after race-${i} answered ${reloaded.status}:`, JSON.stringify(reloaded.body))
+      }
     }
     racing = false
     return answers

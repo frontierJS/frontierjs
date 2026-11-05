@@ -14,8 +14,8 @@
  * has no reason to depend on it, and its absence is not an error.
  */
 
-import { resolve, dirname, isAbsolute } from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { resolve, dirname, basename, isAbsolute } from 'path'
+import { existsSync, readFileSync, watch } from 'fs'
 import { gzipSync } from 'zlib'
 import { DEV_ENV } from '@frontierjs/toolbelt/devline'
 import { pathToFileURL } from 'url'
@@ -421,6 +421,7 @@ export async function clientSchemas(schemaPath, warn, root = process.cwd()) {
 export function schemaPlugin(config, sierraContext) {
   let root = process.cwd()
   let schemaPath = null
+  let dirWatch = null
 
   const warn = (msg) => console.warn(`[Sierra] schema: ${msg}`)
 
@@ -485,15 +486,24 @@ export function schemaPlugin(config, sierraContext) {
 
     configureServer(server) {
       if (!schemaPath) return
-      // The DIRECTORY, and `add` beside `change`: a watch on the file alone goes
-      // deaf the first time it is unlinked and recreated (`git stash`,
-      // `git checkout`, a pull), and the dev server then serves the last schema
-      // it saw until restarted (`FJS-1470`).
-      server.watcher.add(dirname(schemaPath))
+      // The DIRECTORY, one level deep, on a watch of our own. A watch on the
+      // file alone goes deaf the first time it is unlinked and recreated (`git
+      // stash`, `git checkout`, a pull; `FJS-1470`). Vite's watcher is
+      // recursive, so handing it db/ watched every stored upload and WAL write
+      // and pegged a core while the app wrote media (`FJS-4001`).
+      const name = basename(schemaPath)
+      let timer = null
+      dirWatch = watch(dirname(schemaPath), (_event, file) => {
+        if (file !== name) return
+        // One save is several events, and two regenerates in flight can land
+        // out of order and leave the older schema served.
+        clearTimeout(timer)
+        timer = setTimeout(() => { if (existsSync(schemaPath)) regenerate() }, 50)
+      })
+      dirWatch.on('error', (err) => warn(`stopped watching ${dirname(schemaPath)}: ${err.message}`))
+      dirWatch.unref?.()
 
-      const regenerate = async (file) => {
-        if (resolve(file) !== resolve(schemaPath)) return
-
+      const regenerate = async () => {
         const generated = await generate()
         // Said rather than thrown: a throw here is an unhandled rejection in
         // the watcher, and the dev server would keep serving with nobody told.
@@ -508,8 +518,11 @@ export function schemaPlugin(config, sierraContext) {
         if (mod) server.moduleGraph.invalidateModule(mod)
         server.ws.send({ type: 'full-reload' })
       }
-      server.watcher.on('change', regenerate)
-      server.watcher.on('add', regenerate)
+    },
+
+    buildEnd() {
+      dirWatch?.close()
+      dirWatch = null
     },
   }
 }

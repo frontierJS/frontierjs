@@ -155,6 +155,10 @@ test('an app inside a workspace groups by its surfaces, a package stays whole', 
   expect(zoneOf('example/DECISIONS.md')).toMatchObject({ zone: 'example', prefix: 'example/' })
   expect(zoneOf('packages/basecamp/web/src/x.mesa')).toMatchObject({ zone: 'basecamp', prefix: 'packages/basecamp/' })
   expect(zoneOf('IDEAS/ontology.md')).toMatchObject({ zone: 'IDEAS', group: 'repo' })
+  // A member below a grouping folder is named by the member list, not by parts[1].
+  const members = ['packages/basecamp', 'packages/conduits/conduit-x']
+  expect(zoneOf('packages/conduits/conduit-x/src/a.js', members)).toMatchObject({ zone: 'conduit-x', group: 'packages', prefix: 'packages/conduits/conduit-x/' })
+  expect(zoneOf('packages/basecamp/web/x.mesa', members)).toMatchObject({ zone: 'basecamp', prefix: 'packages/basecamp/' })
 })
 
 test('an untracked directory keeps its name rather than becoming a nameless place', () => {

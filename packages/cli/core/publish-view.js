@@ -20,12 +20,12 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { spawnSync }                             from 'node:child_process'
-import { join, resolve }                         from 'node:path'
+import { resolve }                              from 'node:path'
 
 import { spawnStep }                       from './release-view.js'
 import { DESTINATIONS, DEFAULT_TO, hosts } from './publish-hosts.js'
+import { packageMembers }                  from './workspace-members.js'
 
 export const BUMPS = ['patch', 'minor', 'major', 'prerelease']
 
@@ -93,19 +93,12 @@ export const PUBLISH_STEPS = [
 
 // ─── the workspace ───────────────────────────────────────────────────────────
 
-/** `packages/*` with a manifest — the members `ws:pub` reads, and nothing else. */
+/** The `packages/` members with a name — the ones `ws:pub` reads, and nothing else. */
 export function workspaceMembers(root) {
-  const dir = join(root, 'packages')
-  if (!existsSync(dir)) return []
-  const out = []
-  for (const d of readdirSync(dir, { withFileTypes: true })) {
-    if (!d.isDirectory()) continue
-    try {
-      const pkg = JSON.parse(readFileSync(join(dir, d.name, 'package.json'), 'utf8'))
-      if (pkg.name) out.push({ name: pkg.name, folder: d.name, version: pkg.version ?? null, private: Boolean(pkg.private) })
-    } catch { /* not a member */ }
-  }
-  return out.sort((a, b) => a.name.localeCompare(b.name))
+  return packageMembers(root)
+    .filter(m => m.manifest.name)
+    .map(m => ({ name: m.name, folder: m.folder, version: m.manifest.version ?? null, private: Boolean(m.manifest.private) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function fli(fliRoot, cwd, argv, timeout = 60_000) {

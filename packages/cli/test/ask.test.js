@@ -18,6 +18,15 @@ const ROOT = mkdtempSync(join(tmpdir(), 'fli-ask-'))
 
 function tree(name, files) {
   const dir = join(ROOT, name)
+  // Membership is the root `workspaces` list plus a package.json each.
+  const manifests = {}
+  for (const path of Object.keys(files)) {
+    const m = path.match(/^packages\/([^/]+)\//)
+    if (m) manifests[`packages/${m[1]}/package.json`] = JSON.stringify({ name: m[1] })
+  }
+  if (!('package.json' in files)) manifests['package.json'] = JSON.stringify({ workspaces: ['packages/*'] })
+  else files = { ...files, 'package.json': JSON.stringify({ ...JSON.parse(files['package.json']), workspaces: ['packages/*'] }) }
+  files = { ...manifests, ...files }
   for (const [path, body] of Object.entries(files)) {
     const full = join(dir, path)
     mkdirSync(dirname(full), { recursive: true })

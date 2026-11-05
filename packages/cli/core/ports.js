@@ -120,7 +120,7 @@ export const PROJECTS = {
   css:             4,   // the guide/demo server — frontend only
   'junction-example': 5,
   'litestone-example': 6,
-  oracle:             7,   // packages/oracle/mockup — frontend only
+  oracle:             7,   // reserved, no slot in use — a number is claimed forever
   // The process a fleet server runs (`FJS-D29`). It is a BACKEND with no
   // frontend — 8180 dev, 7180 test — and it is in this table rather than left
   // to the dynamic allocator because basecamp's drive starts one and needs the

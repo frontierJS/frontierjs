@@ -44,6 +44,7 @@ import { htmlPage, esc }        from './html-page.js'
 // and the one that drifted would be the one nobody reads the output of.
 import { SKIP, safeRead, isDir, readJson, read }                    from './fs.js'
 import { driveRows, readCommands, runnables, workspaceDeps }      from './runnables.js'
+import { packageMembers, memberOfFile }                          from './workspace-members.js'
 import { readProofs, resolveRun } from './proofs.js'
 // The one owner of *what does a register record look like*. This module used
 // to carry a regex per register, and a row it failed to match rendered a
@@ -151,12 +152,12 @@ function trackedFileCounts(root) {
   const out = gitOut(root, ['ls-files', '-z'])
   if (out === null) return null
 
-  const counts = new Map()
+  const counts  = new Map()
+  const members = packageMembers(root)
   for (const path of out.split('\0')) {
     if (!path) continue
-    const parts = path.split('/')
-    // `packages/<folder>/…` is a member; anything else is the workspace's own.
-    const key = parts[0] === 'packages' && parts.length > 2 ? parts[1] : null
+    // A file under a member's directory is that member's; anything else is the workspace's own.
+    const key = memberOfFile(members, path)?.folder
     if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   return counts
@@ -275,31 +276,36 @@ function phaseNote(src, fn) {
 
 // ─── packages ─────────────────────────────────────────────────────────────────
 //
-// A member is a directory under `packages/` with a package.json. One WITHOUT is
-// reported too and marked claimed: it does not install, test or count, and the
-// only thing that makes that visible is a list of what is there beside a list of
-// what is a member.
+// A member is what `workspace-members.js` says: a `packages/` directory with a
+// package.json, at any depth the root `workspaces` list reaches. A one-level
+// directory WITHOUT is reported too and marked claimed: it does not install,
+// test or count, and the only thing that makes that visible is a list of what
+// is there beside a list of what is a member.
 
 function packages(root) {
   const dir = join(root, 'packages')
   if (!existsSync(dir)) return []
 
-  const names = safeRead(dir).filter(n => !SKIP.has(n) && !n.startsWith('.') && isDir(join(dir, n)))
+  const found = packageMembers(root)
+  // Directories stay out of the row: it is committed output and an absolute path is one machine's.
+  const dirs  = new Map(found.map(m => [m.folder, m.dir]))
   const graph = workspaceDeps(root)
-  const members = []
+  const owned = new Set(found.map(m => m.path.split('/')[1]))
+  const members = safeRead(dir)
+    .filter(n => !SKIP.has(n) && !n.startsWith('.') && isDir(join(dir, n)) && !owned.has(n))
+    .map(folder => ({ folder, claimed: true }))
 
-  for (const folder of names) {
-    const pkg = readJson(join(dir, folder, 'package.json'))
-    if (!pkg) { members.push({ folder, claimed: true }); continue }
+  for (const m of found) {
+    const pkg = m.manifest
     members.push({
-      folder,
-      name:    pkg.name ?? folder,
+      folder:  m.folder,
+      name:    m.name,
       version: pkg.version ?? null,
       private: pkg.private === true,
       desc:    pkg.description ?? null,
       test:    pkg.scripts?.test ?? null,
-      manager: existsSync(join(dir, folder, 'package-lock.json')) ? 'npm' : 'bun',
-      deps:    graph.get(folder)?.deps ?? [],
+      manager: existsSync(join(m.dir, 'package-lock.json')) ? 'npm' : 'bun',
+      deps:    graph.get(m.folder)?.deps ?? [],
     })
   }
 
@@ -308,9 +314,9 @@ function packages(root) {
 
   for (const m of members) {
     if (m.claimed) continue
-    m.topics     = topics(join(dir, m.folder), root)
-    m.sections   = readmeSections(join(dir, m.folder))
-    m.subsystems = subsystems(join(dir, m.folder))
+    m.topics     = topics(dirs.get(m.folder), root)
+    m.sections   = readmeSections(dirs.get(m.folder))
+    m.subsystems = subsystems(dirs.get(m.folder))
     if (counts) m.files = counts.get(m.folder) ?? 0
     // Absent is 0 — the file's own rule, and the reason it is keyed by folder.
     m.baseline = ceilings[m.folder] ?? 0

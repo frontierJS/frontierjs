@@ -30,7 +30,8 @@ function fixture(order, lessons) {
   const root = mkdtempSync(join(tmpdir(), 'fli-tutorial-'))
   const dir  = join(root, 'packages', 'cli', 'commands', 'tutor')
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ws' }))
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ws', workspaces: ['packages/*'] }))
+  writeFileSync(join(root, 'packages', 'cli', 'package.json'), JSON.stringify({ name: 'cli' }))
 
   const rows = order.map(id => `  ['${id}', 'A lesson', 'nothing'],`).join('\n')
   writeFileSync(join(dir, 'index.md'), [
@@ -91,7 +92,7 @@ describe('readCourse', () => {
 
   test('a workspace with no tutorial answers null rather than an empty course', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-tutorial-'))
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ws' }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ws', workspaces: ['packages/*'] }))
     expect(tutorDir(root)).toBe(null)
     expect(readCourse(root)).toBe(null)
     rmSync(root, { recursive: true, force: true })

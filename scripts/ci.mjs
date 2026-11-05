@@ -66,6 +66,8 @@ import { compare as benchCompare, format as benchFormat } from './bench-ab.mjs'
 // because the mechanism needs more explaining than the phase does.
 import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, pauseEdgeCycle, pauseQueueCycle, daemonBlindHint, ciWorkBase, portFree } from './scaffold-build.mjs'
 import { fenceThisProcess }                  from '../packages/cli/core/bun-fence.js'
+import { workspaceMembers }                  from '../packages/cli/core/workspace-members.js'
+import { sourceBytes, kb }                   from './package-size.mjs'
 
 // The deploy and tutor phases scaffold with `--source local`, which `bun link`s
 // this tree's packages; unfenced, a run in any clone re-points the machine's
@@ -758,8 +760,27 @@ function structure() {
 
   report('packages', runChecks({ root: ROOT, scope: 'repo', allow: allow['.'] ?? {} }), ROOT)
 
+  sizeLimits()
+
   if (clean(from)) ok(`${apps.length} app(s), ${checked} rule run(s), no architecture errors` +
     (blind ? ` — ${blind} error rule(s) could not run, see notes` : ''))
+}
+
+// A package nearing its limit in scripts/size-limits.json is a note, never a
+// failure: the file exists so growth gets a pause and a diff, not a red run.
+function sizeLimits() {
+  const file = join(ROOT, 'scripts', 'size-limits.json')
+  if (!existsSync(file)) return
+  for (const [name, limit] of Object.entries(readJson(file)).filter(([k]) => !k.startsWith('//'))) {
+    const dir = `packages/${name}`
+    if (!existsSync(join(ROOT, dir))) {
+      note(`size-limits.json names ${name} and ${dir} does not exist. Remove it.`)
+      continue
+    }
+    const size = kb(sourceBytes(dir).bytes)
+    if (size > limit) note(`${name} is ${size} KB of source, over its ${limit} KB limit in scripts/size-limits.json.`)
+    else if (size >= limit * 0.9) note(`${name} is ${size} KB of source, within 10% of its ${limit} KB limit in scripts/size-limits.json.`)
+  }
 }
 
 // ─── phase 3 · registers ────────────────────────────────────
@@ -2248,27 +2269,11 @@ function packageManagerFor(dir) {
 
 // ─── the workspace ──────────────────────────────────────────
 
-// Every directory under packages/ — including the four with no package.json,
-// which is the whole point: a directory that installs nothing must still be
-// answered for by name.
+// Every workspace member, root-relative, as `workspace-members.js` reads the
+// root `workspaces` list. A directory a glob matches that has no package.json
+// (the bare `packages/conduits` grouping folder) is not a member.
 function workspaceDirs() {
-  if (_dirs) return _dirs
-
-  const fromGlobs = new Set()
-  const root      = readJson(join(ROOT, 'package.json'))
-
-  for (const pattern of root.workspaces ?? []) {
-    if (pattern.endsWith('/*')) {
-      const parent = pattern.slice(0, -2)
-      for (const entry of readdirSync(join(ROOT, parent), { withFileTypes: true })) {
-        if (entry.isDirectory() && !entry.name.startsWith('.')) fromGlobs.add(`${parent}/${entry.name}`)
-      }
-    } else {
-      fromGlobs.add(pattern)
-    }
-  }
-
-  _dirs = [...fromGlobs].sort()
+  if (!_dirs) _dirs = workspaceMembers(ROOT).map(m => m.path).sort()
   return _dirs
 }
 

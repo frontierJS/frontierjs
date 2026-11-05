@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url'
 import { runRegisterCheck, formatRegisterCheck, RULES } from '../core/register-check.js'
 
 // Every fixture declares the prefix its rows are written under.
-const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
+const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' }, workspaces: ['packages/*'] })
 
 const REPO  = fileURLToPath(new URL('../../..', import.meta.url))
 const TODAY = new Date('2026-08-18T00:00:00Z')

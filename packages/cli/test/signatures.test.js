@@ -17,6 +17,7 @@ const ts   = await typeScriptAt(REPO)
 
 function workspace(files) {
   const root = mkdtempSync(join(tmpdir(), 'fli-sig-'))
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }))
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(join(root, path, '..'), { recursive: true })
     writeFileSync(join(root, path), text)
@@ -134,4 +135,22 @@ describe('fli sig', () => {
     const none = spawnSync(process.execPath, [fli, 'sig', 'noSuchSymbolAnywhere'], { cwd: REPO, encoding: 'utf8' })
     expect(none.status).toBe(1)
   }, 60000)
+
+  // An agent shell's stdin is /dev/null: a prompt there read EOF forever and
+  // pinned a core for hours, so outside a workspace it must exit and name the fix.
+  test('outside a workspace with no TTY on stdin it exits and names WORKSPACE_DIR', async () => {
+    const { spawnSync } = await import('node:child_process')
+    const fli = resolve(import.meta.dir, '../bin/fli.js')
+    const dir = mkdtempSync(join(tmpdir(), 'fli-sig-nows-'))
+    const env = { ...process.env, HOME: dir }
+    delete env.WORKSPACE_DIR
+    try {
+      const r = spawnSync(process.execPath, [fli, 'sig', 'gateAuthAround'], {
+        cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000,
+      })
+      expect(r.status).toBe(1)
+      expect(r.stdout).not.toContain('Workspace root path')
+      expect(r.stderr).toContain('WORKSPACE_DIR')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  }, 30000)
 })

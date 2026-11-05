@@ -14,7 +14,7 @@ import { execFileSync } from 'child_process'
 import { rankNext, blockedBy, byHand, envCause, ENV_CAUSES, seamOf, bySeam, blockedLine, recentPaths, COMMIT_FILE_CAP, WEIGHTS } from '../core/next.js'
 
 // Every fixture declares the prefix its rows are written under.
-const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
+const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' }, workspaces: ['packages/*'] })
 
 const REPO = fileURLToPath(new URL('../../..', import.meta.url))
 

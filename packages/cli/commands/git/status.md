@@ -82,6 +82,7 @@ if (flag.short) {
 
 const { buildStatus, splitRel, hubsOf } = await import(joinPath(global.fliRoot, 'core/git-status.js'))
 const { usedByIndex, blastReader } = await import(joinPath(global.fliRoot, 'core/blast.js'))
+const { packageMembers } = await import(joinPath(global.fliRoot, 'core/workspace-members.js'))
 
 const git = (argv) => {
   try { return execSync(`git ${argv}`, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }) }
@@ -96,6 +97,7 @@ const model = buildStatus({
   staged:    git('diff --no-color --numstat --cached'),
   branch:    git('rev-parse --abbrev-ref HEAD').trim() || null,
   blastOf:   blastReader(usedByIndex(root)),
+  memberPaths: packageMembers(root).map(m => m.path),
 })
 
 if (flag.json) { console.log(JSON.stringify(model, null, 2)); return }

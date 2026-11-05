@@ -17,7 +17,7 @@ emitted schema with litestone and runs one emitted app on a real client.
 ```
 src/catalog.js   THE ORIGIN. 32 entities with typed fields, usual links and
                  named lifecycles; 8 actors and what each may do; 18 patterns;
-                 5 modifiers. Lifted from mockup/oracle.jsx, where the same
+                 5 modifiers. Lifted from the old React mockup, where the same
                  collapses were stated as data and again in prompt text
 src/types.js     the words an answer types a field with, and the column each
                  one is. `date` is `String @date`, `money` is `Int @money(<the
@@ -30,8 +30,6 @@ src/emit.js      emit(answer, { scaffold }) → { ok, text, models, document,
                  container `system` creates (FJS-D886), null when none needs one
 src/brief.js     brief() → markdown for a model: the contract, the types, the
                  actors, RULES and the catalog, all rendered from the data
-mockup/          the old React recognizer. Not a workspace member, not ported,
-                 kept as reference (scripts/ci-allowances.json nonMembers)
 ```
 
 ## Traps

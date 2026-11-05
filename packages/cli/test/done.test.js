@@ -257,6 +257,7 @@ describe('a tagged version npm does not hold', () => {
 
   test('names a tagged version and an install pin npm lacks, and stays quiet where it could not ask', async () => {
     const { root, cleanup } = tree({
+      'package.json': '{"workspaces":["packages/*"]}',
       'packages/a/package.json': '{"name":"@x/a","version":"1.0.0"}',
       'packages/b/package.json': '{"name":"@x/b","version":"2.0.0"}',
       'packages/c/package.json': '{"name":"@x/c","version":"3.0.0"}',

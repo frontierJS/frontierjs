@@ -995,9 +995,10 @@ describe('what the machine is asked to do', () => {
     // Every deploy removes the old container first, so a database started
     // without a volume is empty after its next release. Paired with a refused
     // path, which must be refused BEFORE the running container is taken away.
+    const NAMES = mkdtempSync(join(tmpdir(), 'outpost-names-'))
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c\n' } })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
+      docker: createDocker({ appsDir: APPS, namesDir: NAMES, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
       log: { warn() {}, error() {} },
     })
     const ok = await send(server, 'POST', '/deploy', { ...SLUGS,
@@ -1008,6 +1009,9 @@ describe('what the machine is asked to do', () => {
       .toContain(`--mount type=bind,src=${APPS}/pg/data,dst=/var/lib/postgresql/data`)
     // Docker refuses a bind source that is not there and makes nothing.
     expect(statSync(join(APPS, 'pg', 'data')).isDirectory()).toBe(true)
+    // The uuid is the key; a name beside `apps/` (never in it, where the
+    // inspector would list the app twice) is how a person finds the directory.
+    expect(realpathSync(join(NAMES, 'web-pg'))).toBe(realpathSync(join(APPS, 'pg')))
 
     fake.calls.length = 0
     const bad = await send(server, 'POST', '/deploy', { ...SLUGS,

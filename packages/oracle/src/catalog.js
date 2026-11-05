@@ -1,6 +1,6 @@
 // ─── catalog.js — the canonical entities, stated once ─────────────────────────
 //
-// Lifted from `mockup/oracle.jsx`, where the same collapses were stated twice:
+// Lifted from the old React recognizer mockup (deleted; git history), where the same collapses were stated twice:
 // once as data and again in ~1,300 lines of prompt text, and the two drifted.
 // Here they are data only. `brief.js` renders this file for a model and
 // `emit.js` reads it for a schema, so a third statement has nowhere to live.

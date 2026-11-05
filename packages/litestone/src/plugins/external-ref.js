@@ -312,8 +312,11 @@ export class ExternalRefPlugin extends LitestonePlugin {
     const fields = this._maps(ctx).fieldMap[model]
     if (!fields || !args.data) return
 
-    // Which fields carry incoming raw values? (Others are untouched refs.)
-    const rawFields = Object.entries(fields).filter(([field]) => this._isRawValue(args.data[field]))
+    // Which fields carry incoming raw values? (Others are untouched refs.) A
+    // null clears the column and replaces its object like a raw value does
+    // (FJS-3995).
+    const rawFields = Object.entries(fields).filter(([field]) =>
+      args.data[field] === null || this._isRawValue(args.data[field]))
     if (!rawFields.length) return
 
     // The refs this write replaces, in ONE SELECT for every raw field, cleaned
@@ -335,6 +338,7 @@ export class ExternalRefPlugin extends LitestonePlugin {
 
     const id = args.where?.id ?? 'upd'
     for (const [field, opts] of rawFields) {
+      if (args.data[field] === null) continue
       if (opts.isArray && ![].concat(args.data[field]).some(v => this._isRawValue(v))) continue
       await this._serializeField(model, args.data, field, opts, id, ctx)
     }

@@ -677,9 +677,10 @@ class FileStoragePlugin extends ExternalRefPlugin {
     // Which fields does this write replace? An array is never a file value
     // itself, so a File[] field is picked by being given at all: an update
     // that only drops refs carries no file, and the dropped ones still need
-    // their cleanup stashed (FJS-2095, FJS-2315).
+    // their cleanup stashed (FJS-2095, FJS-2315). A null clears the column
+    // and replaces its object like a file does (FJS-3995).
     const rawFields = Object.entries(fields).filter(([field, opts]) =>
-      opts.isArray ? args.data[field] != null : isFileValue(args.data[field]))
+      opts.isArray ? args.data[field] !== undefined : args.data[field] === null || isFileValue(args.data[field]))
     if (!rawFields.length) return
 
     // The refs this write replaces, in ONE SELECT; a keepVersions field
@@ -714,6 +715,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
 
     const id = args.where?.id ?? 'upd'
     for (const [field, opts] of rawFields) {
+      if (args.data[field] === null) continue
       if (opts.isArray && ![].concat(args.data[field]).some(isFileValue)) continue
       await this._serializeField(model, args.data, field, opts, id, ctx)
     }

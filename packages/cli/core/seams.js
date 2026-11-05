@@ -48,6 +48,7 @@
 import { existsSync, readdirSync }              from 'node:fs'
 import { join, relative }                                  from 'node:path'
 import { read }                                            from './fs.js'
+import { packageMembers }                                   from './workspace-members.js'
 
 import { stripComments }                                   from './codegraph.js'
 import { treePaths }                                       from './tree.js'
@@ -119,11 +120,10 @@ const TICKED  = /`([^`]+)`/g
 // owner the bullet had already written down.
 const SRCPATH = /`((?:packages\/)?[a-z@][a-zA-Z0-9@._-]*\/[a-zA-Z0-9/._-]+\.(?:[cm]?[jt]s|mesa))`/g
 
+// Each member's path below `packages/` (`sierra`, `conduits/conduit-stripe`): a
+// cited path names a package when it starts with one of them.
 function packageDirs(root) {
-  try {
-    return new Set(readdirSync(join(root, 'packages'), { withFileTypes: true })
-      .filter(e => e.isDirectory()).map(e => e.name))
-  } catch { return new Set() }
+  return packageMembers(root).map(m => m.path.slice('packages/'.length))
 }
 
 /**
@@ -204,7 +204,7 @@ export function readSeams(root) {
 
     const names = [...b[1].matchAll(TICKED)].map(m => m[1])
     const paths = [...line.matchAll(SRCPATH)].map(m => m[1])
-      .filter(x => pkgs.has(x.replace(/^packages\//, '').split('/')[0]))
+      .filter(x => { const rel = x.replace(/^packages\//, ''); return pkgs.some(p => rel.startsWith(`${p}/`)) })
     const owner = paths.length ? paths[0] : null
 
     seams.push({

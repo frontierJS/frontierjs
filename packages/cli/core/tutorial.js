@@ -21,6 +21,7 @@
 import { existsSync }                                     from 'fs'
 import { join }                                            from 'path'
 import { read, safeRead, isDir }                          from './fs.js'
+import { packageMembers }                                  from './workspace-members.js'
 
 
 // The line a match is on, for a finding that can be clicked.
@@ -29,9 +30,8 @@ const lineOf = (text, index) => text.slice(0, index).split('\n').length
 /** Where the tutorial lives, or null. Searched rather than assumed: a rule keyed
  *  on a hard-coded path reports a workspace that moved it as having none. */
 export function tutorDir(root) {
-  const pkgs = join(root, 'packages')
-  for (const name of safeRead(pkgs)) {
-    const dir = join(pkgs, name, 'commands', 'tutor')
+  for (const m of packageMembers(root)) {
+    const dir = join(m.dir, 'commands', 'tutor')
     if (existsSync(join(dir, 'index.md'))) return dir
   }
   return null

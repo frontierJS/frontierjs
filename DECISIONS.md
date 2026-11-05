@@ -1818,6 +1818,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1922"></a>2026-11-05 · `FJS-D1922` — Q9 — How does a user's claude.ai connector sign in to an App's MCP — B, in its own paper.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **B** was picked as the recommendation qualifies it (*B, in its own paper*) over **A** (a static API key, entered once in claude.ai's `static_headers`), **C** (an external identity provider as the authorization server).
+
+B whole, built from its own paper IDEAS/mcp-oauth.md since the live App lacks it too; this plan keeps 3.5.
+
 ### <a id="fjs-d1832"></a>2026-11-03 · `FJS-D1832` — Q2 — Is the release's encryption key passed in — No. Studio gains `--without-key`, as `restore --verify-only` has: `@encrypted` and `@secret` read as `[redacted]` instead of the client refusing. The key never enters a viewer's container.
 
 Asked in [`IDEAS/basecamp-studio.md`](IDEAS/basecamp-studio.md) § Open questions. **A** was picked over **B** (yes, as the drill does, and Q6's mask hides the plaintext Studio then holds).
@@ -4835,6 +4841,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d1921"></a>2026-11-05 · `FJS-D1921` — Q8 — Where does the copy's boot move `Session` — A litestone client option, `placeModels: { Session: 'sessions' }` or similar: after the schema is parsed and before it is validated, it declares the named database if the schema has none and moves the named models into it, for this client only, so the parser's refusal of a relation across databases still runs. It is the AST form of what `import … into` already does to text (`retargetDbText`, `parser.js`).
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (a one-model form of auth's `retargetDb`), **C** (a model-level exception to `readOnly`, so one model stays writable in a read-only name).
+
+The paper's recommendation, taken as written: it is the only option that works on a schema that imports `auth.lite` by file (`FJS-626`), and it leaves the database blocks alone. B rewrites source text that no app assembles in memory, and no app calls it. C breaks "access is per name" and puts a second access owner beside the database block (Invariant 4). `FJS-4034` and `FJS-4035` come first (1.5, 1.6).
 
 ### <a id="fjs-d1873"></a>2026-11-04 · `FJS-D1873` — How a plugin undoes what its before hook did outside the database when the write does not land — An Observer, `onWriteSettled(model, operation, args, error, ctx)`, fired once per `create`/`createMany`/`update`/`updateMany`/`upsertMany` call with the caller's args; and `tx.hold({ commit, rollback })`, which keeps such an effect until the outermost transaction ends.
 
@@ -16479,6 +16491,18 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1920"></a>2026-11-05 · `FJS-D1920` — Q1 — Where do sessions live while the data is read-only — Only on the copy: normal boot is unchanged and `Session` stays in `main`. The read-only boot flag retargets `Session` alone to a writable `sessions` block as the schema is read, and opens every other block `access: 'readonly'`. Under `strategy database` that block is the staged shop file; in a single-database app it is a scratch file beside the copy. Either way it is discarded at refresh.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (always: `Session` lives in its own block in every app. No change on disk under `strategy database`, but a second file to back up and replicate in every single-database app, all the time, for a copy that may never run), **C** (a signed token that needs no row, checked against the copy's `Credential`), **D** (every auth model in its own writable block, through the `--db` swap auth already has).
+
+The paper's recommendation, taken as written: 0.2 proved its mechanism: per-name access holds inside one shop's file, and `Session` has no relation to break. Auth's `retargetDb` already rewrites `@@db(main)` in memory, though for every auth model at once, so it needs a one-model form. B pays a cost in every app for one mode. C is a second session mechanism for one mode, and a jsonl store (the owner's first thought) is append-only, while sign-out deletes. D is refused by the parser, because every model relating to `User` would cross databases. Under A, `Credential` stays read-only, so a password changed on the copy is refused rather than lost at the next refresh. Still to probe: the existing `Session` table in a shop file opened under the `sessions` name.
+
+### <a id="fjs-d1914"></a>2026-11-05 · `FJS-D1914` — Q7 — How does the release image reach the copy's machine — Every release also writes its image (`docker save`) into the App's replica bucket, keyed by release, and the copy's machine `docker load`s it from there.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (a registry every machine pulls from), **C** (the copy's machine rebuilds from git at `commitSha`), **D** (while a copy is on, each release ships its image to the copy's machine too, the way a laptop release ships to each placement).
+
+The paper's recommendation, taken as written: the bucket is already the one thing that must survive the box, so it adds no new service, and `FJS-D942` ruled out a registry. It covers all three release paths and keeps the bytes identical. B adds a service and reopens D942. C is new bytes and a deploy key per machine. D needs a machine-to-machine path a git build on the box does not have. Cost of A: one image per release in the bucket, pruned to the releases a copy might run.
+
 ### <a id="fjs-d1907"></a>2026-11-04 · `FJS-D1907` — `fli done` keeps its last report under the git dir, keyed on HEAD and the tree, and the Stop hook shares it; a snapshot generator's `--check` never writes
 
 Asked through the question tool. The owner reported `fli done` running over and over. A transcript audit since Oct 22 counted about 3,096 hand runs in 1,649 sessions. Of the 1,470 back-to-back reruns, 1,337 had no Edit or Write between them, and each run takes about 45 s. The Stop hook's own rule, that nothing runs while the tree is as it was, never fired. The snapshot engine runs each header's generator with `--check` appended, and `litestone spec` ignored the flag. It wrote `litestone/docs/spec.snapshot.md` with a fresh `Generated <timestamp>` line, so every report moved the fingerprint it was keyed on. Two changes follow. `litestone spec --check` returns without writing, which keeps the draft ungated as its own comment intends, and the timestamp is dropped so a hand run produces a diff only when the content changed. And **A** was picked over **B** (leave the hand reruns) and **C** (refuse a rerun with only the last verdict line): `doneReport` in `done.js` keeps the report in `<git dir>/fli-done/report.json`. It is keyed on the root, HEAD and `treeFingerprint`, which is now its one owner, moved out of the hook. It expires after 30 minutes, because npm is the one input outside the tree, and it is not kept when the tree moved while the report was being built. `--fresh` builds it regardless, and a kept answer says so in its second line. Measured here: 35.6 s cold against 0.33 s kept, and a `fli done` right after a Stop-hook run took 0.23 s. The case for reopening is a generator that reads something outside the tree besides npm; it would need its own input in the key.
@@ -20634,6 +20658,72 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1919"></a>2026-11-05 · `FJS-D1919` — Q11 — `conduit-37signals` — Keep `conduit-37signals`; Basecamp goes in the description, keywords and README title so a search finds it.
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (rename to `conduit-basecamp`, with the `37signals:event` job id and its callers).
+
+The paper's recommendation, taken as written: in this repo Basecamp already means the host, and a reader of `conduit-basecamp` would assume it talks to it.
+
+### <a id="fjs-d1918"></a>2026-11-05 · `FJS-D1918` — Q10 — `conduit-push` — Split: `conduit-apns` is its own package; FCM authenticates with a Google service account, so by Q9's line it is a module of `conduit-google`. `PushMessage` and the unregistered-device error get one home, in notifications, before the split.
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (keep `conduit-push` as a written exception, a capability over two vendors).
+
+The paper's recommendation, taken as written: B coins a precedent every later connector can cite.
+
+### <a id="fjs-d1917"></a>2026-11-05 · `FJS-D1917` — Q9 — `conduit-gmail` and `conduit-google-maps` — `conduit-gmail` stays the user's delegated OAuth grant (calendar and drive join it as modules if they ride the same token); `conduit-google-maps` renames to `conduit-google`, the project-credential products (API key or service account): Maps Platform now, Translate, Vision, YouTube Data later, each a module with a subpath export.
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (keep gmail and google-maps as two product packages), **C** (one `conduit-google` holding gmail and maps).
+
+The paper's recommendation, taken as written: one sentence per package about whose credential it spends; C puts a user token and an API key under one name, and nothing depends on `conduit-google-maps` yet so the rename is free.
+
+### <a id="fjs-d1916"></a>2026-11-05 · `FJS-D1916` — Q8 — `conduit-shipping` — Rename to `conduit-easypost`.
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (keep `conduit-shipping` as an aggregator name).
+
+The paper's recommendation, taken as written: an aggregator over carriers is EasyPost's product, not a protocol the package speaks.
+
+### <a id="fjs-d1915"></a>2026-11-05 · `FJS-D1915` — Q7 — `conduit-tax` — Fold it into `conduit-stripe` as a `tax` module; one credential, one sink, one drive; the package count drops by one.
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (rename to `conduit-stripe-tax` and keep the dependency).
+
+The paper's recommendation, taken as written: Stripe Tax spends Stripe's key; a second package for the same credential is `FJS-D153`'s own three costs for nothing.
+
+### <a id="fjs-d1913"></a>2026-11-05 · `FJS-D1913` — Q6 — What sets a connector apart from a core package — Four treatments hang off the `packages/conduits/` prefix: an own CI lane that runs connector tests and drives only when a connector or conduit changed, never in the default every-package run; held out of `fli release` until a later ruling admits one; an own atlas ring `conduits` below `batteries`, which amends Q1's rows to carry that ring; and group register rows, one `DRIVES.md` row and one `docs/TESTING.md` row for the group, which is Q4's B.
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (members like any other: default CI run, release list, ring `batteries`, 27 register rows).
+
+The paper's recommendation, taken as written: the owner's stated wish, and it keeps the connector count out of every core-package table a person reads.
+
+### <a id="fjs-d1912"></a>2026-11-05 · `FJS-D1912` — Q4 — Rows in `DRIVES.md` — One row `conduits` whose script runs every connector drive (`bun run --filter './packages/conduits/*' drive`), and `resolveRun` learns to expand it.
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **B** was picked over **A** (one row per connector drive in each table, the sink's name in the proves column).
+
+Against the recommendation (**A**): the owner does not want the 27 connectors treated as core packages (Q6): one group row per table keeps the connector count out of every table a person reads, and resolveRun expanding the group to its drives keeps proof-drive-named and fli proves naming one connector.
+
+### <a id="fjs-d1911"></a>2026-11-05 · `FJS-D1911` — Q2 — The workspace glob — The explicit entry, the convention the root already follows for `packages/sierra/example`. A nested `package.json` anywhere else stays invisible, which is what `FJS-026` relies on (`oracle/mockup`).
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (the recursive glob; every nested manifest becomes a member).
+
+The paper's recommendation, taken as written: B silently enrolls the `nonMembers` allowance and every fixture app with a manifest. B is the reopen path if a third group appears.
+
+### <a id="fjs-d1910"></a>2026-11-05 · `FJS-D1910` — Q5 — What the membership owner returns, and what keys a package — The owner returns `{ name, folder, path, dir, manifest }` and every caller that keys or builds a path moves to `path` (`packages/conduits/ conduit-stripe`); `folder` stays for display and the typecheck-baseline key.
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (keep `folder` as the id everywhere and add `path` beside it).
+
+The paper's recommendation, taken as written: a basename key collides silently the day two groups share one; the 27 basenames are unique today, which is why B works until it does not.
+
+### <a id="fjs-d1909"></a>2026-11-05 · `FJS-D1909` — Q3 — Whether the sibling's git history comes along — Plain copy; the sibling repo stays as the read-only history, its README says where the code went and that nothing is committed there again.
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (`git subtree add` / `filter-repo` so `git log --follow` crosses).
+
+The paper's recommendation, taken as written: the history is "updates" commits and three named ones, and three of the 27 have no history at all; the drives are the record. B costs a merge commit with 27 roots and nothing reads it.
+
+### <a id="fjs-d1908"></a>2026-11-05 · `FJS-D1908` — Q1 — How the 27 enter the atlas — 27 rows in the commented package table, ring `batteries`, one line each.
+
+Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (the atlas learns a *group*: one row `conduits/*` and the per-connector line comes from each package's own `description`).
+
+The paper's recommendation, taken as written: the table is already the one owner and a comment costs no context; B is a second owner for the same fact and a parser change for a cosmetic gain. Twenty-seven hand lines can drift, so 2.3 adds a check that a member with no row is a finding.
 
 ### <a id="fjs-d1691"></a>2026-10-30 · `FJS-D1691` — What an API App's site build is given on the box — the App's release variables (`releaseEnv`), with `DATABASE_URL` pointed at the copy.
 

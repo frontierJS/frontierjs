@@ -10,14 +10,14 @@ left out. The latest version and any advisory are NOT here: they change with
 no commit, so they live in Basecamp, which `fli ws:deps --push` feeds.
 
 ```
-51 package(s) · 21 runtime · 30 dev only · 112 declaration(s) · 31 member(s) · 0 finding(s)
+52 package(s) · 22 runtime · 30 dev only · 113 declaration(s) · 31 member(s) · 0 finding(s)
 ```
 
 ## Findings
 
 None — one installed copy and one range per package, and every declaration installed.
 
-## Runtime (21)
+## Runtime (22)
 
 Installed by anyone who installs the declaring package — a dependency, a
 required peer or an optionalDependency. A package also declared as dev or as
@@ -32,6 +32,7 @@ others.
 | `@opentui/core` | `0.5.17` | @frontierjs/haven `0.5.17`<br>@frontierjs/mesa (dev) `0.5.17`<br>@frontierjs/mesa (optional peer) `0.5.17` |
 | `@sqlite.org/sqlite-wasm` | `3.53.4-build1` | @frontierjs/example `^3.53.4-build1`<br>@frontierjs/litestone (dev) `^3.53.4-build1` |
 | `@xterm/addon-fit` | `0.11.0` | @frontierjs/basecamp `0.11.0`<br>@frontierjs/workbench `0.11.0` |
+| `@xterm/headless` | `6.0.0` | @frontierjs/haven `6.0.0` |
 | `@xterm/xterm` | `6.0.0` | @frontierjs/basecamp `6.0.0`<br>@frontierjs/workbench `6.0.0` |
 | `acorn` | `8.18.0` | @frontierjs/mesa `^8.0.0`<br>@frontierjs/site-kit (dev) `^8.0.0`<br>@frontierjs/ui (dev) `^8.0.0` |
 | `css-tree` | `2.3.1` | @frontierjs/email-kit (dev) `^2.0.0`<br>@frontierjs/email-kit (peer) `^2.0.0`<br>@frontierjs/mesa (dev) `^2.0.0`<br>@frontierjs/mesa (optional peer) `^2.0.0` |

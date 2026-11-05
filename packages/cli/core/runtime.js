@@ -18,6 +18,7 @@ import { commandContext } from './shell.js'
 import { binCommand, SNAPSHOT_BINS } from './snapshots.js'
 import { shQuote } from './machine.js'
 import { missingRequires, acquireMissing } from './requires.js'
+import { packageMembers } from './workspace-members.js'
 
 const env = process.env
 
@@ -436,7 +437,10 @@ export async function Command({ file, arg, flag, emit }) {
   config.git = buildGitUtils(config.paths.root)
 
   // ─── context.wsRoot — lazy workspace root resolver ────────────────────────
-  // Order: the workspace cwd is standing in, then $WORKSPACE_DIR, then a prompt.
+  // Order: the workspace cwd is standing in, then $WORKSPACE_DIR, then a prompt
+  // on a TTY only — readline over a stdin at EOF (every agent shell's
+  // /dev/null) never answers and spins a core (FJS-4002), and a Ctrl-D at the
+  // prompt is that same EOF, so 'close' resolves too.
   //
   // Detection comes first because where you are standing is a fact about this
   // run, while WORKSPACE_DIR is a machine-wide default — a stale one in a
@@ -450,13 +454,18 @@ export async function Command({ file, arg, flag, emit }) {
     return async () => {
       if (cached) return cached
       let root = findWorkspaceRoot(process.cwd()) || process.env.WORKSPACE_DIR || null
+      if (!root && !process.stdin.isTTY) {
+        process.stderr.write(`no workspace above ${process.cwd()} — cd into one, or set WORKSPACE_DIR=<path> in the environment or .env\n`)
+        return null
+      }
       if (!root) {
         const { createInterface } = await import('readline')
         const answer = await new Promise(resolve => {
           const rl = createInterface({ input: process.stdin, output: process.stdout })
+          rl.on('close', () => resolve(''))
           rl.question('Workspace root path (or set WORKSPACE_DIR in .env): ', ans => {
-            rl.close()
             resolve(ans)
+            rl.close()
           })
         })
         root = answer.trim().replace(/^~/, process.env.HOME || '')
@@ -470,27 +479,16 @@ export async function Command({ file, arg, flag, emit }) {
   // Resolves wsRoot itself, so a command is one await:
   //   const { wsRoot, packages } = await context.wsPackages()
   //
-  // Each entry is { dir, folder, path, pkg } — `path` is the wsRoot-relative
+  // Each entry is { dir, folder, path, pkg } -- `path` is the wsRoot-relative
   // one, which is what git needs to answer a question about a single package
-  // inside a single-repo monorepo.
-  //
-  // Reads packages/* only, not the root's `workspaces` globs: those also name
-  // nested example apps, which are not releasable members.
+  // inside a single-repo monorepo. Membership is `workspace-members.js`'s, so a
+  // package two levels down (`packages/conduits/conduit-x`) is here with its
+  // real `path`; the apps and examples the root `workspaces` list also names
+  // are not releasable members and stay out.
   config.wsPackages = async () => {
     const wsRoot = await config.wsRoot()
     if (!wsRoot) return { wsRoot: null, packages: [] }
-    const pkgsDir = resolve(wsRoot, 'packages')
-    if (!existsSync(pkgsDir)) return { wsRoot, packages: [] }
-    const packages = readdirSync(pkgsDir, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => {
-        const dir = resolve(pkgsDir, d.name)
-        try {
-          const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
-          return { dir, folder: d.name, path: `packages/${d.name}`, pkg }
-        } catch { return null }
-      })
-      .filter(Boolean)
+    const packages = packageMembers(wsRoot).map(m => ({ dir: m.dir, folder: m.folder, path: m.path, pkg: m.manifest }))
     return { wsRoot, packages }
   }
 

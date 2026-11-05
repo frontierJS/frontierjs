@@ -22,7 +22,7 @@ let ROOT
 function workspace(name, extra = {}) {
   const dir = join(ROOT, name)
   const files = {
-    'package.json': JSON.stringify({ name: 'ws', registers: { prefix: 'FJS' } }),
+    'package.json': JSON.stringify({ name: 'ws', registers: { prefix: 'FJS' }, workspaces: ['packages/*'] }),
     'CLAUDE.md': [
       '# Map',
       '',

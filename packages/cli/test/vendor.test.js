@@ -13,11 +13,11 @@ import { resolve, dirname, join }                        from 'path'
 import { fileURLToPath }                                 from 'url'
 import { tmpdir }                                        from 'os'
 import { writeFileSync, readFileSync, existsSync,
-         readdirSync, rmSync, mkdirSync, mkdtempSync }    from 'fs'
+         readdirSync, rmSync, mkdirSync, mkdtempSync, symlinkSync }    from 'fs'
 
 import { writeBasecamp }                                    from '../core/basecamps.js'
 import { vendorWorkspacePackages, linkedDeps, packPackage, withCheckout, keepRunRecord,
-         resolvePackagesDir, GENERATED_DIR }              from '../core/vendor.js'
+         resolvePackageSource, GENERATED_DIR }              from '../core/vendor.js'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
 const ROOT  = resolve(__dir, '..')
@@ -287,12 +287,12 @@ describe('an app depending on workspace sources', () => {
   })
 })
 
-// ─── resolvePackagesDir ───────────────────────────────────────────────────────
+// ─── resolvePackageSource ──────────────────────────────────────────────────────
 
-describe('resolvePackagesDir', () => {
+describe('resolvePackageSource', () => {
   test('finds the workspace an app is standing in', () => {
     const app = makeWorkspace()
-    expect(resolvePackagesDir(app, ['@fixture/alpha'])).toBe(join(TMP, 'packages'))
+    expect(resolvePackageSource(app, ['@fixture/alpha']).dir).toBe(join(TMP, 'packages'))
   })
 
   // A directory called `packages` is not evidence that it holds THESE packages;
@@ -301,7 +301,7 @@ describe('resolvePackagesDir', () => {
     mkdirSync(join(TMP, 'elsewhere'), { recursive: true })
     writeJson(join(TMP, 'elsewhere', 'package.json'), { name: 'x', workspaces: ['packages/*'] })
     mkdirSync(join(TMP, 'elsewhere', 'packages'), { recursive: true })
-    expect(resolvePackagesDir(join(TMP, 'elsewhere'), ['@fixture/alpha'])).toBe(null)
+    expect(resolvePackageSource(join(TMP, 'elsewhere'), ['@fixture/alpha'])).toBe(null)
   })
 
   test('$FJS_PACKAGES_DIR is consulted when nothing is walked up to', () => {
@@ -313,12 +313,43 @@ describe('resolvePackagesDir', () => {
     const before = process.env.FJS_PACKAGES_DIR
     process.env.FJS_PACKAGES_DIR = join(TMP, 'packages')
     try {
-      expect(resolvePackagesDir(outside, ['@fixture/alpha'])).toBe(join(TMP, 'packages'))
+      expect(resolvePackageSource(outside, ['@fixture/alpha']).dir).toBe(join(TMP, 'packages'))
     } finally {
       if (before === undefined) delete process.env.FJS_PACKAGES_DIR
       else process.env.FJS_PACKAGES_DIR = before
       rmSync(outside, { recursive: true, force: true })
     }
+  })
+
+  // FJS-D1559: a dependency is packed from whichever member directory holds it.
+  test('a member two levels down is found through the root workspaces list', () => {
+    const app = makeWorkspace()
+    writeJson(join(TMP, 'package.json'), { name: 'ws', private: true, workspaces: ['packages/*', 'packages/group/*'] })
+    writeJson(join(TMP, 'packages', 'group', 'deep', 'package.json'), {
+      name: '@fixture/deep', version: '1.0.0', type: 'module', main: 'index.js',
+    })
+    writeFileSync(join(TMP, 'packages', 'group', 'deep', 'index.js'), 'export const deep = true\n')
+
+    const source = resolvePackageSource(app, ['@fixture/deep'])
+    expect(source.packages.find(p => p.name === '@fixture/deep').dir).toBe(join(TMP, 'packages', 'group', 'deep'))
+
+    const result = vendorWorkspacePackages({ appRoot: app, include: ['@fixture/deep'] })
+    expect(result.packed).toContain('@fixture/deep')
+    expect(readdirSync(join(app, GENERATED_DIR, 'vendor'))).toContain('fixture-deep-1.0.0.tgz')
+  })
+
+  test('a nested member behind a bun link is found from the root above it', () => {
+    makeWorkspace()
+    writeJson(join(TMP, 'package.json'), { name: 'ws', private: true, workspaces: ['packages/*', 'packages/group/*'] })
+    writeJson(join(TMP, 'packages', 'group', 'deep', 'package.json'), { name: '@fixture/deep', version: '1.0.0' })
+    const outside = join(tmpdir(), `fli-vendor-link-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    mkdirSync(join(outside, 'node_modules', '@fixture'), { recursive: true })
+    symlinkSync(join(TMP, 'packages', 'group', 'deep'), join(outside, 'node_modules', '@fixture', 'deep'))
+    try {
+      const source = resolvePackageSource(outside, ['@fixture/deep'])
+      expect(source.dir).toBe(join(TMP, 'packages'))
+      expect(source.packages.map(p => p.name)).toContain('@fixture/alpha')
+    } finally { rmSync(outside, { recursive: true, force: true }) }
   })
 })
 

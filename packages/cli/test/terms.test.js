@@ -28,6 +28,9 @@ function fixture(docs = {}) {
   const root = mkdtempSync(join(tmpdir(), 'fli-terms-'))
   mkdirSync(join(root, 'packages', 'alpha'), { recursive: true })
   mkdirSync(join(root, 'packages', 'beta'),  { recursive: true })
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }))
+  writeFileSync(join(root, 'packages', 'alpha', 'package.json'), JSON.stringify({ name: 'alpha' }))
+  writeFileSync(join(root, 'packages', 'beta', 'package.json'),  JSON.stringify({ name: 'beta' }))
 
   writeFileSync(join(root, 'ARCHITECT.md'), [
     '## 2. Vocabulary — Non-Negotiable',

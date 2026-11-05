@@ -22,13 +22,20 @@
 // litestone and six others into `<pkg>/db` rows.
 const SURFACES = new Set(['db', 'api', 'web', 'site', 'widgets', 'extension', 'desktop', 'mobile', 'cli', 'tests'])
 
-export const zoneOf = (path) => {
+export const zoneOf = (path, memberPaths = null) => {
   // An untracked directory arrives as `web/`. Counted with its trailing slash it
   // becomes a place of its own whose one file has an empty name.
   const seg = path.replace(/\/$/, '').split('/')
   // A place's NAME and its path prefix are not the same string — `litestone`
   // lives at `packages/litestone/`. Trimming by the name alone left every
   // package row printing the prefix it had just been grouped under.
+  // A member can sit below a grouping folder (`packages/conduits/conduit-x`), so
+  // the member list, when the caller has one, names the prefix; without it the
+  // first folder under `packages/` is the member.
+  if (memberPaths) {
+    const hit = memberPaths.filter(p => seg.join('/').startsWith(`${p}/`)).sort((a, b) => b.length - a.length)[0]
+    if (hit) return { zone: hit.slice(hit.lastIndexOf('/') + 1), group: 'packages', prefix: `${hit}/` }
+  }
   if (seg[0] === 'packages' && seg.length > 2) return { zone: seg[1], group: 'packages', prefix: `packages/${seg[1]}/` }
   if (seg.length > 1 && SURFACES.has(seg[0])) return { zone: seg[0], group: 'surface', prefix: `${seg[0]}/` }
   if (seg.length > 2 && SURFACES.has(seg[1])) return { zone: `${seg[0]}/${seg[1]}`, group: 'surface', prefix: `${seg[0]}/${seg[1]}/` }
@@ -121,7 +128,7 @@ export const parseNumstat = (raw) => {
 // pure: the index is built by `core/blast.js`, which reads the tree and pulls
 // in the codegraph. A listing that had to import that to be tested would not be
 // testable from fixtures at all.
-export const buildStatus = ({ porcelain, unstaged = '', staged = '', branch = null, ahead = 0, behind = 0, blastOf = () => null }) => {
+export const buildStatus = ({ porcelain, unstaged = '', staged = '', branch = null, ahead = 0, behind = 0, blastOf = () => null, memberPaths = null }) => {
   const files = parsePorcelain(porcelain)
   const churn = parseNumstat(unstaged)
   for (const [path, n] of parseNumstat(staged)) {
@@ -134,7 +141,7 @@ export const buildStatus = ({ porcelain, unstaged = '', staged = '', branch = nu
     // An untracked path reports as `??` on both halves; treat it as one state
     // so it does not render as staged AND unstaged at once.
     const untracked = f.index === '?' && f.work === '?'
-    const { zone, group, prefix } = zoneOf(f.path)
+    const { zone, group, prefix } = zoneOf(f.path, memberPaths)
     const role = roleOf(f.path)
     const n = churn.get(f.path) ?? { added: 0, deleted: 0, binary: false }
     const rec = {

@@ -31,20 +31,19 @@ import { SKIP, safeRead, isDir, readJson, read, walk }     from './fs.js'
 import { findSnapshots }                                   from './snapshots.js'
 import { GLOBAL, guiPort, studioPort, appPorts, hostFor, toolHost, toolBaseHost } from './ports.js'
 import { preambleIndex, resolveNeeds }                     from './preflight.js'
+import { packageMembers }                                 from './workspace-members.js'
 import { parseFrontmatter }                                from '@frontierjs/toolbelt/frontmatter'
 
 /**
- * `packages/*` members by folder, each with the siblings it depends on — a
- * dependency or a peer, named by package name. A folder with no manifest is
- * not a member and is absent.
+ * The `packages/` members by folder, each with the siblings it depends on — a
+ * dependency or a peer, named by package name. Membership is
+ * `workspace-members.js`'s: a package two levels down is here, and a folder
+ * with no manifest is not a member and is absent.
  */
 export function workspaceDeps(root) {
-  const dir     = join(root, 'packages')
   const members = new Map()
-  for (const folder of safeRead(dir)) {
-    if (SKIP.has(folder) || folder.startsWith('.') || !isDir(join(dir, folder))) continue
-    const pkg = readJson(join(dir, folder, 'package.json'))
-    if (pkg) members.set(folder, { name: pkg.name ?? folder, all: { ...pkg.dependencies, ...pkg.peerDependencies } })
+  for (const m of packageMembers(root)) {
+    members.set(m.folder, { name: m.name, all: { ...m.manifest.dependencies, ...m.manifest.peerDependencies } })
   }
   const known = new Set([...members.values()].map(m => m.name))
   for (const m of members.values()) {
@@ -54,7 +53,7 @@ export function workspaceDeps(root) {
   return members
 }
 
-/** Every directory that could hold an app: the root, its children, and packages/*. */
+/** Every directory that could hold an app: the root, its children, and the `packages/` members. */
 export function appDirs(root) {
   const dirs = [root]
   for (const name of safeRead(root)) {
@@ -63,10 +62,7 @@ export function appDirs(root) {
     if (!isDir(child)) continue
     dirs.push(child)
     if (name !== 'packages') continue
-    for (const inner of safeRead(child)) {
-      if (SKIP.has(inner) || inner.startsWith('.')) continue
-      if (isDir(join(child, inner))) dirs.push(join(child, inner))
-    }
+    for (const m of packageMembers(root)) if (!dirs.includes(m.dir)) dirs.push(m.dir)
   }
   return dirs
 }

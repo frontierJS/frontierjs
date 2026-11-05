@@ -23,6 +23,11 @@ let ROOT
 /** Write a tree from a `{ 'a/b.txt': 'contents' }` map, and answer its root. */
 function tree(name, files) {
   const dir = join(ROOT, name)
+  // Membership is the root `workspaces` list. A fixture that holds packages and
+  // writes no root manifest gets the standard one; a fixture that writes its own
+  // states its own list.
+  if (!('package.json' in files) && Object.keys(files).some(f => f.startsWith('packages/')))
+    files = { 'package.json': JSON.stringify({ workspaces: ['packages/*'] }), ...files }
   for (const [path, body] of Object.entries(files)) {
     const full = join(dir, path)
     mkdirSync(join(full, '..'), { recursive: true })
@@ -1828,6 +1833,7 @@ describe('the silent config hazards', () => {
   test('in the repo run a nested app\'s drives are left to its own run', () => {
     const drive = "import { P } from './p.mjs'\n"
     const root = tree('drive-holds-repo', {
+      'package.json':                     JSON.stringify({ workspaces: ['packages/*'] }),
       'packages/store/package.json':      JSON.stringify({ name: 'store', scripts: { 'verify:studio': 'bun test/verify.mjs' } }),
       'packages/store/test/verify.mjs':   drive,
       'packages/store/test/p.mjs':        "export const P = process.env.FRONTIER_PORT_API\n",
@@ -5572,6 +5578,7 @@ describe('seam-owner', () => {
     // inside its own package reads, and the only shape that rots quietly.
     const root = tree('seam-gone', {
       ...SEAMS('- `$setAuth(user)` — the checkpoint — `litestone/src/core/client.js`'),
+      'packages/litestone/package.json': '{\"name\":\"@frontierjs/litestone\"}',
       'packages/litestone/src/index.js': 'export const x = 1\n',
     })
     const { findings } = only(root, 'seam-owner', { scope: 'repo' })
@@ -5596,6 +5603,7 @@ describe('seam-owner', () => {
     // every import of it works and the declaration is somewhere else entirely.
     const root = tree('seam-reexport', {
       ...SEAMS('- `matchesQuery(fields, record, query)` — the decision — `sierra/src/resource/field-rules.js`'),
+      'packages/sierra/package.json': '{"name":"@frontierjs/sierra"}',
       'packages/sierra/src/resource/field-rules.js': "export { matchesQuery } from '@frontierjs/toolbelt/match'\n",
     })
     const { findings } = only(root, 'seam-owner', { scope: 'repo' })
@@ -5606,7 +5614,9 @@ describe('seam-owner', () => {
   test('the owner is the FIRST path — a second one is where the seam is consumed', () => {
     const root = tree('seam-consumed', {
       ...SEAMS('- `createJunctionClient()` — `junction/src/client/index.ts`, consumed at `sierra/src/resource/index.js`'),
+      'packages/junction/package.json': '{"name":"@frontierjs/junction"}',
       'packages/junction/src/client/index.ts': 'export function createJunctionClient() {}\n',
+      'packages/sierra/package.json': '{"name":"@frontierjs/sierra"}',
       'packages/sierra/src/resource/index.js': "export { createJunctionClient } from '@frontierjs/junction/client'\n",
     })
     expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
@@ -5615,6 +5625,7 @@ describe('seam-owner', () => {
   test('a bullet carries every verb the seam answers to, and one of them is enough', () => {
     const root = tree('seam-pair', {
       ...SEAMS('- `ctx.enqueue(job, payload)` / `deliverOutbox(app)` — `junction/src/plugins/outbox/engine.ts`'),
+      'packages/junction/package.json': '{"name":"@frontierjs/junction"}',
       'packages/junction/src/plugins/outbox/engine.ts': 'export function deliverOutbox(app) {}\n',
     })
     expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
@@ -5638,6 +5649,7 @@ describe('seam-owner', () => {
   test('a key its stated owner never mentions fails', () => {
     const root = tree('seam-key-gone', {
       ...SEAMS('- `x-fjs-build` — which build this is — `junction/src/core/build-id.ts`'),
+      'packages/junction/package.json': '{"name":"@frontierjs/junction"}',
       'packages/junction/src/core/build-id.ts': 'export const H = "x-other-header"\n',
     })
     const { findings } = only(root, 'seam-owner', { scope: 'repo' })
@@ -6165,6 +6177,20 @@ describe('connector-contract', () => {
   test('a sink or drive under node_modules does not count', () => {
     const root = conn('vendored', { 'package.json': PEER, 'node_modules/x/sink.ts': '//\n', 'node_modules/x/drive.ts': '//\n' })
     expect(check(root).findings).toHaveLength(1)
+  })
+
+  // FJS-D1559: a connector may sit in a grouping folder; membership is the root
+  // `workspaces` list, so the walk reaches it and grades it.
+  test('a connector under packages/conduits/ is checked, and the grouping folder is not a package', () => {
+    const root = tree('cc-nested', {
+      'package.json': JSON.stringify({ workspaces: ['packages/*', 'packages/conduits/*'] }),
+      'packages/conduits/conduit-x/package.json': JSON.stringify({ name: '@frontierjs/conduit-x' }),
+      'packages/conduits/conduit-x/src/sink.ts': '//\n',
+    })
+    const { findings } = check(root)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/@frontierjs\/conduit-x is missing a drive/)
+    expect(findings[0].message).toMatch(/peerDependencies/)
   })
 
   test('with no conduit-* package the rule skips, and names why', () => {

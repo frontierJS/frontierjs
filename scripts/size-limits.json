@@ -1,0 +1,10 @@
+{
+  "//": "KB of source per package, as scripts/package-size.mjs counts it (tests, docs, fixtures and snapshots left out). scripts/ci.mjs notes a package at 90% of its limit and again over it; neither fails the run. Raising a number is a hand edit and shows in a diff, which is the pause this file exists for. Absent = not watched.",
+  "cli": 6900,
+  "litestone": 6100,
+  "basecamp": 4500,
+  "mesa": 3300,
+  "junction": 2800,
+  "haven": 1800,
+  "sierra": 1700
+}

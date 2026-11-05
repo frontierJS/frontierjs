@@ -237,11 +237,16 @@ function wideStmt(plain, bigFields) {
   // statement never reaches here — `wideDb` unwraps. Named here because
   // bun-types 1.3 declares the open option and not the method.
   const stmt = /** @type {Stmt & { safeIntegers: (on: boolean) => unknown }} */ (plain)
-  stmt.safeIntegers(true)
+  // The cache entry is shared by every model whose SQL text matches, and
+  // `SELECT changes()` is the same text for all of them — left on, a plain
+  // model's deleteMany got 0n and threw adding it (FJS-4005). So the mode is
+  // held for one call and handed back off.
+  /** @template T @param {() => T} f @returns {T} */
+  const wide = (f) => { stmt.safeIntegers(true); try { return f() } finally { stmt.safeIntegers(false) } }
   return {
-    get: (/** @type {any[]} */ ...a) => narrowRow(stmt.get(...a), bigFields),
-    all: (/** @type {any[]} */ ...a) => { const rows = stmt.all(...a); for (const r of rows) narrowRow(r, bigFields); return rows },
-    run: (/** @type {any[]} */ ...a) => stmt.run(...a),
+    get: (/** @type {any[]} */ ...a) => narrowRow(wide(() => stmt.get(...a)), bigFields),
+    all: (/** @type {any[]} */ ...a) => { const rows = wide(() => stmt.all(...a)); for (const r of rows) narrowRow(r, bigFields); return rows },
+    run: (/** @type {any[]} */ ...a) => wide(() => stmt.run(...a)),
   }
 }
 

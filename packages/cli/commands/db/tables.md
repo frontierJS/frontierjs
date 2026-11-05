@@ -7,6 +7,7 @@ examples:
   - fli db:tables --size
   - fli db:tables --counts
   - fli db:tables --counts --size
+  - fli db:tables --counts --path /frontier-outpost/data/names/kapp-7f691013/data/app.db
   - fli db:tables --test
 flags:
   test:
@@ -14,6 +15,11 @@ flags:
     type: boolean
     description: Query the test database
     defaultValue: false
+  path:
+    char: p
+    type: string
+    description: A database file to read, instead of the project's own
+    defaultValue: ''
   size:
     char: s
     type: boolean
@@ -61,7 +67,7 @@ const sizesKb = db => {
 </script>
 
 ```js
-const { full } = resolveDb($, flag)
+const full = flag.path ? resolve(process.cwd(), flag.path) : resolveDb($, flag).full
 
 if (flag.counts) {
   if (!existsSync(full)) {

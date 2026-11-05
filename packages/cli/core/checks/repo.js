@@ -25,6 +25,7 @@ import { hazardCoverage }                                                       
 import { seamOwnership, SKILL as SEAM_SKILL, keyLiteral, unlisted }                                                                                           from '../seams.js'
 import { readRegisters, splitRow }                                                                                                                            from '../registers.js'
 import { kindOf }                                                                                                                                             from '../file-kind.js'
+import { packageMembers }  from '../workspace-members.js'
 import { safeRead, walk }                                                                                                                                     from '../fs.js'
 
 export const CHECKS = {
@@ -282,11 +283,7 @@ export const CHECKS = {
   },
 
   'test-files-run': ({ root }) => {
-    const pkgs = []
-    for (const name of safeRead(join(root, 'packages'))) {
-      const dir = join(root, 'packages', name)
-      if (existsSync(join(dir, 'package.json'))) pkgs.push(dir)
-    }
+    const pkgs = packageMembers(root).map(m => m.dir)
     if (!pkgs.length) return { skipped: 'no packages/' }
 
     const findings = []
@@ -410,11 +407,7 @@ export const CHECKS = {
   //
   // `packages/cli/commands/**` is never read: a `.md` there is a command.
   'doc-examples-run': ({ root }) => {
-    const pkgs = []
-    for (const name of safeRead(join(root, 'packages'))) {
-      const dir = join(root, 'packages', name)
-      if (existsSync(join(dir, 'package.json'))) pkgs.push(dir)
-    }
+    const pkgs = packageMembers(root).map(m => m.dir)
     if (!pkgs.length) return { skipped: 'no packages/' }
 
     const findings = []
@@ -454,11 +447,7 @@ export const CHECKS = {
   },
 
   'package-root-md': ({ root }) => {
-    const pkgs = []
-    for (const name of safeRead(join(root, 'packages'))) {
-      const dir = join(root, 'packages', name)
-      if (existsSync(join(dir, 'package.json'))) pkgs.push(dir)
-    }
+    const pkgs = packageMembers(root).map(m => m.dir)
     if (!pkgs.length) return { skipped: 'no packages/' }
 
     const STANDARD = ['README.md', 'CLAUDE.md', 'PROJECT_STATE.md']
@@ -517,9 +506,9 @@ export const CHECKS = {
   // anyone; four or more without one is the shape that starts to.
   'docs-index': ({ root }) => {
     const dirs = []
-    for (const name of safeRead(join(root, 'packages'))) {
-      const docs = join(root, 'packages', name, 'docs')
-      if (existsSync(docs)) dirs.push([name, docs])
+    for (const m of packageMembers(root)) {
+      const docs = join(m.dir, 'docs')
+      if (existsSync(docs)) dirs.push([m.folder, docs])
     }
     if (!dirs.length) return { skipped: 'no packages/*/docs/' }
 
@@ -594,11 +583,10 @@ export const CHECKS = {
   // A sink is `sink.*`, `*-sink.*` or `*.sink.*`; a drive is `drive.*`,
   // `*-drive.*` or `*.drive.*`, or anything under a `drive/` directory.
   'connector-contract': ({ root }) => {
-    const dirs = safeRead(join(root, 'packages'))
-      .filter(name => /^conduit-./.test(name))
-      .map(name => join(root, 'packages', name))
-      .filter(dir => existsSync(join(dir, 'package.json')))
-    if (!dirs.length) return { skipped: 'no packages/conduit-*' }
+    const dirs = packageMembers(root)
+      .filter(m => m.manifest.name?.startsWith('@frontierjs/conduit-') || /^conduit-./.test(m.folder))
+      .map(m => m.dir)
+    if (!dirs.length) return { skipped: 'no conduit-* connector package' }
 
     const SINK  = /(^|[.-])sink\.[cm]?[jt]sx?$/
     const DRIVE = /(^|[.-])drive(\.(test|spec))?\.[cm]?[jt]sx?$/

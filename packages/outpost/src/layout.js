@@ -47,6 +47,10 @@ export function layout(env = {}) {
     firewall:         `${config}/firewall.nft`,
     /** `apps/<app>/data/` is each app's data, bind-mounted at its volumePath. */
     apps:             `${state}/apps`,
+    /** `<slug>-<id8> -> ../apps/<app>`, so a person can find an app's data by
+     *  name. Beside `apps/` and not in it: the inspector reads every entry of
+     *  `apps/` as an app and would list a linked one twice. */
+    names:            `${state}/names`,
     builds:           `${state}/builds`,
     static:           `${state}/static`,
     backups:          `${state}/backups`,

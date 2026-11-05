@@ -22,6 +22,8 @@ let ROOT
 
 function tree(name, files) {
   const dir = join(ROOT, name)
+  // Membership is the root `workspaces` list; a fixture that names none has no packages.
+  if (!('package.json' in files)) files = { 'package.json': JSON.stringify({ workspaces: ['packages/*'] }), ...files }
   for (const [path, body] of Object.entries(files)) {
     const full = join(dir, path)
     mkdirSync(join(full, '..'), { recursive: true })
@@ -169,7 +171,7 @@ describe('doc-cites-dead', () => {
 
   test('reports a register id that resolves nowhere, and not one that does', () => {
     const root = tree('cite-id', {
-      'package.json': JSON.stringify({ registers: { prefix: 'FJS' } }),
+      'package.json': JSON.stringify({ registers: { prefix: 'FJS' }, workspaces: ['packages/*'] }),
       'ISSUES.md': '# Issues\n\n## S2 — high\n\n' +
                    '| Id | Pkg | Title | Status | Verified | Detail |\n' +
                    '| --- | --- | --- | --- | --- | --- |\n' +

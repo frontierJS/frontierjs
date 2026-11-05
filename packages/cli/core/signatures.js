@@ -12,8 +12,9 @@
 // The printed form is the declaration with its body cut off and its comment
 // kept, the half of it a caller needs.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
+import { packageMembers } from './workspace-members.js'
 
 const CODE = /\.([cm]?[jt]sx?)$/
 
@@ -39,16 +40,12 @@ export function entryPoints(pkg) {
 
 /** `[{ name, dir, entries: [{ subpath, file }] }]` for every package that declares a code entry point. */
 export function publishedPackages(root) {
-  const base = join(root, 'packages')
   const found = []
-  for (const dir of readdirSync(base).sort()) {
-    const pj = join(base, dir, 'package.json')
-    if (!existsSync(pj)) continue
-    let pkg
-    try { pkg = JSON.parse(readFileSync(pj, 'utf8')) } catch { continue }
+  for (const m of [...packageMembers(root)].sort((a, b) => (a.folder < b.folder ? -1 : a.folder > b.folder ? 1 : 0))) {
+    const pkg = m.manifest
     if (pkg.private || !pkg.name) continue
     const entries = entryPoints(pkg)
-    if (entries.length) found.push({ name: pkg.name, dir: join(base, dir), entries })
+    if (entries.length) found.push({ name: pkg.name, dir: m.dir, entries })
   }
   return found
 }

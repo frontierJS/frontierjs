@@ -33,6 +33,7 @@
 import { readdirSync, existsSync, statSync }              from 'fs'
 import { join, dirname, relative, resolve, sep }           from 'path'
 import { read, safeRead } from './fs.js'
+import { packageMembers } from './workspace-members.js'
 
 import { docFences }     from '@frontierjs/toolbelt/docfences'
 import { readRegisters } from './registers.js'
@@ -183,8 +184,7 @@ const PLACEHOLDERS = new Set(['@x', '@y', '@n', '@name', '@@name', '@attr', '@@a
 export function npmScopes(root) {
   const out   = new Set()
   const files = [join(root, 'package.json')]
-  for (const name of safeRead(join(root, 'packages')))
-    files.push(join(root, 'packages', name, 'package.json'))
+  for (const m of packageMembers(root)) files.push(join(m.dir, 'package.json'))
 
   for (const file of files) {
     const raw = read(file)
@@ -201,8 +201,8 @@ export function npmScopes(root) {
 export function catalogWords(root) {
   const words = new Set()
   let found   = 0
-  for (const name of safeRead(join(root, 'packages'))) {
-    const file = join(root, 'packages', name, 'catalog.snapshot.md')
+  for (const m of packageMembers(root)) {
+    const file = join(m.dir, 'catalog.snapshot.md')
     if (!existsSync(file)) continue
     found++
     const text = read(file) ?? ''

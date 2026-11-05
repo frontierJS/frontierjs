@@ -44,11 +44,16 @@ RUN apt-get update \\
  && rm -rf /var/lib/apt/lists/*
 
 # The framework at ${ref}. bun link registers each package under its own name,
-# which is what a link: dependency resolves against.
+# which is what a link: dependency resolves against. A package sits at
+# packages/<x> or one level lower (packages/conduits/<x>); one inside another
+# package (packages/sierra/example) is that package's, so it is not linked.
 WORKDIR /frontierjs
 RUN git clone --depth 1 --branch ${ref} ${FRAMEWORK_REPO} . \\
  && bun install \\
- && for p in packages/*/; do (cd "$p" && bun link); done
+ && for p in packages/*/ packages/*/*/; do \\
+      q=$(echo "$p" | sed 's:/$::'); \\
+      if [ -f "$q/package.json" ] && [ ! -f "$(dirname "$q")/package.json" ]; then (cd "$q" && bun link); fi; \\
+    done
 
 # The app. Its own install comes after the links, or link: resolves to nothing.
 WORKDIR /app

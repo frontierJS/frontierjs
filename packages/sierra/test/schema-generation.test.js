@@ -14,7 +14,7 @@
 import { describe, test, expect, beforeEach } from 'vitest'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { writeFileSync, mkdirSync, symlinkSync } from 'fs'
+import { writeFileSync, mkdirSync, symlinkSync, unlinkSync } from 'fs'
 
 import { resolveSchemaPath, generateSchemas, schemaPlugin } from '../src/build/schema-plugin.js'
 import {
@@ -523,48 +523,81 @@ model Bookmark {
   })
 })
 
-// A watcher on the FILE sees `change` and `unlink` and then nothing for the
-// recreate that `git stash` / `git checkout` / a pull does, so the dev server
-// served the last schema it saw for good (`FJS-1470`). The DIRECTORY gives
-// `unlink`, `add`, then `change` for every later write.
-describe('the dev watcher survives the schema being recreated', () => {
+// The watch is the plugin's own and stops at the schema's directory. A watch on
+// the FILE alone goes deaf the first time it is unlinked and recreated (`git
+// stash`, `git checkout`, a pull; `FJS-1470`), and the directory handed to
+// Vite's watcher is watched to every depth, which in an app writing media
+// under db/storage is tens of thousands of inotify watches and a pegged core
+// (`FJS-4001`).
+describe('the dev watcher', () => {
 
   function fakeServer() {
     const added = []
-    const handlers = {}
     const sent = []
     return {
-      added, handlers, sent,
+      added, sent,
       watcher: {
         add: (p) => { added.push(p) },
-        on: (ev, fn) => { handlers[ev] = fn },
+        on() {},
       },
       moduleGraph: { getModuleById: () => null, invalidateModule() {} },
       ws: { send: (m) => sent.push(m) },
     }
   }
 
-  test('watches the directory, and regenerates on add as well as change', async () => {
-    const { dir, path } = fixture()
+  async function until(cond, ms = 3000) {
+    const end = Date.now() + ms
+    while (!cond()) {
+      if (Date.now() > end) return false
+      await new Promise((r) => setTimeout(r, 20))
+    }
+    return true
+  }
+
+  async function served(contents) {
+    const { dir, path } = fixture(contents)
     const ctx = {}
     const plugin = schemaPlugin({}, ctx)
     await plugin.configResolved({ root: dir })
     const server = fakeServer()
     plugin.configureServer(server)
+    return { dir, path, ctx, plugin, server }
+  }
 
-    expect(server.added).toContain(dirname(path))
+  test('hands Vite no directory to watch', async () => {
+    const { plugin, server } = await served()
+    try {
+      expect(server.added).toEqual([])
+    } finally { await plugin.buildEnd() }
+  })
 
-    ctx.schemaDefs = null
-    await server.handlers.add(path)
-    expect(ctx.schemaDefs).not.toBeNull()
-    expect(server.sent).toEqual([{ type: 'full-reload' }])
+  test('regenerates when the schema is recreated', async () => {
+    const { path, ctx, plugin, server } = await served()
+    try {
+      ctx.schemaDefs = null
+      unlinkSync(path)
+      writeFileSync(path, SCHEMA)
+      expect(await until(() => ctx.schemaDefs)).toBe(true)
+      expect(server.sent).toContainEqual({ type: 'full-reload' })
 
-    // A neighbour in the same directory is not the schema.
-    ctx.schemaDefs = null
-    await server.handlers.add(resolve(dirname(path), 'other.lite'))
-    await server.handlers.change(resolve(dirname(path), 'other.lite'))
-    expect(ctx.schemaDefs).toBeNull()
-    expect(server.sent.length).toBe(1)
+      ctx.schemaDefs = null
+      writeFileSync(path, SCHEMA + '\n')
+      expect(await until(() => ctx.schemaDefs)).toBe(true)
+    } finally { await plugin.buildEnd() }
+  })
+
+  test('a neighbor, or a file below the schema, is not the schema', async () => {
+    const { path, ctx, plugin, server } = await served()
+    try {
+      const db = dirname(path)
+      ctx.schemaDefs = null
+      writeFileSync(resolve(db, 'other.lite'), SCHEMA)
+      mkdirSync(resolve(db, 'storage', 'thumbs'), { recursive: true })
+      writeFileSync(resolve(db, 'storage', 'thumbs', 'schema.lite'), SCHEMA)
+      writeFileSync(resolve(db, 'app.db-wal'), 'x')
+      expect(await until(() => ctx.schemaDefs, 400)).toBe(false)
+      expect(server.sent).toEqual([])
+    } finally { await plugin.buildEnd() }
   })
 })
 
@@ -589,16 +622,19 @@ describe('a schema the tokenizer throws on', () => {
     const ctx = {}
     const plugin = schemaPlugin({}, ctx)
     await plugin.configResolved({ root: dir })
-    const handlers = {}
+    let reloaded
+    const done = new Promise((r) => { reloaded = r })
     plugin.configureServer({
-      watcher: { add() {}, on: (ev, fn) => { handlers[ev] = fn } },
+      watcher: { add() {}, on() {} },
       moduleGraph: { getModuleById: () => null, invalidateModule() {} },
-      ws: { send() {} },
+      ws: { send: reloaded },
     })
 
-    writeFileSync(path, MID_EDIT)
-    await handlers.change(path)
-    expect(ctx.schemaDefs).toBeNull()
-    expect(ctx.schemaFailure).toContain('Unterminated template literal')
+    try {
+      writeFileSync(path, MID_EDIT)
+      await done
+      expect(ctx.schemaDefs).toBeNull()
+      expect(ctx.schemaFailure).toContain('Unterminated template literal')
+    } finally { await plugin.buildEnd() }
   })
 })

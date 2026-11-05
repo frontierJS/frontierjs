@@ -29,10 +29,11 @@
 // not reproducible and this must never feed a committed snapshot. `staleDays: 0`
 // turns it off for a caller that needs a stable answer.
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { chalk } from './color.js'
+import { packageMembers } from './workspace-members.js'
 import { treePaths } from './tree.js'
 import { ideaQuestions } from './decisions.js'
 import { blockedBy, envCause, ENV_CAUSES, reproOf, seamOf } from './next.js'
@@ -106,11 +107,8 @@ const DEAD_SHAPE = /\s|[*<>{}]|^\/|^\.\.?$/
 
 function workspaceNames(root) {
   const names = new Set()
-  const dirs  = []
-  const pkgs  = resolve(root, 'packages')
-  if (existsSync(pkgs)) {
-    for (const d of readdirSync(pkgs)) if (existsSync(resolve(pkgs, d, 'package.json'))) dirs.push(resolve(pkgs, d))
-  }
+  const members = packageMembers(root)
+  const dirs    = members.map(m => m.dir)
   for (const dir of [root, ...dirs]) {
     try {
       const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
@@ -120,7 +118,7 @@ function workspaceNames(root) {
       }
     } catch {}
   }
-  return { names, dirs }
+  return { names, dirs, members }
 }
 
 // ─── what a ruling's prose can be held to ────────────────────────────────────
@@ -134,14 +132,14 @@ function workspaceNames(root) {
 
 const PATH_EXT = /\.(js|ts|md|mesa|lite|css|mjs|json|html|sh|sql|ya?ml)$/
 
-function deadPathFindings(ruling, { root, inTree, tree }) {
+function deadPathFindings(ruling, { root, inTree, tree, members = [] }) {
   const out    = []
   const lives  = new Set((ruling.livesIn ?? []).map(l => l.token))
   const prose  = (ruling.raw ?? '').replace(/^\s*```[\s\S]*?^\s*```/gm, '')
   const seen   = new Set()
   const topHas = (seg) => tree
-    ? tree.has(seg) || tree.has(`packages/${seg}`)
-    : existsSync(resolve(root, seg)) || existsSync(resolve(root, 'packages', seg))
+    ? tree.has(seg) || tree.has(`packages/${seg}`) || members.some(m => m.folder === seg)
+    : existsSync(resolve(root, seg)) || existsSync(resolve(root, 'packages', seg)) || members.some(m => m.folder === seg)
 
   for (const [, token] of prose.matchAll(/`([^`\n]+)`/g)) {
     if (seen.has(token) || lives.has(token)) continue
@@ -151,6 +149,9 @@ function deadPathFindings(ruling, { root, inTree, tree }) {
     const rel = token.replace(/#.*/, '').replace(/:\d+(-\d+)?$/, '')
     if (!rel.includes('/') || leavesTree(rel) || !PATH_EXT.test(rel) || !topHas(rel.split('/')[0])) continue
     if (inTree(resolve(root, rel)) || inTree(resolve(root, 'packages', rel))) continue
+    // Written from a member's own folder name, wherever that member sits.
+    const [head, ...rest] = rel.split('/')
+    if (members.some(m => m.folder === head && inTree(resolve(m.dir, rest.join('/'))))) continue
     out.push({ message: `cites ${token}, which is not in the tree` })
   }
   return out

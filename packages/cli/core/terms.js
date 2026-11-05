@@ -41,6 +41,7 @@
 import { readdirSync, readFileSync, existsSync } from 'fs'
 import { spawnSync }                             from 'child_process'
 import { join, relative, sep }                   from 'path'
+import { packageMembers, memberOfFile }         from './workspace-members.js'
 import { singularize }                           from '@frontierjs/toolbelt/inflect'
 import { splitFrontmatter }                      from '@frontierjs/toolbelt/frontmatter'
 import { htmlPage, themePicker, themesFor, esc } from './html-page.js'
@@ -144,9 +145,11 @@ function corpusFiles(dir) {
 // Which package a file belongs to. The bucket is what `spread` counts, so a
 // file outside any package still needs one — `root` is a real answer and an
 // empty string would silently merge every such file into one.
-function ownerOf(root, path) {
+function ownerOf(root, path, members) {
   const rel   = relative(root, path)
   const parts = rel.split(sep)
+  const member = memberOfFile(members, parts.join('/'))
+  if (member) return member.folder
   if (parts[0] === 'packages' && parts.length > 1) return parts[1]
   if (parts.length > 1) return parts[0]
   return 'root'
@@ -886,9 +889,10 @@ const EXPORT_RX = /^export\s+(?:async\s+)?(?:function\*?|const|let|class)\s+([A-
 function apiTerms(root, packages) {
   const rows = new Map()
 
-  for (const pkg of packages) {
-    const dir = join(root, 'packages', pkg, 'src')
-    const entries = entryTargets(join(root, 'packages', pkg))
+  for (const m of packages) {
+    const pkg = m.folder
+    const dir = join(m.dir, 'src')
+    const entries = entryTargets(m.dir)
 
     // `@frontierjs/ui` has no `src/` at all — its components ARE the package —
     // so the walk below must not be what decides whether the package is read.
@@ -916,7 +920,7 @@ function apiTerms(root, packages) {
     // pass `EmptyState`, `StatCard` and `FilterBar` reach the prose scan with
     // nothing to say they are code, and land in the concepts table as though
     // somebody had coined them.
-    for (const path of corpusFiles(join(root, 'packages', pkg))) {
+    for (const path of corpusFiles(m.dir)) {
       if (!path.endsWith('.mesa')) continue
       if (/[\\/](test|tests|fixtures|example)[\\/]/.test(path)) continue
       const name = path.slice(path.lastIndexOf('/') + 1, -'.mesa'.length)
@@ -990,15 +994,13 @@ export function collectTerms({ root }) {
   const clarified = new Set(architect.clarified.map(w => w.toLowerCase()))
   const unnamed   = new Set(architect.notYetNamed.map(w => w.toLowerCase()))
 
-  const packages = existsSync(join(root, 'packages'))
-    ? readdirSync(join(root, 'packages'), { withFileTypes: true })
-        .filter(e => e.isDirectory() && !SKIP_DIRS.has(e.name)).map(e => e.name)
-    : []
+  const members  = packageMembers(root)
+  const packages = members.filter(m => !SKIP_DIRS.has(m.folder))
 
   // A package's own name is vocabulary, but it is a NAME — it teaches you what
   // to import, never what a word means. Derived rather than listed so a new
   // package classifies itself.
-  const product = new Set(packages.map(p => p[0].toUpperCase() + p.slice(1)))
+  const product = new Set(packages.map(m => m.folder[0].toUpperCase() + m.folder.slice(1)))
   product.add('Frontier'); product.add('FrontierJS'); product.add('Fli')
 
   const language = new Map()
@@ -1047,7 +1049,7 @@ export function collectTerms({ root }) {
 
     docs.push(rel)
     byKind[kind] += 1
-    const owner = ownerOf(root, path)
+    const owner = ownerOf(root, path, members)
     const cell  = `${owner}|${kind}`
     // § 2 is the doctrine's own list OF terms, and a phrase is matched as
     // plain text, so leaving it in lets `Gate ladder` gain a use by being

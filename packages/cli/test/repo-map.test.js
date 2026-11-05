@@ -34,7 +34,8 @@ function tree(name, files) {
 }
 
 // Every fixture declares the prefix its rows are written under.
-const pkg = (fields) => JSON.stringify({ registers: { prefix: 'FJS' }, ...fields }, null, 2)
+// A root's members are what its `workspaces` list names, so every fixture declares the usual one.
+const pkg = (fields) => JSON.stringify({ registers: { prefix: 'FJS' }, workspaces: ['packages/*'], ...fields }, null, 2)
 
 beforeAll(() => { ROOT = mkdtempSync(join(tmpdir(), 'fli-repo-map-')) })
 afterAll(()  => { try { rmSync(ROOT, { recursive: true, force: true }) } catch {} })

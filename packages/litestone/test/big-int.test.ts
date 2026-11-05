@@ -129,6 +129,21 @@ describe('every other column keeps its own type', () => {
     expect(typeof a.id).toBe('number')
     expect(a.remoteId).toBe(BIG)
   })
+
+  // FJS-4005: `SELECT changes()` is one cached statement every model shares, so
+  // a wide model's many-write left it answering BigInts to the next plain model.
+  test('a plain model’s deleteMany after a wide model’s still counts in numbers', async () => {
+    const db = await client(SCHEMA + `
+model Tag {
+  id   Int    @id @default(autoincrement())
+  name String
+}
+`)
+    await db.tag.create({ data: { name: 't' } })
+    expect(await db.post.deleteMany({ where: { title: 'none' } })).toEqual({ count: 0 })
+    expect(await db.tag.deleteMany({ where: { name: 't' } })).toEqual({ count: 1 })
+    expect(await db.tag.deleteMany({ where: { name: 't' } })).toEqual({ count: 0 })
+  })
 })
 
 describe('the value is still a number to SQLite', () => {

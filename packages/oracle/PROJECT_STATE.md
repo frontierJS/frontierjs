@@ -42,4 +42,3 @@ Planned 2026-10-10. **Access defects come before features**, because getting acc
    - **Shapes as `@@trait`.** Recurring column groups (interval, weekday window, tree) are written out by hand, and the catalog has no shape level yet.
    - **Behavior.** Only the `audit` pattern becomes a declaration (`@@trail(audit)`). The other patterns emit as comments, and hooks, jobs and notifications are not generated.
 
-**`mockup/`** stays as reference and is not ported.

@@ -42,9 +42,10 @@
 //
 // Zero dependencies beyond `@frontierjs/toolbelt/inflect`, plain ESM, node or bun.
 
-import { existsSync, readdirSync, statSync }     from 'node:fs'
+import { existsSync, statSync }                  from 'node:fs'
 import { join }                                  from 'node:path'
 import { read }                                  from './fs.js'
+import { packageMembers }                        from './workspace-members.js'
 
 import { terms }                                 from './intent.js'
 import { readIssues, registerLayout }            from './registers.js'
@@ -415,11 +416,10 @@ export function docBlocks(text, maxWhole = 2500) {
   return out
 }
 
+// Each member's path below `packages/`, sorted, so a nested member
+// (`conduits/conduit-x`) is named by the path that reaches it.
 function packages(root) {
-  try {
-    return readdirSync(join(root, 'packages'), { withFileTypes: true })
-      .filter(e => e.isDirectory()).map(e => e.name).sort()
-  } catch { return [] }
+  return packageMembers(root).map(m => m.path.slice('packages/'.length)).sort()
 }
 
 /**

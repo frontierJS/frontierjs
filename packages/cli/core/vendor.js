@@ -42,6 +42,7 @@ import { spawnSync }                                             from 'node:chil
 import { existsSync, readFileSync, writeFileSync, copyFileSync, statSync,
          readdirSync, mkdirSync, rmSync, realpathSync }           from 'node:fs'
 import { join, resolve, dirname, relative }                       from 'node:path'
+import { packageMembers, memberByName }                         from './workspace-members.js'
 
 // Where the generated build context lands, relative to the app root. The
 // Dockerfile `fli make:deploy` writes names the same path, and the `file:` specs
@@ -77,8 +78,14 @@ export function linkedDeps(manifest) {
   return [...new Set(out)]
 }
 
-// ─── resolvePackagesDir ───────────────────────────────────────────────────────
-// Where the sources those specs point at actually live.
+// ─── resolvePackageSource ─────────────────────────────────────────────────────
+// Where the sources those specs point at actually live: `{ dir, packages }`, the
+// packages being `{ name, dir, private }` for every member the sources hold.
+//
+// A workspace dependency is packed from whichever member directory holds it
+// (`FJS-D1559`), so a root is read through `workspace-members.js` and a package
+// two levels down (`packages/conduits/conduit-x`) is found as readily as one at
+// `packages/x`. `dir` is only what gets reported: `<root>/packages` for a root.
 //
 // Order matters and is not the obvious one. Walking up finds the workspace an
 // app is standing IN, which is the only answer that is current — `bun install`
@@ -86,43 +93,73 @@ export function linkedDeps(manifest) {
 // install back would pack whatever the tree looked like at the last install.
 // A `link:` app is usually outside any workspace, which is what the last
 // candidate is for: `bun link` left a real symlink, and its target is the
-// source.
+// source, whose workspace root is the first ancestor holding `workspaces`.
 //
 // Every candidate is checked against the linked names rather than accepted for
 // existing — a directory called `packages` is not evidence that it holds these.
+// `$FJS_PACKAGES_DIR` stays a one-directory override: it lists that directory's
+// children and nothing deeper.
 
-export function resolvePackagesDir(appRoot, names) {
+export function resolvePackageSource(appRoot, names) {
   const expandHome = (p) => p.replace(/^~/, process.env.HOME || '')
   const candidates = []
 
-  for (let dir = resolve(appRoot); ; dir = dirname(dir)) {
-    const manifest = join(dir, 'package.json')
-    if (existsSync(manifest)) {
-      try {
-        if (JSON.parse(readFileSync(manifest, 'utf8')).workspaces)
-          candidates.push(join(dir, 'packages'))
-      } catch { /* an unreadable manifest is not a workspace root */ }
-    }
-    if (dirname(dir) === dir) break
-  }
+  for (const root of workspaceRootsAbove(resolve(appRoot))) candidates.push(() => sourceOfRoot(root, names))
 
-  if (process.env.FJS_PACKAGES_DIR) candidates.push(resolve(expandHome(process.env.FJS_PACKAGES_DIR)))
-  if (process.env.WORKSPACE_DIR)    candidates.push(resolve(expandHome(process.env.WORKSPACE_DIR), 'packages'))
+  if (process.env.FJS_PACKAGES_DIR) {
+    const dir = resolve(expandHome(process.env.FJS_PACKAGES_DIR))
+    candidates.push(() => sourceOfDir(dir))
+  }
+  if (process.env.WORKSPACE_DIR) {
+    const root = resolve(expandHome(process.env.WORKSPACE_DIR))
+    candidates.push(() => sourceOfRoot(root, names) ?? sourceOfDir(join(root, 'packages')))
+  }
 
   for (const name of names) {
     const linked = join(appRoot, 'node_modules', name)
     if (!existsSync(join(linked, 'package.json'))) continue
-    // The package's own directory; its parent is the packages dir. A scoped name
-    // is two segments under node_modules, so the symlink is at the leaf and the
-    // realpath is the source directory itself.
-    try { candidates.push(dirname(realpathSync(linked))) } catch { /* not resolvable */ }
+    // The member's own directory: a scoped name is two segments under
+    // node_modules, so the symlink is at the leaf and the realpath is the source.
+    let real
+    try { real = realpathSync(linked) } catch { continue }
+    const [root] = workspaceRootsAbove(dirname(real))
+    candidates.push(() => (root && sourceOfRoot(root, names)) ?? sourceOfDir(dirname(real)))
   }
 
-  for (const dir of candidates) {
-    if (!existsSync(dir)) continue
-    if (namesIn(dir).some(p => names.includes(p.name))) return dir
+  for (const candidate of candidates) {
+    const source = candidate()
+    if (source?.packages.some(p => names.includes(p.name))) return source
   }
   return null
+}
+
+/** Every ancestor of `dir` (itself included) whose package.json has `workspaces`, nearest first. */
+function workspaceRootsAbove(dir) {
+  const out = []
+  for (; ; dir = dirname(dir)) {
+    const manifest = join(dir, 'package.json')
+    if (existsSync(manifest)) {
+      try {
+        if (JSON.parse(readFileSync(manifest, 'utf8')).workspaces) out.push(dir)
+      } catch { /* an unreadable manifest is not a workspace root */ }
+    }
+    if (dirname(dir) === dir) break
+  }
+  return out
+}
+
+// The releasable members, plus any member a linked name points at that lives
+// outside `packages/` -- a dependency is packed from wherever it sits.
+function sourceOfRoot(root, names) {
+  const found = new Map()
+  const add   = (m) => { if (m.manifest.name && !found.has(m.dir)) found.set(m.dir, { name: m.manifest.name, dir: m.dir, private: !!m.manifest.private }) }
+  for (const m of packageMembers(root)) add(m)
+  for (const name of names) { const m = memberByName(root, name); if (m) add(m) }
+  return found.size ? { dir: join(root, 'packages'), packages: [...found.values()] } : null
+}
+
+function sourceOfDir(dir) {
+  return existsSync(dir) ? { dir, packages: namesIn(dir) } : null
 }
 
 // ─── namesIn ──────────────────────────────────────────────────────────────────
@@ -288,11 +325,12 @@ export function vendorWorkspacePackages({ appRoot, include = [], packagesDir: gi
     return out
   }
 
-  const packagesDir = given ? resolve(given) : resolvePackagesDir(root, names)
-  if (!packagesDir)
+  const source = given ? sourceOfDir(resolve(given)) ?? { dir: resolve(given), packages: [] } : resolvePackageSource(root, names)
+  if (!source)
     throw new Error(
       `cannot find the sources for ${names.join(', ')} — ` +
       'set $FJS_PACKAGES_DIR, or scaffold with --source npm')
+  const packagesDir = source.dir
   out.packagesDir = packagesDir
 
   // Every publishable package sharing a scope with a linked one, not only the
@@ -301,7 +339,7 @@ export function vendorWorkspacePackages({ appRoot, include = [], packagesDir: gi
   // and quietly mixes a published sierra into a local mesa. Packing the rest
   // costs a second and proves each still packs at all.
   const scopes  = new Set(names.map(scopeOf).filter(Boolean))
-  const targets = namesIn(packagesDir).filter(p => names.includes(p.name) || (!p.private && scopes.has(scopeOf(p.name))))
+  const targets = source.packages.filter(p => names.includes(p.name) || (!p.private && scopes.has(scopeOf(p.name))))
   const unfound = names.filter(n => !targets.some(t => t.name === n))
   if (unfound.length)
     throw new Error(`no package named ${unfound.join(', ')} in ${packagesDir} — the image would install it from nowhere`)

@@ -20,6 +20,7 @@ directories follow FHS under Outpost's name and are made by systemd, and
   outpost.env · outpost.crt · outpost.key · litestream.yml · firewall.nft
 /var/lib/outpost/             StateDirectory=outpost
   apps/<app>/data/            bind-mounted at the App's volumePath (.db files)
+  names/<slug>-<id8>          link to apps/<app>, written on each deploy; `apps/` itself is keyed by uuid
   builds/                     checkouts and build caches (today's apps/, FJS-D1614)
   static/ · backups/ · restore/ · replica-restore/ · deploy-keys/ · uids.json
 /usr/local/lib/outpost/       the installed @frontierjs/outpost (FJS-D1826)

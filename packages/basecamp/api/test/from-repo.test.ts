@@ -24,7 +24,7 @@ import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
 import { parseAppSource, summarizeSource, DOCKERFILE_BYTES } from '../src/domain/release/app-source.ts'
-import { readRepoDockerfile, rawDockerfileUrls, forgeRepo } from '../src/domain/release/dockerfile-template.ts'
+import { readRepoDockerfile, rawDockerfileUrls, forgeRepo, fjsDockerfileTemplate } from '../src/domain/release/dockerfile-template.ts'
 import { startGhSink, NO_HOOKS_TOKEN } from '../src/providers/source/github-sink.ts'
 import { registerAccount }    from '../src/providers/compute/accounts.ts'
 import { connectRepository }  from '../src/services/apps/apps.service.ts'
@@ -436,5 +436,25 @@ describe('fromRepo `isConnecting` writes at GitHub (FJS-D1571)', () => {
     for (const remote of ['git@github.com:sink-owner/app.git', 'https://github.com/sink-owner/app', 'ssh://git@github.com/sink-owner/app.git/'])
       expect(forgeRepo(remote)).toEqual({ forge: 'github', owner: 'sink-owner', name: 'app' })
     expect(forgeRepo('https://gitlab.com/a/b')).toBeNull()
+  })
+})
+
+describe('the template links every workspace member', () => {
+  // FJS-D1559: a package sits at packages/<x> or one level lower, and one inside
+  // another package (a package's own example) is not linked. The loop is the
+  // template's own text run against a tree, with `bun link` stood in for.
+  test('a nested member is linked, a package inside a package is not', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const loop = fjsDockerfileTemplate().match(/&& (for p in[\s\S]*?done)\n/)![1].replace(/\\\n/g, ' ').replace(/bun link/g, 'echo LINK $q')
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-link-loop-'))
+    try {
+      for (const p of ['packages/a', 'packages/a/example', 'packages/group/b', 'packages/c']) {
+        mkdirSync(join(dir, p), { recursive: true })
+        if (p !== 'packages/group') writeFileSync(join(dir, p, 'package.json'), '{}')
+      }
+      const out = Bun.spawnSync(['sh', '-c', loop], { cwd: dir }).stdout.toString().trim().split('\n')
+      expect(out).toEqual(['LINK packages/a', 'LINK packages/c', 'LINK packages/group/b'])
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

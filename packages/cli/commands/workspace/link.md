@@ -29,6 +29,8 @@ import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { resolve } from 'path'
 import { homedir } from 'os'
 
+const { packageMembers } = await import(resolve(global.fliRoot, 'core/workspace-members.js'))
+
 
 const getPkg = (dir) => {
   try { return JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8')) }
@@ -39,14 +41,8 @@ const setPkg = (dir, pkg) =>
 
 const findPkg = (wsRoot, name) => {
   // Accept bare name (fli), scoped name (@frontierjs/fli), or folder name
-  const pkgsDir = resolve(wsRoot, 'packages')
-  const { readdirSync } = require('fs')
   try {
-    return readdirSync(pkgsDir).map(d => {
-      const dir = resolve(pkgsDir, d)
-      const pkg = getPkg(dir)
-      return pkg ? { dir, pkg } : null
-    }).filter(Boolean).find(({ dir, pkg }) =>
+    return packageMembers(wsRoot).map(m => ({ dir: m.dir, pkg: m.manifest })).find(({ dir, pkg }) =>
       pkg.name === name ||
       pkg.name === `@frontierjs/${name}` ||
       dir.endsWith(`/${name}`)
