@@ -23,6 +23,7 @@ const B                 = await import(new URL('file://' + global.fliRoot + '/co
 const DC                = await import(new URL('file://' + global.fliRoot + '/core/docker-context.js'))
 
 const { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, rmSync, mkdtempSync } = await import('node:fs')
+const { randomBytes: keyBytes } = await import('node:crypto')
 const { join, resolve, basename } = await import('node:path')
 const { homedir }        = await import('node:os')
 const { spawn, spawnSync } = await import('node:child_process')
@@ -525,6 +526,18 @@ const hubUrl = ($, path = '') => `http://127.0.0.1:${$.config.apiPort}${path}`
 // — reaches neither. Two environments written twice is how the lesson and the
 // resume end up disagreeing about which key the machine holds.
 
+// Enrollment refuses the all-zeros placeholder (`FJS-D1798`), and the key seals
+// the rows already written, so a resumed lesson reads it back rather than
+// minting another.
+const hubKey = ($) => {
+  const file = join($.config.ws.dir, '.tutor', 'encryption-key')
+  if (existsSync(file)) return readFileSync(file, 'utf8').trim()
+  const key = keyBytes(32).toString('hex')
+  mkdirSync(join($.config.ws.dir, '.tutor'), { recursive: true })
+  writeFileSync(file, key)
+  return key
+}
+
 const startHub = ($) => startServer($, {
   name:   'basecamp',
   script: 'start',
@@ -534,6 +547,7 @@ const startHub = ($) => startServer($, {
     NODE_ENV:         'development',
     FRONTIER_PORT_BE: String($.config.apiPort),
     DATABASE_URL:     join($.config.ws.dir, 'basecamp.db'),
+    ENCRYPTION_KEY:   hubKey($),
     // Both databases have to be redirected, not one. The audit trail is a
     // second `database` block with a RELATIVE path, so it follows the process
     // CWD — which is the checkout — and a lesson that set only `DATABASE_URL`
