@@ -79,6 +79,21 @@ try {
   row('health', bad('unreachable'))
 }
 
+// A start-first container's host port is Docker's pick and changes when it
+// restarts, so the route can dial a port nothing holds (FJS-D1890). Read only:
+// deploy:setup writes the route from the live port.
+try {
+  const { routeDials, readConfigScript, parseConfigRead } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+  const port = await livePort(machine, container, apiPort)
+  const dials = routeDials(parseConfigRead(ask(readConfigScript())).config, appId)
+  for (const d of dials.filter(d => d.port !== Number(port)))
+    row('route', warnT(`dials :${d.port}, the container is on :${port}`))
+  if (dials.some(d => d.port !== Number(port)))
+    echo(chalk`  {dim ℹ  fli deploy:setup re-points it}`)
+} catch {
+  // No Caddy or an unread container: the health row above already said so.
+}
+
 // ─── Pause ────────────────────────────────────────────────────────────────────
 // Two answers to one question, printed side by side and never reconciled. The
 // journal records an intent somebody had; the file records what is in force. A

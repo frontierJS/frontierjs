@@ -3,16 +3,16 @@ title: outpost:install
 description: Make a box that answers ssh a machine of a Basecamp's fleet, from any directory
 effects: makes a Server row in the Basecamp, installs docker, caddy, bun and the Outpost on the box over ssh
 examples:
-  - fli outpost:install box1 --url https://ops.example.com
-  - fli outpost:install root@203.0.113.7 --url https://ops.example.com --name eu-1
+  - fli outpost:install box1
+  - fli outpost:install root@203.0.113.7 --basecamp ops --name eu-1
 args:
   -
     name: server
     description: "The box: an alias from ~/.ssh/config, or user@host"
 flags:
-  url:
+  basecamp:
     type: string
-    description: The Basecamp whose fleet the box joins (default BASECAMP_URL)
+    description: The Basecamp whose fleet the box joins, by its name in basecamps.json (default the only one; with several and none named, refused with the names)
     defaultValue: ''
   name:
     type: string
@@ -34,9 +34,11 @@ and checks in; the run waits for that first heartbeat and reports the row
 `online`, since a machine in the list with no Outpost answering is the failure
 that reads as a green deploy that ran nothing.
 
-The key is `BASECAMP_API_KEY`, read from the environment fli loads, and needs
-`servers:write`; issuing an enrollment is an administrator's act, so the key's
-owner is one. `--url` names the Basecamp, `BASECAMP_URL` otherwise. Enrollment
+The Basecamp and its key come from its entry in `basecamps.json` (`--basecamp`
+names it; `fli basecamp:key` files the key). The key needs `servers:write`;
+issuing an enrollment is an administrator's act, so the key's owner is one.
+The local dev Basecamp is the reserved entry `dev`, written into the file by
+hand. Enrollment
 travels over https only — the command carries a secret — so a plain `http`
 Basecamp is refused by Basecamp itself.
 
@@ -47,12 +49,11 @@ refuses it; one made by hand is at no such cloud and is left unmarked.
 
 ```js
 const dest = String(arg.server ?? '').trim()
-if (!dest) { log.error('Pass the box: fli outpost:install <ssh alias or user@host> --url <basecamp>'); process.exitCode = 1; return }
+if (!dest) { log.error('Pass the box: fli outpost:install <ssh alias or user@host> [--basecamp <name>]'); process.exitCode = 1; return }
 
-const key = process.env.BASECAMP_API_KEY
-if (!key) { log.error('needs BASECAMP_API_KEY — a key issued at /api-keys/ in the Basecamp workspace, with servers:write'); process.exitCode = 1; return }
-const origin = (flag.url || process.env.BASECAMP_URL || '').replace(/\/+$/, '')
-if (!origin) { log.error('Which Basecamp? Pass --url https://<basecamp>, or set BASECAMP_URL'); process.exitCode = 1; return }
+const target = reachBasecamp(flag.basecamp, log)
+if (!target) return
+const { url: origin, key } = target
 
 const ip = await boxAddress(dest)
 if (!ip) { log.error(`${dest} resolves to no IPv4 address: pass user@<ip>, or a Host in ~/.ssh/config with a HostName`); process.exitCode = 1; return }
@@ -80,7 +81,7 @@ const issued = await basecamp(origin, key, `/servers/${encodeURIComponent(server
 const { outcome } = installOutpost(machine, issued.command, { host: dest, log })
 if (outcome === 'failed') { process.exitCode = 1; return }
 
-if (!flag.wait) { log.info(`  fli outpost:install ${dest} --url ${origin} again reports when it is online`); return }
+if (!flag.wait) { log.info(`  fli outpost:install ${dest} --basecamp ${target.name} again reports when it is online`); return }
 
 // The heartbeat is the proof: a row that stays pending has an Outpost that
 // never reached Basecamp, which a green install cannot tell from one that did.

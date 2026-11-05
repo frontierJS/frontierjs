@@ -8,6 +8,7 @@
  *   runTerminalShell({ root, list: true })       each route and whether it lowers, printed
  *   runTerminalShell({ root, frame: '/x/7/' })   one path's frame, printed, no TTY
  *   runTerminalShell({ root, side: file })       interactive, with `file` in a pane beside it
+ *   runTerminalShell({ root, bottom: file })     interactive, with `file` in a pane under it
  *   runTerminalShell({ root, open: '/x/7/' })    interactive, opened at that path
  *   runTerminalShell({ root, reload })           interactive, and the router's `reload(url)` hands
  *                                                the url to `reload` and ends the shell
@@ -32,6 +33,13 @@
  * most Ctrl letters. A page's own command shows and hides it
  * through Mesa's `sideToggle()`, as Ctrl+\ does, and `toggle(true)` only shows it. In the side the mode line says so, and
  * h/j/k/l and Esc are the side's own: Esc going back is the page's.
+ *
+ * A bottom pane is a `.mesa` component in a full-width strip under the page,
+ * above the mode line, mounted the first time it shows and kept while hidden.
+ * No shell key shows it: a page's command does, through Mesa's
+ * `bottomToggle()`, with the side's `toggle(force)`. Showing it focuses into
+ * it and hiding it returns focus to the page; in it, as in the side, every
+ * key is its own. Ctrl+O cycles the panes that are open — page, side, bottom.
  *
  * A process imports a module once, so an edit is seen only by a new one:
  * `reload` is how the caller starts it, `tools/tui.js` by running itself
@@ -83,6 +91,11 @@ const PAGE_COLUMNS = 120
 // leaves each pane EDGE_COLUMNS. opentui's fields bind Alt+arrows to words.
 const RESIZE = keymap({ '<A-=>': 'wider', '<A-+>': 'wider', '<A-->': 'narrower', '<A-_>': 'narrower' })
 const RESIZE_STEP  = 5
+// The bottom pane takes this share of the terminal's rows, and never fewer
+// than BOTTOM_ROWS — its top rule and the ten rows `fli top`, the pane it was
+// made for, refuses to draw in less than.
+const BOTTOM_SHARE = 0.4
+const BOTTOM_ROWS  = 11
 const EDGE_COLUMNS = 20
 const MODE  = new URL('./Mode.mesa', import.meta.url).pathname
 // NORMAL's keymap. Each action is the arrow a keypress is renamed to, as the
@@ -194,21 +207,16 @@ function paneKeys(tui, renderer, file, setMode, setZoom, say) {
   // focusables() skips a hidden pane, so the pane is drawn before focus moves.
   const show = (pane) => { front = pane; lay(); flushSync() }
   // Whatever moves focus while zoomed — a route's mount, a click — brings its
-  // pane forward, or keys would go to a pane nobody can see.
+  // pane forward, or keys would go to a pane nobody can see. The bottom pane
+  // is under both, so focus there leaves the row as it is.
   renderer.on('focused_renderable', (node) => {
     const pane = open && node && tui.paneOf(renderer, node)
-    if (pane && pane !== front) { front = pane; lay() }
+    if ((pane === 'page' || pane === 'side') && pane !== front) { front = pane; lay() }
   })
   renderer.on('resize', lay)
   // biome-ignore lint/correctness/noUnusedVariables: the ??= below reads it, so the side mounts once
   let mounted = null
-  // Focus arriving sets the mode, through Shell.mesa's focusin; a pane with
-  // nothing to focus leaves none, so a hidden side keeps no keys.
-  const into = (pane) => {
-    if (tui.focusPane(renderer, pane)) return
-    renderer.currentFocusedRenderable?.blur()
-    setMode({ mode: 'normal', field: false })
-  }
+  const into = (pane) => focusInto(tui, renderer, setMode, pane)
   // `force` as DOM's `classList.toggle`: true only shows, false only hides.
   const toggle = async (force) => {
     // A side zoomed behind the page is open and not drawn: this brings it forward.
@@ -230,25 +238,61 @@ function paneKeys(tui, renderer, file, setMode, setZoom, say) {
   // unmarked; the kitty protocol names it '=' with meta.
   // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC is the prefix a legacy terminal's Alt key sends
   const altOf = (k) => k.ctrl ? null : k.meta ? k.name : /^\x1b(.)$/.exec(k.sequence ?? '')?.[1]
-  // Ctrl+O crosses only to a side that is open, and zoomed, one pane takes
-  // the row and there is no edge to move.
-  const active = () => [SIDE, ...(open ? [CROSS] : []), ...(box.visible && page.visible ? [RESIZE] : [])]
+  // Zoomed, one pane takes the row and there is no edge to move.
+  const active = () => [SIDE, ...(box.visible && page.visible ? [RESIZE] : [])]
   renderer.keyInput.on('keypress', (k) => {
     const alt = altOf(k)
     const action = actionOf(alt ? { key: alt, alt: true } : chordOf(tui.keyFields(k)), active())
     if (!action) return
     k.preventDefault()
     if (action === 'side') toggle()
-    else if (action === 'pane') {
-      const to = tui.paneOf(renderer) === 'side' ? 'page' : 'side'
-      show(to)
-      into(to)
-    } else {
+    else {
       columns = fit((columns ?? box.width) + (action === 'wider' ? RESIZE_STEP : -RESIZE_STEP))
       lay()
     }
   })
-  return active
+  return { active, open: () => open, bring: show }
+}
+
+/** Focus `pane`. Focus arriving sets the mode, through Shell.mesa's focusin;
+ *  a pane with nothing to focus leaves none, so a hidden pane keeps no keys. */
+function focusInto(tui, renderer, setMode, pane) {
+  if (tui.focusPane(renderer, pane)) return
+  renderer.currentFocusedRenderable?.blur()
+  setMode({ mode: 'normal', field: false })
+}
+
+/**
+ * The bottom pane, hidden until a page's command shows it through
+ * `bottomToggle()`, which mounts `file` there the first time. Its height is
+ * re-laid on a resize, since a share of a terminal made shorter can leave
+ * the pane too short for what it holds.
+ */
+function bottomPane(tui, renderer, file, setMode, say) {
+  const rows = () => Math.max(BOTTOM_ROWS, Math.round(renderer.height * BOTTOM_SHARE))
+  const box = tui.bottomOf(renderer, { height: rows() })
+  box.visible = false
+  renderer.on('resize', () => { box.height = rows() })
+  // biome-ignore lint/correctness/noUnusedVariables: the ??= below reads it, so the pane mounts once
+  let mounted = null
+  const into = (pane) => focusInto(tui, renderer, setMode, pane)
+  // focusables() skips a hidden pane, so the pane is drawn before focus moves.
+  const toggle = async (force) => {
+    if (box.visible && force === true) return into('bottom')
+    if (box.visible) { box.visible = false; flushSync(); return into('page') }
+    if (force === false) return
+    try {
+      mounted ??= tui.mount((await import(file)).default, { renderer, parent: box })
+    } catch (e) {
+      say(`${file} failed: ${e.message}`)
+      return
+    }
+    box.visible = true
+    flushSync()
+    into('bottom')
+  }
+  tui.setBottomToggle(renderer, toggle)
+  return { open: () => box.visible }
 }
 
 /**
@@ -259,12 +303,13 @@ function paneKeys(tui, renderer, file, setMode, setZoom, say) {
  * @param {string}  [o.frame]    print the frame at this path, and return
  * @param {number}  [o.settle]   ms a `frame` waits for the route's first loads
  * @param {string}  [o.side]     a `.mesa` file for the side pane
+ * @param {string}  [o.bottom]   a `.mesa` file for the bottom pane
  * @param {string}  [o.open]     the path to open, rather than the list
  * @param {(url: string) => void} [o.reload]  hands on the url `reload()` was asked for
  * @param {(line: string) => void} [o.print]
  * @returns {Promise<number>}    an exit code
  */
-export async function runTerminalShell({ root, apiUrl, list = false, frame = null, settle = 1500, side = null, open: at = null, reload = null, print = console.log }) {
+export async function runTerminalShell({ root, apiUrl, list = false, frame = null, settle = 1500, side = null, bottom = null, open: at = null, reload = null, print = console.log }) {
   const { config, loader, tree } = await boot(root, apiUrl)
   const routes = await routeList(root, tree, loader)
   const open = routes.filter((r) => !r.refused)
@@ -352,7 +397,12 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   }
 
   const [mode, setPageMode] = createSignal({ mode: 'normal', field: false })
-  const setMode = (m) => setPageMode(tui.paneOf(renderer) === 'side' ? { mode: 'side', field: m.field } : m)
+  // In a pane other than the page its keys are its own, and the line says which.
+  const setMode = (m) => {
+    const pane = tui.paneOf(renderer)
+    setPageMode(pane === 'side' || pane === 'bottom' ? { mode: pane, field: m.field } : m)
+  }
+  const ownKeys = () => mode().mode === 'side' || mode().mode === 'bottom'
   let focusStep = 0
   let adopted = false
   // Before the first mount takes the renderer's keys, so the key lands on
@@ -383,13 +433,26 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   tui.setShellKeys(renderer, {
     text: () => mode().mode === 'normal' ? false : undefined,
     step: (e) => {
-      if (mode().mode === 'side') return
+      if (ownKeys()) return
       shellStep?.(e)
       if (!e.defaultPrevented && mode().mode === 'normal') vim(e)
     },
   })
   const [zoom, setZoom] = createSignal(false)
-  const paneMaps = side ? paneKeys(tui, renderer, side, setMode, setZoom, (note) => set({ note })) : () => []
+  const sidePane = side && paneKeys(tui, renderer, side, setMode, setZoom, (note) => set({ note }))
+  const lowPane = bottom && bottomPane(tui, renderer, bottom, setMode, (note) => set({ note }))
+  // Ctrl+O cycles the panes that are open, taken before any mount as the
+  // side's keys are; with the side alone it swaps page and side.
+  const ring = () => ['page', ...(sidePane?.open() ? ['side'] : []), ...(lowPane?.open() ? ['bottom'] : [])]
+  renderer.keyInput.on('keypress', (k) => {
+    const panes = ring()
+    if (panes.length < 2 || actionOf(chordOf(tui.keyFields(k)), [CROSS]) !== 'pane') return
+    k.preventDefault()
+    const to = panes[(panes.indexOf(tui.paneOf(renderer) ?? 'page') + 1) % panes.length]
+    if (to !== 'bottom') sidePane?.bring(to)
+    focusInto(tui, renderer, setMode, to)
+  })
+  const paneMaps = () => [...(sidePane ? sidePane.active() : []), ...(ring().length > 1 ? [CROSS] : [])]
 
   const listed = {
     routes:   open.filter((r) => !r.params.length),
@@ -459,7 +522,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
 
   // Shell.mesa steps these and `INTO` after the page's keymaps.
   const shellKeys = keymap({ ...(jumps && { '<C-p>': 'jump' }), '?': 'help' })
-  const backs = () => shown && tui.paneOf(renderer) !== 'side'
+  const backs = () => shown && !ownKeys()
   // What `?` lists: each keymap a key is stepped against, in the order it
   // meets them — the side's keys, the page's, then the shell's.
   const help = () => {

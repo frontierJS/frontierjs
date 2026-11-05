@@ -2,8 +2,8 @@
 
 An FJS app laid out like `basecamp` (`FJS-D977`): `db/`, `api/`, and one `web/`
 built for two targets (`FJS-D985`) — the terminal (`fli haven`, `fli dev:tui`)
-and a browser (`bun run web`, `fli dev`). Ten modules differ per target and
-nothing else: `#paint`, `#cell`, `#sign-in`, `#errand`, `#workers`, `#taskmaster`, `#ledger`, `#seen`, `#sound` and `#study`, the
+and a browser (`bun run web`, `fli dev`). Eleven modules differ per target and
+nothing else: `#paint`, `#cell`, `#sign-in`, `#errand`, `#workers`, `#taskmaster`, `#ledger`, `#seen`, `#sound`, `#study` and `#top`, the
 package's `imports`, whose `browser` condition Vite takes and Bun does not.
 **A `#name` import is a target seam, and `#shared/*` is the one other use**: a seam only where the map swaps the file per target (`x.js` default, `x.browser.js` browser). `shared/` at the root (`FJS-D1320`) holds the pure code `api/` and `web/` both run, imported as `#shared/<file>`; it imports nothing from either surface or from junction. Everything else stays relative or `@/`, and `api/` and `web/` never import each other. The plan, and the first open
 box, is `IDEAS/haven.md`.

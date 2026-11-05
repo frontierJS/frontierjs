@@ -499,8 +499,8 @@ describe('how the machine swapped, on the row', () => {
   describe('what the App asks for (FJS-D1882)', () => {
     const host = () => `swap-${uniq()}.example.test`
 
-    test('start-first goes out for an App that asked, with a host and a published port', async () => {
-      const row = await startAgainst({}, { swap: 'startFirst' }, { port: 4100 }, host())
+    test('start-first goes out for an App that asked, with a host, a published port and a health path', async () => {
+      const row = await startAgainst({}, { swap: 'startFirst' }, { port: 4100, healthCheck: '/health' }, host())
       expect(row.asked).toBe('start-first')
     })
 
@@ -519,11 +519,15 @@ describe('how the machine swapped, on the row', () => {
       expect((await startAgainst({}, { swap: 'startFirst' }, {}, host())).asked).toBe('stop-first')
     })
 
+    test('an App with no health path is sent stop-first: running is all the overlap could ask (FJS-4012)', async () => {
+      expect((await startAgainst({}, { swap: 'startFirst' }, { port: 4100, healthCheck: null }, host())).asked).toBe('stop-first')
+    })
+
     test('a rollback reads the live App, not what the release shipped with', async () => {
       // The snapshot says nothing of swap, and turning it off since is honored.
       const off = await startAgainst({}, { swap: 'stopFirst' }, { port: 4100, swap: 'startFirst' }, host())
       expect(off.asked).toBe('stop-first')
-      const on = await startAgainst({}, { swap: 'startFirst' }, { port: 4100, swap: 'stopFirst' }, host())
+      const on = await startAgainst({}, { swap: 'startFirst' }, { port: 4100, healthCheck: '/health', swap: 'stopFirst' }, host())
       expect(on.asked).toBe('start-first')
     })
   })

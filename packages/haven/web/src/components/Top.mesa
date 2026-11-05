@@ -1,0 +1,18 @@
+<script>
+  // Top.mesa — `/top`: shows and hides `fli top` under the scene, in the
+  // shell's bottom pane (`TopPane.mesa`). The pane is the shell's, so where it
+  // was started with none — an installed Haven, a browser — there is no
+  // `/top`. Draws nothing.
+  import { bottomToggle } from '#top'
+
+  var verbs = $context.commands
+  const toggle = bottomToggle()
+  const HELP = "/top — this machine's processes, under the scene; q closes it, Ctrl+O moves between"
+
+  function top() {
+    toggle()
+    return ''
+  }
+
+  if (toggle) $.onDestroy(verbs.add({ word: 'top', help: HELP, run: top }))
+</script>

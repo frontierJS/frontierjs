@@ -54,6 +54,7 @@
 
 import { createHash } from 'crypto'
 import { caddyGuard, guardId } from './pause.js'
+import { STREAM_CLOSE_DELAY } from './swap.js'
 
 export class EdgeError extends Error {}
 
@@ -234,7 +235,8 @@ const apiRoute = (apiPort, paths = null) => ({
   handle:   [{
     handler:   'reverse_proxy',
     upstreams: [{ dial: `127.0.0.1:${apiPort}` }],
-    headers:   { request: { set: { 'X-Forwarded-For': ['{http.vars.client_ip}'] } } },
+    stream_close_delay: STREAM_CLOSE_DELAY,
+    headers:  { request: { set: { 'X-Forwarded-For': ['{http.vars.client_ip}'] } } },
   }],
   terminal: true,
 })
@@ -277,8 +279,15 @@ const PAGE_CACHE  = 'no-cache'
 
 // The SPA: a file that exists, else index.html. Root is read per request, so
 // the `current` symlink swap is the whole of a web release — nothing reloads.
+// A missing /assets file is a 404: the shell in its place answers a module
+// load with 200 text/html, which a tab on a rolled-back release fails as a
+// MIME error and no log line connects to the deploy.
 const spa = (serverPath, headers) => [
   { handle: [{ handler: 'vars', root: `${serverPath}/current` }] },
+  { match:  [{ path: ['/assets/*'], not: [{ file: { try_files: ['{http.request.uri.path}'] } }] }],
+    handle: [{ handler: 'static_response', status_code: 404,
+               headers: { 'Cache-Control': [PAGE_CACHE], 'Content-Type': ['text/plain; charset=utf-8'] }, body: 'Not found\n' }],
+    terminal: true },
   { match:  [{ file: { try_files: ['{http.request.uri.path}', '/index.html'] } }],
     handle: [{ handler: 'rewrite', uri: '{http.matchers.file.relative}' }] },
   // file_server sends no Cache-Control, so Cloudflare held a bundle file for its
@@ -394,6 +403,33 @@ const documentHeaders = ({ scripts = [], styles = [], api = null } = {}) => ({
 export function holdsRoute(config, appId) {
   const ours = new Set([routeId(appId), routeId(appId, 'api')])
   return (config?.apps?.http?.servers?.[INGRESS_SERVER]?.routes ?? []).some(r => ours.has(r['@id']))
+}
+
+/**
+ * The loopback dials of this app's routes, as `{ id, dial, port }`, read
+ * through every subroute (the web route nests its API proxy). Only
+ * `deploy:status` reads this, to say a route dials a port the container has
+ * left; a start-first container's host port changes when it restarts
+ * (`FJS-D1890`).
+ */
+export function routeDials(config, appId) {
+  const ours = new Set([routeId(appId), routeId(appId, 'api')])
+  const out  = []
+  const walk = (handlers, id) => {
+    for (const h of handlers ?? []) {
+      if (h.handler === 'reverse_proxy') {
+        for (const u of h.upstreams ?? []) {
+          const port = /^127\.0\.0\.1:([0-9]+)$/.exec(u.dial ?? '')?.[1]
+          if (port) out.push({ id, dial: u.dial, port: Number(port) })
+        }
+      } else if (h.handler === 'subroute') {
+        for (const r of h.routes ?? []) walk(r.handle, id)
+      }
+    }
+  }
+  for (const r of config?.apps?.http?.servers?.[INGRESS_SERVER]?.routes ?? [])
+    if (ours.has(r['@id'])) walk(r.handle, r['@id'])
+  return out
 }
 
 export function applyEdge(config, { appId, routes, plain = [] }) {

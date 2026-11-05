@@ -95,6 +95,11 @@ const IMAGES = [
     name: 'debian-10',   description: 'Debian 10',   os_flavor: 'debian' },
 ]
 
+/** Backup images, each bound to its server. An enable takes one at once, as
+ *  if its first window had passed, and a disable deletes them all. */
+const BACKUP_IMAGES: Record<string, unknown>[] = []
+let nextBackupId = 300000
+
 /** Machines this stand-in knows about. One is seeded so `machine()` has
  *  something to read; the rest are made by `POST /v1/servers`. */
 const SERVERS = new Map<string, Record<string, unknown>>([
@@ -148,6 +153,8 @@ export function resetHzSink(): void {
   nextActionId = 1
   holding = false
   unsettled.length = 0
+  BACKUP_IMAGES.length = 0
+  nextBackupId = 300000
   for (const id of [...SERVERS.keys()]) if (id !== '7701') SERVERS.delete(id)
   SERVERS.get('7701')!.backup_window = null
 }
@@ -353,7 +360,7 @@ export function startHzSink(port = PORT) {
         const type    = url.searchParams.get('type')
         const status  = url.searchParams.get('status')
         const boundTo = url.searchParams.get('bound_to')
-        return json({ images: IMAGES
+        return json({ images: [...IMAGES, ...BACKUP_IMAGES]
           .filter(i => !type    || i.type   === type)
           .filter(i => !status  || i.status === status)
           .filter(i => !boundTo || String((i as Record<string, unknown>).bound_to) === boundTo) })
@@ -387,7 +394,17 @@ export function startHzSink(port = PORT) {
           ? () => { row.status = 'off' }
           // Hetzner picks the window; this one is the slot `backups()`'s
           // midnight case reads.
-          : () => { row.backup_window = action[2] === 'enable_backup' ? '22-02' : null }
+          : action[2] === 'enable_backup'
+            ? () => {
+                row.backup_window = '22-02'
+                BACKUP_IMAGES.push({ id: nextBackupId++, type: 'backup', status: 'available', bound_to: row.id,
+                  created: new Date().toISOString(), image_size: 1.8 })
+              }
+            : () => {
+                row.backup_window = null
+                for (let i = BACKUP_IMAGES.length - 1; i >= 0; i--)
+                  if (BACKUP_IMAGES[i].bound_to === row.id) BACKUP_IMAGES.splice(i, 1)
+              }
         const made = { id: nextActionId++, command: action[2], status: 'running', resources: [{ id: row.id, type: 'server' }] }
         ACTIONS.set(id, [made, ...(ACTIONS.get(id) ?? [])])
         if (holding && action[2] !== 'poweroff') unsettled.push({ server: id, action: made, apply })

@@ -10,18 +10,29 @@ description: Basecamp itself — make its box at a cloud, install it, point its 
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, provisionScript, markHost,
   cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine, ageOf }
   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-const { basecamp, basecampAll, pullHubArchive, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, keyDirOf, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, pickArchive, checkArchive, asRootOn, seedBoxKey, probeBox, putBoxKey, restartApi, probeUntil, stageOnBox, restoreFindings, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, LOCAL_BASECAMP, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, pullHubArchive, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, keyDirOf, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, pickArchive, checkArchive, asRootOn, seedBoxKey, probeBox, putBoxKey, restartApi, probeUntil, stageOnBox, restoreFindings, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 
 // Basecamp's own hostname, the one `pointHost` points at the box.
 const webDomain = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
 
-// `--url`, then `BASECAMP_URL`, then Basecamp's hostname; never the dev API,
-// since backup and restore name the box.
-const apiOrigin = async (url) => {
-  const domain = await webDomain()
-  return (url || process.env.BASECAMP_URL || (domain ? `https://${domain}` : '')).replace(/\/+$/, '')
+const { resolveBasecamp, readBasecamps, writeBasecamp, reachBasecamp } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
+
+// The Basecamp a command talks to: `--basecamp <name>`, or the only entry
+// (`reachBasecamp` owns the refusal, which lists the names when several are known).
+const reach = (name, log) => reachBasecamp(name, log)
+
+// The entry name a box-taking command talks to: `--basecamp`, else the entry
+// named like the box (the ssh Host an entry is keyed by), else '' so `reach`
+// falls to the only entry or refuses by name. A `user@host` box names no entry.
+const entryFor = (name, server) => name || (Object.hasOwn(readBasecamps(), server) ? server : '')
+
+// Files `name`'s entry over what is there: minting a new key must not drop the
+// scoped key or the `runs` designation the entry already holds.
+const fileBasecamp = (name, fields) => {
+  const set = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined))
+  return writeBasecamp(name, { ...readBasecamps()[name], ...set })
 }
 
 // The box `fli deploy` ships Basecamp to, as ssh reaches it.
@@ -356,14 +367,18 @@ const mint = async (key, holder, extra = []) => {
 const keyName = async () =>
   `fli ${(await import('node:os')).hostname()} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`
 
-// `create`'s key for the admin `/setup` just made, stored as `basecamp:key`
-// stores one. The token is printed only to a terminal: a run piped into a CI
+// `create`'s key for the admin `/setup` just made, filed in `basecamps.json` as
+// `basecamp:key` files one. `entry` is `{ name, host, domain, cloud, boxId }`:
+// the ssh Host name the index is keyed by, and the hostname the API origin is.
+// The token is printed only to a terminal: a run piped into a CI
 // log would keep a never-expiring admin credential in it. `yes` is create's
 // own, so `--yes` copies without asking. Answers the token, or false when none was minted.
-const KEY_QUESTION = `Mint an admin API key for the first admin, stored as BASECAMP_API_KEY?`
-const adminKey = async ({ dest, admin, yes, log, echo, chalk }) => {
-  const extra  = ['--server', dest]
+const KEY_QUESTION = `Mint an admin API key for the first admin, filed under the new Basecamp's name?`
+const adminKey = async ({ dest, admin, entry, yes, log, echo, chalk }) => {
+  const domain = entry.domain || await webDomain()
   const later  = `fli basecamp:key --server ${dest} --as ${admin}`
+  if (!domain) { log.error(`A key is filed with Basecamp's hostname, and none is known. Mint one later: ${later} --domain <hostname>`); return false }
+  const extra  = ['--server', dest]
   const made   = await (async () => {
     const holder = (await holders(extra)).find(p => p.email === admin)
     if (!holder) return { error: `${admin} is no owner or admin on the new Basecamp` }
@@ -371,9 +386,8 @@ const adminKey = async ({ dest, admin, yes, log, echo, chalk }) => {
   })().catch(e => ({ error: e.message }))
   if (made.error) { log.error(`${made.error}. Mint one later: ${later}`); return false }
 
-  const { storeGlobal } = await import(new URL('file://' + global.fliRoot + '/core/global-env.js'))
-  const file = storeGlobal('BASECAMP_API_KEY', made.token)
-  echo`  {green ✓} {bold BASECAMP_API_KEY} {dim ${made.tokenHint ?? ''}} → ${file}`
+  const file = fileBasecamp(entry.name, { url: `https://${domain}`, host: entry.host, cloud: entry.cloud, boxId: entry.boxId, apiKey: made.token })
+  echo`  {green ✓} {bold api key} {dim ${made.tokenHint ?? ''} for ${entry.name}} → ${file}`
   if (!process.stdout.isTTY) return made.token
 
   echo`  {dim api key } {bold ${made.token}}   {dim shown once — revoke it on the API keys screen if it leaks}\n`
@@ -560,14 +574,13 @@ const copyRaw = async ({ server, out, say, how, dry, tty, log, echo, chalk }) =>
  * `keyKept` the fingerprint of the key copy now off the box and `key` that key,
  * both null with none — or null after printing why there is none.
  */
-const takeBackup = async ({ server, out, url, raw, how, dry, tty, log, echo, chalk }) => {
+const takeBackup = async ({ server, out, basecamp: name, raw, how, dry, tty, log, echo, chalk }) => {
   const say = (line) => echo(chalk`  {dim ${line}}`)
   if (raw) return await copyRaw({ server, out, say, how, dry, tty, log, echo, chalk })
 
-  const key = process.env.BASECAMP_API_KEY
-  if (!key) { log.error('needs BASECAMP_API_KEY — fli basecamp:key mints one for the first admin, or pass --raw to copy the files over ssh'); process.exitCode = 1; return null }
-  const origin = await apiOrigin(url)
-  if (!origin) { log.error("needs --url or BASECAMP_URL — Basecamp's origin, https://<its hostname>"); process.exitCode = 1; return null }
+  const target = reach(name, log)
+  if (!target) { log.info('--raw copies the files over ssh with no key'); return null }
+  const { url: origin, apiKey: key } = target
 
   echo(chalk`\n  {bold Backing up Basecamp} {dim at} ${origin} {dim on} ${server}`)
   const got = await pullHubArchive({ origin, key, out, dry, log, say }).catch(err => err)
@@ -668,9 +681,10 @@ const foundRows = (found, takenAt, chalk) => [
 ]
 
 /** Read the restored hub for its fleet and findings; the restore stands whatever this reads. */
-const reportFindings = async ({ origin, takenAt, log, echo, chalk }) => {
-  const key = process.env.BASECAMP_API_KEY
-  if (!key || !origin) { echo(chalk`    {dim ·} {dim set BASECAMP_API_KEY and --url or BASECAMP_URL to read which machines the restored hub hears and what it found}\n`); return }
+const reportFindings = async ({ basecamp: name, takenAt, log, echo, chalk }) => {
+  const target = (() => { try { return resolveBasecamp(name || undefined) } catch { return null } })()
+  if (!target?.apiKey) { echo(chalk`    {dim ·} {dim fli basecamp:key files a key, and --basecamp names it, to read which machines the restored hub hears and what it found}\n`); return }
+  const { url: origin, apiKey: key } = target
   echo(chalk`  {dim Reading} ${origin} {dim for its machines and what the reconcile found — up to a minute and a half}`)
   const found = await restoreFindings({ origin, key, takenAt }).catch(err => err)
   if (found instanceof Error) { log.warn(`The restore stands; what the hub found could not be read: ${found.message}`); return }
@@ -722,10 +736,14 @@ releases through Basecamp from then on.
 
 `fli basecamp:deploy --app <id>` builds an app's image here, loads it onto
 every machine Basecamp runs that app on, and asks Basecamp to release it. It
-needs a `BASECAMP_API_KEY` from the running Basecamp, not a cloud token.
+needs an API key from the running Basecamp, not a cloud token. Every
+`basecamp:*` command that calls the API reads its origin and key from the index
+of Basecamps (`~/.config/fli/basecamps.json`, keyed by the ssh Host name), and
+takes `--basecamp <name>`: with one entry it is the default, and with several
+and no flag the command refuses and lists them.
 
 `fli basecamp:key` mints that key over ssh — `api-keys.create` called as an
-owner through `fli deploy:repl` — and stores it in the global env, with no
+owner through `fli deploy:repl` — and files it in that index, with no
 browser and no password. `fli basecamp:create` offers one for the first admin
 once the install is done.
 

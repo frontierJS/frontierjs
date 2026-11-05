@@ -21,6 +21,16 @@
 
   export const isUnread = (n) => !n.readAt
 
+  /** The kinds that report something wrong — the ones whose email subject is
+   *  `marked()` with a severity. A success, a recovery, a join or a digest
+   *  is news, not trouble, and a red count for it teaches the reader to
+   *  ignore red. */
+  const TROUBLE = new Set([
+    'DeployFailed', 'AlertFiring', 'ServerUnreachable', 'MonitorDown', 'MonitorCertExpiring',
+    'PostureFailed', 'HubPostureFailed', 'DependencyVulnerable', 'JobFailed', 'AppBackupFailed',
+  ])
+  export const isTrouble = (n) => TROUBLE.has(n.type)
+
   /** The driver merges `title`, `body` and `action` into `data` beside the
    *  type's own keys; a row written before a type had a title still renders. */
   export const titleOf  = (n) => n.data?.title ?? n.type

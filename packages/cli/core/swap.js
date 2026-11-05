@@ -7,7 +7,7 @@
 
 import { shQuote } from './machine.js'
 
-export { createSwap, runFlags, portOf, livePivot, swapFor, DEFAULT_STOP_GRACE_S } from '@frontierjs/outpost/swap'
+export { createSwap, runFlags, portOf, livePivot, swapFor, healthAttempts, checkHealthTimeout, DEFAULT_STOP_GRACE_S, STREAM_CLOSE_DELAY } from '@frontierjs/outpost/swap'
 
 // The swaps `deploy.swap` may ask for, spelled as Basecamp's `App.swap` is
 // (`FJS-D1882`). A misspelling refused rather than read as stop-first, or an

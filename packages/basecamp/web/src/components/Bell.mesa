@@ -18,7 +18,7 @@
   import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import { session } from '../lib/session.js'
-  import { notifications, INBOX, isUnread, titleOf, bodyOf, actionOf, markRead, markAllRead }
+  import { notifications, INBOX, isUnread, isTrouble, titleOf, bodyOf, actionOf, markRead, markAllRead }
     from '../resources/Notification.mesa'
 
   const bell  = notifications.tethered({ state: 'local', directives: INBOX })
@@ -29,6 +29,8 @@
   // The menu shows the newest few unread; /notifications/ is the whole list.
   const BELL_MAX = 6
   $: unread = inbox().filter(isUnread)
+  // Red only while something unread is a failure; good news counts in grey.
+  $: countTone = unread.some(isTrouble) ? 'danger' : ''
 
   async function openNote(n) {
     await markRead(n).catch(() => {})
@@ -43,7 +45,7 @@
   {#snippet trigger()}
     <Button treatment="ghost" id="bell"
             aria-label={unread.length ? `Notifications, ${unread.length} unread` : 'Notifications'}
-    >🔔{#if unread.length} <Badge tone="danger" id="bell-count">{unread.length}</Badge>{/if}</Button>
+    >🔔{#if unread.length} <Badge tone={countTone} id="bell-count">{unread.length}</Badge>{/if}</Button>
   {/snippet}
   {#if unread.length}
     <DropdownGroup heading="Unread">

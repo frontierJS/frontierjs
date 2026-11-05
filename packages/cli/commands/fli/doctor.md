@@ -82,6 +82,12 @@ for (const n of report.namespaces) {
   echo(`    ${ICON[n.level]}  ${chalk.cyan(n.ns.padEnd(14))} ${n.key}${n.ok ? '' : hint(n.fix)}`)
 }
 
+echo(chalk`\n  {bold basecamps}`)
+if (!report.basecamps.length) echo(chalk.dim('    \u00b7  no basecamps.json'))
+for (const b of report.basecamps) {
+  echo(`    ${ICON[b.level]}  ${chalk.cyan(b.label.padEnd(14))} ${b.ok ? chalk.dim('ok') : hint(b.hint)}`)
+}
+
 echo('')
 echo(chalk.dim('  ' + '\u2500'.repeat(45)))
 

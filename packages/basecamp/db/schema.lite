@@ -489,6 +489,9 @@ type ServerProvision {
   region    String
   size      String
   image     String
+  // The machine backups it starts with, which `sync` then holds it to; absent
+  // is none (`FJS-D1864`).
+  backups   Json?   @type(BackupPolicy)
 }
 
 type ServerProvisionStep {
@@ -499,12 +502,32 @@ type ServerProvisionStep {
 // `on` is a policy Basecamp then holds the vendor to; `off` tells the vendor
 // to stop and leaves the machine not managed, since holding it off would mean
 // disabling a console re-enable, which deletes the backups taken (`FJS-D1885`);
-// `unmanaged` stops holding it and tells the vendor nothing.
+// `unmanaged` stops holding it and tells the vendor nothing. Off is confirmed:
+// `deletes` is the count of taken backups the person was shown, and `confirm`
+// the machine's name when that count is not none.
 type ServerSetBackups {
   choice  MachineBackupChoice
   plan    MachineBackupPlan?
   hour    Int?
   weekday String?
+  deletes Int?
+  confirm String?
+}
+
+// A machine as the screen displayed it when the person chose it, sent back so
+// `adopt` can tell a stale screen from the machine they meant. A machine with
+// no IP yet or no name shown is null.
+type ServerAdoptShown {
+  name      String?
+  ipAddress String?
+  region    String?
+}
+
+// Link a row to a machine at a vendor account that Basecamp did not buy.
+type ServerAdopt {
+  accountId        String
+  providerServerId String
+  shown            ServerAdoptShown
 }
 
 enum SecretKind     { sshKey providerKey registryAuth tlsCert notification backup generic }
@@ -542,6 +565,8 @@ enum ServerEventKind {
   // `backupsRestored` is a sync putting a managed policy back over what the
   // vendor said, so a console change is never undone silently.
   backupsReadFailed backupsSet backupsRestored backupsRestoreFailed
+  // A row linked to a machine it did not buy (`servers.adopt`).
+  adopted
   // The machine itself. `rebooted` is its boot id changing between two
   // heartbeats; `rebootRequested` above is a person's ask.
   cameOnline unreachable rebooted
@@ -1414,11 +1439,17 @@ model Server {
   //
   // All three are `@system`: `sync` and `destroy` spend `providerId` as the
   // application, so a caller who could write it would point a machine at
-  // another workspace's token (`FJS-3845`). `provision` is the writer, and the
-  // job records `providerServerId` the moment the vendor answers.
+  // another workspace's token (`FJS-3845`). `provision` and `adopt` write them;
+  // the provision job records `providerServerId` the moment the vendor
+  // answers, and `adopt` writes all three from an account and a machine it
+  // has just read.
   providerKind     ComputeProvider @default(custom) @system
   providerId       String?         @system
   providerServerId String?         @system
+  // The vendor link was made by `adopt`, not by buying: Basecamp did not make
+  // this machine, so `destroy` refuses it rather than delete something a
+  // person only pointed at (`FJS-D1865`).
+  adopted          Boolean         @default(false) @system
   registerMethod   RegisterMethod @default(imported)
 
   region           String       @default("custom")
@@ -1908,8 +1939,12 @@ model App {
   // Seconds a stopping container gets before docker kills it, beside `logs`
   // in the release's runtime; Outpost hands it on as `--stop-timeout` and
   // `FRONTIER_STOP_GRACE` for Junction's drain to fit inside (`FJS-D1841`).
-  // Null is Outpost's default (40). App-only, as `containerPort` is.
+  // Null is Outpost's default (50). App-only, as `containerPort` is.
   stopGrace     Int?        @gte(2)
+  // Seconds a new release has to answer `healthCheck` before the swap puts the
+  // old one back; a migration on boot runs inside it (`FJS-4015`). Null is
+  // Outpost's default (30). A stop-first app is down for as long as it waits.
+  healthTimeout Int?        @gte(5) @lte(600)
   // The arguments after the image, replacing its CMD as compose's `command:`
   // does; empty runs the image's own (`FJS-D1585`). Argv, not `Job.command`'s
   // shell line.
@@ -1920,7 +1955,7 @@ model App {
   hasExposedPort Boolean     @default(false)
   // The swap this app asks for when a release lands (`FJS-D1882`). startFirst is
   // a request: Outpost overlaps only for an expand, and never for an app that
-  // exposes its port. Read off the live app, rollbacks included.
+  // exposes its port or names no healthCheck. Read off the live app, rollbacks included.
   swap          DeploySwap  @default(stopFirst) @label("Swap order")
 
   // Deploy on push (`FJS-D884`): a forge's push event releases this app through

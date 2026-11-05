@@ -2,9 +2,9 @@
 title: basecamp:deploy
 description: Build the app here — its image, or web/ for a static App — hand it to the machines Basecamp runs the app on, and release that digest
 examples:
-  - BASECAMP_API_KEY=… fli basecamp:deploy --app <app-id>
+  - fli basecamp:deploy --app <app-id>
   - fli basecamp:deploy --dry
-  - BASECAMP_URL=https://basecamp.example.com BASECAMP_API_KEY=… fli basecamp:deploy --app <app-id>
+  - fli basecamp:deploy --app <app-id> --basecamp ops
   - fli basecamp:deploy --app <app-id> --server deploy@10.0.0.5
   - fli basecamp:deploy --app <app-id> --dist web/dist
   - fli basecamp:deploy --app <app-id> --dry
@@ -13,9 +13,10 @@ flags:
   app:
     type: string
     description: The Basecamp App to release — its id, from the App's page (default is BASECAMP_APP_ID)
-  url:
+  basecamp:
     type: string
-    description: Basecamp's API origin (default is BASECAMP_URL, then the local dev API)
+    description: The Basecamp to call, by its name in basecamps.json (default the only one; with several and none named, refused with the names)
+    defaultValue: ''
   server:
     type: string
     description: "An ssh destination for an App on one machine: an alias from ~/.ssh/config, or user@host. Replaces the Server row's address"
@@ -122,12 +123,13 @@ terminal and no `--yes` the plan is printed and nothing is written; `--dry`
 prints it too. A credential the app requires, a Dockerfile edit and
 `widgets/` stay prose: nothing here can know them.
 
-The three settings are read from the environment fli loads — the shell, then
-the app's `.env`, then `~/.config/fli/.env` — so the key can live in the
-global file and the App in the project's: `BASECAMP_URL`, `BASECAMP_API_KEY`
-and `BASECAMP_APP_ID`. With `BASECAMP_APP_ID` set, `fli deploy` is this command.
+The Basecamp is an entry in `basecamps.json` (`~/.config/fli/`), whose origin
+and key `--basecamp` chooses: the only entry, or the one named, and with several
+and no flag the command refuses and lists them. The App is `--app` or
+`BASECAMP_APP_ID` in the app's `.env`. With `BASECAMP_APP_ID` set, `fli deploy`
+is this command.
 
-`BASECAMP_API_KEY` is read from the environment and never from a flag, which
+The key is read from the entry and never from a flag, which
 would put it in shell history. The key needs `apps:read`,
 `deployments:write` and `deployments:read` (to watch the release) — and
 `apps:write` for a static App — and a standing that may release in its
@@ -345,9 +347,9 @@ const { tmpdir }           = await import('os')
 const { join, resolve }    = await import('path')
 
 const root = $.paths.root
-const key  = process.env.BASECAMP_API_KEY
-if (!key) throw new Error('needs BASECAMP_API_KEY — a key issued at /api-keys/ in the Basecamp workspace the app is in')
-const origin = (flag.url || process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
+const target = reach(flag.basecamp, log)
+if (!target) return
+const { url: origin, apiKey: key } = target
 const appId  = flag.app || process.env.BASECAMP_APP_ID
 if (!appId) throw new Error("needs --app or BASECAMP_APP_ID — the App's id, from its page in Basecamp, or fli basecamp:app to make one and store it")
 

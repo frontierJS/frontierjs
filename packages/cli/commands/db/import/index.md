@@ -7,6 +7,10 @@ examples:
   - fli db:import --dev
   - fli db:import --dry
 flags:
+  basecamp:
+    type: string
+    description: The Basecamp holding the App, by its name in basecamps.json (default the only one; with several and none named, refused with the names) — Basecamp only
+    defaultValue: ''
   dev:
     type: boolean
     description: Import from the dev server instead of production (ssh only)

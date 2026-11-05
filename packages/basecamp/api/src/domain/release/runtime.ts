@@ -17,7 +17,7 @@ export const CONTAINER_KINDS: ReadonlySet<string> = new Set(['container', 'funct
  *  The declared residual of `restated-fields` (`FJS-D1438`): `db/test/schema.test.ts`
  *  'App runtime columns' fails on a name that is no column and on an App column neither here nor
  *  named exempt there. */
-export const RUNTIME_COLUMNS = ['port', 'containerPort', 'volumePath', 'healthCheck', 'cpuLimit', 'memLimitMb', 'stopGrace', 'command'] as const
+export const RUNTIME_COLUMNS = ['port', 'containerPort', 'volumePath', 'healthCheck', 'cpuLimit', 'memLimitMb', 'stopGrace', 'healthTimeout', 'command'] as const
 
 export type Runtime = Partial<Record<(typeof RUNTIME_COLUMNS)[number], string | number | string[]>>
 

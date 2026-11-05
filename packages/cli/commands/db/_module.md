@@ -224,10 +224,12 @@ const pullPath = ({ flag, log, echo, chalk }) => {
  *  under db/backups/<stamp>/. Answers what `pullAppArchive` does, or null after
  *  saying why. */
 const pullThroughBasecamp = async ({ $, flag, log, echo, chalk }, appId) => {
-  const { pullAppArchive, LOCAL_BASECAMP } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
-  const key = process.env.BASECAMP_API_KEY
-  if (!key) { log.error('needs BASECAMP_API_KEY — a key with appBackups:read, issued at /api-keys/ in the Basecamp workspace the app is in'); return null }
-  const origin = (process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
+  const { pullAppArchive } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+  const { reachBasecamp }  = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
+  // The narrow key (appBackups:read) when the entry holds one, the admin key otherwise.
+  const target = reachBasecamp(flag.basecamp, log, { scoped: true })
+  if (!target) return null
+  const { url: origin, key } = target
   const say = (line) => echo(chalk`  {dim ${line}}`)
   const got = await pullAppArchive({ origin, key, appId, take: !!flag.take, dbDir: $.paths.db, dry: flag.dry, log, say })
     .catch(err => { log.error(err.message); return null })

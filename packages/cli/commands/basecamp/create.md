@@ -9,6 +9,7 @@ examples:
   - fli basecamp:create --name ops --key ~/.ssh/id_rsa.pub
   - fli basecamp:create --domain ops.example.com
   - fli basecamp:create --yes --domain ops.example.com --name ops
+  - fli basecamp:create --no-backups
 flags:
   cloud:
     type: string
@@ -46,6 +47,10 @@ flags:
     type: boolean
     description: Hold an address apart from the box, so a replacement keeps it and outbound traffic leaves from it (billed at the cloud's rate, Setup names it)
     defaultValue: true
+  backups:
+    type: boolean
+    description: Turn on the cloud's daily backups of the whole box, billed as a share of its price (asked at a terminal)
+    defaultValue: true
   outpost:
     type: boolean
     description: When installing, enroll the box in Basecamp's own fleet, so apps can run beside it (asked at a terminal)
@@ -74,6 +79,14 @@ say no; a `Host` of that name already there is left alone and the block printed
 instead. Nothing is installed on it unless asked: `fli basecamp:install` puts
 Basecamp on it, and the run prints that line.
 
+The box is backed up daily by its cloud unless `--no-backups` — asked at a
+terminal, yes by default, since the box holds the one database whose loss
+strands every machine Basecamp runs (`FJS-D1864`). DigitalOcean takes the
+policy at create, at 20:00 UTC; Hetzner switches them on once the box is up and
+picks its own window. The box line prints what they add to the bill, an
+estimate from the cloud's published share. A switch the cloud refuses after the
+buy warns, and the box stays up with backups off.
+
 The box answers on a reserved IP unless `--no-reserved-ip`: the address the
 ssh block, the install and the DNS record all name, and the one its outbound
 traffic leaves from. At a cloud that routes it beside the box's own address, a
@@ -101,12 +114,12 @@ yes by default, `--no-outpost` to leave it out — and enrolls it with `fli
 deploy:outpost` after the admin, as `fli basecamp:install` does.
 
 An install then offers an admin API key for that admin — yes by default —
-minted over ssh as `fli basecamp:key` mints one and written to your global
-fli env as `BASECAMP_API_KEY`, so `fli basecamp:deploy` and `fli
-basecamp:app` reach the new Basecamp at once. At a terminal the key is
-printed once, and one more question copies it to the clipboard; a run whose
-output is not a terminal stores it and never prints it. A key already in the
-global env is replaced, not revoked.
+minted over ssh as `fli basecamp:key` mints one and filed in the index of
+Basecamps (`~/.config/fli/basecamps.json`) under the box's Host name, so
+`fli basecamp:deploy` and `fli basecamp:app` reach the new Basecamp at once. At a
+terminal the key is printed once, and one more question copies it to the
+clipboard; a run whose output is not a terminal files it and never prints it. A
+key already filed under the name is replaced, not revoked.
 
 The box and the hostname reach the install as `--server` and `--domain`, and
 every deploy line the run prints carries both, so nothing is written into
@@ -213,12 +226,14 @@ let admin = flag.admin
 let password = ''
 let install = !!admin
 let outpost = flag.outpost
+let backups = flag.backups
 let addHost = false
 let apiKey  = false
 let unneeded = true
 if (asking) {
   name ||= await ask('Server name', `Enter: ${fallbackName}`) || fallbackName
   addHost = await yes(`Add Host ${name} to ~/.ssh/config once it has an address?`, true)
+  if (backups) backups = await yes(`Turn on ${vendor}'s daily backups of the box? They hold Basecamp's database`, true)
   install ||= await yes('Install Basecamp on it once it is up?', false)
   if (install && !admin) admin = await askAdmin(ask)
   if (install && outpost) outpost = await yes(OUTPOST_QUESTION, true)
@@ -260,11 +275,12 @@ if (asking) {
   row('server', `${chalk.bold(name)} ${chalk.dim(`· ${vendor} · ${flag.size} · ${flag.region || 'its default region'} · ${flag.image || 'its default image'}`)}`)
   row('key', keyPath.replace(home, '~'))
   row('address', flag['reserved-ip'] ? `reserved IP ${chalk.dim(points ? `— ${points} if it is a spare in ${flag.region || 'the region'}, else a new one` : '— a new one, kept when the box goes')}` : chalk.dim('the box\'s own'))
+  row('backups', backups ? `daily ${chalk.dim(`— ${vendor}'s, a share of the box's price`)}` : chalk.dim('off'))
   row('ssh', addHost ? `Host ${name} in ~/.ssh/config` : chalk.dim('print the Host block'))
   row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, the addresses, then deploy')}` : chalk.dim('no — fli basecamp:install later'))
   if (admin) row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
   if (install) row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
-  if (install) row('api key', apiKey ? `admin ${chalk.dim('— shown once, stored as BASECAMP_API_KEY')}` : chalk.dim('no — fli basecamp:key later'))
+  if (install) row('api key', apiKey ? `admin ${chalk.dim('— shown once, filed in basecamps.json')}` : chalk.dim('no — fli basecamp:key later'))
   if (install) row('services', unneededRow(unneeded, chalk))
   echo('')
   if (!await yes(`Buy the box at ${vendor}?`, true)) { log.info('Nothing was bought'); return }
@@ -279,12 +295,12 @@ const stages = stageBar({ tty, echo, chalk, quiet: flag.json }, [
 stages.at('buy')
 const bought = await buyBox({
   cloud, name, size: flag.size, region: flag.region, image: flag.image, keyPath,
-  reservedIp: flag['reserved-ip'], reuse: points, sole: true, addHost, json: flag.json, log, echo, chalk,
+  reservedIp: flag['reserved-ip'], reuse: points, backups, sole: true, addHost, json: flag.json, log, echo, chalk,
 })
 if (bought.error) { log.error(bought.error); process.exitCode = 1; return }
 if (flag.json)    { echo(JSON.stringify(bought.made, null, 2)); return }
 if (!bought.dest) return
-const { made, dest, box, identity } = bought
+const { made, dest, box, identity, added } = bought
 const named = domain && domain !== configured ? ` --domain ${domain}` : ''
 const later = ` --server ${box}${named}`
 const installLine = `fli basecamp:install ${box}${named}`
@@ -326,5 +342,7 @@ echo`
 if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, password, log, echo, chalk, outpost, domain, later, tty, stage: stages.at })) { process.exitCode = 1; return }
 if (!apiKey) return
 stages.at('api key')
-if (!await adminKey({ dest, admin, yes, log, echo, chalk })) process.exitCode = 1
+// The index is keyed by the ssh Host, so a box with no Host block is filed under the name it was bought as.
+const entry = { name: added ? box : made.name, host: added ? box : undefined, domain, cloud, boxId: String(made.id) }
+if (!await adminKey({ dest, admin, entry, yes, log, echo, chalk })) process.exitCode = 1
 ```

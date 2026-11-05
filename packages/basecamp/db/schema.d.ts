@@ -60,7 +60,7 @@ export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' 
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
-export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'backupsReadFailed' | 'backupsSet' | 'backupsRestored' | 'backupsRestoreFailed' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
+export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'backupsReadFailed' | 'backupsSet' | 'backupsRestored' | 'backupsRestoreFailed' | 'adopted' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'postureFailed' | 'postureRestored'
 
 export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github'
 
@@ -472,6 +472,7 @@ export interface ServerProvision {
   region: string
   size: string
   image: string
+  backups?: BackupPolicy | null
 }
 
 export interface ServerProvisionStep {
@@ -484,6 +485,20 @@ export interface ServerSetBackups {
   plan?: MachineBackupPlan | null
   hour?: number | null
   weekday?: string | null
+  deletes?: number | null
+  confirm?: string | null
+}
+
+export interface ServerAdoptShown {
+  name?: string | null
+  ipAddress?: string | null
+  region?: string | null
+}
+
+export interface ServerAdopt {
+  accountId: string
+  providerServerId: string
+  shown: ServerAdoptShown
 }
 
 /**
@@ -2409,6 +2424,7 @@ export interface Server {
   providerKind: ComputeProvider
   providerId?: string | null
   providerServerId?: string | null
+  adopted: boolean
   registerMethod: RegisterMethod
   region: string
   ipAddress?: string | null
@@ -2560,6 +2576,7 @@ export interface ServerSystem {
   providerKind?: ComputeProvider
   providerId?: string | null
   providerServerId?: string | null
+  adopted?: boolean
   outpostPublicKey?: string | null
   outpostCert?: string | null
   backupPolicy?: BackupPolicy | null
@@ -2576,6 +2593,7 @@ export interface ServerWhere extends WhereBase {
   providerKind?: ComputeProvider | WhereOp<ComputeProvider> | null
   providerId?: string | WhereOp<string> | null
   providerServerId?: string | WhereOp<string> | null
+  adopted?: boolean | WhereOp<boolean> | null
   registerMethod?: RegisterMethod | WhereOp<RegisterMethod> | null
   region?: string | WhereOp<string> | null
   ipAddress?: string | WhereOp<string> | null
@@ -3043,6 +3061,7 @@ export interface App {
   cpuLimit?: number | null
   memLimitMb?: number | null
   stopGrace?: number | null
+  healthTimeout?: number | null
   command: string[]
   hasExposedPort: boolean
   swap: DeploySwap
@@ -3080,6 +3099,7 @@ export interface AppCreate {
   cpuLimit?: number | null
   memLimitMb?: number | null
   stopGrace?: number | null
+  healthTimeout?: number | null
   command?: string[]
   hasExposedPort?: boolean
   swap?: DeploySwap
@@ -3104,6 +3124,7 @@ export interface AppUpdate {
   cpuLimit?: number | null
   memLimitMb?: number | null
   stopGrace?: number | null
+  healthTimeout?: number | null
   command?: string[]
   hasExposedPort?: boolean
   swap?: DeploySwap
@@ -3141,6 +3162,7 @@ export interface AppWhere extends WhereBase {
   cpuLimit?: number | WhereOp<number> | null
   memLimitMb?: number | WhereOp<number> | null
   stopGrace?: number | WhereOp<number> | null
+  healthTimeout?: number | WhereOp<number> | null
   command?: string[] | WhereOp<string[]> | null
   hasExposedPort?: boolean | WhereOp<boolean> | null
   swap?: DeploySwap | WhereOp<DeploySwap> | null
@@ -6328,6 +6350,8 @@ export interface SeedTypes {
   ServerProvision: ServerProvision
   ServerProvisionStep: ServerProvisionStep
   ServerSetBackups: ServerSetBackups
+  ServerAdoptShown: ServerAdoptShown
+  ServerAdopt: ServerAdopt
   BackupPolicy: BackupPolicy
 }
 
@@ -6510,7 +6534,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem>
   readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'publicKey' | 'tokenHint' | 'revokedAt' | 'lastUsedAt' | 'totalUses' | 'usageDate' | 'usesOnDate' | '@@gate', ApiKeySystem>
-  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerId' | 'providerServerId' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'backupPolicy' | 'backupReading' | 'status' | '@@gate', ServerSystem>
+  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerId' | 'providerServerId' | 'adopted' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'backupPolicy' | 'backupReading' | 'status' | '@@gate', ServerSystem>
   readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, 'noticeOwedAt' | '@@gate', ServerEventSystem>
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>
   readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere, VolumeRelations, never, '@@gate'>

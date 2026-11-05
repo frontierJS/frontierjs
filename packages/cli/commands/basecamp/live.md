@@ -10,9 +10,10 @@ flags:
   app:
     type: string
     description: The Basecamp App — its id, from the App's page (default is BASECAMP_APP_ID)
-  url:
+  basecamp:
     type: string
-    description: Basecamp's API origin (default is BASECAMP_URL, then the local dev API)
+    description: The Basecamp to call, by its name in basecamps.json (default the only one; with several and none named, refused with the names)
+    defaultValue: ''
   retry:
     type: boolean
     description: Reload Caddy on the App's machines first, so a certificate waiting out its backoff is asked for now
@@ -51,9 +52,9 @@ const hostBlock = (chalk, h) => [
 </script>
 
 ```js
-const key = process.env.BASECAMP_API_KEY
-if (!key) { log.error('needs BASECAMP_API_KEY — a key issued at /api-keys/ in the Basecamp workspace the app is in'); process.exitCode = 1; return }
-const origin = (flag.url || process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
+const target = reach(flag.basecamp, log)
+if (!target) return
+const { url: origin, apiKey: key } = target
 const appId  = flag.app || process.env.BASECAMP_APP_ID
 if (!appId) { log.error("needs --app or BASECAMP_APP_ID — the App's id, from its page in Basecamp"); process.exitCode = 1; return }
 

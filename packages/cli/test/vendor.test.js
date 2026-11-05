@@ -15,6 +15,7 @@ import { tmpdir }                                        from 'os'
 import { writeFileSync, readFileSync, existsSync,
          readdirSync, rmSync, mkdirSync, mkdtempSync }    from 'fs'
 
+import { writeBasecamp }                                    from '../core/basecamps.js'
 import { vendorWorkspacePackages, linkedDeps, packPackage, withCheckout, keepRunRecord,
          resolvePackagesDir, GENERATED_DIR }              from '../core/vendor.js'
 
@@ -363,11 +364,15 @@ describe('basecamp:deploy --dry on a plain repository', () => {
 
   // Spawned asynchronously: a spawnSync would block the loop the stub answers on.
   const dry = async () => {
+    // The origin and key are the entry in basecamps.json under HOME, not the environment.
+    const home = mkdtempSync(join(tmpdir(), 'fjs-home-'))
+    writeBasecamp('stub', { url: `http://localhost:${stub.port}`, apiKey: 'x' }, { home })
     const proc = Bun.spawn([process.execPath, resolve(ROOT, 'bin/fli.js'), 'basecamp:deploy', '--dry', '--app', 'app-1'], {
       cwd: repo, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
-      env: { ...process.env, BASECAMP_URL: `http://localhost:${stub.port}`, BASECAMP_API_KEY: 'x', NO_COLOR: '1' },
+      env: { ...process.env, HOME: home, NO_COLOR: '1' },
     })
     const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+    rmSync(home, { recursive: true, force: true })
     return (out + err).replace(/\x1b\[[0-9;]*m/g, '')
   }
 

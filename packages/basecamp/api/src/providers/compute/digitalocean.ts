@@ -172,6 +172,11 @@ const DO_BACKUP_HOURS = [0, 4, 8, 12, 16, 20]
 const WEEKDAYS        = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const BACKUP_ACTIONS  = ['enable_backups', 'change_backup_policy', 'disable_backups']
 
+/** A policy as DO's `backup_policy` takes it, at create and in an action alike. */
+const policyBody = (policy: BackupPolicy) => ({
+  plan: policy.plan, hour: policy.hour, ...(policy.plan === 'weekly' && { weekday: policy.weekday }),
+})
+
 /** Why DO cannot hold this policy, or null. */
 function unheld(policy: BackupPolicy): string | null {
   if (policy.plan !== 'daily' && policy.plan !== 'weekly')
@@ -300,7 +305,7 @@ export const digitalOcean: ComputeConnector = {
   // the real DigitalOcean.
   get address() { return env.DIGITALOCEAN_URL || DO_API },
 
-  defaults: { region: 'nyc3', image: 'ubuntu-24-04-x64' },
+  defaults: { region: 'nyc3', image: 'ubuntu-24-04-x64', backups: { plan: 'daily', hour: 20 } },
   reservedIps,
   // digitalocean.com/pricing/backups
   backupShare: { weekly: 20, daily: 30 },
@@ -386,7 +391,7 @@ export const digitalOcean: ComputeConnector = {
     if ([policy, listed, actions].some(r => r.status === 404)) return null
     const failed = ([[policy, 'droplet:read'], [listed, 'image:read'], [actions, 'actions:read']] as const)
       .find(([r]) => r.error)
-    if (failed) throw new Error(`DigitalOcean: ${said(...failed)}`)
+    if (failed) throw new Error(`DigitalOcean: ${said(failed[0], failed[1])}`)
 
     // An off policy is `{ droplet_id, backup_enabled: false }` and nothing
     // else; a daily plan has no `weekday` key.
@@ -433,9 +438,7 @@ export const digitalOcean: ComputeConnector = {
     const type = !policy ? 'disable_backups' : on ? 'change_backup_policy' : 'enable_backups'
     const res  = await send({ method: 'POST', path: `${at}/actions`, body: {
       type,
-      ...(policy && { backup_policy: {
-        plan: policy.plan, hour: policy.hour, ...(policy.plan === 'weekly' && { weekday: policy.weekday }),
-      } }),
+      ...(policy && { backup_policy: policyBody(policy) }),
     }})
     if (res.status === 404) return false
     if (res.error) throw new Error(`DigitalOcean refused ${type}: ${said(res, 'droplet:update')}`)
@@ -455,6 +458,7 @@ export const digitalOcean: ComputeConnector = {
       user_data: spec.userData,
       ssh_keys:  spec.sshKeys,
       tags:      markTags(spec.mark),
+      ...(spec.backups && { backups: true, backup_policy: policyBody(spec.backups) }),
       // Private networking is on by default at DO now and the flag is
       // deprecated; monitoring is free and is what `Server.health` would
       // otherwise have to infer.

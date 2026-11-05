@@ -310,7 +310,7 @@ export const hetzner: ComputeConnector = {
   get address() { return env.HETZNER_URL || HZ_API },
 
   // Ashburn keeps the box in the US, as DigitalOcean's nyc3 does.
-  defaults: { region: 'ash', image: 'ubuntu-24.04' },
+  defaults: { region: 'ash', image: 'ubuntu-24.04', backups: { plan: 'daily' } },
   reservedIps,
   // hetzner.com/cloud -- Backups, +20% of the server's price
   backupShare: { daily: 20 },
@@ -448,6 +448,8 @@ export const hetzner: ComputeConnector = {
       // enrolls (`FJS-D241`) — so it is asked to boot and the password is
       // never read.
       start_after_create: true,
+      // `spec.backups` has no field here: Hetzner enables backups on a server
+      // that exists, so `provision` asks once the machine runs.
     }})
 
     if (res.error) throw new Error(`Hetzner refused the create — ${refusedWrite(res)}`)

@@ -12,7 +12,10 @@
   // online.
   //
   // `always` is /onboarding/'s: home hides the card once every step is done,
-  // because the fleet is the home screen from then.
+  // because the fleet is the home screen from then. An `advisory` step (the
+  // hub host's machine backups, FJS-D1895) is outside the count and is never
+  // `next`, so it cannot hold the card open; past setup, home shows each one
+  // undone as a single line instead, or it would only ever be seen here.
   import { session } from '../lib/session.js'
   import { infra } from '../resources/Infra.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
@@ -36,7 +39,8 @@
   load()
   $: session.workspaceId, () => load()
 
-  $: next = state?.steps.find(s => !s.done) ?? null
+  $: next  = state?.steps.find(s => !s.done && !s.advisory) ?? null
+  $: owing = state?.steps.filter(s => !s.done && s.advisory) ?? []
 </script>
 
 {#if error}
@@ -55,9 +59,9 @@
     {/if}
     <ol class="steps">
       {#each state.steps as step (step.id)}
-        <li class={step.done ? 'step complete' : 'step'} data-step={step.id} aria-current={next?.id === step.id ? 'step' : null}>
+        <li class={step.done ? 'step complete' : 'step'} data-step={step.id} data-advisory={step.advisory ? '' : null} aria-current={next?.id === step.id ? 'step' : null}>
           <span class="step-marker"></span>
-          <span class="step-label">{step.title}</span>
+          <span class="step-label">{step.title}{#if step.advisory}<span class="text-sm text-muted"> · not counted</span>{/if}</span>
           <span class="step-hint">{step.detail}</span>
           {#if step.href}
             <Button treatment={next?.id === step.id ? '' : 'ghost'} href={step.href}>
@@ -68,4 +72,11 @@
       {/each}
     </ol>
   </article>
+{:else if state}
+  {#each owing as step (step.id)}
+    <article class="alert warning" data-owing={step.id}>
+      <div class="alert-content"><strong>{step.title}.</strong> {step.detail}</div>
+      <Button treatment="ghost" href={step.href}>Open</Button>
+    </article>
+  {/each}
 {/if}

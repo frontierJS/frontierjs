@@ -21,6 +21,7 @@
  */
 
 import { ROOTS } from './layout.js'
+import { repointRoutes, STREAM_CLOSE_DELAY } from './swap.js'
 
 const SERVER = 'ingress'
 /** A DNS name, lowercased. No wildcard: a wildcard certificate is DNS-01, which
@@ -341,6 +342,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
         }
         const proxy = [{
           handler: 'reverse_proxy', upstreams: [{ dial: `127.0.0.1:${port}` }],
+          stream_close_delay: STREAM_CLOSE_DELAY,
           ...(host ? { headers: { request: { set: { Host: [host] } } } } : {}),
         }]
 
@@ -386,6 +388,36 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
           must(await caddy('PATCH', `/config/apps/http/servers/${SERVER}/routes`, sort), 'ordering its routes')
         await logAccess(config, id, hosts)
         return { hosts, paths, redirects }
+      })
+    },
+
+    /**
+     * Move the app's own routes (the whole-host one and its path routes, never
+     * the redirects or another app's) onto `port`, the one its container
+     * answers on now (`FJS-D1890`). Answers `{ moved: [{ id, from, to }] }`,
+     * empty when nothing dialed another port. A machine with no Caddy, or an
+     * app with no route, moves nothing and is not an error: this runs for every
+     * App on the box.
+     */
+    repoint({ appId, port }) {
+      return serially(async () => {
+        checkRouteAppId(appId)
+        if (!(Number.isInteger(Number(port)) && Number(port) > 0))
+          throw new Error(`a route needs the port the app is published on — got '${port}'`)
+        let reply
+        try {
+          reply = await caddy('GET', `/config/apps/http/servers/${SERVER}/routes`)
+        } catch (err) {
+          if (!err.unreachable) throw err
+          return { moved: [] }
+        }
+        const own = (reply.status < 300 ? reply.data ?? [] : [])
+          .filter(r => r['@id'] === routeId(appId) || isPathRouteOf(appId, r['@id']))
+        const { routes, moved } = repointRoutes(own, port)
+        const changed = new Set(moved.map(m => m.id))
+        for (const route of routes)
+          if (changed.has(route['@id'])) must(await caddy('PATCH', `/id/${route['@id']}`, route), `re-pointing ${route['@id']}`)
+        return { moved }
       })
     },
 

@@ -27,6 +27,10 @@ flags:
     type: boolean
     description: Deploy the web only (skip API)
     defaultValue: false
+  basecamp:
+    type: string
+    description: The Basecamp an App is released through, by its name in basecamps.json (default the only one) — passed to basecamp:deploy
+    defaultValue: ''
   site:
     type: boolean
     description: Publish site/ alone, built against the production database (only once its Worker has a deployment)
@@ -84,7 +88,7 @@ if (process.env.BASECAMP_APP_ID) {
   const { spawnSync } = await import('child_process')
   const { join }      = await import('path')
   log.info(`BASECAMP_APP_ID is set — releasing App ${process.env.BASECAMP_APP_ID} through Basecamp`)
-  const run = spawnSync(process.execPath, [join(global.fliRoot, 'bin/fli.js'), 'basecamp:deploy', ...(flag.dry ? ['--dry'] : [])],
+  const run = spawnSync(process.execPath, [join(global.fliRoot, 'bin/fli.js'), 'basecamp:deploy', ...(flag.dry ? ['--dry'] : []), ...(flag.basecamp ? ['--basecamp', flag.basecamp] : [])],
     { cwd: $.paths.root, stdio: 'inherit', env: process.env })
   if (run.status !== 0) $.config.abort = true
   else                  $.config.stop  = true

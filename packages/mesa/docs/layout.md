@@ -60,12 +60,15 @@ src/
                          (`createRenderer`, `createHeadlessRenderer`) — its own
                          engine import would be a second copy — the page
                          (`pageOf`), a strip under it that does not scroll (`footerOf`),
-                         and a pane at its right (`sideOf`): Tab stays in the
-                         pane holding focus, `focusPane` crosses, and a key in
-                         the side never reaches the window a scene walks on.
-                         Whoever fills the side hands its show-and-hide to
-                         `setSideToggle`, and a page reads it with
-                         `sideToggle()` — null where there is no side
+                         a pane at its right (`sideOf`) and one under it, above
+                         the footer (`bottomOf`): Tab stays in the pane holding
+                         focus, `focusPane` crosses, and a key in a pane other
+                         than the page never reaches the window a scene walks
+                         on. Whoever fills a pane hands its show-and-hide to
+                         `setSideToggle` or `setBottomToggle`, and a page reads
+                         it with `sideToggle()` or `bottomToggle()` — null
+                         where nobody fills that pane; `paneBoxOf(r, pane)` is a
+                         pane's box, or null, without making one
   runtime-native.js    — the native runtime, @frontierjs/mesa/runtime/native:
                          `$$host` over Lynx's Element PAPI, the main-thread
                          globals, so no engine import and no peer. The one file

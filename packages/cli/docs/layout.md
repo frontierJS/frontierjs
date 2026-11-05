@@ -78,6 +78,9 @@ core/
                 `pickEnv` is the keys a send carries, for `env:send`, `env:push`
                 and `tell --env`; `pushEnvLines` is a push merged into the
                 server's file, answering keys and never values
+  basecamps.js  `basecamps.json` beside the global env (0600): the Basecamps this
+                machine can reach, keyed by ssh Host name. `resolveBasecamp` is the
+                one `--basecamp <name>` rule; `designatedBasecamp` the `runs` entry.
   command-parse.js  does every command in a routes tree parse — each compiled
                 with the module the runtime pairs it with, checked by `node
                 --check`, reported at the `.md` line. The `command-parses` rule

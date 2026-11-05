@@ -2124,7 +2124,7 @@ title: Workbench
             {#if peer.keyId}
               <p class="text-muted">Enrolled as <code>{peer.keyId}</code>.</p>
             {:else}
-              <p class="text-muted">Not enrolled: paste this key into Basecamp's "Add a peer" form, then set <code>BASECAMP_KEY_ID</code> to the id it answers.</p>
+              <p class="text-muted">Not enrolled: paste this key into Basecamp's "Add a peer" form, then write the id it answers as <code>peerKeyId</code> on this Basecamp's entry in <code>basecamps.json</code>.</p>
             {/if}
           </div>
         </details>

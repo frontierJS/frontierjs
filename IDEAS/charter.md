@@ -231,6 +231,9 @@ document and the build in one.
     module — a skill for a developer, the prompt-to-app builder for anyone else.
     `fli` never holds a key.*
 
+**Carried past the first build:** `charter-to-live.md` takes a charter through a feature, a
+deploy to a designated Basecamp and a login, first in Charter and then in Workbench.
+
 ## Sources
 
 - Bubble: https://manual.bubble.io/help-guides/ai/bubble-ai-agent/generate-apps-with-ai

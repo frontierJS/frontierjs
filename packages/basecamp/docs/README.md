@@ -18,6 +18,8 @@ These pages are read in different situations rather than in order.
   retention, `location`, the key escrow, and a restore by hand
 - [provisioning.md](provisioning.md) — buying a machine at a cloud: the compute
   connector boundary, the spend guard, cloud-init and enrollment, phase by phase
+- [footprint.md](footprint.md) — what a Basecamp box spends in memory, measured on
+  yuma: the evidence a minimum box size will be set from, and how to re-measure
 - [layout.md](layout.md) — the file-by-file map of the package, out of `CLAUDE.md`
 - [hazards.md](hazards.md) — every hazard, the full `What bites here`
 

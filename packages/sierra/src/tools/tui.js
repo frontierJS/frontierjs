@@ -6,6 +6,7 @@
 //   bun tui.js --frame /reports/       one route's frame, printed, no TTY needed
 //   bun tui.js --api http://host:8110  the API origin, when it is not config.junction.url
 //   bun tui.js --side src/Pane.mesa    a component in a pane at the right, Ctrl+\ shows it
+//   bun tui.js --bottom src/Low.mesa   a component in a pane under it, a page's bottomToggle() shows it
 //   bun tui.js --open /reports/        the shell, opened at that path
 //
 // Run it from the WEB ROOT, as `sierra routes` is. Bun, never node: the loader
@@ -62,6 +63,7 @@ try {
     list:   argv.includes('--list'),
     frame:  getFlag('frame'),
     side:   getFlag('side') && resolve(getFlag('side')),
+    bottom: getFlag('bottom') && resolve(getFlag('bottom')),
     open:   getFlag('open'),
     reload: asked && ((url) => writeFileSync(asked, url)),
   })

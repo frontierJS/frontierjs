@@ -6,7 +6,7 @@ examples:
   - fli basecamp:app
   - fli basecamp:app --name thod --server ops1
   - fli basecamp:app --dry
-  - BASECAMP_URL=https://basecamp.example.com fli basecamp:app
+  - fli basecamp:app --basecamp ops
 flags:
   name:
     type: string
@@ -16,9 +16,10 @@ flags:
     type: string
     description: The Basecamp server to place the App on, by id, slug or name (default the one online server; asked at a terminal when there are several)
     defaultValue: ''
-  url:
+  basecamp:
     type: string
-    description: Basecamp's API origin (default is BASECAMP_URL, then the local dev API)
+    description: The Basecamp to call, by its name in basecamps.json (default the only one; with several and none named, refused with the names)
+    defaultValue: ''
   file:
     char: f
     type: string
@@ -44,8 +45,8 @@ project in the workspace already holds as its slug: a second run never makes a
 second App. A write that fails after the project is made archives the project,
 which takes its environment and App with it.
 
-The key is `BASECAMP_API_KEY`, read from the environment fli loads like
-`basecamp:deploy`'s, and needs `projects:write`, `environments:write`,
+The origin and key are the Basecamp's entry in `basecamps.json`, chosen by
+`--basecamp` as `basecamp:deploy` chooses them, and the key needs `projects:write`, `environments:write`,
 `apps:write` and `servers:read`.
 
 ```js
@@ -54,9 +55,9 @@ const { basename, resolve } = await import('path')
 const { setEnvLine } = await import(resolve(global.fliRoot, 'core/global-env.js'))
 
 const root = $.paths.root
-const key  = process.env.BASECAMP_API_KEY
-if (!key) throw new Error('needs BASECAMP_API_KEY — a key issued at /api-keys/ in the Basecamp workspace the app goes in')
-const origin  = (flag.url || process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
+const target = reach(flag.basecamp, log)
+if (!target) return
+const { url: origin, apiKey: key } = target
 const envPath = resolve(root, flag.file)
 
 if (process.env.BASECAMP_APP_ID)

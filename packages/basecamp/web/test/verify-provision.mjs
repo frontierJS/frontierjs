@@ -236,7 +236,7 @@ async function evaluate(expression) {
 }
 
 /** Poll until an expression settles rather than sleeping a guessed amount. */
-async function until(expression, predicate, label, ms = 20_000) {
+async function until(expression, predicate, label, ms = Number(process.env.DRIVE_UNTIL_MS ?? 20_000)) {
   const deadline = Date.now() + ms
   let last
   while (Date.now() < deadline) {
@@ -247,7 +247,8 @@ async function until(expression, predicate, label, ms = 20_000) {
   throw new Error(`${label} — last value: ${JSON.stringify(last)?.slice(0, 200)}`)
 }
 
-const goto = async path => { await send('Page.navigate', { url: BASE + path }); await sleep(1200) }
+// `DRIVE_GOTO_MS` lengthens the wait on a loaded machine: the route renders after the load event.
+const goto = async path => { await send('Page.navigate', { url: BASE + path }); await sleep(Number(process.env.DRIVE_GOTO_MS ?? 1200)) }
 const text = sel => evaluate(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? null`)
 const body = () => evaluate(`document.body.textContent`)
 const click = sel => evaluate(`
@@ -547,6 +548,10 @@ try {
   check('the cost line quotes the vendor\'s own price', /24\.00/.test(cost ?? ''), cost?.trim())
   check('and says plainly that this creates a machine and starts billing',
     /creates a machine/i.test(cost ?? '') && /billing/i.test(cost ?? ''))
+  // An app machine is covered by its replica and archives, so the form never
+  // bills for backups nobody asked for (`FJS-D1864`).
+  check('machine backups start unticked, and the cost line names none',
+    await evaluate(`document.getElementById('backups')?.checked === false && !document.getElementById('provision-backups-cost')`))
 
   const label = await evaluate(`document.querySelector('form button[type=submit]').textContent.trim()`)
   // One act per screen now, so the button states it flatly instead of inferring
@@ -742,8 +747,19 @@ try {
   check('the card reads on again, from the vendor',
     /On.*weekly, Sundays at 16:00 UTC/.test((await text('#server-backups') ?? '').replace(/\s+/g, ' ')))
 
+  // Off deletes the backup the put-back took, so it says how many and asks
+  // for the machine's name before it acts.
   await fill({ 'backups-choice': 'off' })
-  await click('#backups-save')
+  const asked = await until(`document.getElementById('backups-off-confirm')?.textContent ?? ''`,
+    t => /deletes the 1 backup\s+it has taken of drive-web-01/.test(t.replace(/\s+/g, ' ')), 'Off never said what it deletes', 5_000)
+    .catch(e => e.message)
+  check('Off says how many backups the vendor deletes, and offers no plain Save',
+    /deletes the 1 backup/.test(asked) && await evaluate(`!document.getElementById('backups-save')`),
+    String(asked).replace(/\s+/g, ' ').trim())
+  check('and refuses to act until the machine\'s name is typed',
+    await evaluate(`document.getElementById('backups-off-submit').disabled`))
+  await fill({ 'backups-off-name': 'drive-web-01' })
+  await click('#backups-off-submit')
   const offCard = await until(`document.getElementById('server-backups')?.textContent ?? ''`,
     t => /\bOff\b/.test(t) && /Not managed: Basecamp shows/.test(t), 'Off never reached the card', 15_000).catch(e => e.message)
   check('and Off turns them off and leaves the machine not managed (FJS-D1885)',
@@ -888,6 +904,12 @@ try {
   await fill({ name: 'drive-hz-01', size: 'cpx11', image: 'ubuntu-24.04' })
   await until(`!document.querySelector('form button[type=submit]').disabled`, v => v,
     'the Hetzner provision was never armed')
+  // Hetzner's published share is 20%, so €5.18 a month adds €1.04.
+  await click('#backups')
+  const backed = await until(`document.getElementById('provision-backups-cost')?.textContent ?? ''`,
+    t => t || false, 'ticking backups never priced them')
+  check('ticking backups adds their price to the cost line, as the vendor\'s share of the machine\'s',
+    /€1\.04/.test(backed), backed.trim())
   await evaluate(`document.querySelector('form button[type=submit]').click()`)
 
   await until(`(() => {
@@ -903,6 +925,8 @@ try {
     t => /cpx11/.test(t) ? t : false, 'the trail never named what was asked for', 20_000)
   check('and the trail names the vendor\'s own words, not DigitalOcean\'s',
     /cpx11/.test(hzTrail) && /nbg1/.test(hzTrail), hzTrail.replace(/\s+/g, ' ').slice(0, 140))
+  check('and the backups the form asked for', /machine backups daily/.test(hzTrail),
+    hzTrail.replace(/\s+/g, ' ').slice(0, 200))
 
   // ─── Cloud spend ───────────────────────────────────────────────────────
   // The price the vendor quoted, copied onto the row at purchase, summed. Not a
@@ -1082,6 +1106,47 @@ try {
   const text0  = await script.text()
   check('the script it fetches is served, and holds no credential',
     script.status === 200 && !text0.includes('bcen_'), `${script.status}`)
+
+  // ─── Link it to a machine Basecamp did not buy ─────────────────────────
+  // The imported box has no vendor link, and the droplet planted behind the
+  // app's back is a marked machine no row holds. Picking it from the card
+  // links the two and sets `adopted`: the backups card appears, and Destroy is
+  // replaced by the line that says Basecamp will not delete it.
+  console.log('\n  linking the imported machine to the planted droplet')
+  check('an unlinked machine offers the link card, and a vendor machine does not',
+    await evaluate(`!!document.getElementById('server-adopt')`))
+  await click('#adopt-open')
+  await until(`!!document.getElementById('adopt-find')`, v => v, 'the link card never opened')
+  const doAccount = await evaluate(
+    `[...document.getElementById('adopt-account').options].find(o => o.textContent.includes('do-main'))?.value ?? ''`)
+  check('it offers the DigitalOcean account', !!doAccount)
+  await fill({ 'adopt-account': doAccount })
+  await click('#adopt-find')
+  const candidates = await until(`document.getElementById('adopt-candidates')?.textContent ?? ''`,
+    t => t, 'the link card never listed the planted droplet', 20_000)
+  check('the planted droplet is listed', candidates.includes('leaked'), candidates.trim().slice(0, 160))
+  check('and nothing is linked until one is chosen',
+    await evaluate(`!document.getElementById('adopt-confirm')`))
+  await evaluate(`[...document.querySelectorAll('#adopt-candidates button')].find(b => /Choose/.test(b.textContent)).click()`)
+  await until(`!!document.getElementById('adopt-confirm')`, v => v, 'choosing a machine never opened the confirmation')
+  const confirmText = (await text('#adopt-confirm')).replace(/\s+/g, ' ')
+  check('the confirmation shows its name and region', /leaked/.test(confirmText) && /nyc3/.test(confirmText), confirmText)
+  await click('#adopt-link')
+  await until(`!document.getElementById('server-adopt') && !!document.getElementById('server-backups')`, v => v,
+    'linking never showed the machine-backups card', 20_000)
+  check('a linked machine shows its machine-backups card', true)
+  check('its Destroy control is gone',
+    await evaluate(`!document.getElementById('server-destroy') && !document.getElementById('destroy-confirm')`))
+  const adoptedLine = (await text('#server-adopted') ?? '').replace(/\s+/g, ' ')
+  check('replaced by the line that says Basecamp will not destroy it',
+    /did not buy this machine and will not destroy it/.test(adoptedLine), adoptedLine.trim())
+  const linked = await evaluate(`fetch('/servers/${importedId}', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': localStorage.getItem('basecamp_workspace') } }).then(r => r.json())`)
+  check('the row stores the link and `adopted`',
+    linked?.adopted === true && linked?.providerKind === 'digitalocean' && !!linked?.providerServerId,
+    JSON.stringify({ adopted: linked?.adopted, kind: linked?.providerKind }))
 
   // ─── The console ───────────────────────────────────────────────────────
   console.log('\n  the console')

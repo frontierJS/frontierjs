@@ -45,6 +45,10 @@
       "browser": "./web/src/lib/study/study.browser.js",
       "default": "./web/src/lib/study/study.js"
     },
+    "#top": {
+      "browser": "./web/src/lib/top/top.browser.js",
+      "default": "./web/src/lib/top/top.js"
+    },
     "#shared/*": "./shared/*"
   },
   "license": "MIT",
@@ -93,7 +97,8 @@
     "@frontierjs/sierra": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*",
     "@frontierjs/ui": "workspace:*",
-    "@opentui/core": "0.5.17"
+    "@opentui/core": "0.5.17",
+    "@xterm/headless": "6.0.0"
   },
   "engines": {
     "bun": ">=1.4.0"

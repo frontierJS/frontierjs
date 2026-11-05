@@ -8,6 +8,7 @@ title: Provision a machine
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Select   from '@frontierjs/ui/components/forms/Select.mesa'
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
+  import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
   import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
 
   // BUY a machine at a cloud. The sibling screen, /servers/import/, RECORDS one
@@ -35,6 +36,10 @@ title: Provision a machine
   let catError    = null
   let size        = ''
   let image       = ''
+  // The vendor's daily machine backups, off unless asked (`FJS-D1864`): an app
+  // machine's data is covered by its Litestream replica and archives, and a
+  // default that bills is a choice made on somebody's behalf.
+  let backups     = false
 
   $: (draft.name, draft.region, draft.role)
 
@@ -102,6 +107,11 @@ title: Provision a machine
   // so this is one reader and there is no branch on which cloud it is.
   $: chosenPrice = chosen && draft.region ? chosen.prices[draft.region] : null
 
+  // An estimate, from the vendor's published share of the machine's price.
+  $: backupShare  = catalog?.backups?.share ?? null
+  $: backupsPrice = chosenPrice != null && backupShare != null
+    ? Math.round(chosenPrice * backupShare / 100) : null
+
   // Only the sizes this REGION has, which is the same fact as *priced there*:
   // a picker offering a size the region cannot give is a create that fails at
   // the vendor with a message nobody here wrote, and a size with no price
@@ -124,6 +134,7 @@ title: Provision a machine
       const created = await servers.service.invoke('provision', null, {
         name: draft.name, role: draft.role,
         accountId, region: draft.region, size, image,
+        ...(backups && { backups: catalog.backups.policy }),
       })
       goto(`/servers/${created.id}/`)
     } catch (err) {
@@ -227,12 +238,20 @@ title: Provision a machine
                 value={image}
                 onchange={(e) => image = e.target.value} />
 
+        <Checkbox id="backups" name="backups" label="Back up this machine daily" checked={backups}
+                  onchange={(on) => backups = on}
+                  description={`${account?.providerKind}'s image of the whole disk, `
+                    + (backupsPrice != null ? `+${backupsPrice.toMoney(chosen.currency)}/month, estimated`
+                       : backupShare != null ? `${backupShare}% of the machine's price` : 'at its price')
+                    + '. An app machine is covered by its replica and archives; a machine that will host Basecamp wants it on.'} />
+
         {#if chosen && chosenPrice != null}
           <article class="alert warning" id="provision-cost">
             <div class="alert-content">
               This creates a machine at {account?.providerKind} and starts billing:
               <strong>{chosen.label}</strong> in {draft.region} —
-              <strong>{chosenPrice.toMoney(chosen.currency)}/month</strong>.
+              <strong>{chosenPrice.toMoney(chosen.currency)}/month</strong>{#if backups && backupsPrice != null}, and
+              <strong id="provision-backups-cost">{backupsPrice.toMoney(chosen.currency)}/month</strong> for its daily backups{/if}.
               It boots, installs its own outpost and reports back; nothing here connects to it.
             </div>
           </article>

@@ -1239,10 +1239,12 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
   // Json @type(T) — reference the named type's schema instead of the
   // permissive {} that an untyped Json column gets. Carries shape, required
   // keys, validators, the works. When typeDefs hasn't been built (callers
-  // that haven't wired it through), falls back to {}.
+  // that haven't wired it through), falls back to {}. Asked of the schema's
+  // types, not of `typeDefs`: inside a type, `typeDefs` holds only the types
+  // declared above it, and a later one read as {} accepted anything.
   let typeSchema
   const typeAttr = attributes.find(a => a.kind === 'type')
-  if (type.name === 'Json' && typeAttr && typeDefs && typeDefs[typeAttr.name]) {
+  if (type.name === 'Json' && typeAttr && typeDefs && schema.types?.some(t => t.name === typeAttr.name)) {
     // strict: false → loose schema (allow extras); strict (default) → tight.
     typeSchema = { '$ref': `#/$defs/${typeAttr.name}` }
     if (typeAttr.array) typeSchema = { type: 'array', items: typeSchema }

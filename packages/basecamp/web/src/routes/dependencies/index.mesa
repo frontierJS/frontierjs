@@ -145,8 +145,9 @@ title: Dependencies
 {:else if !report?.projects?.length}
   <EmptyState title="Nothing pushed yet">
     A codebase sends its own dependency list, so this works wherever Basecamp runs. From the
-    repository's root, with an API key for this workspace:
-    <pre><code>BASECAMP_URL=… BASECAMP_API_KEY=… fli ws:deps --push --slug &lt;slug&gt; --create</code></pre>
+    repository's root, with this Basecamp's entry holding a key for this workspace
+    (<code>fli basecamp:key</code>, or the <code>scopedKey</code> of its <code>basecamps.json</code> entry):
+    <pre><code>fli ws:deps --push --slug &lt;slug&gt; --create</code></pre>
   </EmptyState>
 {:else}
   <div class="cluster">

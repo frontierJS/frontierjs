@@ -11,9 +11,10 @@ args:
     name: server
     description: One server, by its id or name in Basecamp; with none, one line per server
 flags:
-  url:
+  basecamp:
     type: string
-    description: Basecamp's API origin (default is BASECAMP_URL, then the local dev API)
+    description: The Basecamp to call, by its name in basecamps.json (default the only one; with several and none named, refused with the names)
+    defaultValue: ''
   json:
     type: boolean
     description: Print what Basecamp answered, as JSON
@@ -29,12 +30,12 @@ Basecamp's own box, marked ⛺, carries the `hub.*` controls only when the
 key's holder is a system admin. Any other key reads that box as a fleet row
 without them.
 
-The key needs `serverPostures:read`; `fli basecamp:key` mints one that has it.
+The key is the Basecamp's entry in `basecamps.json`, chosen by `--basecamp`; it needs `serverPostures:read`, which `fli basecamp:key` mints.
 
 ```js
-const key = process.env.BASECAMP_API_KEY
-if (!key) { log.error('needs BASECAMP_API_KEY — fli basecamp:key mints one, or issue one at /api-keys/ in the Basecamp workspace'); process.exitCode = 1; return }
-const origin = (flag.url || process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
+const target = reach(flag.basecamp, log)
+if (!target) return
+const { url: origin, apiKey: key } = target
 const server = String(arg.server ?? '').trim()
 
 if (!server) {

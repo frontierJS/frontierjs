@@ -58,6 +58,7 @@ import domainDns                from './domain-dns.job.ts'
 import { syncReplicasOn }       from './replicate-sync.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../domain/release/app-source.ts'
 import { siteBranch } from '../domain/site/site-checkout.ts'
+import { healthAttempts } from '@frontierjs/outpost/swap'
 import { releaseSite } from '../domain/site/site-publish.ts'
 import { cloudflareFor } from '../domain/site/site-preview.ts'
 import { SITE_STEP, releaseStatus } from '../domain/release/release-record.ts'
@@ -99,12 +100,13 @@ function runtimeFor(snapshot: Record<string, unknown>, service: Record<string, u
 }
 
 // Whether a release may ask Outpost for start-first. Mirrors the conditions of
-// its `checkSwap`: a route in front of a published port, and no exposed port.
+// its `checkSwap`: a route in front of a published port, no exposed port, and
+// a health path to ask before the route moves.
 function wantsStartFirst(
   service: Record<string, unknown>, runtime: Runtime, hosts: unknown[], paths: unknown[],
 ): boolean {
   return service.swap === 'startFirst' && service.hasExposedPort !== true
-    && Boolean(runtime.port) && (hosts.length > 0 || paths.length > 0)
+    && Boolean(runtime.port) && runtime.healthCheck != null && (hosts.length > 0 || paths.length > 0)
 }
 
 function runner(app: App) {
@@ -390,7 +392,7 @@ function runner(app: App) {
       exposes_port:  service.hasExposedPort === true,
       // The live App's ask, as `exposes_port` is (`FJS-D1882`). It is sent only
       // where Outpost would accept it: `checkSwap` refuses a start-first that
-      // has no route to follow the port, and a release is not failed for a
+      // has no route to follow the port or no health path to ask, and a release is not failed for a
       // setting. Outpost still reads the pivot and may answer stop-first.
       swap:          wantsStartFirst(service, runtime, hosts, paths) ? 'start-first' : 'stop-first',
     }
@@ -556,11 +558,13 @@ function runner(app: App) {
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest, ...swapOf(reply.data) }
 
     } else if (name.includes('health')) {
-      // Poll up to 10 times with 3s between attempts. The path, where the app
-      // names one, is asked of the port the release published.
-      const { port, healthCheck } = runtimeFor(ctx.config, service)
+      // Polled every 3s for the release's healthTimeout, the budget Outpost's
+      // swap waited. The path, where the app names one, is asked of the port
+      // the release published.
+      const { port, healthCheck, healthTimeout } = runtimeFor(ctx.config, service)
+      const attempts = healthAttempts((healthTimeout as number | undefined) ?? null, 3_000)
       let last: { data?: Record<string, unknown> } = {}
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < attempts; i++) {
         const reply = await executor.call('/health-check',
           { app_id: deploy.appId, digest, port, path: healthCheck }, { timeoutMs: 5_000 })
         last = reply
@@ -568,7 +572,7 @@ function runner(app: App) {
         await new Promise(r => setTimeout(r, 3_000))
       }
       const why = last.data?.stubbed ? ' (stub executor)' : last.data?.reason ? ` — ${last.data.reason}` : ''
-      throw new Error(`Health check failed after 10 attempts${why}`)
+      throw new Error(`Health check failed after ${attempts} attempts${why}`)
 
     } else {
       // Build, migration, CDN steps etc. — forwarded as a generic step.

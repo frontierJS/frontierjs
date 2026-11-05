@@ -459,6 +459,7 @@ CREATE TABLE IF NOT EXISTS "server" (
   "providerKind" TEXT NOT NULL DEFAULT 'custom',
   "providerId" TEXT,
   "providerServerId" TEXT,
+  "adopted" INTEGER NOT NULL DEFAULT 0,
   "registerMethod" TEXT NOT NULL DEFAULT 'imported',
   "region" TEXT NOT NULL DEFAULT 'custom',
   "ipAddress" TEXT,
@@ -762,7 +763,7 @@ CREATE TABLE IF NOT EXISTS "server_event" (
   "metadata" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "noticeOwedAt" TEXT,
-  CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'backupsReadFailed', 'backupsSet', 'backupsRestored', 'backupsRestoreFailed', 'cameOnline', 'unreachable', 'rebooted', 'containerCrashLooping', 'containerRecovered', 'unitFailed', 'unitRestored', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'postureFailed', 'postureRestored')),
+  CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'backupsReadFailed', 'backupsSet', 'backupsRestored', 'backupsRestoreFailed', 'adopted', 'cameOnline', 'unreachable', 'rebooted', 'containerCrashLooping', 'containerRecovered', 'unitFailed', 'unitRestored', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'postureFailed', 'postureRestored')),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_event_serverId" ON "server_event" ("serverId");
@@ -1032,6 +1033,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   "cpuLimit" REAL,
   "memLimitMb" INTEGER,
   "stopGrace" INTEGER,
+  "healthTimeout" INTEGER,
   "command" TEXT NOT NULL DEFAULT '[]' CHECK (json_valid("command") AND json_type("command") = 'array'),
   "hasExposedPort" INTEGER NOT NULL DEFAULT 0,
   "swap" TEXT NOT NULL DEFAULT 'stopFirst',

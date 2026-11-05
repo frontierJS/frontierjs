@@ -36,13 +36,15 @@
  *   (`FJS-D565`). A stop takes the route with it. `/route` changes the
  *   hostnames with the container left running (`FJS-1610`): a second name
  *   answers over HTTPS, and the port it dials and the loopback bind are read
- *   back off the daemon.
+ *   back off the daemon. A WebSocket held to the app through Caddy still
+ *   echoes after another app's route is written and removed (`FJS-4016`).
  *
  *   `startFirst.*` — a release with `swap: 'start-first'` answers beside the
  *   old container on a port Docker picks, and the route moves before the old
  *   one stops: a curl loop through Caddy across the swap sees only 200s
  *   (`FJS-D1837`). A sick one is refused with the old container serving and
- *   its route untouched. A contract asks for start-first and is swapped
+ *   its route untouched, and one with no health path is refused before
+ *   anything runs. A contract asks for start-first and is swapped
  *   stop-first, by the release's own Litestone (`FJS-D1838`), and a stop-first
  *   release after takes the App's port back. These releases are whoami's
  *   binary on `oven/bun` with this workspace's Litestone and a `db/` at v1 or
@@ -81,10 +83,13 @@ import { tmpdir, homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { connect }      from 'node:net'
+import { connect as tlsConnect } from 'node:tls'
+import { randomBytes }  from 'node:crypto'
 import { networkInterfaces } from 'node:os'
 import { signRequest, verifyRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { ensureCert }   from '../src/cert.js'
-import { routeId }      from '../src/ingress.js'
+import { routeId, createIngress } from '../src/ingress.js'
+import { createDocker } from '../src/docker.js'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PORT     = 7180
@@ -204,6 +209,46 @@ const untilHttps = async (host = HOST) => {
   console.error('https never answered:', r?.stderr || r?.stdout)
   return false
 }
+
+/** A WebSocket to the app's `/echo` through Caddy BY ITS NAME, held open, or
+ *  null when the upgrade is refused. `node:tls`, because SNI picks the cert and
+ *  neither curl 7.81 nor Bun's WebSocket names a server apart from the URL.
+ *  Short text frames only, which is all whoami's echo is sent. */
+const holdSocket = (host = HOST) => new Promise((done) => {
+  const sock = tlsConnect({ host: '127.0.0.1', port: CADDY_HTTPS, servername: host, ca: readFileSync(rootPath) })
+  let buf = Buffer.alloc(0), upgraded = false, closed = null, waiting = null
+  const handle = {
+    get closed() { return closed },
+    echo: (text) => new Promise(ok => {
+      const timer = setTimeout(() => { waiting = null; ok(null) }, 3000)
+      waiting = (v) => { clearTimeout(timer); waiting = null; ok(v) }
+      const body = Buffer.from(text), mask = randomBytes(4)
+      sock.write(Buffer.concat([Buffer.from([0x81, 0x80 | body.length]), mask, body.map((b, i) => b ^ mask[i % 4])]))
+    }),
+    close: () => sock.destroy(),
+  }
+  sock.once('error', () => done(null))
+  sock.once('secureConnect', () => sock.write(`GET /echo HTTP/1.1\r\nHost: ${host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n`
+    + `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}\r\nSec-WebSocket-Version: 13\r\n\r\n`))
+  sock.on('data', (chunk) => {
+    buf = Buffer.concat([buf, chunk])
+    if (!upgraded) {
+      const end = buf.indexOf('\r\n\r\n')
+      if (end < 0) return
+      if (!/^HTTP\/1\.1 101/.test(buf.toString('latin1', 0, end))) { sock.destroy(); return done(null) }
+      upgraded = true
+      buf = buf.subarray(end + 4)
+      done(handle)
+    }
+    while (buf.length >= 2 && buf.length >= 2 + (buf[1] & 0x7f)) {
+      const op = buf[0] & 0x0f, body = buf.subarray(2, 2 + (buf[1] & 0x7f))
+      buf = buf.subarray(2 + body.length)
+      if (op === 0x8) closed = body.length >= 2 ? body.readUInt16BE(0) : 1005
+      else if (op === 0x1) waiting?.(body.toString())
+    }
+  })
+  sock.on('close', () => { closed ??= 1006; waiting?.(null) })
+})
 
 // ─── The stand-in Basecamp ────────────────────────────────────────────────
 
@@ -434,6 +479,11 @@ try {
   // the prefix from the second app. Its upstream is a dead port, so a 502 on
   // /api and the app's own 200 on / say which route each request took.
   const SPLIT = 'split-api'
+  // Any write to Caddy's config reloads every handler, and an unloaded one
+  // closed its WebSockets at once (FJS-4016): this app's socket has to answer
+  // after another app's route is added, reordered ahead of it and removed.
+  const ws       = await holdSocket()
+  const heldOpen = await ws?.echo('before') === 'before'
   const pathed = await call('/route', { app_id: SPLIT, port: 7199, paths: [{ host: HOST, prefix: '/api/' }] })
   if (pathed.status !== 200) console.log(pathed.body)
   const order = await admin('/config/apps/http/servers/ingress/routes').then(r => r.json(), () => [])
@@ -444,13 +494,16 @@ try {
   t('path.restStaysWithTheHost',   status('/') === '200' && status('/apix') === '200')
   await call('/stop', { app_id: SPLIT })
   t('path.stopTakesEveryPrefix',   (await admin(`/id/fjs-${SPLIT}-path-0`)).status === 404)
+  t('socket.outlivesAnotherAppsWrite', heldOpen && ws.closed == null && await ws.echo('after') === 'after')
+  if (!heldOpen || ws.closed != null) console.error('socket:', ws ? `closed ${ws.closed}` : 'the upgrade was refused')
+  ws?.close()
 
   // ─── start-first (FJS-D1837, FJS-D1838) ─────────────────────────────────
 
   buildPivotImages(join(scratch, 'pivot'))
   const release = (version, { swap = 'start-first', ...config } = {}) => call('/deploy', {
     app_id: APP, ...SLUGS, image: `${PIVOT_IMAGE}:${version}`, hosts: [HOST], swap,
-    config: { port: APP_PORT, containerPort: 80, ...config, env: { WHOAMI_NAME: 'fjs-drive', ...config.env } },
+    config: { port: APP_PORT, containerPort: 80, healthCheck: '/', ...config, env: { WHOAMI_NAME: 'fjs-drive', ...config.env } },
   })
   const base = await release('v1', { swap: 'stop-first' })
   if (base.status !== 200) console.log(base.body)
@@ -481,6 +534,23 @@ try {
   t('startFirst.leavesTheOldOneAlone', inspect('{{.Id}}') === serving && appContainers().length === 1
     && await dial() === `127.0.0.1:${moved}` && await untilHttps())
 
+  const unasked = await release('v2', { healthCheck: null })
+  t('startFirst.refusesNoHealthPath', unasked.status >= 400 && /needs a health path/.test(unasked.body?.error ?? '')
+    && inspect('{{.Id}}') === serving && await dial() === `127.0.0.1:${moved}`)
+
+  // A restart gives a `127.0.0.1::80` container a new host port and nothing
+  // the daemon does tells Caddy; the running Outpost's heartbeat pass moves the
+  // route (FJS-D1890). Its 1 s clock can win the race against a read here, so
+  // the stale route is not asserted, only that the route catches up.
+  const portNow = () => Number(sh('docker', 'port', live(), '80/tcp').stdout.trim().split('\n')[0]?.split(':').pop())
+  sh('docker', 'restart', live())
+  let restartedOn = portNow()
+  for (let i = 0; i < 40 && !(restartedOn > 0); i++) { await sleep(250); restartedOn = portNow() }
+  let followed = await dial()
+  for (let i = 0; i < 40 && followed !== `127.0.0.1:${restartedOn}`; i++) { await sleep(250); followed = await dial() }
+  t('startFirst.aRestartMovesThePublishedPort', restartedOn > 0 && restartedOn !== moved)
+  t('startFirst.theHeartbeatRepointsTheRoute',  followed === `127.0.0.1:${restartedOn}` && await untilHttps() && status('/') === '200')
+
   const contract = await release('v1')
   if (contract.status !== 200) console.log(contract.body)
   t('startFirst.aContractSwapsStopFirst', contract.status === 200 && contract.body?.swap === 'stop-first' && contract.body?.pivot === 'contract'
@@ -489,6 +559,20 @@ try {
 
   const after = await deploy()
   t('startFirst.stopFirstTakesTheAppPortBack', after.status === 200 && await dial() === `127.0.0.1:${APP_PORT}` && await untilHttps())
+
+  // ─── a slow boot (FJS-4015) ─────────────────────────────────────────────
+  // A migration on boot that outlives the default 30 s, stood in for by a
+  // sleep: the release's own healthTimeout carries it, rather than a put-back.
+
+  sh('docker', 'pull', '-q', BUSYBOX)
+  const slow = await call('/deploy', {
+    app_id: APP, ...SLUGS, image: BUSYBOX, hosts: [HOST],
+    config: { port: APP_PORT, containerPort: 80, healthCheck: '/', healthTimeout: 60,
+              command: ['sh', '-c', 'sleep 35; mkdir -p /w && echo slow-ok > /w/index.html && exec httpd -f -p 80 -h /w'] },
+  })
+  if (slow.status !== 200) console.log(slow.body)
+  t('healthTimeout.aSlowBootInsideItsBudgetGoesLive', slow.status === 200
+    && /slow-ok/.test(await fetch(`http://127.0.0.1:${APP_PORT}/`).then(r => r.text(), () => '')))
 
   // ─── stop ───────────────────────────────────────────────────────────────
 
@@ -630,9 +714,13 @@ const expected = [
   'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
   'redirect.answers308WithTheRequestUri', 'redirect.droppedWithTheLastOne',
   'path.sitsAheadOfTheWholeHost', 'path.prefixGoesToItsApp', 'path.restStaysWithTheHost', 'path.stopTakesEveryPrefix',
+  'socket.outlivesAnotherAppsWrite',
   'startFirst.anExpandOverlaps', 'startFirst.answersOnAPortDockerPicked', 'startFirst.routeDialsTheNewPort', 'startFirst.leavesOneContainerUnderItsName',
   'startFirst.bindsLoopbackOnly', 'startFirst.dropsNoRequest', 'startFirst.refusesASickRelease', 'startFirst.leavesTheOldOneAlone',
+  'startFirst.refusesNoHealthPath',
+  'startFirst.aRestartMovesThePublishedPort', 'startFirst.theHeartbeatRepointsTheRoute',
   'startFirst.aContractSwapsStopFirst', 'startFirst.leavesNoVolumeBehind', 'startFirst.stopFirstTakesTheAppPortBack',
+  'healthTimeout.aSlowBootInsideItsBudgetGoesLive',
   'stop.removesTheContainer', 'stop.takesTheRoute', 'health.saysNotRunning', 'logs.sayNoSuchContainer',
   'route.unknownIs404',
   'volume.restoresIntoTheVolume', 'volume.refusesANonEmptyOne', 'volume.refusesAPathOffTheRoot',

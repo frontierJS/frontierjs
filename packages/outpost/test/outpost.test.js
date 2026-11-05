@@ -15,6 +15,7 @@ import { test, expect, describe } from 'bun:test'
 import { signRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer, MAX_BODY_BYTES } from '../src/server.js'
 import { createDocker, createInspector, containerName, isDigest, BACKUP_SCRIPT, swapFor } from '../src/docker.js'
+import { STREAM_CLOSE_DELAY } from '../src/swap.js'
 import { createReporter }         from '../src/report.js'
 import { createIngress }          from '../src/ingress.js'
 import { createVitals }           from '../src/vitals.js'
@@ -1850,7 +1851,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect(server_.routes).toEqual([{
       '@id': 'fjs-app-1',
       match: [{ host: ['shop.example.com', 'www.example.com'] }],
-      handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: '127.0.0.1:7300' }] }],
+      handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: '127.0.0.1:7300' }], stream_close_delay: STREAM_CLOSE_DELAY }],
       terminal: true,
     }])
   })
@@ -1878,7 +1879,14 @@ describe('the ingress — Caddy, through its admin API', () => {
 
     const bare = serverWith(fakeCaddy())
     await deploy(bare.server)
-    expect(runArgv(bare.fake)).toContain('--stop-timeout 40 -e FRONTIER_STOP_GRACE=40')
+    expect(runArgv(bare.fake)).toContain('--stop-timeout 50 -e FRONTIER_STOP_GRACE=50')
+  })
+
+  test('a health budget outside 5 to 600 s is refused before anything runs (FJS-4015)', async () => {
+    const asked = serverWith(fakeCaddy())
+    const res = await deploy(asked.server, { config: { port: 7300, containerPort: 80, healthTimeout: 900 } })
+    expect(await res.text()).toMatch(/healthTimeout must be a whole number of seconds, 5 to 600/)
+    expect(asked.fake.calls.some(c => c[0] === 'docker' && c[1] === 'run')).toBe(false)
   })
 
   // FJS-2772: a published port is forwarded, so only the forward chain's
@@ -2085,7 +2093,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     // The classifier is the one `docker run --rm`; unless a case states its
     // answer, the release is an expand and may overlap.
     const verdict = (v, baseline = { resolved: true, note: null }) => ({ stdout: `bun x litestone\n${JSON.stringify({ baseline, verdict: v })}\n` })
-    const overlapWith = (caddy, { answers = {}, ports = { [LIVE]: 7300, [NEXT]: 49153 }, fetch } = {}) => {
+    const overlapWith = (caddy, { answers = {}, ports = { [LIVE]: 7300, [NEXT]: 49153 }, fetch = async () => ({ ok: true, status: 200 }) } = {}) => {
       const fake = fakeRunner({ 'docker run --rm': verdict('expand'), 'docker run': { stdout: 'container-2\n' }, ...answers })
       const run = async (argv, opts) => {
         const at = argv.indexOf('{{json .NetworkSettings.Ports}}')
@@ -2105,7 +2113,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       })
       return { server, argv: () => fake.calls.map(c => c.join(' ')) }
     }
-    const release = (server, extra = {}) => deploy(server, { hosts: ['shop.example.com'], swap: 'start-first', ...extra })
+    const release = (server, extra = {}) => deploy(server, { hosts: ['shop.example.com'], swap: 'start-first', config: { port: 7300, containerPort: 80, healthCheck: '/healthz' }, ...extra })
     const routeWrites = (argv) => argv().filter(c => /^caddy (PATCH|POST|PUT) /.test(c))
 
     test('the new container answers on a port Docker picks before the route moves, and the old one stops after', async () => {
@@ -2186,11 +2194,12 @@ describe('the ingress — Caddy, through its admin API', () => {
       expect(argv().indexOf(`docker stop ${LIVE}_replaced`)).toBeLessThan(run)
     })
 
-    test('start-first is refused, before anything runs, where the port it moves is the address', async () => {
+    test('start-first is refused, before anything runs, where the port it moves is the address or nothing can say it answers', async () => {
       const cases = [
         [{ exposes_port: true },                   'declares its port open (exposes_port)'],
         [{ hosts: [] },                            'needs a published port and a hostname or path'],
         [{ swap: 'blue-green' },                   "swap is 'stop-first' or 'start-first'"],
+        [{ config: { port: 7300, containerPort: 80 } }, 'needs a health path (healthCheck)'],
       ]
       for (const [extra, said] of cases) {
         const { server, argv } = overlapWith(fakeCaddy())
@@ -2267,6 +2276,86 @@ describe('the ingress — Caddy, through its admin API', () => {
         expect(swapFor(pivot).swap).toBe('stop-first')
     })
   })
+
+  describe('a route follows the container between deploys (FJS-D1890)', () => {
+    const LIVE = nameFor('app-1')
+    const routeTo = (port, id = 'fjs-app-1') => ({ '@id': id, match: [{ host: ['shop.example.com'] }], handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: `127.0.0.1:${port}` }] }], terminal: true })
+    const withRoutes = (...routes) => fakeCaddy({ apps: { http: { servers: { ingress: { listen: [':443'], routes } } } } })
+    const dials = (caddy) => caddy.config.apps.http.servers.ingress.routes.map(r => `${r['@id']}=${r.handle[0].upstreams?.[0].dial}`)
+    // `docker ps` lists the apps; `ports` is what the daemon says each
+    // container published.
+    const pass = (caddy, { containers = [LIVE], ports = { [LIVE]: 49200 }, apps = 'app-1\n' } = {}) => {
+      const fake = fakeRunner({ containers, 'docker ps -a': { stdout: apps } })
+      const run = async (argv, opts) => {
+        const at = argv.indexOf('{{json .NetworkSettings.Ports}}')
+        if (at < 0) return fake.run(argv, opts)
+        fake.calls.push(argv)
+        const port = ports[argv[at + 1]]
+        return { exitCode: 0, stdout: JSON.stringify(port ? { '80/tcp': [{ HostIp: '127.0.0.1', HostPort: String(port) }] } : {}) + '\n', stderr: '' }
+      }
+      const said = []
+      const log  = { warn: m => said.push(m), error: m => said.push(m) }
+      const docker = createDocker({ appsDir: APPS, run })
+      return { said, fake, repoint: (ingress = createIngress({ fetch: caddy.fetch })) => docker.repoint({ ingress, log }) }
+    }
+
+    test('a route dialing a port the container no longer holds is moved to the one it does, and the move is logged', async () => {
+      const caddy = withRoutes(routeTo(49100))
+      const { repoint, said } = pass(caddy)
+      expect(await repoint()).toEqual({ moves: [{ appId: 'app-1', id: 'fjs-app-1', from: 49100, to: 49200 }] })
+      expect(dials(caddy)).toEqual(['fjs-app-1=127.0.0.1:49200'])
+      expect(said).toHaveLength(1)
+      expect(said[0]).toContain('app-1')
+      expect(said[0]).toContain(':49100')
+      expect(said[0]).toContain(':49200')
+    })
+
+    test('a route already on the live port is not written', async () => {
+      const caddy = withRoutes(routeTo(49200))
+      const { repoint } = pass(caddy)
+      expect(await repoint()).toEqual({ moves: [] })
+      expect(caddy.asked.some(a => a.startsWith('PATCH /id/'))).toBe(false)
+    })
+
+    test('only the app\'s own routes move: its path routes yes, its redirects and another app\'s no', async () => {
+      const redirect = { '@id': 'fjs-app-1-redirects', match: [{ host: ['www.example.com'] }], handle: [{ handler: 'static_response', status_code: 308, headers: { Location: ['https://shop.example.com'] } }] }
+      const caddy = withRoutes(routeTo(49100), routeTo(49100, 'fjs-app-1-path-0'), redirect, routeTo(49100, 'fjs-app-2'), routeTo(49100, 'fjs-app-1-path-x'))
+      const { repoint } = pass(caddy)
+      await repoint()
+      expect(dials(caddy)).toEqual([
+        'fjs-app-1=127.0.0.1:49200', 'fjs-app-1-path-0=127.0.0.1:49200', 'fjs-app-1-redirects=undefined',
+        'fjs-app-2=127.0.0.1:49100', 'fjs-app-1-path-x=127.0.0.1:49100',
+      ])
+    })
+
+    test('an app mid-swap, with a _next beside it, is left to the swap', async () => {
+      const caddy = withRoutes(routeTo(49100))
+      const { repoint, fake } = pass(caddy, { containers: [LIVE, `${LIVE}_next`] })
+      expect(await repoint()).toEqual({ moves: [] })
+      expect(dials(caddy)).toEqual(['fjs-app-1=127.0.0.1:49100'])
+      expect(fake.calls.some(c => c.includes('{{json .NetworkSettings.Ports}}'))).toBe(false)
+    })
+
+    test('a container with no published port, and an app with no route, move nothing', async () => {
+      const caddy = withRoutes(routeTo(49100))
+      expect(await pass(caddy, { ports: {} }).repoint()).toEqual({ moves: [] })
+      expect(dials(caddy)).toEqual(['fjs-app-1=127.0.0.1:49100'])
+      expect(await pass(withRoutes(routeTo(49100, 'fjs-app-9'))).repoint()).toEqual({ moves: [] })
+    })
+
+    test('a machine with no Caddy moves nothing, and one failing app does not stop the others', async () => {
+      const down = { fetch: async () => { throw new Error('connect ECONNREFUSED') } }
+      expect(await pass(down).repoint()).toEqual({ moves: [] })
+
+      const caddy = withRoutes(routeTo(49100, 'fjs-app-2'))
+      const real  = createIngress({ fetch: caddy.fetch })
+      const { repoint, said } = pass(caddy, { apps: 'app-1\napp-2\n' })
+      const ingress = { repoint: ({ appId, port }) => appId === 'app-1' ? Promise.reject(new Error('caddy refused it')) : real.repoint({ appId, port }) }
+      expect(await repoint(ingress)).toEqual({ moves: [{ appId: 'app-2', id: 'fjs-app-2', from: 49100, to: 49200 }] })
+      expect(said.some(m => m.includes('app-1') && m.includes('caddy refused it'))).toBe(true)
+    })
+  })
+
 
   describe('a redirect answers from Caddy, with no container behind it (FJS-1615)', () => {
     const none = () => fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object' } })

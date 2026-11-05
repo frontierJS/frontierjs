@@ -17,7 +17,7 @@ defaults:
 const { loadFrontierConfig, dockerfileScripts, unexecdEntrypoint } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
-const { createSwap, runFlags, sshRunner, shWord, portOf, livePivot, swapFor, swapSetting } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
+const { createSwap, runFlags, sshRunner, shWord, portOf, livePivot, swapFor, swapSetting, healthAttempts, checkHealthTimeout } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
 const { apiContainer } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
@@ -615,8 +615,9 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // a revert it is a revert that could not land.
 const pauseCore = () => import(new URL('file://' + global.fliRoot + '/core/pause.js'))
 
-const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, serverPath = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, attempts = 10, intervalS = 2, pivot = null }) => {
+const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, serverPath = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, intervalS = 2, pivot = null }) => {
   const asked    = swapSetting(deployConf ?? {})
+  const attempts = healthAttempts(deployConf?.healthTimeout, intervalS * 1000)
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
 
@@ -1489,7 +1490,13 @@ export default {
 
     // Seconds a stopping container gets before docker kills it, also handed to
     // Junction as FRONTIER_STOP_GRACE so its drain fits inside. Whole, at least 2.
-    stopGrace: 40,                    // default: 40
+    stopGrace: 50,                    // default: 50
+
+    // Seconds the new release has to answer api.health before the previous one
+    // is put back. Migrations run on boot inside it, so an app whose expand runs
+    // longer states its own. Stop-first is down for as long as it waits;
+    // start-first keeps the old release serving. Whole, 5 to 600.
+    healthTimeout: 30,                // default: 30
 
     // 'startFirst' runs the new release beside the old one and moves the routes
     // once it answers, for a release whose schema change the old one survives

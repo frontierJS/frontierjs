@@ -15,9 +15,6 @@ import { chalk }                    from './color.js'
 import { ageOf }                    from './cloud.js'
 import { pipeCommand, shQuote, transportFor } from './machine.js'
 
-// The dev API's port in basecamp's own CLAUDE.md, as `fli ws:deps --push` has it.
-export const LOCAL_BASECAMP = 'http://localhost:8120'
-
 /** One call to Basecamp's API, answering the body, or throwing with what Basecamp said. */
 export async function basecamp(origin, key, path, { method = 'GET', body, headers = {} } = {}) {
   let res

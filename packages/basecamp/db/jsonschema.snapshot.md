@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-176 definitions · 74 models · 1 view · 41 types · 60 enums · 0 other
+178 definitions · 74 models · 1 view · 43 types · 60 enums · 0 other
 ```
 
 ## Definitions
@@ -200,6 +200,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ServerProvision` | type |
 | `ServerProvisionStep` | type |
 | `ServerSetBackups` | type |
+| `ServerAdoptShown` | type |
+| `ServerAdopt` | type |
 | `BackupPolicy` | type |
 
 ## Enums
@@ -224,7 +226,7 @@ validates, and a select that silently drops an option.
 - `SecretKind` — `sshKey`, `providerKey`, `registryAuth`, `tlsCert`, `notification`, `backup`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
-- `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `backupsReadFailed`, `backupsSet`, `backupsRestored`, `backupsRestoreFailed`, `cameOnline`, `unreachable`, `rebooted`, `containerCrashLooping`, `containerRecovered`, `unitFailed`, `unitRestored`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `postureFailed`, `postureRestored`
+- `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `backupsReadFailed`, `backupsSet`, `backupsRestored`, `backupsRestoreFailed`, `adopted`, `cameOnline`, `unreachable`, `rebooted`, `containerCrashLooping`, `containerRecovered`, `unitFailed`, `unitRestored`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `postureFailed`, `postureRestored`
 - `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`
 - `ComputeProvider` — `custom`, `hetzner`, `digitalocean`
 - `MachineBackupPlan` — `daily`, `weekly`
@@ -759,6 +761,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `providerKind` | `ComputeProvider` = `"custom"` | — | — | `x-litestone-kind` | — |
 | `providerId` | `string`? | — | — | `x-litestone-kind` | — |
 | `providerServerId` | `string`? | — | — | `x-litestone-kind` | — |
+| `adopted` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
 | `registerMethod` | `RegisterMethod` = `"imported"` | — | — | — | — |
 | `region` | `string` = `"custom"` | — | — | — | — |
 | `ipAddress` | `string`? | — | — | — | — |
@@ -948,6 +951,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
 | `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
 | `stopGrace` | `integer`? | — | — | `minimum: 2` | — |
+| `healthTimeout` | `integer`? | — | — | `minimum: 5` `maximum: 600` | — |
 | `command` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `hasExposedPort` | `boolean` = `false` | — | — | — | — |
 | `swap` | `DeploySwap` = `"stopFirst"` | — | Swap order | — | — |
@@ -2319,6 +2323,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `region` | `string` | yes | — | — | — |
 | `size` | `string` | yes | — | — | — |
 | `image` | `string` | yes | — | — | — |
+| `backups` | `BackupPolicy`? | — | — | — | — |
 
 **On create**: required — `name`, `accountId`, `region`, `size`, `image`
 
@@ -2343,8 +2348,34 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `plan` | `MachineBackupPlan`? | — | — | — | — |
 | `hour` | `integer`? | — | — | — | — |
 | `weekday` | `string`? | — | — | — | — |
+| `deletes` | `integer`? | — | — | — | — |
+| `confirm` | `string`? | — | — | — | — |
 
 **On create**: required — `choice`
+
+### `ServerAdoptShown`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `name` | `string`? | — | — | — | — |
+| `ipAddress` | `string`? | — | — | — | — |
+| `region` | `string`? | — | — | — | — |
+
+**On create**: required — nothing
+
+### `ServerAdopt`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `accountId` | `string` | yes | — | — | — |
+| `providerServerId` | `string` | yes | — | — | — |
+| `shown` | `ServerAdoptShown` | yes | — | — | — |
+
+**On create**: required — `accountId`, `providerServerId`, `shown`
 
 ### `BackupPolicy`
 

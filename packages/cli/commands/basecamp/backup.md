@@ -13,9 +13,10 @@ args:
     name: server
     description: The box Basecamp runs on, which names the directory the archive lands in (default deploy.server in packages/basecamp/frontier.config.js; with --list, every box)
 flags:
-  url:
+  basecamp:
     type: string
-    description: Basecamp's API origin (default is BASECAMP_URL, then https:// and Basecamp's hostname)
+    description: The Basecamp whose API takes the backup, by its name in basecamps.json (default the entry named like <server>, else the only one; with several and none named, refused with the names). --raw needs none
+    defaultValue: ''
   out:
     type: string
     description: The directory the <stamp>/ directory goes in (default ~/.local/share/fli/basecamp/<server>/)
@@ -36,7 +37,8 @@ unpacked, and every file checked against the `manifest.json` it carries. The
 `basecamp-<stamp>/` directory in it. Nothing here is ever pruned
 (`FJS-D1851`). An App's archive is `fli db:download` (`FJS-D1848`).
 
-The key needs `hubBackups:read` and `hubBackups:write`, `hubConfig:read` for
+The origin and key are the Basecamp's entry in `basecamps.json`, chosen by
+`--basecamp`. The key needs `hubBackups:read` and `hubBackups:write`, `hubConfig:read` for
 the destination and `hubConfig:write` to attest the key copy; its holder must
 be a system admin, or Basecamp answers 404, which is refused here rather than
 worked around.
@@ -118,5 +120,5 @@ if (flag.list) { listBackups({ server: String(arg.server ?? '').trim(), out: fla
 
 const server = String(arg.server ?? '').trim() || await deployServer()
 if (!server) { log.error('Pass the box: fli basecamp:backup <server>, or set deploy.server in packages/basecamp/frontier.config.js'); process.exitCode = 1; return }
-await takeBackup({ server, out: flag.out || backupsOf(server), url: flag.url, raw: flag.raw, dry: flag.dry, tty, log, echo, chalk })
+await takeBackup({ server, out: flag.out || backupsOf(server), basecamp: entryFor(flag.basecamp, server), raw: flag.raw, dry: flag.dry, tty, log, echo, chalk })
 ```

@@ -11,10 +11,11 @@
 // with the seam, a missing `docker` and a present one are both a test.
 
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
+import { writeBasecamp, basecampsPath } from '../core/basecamps.js'
 import { diagnose, requiringModules, BINARIES, MIN_BUN, compareVersions } from '../core/doctor.js'
 
 /** A home with a global env file, and a project root with or without a `.env`. */
@@ -142,6 +143,61 @@ describe('namespace env vars', () => {
 
 })
 
+describe('the index of Basecamps', () => {
+
+  const withSsh = (m, text) => {
+    mkdirSync(join(m.home, '.ssh'), { recursive: true })
+    writeFileSync(join(m.home, '.ssh', 'config'), text)
+  }
+  const doctor = (m) => diagnose({ ...m, has: ALL, env: {}, fliRoot: m.root })
+
+  test('no basecamps.json is no rows, because most machines have none', () => {
+    const m = machine()
+    try { expect(doctor(m).basecamps).toEqual([]) } finally { m.cleanup() }
+  })
+
+  test('a file anyone else can read is a warning naming the chmod, since it holds admin keys', () => {
+    const m = machine()
+    try {
+      withSsh(m, 'Host yuma\n  HostName 203.0.113.9\n')
+      writeBasecamp('yuma', { url: 'https://yuma.test', host: 'yuma', apiKey: 'k' }, { home: m.home })
+      expect(doctor(m).basecamps.find(r => r.label === 'basecamps.json').ok).toBe(true)
+
+      chmodSync(basecampsPath(m.home), 0o644)
+      const row = doctor(m).basecamps.find(r => r.label === 'basecamps.json')
+      expect(row.level).toBe('warn')
+      expect(row.hint).toContain(`chmod 600 ${basecampsPath(m.home)}`)
+    } finally { m.cleanup() }
+  })
+
+  test('an entry whose Host is not in ~/.ssh/config is a warning naming the entry; one with no host is not graded', () => {
+    const m = machine()
+    try {
+      withSsh(m, 'Host yuma\n  HostName 203.0.113.9\n')
+      writeBasecamp('yuma', { url: 'https://yuma.test', host: 'yuma', apiKey: 'k' }, { home: m.home })
+      writeBasecamp('lost', { url: 'https://lost.test', host: 'lost', apiKey: 'k' }, { home: m.home })
+      writeBasecamp('dev', { url: 'http://localhost:8110', apiKey: 'k' }, { home: m.home })
+      const rows = doctor(m).basecamps
+      expect(rows.find(r => r.label === 'yuma').ok).toBe(true)
+      const lost = rows.find(r => r.label === 'lost')
+      expect(lost.level).toBe('warn')
+      expect(lost.hint).toContain("Host lost")
+      expect(rows.some(r => r.label === 'dev')).toBe(false)
+      // A warning on the index does not stop fli running.
+      expect(doctor(m).blocked).toBe(0)
+    } finally { m.cleanup() }
+  })
+
+  test('with no ssh config at all every Host is missing', () => {
+    const m = machine()
+    try {
+      writeBasecamp('yuma', { url: 'https://yuma.test', host: 'yuma', apiKey: 'k' }, { home: m.home })
+      expect(doctor(m).basecamps.find(r => r.label === 'yuma').ok).toBe(false)
+    } finally { m.cleanup() }
+  })
+
+})
+
 describe('the summary', () => {
 
   test('everything present is ok, and the count is every check', () => {
@@ -151,7 +207,7 @@ describe('the summary', () => {
         modules: [{ ns: 'a', requires: ['T'] }] })
       expect(r.ok).toBe(true)
       expect(r.failed).toBe(0)
-      expect(r.checks).toBe(r.system.length + r.config.length + r.namespaces.length)
+      expect(r.checks).toBe(r.system.length + r.config.length + r.namespaces.length + r.basecamps.length)
     } finally { m.cleanup() }
   })
 

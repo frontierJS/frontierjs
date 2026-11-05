@@ -8,6 +8,7 @@
 
 import type { Opened, PreviewSettings } from '../workbench/workbench-preview.ts'
 import type { PeerKeys } from '../../peer.ts'
+import { basecampsPath } from '@frontierjs/cli/core/basecamps.js'
 import { createPeer, PeerRefusal, type Peer } from './peer-call.ts'
 
 export type PreviewCall =
@@ -28,13 +29,13 @@ export interface Basecamp {
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
 
-export function createBasecamp (opts: { url: string, keyId: string | null, keys: () => Promise<PeerKeys> }): Basecamp {
+export function createBasecamp (opts: { url: string, keyId: string | null, keys: () => Promise<PeerKeys>, name?: string }): Basecamp {
   const url   = opts.url.replace(/\/+$/, '')
   const keyId = opts.keyId?.trim() || null
   const local = LOOPBACK.has(new URL(url).hostname)
 
   function refusal (action: PreviewCall['action']): string | null {
-    if (!keyId) return `Workbench is not enrolled at ${url} -- paste the public key from GET /door/peer into Basecamp's "Add a peer" form and set BASECAMP_KEY_ID to the id it answers`
+    if (!keyId) return `Workbench is not enrolled at ${url} -- paste the public key from GET /door/peer into Basecamp's "Add a peer" form and write the id it answers as peerKeyId on the "${opts.name ?? 'dev'}" entry in ${basecampsPath()}`
     if (action === 'freeze' && !local) return `Freeze builds the branch on Basecamp's disk, and ${url} is not this machine`
     return null
   }

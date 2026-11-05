@@ -21,6 +21,10 @@ flags:
     type: boolean
     description: Serve the web surface on every interface, so a phone on the LAN can open it
     defaultValue: false
+  basecamp:
+    type: string
+    description: The Basecamp holding the App BASECAMP_APP_ID names, by its name in basecamps.json (default the only one; none resolvable means no port lookup)
+    defaultValue: ''
   api:
     type: string
     description: "Run the other surfaces against a deployed API over an ssh tunnel: production, stage, or an ssh destination[:port]"
@@ -126,7 +130,7 @@ fli opens `ssh -L` from this app's own API port to it and starts the rest: the
 proxies already point at that port, so nothing else changes. `production` and
 `stage` resolve off the deploy block the way `fli deploy` does, and the box's
 port is `deploy.api.port`; anything else is an ssh destination, with `:port` to
-name another. With `BASECAMP_APP_ID` set, a named target is that App's: the
+name another. With `BASECAMP_APP_ID` set, a named target is that App's, asked of the Basecamp in `basecamps.json` (`--basecamp`, else the only entry; the local dev Basecamp is the reserved entry `dev`, written in by hand; with none resolvable there is no lookup): the
 port is the one Basecamp allocated it and the health path its `healthCheck`,
 and a target in another environment is refused, since another environment is
 another App (`FJS-3938`). The machine stays the deploy block's ssh destination
@@ -153,15 +157,16 @@ function readManifest(root) {
 }
 
 // The App `BASECAMP_APP_ID` names, whose port is the one Basecamp allocated
-// on its machine; null for an app Basecamp does not hold.
-async function placedApp() {
+// on its machine; null for an app Basecamp does not hold, and for a machine
+// with no Basecamp entry to ask (the port is then the deploy block's, never a
+// refusal here).
+async function placedApp(name) {
   const appId = process.env.BASECAMP_APP_ID
   if (!appId) return null
-  const key = process.env.BASECAMP_API_KEY
-  if (!key) throw new Error('BASECAMP_APP_ID is set and BASECAMP_API_KEY is not — the App\'s port is Basecamp\'s to say; set the key, or pass --api <ssh alias>:<port>')
-  const { basecamp, LOCAL_BASECAMP } = await core('basecamp')
-  const origin = (process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
-  return basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
+  const { entry } = (await core('basecamps')).lookupBasecamp(name)
+  if (!entry) return null
+  const { basecamp } = await core('basecamp')
+  return basecamp(entry.url, entry.key, `/apps/${encodeURIComponent(appId)}`)
 }
 
 // Before the check, because the slot decides which ports are checked.
@@ -182,7 +187,7 @@ async function resolveRemote($, root, session) {
   const { loadFrontierConfig } = await core('utils')
   const { PLACEHOLDER_SERVER } = await core('deploy-target')
   const target = $.flag.api
-  const app = TARGETS[String(target).trim().toLowerCase()] ? await placedApp() : null
+  const app = TARGETS[String(target).trim().toLowerCase()] ? await placedApp($.flag.basecamp) : null
   const resolved = resolveApiTarget(target, (await loadFrontierConfig(root))?.deploy ?? null, app)
   if (!resolved.ok) { log.error(resolved.reason); process.exit(1) }
   if (resolved.host.endsWith(PLACEHOLDER_SERVER)) {

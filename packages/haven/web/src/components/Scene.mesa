@@ -32,7 +32,7 @@
   // is `$context.commands` (`commands.js`), the one registry: the actors in
   // this scene add their verbs to it — `Whisper` the `/w`, `Dice` the `/roll`, `Fishing` the `/fish`, `Mod` the `/ban`,
   // `WorldMap` the `/map`, `Season` the `/season`, `Weather` the `/weather`, `Hush` the `/hush`, `Emotes` the `/wave`,
-  // `/sit` and `/dance`, `Pets` the `/pet`, `Work` the `/work`, `History` the PageUp and
+  // `/sit` and `/dance`, `Pets` the `/pet`, `Work` the `/work`, `Top` the `/top`, `History` the PageUp and
   // PageDown, `Stops` a Tab on an empty line, and whatever a route places (`Taskmaster`, `Ledger`) — and
   // this file reads it for the
   // line, Tab, the hints and the keys. The bubbles, the nameplates and the
@@ -122,6 +122,7 @@
   import Emotes          from '@/components/Emotes.mesa'
   import Pets            from '@/components/Pets.mesa'
   import Work            from '@/components/Work.mesa'
+  import Top             from '@/components/Top.mesa'
   import { at, copyBox, fill, tint } from '#cell'
   import { paint }       from '#paint'
   import { keys }        from '@frontierjs/mesa/keys'
@@ -566,6 +567,7 @@
     <Emotes {stage} {here} {x} {y} {view} {spawn} {emote} {moveTo} emoteTo={(e) => { emote = e; sync() }} />
     <Pets {stage} {here} {x} {y} {view} {spawn} {facing} {ink} {pet} petTo={wear} />
     <Work />
+    <Top />
   {/if}
 </div>
 {#if here}

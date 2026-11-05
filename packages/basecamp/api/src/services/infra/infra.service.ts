@@ -32,6 +32,7 @@ import { db, ws } from '../../core/resource.ts'
 import { isSnoozed } from '../../domain/alert/alerting.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { edgeAccounts, ingressRefusal } from '../edge/edge.service.ts'
+import { hostServer, hubIds } from '../../domain/host/host-machine.ts'
 
 /** The ceiling on any one kind of node. A fleet past this is a graph nobody
  *  can read anyway, and the answer says it was cut rather than looking whole. */
@@ -40,6 +41,28 @@ const MAX_NODES = 300
 /** How far back Home's release count reaches — a day, which is the question an
  *  operator opening the console in the morning is asking. */
 const RELEASE_WINDOW_HOURS = 24
+
+/**
+ * The hub host's machine backups, for the workspace that holds the host
+ * (`FJS-D1895`). ADVISORY: outside `done` and `total`, so it never holds
+ * home's card open — a host at no vendor Basecamp speaks to, or one turned
+ * Off on purpose (`FJS-D1885`), could never finish it. Home shows it as one
+ * line instead. Done means managed and not read as off.
+ */
+async function hostBackupsStep() {
+  const host = await hostServer(db().asSystem())
+  if (!host || host.workspaceId !== ws()) return null
+  const policy  = host.backupPolicy as { plan: string } | null
+  const reading = host.backupReading as { enabled?: boolean } | null
+  const done    = !!policy && reading?.enabled !== false
+  const detail  = !host.providerServerId ? `${host.name} is not linked to its cloud account, so its backups cannot be read. Link it on its Server screen.`
+    : done      ? `Backed up ${policy!.plan}, held by Basecamp.`
+    : policy    ? 'Basecamp holds a policy the vendor last read as off. A Sync puts it back.'
+    : reading?.enabled ? 'On at the vendor and not managed, so a change in its console goes unnoticed.'
+    : 'Not managed. The disk holding Basecamp\'s own database has no whole-machine backup.'
+  return { id: 'host-backups', title: 'Back up Basecamp\'s machine', detail,
+           href: `/servers/${host.id}/`, done, advisory: true }
+}
 
 type Node = {
   id:      string
@@ -201,13 +224,18 @@ export default createService({
   async launch() {
     $.dispatch = false   // read-shaped
 
-    const [online, project, env, apps, edge, noIngress] = await Promise.all([
+    // The hub's own Project, Environment and App are not the workspace's first
+    // ones (`FJS-D1628`); counted, enrolling the host ticked three steps.
+    const hub = await hubIds(db().asSystem())
+    const not = (id?: string) => id ? { NOT: { id } } : {}
+    const [online, project, env, apps, edge, noIngress, hostBackups] = await Promise.all([
       db().server.findFirst({  where: { workspaceId: ws(), status: 'online' }, orderBy: { createdAt: 'asc' } }),
-      db().project.findFirst({ where: { workspaceId: ws() }, orderBy: { createdAt: 'asc' } }),
-      db().environment.findFirst({ where: { workspaceId: ws() }, orderBy: { createdAt: 'asc' } }),
-      db().app.findMany({ where: { workspaceId: ws() }, orderBy: { createdAt: 'asc' }, limit: MAX_NODES }),
+      db().project.findFirst({ where: { workspaceId: ws(), ...not(hub.project) }, orderBy: { createdAt: 'asc' } }),
+      db().environment.findFirst({ where: { workspaceId: ws(), ...not(hub.environment) }, orderBy: { createdAt: 'asc' } }),
+      db().app.findMany({ where: { workspaceId: ws(), ...not(hub.app) }, orderBy: { createdAt: 'asc' }, limit: MAX_NODES }),
       edgeAccounts(),
       ingressRefusal(),
+      hostBackupsStep(),
     ])
 
     const appIds = apps.map((a: { id: string }) => a.id)
@@ -247,12 +275,14 @@ export default createService({
       { id: 'release', title: 'Deploy it',
         detail: app && isReleased.has(app.id) ? 'Released.' : 'Save and deploy from the app screen.',
         href: app ? `/apps/${app.id}/` : null, done: !!app && isReleased.has(app.id) },
+      ...(hostBackups ? [hostBackups] : []),
     ]
+    const counted = steps.filter(s => !('advisory' in s))
 
     return {
       steps,
-      done:  steps.filter(s => s.done).length,
-      total: steps.length,
+      done:  counted.filter(s => s.done).length,
+      total: counted.length,
       app:   app ? { id: app.id, name: app.name, slug: app.slug, kind: app.kind } : null,
     }
   },

@@ -21,7 +21,7 @@
 // Shipped complete, never run.
 
 import { describe, test, expect, beforeEach } from 'bun:test'
-import { createClient } from '../src/index.js'
+import { createClient, generateJsonSchema } from '../src/index.js'
 import { parse }        from '../src/core/parser.js'
 
 const SCHEMA = `
@@ -94,6 +94,20 @@ describe('a type inside a type', () => {
 
   test('a list handed a scalar is still refused by the array check', async () => {
     expect(await refused({ c: { list: 'nope' } })).toMatch(/must be an array of Leaf/)
+  })
+})
+
+describe('a type naming a type declared BELOW it', () => {
+  test('the JSON Schema references it, as it does one declared above', () => {
+    // A service input naming a policy type further down the file emitted {},
+    // so the method accepted any value there and only the code behind it
+    // refused one.
+    const js: any = generateJsonSchema(parse(`
+      type Ask   { first Json? @type(Later)  second Json? @type(Later[]) }
+      type Later { n Int }
+    `).schema)
+    expect(js.$defs.Ask.properties.first).toMatchObject({ anyOf: expect.arrayContaining([{ $ref: '#/$defs/Later' }]) })
+    expect(JSON.stringify(js.$defs.Ask.properties.second)).toContain('#/$defs/Later')
   })
 })
 

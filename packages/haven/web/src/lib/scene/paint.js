@@ -27,7 +27,7 @@
 // sits between the figures' layer (10, 11) and the speech bubbles' (12),
 // which a canopy must not hide.
 import { BloomEffect, FrameBufferRenderable, RGBA } from '@opentui/core'
-import { pageOf } from '@frontierjs/mesa/runtime/terminal'
+import { pageOf, paneBoxOf } from '@frontierjs/mesa/runtime/terminal'
 import { INK as INK_HEX, viewFor } from './stage.js'
 import { at } from './cell.js'
 
@@ -119,15 +119,26 @@ export const paint = (stage) => (box) => {
   // and a view as wide as the terminal walks the figure under the side. Its
   // rows are still the renderer's, since `viewFor` counts the mode line under
   // the page. Never `process.stdout`'s: `--frame` and a test render headless
-  // with no tty, at the 100×30 that is VIEW.
+  // with no tty, at the 100×30 that is VIEW. A bottom pane open under the
+  // page takes its rows, or the figure walks under it; the page resizes as
+  // it shows and hides, so the same listener fits it again.
   const ctx  = box.ctx
   const page = pageOf(ctx)
-  const fit  = () => stage.fit(viewFor(page.width || ctx.width, ctx.height))
+  const under = () => {
+    const low = paneBoxOf(ctx, 'bottom')
+    return low?.visible ? low.height : 0
+  }
+  const fit  = () => stage.fit(viewFor(page.width || ctx.width, ctx.height - under()))
   fit()
   page.on('resize', fit)
+  // The page is laid out before the pane under it, so the page's resize as
+  // the pane shows reads the pane's rows from before it did.
+  const low = paneBoxOf(ctx, 'bottom')
+  low?.on('resize', fit)
 
   return () => {
     page.off('resize', fit)
+    low?.off('resize', fit)
     stop()
     release()
   }

@@ -19,20 +19,24 @@ import { createReporter }        from './report.js'
 import { createDocker, createInspector } from './docker.js'
 import { createStaticServer }         from './serve.js'
 import { createReplicator }           from './replicate.js'
+import { createIngress }              from './ingress.js'
 
 function serveMachine(config) {
   const docker    = createDocker({ workDir: config.workDir, appsDir: config.appsDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile, deployKeyDir: config.deployKeyDir })
   const inspector = createInspector({ hostFiles: config.hostFiles, appsDir: config.appsDir })
   const replicator = createReplicator({ configPath: config.litestreamConfig, appsDir: config.appsDir, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, socketPath: config.litestreamSocket, hostDb: config.hostFiles?.db ?? null })
-  const outpost   = createOutpostServer(config, { docker, inspector, replicator })
+  // One ingress for the server and the re-point pass: its queue is what keeps
+  // a deploy's route write and a re-point from deciding against the same read.
+  const ingress   = createIngress({ admin: config.caddyAdmin })
+  const outpost   = createOutpostServer(config, { docker, inspector, replicator, ingress })
   const reporter  = createReporter(config, { inspector, replicator })
 
   const server = Bun.serve({
     port:  config.port,
     tls:   { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) },
-    // Bun resets a request pending 10s by default, and `/deploy` waits up to
-    // 30s for health, `/backup` and a restore up to an hour. Each route bounds
-    // its own wait.
+    // Bun resets a request pending 10s by default, and `/deploy` waits for
+    // health up to the release's healthTimeout, `/backup` and a restore up to
+    // an hour. Each route bounds its own wait.
     idleTimeout: 0,
     maxRequestBodySize: MAX_BODY_BYTES,
     fetch: req => outpost.handle(req),
@@ -49,13 +53,29 @@ function serveMachine(config) {
     ? Bun.serve({ hostname: '127.0.0.1', port: config.staticPort, fetch: req => statics.handle(req) })
     : null
 
+  let stopping = false
   const stopTimers = reporter.start()
 
   // The firewall unit reloads its exposed set empty at boot, so every exposed app
   // is dropped until this refills it.
   docker.syncExposed().catch(err => console.error(`outpost: the firewall's exposed set was not refilled — ${err.message}`))
   // A process killed mid-swap leaves an app's last good release stopped as `_replaced`.
-  docker.reconcile().catch(err => console.error(`outpost: set-aside containers were not reconciled — ${err.message}`))
+  // A container restarted by the daemon, or put back just above, answers on a
+  // new host port, so the routes are re-pointed once that has settled and
+  // again every heartbeat; a box that starts before Docker has restarted its
+  // containers is caught by the next tick (`FJS-D1890`).
+  let repointing = false
+  const repoint = async () => {
+    if (repointing || stopping) return
+    repointing = true
+    try { await docker.repoint({ ingress }) }
+    catch (err) { console.error(`outpost: routes were not re-pointed — ${err.message}`) }
+    finally { repointing = false }
+  }
+  docker.reconcile()
+    .catch(err => console.error(`outpost: set-aside containers were not reconciled — ${err.message}`))
+    .then(repoint)
+  const repointTimer = setInterval(repoint, config.heartbeatMs)
 
   console.log(
     `outpost ${config.version} · server ${config.serverId} · :${server.port} → ${config.basecampUrl}` +
@@ -65,12 +85,12 @@ function serveMachine(config) {
   // a timer left running holds the event loop open past the point where anything
   // is listening. A swap cut off between its rename and its start leaves the app
   // down, so in-flight per-app work gets a bounded wait first (`FJS-3865`).
-  let stopping = false
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, async () => {
       if (stopping) return
       stopping = true
       stopTimers()
+      clearInterval(repointTimer)
       server.stop()
       staticServer?.stop()
       const { drained, pending } = await docker.drain()

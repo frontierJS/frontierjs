@@ -754,6 +754,7 @@ rather than refusing the row.
 | `Server` | `providerKind` | `@system` |
 | `Server` | `providerId` | `@system` |
 | `Server` | `providerServerId` | `@system` |
+| `Server` | `adopted` | `@system` |
 | `Server` | `enrollTokenHash` | `@guarded` |
 | `Server` | `outpostPublicKey` | `@system` |
 | `Server` | `outpostCert` | `@system` |

@@ -7,7 +7,10 @@
 // `hub.hostPosture` return, unwrapped, as a custom method's object is.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { resolve } from 'node:path'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve, join } from 'node:path'
+import { writeBasecamp } from '../core/basecamps.js'
 import { readPostures, readPosture, postureLine, postureDetail, failingBySeverity } from '../core/basecamp.js'
 
 const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, '')
@@ -105,9 +108,17 @@ describe('one server', () => {
 // The exit code is what a cron or CI gate reads, so it is asserted on the
 // command itself. Async: a sync spawn would block the stand-in it calls.
 describe('the command', () => {
+  // The command reads its origin and key from basecamps.json under HOME, so the stand-in is filed there.
+  let home
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'fli-posture-'))
+    writeBasecamp('stand-in', { url: origin(), apiKey: 'key' }, { home })
+  })
+  afterAll(() => rmSync(home, { recursive: true, force: true }))
+
   const run = async (...args) => {
-    const child = Bun.spawn([process.execPath, resolve(import.meta.dir, '../bin/fli.js'), 'basecamp:posture', ...args, '--url', origin()],
-      { env: { ...process.env, BASECAMP_API_KEY: 'key', NO_COLOR: '1' }, stdout: 'pipe', stderr: 'pipe' })
+    const child = Bun.spawn([process.execPath, resolve(import.meta.dir, '../bin/fli.js'), 'basecamp:posture', ...args],
+      { env: { ...process.env, HOME: home, NO_COLOR: '1' }, stdout: 'pipe', stderr: 'pipe' })
     const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
     return { out, code }
   }

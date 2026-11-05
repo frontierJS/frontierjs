@@ -1017,9 +1017,9 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | `hostname` | `string` | `'0.0.0.0'` | Bind address. `FRONTIER_HOSTNAME` beats the file; a desktop sidecar sets it to `127.0.0.1` so the API is not on the network |
 | `apiPrefix` | `string` | `''` | Prefix for every route the app registers — `''` mounts services at `/{service}` |
 | `paginate` | `{ default, max }` | `{ default: 20, max: 100 }` | Page size of every model service that declares no `paginate` — `default` when `$limit` is unstated, `max` the most a wire `$limit` may ask for (above it is a 400). A service's own `paginate` wins. In `junction.config.js` it goes under `app:` |
-| `http.drainTimeout` | `number` | `5000` | ms a socket gets to finish during shutdown |
-| `shutdown.timeout` | `number` | `15000` | ms the WHOLE shutdown gets. Past it the process exits **1** rather than waiting — a hung step used to end with node exiting 0 |
-| `shutdown.pluginTimeout` | `number` | `5000` | ms each plugin's `shutdown()` gets. One that never settles is logged and skipped instead of taking the rest of the list with it |
+| `http.drainTimeout` | `number` | a third of `shutdown.timeout` | ms an in-flight request gets to finish during shutdown |
+| `shutdown.timeout` | `number` | the stop grace less 1 s | ms the WHOLE shutdown gets, inside `FRONTIER_STOP_GRACE` (10 s when unset). Past it the process exits **1** rather than waiting — a hung step used to end with node exiting 0 |
+| `shutdown.pluginTimeout` | `number` | the rest of `shutdown.timeout` | ms each plugin's `shutdown()` gets. One that never settles is logged and skipped instead of taking the rest of the list with it |
 | `shutdown.crashHandlers` | `boolean` | `true` | install `unhandledRejection`/`uncaughtException` handlers that log, stop the app and exit 1. Skipped where the app already has its own |
 | `http.compress` | `boolean` | `true` | gzip responses |
 | `http.maxBodySize` | `number` | `262144` | max request body bytes. A body declaring no length is read incrementally and cancelled at the bound, so it is a memory limit and not only a check |

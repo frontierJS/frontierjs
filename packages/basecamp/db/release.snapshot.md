@@ -67,7 +67,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `RegisterMethod` | `imported` · `provisioned` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `backup` · `generic` · `notification` · `providerKey` · `registryAuth` · `sshKey` · `tlsCert` |
-| `ServerEventKind` | `backupsReadFailed` · `backupsRestoreFailed` · `backupsRestored` · `backupsSet` · `cameOnline` · `cleanupFailed` · `cleanupQueued` · `cleanupRan` · `containerCrashLooping` · `containerRecovered` · `created` · `destroyFinished` · `destroyRequested` · `drainCancelled` · `drainStarted` · `enrollmentIssued` · `postureFailed` · `postureRestored` · `provisionCreated` · `provisionReady` · `provisionRequested` · `provisionTimeout` · `rebootRequested` · `rebooted` · `recipeFailed` · `recipeRan` · `removed` · `statusSyncIgnored` · `statusSynced` · `syncFailed` · `syncNoAccount` · `syncRequested` · `syncUnrecognized` · `syncUnsupported` · `unitFailed` · `unitRestored` · `unreachable` · `volumeRemoved` · `volumesPruned` |
+| `ServerEventKind` | `adopted` · `backupsReadFailed` · `backupsRestoreFailed` · `backupsRestored` · `backupsSet` · `cameOnline` · `cleanupFailed` · `cleanupQueued` · `cleanupRan` · `containerCrashLooping` · `containerRecovered` · `created` · `destroyFinished` · `destroyRequested` · `drainCancelled` · `drainStarted` · `enrollmentIssued` · `postureFailed` · `postureRestored` · `provisionCreated` · `provisionReady` · `provisionRequested` · `provisionTimeout` · `rebootRequested` · `rebooted` · `recipeFailed` · `recipeRan` · `removed` · `statusSyncIgnored` · `statusSynced` · `syncFailed` · `syncNoAccount` · `syncRequested` · `syncUnrecognized` · `syncUnsupported` · `unitFailed` · `unitRestored` · `unreachable` · `volumeRemoved` · `volumesPruned` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
 | `ServerStatus` | `destroyed` · `destroying` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
 | `SslMode` | `flexible` · `full` · `fullStrict` · `off` |
@@ -271,6 +271,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `environmentId` | `String` | no | — | **required on write** |
 | `hasExposedPort` | `Boolean` | no | `0` | — |
 | `healthCheck` | `String` | yes | — | — |
+| `healthTimeout` | `Int` | yes | — | — |
 | `hub` | `HubConfig` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isDeployedOnPush` | `Boolean` | no | `0` | @system |
@@ -2032,6 +2033,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `actualSpecs` | `Json` | yes | — | — |
+| `adopted` | `Boolean` | no | `0` | @system |
 | `appServers` | `AppServer[]` | — | — | relation |
 | `backupPolicy` | `Json` | yes | — | @system |
 | `backupReading` | `Json` | yes | — | @system |

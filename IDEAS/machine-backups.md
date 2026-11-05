@@ -6,7 +6,7 @@ dated: 2026-11-03
 
 # Idea — a cloud's own whole-machine backups, seen and switched from Basecamp
 
-**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1–1.3, 2.1–2.3 and 2.2a built; 2.4 next.** Probed against the tree 2026-11-03. Do not cite
+**Status: PROPOSED. Q1–Q4 ruled (`FJS-D1862`–`FJS-D1865`); Phase 0 done; 1.1–1.3, 2.1–2.4, 2.2a, 3.1, 3.2, 4.1 and 4.2 built; every box closed.** Probed against the tree 2026-11-03. Do not cite
 this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-03): see in Basecamp whether a DigitalOcean droplet's backups are on,
@@ -206,28 +206,81 @@ back at the next sync with a `backupsRestored` event.
       `sinkRefuseScope(scope)` refuses the requests that need one scope. `server/_module.md`
       lists `droplet` update and `actions` read. Unproven: that a real scoped token's 403 is
       the one the sink answers.
-- [ ] 2.4 Off asks before it acts, with the count of taken backups the vendor deletes with it.
+- [x] 2.4 Off asks before it acts, with the count of taken backups the vendor deletes with it.
+      Built 2026-11-04 (`FJS-D1889`). `ServerSetBackups` takes `deletes`, the count shown, and
+      `confirm`, the machine's name when that count is not none. `confirmOff` reads the vendor
+      again, stores the reading, and refuses a changed count with a 409 naming the new one.
+      `backupsSet` says how many were deleted (`metadata.deleted`). The card replaces Save with
+      a typed-name panel while backups are taken, and asks for a Sync first when nothing has
+      been read. Both stand-ins take one backup when backups turn on and delete them all on
+      off. `verify:provision` turns backups Off through the typed name.
 
 ### Phase 3 — Asked at create
 
 Goal: a machine Basecamp buys starts with the backups the person chose.
 Done when: a `provision` with backups on yields a droplet whose policy read says so.
 
-- [ ] 3.1 `MachineSpec.backups`; DO sends it in `create`, Hetzner enables after `poll` sees the
+- [x] 3.1 `MachineSpec.backups`; DO sends it in `create`, Hetzner enables after `poll` sees the
       machine running.
-- [ ] 3.2 The provision form and `fli basecamp:create` ask per Q2.
+      Built 2026-11-04. `ServerProvision.backups` is a `BackupPolicy`, absent meaning none;
+      `provision` refuses one the vendor cannot hold before the row is written, stores it as
+      `backupPolicy`, and names it in `provisionRequested`. The `poll` step that moves the row
+      to `installing` calls `setBackups` at both vendors, which turns them on at Hetzner and
+      reads and sends nothing at DO, then records `backupsSet` (*…on the new machine*) and
+      reads back. A refusal there is `backupsRestoreFailed` and leaves the provision standing,
+      since the next sync pushes the stored policy. Stored before the vendor holds it, the
+      reverse of `setBackups`, because the machine does not exist yet; `decision-rules` passed
+      it (not an owner ruling). The DO stand-in keeps a policy sent at
+      create. Found and fixed `FJS-4022` on the way: a type naming a later-declared type was
+      unvalidated input. Unproven: DO's real create accepting `backup_policy`.
+- [x] 3.2 The provision form and `fli basecamp:create` ask per Q2.
+      Built 2026-11-04. Each connector's `defaults.backups` is the daily policy it holds
+      (Hetzner `daily`, DigitalOcean `daily` at 20:00 UTC), so both askers put one yes or no
+      and name no vendor rule. The catalog answers it with its `backupShare` as `backups`; the
+      form's *Back up this machine daily* box starts unticked and prices itself on the cost
+      line: no `ServerRole` names a machine that will host Basecamp, so every one the form
+      buys is an app box, and Q2's *on for a hub host* is `basecamp:create`'s alone. `basecamp:create` asks yes by default, `--no-backups` skips it; `provision-host.ts`
+      takes `"backups":true`, sends the policy at create and calls `setBackups` once the box
+      runs, answering `backups: { plan, monthly, currency }` or `{ error }`, which `buyBox`
+      prints or warns. `fli server:create` does not ask: Q2 names the two above, and the
+      contract stays off. `verify:provision` ticks it on the Hetzner provision (€1.04 on €5.18,
+      named on the trail). Unproven: a real vendor create through `provision-host.ts`.
 
 ### Phase 4 — The host
 
 Goal: the box Basecamp runs on cannot have its backups off unnoticed.
 Done when: a fresh `basecamp:install` on a droplet with backups off shows the checklist item.
 
-- [ ] 4.1 Adopt per Q4 (`FJS-D1865`): pick a marked machine from `reconcile`'s list (IP match only
+- [x] 4.1 Adopt per Q4 (`FJS-D1865`): pick a marked machine from `reconcile`'s list (IP match only
       after the person confirms name, IP and region), write the three `@system` columns and
       `adopted`, and refuse Destroy on an adopted row. The columns' schema comment stops naming
       `provision` as their only writer.
-- [ ] 4.2 A setup-checklist item (`FJS-D1836`) while the hub host's backups are off or not
+      Built 2026-11-04. `servers.adopt` (administrator) takes `ServerAdopt` (`accountId`,
+      `providerServerId`, `shown`), refuses a row already linked or destroyed, reads the machine
+      with `connector.machine`, answers 409 naming the vendor's current name, IP and region when
+      any differs from `shown`, refuses a machine another live row holds at that account or the
+      machine's mark claims for another live row, then writes `providerKind`, `providerId`,
+      `providerServerId` and `adopted` (`@system`) and the `adopted` event. It writes no mark and
+      leaves `backupPolicy` null, so linking changes nothing about the machine's backups. `destroy`
+      refuses an adopted row before the transition. The Server screen's *Link to a cloud machine*
+      card lists `reconcile`'s orphans for the chosen account, a matching IP first and never
+      linked on its own; choosing one opens a confirm panel (name, IP, region) and *Link* sends
+      those as `shown`. An adopted row shows the Machine backups card and, in place of Destroy,
+      a line saying Basecamp did not buy it. The confirm shape is a `decision-rules` call made by
+      the main thread, not an owner ruling. Only marked machines can be adopted: the connector has
+      `marked()` and no list-all, so an unmarked machine never appears. The card shows to every
+      viewer (the screen does not know the caller's role); the service refuses a non-administrator.
+      Unproven: a real DigitalOcean adopt of yuma's droplet.
+- [x] 4.2 A setup-checklist item (`FJS-D1836`) while the hub host's backups are off or not
       managed.
+      Built 2026-11-04 (`FJS-D1895`). `infra.launch` adds `host-backups` for the workspace
+      that holds the host (`hostServer`), marked `advisory`: outside `done` and `total` and
+      never `next`, so it cannot hold home's card open. Once the counted steps are done, home
+      shows it as one warning line with *Open*. It is not done while the host is unlinked,
+      not managed, or managed and read as off; the detail names which. Found and fixed
+      `FJS-4027` on the way: the hub's own Project, Environment and App ticked three steps.
+      The Done when is met by a host that `basecamp:install` placed: unlinked, it shows.
+      Unproven: the home line in a browser (no drive enrolls a hub host), and on yuma.
 
 ## Open questions
 

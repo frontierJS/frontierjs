@@ -570,7 +570,7 @@ export interface ShutdownBudgets {
  *
  * Stated budgets are kept and named in `misfits` when they reach the grace;
  * `load-config` refuses the boot on any. The rest derive: the whole stops a
- * margin short of the grace, the HTTP drain takes at most a third of it, and
+ * margin short of the grace, the HTTP drain takes a third of it, and
  * the plugins take what is left — a queue's drain is the slow step.
  */
 export function shutdownBudgets(
@@ -599,7 +599,7 @@ export function shutdownBudgets(
   }
 
   const timeout       = stated['shutdown.timeout'] ?? graceMs - Math.min(1_000, graceMs / 10)
-  const drainTimeout  = stated['http.drainTimeout'] ?? Math.min(5_000, Math.floor(timeout / 3))
+  const drainTimeout  = stated['http.drainTimeout'] ?? Math.floor(timeout / 3)
   const pluginTimeout = stated['shutdown.pluginTimeout'] ?? Math.max(0, timeout - drainTimeout)
   return { graceMs, timeout, pluginTimeout, drainTimeout, misfits }
 }

@@ -39,12 +39,11 @@ export const spec = {
   NTFY_BASE_URL: {},
   NTFY_TOKEN:    {},
 
-  // The Basecamp a preview is cut in, dialed as a peer (`domain/peer/basecamp.ts`).
-  // 8120 is Basecamp's dev API (docs/PORTS.md). A key id is what Basecamp's
-  // "Add a peer" form answers for the public key `GET /door/peer` shows;
-  // absent, every preview call is refused before it dials.
-  BASECAMP_URL:    { default: 'http://127.0.0.1:8120' },
-  BASECAMP_KEY_ID: {},
+  // The NAME of the entry in basecamps.json a preview is cut in, dialed as a
+  // peer (`domain/peer/basecamp.ts`); `dev` is the local dev Basecamp. A URL
+  // here would outlive a change of Basecamp and send previews to the wrong one,
+  // so the entry holds the URL and the peerKeyId.
+  BASECAMP: { default: 'dev' },
 } satisfies EnvSpec
 
 export const env = defineEnv(spec)

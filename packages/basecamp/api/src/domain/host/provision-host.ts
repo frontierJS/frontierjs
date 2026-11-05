@@ -26,6 +26,11 @@
 // the box is bought: a cloud that assigns only at create needs it then, and a
 // refusal there leaves nothing billing.
 //
+// `"backups":true` asks for the vendor's own machine backups, its connector's
+// daily policy (`FJS-D1864`): sent at create where the vendor takes it there,
+// switched on once the box runs where it does not. A refusal after the buy
+// leaves the box up and is answered, since the box is bought by then.
+//
 // It carries the fleet mark and no server id. Reconcile reports it as an orphan
 // until a Server row names it, which is the truth: a box billing at this
 // account that no row describes. `host` adds the host mark once `fli
@@ -37,6 +42,7 @@
 // The last line of stdout is one JSON object, which is fli's whole contract:
 //   { id, name, ip, region, size, image, monthly }   created and up
 //     + boxIp, reserved: { ip, reused } | { error }  under reservedIp
+//     + backups: { plan, monthly, currency } | { error }  under backups
 //   { id, name, pending: true, … }                    created, not up before the deadline
 //   { off: '<id>' }  { off: '<id>', pending: true }   powered off, or asked and not off yet
 //   { destroyed: '<id>', reservedIp }                 the address it held, unassigned now
@@ -50,9 +56,9 @@
 // stderr is what the minute is spent on, for the person watching: fli lets it
 // through to the terminal untouched.
 
-import { appMark, connectorFor, fleetMark, hostMark, markFor, priceIn, sizeRegions } from '../../providers/compute/index.ts'
+import { appMark, backupCost, connectorFor, fleetMark, hostMark, markFor, priceIn, sizeRegions } from '../../providers/compute/index.ts'
 import type { ComputeSize, ReservedIp } from '../../providers/compute/index.ts'
-import type { ProviderKind }  from '#db/schema.d.ts'
+import type { BackupPolicy, ProviderKind } from '#db/schema.d.ts'
 import { bearerSend }         from './bearer-send.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))
@@ -137,6 +143,7 @@ async function create() {
   const region = input.region || connector.defaults.region
   const image  = input.image  || connector.defaults.image
   const holdIp = (input as Record<string, unknown>).reservedIp === true
+  const backups = (input as Record<string, unknown>).backups === true ? connector.defaults.backups : undefined
   if (!name || !size || !publicKey) fail('create needs name, size and publicKey')
   if (holdIp && !connector.reservedIps) fail(`${vendor} holds no address apart from a box here`)
 
@@ -174,6 +181,7 @@ async function create() {
       name, region, image, size: picked.slug, sshKeys: [sshKey], mark: fleetMark(),
       userData:   held ? connector.reservedIps!.egress : undefined,
       reservedIp: held && !connector.reservedIps!.assign ? held.address : undefined,
+      backups,
     })).providerServerId
   } catch (e) {
     fail((e as Error).message + (held && !held.reused ? ` — ${held.address.ip} is reserved and bills while it holds nothing` : ''))
@@ -189,9 +197,10 @@ async function create() {
     const machine = await connector.machine(send, providerServerId)
     if (machine?.status === 'running' && machine.ipAddress) {
       wait.end(`Up at ${machine.ipAddress}`)
-      if (!held) return answer({ ...made, ip: machine.ipAddress })
+      const backed = backups && { backups: await keepBackups(providerServerId, backups, price, picked.currency) }
+      if (!held) return answer({ ...made, ...backed, ip: machine.ipAddress })
       const reserved = await routeAddress(held.address, providerServerId)
-      return answer({ ...made, ip: 'ip' in reserved ? reserved.ip : machine.ipAddress,
+      return answer({ ...made, ...backed, ip: 'ip' in reserved ? reserved.ip : machine.ipAddress,
                       boxIp: machine.ipAddress, reserved: 'ip' in reserved ? { ...reserved, reused: held.reused } : reserved })
     }
     wait.say(booting(machine?.status))
@@ -199,6 +208,20 @@ async function create() {
   }
   wait.end(`No address after ${READY_DEADLINE_MS / 60_000} minutes`)
   answer({ ...made, pending: true })
+}
+
+/** Make the vendor keep the policy on the running box — sends nothing where
+ *  the create already did — and say what it adds to the bill. */
+async function keepBackups(id: string, policy: BackupPolicy, price: number | null, currency: string):
+    Promise<{ plan: string; monthly: number | null; currency: string } | { error: string }> {
+  try {
+    if (!await connector.setBackups(send, id, policy)) return { error: `${vendor} no longer has ${id}` }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+  step(`Backups on, ${policy.plan}`)
+  const cost = backupCost(connector, policy.plan, { priceMinor: price, currency })
+  return { plan: policy.plan, monthly: 'monthlyMinor' in cost ? cost.monthlyMinor : null, currency }
 }
 
 /** The spare the hostname points at when it can be taken again, else a new

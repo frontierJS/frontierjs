@@ -74,7 +74,8 @@ port is refused rather than walked into (`FJS-740`).
 
 From a checkout the study rides beside the scene: `Ctrl+\` or `/work` shows
 it, Ctrl+O moves between them, and it runs Claude in the checkout
-(`IDEAS/study.md`). An installed Haven has none.
+(`IDEAS/study.md`). `/top` shows `fli top` in a pane under the scene, the
+same way. An installed Haven has neither.
 
 ```js
 const { join, resolve, sep } = await import('node:path')
@@ -271,7 +272,7 @@ const shellArgs = [
   '--api', api,
   ...(flag.frame ? ['--frame', flag.frame] : []),
   ...(flag.open ? ['--open', flag.open] : []),
-  ...(checkout ? ['--side', 'src/components/Study.mesa'] : []),
+  ...(checkout ? ['--side', 'src/components/Study.mesa', '--bottom', 'src/components/TopPane.mesa'] : []),
 ]
 // The token reaches the shell as HAVEN_TOKEN: a terminal has no storage a
 // client could restore a session from (`web/src/lib/session/walk-in.js`).

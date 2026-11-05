@@ -2,14 +2,12 @@
   // LaptopRelease.mesa — how to release this App with fli basecamp:deploy, and
   // the key that command needs.
   //
-  // The key is the step people miss: the command reads BASECAMP_API_KEY from
-  // the environment and refuses without it, and nothing else on the App page
-  // says a key is involved. The link opens API keys with the four scopes the
+  // The key is the step people miss: the command reads it from this Basecamp's
+  // entry in basecamps.json and refuses without one, and nothing else on the
+  // App page says a key is involved. The link opens API keys with the four scopes the
   // command calls already picked, so the key is neither short a scope nor
   // issued whole.
   //
-  // The origin is this page's own: the API answers on it in production behind
-  // Caddy and in dev behind Vite's proxy.
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
@@ -28,8 +26,6 @@
   $: needsSsh = !inline && (app?.placement ?? []).some(p => p.server && !p.server.ipAddress)
 
   $: command = [
-    `BASECAMP_URL=${typeof location === 'undefined' ? 'https://…' : location.origin} \\`,
-    'BASECAMP_API_KEY=… \\',
     `fli basecamp:deploy --app ${app?.id ?? '…'}`
       + (inline ? ' --dist <built folder>' : '')
       + (needsSsh ? ' --server <ssh alias>' : ''),
@@ -40,8 +36,8 @@
   <h2 class="h4">Release it from your laptop</h2>
   <ol class="stack text-sm">
     <li>
-      Make a key for the command. It reads <code>BASECAMP_API_KEY</code> from the
-      environment, never from a flag.
+      Make a key for the command and file it in this Basecamp's entry
+      (<code>fli basecamp:key</code>). The command reads it from there, never from a flag.
       <span class="cluster">
         <Button href={keyHref} treatment="outlined" size="sm" id="laptop-release-key">New deploy key</Button>
         <span class="text-muted">{scopes.join(' · ')}</span>

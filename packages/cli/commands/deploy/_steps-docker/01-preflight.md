@@ -14,7 +14,7 @@ const apiPort    = deployConf.api?.port ?? 3000
 const healthPath = deployConf.api?.health ?? '/health'
 
 // Refused before the build rather than at the swap, minutes later.
-try { swapSetting(deployConf) }
+try { swapSetting(deployConf); checkHealthTimeout(deployConf.healthTimeout) }
 catch (e) {
   log.error(e.message)
   $.config.abort = true

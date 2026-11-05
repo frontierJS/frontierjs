@@ -12,9 +12,10 @@ import { readFileSync } from 'fs'
 import { createHash } from 'crypto'
 import {
   edgeNames, apiOrigin, edgeRoutes, plainRoutes, applyEdge, routeId, accessLogPath, INGRESS_SERVER, PLAIN_SERVER, CLOUDFLARE_RANGES,
-  parseConfigRead, parseConfigWrite, writeConfigScript, EdgeError, inlineScriptHashes, inlineStyleHashes,
+  parseConfigRead, parseConfigWrite, writeConfigScript, routeDials, EdgeError, inlineScriptHashes, inlineStyleHashes,
 } from '../core/edge.js'
 import { guardId } from '../core/pause.js'
+import { STREAM_CLOSE_DELAY } from '../core/swap.js'
 
 const src = (rel) => readFileSync(new URL(`../commands/deploy/${rel}`, import.meta.url).pathname, 'utf8')
 
@@ -78,6 +79,12 @@ describe('one origin', () => {
     const before = inner(r).slice(0, inner(r).indexOf(proxied(r)[0]))
     expect(before.every(x => x.match)).toBe(true)
     expect(proxied(r)[0].handle.map(h => h.handler)).toEqual(['reverse_proxy'])
+  })
+
+  // Unset, another app's deploy writes Caddy's config and closes this app's
+  // WebSockets (FJS-4016); the value is Outpost's, so the two writers agree.
+  test('keeps its WebSockets open across a config write', () => {
+    expect(proxied(r)[0].handle[0].stream_close_delay).toBe(STREAM_CLOSE_DELAY)
   })
 })
 
@@ -315,10 +322,22 @@ describe('the document the web route serves', () => {
 
   test('a hashed bundle file is immutable for a year and the page is checked every load', () => {
     const [r] = routesFor({ web: { domain: 'shop.example' } })
-    const cacheOf = (path) => inner(r).find(x => x.match?.[0]?.path?.[0] === path)
+    const cacheOf = (path) => inner(r).find(x => x.match?.[0]?.path?.[0] === path && x.handle[0].handler === 'headers')
       ?.handle[0].response.set['Cache-Control']
     expect(cacheOf('/assets/*')).toEqual(['public, max-age=31536000, immutable'])
     expect(cacheOf('/index.html')).toEqual(['no-cache'])
+  })
+
+  test('a missing bundle file is an uncached 404, never the page (FJS-4014)', () => {
+    const [r] = routesFor({ web: { domain: 'shop.example' } })
+    const routes = inner(r)
+    const missing = routes.findIndex(x => x.handle[0].handler === 'static_response' && x.match?.[0]?.path?.[0] === '/assets/*')
+    const fallback = routes.findIndex(x => x.match?.[0]?.file?.try_files?.includes('/index.html'))
+    expect(missing).toBeGreaterThan(-1)
+    expect(missing).toBeLessThan(fallback)
+    expect(routes[missing].match[0].not).toEqual([{ file: { try_files: ['{http.request.uri.path}'] } }])
+    expect(routes[missing].handle[0]).toMatchObject({ status_code: 404, headers: { 'Cache-Control': ['no-cache'] } })
+    expect(routes[missing].terminal).toBe(true)
   })
 
   test('pins the origin to https for a year, and no subdomain with it', () => {
@@ -378,5 +397,31 @@ describe('the document the web route serves', () => {
   test('both steps that write the routes hash every page being served', () => {
     expect(src('_steps-docker/07b-edge.md')).toMatch(/-name '\*\.html'/)
     expect(src('_steps-setup/05-caddy.md')).toMatch(/-name '\*\.html'/)
+  })
+})
+
+describe('routeDials (FJS-D1890)', () => {
+  const proxy = (dial) => ({ handler: 'reverse_proxy', upstreams: [{ dial }] })
+  const config = (...routes) => ({ apps: { http: { servers: { [INGRESS_SERVER]: { routes } } } } })
+
+  test('reads each side\'s dial, the web route\'s nested API proxy included', () => {
+    const web = { '@id': 'fli-shop', handle: [{ handler: 'subroute', routes: [{ handle: [proxy('127.0.0.1:3000')] }, { handle: [{ handler: 'file_server' }] }] }] }
+    const api = { '@id': 'fli-shop-api', handle: [proxy('127.0.0.1:3001')] }
+    expect(routeDials(config(web, api), 'shop')).toEqual([
+      { id: 'fli-shop', dial: '127.0.0.1:3000', port: 3000 },
+      { id: 'fli-shop-api', dial: '127.0.0.1:3001', port: 3001 },
+    ])
+  })
+
+  test('another app\'s route, Outpost\'s and a non-loopback dial are not this app\'s', () => {
+    const other = { '@id': 'fli-other', handle: [proxy('127.0.0.1:1')] }
+    const outpost = { '@id': 'fjs-shop', handle: [proxy('127.0.0.1:2')] }
+    const remote = { '@id': 'fli-shop', handle: [proxy('10.0.0.5:3')] }
+    expect(routeDials(config(other, outpost, remote), 'shop')).toEqual([])
+  })
+
+  test('no Caddy config, or no ingress server, is no dials', () => {
+    expect(routeDials({}, 'shop')).toEqual([])
+    expect(routeDials(undefined, 'shop')).toEqual([])
   })
 })

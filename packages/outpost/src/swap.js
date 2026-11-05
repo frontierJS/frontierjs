@@ -25,13 +25,44 @@ import { stripVTControlCharacters } from 'node:util'
  *  `FJS-D1841`). Handed to the container once, as `--stop-timeout` and as
  *  `FRONTIER_STOP_GRACE` for Junction to fit its budgets inside; every
  *  `docker stop` then waits that, an operator's and the daemon's too. Above
- *  15 s so the plugins' share holds Caravan's 30 s drain. */
-export const DEFAULT_STOP_GRACE_S = 40
+ *  46 s: the HTTP drain takes a third of the shutdown and the plugins'
+ *  two thirds must hold Caravan's 30 s drain. */
+export const DEFAULT_STOP_GRACE_S = 50
 
 /** Under 2 s Junction has no room left for a drain once it keeps its margin. */
 export function checkStopGrace(stopGrace) {
   if (stopGrace != null && !(Number.isInteger(stopGrace) && stopGrace >= 2))
     throw new Error(`stopGrace must be a whole number of seconds, at least 2 — got '${stopGrace}'`)
+}
+
+/** How long a new release has to answer its health path before the swap puts
+ *  the old one back, when its run config states none (`FJS-4015`). Kamal's
+ *  `deploy_timeout` default. A migration on boot runs inside it, so an app
+ *  whose expand outlives it is killed mid-run on every release: that app
+ *  states its own. Stop-first is down for as long as it waits; start-first
+ *  keeps the old release serving, so a long one costs nothing there. */
+export const DEFAULT_HEALTH_TIMEOUT_S = 30
+
+/** Under 5 s the first poll is the only one; over 600 s a failed release and
+ *  its put-back no longer fit the 32 minutes Basecamp gives a `/deploy`. */
+export function checkHealthTimeout(healthTimeout) {
+  if (healthTimeout != null && !(Number.isInteger(healthTimeout) && healthTimeout >= 5 && healthTimeout <= 600))
+    throw new Error(`healthTimeout must be a whole number of seconds, 5 to 600 — got '${healthTimeout}'`)
+}
+
+/** Every reverse_proxy handler either deploy path writes carries this
+ *  (`FJS-4016`, `FJS-D1903`). Any write to Caddy's config reloads every
+ *  handler, and an unloaded one closes its WebSockets (1001) at once, so a
+ *  deploy of one app cut every app's sockets on the box. The delay postpones
+ *  that close, never cancels it; a departing container still closes its own
+ *  sockets at SIGTERM. Caddy 2.12's `stream_detached` replaces it. */
+export const STREAM_CLOSE_DELAY = '24h'
+
+/** The polls a health wait gets, one every `intervalMs`, so each path keeps
+ *  its own interval and every path waits the one budget. */
+export function healthAttempts(healthTimeout, intervalMs) {
+  checkHealthTimeout(healthTimeout)
+  return Math.max(1, Math.ceil((healthTimeout ?? DEFAULT_HEALTH_TIMEOUT_S) * 1000 / intervalMs))
 }
 
 /**
@@ -86,6 +117,39 @@ export async function portOf(run, container) {
     if (first) return { port: Number(first.HostPort), loopback: first.HostIp === '127.0.0.1' }
   }
   return { port: null, loopback: false }
+}
+
+const LOOPBACK_DIAL = /^127\.0\.0\.1:([0-9]+)$/
+
+/**
+ * Caddy routes with every loopback upstream moved to `port`, and what moved
+ * (`FJS-D1890`). Docker hands a start-first container a new host port on every
+ * restart, and a route left dialing the old one answers 502 until the next
+ * deploy. A dial that is not `127.0.0.1:<n>` (the static origin's Host-keyed
+ * route, a remote upstream) is not this App's container and stays as it is.
+ * The input is never mutated.
+ */
+export function repointRoutes(routes, port) {
+  const to    = Number(port)
+  const moved = []
+  const walk  = (handlers, id) => {
+    for (const h of handlers ?? []) {
+      if (h.handler === 'reverse_proxy') {
+        if (h.headers?.request?.set?.Host) continue
+        for (const u of h.upstreams ?? []) {
+          const from = LOOPBACK_DIAL.exec(u.dial ?? '')?.[1]
+          if (from == null || Number(from) === to) continue
+          u.dial = `127.0.0.1:${to}`
+          moved.push({ id, from: Number(from), to })
+        }
+      } else if (h.handler === 'subroute') {
+        for (const r of h.routes ?? []) walk(r.handle, id)
+      }
+    }
+  }
+  const out = structuredClone(routes ?? [])
+  for (const r of out) walk(r.handle, r['@id'] ?? null)
+  return { routes: out, moved }
 }
 
 // Where the live release's `db/` is mounted for the classifier, beside the

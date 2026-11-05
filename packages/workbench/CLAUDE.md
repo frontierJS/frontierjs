@@ -35,8 +35,8 @@ slot. `api/index.ts` states 5501; `web/config/vite.config.js` states 5508 with
 - `api/src/core/env.ts` is the only reader of the environment.
 - `api/src/peer.ts` is this machine's Ed25519 key pair (`~/.config/workbench/peer.json`,
   shown at `GET /door/peer` and in the wings' Peer block); `api/src/domain/peer/` dials
-  Basecamp's `apps.preview` as a signed peer -- `BASECAMP_URL` and `BASECAMP_KEY_ID`, the
-  id Basecamp's "Add a peer" form answers. `peer-call.ts` is one conduit target signed with
+  Basecamp's `apps.preview` as a signed peer -- the entry `BASECAMP` names in
+  `basecamps.json` (default `dev`), whose `peerKeyId` is the id Basecamp's "Add a peer" form answers. `peer-call.ts` is one conduit target signed with
   conduit's `ed25519`.
 - `web/src/lib/session.js` is who is signed in (Sierra's `account.me` is not
   mounted); `lib/nav.js` is the nav table.
@@ -45,7 +45,7 @@ slot. `api/index.ts` states 5501; `web/config/vite.config.js` states 5508 with
 
 - **`asSystem()` reads `Session.tokenHash`**, as Haven's does: `@guarded` hides it from everyone else.
 - **A page and a service share a URL** (`/workbench/` is both). The dev proxy tells them apart by `Accept`; `web/config/api-paths.js` derives the proxied paths from `app.snapshot.md`, so regenerate it (`junction app --app api/src/app.ts`) after adding a service.
-- **A preview's freeze builds on Basecamp's disk**: `freeze` sends `branch.path` and is refused unless `BASECAMP_URL` is loopback (`IDEAS/workbench-package.md` § 3.1 Q). Open, thaw and retire work over the wire.
+- **A preview's freeze builds on Basecamp's disk**: `freeze` sends `branch.path` and is refused unless the entry's `url` is loopback (`IDEAS/workbench-package.md` § 3.1 Q). Open, thaw and retire work over the wire.
 - **`/ws` carries one channel**, `notifications:user:<memberId>` (`core/channels.ts`); the inApp driver pushes there and the bell's tether merges the frame. `notifications` is the service's name for that reason -- the client routes a frame by the service named in its first word.
 
 ## Desktop

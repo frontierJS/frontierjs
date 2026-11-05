@@ -164,6 +164,37 @@ export const ASK_RULES = [
   'The answer renders in a narrow console: keep it short and plain.',
 ].join('\n\n')
 
+// `fli ask`. Without the FrontierJS framing a bare "how do I make a server?"
+// gets Express and FastAPI back.
+export const QUESTION_RULES = [
+  'I asked from `fli ask` in a terminal, inside a FrontierJS workspace. Answer for FrontierJS — its fli CLI, its schema (db/schema.lite), its packages — not with another framework\'s habits. Where the question could mean several things, answer the FrontierJS reading of it rather than asking which I meant.',
+  'Every fli command is listed below with its one-line description. A fli command is a markdown file under packages/cli/commands/<namespace>/<name>.md (or an app\'s own commands/) whose frontmatter lists its flags and examples.',
+  'Never invent a command, flag or API. Every command you give is one you saw listed below or in the tree.',
+  'Lead with the command or snippet that does it, then what to know about it in a few short lines, then the file that says more. Plain markdown, short — it prints in a terminal.',
+].join('\n\n')
+
+// The API route has no tools, and a model told to open a file it cannot open
+// says it did.
+export const QUESTION_SEARCH = {
+  tools: 'Find the answer in this project before answering from memory: the command file (open it before you quote a flag), README.md, CLAUDE.md and docs/. You are read-only: Read, Grep, Glob, and rg, ls and git in Bash. Read only what you need and stop as soon as you can answer.',
+  none:  'You cannot read this project, only the command list below: where a flag or detail matters, name the command file to open rather than guessing it.',
+}
+
+/**
+ * One `fli ask`: the rules, any the person added, the command list, then the
+ * question — left out for the API route, which sends this as its system prompt.
+ */
+export function questionPrompt({ question = '', commands = [], system = '', tools = true } = {}) {
+  const q = String(question ?? '').trim()
+  return [
+    QUESTION_RULES,
+    tools ? QUESTION_SEARCH.tools : QUESTION_SEARCH.none,
+    String(system).trim().slice(0, ASK_MAX_RULES),
+    commands.length && `The fli commands:\n${commands.join('\n')}`,
+    q && `The question:\n\n${q}`,
+  ].filter(Boolean).join('\n\n')
+}
+
 // `:ask` (`IDEAS/one-console.md` Phase 5): an agent over the running app, its
 // only tools the app's MCP tools at the standing the pane declared
 // (`FJS-D1391`). The standing is in the URL the agent is handed, so no

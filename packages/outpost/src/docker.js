@@ -24,7 +24,7 @@ import { pipeline }                from 'node:stream/promises'
 import { validRelativePath, validName } from './static.js'
 import { ensureDeployKey }         from './deploy-key.js'
 import { chooseDockerfile, needsGenerated, exposedPort } from './dockerfile.js'
-import { createSwap, portOf as portIn, runFlags, checkStopGrace, livePivot, swapFor } from './swap.js'
+import { createSwap, portOf as portIn, runFlags, checkStopGrace, checkHealthTimeout, healthAttempts, livePivot, swapFor } from './swap.js'
 
 export { swapFor }
 import { layout }                  from './layout.js'
@@ -162,6 +162,7 @@ export function checkRunConfig(config = {}) {
   if (config.command != null && !(Array.isArray(config.command) && config.command.every(arg => typeof arg === 'string')))
     throw new Error(`command must be a list of arguments, each a string — got '${JSON.stringify(config.command)}'`)
   checkStopGrace(config.stopGrace)
+  checkHealthTimeout(config.healthTimeout)
 }
 
 /**
@@ -169,19 +170,22 @@ export function checkRunConfig(config = {}) {
  * publishes the new container on a port Docker picks (`FJS-D1837`), so only
  * a route can follow it: an app reached by its raw port, or one that declares
  * that port open (`exposes_port`), would lose its address on every release.
+ * With no health path the overlap's only check is running for five seconds,
+ * and the route would move to a container still migrating or not yet listening.
  */
-export function checkSwap({ swap = 'stop-first', loopback = false, exposesPort = false, port = null } = {}) {
+export function checkSwap({ swap = 'stop-first', loopback = false, exposesPort = false, port = null, path = null } = {}) {
   if (swap !== 'stop-first' && swap !== 'start-first')
     throw new Error(`swap is 'stop-first' or 'start-first' — got '${swap}'`)
   if (swap !== 'start-first') return
   if (exposesPort) throw new Error('a start-first swap moves the port, and this app declares its port open (exposes_port) — it swaps stop-first')
   if (!loopback || !port) throw new Error('a start-first swap moves the port, so it needs a published port and a hostname or path Caddy routes to it')
+  if (path == null) throw new Error('a start-first swap moves the route once the new container answers, so it needs a health path (healthCheck) to ask — it swaps stop-first')
 }
 
-/** How long `deploy` waits for a new container before putting the old one back.
- *  Basecamp's own health step polls the same ten times three seconds, and its
- *  `/deploy` send is given the room for it. */
-const HEALTH = { attempts: 10, intervalMs: 3_000, settleMs: 5_000 }
+/** How often `deploy` asks a new container, and for how long an app with no
+ *  health path must stay up. How many times is the release's `healthTimeout`
+ *  (`healthAttempts`); an `attempts` given here wins, for a test. */
+const HEALTH = { intervalMs: 3_000, settleMs: 5_000 }
 
 /** How long an app with no health path must stay up, unrestarted, before its
  *  `_replaced` is removed (`FJS-3853`). One `State.Running` read the instant
@@ -529,9 +533,9 @@ export function createDocker({
     }
   }
 
-  async function untilHealthy(target) {
+  async function untilHealthy(target, attempts) {
     let last
-    for (let i = 0; i < health.attempts; i++) {
+    for (let i = 0; i < attempts; i++) {
       if (i) await Bun.sleep(health.intervalMs)
       last = await healthCheck(target)
       if (last.healthy) break
@@ -601,14 +605,15 @@ export function createDocker({
 
   /** The swap for one App. The put-back container is asked about on the port
    *  it published, which an edited App row may not match. */
-  function swapOf(appId) {
+  function swapOf(appId, healthTimeout = null) {
+    const attempts = health.attempts ?? healthAttempts(healthTimeout, health.intervalMs)
     return createSwap({
       run,
       find: () => containersOf(appId),
       health: async ({ name, port, path, previous }) => untilHealthy({
         appId, name, path,
         port: previous ? (await published({ appId }).catch(() => null))?.port : port,
-      }),
+      }, attempts),
     })
   }
 
@@ -936,7 +941,7 @@ export function createDocker({
     async deploy({ appId, project, environment, appSlug, image, digest, config = {}, port, loopback = false, exposesPort = false, swap = 'stop-first', route = null }) {
       const name = containerName({ appId, project, environment, appSlug })
       checkRunConfig(config)
-      checkSwap({ swap, loopback, exposesPort, port })
+      checkSwap({ swap, loopback, exposesPort, port, path: config.healthCheck ?? null })
       const startFirst = swap === 'start-first'
       if (startFirst && typeof route !== 'function') throw new Error('a start-first swap needs the route it moves once the new container answers')
 
@@ -994,7 +999,7 @@ export function createDocker({
         : null
       const opts = Object.keys(clientEnv).length ? { env: clientEnv } : undefined
       const path = config.healthCheck ?? null
-      const swapper = swapOf(appId)
+      const swapper = swapOf(appId, config.healthTimeout ?? null)
       if (startFirst) {
         const started = await swapper.startFirst({ name, argv, opts, before: chown, path, route })
         return { ...started, digest: digest ?? await digestOf(image), swap }
@@ -1364,6 +1369,34 @@ export function createDocker({
         }).catch(err => log.error?.(`outpost: app ${appId}'s set-aside container was not put back — ${err.message}`))
       }
       return { restored }
+    },
+
+    /**
+     * Every App's routes onto the port its container answers on now
+     * (`FJS-D1890`): a start-first container's host port is Docker's pick and
+     * changes on every restart, so a route left as the last deploy wrote it
+     * 502s. An App mid-swap is skipped, because the swap owns its route until
+     * it finishes. A failure is logged per App and never stops the others.
+     * Answers the moves made.
+     */
+    async repoint({ ingress, log = console }) {
+      const listed = await run(['docker', 'ps', '-a', '--filter', `label=${APP_LABEL}`, '--format', `{{.Label "${APP_LABEL}"}}`])
+      if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${(listed.stderr ?? '').trim()}`)
+      const apps = new Set(String(listed.stdout ?? '').split('\n').map(line => line.trim()).filter(Boolean))
+      const moves = []
+      for (const appId of apps) {
+        await serially(appId, async () => {
+          if ((await containersOf(appId)).next) return
+          const port = (await published({ appId }))?.port
+          if (!port) return
+          const { moved } = await ingress.repoint({ appId, port })
+          for (const m of moved) {
+            log.warn?.(`outpost: app ${appId}'s route ${m.id} dialed :${m.from} and its container is on :${m.to} — re-pointed`)
+            moves.push({ appId, ...m })
+          }
+        }).catch(err => log.error?.(`outpost: app ${appId}'s route was not re-pointed — ${err.message}`))
+      }
+      return { moves }
     },
 
     /** Run `fn` as one of the app's serialized operations. A caller doing

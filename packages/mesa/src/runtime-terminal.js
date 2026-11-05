@@ -1407,6 +1407,8 @@ export const keyFields = (k) => k.name === 'linefeed' ? keyFields({ ...k, name: 
   key:      DOM_KEY[k.name] ?? (k.sequence?.length === 1 && k.sequence >= ' ' ? k.sequence : k.name),
   code:     domCode(k.name),
   shiftKey: !!k.shift, ctrlKey: !!k.ctrl, altKey: !!(k.option || k.meta), metaKey: !!k.super,
+  // The bytes the terminal sent, for a host that hands a key on to a pty.
+  sequence: k.raw,
   raw:      k,
 })
 
@@ -1461,8 +1463,8 @@ const KEY_EVENTS = new Set(['keydown', 'keypress'])
 function dispatch(target, type, extra = {}) {
   const path = []
   for (let n = up(target); n; n = up(n)) path.push(n)
-  const sideKey = KEY_EVENTS.has(type) && [target, ...path].some((n) => n.__pane === 'side')
-  if (_renderer && !sideKey && (path.at(-1) ?? target) === _renderer.root) path.push(windowOf(_renderer))
+  const paneKey = KEY_EVENTS.has(type) && [target, ...path].some((n) => n.__pane && n.__pane !== 'page')
+  if (_renderer && !paneKey && (path.at(-1) ?? target) === _renderer.root) path.push(windowOf(_renderer))
   let stopped = false
   const e = {
     type, target, currentTarget: null, isTrusted: true, defaultPrevented: false,
@@ -1731,7 +1733,28 @@ export function footerOf(r) {
   return foot
 }
 
-const sides = new WeakMap()
+/** Each renderer's panes other than the page, by name — `'side'`, `'bottom'`. */
+const paneBoxes = new WeakMap()
+const paneBox = (r, pane) => pane === 'page' ? documentOf(r) : paneBoxes.get(r)?.[pane]
+
+/** The box of \`pane\` — \`'side'\`, \`'bottom'\` — or null where nobody asked for
+ *  it, so a page can measure what a pane takes without making one. */
+export const paneBoxOf = (r, pane) => paneBoxes.get(r)?.[pane] ?? null
+
+/** Make `box` the pane `name`: the page becomes a pane too, and each pane
+ *  remembers what was last focused in it, so `focusPane` returns there. */
+function addPane(r, name, box) {
+  box.__pane = name
+  documentOf(r).__pane = 'page'
+  paneBoxes.set(r, { ...paneBoxes.get(r), [name]: box })
+  if (panes.has(r)) return
+  const last = {}
+  panes.set(r, last)
+  r.on('focused_renderable', (node) => {
+    const pane = node && paneOf(r, node)
+    if (pane) last[pane] = node
+  })
+}
 
 /**
  * A pane at the right of the page, for `mount(C, { parent })`: the page and
@@ -1741,12 +1764,12 @@ const sides = new WeakMap()
  * background otherwise read as one screen.
  *
  * Each is a PANE. Tab and `focusNext` stay inside the pane holding focus, and
- * `focusPane` moves between them. A key at a node in the side does not reach
- * the window, where a page's scene walks on every key; focus events still do,
- * so a mode line follows focus across.
+ * `focusPane` moves between them. A key at a node in a pane other than the
+ * page does not reach the window, where a page's scene walks on every key;
+ * focus events still do, so a mode line follows focus across.
  */
 export function sideOf(r, { width = '40%' } = {}) {
-  let side = sides.get(r)
+  let side = paneBox(r, 'side')
   if (side && !side.isDestroyed) return side
   const doc = documentOf(r)
   const row = new BoxRenderable(r, { width: '100%', flexGrow: 1, flexShrink: 1, flexDirection: 'row' })
@@ -1758,32 +1781,59 @@ export function sideOf(r, { width = '40%' } = {}) {
   doc.flexShrink = 1
   side = new BoxRenderable(r, { width, height: '100%', flexShrink: 0, flexDirection: 'column', border: ['left'] })
   row.add(side)
-  side.__pane = 'side'
-  doc.__pane = 'page'
-  sides.set(r, side)
-  const last = { page: null, side: null }
-  panes.set(r, last)
-  r.on('focused_renderable', (node) => {
-    const pane = node && paneOf(r, node)
-    if (pane) last[pane] = node
-  })
+  addPane(r, 'side', side)
   return side
 }
 
+/**
+ * A full-width pane under the page — and under the side, where there is one —
+ * above the footer, for `mount(C, { parent })`. The page gives up the rows it
+ * takes, and hidden it gives them back. A rule along its top edge takes one
+ * of its rows. A pane as the side is: Tab stays in it, and a key there does
+ * not reach the window.
+ */
+export function bottomOf(r, { height = '40%' } = {}) {
+  let bottom = paneBox(r, 'bottom')
+  if (bottom && !bottom.isDestroyed) return bottom
+  const doc = documentOf(r)
+  // Inside a side's row the page is already sized by the row.
+  if (doc.parent === r.root) {
+    doc.height = 'auto'
+    doc.flexGrow = 1
+    doc.flexShrink = 1
+  }
+  bottom = new BoxRenderable(r, { width: '100%', height, flexShrink: 0, flexDirection: 'column', border: ['top'] })
+  // The footer is the last strip whichever was asked for first.
+  const foot = footers.get(r)
+  if (foot && !foot.isDestroyed) r.root.insertBefore(bottom, foot)
+  else r.root.add(bottom)
+  addPane(r, 'bottom', bottom)
+  return bottom
+}
+
 const toggles = new WeakMap()
+const setToggle = (r, pane, fn) => toggles.set(r, { ...toggles.get(r), [pane]: fn })
+const toggleOf = (r, pane) => (r && toggles.get(r)?.[pane]) ?? null
 
 /** How the side is shown and hidden, said by whoever fills it — the fill is
  *  theirs, mounted the first time it shows, so Mesa cannot show it alone. */
-export function setSideToggle(r, fn) { toggles.set(r, fn) }
+export function setSideToggle(r, fn) { setToggle(r, 'side', fn) }
 
 /** The side's show-and-hide, or null where nobody fills a side, so a page's
  *  command can be offered only where it works. */
-export function sideToggle(r = _renderer) { return (r && toggles.get(r)) ?? null }
+export function sideToggle(r = _renderer) { return toggleOf(r, 'side') }
+
+/** The bottom pane's show-and-hide, said by whoever fills it, as the side's. */
+export function setBottomToggle(r, fn) { setToggle(r, 'bottom', fn) }
+
+/** The bottom pane's show-and-hide, or null where nobody fills one. */
+export function bottomToggle(r = _renderer) { return toggleOf(r, 'bottom') }
 
 const panes = new WeakMap()
 
-/** The pane `node` is in — `'page'` or `'side'` — or null where the renderer
- *  has no side; `node` is what holds focus when not given. */
+/** The pane `node` is in — `'page'`, `'side'` or `'bottom'` — or null where
+ *  the renderer has no pane but the page; `node` is what holds focus when
+ *  not given. */
 export function paneOf(r, node = r.currentFocusedRenderable) {
   if (!panes.has(r)) return null
   for (let n = node; n; n = up(n)) if (n.__pane) return n.__pane
@@ -1794,8 +1844,8 @@ export function paneOf(r, node = r.currentFocusedRenderable) {
  *  Answers the node, or null when the pane holds nothing to focus. */
 export function focusPane(r, pane) {
   const last = panes.get(r)
-  if (!last) return null
-  const box = pane === 'side' ? sides.get(r) : documentOf(r)
+  const box = last && paneBox(r, pane)
+  if (!box) return null
   const was = last[pane]
   const next = was && !was.isDestroyed && within(was, box) && focusables(box).includes(was) ? was : focusables(box)[0]
   next?.focus()
@@ -1808,7 +1858,7 @@ function cycleScope(r) {
   if (modal) return modal
   const pane = paneOf(r)
   if (!pane) return r.root
-  return pane === 'side' ? sides.get(r) : documentOf(r)
+  return paneBox(r, pane) ?? documentOf(r)
 }
 
 /** `node` is in the page's flow: a modal dialog in the top layer is not,

@@ -1,12 +1,12 @@
 ---
 title: basecamp:restore
 description: Make a freshly installed Basecamp the archived one — the archive checked on this machine first, then sent to /setup/restore over ssh and swapped in by a restart
-effects: reads the archive and its key on this machine; with --dry stops there. Otherwise asks the box's Basecamp whether it is set up, writes the archive's key to its secrets directory and restarts the API when the box runs another, sends the archive to /setup/restore, and restarts the API so it boots on the archive; then reads the restored hub with BASECAMP_API_KEY for its machines and what it found
+effects: reads the archive and its key on this machine; with --dry stops there. Otherwise asks the box's Basecamp whether it is set up, writes the archive's key to its secrets directory and restarts the API when the box runs another, sends the archive to /setup/restore, and restarts the API so it boots on the archive; then reads the restored hub with the Basecamp's filed key for its machines and what it found
 examples:
   - fli basecamp:restore
   - fli basecamp:restore yuma --dry
   - fli basecamp:restore yuma --from ~/.local/share/fli/basecamp/yuma/2026-11-04T08-50-56-022Z
-  - fli basecamp:restore yuma --url https://basecamp.example.com
+  - fli basecamp:restore yuma --basecamp yuma
 args:
   -
     name: server
@@ -18,9 +18,10 @@ flags:
   key:
     type: string
     description: The file holding the archive's ENCRYPTION_KEY (default the one filed under ~/.config/fli/basecamp/<server>/ whose fingerprint the manifest names)
-  url:
+  basecamp:
     type: string
-    description: Basecamp's API origin, where the restored hub is read for what it found (default is BASECAMP_URL, then https:// and Basecamp's hostname)
+    description: The Basecamp whose entry in basecamps.json reads the restored hub for what it found (default the entry named like <server>, else the only one; with several and none named, the read is skipped and says so)
+    defaultValue: ''
   yes:
     type: boolean
     description: Restore without asking; still refuses everything the check refuses
@@ -42,7 +43,7 @@ written to its `secrets/ENCRYPTION_KEY` and the API restarted on it, since
 to `POST /setup/restore`, which stages it, and one more restart swaps it in
 before any database opens.
 
-**After the restore** the restored hub is read with `BASECAMP_API_KEY` — the
+**After the restore** the restored hub is read with the Basecamp's key in `basecamps.json` — the
 archive's own key rows came back with it — for up to a minute and a half:
 each enrolled machine and whether it has heartbeat since the archive was
 taken, which only the restored hub could have heard, and what the reconcile
@@ -95,6 +96,6 @@ try {
   const probe = await swapIn({ files, port, container, tar: picked.tar, say })
   echo(chalk`  {green ✓} {bold Restored the hub archived ${probe.restore_taken_at ?? picked.manifest.takenAt}} {dim onto} ${files.host}`)
   echo(chalk`    {dim ·} {dim sign in as the archived hub's admin}`)
-  await reportFindings({ origin: await apiOrigin(flag.url), takenAt: picked.manifest.takenAt, log, echo, chalk })
+  await reportFindings({ basecamp: entryFor(flag.basecamp, server), takenAt: picked.manifest.takenAt, log, echo, chalk })
 } catch (err) { log.error(err.message); process.exitCode = 1 }
 ```

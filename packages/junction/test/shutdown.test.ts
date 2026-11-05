@@ -459,12 +459,18 @@ describe('a shutdown that abandoned work exits 1 (FJS-3944)', () => {
 // is never reached, and one well inside it cuts a plugin that had the time.
 
 describe('the shutdown budgets derive from FRONTIER_STOP_GRACE (FJS-3954)', () => {
-  test('a 40 s grace gives a plugin room for caravan\'s 30 s drain, and the whole finishes first', async () => {
-    const b = shutdownBudgets({}, { FRONTIER_STOP_GRACE: '40' })
+  test('the default 50 s grace gives a plugin room for caravan\'s 30 s drain, and the whole finishes first', async () => {
+    const b = shutdownBudgets({}, { FRONTIER_STOP_GRACE: '50' })
     expect(b.pluginTimeout).toBeGreaterThanOrEqual(30_000)
-    expect(b.timeout).toBeLessThan(40_000)
+    expect(b.timeout).toBeLessThan(50_000)
     expect(b.drainTimeout + b.pluginTimeout).toBeLessThanOrEqual(b.timeout)
     expect(b.misfits).toEqual([])
+  })
+
+  test('the HTTP drain grows with the grace, so a long request at a start-first switch is not cut at 5 s (FJS-4013)', async () => {
+    const b = shutdownBudgets({}, { FRONTIER_STOP_GRACE: '50' })
+    expect(b.drainTimeout).toBe(Math.floor(b.timeout / 3))
+    expect(b.drainTimeout).toBeGreaterThan(12_000)
   })
 
   test('with no grace handed, docker\'s 10 s is assumed', async () => {

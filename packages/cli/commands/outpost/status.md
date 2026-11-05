@@ -9,8 +9,12 @@ examples:
 args:
   -
     name: server
-    description: "The box: an alias from ~/.ssh/config, or user@host. Omitted, every box in BASECAMP_URL's fleet"
+    description: "The box: an alias from ~/.ssh/config, or user@host. Omitted, every box in the Basecamp's fleet"
 flags:
+  basecamp:
+    type: string
+    description: The Basecamp whose Server rows are read, by its name in basecamps.json (default the only one; with a box named and none resolvable, the screen is the box's alone)
+    defaultValue: ''
   json:
     type: boolean
     description: Print the Outpost's reading as it came off the box
@@ -30,10 +34,12 @@ const ago   = (at) => {
 const dot   = (good, chalk) => good === true ? chalk.green('●') : good === false ? chalk.red('●') : chalk.yellow('●')
 const short = (unit) => unit.replace(/\.service$/, '')
 
-/** The key's Basecamp, or null: without one the screen is the box's alone. */
-const hub = () => process.env.BASECAMP_API_KEY && process.env.BASECAMP_URL
-  ? { origin: process.env.BASECAMP_URL.replace(/\/+$/, ''), key: process.env.BASECAMP_API_KEY }
-  : null
+/** The named entry's Basecamp as `{ hub }`, or `{ error }` saying why there is
+ *  none: without one the screen is the box's alone, and says so. */
+const hubOf = (name) => {
+  const got = lookupBasecamp(name)
+  return got.entry ? { hub: { origin: got.entry.url, key: got.entry.key, name: got.entry.name } } : { error: got.error }
+}
 
 /** `0.1.9 (npm has 0.1.11)`, the hint only when npm answered and is ahead. */
 function versionOf(version, latest, chalk) {
@@ -45,16 +51,15 @@ function versionOf(version, latest, chalk) {
 
 /** The Server row's side: when Basecamp last heard this box. A box that reads
  *  well here and that Basecamp has not heard from is a box no release reaches. */
-async function heardOf(serverId, boxHub, basecamp) {
-  const h = hub()
+async function heardOf(serverId, boxHub, basecamp, h) {
   if (!h || !serverId) return null
-  if (boxHub && boxHub.replace(/\/+$/, '') !== h.origin) return { other: boxHub }
+  if (boxHub && boxHub.replace(/\/+$/, '') !== h.origin) return { other: boxHub, name: h.name }
   try { return { row: await basecamp(h.origin, h.key, `/servers/${encodeURIComponent(serverId)}`) } }
   catch (err) { return { error: err.message } }
 }
 
 function heardLine(heard, chalk) {
-  if (heard.other) return chalk`{dim BASECAMP_URL is not this box's Basecamp (${heard.other})}`
+  if (heard.other) return chalk`{dim Basecamp "${heard.name}" is not this box's Basecamp (${heard.other}) — --basecamp names another}`
   if (heard.error) return chalk`{yellow ${heard.error}}`
   const { status, lastHeartbeatAt } = heard.row
   const stale = !lastHeartbeatAt || Date.now() - Date.parse(lastHeartbeatAt) > 120_000
@@ -167,11 +172,12 @@ its container, hostnames, replica, the last day's requests off its Caddy log
 and its newest archive on the box, the Docker disk, and where the files are.
 The version is npm's `latest` beside the pin when npm is ahead.
 
-**With `BASECAMP_API_KEY` and `BASECAMP_URL`**, the box's Server row adds when
-Basecamp last heard it. A box that reads well over ssh and that its Basecamp
-has not heard from in two minutes is one no release reaches: a clock skewed
-past the 300-second window, a wrong `BASECAMP_URL` in its env, or a firewall
-between them.
+**With a Basecamp resolvable** (`--basecamp`, or the only entry in
+`basecamps.json`), the box's Server row adds when Basecamp last heard it. A box
+that reads well over ssh and that its Basecamp has not heard from in two
+minutes is one no release reaches: a clock skewed past the 300-second window, a
+wrong Basecamp URL in the box's own env, or a firewall between them. With none
+resolvable the screen is the box's alone and a line says why; it never refuses.
 
 **With no box named**, the same key lists every Server row in that Basecamp
 and reads each over ssh, one line apiece: the alias in `~/.ssh/config` whose
@@ -189,6 +195,7 @@ const { aliasOf }  = await import(new URL('file://' + global.fliRoot + '/core/cl
 
 const latestAsked = latestOn(OUTPOST)
 const dest = String(arg.server ?? '').trim()
+const { hub: h, error: hubError } = hubOf(flag.basecamp)
 
 const reach = (target) => {
   const machine = createMachine({ host: target, path: null, exec: $.exec, transport: null })
@@ -197,8 +204,7 @@ const reach = (target) => {
 
 // ── The fleet, a line per box ───────────────────────────────────────────────
 if (!dest) {
-  const h = hub()
-  if (!h) { log.error('Pass the box: fli outpost:status <ssh alias or user@host> — or set BASECAMP_API_KEY and BASECAMP_URL for the fleet'); process.exitCode = 1; return }
+  if (!h) { log.error(`Pass the box: fli outpost:status <ssh alias or user@host> — or file a Basecamp for the fleet: ${hubError}`); process.exitCode = 1; return }
   const rows = await basecampAll(h.origin, h.key, '/servers').catch(err => { log.error(`The fleet is Basecamp's Server rows — ${err.message}`); return null })
   if (!rows) { process.exitCode = 1; return }
   const boxes = []
@@ -228,7 +234,7 @@ const latest = await latestAsked
 
 if (read.old) {
   const { pinned, units, health } = read.old
-  const heard = await heardOf(health?.server_id, null, basecamp)
+  const heard = await heardOf(health?.server_id, null, basecamp, h)
   echo('')
   echo`  {bold ${dest}} {dim ·} Outpost ${versionOf(pinned, latest, chalk)} {dim · no status entry on this version}`
   if (read.said) echo`  {dim ${read.said}}`
@@ -239,6 +245,7 @@ if (read.old) {
     ? chalk`  {bold Health}    ${health.ok ? 'ok' : 'not ok'} {dim ·} server ${health.server_id ?? '–'} {dim ·} version ${health.version ?? '–'}`
     : chalk`  {bold Health}    {red the command port did not answer /health}`)
   if (heard) echo`  {bold Basecamp}  ${heardLine(heard, chalk)}`
+  else if (!h) echo`  {bold Basecamp}  {dim not read — ${hubError}}`
   echo`\n  {dim An Outpost with}  outpost status  {dim answers the full screen.}\n`
   return
 }
@@ -246,12 +253,13 @@ if (read.old) {
 const s     = read.status
 const r     = s.posture?.readings
 const apps  = appsOf(s)
-const heard = await heardOf(s.outpost.server_id, s.outpost.basecamp_url, basecamp)
+const heard = await heardOf(s.outpost.server_id, s.outpost.basecamp_url, basecamp, h)
 
 echo('')
 echo`  {bold ${dest}} {dim ·} Outpost ${versionOf(s.outpost.version, latest, chalk)} {dim · server} ${s.outpost.server_id ?? '–'} {dim →} ${s.outpost.basecamp_url ?? 'no Basecamp'}`
 if (s.outpost.error) echo`  {yellow ${s.outpost.error}}`
 if (heard) echo`  {bold Basecamp}  ${heardLine(heard, chalk)}`
+else if (!h) echo`  {bold Basecamp}  {dim not read — ${hubError}}`
 echo('')
 echo.lines(unitLines(s.units, chalk), { indent: 2 })
 echo('')

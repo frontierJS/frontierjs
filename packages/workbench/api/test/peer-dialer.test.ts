@@ -109,11 +109,11 @@ describe('the dialer', () => {
     expect(err.message).toMatch(/signature refused/)
   })
 
-  test('without BASECAMP_KEY_ID it refuses before dialing', async () => {
+  test('without a peerKeyId it refuses before dialing', async () => {
     seen.length = 0
     const err = await dialer({ keyId: null }).preview(open).catch(e => e)
     expect(err).toBeInstanceOf(PeerRefusal)
-    expect(err.message).toMatch(/GET \/door\/peer.*"Add a peer"/)
+    expect(err.message).toMatch(/GET \/door\/peer.*"Add a peer".*peerKeyId on the "dev" entry in .*basecamps\.json/)
     expect(seen).toHaveLength(0)
   })
 

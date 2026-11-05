@@ -42,9 +42,10 @@ flags:
     type: boolean
     description: Enroll the new install's box in its own fleet, so apps can run beside it (asked at a terminal)
     defaultValue: true
-  url:
+  basecamp:
     type: string
-    description: The old Basecamp's API origin, where the backup is taken (default is BASECAMP_URL, then https:// and Basecamp's hostname)
+    description: The old Basecamp, by its name in basecamps.json, whose API takes the backup and later reads the restored hub; a fresh install files its new key under it too (default the entry named like <server>, else the only one; with several and none named, refused with the names)
+    defaultValue: ''
 ---
 
 `fli basecamp:backup`, `fli deploy:retire --production`, `fli basecamp:install`
@@ -80,11 +81,11 @@ made here and kept off the box the way the backup kept the old. The install is
 the box in the restored fleet again, whose row would otherwise answer that it
 heard the box before.
 
-**After**, fresh mode mints `BASECAMP_API_KEY` for the new admin, keeps the
+**After**, fresh mode mints an API key for the new admin and files it in `basecamps.json` under that entry's name (the box's, when no `--basecamp` names another), keeps the
 install's Cloudflare token as the new Basecamp's provider key with the zone
 picked for app records (`FJS-D1855`), and prints the old Basecamp's App ids, as
 a `BASECAMP_APP_ID` still naming one is stale (`FJS-D1854`). Restore mode's
-`BASECAMP_API_KEY` opens the restored hub again, which then reports the
+filed key opens the restored hub again, which then reports the
 machines it hears. Both print the setup checklist as the new Basecamp answers it.
 
 <script>
@@ -210,7 +211,7 @@ const runRows = ({ mode, head, how, newKey, purge, install, chalk }) => {
     restore && step(5, 'restore', chalk`the archive onto the new install, then the box enrolled in its fleet again {dim — sign in as its admin}`),
     step(restore ? 6 : 4, 'after', restore
       ? chalk`the machines the restored hub hears {dim ·} the setup checklist`
-      : chalk`BASECAMP_API_KEY minted {dim ·} the old App ids {dim ·} the setup checklist`),
+      : chalk`API key filed {dim ·} the old App ids {dim ·} the setup checklist`),
   ]
 }
 
@@ -240,8 +241,8 @@ const confirmed = async ({ server, yes, tty, log, chalk }) => {
 /** 3.3: the backup, and in restore mode the check 2.1 runs, both before the
  *  box is touched. Answers `{ taken, picked, keyFile }` — the last two in
  *  restore mode only — or null. */
-const backUpFirst = async ({ server, mode, how, newKey, url, tty, log, echo, chalk }) => {
-  const taken = await takeBackup({ server, out: backupsOf(server), url, how, tty, log, echo, chalk })
+const backUpFirst = async ({ server, mode, how, newKey, basecamp, tty, log, echo, chalk }) => {
+  const taken = await takeBackup({ server, out: backupsOf(server), basecamp, how, tty, log, echo, chalk })
   if (!taken) { log.error('No backup, so nothing else ran — the box is as it was'); return null }
   if (mode === 'fresh') {
     if (taken.keyKept || newKey) return { taken }
@@ -351,6 +352,7 @@ const launchRows = async ({ server, as, chalk }) => {
 ```js
 const server = String(arg.server ?? '').trim() || await deployServer()
 if (!server) { log.error('Pass the box: fli basecamp:reinstall <server>, or set deploy.server in packages/basecamp/frontier.config.js'); process.exitCode = 1; return }
+const entryName = entryFor(flag.basecamp, server)
 if (flag.fresh && flag.restore) { log.error('Pass one of --fresh and --restore'); process.exitCode = 1; return }
 
 const files = await deployFiles(server)
@@ -380,7 +382,7 @@ echo.lines([...runRows({ mode, head: old.head, how, newKey: flag['new-key'], pur
 if (flag.plan) return
 if (!await confirmed({ server, yes: flag.yes, tty, log, chalk })) { process.exitCode = 1; return }
 
-const kept = await backUpFirst({ server, mode, how, newKey: flag['new-key'], url: flag.url, tty, log, echo, chalk })
+const kept = await backUpFirst({ server, mode, how, newKey: flag['new-key'], basecamp: entryName, tty, log, echo, chalk })
 if (!kept) { process.exitCode = 1; return }
 const key = await keyToCarry({ server, mode, kept, newKey: flag['new-key'], how, echo, chalk })
 const resume = mode === 'restore'
@@ -404,9 +406,9 @@ try {
   if (mode === 'restore') {
     if (!await restoreOnto({ files, port, container, picked: kept.picked, key, log, echo, chalk })) { process.exitCode = 1; return }
     if (install.outpost && !await joinFleet(server, install.domain, tty)) process.exitCode = 1
-    await reportFindings({ origin: await apiOrigin(flag.url), takenAt: kept.picked.manifest.takenAt, log, echo, chalk })
+    await reportFindings({ basecamp: entryName, takenAt: kept.picked.manifest.takenAt, log, echo, chalk })
   } else {
-    const token = await adminKey({ dest: server, admin: install.admin, yes: async () => false, log, echo, chalk })
+    const token = await adminKey({ dest: server, admin: install.admin, entry: { name: entryName || server, host: server.includes('@') ? undefined : server, domain: install.domain }, yes: async () => false, log, echo, chalk })
     if (!token) process.exitCode = 1
     if (token && install.ingress) await keepEdge({ host: files.host, port, key: token, ingress: install.ingress, log, echo, chalk })
     if (old.fleet.apps?.length) {

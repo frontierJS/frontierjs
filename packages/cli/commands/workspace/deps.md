@@ -38,19 +38,15 @@ flags:
     type: boolean
     description: With --push, create the Basecamp project if it does not exist
     defaultValue: false
-  url:
+  basecamp:
     type: string
-    description: Basecamp's API origin (default is BASECAMP_URL, then the local dev API)
+    description: The Basecamp the push goes to, by its name in basecamps.json (default the only one; with several and none named, refused with the names)
     defaultValue: ''
 ---
 
 <script>
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { resolve } from 'path'
-
-// The dev API's port in basecamp's own CLAUDE.md. A hosted Basecamp is named
-// by BASECAMP_URL or --url.
-const LOCAL_BASECAMP = 'http://localhost:8120'
 </script>
 
 ```js
@@ -61,21 +57,19 @@ if (!wsRoot) { log.error('No workspace found from here'); process.exitCode = 1; 
 // relative import names nothing.
 const { collectDeps, depsPayload, depsFindings, renderDepsSnapshot } =
   await import(resolve(global.fliRoot, 'core/deps.js'))
+const { reachBasecamp } = await import(resolve(global.fliRoot, 'core/basecamps.js'))
 
 const report = collectDeps(wsRoot)
 
 if (flag.json) { echo(JSON.stringify(depsPayload(report), null, 2)); return }
 
 if (flag.push) {
-  // The key is read from the environment and never from a flag, which would
-  // put it in shell history and in every process listing.
-  const key = process.env.BASECAMP_API_KEY
-  if (!key) {
-    log.error('--push needs BASECAMP_API_KEY — a key issued at /api-keys/ in the Basecamp workspace to push to')
-    process.exitCode = 1
-    return
-  }
-  const origin  = (flag.url || process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
+  // The key comes from the Basecamp's entry, never a flag, which would put it
+  // in shell history and in every process listing. The narrow `scopedKey` is
+  // used when the entry holds one; the admin key otherwise.
+  const target = reachBasecamp(flag.basecamp, log, { scoped: true })
+  if (!target) return
+  const { url: origin, key } = target
   const project = flag.slug || report.name
   const body    = depsPayload(report, { project, create: !!flag.create })
 
@@ -154,9 +148,13 @@ would fail CI for nothing. `--push` sends the same list to Basecamp's
 `dependencies.ingest`, which looks each package up on the npm registry and OSV
 and shows the verdict at `/dependencies/`.
 
+The Basecamp is its entry in `basecamps.json` (`--basecamp` names it; the local
+dev Basecamp is the reserved entry `dev`, written into the file by hand). The
+push uses the entry's `scopedKey` when it holds one, its `apiKey` otherwise.
+
 ```
-BASECAMP_API_KEY=… fli ws:deps --push --slug frontierjs --create
-BASECAMP_URL=https://basecamp.example.com BASECAMP_API_KEY=… fli ws:deps --push
+fli ws:deps --push --slug frontierjs --create
+fli ws:deps --push --basecamp ops
 ```
 
 A push is the whole truth for its project: a declaration it no longer carries is

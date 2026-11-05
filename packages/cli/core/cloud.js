@@ -270,10 +270,11 @@ export const boxName = (name) => /^[a-z0-9][a-z0-9.-]*$/i.test(name)
 // line dropped, and a Host block in ~/.ssh/config when asked. `sole` refuses
 // while a bare box an earlier run left is at the account, so a retry never buys
 // two — Basecamp's rule, since one Basecamp has one box; a fleet takes many.
-// Prints the box and its address; `json` prints nothing and stops at the buy.
+// `backups` turns on the cloud's daily machine backups, off unless asked
+// (`FJS-D1864`). Prints the box and its address; `json` prints nothing and stops at the buy.
 // Answers { error }, { made } when the box has no address yet or under json,
 // else { made, dest, box, identity, block, added }.
-export const buyBox = async ({ cloud, name, size, region, image, keyPath, reservedIp, reuse, sole = false, addHost, json = false, log, echo, chalk }) => {
+export const buyBox = async ({ cloud, name, size, region, image, keyPath, reservedIp, reuse, backups = false, sole = false, addHost, json = false, log, echo, chalk }) => {
   const { existsSync, readFileSync, appendFileSync, mkdirSync, writeFileSync } = await import('node:fs')
   const { spawnSync } = await import('node:child_process')
   const { homedir }   = await import('node:os')
@@ -284,7 +285,7 @@ export const buyBox = async ({ cloud, name, size, region, image, keyPath, reserv
   const made = await runProvision({
     cloud, action: 'create', name, region, image, size, sole,
     publicKey: readFileSync(keyPath, 'utf8'),
-    reservedIp, reuse: reuse ?? undefined,
+    reservedIp, reuse: reuse ?? undefined, backups,
   })
   if (made.error) return { error: made.error }
   if (json) return { made }
@@ -308,6 +309,8 @@ export const buyBox = async ({ cloud, name, size, region, image, keyPath, reserv
     ? `${chalk.bold(made.ip)} ${chalk.dim(`reserved${made.reserved.reused ? ', reused' : ''}${made.boxIp !== made.ip ? ` · box ${made.boxIp}` : ''}`)}`
     : chalk.bold(made.ip))
   if (made.reserved?.error) log.warn(`  No reserved IP: ${made.reserved.error}. The box answers on its own address`)
+  if (made.backups?.plan) row('backups', `${made.backups.plan}${made.backups.monthly == null ? '' : chalk.dim(` · +${(made.backups.monthly / 100).toFixed(2)} ${made.backups.currency}/mo, estimated`)}`)
+  if (made.backups?.error) log.warn(`  Backups are off: ${made.backups.error}. Turn them on at ${cloudLabel(cloud)}, or on the box's Server screen once Basecamp holds it`)
   echo('')
 
   // The box is minutes old, so a known_hosts line for its address is an older

@@ -1,5 +1,5 @@
 // src/pieces/furniture.js — what a room is furnished with: a couch, a cot, a
-// jukebox, a bucket, and the rug. A seat faces the way its cushions do.
+// jukebox, a radio, a bucket, and the rug. A seat faces the way its cushions do.
 import { piece, inked, seats } from './index.js'
 
 /** Four cushions facing up the room. */
@@ -23,6 +23,14 @@ const JUKEBOX = String.raw`
 |_________|
 `
 export const jukebox = piece('jukebox', JUKEBOX, inked(JUKEBOX, 'w', { '(': 'J', ')': 'J', o: 'Q', ':': 'J', '=': 'q' }))
+
+const RADIO = String.raw`
+ _/_
+|o::|
+'---'
+`
+/** The loft's band heard at home: `Band.mesa` with `radio` finds it by name. */
+export const radio = piece('radio', RADIO, inked(RADIO, 'w', { o: 'Q', ':': 'q', '/': 'l' }))
 
 /**
  * A rug is floor, walked on, a border `m` round a field `M`. `marks` are

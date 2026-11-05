@@ -14,6 +14,11 @@ import { CLOCK, cueAt } from '#shared/band.js'
 /** The rooms with a band in them. */
 export const BAND_ROOMS = new Set(['upstairs'])
 
+/** The rooms with a radio in them, and the band room each one plays. A radio
+ *  only listens: it counts the band room's cue and cannot ask for a song.
+ *  Placed by hand until a member furnishes their own house (`IDEAS/haven.md` 9.3). */
+export const RADIOS: Record<string, string> = { jordan: 'upstairs' }
+
 /** How far ahead of the request a cue starts: the socket's trip, and the
  *  `AHEAD_MS` a screen has already pulled, both fit inside it. */
 export const LEAD_MS = 1500

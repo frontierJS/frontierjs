@@ -23,7 +23,8 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { existsSync }   from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { basecampsPath, readBasecamps } from './basecamps.js'
 import { requiresOf }                 from './requires.js'
 import { esetHint, globalEnvPath }    from './global-env.js'
 import { execSync }     from 'node:child_process'
@@ -87,6 +88,41 @@ export function onPath(cmd) {
   catch { return false }
 }
 
+// ─── the index of Basecamps ───────────────────────────────────────────────────
+//
+// `basecamps.json` holds admin keys, so a file anyone else can read leaks them,
+// and an entry whose ssh Host is not in `~/.ssh/config` makes every ssh-backed
+// verb (`backup`, `restore`, `reinstall`) fail at the connection instead of at a
+// sentence naming the entry. Both are warnings: the machine runs fli either way.
+
+const sshHosts = (home) => {
+  let text = ''
+  try { text = readFileSync(join(home, '.ssh', 'config'), 'utf8') } catch { return new Set() }
+  const names = new Set()
+  for (const line of text.split('\n')) {
+    const [key, ...rest] = line.trim().split(/\s+/)
+    if (/^host$/i.test(key)) for (const n of rest) names.add(n)
+  }
+  return names
+}
+
+function basecampRows(home) {
+  const file = basecampsPath(home)
+  if (!existsSync(file)) return []
+  const rows = []
+  const mode = statSync(file).mode & 0o777
+  rows.push({ label: 'basecamps.json', ok: (mode & 0o077) === 0, hint: `mode ${mode.toString(8)}, it holds admin keys  \u2192  chmod 600 ${file}`, path: file })
+
+  let all
+  try { all = readBasecamps({ home }) } catch (err) { rows.push({ label: 'basecamps.json', ok: false, hint: err.message, path: file }) }
+  const hosts = sshHosts(home)
+  for (const [name, entry] of Object.entries(all ?? {})) {
+    if (!entry.host) continue
+    rows.push({ label: name, ok: hosts.has(entry.host), hint: `no 'Host ${entry.host}' in ~/.ssh/config  \u2192  fli basecamp:create writes it, or add the block by hand`, path: file })
+  }
+  return rows.map(r => ({ ...r, level: r.ok ? 'ok' : 'warn' }))
+}
+
 /**
  * What this machine can and cannot do.
  *
@@ -142,11 +178,13 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
     }
   }
 
-  const all    = [...system, ...config, ...namespaces]
+  const basecamps = basecampRows(home)
+
+  const all    = [...system, ...config, ...namespaces, ...basecamps]
   const failed = all.filter(c => !c.ok)
 
   return {
-    system, config, namespaces,
+    system, config, namespaces, basecamps,
     checks:  all.length,
     failed:  failed.length,
     // *Nothing here is broken enough to stop you* is a different sentence from

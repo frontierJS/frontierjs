@@ -13,7 +13,7 @@
 // Custom methods dispatch on the X-Service-Method HEADER, not a sub-path
 // (DECISIONS.md). `POST /servers/:id/drain` is a 404; the call is
 // `POST /servers/:id` with `X-Service-Method: drain`.
-//   events · reboot · drain · undrain · sync · setBackups
+//   events · reboot · drain · undrain · sync · setBackups · adopt
 //   heartbeat — the outpost's, HMAC at the transport, exempted from sessionScope
 //
 // The wire contract is the SCHEMA's field names, because autoValidate strips
@@ -221,6 +221,16 @@ async function readBackups(
     return
   }
   if (!reading) return
+  await storeReading(serverId, connector, plan, reading)
+  return reading
+}
+
+async function storeReading(
+  serverId:  string,
+  connector: ComputeConnector,
+  plan:      Record<string, unknown> | null,
+  reading:   MachineBackups,
+) {
   await db().asSystem().server.update({
     where: { id: serverId },
     data:  { backupReading: {
@@ -229,8 +239,46 @@ async function readBackups(
       readAt: new Date().toISOString(),
     } },
   })
-  return reading
 }
+
+/**
+ * Off deletes every backup the vendor has taken, so it is a destructive move
+ * (`docs/vision.md` constraint 5): the caller sends back the count it was
+ * shown and, when that is not none, the machine's name. The count is checked
+ * against a read made now, because a backup taken since the screen's last
+ * Sync is one nobody agreed to delete; that read is stored, so the screen
+ * shows the number to confirm again.
+ */
+async function confirmOff(
+  server:    { id: string, name: string, plan: Record<string, unknown> | null, providerServerId: unknown },
+  connector: ComputeConnector,
+  send:      AccountSend,
+  deletes:   unknown,
+  confirm:   unknown,
+): Promise<number> {
+  if (!Number.isInteger(deletes) || (deletes as number) < 0)
+    throw new BadRequest(`Turning backups off says how many taken backups ${connector.label} deletes with them`)
+  if ((deletes as number) > 0 && confirm !== server.name)
+    throw new BadRequest(
+      `Type the machine's name to turn its backups off — '${server.name}'. `
+      + `${connector.label} deletes the backups it has taken, and that cannot be undone.`)
+
+  let reading: MachineBackups | null
+  try {
+    reading = await connector.backups(send, String(server.providerServerId))
+  } catch (err) {
+    throw new BadGateway(reasonOf(err))
+  }
+  if (!reading) throw new NotFound(`${connector.label} no longer has this machine`)
+  await storeReading(server.id, connector, server.plan, reading)
+  if (reading.taken.length !== deletes)
+    throw new Conflict(
+      `${connector.label} now holds ${backupCount(reading.taken.length)} of ${server.name}, not ${deletes}; `
+      + 'confirm again with the new count')
+  return reading.taken.length
+}
+
+const backupCount = (n: number) => `${n} backup${n === 1 ? '' : 's'}`
 
 /**
  * Put a managed policy back where the vendor's reading disagrees (`FJS-D1862`),
@@ -264,6 +312,39 @@ async function restoreBackups(
   }
   await recordEvent(serverId, 'backupsRestored',
     `${connector.label} had machine backups ${said}; put back ${wanted}`, { found, policy })
+  await readBackups(serverId, connector, send, providerId, targetId, plan)
+}
+
+/**
+ * Make a new machine keep the backups it was bought with. Hetzner enables them
+ * only on a server that exists; at DigitalOcean the create sent them, so this
+ * reads, agrees and sends nothing. A refusal leaves the provision standing:
+ * the policy is stored, so the next sync pushes it again.
+ *
+ * Stored before any vendor holds it, the reverse of `setBackups`, because the
+ * machine does not exist when `provision` writes the row. `unheldBackups`
+ * refused there what no vendor keeps, so what is left to fail is the push.
+ */
+async function startBackups(
+  serverId:   string,
+  connector:  ComputeConnector,
+  send:       AccountSend,
+  providerId: string,
+  targetId:   string,
+  plan:       Record<string, unknown> | null,
+  policy:     BackupPolicy,
+) {
+  const wanted = describePolicy(policy, connector.label)
+  try {
+    if (!await connector.setBackups(send, providerId, policy)) return
+  } catch (err) {
+    $.app.logger.error('conduit: backup start failed', { target: targetId, serverId, error: String(err) })
+    await recordEvent(serverId, 'backupsRestoreFailed',
+      `${connector.label} did not start machine backups ${wanted} on the new machine; the next sync asks again: ${reasonOf(err)}`,
+      { target: targetId, policy, at: 'create', error: String(err) })
+    return
+  }
+  await recordEvent(serverId, 'backupsSet', `Machine backups set ${wanted} on the new machine`, { policy, at: 'create' })
   await readBackups(serverId, connector, send, providerId, targetId, plan)
 }
 
@@ -350,6 +431,9 @@ export default createService({
     { method: 'sync', gate: LEVELS.USER },
     // A vendor write that bills, at the weight of buying a machine.
     { method: 'setBackups', input: 'ServerSetBackups', gate: LEVELS.ADMINISTRATOR },
+    // Points a row at a machine that bills, and writes the columns `sync` and
+    // `destroy` spend as the application: the weight of `provision`.
+    { method: 'adopt', input: 'ServerAdopt', gate: LEVELS.ADMINISTRATOR },
     { method: 'catalog', gate: LEVELS.USER },
     // `providers` reads rows this app owns and discloses account names, which
     // is the model's own read gate, never a token.
@@ -704,11 +788,12 @@ export default createService({
   // The vendor is told FIRST and the policy stored after it answers, so a
   // policy the vendor refused is never one `sync` keeps pushing. Off stores
   // no policy (`FJS-D1885`): holding a machine off would mean a sync
-  // disabling a console re-enable, and a disable deletes the backups taken.
+  // disabling a console re-enable, and a disable deletes the backups taken,
+  // which is why Off is confirmed (`confirmOff`).
   async setBackups() {
     const id     = $.id as string
     const server = await getScoped('server', 'Server', id)
-    const { choice, plan, hour, weekday } = ($.data ?? {}) as Record<string, any>
+    const { choice, plan, hour, weekday, deletes, confirm } = ($.data ?? {}) as Record<string, any>
 
     const connector = connectorFor(server.providerKind)
     if (!connector || !server.providerId || !server.providerServerId)
@@ -722,11 +807,15 @@ export default createService({
       throw new BadRequest('Turning backups on names a plan, daily or weekly')
     if (choice !== 'on' && (plan || hour != null || weekday))
       throw new BadRequest(`'${choice}' takes no plan, hour or day`)
+    if (choice !== 'off' && (deletes != null || confirm != null))
+      throw new BadRequest(`'${choice}' deletes nothing, so it takes no confirmation`)
     const why = policy && connector.unheldBackups(policy)
     if (why) throw new BadRequest(why)
 
     const targetId = targetFor(connector.kind, server.providerId)
     const send     = sendVia($.app, targetId)
+
+    const deleted = choice === 'off' ? await confirmOff(server, connector, send, deletes, confirm) : 0
 
     let held = true
     try {
@@ -745,9 +834,79 @@ export default createService({
 
     await recordEvent(id, 'backupsSet',
       policy  ? `Machine backups set ${describePolicy(policy, connector.label)}`
-      : choice === 'off' ? `Machine backups turned off at ${connector.label}; not managed`
+      : choice === 'off' ? `Machine backups turned off at ${connector.label}, which deletes the ${backupCount(deleted)} it had taken; not managed`
       : 'Machine backups no longer managed; nothing sent to the vendor',
-      { requested_by: actor(), choice, policy })
+      { requested_by: actor(), choice, policy, ...(choice === 'off' && { deleted }) })
+
+    return getScoped('server', 'Server', id)
+  },
+
+  // ── adopt — POST /servers/:id  X-Service-Method: adopt ───────────
+  //
+  // Link a row Basecamp did not buy (the hub host's own, an imported box) to a
+  // machine at a vendor account, so its backups can be read and set
+  // (`FJS-D1865`). The person picks the machine from `reconcile`'s list and
+  // sends back what the screen showed; a machine that has changed since, or an
+  // IP the vendor re-issued, is not the one they confirmed, so it is a 409
+  // naming what the vendor says now. Nothing is written at the vendor and
+  // `backupPolicy` stays as it was: null is *not managed*, so linking changes
+  // nothing about the machine's backups.
+  //
+  // `adopted` is what `destroy` reads: this app never deletes a machine it did
+  // not buy.
+  async adopt() {
+    const id     = $.id as string
+    const server = await getScoped('server', 'Server', id)
+    const { accountId, providerServerId, shown } = ($.data ?? {}) as Record<string, any>
+
+    if (server.status === 'destroyed' || server.status === 'destroying')
+      throw new Conflict(`'${server.name}' is ${server.status}, so there is no machine to link`)
+    if (server.providerServerId || server.providerKind !== 'custom')
+      throw new Conflict(`'${server.name}' is already linked to a machine at ${server.providerKind}`)
+
+    const account = await db().secret.findFirst({ where: { id: String(accountId) } })
+    if (!account) throw new NotFound(`Provider account '${accountId}' not found`)
+    const connector = connectorFor(account.providerKind as ProviderKind | null)
+    if (!connector)
+      throw new BadRequest(`'${account.name}' is not an account at a cloud Basecamp can speak to`)
+    await refuseForeignAccount({ providerId: account.id, workspaceId: server.workspaceId })
+
+    const send = sendVia($.app, targetFor(connector.kind, account.id as string))
+    let machine
+    try {
+      machine = await connector.machine(send, String(providerServerId))
+    } catch (err) {
+      throw new BadGateway(reasonOf(err))
+    }
+    if (!machine) throw new NotFound(`${connector.label} has no machine '${providerServerId}' at ${account.name}`)
+
+    const now  = { name: machine.name, ipAddress: machine.ipAddress, region: machine.region }
+    const drift = (['name', 'ipAddress', 'region'] as const).filter(k => (shown?.[k] ?? null) !== (now[k] ?? null))
+    if (drift.length)
+      throw new Conflict(
+        `${connector.label} now shows this machine as ${drift.map(k => `${k} '${now[k] ?? 'none'}'`).join(', ')}, `
+        + 'not what the screen showed; look again and confirm the machine you mean')
+
+    const held = await db().server.findFirst({
+      where: { providerId: account.id, providerServerId: machine.providerServerId, status: { not: 'destroyed' } },
+    })
+    if (held)
+      throw new Conflict(`'${held.name}' already holds ${connector.label} machine ${machine.providerServerId}`)
+    if (machine.serverId && machine.serverId !== id) {
+      const claimed = await db().server.findFirst({ where: { id: machine.serverId, status: { not: 'destroyed' } } })
+      if (claimed)
+        throw new Conflict(`${connector.label} marks this machine as '${claimed.name}', a row in this workspace`)
+    }
+
+    await db().server.update({
+      where: { id },
+      data:  { providerKind: connector.kind, providerId: account.id, providerServerId: machine.providerServerId, adopted: true },
+      system: ['providerKind', 'providerId', 'providerServerId', 'adopted'],
+    })
+    await recordEvent(id, 'adopted',
+      `Linked to ${connector.label} machine ${machine.name ?? machine.providerServerId} (${machine.providerServerId}). `
+      + 'Basecamp did not buy it, so it will not destroy it',
+      { provider_server_id: machine.providerServerId, requested_by: actor() })
 
     return getScoped('server', 'Server', id)
   },
@@ -768,6 +927,7 @@ export default createService({
   async provision() {
     const data = ($.data ?? {}) as Record<string, unknown>
     const { name, role, accountId, region, size, image } = data as Record<string, string>
+    const backups = (data.backups ?? null) as BackupPolicy | null
 
     // First, before the vendor is asked anything: a machine bought now could
     // only enroll against a key anyone can compute (`FJS-D1798`).
@@ -809,6 +969,8 @@ export default createService({
       throw new BadRequest(
         `${connector.label} does not offer '${size}' in ${region}`
         + `${sizeRegions(chosen).length ? ` — it has ${sizeRegions(chosen).join(', ')}` : ''}`)
+    const unheld = backups && connector.unheldBackups(backups)
+    if (unheld) throw new BadRequest(unheld)
 
     // Before the vendor is asked for a machine, which is billed from its first
     // minute and would never enroll.
@@ -860,15 +1022,17 @@ export default createService({
     await db().asSystem().server.update({
       where: { id: server.id },
       data:  { providerKind: account.providerKind, providerId: account.id,
-               enrollTokenHash: enroll.hash, enrollExpiresAt: enroll.expiresAt },
+               enrollTokenHash: enroll.hash, enrollExpiresAt: enroll.expiresAt,
+               backupPolicy: backups },
     })
 
     // The move, not an update naming the column: the from-list, the authority
     // and the compare-and-swap are one declaration.
     await db().server.transition(server.id, 'provision')
     await recordEvent(server.id, 'provisionRequested',
-      `Provisioning a ${size} in ${region} at ${connector.label}`,
-      { requested_by: actor(), size, region, image })
+      `Provisioning a ${size} in ${region} at ${connector.label}, machine backups `
+      + (backups ? describePolicy(backups, connector.label) : 'off'),
+      { requested_by: actor(), size, region, image, backups })
 
     // The token crosses to the job in the DISPATCH rather than being re-read,
     // because the row holds only its hash and nothing can recover it.
@@ -908,6 +1072,7 @@ export default createService({
         size:     String(plan.size),
         image:    String(plan.image),
         mark:     markFor(server.id as string),
+        ...(server.backupPolicy && { backups: server.backupPolicy }),
         userData: cloudInit({
           serverId:    server.id as string,
           basecampUrl: env.FRONTIER_API_URL,
@@ -944,6 +1109,9 @@ export default createService({
           await recordEvent(id, 'provisionReady',
             `The machine is up at ${seen.ipAddress} and is installing its outpost`,
             { ip_address: seen.ipAddress })
+          if (server.backupPolicy)
+            await startBackups(id, connector, send, String(server.providerServerId),
+              targetFor(connector.kind, String(server.providerId)), server.plan, server.backupPolicy)
         }
       }
       return getScoped('server', 'Server', id)
@@ -986,6 +1154,11 @@ export default createService({
     const connector = connectorFor(server.providerKind)
     if (!connector)
       throw new BadRequest('This machine was imported, not provisioned — remove it instead')
+    // Before the transition: a refused destroy must not move the row.
+    if (server.adopted)
+      throw new BadRequest(
+        `Basecamp did not buy this machine, so it does not destroy it: delete it in ${connector.label}'s console, `
+        + 'then remove it here')
     await refuseForeignAccount(server)
 
     await db().server.transition(id, 'destroy')
@@ -1158,8 +1331,12 @@ export default createService({
     if (!connector)
       throw new BadRequest(`'${account.name}' is not an account at a cloud Basecamp can speak to`)
 
+    // `backups` is what the form's one question turns on, and the share its
+    // cost line reads, so the form names no vendor's backup rules.
     const target = targetFor(connector.kind, account.id as string)
-    return { provider: connector.kind, ...(await connector.catalog(sendVia($.app, target))) }
+    const policy = connector.defaults.backups
+    return { provider: connector.kind, ...(await connector.catalog(sendVia($.app, target))),
+             backups: { policy, share: connector.backupShare[policy.plan] ?? null } }
   },
 
   // ── providers — GET /servers  X-Service-Method: providers ────────

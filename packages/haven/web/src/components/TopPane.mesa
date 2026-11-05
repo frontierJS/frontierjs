@@ -1,0 +1,11 @@
+<script>
+  // TopPane.mesa — the bottom pane's fill: `fli top`, run in a pty and drawn
+  // cell by cell (`lib/top/pty.js`). Mounted by the shell's `--bottom`, never
+  // by a route. Every key here is the process's, so its `q` quits it, and its
+  // exit hides the pane; focus arriving starts a fresh one.
+  import { topScreen } from '@/lib/top/pty.js'
+
+  const top = topScreen()
+</script>
+
+<div tabindex="0" onfocus={top.start} onkeydown={top.key} {@attach top.attach}></div>

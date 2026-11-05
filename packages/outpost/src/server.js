@@ -193,7 +193,7 @@ export function createOutpostServer(config, {
       if (fronted && !port) throw new Error('hosts need a published port to route to — config.port is not set')
       checkRunConfig(body.config)
       const asked = body.swap ?? 'stop-first'
-      checkSwap({ swap: asked, loopback: fronted, exposesPort: body.exposes_port === true, port })
+      checkSwap({ swap: asked, loopback: fronted, exposesPort: body.exposes_port === true, port, path: body.config?.healthCheck ?? null })
       const routeTo = (to) => ingress.route({ appId, hosts, port: to, redirects, paths })
 
       // The build and the route are this app's too, not only the swap: a

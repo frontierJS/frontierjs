@@ -24,7 +24,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/deploy-key.js` | each app's deploy key (`FJS-D1555`) — `cert.js`'s rule: made once, kept, never sent; `build` clones with it via `GIT_SSH_COMMAND` |
 | `src/dockerfile.js` | **which Dockerfile a build uses, whether it installs from `deploy/generated/`, and which port its last `EXPOSE` names** — the App's stored copy, `deploy/Dockerfile`, the root's; `fli basecamp:deploy` imports the same functions (`FJS-D1560`), so the laptop and the push choose alike, and Basecamp's `fromRepo` reads the seed's port with the one `build` reports. No `Bun` global at import: the cli loads it under node too |
 | `src/status.js` | **`outpost status`** — one reading of the box printed as JSON, by the heartbeat's and reports' own readers plus the inspector's `units()` and `runtime()` (the heartbeat's containers, restart history included), a day of requests per route off `analytics.js`, and the newest `/backup` archive per app. No listener, no timer: it is run at a shell (`fli outpost:status` over ssh), never by the unit, and reads the unit's env file itself. `STATUS_SHAPE` is what fli checks before it renders |
-| `src/index.js` | the process: serve, start the timers, stop them on a signal; `status` as the first argument is `status.js` instead |
+| `src/index.js` | the process: serve, start the timers, stop them on a signal; `status` as the first argument is `status.js` instead. One of the timers is `docker.repoint`, at start after `reconcile()` and every heartbeat: a start-first container gets a new host port from every restart, and the pass moves its routes after it (`FJS-D1890`, `ingress.repoint`, `repointRoutes` in `swap.js`) |
 
 ## What bites here
 
@@ -76,8 +76,9 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   `<its name>_replaced`, stopped, because a SQLite volume takes one writer. A
   `_replaced` with nothing live beside it is the last good container of an
   unfinished swap, so `deploy` keeps it and only `/stop` removes it. The wait
-  is up to 30s, so a caller sending `/deploy` at a 10s timeout reads a working
-  release as a failed one.
+  is the release's `healthTimeout` (30 s default, 600 s at most, `FJS-4015`),
+  twice when the old one is put back, so a caller sending `/deploy` at a 10s
+  timeout reads a working release as a failed one.
 - **`swap: 'start-first'` is a request the release can turn down** (`FJS-D1846`).
   After the build, `docker.pivot` runs the NEW image's `bun x litestone release`
   against the live image's `db/schema.lite`, carried in a throwaway volume, with

@@ -80,7 +80,7 @@ jobs:
       - name: Stage screens and a Windows sidecar
         run: bun scripts/desktop-sidecar.mjs stage --target bun-windows-x64 --dir "$RUNNER_TEMP/desktop-sidecar"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: desktop-staged
           path: ${{ runner.temp }}/desktop-sidecar/probe/desktop/
@@ -106,7 +106,7 @@ jobs:
         with:
           bun-version: 1.4.4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: desktop-staged
           path: desktop

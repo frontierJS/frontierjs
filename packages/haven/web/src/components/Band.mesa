@@ -20,6 +20,12 @@
   // 30-row terminal shows, so while the box is panned off the top it is
   // drawn whole along the view's top edge, on a ground of its own.
   //
+  // With `radio` it is a home's radio (`RADIOS` in `api/src/setlist.ts`): the
+  // server answers the loft's cue for the home's room and tells the home each
+  // `song`, so it plays what the loft does. It starts off, `/music` beside the
+  // radio piece turns it, and `/song <n>` is refused there: a song is asked
+  // for upstairs.
+  //
   // A route places it (`routes/upstairs.mesa`), never the scene file: a
   // scene's picture is pinned and its test must make no sound.
   import { getClient } from '@frontierjs/sierra/resource'
@@ -29,8 +35,11 @@
   import { listening } from '@/lib/band/listening.js'
   import { traces, COL_MS } from '@/lib/band/scope.js'
 
+  export let radio = false
+
   var verbs = $context.commands
   var room  = $context.room
+  const scene = $context.scene
   const band = createBand()
   let stop = null
   let gone = false
@@ -42,7 +51,7 @@
 
   function start() {
     stop = stream((from, n) => band.samples(from, n), { rate: RATE, gain: () => listening.volume / 100 })
-    return stop ? `the band plays ${songOf(songAt(Date.now(), band.cueOf(Date.now()))).name}` : 'nothing here can play sound'
+    return stop ? `the ${radio ? 'radio' : 'band'} plays ${songOf(songAt(Date.now(), band.cueOf(Date.now()))).name}` : 'nothing here can play sound'
   }
   function playing() {
     const now  = Date.now()
@@ -86,7 +95,7 @@
       stop()
       stop = null
       listening.heard = false
-      return 'the band plays on, unheard'
+      return radio ? 'the radio is off' : 'the band plays on, unheard'
     }
     listening.heard = true
     return start()
@@ -106,17 +115,18 @@
     if (room) {
       try { band.seat(await client.service('band').invoke('cue', null, { roomId: room.id })) } catch {}
     }
-    if (listening.heard && !gone) start()
+    if (listening.heard && !gone && !radio) start()
   })
   $.onDestroy(() => { gone = true; stop?.() })
-  $.onDestroy(verbs.add({ word: 'music', help: '/music', run: toggle }))
+  const set = scene.marks.find((m) => m.kind === 'piece' && m.piece.name === 'radio')
+  const reach = radio && set ? { x: set.x + 2, y: set.y + 3, within: 3 } : undefined
+  $.onDestroy(verbs.add({ word: 'music', help: '/music', reach, run: toggle }))
   $.onDestroy(verbs.add({ word: 'volume', help: '/volume [0-100]', run: volume }))
   $.onDestroy(verbs.add({ word: 'song', help: '/song [n|strings]', run: song }))
   $.onDestroy(verbs.add({ word: 'songs', help: '/songs [n]', run: songs }))
 
   // ─── the scope ─────────────────────────────────────────────────────────────
 
-  const scene  = $context.scene
   const box    = scene.marks.find((m) => m.kind === 'piece' && m.piece.name === 'scope') ?? null
   const inks   = box ? box.piece.inks.map((k) => scene.entryOf(k)?.fg) : []
   const edge   = scene.entryOf('l')?.fg

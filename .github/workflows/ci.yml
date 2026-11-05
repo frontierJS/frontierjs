@@ -90,7 +90,7 @@ jobs:
       # The step log stops at the notes, so a red phase's output is only here.
       - name: Upload the CI report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ci-last
           path: .cache/ci-last.txt

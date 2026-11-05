@@ -232,6 +232,11 @@ export interface MachineSpec {
    *  whose `reservedIps` has no `assign` reads it; one with `assign` attaches
    *  the address after boot instead. */
   reservedIp?: ReservedIp
+  /** The machine backups it starts with; absent is none, as both vendors
+   *  default (`FJS-D1864`). Only a connector whose vendor takes them at create
+   *  sends this; `provision` makes every vendor keep it once the machine runs,
+   *  which sends nothing where the create already did. */
+  backups?:  BackupPolicy
   mark:      MachineMark
 }
 
@@ -302,8 +307,10 @@ export interface ComputeConnector {
   /** Where the vendor is, when nothing overrides it. */
   address: string
   /** What `fli basecamp:create` asks for when it is not told: a US region and
-   *  the Ubuntu the enrollment script supports. */
-  defaults: { region: string; image: string }
+   *  the Ubuntu the enrollment script supports. `backups` is the policy a
+   *  machine asked to be backed up starts with — daily, held by this vendor —
+   *  so the provision form and fli ask one yes or no and name no vendor rule. */
+  defaults: { region: string; image: string; backups: BackupPolicy }
   /** Held addresses, where this app can hold one at this vendor. */
   reservedIps?: ReservedIps
   /** The descriptor this account registers as. The credential is a REF the

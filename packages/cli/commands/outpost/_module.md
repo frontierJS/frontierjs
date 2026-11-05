@@ -7,6 +7,7 @@ description: The Outpost — the process a fleet machine runs for its Basecamp
 const { basecamp, basecampAll, installOutpost, readOutpost } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { boxAddress, markServer }   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
 const { createMachine }            = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
+const { reachBasecamp, lookupBasecamp } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
 </script>
 
 An Outpost is what a machine runs to be a member of a Basecamp's fleet: it
@@ -23,6 +24,6 @@ the serving container rather than through an API key.
 
 `fli outpost:status <box>` reads an enrolled box back over ssh, from its own
 Outpost: no key and no Basecamp needed. With no box named it reads every Server
-row the Basecamp holds, one line each, and that needs the key. `fli
+row the Basecamp holds, one line each, and that needs its entry's key in `basecamps.json`. `fli
 outpost:logs` is the log after it: an App's container by its `fjs.app` label,
 or a unit's journal.

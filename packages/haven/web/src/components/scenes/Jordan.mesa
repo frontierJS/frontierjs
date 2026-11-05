@@ -5,7 +5,7 @@
   // the west wall, the bell and the mat by the door — so one
   // `components/HomeBoard.mesa` writes on any of them, and only on the screen
   // of the member whose board names this home. Jordan's own: a server rack
-  // blinking beside the desk, a bookshelf, and a stove by the bed.
+  // blinking beside the desk, a bookshelf, a stove by the bed, and a radio.
   // The picture this draws is `jordan.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
   import { INDOORS } from '@/lib/scene/stage.js'
@@ -13,6 +13,7 @@
   import Door  from '@/components/Door.mesa'
   import { frame } from '@/pieces/frame.js'
   import { corkboard, screen, desk, calendar, bell, doormat, bed, homeRug, bookshelf, serverRack, stove, plant } from '@/pieces/home.js'
+  import { radio } from '@/pieces/furniture.js'
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -53,5 +54,6 @@
   <Piece of={bookshelf} x={23} y={13} />
   <Piece of={stove}     x={24} y={20} />
   <Piece of={plant}     x={91} y={17} />
+  <Piece of={radio}     x={60} y={20} />
   <slot />
 </Scene>

@@ -43,8 +43,8 @@ import { createTestEnv, session } from '@frontierjs/testing'
 import { GatePlugin }    from '@frontierjs/litestone'
 import { basecampGateLevel }       from '../src/core/gate.ts'
 import { buildBasecampApp }        from '../src/app.ts'
-import { startDoSink, sinkHoldBackups, sinkSettleBackups } from '../src/providers/compute/digitalocean-sink.ts'
-import { startHzSink, hzSinkHoldBackups, hzSinkSettleBackups } from '../src/providers/compute/hetzner-sink.ts'
+import { startDoSink, sinkHoldBackups, sinkSettleBackups, sinkBoot, CREATED } from '../src/providers/compute/digitalocean-sink.ts'
+import { startHzSink, hzSinkHoldBackups, hzSinkSettleBackups, hzBoot, HZ_CREATED } from '../src/providers/compute/hetzner-sink.ts'
 import { connectorFor, targetFor, markFor, fleetMark, priceIn, backupCost } from '../src/providers/compute/index.ts'
 import { registerAccount, sendVia } from '../src/providers/compute/accounts.ts'
 import type { ComputeProvider }    from '../../db/schema.d.ts'
@@ -1038,6 +1038,21 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     })).rejects.toThrow(/does not offer/)
   })
 
+  test('backups the vendor cannot hold are refused before anything is written', async () => {
+    // DigitalOcean takes no backups without an hour; refused inside the job,
+    // the machine would be bought without the backups the person asked for.
+    await expect(env.as(owner).service('servers').call('provision', null, {
+      name: 'no-hour', accountId: account.id, region: 'nyc3', size: 's-2vcpu-4gb',
+      image: 'ubuntu-24-04-x64', backups: { plan: 'daily' },
+    })).rejects.toThrow(/hour/)
+    // A plan no vendor is asked for is the schema's refusal, before the vendor's.
+    await expect(env.as(owner).service('servers').call('provision', null, {
+      name: 'no-hour', accountId: account.id, region: 'nyc3', size: 's-2vcpu-4gb',
+      image: 'ubuntu-24-04-x64', backups: { plan: 'hourly', hour: 4 },
+    })).rejects.toThrow(/plan/)
+    expect(await (env.system as any).server.findFirst({ where: { name: 'no-hour' } })).toBeNull()
+  })
+
   test('the enrollment token is minted as a HASH, and the row never holds the token', async () => {
     const row = await (env.system as any).server.findFirst({ where: { name: 'prod-web-01' } })
     expect(row.enrollTokenHash).toMatch(/^[0-9a-f]{64}$/)
@@ -1143,10 +1158,45 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     expect(set.message).toBe('Machine backups set weekly, SUN at 16:00 UTC')
 
     // Off is not a managed state (`FJS-D1885`): the vendor stops, nothing is held.
-    await servers.call('setBackups', row.id, { choice: 'off' })
+    await servers.call('setBackups', row.id, { choice: 'off', deletes: 1, confirm: 'backed-up' })
     after = await stored()
     expect(after.backupPolicy).toBeNull()
-    expect(after.backupReading.enabled).toBe(false)
+    expect(after.backupReading).toMatchObject({ enabled: false, taken: [] })
+    const off = (await sys.serverEvent.findMany({ where: { serverId: row.id, kind: 'backupsSet' } })).at(-1)
+    expect(off.message).toBe('Machine backups turned off at DigitalOcean, which deletes the 1 backup it had taken; not managed')
+    expect(off.metadata.deleted).toBe(1)
+  })
+
+  test('Off deletes the backups taken, so it is confirmed against a count read now', async () => {
+    const sys     = env.system as any
+    const row     = await sys.server.findFirst({ where: { name: 'backed-up' } })
+    const servers = env.as(owner).service('servers')
+    const sets    = () => sys.serverEvent.findMany({ where: { serverId: row.id, kind: 'backupsSet' } })
+    await servers.call('setBackups', row.id, { choice: 'on', plan: 'daily', hour: 20 })
+    const before = (await sets()).length
+
+    await expect(servers.call('setBackups', row.id, { choice: 'off' })).rejects.toThrow(/says how many taken backups/)
+    await expect(servers.call('setBackups', row.id, { choice: 'off', deletes: 1 }))
+      .rejects.toThrow(/Type the machine's name .* 'backed-up'/)
+    await expect(servers.call('setBackups', row.id, { choice: 'unmanaged', deletes: 0 })).rejects.toThrow(/takes no confirmation/)
+
+    // A screen read before the backup was taken: refused, and the reading
+    // stored so the screen shows the number to confirm again.
+    await sys.server.update({ where: { id: row.id }, data: { backupReading: { enabled: true, taken: [] } } })
+    const stale = await servers.call('setBackups', row.id, { choice: 'off', deletes: 0 }).catch((e: any) => e)
+    expect(stale.code).toBe(409)
+    expect(stale.message).toMatch(/DigitalOcean now holds 1 backup of backed-up, not 0/)
+    let after = await sys.server.findFirst({ where: { id: row.id } })
+    expect(after.backupReading.taken).toHaveLength(1)
+    expect(after.backupReading.enabled).toBe(true)
+    expect(after.backupPolicy).toEqual({ plan: 'daily', hour: 20, weekday: null })
+    expect(await sets()).toHaveLength(before)
+
+    // With none taken there is nothing to delete, and no name to type.
+    await servers.call('setBackups', row.id, { choice: 'off', deletes: 1, confirm: 'backed-up' })
+    await servers.call('setBackups', row.id, { choice: 'off', deletes: 0 })
+    after = await sys.server.findFirst({ where: { id: row.id } })
+    expect(after.backupReading).toMatchObject({ enabled: false, taken: [] })
   })
 
   test('unmanaged stops holding a policy and sends the vendor nothing', async () => {
@@ -1160,7 +1210,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     // Still on at the vendor: a sync reads it as the machine left it.
     await servers.call('sync', row.id)
     expect((await sys.server.findFirst({ where: { id: row.id } })).backupReading).toMatchObject({ enabled: true, plan: 'daily' })
-    await servers.call('setBackups', row.id, { choice: 'off' })
+    await servers.call('setBackups', row.id, { choice: 'off', deletes: 1, confirm: 'backed-up' })
   })
 
   test('sync puts a managed policy back over a console change, and says what it found', async () => {
@@ -1188,7 +1238,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     put = (await restored()).find((e: any) => e.metadata.found.plan === 'weekly')
     expect(put.message).toBe('DigitalOcean had machine backups weekly, MON at 04:00 UTC; put back daily at 20:00 UTC')
     expect((await sys.server.findFirst({ where: { id: row.id } })).backupReading).toMatchObject({ plan: 'daily', hour: 20 })
-    await servers.call('setBackups', row.id, { choice: 'off' })
+    await servers.call('setBackups', row.id, { choice: 'off', deletes: 1, confirm: 'backed-up' })
   })
 
   test('a change still applying is not drift, and a push that fails is recorded once a sync', async () => {
@@ -1223,7 +1273,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     expect(failed).toHaveLength(2)
     expect(failed[0].message).toMatch(/^DigitalOcean has machine backups daily at 20:00 UTC; could not put back daily at 05:00 UTC: .*0, 4, 8/)
     expect(failed[0].metadata.error).toMatch(/0, 4, 8/)
-    await servers.call('setBackups', row.id, { choice: 'off' })
+    await servers.call('setBackups', row.id, { choice: 'off', deletes: 1, confirm: 'backed-up' })
   })
 
   test('a switch the token may not make is a 502 naming the scope, and nothing is stored', async () => {
@@ -1341,6 +1391,132 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
       accountId: account.id,
     }) as any
     expect(report.missing.some((m: any) => m.name === 'vanished')).toBe(true)
+  })
+})
+
+// ─── Linking a row to a machine Basecamp did not buy ─────────────────────
+
+describe('adopt links an imported row to a machine, and Basecamp never destroys it', () => {
+  let imported: any, other: any, ghost: any, shown: any
+  const sys     = () => env.system as any
+  const servers = () => env.as(owner).service('servers')
+  const send    = () => sendVia(app, targetFor('digitalocean', account.id))
+
+  test('a marked machine no row holds is linked, `adopted` is set and the trail says so', async () => {
+    const { resetSink } = await import('../src/providers/compute/digitalocean-sink.ts')
+    resetSink()
+    await registerAtSink(account)
+    const base = await sys().server.findFirst({ where: {} })
+    // The stand-in numbers its machines from the top again, so a row an
+    // earlier test left holding id 1001 would be this test's "another row".
+    await sys().server.updateMany({
+      where: { providerServerId: { not: null } }, data: { providerServerId: null }, system: ['providerServerId'],
+    })
+    ghost = await digitalOcean.create(send(), {
+      name: 'hub-box', region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64',
+      userData: '#!/bin/bash\ntrue', mark: markFor('never-recorded'),
+    })
+    imported = await sys().server.create({ data: { workspaceId: base.workspaceId, name: 'hub-box-row', slug: 'hub-box-row' } })
+    other    = await sys().server.create({ data: { workspaceId: base.workspaceId, name: 'second-row', slug: 'second-row' } })
+    const m = await digitalOcean.machine(send(), ghost.providerServerId) as any
+    shown = { name: m.name, ipAddress: m.ipAddress, region: m.region }
+
+    const linked = await servers().call('adopt', imported.id,
+      { accountId: account.id, providerServerId: ghost.providerServerId, shown }) as any
+    expect(linked).toMatchObject({
+      providerKind: 'digitalocean', providerId: account.id, providerServerId: ghost.providerServerId, adopted: true,
+    })
+    // Linking touches no backups: null is *not managed*.
+    expect(linked.backupPolicy).toBeNull()
+    const [event] = await sys().serverEvent.findMany({ where: { serverId: imported.id, kind: 'adopted' } })
+    expect(event.message).toMatch(/^Linked to DigitalOcean machine hub-box \(.+\)\. Basecamp did not buy it/)
+    expect(event.metadata.provider_server_id).toBe(ghost.providerServerId)
+    // No longer an orphan, and the vendor machine is untouched.
+    const report = await servers().call('reconcile', null, { accountId: account.id }) as any
+    expect(report.orphans).toHaveLength(0)
+  })
+
+  test('a second adopt on the linked row is refused', async () => {
+    await expect(servers().call('adopt', imported.id,
+      { accountId: account.id, providerServerId: ghost.providerServerId, shown }))
+      .rejects.toThrow(/already linked/)
+  })
+
+  test('a machine another row holds is refused', async () => {
+    await expect(servers().call('adopt', other.id,
+      { accountId: account.id, providerServerId: ghost.providerServerId, shown }))
+      .rejects.toThrow(/already holds DigitalOcean machine/)
+    expect((await sys().server.findFirst({ where: { id: other.id } })).providerServerId).toBeNull()
+  })
+
+  test('a machine marked as another live row is refused, and one the vendor lacks is not found', async () => {
+    const claimed = await digitalOcean.create(send(), {
+      name: 'claimed', region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64',
+      userData: '#!/bin/bash\ntrue', mark: markFor(imported.id),
+    })
+    const m = await digitalOcean.machine(send(), claimed.providerServerId) as any
+    await expect(servers().call('adopt', other.id, {
+      accountId: account.id, providerServerId: claimed.providerServerId,
+      shown: { name: m.name, ipAddress: m.ipAddress, region: m.region },
+    })).rejects.toThrow(/marks this machine as 'hub-box-row'/)
+    await expect(servers().call('adopt', other.id,
+      { accountId: account.id, providerServerId: '99999999', shown }))
+      .rejects.toThrow(/has no machine/)
+  })
+
+  test('a screen that differs from the vendor is a 409 naming what the vendor shows now', async () => {
+    const fresh = await digitalOcean.create(send(), {
+      name: 'renamed', region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64',
+      userData: '#!/bin/bash\ntrue', mark: markFor('also-never-recorded'),
+    })
+    const err = await servers().call('adopt', other.id, {
+      accountId: account.id, providerServerId: fresh.providerServerId,
+      shown: { ...shown, name: 'something-else' },
+    }).catch((e: any) => e)
+    expect(err.code).toBe(409)
+    expect(err.message).toMatch(/now shows this machine as name 'renamed'/)
+    expect((await sys().server.findFirst({ where: { id: other.id } })).adopted).toBe(false)
+  })
+
+  test('destroy on an adopted row is refused, the row does not move and the machine stands', async () => {
+    await expect(servers().call('destroy', imported.id, { confirm: 'hub-box-row' }))
+      .rejects.toThrow(/did not buy this machine, so it does not destroy it/)
+    expect((await sys().server.findFirst({ where: { id: imported.id } })).status).not.toMatch(/destroy/)
+    expect(await digitalOcean.machine(send(), ghost.providerServerId)).not.toBeNull()
+  })
+
+  test('nobody may write `adopted` by patch, an owner included', async () => {
+    await expect(servers().patch(other.id, { adopted: true })).rejects.toThrow(/is @system/)
+  })
+
+  // FJS-D1895: the hub host's backups are a checklist step outside the count,
+  // so a host that can never finish it never holds home's card open.
+  test('the setup checklist names the hub host\'s backups and never counts them', async () => {
+    const { placeHub } = await import('../src/domain/host/host-machine.ts')
+    const infra  = () => env.as(owner).service('infra')
+    const step   = (r: any) => r.steps.find((s: any) => s.id === 'host-backups')
+    const before = await infra().call('launch')
+    expect(step(before)).toBeUndefined()
+
+    if (!await sys().hubConfig.exists({ where: { id: 'hub' } })) await sys().hubConfig.create({ data: { id: 'hub' } })
+    const hub = await placeHub(sys(), other)
+    const unlinked = await infra().call('launch')
+    expect(step(unlinked)).toMatchObject({ done: false, advisory: true, href: `/servers/${other.id}/` })
+    expect(step(unlinked).detail).toMatch(/not linked to its cloud account/)
+    // Neither the step nor the hub's own Project, Environment and App moves the count.
+    expect([unlinked.done, unlinked.total]).toEqual([before.done, before.total])
+
+    await sys().appServer.deleteMany({ where: { appId: hub.id } })
+    await placeHub(sys(), imported)
+    expect(step(await infra().call('launch'))).toMatchObject({ done: false, detail: expect.stringMatching(/^Not managed/) })
+
+    await sys().server.update({ where: { id: imported.id }, system: ['backupPolicy', 'backupReading'],
+      data: { backupPolicy: { plan: 'daily', hour: 20 }, backupReading: { enabled: true, plan: 'daily', readAt: new Date().toISOString() } } })
+    const held = await infra().call('launch')
+    expect(step(held)).toMatchObject({ done: true, detail: 'Backed up daily, held by Basecamp.' })
+    expect([held.done, held.total]).toEqual([before.done, before.total])
+
+    await sys().hubConfig.update({ where: { id: 'hub' }, data: { appId: null } })
   })
 })
 
@@ -2201,13 +2377,13 @@ describe('two clouds, one vocabulary', () => {
     { kind: 'digitalocean' as ComputeProvider, connector: digitalOcean, account: () => account, address: SINK,
       region: 'nyc3', size: 's-1vcpu-1gb', image: 'ubuntu-24-04-x64', currency: 'USD',
       backupPolicy: { plan: 'daily' as const, hour: 20 },
-      hold: sinkHoldBackups, settle: sinkSettleBackups,
+      hold: sinkHoldBackups, settle: sinkSettleBackups, boot: sinkBoot, created: CREATED,
       reset: async () => (await import('../src/providers/compute/digitalocean-sink.ts')).resetSink() },
     { kind: 'hetzner' as ComputeProvider, connector: hetzner, account: () => hzAccount, address: HZ_SINK,
       region: 'nbg1', size: 'cpx11', image: 'ubuntu-24.04', currency: 'EUR',
       // Hetzner picks the window, so the policy names no hour.
       backupPolicy: { plan: 'daily' as const, hour: null },
-      hold: hzSinkHoldBackups, settle: hzSinkSettleBackups,
+      hold: hzSinkHoldBackups, settle: hzSinkSettleBackups, boot: hzBoot, created: HZ_CREATED,
       reset: async () => (await import('../src/providers/compute/hetzner-sink.ts')).resetHzSink() },
   ]
 
@@ -2301,8 +2477,8 @@ describe('two clouds, one vocabulary', () => {
         .map((m: any) => m.providerServerId)).toContain(made.providerServerId)
       expect(await c.connector.marked(send, markFor(serial))).toHaveLength(1)
 
-      // A machine is bought with its backups off, at both vendors (`FJS-D1864`
-      // asks at create; nothing sends the field yet).
+      // A machine is bought with its backups off, at both vendors, when the
+      // spec names none (`FJS-D1864`).
       expect(await c.connector.backups(send, made.providerServerId)).toEqual({
         enabled: false, plan: null, hour: null, weekday: null,
         windowHours: null, retentionDays: null, taken: [], pending: false,
@@ -2323,11 +2499,13 @@ describe('two clouds, one vocabulary', () => {
 
       // On, then off, read back after each: the switch is what the vendor
       // then says, not what the call answered.
+      // Off deletes the backups taken, at both vendors.
       expect(await c.connector.setBackups(send, made.providerServerId, c.backupPolicy)).toBe(true)
-      expect(await c.connector.backups(send, made.providerServerId))
-        .toMatchObject({ enabled: true, plan: 'daily', windowHours: 4, retentionDays: 7 })
+      const on = await c.connector.backups(send, made.providerServerId)
+      expect(on).toMatchObject({ enabled: true, plan: 'daily', windowHours: 4, retentionDays: 7 })
+      expect(on!.taken).toHaveLength(1)
       expect(await c.connector.setBackups(send, made.providerServerId, null)).toBe(true)
-      expect((await c.connector.backups(send, made.providerServerId))!.enabled).toBe(false)
+      expect(await c.connector.backups(send, made.providerServerId)).toMatchObject({ enabled: false, taken: [] })
 
       expect(await c.connector.destroy(send, made.providerServerId)).toBe(true)
       expect(await c.connector.machine(send, made.providerServerId)).toBeNull()
@@ -2337,6 +2515,67 @@ describe('two clouds, one vocabulary', () => {
         .map((m: any) => m.providerServerId)).not.toContain(made.providerServerId)
     })
   }
+
+  for (const c of clouds()) {
+    test(`${c.kind}: a machine provisioned with backups on is running with them`, async () => {
+      // DigitalOcean takes the policy in the create and Hetzner only on a
+      // server that exists, so the poll that sees the machine up is where
+      // both agree; at DigitalOcean it reads and sends nothing. The policy is
+      // the connector's default, the one the provision form and fli send.
+      const policy = c.connector.defaults.backups
+      await c.reset()
+      await registerAt(c.account(), c.address)
+      const servers = env.as(owner).service('servers')
+      const sys     = env.system as any
+
+      const row = await servers.call('provision', null, {
+        name: `kept-${c.kind}`, accountId: c.account().id,
+        region: c.region, size: c.size, image: c.image, backups: policy,
+      }) as any
+      expect((await sys.server.findFirst({ where: { id: row.id } })).backupPolicy)
+        .toEqual(policy)
+
+      await servers.call('provisionStep', row.id, { step: 'create', enrollToken: 'bcen_test' })
+      const made = (await sys.server.findFirst({ where: { id: row.id } })).providerServerId
+      expect(c.created[0].backups ?? false).toBe(c.kind === 'digitalocean')
+
+      const send = sendVia(app, targetFor(c.kind, c.account().id))
+      c.boot(String(made))
+      const seen = await servers.call('provisionStep', row.id, { step: 'poll' }) as any
+      expect(seen.status).toBe('installing')
+      expect(await c.connector.backups(send, String(made)))
+        .toMatchObject({ enabled: true, plan: 'daily', hour: policy.hour ?? expect.any(Number) })
+      expect(seen.backupReading).toMatchObject({ enabled: true, plan: 'daily' })
+
+      const events = await sys.serverEvent.findMany({ where: { serverId: row.id }, orderBy: { createdAt: 'asc' } })
+      expect(events.find((e: any) => e.kind === 'provisionRequested').message).toMatch(/machine backups daily/)
+      expect(events.find((e: any) => e.kind === 'backupsSet').message).toMatch(/^Machine backups set daily.* on the new machine$/)
+    })
+  }
+
+  test('a refused start leaves the provision standing and says the next sync asks again', async () => {
+    const { resetSink, sinkRefuseScope } = await import('../src/providers/compute/digitalocean-sink.ts')
+    resetSink()
+    await registerAtSink(account)
+    const servers = env.as(owner).service('servers')
+    const sys     = env.system as any
+    const row = await servers.call('provision', null, {
+      name: 'kept-refused', accountId: account.id, region: 'nyc3', size: 's-1vcpu-1gb',
+      image: 'ubuntu-24-04-x64', backups: { plan: 'daily', hour: 20 },
+    }) as any
+    await servers.call('provisionStep', row.id, { step: 'create', enrollToken: 'bcen_test' })
+    sinkBoot(String((await sys.server.findFirst({ where: { id: row.id } })).providerServerId))
+
+    sinkRefuseScope('droplet:read')
+    let seen: any
+    try { seen = await servers.call('provisionStep', row.id, { step: 'poll' }) } finally { sinkRefuseScope(null) }
+    expect(seen.status).toBe('installing')
+    expect(seen.backupPolicy).toEqual({ plan: 'daily', hour: 20 })
+    const failed = await sys.serverEvent.findMany({ where: { serverId: row.id, kind: 'backupsRestoreFailed' } })
+    expect(failed).toHaveLength(1)
+    expect(failed[0].message).toMatch(/^DigitalOcean did not start machine backups daily at 20:00 UTC on the new machine; the next sync asks again: .*droplet:read/)
+    expect(await sys.serverEvent.findMany({ where: { serverId: row.id, kind: 'backupsSet' } })).toHaveLength(0)
+  })
 
   test('and the two are NOT the same vendor answering twice', async () => {
     // The control the whole describe needs. Every assertion above is satisfied

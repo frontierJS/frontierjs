@@ -92,6 +92,12 @@ let nextId = 1000
  *  Absent is off, which is how a droplet created without `backups: true` is. */
 const BACKUPS = new Map<string, Record<string, unknown>>()
 
+/** Droplet id → the backups taken of it. An enable takes one at once, as if
+ *  its first window had passed, and a disable deletes them all, which is what
+ *  makes Off a destructive move. */
+const TAKEN = new Map<string, Record<string, unknown>[]>()
+let nextBackupId = 7000
+
 /** A custom-scoped token missing one scope: the requests that need it 403,
  *  the rest answer. Null is a full-access token. */
 let missingScope: string | null = null
@@ -122,12 +128,20 @@ export function resetSink(): void {
   nextId = 1000
   missingScope = null
   BACKUPS.clear()
+  TAKEN.clear()
+  nextBackupId = 7000
   ACTIONS.clear()
   nextActionId = 1
   holding = false
   unsettled.length = 0
   for (const id of [...DROPLETS.keys()]) if (id !== '901') DROPLETS.delete(id)
 }
+
+/** Retention and window length are DO's, per plan (0.1's reads). */
+const keepPolicy = (id: string, ask: Record<string, unknown>) => BACKUPS.set(id, {
+  plan: ask.plan, hour: ask.hour, ...(ask.plan === 'weekly' && { weekday: ask.weekday }),
+  window_length_hours: 4, retention_period_days: ask.plan === 'weekly' ? 28 : 7,
+})
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -172,6 +186,8 @@ async function createDroplet(req: Request): Promise<Response> {
   }
   DROPLETS.set(id, row)
   CREATED.push(spec)
+  // Kept from the start, with none taken until the first window passes.
+  if (spec.backups === true) keepPolicy(id, (spec.backup_policy ?? { plan: 'daily' }) as Record<string, unknown>)
 
   // A real droplet comes up on its own a minute or so later. In-process tests
   // must not depend on a clock, so this is OFF unless asked for: `sinkBoot` is
@@ -286,7 +302,7 @@ export function startDoSink(port = PORT) {
         const kept = BACKUPS.get(String(row.id))
         return backups[2]
           ? json({ policy: { droplet_id: row.id, backup_enabled: Boolean(kept), ...(kept && { backup_policy: kept }) } })
-          : json({ backups: [], links: {}, meta: { total: 0 } })
+          : json({ backups: TAKEN.get(String(row.id)) ?? [], links: {}, meta: { total: TAKEN.get(String(row.id))?.length ?? 0 } })
       }
 
       const action = url.pathname.match(/^\/v2\/droplets\/([^/]+)\/actions$/)
@@ -305,11 +321,7 @@ export function startDoSink(port = PORT) {
         const type = String(body.type ?? '')
         const id   = String(row.id)
         const ask  = (body.backup_policy ?? {}) as Record<string, unknown>
-        // Retention and window length are DO's, per plan (0.1's reads).
-        const keep = () => BACKUPS.set(id, {
-          plan: ask.plan, hour: ask.hour, ...(ask.plan === 'weekly' && { weekday: ask.weekday }),
-          window_length_hours: 4, retention_period_days: ask.plan === 'weekly' ? 28 : 7,
-        })
+        const keep = () => keepPolicy(id, ask)
         // Stricter than DO is known to be: no real enable on an enabled droplet
         // has been read, and a connector sending the wrong action fails here.
         const refuse = (message: string) => json({ id: 'unprocessable_entity', message }, 422)
@@ -320,11 +332,15 @@ export function startDoSink(port = PORT) {
         if (type === 'power_off') apply = () => { row.status = 'off' }
         else if (type === 'enable_backups') {
           if (BACKUPS.has(id)) return refuse('Droplet already has backups enabled.')
-          apply = keep
+          apply = () => {
+            keep()
+            TAKEN.set(id, [{ id: nextBackupId++, name: `${row.name} backup`, type: 'backup',
+              created_at: new Date().toISOString(), size_gigabytes: 2.4 }, ...(TAKEN.get(id) ?? [])])
+          }
         } else if (type === 'change_backup_policy') {
           if (!BACKUPS.has(id)) return refuse('Droplet does not have backups enabled.')
           apply = keep
-        } else if (type === 'disable_backups') apply = () => { BACKUPS.delete(id) }
+        } else if (type === 'disable_backups') apply = () => { BACKUPS.delete(id); TAKEN.delete(id) }
         else return refuse(`action ${type} is not in this sink`)
 
         const made = { id: nextActionId++, type, status: 'in-progress', resource_id: row.id, resource_type: 'droplet' }

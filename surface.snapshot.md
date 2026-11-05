@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4214 source file(s) read
+27 package(s) · 4222 source file(s) read
 252 entry point(s), 34 imported by nothing outside their package, 16 emitted
-1712 value export(s), 642 reached by nothing outside, 180 emitted
+1720 value export(s), 644 reached by nothing outside, 180 emitted
 460 type export(s), 346 reached by nothing outside
 ```
 
@@ -36,13 +36,13 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 28 | 5 | 268 | 130 | 40 | 1 | 1 |
 | `junction` | 27 | 3 | 272 | 119 | 13 | 269 | 210 |
-| `mesa` | 19 | 4 | 313 | 110 | 77 | 0 | 0 |
+| `mesa` | 19 | 4 | 317 | 110 | 77 | 0 | 0 |
 | `sierra` | 25 | 6 | 200 | 84 | 20 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
 | `toolbelt` | 68 | 0 | 318 | 37 | 12 | 0 | 0 |
 | `ui` | 9 | 0 | 55 | 35 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
-| `outpost` | 10 | 2 | 37 | 16 | 2 | 0 | 0 |
+| `outpost` | 10 | 2 | 41 | 18 | 2 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 60 | 41 |
 | `site-kit` | 9 | 4 | 36 | 9 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 21 |
@@ -206,7 +206,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · 19 entry point(s) · 313 value, 0 type export(s)
+`packages/mesa` · 19 entry point(s) · 317 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./render` `./css-inliner` `./vite/client` `./vite/hmr`
 
@@ -248,11 +248,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/outpost`
 
-`packages/outpost` · 10 entry point(s) · 37 value, 0 type export(s)
+`packages/outpost` · 10 entry point(s) · 41 value, 0 type export(s)
 
 **Entries imported by nothing outside (2):** `.` `./static`
 
-**Unreached values (16):** `BACKUP_SCRIPT` `checkRunConfig` `checkStopGrace` `checkSwap` `containerName` `createInspector` `createStatic` `digestOfFiles` `DRAIN_MS` `followLines` `isDigest` `logArgs` `spawnRun` `spawnStream` `validName` `validRelativePath`
+**Unreached values (18):** `BACKUP_SCRIPT` `checkRunConfig` `checkStopGrace` `checkSwap` `containerName` `createInspector` `createStatic` `DEFAULT_HEALTH_TIMEOUT_S` `digestOfFiles` `DRAIN_MS` `followLines` `isDigest` `logArgs` `repointRoutes` `spawnRun` `spawnStream` `validName` `validRelativePath`
 
 **Emitted (2):** `MAX_BODY_BYTES` `ROOTS`
 

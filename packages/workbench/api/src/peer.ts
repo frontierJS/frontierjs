@@ -4,7 +4,7 @@
 // The pair is minted on first use into `~/.config/workbench/peer.json`, beside
 // `push.json`, since there is no row to hold it. The public half is what an
 // administrator pastes into Basecamp's "Add a peer" form; the id that form
-// answers goes in `BASECAMP_KEY_ID`.
+// answers is the `peerKeyId` of the Basecamp's entry in `basecamps.json`.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'

@@ -18,6 +18,7 @@ import { resolvePush }                        from './push.ts'
 import { notificationChannelName }        from './core/channels.ts'
 import { peerKeys, peerRoute, PEER_PATH }     from './peer.ts'
 import { createBasecamp }                     from './domain/peer/basecamp.ts'
+import { resolveBasecamp, DEV_BASECAMP } from '@frontierjs/cli/core/basecamps.js'
 import './workbench.types.ts'
 
 const SCHEMA = new URL('../../db/schema.lite', import.meta.url).pathname
@@ -32,6 +33,16 @@ export interface WorkbenchAppOptions {
   port?: number
   /** How a push leaves. A test hands a stub so a report never reaches the real ntfy.sh under the developer's own topic. */
   deliver?: typeof fetch
+}
+
+// A machine that never ran `fli basecamp:create` still has the dev Basecamp on
+// 8120 (docs/PORTS.md); any other name missing from the index is a typo that
+// would otherwise send previews somewhere unintended, so it stops the boot.
+function previewBasecamp (name: string): { name: string, url: string, peerKeyId?: string | null } {
+  try { return resolveBasecamp(name) } catch (err) {
+    if (name === DEV_BASECAMP) return { name, url: 'http://127.0.0.1:8120', peerKeyId: null }
+    throw err
+  }
 }
 
 export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promise<App> {
@@ -58,7 +69,8 @@ export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promis
   // One instance for every service that sends to it, as Basecamp's was.
   app.own('workbench', createWorkbench({ dir: env.WORKBENCH_DIR || undefined, bin: env.CLAUDE_BIN, env }))
   // The peer a preview is cut in; the key pair is read on the first call, not here.
-  const basecamp = createBasecamp({ url: env.BASECAMP_URL, keyId: env.BASECAMP_KEY_ID || null, keys: () => peerKeys() })
+  const entry    = previewBasecamp(env.BASECAMP)
+  const basecamp = createBasecamp({ name: entry.name, url: entry.url, keyId: entry.peerKeyId ?? null, keys: () => peerKeys() })
   app.own('basecamp', basecamp)
 
   const login = loginRoute(db, auth, { key })

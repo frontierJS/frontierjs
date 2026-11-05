@@ -965,15 +965,18 @@ try {
   await until(`document.querySelectorAll('#launch-steps .step').length`, n => n > 0,
     'the step list never rendered')
 
-  const steps = await evaluate(`[...document.querySelectorAll('#launch-steps .step')].map(li => li.dataset.step)`)
+  const steps = await evaluate(`[...document.querySelectorAll('#launch-steps .step:not([data-advisory])')].map(li => li.dataset.step)`)
   check('the launch steps, Cloudflare second', steps.length === 7 && steps[1] === 'dns', JSON.stringify(steps))
+  // FJS-D1895: the seeded workspace holds the hub host, whose backups are never read here.
+  check('and the hub host\'s backups beside them, not counted',
+    await evaluate(`document.querySelector('#launch-steps [data-step="host-backups"]')?.matches('[data-advisory]:not(.complete)')`))
 
   const progress = await evaluate(`(() => {
     const el = document.getElementById('launch-progress')
     return el ? { value: el.value, max: el.max } : null })()`)
   check('the progress element carries the real numbers', progress?.max === 7, JSON.stringify(progress))
 
-  const complete = await evaluate(`document.querySelectorAll('#launch-steps .step.complete').length`)
+  const complete = await evaluate(`document.querySelectorAll('#launch-steps .step.complete:not([data-advisory])').length`)
   check('and it agrees with the steps marked complete', complete === progress?.value,
     `${complete} complete, progress says ${progress?.value}`)
 
@@ -2281,6 +2284,8 @@ try {
   ok(`the bell counts what is unread (${unreadAtFirst})`)
   check('and its name says so to a screen reader',
     /unread/.test(await evaluate(`document.getElementById('bell').getAttribute('aria-label')`)))
+  check('and counts in red while a failure is among them',
+    await evaluate(`document.getElementById('bell-count').classList.contains('danger')`))
 
   await click('#bell')
   const menu = await until(`[...document.querySelectorAll('[role=menuitem]')].map(b => b.textContent.trim()).join(' | ')`,
@@ -2430,12 +2435,17 @@ try {
   // The grace was settable by API patch alone, with nowhere to read it back (FJS-3984).
   check('…and says the grace is the machine\'s default while none is set',
     bpApp?.stopGrace == null && /Stop grace\s*the machine's default/.test(runtime), runtime)
-  const graced = await asOwner('PATCH', `/apps/${bpAppId}`, { stopGrace: 90, version: bpApp?.version })
-  check('an app takes a stop grace', graced.status < 300 && graced.body?.stopGrace === 90, JSON.stringify(graced).slice(0, 160))
+  check('…and the same of the health wait (FJS-4015)',
+    bpApp?.healthTimeout == null && /Health wait\s*the machine's default/.test(runtime), runtime)
+  const tooLong = await asOwner('PATCH', `/apps/${bpAppId}`, { healthTimeout: 900, version: bpApp?.version })
+  check('a health wait past 600 s is refused', tooLong.status === 400 || tooLong.status === 422, JSON.stringify(tooLong).slice(0, 160))
+  const graced = await asOwner('PATCH', `/apps/${bpAppId}`, { stopGrace: 90, healthTimeout: 120, version: bpApp?.version })
+  check('an app takes a stop grace and a health wait', graced.status < 300 && graced.body?.stopGrace === 90 && graced.body?.healthTimeout === 120, JSON.stringify(graced).slice(0, 160))
   await goto(`/apps/${bpAppId}/?tab=config`)
   const gracedRuntime = await until(`document.getElementById('app-runtime')?.textContent ?? ''`,
     t => t.includes('Stop grace'), 'the Config tab never drew the runtime').catch(() => '')
   check('its Config tab shows the stop grace in seconds', /Stop grace\s*90 s/.test(gracedRuntime), gracedRuntime)
+  check('…and the health wait', /Health wait\s*120 s/.test(gracedRuntime), gracedRuntime)
 
   // The swap an app asks for (FJS-D1882): stop-first until the owner says otherwise.
   check('…and says the old release is stopped first while no swap is asked for',
@@ -2447,6 +2457,8 @@ try {
     t => t.includes('Start the new release'), 'the Config tab never drew the swap').catch(() => '')
   check('its Config tab says the new release starts first, and only for an expand',
     /Start the new release before stopping the old one\s*— only when the schema change is an expand/.test(swappedRuntime), swappedRuntime)
+  check('…and that an app naming no health check swaps stop-first anyway (FJS-4012)',
+    bpApp?.healthCheck == null && /this app names no health check, so it swaps stop-first/.test(swappedRuntime), swappedRuntime)
   await click('#app-more')
   await until(`!!document.getElementById('app-edit')`, v => v, 'the app menu never opened')
   await click('#app-edit')

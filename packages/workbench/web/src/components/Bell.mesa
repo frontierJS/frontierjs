@@ -42,7 +42,7 @@
   {#snippet trigger()}
     <Button treatment="ghost" id="bell"
             aria-label={unread.length ? `Notifications, ${unread.length} unread` : 'Notifications'}
-    >🔔{#if unread.length} <Badge tone="danger" id="bell-count">{unread.length}</Badge>{/if}</Button>
+    >🔔{#if unread.length} <Badge id="bell-count">{unread.length}</Badge>{/if}</Button>
   {/snippet}
   {#if unread.length}
     <DropdownGroup heading="Unread">

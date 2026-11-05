@@ -7,6 +7,8 @@ import { test, expect } from 'bun:test'
 
 import { pacerAt } from '#shared/pacer.ts'
 import { obstacleAt, pickupAt, standable, walkable, worldFor } from '../src/world.ts'
+import { ROOMS } from '../src/rooms.ts'
+import { BAND_ROOMS, RADIOS } from '../src/setlist.ts'
 
 test('a scene is read by its slug, and a room with no scene has none', () => {
   expect(worldFor('tavern')?.slug).toBe('tavern')
@@ -75,4 +77,15 @@ test('a pickup lies on floor: each of its cells names it, a cell beside does not
   }
   expect(pickupAt(w, w.spawn.x, w.spawn.y)).toBeNull()
   expect(worldFor('tavern')!.pickups).toEqual([])
+})
+
+// A radio whose room is missing or holds no `radio` piece fails silent: no
+// `song` reaches it, or `/music` answers anywhere in the room.
+test('every radio is a room with a radio piece, playing a room with a band', () => {
+  const slugs = new Set(ROOMS.map(r => r.slug))
+  for (const [home, band] of Object.entries(RADIOS)) {
+    expect(slugs.has(home)).toBe(true)
+    expect(BAND_ROOMS.has(band) && slugs.has(band)).toBe(true)
+    expect(worldFor(home)!.pieces.some(p => p.name === 'radio')).toBe(true)
+  }
 })

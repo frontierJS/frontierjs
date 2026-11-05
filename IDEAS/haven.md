@@ -1045,6 +1045,10 @@ knocks the other back on both screens and removes neither.
   moderation surface, so this waits on 3.2's mod standing.
   - Needs 12.1 (a plot is placements in a row) and 12.9 (the editor it is
     placed in).
+  - A radio is furniture a member places (`FJS-D1894`): `RADIOS` in
+    `api/src/setlist.ts` becomes the houses that placed one, read from their
+    rows. Until then it is hard-coded in Jordan's home: listen-only, off on
+    walk-in, `/music` beside it.
 - [ ] 9.4 The home row. The left hand acts while the right walks on `h j k l`:
   `a s d f` in NORMAL, each keeping what the key means in vim. A figure
   gains a facing, the way it last stepped, as one more presence key beside

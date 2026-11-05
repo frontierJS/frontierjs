@@ -396,6 +396,13 @@ title: Server
   $: weekdayOptions = Object.entries(WEEKDAYS).map(([value, label]) => ({ value, label }))
   $: backupOptions = picksHour ? BACKUP_CHOICES : BACKUP_CHOICES.filter(c => c.value !== 'weekly')
 
+  // Off deletes the backups taken, so it says how many and, when there are
+  // any, asks for the machine's name, as Destroy does. The count sent is the
+  // one shown; the service refuses it if the vendor holds another by now, and
+  // stores the new reading, so this count updates to the one to confirm.
+  let offName = ''
+  $: offDeletes = backups?.taken?.length ?? null
+
   async function saveBackups() {
     error = null; busy = 'backups'
     const on = backupChoice === 'daily' || backupChoice === 'weekly'
@@ -404,7 +411,10 @@ title: Server
         ? { choice: 'on', plan: backupChoice,
             ...(picksHour && { hour: Number(backupHour) }),
             ...(backupChoice === 'weekly' && { weekday: backupDay }) }
-        : { choice: backupChoice })
+        : backupChoice === 'off'
+          ? { choice: 'off', deletes: offDeletes, ...(offDeletes > 0 && { confirm: offName }) }
+          : { choice: backupChoice })
+      offName = ''
       await loadEvents()
       toasts.success('Machine backups saved')
     } catch (e) {
@@ -420,9 +430,78 @@ title: Server
       : `cost not estimated${c?.unestimated ? `: ${c.unestimated}` : ''}`
   }
 
+  // ─── Link to a cloud machine ─────────────────────────────────────────
+  // A row Basecamp did not buy (its own host, an imported box) gets a vendor
+  // link by choosing a machine from `reconcile`'s list, so only machines
+  // carrying the fleet mark can be picked. A matching IP lists first and is
+  // never linked on its own: the person confirms name, IP and region, and
+  // those are what `adopt` checks against the vendor again. Every viewer sees
+  // the card because this screen does not know the caller's role (see
+  // `moves` above); the service answers a non-administrator with the role
+  // it wants, shown in `adopt-error`.
+  $: canAdopt = !!server && !cloudMade && server.status !== 'destroyed' && server.status !== 'destroying'
+
+  let adoptOpen = false, adoptAccounts = [], adoptAccountId = '', adoptSweep = null
+  let adoptPicked = null, adoptError = null, adoptBusy = null
+
+  // Opened after the accounts arrive: an account picker drawn before them is an
+  // empty Select, and List machines enabled against nothing.
+  async function openAdopt() {
+    adoptError = null; adoptBusy = 'accounts'
+    try {
+      const answer = await servers.service.invoke('providers')
+      adoptAccounts = (answer?.accounts ?? []).filter(a => a.providerKind && a.providerKind !== 'custom')
+      if (!adoptAccountId && adoptAccounts.length) adoptAccountId = adoptAccounts[0].id
+    } catch (e) {
+      adoptError = e.message
+    } finally {
+      adoptBusy = null; adoptOpen = true
+    }
+  }
+
+  async function findCandidates() {
+    adoptError = null; adoptSweep = null; adoptPicked = null; adoptBusy = 'find'
+    try {
+      adoptSweep = await servers.service.invoke('reconcile', null, { accountId: adoptAccountId })
+    } catch (e) {
+      adoptError = e.message
+    } finally {
+      adoptBusy = null
+    }
+  }
+
+  // Same address first. Named `server.ipAddress` in the expression for the
+  // reason `moves` is.
+  $: candidates = adoptSweep
+    ? [...adoptSweep.orphans].sort((a, b) =>
+        Number(!!server.ipAddress && b.ipAddress === server.ipAddress)
+        - Number(!!server.ipAddress && a.ipAddress === server.ipAddress))
+    : []
+
+  async function link() {
+    adoptError = null; adoptBusy = 'link'
+    try {
+      const { providerServerId, name, ipAddress, region } = adoptPicked
+      await servers.service.invoke('adopt', server.id, {
+        accountId: adoptAccountId, providerServerId,
+        shown: { name: name ?? null, ipAddress: ipAddress ?? null, region: region ?? null },
+      })
+      adoptOpen = false; adoptSweep = null; adoptPicked = null
+      await watchRow()
+      await loadEvents()
+      toasts.success(`${server.name} is linked to ${server.providerKind}`)
+    } catch (e) {
+      adoptError = e.message
+    } finally {
+      adoptBusy = null
+    }
+  }
+
   // Remove deletes the ROW. On a machine a cloud still bills for, that is the
   // orphan `reconcile` exists to find, so the confirmation says so.
-  $: removeWarning = cloudMade && server.status !== 'destroyed'
+  $: removeWarning = server?.adopted && server.status !== 'destroyed'
+    ? `This removes ${server.name} from Basecamp only. The machine keeps running — and billing — at ${server.providerKind}, and Basecamp will not destroy it: delete it in ${server.providerKind}'s console.`
+    : cloudMade && server.status !== 'destroyed'
     ? `This removes ${server.name} from Basecamp only. The machine keeps running — and billing — at ${server.providerKind}. Destroy it instead to delete it there.`
     : `Remove ${server?.name} from Basecamp?`
 </script>
@@ -592,6 +671,70 @@ title: Server
       {/if}
     </article>
 
+    {#if canAdopt}
+      <article class="card stack" id="server-adopt">
+        <h2 class="h4">Link to a cloud machine</h2>
+        <p class="text-sm text-muted">
+          Points this row at a machine Basecamp did not buy, so its backups can be read and set.
+          Basecamp changes nothing there and will not destroy it. Only machines carrying
+          Basecamp's tag at the provider can be listed.
+        </p>
+        {#if !adoptOpen}
+          <div class="cluster">
+            <Button treatment="outlined" id="adopt-open" disabled={adoptBusy === 'accounts'} onclick={openAdopt}>
+              {adoptBusy === 'accounts' ? 'Asking…' : 'Find a machine'}
+            </Button>
+          </div>
+        {:else}
+          <div class="cluster">
+            <Select id="adopt-account" label="Account" value={adoptAccountId}
+                    options={adoptAccounts.map(a => ({ value: a.id, label: `${a.name} (${a.providerKind})` }))}
+                    onchange={(e) => { adoptAccountId = e.target.value; adoptSweep = null; adoptPicked = null }} />
+            <Button tone="primary" id="adopt-find" disabled={!adoptAccountId || adoptBusy === 'find'} onclick={findCandidates}>
+              {adoptBusy === 'find' ? 'Asking…' : 'List machines'}
+            </Button>
+          </div>
+          {#if adoptSweep}
+            {#if !candidates.length}
+              <p class="text-sm text-muted" id="adopt-none">No tagged machine at {adoptSweep.account.name} lacks a row here.</p>
+            {:else}
+              <ul class="stack" id="adopt-candidates">
+                {#each candidates as o}
+                  <li class="cluster" data-machine={o.providerServerId}>
+                    <strong>{o.name ?? o.providerServerId}</strong>
+                    <span class="text-sm text-muted">{o.ipAddress ?? 'no address'} · {o.region ?? '—'}</span>
+                    {#if server.ipAddress && o.ipAddress === server.ipAddress}
+                      <span class="badge info">same address as this row</span>
+                    {/if}
+                    <Button treatment="outlined" onclick={() => adoptPicked = o}>Choose</Button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          {/if}
+          {#if adoptPicked}
+            <div class="card outlined stack" id="adopt-confirm">
+              <p class="text-sm">Link <strong>{server.name}</strong> to this machine?</p>
+              <dl class="facts">
+                <dt>Name</dt><dd>{adoptPicked.name ?? '—'}</dd>
+                <dt>Address</dt><dd>{adoptPicked.ipAddress ?? 'no address'}</dd>
+                <dt>Region</dt><dd>{adoptPicked.region ?? '—'}</dd>
+              </dl>
+              <div class="cluster">
+                <Button tone="primary" id="adopt-link" disabled={adoptBusy === 'link'} onclick={link}>
+                  {adoptBusy === 'link' ? 'Linking…' : 'Link'}
+                </Button>
+                <Button treatment="ghost" onclick={() => adoptPicked = null}>Cancel</Button>
+              </div>
+            </div>
+          {/if}
+        {/if}
+        {#if adoptError}
+          <article class="alert danger" id="adopt-error"><div class="alert-content">{adoptError}</div></article>
+        {/if}
+      </article>
+    {/if}
+
     {#if cloudMade}
       <article class="card stack" id="server-backups">
         <h2 class="h4">Machine backups</h2>
@@ -629,10 +772,32 @@ title: Server
                     options={weekdayOptions} value={backupDay}
                     onchange={(e) => backupDay = e.target.value} />
           {/if}
-          <Button treatment="outlined" id="backups-save" disabled={busy === 'backups'} onclick={saveBackups}>
-            {busy === 'backups' ? 'Saving…' : 'Save'}
-          </Button>
+          {#if backupChoice !== 'off' || offDeletes === 0}
+            <Button treatment="outlined" id="backups-save" disabled={busy === 'backups'} onclick={saveBackups}>
+              {busy === 'backups' ? 'Saving…' : 'Save'}
+            </Button>
+          {/if}
         </div>
+        {#if backupChoice === 'off' && offDeletes == null}
+          <p class="text-sm text-muted" id="backups-off-unread">
+            Sync from provider first, so Basecamp can say how many backups Off deletes.
+          </p>
+        {:else if backupChoice === 'off' && offDeletes > 0}
+          <div class="card outlined danger stack" id="backups-off-confirm">
+            <p class="text-sm">
+              {server.providerKind} deletes the <strong>{offDeletes} backup{offDeletes === 1 ? '' : 's'}</strong>
+              it has taken of <strong>{server.name}</strong>. This cannot be undone. Type the machine's name to confirm.
+            </p>
+            <form class="cluster" onsubmit={e => { e.preventDefault(); saveBackups() }}>
+              <Input id="backups-off-name" name="backups-off-name" label="Machine name" autocomplete="off"
+                     placeholder={server.name} bind:value={offName} />
+              <Button type="submit" tone="danger" id="backups-off-submit"
+                      disabled={offName !== server.name || busy === 'backups'}>
+                {busy === 'backups' ? 'Turning off…' : 'Turn off backups'}
+              </Button>
+            </form>
+          </div>
+        {/if}
       </article>
     {/if}
 
@@ -755,7 +920,14 @@ title: Server
     {/if}
   </article>
 
-  {#if cloudMade && moves.has('destroy')}
+  {#if server.adopted}
+    <article class="card outlined stack" id="server-adopted">
+      <p class="text-sm">
+        Basecamp did not buy this machine and will not destroy it. Delete it in {server.providerKind}'s
+        console, then remove it here.
+      </p>
+    </article>
+  {:else if cloudMade && moves.has('destroy')}
     <article class="card outlined danger stack" id="server-destroy">
       <h2 class="h4">Destroy this machine</h2>
       <p class="text-sm">

@@ -613,7 +613,7 @@ describe('swapContainer — the docker run line', () => {
   test('the stop grace reaches the run command, and the replaced container is stopped by its own', async () => {
     const t = onBox({ before: { app: old } })
     await t.go()
-    expect(t.runCmd()).toContain('--stop-timeout 40 -e FRONTIER_STOP_GRACE=40')
+    expect(t.runCmd()).toContain('--stop-timeout 50 -e FRONTIER_STOP_GRACE=50')
     expect(t.commands.find(c => c.startsWith('docker stop'))).toBe('docker stop app_replaced')
     expect(await runCmd({ deployConf: { stopGrace: 25 } })).toContain('--stop-timeout 25 -e FRONTIER_STOP_GRACE=25')
   })

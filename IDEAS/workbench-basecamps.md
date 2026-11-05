@@ -71,12 +71,22 @@ peer.
 Goal: what each verb needs, measured against a real Basecamp.
 Done when: each probe's finding is written under its step.
 
-- [ ] 0.1 List every reader of `BASECAMP_URL` / `BASECAMP_API_KEY` and split
+- [x] 0.1 List every reader of `BASECAMP_URL` / `BASECAMP_API_KEY` and split
   the laptop's from the box's. Laptop-side: the `basecamp:*` commands,
   `ws:deps --push`, `db`, `outpost:status` and the `tutor` fixture — each moves
   to the index. Box-side: `packages/outpost/src/config.js` and Basecamp's own
   providers read the in-box env and keep it. For each laptop reader, note what
   it needs: the origin, the key, or the ssh Host.
+  **Listed 2026-11-04.** Origin + key: the shared `originOf` and key readers in
+  `basecamp/_module.md`, `app`, `deploy`, `live`, `posture`, `backup`, `restore`,
+  `reinstall`, `outpost:install`, `outpost:status` (hub optional: no entry means
+  the ssh-only path, not a refusal), `utils/dev.md` (the App's port). Scoped key:
+  `ws:deps --push`, `db` and `db:download`. Writers, which 1.2 turns into the
+  entry: the key-minting step in `_module.md` (create and install), `key.md`,
+  `reinstall.md` fresh mode. Exempt: the `tutor` fixture hands `BASECAMP_URL` to
+  the box's Outpost env, box-side in kind; Workbench's `env.ts`/`app.ts` was the
+  signed peer's own pair, Q4's, and reads the entry since 1.6. Tests setting the pair: `basecamp-posture.test.js`,
+  `vendor.test.js`.
 - [ ] 0.2 Against the local dev Basecamp, `hubBackups.take` then poll `find`
   with a key `basecamp:key` minted, from outside Basecamp's process.
 - [ ] 0.3 Restart Basecamp's API container over ssh on a box, and time how long
@@ -88,24 +98,62 @@ Goal: fli knows every Basecamp by its ssh Host name.
 Done when: `fli basecamp` lists the dev Basecamp and one box, each with whether
 it answers, and `bun run test` in `packages/cli` is green.
 
-- [ ] 1.1 `packages/cli/core/basecamps.js` reads and writes `basecamps.json`
+- [x] 1.1 `packages/cli/core/basecamps.js` reads and writes `basecamps.json`
   (`0600`) in the directory `core/global-env.js` owns, never a hand-spelled
   path: per name, the API origin, the ssh Host, the cloud and box id, and the
   API key (Q1, Q2). The Host is optional: the local dev Basecamp is the
   reserved name `dev`, and a CI machine adds an entry with no Host. Restart
   refuses an entry with no Host.
-- [ ] 1.2 `basecamp:create`, `basecamp:install` and `basecamp:key` write the
+  **Built 2026-11-04:** `readBasecamps`, `writeBasecamp` (0600, re-chmods a
+  looser file; `runs: true` moves the Charter designation so one entry holds it),
+  `removeBasecamp`, `resolveBasecamp(name?)` (one entry is the default; several
+  and no name refuses listing them), `designatedBasecamp`; `test/basecamps.test.js`
+  over a temp home. The laptop's file was seeded with `yuma` from the env pair;
+  the pair stays in `~/.config/fli/.env` until 1.3 lands and the owner deletes it.
+- [x] 1.2 `basecamp:create`, `basecamp:install` and `basecamp:key` write the
   entry; the key moves out of the global env into it.
-- [ ] 1.3 Every laptop reader 0.1 found takes `--basecamp <name>`; with one
+  **Built 2026-11-04:** `adminKey` in `basecamp/_module.md` (which `create` and
+  `reinstall` call; `install` never minted a key) files `{ url, host, cloud,
+  boxId, apiKey }` through `fileBasecamp(name, fields)`, a merge that keeps a
+  `scopedKey` and the `runs` mark across a re-mint. `basecamp:key` takes
+  `--basecamp` and `--domain`. The `dev` entry is written by hand into the file,
+  since `basecamp:key` mints over ssh and the dev Basecamp has no box; no add
+  verb (cut one level simpler).
+- [x] 1.3 Every laptop reader 0.1 found takes `--basecamp <name>`; with one
   entry it is the default, and with several and no flag the command refuses by
   name and lists them. `BASECAMP_URL` / `BASECAMP_API_KEY` leave every laptop
   reader in the same change, with no alias. `ws:deps --push` and `db` keep
   their scoped key: the entry holds the admin key for ring-0 verbs, and a
   scoped key beside it when one was issued.
-- [ ] 1.4 `fli basecamp` lists the entries and whether each answers.
-- [ ] 1.5 Pin the boundary in `packages/cli`: no command source reads either
+  **Built 2026-11-04.** `reachBasecamp(name, log, { scoped })` in `core/basecamps.js`
+  is the one refusal; `lookupBasecamp` is the soft form for `outpost:status` (a
+  named box keeps the ssh-only screen and says the hub was not read) and
+  `utils/dev.md` (no entry, no port lookup). A `<server>` positional doubles as
+  the entry name in `backup`, `restore` and `reinstall`, since the key is the ssh
+  Host. `fli deploy` takes `--basecamp` and passes it to `basecamp:deploy`.
+  `ws:deps --push`, `db:download` and `db:import` use `scopedKey ?? apiKey`.
+  `--url` is gone everywhere, and so is `LOCAL_BASECAMP`. The only hits left are
+  the `tutor` fixture, which hands `BASECAMP_URL` to the box's Outpost env.
+- [x] 1.4 `fli basecamp` lists the entries and whether each answers.
+  **Built 2026-11-04:** `basecamp:list`, alias `basecamp` (the `server:list` pattern);
+  `pingBasecamp` in `core/basecamps.js`, one unsigned GET to `/health` per entry in
+  parallel, 3 s each; an HTML 200 is "not the API". A silent entry is information,
+  so the exit code stays 0. `--json` prints the rows with keys as booleans.
+- [x] 1.5 Pin the boundary in `packages/cli`: no command source reads either
   env var, the file is `0600`, and every entry with a Host names one in
   `~/.ssh/config`. The last two are `fli doctor` rows as well.
+  **Built 2026-11-04:** `test/basecamps-boundary.test.js` walks `commands/**/*.md` and
+  `core/**/*.js` for the two names, allowing only the tutor fixture's two files and
+  checking the allowance is still used. `core/doctor.js` `basecampRows`: a warn when
+  the file has a group or other bit set (`chmod 600`), and a warn per entry whose
+  `host` has no literal `Host <name>` in `~/.ssh/config`; `dev` is not graded.
+- [x] 1.6 Workbench reads its Basecamp from the index by name (Q4, `FJS-D1898`).
+  **Built 2026-11-04:** `api/src/core/env.ts` holds `BASECAMP` (default `dev`), the
+  name of the entry, and `app.ts` resolves it with `resolveBasecamp`, falling back
+  to `http://127.0.0.1:8120` for `dev` alone; any other absent name stops the boot.
+  The entry's `peerKeyId` is the id Basecamp's "Add a peer" form answers, and the
+  not-enrolled refusal names that field and the file. `basecamps-boundary.test.js`
+  also walks `packages/workbench/api/src` for the old pair.
 
 ### Phase 2 — Back up and restart (fli)
 
@@ -156,7 +204,7 @@ dev Basecamp and the page shows each outcome.
   - **C** — No destroy yet; it stays `fli server:destroy`.
   - **Recommend A** — the backup-first gate is what makes destroying from a
     screen safe.
-- **Q4 — Workbench's preview Basecamp.**
+- ~~**Q4 — Workbench's preview Basecamp.**~~ **Answered 2026-11-04 (`FJS-D1898`): A — The preview peer reads its Basecamp from the index, by name, and `BASECAMP_URL` / `BASECAMP_KEY_ID` leave `api/src/core/env.ts`.**
   - **A** — The preview peer reads its Basecamp from the index, by name, and
     `BASECAMP_URL` / `BASECAMP_KEY_ID` leave `api/src/core/env.ts`.
   - **B** — Previews keep their own env pair.

@@ -4022,7 +4022,7 @@ describe('a custom method that writes as the app declares the level it needs (FJ
     ['jobs', 'trigger', DEVELOPER], ['volumes', 'prune', ADMIN], ['serverPostures', 'check', DEVELOPER],
     ['notificationChannels', 'test', ADMIN], ['backupDestinations', 'test', ADMIN],
     ['servers', 'sync', DEVELOPER], ['servers', 'catalog', DEVELOPER],
-    ['servers', 'reconcile', DEVELOPER], ['servers', 'issueEnrollment', ADMIN],
+    ['servers', 'reconcile', DEVELOPER], ['servers', 'issueEnrollment', ADMIN], ['servers', 'adopt', ADMIN],
     ['apps', 'place', DEVELOPER], ['apps', 'unplace', DEVELOPER], ['invitations', 'resend', ADMIN],
     ['apiKeys', 'owners', ADMIN], ['secrets', 'verify', ADMIN],
   ]

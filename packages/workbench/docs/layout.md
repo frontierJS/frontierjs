@@ -11,7 +11,7 @@ The file-by-file map. `CLAUDE.md` keeps the owners and the traps. Paths under
 | `api/index.ts` | starts the app on `PORT`, else 5501 (`GLOBAL.workbench`) |
 | `api/src/app.ts` | builds the app, never starts it; claims `app.own('workbench', ...)` |
 | `api/src/workbench.types.ts` | types the claim by augmenting junction's exported `App` interface |
-| `api/src/core/env.ts` | the environment: `WORKBENCH_KEY`, `ENCRYPTION_KEY`, `WORKBENCH_DIR`, `CLAUDE_BIN`, `HOST`, `BASECAMP_URL`, `BASECAMP_KEY_ID`. No `LOCAL_MACHINE` -- this app IS the local machine |
+| `api/src/core/env.ts` | the environment: `WORKBENCH_KEY`, `ENCRYPTION_KEY`, `WORKBENCH_DIR`, `CLAUDE_BIN`, `HOST`, `BASECAMP` (the name of an entry in `basecamps.json`). No `LOCAL_MACHINE` -- this app IS the local machine |
 | `api/src/core/workbench.ts` | `createWorkbench` -- the pins' directory and the Claude binary |
 | `api/src/auth.ts` · `login.ts` · `principal.ts` | the door: mint a Session, read a token back to its member, `/door/*` routes, the per-call principal |
 | `api/src/peer.ts` | this machine's peer key pair, minted into `~/.config/workbench/peer.json`, and `GET /door/peer` that shows its public half |
