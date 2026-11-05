@@ -915,8 +915,16 @@ function checkSnapshotsRemoved(present) {
   const now     = new Set(present)
   const allowed = allowances.removedSnapshots ?? {}
 
+  // A `.snapshot.d.ts` is hand-written types for the generated `.snapshot.js` it
+  // must be named beside, so no generator claims it; its sibling being checked
+  // and the file still on disk is what present means for it.
+  const typesOf = (path) => {
+    const js = path.replace(/\.d\.ts$/, '.js')
+    return js !== path && now.has(js) && existsSync(join(ROOT, path))
+  }
+
   for (const path of before) {
-    if (now.has(path)) continue
+    if (now.has(path) || typesOf(path)) continue
     if (path in allowed) continue
     fail(
       `${path} was a committed snapshot at ${ref} and is gone\n` +
