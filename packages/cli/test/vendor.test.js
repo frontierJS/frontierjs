@@ -17,6 +17,7 @@ import { writeFileSync, readFileSync, existsSync,
 
 import { writeBasecamp }                                    from '../core/basecamps.js'
 import { vendorWorkspacePackages, linkedDeps, packPackage, withCheckout, keepRunRecord,
+         gradeAtCommit, pendingRetry, RETRY_FILE,
          resolvePackageSource, GENERATED_DIR }              from '../core/vendor.js'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
@@ -456,6 +457,81 @@ describe('withCheckout', () => {
   })
 })
 
+describe('gradeAtCommit', () => {
+  // A stand-in ci.mjs over the real run log: it fails each suite red.json names,
+  // and records every argv it was run with outside the checkout.
+  const stubCi = (calls) => `
+import { openRunLog } from ${JSON.stringify(join(ROOT, 'core', 'ci-log.js'))}
+import { readFileSync, appendFileSync } from 'node:fs'
+const argv = process.argv.slice(2)
+appendFileSync(${JSON.stringify(calls)}, JSON.stringify(argv) + '\\n')
+const red = JSON.parse(readFileSync('red.json', 'utf8'))
+const log = openRunLog(process.cwd(), { commit: 'x', dirty: false, argv, scope: argv.length ? 'partial' : 'full', only: null, phases: ['tests'] })
+log.emit('phase', { name: 'tests' })
+for (const key of red) log.emit('step', { phase: 'tests', status: 'fail', label: key, key })
+log.emit('phase-end', { name: 'tests', ms: 1, ok: !red.length })
+log.emit('end', { ok: !red.length, ms: 1 })
+process.exit(red.length ? 1 : 0)
+`
+
+  test('a retry reruns what failed first, stops while it is red, and runs the full gate once it is green', () => {
+    const repo    = mkdtempSync(join(tmpdir(), 'grade-'))
+    const scratch = mkdtempSync(join(tmpdir(), 'grade-scratch-'))
+    const calls   = join(scratch, 'calls.jsonl')
+    const git = (...a) => spawnSync('git', a, { cwd: repo, encoding: 'utf8' })
+    const commit = (red) => {
+      writeFileSync(join(repo, 'red.json'), JSON.stringify(red))
+      git('add', '.'); git('commit', '-qm', JSON.stringify(red))
+      return git('rev-parse', 'HEAD').stdout.trim()
+    }
+    const ran = () => {
+      const lines = existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n').map(l => JSON.parse(l)) : []
+      rmSync(calls, { force: true })
+      return lines
+    }
+    git('init', '-q'); git('config', 'user.email', 'a@b.c'); git('config', 'user.name', 'a')
+    mkdirSync(join(repo, 'scripts'))
+    writeFileSync(join(repo, 'scripts', 'ci.mjs'), stubCi(calls))
+    writeFileSync(join(repo, 'package.json'), '{"name":"x","version":"1.0.0"}')
+    writeFileSync(join(repo, '.gitignore'), '.cache/\n')
+    const plan = [['--phase', 'tests', '--only', 'packages/a']]
+
+    const first = commit(['packages/a'])
+    expect(gradeAtCommit({ repo, sha: first, scratch })).toMatchObject({ status: 1, stillRed: false, retry: null })
+    expect(ran()).toEqual([[]])
+    expect(JSON.parse(readFileSync(join(repo, RETRY_FILE), 'utf8'))).toEqual({ sha: first, plan })
+
+    const second = commit(['packages/a'])
+    const red = gradeAtCommit({ repo, sha: second, scratch })
+    expect(red).toMatchObject({ status: 1, stillRed: true })
+    expect(ran()).toEqual(plan)
+    // Still red keeps the plan where the full run left it.
+    expect(JSON.parse(readFileSync(join(repo, RETRY_FILE), 'utf8'))).toEqual({ sha: first, plan })
+
+    const third = commit([])
+    expect(gradeAtCommit({ repo, sha: third, scratch })).toMatchObject({ status: 0, stillRed: false })
+    expect(ran()).toEqual([...plan, []])
+    expect(existsSync(join(repo, RETRY_FILE))).toBe(false)
+    expect(git('worktree', 'list').stdout.trim().split('\n')).toHaveLength(1)
+    rmSync(repo, { recursive: true, force: true }); rmSync(scratch, { recursive: true, force: true })
+  })
+
+  test('a plan from another line of history is not this sha\'s', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'grade-lines-'))
+    const git = (...a) => spawnSync('git', a, { cwd: repo, encoding: 'utf8' })
+    git('init', '-q'); git('config', 'user.email', 'a@b.c'); git('config', 'user.name', 'a')
+    git('commit', '-q', '--allow-empty', '-m', 'one')
+    const one = git('rev-parse', 'HEAD').stdout.trim()
+    git('checkout', '-q', '--orphan', 'other'); git('commit', '-q', '--allow-empty', '-m', 'two')
+    const two = git('rev-parse', 'HEAD').stdout.trim()
+    mkdirSync(join(repo, '.cache'))
+    writeFileSync(join(repo, RETRY_FILE), JSON.stringify({ sha: one, plan: [['--phase', 'tests']] }))
+    expect(pendingRetry(repo, one)?.sha).toBe(one)
+    expect(pendingRetry(repo, two)).toBeNull()
+    rmSync(repo, { recursive: true, force: true })
+  })
+})
+
 describe('keepRunRecord', () => {
   // FJS-3934: a release CI run writes its summary into the throwaway checkout,
   // and the checkout is removed -- the failure's detail went with it while the
@@ -473,6 +549,9 @@ describe('keepRunRecord', () => {
     expect(readFileSync(kept, 'utf8')).toContain('expect(received)')
     expect(readFileSync(join(cwd, '.cache', 'ci-runs', 'r1.jsonl'), 'utf8')).toBe('{}')
     expect(keepRunRecord(mkdtempSync(join(tmpdir(), 'keep-empty-')), cwd)).toBeNull()
+    // A release retry's narrowed first pass writes ci-last-partial.txt instead.
+    writeFileSync(join(tree, '.cache', 'ci-last-partial.txt'), 'still red')
+    expect(readFileSync(keepRunRecord(tree, cwd, { summary: 'ci-last-partial.txt' }), 'utf8')).toBe('still red')
     rmSync(tree, { recursive: true, force: true }); rmSync(cwd, { recursive: true, force: true })
   })
 })

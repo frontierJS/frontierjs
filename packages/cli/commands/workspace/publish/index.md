@@ -57,7 +57,7 @@ flags:
     defaultValue: false
   ci:
     type: boolean
-    description: Run the full CI before tagging; --no-ci tags the release commit ungraded, refused beside --to npm
+    description: Run the full CI before tagging, after rerunning what the last failed attempt failed (FJS-D1964); --no-ci tags the release commit ungraded, refused beside --to npm
     defaultValue: true
   push:
     type: boolean

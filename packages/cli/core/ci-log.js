@@ -281,6 +281,39 @@ export function lastFullRun(runs) {
   return runs.find(r => r.scope === 'full' && (r.status === 'passed' || r.status === 'failed')) ?? null
 }
 
+// ─── a release retry's first pass ─────────────────────────────────────────────
+//
+// A release gate that failed is rerun whole, and the full run said whether the
+// fix worked only at its end. So the retry reruns what failed first, narrowed:
+// still red, and it stops in minutes. A green first pass decides nothing, and
+// the full run still grades the tagged sha (FJS-D1720).
+
+// The phases `--only` narrows to a package (ci.mjs `selectedDirs`).
+const NARROWED_BY_ONLY = new Set(['tests', 'typecheck'])
+
+/** The ci.mjs argv lists that rerun what `run` failed: one narrowed by
+ *  `--only` to the failing suites, and one for each phase that reruns whole.
+ *  A phase the run died inside counts as failed. Empty for a green run. */
+export function retryPlan(run) {
+  const narrowed = [], whole = [], keys = new Set()
+  for (const p of run?.phases ?? []) {
+    if (p.ok !== false && p.ms != null) continue
+    const fails = p.steps.filter(s => s.status === 'fail')
+    // A keyless failure (a stale allowance, a baseline raised) is the phase's
+    // own, and no `--only` reaches it.
+    if (NARROWED_BY_ONLY.has(p.name) && p.ms != null && fails.length && fails.every(s => s.key)) {
+      narrowed.push(p.name)
+      for (const s of fails) keys.add(s.key)
+    } else {
+      whole.push(p.name)
+    }
+  }
+  const plan = []
+  if (narrowed.length) plan.push([...narrowed.flatMap(p => ['--phase', p]), ...[...keys].flatMap(k => ['--only', k])])
+  if (whole.length)    plan.push(whole.flatMap(p => ['--phase', p]))
+  return plan
+}
+
 // ─── what the page reads ──────────────────────────────────────────────────────
 
 export function ciScript(root) {

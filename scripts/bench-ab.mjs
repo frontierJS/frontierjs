@@ -41,9 +41,10 @@ const TIMEOUT_MS = 180_000
 
 /** `packages/<name>/bench/cases.mjs`, relative to `root`, sorted. */
 export function caseFiles(root, only = null) {
-  const dir = join(root, 'packages')
+  const dir   = join(root, 'packages')
+  const named = only == null ? null : [only].flat()
   return readdirSync(dir).sort()
-    .filter(name => !only || name === only)
+    .filter(name => !named || named.includes(name))
     .map(name => `packages/${name}/${CASES}`)
     .filter(file => existsSync(join(root, file)))
 }

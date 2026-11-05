@@ -87,9 +87,11 @@ const testsOnly = args.includes('--tests-only')
 const update    = args.includes('--update')
 const verbose   = args.includes('--verbose')
 const baseRef   = readFlag(args, '--base-ref') ?? process.env.FJS_CI_BASE_REF ?? 'origin/main'
-// Narrows the typecheck and test phases to one package. Coverage and hygiene
-// are repo-wide questions and ignore it.
-const only      = readFlag(args, '--only')
+// Narrows the typecheck and test phases to the packages named. Coverage and
+// hygiene are repo-wide questions and ignore it. Repeatable: a release retry
+// reruns every suite that failed in one run (`retryPlan` in core/ci-log.js).
+const only      = args.reduce((out, a, i) =>
+  a === '--only' && args[i + 1] ? [...out, args[i + 1]] : out, [])
 // Repeatable: `--phase deploy --phase tutor`.
 const wantedPhases = args.reduce((out, a, i) =>
   a === '--phase' && args[i + 1] ? [...out, args[i + 1]] : out, [])
@@ -147,8 +149,8 @@ Flags
   --tests-only        the suites alone
   --phase <name>      one phase, repeatable; run in the table's order, never
                       the order typed — scaffold packs what deploy installs
-  --only <pkg>        narrow typecheck and tests; hygiene and coverage are
-                      repo-wide questions and ignore it
+  --only <pkg>        narrow typecheck and tests, repeatable; hygiene and
+                      coverage are repo-wide questions and ignore it
   --base-ref <ref>    what access, snapshots and perf compare against (origin/main)
   --update            write ratchet improvements back to ci-allowances.json
   --verbose           full child output
@@ -238,7 +240,7 @@ async function main() {
 
   const planned = Object.keys(PHASES).filter(name =>
     !(testsOnly && name !== 'tests' && name !== 'conduits') && !(fast && FULL_ONLY.has(name)))
-  startRunLog(planned, only ? 'partial' : testsOnly ? 'tests-only' : fast ? 'fast' : 'full')
+  startRunLog(planned, only.length ? 'partial' : testsOnly ? 'tests-only' : fast ? 'fast' : 'full')
   for (const name of planned) await runPhase(name)
   report()
 }
@@ -249,7 +251,7 @@ function startRunLog(phases, scope) {
   const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER })
   runLog = openRunLog(ROOT, {
     commit, dirty: status.status === 0 ? status.stdout.trim() !== '' : null,
-    argv: args, scope, only: only ?? null, phases,
+    argv: args, scope, only: only.length ? only.join(' ') : null, phases,
   })
 }
 
@@ -1119,14 +1121,14 @@ async function typecheck() {
   const dirs = selectedDirs().filter(dir => readPackage(dir)?.scripts?.typecheck)
   await inLanes(dirs, LANES, dir => runScriptAsync(dir, 'typecheck'), (dir, run) => {
     if (run.code !== 0) {
-      fail(`${dir} typecheck exited ${run.code}`, run.output)
+      fail(`${dir} typecheck exited ${run.code}`, run.output, { key: dir, ms: run.ms })
       return
     }
     // scripts/typecheck.mjs prints this when a package has improved and nobody
     // locked the improvement in. Not a failure — an unclaimed one.
     const improved = /below the baseline of (\d+)/.exec(`${run.output.stdout}${run.output.stderr}`)
     if (improved) note(`${dir} is below its baseline of ${improved[1]} — run \`bun run typecheck -- --update\` in it.`)
-    ok(`${dir}`, run.ms)
+    ok(`${dir}`, run.ms, { key: dir, ms: run.ms })
   })
 }
 
@@ -1772,6 +1774,8 @@ async function deploy() {
 
 function perf() {
   const from = phase('perf')
+  // bench-ab names a package by its directory alone: `--only packages/cli` is `cli` there.
+  const benchOnly = only.map(name => name.split('/').pop())
 
   const ref = resolveRef(baseRef)
   if (!ref) note(`perf compared against nothing — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FJS_CI_BASE_REF.`)
@@ -1780,13 +1784,13 @@ function perf() {
   if (ref) {
     const listed = spawnSync('git', ['ls-tree', '--name-only', '-r', ref, '--', 'packages'], { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER })
     for (const file of (listed.stdout ?? '').split('\n').filter(f => /^packages\/[^/]+\/bench\/cases\.mjs$/.test(f)))
-      if ((!only || file.split('/')[1] === only) && !existsSync(join(ROOT, file)))
+      if ((!only.length || benchOnly.includes(file.split('/')[1])) && !existsSync(join(ROOT, file)))
         fail(`${file} — at ${ref.slice(0, 8)} and gone here; its cases no longer run`)
   }
 
   begin('perf')
   const t0    = Date.now()
-  const model = benchCompare({ root: ROOT, ref, only: only ?? null })
+  const model = benchCompare({ root: ROOT, ref, only: only.length ? benchOnly : null })
   console.log(benchFormat(model).replace(/^/gm, '    ').replace(/OVER CEILING \S+/g, yellow))
 
   for (const p of model.packages) {
@@ -2329,13 +2333,14 @@ function workspaceDirs() {
 }
 
 function selectedDirs() {
-  if (!only) return workspaceDirs()
-  const match = workspaceDirs().filter(d => d === only || d.endsWith(`/${only}`))
-  if (!match.length) {
-    console.error(`[ci] --only ${only} matches no workspace member`)
+  if (!only.length) return workspaceDirs()
+  const names   = name => d => d === name || d.endsWith(`/${name}`)
+  const missing = only.filter(name => !workspaceDirs().some(names(name)))
+  if (missing.length) {
+    console.error(`[ci] --only ${missing.join(', ')} matches no workspace member`)
     process.exit(2)
   }
-  return match
+  return workspaceDirs().filter(d => only.some(name => names(name)(d)))
 }
 
 // A package.json under any directory a workspace pattern starts in, that no

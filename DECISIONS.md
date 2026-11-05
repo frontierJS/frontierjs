@@ -16694,6 +16694,10 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1964"></a>2026-11-05 · `FJS-D1964` — A failed release gate is retried what-failed-first: `ws:pub` reruns the last attempt's failed phases and suites before the full run, and stops while they are still red
+
+The owner's call, asked through the question tool after `decision-rules`. **Fail-fast retry** was picked over **carrying green results across the retry** and **sharding the auth suite**. A carry was the first recommendation and was withdrawn. Many test files read other packages by relative path, 92 in `ui` and 17 in `cli`, so a package's declared dependencies are not what its suites read, and a carry would tag suites graded that never ran on the tagged bytes. [`FJS-D1720`](#fjs-d1720) stands: a green first pass decides nothing, and the full run still grades the sha. A failed full run writes `.cache/ci-release-retry.json` (`{ sha, plan }`, from `retryPlan` in `packages/cli/core/ci-log.js`), and a later attempt on a descendant sha runs that plan first in the same checkout (`gradeAtCommit` in `packages/cli/core/vendor.js`). The plan is at most two `ci.mjs` runs: failing `tests` and `typecheck` suites narrowed by a repeatable `--only`, and every other failed phase whole. A red retry costs minutes, not the full half hour; a green one costs what it did.
+
 ### <a id="fjs-d1961"></a>2026-11-05 · `FJS-D1961` — Q5 — Whether the screen edits the index — Verbs only. Entries are read; a key is minted by `basecamp:key` over ssh and an entry is written by `create`, `install`, `key` or a hand edit.
 
 Asked in [`IDEAS/workbench-basecamps.md`](IDEAS/workbench-basecamps.md) § Open questions. **A** was picked over **B** (A form that adds, renames and forgets an entry (url, Host, cloud, box id), with no key field; keys stay ssh-minted), **C** (B plus a key field, so a key from Basecamp's API keys screen can be pasted in).

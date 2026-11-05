@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readdirSync, readFileSyn
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
-  parseCounts, failureExcerpt, openRunLog, readRuns, foldRun, latestByItem, lastFullRun,
+  parseCounts, failureExcerpt, openRunLog, readRuns, foldRun, latestByItem, lastFullRun, retryPlan,
   ciState, ciArgv, startCiRun, stopCiRun, RUNS_DIR,
 } from '../core/ci-log.js'
 
@@ -243,6 +243,45 @@ describe('latestByItem', () => {
       label: 'a.snapshot.md no longer matches its source', detail: 'Run it and read the diff.',
       output: '- old\n+ new', fix: { kind: 'snapshot', file: 'a.snapshot.md' },
     }])
+  })
+})
+
+describe('retryPlan', () => {
+  const run = (...phases) => foldRun([
+    { e: 'run', at: 0, id: 'r', pid: 1, scope: 'full', argv: [] },
+    ...phases.flatMap(([name, ok, steps = []]) => [
+      { e: 'phase', at: 1, name },
+      ...steps.map(([status, key]) => ({ e: 'step', at: 1, phase: name, status, label: `${key ?? name} ${status}`, key })),
+      ...(ok == null ? [] : [{ e: 'phase-end', at: 2, name, ms: 1, ok }]),
+    ]),
+  ], { alive: () => false })
+
+  test('failing suites rerun narrowed by --only in one run, a failed phase reruns whole in another', () => {
+    const plan = retryPlan(run(
+      ['lint', true],
+      ['typecheck', false, [['ok', 'packages/a'], ['fail', 'packages/b']]],
+      ['tutor', false, [['fail', 'tutor:app']]],
+      ['tests', false, [['fail', 'packages/c'], ['ok', 'packages/d'], ['fail', 'packages/b']]],
+    ))
+    expect(plan).toEqual([
+      ['--phase', 'typecheck', '--phase', 'tests', '--only', 'packages/b', '--only', 'packages/c'],
+      ['--phase', 'tutor'],
+    ])
+  })
+
+  // A stale knownTestFailures entry fails the phase with no key, and a run
+  // narrowed to the keyed suites would never reach it.
+  test('a keyless failure in tests reruns the whole phase', () => {
+    expect(retryPlan(run(['tests', false, [['fail', 'packages/c'], ['fail']]]))).toEqual([['--phase', 'tests']])
+  })
+
+  test('the phase a killed run died inside counts as failed', () => {
+    expect(retryPlan(run(['lint', true], ['deploy', null]))).toEqual([['--phase', 'deploy']])
+  })
+
+  test('a green run, or none, plans nothing', () => {
+    expect(retryPlan(run(['lint', true], ['tests', true, [['ok', 'packages/a']]]))).toEqual([])
+    expect(retryPlan(null)).toEqual([])
   })
 })
 

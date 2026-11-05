@@ -43,6 +43,7 @@ import { existsSync, readFileSync, writeFileSync, copyFileSync, statSync,
          readdirSync, mkdirSync, rmSync, realpathSync }           from 'node:fs'
 import { join, resolve, dirname, relative }                       from 'node:path'
 import { releasableMembers, memberByName }                    from './workspace-members.js'
+import { readRuns, lastFullRun, retryPlan }                  from './ci-log.js'
 
 // Where the generated build context lands, relative to the app root. The
 // Dockerfile `fli make:deploy` writes names the same path, and the `file:` specs
@@ -243,20 +244,68 @@ export function withCheckout({ repo, sha, scratch }, fn) {
 // run printed named .cache/ci-last.txt, which in the working tree is some
 // earlier run (FJS-3934). `ci-runs/` is copied as it is; the summary lands as
 // `ci-last-release.txt`, beside the working tree's `ci-last.txt` rather than
-// over it. Returns the summary's path, or null when the run wrote none.
-export function keepRunRecord(tree, cwd) {
+// over it. A narrowed run's summary is `ci-last-partial.txt` there, and the
+// caller names it. Returns the summary's path, or null when the run wrote none.
+export function keepRunRecord(tree, cwd, { summary = 'ci-last.txt' } = {}) {
   const runs = join(tree, '.cache', 'ci-runs')
   if (existsSync(runs)) {
     const to = join(cwd, '.cache', 'ci-runs')
     mkdirSync(to, { recursive: true })
     for (const f of readdirSync(runs)) copyFileSync(join(runs, f), join(to, f))
   }
-  const last = join(tree, '.cache', 'ci-last.txt')
+  const last = join(tree, '.cache', summary)
   if (!existsSync(last)) return null
   const kept = join(cwd, '.cache', 'ci-last-release.txt')
   mkdirSync(dirname(kept), { recursive: true })
   copyFileSync(last, kept)
   return kept
+}
+
+// ─── gradeAtCommit ────────────────────────────────────────────────────────────
+// The release gate: the full CI in a checkout of `sha` (`FJS-D1720`). A failed
+// run leaves `RETRY_FILE` in `repo` naming what failed (`retryPlan`), and the
+// next attempt on a descendant sha reruns that first and stops if it is still
+// red: the full run said whether the fix worked only at its end, after half an
+// hour. A green first pass decides nothing, and the full run follows.
+//
+//   { repo, sha, scratch, say } → { status, kept, stillRed, retry }
+
+export const RETRY_FILE = join('.cache', 'ci-release-retry.json')
+
+// A plan from another line of history names failures this sha never had.
+export function pendingRetry(repo, sha) {
+  let kept
+  try { kept = JSON.parse(readFileSync(join(repo, RETRY_FILE), 'utf8')) } catch { return null }
+  if (!kept?.sha || !kept.plan?.length) return null
+  const { status } = spawnSync('git', ['merge-base', '--is-ancestor', kept.sha, sha], { cwd: repo })
+  return status === 0 ? kept : null
+}
+
+function keepRetry(repo, sha, plan) {
+  const file = join(repo, RETRY_FILE)
+  if (!plan.length) return rmSync(file, { force: true })
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, `${JSON.stringify({ sha, plan }, null, 2)}\n`)
+}
+
+export function gradeAtCommit({ repo, sha, scratch, say = () => {} }) {
+  const retry = pendingRetry(repo, sha)
+  let kept = null, stillRed = false
+  const status = withCheckout({ repo, sha, scratch }, tree => {
+    const ci = (argv = []) => spawnSync('node', ['scripts/ci.mjs', ...argv], { cwd: tree, stdio: 'inherit' }).status
+    for (const argv of retry?.plan ?? []) {
+      say(`rerunning first what failed on ${retry.sha.slice(0, 12)} -- ${argv.join(' ')}`)
+      if (ci(argv) === 0) continue
+      stillRed = true
+      kept = keepRunRecord(tree, repo, { summary: 'ci-last-partial.txt' })
+      return 1
+    }
+    const status = ci()
+    kept = keepRunRecord(tree, repo)
+    keepRetry(repo, sha, status === 0 ? [] : retryPlan(lastFullRun(readRuns(tree))))
+    return status
+  })
+  return { status, kept, stillRed, retry }
 }
 
 //   { repo, sha, entries: [{ name, dir }], destination, scratch }

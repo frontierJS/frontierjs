@@ -771,7 +771,10 @@ mv "$tmp" "$key"
  * one the archive or the old database was encrypted under.
  */
 export async function seedBoxKey({ host, secretsDir, key }) {
+  // The app directory is made here first on a purged box and setup keeps its
+  // mode, so under umask 077 Caddy could not read the release and every page 403'd.
   await asRootOn(host, `set -eu
+mkdir -p ${shQuote(dirname(secretsDir))}
 umask 077
 mkdir -p ${shQuote(secretsDir)}
 tmp=$(mktemp ${shQuote(secretsDir)}/.key-XXXXXX)
