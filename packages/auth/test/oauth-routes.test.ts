@@ -439,3 +439,50 @@ describe('GET /auth/oauth', () => {
     } finally { bare.cleanup() }
   })
 })
+
+// ─── the authorization-server document ──────────────────────────────────────
+
+describe('GET /.well-known/oauth-authorization-server', () => {
+
+  test('states the document an MCP connector reads, field for field', async () => {
+    const res = await request(app).get('/.well-known/oauth-authorization-server')
+    expect(res.status).toBe(200)
+    expect(String(res.headers?.['content-type'])).toContain('application/json')
+    expect(res.body).toEqual({
+      issuer:                                PUBLIC_URL,
+      authorization_endpoint:                `${PUBLIC_URL}/auth/authorize`,
+      token_endpoint:                        `${PUBLIC_URL}/auth/token`,
+      response_types_supported:              ['code'],
+      grant_types_supported:                 ['authorization_code', 'refresh_token'],
+      code_challenge_methods_supported:      ['S256'],
+      token_endpoint_auth_methods_supported: ['none'],
+      client_id_metadata_document_supported: true,
+    })
+  })
+
+  // RFC 8414 § 3.3: the issuer a client compares against must be the origin it
+  // fetched from, and the protected-resource document names the same string.
+  test('the issuer is the origin alone, with no path and no trailing slash', async () => {
+    const { issuer } = (await request(app).get('/.well-known/oauth-authorization-server')).body as { issuer: string }
+    expect(issuer).toBe(new URL(PUBLIC_URL).origin)
+    expect(new URL(issuer).pathname).toBe('/')
+    expect(issuer.endsWith('/')).toBe(false)
+  })
+
+  test('the endpoints sit under apiPrefix and auth\'s prefix, however apiPrefix is spelled', async () => {
+    for (const apiPrefix of ['/api', 'api/']) {
+      const h2 = await makeAuth()
+      try {
+        const pre: any = await createTestApp({ auth: h2.auth as any, config: { apiPrefix, publicUrl: PUBLIC_URL } as any })
+        pre.setAuth(h2.auth as any)
+        pre.configure(auth({ auth: h2.auth }))
+        const res = await request(pre).get('/.well-known/oauth-authorization-server')
+        const doc = res.body as Record<string, string>
+        expect(res.status).toBe(200)
+        expect(doc.issuer).toBe(PUBLIC_URL)
+        expect(doc.authorization_endpoint).toBe(`${PUBLIC_URL}/api/auth/authorize`)
+        expect(doc.token_endpoint).toBe(`${PUBLIC_URL}/api/auth/token`)
+      } finally { h2.cleanup() }
+    }
+  })
+})

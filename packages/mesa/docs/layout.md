@@ -50,6 +50,12 @@ src/
                          out as a row). A color or display it cannot lower
                          comes back by line
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
+                         Also `startRender` and `renderString`, the string
+                         mode's one render: render.js awaits on it, and a
+                         page bundled without happy-dom (`fli mesa:pack`)
+                         calls `renderString`. Not in runtime-server.js: the
+                         compiler imports that file, and the edge would
+                         evaluate this runtime before a document exists
   runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal:
                          `$$host`, a cell tree over @opentui/core (optional peer,
                          pinned exact while 0.x — FJS-D698). Bun only. Events

@@ -256,3 +256,7 @@ export function createHistory(max = 50) {
     },
   }
 }
+
+// Every scene is a fresh mount, so a history made per scene emptied at each
+// door; this one lasts the run. Memory only.
+export const said = createHistory()

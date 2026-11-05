@@ -98,7 +98,7 @@
   import { rooms }       from '@/resources/Room.mesa'
   import { createStage, arrival, OUTDOORS, worn } from '@/lib/scene/stage.js'
   import { remember }    from '@/lib/scene/map.js'
-  import { createCommands, createHistory, complete, matches, partial } from '@/lib/hash/commands.js'
+  import { createCommands, complete, matches, partial, said } from '@/lib/hash/commands.js'
   import { WIDE_LAYER, cellOf, covered, figures, inView, standsOn } from '@/lib/scene/crowd.js'
   import { spanOf } from '#shared/shape.ts'
   import { facingOf, FIRST_FACING } from '#shared/facing.ts'
@@ -151,8 +151,6 @@
   // A pane open over the room hides the bubbles (`commands.js`'s `pane`).
   let paned = false
   $.onDestroy(commands.subscribe(() => { paned = !!commands.mode?.pane }))
-  // Up and Down in the line recall the commands said here; held in memory only.
-  var said = createHistory()
 
   // A snapshot: the room is set before this mounts and never changes under
   // it. Read reactively it would make `here` derived, and a derived presence
@@ -473,15 +471,17 @@
       draft = complete(draft, choice.words, choice.head)
       return
     }
-    if (commands.mode && commands.modeKey(e)) {
-      e.preventDefault()
-      normal()
-      return
-    }
+    // A slash line recalls before an open pane takes the arrow, or the desk's
+    // cursor eats every Up and an earlier /report never comes back.
     if (room && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && (said.browsing || draft.startsWith('/'))) {
       e.preventDefault()
       const line = e.key === 'ArrowUp' ? said.prev(draft) : said.next()
       if (line !== null) draft = line
+      return
+    }
+    if (commands.mode && commands.modeKey(e)) {
+      e.preventDefault()
+      normal()
       return
     }
     if (room && commands.press(e.key, { x, y, facing }, e)) { if (e.defaultPrevented) normal(); return }

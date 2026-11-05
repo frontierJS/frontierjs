@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-47 services · 51 routes · 15 plugins · prefix /api
+47 services · 54 routes · 15 plugins · prefix /api
 ```
 
 ## Custom methods whose body writes as the app
@@ -955,7 +955,10 @@ once; everything else was registered by hand or by a plugin.
 
 | Method | Path | Kind |
 | --- | --- | --- |
+| GET | `/.well-known/oauth-authorization-server` | raw |
+| GET | `/.well-known/oauth-protected-resource/*` | raw |
 | OPTIONS | `/*` | raw |
+| GET | `/api/.well-known/oauth-protected-resource/mcp` | raw |
 | DELETE | `/api/{service}` | service |
 | GET | `/api/{service}` | service |
 | PATCH | `/api/{service}` | service |

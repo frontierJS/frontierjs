@@ -37,7 +37,7 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
-import { BadRequest, CALL_OPTIONS_AT, LEVELS, Unauthorized, errorBody, normalizePrefix, principalGateLevel, scopeRefusal, toDataPrincipal, withholdProtected, setCallDb } from '@frontierjs/junction'
+import { BadRequest, CALL_OPTIONS_AT, LEVELS, NotFound, Unauthorized, errorBody, normalizePrefix, principalGateLevel, scopeRefusal, toDataPrincipal, withholdProtected, setCallDb } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
 import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
 import { BREADCRUMBS_META, answersOneRow, breadcrumbsFor, describeBreadcrumbs } from './breadcrumbs.ts'
@@ -156,6 +156,22 @@ export function mcp(opts: McpOptions = {}): Plugin {
       })
 
       app.get(`${path}/calls`, async (ctx: RouteCtx<typeof app>) => calls(app, ctx, trail))
+
+      // The copy under the prefix is the one 1.1's header names. The root
+      // copy is RFC 9728's path-inserted form a client probes with no header,
+      // matched at request time because `apiPrefix` can move after
+      // `register()` (`FJS-3072`).
+      const document = (ctx: RouteCtx<typeof app>, request: Request) => {
+        if (!signIn) throw new NotFound()
+        return ctx.json(protectedResource(app, request, path))
+      }
+      app.get(`${WELL_KNOWN}${path}`, (ctx: RouteCtx<typeof app>) => document(ctx, (ctx.$raw as { $req: Request }).$req))
+      app.http.router.get(`${WELL_KNOWN}/*`, (ctx: RouteCtx<typeof app>) => {
+        const request = (ctx.$raw as { $req: Request }).$req
+        const rest    = new URL(request.url).pathname.slice(WELL_KNOWN.length)
+        if (rest !== '' && rest !== `${normalizePrefix(app.config.apiPrefix)}${path}`) throw new NotFound()
+        return document(ctx, request)
+      })
     },
 
     // Services register during `autoload-services`, which is above `boot-plugins`
@@ -248,8 +264,28 @@ const AUTH_PLUGIN = '@frontierjs/auth'
  * a connector follows this header before any root probe.
  */
 function resourceMetadataUrl(app: App, request: Request, path: string): string {
-  const origin = app.config.publicUrl ?? new URL(request.url).origin
-  return `${origin}${normalizePrefix(app.config.apiPrefix)}/.well-known/oauth-protected-resource${path}`
+  return `${originOf(app, request)}${normalizePrefix(app.config.apiPrefix)}${WELL_KNOWN}${path}`
+}
+
+const WELL_KNOWN = '/.well-known/oauth-protected-resource'
+
+/**
+ * RFC 9728's document. A Claude client refuses a `resource` that is not the
+ * MCP URL exactly and reads only the first authorization server, which is
+ * the origin alone (`FJS-D1945`) — the same string auth's own document states
+ * as its `issuer`.
+ */
+function protectedResource(app: App, request: Request, path: string) {
+  const origin = originOf(app, request)
+  return {
+    resource:                 `${origin}${normalizePrefix(app.config.apiPrefix)}${path}`,
+    authorization_servers:    [origin],
+    bearer_methods_supported: ['header'],
+  }
+}
+
+function originOf(app: App, request: Request): string {
+  return app.config.publicUrl ?? new URL(request.url).origin
 }
 
 // ─── the SDK ──────────────────────────────────────────────────────────────────

@@ -18,6 +18,8 @@
 // daily    the newest daily check posted in the Kobami chat, each item a link
 // daily-dev  the same check less the 📣 ads / SEO section, only what Jordan holds alone
 // plans    open to-dos per client plan (the Daily Checklist doc's table), project by project
+// notifications  this account's unread Hey! notifications, by who made them
+// mark-read      marks read every unread one Luc, Vlad or Colin made, then shows what is left
 import { execFile } from 'node:child_process'
 
 const basecamp = (...args) => new Promise((resolve, reject) => {
@@ -182,6 +184,47 @@ function planTable(html) {
 // The leaderboard's team, by Basecamp id: a name search for Vlad answers
 // "Ambiguous person", and the account itself is read as `me`.
 const BOARD = [['Jordan', 'me'], ['Vlad', '--person', '41640225'], ['Colin', '--person', '52968940']]
+
+// Whose notifications `mark-read` clears, by Basecamp id for the same reason.
+const TEAM = new Map([[47581279, 'Luc'], [41640225, 'Vlad'], [52968940, 'Colin']])
+
+// The server answers at most 100 unreads, and `notifications read` resolves an
+// id against the page it was listed on; unreads repeat on every page, so the
+// first page's ids are the ones to send.
+const unreadNotifications = async () => {
+  const data = await basecamp('notifications', 'list', '--limit-bubble-ups')
+  return { unreads: data.unreads ?? [], capped: !!data.unreads_capped }
+}
+
+/** The unreads as `{ title, blocks }`, `lead` blocks first; each item keyed by who made it, so Tab filters by person. */
+function notificationsAnswer({ unreads, capped }, title, lead = []) {
+  if (!unreads.length) return { title, blocks: [...lead, { kind: 'callout', tone: 'ok', text: 'No unread notifications.' }] }
+  const by = (n) => first(n.creator?.name) || 'someone'
+  const team = unreads.filter((n) => TEAM.has(n.creator?.id))
+  const people = tally(unreads, (n) => [by(n)], 8)
+  const sorted = [...unreads].sort((a, b) => TEAM.has(b.creator?.id) - TEAM.has(a.creator?.id) || by(a).localeCompare(by(b)) || b.unread_at.localeCompare(a.unread_at))
+  return {
+    title,
+    blocks: [
+      ...lead,
+      { kind: 'stats', items: [
+        { label: 'unread', value: capped ? `${unreads.length}+` : unreads.length, note: capped ? 'the server caps at 100' : '', noteTone: 'muted' },
+        { label: [...TEAM.values()].join('/'), value: team.length, key: 'team', tone: team.length ? 'warn' : 'ok' },
+        ...people.slice(0, 2).map((p) => ({ label: p.label, value: p.value, key: p.label.toLowerCase() })),
+      ] },
+      ...(team.length ? [{ kind: 'callout', tone: 'muted', text: `/report mark-read marks the ${team.length} from ${[...TEAM.values()].join(', ')} read.` }] : []),
+      { kind: 'heading', text: 'By who' },
+      { kind: 'bars', items: people },
+      ...chunks(sorted, 12).map((part) => ({ kind: 'list', items: part.map((n) => ({
+        text: `${oneLine(n.title)} · ${by(n)} · ${oneLine(n.bucket_name)}`,
+        note: `${n.type} · ${ago(n.unread_at)}`,
+        tone: TEAM.has(n.creator?.id) ? undefined : 'muted',
+        url: n.app_url,
+        keys: [by(n).toLowerCase(), ...(TEAM.has(n.creator?.id) ? ['team'] : [])],
+      })) })),
+    ],
+  }
+}
 
 const REPORTS = {
   plans: {
@@ -447,6 +490,33 @@ const REPORTS = {
     help: 'the daily check less the 📣 ads / SEO section, only what Jordan holds alone',
     run: () => dailyReport((item, section) =>
       section.includes('📣') ? 'in 📣 ads / SEO' : item.who !== 'Jordan' ? "not Jordan's alone" : null),
+  },
+
+  notifications: {
+    help: "this account's unread notifications, by who made them",
+    async run() {
+      const list = await unreadNotifications()
+      return notificationsAnswer(list, `${list.unreads.length}${list.capped ? '+' : ''} unread notifications`)
+    },
+  },
+
+  // Writes, so a /rerun marks again; it reads the list fresh each time, so a
+  // second run marks only what arrived since.
+  'mark-read': {
+    help: `marks read every unread notification ${[...TEAM.values()].join(', ')} made, then shows what is left`,
+    async run() {
+      const marked = (await unreadNotifications()).unreads.filter((n) => TEAM.has(n.creator?.id))
+      if (marked.length) await basecamp('notifications', 'read', ...marked.map((n) => String(n.id)))
+      // The list read back proves the marks took; one still listed did not.
+      const left = await unreadNotifications()
+      const stuck = left.unreads.filter((n) => marked.some((m) => m.id === n.id))
+      return notificationsAnswer(left, `Marked ${marked.length - stuck.length} read · ${left.unreads.length} left`, [
+        ...(stuck.length ? [{ kind: 'callout', tone: 'danger', text: `${stuck.length} of the ${marked.length} are still unread after the mark.` }] : []),
+        ...(marked.length ? [{ kind: 'heading', text: 'Marked read' }, ...chunks(marked, 12).map((part) => ({ kind: 'list', items: part.map((n) => ({
+          text: `${oneLine(n.title)} · ${TEAM.get(n.creator.id)} · ${oneLine(n.bucket_name)}`, note: n.type, tone: 'ok', url: n.app_url,
+        })) })), { kind: 'heading', text: 'Still unread' }] : []),
+      ])
+    },
   },
 }
 

@@ -256,6 +256,18 @@ function printHelp(meta, filePath, { full = true } = {}) {
     for (const ex of examples) out(`    ${dim(ex)}`)
   }
 
+  // The note is what to pick on the vendor's page, so it prints even when the key
+  // is set: the card is where a person making a second token reads the scopes.
+  const required = [...requiresOf(getModule(meta.title?.split(':')[0])?.meta), ...requiresOf(meta)]
+  if (required.length) {
+    out()
+    out(`  ${yellow('requires')}`)
+    for (const { key, url, note } of required) {
+      out(`    ${process.env[key] ? green('✓') : chalk.red('✗')}  ${key}${url ? dim(`  ${url}`) : ''}`)
+      if (note) out(`       ${dim(note)}`)
+    }
+  }
+
   if (filePath && full) {
     try { printPlanFromFile(filePath, {}, { indent: '  ', write: (s) => { text += s } }) } catch {}
     return page(text)

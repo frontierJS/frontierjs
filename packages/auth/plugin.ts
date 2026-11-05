@@ -241,6 +241,15 @@ export function auth(opts: AuthPluginOptions): Plugin {
         },
       })
 
+      // ── GET /.well-known/oauth-authorization-server ──────────────────
+      //
+      // RFC 8414 puts the document at the ROOT of the issuer's origin, outside
+      // `apiPrefix`, so it goes through the router and not `app.get`. A
+      // connector reads it from `publicUrl`; the SPA's host answers that path
+      // unless the front door proxies it (`cli/core/edge.js`).
+      app.http.router.get(WELL_KNOWN_AS, (ctx: TransportContext) =>
+        ctx.json(authorizationServer(app, prefix, (ctx.$raw as { $req: Request }).$req)))
+
       // ── POST /auth/register ──────────────────────────────────────────
       // Plugin-level only — not on IAuth.
       // createUser + login in one step. Issues a session token.
@@ -879,6 +888,31 @@ function clearCookie(ctx: TransportContext): void {
 }
 
 // ─── OAuth helpers ────────────────────────────────────────────────────────
+
+const WELL_KNOWN_AS = '/.well-known/oauth-authorization-server'
+
+/**
+ * RFC 8414's document. `issuer` is the origin alone, the one string the
+ * protected-resource document names in `authorization_servers` (`FJS-D1945`);
+ * a client compares the two and refuses a mismatch. The endpoints are named
+ * ahead of their routes. Paths are built at request time, because `apiPrefix`
+ * can move after `register()` (`FJS-3072`). Only the OIDC form is withheld:
+ * its schema demands a JWKS and ID-token fields this server does not have.
+ */
+function authorizationServer(app: App, prefix: string, request: Request) {
+  const origin = app.config.publicUrl ?? new URL(request.url).origin
+  const base   = `${origin}${normalizePrefix((app as { config?: { apiPrefix?: string } }).config?.apiPrefix)}${prefix}`
+  return {
+    issuer:                                origin,
+    authorization_endpoint:                `${base}/authorize`,
+    token_endpoint:                        `${base}/token`,
+    response_types_supported:              ['code'],
+    grant_types_supported:                 ['authorization_code', 'refresh_token'],
+    code_challenge_methods_supported:      ['S256'],
+    token_endpoint_auth_methods_supported: ['none'],
+    client_id_metadata_document_supported: true,
+  }
+}
 
 /**
  * The redirect URI, exactly as the provider has it on file.

@@ -183,6 +183,18 @@ export class InvalidSecondFactorError extends AuthError {
 }
 
 /**
+ * The password was right, and the account owes a second factor it has not set
+ * up. A sign-in holds such an account to enrollment (`FJS-D1008`); a proof
+ * issues no session to hold, so it refuses and says where to finish. Not a
+ * credential failure, so not 401.
+ * → 403
+ */
+export class SecondFactorEnrollmentOwedError extends AuthError {
+  constructor(message = 'Finish setting up two-factor authentication on the web app first, then try again') { super(message) }
+  readonly status = 403
+}
+
+/**
  * A support episode cannot begin from where this session stands: it is already
  * inside one, or the subject is the session's own user. Both are the session's
  * STATE refusing the start, not the operator's standing, so this is the 409 of

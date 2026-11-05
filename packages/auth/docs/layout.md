@@ -27,4 +27,11 @@ cleanup.ts   expired-row pruning — `auth.cleanup` on the instance, started in
 errors.ts    the auth error classes (each carries its own `status`)
 types.ts     the public types
 index.ts     public API
+Authorize.mesa  the /authorize page: password, TOTP, consent (`FJS-D1934`).
+             Source only — auth never imports it
+authorize-page.snapshot.js  that page packed by `fli mesa:pack`: `render(props)`
+             and `STYLE_HASH`, with Mesa's render and the css subset inlined,
+             so auth takes no dependency on mesa or css. Regenerate from its
+             header; the `snapshots` phase fails it stale. Its types are
+             `authorize-page.snapshot.d.ts`, the props contract the route keeps
 ```

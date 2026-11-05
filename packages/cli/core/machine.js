@@ -192,6 +192,15 @@ export function withCwd(body, cwd) {
 export const HELD_MAX_BYTES = 256 * 1024 * 1024
 
 /** How many of a held run's last lines a failure carries. --verbose shows them all as they come. */
+// A fresh box on a public address is scanned within minutes, and sshd's
+// MaxStartups drops a random share of new connections once ten are waiting to
+// authenticate — the drop reads as one of these, before any key is offered
+// (FJS-4046). The drops come in bursts of ten seconds and more, so the pauses
+// span half a minute. A refused key or a dead host is not retried.
+const PREAUTH_DROP = /kex_exchange_identification|Connection (reset|closed) by/
+export const REACH_PAUSES_MS = [1000, 2000, 3000, 5000, 8000, 13000]
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+
 export const HELD_TAIL_LINES = 40
 
 const tail = (out) => {
@@ -344,8 +353,16 @@ export function createMachine({ host, exec, transport = null, path = null, verbo
     reach: () => {
       const probe = reachCommand(host, kind)
       if (!probe) return true
-      try { exec({ command: probe, stdio: 'ignore' }); return true }
-      catch { return false }
+      for (let i = 0; ; i++) {
+        try { exec({ command: probe, stdio: ['ignore', 'ignore', 'pipe'] }); return true }
+        catch (err) {
+          const said = String(err?.stderr ?? '').trim()
+          if (PREAUTH_DROP.test(said) && i < REACH_PAUSES_MS.length) { pause(REACH_PAUSES_MS[i]); continue }
+          // Every caller prints only "Cannot reach", so ssh's own reason is the operator's here.
+          if (said) process.stderr.write(`${said}\n`)
+          return false
+        }
+      }
     },
   }
 }

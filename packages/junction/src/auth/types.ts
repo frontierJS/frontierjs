@@ -140,6 +140,21 @@ export type LoginResult =
     }
 
 /**
+ * What `authenticate` answers: who proved the password, or a ticket when a
+ * second factor is owed. The proof is not a session -- nothing is minted, so a
+ * consent screen can ask who is there without signing them in (`FJS-D1948`).
+ * Discriminate on the key: `'challenge' in result`.
+ */
+export type ProofResult =
+  | { userId: string }
+  | {
+      /** Present this to `completeAuthenticate` with the code. Single-use. */
+      challenge: string
+      /** ISO-8601. After this the caller starts again from the password. */
+      expiresAt: string
+    }
+
+/**
  * What spending a mailed address link is worth (`FJS-D1310`).
  *
  * A registration's link is the account's first proof of its mailbox, so it
@@ -171,6 +186,14 @@ export interface IAuth {
    * which kind of string it holds.
    */
   completeLogin?(challenge: string, code: string): Promise<{ token: string; user: SessionContext }>
+
+  /**
+   * `login` and `completeLogin` that sign nobody in: the same throttle on the
+   * ticket, the same refusals and the same trail, answering the proven id
+   * instead of a session. Optional, for the reason `completeLogin` is.
+   */
+  authenticate?(email: string, password: string):           Promise<ProofResult>
+  completeAuthenticate?(challenge: string, code: string):   Promise<{ userId: string }>
 
   // Users
   createUser(data: CreateUserInput):         Promise<SessionContext>

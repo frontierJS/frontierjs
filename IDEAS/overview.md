@@ -735,6 +735,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `agent-client-ui.md` — a Resource rendered inside the agent's client: MCP Apps and A2UI as Mesa targets
 - `api-ontology.md` — the API realm's primitives: the words Junction spells and no register defines
 - `box-ssh-keys.md` — whose SSH key a new box carries: `fli` boxes get the runner's key, API-made boxes get none, and `sshKeyId` only grades; Q1 install it at create
+- `fli-profiles.md` — one machine, several clients: `FLI_PROFILE` in a project `.env` loads `~/.config/fli/profiles/<name>.env` between project and global; no sticky switch; Q1–Q3 ruled (profile, .env key, global fallback kept); Phase 4 = manage from Workbench (owner direction); 0.1 next
 - `box-health.md` — the bottom two layers of a box reach Basecamp: container state and systemd units in the heartbeat, graded as posture controls, edges as events; a managed Monitor per App hostname
 - `basecamp-dogfood.md` — the last in-place schema rewrite, then append-only migrations (D1605); D1603–D1611 ruled; Q1 Account tier with the team, Phase 1 schema pass next
 - `browser-kit.md` — the ten browser APIs every app wraps by hand, wrapped once as signals; pure halves to toolbelt, signals to mesa

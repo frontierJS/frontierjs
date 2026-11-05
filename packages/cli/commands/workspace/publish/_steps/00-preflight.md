@@ -156,7 +156,7 @@ if (!flag.dry && $.config.to?.includes('tarballs')) {
     log.error('  ✗  gh-auth')
     log.error('      GitHub does not know who you are — `gh release create` uploads the tarballs')
     if (process.env.GH_TOKEN || process.env.GITHUB_TOKEN)
-      log.error('      `GH_TOKEN`/`GITHUB_TOKEN` is set — fli loads `~/.config/fli/env` — and gh uses it over `gh auth login`; a stale one answers 401')
+      log.error('      `GH_TOKEN`/`GITHUB_TOKEN` is set — fli loads `~/.config/fli/.env` — and gh uses it over `gh auth login`; a stale one answers 401')
     log.error('      Run `gh auth login`, or `--to npm` to leave the release host out of this run')
     $.config.abort = true
     $.config.prompts?.close()

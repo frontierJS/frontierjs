@@ -43,7 +43,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PORTS } from './lib/preflight.mjs'
 import { Client } from '@modelcontextprotocol/client'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { StreamableHTTPClientTransport, discoverOAuthProtectedResourceMetadata, discoverAuthorizationServerMetadata } from '@modelcontextprotocol/client'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -158,6 +158,27 @@ console.log('\na stranger is asked to sign in')
   let refused = null
   try { await (await open(null)).close() } catch (err) { refused = err?.status ?? String(err) }
   check('and a real client with no credential is refused at the handshake', refused, 401)
+
+  // The SDK's own discovery, from the header's URL and from the root probe a
+  // client makes with no header. A `resource` that is not the MCP URL exactly
+  // is refused by the client (`FJS-D1945`).
+  const expected = { resource: MCP.href, authorization_servers: [API] }
+  const described = (m) => ({ resource: m.resource, authorization_servers: m.authorization_servers })
+  check('the header\'s URL describes /mcp, with the App\'s origin as its issuer',
+        described(await discoverOAuthProtectedResourceMetadata(MCP, { resourceMetadataUrl: METADATA })), expected)
+  check('and so does the root URL a client probes with no header',
+        described(await discoverOAuthProtectedResourceMetadata(MCP)), expected)
+
+  // The next hop: the SDK follows `authorization_servers[0]` to RFC 8414's
+  // document and refuses it when `issuer` is not that string (`FJS-D1945`).
+  const issuer = (await discoverOAuthProtectedResourceMetadata(MCP)).authorization_servers[0]
+  const server = await discoverAuthorizationServerMetadata(issuer)
+  check('the issuer the resource names serves an authorization-server document stating it',
+        [server?.issuer, server?.code_challenge_methods_supported, server?.token_endpoint_auth_methods_supported],
+        [issuer, ['S256'], ['none']])
+  check('whose endpoints sit under the API prefix',
+        [server?.authorization_endpoint, server?.token_endpoint],
+        [`${API}/api/auth/authorize`, `${API}/api/auth/token`])
 }
 
 console.log('\na real MCP client, against a real shop')

@@ -282,11 +282,11 @@ if (unknown.length) {
   log.error('      A guess either bumps over a version nobody installed or republishes one')
   log.error('      Check the network, `npm view <name>@<version>` and `gh release view <name>@<version>`, then run again')
   // gh takes a token from the environment over its own login, and fli loads
-  // `~/.config/fli/env` into that environment — so a token set there months
+  // `~/.config/fli/.env` into that environment — so a token set there months
   // ago for `github:*` answers 401 here while `gh auth status` on a bare shell
   // is green. Named, because nothing in gh's own output says where it came from.
   if (process.env.GH_TOKEN || process.env.GITHUB_TOKEN)
-    log.error('      `GH_TOKEN`/`GITHUB_TOKEN` is set — fli loads `~/.config/fli/env` — and gh uses it over `gh auth login`; a stale one answers 401. Refresh it (`fli eset GITHUB_TOKEN <token> --global`) or remove the line')
+    log.error('      `GH_TOKEN`/`GITHUB_TOKEN` is set — fli loads `~/.config/fli/.env` — and gh uses it over `gh auth login`; a stale one answers 401. Refresh it (`fli eset GITHUB_TOKEN <token> --global`) or remove the line')
   $.config.abort = true
   return
 }

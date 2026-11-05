@@ -34,6 +34,7 @@ export {
   LastCredentialError, NoPasswordCredentialError, NotFoundError,
   TotpAlreadyEnabledError, InvalidSecondFactorError, ReauthenticationFailedError,
   ReauthenticationRequiredError, WeakPasswordError, SupportEpisodeError, InvalidExpiryError,
+  SecondFactorEnrollmentOwedError,
 } from './errors.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────

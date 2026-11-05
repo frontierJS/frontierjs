@@ -5,7 +5,7 @@
 // Never touches HTTP — that is the plugin's job.
 // Never sends email — that is the caller's job via the onX callbacks in opts.
 
-import type { IAuth, LoginResult, EmailVerificationResult, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from '@frontierjs/junction'
+import type { IAuth, LoginResult, ProofResult, EmailVerificationResult, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from '@frontierjs/junction'
 import { parseTtl } from '@frontierjs/junction'
 import { authModelOf } from '@frontierjs/litestone'
 import { modelToAccessor } from '@frontierjs/litestone/ddl'
@@ -43,7 +43,7 @@ import {
   UserNotFoundError, AuthConfigError,
   LastCredentialError,
   NoPasswordCredentialError, NotFoundError,
-  TotpAlreadyEnabledError, InvalidSecondFactorError, WeakPasswordError,
+  TotpAlreadyEnabledError, InvalidSecondFactorError, WeakPasswordError, SecondFactorEnrollmentOwedError,
   SupportEpisodeError, InvalidExpiryError,
 } from './errors.ts'
 
@@ -279,6 +279,20 @@ export function createLitestoneAuth(
     return fields as Record<string, unknown>
   }
 
+  type Ending = 'session' | 'proof'
+
+  // A bot or a peer reaches this app through its API keys only. The refusal is
+  // the wrong-password one, so a login form does not tell a stranger which
+  // addresses belong to automations.
+  async function refuseUnlessPerson(user: any, meta: Record<string, unknown>): Promise<void> {
+    if ((user.kind ?? 'user') === 'user') return
+    await audit('login.failed', {
+      model: personModel, records: [user.id], actorId: user.id,
+      meta:  { ...meta, reason: 'not-a-person', kind: user.kind },
+    })
+    throw new InvalidCredentialsError()
+  }
+
   // The tail every proven identity shares: the app's veto, a token, the session
   // row, the trail. Password login is one caller and it must not be the only one
   // — a hook that fires for passwords alone is a lockout that OAuth walks past,
@@ -292,16 +306,7 @@ export function createLitestoneAuth(
     meta:       Record<string, unknown> = {},
     held        = false,
   ): Promise<{ token: string; user: SessionContext }> {
-    // A bot or a peer reaches this app through its API keys only. The refusal is
-    // the wrong-password one, so a login form does not tell a stranger which
-    // addresses belong to automations.
-    if ((user.kind ?? 'user') !== 'user') {
-      await audit('login.failed', {
-        model: personModel, records: [user.id], actorId: user.id,
-        meta:  { ...meta, reason: 'not-a-person', kind: user.kind },
-      })
-      throw new InvalidCredentialsError()
-    }
+    await refuseUnlessPerson(user, meta)
 
     // Before the session is issued, so a refusal leaves nothing behind. The hook
     // therefore has no session id to be given — what happened after this point
@@ -421,21 +426,40 @@ export function createLitestoneAuth(
     return codes
   }
 
+  // Who a proven identity becomes. `session` is a sign-in; `proof` answers the
+  // id alone, for a consent screen that must leave no session, no `onLogin` and
+  // no `login.succeeded` behind it (`FJS-D1948`). `login.proven` is its trail
+  // line, so a password spent at that screen is not missing from the account's
+  // history. A held session cannot be held at a screen that issues none, so an
+  // account owing enrollment is refused there and sent to finish it.
+  async function endProven(user: any, ending: Ending, meta: Record<string, unknown>, held = false): Promise<LoginResult | ProofResult> {
+    if (ending === 'session') return issueSession(user, 'session', meta, held)
+    await refuseUnlessPerson(user, meta)
+    if (held) throw new SecondFactorEnrollmentOwedError()
+    await audit('login.proven', {
+      model: personModel, records: [user.id], actorId: user.id, actorType: 'user',
+      ...(Object.keys(meta).length ? { meta } : {}),
+    })
+    return { userId: String(user.id) }
+  }
+
   // What a proven FIRST factor earns: a session, or a ticket when the account
   // has a second. A password and a magic link both end here, so neither can be
   // the way past the other's code (`FJS-D888`). Whether a ticket is owed is a
   // `totp` credential EXISTING — enrollment writes `totpPending` and only
   // `confirmTotp` promotes it, so an unproven secret never gates a login
   // (`FJS-D261`).
-  async function firstFactorProven(user: any, meta: Record<string, unknown> = {}): Promise<LoginResult> {
+  async function firstFactorProven(user: any, meta?: Record<string, unknown>): Promise<LoginResult>
+  async function firstFactorProven(user: any, meta: Record<string, unknown>, ending: Ending): Promise<LoginResult | ProofResult>
+  async function firstFactorProven(user: any, meta: Record<string, unknown> = {}, ending: Ending = 'session'): Promise<LoginResult | ProofResult> {
     const totp = await liveTotp(user.id)
     if (!totp) {
       // A session that exists before the factor does (`FJS-D1008`): the plugin
-      // holds it to enrollment. A bot or a peer is refused in issueSession, so
+      // holds it to enrollment. A bot or a peer is refused at the ending, so
       // the predicate is only asked about a person.
       const owed = (user.kind ?? 'user') === 'user' && typeof requireSecondFactor === 'function'
         ? await requireSecondFactor(user) : requireSecondFactor === true
-      return issueSession(user, 'session', meta, owed)
+      return endProven(user, ending, meta, owed)
     }
 
     // One live ticket per person. A second sign-in supersedes the first rather
@@ -461,6 +485,175 @@ export function createLitestoneAuth(
     })
 
     return { challenge: value, expiresAt: String(row.expiresAt) }
+  }
+
+  // ── login ────────────────────────────────────────────────────────────
+
+  async function passwordFirstFactor(email: string, password: string, ending: Ending): Promise<LoginResult | ProofResult> {
+    // Every refusal records the same way and answers the same error. The three
+    // branches are distinguishable in the trail by `reason` and nowhere else —
+    // telling a caller whether the address exists is an enumeration oracle.
+    // Recorded FIRST, then the hook runs. A hook that replaces the error must
+    // not also be able to erase the attempt from the trail — the record is
+    // what happened, the hook only decides what the caller is told.
+    const refuse = async (reason: string, userId: string | null) => {
+      await audit('login.failed', {
+        model:   personModel,
+        records: userId ? [userId] : [],
+        actorId: userId,
+        // The attempted address, on purpose: a spray across many addresses is
+        // invisible without it, and it is the only identifier a failed attempt
+        // for an unknown user has. Never the attempted password.
+        meta:    { reason, email },
+      })
+      // A throw here REPLACES InvalidCredentialsError — a lockout answers 429,
+      // not 401. Returned rather than thrown so the call sites read `throw
+      // await refuse(...)` and cannot forget to.
+      if (onLoginFailed) await onLoginFailed({ email, userId, reason, stage: 'password' })
+      return new InvalidCredentialsError()
+    }
+
+    // The two branches that never reach the real comparison pay its cost
+    // anyway. Same error, same trail shape, and now the same clock — an early
+    // return here answers in a millisecond where a wrong password takes ~220ms,
+    // which enumerates users through a message that says nothing.
+    const user = await sys[person].findFirst({ where: { email } })
+    if (!user) {
+      await payPasswordCost(password)
+      throw await refuse('no-such-user', null)
+    }
+
+    const cred = await sys.credential.findFirst({
+      where: { userId: user.id, type: 'password' }
+    })
+    if (!cred) {
+      await payPasswordCost(password)
+      throw await refuse('no-password-credential', user.id)
+    }
+
+    // A stored hash cheaper than BCRYPT_COST refuses faster than the other
+    // branches do, so the refusal pays the shortfall and the success rewrites
+    // the hash (FJS-1457). The rewrite is the same password, so it is no
+    // credential change and announces nothing.
+    const valid = await verifyPassword(password, cred.value)
+    if (!valid) {
+      await payPasswordCost(password, cred.value)
+      throw await refuse('bad-password', user.id)
+    }
+    if (passwordNeedsRehash(cred.value)) {
+      await sys.credential.update({ where: { id: cred.id }, data: { value: await hashPassword(password) } })
+    }
+
+    return firstFactorProven(user, {}, ending)
+  }
+
+  // ── The second step ──────────────────────────────────────────────────
+  //
+  // Everything here answers one error — five different things can be wrong
+  // and the caller is told none of them, for `login()`'s reason one layer on.
+  // The trail carries the `reason`, and `retryable` carries the only
+  // distinction a screen can act on: whether typing again is worth anything.
+  //
+  // No `payPasswordCost` here, and the asymmetry is deliberate rather than an
+  // omission. `login()` pays it because an EMAIL is guessable and the clock
+  // would say which addresses have accounts. A ticket is 32 random bytes
+  // nobody can enumerate, so there is no oracle to close, and paying a bcrypt
+  // per attempt would only hand an attacker a way to cost the server 220ms a
+  // request.
+
+  async function secondFactor(challenge: string, code: string, ending: Ending): Promise<LoginResult | ProofResult> {
+    const spend = async (reason: string, row: any, retryable = true) => {
+      await audit('login.failed', {
+        model:   'LoginChallenge',
+        records: row ? [String(row.id)] : [],
+        actorId: row ? String(row.userId) : null,
+        meta:    { reason, stage: 'second-factor' },
+      })
+      if (onLoginFailed) {
+        await onLoginFailed({
+          email:  null,
+          userId: row ? String(row.userId) : null,
+          reason,
+          stage:  'second-factor',
+        })
+      }
+      return new InvalidSecondFactorError(undefined, retryable)
+    }
+
+    // `withExpired` because this read WANTS the lapsed row: *this ticket ran
+    // out* and *no such ticket* are different lines in the trail and only one
+    // of them tells a person to sign in again. Every other read of a windowed
+    // model here takes the filter the schema declares.
+    const row = await sys.loginChallenge.findFirst({
+      where: { value: challenge }, withExpired: true,
+    })
+    if (!row) throw await spend('no-such-challenge', null, false)
+
+    // Read at resolution, so a lapsed ticket stops working the instant it
+    // lapses whether or not the sweep has been anywhere near it.
+    if (!sys.$inWindow('loginChallenge', row)) {
+      await sys.loginChallenge.deleteMany({ where: { id: row.id }, ...PURGE })
+      throw await spend('challenge-expired', row, false)
+    }
+
+    const user = await sys[person].findFirst({ where: { id: row.userId } })
+    const cred = user ? await liveTotp(row.userId) : null
+    // The account was deleted, or the factor was turned off, between the two
+    // requests. The ticket dies with it rather than becoming a password-free
+    // way in.
+    if (!user || !cred) {
+      await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+      throw await spend(user ? 'factor-removed' : 'no-such-user', row, false)
+    }
+
+    if (!await claimAttempt(sys.loginChallenge, row.id)) {
+      await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+      throw await spend('no-such-challenge', row, false)
+    }
+
+    // Every spend below is a write whose WHERE carries the check and whose
+    // count is the answer: two requests holding one code both pass a read.
+    const spendTicket = async () =>
+      (await sys.loginChallenge.deleteMany({ where: { id: row.id } })).count > 0
+
+    const at   = sys.$now()
+    const step = verifyTotpCode(cred.value, code, at, totpDrift)
+
+    if (step !== null) {
+      // The window is 30 seconds wide and a code is good for all of it, so
+      // without this the window IS a replay window. `lt` and not `lte`: the
+      // same step is the same code.
+      const { count } = await sys.credential.updateMany({
+        where: { id: cred.id, OR: [{ totpLastStep: null }, { totpLastStep: { lt: step } }] },
+        data:  { totpLastStep: step },
+      })
+      if (!count) throw await spend('code-replayed', row, await attemptsLeft(sys.loginChallenge, row.id))
+      if (!await spendTicket()) throw await spend('no-such-challenge', row, false)
+      return endProven(user, ending, { factor: 'totp' })
+    }
+
+    // Not a TOTP code — a recovery code is the other thing a person types into
+    // that box, and they cannot be asked to say which one it is.
+    const recovery = await matchRecoveryCode(row.userId, code)
+    if (recovery) {
+      // Deleted rather than flagged. A spent code that still exists is one
+      // column away from being accepted again, and nothing would read wrong.
+      const used = await sys.credential.deleteMany({ where: { id: recovery.id } })
+      if (!used.count) throw await spend('code-replayed', row, await attemptsLeft(sys.loginChallenge, row.id))
+      if (!await spendTicket()) throw await spend('no-such-challenge', row, false)
+
+      const left = await countRecoveryCodes(row.userId)
+      await credentialChanged('recovery.used', String(row.userId), {
+        model:   'Credential',
+        records: [String(recovery.id)],
+        actorId: String(row.userId),
+        actorType: 'user',
+        meta:    { remaining: left },
+      })
+      return endProven(user, ending, { factor: 'recovery', recoveryCodesRemaining: left })
+    }
+
+    throw await spend('bad-code', row, await attemptsLeft(sys.loginChallenge, row.id))
   }
 
   // A provider click is a first factor like a password (FJS-D915). An OAuth
@@ -1105,173 +1298,21 @@ export function createLitestoneAuth(
       return { ended: true }
     },
 
-    // ── login ────────────────────────────────────────────────────────────
-
     async login(email: string, password: string): Promise<LoginResult> {
-      // Every refusal records the same way and answers the same error. The three
-      // branches are distinguishable in the trail by `reason` and nowhere else —
-      // telling a caller whether the address exists is an enumeration oracle.
-      // Recorded FIRST, then the hook runs. A hook that replaces the error must
-      // not also be able to erase the attempt from the trail — the record is
-      // what happened, the hook only decides what the caller is told.
-      const refuse = async (reason: string, userId: string | null) => {
-        await audit('login.failed', {
-          model:   personModel,
-          records: userId ? [userId] : [],
-          actorId: userId,
-          // The attempted address, on purpose: a spray across many addresses is
-          // invisible without it, and it is the only identifier a failed attempt
-          // for an unknown user has. Never the attempted password.
-          meta:    { reason, email },
-        })
-        // A throw here REPLACES InvalidCredentialsError — a lockout answers 429,
-        // not 401. Returned rather than thrown so the call sites read `throw
-        // await refuse(...)` and cannot forget to.
-        if (onLoginFailed) await onLoginFailed({ email, userId, reason, stage: 'password' })
-        return new InvalidCredentialsError()
-      }
-
-      // The two branches that never reach the real comparison pay its cost
-      // anyway. Same error, same trail shape, and now the same clock — an early
-      // return here answers in a millisecond where a wrong password takes ~220ms,
-      // which enumerates users through a message that says nothing.
-      const user = await sys[person].findFirst({ where: { email } })
-      if (!user) {
-        await payPasswordCost(password)
-        throw await refuse('no-such-user', null)
-      }
-
-      const cred = await sys.credential.findFirst({
-        where: { userId: user.id, type: 'password' }
-      })
-      if (!cred) {
-        await payPasswordCost(password)
-        throw await refuse('no-password-credential', user.id)
-      }
-
-      // A stored hash cheaper than BCRYPT_COST refuses faster than the other
-      // branches do, so the refusal pays the shortfall and the success rewrites
-      // the hash (FJS-1457). The rewrite is the same password, so it is no
-      // credential change and announces nothing.
-      const valid = await verifyPassword(password, cred.value)
-      if (!valid) {
-        await payPasswordCost(password, cred.value)
-        throw await refuse('bad-password', user.id)
-      }
-      if (passwordNeedsRehash(cred.value)) {
-        await sys.credential.update({ where: { id: cred.id }, data: { value: await hashPassword(password) } })
-      }
-
-      return firstFactorProven(user)
+      return passwordFirstFactor(email, password, 'session') as Promise<LoginResult>
     },
 
-    // ── The second step ──────────────────────────────────────────────────
-    //
-    // Everything here answers one error — five different things can be wrong
-    // and the caller is told none of them, for `login()`'s reason one layer on.
-    // The trail carries the `reason`, and `retryable` carries the only
-    // distinction a screen can act on: whether typing again is worth anything.
-    //
-    // No `payPasswordCost` here, and the asymmetry is deliberate rather than an
-    // omission. `login()` pays it because an EMAIL is guessable and the clock
-    // would say which addresses have accounts. A ticket is 32 random bytes
-    // nobody can enumerate, so there is no oracle to close, and paying a bcrypt
-    // per attempt would only hand an attacker a way to cost the server 220ms a
-    // request.
-
     async completeLogin(challenge: string, code: string): Promise<{ token: string; user: SessionContext }> {
-      const spend = async (reason: string, row: any, retryable = true) => {
-        await audit('login.failed', {
-          model:   'LoginChallenge',
-          records: row ? [String(row.id)] : [],
-          actorId: row ? String(row.userId) : null,
-          meta:    { reason, stage: 'second-factor' },
-        })
-        if (onLoginFailed) {
-          await onLoginFailed({
-            email:  null,
-            userId: row ? String(row.userId) : null,
-            reason,
-            stage:  'second-factor',
-          })
-        }
-        return new InvalidSecondFactorError(undefined, retryable)
-      }
+      return secondFactor(challenge, code, 'session') as Promise<{ token: string; user: SessionContext }>
+    },
 
-      // `withExpired` because this read WANTS the lapsed row: *this ticket ran
-      // out* and *no such ticket* are different lines in the trail and only one
-      // of them tells a person to sign in again. Every other read of a windowed
-      // model here takes the filter the schema declares.
-      const row = await sys.loginChallenge.findFirst({
-        where: { value: challenge }, withExpired: true,
-      })
-      if (!row) throw await spend('no-such-challenge', null, false)
+    // The same two steps for a screen that must not sign anybody in (`FJS-D1948`).
+    async authenticate(email: string, password: string): Promise<ProofResult> {
+      return passwordFirstFactor(email, password, 'proof') as Promise<ProofResult>
+    },
 
-      // Read at resolution, so a lapsed ticket stops working the instant it
-      // lapses whether or not the sweep has been anywhere near it.
-      if (!sys.$inWindow('loginChallenge', row)) {
-        await sys.loginChallenge.deleteMany({ where: { id: row.id }, ...PURGE })
-        throw await spend('challenge-expired', row, false)
-      }
-
-      const user = await sys[person].findFirst({ where: { id: row.userId } })
-      const cred = user ? await liveTotp(row.userId) : null
-      // The account was deleted, or the factor was turned off, between the two
-      // requests. The ticket dies with it rather than becoming a password-free
-      // way in.
-      if (!user || !cred) {
-        await sys.loginChallenge.deleteMany({ where: { id: row.id } })
-        throw await spend(user ? 'factor-removed' : 'no-such-user', row, false)
-      }
-
-      if (!await claimAttempt(sys.loginChallenge, row.id)) {
-        await sys.loginChallenge.deleteMany({ where: { id: row.id } })
-        throw await spend('no-such-challenge', row, false)
-      }
-
-      // Every spend below is a write whose WHERE carries the check and whose
-      // count is the answer: two requests holding one code both pass a read.
-      const spendTicket = async () =>
-        (await sys.loginChallenge.deleteMany({ where: { id: row.id } })).count > 0
-
-      const at   = sys.$now()
-      const step = verifyTotpCode(cred.value, code, at, totpDrift)
-
-      if (step !== null) {
-        // The window is 30 seconds wide and a code is good for all of it, so
-        // without this the window IS a replay window. `lt` and not `lte`: the
-        // same step is the same code.
-        const { count } = await sys.credential.updateMany({
-          where: { id: cred.id, OR: [{ totpLastStep: null }, { totpLastStep: { lt: step } }] },
-          data:  { totpLastStep: step },
-        })
-        if (!count) throw await spend('code-replayed', row, await attemptsLeft(sys.loginChallenge, row.id))
-        if (!await spendTicket()) throw await spend('no-such-challenge', row, false)
-        return issueSession(user, 'session', { factor: 'totp' })
-      }
-
-      // Not a TOTP code — a recovery code is the other thing a person types into
-      // that box, and they cannot be asked to say which one it is.
-      const recovery = await matchRecoveryCode(row.userId, code)
-      if (recovery) {
-        // Deleted rather than flagged. A spent code that still exists is one
-        // column away from being accepted again, and nothing would read wrong.
-        const used = await sys.credential.deleteMany({ where: { id: recovery.id } })
-        if (!used.count) throw await spend('code-replayed', row, await attemptsLeft(sys.loginChallenge, row.id))
-        if (!await spendTicket()) throw await spend('no-such-challenge', row, false)
-
-        const left = await countRecoveryCodes(row.userId)
-        await credentialChanged('recovery.used', String(row.userId), {
-          model:   'Credential',
-          records: [String(recovery.id)],
-          actorId: String(row.userId),
-          actorType: 'user',
-          meta:    { remaining: left },
-        })
-        return issueSession(user, 'session', { factor: 'recovery', recoveryCodesRemaining: left })
-      }
-
-      throw await spend('bad-code', row, await attemptsLeft(sys.loginChallenge, row.id))
+    async completeAuthenticate(challenge: string, code: string): Promise<{ userId: string }> {
+      return secondFactor(challenge, code, 'proof') as Promise<{ userId: string }>
     },
 
     // ── TOTP: enrollment and the way back ────────────────────────────────

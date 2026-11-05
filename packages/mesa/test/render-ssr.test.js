@@ -25,6 +25,7 @@ import {
   initRenderer, resetRenderer, renderToHTML, renderAll, wrapPage, escapeHTML,
 } from '../src/render.js'
 import { renderFile } from '../src/render-component.js'
+import { renderString as renderStringExport } from '../src/runtime.js'
 import {
   createRoot, createSignal, createEffect, flushSync, mount, setRenderEnvironment,
 } from '../src/runtime.js'
@@ -507,6 +508,36 @@ describe('renderToHTML — target: server (FJS-D1634)', () => {
   it('refuses keepAnchors, which the string mode has nothing to keep', async () => {
     const Comp = await buildServer(SRC)
     await expect(renderToHTML(Comp, {}, { target: 'server', keepAnchors: true })).rejects.toThrow(/keepAnchors has no meaning/)
+  })
+
+  // `renderString` is what a bundled page calls where render.js cannot go.
+  it('renderString answers the same bytes with no window, escaping every prop', async () => {
+    const PROPS = `<script>
+  export const name = ''
+  export const hidden = ''
+</script>
+<form><input type="hidden" name="h" value={hidden}><p>Hi {name}</p></form>`
+    const Comp = await buildServer(PROPS)
+    const props = { name: '<script>x</script>', hidden: 'a"b&c' }
+    const page = await renderToHTML(Comp, props, { target: 'server' })
+    resetRenderer()
+    try {
+      const str = renderStringExport(Comp, props)
+      expect(str).toBe(page)
+      expect(str).toContain('Hi &lt;script&gt;x&lt;/script&gt;')
+      expect(str).toContain('value="a&quot;b&amp;c"')
+      expect(str).not.toContain('<script>')
+    } finally {
+      initRenderer()
+    }
+  })
+
+  it('renderString refuses an {#await} it cannot wait on', async () => {
+    const Comp = await buildServer(`<script>
+  const p = Promise.resolve(1)
+</script>
+{#await p}<i>wait</i>{:then v}<b>{v}</b>{/await}`)
+    expect(() => renderStringExport(Comp, {})).toThrow(/\{#await\} still pending/)
   })
 
   // The fallback lives where the compile does. `renderComponent` compiles for

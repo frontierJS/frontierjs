@@ -166,7 +166,7 @@ boolean, and nobody checks a pasted token's scopes.
     an env file into the child process only, and warns that same-user
     processes can still read that environment
     ([secret references](https://developer.1password.com/docs/cli/secret-references)).
-    This is the shape for `~/.config/fli/env` (4.3): references on disk,
+    This is the shape for `~/.config/fli/.env` (4.3): references on disk,
     values only in the running step.
   - **Pulumi ESC and Tailscale** exchange a platform's OIDC identity for a
     short-lived vendor token with no stored secret at all
@@ -214,7 +214,7 @@ boolean, and nobody checks a pasted token's scopes.
   screen asks for the token it asks for today.
 - **fnox is three parts, and two already have a home.** Its vault is
   `Secret` (`@encrypted data`, `kind`, `verifiedAt`). Its `exec` is `fli`
-  running a deploy step as a child process with `~/.config/fli/env` in its
+  running a deploy step as a child process with `~/.config/fli/.env` in its
   environment, which today holds long-lived values in plaintext, and a stale
   `GITHUB_TOKEN` there has already broken `gh` under `fli`. Its lease is the
   gap, and FJS can place it better than fnox does: fnox mints on the dev
@@ -348,7 +348,7 @@ environment and no log.
 - [ ] 4.2 `secrets.verify` and 0.2's scope read take a child where the
   connector leases, and the parent is probed only for *can it mint*. The
   probe that 0.2 wanted throwaway tokens for becomes mint, read, expire.
-- [ ] 4.3 `~/.config/fli/env` holds references, not values: a line such as
+- [ ] 4.3 `~/.config/fli/.env` holds references, not values: a line such as
   `CLOUDFLARE_API_TOKEN=basecamp://<workspace>/secret/<name>` that `fli`
   resolves at step start by asking Basecamp for a child, which enters the
   step's environment only. A plain value still works and is reported by

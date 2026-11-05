@@ -3,7 +3,7 @@
  */
 import { WINDOW_BINDS } from './window-binds.js'
 import { ISLAND_OPEN, ISLAND_CLOSE, islandPayload, dynamicTag, stampAt, warnRefusedName,
-  SPREAD_REFUSED, warnRefusedMarkup, warnRefusedHandler } from './runtime-server.js'
+  SPREAD_REFUSED, warnRefusedMarkup, warnRefusedHandler, settle } from './runtime-server.js'
 
 const _resolved = Promise.resolve()
 /** True in any browser environment. False in Node/Deno/workers without DOM.
@@ -6470,3 +6470,47 @@ function givenProp(prop, value) {
 }
 
 export const version = '1.1.0'
+
+/**
+ * The one place a string render starts: the component's pushes under a root,
+ * its dispose, and `waiting` when an `{#await}` has yet to settle. `renderToHTML`
+ * and `renderString` both begin here, so a page and a packed module write the
+ * same bytes for one source. A throw disposes the root before it leaves.
+ */
+export function startRender(ComponentFactory, props) {
+  const out = []
+  let dispose = null
+  try {
+    createRoot((d) => {
+      dispose = d
+      ComponentFactory(out, props ?? {})
+    })
+    return { out, dispose, waiting: settle(out) }
+  } catch (e) {
+    dispose?.()
+    throw e
+  }
+}
+
+/**
+ * A component compiled `target: 'server'`, rendered to its markup with no
+ * document — for a module bundled where `render.js` cannot go, since it
+ * top-level-awaits happy-dom. It lives here and not in `runtime-server.js`,
+ * which the compiler imports: that edge would evaluate this runtime before
+ * `initRenderer` installs a document, and `mount` would read no browser.
+ * Synchronous, so an `{#await}` still pending is refused (`renderToHTML` waits
+ * on one), and so is a `<mesa:head>`, which has no page here to land in and
+ * would otherwise vanish.
+ */
+export function renderString(ComponentFactory, props) {
+  const { out, dispose, waiting } = startRender(ComponentFactory, props)
+  dispose()
+  if (waiting) {
+    waiting.catch(() => {})
+    throw new Error('[Mesa renderString] the component has an {#await} still pending; render it with renderToHTML, which waits.')
+  }
+  if (out.head) {
+    throw new Error('[Mesa renderString] the component writes a <mesa:head>, and a bare render has no page to put it in; render it with renderToHTML({ full: true }).')
+  }
+  return out.join('').trim()
+}

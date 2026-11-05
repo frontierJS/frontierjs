@@ -1,0 +1,55 @@
+<!--
+  The /authorize page (FJS-D1934): password, then the TOTP code when one is
+  owed, then consent. Packed by `fli mesa:pack` into
+  authorize-page.snapshot.js, which is what auth ships; edit this file and
+  repack, never the snapshot. The props are the route's contract, so a new one
+  is a change to both. No script: the page is three forms that POST.
+
+  The client is named by its host and never by the client_name its document
+  asserts, which any host can set to anything.
+-->
+<script>
+  export const app = ''
+  export const client = { host: '', loopback: false }
+  export const redirectHost = ''
+  export const step = 'password'
+  export const error = null
+  export const action = ''
+  export const fields = {}
+</script>
+
+<main class="container narrow">
+  <div class="card stack">
+    {#if step === 'consent'}
+      <h1 class="h1">Allow access to {app}</h1>
+    {:else}
+      <h1 class="h1">Sign in to {app}</h1>
+    {/if}
+    {#if error}
+      <div class="alert danger" role="alert"><div class="alert-content"><p>{error}</p></div></div>
+    {/if}
+    <form method="post" action={action} class="stack">
+      {#each Object.entries(fields ?? {}) as pair}
+        <input type="hidden" name={pair[0]} value={pair[1]}>
+      {/each}
+      {#if step === 'password'}
+        <label class="stack">Email <input class="field" name="email" type="email" autocomplete="username" required></label>
+        <label class="stack">Password <input class="field" name="password" type="password" autocomplete="current-password" required></label>
+        <button class="btn primary">Continue</button>
+      {:else if step === 'totp'}
+        <label class="stack">Six-digit code <input class="field" name="code" inputmode="numeric" autocomplete="one-time-code" minlength="6" maxlength="6" required></label>
+        <button class="btn primary">Continue</button>
+      {:else}
+        <p>Allow <strong>{client.host}</strong> to act as you in <strong>{app}</strong>?</p>
+        <p>It will send you back to <strong>{redirectHost}</strong>.</p>
+        {#if client.loopback}
+          <div class="alert warning" role="note"><div class="alert-content"><p>This connector returns to a program on this computer, and any program running here can receive the code. Allow it only if you started this sign-in yourself.</p></div></div>
+        {/if}
+        <div class="cluster">
+          <button class="btn primary" name="decision" value="allow">Allow</button>
+          <button class="btn outlined" name="decision" value="deny">Deny</button>
+        </div>
+      {/if}
+    </form>
+  </div>
+</main>

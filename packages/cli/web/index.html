@@ -3584,7 +3584,7 @@ function registryStatus(s) {
   if (npm) parts.push(`npm: ${count('level')} level · ${count('ahead')} unreleased · ${count('behind')} behind · ${count('unpublished')} never published`)
   if (rel) parts.push(`release: ${rows.filter(p => p.release === true).length} shipped · ${rows.filter(p => p.release === false).length} missing`)
   return unsure.length
-    ? ['warning', `${unsure.length} could not say`, `${unsure.map(p => p.name).join(', ')} — a host did not answer; a stale GH_TOKEN in ~/.config/fli/env is the usual reason · ${read}`]
+    ? ['warning', `${unsure.length} could not say`, `${unsure.map(p => p.name).join(', ')} — a host did not answer; a stale GH_TOKEN in ~/.config/fli/.env is the usual reason · ${read}`]
     : ['success', 'read', `${parts.join(' · ')} · ${read}`]
 }
 

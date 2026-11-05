@@ -16,6 +16,12 @@
 // check and the connect, which needs the socket pinned to the address that was
 // graded: a caller using `fetch` connects through `pinTo`, to the address
 // `gradePublicUrl` answered, and `assertPublicUrl` alone leaves that window open.
+//
+// `fetchPublicJson` is that walk done once, with the bounds a stranger's server
+// needs: it follows no redirect it has not graded, reads no more than a byte cap
+// and gives up on one deadline for the lookups, the hops and the body together.
+// A server that answers one byte a second or a body of a gigabyte is as much
+// the stranger's choice as the URL.
 
 import { lookup } from 'node:dns/promises'
 import { isIP }   from 'node:net'
@@ -185,7 +191,8 @@ export async function gradePublicUrl(
     // timeout of its own — it occupies a libuv thread pool slot until the
     // resolver answers, and the pool is four threads, so a hung resolver would
     // stall unrelated file I/O across the process rather than just this
-    // request. The fetch's own `AbortSignal.timeout` is downstream of here.
+    // request. `fetchPublicJson`'s deadline starts before this and its signal
+    // is checked after it; this bound is what stops the lookup itself.
     : (await withTimeout(
         resolve(host, { all: true }).catch(() => { throw new PublicUrlError(`${host} does not resolve`) }),
         lookupTimeoutMs, host)).map(a => a.address)
@@ -199,4 +206,152 @@ export async function gradePublicUrl(
   // a name gets, and a host's v6 route is the likelier one to be dead.
   const pick = addresses.find(a => isIP(a) === 4) ?? addresses[0]
   return { url, address: literal ? null : pick }
+}
+
+// ─── the bounded fetch ────────────────────────────────────────────────────
+
+export interface PublicFetchOptions extends PublicUrlOptions {
+  // The body, in bytes. Past it the fetch is refused, never truncated: half a
+  // JSON document parses as nothing or as something else. Default 64 KiB.
+  maxBytes?:  number
+  // One deadline for the whole walk: every lookup, every redirect hop and the
+  // body read. Default 5s.
+  timeoutMs?: number
+  // Redirects followed, each one graded again. Default 3.
+  maxHops?:   number
+  // Replaces the global `fetch`, for a test that serves nothing over a socket.
+  fetch?:     typeof fetch
+}
+
+export interface PublicJson {
+  // The URL the body came from, after redirects.
+  url:    string
+  status: number
+  json:   unknown
+  // Seconds from `Cache-Control: max-age`; null when absent or `no-store`. The
+  // caller caches, and decides what a null is worth.
+  maxAge: number | null
+}
+
+// A sibling of the grading refusal and the same 400, so a caller that already
+// maps `PublicUrlError` maps this one with no new branch.
+export class PublicFetchError extends PublicUrlError {
+  constructor(message: string) { super(message); this.name = 'PublicFetchError' }
+}
+
+const REDIRECTS = new Set([301, 302, 303, 307, 308])
+
+// The URL as a person reads it in an error: no userinfo and no query, which is
+// where a token pasted into a link lives.
+const shown = (u: URL) => `${u.protocol}//${u.host}${u.pathname}`
+
+function maxAgeOf(cacheControl: string | null): number | null {
+  if (!cacheControl || /(^|[\s,])no-store(\s*(,|$))/i.test(cacheControl)) return null
+  const m = cacheControl.match(/(^|[\s,])max-age=(\d+)/i)
+  return m ? Number(m[2]) : null
+}
+
+async function readCapped(res: Response, limit: number, where: string): Promise<Uint8Array> {
+  const declared = Number(res.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > limit)
+    throw new PublicFetchError(`${where} is larger than ${limit} bytes`)
+  if (!res.body) return new Uint8Array(0)
+
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > limit) {
+        await reader.cancel().catch(() => {})
+        throw new PublicFetchError(`${where} is larger than ${limit} bytes`)
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const joined = new Uint8Array(size)
+  let offset = 0
+  for (const c of chunks) { joined.set(c, offset); offset += c.byteLength }
+  return joined
+}
+
+/**
+ * Fetches JSON from a URL somebody else chose and answers it, or throws
+ * `PublicFetchError` (a `PublicUrlError`, status 400) naming the URL and why.
+ * Every hop, the first and each `Location`, is graded and connected to by
+ * `gradePublicUrl` and `pinTo`, so a redirect to a private address is refused
+ * where a plain `fetch` would have followed it. No caching: the caller keeps
+ * the answer for `maxAge`.
+ */
+export async function fetchPublicJson(raw: string | URL, opts: PublicFetchOptions = {}): Promise<PublicJson> {
+  const maxBytes  = opts.maxBytes  ?? 65_536
+  const timeoutMs = opts.timeoutMs ?? 5_000
+  const maxHops   = opts.maxHops   ?? 3
+  const doFetch   = opts.fetch ?? fetch
+  const signal    = AbortSignal.timeout(timeoutMs)
+
+  let target: string | URL = raw
+  for (let hop = 0; ; hop++) {
+    // Graded on every hop: a refusal here is already worded for the person who
+    // pasted the URL.
+    const graded = await gradePublicUrl(target, opts)
+    const url    = graded.url
+    const where  = shown(url)
+    const late   = () => new PublicFetchError(`${where} did not answer within ${timeoutMs}ms`)
+    if (signal.aborted) throw late()
+
+    const pinned = graded.address ? pinTo(url, graded.address) : null
+    const init: RequestInit & { tls?: { serverName: string } } = {
+      method:   'GET',
+      headers:  { accept: 'application/json', ...pinned?.headers },
+      redirect: 'manual',
+      signal,
+      ...(pinned?.tls ? { tls: pinned.tls } : {}),
+    }
+
+    let res: Response
+    try { res = await doFetch(pinned?.url ?? url.toString(), init) }
+    catch (err) {
+      if (signal.aborted) throw late()
+      throw new PublicFetchError(`${where} could not be fetched (${(err as Error).message})`)
+    }
+
+    if (REDIRECTS.has(res.status)) {
+      await res.body?.cancel().catch(() => {})
+      const location = res.headers.get('location')
+      if (!location) throw new PublicFetchError(`${where} redirected with no Location`)
+      if (hop >= maxHops) throw new PublicFetchError(`${where} redirected more than ${maxHops} times`)
+      try { target = new URL(location, url) }
+      catch { throw new PublicFetchError(`${where} redirected to something that is not a URL`) }
+      continue
+    }
+
+    if (res.status < 200 || res.status > 299) {
+      await res.body?.cancel().catch(() => {})
+      throw new PublicFetchError(`${where} answered ${res.status}`)
+    }
+    const type = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+    if (type !== 'application/json' && !type.endsWith('+json')) {
+      await res.body?.cancel().catch(() => {})
+      throw new PublicFetchError(`${where} answered ${type || 'no content type'}, not JSON`)
+    }
+
+    let bytes: Uint8Array
+    try { bytes = await readCapped(res, maxBytes, where) }
+    catch (err) {
+      if (err instanceof PublicFetchError) throw err
+      if (signal.aborted) throw late()
+      throw new PublicFetchError(`${where} broke off while being read (${(err as Error).message})`)
+    }
+    let json: unknown
+    try { json = JSON.parse(new TextDecoder().decode(bytes)) }
+    catch { throw new PublicFetchError(`${where} answered a body that is not valid JSON`) }
+
+    return { url: url.toString(), status: res.status, json, maxAge: maxAgeOf(res.headers.get('cache-control')) }
+  }
 }

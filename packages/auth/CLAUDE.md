@@ -50,5 +50,6 @@ only place a notification is read back out of an outbox.
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
 auth.ts cleanup.ts crypto.ts errors.ts index.ts oauth.ts package.json plugin.ts schema.ts 
-services.ts tenancy.ts totp.ts types.ts 
+services.ts tenancy.ts totp.ts types.ts Authorize.mesa authorize-page.snapshot.js
+authorize-page.snapshot.d.ts 
 -->

@@ -778,6 +778,12 @@ core/
                 failure: `cognitive` is null, every other reading holds, and the
                 page says which of the three reasons it was — because *quiet*
                 and *nobody read this* must not draw the same tile
+  mesa-pack.js  `fli mesa:pack` — one `.mesa` compiled `target: 'server'`,
+                bundled with its runtime and a `@frontierjs/css` subset into a
+                `*.snapshot.js` exporting `render(props)` and `STYLE_HASH`
+                (`FJS-D1934`). Mesa and css resolve from the cli, never the
+                caller; `test/mesa-pack.test.js` packs twice from two
+                directories, since a leaked temp path fails only on CI
   export-pairs.js  two `exports` keys reaching one file under two spellings —
                 `ws:exports` fails on one. A `.mesa` subpath keeps its extension
                 (tools recognise a component by it), every other is bare

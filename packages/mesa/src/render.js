@@ -38,9 +38,9 @@
  * See docs/STATIC_RENDERING.md for the full model and the Sierra integration status.
  */
 
-import { setRenderEnvironment, createRoot, flushSync, settleAwaits } from './runtime.js'
+import { setRenderEnvironment, createRoot, flushSync, settleAwaits, startRender } from './runtime.js'
 import { missingPeer, NO_LOADING } from './optional-peer.js'
-import { isAnchorComment, settle } from './runtime-server.js'
+import { isAnchorComment } from './runtime-server.js'
 
 const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'renderToHTML'))
 
@@ -353,19 +353,15 @@ async function _renderString(ComponentFactory, props, options) {
       'mode writes no anchor comments. Drop the option, or render on the DOM path.'
     )
   }
-  const out = []
-  let dispose = null
+  let started = null
   try {
-    createRoot((d) => {
-      dispose = d
-      ComponentFactory(out, props ?? {})
-    })
-    const waiting = settle(out)
-    if (waiting) await waiting
+    started = startRender(ComponentFactory, props)
+    if (started.waiting) await started.waiting
   } catch (e) {
-    dispose?.()
+    started?.dispose()
     throw renderFailure(e, options.label)
   }
+  const { out, dispose } = started
   const html = out.join('').trim()
   // `<mesa:head>` wrote beside the body (`runtime-server.js` `head`); the
   // page is the one place it has somewhere to go.

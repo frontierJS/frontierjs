@@ -174,7 +174,7 @@ upload beside the npm line, and a real run leaves an asset the postflight verifi
   asks `gh auth status --active` only when `tarballs` is in the run, and `npm
   login`/`whoami` only when `npm` is. **Hazard found:** gh takes
   `GH_TOKEN`/`GITHUB_TOKEN` from the environment over its keyring login, and
-  fli loads `~/.config/fli/env` into that environment — the token there was
+  fli loads `~/.config/fli/.env` into that environment — the token there was
   stale and every gh call under fli answered 401 while a bare shell was green;
   both refusals now name the variable. Proof: dry runs print one line per
   destination for each `--to` shape and `--to bogus` is refused by name; with

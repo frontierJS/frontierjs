@@ -17,6 +17,8 @@
   },
   "files": [
     "*.ts",
+    "Authorize.mesa",
+    "authorize-page.snapshot.js",
     "db",
     "README.md",
     "LICENSE"

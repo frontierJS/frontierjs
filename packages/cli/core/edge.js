@@ -156,6 +156,17 @@ export function routePrefixes(paths = null) {
 }
 
 /**
+ * RFC 8414 and RFC 9728 put their documents at the ROOT of the issuer's
+ * origin, outside `apiPrefix`, so a prefix list never names them and the page's
+ * file server would answer a connector's discovery with the SPA shell. A glob
+ * and not a `routePrefixes` entry: a Basecamp `DomainRoute` and Outpost's
+ * `paths` refuse a wildcard by name (`normalizePrefix`), so only Caddy's path
+ * matcher, where a trailing `*` is a prefix match across slashes, can carry it.
+ * Under two origins the API's own host proxies every path and needs no twin.
+ */
+export const OAUTH_WELL_KNOWN = '/.well-known/oauth-*'
+
+/**
  * The routes `deploy:setup` writes: one, or two.
  *
  * The pause guard is the FIRST handler in every route — a paused app whose API
@@ -171,7 +182,7 @@ export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null,
     throw new EdgeError('deploy.web.domain is not set. Caddy routes by hostname and fetches a certificate for it, so the edge needs one.')
 
   const { prefix = '/api', roots } = paths ?? {}
-  const matched = routePrefixes(paths).flatMap(p => [p, `${p}/*`])
+  const matched = [...routePrefixes(paths).flatMap(p => [p, `${p}/*`]), OAUTH_WELL_KNOWN]
   const proxy = split ? [] : [...(prefix ? [] : [navigation(roots ?? ['/api'])]), apiRoute(apiPort, matched)]
 
   const routes = []

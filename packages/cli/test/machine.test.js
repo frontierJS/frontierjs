@@ -222,6 +222,20 @@ fi`)
     const t = createMachine({ host: 'deploy@box', exec: () => { throw new Error('no route') } })
     expect(t.reach()).toBe(false)
   })
+
+  test('a connection sshd drops before the handshake is tried again, and a refused key is not', () => {
+    const dropped = Object.assign(new Error('ssh'), { stderr: 'kex_exchange_identification: read: Connection reset by peer\n' })
+    let calls = 0
+    const t = createMachine({ host: 'deploy@box', exec: () => { if (calls++ === 0) throw dropped } })
+    expect(t.reach()).toBe(true)
+    expect(calls).toBe(2)
+
+    const denied = Object.assign(new Error('ssh'), { stderr: 'root@box: Permission denied (publickey).\n' })
+    calls = 0
+    const u = createMachine({ host: 'deploy@box', exec: () => { calls++; throw denied } })
+    expect(u.reach()).toBe(false)
+    expect(calls).toBe(1)
+  })
 })
 
 // ─── moving an image ─────────────────────────────────────────────────────────

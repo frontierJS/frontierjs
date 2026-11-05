@@ -307,18 +307,51 @@ the App's `/authorize`.
   - **Hand-written 401s carry no header.** `ctx.json(…, 401)` and
     `new Response(…, { status: 401 })` in health, webhooks, export, devtools,
     `bearer.ts` and `http.ts` bypass `errorResponse`. None of them is `/mcp`.
-- [ ] 1.2 `/.well-known/oauth-protected-resource` (and the path-suffixed form)
+- [x] 1.2 `/.well-known/oauth-protected-resource` (and the path-suffixed form)
       names the MCP URL as `resource` and the App's issuer as its one
       authorization server. `mcp` mounts it through `app.http.router` (0.4),
       and under the prefix too, at the URL 1.1's header names.
-- [ ] 1.3 `/.well-known/oauth-authorization-server`: issuer, the two endpoints,
+  **Built 2026-11-05.** Proved by `verify:mcp` 40/40, whose two new rows run
+  the SDK's own `discoverOAuthProtectedResourceMetadata` from the header's URL
+  and from the root, and the mcp suite 195/195. Four things the plan did not
+  say:
+  - **The issuer is the origin alone** (`FJS-D1945`, Q11). The document is
+    `{ resource, authorization_servers: [publicUrl], bearer_methods_supported:
+    ["header"] }`.
+  - **The root route is one wildcard**, `/.well-known/oauth-protected-resource/*`,
+    which also matches the bare path. The suffix is compared at request time,
+    because `apiPrefix` can move after `register()` (`FJS-3072`). Any other
+    suffix is `404`.
+  - **An App without `auth()` answers both copies `404`**, since it has no
+    sign-in to describe.
+  - **`example` and basecamp `app.snapshot.md`** gained the two routes and
+    were regenerated.
+- [x] 1.3 `/.well-known/oauth-authorization-server`: issuer, the two endpoints,
       `code_challenge_methods_supported: ["S256"]`,
       `token_endpoint_auth_methods_supported: ["none"]`,
       `client_id_metadata_document_supported: true`, the grant types.
-      `auth` mounts it, since it names `auth`'s endpoints (0.4). An App
-      whose front door sends the root to a static host is told at startup
-      that the document is unreachable. Price whether to say so or to serve
-      the issuer's path-appended discovery form under the prefix.
+      `auth` mounts it at the root, since it names `auth`'s endpoints (0.4),
+      and its `issuer` is `publicUrl` (`FJS-D1945`). `cli/core/edge.js` adds
+      `/.well-known/oauth-*` to the paths it proxies to the API beside
+      `apiPaths`. An App behind a front door `edge.js` does not write (a
+      hand-written Caddyfile, a Vite proxy) is told per Q12. Check the
+      two-origin shape (`deploy.api.domain`), where the API origin is the
+      issuer and needs no extra route.
+  **Built 2026-11-05.** Proved by `verify:mcp` 42/42, whose two new rows run
+  the SDK's `discoverAuthorizationServerMetadata` from the server 1.2's
+  document names, `verify:oauth` 28/28, and the auth (690), cli (4379) and
+  mcp (195) suites. Three things the plan did not say:
+  - **The glob is not in `routePrefixes`.** Its two other readers, a Basecamp
+    `DomainRoute` and Outpost's `paths`, refuse a `*` by name, and a glob
+    there would 400 the release. `OAUTH_WELL_KNOWN` is appended to the
+    one-origin Caddy matcher alone; the plaintext `:80` route still redirects
+    it like a page. Caddy's prefix match is asserted by a stand-in, not a
+    live Caddy.
+  - **The endpoints are computed per request** under `apiPrefix` + auth's
+    prefix, so the document names `/authorize` and `/token` before Phases 2–3
+    mount them.
+  - **The startup warning is not built.** The App has no signal that says
+    which front door it sits behind; Q12 holds the options.
 
 ### Phase 2 — Authorize
 
@@ -351,6 +384,19 @@ the loopback warning.
     names no other origin, and that a hostile `client_name` and host render
     escaped.
   - **A drive in Chromium** follows Allow through to the redirect.
+  - **In progress 2026-11-05.** The page and its packer are built and proved:
+    `Authorize.mesa`, `authorize-page.snapshot.js` (47.5 KB, `render(props)`
+    and `STYLE_HASH`), `fli mesa:pack` (`commands/mesa/pack.md`,
+    `core/mesa-pack.js`, `--css`/`--check`/`--stdout`/`--out`, byte-identical
+    across runs), and Mesa's `renderString` / `startRender` — in
+    `runtime.js`, not `runtime/server`, because the compiler imports the
+    server runtime and that placement made a cycle that broke `mount()`'s
+    browser detection. `render.js`'s `_renderString` shares `startRender`.
+    Proved by mesa 2596, cli 4385, auth 696, `example` `verify` 72 and
+    `verify:site` 47. Owed to the route: the `<title>` (the pack's `render`
+    takes `out.head` into the document head), `themes/dark` dropped from the
+    subset (it applies only under `.theme-dark`, which a page with no script
+    never sets), `form-action`, and Q14's verbs (`FJS-D1948`).
 - [ ] 2.2 Fetch the client metadata document per Q7: https only, a public
       address through `public-url.ts`'s `gradePublicUrl` and `pinTo`, size
       and time caps, cached no longer than its `max-age`. Its
@@ -555,3 +601,89 @@ it signed in, until its access token expires, and then handles refresh per Q6.
     (`FJS-1662`). C is a second 401 beside the owner and leaves every other
     one bare. A second header-carrying error, `Retry-After` on a 429, would
     be added the same narrow way.
+- ~~**Q11 — What is the issuer?**~~ **Answered 2026-11-05 (`FJS-D1945`): A — the origin alone, `publicUrl`. The document sits at the root, so 1.3 has `cli/core/edge.js` proxy `/.well-known/oauth-*` to the API beside `apiPaths`, and the App warns at startup only behind a front door `edge.js` does not write.** 1.2 writes it into `authorization_servers`,
+  and 1.3 serves the authorization-server document at a URL derived from it,
+  whose `issuer` must equal it (RFC 8414 § 3.3). The MCP client SDK 2.3.1
+  tries `/.well-known/oauth-authorization-server<path>`, then
+  `/.well-known/openid-configuration<path>`, then
+  `<path>/.well-known/openid-configuration`, and parses the two OIDC forms
+  with a schema that requires `jwks_uri`, `subject_types_supported` and
+  `id_token_signing_alg_values_supported`.
+  - **A** — the origin alone, `publicUrl`. The document sits at the root, so
+    1.3 has `cli/core/edge.js` proxy `/.well-known/oauth-*` to the API
+    beside `apiPaths`, and the App warns at startup only behind a front door
+    `edge.js` does not write.
+  - **B** — `publicUrl` + `apiPrefix`. The RFC 8414 form is still at the
+    root. Only the third, OIDC form sits under the prefix, and it must
+    publish a JWKS and ID-token fields `FJS-D1926` gives no meaning.
+  - **Recommend A** — one value, already ruled origin-only by `FJS-D1935`, and
+    both documents read it from junction config. B makes a second string that
+    must agree with the first, and escapes the front door only by publishing
+    fields that are false. B reopens only if the App ever serves real OIDC.
+- ~~**Q12 — How is an App told its root `.well-known` is unreachable behind a front door `edge.js` did not write?**~~ **Answered 2026-11-05 (`FJS-D1946`): A — a post-deploy probe in `_steps-docker/07b-edge.md`, which already warns rather than aborts: fetch `<public origin>/.well-known/oauth-authorization-server` and warn on a 404 or a non-JSON body, only when the snapshot shows `auth()`'s routes. Catches a hand-written Caddyfile and edge.js's own Caddy alike; does not see a Vite dev proxy.** 1.3 found the App has no signal that
+  says which front door it sits behind: `FRONTIER_TRUST_PROXY` says a proxy is
+  declared, not who wrote it, and `fli deploy`'s health check
+  (`_steps-docker/06-swap.md`) reads the loopback port only.
+  - **A** — a post-deploy probe in `_steps-docker/07b-edge.md`, which already
+    warns rather than aborts: fetch `<public origin>/.well-known/oauth-authorization-server`
+    and warn on a 404 or a non-JSON body, only when the snapshot shows
+    `auth()`'s routes. Catches a hand-written Caddyfile and edge.js's own
+    Caddy alike; does not see a Vite dev proxy.
+  - **B** — a startup warning in the App when a request's `Host` differs from
+    `publicUrl`'s. A heuristic that fires per process and per hop.
+  - **C** — A, plus the scaffold's Vite proxy block forwards
+    `/.well-known/oauth-` so a dev connector pointed at the page's origin
+    discovers too.
+  - **Recommend A** — one place, after the deploy that could have broken it,
+    and the App's boot stays untouched. In dev the API port is the origin the
+    document names, so C only matters for a connector pointed at Vite, which
+    no drive does. Kamal and Dokku both probe the public URL after a deploy
+    rather than asking the app to guess (Kamal `healthcheck`, Dokku `CHECKS`).
+- ~~**Q13 — Where does the bounded fetch of a client metadata document live?**~~ **Answered 2026-11-05 (`FJS-D1947`): A — one helper in junction beside `public-url.ts`, `fetchPublicJson(url, { maxBytes, timeoutMs, maxHops })` over `gradePublicUrl` and `pinTo`; `auth` calls it, and moving conduit's transport onto it is filed as a follow-up.**
+  2.2 needs https-only, a public address (`gradePublicUrl` + `pinTo`), a byte
+  cap, a timeout, `redirect: 'manual'` with a hop cap, and `max-age` caching.
+  `public-url.ts` answers only "may we send a request there". The only bounded
+  fetch of a URL someone else chose is `conduit/src/transports/http.ts`
+  (`DEFAULT_MAX_BYTES`, `MAX_REDIRECT_HOPS`, pinned), and `auth` depends on
+  `junction` alone.
+  - **A** — one helper in junction beside `public-url.ts`,
+    `fetchPublicJson(url, { maxBytes, timeoutMs, maxHops })` over
+    `gradePublicUrl` and `pinTo`; `auth` calls it, and moving conduit's
+    transport onto it is filed as a follow-up.
+  - **B** — `auth` depends on `conduit` and calls its transport.
+  - **C** — the caps live in `auth` beside the CIMD cache.
+  - **Recommend A** — the guard and the bounded fetch are one noun with one
+    owner (Invariant 4), and B reverses nothing but adds a package of
+    transports to every App with accounts. C is the second copy of conduit's
+    caps that diverges. The cache stays in `auth`: it is the client registry,
+    not a transport concern.
+- ~~**Q14 — How does `/authorize` learn who is proven without a session?**~~ **Answered 2026-11-05 (`FJS-D1948`): A — two named verbs on the auth object, `authenticate(email, password)` and `completeAuthenticate(challenge, code)`, each returning `{ userId }` or `{ challenge, expiresAt }`, sharing the throttle, the bcrypt cost, the audit and the TOTP step with `login` through a private ending parameter (session vs proof) on `firstFactorProven` and `completeLogin`. An account owing enrollment is refused with a pointer to the web surface.**
+  `login` and `completeLogin` both end in `issueSession`, so calling either
+  from the consent page mints a browser session nobody asked for and a
+  `login.succeeded` entry.
+  - **A** — two named verbs on the auth object, `authenticate(email, password)`
+    and `completeAuthenticate(challenge, code)`, each returning `{ userId }`
+    or `{ challenge, expiresAt }`, sharing the throttle, the bcrypt cost, the
+    audit and the TOTP step with `login` through a private ending parameter
+    (session vs proof) on `firstFactorProven` and `completeLogin`. An
+    account owing enrollment is refused with a pointer to the web surface.
+  - **B** — a `proveIdentity` option on `firstFactorProven` itself.
+  - **C** — call `login`, then delete the minted session.
+  - **Recommend A** — Django splits `authenticate()` from `login()` on exactly
+    this line, and Laravel `Auth::validate()` from `Auth::attempt()`; the proof
+    is a different answer from a session, and `issueHandoff` / `redeemHandoff`
+    are the precedent for a named verb. B changes a return type behind a flag
+    a magic-link caller could reach. C leaves the trail wrong.
+- ~~**Q15 — Where does an authorization code keep its client, redirect and resource?**~~ **Answered 2026-11-05 (`FJS-D1949`): A — a `Credential` row, `type: 'authCode'`, with two new nullable columns `clientId` and `redirectUri`; `label` keeps the audience, here the `resource`. The HMAC input carries the type, so a handoff and a code cannot be spent as each other.** 2.3 says the table `hashHandoff` writes, which is `Credential`:
+  it has `label` (the audience) and `scope` free and no column for a redirect
+  or a client.
+  - **A** — a `Credential` row, `type: 'authCode'`, with two new nullable
+    columns `clientId` and `redirectUri`; `label` keeps the audience, here the
+    `resource`. The HMAC input carries the type, so a handoff and a code
+    cannot be spent as each other.
+  - **B** — the three packed into `label` as JSON.
+  - **C** — a new `AuthorizationCode` model with `@@expires`.
+  - **Recommend A** — the plan already rules out a new table, and B is a
+    parse with no owner. `Session` gains `clientId` for Q4 in the same shape,
+    so one column name serves both. C is the reopen path if a third column
+    group arrives.

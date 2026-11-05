@@ -82,7 +82,7 @@ export type {
 } from './src/transport/types.ts'
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
-export type { IAuth, LoginResult, EmailVerificationResult, SessionVerifier, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from './src/auth/types.ts'
+export type { IAuth, LoginResult, ProofResult, EmailVerificationResult, SessionVerifier, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from './src/auth/types.ts'
 
 // ─── Events ───────────────────────────────────────────────────────────────
 export { createEventBus }                                         from './src/events/index.ts'

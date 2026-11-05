@@ -23,7 +23,7 @@ src/
     loader.ts — auto-discovers *.service.ts
     app-root.ts — createApp({ root }) and the folders derived from it (FJS-D1080)
     rate-limit.ts — the one rate limiter
-    public-url.ts — assertPublicUrl: whether a URL a stranger chose may be fetched; @frontierjs/junction/public-url (FJS-1579)
+    public-url.ts — assertPublicUrl: whether a URL a stranger chose may be fetched; fetchPublicJson: the bounded fetch of one (size, deadline, graded hops); @frontierjs/junction/public-url (FJS-1579, FJS-D1947)
     idempotency.ts — claimIdempotency
     metrics.ts — reading a counter, beside db/metrics.lite
     diagnostics.ts — whether to print developer diagnostics

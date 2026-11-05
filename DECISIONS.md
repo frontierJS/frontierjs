@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1942"></a>2026-11-05 · `FJS-D1942` — Q1 — The noun — *profile*: AWS's word for this exact shape, so nobody has to learn it. It's spelled like `FJS-D1152`'s `Profile`, the claim key for a Provider's person in a conduit, but that is a model name in another realm and this is a CLI word.
+
+Asked in [`IDEAS/fli-profiles.md`](IDEAS/fli-profiles.md) § Open questions. **A** was picked over **B** (*account*: what gh and doctl call one login. But a profile holds one account at each of several vendors, so the word names the wrong level), **C** (*context*: kubectl's word; collides with `ctx`).
+
+The paper's recommendation, taken as written: discovered rather than invented, and the collision is across realms and cases.
+
 ### <a id="fjs-d1937"></a>2026-11-05 · `FJS-D1937` — Basecamp's schema before the first dogfood db: a vendor-account Secret pointer is `providerSecretId`, an adopted machine is `RegisterMethod.adopted`, and a provider enum column is `providerKind` everywhere.
 
 Asked in chat, through the question tool, as four questions in a naming review before the yuma reinstall. After the reinstall, migrations are append-only (`FJS-D1605`). Each change is folded into the squashed initial.
@@ -1850,6 +1856,36 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1949"></a>2026-11-05 · `FJS-D1949` — Q15 — Where does an authorization code keep its client, redirect and resource — A `Credential` row, `type: 'authCode'`, with two new nullable columns `clientId` and `redirectUri`; `label` keeps the audience, here the `resource`. The HMAC input carries the type, so a handoff and a code cannot be spent as each other.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (the three packed into `label` as JSON), **C** (a new `AuthorizationCode` model with `@@expires`).
+
+The paper's recommendation, taken as written: the plan already rules out a new table, and B is a parse with no owner. `Session` gains `clientId` for Q4 in the same shape, so one column name serves both. C is the reopen path if a third column group arrives.
+
+### <a id="fjs-d1948"></a>2026-11-05 · `FJS-D1948` — Q14 — How does `/authorize` learn who is proven without a session — Two named verbs on the auth object, `authenticate(email, password)` and `completeAuthenticate(challenge, code)`, each returning `{ userId }` or `{ challenge, expiresAt }`, sharing the throttle, the bcrypt cost, the audit and the TOTP step with `login` through a private ending parameter (session vs proof) on `firstFactorProven` and `completeLogin`. An account owing enrollment is refused with a pointer to the web surface.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (a `proveIdentity` option on `firstFactorProven` itself), **C** (call `login`, then delete the minted session).
+
+The paper's recommendation, taken as written: Django splits `authenticate()` from `login()` on exactly this line, and Laravel `Auth::validate()` from `Auth::attempt()`; the proof is a different answer from a session, and `issueHandoff` / `redeemHandoff` are the precedent for a named verb. B changes a return type behind a flag a magic-link caller could reach. C leaves the trail wrong.
+
+### <a id="fjs-d1947"></a>2026-11-05 · `FJS-D1947` — Q13 — Where does the bounded fetch of a client metadata document live — One helper in junction beside `public-url.ts`, `fetchPublicJson(url, { maxBytes, timeoutMs, maxHops })` over `gradePublicUrl` and `pinTo`; `auth` calls it, and moving conduit's transport onto it is filed as a follow-up.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (`auth` depends on `conduit` and calls its transport), **C** (the caps live in `auth` beside the CIMD cache).
+
+The paper's recommendation, taken as written: the guard and the bounded fetch are one noun with one owner (Invariant 4), and B reverses nothing but adds a package of transports to every App with accounts. C is the second copy of conduit's caps that diverges. The cache stays in `auth`: it is the client registry, not a transport concern.
+
+### <a id="fjs-d1946"></a>2026-11-05 · `FJS-D1946` — Q12 — How is an App told its root `.well-known` is unreachable behind a front door `edge.js` did not write — A post-deploy probe in `_steps-docker/07b-edge.md`, which already warns rather than aborts: fetch `<public origin>/.well-known/oauth-authorization-server` and warn on a 404 or a non-JSON body, only when the snapshot shows `auth()`'s routes. Catches a hand-written Caddyfile and edge.js's own Caddy alike; does not see a Vite dev proxy.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (a startup warning in the App when a request's `Host` differs from `publicUrl`'s. A heuristic that fires per process and per hop), **C** (A, plus the scaffold's Vite proxy block forwards `/.well-known/oauth-` so a dev connector pointed at the page's origin discovers too).
+
+The paper's recommendation, taken as written: one place, after the deploy that could have broken it, and the App's boot stays untouched. In dev the API port is the origin the document names, so C only matters for a connector pointed at Vite, which no drive does. Kamal and Dokku both probe the public URL after a deploy rather than asking the app to guess (Kamal `healthcheck`, Dokku `CHECKS`).
+
+### <a id="fjs-d1945"></a>2026-11-05 · `FJS-D1945` — Q11 — What is the issuer — The origin alone, `publicUrl`. The document sits at the root, so 1.3 has `cli/core/edge.js` proxy `/.well-known/oauth-*` to the API beside `apiPaths`, and the App warns at startup only behind a front door `edge.js` does not write.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (`publicUrl` + `apiPrefix`. The RFC 8414 form is still at the root. Only the third, OIDC form sits under the prefix, and it must publish a JWKS and ID-token fields `FJS-D1926` gives no meaning).
+
+The paper's recommendation, taken as written: one value, already ruled origin-only by `FJS-D1935`, and both documents read it from junction config. B makes a second string that must agree with the first, and escapes the front door only by publishing fields that are false. B reopens only if the App ever serves real OIDC.
 
 ### <a id="fjs-d1936"></a>2026-11-05 · `FJS-D1936` — Q10 — How does a 401 carry its challenge — `Unauthorized` takes a narrow `challenge` of auth-params. `errorResponse` writes `WWW-Authenticate: Bearer` on every 401, with the params quoted when a challenge is given, on fresh headers rather than the shared `JSON_HEADERS`. The challenge never reaches `toJSON()`.
 
@@ -16597,6 +16633,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1944"></a>2026-11-05 · `FJS-D1944` — Q3 — Whether the global file keeps account keys once profiles exist — Yes, as the fallback: a project with no profile works as today.
+
+Asked in [`IDEAS/fli-profiles.md`](IDEAS/fli-profiles.md) § Open questions. **A** was picked over **B** (No: the global file holds machine facts only, and a command needing an account key with no profile set fails on the missing key, naming `FLI_PROFILE`).
+
+Against the recommendation (**B**): owner's pick: a project with no profile keeps working as today.
+
+### <a id="fjs-d1943"></a>2026-11-05 · `FJS-D1943` — Q2 — How a project names its profile — `FLI_PROFILE` in the project `.env`, shell overrides.
+
+Asked in [`IDEAS/fli-profiles.md`](IDEAS/fli-profiles.md) § Open questions. **A** was picked over **B** (a directory map in global config, git `includeIf` style: one line covers `~/code/<client>/*`, including repos with no `.env`), **C** (a sticky `fli profile use <name>`).
+
+The paper's recommendation, taken as written: derived from the project root `fli` already finds, one road, and the override is the shell's. B is a second place saying which credentials apply, and moving a repo changes them silently. C is the gcloud/kubectl failure. B is the reopen path if a line per repo proves heavy.
 
 ### <a id="fjs-d1941"></a>2026-11-05 · `FJS-D1941` — Q7 — The pin nobody moved — Keep the hand move. 04 prints `move the pin` with the file and the two versions after any run that put a pinned package on npm, before a failure is thrown, and `fli done` lists a pin older than npm's `latest` for the release whose line went unread.
 

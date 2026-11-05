@@ -132,7 +132,8 @@ own. The token is checked right after the hostname, before any other question or
 purchase: one that opens no zone holding it refuses the run, so nothing is spent
 on a box whose name cannot be pointed at it. With no `CLOUDFLARE_TOKEN` a
 terminal takes the paste, and a run with no terminal warns, installs, and prints
-the `fli basecamp:dns` line instead of writing the record.
+the `fli basecamp:dns` line instead of writing the record. What the token must
+hold, and the page that makes one, is `fli basecamp:dns -h`'s **requires**.
 
 `--yes` answers every question for you: each yes/no is yes — installing,
 the Outpost, the API key, its copy and the purchase included — and each typed answer is what Enter

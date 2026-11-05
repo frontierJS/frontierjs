@@ -952,4 +952,52 @@ describe('an App that installs auth() answers /mcp 401 to a caller it cannot nam
     expect(res.status).toBe(200)
     expect(await res.text()).toContain('orders_find')
   })
+
+  // A `resource` one character off the MCP URL is refused by the client, and
+  // the first authorization server is the issuer auth's own document must
+  // state (`FJS-D1945`).
+  const DOCUMENT = {
+    resource:                 'https://shop.test/api/mcp',
+    authorization_servers:    ['https://shop.test'],
+    bearer_methods_supported: ['header'],
+  }
+  const origin = () => `http://localhost:${own.http.port}`
+
+  test('the URL the header names answers the document', async () => {
+    const res = await fetch(`${origin()}/api/.well-known/oauth-protected-resource/mcp`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(DOCUMENT)
+  })
+
+  test('the root answers it at the path-inserted URL and the bare one', async () => {
+    for (const at of ['/.well-known/oauth-protected-resource/api/mcp', '/.well-known/oauth-protected-resource']) {
+      const res = await fetch(`${origin()}${at}`)
+      expect([at, res.status]).toEqual([at, 200])
+      expect(await res.json()).toEqual(DOCUMENT)
+    }
+  })
+
+  test('a root path naming another resource is not found', async () => {
+    const res = await fetch(`${origin()}/.well-known/oauth-protected-resource/api/orders`)
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('an App without auth() has no protected resource to describe', () => {
+  let bare: App & { start(): Promise<void>; stop(): Promise<void>; http: { port: number } }
+
+  beforeAll(async () => {
+    const db = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: '0'.repeat(64) }) as Record<string, never>
+    bare = createApp({ db, config: { port: 0, apiPrefix: '/api' }, logLevel: 'silent' }) as never
+    bare.configure(mcp({ name: 'shop' }))
+    await bare.start()
+  })
+  afterAll(async () => { await bare?.stop?.() })
+
+  test('both copies are not found', async () => {
+    for (const at of ['/api/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-protected-resource/api/mcp']) {
+      const res = await fetch(`http://localhost:${bare.http.port}${at}`)
+      expect([at, res.status]).toEqual([at, 404])
+    }
+  })
 })

@@ -12,9 +12,10 @@ import { readFileSync } from 'fs'
 import { createHash } from 'crypto'
 import {
   edgeNames, apiOrigin, edgeRoutes, plainRoutes, applyEdge, routeId, accessLogPath, INGRESS_SERVER, PLAIN_SERVER, CLOUDFLARE_RANGES,
-  parseConfigRead, parseConfigWrite, writeConfigScript, routeDials, EdgeError, inlineScriptHashes, inlineStyleHashes,
+  parseConfigRead, parseConfigWrite, writeConfigScript, routeDials, EdgeError, inlineScriptHashes, inlineStyleHashes, OAUTH_WELL_KNOWN,
 } from '../core/edge.js'
 import { guardId } from '../core/pause.js'
+import { checkDiscovery } from '../core/discovery-probe.js'
 import { STREAM_CLOSE_DELAY } from '../core/swap.js'
 
 const src = (rel) => readFileSync(new URL(`../commands/deploy/${rel}`, import.meta.url).pathname, 'utf8')
@@ -67,10 +68,25 @@ describe('one origin', () => {
 
   test('proxies /api/ and /ws to the container, and serves the SPA from current/', () => {
     const [api] = proxied(r)
-    expect(api.match).toEqual([{ path: ['/api', '/api/*', '/ws', '/ws/*'] }])
+    expect(api.match).toEqual([{ path: ['/api', '/api/*', '/ws', '/ws/*', OAUTH_WELL_KNOWN] }])
     expect(api.handle[0].upstreams).toEqual([{ dial: '127.0.0.1:3000' }])
     expect(inner(r).find(x => x.handle[0].handler === 'vars').handle[0].root).toBe('/apps/shop/current')
     expect(handlers(r)).toContain('file_server')
+  })
+
+  // A connector probes the issuer's ORIGIN, which is outside apiPrefix; the
+  // page's file server would answer with the SPA shell and the sign-in
+  // would read as unsupported. Caddy's trailing `*` is a prefix match that
+  // crosses slashes, so one glob covers both documents and the path-suffixed form.
+  test('proxies the OAuth discovery documents to the container', () => {
+    const [api] = proxied(r)
+    const [glob] = api.match[0].path.filter(p => p.includes('.well-known'))
+    const covers = (path) => path.startsWith(glob.slice(0, -1))
+    expect(glob).toBe('/.well-known/oauth-*')
+    expect(covers('/.well-known/oauth-authorization-server')).toBe(true)
+    expect(covers('/.well-known/oauth-protected-resource/api/mcp')).toBe(true)
+    expect(covers('/.well-known/security.txt')).toBe(false)
+    expect(api.handle[0].upstreams).toEqual([{ dial: '127.0.0.1:3000' }])
   })
 
   // A rewrite before the proxy would hand an app registered under apiPrefix
@@ -101,6 +117,8 @@ describe('two origins', () => {
     expect(api.match).toEqual([{ host: ['api.shop.example'] }])
     const [p] = proxied(api)
     expect(p.match).toBeUndefined()
+    expect(JSON.stringify(api)).not.toContain('.well-known')
+    expect(JSON.stringify(web)).not.toContain('.well-known')
     expect(handlers(api)).not.toContain('vars')
   })
 
@@ -462,5 +480,91 @@ describe('the web release merge (FJS-4026)', () => {
       expect(held).toEqual(['bbbbbbb.js', 'ccccccc.js'])
       expect(existsSync(`${serverPath}/releases/ccccccc/${assetDir}/aaaaaaa.js`)).toBe(false)
     } finally { rmSync(serverPath, { recursive: true, force: true }) }
+  })
+})
+
+// ─── the OAuth discovery probe (FJS-D1946) ───────────────────────────────────
+// RFC 8414 puts the document at the origin's root, where a front door that did
+// not write `OAUTH_WELL_KNOWN` hands the SPA shell to a connector.
+
+describe('the discovery probe after the edge is written', () => {
+  const WITH_OAUTH = { routes: [{ method: 'GET', path: '/.well-known/oauth-authorization-server', kind: 'raw' }] }
+  const AUTH_ONLY  = { routes: [{ method: 'POST', path: '/api/auth/login', kind: 'raw' }] }
+  const ONE        = edgeNames({ web: { domain: 'shop.example' } })
+  const TWO        = edgeNames({ web: { domain: 'app.shop.example' }, api: { domain: 'api.shop.example' } })
+  const stub       = (fn) => { const calls = []; const f = async (url, init) => { calls.push(url); return fn(url, init) }; f.calls = calls; return f }
+  const json       = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+  test('a 200 JSON body naming this origin as issuer is silent', async () => {
+    const fetch = stub(() => json({ issuer: 'https://shop.example' }))
+    const out = await checkDiscovery({ snapshot: WITH_OAUTH, names: ONE, fetch })
+    expect(out).toEqual({ probed: true, url: 'https://shop.example/.well-known/oauth-authorization-server', warning: null })
+    expect(fetch.calls).toEqual(['https://shop.example/.well-known/oauth-authorization-server'])
+  })
+
+  test('a 404 warns, naming the URL and the status, and what to add', async () => {
+    const out = await checkDiscovery({ snapshot: WITH_OAUTH, names: ONE, fetch: stub(() => new Response('nope', { status: 404 })) })
+    expect(out.warning).toContain('https://shop.example/.well-known/oauth-authorization-server')
+    expect(out.warning).toContain('answered 404')
+    expect(out.warning).toContain('/.well-known/oauth-*')
+  })
+
+  test('the SPA shell (200, not JSON) warns', async () => {
+    const out = await checkDiscovery({ snapshot: WITH_OAUTH, names: ONE, fetch: stub(() => new Response('<!doctype html>', { status: 200 })) })
+    expect(out.warning).toContain('not JSON')
+  })
+
+  test('JSON naming another issuer warns', async () => {
+    const out = await checkDiscovery({ snapshot: WITH_OAUTH, names: ONE, fetch: stub(() => json({ issuer: 'http://localhost:3000' })) })
+    expect(out.warning).toContain('http://localhost:3000')
+  })
+
+  test('a refused connection warns and does not throw', async () => {
+    const out = await checkDiscovery({ snapshot: WITH_OAUTH, names: ONE, fetch: stub(() => { throw new TypeError('Unable to connect') }) })
+    expect(out.warning).toContain('did not answer')
+    expect(out.warning).toContain('Unable to connect')
+  })
+
+  test('a real refused port is a warning too', async () => {
+    const server = Bun.serve({ port: 0, fetch: () => new Response('') })
+    const port = server.port
+    server.stop(true)
+    const out = await checkDiscovery({ snapshot: WITH_OAUTH, names: ONE, timeoutMs: 2000,
+      fetch: (url, init) => fetch(`http://127.0.0.1:${port}${new URL(url).pathname}`, init) })
+    expect(out.probed).toBe(true)
+    expect(out.warning).toContain('did not answer')
+  })
+
+  test('a silent server times out into a warning', async () => {
+    const hang = (url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason)))
+    const out = await checkDiscovery({ snapshot: WITH_OAUTH, names: ONE, fetch: hang, timeoutMs: 30 })
+    expect(out.warning).toContain('no reply in')
+  })
+
+  test('an App with auth routes but no OAuth server makes no request', async () => {
+    const fetch = stub(() => json({}))
+    expect(await checkDiscovery({ snapshot: AUTH_ONLY, names: ONE, fetch })).toEqual({ probed: false })
+    expect(await checkDiscovery({ snapshot: null, names: ONE, fetch })).toEqual({ probed: false })
+    expect(fetch.calls).toEqual([])
+  })
+
+  test('no domain at all makes no request', async () => {
+    const fetch = stub(() => json({}))
+    expect(await checkDiscovery({ snapshot: WITH_OAUTH, names: edgeNames({}), fetch })).toEqual({ probed: false })
+    expect(fetch.calls).toEqual([])
+  })
+
+  test('two origins probe the API domain, and its issuer is the API origin', async () => {
+    const fetch = stub(() => json({ issuer: 'https://api.shop.example' }))
+    const out = await checkDiscovery({ snapshot: WITH_OAUTH, names: TWO, fetch })
+    expect(out.warning).toBe(null)
+    expect(fetch.calls).toEqual(['https://api.shop.example/.well-known/oauth-authorization-server'])
+  })
+
+  test('the route step runs it after the write, as a warning', () => {
+    const step = src('_steps-docker/07b-edge.md')
+    expect(step).toContain('checkDiscovery(')
+    expect(step.indexOf('checkDiscovery(')).toBeGreaterThan(step.indexOf('writeEdge('))
+    expect(step).toContain('log.warn(`OAuth discovery:')
   })
 })
