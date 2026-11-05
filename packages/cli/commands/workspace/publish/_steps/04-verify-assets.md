@@ -80,8 +80,13 @@ async function assetsNotServed() {
 
 // Printed before a failure is thrown: npm holds the version either way, and the
 // pin is the owner's hand move (`FJS-D1773`), which this line asks for (`FJS-D1941`).
+// Every version the release put on npm, not this run's publishes alone: a rerun
+// that finishes one failed package reaches here with outpost shipped by the run
+// before it, and the move is still owed. Step 03 throws on any failed publish, so
+// a run that gets here has every released version on npm.
 function remindPinsToMove() {
-  for (const p of pinsToMove(config.wsRoot, shippedTo('npm', config, flag.dry))) {
+  const onNpm = config.to.includes('npm') ? config.released.map(({ name, newVersion }) => `${name}@${newVersion}`) : []
+  for (const p of pinsToMove(config.wsRoot, onNpm)) {
     const line = `${p.file}: ${p.constant} = '${p.version}' → '${p.shipped}', by hand now npm holds it (FJS-D1941)`
     if (flag.dry) log.dry(`  A real run leaves a pin to move: ${line}`)
     else echo(chalk`  {yellow move the pin} ${line}`)
