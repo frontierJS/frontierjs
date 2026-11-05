@@ -67,12 +67,13 @@ Every hazard in this package, the full `What bites here`; `CLAUDE.md` keeps the 
   an owner. `revokeSession` and `revokeApiKey` put `userId` into the delete
   rather than checking after a read — the id is what a UI hands back from a list,
   and matching on it alone ends anyone's session whose id can be guessed.
-- **A support operator and an agent over `/mcp` are refused the same writes.**
-  `refuseDelegated(ctx, user, what)` throws for `user.support` and for
-  `ctx.transport === 'mcp'`: every credential change outlives the episode or the
-  session it came from, and a key minted by an agent is the session ceiling
-  escaped (`FJS-1795`, `FJS-D628`). A new method that changes a credential calls
+- **A support operator, an authorized app and an agent over `/mcp` are refused the same writes.**
+  `refuseDelegated(ctx, user, what)` throws for `user.support`, for
+  `user.authorizedApp` and for `ctx.transport === 'mcp'`: every credential
+  change outlives the episode, the approval or the session it came from, and a
+  key minted by an agent is the session ceiling escaped (`FJS-1795`, `FJS-D628`). A new method that changes a credential calls
   it; a read does not. The tools stay LISTED to an agent and refuse when called.
+- **`verifySession` routes a Bearer on its prefix: `fjs_` is an API key, `fja_` an access token, anything else a session** (`FJS-D1926`). The access token is signed claims (`crypto.ts`'s `signAccessToken`, HMAC under the `access:` domain of `encryptionKey`) and resolves with no row read, as `authMethod: 'accessToken'` with `authorizedApp` set; every miss, an expiry on `sys.$now()` included, is anonymous. A new token kind must not open with `fjs_`, which is tested first and would look it up as an API key; a refresh token must never pass `verifySession` at all, which its own prefix keeps true. No gate claim rides in the token, so the person's level is read from their row at each call.
 - **Every service says `model: null`, and every method `gate: VISITOR`.** The
   names are not models — `sessions` reaches this package's own `Session` and
   `account` an app's `Account` — and a name that reaches a model is graded by its
@@ -235,11 +236,12 @@ Every hazard in this package, the full `What bites here`; `CLAUDE.md` keeps the 
   `reason: 'refused-by-app'` with the message: a veto that leaves no trace is
   the class of defect `FJS-277` was.
 - **Auth records events through `db.$audit`, beside the `@@trail(audit)` rows
-  rather than instead of them.** `login.succeeded`, `login.failed`,
+  rather than instead of them.** `login.succeeded`, `login.proven`, `login.failed`,
   `login.challenged`, `totp.confirm.failed`, `logout`, `session.revoked`, `password.reset.refused`,
   the `oauth.*` events (`oauth.signin`, `oauth.registered`, `oauth.refused`,
-  `oauth.link.refused`), `magiclink.registered` and the `support.*` pair (`support.started`,
-  `support.ended`) — `@@trail` covers writes, so it covered the sign-in (`create:session`, with
+  `oauth.link.refused`), `magiclink.registered`, the `support.*` pair (`support.started`,
+  `support.ended`) and the authorization code's `authcode.issued` and
+  `authcode.refused` — `@@trail` covers writes, so it covered the sign-in (`create:session`, with
   `actorId: null`, because an `asSystem()` write names no principal) and missed
   the failed attempt entirely, which is the one an app rate-limits on
   (`FJS-276`, `FJS-277`). The `create:session` row records the WRITE and cannot

@@ -59,7 +59,6 @@ box's file names and no manifest, so it is put back by hand
 (`packages/basecamp/docs/backups.md` § 7, *The hub, by hand*).
 
 <script>
-const { apiContainer } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 
 const confirmed = async ({ host, takenAt, yes, tty, log, chalk }) => {
   if (yes) return true
@@ -84,9 +83,7 @@ if (!await checkHere({ picked, keyFile, log, echo, chalk })) { process.exitCode 
 if (flag.dry) { log.dry(`ask Basecamp on ${server} whether it is empty, put the archive's key there, send the archive to /setup/restore and restart it`); return }
 
 const files = await deployFiles(server)
-const { default: conf } = await import(provisionScript().root + 'frontier.config.js')
-const port = conf.deploy.api.port
-const container = apiContainer(conf.deploy.app_id, conf.deploy)
+const { container, port } = await basecampApi()
 const key = (await Bun.file(keyFile).text()).trim()
 
 try {

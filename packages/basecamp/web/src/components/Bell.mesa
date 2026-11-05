@@ -18,6 +18,7 @@
   import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import { session } from '../lib/session.js'
+  import { ago, at } from '../lib/datetime.js'
   import { notifications, INBOX, isUnread, isTrouble, titleOf, bodyOf, actionOf, markRead, markAllRead }
     from '../resources/Notification.mesa'
 
@@ -52,7 +53,10 @@
       {#each unread.slice(0, BELL_MAX) as n}
         <DropdownItem onclick={() => openNote(n)}>
           <span class="stack bell-note" title={bodyOf(n) ? `${titleOf(n)} — ${bodyOf(n)}` : titleOf(n)}>
-            <strong>{titleOf(n)}</strong>
+            <span class="bell-head">
+              <strong>{titleOf(n)}</strong>
+              <span class="bell-when text-sm text-muted" title={at(n.createdAt)}>{ago(n.createdAt, '')}</span>
+            </span>
             {#if bodyOf(n)}<span class="bell-body text-sm text-muted">{bodyOf(n)}</span>{/if}
           </span>
         </DropdownItem>
@@ -71,6 +75,8 @@
   /* A posture failure's body is every failing control joined; unclamped it
      fills the screen. The row's title attribute carries the whole text. */
   .bell-note { min-width: 0; }
+  .bell-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; }
+  .bell-when { flex: none; white-space: nowrap; }
   .bell-body {
     display: -webkit-box;
     -webkit-box-orient: vertical;

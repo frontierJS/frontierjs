@@ -19,6 +19,8 @@ import { createAuthServices, gradeForWire, asPrincipal, DEFAULT_SERVICE_NAMES } 
 import { SupportEpisodeError }                                     from './errors.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
 import type { AuthCleanupHandle }                                 from './cleanup.ts'
+import { canAuthorize, mountAuthorize }                         from './authorize.ts'
+import { canIssueTokens, mountToken }                          from './token.ts'
 
 /**
  * Where a half-finished login lives in cookie mode.
@@ -249,6 +251,19 @@ export function auth(opts: AuthPluginOptions): Plugin {
       // unless the front door proxies it (`cli/core/edge.js`).
       app.http.router.get(WELL_KNOWN_AS, (ctx: TransportContext) =>
         ctx.json(authorizationServer(app, prefix, (ctx.$raw as { $req: Request }).$req)))
+
+      // ── GET / POST /auth/authorize ───────────────────────────────────
+      //
+      // A connector's sign-in (`FJS-D1925`), mounted wherever the auth can
+      // serve it: the consent ticket and the code are keyed on `encryptionKey`,
+      // so without one the path is not there to answer.
+      if (canAuthorize(auth)) mountAuthorize(app, { auth, prefix, limiters: { login: loginLimiter, account: accountLimiter } })
+
+      // ── POST /auth/token ─────────────────────────────────────────────
+      //
+      // The code and the refresh token are guessable secrets, so the login
+      // throttle runs before either is read.
+      if (canIssueTokens(auth)) mountToken(app, { auth, prefix, limiter: loginLimiter })
 
       // ── POST /auth/register ──────────────────────────────────────────
       // Plugin-level only — not on IAuth.

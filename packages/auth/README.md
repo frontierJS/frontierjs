@@ -287,6 +287,14 @@ if ('challenge' in result) {
 }
 ```
 
+`authenticate(email, password)` and `completeAuthenticate(challenge, code)` are
+the same two steps for a screen that must not sign anybody in, the OAuth consent
+page in front of `/mcp` (`FJS-D1948`): they answer `{ userId }` or the same
+`{ challenge, expiresAt }`, mint no session, run no `onLogin`, and record
+`login.proven` where a sign-in records `login.succeeded`. An account that owes a
+second factor it has not set up is refused 403 (`SecondFactorEnrollmentOwedError`)
+and told to finish on the web app first.
+
 `code` takes a TOTP code or a recovery code — the person typing it is answering
 one question. A code is single-use inside its own 30-second window, and every
 code from before the last accepted step is refused with it.

@@ -16,7 +16,7 @@ export interface SessionContext {
   scopes?:      string[]
   // `(string & {})` keeps the literals completing: an attester names its own
   // method (`pin`) through `app.runAs(id, { attestedBy })`.
-  authMethod:   'session' | 'apiKey' | 'oauth' | 'created' | 'verified' | (string & {})
+  authMethod:   'session' | 'apiKey' | 'accessToken' | 'oauth' | 'created' | 'verified' | (string & {})
 
   /**
    * Which session row this token is — set on the `session` path.
@@ -64,6 +64,22 @@ export interface SessionContext {
     episodeId:  string
     reason:     string
     endsAt:     Date | string
+  } | null
+
+  /**
+   * AN AUTHORIZED APP — this principal is the person, reached through a client
+   * they approved at `/authorize` (`FJS-D1950`) and holding its access token.
+   *
+   * Set by a provider on the access-token path; absent everywhere else. The
+   * principal is the person's own, so the gate grades them as for any session;
+   * this is what `refuseDelegated` reads to keep the app from writes that would
+   * outlive the approval. `sessionId` is the authorized app's row, where the
+   * provider keeps one.
+   */
+  authorizedApp?: {
+    clientId:   string
+    audience:   string
+    sessionId?: string
   } | null
 
   // ── Standing, for @@gate ──────────────────────────────────────────────
@@ -279,6 +295,21 @@ export interface IAuth {
    */
   issueHandoff?(userId: string, opts: { challenge: string; audience: string; scopes?: string[] }): Promise<{ code: string; expiresAt: string }>
   redeemHandoff?(code: string, verifier: string): Promise<{ userId: string; audience: string; scopes: string[] } | null>
+
+  /**
+   * `/authorize`'s code (`FJS-D1949`): a handoff bound also to the client, the
+   * redirect and the resource it was issued for, living five minutes. Redeem
+   * spends it whatever happens and throws (400) on any of the three presented
+   * differently, an expired code, or a wrong verifier.
+   */
+  issueAuthorizationCode?(opts: { userId: string; clientId: string; redirectUri: string; resource: string; challenge: string }): Promise<{ code: string; expiresAt: string }>
+  /**
+   * An authorized app's access token (`FJS-D1926`): signed claims naming the
+   * person, the client and the resource, which `verifySession` resolves with no
+   * row read. Present only where the provider holds a signing key.
+   */
+  issueAccessToken?(opts: { userId: string; clientId: string; audience: string; sessionId?: string }): Promise<{ token: string; expiresAt: string }>
+  redeemAuthorizationCode?(opts: { code: string; verifier: string; clientId: string; redirectUri: string; resource: string }): Promise<{ userId: string; clientId: string; resource: string }>
 
   // ── The caller acting on their own credentials ────────────────────────
   //

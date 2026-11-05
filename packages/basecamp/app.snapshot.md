@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-56 services · 51 routes · 24 plugins · prefix (none)
+56 services · 53 routes · 24 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -1503,6 +1503,8 @@ once; everything else was registered by hand or by a plugin.
 | GET | `/app-archive-pull/{id}` | raw |
 | PUT | `/app-archive-pull/{id}` | raw |
 | PUT | `/app-archive-upload/{appId}` | raw |
+| GET | `/auth/authorize` | raw |
+| POST | `/auth/authorize` | raw |
 | POST | `/auth/email/verify` | raw |
 | POST | `/auth/email/verify/request` | raw |
 | POST | `/auth/login` | raw |

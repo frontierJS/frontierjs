@@ -62,6 +62,8 @@ title: Workbench
   import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
   import Dot        from '@frontierjs/ui/components/display/Dot.mesa'
+  import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Markdown   from '@frontierjs/ui/components/display/Markdown.mesa'
@@ -120,6 +122,15 @@ title: Workbench
     afterDraw(place)
   }
   showFocus()
+
+  // The wings fold to a one-button rail, so the stage takes the width.
+  const WINGS_KEY = 'workbench.workbench.wingsFolded'
+  let wingsFolded = false
+  try { wingsFolded = localStorage.getItem(WINGS_KEY) === '1' } catch {}
+  function toggleWings() {
+    wingsFolded = !wingsFolded
+    try { localStorage.setItem(WINGS_KEY, wingsFolded ? '1' : '0') } catch {}
+  }
 
   // The revs the transcripts were fetched at; a poll answering another is the
   // cue to fetch again.
@@ -599,17 +610,6 @@ title: Workbench
 
   const tabOf = (p) => tabsOf(p).some(t => t.key === tabs[p.id]) ? tabs[p.id] : 'chat'
 
-  // role="tab" promises the arrow keys: they move along the strip and select.
-  function arrowTab(p, e) {
-    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key]
-    if (!step) return
-    const keys = tabsOf(p).map(t => t.key)
-    const next = keys[(keys.indexOf(tabOf(p)) + step + keys.length) % keys.length]
-    e.preventDefault()
-    setTab(p, next)
-    afterDraw(() => document.getElementById(`workbench-tab-${next}-${p.id}`)?.focus())
-  }
-
   function setTab(p, key) {
     tabs = { ...tabs, [p.id]: key }
     if (key === 'diff')  loadDiff(p.id)
@@ -732,10 +732,13 @@ title: Workbench
     scrollToEnd(p.id)
   }
 
-  // Working, finished and waiting on the next message, or never run. A finish
-  // not yet seen counts as new, as it does on the pane's own dot.
-  const chatTone  = (c) => c.unread ? 'success' : TONE[c.state]
-  const chatLabel = (c) => c.state === 'working' ? 'working' : c.state === 'error' ? 'stopped with an error'
+  // A finish already seen is the same tone hollow, so a new reply still stands
+  // out from one that is only waiting.
+  const chatTone   = (c) => c.asks ? 'warning' : TONE[c.state]
+  const chatHollow = (c) => (c.state === 'done' || c.state === 'error') && !c.unread
+  const chatLabel  = (c) => c.state === 'working' ? (c.tool ? `› ${c.tool}` : 'thinking…')
+    : c.state === 'error' ? 'stopped with an error'
+    : c.asks ? (c.unread ? 'asked you something, unread' : 'asked you something')
     : c.state === 'done' ? (c.unread ? 'finished, unread — your turn' : 'waiting on you') : 'idle'
 
   // From a slim header: there is nothing to read or type into folded, so
@@ -753,7 +756,6 @@ title: Workbench
   }
 
   async function closeChat(p, c) {
-    if (c.title && !confirm(`Close "${c.title}"? Its transcript here goes; Claude Code keeps the session, and its cost stays in the total.`)) return
     if (await act('close', p, { chat: c.id })) { fetchedAt[p.id] = -1; await loadPins() }
   }
 
@@ -827,7 +829,6 @@ title: Workbench
     document.getElementById(`workbench-draft-${p.id}`)?.focus()
   }
   async function unpin(p)  {
-    if (!confirm(`Unpin ${p.name}? Its chats here are forgotten; Claude Code keeps the sessions.`)) return
     if (await act('unpin', p)) await loadPins()
   }
   async function configure(p, form) {
@@ -1234,14 +1235,16 @@ title: Workbench
 
   const FOLDS = [
     { key: 'none', label: 'None'   },
-    { key: 'you',  label: 'Mine'   },
     { key: 'ai',   label: 'Claude' },
+    { key: 'you',  label: 'Mine'   },
     { key: 'both', label: 'Both'   },
   ]
   let folds = {}
   let flips = {}
 
   const foldOf = (id) => folds[id] ?? 'none'
+  const foldIndex = (id) => FOLDS.findIndex(f => f.key === foldOf(id))
+  const foldWord = (id, step = 0) => FOLDS[(foldIndex(id) + step) % FOLDS.length].label
   const side   = (it) => it.kind === 'you' ? 'you' : 'ai'
   function folded(id, it, i) {
     const mode = foldOf(id)
@@ -1332,7 +1335,7 @@ title: Workbench
     <p class="text-sm text-muted">{error}</p>
   </Callout>
 {:else}
-  <div class="workbench" id="workbench-grid">
+  <div class="workbench" id="workbench-grid" data-wings={wingsFolded ? 'folded' : null}>
     <div class="workbench-stage">
       {#if error}
         <article class="alert danger" id="screen-error">
@@ -1390,21 +1393,74 @@ title: Workbench
                      label={dotLabel(p.id)} />
                 {p.name}
               </h2>
+              {#if !isSlim(p.id)}
+                <span class="workbench-viewmenu">
+                  <DropdownMenu placement="bottom-start">
+                    {#snippet trigger()}
+                      <Button size="xs" treatment="ghost" square id={`workbench-view-${p.id}`}
+                              aria-label={`${p.name} shows ${tabsOf(p).find(t => t.key === tabOf(p))?.label}`}
+                              title={tabsOf(p).find(t => t.key === tabOf(p))?.label}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /><path d="M9 10v10" /></svg>
+                      </Button>
+                    {/snippet}
+                    {#each tabsOf(p) as t (t.key)}
+                      <DropdownItem radio checked={tabOf(p) === t.key} tone={t.tone ?? ''} data-tab={t.key} onclick={() => setTab(p, t.key)}>{t.label}</DropdownItem>
+                    {/each}
+                  </DropdownMenu>
+                </span>
+              {/if}
               {#if isSlim(p.id) && !p.missing}
                 <div class="text-sm workbench-head-chats" role="group" aria-label={`Chats in ${p.name}`}>
                   {#each chatsOf(p.id) as c (c.id)}
                     <button type="button" class="workbench-head-chat" data-chat={c.id} data-unread={c.unread ? '' : null}
                             aria-current={c.id === status[p.id]?.chat ? 'true' : null}
                             onclick={() => openChat(p, c.id)} title={`${c.title ?? 'Nothing sent here yet'} — ${chatLabel(c)}`}>
-                      <Dot tone={chatTone(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
+                      <Dot tone={chatTone(c)} hollow={chatHollow(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
                       <span class="workbench-chat-title">{chatTitle(c)}</span>
                     </button>
                   {/each}
                   <Button size="xs" treatment="ghost" class="workbench-head-add" onclick={() => addChat(p)}
                           aria-label={`New chat in ${p.name}`} title="Another chat in this checkout, opened">+ New</Button>
                 </div>
+              {:else if !p.missing}
+                <div class="text-sm workbench-chats" role="group" aria-label={`Chats in ${p.name}`}>
+                  {#each chatsOf(p.id) as c (c.id)}
+                    <span class="workbench-chat-tab" data-chat={c.id}>
+                      <button type="button" class="workbench-chat-open" onclick={() => openChat(p, c.id)}
+                              aria-current={c.id === status[p.id]?.chat ? 'true' : null}
+                              title={c.title ?? 'Nothing sent here yet'}>
+                        <Dot tone={chatTone(c)} hollow={chatHollow(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
+                        <span class="workbench-chat-title">{chatTitle(c)}</span>
+                      </button>
+                      {#if c.state !== 'working'}
+                        <button type="button" class="workbench-chat-close" aria-label={`Close ${chatTitle(c)}`}
+                                title="Close — Claude Code keeps the session"
+                                data-confirm={c.title ? 'Its transcript here goes; Claude Code keeps the session, and its cost stays in the total.' : null}
+                                data-confirm-title={`Close "${c.title}"?`} data-confirm-label="Close"
+                                onclick={() => closeChat(p, c)}>×</button>
+                      {/if}
+                    </span>
+                  {/each}
+                  <Button size="xs" treatment="ghost" square class="workbench-chat-add" onclick={() => fresh(p)} disabled={blank(p.id)}
+                          aria-label={`New chat in ${p.name}`}
+                          title={blank(p.id) ? 'This chat has nothing sent yet' : 'Another chat in this checkout'}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+                  </Button>
+                </div>
               {/if}
               <span class="cluster">
+                {#if tabOf(p) === 'chat' && transcripts[p.id]?.items?.length}
+                  <button type="button" class="workbench-fold text-xs" data-on={foldOf(p.id) !== 'none' ? '' : undefined}
+                  title={`Collapse messages: ${foldWord(p.id)} · click for ${foldWord(p.id, 1)}`}
+                  aria-label={`Collapse: ${foldWord(p.id)}`}
+                  onclick={() => setFold(p.id, FOLDS[(foldIndex(p.id) + 1) % FOLDS.length].key)}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 20 5-5 5 5" /><path d="m7 4 5 5 5-5" /></svg>
+                  {#if foldOf(p.id) !== 'none'}<span class="text-muted">{foldWord(p.id)}</span>{/if}
+                  </button>
+                {/if}
                 {#if needsYou(status[p.id])}
                   <Button size="xs" treatment="outlined" tone="warning" class="workbench-needs" onclick={() => toQuestion(p)}
                           title={asksOf(p.id)}>needs you · {status[p.id].questions.length}</Button>
@@ -1449,74 +1505,28 @@ title: Workbench
               </div>
             {/if}
 
-            <div class="cluster text-sm workbench-meta">
-              {#if p.git}
-                {#if p.git.branch}<code>{p.git.branch}</code>{:else}<Pill tone="warning">detached</Pill>{/if}
-                {#if p.git.changes}<Pill tone="warning">{p.git.changes} changed</Pill>{:else}<Pill tone="success">clean</Pill>{/if}
-                {#if p.git.ahead}<Pill tone="info">↑{p.git.ahead}</Pill>{/if}
-                {#if p.git.lastCommitAt}<span class="text-muted">{ago(p.git.lastCommitAt)}</span>{/if}
-              {/if}
-              {#each servingApps(p.id) as r (r.id)}
-                {#each r.ports as s}
-                  <a class="text-success" href={`http://localhost:${s.port}`} target="_blank" rel="noopener"
-                     title={`${r.name}'s ${s.label}, started from the Run tab`}>{s.label} :{s.port} ↗</a>
-                {/each}
-                {#if !r.ports.length}<span class="text-info">{r.name} starting…</span>{/if}
-              {/each}
-              {#if !p.missing && appsOf(p.id).length && !servingApps(p.id).length}
-                <Button size="xs" treatment="ghost" class="workbench-start-app" onclick={() => startApp(p)}
-                        title={appsOf(p.id).length === 1 ? `fli dev in ${p.name}, left running on this machine` : 'Choose which app to start'}>▶ Start app</Button>
-              {/if}
-              <span class="text-muted workbench-now" aria-live="polite">
-                {doing(p.id)}
-                {#if totalOf(p)}
-                  <span title={branchesOf(p).length ? 'Every run and review in this checkout and its branches' : 'Every run and review in this checkout'}>· {money(totalOf(p))} total</span>
-                {/if}
-              </span>
-            </div>
-
-            <div class="tablist workbench-tabs" role="tablist" aria-label={`What ${p.name} shows`}
-                 onkeydown={(e) => arrowTab(p, e)}>
-              {#each tabsOf(p) as t (t.key)}
-                <button type="button" class={`tab ${t.tone ?? ''}`} role="tab" data-tab={t.key}
-                        id={`workbench-tab-${t.key}-${p.id}`}
-                        aria-selected={tabOf(p) === t.key ? 'true' : 'false'}
-                        tabindex={tabOf(p) === t.key ? '0' : '-1'}
-                        onclick={() => setTab(p, t.key)}>{t.label}</button>
-              {/each}
-            </div>
-
             {#if tabOf(p) === 'chat'}
-              <div class="workbench-panel workbench-chat-panel" role="tabpanel" aria-labelledby={`workbench-tab-chat-${p.id}`}>
-                {#if transcripts[p.id]?.items?.length}
-                  <div class="text-xs workbench-folds" role="group" aria-label={`Collapse messages in ${p.name}`}>
-                    <span class="text-muted">Collapse</span>
-                    {#each FOLDS as f}
-                      <button type="button" class="workbench-fold" aria-pressed={foldOf(p.id) === f.key ? 'true' : 'false'}
-                              onclick={() => setFold(p.id, f.key)}>{f.label}</button>
-                    {/each}
-                  </div>
-                {/if}
+              <div class="workbench-panel workbench-chat-panel" role="region" aria-labelledby={`workbench-view-${p.id}`}>
 
                 <div class="workbench-chat">
                   <div class="workbench-log" id={`chat-log-${p.id}`} onscroll={(e) => spy(p.id, e.target)}>
                     {#each grouped(transcripts[p.id]?.items) as it, i}
                       {#if it.kind === 'you'}
-                        <div class="workbench-msg workbench-you info" id={`chat-${p.id}-${i}`} data-turn={i}>
+                        <div class="workbench-msg workbench-you" id={`chat-${p.id}-${i}`} data-turn={i}>
                           <button type="button" class="workbench-msg-head text-sm" aria-expanded={folded(p.id, it, i) ? 'false' : 'true'}
                                   onclick={() => flip(p.id, i)}>
-                            <strong>You</strong>
-                            <span class="text-muted">{it.at ? ago(it.at) : ''}</span>
+                            <Badge tone="info">You</Badge>
+                            {#if it.at}<span class="text-xs text-muted workbench-when">{ago(it.at)}</span>{/if}
                             <span class="workbench-chevron" aria-hidden="true">{folded(p.id, it, i) ? '▸' : '▾'}</span>
                           </button>
                           <div class={`workbench-text${folded(p.id, it, i) ? ' clamp-2' : ''}`}>{it.text}</div>
                           {#if it.images}<div class="text-xs text-muted">+ {plural(it.images, 'image')}</div>{/if}
                         </div>
                       {:else if it.kind === 'text'}
-                        <div class="workbench-msg workbench-ai muted" id={`chat-${p.id}-${i}`}>
+                        <div class="workbench-msg" id={`chat-${p.id}-${i}`}>
                           <button type="button" class="workbench-msg-head text-sm" aria-expanded={folded(p.id, it, i) ? 'false' : 'true'}
                                   onclick={() => flip(p.id, i)}>
-                            <strong>Claude</strong>
+                            <Badge>Claude</Badge>
                             <span class="workbench-chevron" aria-hidden="true">{folded(p.id, it, i) ? '▸' : '▾'}</span>
                           </button>
                           {#if folded(p.id, it, i)}
@@ -1562,7 +1572,7 @@ title: Workbench
               </div>
 
             {:else if tabOf(p) === 'diff'}
-              <div class="workbench-panel text-sm workbench-diff-panel" role="tabpanel" aria-labelledby={`workbench-tab-diff-${p.id}`}>
+              <div class="workbench-panel text-sm workbench-diff-panel" role="region" aria-labelledby={`workbench-view-${p.id}`}>
                 {#if diffs[p.id]}
                   {#if p.from}
                     <p class="text-muted">The branch's tree against what it was cut from, or last landed — what Land would carry. Click a line to comment on it.</p>
@@ -1632,7 +1642,7 @@ title: Workbench
               </div>
 
             {:else if tabOf(p) === 'run'}
-              <div class="workbench-panel stack text-sm workbench-run" id={`workbench-run-${p.id}`} role="tabpanel" aria-labelledby={`workbench-tab-run-${p.id}`}>
+              <div class="workbench-panel stack text-sm workbench-run" id={`workbench-run-${p.id}`} role="region" aria-labelledby={`workbench-view-${p.id}`}>
                 <p class="text-muted">Started in this checkout and left running on the API's machine. A new message does not stop one; {p.from ? 'Archive does' : 'Unpin does'}.</p>
                 {#if !runnables[p.id]}
                   <p class="text-muted">Reading the checkout…</p>
@@ -1682,7 +1692,7 @@ title: Workbench
               </div>
 
             {:else if tabOf(p) === 'plan'}
-              <div class="workbench-panel stack text-sm workbench-plan" id={`workbench-plan-${p.id}`} role="tabpanel" aria-labelledby={`workbench-tab-plan-${p.id}`}>
+              <div class="workbench-panel stack text-sm workbench-plan" id={`workbench-plan-${p.id}`} role="region" aria-labelledby={`workbench-view-${p.id}`}>
                 {#if drafting(p)}
                   <form class="stack workbench-plan-build" onsubmit={(e) => buildPlan(p, e)}>
                     <p class="text-muted">A new chat reads the checkout and writes the plan — it may edit that one file and nothing else, so it cannot start building.</p>
@@ -1866,7 +1876,7 @@ title: Workbench
               </div>
 
             {:else if tabOf(p) === 'checks'}
-              <div class="workbench-panel text-sm workbench-checks" id={`workbench-checks-${p.id}`} role="tabpanel" aria-labelledby={`workbench-tab-checks-${p.id}`}>
+              <div class="workbench-panel text-sm workbench-checks" id={`workbench-checks-${p.id}`} role="region" aria-labelledby={`workbench-view-${p.id}`}>
                 <p class="text-muted">This checkout's own <code>fli done</code>, run when the last message finished.</p>
                 {#if transcripts[p.id]?.checks?.error}
                   <p class="text-danger">{transcripts[p.id].checks.error}</p>
@@ -1883,7 +1893,7 @@ title: Workbench
               </div>
 
             {:else if tabOf(p) === 'review'}
-              <div class="workbench-panel stack text-sm workbench-review" id={`workbench-review-${p.id}`} role="tabpanel" aria-labelledby={`workbench-tab-review-${p.id}`}>
+              <div class="workbench-panel stack text-sm workbench-review" id={`workbench-review-${p.id}`} role="region" aria-labelledby={`workbench-view-${p.id}`}>
                 {#if transcripts[p.id].review.state === 'working'}
                   <p class="text-muted">A read-only reviewer is reading the change…</p>
                 {:else if transcripts[p.id].review.state === 'error'}
@@ -1899,12 +1909,12 @@ title: Workbench
               </div>
 
             {:else if tabOf(p) === 'terminal'}
-              <div class="workbench-panel workbench-terminal-panel" role="tabpanel" aria-labelledby={`workbench-tab-terminal-${p.id}`}>
+              <div class="workbench-panel workbench-terminal-panel" role="region" aria-labelledby={`workbench-view-${p.id}`}>
                 <Terminal pin={p.id} />
               </div>
 
             {:else if tabOf(p) === 'settings'}
-              <div class="workbench-panel text-sm workbench-settings" role="tabpanel" aria-labelledby={`workbench-tab-settings-${p.id}`}>
+              <div class="workbench-panel text-sm workbench-settings" role="region" aria-labelledby={`workbench-view-${p.id}`}>
                 <p class="text-muted"><code>{p.path}</code></p>
                 <form class="stack" onsubmit={(e) => { e.preventDefault(); configure(p, e.target) }}>
                   <Input label="Budget per message (USD)" name="budget" type="number" min="1" max="500" step="1" value={String(p.budget)} />
@@ -1920,6 +1930,8 @@ title: Workbench
                     <Button type="submit" treatment="outlined">Save</Button>
                     {#if !p.from}
                       <Button treatment="ghost" tone="danger" onclick={() => unpin(p)}
+                              data-confirm="Its chats here are forgotten; Claude Code keeps the sessions."
+                              data-confirm-title={`Unpin ${p.name}?`} data-confirm-label="Unpin"
                               disabled={branchesOf(p).length > 0}
                               title={branchesOf(p).length ? 'Archive its branches first' : `Unpin ${p.name}`}>Unpin</Button>
                     {/if}
@@ -1969,8 +1981,6 @@ title: Workbench
                 {#if status[p.id]?.state === 'working' && !elsewhere(p.id)}
                   <Button treatment="outlined" tone="danger" onclick={() => stop(p)}>Stop</Button>
                 {/if}
-                <Button treatment="ghost" onclick={() => fresh(p)} disabled={blank(p.id)}
-                        title="Another chat in this checkout, in a tab below this one">New chat</Button>
                 {#if status[p.id]?.state !== 'working'}
                   {#if p.checkable}
                     <Button treatment="ghost" onclick={() => check(p)}
@@ -1992,25 +2002,33 @@ title: Workbench
                 {/if}
               </div>
             </form>
-            {#if chatsOf(p.id).length > 1}
-              <div class="text-sm workbench-chats" role="group" aria-label={`Chats in ${p.name}`}>
-                {#each chatsOf(p.id) as c (c.id)}
-                  <span class="workbench-chat-tab" data-chat={c.id}>
-                    <button type="button" class="workbench-chat-open" onclick={() => selectChat(p, c.id)}
-                            aria-current={c.id === status[p.id]?.chat ? 'true' : null}
-                            title={c.title ?? 'Nothing sent here yet'}>
-                      <Dot tone={chatTone(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
-                      <span class="workbench-chat-title">{chatTitle(c)}</span>
-                    </button>
-                    {#if c.state !== 'working'}
-                      <button type="button" class="workbench-chat-close" aria-label={`Close ${chatTitle(c)}`}
-                              title="Close — Claude Code keeps the session" onclick={() => closeChat(p, c)}>×</button>
-                    {/if}
-                  </span>
+            {/if}
+
+            <div class="cluster text-sm workbench-meta">
+              {#if p.git}
+                {#if p.git.branch}<code>{p.git.branch}</code>{:else}<Pill tone="warning">detached</Pill>{/if}
+                {#if p.git.changes}<Pill tone="warning">{p.git.changes} changed</Pill>{:else}<Pill tone="success">clean</Pill>{/if}
+                {#if p.git.ahead}<Pill tone="info">↑{p.git.ahead}</Pill>{/if}
+                {#if p.git.lastCommitAt}<span class="text-muted">{ago(p.git.lastCommitAt)}</span>{/if}
+              {/if}
+              {#each servingApps(p.id) as r (r.id)}
+                {#each r.ports as s}
+                  <a class="text-success" href={`http://localhost:${s.port}`} target="_blank" rel="noopener"
+                     title={`${r.name}'s ${s.label}, started from the Run tab`}>{s.label} :{s.port} ↗</a>
                 {/each}
-              </div>
-            {/if}
-            {/if}
+                {#if !r.ports.length}<span class="text-info">{r.name} starting…</span>{/if}
+              {/each}
+              {#if !p.missing && appsOf(p.id).length && !servingApps(p.id).length}
+                <Button size="xs" treatment="ghost" class="workbench-start-app" onclick={() => startApp(p)}
+                        title={appsOf(p.id).length === 1 ? `fli dev in ${p.name}, left running on this machine` : 'Choose which app to start'}>▶ Start app</Button>
+              {/if}
+              <span class="text-muted workbench-now" aria-live="polite">
+                {doing(p.id)}
+                {#if totalOf(p)}
+                  <span title={branchesOf(p).length ? 'Every run and review in this checkout and its branches' : 'Every run and review in this checkout'}>· {money(totalOf(p))} total</span>
+                {/if}
+              </span>
+            </div>
           </article>
       {/each}
       {/if}
@@ -2044,6 +2062,9 @@ title: Workbench
     </div>
 
     <aside class="workbench-wings" aria-label="The wings">
+      <Button size="xs" treatment="ghost" class="workbench-wings-fold" onclick={toggleWings}
+              aria-expanded={wingsFolded ? 'false' : 'true'} aria-label={wingsFolded ? 'Show the wings' : 'Fold the wings'}
+              title={wingsFolded ? 'Show the wings' : 'Fold the wings away'}>{wingsFolded ? '«' : '»'}</Button>
       {#if waiting().length}
         <Button size="sm" treatment="outlined" tone={needsYou(status[waiting()[0].id]) ? 'warning' : 'success'} id="workbench-next" onclick={() => openWaiting(waiting()[0])}
                 title="A plan's open question first, then the oldest finished chat nobody has looked at (Alt+J)">Next waiting · {waiting().length}</Button>
@@ -2073,6 +2094,8 @@ title: Workbench
                 <Button size="xs" treatment="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>
               {:else}
                 <Button size="xs" treatment="ghost" tone="danger" onclick={() => unpin(p)}
+                        data-confirm="Its chats here are forgotten; Claude Code keeps the sessions."
+                        data-confirm-title={`Unpin ${p.name}?`} data-confirm-label="Unpin"
                         disabled={branchesOf(p).length > 0}>Unpin</Button>
               {/if}
             </div>
@@ -2151,7 +2174,6 @@ title: Workbench
     --workbench-tab-size: 12rem;
     --workbench-tab-min: 5rem;
     --workbench-rail-size: 0.75rem;
-    --workbench-tail-radius: 2px;
     --workbench-gutter: 3.5em;
     --workbench-sign: 1.2em;
     display: grid;
@@ -2159,6 +2181,9 @@ title: Workbench
     gap: var(--space-lg);
     block-size: max(var(--workbench-min-block), calc(100dvh - var(--workbench-top, 10rem) - var(--screen-pad, 1rem)));
   }
+  .workbench[data-wings='folded'] { grid-template-columns: minmax(0, 1fr) auto; }
+  .workbench[data-wings='folded'] .workbench-wings > :global(:not(.workbench-wings-fold)) { display: none; }
+  :global(.workbench-wings-fold) { align-self: flex-end; }
   .workbench-stage { display: flex; flex-direction: column; gap: var(--space-sm); min-block-size: 0; }
   .workbench-bar { justify-content: space-between; flex-shrink: 0; }
   /* Every cell the same size: a pane's log scrolls inside it, so a row is a
@@ -2223,7 +2248,8 @@ title: Workbench
   .workbench-head > .cluster { flex-shrink: 0; margin-inline-start: auto; }
   .workbench-head-chats {
     display: flex;
-    flex: 1;
+    order: 1;
+    flex: 1 0 100%;
     align-items: center;
     gap: var(--space-xs);
     min-inline-size: 0;
@@ -2246,23 +2272,20 @@ title: Workbench
   .workbench-head-chat[aria-current='true'] { background: var(--surface-sunken); color: inherit; }
   .workbench-head-chat[data-unread] { color: inherit; font-weight: 600; }
   .workbench-head-chats :global(.workbench-head-add) { flex-shrink: 0; }
-  .workbench-tabs { flex-shrink: 0; }
-  .workbench-folds {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-xs);
-  }
   .workbench-fold {
-    padding: 0 var(--space-xs);
-    border: var(--border-width) solid transparent;
-    border-radius: var(--pill-radius);
-    background: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs);
+    border: var(--border-width) solid var(--rule);
+    border-radius: var(--field-radius);
+    background: transparent;
     color: var(--ink-mute);
     font: inherit;
     cursor: pointer;
   }
-  .workbench-fold[aria-pressed='true'] { border-color: var(--tint-rule); color: inherit; }
+  .workbench-fold:hover { color: inherit; background: var(--surface-sunken); }
+  .workbench-fold[data-on] { --bg-mix: var(--color-primary); border-color: var(--tint-rule); background: var(--tint-surface); color: var(--tint-ink); }
   .workbench-panel {
     flex: 1;
     min-block-size: 0;
@@ -2298,28 +2321,36 @@ title: Workbench
     cursor: pointer;
   }
 
-  /* Under the message box, like a spreadsheet's sheets: every chat sends
-     from the one box, into the one tree. */
+  /* The pane's top row: the name first, then a tab per chat, standing on
+     the header's rule. Every chat sends from the one box, into the one tree. */
+  .workbench-head:has(.workbench-chats) {
+    align-items: end;
+    border-block-end: var(--border-width) solid var(--tint-rule);
+  }
+  .workbench-head:has(.workbench-chats) > h2 { padding-block-end: var(--space-xs); }
+  .workbench-head:has(.workbench-chats) > .cluster,
+  .workbench-head:has(.workbench-chats) > .workbench-viewmenu { padding-block-end: var(--space-xs); }
   .workbench-chats {
     display: flex;
-    flex-shrink: 0;
+    flex: 1 1 0;
+    min-inline-size: 0;
     gap: var(--space-xs);
     overflow-x: auto;
-    border-block-start: var(--border-width) solid var(--tint-rule);
   }
+  .workbench-chats :global(.workbench-chat-add) { flex-shrink: 0; align-self: center; }
   .workbench-chat-tab {
     display: flex;
     align-items: center;
-    flex: 0 1 var(--workbench-tab-size);
+    flex: 0 1 max-content;
     min-inline-size: var(--workbench-tab-min);
     border: var(--border-width) solid transparent;
-    border-block-start: 0;
-    border-radius: 0 0 var(--card-radius) var(--card-radius);
+    border-block-end: 0;
+    border-radius: var(--card-radius) var(--card-radius) 0 0;
   }
-  .workbench-chat-tab:has([aria-current='true']) { border-color: var(--tint-rule); background: var(--surface-sunken); }
+  .workbench-chat-tab:has([aria-current='true']) { border-color: var(--rule); background: var(--surface-raised); }
   .workbench-chat-open {
     display: flex;
-    flex: 1;
+    flex: 1 1 auto;
     align-items: center;
     gap: var(--space-xs);
     min-inline-size: 0;
@@ -2330,7 +2361,7 @@ title: Workbench
     font: inherit;
     cursor: pointer;
   }
-  .workbench-chat-open[aria-current='true'] { color: inherit; }
+  .workbench-chat-open[aria-current='true'] { color: var(--ink-soft); }
   .workbench-chat-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .workbench-chat-close {
     padding: 0 var(--space-xs);
@@ -2453,15 +2484,11 @@ title: Workbench
     .workbench-pane { block-size: min(85dvh, var(--workbench-pane-max)); }
   }
 
-  .workbench-msg {
-    max-inline-size: 88%;
-    padding: var(--space-xs) var(--space-sm);
-    border: var(--border-width) solid var(--tint-rule);
-    border-radius: var(--card-radius);
-    background: var(--tint-surface);
-  }
-  .workbench-you { align-self: flex-end; border-end-end-radius: var(--workbench-tail-radius); }
-  .workbench-ai  { align-self: flex-start; border-end-start-radius: var(--workbench-tail-radius); }
+  .workbench-msg { display: flex; flex-direction: column; gap: var(--space-2xs); }
+  .workbench-you { align-self: flex-end; max-inline-size: 88%; }
+  .workbench-you .workbench-msg-head { justify-content: flex-end; }
+  .workbench-you .workbench-chevron { margin-inline-start: 0; }
+  .workbench-when { opacity: 0.7; }
   .workbench-msg-head {
     display: flex;
     align-items: baseline;
@@ -2477,6 +2504,7 @@ title: Workbench
   }
   .workbench-chevron { margin-inline-start: auto; color: var(--ink-mute); }
   .workbench-tools, .workbench-result { align-self: flex-start; padding-inline: var(--space-sm); }
+  .workbench-result { opacity: 0.7; }
   .workbench-text { white-space: pre-wrap; overflow-wrap: anywhere; }
   /* A long path or URL in a reply must wrap inside the bubble, and a fence
      scrolls in its own box rather than widening the log. */

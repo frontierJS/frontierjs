@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Basecamp.mesa — the Resource layer for the Basecamps this
+  // laptop made (api services/basecamps).
+  //
+  // No model, like Atlas: the index is fli's `basecamps.json` on the machine
+  // the API runs on, not anything in this app's database.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const basecamps = createResource('basecamps', { model: null })
+</script>

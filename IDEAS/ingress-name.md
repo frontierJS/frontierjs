@@ -113,14 +113,19 @@ secret.
 
 - **A dedicated ingress zone per workspace** — a registrable domain of its own,
   such as `acme-apps.dev`, holding no Domain a person browses with a session and
-  never Basecamp's own host. Basecamp refuses an ingress zone that holds its host.
+  never Basecamp's own host. The posture grader states an ingress zone that holds
+  its host as a finding, a refusal once a second operator sets a pair
+  (`FJS-D1955`).
 - **The name is the ingress record's**, `<appId>.<zone>`, served by Caddy beside
   the App's Domains. A readable alias is a Domain row, which exists today.
-- **Off by default, one column on `App`**, read by `routedHosts` and by the
-  posture grader. The App page shows the URL when it is on, the way CapRover's
-  *Your app is publicly available at* does.
-- **DNS-only, Caddy's ACME per name** — what Outpost does for every Domain today.
-  A wildcard certificate waits on fleet-ingress Phase 3.
+- **On until a Domain attaches, one column on `App` defaulted on**
+  (`FJS-D1952`), read by `routedHosts` and by the posture grader; turning it off
+  hides an internal App. The App page shows the URL when it is on, the way
+  CapRover's *Your app is publicly available at* does.
+- **DNS-only, one `*.<zone>` certificate** minted by DNS-01 and pushed as
+  `uploaded`; no ingress name is served before it exists (`FJS-D1954`), so it
+  waits on fleet-ingress Phase 3's push.
+- **A redirect to the primary Domain once one attaches** (`FJS-D1956`).
 - **`noindex` on every ingress name.**
 - **`__Host-session`** in junction wherever the cookie is `Secure`.
 
@@ -133,38 +138,70 @@ secret.
 Goal: the questions ruled, and the record's behavior measured rather than read.
 Done when: Q1–Q6 are ruled, and 0.1's probe is written under its step.
 
-- [ ] 0.1 On a test App with a Domain, `dig <appId>.<zone>` resolves to the
+- [x] 0.1 On a test App with a Domain, `dig <appId>.<zone>` resolves to the
       machine and `curl https://<appId>.<zone>` gets no route from Caddy — the
       gap this paper closes, measured.
+      **Measured 2026-11-05 on `chartered`** (zone `maverickmade.tech`, machine
+      `159.203.150.231`), App `ingress-probe` (`7410006d-…`, a busybox `httpd`
+      Dockerfile) with Domain `ingress-probe.maverickmade.tech`:
+      - The zone holds both records, marked: `A <appId>.maverickmade.tech →
+        159.203.150.231` (`basecamp:app:<appId>`, DNS-only) and the Domain's
+        `CNAME` to it. `dig` at 1.1.1.1 and 8.8.8.8 resolves both.
+      - `https://ingress-probe.maverickmade.tech/` → **200**, certificate valid.
+      - `https://<appId>.maverickmade.tech/` → **TLS alert internal error**, not
+        a 404: Caddy holds no certificate for a name it does not route, so the
+        gap shows at the handshake, before routing. `http://` → **308** to
+        `https://` from Caddy's redirect, which answers any host.
+      - So serving (Phase 2) is one hostname more in `routedHosts`; DNS needs nothing.
+      Found on the way: `FJS-4047` (a `basecamp:deploy` release never adopts
+      `EXPOSE`, so the Domain was 502 until `containerPort` was set by hand) and
+      `FJS-D1951` (the run key cannot run `basecamp:deploy`'s set-up). The probe
+      App stays on the box for Phase 2's drive.
 - [ ] 0.2 Where the zone's name comes from. `routedHosts` cannot call a vendor on
       every release; recommend storing the name beside `ingressZoneId` when the
       pair is set, under the same `@@check`.
-- [ ] 0.3 Rule Q1–Q6.
+- [x] 0.3 Rule Q1–Q6. **Ruled 2026-11-05:** `FJS-D1952`–`FJS-D1957`. Q3 = B put
+      the wildcard first, so it is Phase 1 and serving is Phase 2; Q4 = C made
+      the 409 a grader finding (3.1).
 - [ ] 0.4 Re-read the prior art above with a source per claim.
 
-### Phase 1 — The name answers
+### Phase 1 — One wildcard certificate
 
-Goal: an App with the column on answers HTTPS at its ingress name, with or
-without a Domain.
+Goal: the machine holds `*.<zone>` before any ingress name is served
+(`FJS-D1954`), so there is one certificate path and no per-name ACME to migrate
+off.
+Done when: a fresh App's ingress name is served under `*.<zone>` with no new ACME
+order on the machine.
+
+- [ ] 1.1 Basecamp mints `*.<zone>` by DNS-01 with the token it already holds,
+      and pushes it as an `uploaded` certificate. Waits on fleet-ingress Phase 3
+      (the `uploaded` push), which is proposed, not built.
+
+### Phase 2 — The name answers
+
+Goal: an App with no Domain answers HTTPS at its ingress name, and one with a
+Domain redirects there.
 Done when: `verify:dns` releases an App with no Domain and fetches
-`https://<appId>.<zone>` through Outpost's Caddy; turning the column off makes it
-refuse; `edge.test.ts` and `posture.test.ts` grade both.
+`https://<appId>.<zone>` through Outpost's Caddy; attaching a Domain makes it a
+redirect to the primary; turning the column off makes it refuse;
+`edge.test.ts` and `compute.test.ts` grade all three.
 
-- [ ] 1.1 The column on `App`, default per Q1. Named for what it says — the App
-      is served at its ingress name — and kept apart from `hasExposedPort`.
-- [ ] 1.2 The ingress record pushed on its own. Split the A-record half out of
+- [ ] 2.1 The column on `App`, defaulted on (`FJS-D1952`). Named for what it
+      says — the App is served at its ingress name — and kept apart from
+      `hasExposedPort`.
+- [ ] 2.2 The ingress record pushed on its own. Split the A-record half out of
       `edge.push()` so an App with the column on and no Domain gets its record,
       dispatched on the same three triggers `domain:dns` answers. Turning the
       column off deletes the record only when no Domain CNAMEs to it.
-- [ ] 1.3 `routedHosts` adds the ingress name when the column is on — the one
-      reader, no second list.
-- [ ] 1.4 The refusal where the ingress pair is set: a zone that holds
-      `FRONTIER_APP_URL`'s host is a 409 saying why, decided before anything is
-      written.
-- [ ] 1.5 `X-Robots-Tag: noindex` on the ingress name's route in Outpost.
-- [ ] 1.6 The App page shows the URL when on, and the switch.
+- [ ] 2.3 `routedHosts` adds the ingress name when the column is on and the App
+      has no Domain — the one reader, no second list. With a Domain,
+      `routedRedirects` sends it to the primary, falling back to the first by
+      `hostname` (`FJS-D1956`); the column off drops both; the last Domain
+      removed serves the App again.
+- [ ] 2.4 `X-Robots-Tag: noindex` on the ingress name's route in Outpost.
+- [ ] 2.5 The App page shows the URL when on, and the switch.
 
-### Phase 2 — Posture and the cookie
+### Phase 3 — Posture and the cookie
 
 Goal: the grader states what is served, and a tossed cookie cannot replace a
 session.
@@ -172,54 +209,55 @@ Done when: `posture.test.ts` lists a served ingress name as declared exposure an
 an ingress zone holding Basecamp's host as a finding; junction's transport test
 sees `__Host-session` under `secure` and `session` without it.
 
-- [ ] 2.1 The grader reads the column and the zone rule from 1.4.
-- [ ] 2.2 `__Host-` in junction's cookie writer when `secure`, per Q6.
-
-### Phase 3 — One wildcard certificate
-
-Goal: the ingress zone's names stop appearing in Certificate Transparency one by
-one.
-Done when: a fresh App's ingress name is served under `*.<zone>` with no new ACME
-order on the machine.
-
-- [ ] 3.1 Basecamp mints `*.<zone>` by DNS-01 with the token it already holds,
-      and pushes it as an `uploaded` certificate. Waits on fleet-ingress Phase 3.
+- [ ] 3.1 The grader reads the column, and states an ingress zone holding
+      `FRONTIER_APP_URL`'s host as a finding, not a refusal (`FJS-D1955`).
+- [ ] 3.2 `__Host-` in junction's cookie writer when `secure` (`FJS-D1957`).
+      Independent of Phases 1–2; it can land any time.
 
 ---
 
 ## Open questions
 
-- **Q1 — On or off by default.**
+- ~~**Q1 — On or off by default.**~~ **Answered 2026-11-05 (`FJS-D1952`): B — On for every App with no Domain, off once one attaches.**
   - **A** — Off; one switch per App.
   - **B** — On for every App with no Domain, off once one attaches.
   - **Recommend A** — a wrong *on* publishes an app to the internet and a wrong
     *off* costs one click, and `FJS-D930` ruled the same way for raw ports.
-- **Q2 — The name's shape.**
+- ~~**Q2 — The name's shape.**~~ **Answered 2026-11-05 (`FJS-D1953`): A — `<appId>.<zone>`, the ingress record's name as `FJS-D561` ruled it.**
   - **A** — `<appId>.<zone>`, the ingress record's name as `FJS-D561` ruled it.
   - **B** — `<slug>-<short>.<zone>`, readable with a random tail.
   - **C** — `<slug>.<zone>`, CapRover's shape.
   - **Recommend A** — one string is both the CNAME target and the URL, and a
     rename rewrites nothing. B and C bring back the rewrite `FJS-D561` avoided,
     and C collides across projects. A readable name is a Domain row today.
-- **Q3 — The certificate.**
+- ~~**Q3 — The certificate.**~~ **Answered 2026-11-05 (`FJS-D1954`): B — Wait for the wildcard before serving any ingress name.**
   - **A** — Caddy's ACME per name now; the wildcard as Phase 3.
   - **B** — Wait for the wildcard before serving any ingress name.
   - **Recommend A** — names leak to Certificate Transparency, and that is
     harmless once § Security 3 treats them as public. Let's Encrypt's limit of
     about 50 new certificates per registered domain per week binds only a
     workspace releasing that many new Apps in a week.
-- **Q4 — What the zone rule refuses.**
+- ~~**Q4 — What the zone rule refuses.**~~ **Answered 2026-11-05 (`FJS-D1955`): C — Refuse nothing; the posture grader states a zone holding `FRONTIER_APP_URL`'s host as a finding, and the pair is accepted.**
   - **A** — An ingress zone that holds `FRONTIER_APP_URL`'s host.
   - **B** — A, and also any zone holding a Domain on an App marked as holding
     sessions.
+  - **C** — Refuse nothing; the posture grader states a zone holding
+    `FRONTIER_APP_URL`'s host as a finding, and the pair is accepted.
   - **Recommend A** — B needs a noun for *holds sessions* that nothing declares
     today; the paper's recommended setup states B as advice instead.
-- **Q5 — Once a Domain attaches.**
-  - **A** — The ingress name keeps serving, `noindex`.
-  - **B** — The ingress name redirects to the primary Domain.
-  - **Recommend A** — it is the address that skips the Domain's proxy and DNS,
-    which is what a person debugging a Domain wants, and `noindex` covers search.
-- **Q6 — `__Host-` on the session cookie.**
+- ~~**Q5 — Once a Domain attaches.**~~ **Answered 2026-11-05 (`FJS-D1956`): B — A redirect to the primary Domain, so the name keeps a certificate but never serves the App.** `FJS-D1952` stops serving the App there; what
+  the name answers instead is the question.
+  - **A** — Nothing: Caddy drops the name, and the A record stays as the
+    Domain's CNAME target.
+  - **B** — A redirect to the primary Domain, so the name keeps a certificate
+    but never serves the App.
+  - **Recommend B** — a link shared while the ingress name was the App's only
+    address keeps working, and a redirect serves nothing, so D1952's line holds.
+    It is a redirecting Domain's path already: one more entry from
+    `routedRedirects` (`FJS-1615`) to Outpost's `redirectsOf`. With no primary
+    Domain it falls back to the first by `hostname`; the column off drops the
+    redirect too; the last Domain removed serves the App again.
+- ~~**Q6 — `__Host-` on the session cookie.**~~ **Answered 2026-11-05 (`FJS-D1957`): A — Junction names the cookie `__Host-session` whenever it is `Secure`.**
   - **A** — Junction names the cookie `__Host-session` whenever it is `Secure`.
   - **B** — Leave it host-only and unprefixed.
   - **Recommend A** — host-only stops a cookie being read across Apps but not

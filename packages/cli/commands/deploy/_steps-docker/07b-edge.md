@@ -1,6 +1,6 @@
 ---
 title: 07b-edge
-description: Rewrite this app's Caddy routes when the API's paths have moved
+description: Rewrite this app's Caddy routes when the API's paths have moved, then check the OAuth discovery document answers
 skip: "$.config.siteOnly"
 ---
 
@@ -34,4 +34,13 @@ if (written === 'written') log.done('Routes rewritten — the API mounts paths i
 else if (written === 'unchanged') log.info('Routes unchanged')
 else if (written === 'absent') log.info('No routes for this app in Caddy — fli deploy:setup writes them')
 else log.warn(`Routes not rewritten: ${written.error}`)
+
+// The routes above are Caddy's own; a front door nobody wrote here (a hand-made
+// Caddyfile) answers the root .well-known path with the page. Only a warning:
+// the release is serving, and the fix is in a file this deploy does not own.
+const { checkDiscovery } = await import(new URL('file://' + global.fliRoot + '/core/discovery-probe.js'))
+const { readAppSnapshot } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
+const discovery = await checkDiscovery({ snapshot: readAppSnapshot($.paths.root), names: edge })
+if (discovery.warning) log.warn(`OAuth discovery: ${discovery.warning}`)
+else if (discovery.probed) log.info(`OAuth discovery answers at ${discovery.url}`)
 ```

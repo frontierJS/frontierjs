@@ -13,13 +13,17 @@ title: Settings
 
   import { theme, setTheme, themes } from '@frontierjs/sierra/theme'
   import { session } from '../../lib/session.js'
+  import { textSize, setTextSize, resetTextSize, TEXT_SIZE } from '../../lib/text-size.js'
 
   import Card        from '@frontierjs/ui/components/layout/Card.mesa'
   import Switch      from '@frontierjs/ui/components/forms/Switch.mesa'
+  import Slider      from '@frontierjs/ui/components/forms/Slider.mesa'
+  import Button      from '@frontierjs/ui/components/forms/Button.mesa'
   import ThemePicker from '@frontierjs/ui/components/display/ThemePicker.mesa'
 
   $: (theme.value, theme.preference)
   $: (session.user)
+  $: (textSize())
 
   const following = () => theme.preference === 'system'
 
@@ -45,5 +49,11 @@ title: Settings
   <ThemePicker id="settings-theme" label="Theme"
                themes={themes()} value={theme.preference}
                onchange={setTheme} />
-  <p class="text-sm text-muted">Stored in this browser, not on your account.</p>
+  <Slider id="settings-text-size" label="Font size"
+          min={TEXT_SIZE.min} max={TEXT_SIZE.max} step={TEXT_SIZE.step}
+          value={textSize()} format={(v) => `${v}px`} onchange={setTextSize} />
+  <div>
+    <Button size="xs" treatment="outlined" onclick={resetTextSize}>Reset to {TEXT_SIZE.fallback}px</Button>
+  </div>
+  <p class="text-sm text-muted">Stored in this browser, not on your account. The terminal picks it up when it opens.</p>
 </Card>

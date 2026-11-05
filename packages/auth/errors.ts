@@ -218,3 +218,32 @@ export class InvalidExpiryError extends AuthError {
   constructor(message = 'expiresAt must be a date in the future') { super(message) }
   readonly status = 400
 }
+
+/**
+ * A client metadata document (CIMD) that cannot stand for the client asking:
+ * unreachable, not https, naming another `client_id`, or declaring something
+ * the authorization server does not do. The message names the client URL and
+ * the reason, because the person reading it is the one who pasted the
+ * connector, and nothing about this request can be retried into working.
+ * → 400
+ */
+export class ClientRefusedError extends AuthError {
+  readonly status = 400
+  readonly clientId: string
+  constructor(clientId: string, reason: string) {
+    super(`The client ${clientId} was refused: ${reason}`)
+    this.clientId = clientId
+  }
+}
+
+/**
+ * An authorization code that does not redeem: unknown, already spent, expired,
+ * or presented by another client, redirect or resource than it was issued to.
+ * One error for all of them, as RFC 6749's `invalid_grant` is one answer; the
+ * audit trail's `reason` is what tells them apart.
+ * → 400
+ */
+export class InvalidGrantError extends AuthError {
+  constructor(message = 'The authorization code is invalid or has expired') { super(message) }
+  readonly status = 400
+}

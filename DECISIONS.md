@@ -1857,6 +1857,54 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1957"></a>2026-11-05 · `FJS-D1957` — Q6 — `__Host-` on the session cookie — Junction names the cookie `__Host-session` whenever it is `Secure`.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **A** was picked over **B** (Leave it host-only and unprefixed).
+
+The paper's recommendation, taken as written: host-only stops a cookie being read across Apps but not being set; only the prefix stops a sibling replacing it. It is a junction change and holds for every app, not Basecamp alone.
+
+### <a id="fjs-d1956"></a>2026-11-05 · `FJS-D1956` — Q5 — Once a Domain attaches — A redirect to the primary Domain, so the name keeps a certificate but never serves the App.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **B** was picked over **A** (Nothing: Caddy drops the name, and the A record stays as the Domain's CNAME target).
+
+The paper's recommendation, taken as written: a link shared while the ingress name was the App's only address keeps working, and a redirect serves nothing, so D1952's line holds. It is a redirecting Domain's path already: one more entry from `routedRedirects` (`FJS-1615`) to Outpost's `redirectsOf`. With no primary Domain it falls back to the first by `hostname`; the column off drops the redirect too; the last Domain removed serves the App again.
+
+### <a id="fjs-d1955"></a>2026-11-05 · `FJS-D1955` — Q4 — What the zone rule refuses — Refuse nothing; the posture grader states a zone holding `FRONTIER_APP_URL`'s host as a finding, and the pair is accepted.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **C** was picked over **A** (An ingress zone that holds `FRONTIER_APP_URL`'s host), **B** (A, and also any zone holding a Domain on an App marked as holding sessions).
+
+Against the recommendation (**A**): warn while one tester runs one box (chartered keeps maverickmade.tech beside its own host); tighten the finding to A's refusal before a second operator sets an ingress pair.
+
+### <a id="fjs-d1954"></a>2026-11-05 · `FJS-D1954` — Q3 — The certificate — Wait for the wildcard before serving any ingress name.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **B** was picked over **A** (Caddy's ACME per name now; the wildcard as Phase 3).
+
+Against the recommendation (**A**): one certificate path: build the *.<zone> wildcard once rather than ship per-name ACME and then migrate every App off it. The wildcard step (waiting on fleet-ingress Phase 3) now comes before any ingress name is served.
+
+### <a id="fjs-d1953"></a>2026-11-05 · `FJS-D1953` — Q2 — The name's shape — `<appId>.<zone>`, the ingress record's name as `FJS-D561` ruled it.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **A** was picked over **B** (`<slug>-<short>.<zone>`, readable with a random tail), **C** (`<slug>.<zone>`, CapRover's shape).
+
+The paper's recommendation, taken as written: one string is both the CNAME target and the URL, and a rename rewrites nothing. B and C bring back the rewrite `FJS-D561` avoided, and C collides across projects. A readable name is a Domain row today.
+
+### <a id="fjs-d1952"></a>2026-11-05 · `FJS-D1952` — Q1 — On or off by default — On for every App with no Domain, off once one attaches.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **B** was picked over **A** (Off; one switch per App).
+
+Against the recommendation (**A**): a fresh App should answer the moment it is released, as pages.dev and CapRover do; a switch nobody knows to flip defeats the address. The App keeps one column, defaulted on, so an internal App can be turned off and the posture grader reads it.
+
+### <a id="fjs-d1951"></a>2026-11-05 · `FJS-D1951` — Does the run key's scope set (FJS-D1896) widen to what basecamp:deploy's set-up reads and writes — domainRoutes and variables — Add `domainRoutes:*` and `variables:*` to D1896's set; `servers:write`, the hub and `apiKeys` stay refused.
+
+Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **A** was picked over **B** (Charter makes the App whole with the admin key before a run, so the run key only releases; a second, stronger credential in every run).
+
+The paper's recommendation, taken as written: the run workspace holds only Charter's own Apps (`FJS-D1899`), and the boundary D1896 draws is machines and keys, not per-App config.
+
+### <a id="fjs-d1950"></a>2026-11-05 · `FJS-D1950` — Q16 — What is the noun for what a person makes when they approve a client — The provider link keeps `connections`, and the approved client is an **authorized app**: the `Session` row with a `clientId` (Q4 stands), `AuthSessionInfo.client`, audit `app.authorized` / `app.refreshed` / `app.reuse-refused` / `app.revoked`, and this paper's "connection" read as "authorized app" from here on.
+
+Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **B** was picked over **A** (the approved client keeps "connection", and the provider link is renamed `links` (`GET /links`, `listLinks`, `removeLink`) with every caller moved, Basecamp's hub included), **C** (both keep "connection", told apart by context).
+
+The paper's recommendation, taken as written: both words then have the precedent their users already know, and no live route moves. A renames a working surface for a word the industry also uses for providers. C is the collision kept.
+
 ### <a id="fjs-d1949"></a>2026-11-05 · `FJS-D1949` — Q15 — Where does an authorization code keep its client, redirect and resource — A `Credential` row, `type: 'authCode'`, with two new nullable columns `clientId` and `redirectUri`; `label` keeps the audience, here the `resource`. The HMAC input carries the type, so a handoff and a code cannot be spent as each other.
 
 Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (the three packed into `label` as JSON), **C** (a new `AuthorizationCode` model with `@@expires`).
@@ -16633,6 +16681,24 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1960"></a>2026-11-05 · `FJS-D1960` — Q2 — Do groups get a color — A, then B if groups do not stand out.
+
+Asked in [`IDEAS/workbench-package-chats.md`](IDEAS/workbench-package-chats.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, then B if groups do not stand out*) over **B** (a categorical palette in `@frontierjs/css` (a new term, through `decision-rules`), with each package's color chosen from a hash of its name), **C** (reuse tones).
+
+the recommendation as written: no color now, order and label only; B is reopened only if groups do not stand out in use.
+
+### <a id="fjs-d1959"></a>2026-11-05 · `FJS-D1959` — Q3 — What a chat's checks grade — `fli done` graded on the files this chat wrote, cut in `collectChanges`, with the scope named in the line.
+
+Asked in [`IDEAS/workbench-package-chats.md`](IDEAS/workbench-package-chats.md) § Open questions. **B** was picked over **A** (the whole tree, as now), **C** (B, plus the package's own `bun run test`).
+
+The paper's recommendation, taken as written: the pane's `checks ✓` reads as being about this chat, and today it is not once two chats share a tree. C adds a slow test run to every run; offer it as a button instead. The cut belongs to `collectChanges` in `done.js`, the owner of what changed, because cutting `changed` alone leaves `added` and `diff` whole for `layoutNamed` and `provesFor`. The written-file list is incomplete: a Bash edit, a `git mv` or a generator records no `edit`/`write` event. So the line states its scope (*checks · this chat's 4 files*), and a chat with no recorded writes is graded on the whole tree. The checkout's own Stop hook still grades the whole tree, so a narrowed `✓` can sit beside a failing hook. The stated scope is what makes that readable.
+
+### <a id="fjs-d1958"></a>2026-11-05 · `FJS-D1958` — Q1 — Where a chat's package comes from — Inferred from writes, with an override on the tab.
+
+Asked in [`IDEAS/workbench-package-chats.md`](IDEAS/workbench-package-chats.md) § Open questions. **A** was picked over **B** (declared only: picked when the chat opens, blank means repo-wide), **C** (inferred only, no override).
+
+The paper's recommendation, taken as written: chats drift (one that starts on auth ends up editing junction), so a choice made up front goes stale. Writes are already in the stream, and the override covers a chat that is about a package it only reads.
 
 ### <a id="fjs-d1944"></a>2026-11-05 · `FJS-D1944` — Q3 — Whether the global file keeps account keys once profiles exist — Yes, as the fallback: a project with no profile works as today.
 

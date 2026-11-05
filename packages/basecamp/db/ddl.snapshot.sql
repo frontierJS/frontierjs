@@ -261,6 +261,8 @@ CREATE TABLE IF NOT EXISTS "credential" (
   "scope" TEXT,
   "totpLastStep" INTEGER,
   "isLinked" INTEGER,
+  "clientId" TEXT,
+  "redirectUri" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;

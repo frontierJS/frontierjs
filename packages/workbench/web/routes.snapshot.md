@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-9 routes · 1 layout · target spa · trailing slash always
+11 routes · 1 layout · target spa · trailing slash always
 ```
 
 ## Routes
@@ -26,6 +26,8 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/atlas/` | `src/routes/atlas/index.mesa` | `src/routes/_module.mesa` | — |
 | `/atlas/autopilot/` | `src/routes/atlas/autopilot/index.mesa` | `src/routes/_module.mesa` | — |
 | `/atlas/decide/` | `src/routes/atlas/decide/index.mesa` | `src/routes/_module.mesa` | — |
+| `/basecamps/` | `src/routes/basecamps/index.mesa` | `src/routes/_module.mesa` | — |
+| `/basecamps/new/` | `src/routes/basecamps/new/index.mesa` | `src/routes/_module.mesa` | — |
 | `/git-activity/local/` | `src/routes/git-activity/local.mesa` | `src/routes/_module.mesa` | — |
 | `/login/` | `src/routes/login/index.mesa` | `src/routes/_module.mesa` | — |
 | `/notifications/` | `src/routes/notifications/index.mesa` | `src/routes/_module.mesa` | — |
@@ -43,6 +45,8 @@ this section exists to show.
 - `/atlas/` — siteName: `Workbench` · title: `Atlas`
 - `/atlas/autopilot/` — siteName: `Workbench` · title: `Autopilot`
 - `/atlas/decide/` — siteName: `Workbench` · title: `Decide`
+- `/basecamps/` — siteName: `Workbench` · title: `Basecamps`
+- `/basecamps/new/` — siteName: `Workbench` · title: `New Basecamp`
 - `/git-activity/local/` — siteName: `Workbench` · title: `Local repositories`
 - `/login/` — siteName: `Workbench` · title: `Sign in`
 - `/notifications/` — siteName: `Workbench` · title: `Notifications`
@@ -54,4 +58,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 9 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/git-activity/local/`, `/login/`, `/notifications/`, `/settings/`, `/workbench/`
+- `src/routes/_module.mesa` — 11 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/git-activity/local/`, `/login/`, `/notifications/`, `/settings/`, `/workbench/`

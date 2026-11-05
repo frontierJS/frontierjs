@@ -91,7 +91,6 @@ machines it hears. Both print the setup checklist as the new Basecamp answers it
 <script>
 const { spawnSync }    = await import('node:child_process')
 const { randomBytes }  = await import('node:crypto')
-const { apiContainer } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 
 // One expression: `-e` answers undefined for an arrow function with a block body (FJS-3999).
 const FLEET = `Promise.all([` +
@@ -356,9 +355,7 @@ const entryName = entryFor(flag.basecamp, server)
 if (flag.fresh && flag.restore) { log.error('Pass one of --fresh and --restore'); process.exitCode = 1; return }
 
 const files = await deployFiles(server)
-const { default: conf } = await import(provisionScript().root + 'frontier.config.js')
-const port = conf.deploy.api.port
-const container = apiContainer(conf.deploy.app_id, conf.deploy)
+const { container, port } = await basecampApi()
 const asking = tty.interactive && !flag.yes
 
 echo(chalk`\n  {bold fli basecamp:reinstall}  {dim Basecamp on} ${files.host}\n`)

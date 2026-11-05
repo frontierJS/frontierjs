@@ -169,6 +169,19 @@ describe('who cannot prove', () => {
     env.cleanup()
   })
 
+  test('the enrollment refusal is in the trail, and no lockout hook counts a right password', async () => {
+    const failed: unknown[] = []
+    const env  = await makeAuth({ encryptionKey: TEST_KEY, requireSecondFactor: true, onLoginFailed: async e => { failed.push(e) } })
+    const u    = await makeUser(env)
+    const rows = await trail(env, () => env.auth.authenticate!(u.email, PASSWORD))
+    const row  = rows.find(r => r.operation === 'login.failed')
+    expect(row?.meta).toMatchObject({ reason: 'enrollment-owed' })
+    expect(row?.actorId).toBe(u.userId)
+    expect(ops(rows)).not.toContain('login.proven')
+    expect(failed).toEqual([])
+    env.cleanup()
+  })
+
   test('a bot is refused as a sign-in refuses it', async () => {
     const email = nextEmail()
     const bot = await h.sys.user.create({ data: { email, kind: 'bot' } })

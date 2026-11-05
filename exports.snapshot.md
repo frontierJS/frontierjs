@@ -28,7 +28,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/auth`
 
-`packages/auth` · ships `Authorize.mesa` `LICENSE` `README.md` `auth.ts` `authorize-page.snapshot.d.ts` `authorize-page.snapshot.js` `cleanup.ts` `console.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `tenancy.ts` `totp.ts` `types.ts`
+`packages/auth` · ships `Authorize.mesa` `LICENSE` `README.md` `auth.ts` `authorize-page.snapshot.d.ts` `authorize-page.snapshot.js` `authorize.ts` `cleanup.ts` `clients.ts` `console.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `tenancy.ts` `totp.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |

@@ -4,6 +4,13 @@ The file-by-file map of `@frontierjs/auth`; the owners that matter most turns ar
 
 ```
 auth.ts      the IAuth implementation — sessions, login, verification
+authorize.ts GET / POST /authorize (`FJS-D1925`): admits the client and its
+             redirect, then password, TOTP and consent on the packed page;
+             mounted by plugin.ts where the auth has `encryptionKey`
+clients.ts   the client registry for /authorize (`FJS-D1929`): a client's
+             metadata document (CIMD) fetched through junction's
+             `fetchPublicJson`, graded, and cached no longer than its
+             max-age; `checkRedirect`, `isLoopbackOnly`, `clientHost`
 oauth.ts     the OAuth flow engine — the URL, the code-for-token trade, the
              normalized identity. No HTTP, no database, no session — plugin.ts
              owns the routes and auth.ts decides who the identity is
@@ -18,7 +25,8 @@ db/auth.lite      Credential / Session / Verification / LoginChallenge /
                   `extend model`, never pasted
 schema.ts    reads those two: authUserModel / authMachineryModels /
              authSchemaFragments (both) / retargetDb
-crypto.ts    hashing / token generation
+crypto.ts    hashing / token generation; the access token's sign and read
+             (`fja_`, `FJS-D1926`), which verifySession takes as its third arm
 totp.ts      RFC 6238 codes, base32, recovery codes — clockless, `at` is a
              parameter (`FJS-D261`). Published as `@frontierjs/auth/totp` so a
              seed or drive types a code with this copy, not its own HOTP.

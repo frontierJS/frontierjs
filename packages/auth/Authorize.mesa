@@ -18,6 +18,8 @@
   export const fields = {}
 </script>
 
+<mesa:head><title>Sign in to {app}</title></mesa:head>
+
 <main class="container narrow">
   <div class="card stack">
     {#if step === 'consent'}

@@ -13,7 +13,7 @@ title: Notifications
     notifications, isUnread, titleOf, bodyOf, actionOf,
     markRead, markUnread, markAllRead, INBOX,
   } from '../../resources/Notification.mesa'
-  import { at } from '../../lib/datetime.js'
+  import { ago, at } from '../../lib/datetime.js'
 
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
@@ -104,7 +104,7 @@ title: Notifications
           {/if}
           {#if bodyOf(n)}<div class="text-sm text-muted">{bodyOf(n)}</div>{/if}
         </td>
-        <td class="text-sm text-muted">{at(n.createdAt)}</td>
+        <td class="text-sm text-muted" title={at(n.createdAt)}>{ago(n.createdAt, '—')}</td>
         <td>
           {#if isUnread(n)}<Pill tone="primary">new</Pill>{/if}
           <Button treatment="ghost" size="sm" onclick={() => toggle(n)}>

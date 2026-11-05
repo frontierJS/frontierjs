@@ -81,7 +81,7 @@ Goal: the list of every step a person did, which is what Phase 1 automates.
 Done when: one corpus charter is generated, deployed to the designated Basecamp, logged into
 and removed, with each hand step and each failure written under its step.
 
-- [ ] 0.1 Designate the box (Q1). If it is a new box, make it once with `fli basecamp:create` +
+- [x] 0.1 Designate the box (Q1). If it is a new box, make it once with `fli basecamp:create` +
   `basecamp:install`. By hand, as today's `basecamp:*` commands do, it is reached through
   `BASECAMP_URL` and `BASECAMP_API_KEY`.
   **Named 2026-11-04, not bought:** the owner chose `chartered.maverickmade.tech` at
@@ -93,6 +93,18 @@ and removed, with each hand step and each failure written under its step.
   --size 4gb --name chartered --domain chartered.maverickmade.tech --admin <ME>`. Then the
   workspace's ingress pair is set to that zone, and `ingress-name.md` 0.1 is probed on this
   box rather than on yuma, whose workspace has no ingress pair and whose one Domain is live.
+  **Made 2026-11-05** by the owner (DigitalOcean, Outpost enrolled, hostname behind
+  Cloudflare's proxy). In `basecamps.json`, `chartered` is `runs: true` and its `apiKey` is the
+  run key (1.0): holder the owner, scopes `apps`, `domains`, `deployments`, `projects`,
+  `environments`, `domainRoutes`, `variables` read+write (`FJS-D1951`) and `servers:read`,
+  named `charter-run-D1951`; probed `GET /apps`, `/domainRoutes`, `/variables` answer and
+  `POST /servers` and `/apiKeys` are 403. The first run key, without the two D1951 added, is
+  still to revoke on the API keys screen. The admin key is a second entry, `chartered-admin`, on the
+  same box, because `basecamp:app`/`basecamp:deploy` reach an entry through `reachBasecamp`,
+  which reads only `apiKey`. `basecamp:key --server chartered` files over `chartered`'s
+  `apiKey`, so a new admin key takes `--basecamp chartered-admin`. Workspace `chartered`'s
+  ingress pair is the Cloudflare account Basecamp holds and `maverickmade.tech`; that token
+  opens all eight zones of the account, not one.
 - [x] 0.2 Probe the roles (Q2). On the designated Basecamp, make a workspace for runs and a
   member at each `WorkspaceRole` below `admin`. Record which role can create, release and remove
   an App and its Domain, and which is refused servers and the hub.
@@ -178,10 +190,12 @@ box diff is empty, and each miss is a filed `FJS-###`.
   and the run workspace's key, under an App name `<case>-<mmdd>`, on a hostname per Q3.
   **Under `FJS-D1899` (2026-11-04):** the stage makes no Domain — `basecamp:deploy --yes`
   with no `--domain` leaves the hostname unset — and the App's URL is its ingress name, which
-  Basecamp neither serves nor names until `ingress-name.md` Phase 1 lands. `live.ts` records
+  Basecamp neither serves nor names until `ingress-name.md` Phase 2 lands. `live.ts` records
   `hostname: null` and the use stage fails on it by name rather than driving a scratch copy.
-  Order: the box (0.1), then `ingress-name.md` 0.1 probed on it, then its Q1–Q6 to the owner,
-  then its Phase 1, then this step against the box.
+  Order: the box (0.1), then `ingress-name.md` 0.1 probed on it and its Q1–Q6 ruled (done
+  2026-11-05, `FJS-D1952`–`D1957`), then fleet-ingress Phase 3's `uploaded` push, then
+  ingress-name's wildcard (its Phase 1, `FJS-D1954`) and serving (its Phase 2), then this step
+  against the box.
 - [x] 1.4 The use stage runs owner login, the `flows.json` move and the access and stranger
   drives against the deployed URL, the same drives Phase 6 runs locally. **Built 2026-11-04:**
   `builder/use.ts`, `use(app, { url?, owner?, flow? })` → `{ login, move, access, stranger }`,
@@ -310,6 +324,16 @@ only control on the page that touches the box.
     with the schema in every run and so measures nothing, and a hand-kept count of 3 would be a
     second copy of the declaration that lets a real new leak through. A is the rule the access
     check in the same stage already applies. **Until ruled the stage fails on any leak (B).**
+- ~~**FJS-D1951 — Does the run key's scope set (FJS-D1896) widen to what basecamp:deploy's set-up reads and writes — domainRoutes and variables?**~~ **Answered 2026-11-05 (`FJS-D1951`): A — add `domainRoutes:*` and `variables:*` to D1896's set; `servers:write`, the hub and `apiKeys` stay refused.** Measured 2026-11-05 on `chartered`: with the
+  run key the preflight skips every Variable rule (`variables:read` 403) and a first release
+  stops at `GET /domainRoutes` (`domainRoutes:read` 403); the deploy's help names
+  `variables:write` and `domainRoutes:write` as well.
+  - **A** — add `domainRoutes:*` and `variables:*` to D1896's set; `servers:write`, the hub and
+    `apiKeys` stay refused
+  - **B** — Charter makes the App whole with the admin key before a run, so the run key only
+    releases; a second, stronger credential in every run
+  - **Recommend A** — the run workspace holds only Charter's own Apps (`FJS-D1899`), and the
+    boundary D1896 draws is machines and keys, not per-App config
 
 ## See also
 

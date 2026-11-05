@@ -1625,6 +1625,7 @@ the failure this is most likely to cause.
 04-build-api   → docker build on server (no registry needed)
 05-backup      → hot backup of the database before any changes
 06-swap        → stop old container, start new (migrations run in entrypoint), poll deploy.api.health — puts the previous container back on failure; deploy.swap startFirst on an expand starts it beside the old one and moves the routes
+07b-edge      → rewrite this app's Caddy routes for the API's current paths, then probe /.well-known/oauth-authorization-server on the public origin (App with an OAuth server only) and warn, never abort, when it does not answer JSON naming that origin
 08-release-web → atomic symlink swap; Caddy reads the root per request
 08b-outpost    → enroll the API's box in the app's fleet (if outpost: true; --no-outpost skips)
 08c-site       → production only: build site/ against a copy of the db and publish it, once its Worker has a deployment

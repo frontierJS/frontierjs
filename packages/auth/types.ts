@@ -59,6 +59,17 @@ export interface LitestoneAuthOptions {
   // walks away mid-episode leaves it open for exactly this long.
   supportTtl?: string
 
+  // How long an authorized app's access token lives. Default: '1 hour'.
+  //
+  // The token is self-contained, so nothing revokes it before this: removing
+  // the authorized app stops its refresh, and the last token runs out here.
+  accessTokenTtl?: string
+
+  // How long an authorized app may keep refreshing, from the approval.
+  // Default: '30 days'. A refresh does not extend it, as a sign-in's
+  // `sessionTtl` is not extended by use; past it the person approves again.
+  refreshTokenTtl?: string
+
   // How long a session's proof of the password stands for the credential
   // changes — the password, the address, the second factor, a connection, a new
   // API key (`FJS-D1209`). Sign-in starts it and `account.reauthenticate`

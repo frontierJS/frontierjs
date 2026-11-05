@@ -96,15 +96,22 @@ export async function compileServer(source) {
 // ─── pageModule ───────────────────────────────────────────────────────────────
 
 // The entry the bundle is built from. `render` is the only code it adds; the
-// render itself is Mesa's `renderString`.
+// render itself is Mesa's `startRender`, which leaves a `<mesa:head>` in
+// `out.head` for this document's head rather than refusing it.
 const pageModule = (style) => `import Component from './component.js'
-import { renderString } from ${JSON.stringify(resolveFile('@frontierjs/mesa/runtime'))}
+import { startRender } from ${JSON.stringify(resolveFile('@frontierjs/mesa/runtime'))}
 const STYLE = ${JSON.stringify(style)}
 export const STYLE_HASH = ${JSON.stringify(styleHash(style))}
 export function render(props) {
+  const { out, dispose, waiting } = startRender(Component, props)
+  dispose()
+  if (waiting) {
+    waiting.catch(() => {})
+    throw new Error('the page has an {#await} still pending, and a packed page renders synchronously')
+  }
   return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<style>' + STYLE + '</style></head><body>' + renderString(Component, props) + '</body></html>'
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' + (out.head ?? []).join('') +
+    '<style>' + STYLE + '</style></head><body>' + out.join('').trim() + '</body></html>'
 }
 `
 

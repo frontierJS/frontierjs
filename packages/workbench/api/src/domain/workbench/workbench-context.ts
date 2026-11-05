@@ -28,6 +28,7 @@ export function workbenchContext(p: Pin): string {
     '- The checkout can hold several chats sharing one working tree. One runs at a time, and another chat may have changed files since you last read them. Fork makes a branch in a worktree of its own.',
     `- After a run ends, Workbench may run ${after}. The results show in the pane, not here, and line comments the person leaves on the diff arrive with their next message.`,
     '- An unruled question in a plan file shows on the pane as "needs you".',
+    '- A reply whose last line ends in "?" marks its chat tab as waiting on them. When you stop for an answer or a choice, end on the question itself; otherwise do not end on one.',
     '- They can continue this session in a real terminal with the pane\'s Copy resume.',
   ].join('\n')
 }

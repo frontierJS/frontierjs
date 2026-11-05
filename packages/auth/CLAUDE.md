@@ -11,7 +11,7 @@ and the `/auth/*` route plugin. `bun run test` (bun).
 `docs/layout.md` is the file-by-file map; read it when a change touches a file
 this list does not name. The owners that matter on most turns:
 
-- `auth.ts` is the `IAuth` implementation — sessions, login, verification; `firstFactorProven()` is the one tail every first factor ends at, `issueSession` the one place a session is minted, `toContext()` the one place a session context is built, `credentialChanged()` the one credential observer.
+- `auth.ts` is the `IAuth` implementation — sessions, login, verification; `firstFactorProven()` is the one tail every first factor ends at (its ending is a session, or a bare proof for `authenticate`), `issueSession` the one place a session is minted, `toContext()` the one place a session context is built, `credentialChanged()` the one credential observer.
 - `plugin.ts` is `auth()` — mounts `/auth/*` (the raw routes, with their own body reader `BODY_FIELDS`), declares the cookie mode, registers the three services at `boot()`.
 - `services.ts` is `account` / `sessions` / `api-keys` — the half that is NOT a route; `refuseDelegated` and `fresh()` guard every credential write.
 - `oauth.ts` is the flow engine — URL, code-for-token trade, normalized identity; no HTTP, no database, no session.
@@ -49,7 +49,7 @@ methods, `account-recovery`, `onCredentialChanged` — also runs `example`:
 only place a notification is read back out of an outbox.
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
-auth.ts cleanup.ts crypto.ts errors.ts index.ts oauth.ts package.json plugin.ts schema.ts 
+auth.ts authorize.ts cleanup.ts clients.ts crypto.ts errors.ts index.ts oauth.ts package.json plugin.ts schema.ts 
 services.ts tenancy.ts totp.ts types.ts Authorize.mesa authorize-page.snapshot.js
 authorize-page.snapshot.d.ts 
 -->

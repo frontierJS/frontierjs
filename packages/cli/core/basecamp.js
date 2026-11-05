@@ -374,21 +374,34 @@ async function manifestMismatches(dir) {
   return { manifest, off }
 }
 
+const hubWhere = (destinationId) => destinationId ? 'its backup destination' : 'its own disk, with no backup destination set'
+
+/**
+ * Take a hub backup and wait for Basecamp to settle it, leaving the archive
+ * where Basecamp wrote it. Answers the `HubBackup` row; a backup that did not
+ * succeed throws with Basecamp's reason. Workbench's Back up now is this alone.
+ */
+export async function takeHubBackup({ origin, key, log, say = () => {} }) {
+  const destinationId = await hubDestination(origin, key)
+  say(`Backing up Basecamp to ${hubWhere(destinationId)} — answered once the archive is written`)
+  const queued = await basecamp(origin, key, '/hub-backups', { method: 'POST', headers: { 'x-service-method': 'take' }, body: { destinationId } })
+  const row = await hubSettled(origin, key, queued.id)
+  if (row.status !== 'success') throw new Error(`The backup ${row.status}: ${row.error ?? 'no reason given'}`)
+  if (row.error) log.warn(`The backup was taken and kept on the box: ${row.error}`)
+  return row
+}
+
 /**
  * Take a hub backup, wait for it, fetch it into `<out>/<stamp>/` and unpack it
  * there, graded against its manifest. Answers `{ dir, file, archive, manifest,
  * row }` — `archive` the unpacked `basecamp-<stamp>/` — or null on a dry run.
  */
 export async function pullHubArchive({ origin, key, out, dry = false, log, say = () => {} }) {
-  const destinationId = await hubDestination(origin, key)
-  const where = destinationId ? 'its backup destination' : 'its own disk, with no backup destination set'
-  if (dry) { log.dry(`take a backup of Basecamp at ${origin} to ${where}, then fetch it under ${out}`); return null }
-
-  say(`Backing up Basecamp to ${where} — answered once the archive is written`)
-  const queued = await basecamp(origin, key, '/hub-backups', { method: 'POST', headers: { 'x-service-method': 'take' }, body: { destinationId } })
-  const row = await hubSettled(origin, key, queued.id)
-  if (row.status !== 'success') throw new Error(`The backup ${row.status}: ${row.error ?? 'no reason given'}`)
-  if (row.error) log.warn(`The backup was taken and kept on the box: ${row.error}`)
+  if (dry) {
+    log.dry(`take a backup of Basecamp at ${origin} to ${hubWhere(await hubDestination(origin, key))}, then fetch it under ${out}`)
+    return null
+  }
+  const row = await takeHubBackup({ origin, key, log, say })
 
   const { url, name } = await basecamp(origin, key, `/hub-backups/${encodeURIComponent(row.id)}`,
     { method: 'POST', headers: { 'x-service-method': 'download' }, body: {} })
@@ -766,6 +779,17 @@ printf '%s\\n' ${shQuote(key)} > "$tmp"
 chmod 400 "$tmp"
 mv "$tmp" ${shQuote(`${secretsDir}/ENCRYPTION_KEY`)}
 `, 'place the key')
+}
+
+/**
+ * Basecamp's API container and port on its box, `{ container, port }`, from its
+ * deploy config in the checkout beside this cli — the reading `basecamp:restore`
+ * makes, for a caller with no `global.fliRoot` (Workbench).
+ */
+export async function basecampApi() {
+  const { apiContainer } = await import('./ports.js')
+  const { deploy } = (await import(new URL('../../basecamp/frontier.config.js', import.meta.url).href)).default
+  return { container: apiContainer(deploy.app_id, deploy), port: deploy.api.port }
 }
 
 /** Restart the API container, so it boots on the key or the archive just staged. */

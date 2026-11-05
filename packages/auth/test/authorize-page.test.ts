@@ -61,12 +61,13 @@ describe('authorize page', () => {
       step: 'consent', app: HOSTILE, client: { host: HOSTILE, loopback: false },
       redirectHost: HOSTILE, error: HOSTILE, fields: { request: HOSTILE },
     })
-    // Five text sinks: the App twice, the host, the redirect, the error.
+    // Six text sinks: the App in the title and twice in the body, the host,
+    // the redirect, the error.
     // Inside a quoted attribute only `"` and `&` can end or bend the value, so
     // the server target escapes those two there, as the DOM serializer does.
     const outsideAttributes = html.replace(/="[^"]*"/g, '=""')
     expect(outsideAttributes).not.toContain('<script')
-    expect(outsideAttributes.match(/&lt;script&gt;alert\(1\)&lt;\/script&gt;"x/g)).toHaveLength(5)
+    expect(outsideAttributes.match(/&lt;script&gt;alert\(1\)&lt;\/script&gt;"x/g)).toHaveLength(6)
     expect(html).toContain('value="<script>alert(1)</script>&quot;x"')
     expect(page({ error: 'Wrong password' })).toMatch(/role="alert"[\s\S]*Wrong password/)
     expect(page()).not.toContain('role="alert"')

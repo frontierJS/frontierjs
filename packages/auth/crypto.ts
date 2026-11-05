@@ -100,6 +100,86 @@ export function hashHandoff(code: string, challenge: string, secret: string): st
   return createHmac('sha256', secret).update(`handoff:${code}:${challenge}`).digest('hex')
 }
 
+// The prefix is the type, so a handoff code and an authorization code never
+// hash to each other's row.
+export function hashAuthCode(code: string, challenge: string, secret: string): string {
+  return createHmac('sha256', secret).update(`authcode:${code}:${challenge}`).digest('hex')
+}
+
+// `/authorize`'s consent ticket, under its own prefix for the same reason.
+export function hashConsent(ticket: string, challenge: string, secret: string): string {
+  return createHmac('sha256', secret).update(`consent:${ticket}:${challenge}`).digest('hex')
+}
+
+// An authorized app's refresh token (`FJS-D1927`). Only its HMAC is stored, so
+// the `Session` row a reader copies cannot be replayed. Its own prefix keeps a
+// refresh token presented as a Bearer off the session lookup: `verifySession`
+// answers anonymous for it without a read.
+export const REFRESH_TOKEN_PREFIX = 'fjr_'
+
+export function generateRefreshToken(): string {
+  return `${REFRESH_TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`
+}
+
+export function hashRefreshToken(token: string, secret: string): string {
+  return createHmac('sha256', secret).update(`refresh:${token}`).digest('hex')
+}
+
+// ─── Access tokens ────────────────────────────────────────────────────────
+//
+// What an authorized app presents as a Bearer (`FJS-D1926`): signed claims, so
+// it resolves without a `Session` read and a read-only copy holding the same
+// key can accept it. `fja_` because verifySession tests `fjs_` first, and a
+// token opening with that would be looked up as an API key and answer anonymous.
+// Nothing a gate reads is a claim: the level is graded from the user row at
+// every call, so a demoted person's token stops reaching what they lost.
+
+export const ACCESS_TOKEN_PREFIX = 'fja_'
+
+export interface AccessTokenClaims {
+  /** The user id. */
+  sub: string
+  /** The client id, which is its metadata document's URL. */
+  cid: string
+  /** The resource the token was issued for. */
+  aud: string
+  /** Expiry and issue time, unix seconds. */
+  exp: number
+  iat: number
+  /** The authorized app's `Session` row, once one is written for the grant. */
+  sid?: string
+}
+
+function signAccessPayload(payload: string, secret: string): Buffer {
+  return createHmac('sha256', secret).update(`access:${payload}`).digest()
+}
+
+export function signAccessToken(claims: AccessTokenClaims, secret: string): string {
+  const payload = Buffer.from(JSON.stringify(claims)).toString('base64url')
+  return `${ACCESS_TOKEN_PREFIX}${payload}.${signAccessPayload(payload, secret).toString('base64url')}`
+}
+
+/**
+ * The claims of a token this key signed, or null. The expiry is NOT read here:
+ * the caller grades it on the database's clock, which this module does not hold.
+ * Every miss is null rather than a throw, because the input is a stranger's.
+ */
+export function readAccessToken(token: string, secret: string): AccessTokenClaims | null {
+  if (typeof token !== 'string' || !token.startsWith(ACCESS_TOKEN_PREFIX)) return null
+  const [payload, sig, extra] = token.slice(ACCESS_TOKEN_PREFIX.length).split('.')
+  if (!payload || !sig || extra !== undefined) return null
+  const offered  = Buffer.from(sig, 'base64url')
+  const expected = signAccessPayload(payload, secret)
+  if (offered.length !== expected.length || !timingSafeEqual(offered, expected)) return null
+  let claims: any
+  try { claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) } catch { return null }
+  if (!claims || typeof claims !== 'object') return null
+  for (const key of ['sub', 'cid', 'aud'] as const) if (typeof claims[key] !== 'string' || !claims[key]) return null
+  if (!Number.isFinite(claims.exp) || !Number.isFinite(claims.iat)) return null
+  if (claims.sid !== undefined && typeof claims.sid !== 'string') return null
+  return claims as AccessTokenClaims
+}
+
 // ─── Verification tokens ──────────────────────────────────────────────────
 // Opaque random token — stored as-is in verifications.value.
 // The field is @guarded so it never leaks in API responses.

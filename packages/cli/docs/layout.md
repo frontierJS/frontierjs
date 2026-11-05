@@ -676,6 +676,10 @@ core/
                 route lost; a hostname another route holds is refused. Per-app
                 access logs, which Caddy rolls itself. Loaded verbatim by
                 `pauseEdgeCycle`
+  discovery-probe.js  the post-deploy fetch of `/.well-known/oauth-authorization-server`
+                at the public origin, a warning never an abort (`FJS-D1946`) —
+                a front door `edge.js` did not write hides the root path, and
+                nothing on the box can tell which door it sits behind.
   pause.js      taking an app down on purpose: the Caddy guard (the first
                 handler of every route, matched on the file it stats), the
                 page, the drift verdict and the refusals. All pure. The guard is

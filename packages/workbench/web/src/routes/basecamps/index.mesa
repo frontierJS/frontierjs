@@ -1,0 +1,183 @@
+---
+title: Basecamps
+---
+<script>
+  // Every Basecamp in this laptop's basecamps.json, whether it answers, and
+  // the newest backup it holds — with Back up now (Basecamp's own backup,
+  // over its API) and Restart (its API container, over ssh) on each.
+  //
+  // A verb runs in the API and its outcome is held there (api
+  // services/basecamps), so this page polls `outcome` while one is working
+  // and reads the list again once it settles; leaving the page does not stop
+  // a backup or a restart.
+  import { basecamps } from '../../resources/Basecamp.mesa'
+  import { ago, at }   from '../../lib/datetime.js'
+
+  import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import Dot                 from '@frontierjs/ui/components/display/Dot.mesa'
+  import EmptyState          from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Table               from '@frontierjs/ui/components/display/Table.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore'
+
+  const POLL = 2000
+
+  let rows      = []
+  let loading   = true
+  let error     = null
+  let pressed   = {}     // name → the verb whose request is in flight
+  let destroyed = false
+  let timer     = null
+
+  $.onDestroy(() => { destroyed = true; clearTimeout(timer) })
+
+  const working = () => rows.filter(r => r.outcome?.state === 'working')
+
+  function schedule() {
+    clearTimeout(timer)
+    if (!destroyed && working().length) timer = setTimeout(poll, POLL)
+  }
+
+  async function load() {
+    try {
+      rows  = await basecamps.service.invoke('list')
+      error = null
+    } catch (err) {
+      error = err.message
+    } finally {
+      loading = false
+    }
+    schedule()
+  }
+
+  const withOutcome = (name, outcome) => rows.map(r => r.name === name ? { ...r, outcome } : r)
+
+  async function poll() {
+    let settled = false
+    for (const r of working()) {
+      try {
+        const outcome = await basecamps.service.invoke('outcome', r.name)
+        if (outcome?.state !== 'working') settled = true
+        rows = withOutcome(r.name, outcome)
+      } catch {}
+    }
+    if (destroyed) return
+    settled ? load() : schedule()
+  }
+
+  async function run(r, verb) {
+    pressed = { ...pressed, [r.name]: verb }
+    try {
+      rows = withOutcome(r.name, await basecamps.service.invoke(verb, r.name, {}))
+      schedule()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      pressed = { ...pressed, [r.name]: null }
+    }
+  }
+
+  const VERB = { backup: 'Backing up', restart: 'Restarting' }
+
+  function probeSaid(probe) {
+    if (!probe || typeof probe !== 'object') return 'the probe answered'
+    const parts = []
+    if ('users' in probe)      parts.push(`${probe.users} users`)
+    if ('workspaces' in probe) parts.push(`${probe.workspaces} workspaces`)
+    if (probe.needs_setup)     parts.push('waiting for /setup')
+    return parts.length ? `the probe answered ${parts.join(', ')}` : `the probe answered ${JSON.stringify(probe)}`
+  }
+
+  function outcomeLine(o) {
+    if (o.state === 'working') return `${VERB[o.verb]} — started ${ago(o.startedAt)}`
+    if (o.state === 'error')   return `${o.verb === 'backup' ? 'Back up' : 'Restart'} failed after ${o.seconds ?? 0} s: ${o.error}`
+    if (o.verb === 'backup')   return `Backed up in ${o.seconds} s — Basecamp recorded ${o.row?.id} (${o.row?.status}) at ${at(o.row?.finishedAt ?? o.row?.createdAt)}${o.note ? `. ${o.note}` : ''}`
+    return `Restarted in ${o.seconds} s — ${probeSaid(o.probe)}`
+  }
+
+  const toneOf = (o) => o.state === 'error' ? 'text-danger' : o.state === 'done' ? 'text-success' : ''
+
+  const COLUMNS = [
+    { name: 'name',    label: 'Basecamp' },
+    { name: 'backup',  label: 'Newest backup' },
+    { name: 'actions', label: '' },
+  ]
+
+  load()
+</script>
+
+<div class="section-header">
+  <h1>Basecamps</h1>
+  <span class="cluster">
+    <Button treatment="outlined" id="basecamps-refresh" onclick={load}>Refresh</Button>
+    <Button id="basecamps-new" href="/basecamps/new/">New Basecamp</Button>
+  </span>
+</div>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading && !rows.length}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No Basecamps">
+    basecamps.json lists none. fli basecamp:create makes one and adds it.
+  </EmptyState>
+{:else}
+  <Table id="basecamps-rows" columns={COLUMNS} rows={rows}>
+    {#snippet row(r)}
+      <tr data-basecamp={r.name}>
+        <td>
+          <span class="cluster">
+            <Dot tone={r.answers.ok ? 'success' : 'danger'} label={r.answers.ok ? 'answers' : 'does not answer'} />
+            <strong>{r.name}</strong>
+            {#if r.runs}<span class="text-sm text-muted">runs</span>{/if}
+          </span>
+          <div class="text-sm text-muted">{r.url}</div>
+          <div class="text-sm text-muted">{r.host ? `ssh ${r.host}` : 'no ssh Host'}</div>
+          <div class="text-sm text-muted">{r.answers.ok ? `answers in ${r.answers.ms} ms` : `does not answer: ${r.answers.why}`}</div>
+          {#if r.outcome}
+            <div class={`text-sm ${toneOf(r.outcome)}`} data-outcome={r.outcome.state}>{outcomeLine(r.outcome)}</div>
+          {/if}
+        </td>
+        <td class="text-sm">
+          {#if r.newestBackup}
+            <span title={at(r.newestBackup.createdAt)}>{ago(r.newestBackup.createdAt)}</span>
+            <div class="text-muted">{r.newestBackup.status}</div>
+          {:else if r.backupError}
+            <span class="text-danger">{r.backupError}</span>
+          {:else if !r.hasKey}
+            <span class="text-muted">no API key</span>
+          {:else}
+            <span class="text-muted">{r.answers.ok ? 'none yet' : '—'}</span>
+          {/if}
+        </td>
+        <td>
+          <span class="cluster">
+            <Button size="sm" treatment="outlined"
+              disabled={!r.hasKey || r.outcome?.state === 'working' || !!pressed[r.name]}
+              loading={pressed[r.name] === 'backup'}
+              title={r.hasKey ? 'Take Basecamp\'s own backup now' : 'needs an API key: fli basecamp:key'}
+              onclick={() => run(r, 'backup')}>Back up now</Button>
+            {#if r.host}
+              <ConfirmationPopover inline title={`Restart ${r.name}?`} confirmLabel="Restart" onconfirm={() => run(r, 'restart')}>
+                {#snippet trigger()}
+                  <Button size="sm" treatment="ghost" tone="danger"
+                    disabled={r.outcome?.state === 'working' || !!pressed[r.name]}
+                    loading={pressed[r.name] === 'restart'}>Restart</Button>
+                {/snippet}
+              </ConfirmationPopover>
+            {:else}
+              <Button size="sm" treatment="ghost" disabled title="needs an ssh Host">Restart</Button>
+            {/if}
+          </span>
+          {#if !r.hasKey}<div class="text-sm text-muted">no API key — fli basecamp:key files one</div>{/if}
+          {#if !r.host}<div class="text-sm text-muted">Restart needs an ssh Host</div>{/if}
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
+{/if}

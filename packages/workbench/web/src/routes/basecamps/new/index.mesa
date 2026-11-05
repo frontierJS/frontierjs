@@ -1,0 +1,148 @@
+---
+title: New Basecamp
+---
+<script>
+  // A form over `fli basecamp:create --yes`, run in the API as a child whose
+  // log this page tails (api services/basecamps, `provision` and `creation`).
+  // Buying and installing a box takes minutes and outlives this page, so a run
+  // already going is picked up on load and the page polls until it exits.
+  //
+  // The command is confirmed by a person each run. The confirm below is that
+  // yes, and `approved: true` goes with it; the owner's first real purchase
+  // from here is the proof, and Plan only (--dry) is the rehearsal.
+  import { basecamps } from '../../../resources/Basecamp.mesa'
+
+  import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import Checkbox            from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import Input               from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select              from '@frontierjs/ui/components/forms/Select.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore'
+
+  const POLL = 2000
+
+  // The kinds `CLOUDS` names in packages/cli/core/cloud.js.
+  const CLOUDS = [
+    { value: '',             label: 'Whichever token is stored' },
+    { value: 'hetzner',      label: 'Hetzner' },
+    { value: 'digitalocean', label: 'DigitalOcean' },
+  ]
+
+  let domain     = ''
+  let name       = ''
+  let cloud      = ''
+  let size       = '4gb'
+  let region     = ''
+  let admin      = ''
+  let reservedIp = true
+  let backups    = true
+  let outpost    = true
+  let dry        = false
+
+  let starting  = false
+  let run       = null   // the API's held create run, with the end of its log
+  let destroyed = false
+  let timer     = null
+
+  $.onDestroy(() => { destroyed = true; clearTimeout(timer) })
+
+  const firstLabel = () => domain.trim().split('.')[0]
+  const boxName    = () => name.trim() || firstLabel()
+  const running    = () => !!run && !run.exit && !run.error
+  const ready      = () => !!domain.trim() && !!boxName() && !starting && !running()
+
+  function schedule() {
+    clearTimeout(timer)
+    if (!destroyed && running()) timer = setTimeout(poll, POLL)
+  }
+
+  async function poll() {
+    try {
+      run = await basecamps.service.invoke('creation', null)
+    } catch (err) {
+      toasts.error(err.message)
+    }
+    schedule()
+  }
+
+  async function start() {
+    starting = true
+    try {
+      await basecamps.service.invoke('provision', null, {
+        domain, name: boxName(), cloud, size, region, admin, reservedIp, backups, outpost, dry, approved: true,
+      })
+      run = await basecamps.service.invoke('creation', null)
+      schedule()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      starting = false
+    }
+  }
+
+  const verdict = () => {
+    if (!run || running()) return null
+    if (run.error) return { tone: 'text-danger', text: `Could not start: ${run.error}` }
+    if (run.exit.code === 0) return { tone: 'text-success', text: run.argv.includes('--dry') ? 'The plan ran. Nothing was bought.' : 'Done.' }
+    return { tone: 'text-danger', text: `Exited with ${run.exit.code ?? run.exit.signal}. Read the log above.` }
+  }
+
+  poll()
+</script>
+
+<div class="section-header">
+  <h1>New Basecamp</h1>
+  <span class="cluster">
+    <a href="/basecamps/">Back to Basecamps</a>
+  </span>
+</div>
+
+<form class="stack" id="basecamps-new" onsubmit={(e) => e.preventDefault()}>
+  <Input id="new-domain" label="Domain" placeholder="ops.example.com" bind:value={domain}
+    hint="Basecamp's hostname; its DNS record is written at Cloudflare." />
+  <Input id="new-name" label="Name" placeholder={(domain, firstLabel()) || 'ops'} bind:value={name}
+    hint="The box's name and its ssh Host. Blank takes the domain's first label." />
+  <Select id="new-cloud" label="Cloud" placeholder="" options={CLOUDS} bind:value={cloud} />
+  <Input id="new-size" label="Size" bind:value={size} hint="Memory (1gb, 4gb, 8gb …) or the cloud's own size slug." />
+  <Input id="new-region" label="Region" placeholder="the cloud's US region" bind:value={region} />
+  <Input id="new-admin" label="Admin email" type="email" placeholder="blank installs nothing" bind:value={admin}
+    hint="With an email, Basecamp is installed on the box and this address is its first admin." />
+  <Checkbox id="new-reserved-ip" label="Reserved IP" checked={reservedIp} onchange={(v) => { reservedIp = v }}
+    description="An address held apart from the box, so a replacement keeps it. Billed by the cloud." />
+  <Checkbox id="new-backups" label="Cloud backups" checked={backups} onchange={(v) => { backups = v }}
+    description="The cloud's daily backups of the whole box, billed as a share of its price." />
+  <Checkbox id="new-outpost" label="Join Outpost" checked={outpost} onchange={(v) => { outpost = v }}
+    description="Enroll the box in Basecamp's own fleet, so apps can run beside it." />
+  <Checkbox id="new-dry" label="Plan only (--dry)" checked={dry} onchange={(v) => { dry = v }}
+    description="Print what a run would do and buy nothing." />
+
+  <p id="new-billing" class="text-sm">
+    The box is billed by the cloud from the moment it is bought. Undoing it is
+    <code>fli server:destroy {(domain, name, boxName()) || 'NAME'}</code> from a terminal.
+  </p>
+
+  <div class="cluster">
+    <ConfirmationPopover title={dry ? `Plan ${(domain, name, boxName())}?` : `Buy and install ${(domain, name, boxName())}?`}
+      message={dry ? 'Nothing is bought.' : 'The cloud bills this box from now. Undo it with fli server:destroy from a terminal.'}
+      confirmLabel={dry ? 'Plan' : 'Buy the box'} tone={dry ? 'primary' : 'danger'} onconfirm={start}>
+      {#snippet trigger()}
+        <Button id="new-start" disabled={(domain, name, starting, run, !ready())} loading={starting}>{dry ? 'Plan a Basecamp' : 'Create the Basecamp'}</Button>
+      {/snippet}
+    </ConfirmationPopover>
+  </div>
+</form>
+
+{#if run}
+  <section class="stack-sm" id="new-run">
+    <h2 class="h5">{run.name}</h2>
+    <div class="text-sm text-muted">{run.argv.join(' ')}</div>
+    <pre id="new-log" class="text-sm">{run.lines.join('\n') || ((run.exit, run.error, running()) ? 'Started, no output yet…' : '')}</pre>
+    {#if (run.exit, run.error, running())}
+      <div class="text-sm text-muted">Running, pid {run.pid}. This page keeps reading the log.</div>
+    {/if}
+    {#if (run.exit, run.error, verdict())}
+      <div class={`text-sm ${verdict().tone}`} data-verdict>{verdict().text}</div>
+      <a href="/basecamps/">Back to Basecamps</a>
+    {/if}
+  </section>
+{/if}

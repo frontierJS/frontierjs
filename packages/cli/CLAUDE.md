@@ -106,7 +106,7 @@ children.js ci-log.js ci.mjs CLAUDE.md claude-usage.js clipboard.js close.js clo
 cloudflare.js cloudflare.test.js codegraph.js codegraph-page.js color.js command-parse.js 
 compiler.js config.js config.json console.js Console.mesa crest.js crud-templates.js data.js 
 ddl.snapshot.sql decide.js decide-walk.js decisions.js DECISIONS.md deploy-image.js deploy.lite diagram.js diagram-prompt.md 
-deploy-plan.js deploy-target.js deps.js desktop-sidecar.js desktop-surface.js dev-run.js diagnose.js docker-context.js doctor.js 
+deploy-plan.js deploy-target.js deps.js desktop-sidecar.js desktop-surface.js dev-run.js diagnose.js discovery-probe.js docker-context.js doctor.js 
 done.js edge.js effects.js env-health.js env-preflight.js export-pairs.js exports.snapshot.md 
 extension-surface.js file.js file-kind.js file-tree.js find.js flags.js fli.js fli.json 
 frontier-member.js fs.js functions.js git-history.js git-status.js git.js global-env.js guarded-write.js 

@@ -17,6 +17,8 @@ import {
   generateApiKey,
   hashApiKey,
   hashHandoff,
+  hashAuthCode,
+  hashConsent,
   pkceChallenge,
   generateToken,
   generateCode,
@@ -24,6 +26,12 @@ import {
   generateSessionToken,
   expiresAt,
   API_KEY_PREFIX,
+  ACCESS_TOKEN_PREFIX,
+  signAccessToken,
+  readAccessToken,
+  REFRESH_TOKEN_PREFIX,
+  generateRefreshToken,
+  hashRefreshToken,
 } from './crypto.ts'
 import type { LitestoneAuthOptions, CredentialEvent } from './types.ts'
 import {
@@ -31,6 +39,7 @@ import {
 } from './oauth.ts'
 import type { OAuthIdentity, TokenSet, AuthOAuth, OAuthResolution } from './oauth.ts'
 import { createAuthCleanupJobs } from './cleanup.ts'
+import { ClientCache, type ClientFetchOptions } from './clients.ts'
 import { userTenancy }          from './tenancy.ts'
 import type { AuthCleanupHandle } from './cleanup.ts'
 import {
@@ -44,7 +53,7 @@ import {
   LastCredentialError,
   NoPasswordCredentialError, NotFoundError,
   TotpAlreadyEnabledError, InvalidSecondFactorError, WeakPasswordError, SecondFactorEnrollmentOwedError,
-  SupportEpisodeError, InvalidExpiryError,
+  SupportEpisodeError, InvalidExpiryError, InvalidGrantError,
 } from './errors.ts'
 
 // Minimal interface — avoids a hard import of @frontierjs/litestone types
@@ -74,7 +83,7 @@ const PURGE = { withExpired: true } as const
 export function createLitestoneAuth(
   db:   LitestoneClient,
   opts: LitestoneAuthOptions = {}
-): IAuth & AuthOAuth & { _sessionTtl: string, cleanup: AuthCleanupHandle } {
+): IAuth & AuthOAuth & Partial<ConsentVerbs> & Partial<AuthorizedAppVerbs> & { _sessionTtl: string, cleanup: AuthCleanupHandle, clients: ClientFetchOptions } {
 
   const {
     encryptionKey,
@@ -84,6 +93,8 @@ export function createLitestoneAuth(
     // this long. An app raises it deliberately; nothing lets a caller ask for
     // more than it.
     supportTtl           = '30 minutes',
+    accessTokenTtl       = '1 hour',
+    refreshTokenTtl      = '30 days',
     reauthenticationWindow = '1 hour',
     password: passwordPolicy = {},
     passwordResetTtl     = '1 hour',
@@ -435,7 +446,15 @@ export function createLitestoneAuth(
   async function endProven(user: any, ending: Ending, meta: Record<string, unknown>, held = false): Promise<LoginResult | ProofResult> {
     if (ending === 'session') return issueSession(user, 'session', meta, held)
     await refuseUnlessPerson(user, meta)
-    if (held) throw new SecondFactorEnrollmentOwedError()
+    // Not handed to `onLoginFailed`: the password was right, and a lockout
+    // counting it would lock out a person for not having enrolled yet.
+    if (held) {
+      await audit('login.failed', {
+        model: personModel, records: [user.id], actorId: user.id,
+        meta:  { ...meta, reason: 'enrollment-owed' },
+      })
+      throw new SecondFactorEnrollmentOwedError()
+    }
     await audit('login.proven', {
       model: personModel, records: [user.id], actorId: user.id, actorType: 'user',
       ...(Object.keys(meta).length ? { meta } : {}),
@@ -881,6 +900,15 @@ export function createLitestoneAuth(
     return toContext(changed, 'verified')
   }
 
+  // The one lookup of a session by the token its holder presents. An authorized
+  // app's row has a null `token`, and a `where` whose value is null or absent
+  // matches rows rather than none, so an empty string or a refresh token never
+  // reaches the query.
+  async function sessionByToken(token: unknown): Promise<any | null> {
+    if (typeof token !== 'string' || !token || token.startsWith(REFRESH_TOKEN_PREFIX)) return null
+    return sys.session.findFirst({ where: { token } })
+  }
+
   // Guards for API key operations — encryptionKey is required for these.
   // Using a lazy check so apps that never use API keys don't need to provide it.
   function requireEncryptionKey(operation: string): string {
@@ -1079,6 +1107,151 @@ export function createLitestoneAuth(
 
   // ─── IAuth ────────────────────────────────────────────────────────────────
 
+
+  // ─── The consent ticket ───────────────────────────────────────────────────
+  //
+  // What `/authorize`'s consent step carries between the proof and the click.
+  // A user id in the form would be a forgery anybody could post; the ticket is
+  // spent once, by whichever of Allow or Deny comes first, and only for the
+  // client, redirect, resource and PKCE challenge the proof was made under.
+  async function issueConsent(opts: ConsentBinding & { userId: string }): Promise<{ ticket: string, expiresAt: string }> {
+    const secret = requireEncryptionKey('issueConsent')
+    const ticket = generateToken()
+    const until  = expiresAt(CONSENT_TTL, sys.$now())
+    await sys.credential.create({ data: {
+      userId: opts.userId, type: 'consent', value: hashConsent(ticket, opts.challenge, secret),
+      label: opts.resource, clientId: opts.clientId, redirectUri: opts.redirectUri, tokenExpiresAt: until,
+    } })
+    return { ticket, expiresAt: until }
+  }
+
+  async function redeemConsent(opts: ConsentBinding & { ticket: string }): Promise<{ userId: string } | null> {
+    const secret = requireEncryptionKey('redeemConsent')
+    if (typeof opts?.ticket !== 'string' || !opts.ticket || typeof opts.challenge !== 'string') return null
+    const row = await sys.credential.findFirst({ where: { type: 'consent', value: hashConsent(opts.ticket, opts.challenge, secret) } })
+    if (!row) return null
+    const { count } = await sys.credential.deleteMany({ where: { id: row.id, type: 'consent' } })
+    if (!count || !row.tokenExpiresAt || new Date(row.tokenExpiresAt) <= sys.$now()) return null
+    if (row.clientId !== opts.clientId || row.redirectUri !== opts.redirectUri || row.label !== opts.resource) return null
+    return { userId: String(row.userId) }
+  }
+
+  // ─── The access token ─────────────────────────────────────────────────────
+  //
+  // Silent: the route that trades a code or a refresh token for one records
+  // the grant, and a verb that also audited would file every issue twice.
+  async function issueAccessToken(opts: AccessTokenRequest): Promise<{ token: string, expiresAt: string }> {
+    const secret = requireEncryptionKey('issueAccessToken')
+    for (const key of ['userId', 'clientId', 'audience'] as const)
+      if (typeof opts?.[key] !== 'string' || !opts[key]) throw new AuthConfigError(`issueAccessToken needs ${key}`)
+    const now   = sys.$now()
+    const until = expiresAt(accessTokenTtl, now)
+    const token = signAccessToken({
+      sub: opts.userId, cid: opts.clientId, aud: opts.audience,
+      iat: Math.floor(now.getTime() / 1000), exp: Math.floor(new Date(until).getTime() / 1000),
+      ...(opts.sessionId ? { sid: opts.sessionId } : {}),
+    }, secret)
+    return { token, expiresAt: until }
+  }
+
+  // No row is read: a read-only copy holding the key accepts the token as the
+  // primary does. Every miss is anonymous, never a throw, as for an API key.
+  async function verifyAccessToken(token: string): Promise<SessionContext | null> {
+    if (!encryptionKey) return null
+    const claims = readAccessToken(token, encryptionKey)
+    if (!claims || claims.exp * 1000 <= sys.$now().getTime()) return null
+    const user = await sys[person].findUnique({ where: { id: claims.sub } })
+    if (!user) return null
+    return {
+      ...toContext(user, 'accessToken'),
+      authorizedApp: { clientId: claims.cid, audience: claims.aud, ...(claims.sid ? { sessionId: claims.sid } : {}) },
+    }
+  }
+
+  // ─── The authorized app ───────────────────────────────────────────────────
+  //
+  // A `Session` row with a `clientId` and no `token` (`FJS-D1927`), made when
+  // `/token` spends a code. The refresh token is answered once and kept only
+  // as its hash. Every refusal is the one `InvalidGrantError`, so an unknown
+  // token, an expired row and another client's token read the same.
+
+  async function accessFor(row: any, audience: string): Promise<Omit<AuthorizedAppTokens, 'refreshToken'>> {
+    const { token, expiresAt: until } = await issueAccessToken({
+      userId: String(row.userId), clientId: String(row.clientId), audience, sessionId: String(row.id),
+    })
+    const expiresIn = Math.max(0, Math.round((new Date(until).getTime() - sys.$now().getTime()) / 1000))
+    return { accessToken: token, expiresIn, sessionId: String(row.id) }
+  }
+
+  async function authorizeApp(opts: AuthorizedAppRequest): Promise<AuthorizedAppTokens> {
+    const secret = requireEncryptionKey('authorizeApp')
+    for (const key of ['userId', 'clientId', 'audience'] as const)
+      if (typeof opts?.[key] !== 'string' || !opts[key]) throw new AuthConfigError(`authorizeApp needs ${key}`)
+    const refreshToken = generateRefreshToken()
+    const row = await sys.session.create({ data: {
+      userId:       opts.userId,
+      clientId:     opts.clientId,
+      token:        null,
+      refreshToken: hashRefreshToken(refreshToken, secret),
+      expiresAt:    expiresAt(refreshTokenTtl, sys.$now()),
+      ...(opts.ipAddress ? { ipAddress: opts.ipAddress } : {}),
+      ...(opts.userAgent ? { userAgent: opts.userAgent } : {}),
+    } })
+    await audit('app.authorized', {
+      model: 'Session', records: [String(row.id)], actorId: opts.userId, actorType: 'user',
+      meta:  { clientId: opts.clientId },
+    })
+    return { ...(await accessFor(row, opts.audience)), refreshToken }
+  }
+
+  async function refreshAuthorizedApp(opts: AuthorizedAppRefresh): Promise<AuthorizedAppTokens> {
+    const secret = requireEncryptionKey('refreshAuthorizedApp')
+    const presented = opts?.refreshToken
+    if (typeof presented !== 'string' || !presented.startsWith(REFRESH_TOKEN_PREFIX)) throw new InvalidGrantError(REFRESH_REFUSED)
+    if (typeof opts.clientId !== 'string' || !opts.clientId) throw new InvalidGrantError(REFRESH_REFUSED)
+    const hash = hashRefreshToken(presented, secret)
+    const now  = sys.$now()
+
+    const current = await sys.session.findFirst({ where: { refreshToken: hash } })
+    if (current) {
+      if (current.clientId !== opts.clientId) throw new InvalidGrantError(REFRESH_REFUSED)
+      const next = generateRefreshToken()
+      // Keyed on the hash just read: of two refreshes racing on one token, one
+      // rotates and the other falls to the previous-token branch below.
+      const { count } = await sys.session.updateMany({
+        where: { id: current.id, refreshToken: hash },
+        data:  { refreshToken: hashRefreshToken(next, secret), previousRefreshToken: hash, rotatedAt: now.toISOString() },
+      })
+      if (count) {
+        await audit('app.refreshed', {
+          model: 'Session', records: [String(current.id)], actorId: String(current.userId), actorType: 'user',
+          meta:  { clientId: opts.clientId },
+        })
+        return { ...(await accessFor(current, opts.audience)), refreshToken: next }
+      }
+    }
+
+    const prior = await sys.session.findFirst({ where: { previousRefreshToken: hash } })
+    if (!prior || prior.clientId !== opts.clientId) throw new InvalidGrantError(REFRESH_REFUSED)
+
+    if (prior.rotatedAt && now.getTime() - new Date(prior.rotatedAt).getTime() <= REFRESH_REUSE_GRACE_MS) {
+      // The retry of a refresh whose answer was lost. Only hashes are kept, so
+      // the token that answer carried cannot be handed back; a new one replaces
+      // it, and `previousRefreshToken` and `rotatedAt` stay, so the window is
+      // still measured from the first rotation.
+      const next = generateRefreshToken()
+      await sys.session.updateMany({ where: { id: prior.id }, data: { refreshToken: hashRefreshToken(next, secret) } })
+      return { ...(await accessFor(prior, opts.audience)), refreshToken: next }
+    }
+
+    await sys.session.deleteMany({ where: { id: prior.id }, ...PURGE })
+    await audit('app.reuse-refused', {
+      model: 'Session', records: [String(prior.id)],
+      meta:  { clientId: opts.clientId, userId: String(prior.userId) },
+    })
+    throw new InvalidGrantError(REFRESH_REFUSED)
+  }
+
   return {
 
     // Present only where the app mails them — see `onMagicLinkRequested`.
@@ -1097,6 +1270,18 @@ export function createLitestoneAuth(
     // own, and a one-shot boot (junction call, the snapshot tools) sweeps nothing.
     cleanup: createAuthCleanupJobs(db),
 
+    // `/authorize`'s client registry: one cache per auth object, on its clock.
+    // A test sets `fetch` and `allowPrivate` here to serve documents itself.
+    clients: { now: () => sys.$now(), cache: new ClientCache() },
+
+    // The consent step's ticket needs the key, and `/authorize` mounts only
+    // where these exist.
+    ...(encryptionKey ? { issueConsent, redeemConsent } : {}),
+
+    // Only an App with a key can sign one, so only that App has the verb.
+    ...(encryptionKey ? { issueAccessToken } : {}),
+    ...(encryptionKey ? { authorizeApp, refreshAuthorizedApp } : {}),
+
     // ── verifySession ────────────────────────────────────────────────────
     // Hot path — called on every authenticated request.
     // Two db lookups maximum: session → user.
@@ -1110,8 +1295,9 @@ export function createLitestoneAuth(
       // is anonymous — a key that can be issued and never used. The prefix is
       // ours (crypto.ts), so it routes without costing a session lookup.
       if (token.startsWith(API_KEY_PREFIX)) return verifyApiKeyImpl(token)
+      if (token.startsWith(ACCESS_TOKEN_PREFIX)) return verifyAccessToken(token)
 
-      const session = await sys.session.findFirst({ where: { token } })
+      const session = await sessionByToken(token)
       if (session) {
         // ── Support mode ────────────────────────────────────────────────
         //
@@ -1209,9 +1395,7 @@ export function createLitestoneAuth(
       reason:  string,
       ttl?:    string,
     ): Promise<{ endsAt: string }> {
-      const session = await sys.session.findFirst({
-        where: { token }
-      })
+      const session = await sessionByToken(token)
       if (!session) throw new InvalidTokenError('No live session for this token')
 
       // Chaining is refused rather than nested. An operator already inside an
@@ -1274,7 +1458,7 @@ export function createLitestoneAuth(
     },
 
     async endSupport(token: string): Promise<{ ended: boolean }> {
-      const session = await sys.session.findFirst({ where: { token } })
+      const session = await sessionByToken(token)
       if (!session?.impersonatingUserId) return { ended: false }
 
       // An explicit null clears (Invariant 9). Ending twice is a no-op rather
@@ -1966,13 +2150,13 @@ export function createLitestoneAuth(
       // logout that says which session ended is the half that makes a trail
       // followable. An unknown token is still recorded: it is what a replayed or
       // already-expired token looks like.
-      const session = await sys.session.findFirst({ where: { token } })
+      const session = await sessionByToken(token)
 
       // Before the delete, per the ordering rule — a refusal that has already
       // destroyed the session it refused to destroy is not a refusal.
       if (onLogout) await onLogout({ userId: session?.userId ?? null, sessionId: session?.id ?? null })
 
-      await sys.session.deleteMany({ where: { token }, ...PURGE })
+      if (session) await sys.session.deleteMany({ where: { id: session.id }, ...PURGE })
 
       await audit('logout', {
         model:   'Session',
@@ -2391,6 +2575,67 @@ export function createLitestoneAuth(
       return { userId: String(row.userId), audience: String(row.label), scopes: row.scope ? String(row.scope).split(/\s+/).filter(Boolean) : [] }
     },
 
+    // ── issueAuthorizationCode / redeemAuthorizationCode ─────────────────
+    // `/authorize`'s code (`FJS-D1949`): a handoff's shape, issued to a
+    // client rather than a page, so the row also names the client, the
+    // redirect and the resource (`label`), and redeem refuses any of them
+    // presented differently. Five minutes, because the person may be on a
+    // phone getting back from claude.ai. Every refusal is one `InvalidGrantError`
+    // and an `authcode.refused` row whose `reason` says which.
+
+    async issueAuthorizationCode(opts: {
+      userId: string, clientId: string, redirectUri: string, resource: string, challenge: string,
+    }): Promise<{ code: string, expiresAt: string }> {
+      const secret = requireEncryptionKey('issueAuthorizationCode')
+      if (typeof opts?.challenge !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(opts.challenge))
+        throw new InvalidTokenError('challenge must be an S256 PKCE challenge')
+      for (const key of ['userId', 'clientId', 'redirectUri', 'resource'] as const)
+        if (typeof opts[key] !== 'string' || !opts[key]) throw new AuthConfigError(`issueAuthorizationCode needs ${key}`)
+
+      const code  = generateToken()
+      const until = expiresAt('5m', sys.$now())
+      const row   = await sys.credential.create({ data: {
+        userId: opts.userId, type: 'authCode', value: hashAuthCode(code, opts.challenge, secret),
+        label: opts.resource, clientId: opts.clientId, redirectUri: opts.redirectUri, tokenExpiresAt: until,
+      } })
+      await audit('authcode.issued', {
+        model: 'Credential', records: [String(row.id)], actorId: opts.userId, actorType: 'user',
+        meta:  { clientId: opts.clientId, resource: opts.resource },
+      })
+      return { code, expiresAt: until }
+    },
+
+    async redeemAuthorizationCode(opts: {
+      code: string, verifier: string, clientId: string, redirectUri: string, resource: string,
+    }): Promise<{ userId: string, clientId: string, resource: string }> {
+      const secret = requireEncryptionKey('redeemAuthorizationCode')
+      const refuse = async (reason: string, rowId?: string) => {
+        await audit('authcode.refused', {
+          model: 'Credential', records: rowId ? [rowId] : [],
+          meta:  { reason, clientId: opts?.clientId ?? null, resource: opts?.resource ?? null },
+        })
+        return new InvalidGrantError()
+      }
+      const { code, verifier } = opts ?? {} as typeof opts
+      // A wrong verifier hashes to no row, so it is the same miss as a spent code.
+      if (typeof code !== 'string' || typeof verifier !== 'string' || !code || verifier.length < 43)
+        throw await refuse('unknown-code')
+      const value = hashAuthCode(code, pkceChallenge(verifier), secret)
+      const row   = await sys.credential.findFirst({ where: { type: 'authCode', value } })
+      if (!row) throw await refuse('unknown-code')
+
+      // Spent before any binding is read: a code presented by the wrong client
+      // is gone, so the right one cannot be raced to it afterwards.
+      const { count } = await sys.credential.deleteMany({ where: { id: row.id, type: 'authCode' } })
+      const id = String(row.id)
+      if (!count) throw await refuse('unknown-code', id)
+      if (!row.tokenExpiresAt || new Date(row.tokenExpiresAt) <= sys.$now()) throw await refuse('expired', id)
+      if (row.clientId    !== opts.clientId)    throw await refuse('client-mismatch', id)
+      if (row.redirectUri !== opts.redirectUri) throw await refuse('redirect-mismatch', id)
+      if (row.label       !== opts.resource)    throw await refuse('resource-mismatch', id)
+      return { userId: String(row.userId), clientId: String(row.clientId), resource: String(row.label) }
+    },
+
     // ── Sudo mode (`FJS-D1209`) ──────────────────────────────────────────
     // A session proves the password once — and the code, where a second factor
     // is live — and the credential changes ride that proof for
@@ -2503,4 +2748,64 @@ export function createLitestoneAuth(
 
     verifyApiKey: verifyApiKeyImpl,
   }
+}
+
+// ─── /authorize's consent verbs ───────────────────────────────────────────────
+
+/** Ten minutes: a person reads the consent step, and may be on a phone. */
+const CONSENT_TTL = '10m'
+
+/** What a consent ticket is bound to; a redemption presenting any of it differently is a miss. */
+export interface ConsentBinding {
+  clientId:    string
+  redirectUri: string
+  resource:    string
+  challenge:   string
+}
+
+/** What an access token is minted for; `sessionId` is the authorized app's row, once there is one. */
+export interface AccessTokenRequest {
+  userId:     string
+  clientId:   string
+  audience:   string
+  sessionId?: string
+}
+
+/** Thirty seconds after a rotation the previous refresh token still answers (`FJS-D1931`). */
+const REFRESH_REUSE_GRACE_MS = 30_000
+
+const REFRESH_REFUSED = 'The refresh token is invalid or has expired'
+
+/** An authorized app being made: who approved it, which client, and the resource its tokens are for. */
+export interface AuthorizedAppRequest {
+  userId:     string
+  clientId:   string
+  audience:   string
+  ipAddress?: string
+  userAgent?: string
+}
+
+export interface AuthorizedAppRefresh {
+  refreshToken: string
+  clientId:     string
+  audience:     string
+}
+
+/** What `/token` answers; `refreshToken` is the only copy of it there is. */
+export interface AuthorizedAppTokens {
+  accessToken:  string
+  expiresIn:    number
+  refreshToken: string
+  sessionId:    string
+}
+
+/** `/token`'s two verbs, present only where the auth holds an `encryptionKey`. */
+export interface AuthorizedAppVerbs {
+  authorizeApp(opts: AuthorizedAppRequest): Promise<AuthorizedAppTokens>
+  refreshAuthorizedApp(opts: AuthorizedAppRefresh): Promise<AuthorizedAppTokens>
+}
+
+export interface ConsentVerbs {
+  issueConsent(opts: ConsentBinding & { userId: string }): Promise<{ ticket: string, expiresAt: string }>
+  redeemConsent(opts: ConsentBinding & { ticket: string }): Promise<{ userId: string } | null>
 }

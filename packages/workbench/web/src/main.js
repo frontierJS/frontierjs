@@ -5,3 +5,6 @@
 // The design system. One import, no build step, no config; nothing in this app
 // defines a color, a radius or a spacing scale of its own (repo invariant 13).
 import '@frontierjs/css'
+
+import { applyTextSize } from './lib/text-size.js'
+applyTextSize()

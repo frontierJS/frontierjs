@@ -87,10 +87,14 @@ Done when: each probe's finding is written under its step.
   the box's Outpost env, box-side in kind; Workbench's `env.ts`/`app.ts` was the
   signed peer's own pair, Q4's, and reads the entry since 1.6. Tests setting the pair: `basecamp-posture.test.js`,
   `vendor.test.js`.
-- [ ] 0.2 Against the local dev Basecamp, `hubBackups.take` then poll `find`
-  with a key `basecamp:key` minted, from outside Basecamp's process.
+- [~] 0.2 Against the local dev Basecamp, `hubBackups.take` then poll `find`
+  with a key `basecamp:key` minted, from outside Basecamp's process — dropped:
+  answered by `IDEAS/basecamp-reinstall.md` 1.2. `pullHubArchive` in
+  `core/basecamp.js` takes through `hubBackups.take`, polls `hubSettled` until
+  the row is `success` and refuses any other status; it has run against a box.
 - [ ] 0.3 Restart Basecamp's API container over ssh on a box, and time how long
   until its health route answers again. The box is the owner's; ask first.
+  Until measured, restart waits `probeUntil`'s three minutes.
 
 ### Phase 1 — The index (fli)
 
@@ -158,29 +162,75 @@ it answers, and `bun run test` in `packages/cli` is green.
 ### Phase 2 — Back up and restart (fli)
 
 Goal: both verbs work from a terminal before a screen exists.
-Done when: each runs against the dev Basecamp and reports the outcome Basecamp
-recorded, not the outcome it asked for.
+Done when: each reports the outcome Basecamp recorded, not the outcome it asked
+for — backup the `HubBackup` row's status, restart what `/setup/probe` answers
+after the container is back. Backup runs against any entry with a key; restart
+needs a Host, so its live run is a box and is 0.3.
 
-- [ ] 2.1 Take Basecamp's own backup and wait for it to settle. The spelling is a
+- [x] 2.1 Take Basecamp's own backup and wait for it to settle. The spelling is a
   new verb or a flag on `basecamp:backup`, whose default today is an App; settle it
   through `decision-rules` at the step. Settled by `FJS-D1848`: `fli basecamp:backup` is
   Basecamp's own, built as `IDEAS/basecamp-reinstall.md` 1.2.
-- [ ] 2.2 `fli basecamp:restart` restarts the API container over ssh and waits
-  until the health route answers.
+  **Built there.** `fli basecamp:backup <server>` takes, polls, downloads and
+  checks the manifest; a Basecamp whose API cannot back up falls to the ssh copy.
+- [x] 2.2 `fli basecamp:restart <server>` restarts the API container over ssh and
+  waits until the health route answers. A wrapper over `restartApi` and
+  `probeUntil` in `core/basecamp.js`, which `IDEAS/basecamp-reinstall.md` left
+  with no caller; the container is `apiContainerName()` in `core/ports.js`. The
+  `<server>` positional doubles as the entry name, as `backup` does, and an entry
+  with no Host is refused by name (1.1). Proved here by `--dry` against a box
+  entry; the live run is 0.3.
+  **Built 2026-11-05:** `commands/basecamp/restart.md`. Container and port come
+  from `packages/basecamp/frontier.config.js` as `restore.md` reads them
+  (`frontier-basecamp`, 8120); the box is the entry's `host`, so `ssh` goes
+  through the `Host` alias. The result line is what `/setup/probe` answered
+  (users, workspaces, a restore in flight) — it carries no version. `--dry`
+  against `yuma` printed the plan and ran nothing.
 
 ### Phase 3 — The screen (Workbench)
 
 Goal: the same verbs from Workbench.
-Done when: on `/basecamps/`, signed in, Back up now and Restart run against the
-dev Basecamp and the page shows each outcome.
+Done when: on `/basecamps/`, signed in, every entry in `basecamps.json` is
+listed with whether it answers; Back up now against one that answers shows the
+row Basecamp recorded; Restart on an entry with no Host is refused by name on
+the page, and on a box it shows what the probe answered (the box run is 0.3).
+The service's test runs both verbs against a stub Basecamp, the shape of
+`api/test/peer-dialer.test.ts`.
 
-- [ ] 3.1 A `basecamps` service in Workbench over `core/basecamps.js` and the
-  Phase 2 helpers, imported by path.
-- [ ] 3.2 `/basecamps/` lists each entry with whether it answers, plus Back up now
-  (with the newest backup's time) and Restart behind a confirm.
+- [x] 3.1 A `basecamps` service in Workbench over `core/basecamps.js` and the
+  Phase 2 helpers, imported by path. Four methods, all ADMINISTRATOR: `list`
+  (entries without their keys, whether each answers, the newest `HubBackup`
+  Basecamp holds, and the held outcome of the last verb), `backup` and `restart`
+  (each starts the verb and holds its outcome in memory, the shape of `explain`
+  in `domain/atlas/atlas.ts`), and `outcome` (what the page polls). Taking
+  without downloading splits `takeHubBackup` out of `pullHubArchive` in
+  `core/basecamp.js`; the screen never pulls an archive to the laptop. No
+  credential leaves the API: `apiKey`, `scopedKey` and `peerKeyId` stay out of
+  every answer.
+  **Built 2026-11-05:** `api/src/domain/basecamps/basecamps.ts` and
+  `services/basecamps/basecamps.service.ts`; `api/test/basecamps.test.ts` runs
+  both verbs against a stub Basecamp over a temp index. A key refused by
+  Basecamp (a scoped one without `hubBackups:read`, 403) is answered as
+  `backupError` so it never reads as "none yet". Basecamp's container and port
+  are `basecampApi()` in `core/basecamp.js`, the one reading `restart`,
+  `restore` and `reinstall` now share, since Workbench imports nothing from
+  Basecamp.
+- [x] 3.2 `/basecamps/` lists each entry with whether it answers, plus Back up now
+  (with the newest backup's time) and Restart behind a confirm, the kit's
+  `ConfirmationPopover`. An outcome line per entry, polled while a verb runs.
+  Nav entry in `web/src/lib/nav.js`; the proxied path comes from the regenerated
+  `app.snapshot.md` (`packages/workbench/CLAUDE.md` § Traps).
+  **Built 2026-11-05:** `web/src/routes/basecamps/index.mesa` over
+  `resources/Basecamp.mesa`. Driven in Chrome against the real index: four rows;
+  `dev` (hand-written that day, `http://127.0.0.1:8120`, no key, no Host) shows
+  both buttons disabled with their reasons; Back up now on `yuma` settled in 3 s
+  with the `HubBackup` row Basecamp recorded as `success`; the Restart confirm
+  opened and cancelled; no console error or failed request. The live restart
+  from the page is 0.3.
 - [ ] 3.3 Create is a form over `basecamp:create --yes`, run as a job whose output
   streams to the page, since a box takes minutes. The form says the box is
   billed from that moment and that undoing it is `fli server:destroy` (Q3).
+  Proved here with `--dry`; the first purchase from the page is the owner's.
 
 ## Open questions
 
@@ -210,6 +260,20 @@ dev Basecamp and the page shows each outcome.
   - **B** — Previews keep their own env pair.
   - **Recommend A** — one list of Basecamps on this laptop, not two. The peer key
     id joins the entry.
+- **Q5 — Whether the screen edits the index.** The owner minted a `chartered`
+  entry by hand on 2026-11-05 and asked whether `/basecamps/` should cover
+  enrolling and keys as well as the verbs.
+  - **A** — Verbs only. Entries are read; a key is minted by `basecamp:key` over
+    ssh and an entry is written by `create`, `install`, `key` or a hand edit.
+  - **B** — A form that adds, renames and forgets an entry (url, Host, cloud,
+    box id), with no key field; keys stay ssh-minted.
+  - **C** — B plus a key field, so a key from Basecamp's API keys screen can be
+    pasted in.
+  - **Recommend A** — `core/basecamps.js` stays the one writer (`FJS-D1828`),
+    and a key typed into a browser is a second way to hold a credential
+    `FJS-D1827` ruled ssh the root of. A re-mint by `basecamp:key` would also
+    silently replace a pasted key. The reopen is a Forget button over
+    `removeBasecamp` if a stale entry ever needs clearing from the screen.
 
 ## Out of scope
 

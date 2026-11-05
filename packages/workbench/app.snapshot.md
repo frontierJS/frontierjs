@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-5 services · 19 routes · 7 plugins · prefix (none)
+6 services · 19 routes · 7 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -69,6 +69,28 @@ name when it declares none.
   - `explain` — standing 5 or above — declared `gate: 5`
   - `run` — standing 5 or above — declared `gate: 5`
   - `turn` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `basecamps` · model `basecamps`
+
+- **methods** — `list`, `outcome`, `creation`, `backup`, `restart`, `provision`
+- **custom methods** — `list`, `outcome`, `creation`, `backup`, `restart`, `provision`
+- **who may call** —
+  - `list` — standing 5 or above — declared `gate: 5`
+  - `outcome` — standing 5 or above — declared `gate: 5`
+  - `creation` — standing 5 or above — declared `gate: 5`
+  - `backup` — standing 5 or above — declared `gate: 5`
+  - `restart` — standing 5 or above — declared `gate: 5`
+  - `provision` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

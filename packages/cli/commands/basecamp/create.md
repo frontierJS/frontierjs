@@ -270,7 +270,9 @@ if (!boxName(name)) {
 }
 
 // The last stop before money is spent, so it shows what the answers add up to.
-if (asking) {
+// A dry run ends here: buying runs a provisioner of its own, outside $.exec,
+// so --dry has to be answered before it rather than inside it.
+if (asking || flag.dry) {
   echo('')
   row('hostname', domain || chalk.dim('none yet'))
   row('server', `${chalk.bold(name)} ${chalk.dim(`· ${vendor} · ${flag.size} · ${flag.region || 'its default region'} · ${flag.image || 'its default image'}`)}`)
@@ -284,6 +286,7 @@ if (asking) {
   if (install) row('api key', apiKey ? `admin ${chalk.dim('— shown once, filed in basecamps.json')}` : chalk.dim('no — fli basecamp:key later'))
   if (install) row('services', unneededRow(unneeded, chalk))
   echo('')
+  if (flag.dry) { log.dry(`buy ${name} at ${vendor}${install ? ', wait for ssh, install Basecamp and point its DNS record' : ''}`); return }
   if (!await yes(`Buy the box at ${vendor}?`, true)) { log.info('Nothing was bought'); return }
   echo('')
 }

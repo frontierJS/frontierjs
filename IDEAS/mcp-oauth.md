@@ -363,7 +363,7 @@ fetched is refused too. A document naming itself `Claude` from another host
 shows that host on the page and not the name, and the Claude Code fixture shows
 the loopback warning.
 
-- [ ] 2.1 The sign-in and consent page per Q2: the password, then the TOTP
+- [x] 2.1 The sign-in and consent page per Q2: the password, then the TOTP
       code if one is owed, then "Allow `<client_id host>` to act as you in
       `<App>`", with the redirect's host shown and a warning when every
       redirect is loopback (0.1). The host and not `client_name`, because
@@ -384,7 +384,29 @@ the loopback warning.
     names no other origin, and that a hostile `client_name` and host render
     escaped.
   - **A drive in Chromium** follows Allow through to the redirect.
-  - **In progress 2026-11-05.** The page and its packer are built and proved:
+  - **Built 2026-11-05.** The route is `auth`'s `authorize.ts` (`mountAuthorize`,
+    called from `plugin.ts`), mounted only when the auth has an
+    `encryptionKey`, the way `requestRegistration` is. Check order: client
+    document, redirect, repeated parameter — each a plain-text 400 and no
+    redirect — then `response_type`, S256, a 43-character challenge and
+    `resource` (`<publicUrl><apiPrefix>/mcp`, the default mount) as a 302
+    carrying `error` and `state`. Steps `password` → `totp` → `consent` on one
+    POST reader of its own (`/auth/login` reads nothing new); a refused proof
+    re-renders at 200, a limiter at 429. Consent is a `Credential`
+    `type: 'consent'` ticket (`issueConsent` / `redeemConsent`, ten minutes,
+    HMAC `consent:` over the request's PKCE challenge), because a handoff is
+    spent with the client's verifier, which the server never holds; a replay
+    or a forged ticket returns the person to the password step. Headers:
+    `no-store` and `default-src 'none'; style-src '<STYLE_HASH>'; form-action
+    'self' <redirect origin>; frame-ancestors 'none'; base-uri 'none'`.
+    Proved by `authorize-route.test.ts` 17, the auth suite 754, cli
+    `mesa-pack` 5, mesa 2596, `example` `verify:oauth` 28, `verify:mcp` 42
+    and `verify:users` 106. In bearer mode the POST has no Origin check;
+    the ticket's binding is the defense. A wrong `resource` answers
+    `invalid_request`; RFC 8707's `invalid_target` is owed with 3.1. No
+    RFC 9207 `iss` on the redirect. The Chromium drive through Allow is
+    owed: it needs a served client document and a loopback listener.
+  - **The page and its packer**, proved first:
     `Authorize.mesa`, `authorize-page.snapshot.js` (47.5 KB, `render(props)`
     and `STYLE_HASH`), `fli mesa:pack` (`commands/mesa/pack.md`,
     `core/mesa-pack.js`, `--css`/`--check`/`--stdout`/`--out`, byte-identical
@@ -397,16 +419,36 @@ the loopback warning.
     takes `out.head` into the document head), `themes/dark` dropped from the
     subset (it applies only under `.theme-dark`, which a page with no script
     never sets), `form-action`, and Q14's verbs (`FJS-D1948`).
-- [ ] 2.2 Fetch the client metadata document per Q7: https only, a public
+- [x] 2.2 Fetch the client metadata document per Q7: https only, a public
       address through `public-url.ts`'s `gradePublicUrl` and `pinTo`, size
       and time caps, cached no longer than its `max-age`. Its
       own `client_id` must equal the URL fetched. Check `redirect_uri`
       against it exactly, except a loopback port, on both `localhost` and
       `127.0.0.1`. A redirect that is neither `https` nor loopback `http` is
       refused, so 2.1's `form-action` never meets an opaque origin. The test fixtures are 0.1's two documents verbatim.
-- [ ] 2.3 Issue the code bound to its challenge, as a row in the table
+  **Built 2026-11-05.** `auth`'s `clients.ts` over junction's
+  `fetchPublicJson` (`FJS-D1947`: 64 KiB, 5 s, graded and pinned per hop;
+  `FJS-4045` moves conduit onto it). Proved by `clients.test.ts` 17 and the
+  auth suite 736. Three things the plan did not say:
+  - **The confidential twin is refused** (`token_endpoint_auth_method` other
+    than `none`), as is a document without `authorization_code`.
+  - **The cache is bounded**: `max-age` capped at an hour, 256 entries, a
+    refusal never kept, the clock the auth object's `sys.$now()`.
+  - **A redirect while fetching the document is refused** (`maxHops: 0`): a
+    client id is a URL its owner serves, and a hop hands that trust to the
+    host it lands on. Owed to the route: the cache hangs on the auth object.
+- [x] 2.3 Issue the code bound to its challenge, as a row in the table
       `hashHandoff` already writes rather than a new one: short-lived, single
       use, and naming the client, the redirect and the `resource`.
+  **Built 2026-11-05** per `FJS-D1949`: `Credential` `type: 'authCode'` with
+  `clientId` and `redirectUri`, `label` the resource, five minutes, HMAC
+  domain `authcode:` so a handoff and a code cannot be spent as each other;
+  `issueAuthorizationCode` / `redeemAuthorizationCode` on `IAuth`, every
+  refusal one `InvalidGrantError` with its own audit reason. Proved by
+  `authorization-code.test.ts` 12, `example` `verify` 72, and the six db
+  snapshots regenerated. `cleanup.ts` sweeps expired codes with handoffs.
+  The audit names are `authcode.issued` / `authcode.refused`; the
+  `connection` noun is Q16's.
 
 ### Phase 3 — Token
 
@@ -416,17 +458,35 @@ at the person's gate level, refreshes, and shows the old refresh token refused.
 
 - [ ] 3.1 `/token`, `authorization_code` grant: verify PKCE, client and
       redirect; refuse a `resource` that is not the MCP URL.
-- [ ] 3.2 The access token per Q3, one hour by default. It carries the user, the
+- [x] 3.2 The access token per Q3, one hour by default. It carries the user, the
       client, the audience and the expiry, and nothing a gate reads, so the
       level is graded at call time as for any session.
-- [ ] 3.3 `verifySession` takes the access token's prefix as its third arm and
-      answers the `User` with `delegated: 'connection'`. `refuseDelegated`
+  **Built 2026-11-05.** `crypto.ts`: `ACCESS_TOKEN_PREFIX = 'fja_'`,
+  `signAccessToken` / `readAccessToken` — `fja_<b64url claims>.<b64url
+  HMAC-SHA256>` over `access:` + payload under `encryptionKey`, claims
+  `sub cid aud exp iat sid?`, compared with `timingSafeEqual`. `auth.ts`:
+  `issueAccessToken({ userId, clientId, audience, sessionId? })` behind
+  `requireEncryptionKey`, option `accessTokenTtl = '1 hour'`, no audit row
+  (3.1's route audits), on `IAuth` as optional.
+- [x] 3.3 `verifySession` takes the access token's prefix as its third arm and
+      answers the `User` with `authorizedApp` set (Q16). `refuseDelegated`
       (`junction/src/auth/delegation.ts`, its one owner) refuses on that field
-      as it does on `support`, whatever the transport. Test: a connection's
+      as it does on `support`, whatever the transport. Test: an authorized app's
       token is refused `createApiKey` and a password change over REST, and the
       same token's data write at the person's level succeeds over `/mcp` on
-      the live App. Only the copy is read-only; a connection is not.
-- [ ] 3.4 The connection per Q4, created when the code is spent. It holds the
+      the live App. Only the copy is read-only; an authorized app is not.
+  **Built 2026-11-05.** The arm sits after the `fjs_` branch and reads no
+  `Session` row (Phase 6 needs that): `exp` against `sys.$now()`, then the
+  user; every miss is anonymous. The context is `toContext(user,
+  'accessToken')` plus `authorizedApp: { clientId, audience, sessionId? }` —
+  junction's `SessionContext` gains the field and the `authMethod` literal,
+  and `refuseDelegated` refuses on it as its third arm. Proved by
+  `access-token.test.ts` 12 (incl. `POST /api-keys` and `changePassword` 403
+  over REST with the token, and a gated write at the person's level 201),
+  auth 766, junction 3531, mcp 195, `verify:oauth` 28, `verify:mcp` 42. The
+  `/mcp` write with a live client's token waits for 3.1. `authorize.ts` now
+  answers `invalid_target` for a wrong `resource`.
+- [ ] 3.4 The authorized app per Q4 (Q16's noun), created when the code is spent. It holds the
       refresh token hashed and `@guarded`. Test: its refresh token presented as
       a Bearer is anonymous.
 - [ ] 3.5 `refresh_token` grant: rotate, and handle reuse per Q5.
@@ -435,16 +495,17 @@ at the person's gate level, refreshes, and shows the old refresh token refused.
 
 Goal: a person can see and end what they connected, and the trail says what
 happened.
-Done when: revoking a connection from the sessions list, or a password change,
+Done when: revoking an authorized app from the sessions list, or a password change,
 stops its next refresh. An access token already minted answers until it
 expires.
 
-- [ ] 4.1 Connections show in `listSessions` with the client's name, and
+- [ ] 4.1 Authorized apps show in `listSessions` with the client's name, and
       `revokeSession` ends one. `AuthSessionInfo` grows a `client` field.
-- [ ] 4.2 A credential change ends connections through `endOtherSessions`.
-- [ ] 4.3 Audit entries for connected, refreshed, reuse refused and revoked.
+- [ ] 4.2 A credential change ends authorized apps through `endOtherSessions`.
+- [ ] 4.3 Audit entries `app.authorized`, `app.refreshed`, `app.reuse-refused`
+      and `app.revoked` (Q16).
       The tokens are `@guarded` columns, so Invariant 7 redacts them.
-- [ ] 4.4 The sweep removes expired connections and codes (`@@expires`,
+- [ ] 4.4 The sweep removes expired authorized apps and codes (`@@expires`,
       `PURGE`).
 
 ### Phase 5 — Proved with a real connector
@@ -467,7 +528,7 @@ Done when: a connector signed in on the live App answers on a copy staged before
 it signed in, until its access token expires, and then handles refresh per Q6.
 
 - [ ] 6.1 The copy accepts access tokens the live App signed: same key, no row.
-- [ ] 6.2 Connections move with `Session` into the copy's `sessions` block
+- [ ] 6.2 Authorized apps move with `Session` into the copy's `sessions` block
       (`FJS-D1921`), so a sign-in on the copy can write one.
 - [ ] 6.3 Refresh on the copy per Q6.
 
@@ -687,3 +748,22 @@ it signed in, until its access token expires, and then handles refresh per Q6.
     parse with no owner. `Session` gains `clientId` for Q4 in the same shape,
     so one column name serves both. C is the reopen path if a third column
     group arrives.
+- ~~**Q16 — What is the noun for what a person makes when they approve a client?**~~ **Answered 2026-11-05 (`FJS-D1950`): B — the provider link keeps `connections`, and the approved client is an **authorized app**: the `Session` row with a `clientId` (Q4 stands), `AuthSessionInfo.client`, audit `app.authorized` / `app.refreshed` / `app.reuse-refused` / `app.revoked`, and this paper's "connection" read as "authorized app" from here on.** This paper says connection (Q4), but `auth` already has a
+  `connections` service, `GET /connections` and `removeConnection` for an
+  OAuth PROVIDER link, which Basecamp's hub calls. One package, one word, two
+  things. Prior art splits the same way: Auth0, Discord and Twitch call a
+  provider link a connection, while GitHub, Google and Discord call a client a
+  person approved an authorized app (GitHub "Authorized OAuth Apps", Google
+  "Third-party apps with account access", Discord "Authorized Apps").
+  - **A** — the approved client keeps "connection", and the provider link is
+    renamed `links` (`GET /links`, `listLinks`, `removeLink`) with every
+    caller moved, Basecamp's hub included.
+  - **B** — the provider link keeps `connections`, and the approved client is
+    an **authorized app**: the `Session` row with a `clientId` (Q4 stands),
+    `AuthSessionInfo.client`, audit `app.authorized` / `app.refreshed` /
+    `app.reuse-refused` / `app.revoked`, and this paper's "connection" read as
+    "authorized app" from here on.
+  - **C** — both keep "connection", told apart by context.
+  - **Recommend B** — both words then have the precedent their users already
+    know, and no live route moves. A renames a working surface for a word
+    the industry also uses for providers. C is the collision kept.

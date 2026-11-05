@@ -15,6 +15,7 @@
   import '@xterm/xterm/css/xterm.css'
   import { getClient } from '@frontierjs/sierra/resource'
   import { session }   from '../lib/session.js'
+  import { scaled }    from '../lib/text-size.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
 
   export let pin = ''
@@ -61,7 +62,7 @@
   $.onMount(() => {
     term = new Terminal({
       fontFamily: getComputedStyle(host).getPropertyValue('--font-mono') || 'ui-monospace, monospace',
-      fontSize:   13,
+      fontSize:   scaled(13),
       cursorBlink: true,
       scrollback: 5000,
       theme:      themeOf(host),

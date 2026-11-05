@@ -61,6 +61,12 @@ model Credential {
   /// row: an account a provider MADE has nothing but the provider securing it,
   /// and one the mailbox made keeps the mailbox as a way in (`FJS-D1011`).
   isLinked        Boolean?
+  /// Authorization code only — the client and the redirect the code was issued
+  /// to (`FJS-D1949`); `label` is the resource. A code redeemed with any of the
+  /// three different is refused, so a code that leaks through a redirect is
+  /// worthless to any other client.
+  clientId        String?
+  redirectUri     String?
   createdAt       DateTime   @default(now())
 
   @@db(main)
@@ -80,7 +86,8 @@ model Credential {
 model Session {
   id         String    @id @default(uuid())
   userId     String
-  token      String    @unique @guarded
+  /// Null on an authorized app's row, which no cookie or Bearer names.
+  token      String?   @unique @guarded
   expiresAt  DateTime
   ipAddress  String?
   userAgent  String?
@@ -115,6 +122,21 @@ model Session {
   impersonatingUserId  String?
   impersonationReason  String?
   impersonationEndsAt  DateTime?
+
+  /// AN AUTHORIZED APP (`FJS-D1927`, `FJS-D1950`) — set where a person approved
+  /// an OAuth client at `/authorize`; the client's metadata-document URL. The
+  /// row is how the app is listed, revoked and ended by a credential change,
+  /// exactly as a sign-in is.
+  clientId  String?
+
+  /// The HMAC of the current refresh token, and of the one it replaced. Only
+  /// the hash is kept, so a copy of this table refreshes nothing. The previous
+  /// one answers for 30 seconds after `rotatedAt` -- a client whose refresh
+  /// timed out retries with it -- and after that it is a stolen token, and
+  /// presenting it deletes the row (`FJS-D1931`).
+  refreshToken          String?   @unique @guarded
+  previousRefreshToken  String?   @guarded
+  rotatedAt             DateTime?
 
   @@db(main)
   @@gate(8)

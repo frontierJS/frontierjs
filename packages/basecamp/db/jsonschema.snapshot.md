@@ -291,6 +291,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `scope` | `string`? | — | — | — | — |
 | `totpLastStep` | `integer`? | — | — | — | — |
 | `isLinked` | `boolean`? | — | — | — | — |
+| `clientId` | `string`? | — | — | — | — |
+| `redirectUri` | `string`? | — | — | — | — |
 
 **On create**: required — `userId`, `type` · not accepted — `id`
 

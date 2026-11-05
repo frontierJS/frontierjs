@@ -219,6 +219,10 @@ export type ChatStatus = {
   /** The chat's first message, cut to a line; null before it has one. */
   title:   string | null
   state:   RunState
+  /** What its run is doing now, while it works. */
+  tool:    string | null
+  /** Finished on a question: the tab reads "needs you". */
+  asks:    boolean
   unread:  boolean
   session: string | null
 }
@@ -260,7 +264,8 @@ type Folded = {
   /** Kept apart from `items`, which drops the oldest past MAX_ITEMS. */
   title:   string | null
   session: string | null
-  run:     { state: RunState, tool: string | null, cost: number | null, turns: number | null, at: string | null }
+  /** `asks`: the run's last line of text ended on a question. */
+  run:     { state: RunState, tool: string | null, cost: number | null, turns: number | null, at: string | null, asks: boolean }
   /** Cost by the local day each run started. */
   byDay:   Record<string, number>
   /** Every run, kept whole like `byDay`: a step's cost is summed off it. */
@@ -283,8 +288,15 @@ const INSTALL_MS = 10 * 60_000
 
 const freshFold = (): Folded => ({
   offset: 0, partial: '', items: [], title: null, session: null,
-  run: { state: 'idle', tool: null, cost: null, turns: null, at: null }, byDay: {}, runs: [],
+  run: { state: 'idle', tool: null, cost: null, turns: null, at: null, asks: false }, byDay: {}, runs: [],
 })
+
+// A headless run cannot stop and wait, so a question is only ever the way a
+// reply ends; trailing emphasis or a closing quote still counts.
+const endsOnQuestion = (items: Item[]) => {
+  const last = items.findLast(i => i.kind === 'text')
+  return !!last && /\?[*_)"'`\s]*$/.test((last as { text: string }).text)
+}
 
 // The operator's own day: the workbench runs only on their machine, so this
 // process's zone is theirs.
@@ -736,7 +748,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       const at = String(event.at ?? '')
       push(f, { kind: 'you', text: String(event.text ?? ''), at, ...(event.images ? { images: Number(event.images) } : {}) })
       f.title ??= titleOf(String(event.text ?? ''))
-      f.run = { state: 'working', tool: null, cost: null, turns: null, at }
+      f.run = { state: 'working', tool: null, cost: null, turns: null, at, asks: false }
       f.runs.push({ at, cost: null, turns: null })
       return
     }
@@ -755,7 +767,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       if (e.type === 'tool')    { push(f, { kind: 'tool', text: e.text }); f.run.tool = e.text }
       if (e.type === 'result') {
         push(f, { kind: 'result', ok: e.ok, stop: e.stop, cost: e.cost, turns: e.turns })
-        f.run = { ...f.run, state: e.ok ? 'done' : 'error', tool: null, cost: e.cost, turns: e.turns }
+        f.run = { ...f.run, state: e.ok ? 'done' : 'error', tool: null, cost: e.cost, turns: e.turns, asks: e.ok && endsOnQuestion(f.items) }
         const last = f.runs.at(-1)
         if (last) { last.cost = e.cost; last.turns = e.turns }
         if (e.cost != null && f.run.at) {
@@ -884,7 +896,12 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       rev:    [shown.chat.id, shown.fold.offset, review?.fold.offset ?? 0, checks ? `${checks.state}@${checks.at}` : ''].join('.'),
       chat:    shown.chat.id,
       running: alive(p.pid) ? p.runChat : null,
-      chats:   all.map(c => ({ id: c.chat.id, title: c.fold.title, state: c.state, unread: unread(c), session: c.chat.session })),
+      chats:   all.map(c => ({
+        id: c.chat.id, title: c.fold.title, state: c.state,
+        tool: c.state === 'working' ? c.fold.run.tool : null,
+        asks: c.state === 'done' && c.fold.run.asks,
+        unread: unread(c), session: c.chat.session,
+      })),
       spent:  {
         total: own.reduce((n, s) => n + s.total, 0) + rev.total,
         today: own.reduce((n, s) => n + s.today, 0) + rev.today,
