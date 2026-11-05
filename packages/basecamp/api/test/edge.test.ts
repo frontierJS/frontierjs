@@ -258,7 +258,7 @@ describe('the edge service', () => {
   })
 
   test('records sit beside the workspace\'s Domains: matched, and missing', async () => {
-    const answer = await edge(developer).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
+    const answer = await edge(developer).call('records', null, { providerSecretId: good.id, zoneId: 'zone-example' }) as any
     expect(answer.zone.name).toBe('example.test')
 
     const byType = Object.fromEntries(answer.records.map((r: any) => [r.type, r]))
@@ -273,12 +273,12 @@ describe('the edge service', () => {
   })
 
   test('a vendor refusal is a 502 with the vendor\'s message', async () => {
-    await expect(edge(developer).call('records', null, { accountId: good.id, zoneId: BROKEN_ZONE }))
+    await expect(edge(developer).call('records', null, { providerSecretId: good.id, zoneId: BROKEN_ZONE }))
       .rejects.toMatchObject({ code: 502, message: expect.stringContaining('Invalid zone configuration') })
   })
 
   test('another workspace\'s account is not found, before any vendor is asked', async () => {
-    await expect(edge(developer).call('records', null, { accountId: stranger.id, zoneId: 'zone-example' }))
+    await expect(edge(developer).call('records', null, { providerSecretId: stranger.id, zoneId: 'zone-example' }))
       .rejects.toMatchObject({ code: 404 })
   })
 
@@ -416,7 +416,7 @@ describe('sync', () => {
   let online1: any, online2: any
   const tag = () => Math.random().toString(36).slice(2, 8)
   const edge = (who: any) => env.as(who).service('edge')
-  const shopRecords = async () => await edge(admin).call('records', null, { accountId: good.id, zoneId: 'zone-shop' }) as any
+  const shopRecords = async () => await edge(admin).call('records', null, { providerSecretId: good.id, zoneId: 'zone-shop' }) as any
   let good: any
 
   beforeAll(async () => {
@@ -489,14 +489,14 @@ describe('sync', () => {
     const workspaces = env.as(admin).service('workspaces')
     await expect(workspaces.patch(site.id, { ingressZoneId: 'zone-shop', version: await version() }))
       .rejects.toThrow(/an ingress zone names its account and its zone together/)
-    const before = await edge(developer).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
+    const before = await edge(developer).call('records', null, { providerSecretId: good.id, zoneId: 'zone-example' }) as any
     expect(before.missing.find((d: any) => d.id === api.id).why).toBe('no-ingress')
     await workspaces.patch(site.id, { ingressSecretId: good.id, ingressZoneId: 'zone-shop', version: await version() })
   })
 
   test('zones names the ingress zone, and a missing hostname a push would write carries no cause', async () => {
-    expect((await edge(developer).call('zones', null, {}) as any).ingress).toEqual({ accountId: good.id, zoneId: 'zone-shop' })
-    const { missing } = await edge(developer).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
+    expect((await edge(developer).call('zones', null, {}) as any).ingress).toEqual({ providerSecretId: good.id, zoneId: 'zone-shop' })
+    const { missing } = await edge(developer).call('records', null, { providerSecretId: good.id, zoneId: 'zone-example' }) as any
     expect(missing.find((d: any) => d.id === api.id).why).toBeNull()
   })
 
@@ -571,7 +571,7 @@ describe('sync', () => {
     const quiet = await (env.system as any).domain.create({ data: { workspaceId: site.id, appId: idle.id, hostname: 'idle.example.test' } })
     await expect(edge(admin).call('sync', quiet.id, {}))
       .rejects.toMatchObject({ code: 409, message: expect.stringContaining('no release has landed on') })
-    const { missing } = await edge(developer).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
+    const { missing } = await edge(developer).call('records', null, { providerSecretId: good.id, zoneId: 'zone-example' }) as any
     expect(missing.find((d: any) => d.id === quiet.id)).toMatchObject({ why: 'no-machine', detail: expect.stringContaining('no release has landed on') })
 
     await expect(edge(developer).call('sync', api.id, {})).rejects.toMatchObject({ code: 403 })
@@ -661,7 +661,7 @@ describe('sync', () => {
   test('a record marked for a Domain that does not exist is an orphan', async () => {
     await cloudflare.appendRecords(sendVia(app, `provider:cloudflare:${good.id}`), 'zone-example', domainMark('no-such-domain'),
       [{ type: 'CNAME', name: 'ghost.example.test', content: `${web.id}.shop.test` }])
-    const answer = await edge(admin).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
+    const answer = await edge(admin).call('records', null, { providerSecretId: good.id, zoneId: 'zone-example' }) as any
     expect(answer.orphans.map((r: any) => r.name)).toContain('ghost.example.test')
   })
 

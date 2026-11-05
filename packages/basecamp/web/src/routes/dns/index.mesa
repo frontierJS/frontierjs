@@ -37,7 +37,7 @@ title: DNS & edge
   let appById  = new Map()
   let adapter  = null
   let accounts = []
-  let ingress  = null         // { accountId, zoneId } — where every App's ingress record goes
+  let ingress  = null         // { providerSecretId, zoneId } — where every App's ingress record goes
   let error    = null
   let loading  = true
 
@@ -89,7 +89,7 @@ title: DNS & edge
   async function readZone(accountId, zoneId) {
     picked = { accountId, zoneId }; zoneBusy = true; zoneError = null
     try {
-      zone = await edge.service.invoke('records', null, { accountId, zoneId })
+      zone = await edge.service.invoke('records', null, { providerSecretId: accountId, zoneId })
     } catch (e) {
       zone = null; zoneError = e.message
     } finally {
@@ -121,7 +121,7 @@ title: DNS & edge
     try {
       const ws = await workspaces.service.get(session.workspaceId)
       await workspaces.service.patch(ws.id, { ingressSecretId: accountId, ingressZoneId: zoneId, version: ws.version })
-      ingress = { accountId, zoneId }
+      ingress = { providerSecretId: accountId, zoneId }
       toasts.success('Ingress zone set')
       readZone(accountId, zoneId)
     } catch (e) {
@@ -172,7 +172,7 @@ title: DNS & edge
   // An ingress record naming the wrong machines. `down` is an app on no online
   // machine at all, whose record is kept where it last ran (FJS-D567) — the
   // one a push cannot fix, so it is the red one.
-  $: isIngress = !!picked && ingress?.accountId === picked.accountId && ingress?.zoneId === picked.zoneId
+  $: isIngress = !!picked && ingress?.providerSecretId === picked.accountId && ingress?.zoneId === picked.zoneId
 
   $: down       = zone?.stale.filter(s => s.down) ?? []
   $: staleTitle = down.length
@@ -428,7 +428,7 @@ title: DNS & edge
                     treatment={picked?.zoneId === hit.item.id ? 'outlined' : 'ghost'}
                     aria-pressed={picked?.zoneId === hit.item.id ? 'true' : 'false'}
                     onclick={() => readZone(account.id, hit.item.id)}
-                  ><span class="zone-name">{#each segments(hit.item.name, hit.ranges) as part}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>{#if hit.item.status !== 'active'} <Pill tone={ZONE_TONE[hit.item.status] ?? 'muted'}>{hit.item.status}</Pill>{/if}{#if ingress?.accountId === account.id && ingress?.zoneId === hit.item.id} <Badge tone="success">ingress</Badge>{/if}</Button>
+                  ><span class="zone-name">{#each segments(hit.item.name, hit.ranges) as part}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>{#if hit.item.status !== 'active'} <Pill tone={ZONE_TONE[hit.item.status] ?? 'muted'}>{hit.item.status}</Pill>{/if}{#if ingress?.providerSecretId === account.id && ingress?.zoneId === hit.item.id} <Badge tone="success">ingress</Badge>{/if}</Button>
                 </li>
               {/each}
             </ul>

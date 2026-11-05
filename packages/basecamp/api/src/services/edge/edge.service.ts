@@ -121,7 +121,7 @@ interface DomainRow { id: string; appId: string; hostname: string; redirectTo: s
 const scoped = sessionScope()
 
 async function account(id: unknown): Promise<EdgeAccount> {
-  if (!id) throw new BadRequest('accountId is required — which edge account to ask')
+  if (!id) throw new BadRequest('providerSecretId is required — which edge account to ask')
   const found = (await edgeAccounts()).find(a => a.id === String(id))
   if (!found) throw new NotFound(`Edge account '${id}' not found`)
   return found
@@ -135,12 +135,12 @@ const sendFor = (a: EdgeAccount) => {
 /** The workspace's ingress pair as stored, or null when none is set. Read
  *  `asSystem()` confined to the workspace, for `edgeAccounts`' reason: a
  *  developer reads the drift, and the Workspace row is not what they guard. */
-async function ingressPair(): Promise<{ accountId: string; zoneId: string } | null> {
+async function ingressPair(): Promise<{ providerSecretId: string; zoneId: string } | null> {
   const row = await db().asSystem().workspace.findFirst({
     where: { id: ws() }, select: { ingressSecretId: true, ingressZoneId: true },
   }) as { ingressSecretId: string | null; ingressZoneId: string | null } | null
   if (!row?.ingressSecretId || !row.ingressZoneId) return null
-  return { accountId: row.ingressSecretId, zoneId: row.ingressZoneId }
+  return { providerSecretId: row.ingressSecretId, zoneId: row.ingressZoneId }
 }
 
 /** The refusal for a workspace with no ingress pair — one sentence, said by
@@ -148,8 +148,8 @@ async function ingressPair(): Promise<{ accountId: string; zoneId: string } | nu
 export const NO_INGRESS = 'This workspace has no ingress zone — set one (an edge account and a zone it opens) before a Domain can be pushed'
 
 /** The refusal for an ingress pair whose account the workspace no longer holds. */
-export const ingressAccountGone = (accountId: string) =>
-  `The ingress zone names edge account '${accountId}', which this workspace no longer holds — set it again`
+export const ingressAccountGone = (providerSecretId: string) =>
+  `The ingress zone names edge account '${providerSecretId}', which this workspace no longer holds — set it again`
 
 /** Why a push would be refused for want of an ingress zone, or null when the
  *  pair is set and its account is still held. The cause `records` names
@@ -157,16 +157,16 @@ export const ingressAccountGone = (accountId: string) =>
 export async function ingressRefusal(): Promise<string | null> {
   const pair = await ingressPair()
   if (!pair) return NO_INGRESS
-  return (await edgeAccounts()).some(a => a.id === pair.accountId) ? null : ingressAccountGone(pair.accountId)
+  return (await edgeAccounts()).some(a => a.id === pair.providerSecretId) ? null : ingressAccountGone(pair.providerSecretId)
 }
 
 /** This workspace's ingress zone, or null when none is set. */
 async function ingressZone(accounts: EdgeAccount[]): Promise<ZoneAt | null> {
   const pair = await ingressPair()
   if (!pair) return null
-  const account = accounts.find(a => a.id === pair.accountId)
+  const account = accounts.find(a => a.id === pair.providerSecretId)
   if (!account)
-    throw new Conflict(ingressAccountGone(pair.accountId))
+    throw new Conflict(ingressAccountGone(pair.providerSecretId))
   const { connector, send } = sendFor(account)
   return { account, connector, send, zone: await connector.zone(send, pair.zoneId) }
 }
@@ -270,7 +270,7 @@ async function unpush(domain: DomainRow) {
 export default createService({
   name: 'edge',
   scope: keyScope('edge'),
-  reservedQuery: [...WORKSPACE_QUERY, 'accountId', 'zoneId'],
+  reservedQuery: [...WORKSPACE_QUERY, 'providerSecretId', 'zoneId'],
 
   // `methods:` rather than the scan, for infra.service.ts's reason: a service
   // with no model otherwise answers every CRUD verb it was never given.
@@ -327,7 +327,7 @@ export default createService({
   // Which records are OURS is the mark, which the connector reads.
   async records() {
     const data   = ($.data ?? {}) as Record<string, unknown>
-    const a      = await account(data.accountId ?? $.reserved.accountId)
+    const a      = await account(data.providerSecretId ?? $.reserved.providerSecretId)
     const zoneId = data.zoneId ?? $.reserved.zoneId
     if (!zoneId) throw new BadRequest('zoneId is required — which zone to read')
 
@@ -374,7 +374,7 @@ export default createService({
 
     // In `push`'s order, so the cause named is the refusal a push would make.
     const pair      = await ingressPair()
-    const noIngress = !pair || !(await edgeAccounts()).some(x => x.id === pair.accountId)
+    const noIngress = !pair || !(await edgeAccounts()).some(x => x.id === pair.providerSecretId)
     const missing   = []
     for (const d of inZone.filter(d => !served.has(fqdn(d.hostname)))) {
       const why = noIngress ? 'no-ingress'

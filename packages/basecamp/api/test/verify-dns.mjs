@@ -220,7 +220,7 @@ try {
   // The Domain's own push has run and been skipped — the app runs nowhere, so
   // there is nothing to point at. Waited out rather than raced.
   await sleep(1500)
-  const plan = await edge('records', { accountId: secret?.id, zoneId: 'zone-example' })
+  const plan = await edge('records', { providerSecretId: secret?.id, zoneId: 'zone-example' })
   check('before a release, the hostname is MISSING from its zone — nothing was published pointing nowhere',
     (plan.body?.missing ?? []).some(d => d.hostname === hostname) && !(await cnameAt()).length,
     JSON.stringify(plan.body?.missing))
@@ -256,7 +256,7 @@ try {
   const kept = await aAt()
   check('draining the app\'s only machine leaves its record where it last ran — it is never emptied',
     kept.length === 1 && kept[0].content === one.ipAddress, JSON.stringify(kept))
-  const down = await edge('records', { accountId: secret?.id, zoneId: 'zone-shop' })
+  const down = await edge('records', { providerSecretId: secret?.id, zoneId: 'zone-shop' })
   check('…and drift names the app down', (down.body?.stale ?? []).some(s => s.appId === app.id && s.down),
     JSON.stringify(down.body?.stale))
 
@@ -268,7 +268,7 @@ try {
   const a2 = await until(async () => { const a = await aAt(); return a.length === 1 && a[0].content === two.ipAddress }, 15_000)
   check('the ingress record follows the release to the second machine, with nobody pressing sync', !!a2,
     JSON.stringify(await aAt()))
-  const after = await edge('records', { accountId: secret?.id, zoneId: 'zone-shop' })
+  const after = await edge('records', { providerSecretId: secret?.id, zoneId: 'zone-shop' })
   check('…and no drift is left', !(after.body?.stale ?? []).some(s => s.appId === app.id), JSON.stringify(after.body?.stale))
 
   // ── The first machine comes back with no release: it still runs the old one ──
@@ -293,7 +293,7 @@ try {
   const conflict = await edge('sync', {}, theirs?.id)
   check('…and sync by hand is refused as a conflict, naming the record',
     conflict.status === 409 && String(conflict.body?.message).includes('192.0.2.10'), JSON.stringify(conflict.body))
-  const named = await edge('records', { accountId: secret?.id, zoneId: 'zone-shop' })
+  const named = await edge('records', { providerSecretId: secret?.id, zoneId: 'zone-shop' })
   check('…and drift names it', (named.body?.conflicts ?? []).some(d => d.hostname === 'www.shop.test'))
 
   // ── A deleted Domain takes its record with it ──
@@ -304,7 +304,7 @@ try {
   check('the Domain is deleted', removed.status === 200, JSON.stringify(removed))
   const cleared = await until(async () => (await cnameAt()).length === 0, 15_000)
   check('…and its CNAME leaves Cloudflare', cleared, JSON.stringify(await cnameAt()))
-  const left = await edge('records', { accountId: secret?.id, zoneId: 'zone-example' })
+  const left = await edge('records', { providerSecretId: secret?.id, zoneId: 'zone-example' })
   check('…leaving no orphan behind', !(left.body?.orphans ?? []).some(r => r.name === hostname), JSON.stringify(left.body?.orphans))
   check('…and the app\'s ingress record stays, for its other hostnames', (await aAt()).length === 1, JSON.stringify(await aAt()))
 } catch (err) {

@@ -51,7 +51,7 @@ like a compute account (`FJS-D558`), and `services/edge/` reads through it.
 
 ```
 edge.zones                         → each account, with its zones or the vendor's error
-edge.records(accountId, zoneId)    → the zone's records, and drift: missing · conflicts · orphans · stale
+edge.records(providerSecretId, zoneId) → the zone's records, and drift: missing · conflicts · orphans · stale
 edge.sync(domainId)                → the App's ingress record, then the Domain's CNAME to it (ADMINISTRATOR)
 ```
 
