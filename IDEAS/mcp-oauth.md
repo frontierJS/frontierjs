@@ -547,9 +547,12 @@ expires.
   app row it removed (`meta.clientId`). `revokeSession` on an app writes
   `app.revoked` instead of `session.revoked`, so one query on `operation`
   tells a sign-out from a revocation; `endOtherSessions`, `revokeSessions`
-  and every other path that ends a person's sessions go through it. Proved
-  by `authorized-apps.test.ts` (no entry holds a token or a hash; an image
-  shows `[redacted]`; another person cannot revoke the row).
+  and every other path that ends a person's sessions go through it
+  (`resetTotp`, a password reset, `deleteUser`, a provider sign-in evicting
+  an unverified account), so "which apps lost access" has one answer.
+  Proved by `authorized-apps.test.ts` 9 (no entry holds a token or a hash;
+  an image shows `[redacted]`; another person cannot revoke the row), auth
+  802.
 - [x] 4.4 The sweep removes expired authorized apps and codes (`@@expires`,
       `PURGE`).
   **Proved 2026-11-05** with `sweepNow()`: an expired app row goes, a live
