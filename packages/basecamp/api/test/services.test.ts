@@ -4486,12 +4486,13 @@ describe('a list honors every filter it admits', () => {
     expect(got).toEqual([d2.id])
   })
 
-  test('a hand patch of a release drops its set-once columns and refuses what it recorded (FJS-3863)', async () => {
-    const patched = await env.as(owner).service('deployments').patch(d1.id, { trigger: 'rollback', commitAuthor: 'someone else' })
-    expect(patched.trigger).toBe('button')
-    expect(patched.commitAuthor).toBeNull()
-    for (const data of [{ durationMs: 42 }, { builtImage: 'sha256:' + 'f'.repeat(64) }, { commitSha: 'abc' }, { branch: 'main' }, { finishedAt: '2026-01-01T00:00:00.000Z' }])
-      await expect(env.as(owner).service('deployments').patch(d1.id, data)).rejects.toThrow(/@system/)
+  test('a release cannot be rewritten by hand: deployments mounts no update or patch (FJS-3863)', async () => {
+    const methods = Object.keys((env.app.services.get('deployments') as any).describe().inputs ?? {})
+    expect(methods).not.toContain('update')
+    expect(methods).not.toContain('patch')
+    for (const verb of ['patch', 'update'])
+      await expect((env.as(owner).service('deployments') as any)[verb](d1.id, { durationMs: 42, builtImage: 'sha256:' + 'f'.repeat(64) }))
+        .rejects.toThrow()
     const after = await (env.system as any).deployment.findFirst({ where: { id: d1.id } })
     expect(after.durationMs).not.toBe(42)
     expect(after.builtImage).not.toBe('sha256:' + 'f'.repeat(64))

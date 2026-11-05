@@ -235,9 +235,11 @@ export default createService({
   // in the workspace (FJS-031). Declaring both is refused at construction.
   channel: workspaceChannel,
   // The whole surface (`FJS-D1796`): `rollback` states its input, and a
-  // `methods:` list is the surface or a narrowing of it.
+  // `methods:` list is the surface or a narrowing of it. No `update` or
+  // `patch`: every column is `@system` or `@immutable` (`FJS-3863`), so either
+  // would be a tool that writes nothing.
   methods: [
-    'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+    'find', 'get', 'aggregate', 'create', 'remove', 'restore',
     'rebind', 'startRun', 'stepStatus', 'finishRun',
     { method: 'rollback', input: 'DeploymentRollback' },
     // What `rollback` with `isRestoringVolume` would put back. Writes nothing.

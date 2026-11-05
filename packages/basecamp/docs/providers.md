@@ -50,9 +50,9 @@ Not in `app.providers`: a Cloudflare token is a `providerKey` Secret, registered
 like a compute account (`FJS-D558`), and `services/edge/` reads through it.
 
 ```
-edge.zones                         → each account, with its zones or the vendor's error
+edge.zones                             → each account, with its zones or the vendor's error
 edge.records(providerSecretId, zoneId) → the zone's records, and drift: missing · conflicts · orphans · stale
-edge.sync(domainId)                → the App's ingress record, then the Domain's CNAME to it (ADMINISTRATOR)
+edge.sync(domainId)                    → the App's ingress record, then the Domain's CNAME to it (ADMINISTRATOR)
 ```
 
 **What the adapter adds is the other side of a `Domain` row** — the zone's own

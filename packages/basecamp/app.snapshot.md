@@ -554,7 +554,7 @@ name when it declares none.
 
 ### `deployments` · model `Deployment`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `rebind`, `startRun`, `stepStatus`, `finishRun`, `rollback`, `rollbackCopy`
+- **methods** — `find`, `get`, `aggregate`, `create`, `remove`, `rebind`, `startRun`, `stepStatus`, `finishRun`, `rollback`, `rollbackCopy`
 - **custom methods** — `rebind`, `startRun`, `stepStatus`, `finishRun`, `rollback`, `rollbackCopy`
 - **input** — `rollback` takes `DeploymentRollback`
 - **who may call** —
