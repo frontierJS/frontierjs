@@ -658,6 +658,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `expiresAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `ingressSecretId` | `string`? | — | — | — | — |
 | `ingressZoneId` | `string`? | — | — | — | — |
+| `ingressZone` | `string`? | — | — | `x-litestone-kind` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `accountId`, `name`, `slug` · not accepted — `id`, `version`

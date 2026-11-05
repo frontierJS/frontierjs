@@ -218,6 +218,7 @@ CREATE TABLE IF NOT EXISTS "workspace" (
   "expiresAt" TEXT,
   "ingressSecretId" TEXT,
   "ingressZoneId" TEXT,
+  "ingressZone" TEXT,
   "pushTopic" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -226,6 +227,7 @@ CREATE TABLE IF NOT EXISTS "workspace" (
   CHECK ("kind" IN ('personal', 'team', 'enterprise', 'demo')),
   CHECK ("status" IN ('active', 'suspended')),
   CHECK ((ingressSecretId IS NULL) = (ingressZoneId IS NULL)),
+  CHECK ((ingressSecretId IS NULL) = (ingressZone IS NULL)),
   CHECK ((kind = 'demo') = (expiresAt IS NOT NULL)),
   FOREIGN KEY ("accountId") REFERENCES "account" ("id")
 ) STRICT;
