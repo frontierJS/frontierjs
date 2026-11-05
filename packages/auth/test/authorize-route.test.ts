@@ -206,6 +206,12 @@ describe('the steps', () => {
     expect(new URL(res.headers.location!).searchParams.get('error')).toBe('invalid_target')
   })
 
+  test('an absent resource goes back as invalid_request, not invalid_target', async () => {
+    const { resource: _, ...params } = request().params
+    const res = await get(params)
+    expect(new URL(res.headers.location!).searchParams.get('error')).toBe('invalid_request')
+  })
+
   test('response_type other than code goes back as unsupported_response_type', async () => {
     const res = await get(request({ response_type: 'token' }).params)
     expect(new URL(res.headers.location!).searchParams.get('error')).toBe('unsupported_response_type')

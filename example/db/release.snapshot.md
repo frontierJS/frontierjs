@@ -1143,6 +1143,7 @@ table `session` · db `main` · gate `8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `clientId` | `String` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `expiresAt` | `DateTime` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
@@ -1151,8 +1152,11 @@ table `session` · db `main` · gate `8`
 | `impersonationReason` | `String` | yes | — | — |
 | `ipAddress` | `String` | yes | — | — |
 | `isEnrollmentOnly` | `Boolean` | no | `0` | — |
+| `previousRefreshToken` | `String` | yes | — | @guarded |
 | `reauthenticatedAt` | `DateTime` | yes | — | — |
-| `token` | `String` | no | — | unique · @guarded · **required on write** |
+| `refreshToken` | `String` | yes | — | unique · @guarded |
+| `rotatedAt` | `DateTime` | yes | — | — |
+| `token` | `String` | yes | — | unique · @guarded |
 | `userAgent` | `String` | yes | — | — |
 | `userId` | `String` | no | — | **required on write** |
 

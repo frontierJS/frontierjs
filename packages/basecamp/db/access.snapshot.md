@@ -762,6 +762,8 @@ rather than refusing the row.
 | `Server` | `backupReading` | `@system` |
 | `ServerEvent` | `noticeOwedAt` | `@system` |
 | `Session` | `token` | `@guarded` |
+| `Session` | `refreshToken` | `@guarded` |
+| `Session` | `previousRefreshToken` | `@guarded` |
 | `User` | `email` | `@allow(write, auth().isSystemAdmin)` |
 | `User` | `isEmailVerified` | `@allow(write, auth().isAdmin)` |
 | `User` | `accountId` | `@allow(write, auth().isSystemAdmin)` |

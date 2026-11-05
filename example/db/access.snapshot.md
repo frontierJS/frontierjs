@@ -279,6 +279,8 @@ rather than refusing the row.
 | `PushSubscription` | `auth` | `@encrypted` |
 | `Run` | `context` | `@encrypted` |
 | `Session` | `token` | `@guarded` |
+| `Session` | `refreshToken` | `@guarded` |
+| `Session` | `previousRefreshToken` | `@guarded` |
 | `Subscription` | `cancelledAt` | `@system` |
 | `Subscription` | `isCancelingAtPeriodEnd` | `@system` |
 | `Subscription` | `userId` | `@system` |

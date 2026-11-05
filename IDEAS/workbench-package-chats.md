@@ -63,9 +63,10 @@ source (paths touched). Neither colors by default without a fixed palette.
 
 ## Recommended setup
 
-- **The package is inferred, with an override.** The member with the most
-  `edit`/`write` paths in a chat is its package. A chat with no writes, or with
-  writes spread so no member holds a clear majority, is *repo-wide*. The tab's
+- **The package is inferred, with an override.** The member holding more than
+  half of a chat's `edit`/`write` paths that fall inside a member is its
+  package. Root files such as `ISSUES.md` don't count toward any member (0.1).
+  A chat with no member writes, or with no member above half, is *repo-wide*. The tab's
   menu sets an override — a member, or repo-wide — kept on the `Chat` as
   `package`. Absent means inferred, and an override naming a member that has
   since gone falls back to inferred. This is Q1.
@@ -120,10 +121,39 @@ Done when: a table of the chats under `~/.config/workbench/logs`, split into
 single-package, mixed and no-writes, is pasted under 0.1, with how often a
 chat's majority package changed between runs.
 
-- [ ] 0.1 Fold every chat log with the `edit`/`write` events counted per member
+- [x] 0.1 Fold every chat log with the `edit`/`write` events counted per member
   (`memberOfFile`) and print the split, plus how many chats changed majority
   from one run to the next. It decides Q1's majority line and whether the
   idle-only regroup is enough.
+  - **Sample.** `~/.config/workbench/logs` holds 4 chats with one prompt each
+    and no `edit`/`write` at all, so the fold ran over this repo's 2,728 Claude
+    Code transcripts instead (a Workbench chat is the same `claude` session).
+    These are main-thread `Edit`/`Write`/`MultiEdit` paths only. Subagent and
+    Bash writes are not counted, the same blind spot the stream has.
+
+    | Chats (2,728) | Count | Share |
+    | --- | --- | --- |
+    | No writes inside the repo | 990 | 36% |
+    | Writes to root files only (`ISSUES.md`, `DECISIONS.md`, `IDEAS/`) | 290 | 11% |
+    | One member | 1,173 | 43% |
+    | Several members, one above 50% | 215 | 8% |
+    | Several members, none above 50% (46 are exact ties) | 60 | 2% |
+
+    | Of the 1,448 chats that write to a member | ≥ 50% | > 50% | ≥ 60% | ≥ 67% | ≥ 90% |
+    | --- | --- | --- | --- | --- | --- |
+    | Top member's share of member writes | 99% | 96% | 94% | 88% | 82% |
+
+  - **Root files must not count.** With root writes counted as a group, root
+    is the top group in 338 chats, more than any package. Filing an issue would
+    make a litestone chat repo-wide. The share is taken over member writes only.
+  - **The line is a strict majority, above 50%.** It places 96% of chats that
+    write to a member, and a tie stays repo-wide. 67% would push another 8% to
+    repo-wide and is a number no one could predict from the label. The
+    change-between-runs rate below was measured only at the 50% line. If
+    regrouping churns in real use, 67% is how to reopen this.
+  - **Regrouping only when idle is enough.** 144 chats wrote in two or more
+    runs. The majority changed in 14 of them (10%), 15 changes in total. Median
+    writes per chat are 4 (p90 13), and most chats are one run long.
 - [ ] 0.2 Run `workspaceMembers` against each pinned checkout and the
   `fjs-prototypes` repos. List which have no workspaces, which throw, and which
   use `pnpm-workspace.yaml`.
@@ -132,8 +162,9 @@ chat's majority package changed between runs.
 
 Goal: `ChatStatus` carries `package`, inferred or overridden.
 Done when: `packages/workbench/api/test/services.test.ts` covers inferred,
-override, repo-wide and a checkout that has no workspaces, and `fli done` is
-clean.
+override, repo-wide and a checkout that has no workspaces, plus 0.1's rule:
+root-only writes, an exact tie, and many root writes with one member write.
+`fli done` is clean.
 
 - [ ] 1.1 Members per pin, read through `loadCli`'s pattern from
   `workspace-members.js`, re-read when the root `package.json` mtime moves. A

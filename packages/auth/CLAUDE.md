@@ -29,7 +29,7 @@ touching a login path, a credential write, a `.lite` fragment or a callback.
 - **Only a `kind: user` signs in, and `issueSession` is where that is refused** (`FJS-D1198`). A bot or peer holds API keys only.
 - **A refused proof inside a live session is 403, never 401** (`FJS-1088`) — sierra signs the person out on a 401. `login()` and `completeLogin` hold no session and keep 401.
 - **A credential change asks whether the SESSION proved a password recently** (`FJS-D1209`): `fresh(user)` after `refuseDelegated` on every method that changes how the account signs in, and such a change ends every OTHER session through `endOtherSessions` (`FJS-D1208`).
-- **A support operator and an agent over `/mcp` are refused the same writes** — `refuseDelegated(ctx, user, what)` on every credential write, never on a read (`FJS-1795`, `FJS-D628`).
+- **A support operator, an agent over `/mcp` and an authorized app are refused the same writes** — `refuseDelegated(ctx, user, what)` on every credential write, never on a read (`FJS-1795`, `FJS-D628`).
 - **Ownership is in the WHERE.** No service method takes a user id; `revokeSession` and `revokeApiKey` put `userId` into the delete, never check after a read.
 - **A new password is graded in ONE place, `requireStrongPassword`**, before a token is spent (`FJS-2349`); `test/harness.ts` sets `min: 1`.
 - **An app IMPORTS `db/auth.lite` and says the rest with `extend model`**, never pastes — a pasted copy drifted `@secret` to `@guarded` with 137 green tests either side. `User` alone is APPENDED (`@@gate(4.4.4.5)`, the other models `8`); `@@db(main)` in the shipped `.lite` is load-bearing to `retargetDb` (`FJS-038`).
@@ -49,7 +49,7 @@ methods, `account-recovery`, `onCredentialChanged` — also runs `example`:
 only place a notification is read back out of an outbox.
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
-auth.ts authorize.ts cleanup.ts clients.ts crypto.ts errors.ts index.ts oauth.ts package.json plugin.ts schema.ts 
+auth.ts authorize.ts cleanup.ts clients.ts crypto.ts errors.ts index.ts oauth.ts package.json plugin.ts schema.ts token.ts 
 services.ts tenancy.ts totp.ts types.ts Authorize.mesa authorize-page.snapshot.js
 authorize-page.snapshot.d.ts 
 -->

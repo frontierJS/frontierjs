@@ -399,6 +399,28 @@ console.log('\nan account with a second factor')
      String(again.callback.headers.get('location')))
 }
 
+// ─── /auth/token ───────────────────────────────────────────────────────────
+//
+// The connector's code-for-token trade (`FJS-D1927`). The drive holds no
+// client document, so it proves only the refusals a stranger can reach:
+// RFC 6749 § 5.2's JSON, and never a cached answer.
+{
+  const token = (fields) => fetch(`${API}/api/auth/token`, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields),
+  })
+  const bad = await token({ grant_type: 'authorization_code', code: 'nope', code_verifier: 'v'.repeat(43),
+    client_id: 'https://claude.ai/oauth/claude-code-client-metadata', redirect_uri: 'http://localhost:51234/callback',
+    resource: `${API}/api/mcp` })
+  const badBody = await bad.json().catch(() => null)
+  ok('/api/auth/token refuses an unknown code as 400 invalid_grant, not stored',
+     bad.status === 400 && badBody?.error === 'invalid_grant' && bad.headers.get('cache-control') === 'no-store',
+     `${bad.status} ${JSON.stringify(badBody)} ${bad.headers.get('cache-control')}`)
+  const other = await token({ grant_type: 'client_credentials', client_id: 'x' })
+  const otherBody = await other.json().catch(() => null)
+  ok('/api/auth/token answers a grant it does not serve with unsupported_grant_type',
+     other.status === 400 && otherBody?.error === 'unsupported_grant_type', `${other.status} ${JSON.stringify(otherBody)}`)
+}
+
 // ─── Result ────────────────────────────────────────────────────────────────
 
 console.log(`\n${pass} passed, ${fail} failed\n`)

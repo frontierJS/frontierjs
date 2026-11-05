@@ -227,10 +227,31 @@ The service's test runs both verbs against a stub Basecamp, the shape of
   with the `HubBackup` row Basecamp recorded as `success`; the Restart confirm
   opened and cancelled; no console error or failed request. The live restart
   from the page is 0.3.
-- [ ] 3.3 Create is a form over `basecamp:create --yes`, run as a job whose output
+- [x] 3.3 Create is a form over `basecamp:create --yes`, run as a job whose output
   streams to the page, since a box takes minutes. The form says the box is
   billed from that moment and that undoing it is `fli server:destroy` (Q3).
   Proved here with `--dry`; the first purchase from the page is the owner's.
+  **Built 2026-11-05:** `web/src/routes/basecamps/new/index.mesa` over two more
+  service methods, `provision` (a write: the API spawns `fli basecamp:create
+  --yes … --approved` detached, its log under `WORKBENCH_DIR/logs/`) and
+  `creation` (the held run with the tail of its log, polled until it exits);
+  `domain/basecamps/basecamps-create.ts`, `api/test/basecamps-create.test.ts`.
+  The page's confirm is the person's yes that `confirm: human` asks for, so
+  `--approved` goes with it, as `fli gui` sends. The method is `provision`
+  because `create` is every service's CRUD name. Driving it found that
+  `basecamp:create --dry` bought anyway — buying runs its own provisioner, and
+  `--dry` intercepts only `$.exec` (`FJS-4048`, closed: the command stops at its
+  summary). Driven in Chrome against the real tokens: a hostname in no zone the
+  token opens exits 1 with Cloudflare's refusal in the log; `dry-proof.awe.dev`
+  prints the summary and "The plan ran. Nothing was bought."; no console error
+  or failed request. The held run is in memory, so an API restart forgets it
+  while the log file stays.
+
+**Done 2026-11-05.** Every verb is on the screen and driven with the real index.
+Found: a service over `cli/core` by path needs the cli's own readings
+(`basecampApi()`) rather than Basecamp's config, and a dry run is only a proof
+once the command answers `--dry` itself. Still the owner's: a live Restart on a
+box (0.3) and the first purchase from the page.
 
 ## Open questions
 

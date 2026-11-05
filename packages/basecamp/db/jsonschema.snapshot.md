@@ -313,6 +313,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `impersonatingUserId` | `string`? | — | — | — | — |
 | `impersonationReason` | `string`? | — | — | — | — |
 | `impersonationEndsAt` | `string`? | — | — | `format: "date-time"` | — |
+| `clientId` | `string`? | — | — | — | — |
+| `rotatedAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `userId`, `expiresAt` · not accepted — `id`
 

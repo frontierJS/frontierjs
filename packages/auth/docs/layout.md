@@ -11,6 +11,9 @@ clients.ts   the client registry for /authorize (`FJS-D1929`): a client's
              metadata document (CIMD) fetched through junction's
              `fetchPublicJson`, graded, and cached no longer than its
              max-age; `checkRedirect`, `isLoopbackOnly`, `clientHost`
+token.ts     POST /token (RFC 6749 § 3.2): the code and refresh grants,
+             answered as § 5's JSON; one mapping, `answerRefusal`, turns a
+             refusal into its 400; mounted where the auth has `encryptionKey`
 oauth.ts     the OAuth flow engine — the URL, the code-for-token trade, the
              normalized identity. No HTTP, no database, no session — plugin.ts
              owns the routes and auth.ts decides who the identity is
