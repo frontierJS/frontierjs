@@ -916,15 +916,15 @@ const autoKey = (key, dbName) => dbName === 'main' ? key : `${key}:${dbName}`
 
 function readAutoHash(rawDb, dbName) {
   try {
-    return rawDb.query(`SELECT value FROM "${AUTO_META_TABLE}" WHERE key = ?`).get(autoKey(AUTO_HASH_KEY, dbName))?.value ?? null
+    return rawDb.query(`SELECT value FROM ${quoteIdent(AUTO_META_TABLE)} WHERE key = ?`).get(autoKey(AUTO_HASH_KEY, dbName))?.value ?? null
   } catch { return null }   // meta table doesn't exist yet
 }
 
 function writeAutoHash(rawDb, dbName, hash) {
   try {
-    rawDb.run(`CREATE TABLE IF NOT EXISTS "${AUTO_META_TABLE}" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+    rawDb.run(`CREATE TABLE IF NOT EXISTS ${quoteIdent(AUTO_META_TABLE)} (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
     rawDb.run(
-      `INSERT INTO "${AUTO_META_TABLE}" (key, value) VALUES (?, ?)
+      `INSERT INTO ${quoteIdent(AUTO_META_TABLE)} (key, value) VALUES (?, ?)
        ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
       autoKey(AUTO_HASH_KEY, dbName), hash
     )
@@ -939,7 +939,7 @@ function writeAutoHash(rawDb, dbName, hash) {
 // once and going quiet is how it stops being known.
 function readAutoResidue(rawDb, dbName) {
   try {
-    const v = rawDb.query(`SELECT value FROM "${AUTO_META_TABLE}" WHERE key = ?`).get(autoKey(AUTO_RESIDUE_KEY, dbName))?.value
+    const v = rawDb.query(`SELECT value FROM ${quoteIdent(AUTO_META_TABLE)} WHERE key = ?`).get(autoKey(AUTO_RESIDUE_KEY, dbName))?.value
     const parsed = v ? JSON.parse(v) : null
     return Array.isArray(parsed) && parsed.length ? parsed : null
   } catch { return null }
@@ -948,10 +948,10 @@ function readAutoResidue(rawDb, dbName) {
 function writeAutoResidue(rawDb, dbName, residue) {
   const key = autoKey(AUTO_RESIDUE_KEY, dbName)
   try {
-    rawDb.run(`CREATE TABLE IF NOT EXISTS "${AUTO_META_TABLE}" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
-    if (!residue?.length) { rawDb.run(`DELETE FROM "${AUTO_META_TABLE}" WHERE key = ?`, key); return }
+    rawDb.run(`CREATE TABLE IF NOT EXISTS ${quoteIdent(AUTO_META_TABLE)} (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+    if (!residue?.length) { rawDb.run(`DELETE FROM ${quoteIdent(AUTO_META_TABLE)} WHERE key = ?`, key); return }
     rawDb.run(
-      `INSERT INTO "${AUTO_META_TABLE}" (key, value) VALUES (?, ?)
+      `INSERT INTO ${quoteIdent(AUTO_META_TABLE)} (key, value) VALUES (?, ?)
        ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
       key, JSON.stringify(residue)
     )

@@ -70,7 +70,7 @@ export class LocalProvider {
   async stream(/** @type {string} */ key) {
     const path = this._filePath(key)
     if (!existsSync(path)) throw new Error(`File not found: ${key}`)
-    return /** @type {ReadableStream<Uint8Array>} */ (Readable.toWeb(createReadStream(path)))
+    return /** @type {ReadableStream<Uint8Array>} */ (/** @type {unknown} */ (Readable.toWeb(createReadStream(path))))
   }
 
   // The file's absolute path, for a tool that reads a file by name (ffmpeg).

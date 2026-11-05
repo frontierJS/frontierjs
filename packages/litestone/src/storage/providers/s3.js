@@ -93,6 +93,7 @@ export class S3Provider {
 
   // ── Upload ────────────────────────────────────────────────────────────────
 
+  /** @returns {Promise<void>} */
   async put(/** @type {string} */ key, /** @type {any} */ body, { contentType = 'application/octet-stream', size } = /** @type {{ contentType?: string, size?: number }} */ ({})) {
     const url     = this._objectUrl(key)
     const headers = /** @type {Record<string, string>} */ ({ 'content-type': contentType })
@@ -131,6 +132,7 @@ export class S3Provider {
   // in heap at a time; a stream that ends inside its first part is an ordinary
   // PUT of those bytes, since an upload of one small part is only extra requests.
   // A failure after the upload began aborts it, so no parts are left billing.
+  /** @returns {Promise<void>} */
   async _putMultipart(/** @type {string} */ key, /** @type {ReadableStream} */ body, /** @type {{ contentType: string, size?: number }} */ { contentType, size }) {
     const partSize = Math.max(PART_SIZE, Math.ceil((size ?? 0) / MAX_PARTS))
     const parts    = partsOf(body, partSize)
@@ -146,12 +148,12 @@ export class S3Provider {
     const upload = `uploadId=${encodeURIComponent(uploadId)}`
     const etags  = /** @type {string[]} */ ([])
     try {
-      let part = first
+      let part = /** @type {IteratorResult<Uint8Array, void>} */ (first)
       for (;;) {
         const number = etags.length + 1
         if (number > MAX_PARTS)
           throw new Error(`fromStream to provider ${this._provider} passed ${MAX_PARTS} parts of ${partSize} bytes -- state its size so the parts can be larger`)
-        const res = await this._send('PUT', `${url}?partNumber=${number}&${upload}`, {}, part.value, `multipart part ${number}`)
+        const res = await this._send('PUT', `${url}?partNumber=${number}&${upload}`, {}, /** @type {Uint8Array} */ (part.value), `multipart part ${number}`)
         const etag = res.headers.get('etag')
         if (!etag) throw new Error(`S3 multipart part ${number} returned no ETag for ${key}`)
         etags.push(etag)
@@ -174,7 +176,7 @@ export class S3Provider {
   // One signed request whose body is already in hand.
   async _send(/** @type {string} */ method, /** @type {string} */ url, /** @type {Record<string, string>} */ headers, /** @type {Uint8Array | null} */ body, /** @type {string} */ what) {
     const signed = await signRequest(method, url, headers, body, this._opts())
-    const res    = await fetch(url, { method, headers: { ...headers, ...signed }, ...(body ? { body } : {}) })
+    const res    = await fetch(url, { method, headers: { ...headers, ...signed }, ...(body ? { body: /** @type {BodyInit} */ (body) } : {}) })
     if (!res.ok) {
       const text = await res.text().catch(() => '')
       throw new Error(`S3 ${what} failed (${res.status}): ${text}`)

@@ -95,8 +95,7 @@ import { randomBytes }  from 'node:crypto'
 import { networkInterfaces } from 'node:os'
 import { signRequest, verifyRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { ensureCert }   from '../src/cert.js'
-import { routeId, createIngress } from '../src/ingress.js'
-import { createDocker } from '../src/docker.js'
+import { routeId } from '../src/ingress.js'
 import { DEFAULT_HEALTH_TIMEOUT_S, DEFAULT_STOP_GRACE_S } from '../src/swap.js'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..')

@@ -53,7 +53,7 @@ import { packageTable }         from './package-table.js'
 // migrated to the `###` heading form and the hand reader here, keyed to the
 // legacy bold lead, went to zero and took the section with it.
 import { readRegisters, registerLayout, readOverviewRows,
-         plain, firstClaim, splitRow } from './registers.js'
+         plain, firstClaim } from './registers.js'
 import { RULES }                from './checks.js'
 import { blockedBy, byHand, envCause } from './next.js'
 import { styleBundle }          from './assets.js'    

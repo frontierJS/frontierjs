@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "drive": "bun test/sendgrid.drive.ts",
-    "test": "bun run drive",
+    "test": "node ../../../scripts/tmp-run.mjs 'bun run drive'",
     "typecheck": "node ../../../scripts/typecheck.mjs"
   },
   "peerDependencies": {

@@ -95,7 +95,7 @@ export function useStorage(/** @type {any} */ config) {
     path(/** @type {any} */ value) {
       const ref = parseRef(value)
       if (!ref) throw new Error('useStorage.path: invalid file reference')
-      return provider.path ? provider.path(ref.key) : null
+      return 'path' in provider ? provider.path(ref.key) : null
     },
 
     // Delete by reference (use carefully — prefer letting the plugin handle this)

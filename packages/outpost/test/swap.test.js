@@ -2,7 +2,7 @@
 // The table is `fixtures/swap-cases.js`, which the cli's suite drives too.
 
 import { describe, test, expect } from 'bun:test'
-import { createSwap, runFlags, logArgs, repointRoutes, healthBudgetS, healthyStatus, DEFAULT_STOP_GRACE_S, DEFAULT_HEALTH_TIMEOUT_S, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S, HEALTHY_STATUS } from '../src/swap.js'
+import { createSwap, runFlags, logArgs, repointRoutes, healthBudgetS, healthyStatus, DEFAULT_STOP_GRACE_S, DEFAULT_HEALTH_TIMEOUT_S, HEALTH_CHECK_TIMEOUT_S, HEALTHY_STATUS } from '../src/swap.js'
 import { CASES, NAME, fakeDaemon, runArgv, imagesOn } from './fixtures/swap-cases.js'
 
 describe('createSwap — the contract table', () => {

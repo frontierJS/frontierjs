@@ -383,10 +383,13 @@ describe('dockerfileScripts', () => {
     expect(await parse(undefined)).toEqual([])
   })
 
-  test('basecamp\'s real Dockerfile asks for exactly one script', async () => {
+  // Its CMD runs the entry file itself rather than a script, so a second bun
+  // process is not kept alive for the container's life; the doctor requires
+  // nothing of its package.json.
+  test('basecamp\'s real Dockerfile runs the entry file and asks for no script', async () => {
     const { readFileSync } = await import('fs')
     const src = readFileSync(resolve(ROOT, '../basecamp/deploy/Dockerfile'), 'utf8')
-    expect(await parse(src)).toEqual(['start'])
+    expect(await parse(src)).toEqual([])
   })
 })
 

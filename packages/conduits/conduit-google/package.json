@@ -17,7 +17,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "bun run drive",
+    "test": "node ../../../scripts/tmp-run.mjs 'bun run drive'",
     "drive": "bun test/google.drive.ts",
     "typecheck": "node ../../../scripts/typecheck.mjs"
   },

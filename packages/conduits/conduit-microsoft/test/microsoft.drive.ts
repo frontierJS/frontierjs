@@ -17,7 +17,7 @@ import { createConduit, type CredentialCaller, type CredentialResolver, type Del
 import { results, report, DRIVE_RESILIENCE } from '../../lib/drive.ts'
 import { startMicrosoftSink, CLIENT_ID, CLIENT_SECRET, MAILBOX } from '../sink.ts'
 import {
-  microsoftTargets, bindMicrosoft, me, listFolders, folder, createFolder, deltaStart, deltaNext, walkDelta, conversation, message, attachmentBytes,
+  microsoftTargets, bindMicrosoft, me, listFolders, folder, createFolder, deltaNext, walkDelta, conversation, message, attachmentBytes,
   createDraft, createReply, patchMessage, sendDraft, moveMessage, findByInternetMessageId, sendMime, authorizeUrl, exchangeCode, linkToRequest,
   microsoftTokenResolver, memoryGrantStore, createSubscription, ensureSubscription, type SubscriptionStore,
   graphChangeDialect, graphLifecycleDialect, subscriptionIdOf, resourceIdOf, handshake, translate, addressesOf, headerOf,
@@ -51,7 +51,6 @@ late.conduit = conduit
 for (const d of Object.values(targets)) await conduit.register(d)
 
 const calls = () => sink.received.length
-const statuses = (re: RegExp) => sink.received.filter(r => re.test(r.path)).map(r => r.status)
 
 // ── the notification receiver: handshake first, then the dialect by hand (no junction here) ──
 const subs = new Map<string, string>()

@@ -64,7 +64,7 @@ try {
   await wait(80)
   const done = await getTask(send, SERP, eid)
   const after = await tasksReady(send, SERP)
-  t('getTask.notReadyThenCollected', { first: notYet.task?.kind, firstCode: notYet.task?.code, then: done.task?.kind, items: (done.task?.result as { items: unknown[] }[] | null)?.[0]?.items.length, leftList: !after.ready?.some(r => r.id === eid) })
+  t('getTask.notReadyThenCollected', { first: notYet.task?.kind, firstCode: notYet.task?.code, after: done.task?.kind, items: (done.task?.result as { items: unknown[] }[] | null)?.[0]?.items.length, leftList: !after.ready?.some(r => r.id === eid) })
 
   const one = await live(send, 'backlinks/referring_domains/live', { target: 'kobami.test', limit: 10 })
   t('live.oneTaskAnsweredInline', { kind: one.task?.kind, hasResult: Array.isArray(one.task?.result), costMicros: one.task?.costMicros })
@@ -86,7 +86,7 @@ process.exit(report(got, {
   'rateLimited.handedToCallerWithWindow':   { kind: 'rate_limited', retryable: true, retryAfterMs: 60000, attempts: 1 },
   'lostPost.notResent':                     { kind: 'timeout', retryable: false, attempts: 1 },
   'lostPost.resolvedByTagInTasksReady':     { found: true, readyIsFree: 200 },
-  'getTask.notReadyThenCollected':          { first: 'not_ready', firstCode: 40602, then: 'ok', items: 3, leftList: true },
+  'getTask.notReadyThenCollected':          { first: 'not_ready', firstCode: 40602, after: 'ok', items: 3, leftList: true },
   'live.oneTaskAnsweredInline':             { kind: 'ok', hasResult: true, costMicros: 600 },
   'live.refusesStandardPath':               true,
   'cost.isMicrosNotCents':                  { sixHundred: 600, nothing: null, tenCents: 100000 },

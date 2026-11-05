@@ -38,7 +38,7 @@ const CEILING: Record<string, number> = {
   'exclusion.js':     3,
   'include.js':       55,
   'migrate.js':       38,
-  'migrations.js':    26,
+  'migrations.js':    21,
   'opportunities.js': 1,
   'parser.js':        18,
   'plugin.js':        2,

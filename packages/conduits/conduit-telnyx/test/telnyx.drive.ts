@@ -7,7 +7,7 @@
 import { createConduit, createStaticResolver } from '@frontierjs/conduit'
 import { results, report, control, DRIVE_RESILIENCE } from '../../lib/drive.ts'
 import { startTelnyxSink } from '../sink.ts'
-import { telnyxTarget, bindSend, sendMessage, getMessage, toE164, verifyTelnyxSignature, keywordOf } from '../src/index.ts'
+import { telnyxTarget, bindSend, sendMessage, toE164, verifyTelnyxSignature, keywordOf } from '../src/index.ts'
 
 const { got, t } = results()
 const KEY = 'KEY_dev'

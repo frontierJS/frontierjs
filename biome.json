@@ -42,7 +42,7 @@
       "linter": { "rules": { "correctness": { "noInnerDeclarations": "off" } } }
     },
     {
-      "includes": ["**/test/**", "packages/cli/core/**", "packages/junction/src/**"],
+      "includes": ["**/test/**", "packages/conduits/*/sink.ts", "packages/cli/core/**", "packages/junction/src/**"],
       "linter": { "rules": { "suspicious": { "noControlCharactersInRegex": "off" } } }
     }
   ]

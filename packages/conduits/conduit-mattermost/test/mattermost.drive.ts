@@ -168,7 +168,7 @@ try {
   const bobEdits = await bob.api<unknown>(postModel.update!(id, { message: 'mine now' }))
   const deleted = await alice.api<unknown>(postModel.delete!(id))
   const afterDelete = await alice.api<unknown>(postModel.update!(id, { message: 'too late' }))
-  t('post.deleteThenGone', { othersEdit: translate(bobEdits.error!, bobEdits.meta.status).kind, deleted: !deleted.error, then: translate(afterDelete.error!, afterDelete.meta.status).kind })
+  t('post.deleteThenGone', { othersEdit: translate(bobEdits.error!, bobEdits.meta.status).kind, deleted: !deleted.error, after: translate(afterDelete.error!, afterDelete.meta.status).kind })
 
   const target = (await postMessage(alice, { channelExternalId: ids.open, message: 'react to me' })).row!
   const reacted = await alice.api<unknown>(reactionModel.create!({ postExternalId: target.externalId, profileExternalId: ids.alice, emojiName: 'thumbsup' }))
@@ -638,7 +638,7 @@ process.exit(report(got, {
   'post.lostWithoutPendingIdIsIndeterminate':  { kind: 'timeout', retryable: false, attempts: 1, postsAdded: 1 },
   'post.rateLimitedWaitReadOffReset':          { kind: 'rate_limited', retryAfterMs: 2000, attempts: 1 },
   'post.patchTouchesOnlyWhatIsPresent':        { path: true, body: { is_pinned: true }, isPinned: true, message: 'hello from the terminal', editedAt: null },
-  'post.deleteThenGone':                       { othersEdit: 'forbidden', deleted: true, then: 'gone' },
+  'post.deleteThenGone':                       { othersEdit: 'forbidden', deleted: true, after: 'gone' },
   'reaction.keyReadsBackThroughDelete':        { key: true, deleted: true, path: true, badEmoji: true, left: 0 },
   'member.keyReadsBackThroughDelete':          { key: true, joinedCanList: true, left: true, leftCannot: 'forbidden' },
   'channel.createPatchDelete':                 { type: 'private', purpose: 'pixels', creator: true, patchBody: { display_name: 'Design & Brand' }, renamed: 'Design & Brand', dup: 'refused', dupCode: 'store.sql_channel.save_channel.exists.app_error', listedBefore: ['design', 'general', 'ops'], deleted: true, listedAfter: ['general', 'ops'], directRefused: true },

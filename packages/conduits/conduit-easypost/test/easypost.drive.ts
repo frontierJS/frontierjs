@@ -9,7 +9,7 @@ import { createHmac } from 'node:crypto'
 import { createConduit, createStaticResolver } from '@frontierjs/conduit'
 import { results, report, control, DRIVE_RESILIENCE } from '../../lib/drive.ts'
 import { startEasyPostSink } from '../sink.ts'
-import { easypostTarget, bindSend, verifyAddress, createShipment, buyLabel, refundLabel, createTracker, verifyEasyPostSignature, type EpEvent } from '../src/index.ts'
+import { easypostTarget, bindSend, verifyAddress, createShipment, buyLabel, refundLabel, createTracker, verifyEasyPostSignature } from '../src/index.ts'
 
 const { got, t } = results()
 const inbox: string[] = [], seenEvents: string[] = []

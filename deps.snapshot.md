@@ -37,7 +37,7 @@ others.
 | `acorn` | `8.18.0` | @frontierjs/mesa `^8.0.0`<br>@frontierjs/site-kit (dev) `^8.0.0`<br>@frontierjs/ui (dev) `^8.0.0` |
 | `css-tree` | `2.3.1` | @frontierjs/email-kit (dev) `^2.0.0`<br>@frontierjs/email-kit (peer) `^2.0.0`<br>@frontierjs/mesa (dev) `^2.0.0`<br>@frontierjs/mesa (optional peer) `^2.0.0` |
 | `happy-dom` | `20.11.6` | @frontierjs/email-kit (dev) `^20.11.6`<br>@frontierjs/email-kit (peer) `^20.11.6`<br>@frontierjs/jetty (dev) `^20.11.6`<br>@frontierjs/mesa (dev) `^20.11.6`<br>@frontierjs/mesa (optional peer) `^20.11.6`<br>@frontierjs/sierra (dev) `^20.11.6`<br>@frontierjs/site-kit `^20.11.6` |
-| `postal-mime` | `4.0.5` | @frontierjs/conduit-mailgun `4.0.5` |
+| `postal-mime` | `4.0.11` | @frontierjs/conduit-mailgun `4.0.11` |
 | `rehype-slug` | `6.0.0` | @frontierjs/mesa (dev) `^6.0.0`<br>@frontierjs/mesa (optional peer) `^6.0.0`<br>@frontierjs/site-kit `^6.0.0` |
 | `rehype-stringify` | `10.0.1` | @frontierjs/mesa (dev) `^10.0.1`<br>@frontierjs/mesa (optional peer) `^10.0.1`<br>@frontierjs/site-kit `^10.0.1` |
 | `remark-gfm` | `4.0.1` | @frontierjs/mesa (dev) `^4.0.1`<br>@frontierjs/mesa (optional peer) `^4.0.1`<br>@frontierjs/site-kit `^4.0.1` |

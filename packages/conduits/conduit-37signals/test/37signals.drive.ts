@@ -53,7 +53,7 @@ import { createConduit, withCache } from '@frontierjs/conduit'
 import type { CredentialCaller, CredentialResolver } from '@frontierjs/conduit'
 import { results, report, control, DRIVE_RESILIENCE } from '@frontierjs/conduit/testing'
 import { startBasecampSink } from '../sink.ts'
-import { basecampTargets, bindBasecamp, translate, basecampTokenResolver, BASECAMP_API_TARGET, BASECAMP_TOKEN_TARGET, BASECAMP_PERSON_TARGET, type GrantStore, type BasecampSend, me, project, projects, recording, todolists, walk, nextLink, type DockEntry,
+import { basecampTargets, bindBasecamp, translate, basecampTokenResolver, BASECAMP_API_TARGET, BASECAMP_PERSON_TARGET, type GrantStore, type BasecampSend, me, project, projects, recording, todolists, walk, nextLink, type DockEntry,
   createTodo, completeTodo, postMessage, comment, chatLine, findCreated, type RichText, pollEvents, FEED_TYPES, type FeedFrom, type FeedFilters, eventJobId, reread,
   basecampStreamDialect, BASECAMP_STREAM_TARGET, type StreamEvent } from '../src/index.ts'
 
@@ -424,7 +424,7 @@ try {
   const afterRefusal = await me(authed)
   t('token.aRefusedRefreshIsAuthFailedOnce', {
     kind: refusedMint.error?.kind, retryable: refusedMint.error?.retryable, lost: [...grant.lost],
-    refreshes: (await refreshes()).length, apiRequests: (await bearers()).length, then: afterRefusal.error?.kind,
+    refreshes: (await refreshes()).length, apiRequests: (await bearers()).length, after: afterRefusal.error?.kind,
   })
 
   grant.refresh = sink.refreshToken
@@ -536,7 +536,7 @@ try {
   const added = await appendEvents([{ event_type: 'todo.created', kind: 'todo_created', recording_id: 1000500 }, { event_type: 'card.created', kind: 'card_created' }])
   const resumed = await pollEvents(send, { position: replay.position! })
   const idle = await pollEvents(send, { position: resumed.position! })
-  t('feed.resumesAfterItsPosition', { ids: resumed.events?.map(e => e.id), added: added.ids[0], next: resumed.next ?? null, then: idle.events?.length })
+  t('feed.resumesAfterItsPosition', { ids: resumed.events?.map(e => e.id), added: added.ids[0], next: resumed.next ?? null, after: idle.events?.length })
 
   await ctl.reset()
   const narrowed = await drain({ since: 0, types: ['todo.created', 'todo.completed'], buckets: [1000147] })
@@ -774,7 +774,7 @@ process.exit(report(got, {
   },
   'token.twoAcrossAnExpiryOneRefresh': { ids: [1000133, 47], refreshes: 2, spent: [['Bearer bc_minted_2', 200], ['Bearer bc_minted_2', 200], ['Bearer bc_minted_2', 200], ['Bearer bc_minted_2', 200], ['Bearer bc_minted_2', 200]] },
   'token.a401RemintsOnceForBoth':     { held: 1000133, ids: [1000133, 1000133], refreshes: 1, statuses: [200, 200, 401, 401] },
-  'token.aRefusedRefreshIsAuthFailedOnce': { kind: 'auth_failed', retryable: false, lost: ['invalid_grant'], refreshes: 1, apiRequests: 1, then: 'auth_failed' },
+  'token.aRefusedRefreshIsAuthFailedOnce': { kind: 'auth_failed', retryable: false, lost: ['invalid_grant'], refreshes: 1, apiRequests: 1, after: 'auth_failed' },
   'token.aFailedRefreshKeepsTheGrant': { throttled: ['auth_failed', true, 1000], outage: ['auth_failed', false], grantKept: true, refreshes: [429, 500, 200], later: 1000133 },
   'token.aRotatedRefreshReachesTheApp': { id: 1000133, rotated: [['bc_refresh', 'bc_refresh_6'], ['bc_refresh_6', 'bc_refresh_7']], sent: ['bc_refresh', 'bc_refresh_6'] },
   'person.spendsTheCallersToken':     { ids: [1000200, 1000201, 1000200], refreshed: ['bc_refresh_ana', 'bc_refresh_ben'], bearers: [true, true] },
@@ -783,7 +783,7 @@ process.exit(report(got, {
   'person.noCallerOrNoStoreFailsClosed': { nobody: 'auth_failed', requests: 0, noGrantsFor: 'TypeError', noStore: 'TypeError' },
   'feed.entersAtThePresent':          { events: [], position: 'string', next: null, since: 'now', types: 16, excludes: false },
   'feed.replayFollowsNextToTheEnd':   { ids: [1000504, 1000511, 1000518, 1000525, 1000532, 1000539, 1000546, 1000553, 1000560, 1000567, 1000574, 1000581], pages: 3, followedWhole: true },
-  'feed.resumesAfterItsPosition':     { ids: [1000588], added: 1000588, next: null, then: 0 },
+  'feed.resumesAfterItsPosition':     { ids: [1000588], added: 1000588, next: null, after: 0 },
   'feed.filtersRideTheQuery':         { ids: [1000532, 1000546, 1000574], types: 'todo.created,todo.completed', buckets: '1000147' },
   'feed.otherFiltersAreFiltersChanged': { kind: 'refused', code: 'filters_changed', retryable: false, events: null, lastApplied: 1000525, reentered: [1000546, 1000574] },
   'feed.belowTheEpochResumesAtIt':    { kind: 'refused', code: 'before_epoch', retryable: false, resume: 'string', ids: [1000567, 1000574, 1000581], fromZero: 1000567 },

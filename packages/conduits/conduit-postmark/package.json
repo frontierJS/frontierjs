@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "drive": "bun test/postmark.drive.ts",
-    "test": "bun run drive",
+    "test": "node ../../../scripts/tmp-run.mjs 'bun run drive'",
     "typecheck": "node ../../../scripts/typecheck.mjs"
   },
   "engines": {

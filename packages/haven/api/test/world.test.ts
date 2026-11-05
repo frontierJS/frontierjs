@@ -82,7 +82,7 @@ test('a pickup lies on floor: each of its cells names it, a cell beside does not
 // A radio whose room is missing or holds no `radio` piece fails silent: no
 // `song` reaches it, or `/music` answers anywhere in the room.
 test('every radio is a room with a radio piece, playing a room with a band', () => {
-  const slugs = new Set(ROOMS.map(r => r.slug))
+  const slugs = new Set<string>(ROOMS.map(r => r.slug))
   for (const [home, band] of Object.entries(RADIOS)) {
     expect(slugs.has(home)).toBe(true)
     expect(BAND_ROOMS.has(band) && slugs.has(band)).toBe(true)

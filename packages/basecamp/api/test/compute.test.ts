@@ -1362,7 +1362,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     })
 
     const report = await env.as(owner).service('servers').call('reconcile', null, {
-      accountId: account.id,
+      providerSecretId: account.id,
     }) as any
 
     expect(report.orphans).toHaveLength(1)
@@ -1388,7 +1388,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     })
 
     const report = await env.as(owner).service('servers').call('reconcile', null, {
-      accountId: account.id,
+      providerSecretId: account.id,
     }) as any
     expect(report.missing.some((m: any) => m.name === 'vanished')).toBe(true)
   })

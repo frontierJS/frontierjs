@@ -93,7 +93,11 @@ export function dueSql(/** @type {any} */ c) {
   const off = c.offset
   if (c.kind === 'instant') {
     if (!off) return { sql: `strftime(${INSTANT}, ${on})`, params: [] }
-    const seconds = off.sign * unitInfo(off.unit).factor
+    const unit = unitInfo(off.unit)
+    // The parser admits only a duration unit here, so an unknown one is a parser
+    // defect; a calendar unit (a month) has no fixed factor and cannot be seconds.
+    if (unit?.factor == null) throw new Error(`commitment offset names a unit without a fixed length: '${off.unit}'`)
+    const seconds = off.sign * unit.factor
     return off.field
       ? { sql: `strftime(${INSTANT}, ${on}, (? * "${off.column}") || ' seconds')`, params: [seconds] }
       : { sql: `strftime(${INSTANT}, ${on}, ?)`, params: [`${seconds * off.value} seconds`] }
