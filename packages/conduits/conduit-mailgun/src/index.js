@@ -1,4 +1,4 @@
-"use strict";
+
 // @frontierjs/conduit-mailgun — Mailgun over conduit.
 //
 // The third mail vendor, chosen for RAW MIME: a route whose forward URL ends
@@ -27,7 +27,7 @@ var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
             s = arguments[i];
-            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+            for (var p in s) if (Object.hasOwn(s, p))
                 t[p] = s[p];
         }
         return t;
@@ -46,7 +46,7 @@ var __createBinding = (this && this.__createBinding) || (Object.create ? (functi
     o[k2] = m[k];
 }));
 var __exportStar = (this && this.__exportStar) || function(m, exports) {
-    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+    for (var p in m) if (p !== "default" && !Object.hasOwn(exports, p)) __createBinding(exports, m, p);
 };
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }

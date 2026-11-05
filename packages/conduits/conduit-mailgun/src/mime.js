@@ -1,4 +1,4 @@
-"use strict";
+
 // src/mime.ts — raw RFC 5322 bytes to one `ReceivedMail`.
 //
 // The parser `FJS-D784` said the first raw-MIME vendor would bring. Mailgun's
@@ -25,7 +25,7 @@ var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
             s = arguments[i];
-            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+            for (var p in s) if (Object.hasOwn(s, p))
                 t[p] = s[p];
         }
         return t;

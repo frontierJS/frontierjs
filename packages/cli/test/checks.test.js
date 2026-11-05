@@ -5611,7 +5611,7 @@ describe('seam-owner', () => {
     // inside its own package reads, and the only shape that rots quietly.
     const root = tree('seam-gone', {
       ...SEAMS('- `$setAuth(user)` — the checkpoint — `litestone/src/core/client.js`'),
-      'packages/litestone/package.json': '{\"name\":\"@frontierjs/litestone\"}',
+      'packages/litestone/package.json': '{"name":"@frontierjs/litestone"}',
       'packages/litestone/src/index.js': 'export const x = 1\n',
     })
     const { findings } = only(root, 'seam-owner', { scope: 'repo' })
