@@ -1113,6 +1113,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
   /** @type {any[]} */
   const hoistedParams = []
   if (hoisted) {
+    /** @type {Record<string, any>} */
     const eq = {}
     for (const k of hoisted) eq[k] = where[k]
     hoistedSql = buildWhere(eq, hoistedParams, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)
@@ -1134,6 +1135,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
       // Each branch binds the hoisted values again, in the order its SQL reads them.
       const parts = []
       for (const w of val) {
+        /** @type {any[]} */
         const own = []
         const sql = buildWhere(w, own, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)
         if (!sql) continue

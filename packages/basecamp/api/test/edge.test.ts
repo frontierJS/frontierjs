@@ -991,7 +991,7 @@ describe('a deleted App', () => {
 // dispatch the job itself and race these calls.
 
 describe('the ingress wildcard', () => {
-  let site: any, good: any, one: any, two: any
+  let site: any, good: any, one: any
   const tag = () => Math.random().toString(36).slice(2, 8)
   const sys = () => env.system as any
   const fresh = async () => await sys().workspace.findFirst({ where: { id: site.id } })
@@ -1018,7 +1018,6 @@ describe('the ingress wildcard', () => {
   const quick = async () => {}
 
   beforeAll(async () => {
-    const { grantsFor } = await import('../src/core/capabilities.ts')
     const acct = await sys().account.create({ data: { slug: `wild-${tag()}`, displayName: 'Wild' } })
     site = await sys().workspace.create({ data: { accountId: acct.id, name: 'Wild', slug: `wild-${tag()}` } })
     good = await sys().secret.create({ data: { workspaceId: site.id, name: 'cf-wild', kind: 'providerKey', providerKind: 'cloudflare',
@@ -1030,7 +1029,7 @@ describe('the ingress wildcard', () => {
       return row
     }
     one = await server('one', ['checkIn'])
-    two = await server('two', ['checkIn'])
+    await server('two', ['checkIn'])
     await server('three', ['checkIn', 'drain'])
     await new Promise(r => setImmediate(() => setImmediate(r)))
     await sys().workspace.update({ where: { id: site.id }, data: { ingressSecretId: good.id, ingressZoneId: 'zone-shop', ingressZone: 'shop.test',

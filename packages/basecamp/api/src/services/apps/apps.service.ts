@@ -361,7 +361,7 @@ export async function retireAppsIn(app: App, environmentIds: string[]): Promise<
  */
 export async function unpublishAppsIn(appIds: string[]): Promise<void> {
   if (!appIds.length) return
-  const domains = await ($.app.db as any).asSystem().domain.findMany({
+  const domains = await db().domain.findMany({
     where: { appId: { in: appIds } }, withDeleted: true, select: { id: true, version: true },
   }) as { id: string, version: number }[]
   for (const d of domains) await toZone(d.id, `${d.version}:app-removed`)
