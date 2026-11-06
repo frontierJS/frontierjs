@@ -1,7 +1,8 @@
 // src/domain/workbench/workbench-run.ts — what a pinned checkout can START, and reading one back.
 //
-// The Run tab of a workbench card: `fli dev` for each app in the checkout, and
-// the package.json scripts of the checkout and its apps. The inventory is fli's
+// The Run tab of a workbench card: `fli dev` for each app in the checkout, the
+// package.json scripts of the checkout and its apps, and each workspace
+// member's own `bun run test`. The apps and scripts are fli's
 // (`findApps` and `tasks` in `@frontierjs/cli/core/runnables.js`), so a row here
 // and a row in `fli gui` are one row. A request names a row ID and never a
 // command; the argv comes from the inventory, which comes from the tree.
@@ -21,7 +22,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 export type Runnable = {
   id:     string
-  kind:   'app' | 'script'
+  kind:   'app' | 'script' | 'test'
   name:   string
   /** Where it runs, relative to the checkout; `.` is the checkout itself. */
   dir:    string
@@ -68,8 +69,9 @@ function readJson(path: string): Record<string, any> | null {
   try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null }
 }
 
-/** Every app in the checkout with `fli dev`, then every script. */
-export async function inventory(root: string, name: string): Promise<Runnable[]> {
+/** Every app in the checkout with `fli dev`, then every script, then each
+ *  member's test where no script row already runs it. */
+export async function inventory(root: string, name: string, members: Array<{ name: string, path: string }> = []): Promise<Runnable[]> {
   const { findApps, tasks } = await loadCli()
   const apps: Runnable[] = findApps(root).map(dir => {
     const rel = relative(root, dir) || '.'
@@ -81,7 +83,24 @@ export async function inventory(root: string, name: string): Promise<Runnable[]>
   const scripts: Runnable[] = tasks(root).map(t => ({
     id: t.id, kind: 'script', name: t.name, dir: t.dir, start: t.start, argv: t.argv, script: t.run ?? null,
   }))
-  return [...apps, ...scripts]
+  const claimed = new Set(scripts.map(r => `${r.dir} ${r.start}`))
+  return [...apps, ...scripts, ...memberTests(root, members).filter(r => !claimed.has(`${r.dir} ${r.start}`))]
+}
+
+/**
+ * A member's `test` script as a row, `test:<path>`. `tasks` leaves members'
+ * scripts out (a row per package script is an inventory nobody reads), so the
+ * page draws only the one for the shown chat's package. Read fresh, not off
+ * the member list's cache: that moves with the root package.json only.
+ */
+function memberTests(root: string, members: Array<{ name: string, path: string }>): Runnable[] {
+  const out: Runnable[] = []
+  for (const m of members) {
+    const script = readJson(join(root, m.path, 'package.json'))?.scripts?.test
+    if (typeof script !== 'string') continue
+    out.push({ id: `test:${m.path}`, kind: 'test', name: m.name, dir: m.path, start: 'bun run test', argv: ['bun', 'run', 'test'], script })
+  }
+  return out
 }
 
 /**

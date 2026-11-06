@@ -5,7 +5,7 @@ skip: "!$.config.doApi"
 ---
 
 ```js
-const { imageTag, deployConf } = $.config
+const { imageTag } = $.config
 const { host, path: serverPath } = $.config.api
 
 // Where the image is BUILT. Defaults to the api target, so an app that declares
@@ -15,7 +15,7 @@ const { host, path: serverPath } = $.config.api
 // declared machine rather than *this laptop*: building locally by default trades
 // server drift for developer-machine drift, which is worse.
 const builder     = $.config.builder ?? $.config.api
-const dockerfile  = deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
+const dockerfile  = $.config.dockerfile
 const machine     = machineFor($, builder.host, builder.path)
 const target      = machineFor($, host, serverPath)
 // 02-ship extracted the app here, vendored dependencies included.

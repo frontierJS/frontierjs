@@ -287,7 +287,8 @@ export function generateTypeScript(schema, opts = {}) {
     // write is refused unless `system: ['col']` names it. Create and Update
     // leave it out and the TableClient's write signatures bring it back for
     // exactly the names `system` carries, so a write that would be refused at
-    // run time does not typecheck. Optional throughout: whether the column is
+    // run time does not typecheck. asSystem() is not refused and its client
+    // (`__Sudo`) takes the column in data bare. Optional throughout: whether the column is
     // required is the runtime's to say, and it does.
     const systemFields = model.fields.filter(f => f.type.kind !== 'relation' && isSystemField(f))
     if (systemFields.length) {
@@ -499,6 +500,8 @@ export interface CursorResult<T> {`,
     ``,
     `/** The \`@system\` columns a write may carry in its data: the ones its \`system\` names. */`,
     `type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>`,
+    `/** The client \`asSystem()\` returns: it writes a \`@system\` column with no \`system\` naming it, so every table takes the column in data. */`,
+    `type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D> ? TableClient<R, C & D, U & D, W, Rel, M, S, D> : T[K] }`,
     ``,
     `/** What \`include\` may name: a relation, or \`_count\`. A relation takes \`true\` or its own read options. */`,
     `export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }`,
@@ -658,7 +661,7 @@ export interface CursorResult<T> {`,
   lines.push(
     ``,
     `  // Auth scoping`,
-    `  asSystem(): LitestoneClient`,
+    `  asSystem(): __Sudo<LitestoneClient>`,
     `  $setAuth(user: Record<string, unknown>): LitestoneClient`,
     `  $scopedBy(scope: Record<string, unknown>): LitestoneClient`,
     ``,

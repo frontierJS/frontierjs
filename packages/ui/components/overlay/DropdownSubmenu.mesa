@@ -201,6 +201,8 @@
       style:position="fixed"
       style:min-inline-size="10rem"
       style:max-inline-size="16rem"
+      style:max-block-size="calc(100dvh - 16px)"
+      style:overflow-y="auto"
       style:padding="0.25rem"
       style:left="{x}px"
       style:top="{y}px"

@@ -13,7 +13,7 @@ import { sessionScope, workspaceChannel, getPagination, refuseProtectedForDevelo
   from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
-import { retireAppsIn }         from '../apps/apps.service.ts'
+import { retireAppsIn, unpublishAppsIn } from '../apps/apps.service.ts'
 import { syncReplicasOf }       from '../../jobs/replicate-sync.job.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -79,6 +79,7 @@ export default createService({
     // no machine, so the Apps are retired first.
     const apps    = await retireAppsIn($.app, [env.id])
     const removed = await removeScoped('environment', 'Environment')
+    await unpublishAppsIn(apps.map(a => a.id))
     await syncReplicasOf($.app, apps.map(a => a.id))
     return { ...removed, apps }
   },

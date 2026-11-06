@@ -100,7 +100,7 @@
   --label-letter-spacing: 0.12em;
 
   --btn-font-weight:      600;
-  --btn-text-transform:   uppercase;
+  --btn-text-transform:   lowercase;
   --btn-letter-spacing:   0.08em;
   --badge-font-weight:    600;
   --badge-text-transform: uppercase;

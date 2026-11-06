@@ -11,7 +11,10 @@ import { scaffoldPort, surfaceIndexHtml, surfaceViteConfig } from './surface.js'
 export function makeIndexHtml(appName) {
   return surfaceIndexHtml({
     title: appName,
-    head:  `    <link rel="manifest" href="/manifest.webmanifest" />
+    // Search results and link previews quote this; without one a crawler
+    // picks a sentence off the page. Replace it with what the app is for.
+    head:  `    <meta name="description" content="${appName} -- say in one sentence what this app is for." />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 `,
     // class="app" is what gives the page @frontierjs/css's font and ground; the

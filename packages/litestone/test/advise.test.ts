@@ -522,6 +522,34 @@ describe('foreign-key-without-index', () => {
     expect(findings(DAILY('@@index([crewId, id, day])'), ID)).toHaveLength(1)
     expect(findings(DAILY('@@index([day])'), ID)).toHaveLength(1)
   })
+
+  // FJS-3823: a @from aggregate runs one correlated subquery per parent row, so an
+  // unindexed key costs 7.1 ms per 100 rows against 56 µs indexed, so the finding
+  // names each @from that pays it.
+  const COUNTED = (extra = '') => `
+    model Order { id Int @id  lineCount Int @from(OrderLine, count: true)  lines OrderLine[] }
+    model OrderLine {
+      id      Int   @id
+      orderId Int
+      order   Order @relation(fields: [orderId], references: [id])
+      ${extra}
+    }`
+
+  test('names the @from that reads through a key nothing indexes', () => {
+    const f = findings(COUNTED(), ID)
+    expect(f.map(x => `${x.model}.${x.field}`)).toEqual(['OrderLine.orderId'])
+    expect(f[0].message).toContain('Order.lineCount')
+    expect(f[0].message).toContain('@@index([orderId])')
+  })
+
+  test('says nothing of @from where no @from reads through the key', () => {
+    const f = findings(REL + `model Post { id Int @id  authorId Int  author User @relation(fields: [authorId], references: [id]) }`, ID)
+    expect(f[0].message).not.toContain('@from')
+  })
+
+  test('silent once the @from key is indexed', () => {
+    expect(findings(COUNTED('@@index([orderId])'), ID)).toEqual([])
+  })
 })
 
 describe('transition-to-a-state-nothing-reaches', () => {

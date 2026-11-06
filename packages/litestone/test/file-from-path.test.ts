@@ -213,3 +213,55 @@ describe('fromPath(path, { move: true }) adopts the file (FJS-3971)', () => {
     db.$close()
   })
 })
+
+// An upload assembled as <id>.part and adopted by path is stored under that
+// temp name unless the app, which has the handshake's name and type, says
+// otherwise (FJS-3972).
+describe('fromPath(path, { name, type, size }) states what the sender said', () => {
+  const part = join(dir, 'abc123.part.bin')
+  const bytes = Buffer.from('hello from a phone')
+  writeFileSync(part, bytes)
+
+  async function withStore() {
+    const root = join(dir, `store-${crypto.randomUUID()}`)
+    const db: any = await createClient({
+      schema: `model Photo {\n id Int @id\n original File?\n @@allow(all, true)\n}`,
+      db: ':memory:', plugins: [FileStorage({ provider: 'local', bucket: 'test', localPath: root, publicBase: 'https://cdn.test' })],
+    })
+    await autoMigrate(db)
+    return db
+  }
+  const make = (db: any, original: unknown) =>
+    db.asSystem().photo.create({ data: { id: 1, original }, select: { original: { resolve: false } } })
+
+  test('name is kept on the ref and type is the claim sniffing falls back to', async () => {
+    const db = await withStore()
+    const row = await make(db, fromPath(part, { name: 'IMG_0042', type: 'text/plain' }))
+    expect(row.original.name).toBe('IMG_0042')
+    expect(row.original.mime).toBe('text/plain')
+    expect(row.original.key.endsWith('.txt')).toBe(true)
+    db.$close()
+  })
+
+  test('without an override the file keeps its own name', async () => {
+    const db = await withStore()
+    const row = await make(db, fromPath(part))
+    expect(row.original.name).toBe('abc123.part.bin')
+    db.$close()
+  })
+
+  test('a stated size that disagrees with the file is refused, and a move keeps the file where it was', async () => {
+    const db = await withStore()
+    const mine = join(dir, 'moveme.bin')
+    writeFileSync(mine, bytes)
+    await expect(make(db, fromPath(mine, { move: true, size: bytes.length + 1 }))).rejects.toThrow(/size/)
+    expect(existsSync(mine)).toBe(true)
+    const row = await make(db, fromPath(part, { size: bytes.length }))
+    expect(row.original.size).toBe(bytes.length)
+    db.$close()
+  })
+
+  test('a malformed size is refused at construction, as fromStream refuses it', () => {
+    expect(() => fromPath(part, { size: -1 })).toThrow(/size/)
+  })
+})

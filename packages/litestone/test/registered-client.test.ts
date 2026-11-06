@@ -284,9 +284,9 @@ describe('a write may name what it supplies as the application (FJS-3079)', () =
   })
 })
 
-// FJS-3304 -- a @system column is writable only through `system`, so the types
-// say so: it is absent from the Create/Update a bare write takes and arrives
-// with the name in `system: [...]`.
+// FJS-3304 -- a @system column is writable only through `system` on a client
+// that is not asSystem(), so the types say so: it is absent from the
+// Create/Update a bare write takes and arrives with the name in `system: [...]`.
 const SYSTEM_ONLY = `
   import { createClient } from '@frontierjs/litestone'
 
@@ -301,11 +301,11 @@ const SYSTEM_ONLY = `
     await sys.component.createMany({ data: [{ name: 'a', lastCheckOk: true }], system: ['lastCheckOk'] })
 
     // @ts-expect-error -- named in data and not in system: refused at run time
-    await sys.component.create({ data: { name: 'a', lastCheckOk: true } })
+    await db.component.create({ data: { name: 'a', lastCheckOk: true } })
     // @ts-expect-error -- same on update
-    await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: true } })
+    await db.component.update({ where: { id: 1 }, data: { lastCheckOk: true } })
     // @ts-expect-error -- '@@gate' lifts the gate, not the column
-    await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: true }, system: ['@@gate'] })
+    await db.component.update({ where: { id: 1 }, data: { lastCheckOk: true }, system: ['@@gate'] })
     // @ts-expect-error -- the value is still typed
     await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: 'yes' }, system: ['lastCheckOk'] })
     // an ordinary column needs no system
@@ -325,5 +325,43 @@ describe('a @system column is writable only through system (FJS-3304)', () => {
     expect(ts).toMatch(/export interface Component \{[^}]*lastCheckOk\?: boolean/)
     expect(ts).not.toMatch(/export interface ComponentCreate \{[^}]*lastCheckOk/)
     expect(ts).not.toMatch(/export interface ComponentUpdate \{[^}]*lastCheckOk/)
+  })
+})
+
+// FJS-3910 -- asSystem() writes a @system column without naming it, so its
+// types take the column in data as they take any other. `db` itself still
+// needs system: [...].
+const SYSTEM_CLIENT = `
+  import { createClient } from '@frontierjs/litestone'
+
+  export async function run() {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    const sys = db.asSystem()
+
+    await sys.component.create({ data: { name: 'a', lastCheckOk: true } })
+    await sys.component.createMany({ data: [{ name: 'a', lastCheckOk: true }] })
+    await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: null } })
+    await sys.component.updateMany({ where: {}, data: { lastCheckOk: false } })
+    await sys.component.upsert({ where: { id: 1 }, create: { name: 'a', lastCheckOk: true }, update: { lastCheckOk: true } })
+    // naming it stays legal under asSystem()
+    await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: true }, system: ['lastCheckOk'] })
+    // @ts-expect-error -- the value is still typed
+    await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: 'yes' } })
+    // @ts-expect-error -- a column the model lacks
+    await sys.component.update({ where: { id: 1 }, data: { nope: 1 } })
+
+    // the client that is not asSystem() still refuses it at run time, so still at compile time
+    // @ts-expect-error -- named in data and not in system
+    await db.component.update({ where: { id: 1 }, data: { lastCheckOk: true } })
+    // @ts-expect-error -- a person's client, system audience types or not
+    await db.$setAuth({ id: 1 }).component.update({ where: { id: 1 }, data: { lastCheckOk: true } })
+  }
+`
+
+describe('asSystem() takes a @system column in data (FJS-3910)', () => {
+  test('every write on the asSystem client, and none on the client that is not', () => {
+    const { ok, out } = compile('system', SYSTEMIC, SYSTEM_CLIENT)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
   })
 })

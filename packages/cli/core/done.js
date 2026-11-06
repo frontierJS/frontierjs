@@ -42,14 +42,28 @@ const SIBLING_MIN = 3
 /**
  * What changed against HEAD, untracked files included. The diff is
  * `changedTree`'s, so the drives listed here are the ones `fli proves` names.
+ * `only` keeps the root-relative files named and cuts all four together:
+ * cutting `changed` alone leaves `added` and `diff` whole for `layoutNamed`
+ * and `provesFor` (FJS-D1959).
  */
-export function collectChanges(root) {
+export function collectChanges(root, { only = null } = {}) {
   const git = argv => gitOut(root, argv) ?? ''
   const lines     = text => text.split('\n').map(l => l.trim()).filter(Boolean)
-  const untracked = lines(git(['ls-files', '--others', '--exclude-standard']))
-  const changed   = [...new Set([...lines(git(['diff', '--name-only', 'HEAD'])), ...untracked])].sort()
-  const added     = [...new Set([...lines(git(['diff', '--name-only', '--diff-filter=A', 'HEAD'])), ...untracked])].sort()
-  return { changed, added, untracked, diff: changedTree(root).diff }
+  const keep      = only ? new Set(only) : null
+  const cut       = files => keep ? files.filter(f => keep.has(f)) : files
+  const untracked = cut(lines(git(['ls-files', '--others', '--exclude-standard'])))
+  const changed   = cut([...new Set([...lines(git(['diff', '--name-only', 'HEAD'])), ...untracked])].sort())
+  const added     = cut([...new Set([...lines(git(['diff', '--name-only', '--diff-filter=A', 'HEAD'])), ...untracked])].sort())
+  const diff      = changedTree(root).diff
+  return { changed, added, untracked, diff: keep ? diffOf(diff, keep) : diff }
+}
+
+// A pathspec would read `routes/[id]/` as a glob, so the cut is made on the
+// diff's own file headers.
+function diffOf(diff, keep) {
+  return diff.split(/(?=^diff --git )/m)
+    .filter(part => keep.has(part.match(/^diff --git a\/\S+ b\/(\S+)/)?.[1]))
+    .join('')
 }
 
 // ─── the checks ───────────────────────────────────────────────────────────────
@@ -227,11 +241,12 @@ export async function engineItems(root) {
 /**
  * Everything, over the working tree. `changes` is handed in by a test; the
  * engines and the drives read the real tree and are skipped with `engines:
- * false`.
+ * false`. `only` narrows the changes as `collectChanges` does; the engines
+ * still grade the whole tree.
  */
-export async function runDone(root, { changes = null, engines = true } = {}) {
+export async function runDone(root, { changes = null, engines = true, only = null } = {}) {
   root = resolve(root)
-  const c = changes ?? collectChanges(root)
+  const c = changes ?? collectChanges(root, { only })
   if (!c.changed.length) return { root, changed: 0, items: [], drives: [], unfinished: 0 }
 
   const items = [

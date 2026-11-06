@@ -10,7 +10,7 @@ below is a summary, not the source of truth.
 | Step | Function | Skippable |
 |---|---|---|
 | `01-preflight` | SSH check, validate config, acquire the deploy lock | no |
-| `01b-env-check` | Diff `.env.example` against the server's `.env.production` | yes, gated by `envCheck` |
+| `01b-env-check` | Refuse a server `.env.production` missing a key the app's `defineEnv` spec requires — the set Basecamp grades (`FJS-D1977`); every `.env.example` key for an app with no env module | yes, gated by `envCheck` |
 | `02-ship` | `git archive` of HEAD at the app's directory, plus `deploy/generated/`, into `<path>/src` on every machine; uncommitted changes are named and not shipped | no |
 | `02b-build-check` | Refuse a build that would bake configuration into the image | yes, gated by `buildCheck: false` |
 | `03-build-web` | Build web on the server, versioned release | yes, gated by `doWeb` |

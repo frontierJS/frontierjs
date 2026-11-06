@@ -292,6 +292,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./docker` | `src/docker.js` | yes |
 | exports | `./swap` | `src/swap.js` | yes |
 | exports | `./dockerfile` | `src/dockerfile.js` | yes |
+| exports | `./doors` | `src/doors.js` | yes |
 | exports | `./static` | `src/static.js` | yes |
 | exports | `./serve` | `src/serve.js` | yes |
 | exports | `./vitals` | `src/vitals.js` | yes |

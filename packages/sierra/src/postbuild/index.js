@@ -7,11 +7,11 @@
  *   1. move404       — 404/index.html → 404.html (Cloudflare/Netlify)
  *   2. writeRobots   — a default robots.txt, unless the public dir gave one
  *   3. redirects     — the route table's rules merged into the app's own _redirects
+ *   3c. headers      — _headers from the cache rule
  *   4. sitemap       — generate sitemap.xml from indexed routes
  *
  * Conditional:
  *   3b. functions    — the host-function entry (when config.functions names a directory)
- *   3c. headers      — _headers from the site's cache rule (static)
  *   5. llms          — generate llms.txt (when config.llms is true or 'auto')
  *   6. speculation   — hover-prerender Speculation Rules on every page (static)
  *   7. deferJS       — defer script tags in index.html
@@ -99,9 +99,9 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
   const rFunctions = await generateFunctions(config, root)
   if (rFunctions) results.push(rFunctions)
 
-  // 3c. _headers, static only: `cacheFor` is the site origin's rule, and an
-  // SPA's origin (junction's static files) answers with its own.
-  if (prerenderedUrls) results.push(await generateHeaders(outDir, { preview: config.preview === true }))
+  // 3c. _headers. An SPA published as an App's files is served by an Outpost
+  // that applies this file and has no other way to know which names are hashed.
+  results.push(await generateHeaders(outDir, { preview: config.preview === true }))
 
   // What each page DECLARED about itself. Built once here and handed to every
   // step that needs it: `generateSitemap` reads `sitemap: { priority,

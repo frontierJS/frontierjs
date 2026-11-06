@@ -9,7 +9,7 @@ import { describe, test, expect } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { releaseFindings, mergeVariables, imageRuntime, readEnvSpec, releasePlan } from '../core/release-preflight.js'
+import { releaseFindings, mergeVariables, imageRuntime, readEnvSpec, requiredEnvKeys, releasePlan, frontingStatics } from '../core/release-preflight.js'
 
 const SPEC = { spec: {
   ENCRYPTION_KEY:   { type: 'string', required: true },
@@ -182,6 +182,48 @@ describe('readEnvSpec', () => {
   })
 })
 
+// The SSH door's env check and Basecamp's env-required refuse on one set, so a
+// move from Basecamp is not refused on a key Basecamp never held (FJS-D1977).
+describe('requiredEnvKeys', () => {
+  const app = (files) => {
+    const root = mkdtempSync(join(tmpdir(), 'env-keys-'))
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, path, '..'), { recursive: true })
+      writeFileSync(join(root, path), text)
+    }
+    return root
+  }
+
+  test('the defineEnv spec decides, and .env.example\'s optional keys are not required', () => {
+    const root = app({
+      'api/src/core/env.ts': "import { defineEnv } from '@frontierjs/junction'\n" +
+        "export const env = defineEnv({ ENCRYPTION_KEY: { required: true }, TENOR_API_KEY: {} })\n",
+      '.env.example': 'ENCRYPTION_KEY=\nTENOR_API_KEY=\n',
+    })
+    try { expect(requiredEnvKeys(root)).toEqual({ keys: ['ENCRYPTION_KEY'], from: 'defineEnv' }) }
+    finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  test('an app with no env module falls back to every .env.example key, quietly', () => {
+    const root = app({ '.env.example': '# comment\nENCRYPTION_KEY=x\n\nTENOR_API_KEY=\n' })
+    try { expect(requiredEnvKeys(root)).toEqual({ keys: ['ENCRYPTION_KEY', 'TENOR_API_KEY'], from: '.env.example' }) }
+    finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  test('an env module that does not load falls back and says why', () => {
+    const root = app({
+      'api/src/core/env.ts': "throw new Error('boom')\n",
+      '.env.keys': 'ENCRYPTION_KEY\n',
+    })
+    try {
+      const got = requiredEnvKeys(root)
+      expect(got.keys).toEqual(['ENCRYPTION_KEY'])
+      expect(got.from).toBe('.env.keys')
+      expect(got.warning).toContain('boom')
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+})
+
 describe('the plan a never-released App yields (FJS-3525)', () => {
   const found = run({ surfaces: ['web'] })
 
@@ -255,6 +297,14 @@ describe('a setup that stopped part way is finished by the next run (FJS-3529, F
     expect(plan.app).toEqual({})
     expect(plan.variables).toEqual([])
     expect(plan.empty).toBe(false)
+  })
+
+  test('the static App whose Domain routes to no other App is the one fli deploy releases beside the API (FJS-4054)', () => {
+    const API = { id: 'a1' }
+    const IMG = { id: 'c2', source: { kind: 'image' }, domains: [{ id: 'd2', hostname: 'other.awe.dev' }] }
+    expect(frontingStatics({ app: API, siblings: [WEB, IMG], routes: [{ domainId: 'd1', appId: 'a1', pathPrefix: '/api' }] }).map(f => f.app.id)).toEqual(['w1'])
+    expect(frontingStatics({ app: API, siblings: [WEB], routes: [{ domainId: 'd1', appId: 'other', pathPrefix: '/api' }] })).toEqual([])
+    expect(frontingStatics({ app: API, siblings: [WEB], routes: null }).map(f => f.domain.id)).toEqual(['d1'])
   })
 
   test('a Domain routed to another App is that App\'s front door, and a routed one is quiet', () => {

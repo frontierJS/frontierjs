@@ -179,8 +179,8 @@ name when it declares none.
 
 ### `workbench` · model `workbench`
 
-- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
-- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
+- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `setPackage`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
+- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `setPackage`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
 - **who may call** —
   - `pins` — standing 5 or above — declared `gate: 5`
   - `status` — standing 5 or above — declared `gate: 5`
@@ -197,6 +197,7 @@ name when it declares none.
   - `fresh` — standing 5 or above — declared `gate: 5`
   - `select` — standing 5 or above — declared `gate: 5`
   - `close` — standing 5 or above — declared `gate: 5`
+  - `setPackage` — standing 5 or above — declared `gate: 5`
   - `seen` — standing 5 or above — declared `gate: 5`
   - `check` — standing 5 or above — declared `gate: 5`
   - `review` — standing 5 or above — declared `gate: 5`

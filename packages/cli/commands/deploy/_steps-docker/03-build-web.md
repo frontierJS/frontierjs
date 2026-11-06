@@ -47,11 +47,9 @@ const [buildCmd, buildCwd] = scripts['build:web'] ? ['bun run build:web', src] :
 //
 // The env goes in the SCRIPT rather than in the exec options: the script is
 // piped to the TARGET's shell, so an env option here would set the operator's.
-// The value is a commit sha, and it is asserted to be one rather than trusted —
-// it is interpolated into a command line, and Invariant 8's reasoning applies to
-// a shell exactly as it does to SQL.
-if (!/^[0-9a-fA-F]{7,64}$/.test(String(commit)))
-  throw new Error(`refusing to build: the commit "${commit}" is not a sha`)
+// `webBuildEnv` asserts the commit is a sha, since it is interpolated into a
+// command line.
+const { webBuildEnv, envPrefix } = await import(new URL('file://' + global.fliRoot + '/core/release-build.js'))
 
 // ─── Where the API is ─────────────────────────────────────────────────────────
 //
@@ -72,7 +70,7 @@ catch (e) {
 }
 
 log.info(origin ? `Building web on server, calling the API at ${origin}...` : 'Building web on server...')
-machine.run(`VITE_FJS_BUILD=${commit}${origin ? ` FRONTIER_PUBLIC_API_URL=${origin}` : ''} ${buildCmd}`, { cwd: buildCwd })
+machine.run(`${envPrefix(webBuildEnv({ commit, apiOrigin: origin }))} ${buildCmd}`, { cwd: buildCwd })
 
 // A build that never inlined FRONTIER_PUBLIC_API_URL ships a bundle calling its own
 // origin, where nothing proxies /api/ any more. Asked of the output, because

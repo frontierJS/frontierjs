@@ -219,6 +219,8 @@ CREATE TABLE IF NOT EXISTS "workspace" (
   "ingressSecretId" TEXT,
   "ingressZoneId" TEXT,
   "ingressZone" TEXT,
+  "ingressCertSecretId" TEXT,
+  "ingressCertExpiresAt" TEXT,
   "pushTopic" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -228,6 +230,7 @@ CREATE TABLE IF NOT EXISTS "workspace" (
   CHECK ("status" IN ('active', 'suspended')),
   CHECK ((ingressSecretId IS NULL) = (ingressZoneId IS NULL)),
   CHECK ((ingressSecretId IS NULL) = (ingressZone IS NULL)),
+  CHECK ((ingressCertSecretId IS NULL) = (ingressCertExpiresAt IS NULL)),
   CHECK ((kind = 'demo') = (expiresAt IS NOT NULL)),
   FOREIGN KEY ("accountId") REFERENCES "account" ("id")
 ) STRICT;
@@ -1043,6 +1046,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   "healthTimeoutSeconds" INTEGER,
   "command" TEXT NOT NULL DEFAULT '[]' CHECK (json_valid("command") AND json_type("command") = 'array'),
   "hasExposedPort" INTEGER NOT NULL DEFAULT 0,
+  "isIngressNamePublished" INTEGER NOT NULL DEFAULT 1,
   "swap" TEXT NOT NULL DEFAULT 'stopFirst',
   "isDeployedOnPush" INTEGER NOT NULL DEFAULT 0,
   "pushSecret" TEXT,

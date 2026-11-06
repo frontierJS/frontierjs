@@ -275,6 +275,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `hub` | `HubConfig` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isDeployedOnPush` | `Boolean` | no | `0` | @system |
+| `isIngressNamePublished` | `Boolean` | no | `1` | — |
 | `jobs` | `Job[]` | — | — | relation |
 | `kind` | `AppKind` | no | `'container'` | — |
 | `memLimitMb` | `Int` | yes | — | — |
@@ -2374,6 +2375,8 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 | `flags` | `Flag[]` | — | — | relation |
 | `flows` | `Flow[]` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `ingressCertExpiresAt` | `DateTime` | yes | — | @system |
+| `ingressCertSecretId` | `String` | yes | — | @system |
 | `ingressSecretId` | `String` | yes | — | — |
 | `ingressZone` | `String` | yes | — | @system |
 | `ingressZoneId` | `String` | yes | — | — |
@@ -2395,6 +2398,7 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 
 ```
 @@index(accountId)
+@@check((ingressCertSecretId IS NULL) = (ingressCertExpiresAt IS NULL))
 @@check((ingressSecretId IS NULL) = (ingressZone IS NULL))
 @@check((ingressSecretId IS NULL) = (ingressZoneId IS NULL))
 @@check((kind = 'demo') = (expiresAt IS NOT NULL))

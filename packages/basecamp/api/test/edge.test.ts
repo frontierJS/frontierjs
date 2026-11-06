@@ -12,6 +12,8 @@
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { X509Certificate } from 'node:crypto'
 import { createTestEnv, session } from '@frontierjs/testing'
 import { GatePlugin }    from '@frontierjs/litestone'
 import { basecampGateLevel }       from '../src/core/gate.ts'
@@ -20,6 +22,7 @@ import { startCfSink, EMPTY_TOKEN, BROKEN_ZONE } from '../src/providers/edge/clo
 import { edgeConnectorFor, domainMark } from '../src/providers/edge/index.ts'
 import { connectorFor }            from '../src/providers/compute/index.ts'
 import { registerAccount, sendVia, accountConnectorFor } from '../src/providers/compute/accounts.ts'
+import { ensureIngressCert, pushIngressCert } from '../src/jobs/ingress-cert.job.ts'
 
 // Every Domain write also pushes its App's routes to the machines running it
 // (`FJS-1610`), and none of these machines has an outpost. The stub answers
@@ -247,6 +250,24 @@ describe('the edge service', () => {
     expect(accounts.map((a: any) => a.name)).toEqual(['cf-a-good', 'cf-b-revoked'])
     expect(accounts[0].zones.map((z: any) => z.name).sort()).toEqual(['broken.test', 'example.test', 'pending.test', 'shop.test'])
     expect(JSON.stringify(accounts)).not.toContain(CF_TOKEN)
+  })
+
+  // `zones` and `records` write nothing, so a key issued `edge:read` reaches
+  // them; undeclared, junction grades a custom method as a write.
+  test('a key scoped edge:read reaches the zone reads, and `sync` stays a write', async () => {
+    const scopes = (app.services.get('edge') as any).describe().scopes
+    expect(scopes).toMatchObject({ zones: 'edge:read', records: 'edge:read', sync: 'edge:write' })
+
+    const sys    = env.system as any
+    const holder = await member(sys, site.id, (await sys.workspace.findUnique({ where: { id: site.id } })).accountId, 'owner')
+    const made: any = await env.as(holder).service('apiKeys').create({ name: `edge-${tag()}`, scopes: ['edge:read'], expiresIn: '30d' })
+    const row = await sys.apiKey.findUnique({ where: { id: made.id } })
+    const wire   = { transport: 'http' }
+    const reader = session({ ...holder, authMethod: 'apiKey', credentialId: row.credentialId, scopes: ['edge:read'] })
+    const { accounts } = await edge(reader).call('zones', null, {}, wire) as any
+    expect(accounts.map((a: any) => a.name)).toContain('cf-a-good')
+    await expect(edge(reader).call('records', null, { providerSecretId: good.id, zoneId: 'zone-example' }, wire)).resolves.toBeDefined()
+    await expect(edge(reader).call('sync', 'no-such-domain', {}, wire)).rejects.toMatchObject({ code: 403 })
   })
 
   test('a refused account carries its error and no zones, and does not blank the other', async () => {
@@ -830,7 +851,8 @@ describe('sync', () => {
     expect(await edge(developer).call('syncStep', api.id) as any)
       .toMatchObject({ skipped: expect.stringContaining('kept where it last ran') })
     expect(await ingressAt()).toEqual(['203.0.113.6'])
-    expect((await shopRecords()).stale).toEqual([
+    // Every App on the machine has a record now (FJS-D1952), so each is down; this one is the case.
+    expect((await shopRecords()).stale.filter((s: any) => s.appId === web.id)).toEqual([
       { appId: web.id, name: `${web.id}.shop.test`, have: ['203.0.113.6'], want: [], down: true }])
   })
 
@@ -852,5 +874,373 @@ describe('sync', () => {
     expect((await req.send(body)).status).toBe(200)
 
     expect(await until(ingressAt, (v: string[]) => v[0] === '203.0.113.5')).toEqual(['203.0.113.5'])
+  })
+})
+
+// ─── A delete leaves no record in the zone (FJS-D1976) ───────────────────
+//
+// `@@softDelete(cascade)` stamps a parent's Domains and sends nothing, and
+// nothing ever removed an App's own ingress record. Each delete below is one
+// the service answers, and each assertion waits on what the zone holds.
+
+describe('a deleted App', () => {
+  let site: any, admin: any, good: any, online: any, bare: any
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  const sys = () => env.system as any
+  const zone = (zoneId: string) => cloudflare.records(sendVia(app, `provider:cloudflare:${good.id}`), zoneId)
+  const until = async <T>(read: () => Promise<T>, done: (v: T) => boolean, ms = 10_000): Promise<T> => {
+    const end = Date.now() + ms
+    for (;;) {
+      const v = await read()
+      if (done(v) || Date.now() > end) return v
+      await Bun.sleep(50)
+    }
+  }
+  const cnameAt   = async (host: string) => (await zone('zone-example')).find((r: any) => r.name === host && r.type === 'CNAME')
+  const ingressOf = async (appId: string) => (await zone('zone-shop')).filter((r: any) => r.name === `${appId}.shop.test`)
+
+  /** A project, environment and App placed on the online machine, with one
+   *  Domain pushed through `domains`, so its CNAME and the App's ingress
+   *  record are both in the zone. */
+  const published = async () => {
+    const project = await sys().project.create({ data: { workspaceId: site.id, name: 'P', slug: `p-${tag()}` } })
+    const e       = await sys().environment.create({ data: { workspaceId: site.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    const web     = await sys().app.create({ data: { workspaceId: site.id, environmentId: e.id, name: 'web', slug: `web-${tag()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    await sys().appServer.create({ data: { appId: web.id, serverId: online.id, status: 'running' } })
+    const hostname = `${tag()}.example.test`
+    const domain   = await env.as(admin).service('domains').create({ appId: web.id, hostname })
+    expect(await until(() => cnameAt(hostname), Boolean)).toMatchObject({ mark: { domainId: domain.id } })
+    expect(await until(() => ingressOf(web.id), (r: any[]) => r.length > 0)).toMatchObject([{ mark: { appId: web.id } }])
+    return { project, environment: e, app: web, domain, hostname }
+  }
+  const gone = async (made: { app: any, hostname: string }) => {
+    expect(await until(() => cnameAt(made.hostname), (r: any) => !r)).toBeUndefined()
+    expect(await until(() => ingressOf(made.app.id), (r: any[]) => r.length === 0)).toEqual([])
+  }
+
+  beforeAll(async () => {
+    const { grantsFor } = await import('../src/core/capabilities.ts')
+    const acct = await sys().account.create({ data: { slug: `gone-${tag()}`, displayName: 'Gone' } })
+    const own  = await sys().user.create({ data: { email: `gone-${tag()}@x.co`, accountId: acct.id } })
+    site = await sys().workspace.create({ data: { accountId: acct.id, name: 'Gone', slug: `gone-${tag()}` } })
+    await sys().workspaceMember.create({ data: { workspaceId: site.id, userId: own.id, role: 'owner', capabilities: grantsFor('owner') } })
+    admin = session({ id: own.id, workspaceId: site.id })
+    good = await sys().secret.create({ data: {
+      workspaceId: site.id, name: 'cf-gone', kind: 'providerKey', providerKind: 'cloudflare', data: JSON.stringify({ token: CF_TOKEN }),
+    }})
+    await registerAtSink(good)
+    online = await sys().server.create({ data: { workspaceId: site.id, name: 'one', slug: `one-${tag()}`, ipAddress: '203.0.113.9', providerKind: 'custom' } })
+    online = await sys().server.transition(online.id, 'checkIn')
+    // The move reaches `pushAppsOn` a tick later; run late it would queue a push per Domain.
+    await new Promise(r => setImmediate(() => setImmediate(r)))
+    const row = await sys().workspace.findFirst({ where: { id: site.id } })
+    await env.as(admin).service('workspaces').patch(site.id, { ingressSecretId: good.id, ingressZoneId: 'zone-shop', version: row.version })
+
+    const other = await sys().workspace.create({ data: { accountId: acct.id, name: 'Bare', slug: `bare-${tag()}` } })
+    await sys().workspaceMember.create({ data: { workspaceId: other.id, userId: own.id, role: 'owner', capabilities: grantsFor('owner') } })
+    bare = session({ id: own.id, workspaceId: other.id })
+  })
+
+  test('takes its Domain\'s CNAME and its own ingress record with it', async () => {
+    const made = await published()
+    await env.as(admin).service('apps').remove(made.app.id)
+    await gone(made)
+  })
+
+  test('…and only its own: a sibling App keeps its ingress record and its CNAME', async () => {
+    const gonner = await published()
+    const keeper = await published()
+    await env.as(admin).service('apps').remove(gonner.app.id)
+    await gone(gonner)
+    expect(await cnameAt(keeper.hostname)).toMatchObject({ mark: { domainId: keeper.domain.id } })
+    expect(await ingressOf(keeper.app.id)).toMatchObject([{ mark: { appId: keeper.app.id } }])
+  })
+
+  test('deleted with its environment, it leaves neither record', async () => {
+    const made = await published()
+    await env.as(admin).service('environments').remove(made.environment.id)
+    await gone(made)
+  })
+
+  test('deleted with its project, it leaves neither record', async () => {
+    const made = await published()
+    await env.as(admin).service('projects').remove(made.project.id)
+    await gone(made)
+  })
+
+  test('in a workspace with no ingress zone, the delete still succeeds', async () => {
+    const e = await sys().environment.create({ data: { workspaceId: bare.workspaceId, projectId:
+      (await sys().project.create({ data: { workspaceId: bare.workspaceId, name: 'P', slug: `p-${tag()}` } })).id,
+      name: 'E', slug: `e-${tag()}` } })
+    const lone = await sys().app.create({ data: { workspaceId: bare.workspaceId, environmentId: e.id, name: 'lone', slug: `lone-${tag()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    await sys().domain.create({ data: { workspaceId: bare.workspaceId, appId: lone.id, hostname: `${tag()}.example.test` } })
+    await expect(env.as(bare).service('apps').remove(lone.id)).resolves.toBeDefined()
+    expect(await sys().app.exists({ where: { id: lone.id } })).toBe(false)
+  })
+})
+
+// ─── The wildcard (`ingress:cert`) ───────────────────────────────────────
+//
+// `issue` is stubbed: the ACME client has its own suite against Pebble
+// (`acme.test.ts`), and `verify:dns` runs this job against Pebble end to end.
+// What is graded here is what the job does around it -- the TXT it writes and
+// removes at the vendor, what it stores, when it declines to mint, and who it
+// tells. The zone is set on the row directly: the `workspaces` patch would
+// dispatch the job itself and race these calls.
+
+describe('the ingress wildcard', () => {
+  let site: any, good: any, one: any, two: any
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  const sys = () => env.system as any
+  const fresh = async () => await sys().workspace.findFirst({ where: { id: site.id } })
+  const txts = async () => (await cloudflare.records(sendVia(app, `provider:cloudflare:${good.id}`), 'zone-shop'))
+    .filter((r: any) => r.type === 'TXT' && r.name === '_acme-challenge.shop.test')
+
+  const pem = (name: string, days: number) => {
+    const dir = require('node:fs').mkdtempSync(join(require('node:os').tmpdir(), 'wild-'))
+    const run = spawnSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
+      '-keyout', `${dir}/k.pem`, '-out', `${dir}/c.pem`, '-days', String(days), '-subj', `/CN=${name}`, '-addext', `subjectAltName=DNS:${name}`])
+    if (run.status !== 0) throw new Error(`openssl: ${run.stderr}`)
+    const cert = require('node:fs').readFileSync(`${dir}/c.pem`, 'utf8')
+    return { cert, key: require('node:fs').readFileSync(`${dir}/k.pem`, 'utf8'), expiresAt: new Date(new X509Certificate(cert).validTo).toISOString() }
+  }
+
+  let orders: { accountKey?: any; seen: number }[] = []
+  const issue = (name = '*.shop.test', days = 90) => (async (o: any) => {
+    const made = pem(name, days)
+    await o.dns.set('_acme-challenge.shop.test', 'challenge-value')
+    orders.push({ accountKey: o.accountKey, seen: (await txts()).length })
+    await o.dns.clear('_acme-challenge.shop.test', 'challenge-value')
+    return { ...made, accountKey: { kty: 'EC', d: `account-${orders.length}` } }
+  }) as any
+  const quick = async () => {}
+
+  beforeAll(async () => {
+    const { grantsFor } = await import('../src/core/capabilities.ts')
+    const acct = await sys().account.create({ data: { slug: `wild-${tag()}`, displayName: 'Wild' } })
+    site = await sys().workspace.create({ data: { accountId: acct.id, name: 'Wild', slug: `wild-${tag()}` } })
+    good = await sys().secret.create({ data: { workspaceId: site.id, name: 'cf-wild', kind: 'providerKey', providerKind: 'cloudflare',
+      data: JSON.stringify({ token: CF_TOKEN }) } })
+    await registerAtSink(good)
+    const server = async (name: string, moves: string[]) => {
+      let row = await sys().server.create({ data: { workspaceId: site.id, name, slug: `${name}-${tag()}`, ipAddress: '203.0.113.9', providerKind: 'custom' } })
+      for (const m of moves) row = await sys().server.transition(row.id, m)
+      return row
+    }
+    one = await server('one', ['checkIn'])
+    two = await server('two', ['checkIn'])
+    await server('three', ['checkIn', 'drain'])
+    await new Promise(r => setImmediate(() => setImmediate(r)))
+    await sys().workspace.update({ where: { id: site.id }, data: { ingressSecretId: good.id, ingressZoneId: 'zone-shop', ingressZone: 'shop.test',
+      version: (await fresh()).version }, system: ['ingressZone'] })
+  })
+
+  test('mints once: the TXT is appended while the CA looks and removed after, and the result is stored', async () => {
+    orders = []
+    const out = await ensureIngressCert(app, site.id, { issue: issue(), waitForDns: quick })
+    expect(out).toMatchObject({ minted: true, failed: [] })
+    expect(orders).toEqual([{ accountKey: undefined, seen: 1 }])
+    expect(await txts()).toEqual([])
+
+    const ws = await fresh()
+    expect(ws.ingressCertSecretId).toBeString()
+    expect(new Date(ws.ingressCertExpiresAt).getTime()).toBeGreaterThan(Date.now() + 80 * 86_400_000)
+    const secret = await sys().secret.findFirst({ where: { id: ws.ingressCertSecretId } })
+    expect(secret.kind).toBe('tlsCert')
+    expect(JSON.parse(secret.data)).toMatchObject({ cert: expect.stringContaining('BEGIN CERTIFICATE'), key: expect.stringContaining('PRIVATE KEY'), accountKey: { d: 'account-1' } })
+  })
+
+  test('pushes to every online machine, and not the draining one', async () => {
+    const out = await ensureIngressCert(app, site.id, { issue: issue(), waitForDns: quick })
+    expect([...out.pushed].sort()).toEqual(['one', 'two'])
+  })
+
+  test('a fresh certificate is not ordered again, and is pushed again', async () => {
+    orders = []
+    const out = await ensureIngressCert(app, site.id, { issue: issue(), waitForDns: quick })
+    expect(out).toMatchObject({ minted: false, failed: [] })
+    expect(orders).toEqual([])
+    expect(out.pushed).toHaveLength(2)
+  })
+
+  test('inside 30 days it renews with the same ACME account and replaces the Secret', async () => {
+    const before = await fresh()
+    await sys().workspace.update({ where: { id: site.id }, data: { ingressCertExpiresAt: new Date(Date.now() + 5 * 86_400_000).toISOString(), version: before.version },
+      system: ['ingressCertExpiresAt'] })
+    orders = []
+    const out = await ensureIngressCert(app, site.id, { issue: issue(), waitForDns: quick })
+    expect(out.minted).toBe(true)
+    expect(orders[0].accountKey).toEqual({ kty: 'EC', d: 'account-1' })
+    const after = await fresh()
+    expect(after.ingressCertSecretId).not.toBe(before.ingressCertSecretId)
+    expect(await sys().secret.findFirst({ where: { id: before.ingressCertSecretId } })).toBeNull()
+  })
+
+  test('a certificate naming another zone is ordered again', async () => {
+    const before = await fresh()
+    const other = await sys().secret.create({ data: { workspaceId: site.id, name: `other-${tag()}`, kind: 'tlsCert', data: JSON.stringify(pem('*.elsewhere.test', 90)) } })
+    await sys().workspace.update({ where: { id: site.id }, data: { ingressCertSecretId: other.id, ingressCertExpiresAt: new Date(Date.now() + 80 * 86_400_000).toISOString(), version: before.version }, system: ['ingressCertSecretId', 'ingressCertExpiresAt'] })
+    orders = []
+    const out = await ensureIngressCert(app, site.id, { issue: issue(), waitForDns: quick })
+    expect(out.minted).toBe(true)
+    expect(orders).toHaveLength(1)
+  })
+
+  test('a release pushes the stored wildcard to its machine', async () => {
+    const { executorOn } = await import('../src/providers/executor.ts')
+    expect(await pushIngressCert(app, await executorOn(app, one.id) as any, site.id)).toBe('pushed')
+  })
+
+  test('a zone cleared drops the machines\' copy, nulls both columns and removes the Secret', async () => {
+    const before = await fresh()
+    await sys().workspace.update({ where: { id: site.id }, data: { ingressSecretId: null, ingressZoneId: null, ingressZone: null, version: before.version },
+      system: ['ingressZone'] })
+    const out = await ensureIngressCert(app, site.id, { issue: issue(), waitForDns: quick })
+    expect(out).toMatchObject({ dropped: true, minted: false, failed: [] })
+    expect(await fresh()).toMatchObject({ ingressCertSecretId: null, ingressCertExpiresAt: null })
+    expect(await sys().secret.findFirst({ where: { id: before.ingressCertSecretId } })).toBeNull()
+    expect(await pushIngressCert(app, await (await import('../src/providers/executor.ts')).executorOn(app, one.id) as any, site.id)).toBe('none')
+  })
+
+  test('the columns are a pair', async () => {
+    const ws = await fresh()
+    await expect(sys().workspace.update({ where: { id: site.id }, data: { ingressCertSecretId: 'x', version: ws.version }, system: ['ingressCertSecretId'] }))
+      .rejects.toThrow(/ingress certificate is stored with its expiry/)
+  })
+})
+
+// ─── The ingress name (FJS-D1952) ────────────────────────────────────────
+//
+// Every App answers at `<appId>.<zone>` while no Domain serves it, once the
+// workspace holds its wildcard (FJS-D1954), and redirects there to the primary
+// Domain after (FJS-D1956). The zone and the certificate are set on the row
+// directly, as the wildcard suite does, so no `ingress:cert` job races these.
+
+describe('the ingress name', () => {
+  let site: any, good: any, admin: any, one: any, env1: any
+  const tag  = () => Math.random().toString(36).slice(2, 8)
+  const sys  = () => env.system as any
+  const edge = () => env.as(admin).service('edge')
+  const wsRow = async () => await sys().workspace.findFirst({ where: { id: site.id } })
+  const aOf  = async (appId: string) => (await cloudflare.records(sendVia(app, `provider:cloudflare:${good.id}`), 'zone-shop'))
+    .filter((r: any) => r.type === 'A' && r.name === `${appId}.shop.test`)
+  const mkApp = async (name: string) => {
+    const row = await sys().app.create({ data: { workspaceId: site.id, environmentId: env1.id, name, slug: `${name}-${tag()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    await sys().appServer.create({ data: { appId: row.id, serverId: one.id, status: 'running' } })
+    return row
+  }
+  const domain = (appId: string, hostname: string, extra = {}) =>
+    sys().domain.create({ data: { workspaceId: site.id, appId, hostname, ...extra } })
+  const switchOff = (row: any) => sys().app.update({ where: { id: row.id }, data: { isIngressNamePublished: false } })
+
+  beforeAll(async () => {
+    const { grantsFor } = await import('../src/core/capabilities.ts')
+    const acct = await sys().account.create({ data: { slug: `name-${tag()}`, displayName: 'Name' } })
+    const own  = await sys().user.create({ data: { email: `name-${tag()}@x.co`, accountId: acct.id } })
+    site = await sys().workspace.create({ data: { accountId: acct.id, name: 'Name', slug: `name-${tag()}` } })
+    await sys().workspaceMember.create({ data: { workspaceId: site.id, userId: own.id, role: 'owner', capabilities: grantsFor('owner') } })
+    admin = session({ id: own.id, workspaceId: site.id })
+    good = await sys().secret.create({ data: { workspaceId: site.id, name: 'cf-name', kind: 'providerKey', providerKind: 'cloudflare',
+      data: JSON.stringify({ token: CF_TOKEN }) } })
+    await registerAtSink(good)
+    one = await sys().server.create({ data: { workspaceId: site.id, name: 'one', slug: `one-${tag()}`, ipAddress: '203.0.113.21', providerKind: 'custom' } })
+    one = await sys().server.transition(one.id, 'checkIn')
+    await new Promise(r => setImmediate(() => setImmediate(r)))
+    const project = await sys().project.create({ data: { workspaceId: site.id, name: 'P', slug: `p-${tag()}` } })
+    env1 = await sys().environment.create({ data: { workspaceId: site.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    await sys().workspace.update({ where: { id: site.id }, data: { ingressSecretId: good.id, ingressZoneId: 'zone-shop', ingressZone: 'shop.test',
+      version: (await wsRow()).version }, system: ['ingressZone'] })
+  })
+
+  test('is not served before the workspace holds its wildcard', async () => {
+    const { routedHosts } = await import('../src/domain/release/runtime.ts')
+    const bare = await mkApp('early')
+    expect(await routedHosts(app.db, bare.id)).toEqual([])
+    const cert = await sys().secret.create({ data: { workspaceId: site.id, name: `wild-${tag()}`, kind: 'tlsCert', data: '{}' } })
+    await sys().workspace.update({ where: { id: site.id }, data: { ingressCertSecretId: cert.id,
+      ingressCertExpiresAt: new Date(Date.now() + 80 * 86_400_000).toISOString(), version: (await wsRow()).version },
+      system: ['ingressCertSecretId', 'ingressCertExpiresAt'] })
+    expect(await routedHosts(app.db, bare.id)).toEqual([`${bare.id}.shop.test`])
+  })
+
+  test('an App with no Domain is served at it, noindex, and the column off serves nothing', async () => {
+    const { routedHosts, routedRedirects, noindexHosts } = await import('../src/domain/release/runtime.ts')
+    const bare = await mkApp('bare')
+    expect(await routedHosts(app.db, bare.id)).toEqual([`${bare.id}.shop.test`])
+    expect(await routedRedirects(app.db, bare.id)).toEqual([])
+    expect(await noindexHosts(app.db, bare.id)).toEqual([`${bare.id}.shop.test`])
+    await switchOff(bare)
+    expect(await routedHosts(app.db, bare.id)).toEqual([])
+    expect(await routedRedirects(app.db, bare.id)).toEqual([])
+    expect(await noindexHosts(app.db, bare.id)).toEqual([])
+  })
+
+  test('a serving Domain makes it a redirect to the primary, or the first by hostname', async () => {
+    const { routedHosts, routedRedirects, noindexHosts } = await import('../src/domain/release/runtime.ts')
+    const web  = await mkApp('web')
+    const name = `${web.id}.shop.test`
+    // A redirecting Domain serves nothing, so the name still does.
+    await domain(web.id, 'old.example.test', { redirectTo: 'https://elsewhere.test' })
+    expect(await routedHosts(app.db, web.id)).toEqual([name])
+
+    await domain(web.id, 'zz.example.test')
+    const b = await domain(web.id, 'bb.example.test')
+    expect(await routedHosts(app.db, web.id)).toEqual(['bb.example.test', 'zz.example.test'])
+    expect(await routedRedirects(app.db, web.id)).toEqual([
+      { host: 'old.example.test', to: 'https://elsewhere.test' },
+      { host: name, to: 'https://bb.example.test' },
+    ])
+    // The redirect is noindex too; the Domains are not.
+    expect(await noindexHosts(app.db, web.id)).toEqual([name])
+    await sys().domain.update({ where: { id: (await sys().domain.findFirst({ where: { hostname: 'zz.example.test' } })).id },
+      data: { isPrimary: true, version: 1 } })
+    expect((await routedRedirects(app.db, web.id)).at(-1)).toEqual({ host: name, to: 'https://zz.example.test' })
+
+    await switchOff(web)
+    expect((await routedRedirects(app.db, web.id)).map(r => r.host)).toEqual(['old.example.test'])
+    void b
+  })
+
+  test('the last serving Domain removed serves the App at it again', async () => {
+    const { routedHosts } = await import('../src/domain/release/runtime.ts')
+    const web = await mkApp('again')
+    const d   = await domain(web.id, 'again.example.test')
+    expect(await routedHosts(app.db, web.id)).toEqual(['again.example.test'])
+    await sys().domain.delete({ where: { id: d.id } })
+    expect(await routedHosts(app.db, web.id)).toEqual([`${web.id}.shop.test`])
+  })
+
+  test('ingressStep writes the record of an App with no Domain, and the column off removes it', async () => {
+    const bare = await mkApp('record')
+    expect(await edge().call('ingressStep', bare.id)).toMatchObject({ name: `${bare.id}.shop.test`, addresses: ['203.0.113.21'] })
+    expect(await aOf(bare.id)).toMatchObject([{ content: '203.0.113.21', mark: { fleet: 'basecamp', appId: bare.id } }])
+    await switchOff(bare)
+    expect((await edge().call('ingressStep', bare.id) as any).removed).toHaveLength(1)
+    expect(await aOf(bare.id)).toEqual([])
+  })
+
+  test('…but keeps it while a Domain CNAMEs to it', async () => {
+    const web = await mkApp('kept')
+    await domain(web.id, 'kept.example.test')
+    await switchOff(web)
+    expect(await edge().call('ingressStep', web.id)).toMatchObject({ addresses: ['203.0.113.21'] })
+    expect(await aOf(web.id)).toHaveLength(1)
+  })
+
+  test('an App running nowhere is skipped, and its record is left where it last ran', async () => {
+    const idle = await sys().app.create({ data: { workspaceId: site.id, environmentId: env1.id, name: 'idle', slug: `idle-${tag()}` } })
+    expect(await edge().call('ingressStep', idle.id)).toMatchObject({ appId: idle.id, skipped: expect.stringContaining('is not published') })
+  })
+
+  test('turning the column off through `apps` removes the record with nobody pressing sync', async () => {
+    const bare = await mkApp('patched')
+    await edge().call('ingressStep', bare.id)
+    await env.as(admin).service('apps').patch(bare.id, { isIngressNamePublished: false })
+    const deadline = Date.now() + 10_000
+    while ((await aOf(bare.id)).length && Date.now() < deadline) await new Promise(r => setTimeout(r, 50))
+    expect(await aOf(bare.id)).toEqual([])
   })
 })

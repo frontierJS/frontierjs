@@ -493,6 +493,10 @@ export function applyEdge(config, { appId, routes, plain = [] }) {
 
 const hostsOf = (r) => (r.match ?? []).flatMap(m => m.host ?? []).map(h => String(h).toLowerCase())
 
+// Which door wrote a route, and the refusal both doors print, are Outpost's:
+// it reads the same Caddy from the other side (`FJS-D1967`).
+export { heldBy, doorRefusal } from '@frontierjs/outpost/doors'
+
 // ─── the admin API, as scripts for the target's own shell ─────────────────────
 
 /**

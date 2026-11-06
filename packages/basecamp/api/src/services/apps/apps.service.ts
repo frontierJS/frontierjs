@@ -48,7 +48,7 @@ import { mintPush } from '../../plugins/git-push.ts'
 // recomputed: an include returns raw Domain rows, so without this the app
 // detail screen received hostnames with no cert_status at all and every one of
 // them rendered as "no certificate" — including the expired ones.
-import { certStatusOf } from '../domains/domains.service.ts'
+import { certStatusOf, toZone } from '../domains/domains.service.ts'
 import { resolveExecutor, executorOn, isExecutor } from '../../providers/executor.ts'
 import { sourceConnectorFor, RepoUnseen } from '../../providers/source/index.ts'
 import type { SourceRepo } from '../../providers/source/index.ts'
@@ -60,10 +60,11 @@ import type { ProviderKind } from '#db/schema.d.ts'
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, byteLength, DOCKERFILE_BYTES }
   from '../../domain/release/app-source.ts'
 import { fjsDockerfileTemplate, readRepoDockerfile, forgeRepo, DOCKERFILE_PATHS } from '../../domain/release/dockerfile-template.ts'
-import { runtimeOf, CONTAINER_KINDS, servingAddresses } from '../../domain/release/runtime.ts'
+import { runtimeOf, CONTAINER_KINDS, servingAddresses, ingressStateOf } from '../../domain/release/runtime.ts'
 import { runLiveCheck } from '../../domain/release/live-check.ts'
 import type { DnsAnswer, HttpsAnswer } from '../../domain/release/live-check.ts'
 import { ingressRefusal } from '../edge/edge.service.ts'
+import ingressDns from '../../jobs/ingress-dns.job.ts'
 import { portHolders, serversOf, assertPortFree, allocatePort, withPortLock } from '../../domain/release/host-port.ts'
 import { restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from '../../jobs/app-backup-run.job.ts'
 import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../../domain/job/job-schedule.ts'
@@ -350,6 +351,22 @@ export async function retireAppsIn(app: App, environmentIds: string[]): Promise<
 }
 
 /**
+ * Tell the zone these Apps are gone, after the delete that stamped them. Each
+ * Domain of theirs -- the ones the cascade just stamped and the ones deleted
+ * earlier -- goes through the `domain:dns` job, whose `unpush` removes the
+ * Domain's own CNAME and, the App being deleted, the App's ingress record.
+ * `@@softDelete(cascade)` stamps rows and dispatches nothing, and a job
+ * dispatched before the stamp would read a live Domain and push it again.
+ */
+export async function unpublishAppsIn(appIds: string[]): Promise<void> {
+  if (!appIds.length) return
+  const domains = await ($.app.db as any).asSystem().domain.findMany({
+    where: { appId: { in: appIds } }, withDeleted: true, select: { id: true, version: true },
+  }) as { id: string, version: number }[]
+  for (const d of domains) await toZone(d.id, `${d.version}:app-removed`)
+}
+
+/**
  * `source` and `kind` are one decision, so they are checked together.
  *
  * An inline app has no image and no container — its release is files behind
@@ -497,6 +514,7 @@ async function detail(id: string) {
     recent_deployments: deployments,
     jobs,
     portsTaken: [...new Set(holders.map(h => h.port))].sort((a, b) => a - b),
+    ingress: await ingressStateOf(db(), row.id),
   }
 }
 
@@ -789,6 +807,8 @@ export default createService({
       const updated = await db().app.update({ where: { id: $.id as string }, data: patch })
       syncAppBackupSchedule($.app, updated)
       syncAppDrillSchedule($.app, updated)
+      if ('isIngressNamePublished' in patch && patch.isIngressNamePublished !== current.isIngressNamePublished)
+        await $.app.jobs.dispatch(ingressDns, { appId: updated.id }, { id: `ingress:${updated.id}:${updated.updatedAt}` })
     }
     if ('replicaDestinationId' in patch) await syncReplicasOf($.app, [current.id])
 
@@ -799,6 +819,7 @@ export default createService({
     const target  = await getScoped('app', 'App')
     const machine = await retireFromMachine($.app, target)
     const removed = await removeScoped('app', 'App')
+    await unpublishAppsIn([target.id as string])
     // A deleted app's volume is not a thing to archive at 02:00.
     syncAppBackupSchedule($.app, { id: target.id, backupCron: null, deletedAt: null })
     syncAppDrillSchedule($.app, { id: target.id, drillCron: null, deletedAt: null })

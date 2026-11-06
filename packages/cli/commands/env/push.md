@@ -23,11 +23,11 @@ flags:
     defaultValue: '.env.production'
   production:
     type: boolean
-    description: Push to the production target
+    description: Push to the production target — with BASECAMP_APP_ID set, the project's production App
     defaultValue: false
   stage:
     type: boolean
-    description: Push to the staging target
+    description: Push to the staging target — with BASECAMP_APP_ID set, the project's staging App
     defaultValue: false
   server:
     type: string
@@ -72,14 +72,10 @@ function keyLines(result, chalk, dry) {
     chalk`${chalk[tone](mark)} ${key.padEnd(width)}  {dim ${dry ? wouldSay : said}${secret.has(key) ? ' as a secret' : ''}}`))
 }
 
-/** The App `id` names and its environment's Variable rows. A rebuilt Basecamp
- *  keeps no App the old one issued, and its 404 alone reads as a typo. */
-async function readApp({ basecamp, basecampAll }, entry, id) {
-  const app = await basecamp(entry.url, entry.key, `/apps/${encodeURIComponent(id)}`).catch(err => {
-    if (err.status === 404)
-      throw new Error(`BASECAMP_APP_ID ${id} is no App on ${entry.name} — take it out of .env and run fli basecamp:app`)
-    throw err
-  })
+/** The App of `target` in the project `id` names, and its environment's
+ *  Variable rows. */
+async function readApp({ resolveBasecampApp, basecampAll }, entry, id, target) {
+  const app = await resolveBasecampApp(entry.url, entry.key, id, target, { where: entry.name })
   const rows = await basecampAll(entry.url, entry.key, `/variables?environmentId=${encodeURIComponent(app.environmentId)}`)
   return { app, rows }
 }
@@ -108,7 +104,10 @@ is left alone and named, unless `--overwrite`. Output names keys, never values;
 `--dry` reads the target and says what would change without writing.
 
 **An app with `BASECAMP_APP_ID` set is an App in Basecamp**, which `fli deploy`
-releases, so the target is the App's Variables — a key whose name reads as a
+releases, so the target is the App's Variables. The App is the deploy target's
+(`--production`, `--stage`, the branch, else dev): the one with the same slug in
+the project's environment of that tier, refused by name when there is none
+(`FJS-D1965`). A key whose name reads as a
 credential (`KEY`, `SECRET`, `TOKEN`, `PASSWORD`) made a secret. The keys the
 release plans itself are skipped: `PORT`, `NODE_ENV`, `ENCRYPTION_KEY`, every
 database path and every URL on a localhost default, since a laptop's value for
@@ -141,9 +140,9 @@ if (!picked.count) return refuse(`${picked.source} holds no KEY=value line to pu
 
 // ─── An App in Basecamp ───────────────────────────────────────────────────────
 if (process.env.BASECAMP_APP_ID) {
-  const refused = ['production', 'stage', 'server', 'path'].filter(f => flag[f])
+  const refused = ['server', 'path'].filter(f => flag[f])
   if (refused.length)
-    return refuse(`--${refused.join(', --')} ${refused.length === 1 ? 'is' : 'are'} for a server's env file — BASECAMP_APP_ID names one Basecamp App, and its Variables are the target`)
+    return refuse(`--${refused.join(', --')} ${refused.length === 1 ? 'is' : 'are'} for a server's env file — an App Basecamp runs takes its Variables, and --production or --stage pick which App`)
   const client = await import(resolve(global.fliRoot, 'core/basecamp.js'))
   const { reachBasecamp } = await import(resolve(global.fliRoot, 'core/basecamps.js'))
   const { gatherReleaseInputs, releaseOwnedKeys, variablePush } = await import(resolve(global.fliRoot, 'core/release-preflight.js'))
@@ -151,7 +150,7 @@ if (process.env.BASECAMP_APP_ID) {
   const entry = reachBasecamp(flag.basecamp, log)
   if (!entry) return
   let app, rows
-  try { ({ app, rows } = await readApp(client, entry, process.env.BASECAMP_APP_ID)) } catch (err) { return refuse(err.message) }
+  try { ({ app, rows } = await readApp(client, entry, process.env.BASECAMP_APP_ID, resolveTarget(flag, $.git))) } catch (err) { return refuse(err.message) }
 
   const owned = releaseOwnedKeys(gatherReleaseInputs($.paths.root))
   const push  = variablePush({ rows, appId: app.id, body: picked.body, owned, named, overwrite: flag.overwrite })

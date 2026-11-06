@@ -659,6 +659,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `ingressSecretId` | `string`? | — | — | — | — |
 | `ingressZoneId` | `string`? | — | — | — | — |
 | `ingressZone` | `string`? | — | — | `x-litestone-kind` | — |
+| `ingressCertSecretId` | `string`? | — | — | `x-litestone-kind` | — |
+| `ingressCertExpiresAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `accountId`, `name`, `slug` · not accepted — `id`, `version`
@@ -958,6 +960,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `healthTimeoutSeconds` | `integer`? | — | — | `minimum: 5` `maximum: 600` | — |
 | `command` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `hasExposedPort` | `boolean` = `false` | — | — | — | — |
+| `isIngressNamePublished` | `boolean` = `true` | — | — | — | — |
 | `swap` | `DeploySwap` = `"stopFirst"` | — | Swap order | — | — |
 | `isDeployedOnPush` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
 | `pushSecret` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` `x-litestone-kind` | — |

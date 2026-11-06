@@ -45,8 +45,8 @@
 // so the route Open sends names the port `fli dev` will bind there. The rows
 // are `workbench-preview.ts`'s, written by the service as the caller.
 //
-// The Run tab starts what the checkout declares — `fli dev` per app, and its
-// package.json scripts (`domain/workbench/workbench-run.ts`) — detached, each with a log
+// The Run tab starts what the checkout declares — `fli dev` per app, its
+// package.json scripts and each member's test (`domain/workbench/workbench-run.ts`) — detached, each with a log
 // of its own and its pid on the pin, like a run. Unpin and Archive stop them.
 //
 // When a run ends with nothing queued behind it, two follow-ups may start:
@@ -93,7 +93,7 @@ import {
   readSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { homedir }                     from 'node:os'
-import { basename, join, posix }       from 'node:path'
+import { basename, isAbsolute, join, posix, relative } from 'node:path'
 import { fileURLToPath }               from 'node:url'
 import { resolveRoot }                 from '../local/local-git.ts'
 import { commitFiles, readDiff }       from './workbench-diff.ts'
@@ -109,6 +109,9 @@ export type Chat = {
   session: string | null
   /** The session this chat's first message forks; spent once `session` is set. */
   forkOf:  string | null
+  /** The package chosen on the tab: a member path, or `'.'` for repo-wide.
+   *  Absent, or naming a member since gone, means inferred from its writes. */
+  package?: string
 }
 
 export type Pin = {
@@ -209,6 +212,9 @@ export type ChecksFile = {
   at:      string
   pid:     number | null
   report?: { changed: number, unfinished: number, items: Array<{ check: string, subject: string, ok: boolean, message: string }>, drives: Array<{ changed: string, tier: string | null, on: string[], run: string[] }> }
+  /** The chat whose written files were graded, and how many; absent or
+   *  null graded the whole tree. */
+  scope?:  { chat: string, files: number } | null
   error?:  string
 }
 
@@ -225,6 +231,11 @@ export type ChatStatus = {
   asks:    boolean
   unread:  boolean
   session: string | null
+  /** The member it is about; null is repo-wide. `inferred` when not chosen. */
+  package: { name: string, path: string, inferred: boolean } | null
+  /** The choice the tab menu reads back: a member path, `'.'`, or null
+   *  while inferred, as a choice naming a member since gone is. */
+  chosen:  string | null
 }
 
 export type PinStatus = {
@@ -242,10 +253,12 @@ export type PinStatus = {
   /** The chat shown, and the one working when a run is. */
   chat:    string
   running: string | null
+  /** In drawing order: repo-wide first, then by member order, each group in
+   *  the order its chats were opened. */
   chats:   ChatStatus[]
   /** Every run and review in this checkout, and those started today. */
   spent:   Spent
-  checks:  { state: ChecksState, at: string, changed: number, unfinished: number, drives: number } | null
+  checks:  { state: ChecksState, at: string, changed: number, unfinished: number, drives: number, scope: { chat: string, files: number } | null } | null
   review:  { state: RunState, cost: number | null } | null
   /** Each dev server or script the Run tab started, and the ports an app holds. */
   runs:    Array<{ id: string, name: string, running: boolean, exit: number | null, stopped: boolean, ports: Served[] }>
@@ -270,6 +283,12 @@ type Folded = {
   byDay:   Record<string, number>
   /** Every run, kept whole like `byDay`: a step's cost is summed off it. */
   runs:    Array<{ at: string, cost: number | null, turns: number | null }>
+  /** Each `edit`/`write` path as the tool named it, with how many times. A
+   *  call is counted before it lands, as 0.1 measured the rule; a Bash write
+   *  records none. */
+  writes:  Record<string, number>
+  /** `writes` as they stood when the latest run started. */
+  before:  Record<string, number>
 }
 
 /** Kept per chat; older items stay in the log and in Claude Code's own session. */
@@ -288,7 +307,7 @@ const INSTALL_MS = 10 * 60_000
 
 const freshFold = (): Folded => ({
   offset: 0, partial: '', items: [], title: null, session: null,
-  run: { state: 'idle', tool: null, cost: null, turns: null, at: null, asks: false }, byDay: {}, runs: [],
+  run: { state: 'idle', tool: null, cost: null, turns: null, at: null, asks: false }, byDay: {}, runs: [], writes: {}, before: {},
 })
 
 // A headless run cannot stop and wait, so a question is only ever the way a
@@ -398,6 +417,15 @@ const loadDecide = () => decideMod ??= import('@frontierjs/cli/core/decide.js') 
 type DecisionsMod = { rulingSections: (root: string) => string[] }
 let decisionsMod: Promise<DecisionsMod> | null = null
 const loadDecisions = () => decisionsMod ??= import('@frontierjs/cli/core/decisions.js') as Promise<DecisionsMod>
+/** A workspace member as a chat's package names it: `path` is relative to the
+ *  checkout, so a branch's worktree reads the same members as its parent. */
+export type Member = { name: string, path: string }
+type MembersMod = {
+  workspaceMembers: (root: string) => Member[]
+  memberOfFile:     (members: Member[], file: string) => Member | undefined
+}
+let membersMod: Promise<MembersMod> | null = null
+const loadMembers = () => membersMod ??= import('@frontierjs/cli/core/workspace-members.js') as Promise<MembersMod>
 
 /** A plan's path, relative to its checkout: a markdown file inside it. */
 export function planPathRefusal(input: unknown): string | null {
@@ -750,6 +778,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       f.title ??= titleOf(String(event.text ?? ''))
       f.run = { state: 'working', tool: null, cost: null, turns: null, at, asks: false }
       f.runs.push({ at, cost: null, turns: null })
+      f.before = { ...f.writes }
       return
     }
     if (event.type === 'exit') {
@@ -765,6 +794,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       if (e.type === 'session') f.session = e.id
       if (e.type === 'text')    { push(f, { kind: 'text', text: e.text }); f.run.tool = null }
       if (e.type === 'tool')    { push(f, { kind: 'tool', text: e.text }); f.run.tool = e.text }
+      if (e.type === 'edit' || e.type === 'write') f.writes[e.file] = (f.writes[e.file] ?? 0) + 1
       if (e.type === 'result') {
         push(f, { kind: 'result', ok: e.ok, stop: e.stop, cost: e.cost, turns: e.turns })
         f.run = { ...f.run, state: e.ok ? 'done' : 'error', tool: null, cost: e.cost, turns: e.turns, asks: e.ok && endsOnQuestion(f.items) }
@@ -860,6 +890,77 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return out
   }
 
+  // Keyed on the root package.json's mtime and size, as the questions are: a
+  // member added under an existing `X/*` without touching it is not seen
+  // until it moves.
+  const memberCache = new Map<string, { mark: string, value: Member[] }>()
+
+  /** The checkout's workspace members; `[]` where it has none. A `workspaces`
+   *  the reader refuses is one line in this API's log, once per change to the
+   *  file, and never an error on the pane. */
+  async function membersOf(p: Pin): Promise<Member[]> {
+    const file = join(p.path, 'package.json')
+    let mark: string
+    try { const st = statSync(file); mark = `${st.mtimeMs}:${st.size}` } catch { memberCache.delete(file); return [] }
+    const hit = memberCache.get(file)
+    if (hit?.mark === mark) return hit.value
+    let value: Member[] = []
+    try {
+      const { workspaceMembers } = await loadMembers()
+      value = workspaceMembers(p.path).map(m => ({ name: m.name, path: m.path }))
+    } catch (e) { console.warn(`[workbench] ${p.name}: chats are not grouped by package -- ${(e as Error).message}`) }
+    memberCache.set(file, { mark, value })
+    return value
+  }
+
+  async function members(id: string): Promise<Member[] | null> {
+    const p = getPin(id)
+    return p ? membersOf(p) : null
+  }
+
+  /** A chat's writes by member path. A path is taken relative to the pin, so
+   *  a branch's worktree counts the same; one outside the checkout or in no
+   *  member (`ISSUES.md`) counts toward none, or root writes would outvote
+   *  the package (IDEAS/workbench-package-chats.md 0.1). */
+  async function memberWritesOf(p: Pin, list: Member[], writes: Record<string, number>): Promise<Record<string, number>> {
+    const out: Record<string, number> = {}
+    if (!list.length) return out
+    const { memberOfFile } = await loadMembers()
+    for (const [file, n] of Object.entries(writes)) {
+      const rel = inCheckout(p, file)
+      if (rel === null) continue
+      const m = memberOfFile(list, rel)
+      if (m) out[m.path] = (out[m.path] ?? 0) + n
+    }
+    return out
+  }
+
+  /** A written path relative to the pin, or null outside it. */
+  function inCheckout(p: Pin, file: string): string | null {
+    const rel = isAbsolute(file) ? relative(p.path, file) : file
+    return rel.startsWith('..') || isAbsolute(rel) ? null : rel
+  }
+
+  async function memberWrites(id: string, chat: string): Promise<Record<string, number> | null> {
+    const p = getPin(id)
+    if (!p?.chats.some(c => c.id === chat)) return null
+    return memberWritesOf(p, await membersOf(p), (await fold(logFile(id, chat))).writes)
+  }
+
+  /** The chosen member while it is still one, else the member holding more
+   *  than half the chat's member writes; a tie or no member writes is
+   *  repo-wide. `status` passes a run in progress the writes before it, so a
+   *  tab never regroups under the cursor (IDEAS/workbench-package-chats.md). */
+  async function packageOf(p: Pin, list: Member[], chat: Chat, writes: Record<string, number>): Promise<ChatStatus['package']> {
+    if (chat.package === '.') return null
+    const chosen = list.find(m => m.path === chat.package)
+    if (chosen) return { ...chosen, inferred: false }
+    const counts = await memberWritesOf(p, list, writes)
+    const total  = Object.values(counts).reduce((a, b) => a + b, 0)
+    const top    = list.find(m => (counts[m.path] ?? 0) * 2 > total)
+    return top ? { ...top, inferred: true } : null
+  }
+
   type ChatFold = { chat: Chat, fold: Folded, state: RunState, mtime: number }
 
   /** Every chat's log folded, and the one holding the latest run — which,
@@ -888,6 +989,10 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     const today  = dayOf(Date.now())
     const own    = [...all.map(c => spentOf(c.fold.byDay, today)), spentOf(p.closedByDay, today)]
     const rev    = spentOf((await fold(reviewFile(p.id))).byDay, today)
+    const list   = await membersOf(p)
+    const pkgs   = await Promise.all(all.map(c => packageOf(p, list, c.chat, c.state === 'working' ? c.fold.before : c.fold.writes)))
+    const rank   = (i: number) => pkgs[i] ? list.findIndex(m => m.path === pkgs[i]!.path) : -1
+    const drawn  = all.map((_, i) => i).sort((a, b) => rank(a) - rank(b))
     return {
       id: p.id, state, tool: state === 'working' ? f.run.tool : null,
       cost: f.run.cost, turns: f.run.turns,
@@ -896,11 +1001,12 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       rev:    [shown.chat.id, shown.fold.offset, review?.fold.offset ?? 0, checks ? `${checks.state}@${checks.at}` : ''].join('.'),
       chat:    shown.chat.id,
       running: alive(p.pid) ? p.runChat : null,
-      chats:   all.map(c => ({
+      chats:   drawn.map(i => [all[i], pkgs[i]] as const).map(([c, pkg]) => ({
         id: c.chat.id, title: c.fold.title, state: c.state,
         tool: c.state === 'working' ? c.fold.run.tool : null,
         asks: c.state === 'done' && c.fold.run.asks,
-        unread: unread(c), session: c.chat.session,
+        unread: unread(c), session: c.chat.session, package: pkg,
+        chosen: c.chat.package === '.' ? '.' : pkg && !pkg.inferred ? pkg.path : null,
       })),
       spent:  {
         total: own.reduce((n, s) => n + s.total, 0) + rev.total,
@@ -911,6 +1017,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
         changed:    checks.report?.changed ?? 0,
         unfinished: checks.report?.unfinished ?? 0,
         drives:     checks.report?.drives.length ?? 0,
+        scope:      checks.scope ?? null,
       },
       review: review && { state: review.state, cost: review.fold.run.cost },
       runs:   await runsOf(p),
@@ -990,11 +1097,11 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     const { askArgv, askInput } = await loadAskClaude()
     cancelFollowUps(p)
     const forking = !chat.session && !!chat.forkOf
+    const file    = logFile(p.id, chat.id)
     argv ??= [
       ...askArgv({ session: chat.session ?? chat.forkOf, fork: forking, work: { budget: p.budget, hooks: p.hooks }, images: images.length > 0 }),
-      '--append-system-prompt', workbenchContext(p),
+      '--append-system-prompt', workbenchContext(p, await packageOf(p, await membersOf(p), chat, (await fold(file)).writes)),
     ]
-    const file    = logFile(p.id, chat.id)
     const child = launch(file, p.path, argv, prompt, async (code, signal) => {
       const still = getPin(p.id)
       if (!still) return
@@ -1010,7 +1117,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       const next = queues.get(p.id)?.shift()
       const same = chatIn(now, chat.id)
       if (next !== undefined && same) { await start(now, same, next.text, undefined, next.images); return }
-      if (!stopped) await followUp(p.id, f.run.state)
+      if (!stopped) await followUp(p.id, chat.id, f.run.state)
     }, { input: askInput(prompt, images), images: images.length })
     updatePin(p.id, { pid: child.pid ?? null, runChat: chat.id })
   }
@@ -1034,7 +1141,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   async function runnables(id: string) {
     const p = getPin(id)
     if (!p) return null
-    const rows = await inventory(p.path, p.name)
+    const rows = await inventory(p.path, p.name, await membersOf(p))
     return { id, rows: rows.map(({ argv: _argv, ...r }) => r) }
   }
 
@@ -1043,7 +1150,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     if (!p) return { refused: `no pinned checkout '${id}'` }
     const gone = goneRefusal(p)
     if (gone) return gone
-    const row = (await inventory(p.path, p.name)).find(r => r.id === rowId)
+    const row = (await inventory(p.path, p.name, await membersOf(p))).find(r => r.id === rowId)
     if (!row) return { refused: `${p.name} has nothing to run called '${rowId}'` }
     const had = p.runs[row.id]
     if (had && alive(had.pid)) return { refused: `${row.name} is already running (pid ${had.pid}) — stop it first` }
@@ -1359,10 +1466,10 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   /** After a run with nothing queued: the checks where the checkout has them,
    *  and a review where the pin asks for one and the run finished. */
-  async function followUp(id: string, ended: RunState) {
+  async function followUp(id: string, chat: string, ended: RunState) {
     const p = getPin(id)
     if (!p) return
-    if (doneScript(p.path)) check(id)
+    if (doneScript(p.path)) await check(id, chat)
     if (p.review && ended === 'done') await review(id)
   }
 
@@ -1373,28 +1480,35 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     if (alive(p.reviewPid)) { reviewStopping.add(p.id); killGroup(p.reviewPid) }
   }
 
-  /** Run the checkout's own `fli done` over its tree, replacing any check in flight. */
-  function check(id: string): { started: string } | { refused: string } {
+  /** Run the checkout's own `fli done` over the files one chat wrote — the
+   *  shown one unless another is named — replacing any check in flight. A
+   *  Bash edit, a `git mv` or a generator records no write, so a chat with
+   *  none is graded on the whole tree (FJS-D1959). */
+  async function check(id: string, chat?: unknown): Promise<{ started: string } | { refused: string }> {
     const p = getPin(id)
     if (!p) return { refused: `no pinned checkout '${id}'` }
+    const c = chatIn(p, chat)
+    if (!c) return { refused: `${p.name} has no chat '${chat}'` }
     if (alive(p.pid)) return { refused: 'the run is still working; checks run when it ends' }
     const gone = goneRefusal(p)
     if (gone) return gone
     const done = doneScript(p.path)
     if (!done) return { refused: `${p.name} carries no fli done — neither packages/cli/core/done.js nor @frontierjs/cli` }
+    const only  = Object.keys((await fold(logFile(id, c.id))).writes).map(f => inCheckout(p, f)).filter(f => f !== null)
+    const scope = only.length ? { chat: c.id, only: [...new Set(only)].sort() } : null
     const prior = readChecks(id)
     if (prior?.state === 'running' && alive(prior.pid)) killGroup(prior.pid)
 
     mkdirSync(join(root, 'logs'), { recursive: true })
     const at = new Date().toISOString()
-    const child = spawn(process.execPath, [CHECK_SCRIPT, done, p.path, checksFile(id), at], {
+    const child = spawn(process.execPath, [CHECK_SCRIPT, done, p.path, checksFile(id), at, ...(scope ? [JSON.stringify(scope)] : [])], {
       cwd: p.path, detached: true, env: childEnv(env), stdio: 'ignore',
     })
     child.on('error', () => {})
     child.unref()
     // Written in the tick the child was spawned in, before it can have
     // imported anything, so its own report always lands on top of this.
-    writeFileSync(checksFile(id), JSON.stringify({ state: 'running', at, pid: child.pid ?? null } satisfies ChecksFile))
+    writeFileSync(checksFile(id), JSON.stringify({ state: 'running', at, pid: child.pid ?? null, scope: scope && { chat: scope.chat, files: scope.only.length } } satisfies ChecksFile))
     return { started: at }
   }
 
@@ -1499,13 +1613,33 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return updatePin(id, { chats, chat: shown, closedByDay })
   }
 
+  /** Choose a chat's package: a member path, `'.'` for repo-wide, or an
+   *  explicit `null` to go back to inferring. A key left out is refused
+   *  rather than read as a clear (Invariant 9). */
+  async function setPackage(id: string, input: unknown): Promise<Pin | { refused: string }> {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const { chat, package: pkg } = (input ?? {}) as { chat?: unknown, package?: unknown }
+    const c = chat == null || chat === '' ? null : chatIn(p, chat)
+    if (!c) return { refused: `${p.name} has no chat '${chat}'` }
+    if (!input || typeof input !== 'object' || !('package' in input)) return { refused: "say package: a member path, '.' for repo-wide, or null to infer it" }
+    if (pkg !== null && pkg !== '.' && !(await membersOf(p)).some(m => m.path === pkg))
+      return { refused: `${p.name} has no workspace member '${pkg}'` }
+    const chats = p.chats.map(x => {
+      if (x.id !== c.id) return x
+      const { package: _, ...rest } = x
+      return pkg === null ? rest : { ...rest, package: pkg as string }
+    })
+    return updatePin(id, { chats })
+  }
+
   function seen(id: string) {
     return updatePin(id, { seenAt: new Date().toISOString() })
   }
 
   return {
-    dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff,
-    send, stop, fresh, select, close, seen, check, review, fork, land, commit, archive, archiveRefusal, recordOpened,
+    dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff, members, memberWrites,
+    send, stop, fresh, select, close, setPackage, seen, check, review, fork, land, commit, archive, archiveRefusal, recordOpened,
     runnables, run, halt, output, shellEnv, readPlan, buildPlan, go, next, tick, file, decide, openPlan, closePlan,
   }
 }

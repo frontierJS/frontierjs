@@ -30,7 +30,7 @@ import { isAbsolute, join, normalize, relative } from 'node:path'
 import { executorOn, isExecutor } from '../../providers/executor.ts'
 import { snapshotVariables }        from '../release/variables.ts'
 import { db }                       from '../../core/resource.ts'
-import { routedHosts, routedPaths, routedRedirects } from '../release/runtime.ts'
+import { routedHosts, routedPaths, routedRedirects, noindexHosts } from '../release/runtime.ts'
 import { childEnv }                 from '@frontierjs/junction'
 import type { App }                 from '@frontierjs/junction'
 import { env }                      from '../../core/env.ts'
@@ -139,7 +139,8 @@ async function routeTo(app: App, serverId: string | null, appId: string, hosts: 
   // A /route that names no redirects or paths removes the ones the machine holds.
   const paths     = await routedPaths(app.db, appId)
   const redirects = await routedRedirects(app.db, appId)
-  const reply = await executor.call('/route', { app_id: appId, hosts, paths, redirects, port })
+  const noindex   = await noindexHosts(app.db, appId)
+  const reply = await executor.call('/route', { app_id: appId, hosts, paths, redirects, noindex, port })
   if (reply.error) return { ok: false, why: reply.error.message }
   const note = (reply.data as { note?: unknown } | undefined)?.note
   return { ok: true, note: typeof note === 'string' ? note : null }

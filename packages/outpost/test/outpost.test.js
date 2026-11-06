@@ -18,6 +18,7 @@ import { createDocker, createInspector, containerName, isDigest, BACKUP_SCRIPT, 
 import { STREAM_CLOSE_DELAY, HEALTH_CHECK_TIMEOUT_S } from '../src/swap.js'
 import { createReporter }         from '../src/report.js'
 import { createIngress }          from '../src/ingress.js'
+import { heldBy, doorOf }         from '../src/doors.js'
 import { createVitals }           from '../src/vitals.js'
 import { createStatic }           from '../src/static.js'
 import { createStaticServer }     from '../src/serve.js'
@@ -30,6 +31,7 @@ import pkg                        from '../package.json' with { type: 'json' }
 import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { createHash }             from 'node:crypto'
+import { spawnSync }              from 'node:child_process'
 import { join }                   from 'node:path'
 import { gzipSync }               from 'node:zlib'
 
@@ -1931,6 +1933,49 @@ describe('the ingress — Caddy, through its admin API', () => {
     }])
   })
 
+  describe('one door per app on a box (FJS-D1967)', () => {
+    const sshRoute = (host) => ({ apps: { http: { servers: { ingress: { listen: [':443'], routes: [
+      { '@id': 'fli-shop', match: [{ host: [host] }], handle: [{ handler: 'subroute', routes: [] }] }] } } } } })
+
+    test('a hostname fli deploy routed refuses the release before anything is built or started', async () => {
+      const caddy = fakeCaddy(sshRoute('shop.example.com'))
+      const { server, fake } = serverWith(caddy)
+      const res = await deploy(server, { hosts: ['Shop.Example.com'], source: { kind: 'git', repo: 'git@example.test:shop.git' }, digest: null })
+      const said = (await res.json()).error
+      expect(res.status).toBeGreaterThanOrEqual(400)
+      expect(said).toContain('shop.example.com is served on this box by `fli deploy` over SSH (fli-shop)')
+      expect(said).toContain('fli deploy:move --to=basecamp')
+      expect(fake.calls).toEqual([])
+      expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fli-shop'])
+    })
+
+    test('a path or a redirect on that hostname is refused the same way', async () => {
+      const path = await deploy(serverWith(fakeCaddy(sshRoute('shop.example.com'))).server,
+        { paths: [{ host: 'shop.example.com', prefix: '/api' }] })
+      expect((await path.json()).error).toContain('fli deploy:move --to=basecamp')
+      const redirect = await deploy(serverWith(fakeCaddy(sshRoute('shop.example.com'))).server,
+        { redirects: [{ host: 'shop.example.com', to: 'https://www.example.com' }] })
+      expect((await redirect.json()).error).toContain('fli deploy:move --to=basecamp')
+    })
+
+    test('fli deploy holding another hostname is no business of this release', async () => {
+      const res = await deploy(serverWith(fakeCaddy(sshRoute('blog.example.com'))).server, { hosts: ['shop.example.com'] })
+      expect(res.status).toBe(200)
+    })
+
+    test('heldBy reads the door off the route id, and a hand-written route belongs to neither', () => {
+      const config = { apps: { http: { servers: { ingress: { routes: [
+        { '@id': 'fjs-app-1', match: [{ host: ['a.example.com'] }] },
+        { '@id': 'fli-shop-api', match: [{ host: ['API.example.com'], path: ['/api/*'] }] },
+        { match: [{ host: ['b.example.com'] }] },
+      ] } } } } }
+      expect(heldBy(config, 'basecamp', ['a.example.com', 'b.example.com'])).toEqual([{ id: 'fjs-app-1', hosts: ['a.example.com'] }])
+      expect(heldBy(config, 'ssh', ['api.example.com'])).toEqual([{ id: 'fli-shop-api', hosts: ['api.example.com'] }])
+      expect(heldBy(config, 'ssh', [])).toEqual([])
+      expect([doorOf('fjs-x'), doorOf('fli-x'), doorOf(undefined), doorOf('caddy-x')]).toEqual(['basecamp', 'ssh', null, null])
+    })
+  })
+
   test('an app behind Caddy is told the one hop, and an app with no hostname is not (FJS-1841)', async () => {
     // Untold, the app keys every caller on Caddy's address, so one caller's
     // failed logins lock out the site; told with no proxy in front, a caller
@@ -2550,6 +2595,35 @@ describe('the ingress — Caddy, through its admin API', () => {
       expect(old.handle[0].headers.Location).toEqual(['https://shop.example.com/sale'])
     })
 
+    test('a host the call names noindex answers it, served or redirected, and no other host does', async () => {
+      const caddy = fakeCaddy()
+      const { server } = serverWith(caddy, fakeRunner({
+        'docker run': { stdout: 'container-1\n' },
+        'docker inspect --format': { stdout: JSON.stringify({ '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '7302' }] }) + '\n' },
+      }))
+      await deploy(server, { hosts: ['App-1.apps.example', 'app-1.example.com'], noindex: ['App-1.apps.example'] })
+      const [served] = caddy.config.apps.http.servers.ingress.routes
+      expect(served.handle[0]).toEqual({ handler: 'subroute', routes: [{
+        match: [{ host: ['app-1.apps.example'] }], handle: [{ handler: 'headers', response: { set: { 'X-Robots-Tag': ['noindex'] } } }],
+      }] })
+      expect(served.handle.at(-1).handler).toBe('reverse_proxy')
+
+      // The host's shape says nothing: an app's own Domain can start with its id.
+      await deploy(server, { hosts: ['app-1.apps.example'] })
+      expect(caddy.config.apps.http.servers.ingress.routes[0].handle.map(h => h.handler)).toEqual(['reverse_proxy'])
+
+      await deploy(server, {
+        hosts:     ['shop.example.com'],
+        redirects: [{ host: 'app-1.apps.example', to: 'https://shop.example.com' }, { host: 'www.example.com', to: 'https://shop.example.com' }],
+        noindex:   ['app-1.apps.example'],
+      })
+      const [shop, redirects] = caddy.config.apps.http.servers.ingress.routes
+      expect(shop.handle.map(h => h.handler)).toEqual(['reverse_proxy'])
+      const [ingress, www] = redirects.handle[0].routes
+      expect(ingress.handle[0].headers['X-Robots-Tag']).toEqual(['noindex'])
+      expect(www.handle[0].headers['X-Robots-Tag']).toBeUndefined()
+    })
+
     test('an app with only redirects needs no container and no port', async () => {
       const caddy = fakeCaddy()
       const { server } = serverWith(caddy, none())
@@ -2594,8 +2668,22 @@ describe('the ingress — Caddy, through its admin API', () => {
       const res = await routeWith(server, { static: true, hosts: ['shop.example.com'], redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
       expect(res.status).toBe(200)
       const [app] = caddy.config.apps.http.servers.ingress.routes
-      expect(app.handle[0].upstreams[0].dial).toBe('127.0.0.1:7181')
-      expect(app.handle[0].headers.request.set.Host).toEqual(['app-1.localhost'])
+      const [encode, proxy] = app.handle
+      expect(encode).toMatchObject({ handler: 'encode', prefer: ['zstd', 'gzip'] })
+      expect(proxy.upstreams[0].dial).toBe('127.0.0.1:7181')
+      expect(proxy.headers.request.set.Host).toEqual(['app-1.localhost'])
+    })
+
+    // A container encodes its own answers, and an SSE stream held back by
+    // Caddy's minimum length until it fills is an event that never arrives.
+    test('a container app is routed with no encode step', async () => {
+      const caddy = fakeCaddy()
+      const { server } = serverWith(caddy, fakeRunner({
+        'docker run': { stdout: 'container-1\n' },
+        'docker inspect --format': { stdout: JSON.stringify({ '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '7302' }] }) + '\n' },
+      }))
+      await deploy(server, { hosts: ['shop.example.com'] })
+      expect(caddy.config.apps.http.servers.ingress.routes[0].handle.map(h => h.handler)).toEqual(['reverse_proxy'])
     })
   })
 
@@ -2785,7 +2873,8 @@ describe('the ingress — Caddy, through its admin API', () => {
       const res = await send(server, 'POST', '/static/activate', { app_id: 'app-1', slug: 'wb-client', digest, hosts: ['client.preview.example.com'] })
       expect((await res.json()).hosts).toEqual(['client.preview.example.com'])
 
-      const proxy = caddy.config.apps.http.servers.ingress.routes[0].handle[0]
+      const [encode, proxy] = caddy.config.apps.http.servers.ingress.routes[0].handle
+      expect(encode.handler).toBe('encode')
       expect(proxy.upstreams[0].dial).toBe('127.0.0.1:7181')
       // What Caddy sends upstream, asked of the origin itself: the public
       // hostname's own first label is 'client', which names no app here.
@@ -2818,6 +2907,114 @@ describe('the ingress — Caddy, through its admin API', () => {
       const body = await (await send(server, 'POST', '/static/retire', { app_id: 'app-1', slug: 'wb-client' })).json()
       expect(body).toEqual({ retired: true, unrouted: true })
       expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
+    })
+  })
+
+  describe('a pushed wildcard certificate (FJS-D1975)', () => {
+    /** A self-signed certificate over `names` and its key, made by openssl the way `cert.js` makes the command port's. */
+    const pair = (names = ['*.fjs.test', 'fjs.test']) => {
+      const dir = mkdtempSync(join(tmpdir(), 'outpost-cert-'))
+      const made = spawnSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
+        '-days', '30', '-subj', '/CN=fjs.test', '-addext', `subjectAltName=${names.map(n => `DNS:${n}`).join(',')}`,
+        '-keyout', join(dir, 'k.pem'), '-out', join(dir, 'c.pem')], { encoding: 'utf8' })
+      expect(made.status).toBe(0)
+      const out = { cert: readFileSync(join(dir, 'c.pem'), 'utf8'), key: readFileSync(join(dir, 'k.pem'), 'utf8') }
+      rmSync(dir, { recursive: true })
+      return out
+    }
+    const ZONE = { id: 'zone', ...pair() }
+    const loaded = (caddy) => caddy.config?.apps?.tls?.certificates?.load_pem
+    const post = (caddy, path, body) => send(serverWith(caddy).server, 'POST', path, body)
+    const writes = (caddy) => caddy.asked.filter(a => !a.startsWith('GET') && !a.endsWith('412')).length
+
+    test('a push writes one load_pem entry by @id, makes apps.tls, and answers its names and expiry', async () => {
+      const caddy = fakeCaddy({ apps: { http: { servers: {} } } })
+      const res  = await post(caddy, '/certs/load', ZONE)
+      const body = await res.json()
+      expect(res.status).toBe(200)
+      expect(body).toMatchObject({ id: 'zone', names: ['*.fjs.test', 'fjs.test'], changed: true, loaded: true })
+      expect(new Date(body.expires_at).getTime()).toBeGreaterThan(Date.now())
+      expect(loaded(caddy)).toEqual([{ '@id': 'fjs-cert-zone', certificate: ZONE.cert, key: ZONE.key }])
+      expect(caddy.config.apps.http).toEqual({ servers: {} })
+    })
+
+    test('it keeps what apps.tls already holds, and loads into an empty Caddy', async () => {
+      const caddy = fakeCaddy({ apps: { tls: { automation: { policies: [{ issuers: [{ module: 'internal' }] }] } } } })
+      await post(caddy, '/certs/load', ZONE)
+      expect(caddy.config.apps.tls.automation.policies).toHaveLength(1)
+      expect(loaded(caddy)).toHaveLength(1)
+      const empty = fakeCaddy()
+      expect((await post(empty, '/certs/load', ZONE)).status).toBe(200)
+      expect(loaded(empty)).toHaveLength(1)
+    })
+
+    test('the same pair again writes nothing', async () => {
+      const caddy = fakeCaddy()
+      await post(caddy, '/certs/load', ZONE)
+      const before = writes(caddy)
+      const again  = await (await post(caddy, '/certs/load', ZONE)).json()
+      expect(again.changed).toBe(false)
+      expect(writes(caddy)).toBe(before)
+    })
+
+    test('a new pair under the same id replaces the entry in place, beside other ids', async () => {
+      const caddy = fakeCaddy()
+      const other = { id: 'other', ...pair(['*.other.test']) }
+      await post(caddy, '/certs/load', ZONE)
+      await post(caddy, '/certs/load', other)
+      const next = pair()
+      const body = await (await post(caddy, '/certs/load', { id: 'zone', ...next })).json()
+      expect(body.changed).toBe(true)
+      expect(loaded(caddy)).toEqual([
+        { '@id': 'fjs-cert-zone', certificate: next.cert, key: next.key },
+        { '@id': 'fjs-cert-other', certificate: other.cert, key: other.key },
+      ])
+    })
+
+    test('a key that is not the certificate\'s, an expired certificate and PEM that does not parse are refused with nothing written', async () => {
+      const caddy = fakeCaddy()
+      const other = pair()
+      const refuse = async (body) => { const r = await post(caddy, '/certs/load', body); return [r.status, (await r.json()).error] }
+      expect(await refuse({ ...ZONE, key: other.key })).toEqual([500, 'key does not match the certificate'])
+      expect(await refuse({ ...ZONE, cert: 'nope' })).toEqual([500, 'cert is not a PEM certificate'])
+      expect(await refuse({ ...ZONE, key: 'nope' })).toEqual([500, 'key is not a PEM private key'])
+      expect((await refuse({ ...ZONE, id: '../x' }))[1]).toContain('is not a plain name')
+      expect(caddy.asked).toEqual([])
+
+      const late = createIngress({ fetch: caddy.fetch, now: () => Date.now() + 60 * 86_400_000 })
+      await expect(late.loadCert(ZONE)).rejects.toThrow(/the certificate expired/)
+      expect(caddy.asked).toEqual([])
+    })
+
+    test('a drop removes the entry, leaves the others, and says when none was there', async () => {
+      const caddy = fakeCaddy()
+      const other = { id: 'other', ...pair(['*.other.test']) }
+      await post(caddy, '/certs/load', ZONE)
+      await post(caddy, '/certs/load', other)
+      expect(await (await post(caddy, '/certs/drop', { id: 'zone' })).json()).toEqual({ removed: true })
+      expect(loaded(caddy).map(p => p['@id'])).toEqual(['fjs-cert-other'])
+      expect(await (await post(caddy, '/certs/drop', { id: 'zone' })).json()).toEqual({ removed: false })
+    })
+
+    test('a write landing between the read and the write is merged, not reverted', async () => {
+      const caddy = fakeCaddy({ apps: { http: { servers: { ingress: { listen: [':443'], routes: [] } } } } })
+      caddy.interleave((config) => { config.apps.http.servers.ingress.routes.push({ '@id': 'fli-shop' }) })
+      await post(caddy, '/certs/load', ZONE)
+      expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fli-shop'])
+      expect(loaded(caddy)).toHaveLength(1)
+    })
+
+    test('with no Caddy on the machine a push answers loaded: false, and an app id cannot spell a certificate\'s @id', async () => {
+      const fake   = fakeRunner({})
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run }), inspector: createInspector({ run: fake.run }),
+        log: { warn() {}, error() {} },
+      })
+      const res = await send(server, 'POST', '/certs/load', ZONE)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ loaded: false })
+      expect(await (await send(server, 'POST', '/certs/drop', { id: 'zone' })).json()).toEqual({ removed: false })
+      await expect(createIngress({ fetch: fakeCaddy().fetch }).route({ appId: 'cert-zone', hosts: ['a.example.com'], port: 7300 })).rejects.toThrow(/certificate id/)
     })
   })
 

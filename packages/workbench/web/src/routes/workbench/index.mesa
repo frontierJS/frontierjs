@@ -64,11 +64,14 @@ title: Workbench
   import Dot        from '@frontierjs/ui/components/display/Dot.mesa'
   import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
+  import DropdownSubmenu from '@frontierjs/ui/components/overlay/DropdownSubmenu.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Markdown   from '@frontierjs/ui/components/display/Markdown.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Spinner    from '@frontierjs/ui/components/feedback/Spinner.mesa'
   import Tab        from '@frontierjs/ui/components/layout/Tab.mesa'
   import TabList    from '@frontierjs/ui/components/layout/TabList.mesa'
   import TabPanel   from '@frontierjs/ui/components/layout/TabPanel.mesa'
@@ -600,7 +603,7 @@ title: Workbench
     if (!p.missing) out.push({ key: 'terminal', label: 'Terminal' })
     const c = status[p.id]?.checks
     if (c) out.push({ key: 'checks', tone: CHECKS_TONE[c.state],
-                      label: checksLabel(c) + (c.drives ? ` · ${plural(c.drives, 'drive')} to run` : '') })
+                      label: checksLabel(c, status[p.id].chat) + (c.drives ? ` · ${plural(c.drives, 'drive')} to run` : '') })
     const r = transcripts[p.id]?.review
     if (r) out.push({ key: 'review', tone: r.state === 'error' ? 'danger' : '',
                       label: r.state === 'working' ? 'Review…' : `Review${status[p.id]?.review?.cost != null ? ` ${money(status[p.id].review.cost)}` : ''}` })
@@ -714,6 +717,25 @@ title: Workbench
   // ─── chats ───────────────────────────────────────────────────────────
 
   const chatsOf   = (id) => status[id]?.chats ?? []
+  // The API sends chats grouped, so a group is a run of one package. Repo-wide
+  // draws no label, which leaves a checkout without workspaces as it was.
+  function groupsOf(id) {
+    const groups = []
+    for (const c of chatsOf(id)) {
+      const path = c.package?.path ?? '.'
+      if (groups.at(-1)?.path !== path) groups.push({ path, name: c.package?.name ?? null, label: c.package && path.split('/').at(-1), chats: [] })
+      groups.at(-1).chats.push(c)
+    }
+    return groups
+  }
+  // A group's label folds it to a chip, per pin, kept as slim is.
+  let groupFolds = {}
+  const groupFolded = (id, path) => !!groupFolds[id]?.[path]
+  const foldGroup   = (id, path) => { groupFolds = { ...groupFolds, [id]: { ...groupFolds[id], [path]: !groupFolded(id, path) } } }
+  // The chip wears the dot of the chat that most wants you, so a fold never
+  // hides a question or a reply.
+  const loudestOf   = (g) => g.chats.find(c => c.asks) ?? g.chats.find(c => c.unread) ?? g.chats.find(c => c.state === 'working')
+  const holdsShown  = (id, g) => g.chats.some(c => c.id === status[id]?.chat)
   const shownOf   = (id) => chatsOf(id).find(c => c.id === status[id]?.chat)
   const chatTitle = (c) => c.title ?? 'New chat'
   // Nothing sent and nothing resumed: New chat would open its twin.
@@ -758,6 +780,14 @@ title: Workbench
   async function closeChat(p, c) {
     if (await act('close', p, { chat: c.id })) { fetchedAt[p.id] = -1; await loadPins() }
   }
+
+  // null goes back to inferring, '.' is repo-wide (Invariant 9: the key is sent).
+  async function choosePackage(p, c, pkg) {
+    if (pkg === c.chosen) return
+    if (await act('setPackage', p, { chat: c.id, package: pkg })) await loadPins()
+  }
+  const shortOf    = (path) => path.split('/').at(-1)
+  const inferredOf = (c) => c.chosen == null ? (c.package ? `${shortOf(c.package.path)} · inferred` : 'repo-wide') : ''
 
   // ─── branches ────────────────────────────────────────────────────────
 
@@ -880,12 +910,15 @@ title: Workbench
   // ─── after a run: checks and review ──────────────────────────────────
 
   const CHECKS_TONE  = { running: 'info', pass: 'success', fail: 'danger', error: 'danger' }
-  function checksLabel(c) {
+  // A chat's checks grade only the files it wrote (FJS-D1959), and the
+  // checkout's Stop hook grades the whole tree, so the line says which.
+  function checksLabel(c, shown) {
     if (c.state === 'running') return 'checking…'
     if (c.state === 'error')   return 'checks failed to run'
-    if (c.state === 'pass')    return `checks ✓ · ${c.changed} changed`
-    return `${c.unfinished} unfinished · ${c.changed} changed`
+    const scope = c.scope ? `${whose(c.scope, shown)} ${plural(c.scope.files, 'file')}, ${c.changed} changed` : `${c.changed} changed in the tree`
+    return c.state === 'pass' ? `checks ✓ · ${scope}` : `${c.unfinished} unfinished · ${scope}`
   }
+  const whose = (scope, shown) => scope.chat === shown ? 'this chat\'s' : 'another chat\'s'
 
   const reviewReply = (id) => (transcripts[id]?.review?.items ?? [])
     .filter(it => it.kind === 'text').map(it => it.text).join('\n\n')
@@ -983,8 +1016,24 @@ title: Workbench
 
   const rowKey  = (id, row) => `${id} ${row}`
   const runOf   = (id, row) => status[id]?.runs?.find(r => r.id === row)
-  const RUN_GROUPS = [{ of: 'app', heading: 'Apps' }, { of: 'script', heading: 'Scripts' }]
   const rowsOf  = (id, of) => (runnables[id] ?? []).filter(r => r.kind === of)
+  // The shown chat's package test leads; another member's test is listed only
+  // once it has run, so its output stays reachable.
+  const testOf  = (id) => {
+    const pkg = shownOf(id)?.package
+    return pkg ? (runnables[id] ?? []).find(r => r.kind !== 'app' && r.dir === pkg.path && r.start === 'bun run test') : null
+  }
+  function runGroupsOf(id) {
+    const lead = testOf(id)
+    const rest = (of) => rowsOf(id, of).filter(r => r !== lead)
+    return [
+      { key: 'package', heading: "This chat's package", rows: lead ? [lead] : [] },
+      { key: 'app',     heading: 'Apps',    rows: rowsOf(id, 'app') },
+      { key: 'script',  heading: 'Scripts', rows: rest('script') },
+      { key: 'test',    heading: 'Tests',   rows: rest('test').filter(r => runOf(id, r.id)) },
+    ].filter(g => g.rows.length)
+  }
+  const startLabel = (id, row) => row.kind === 'app' ? '▶ Start' : row === testOf(id) ? `Test ${row.dir.split('/').at(-1)}` : 'Run'
   const appsOf  = (id) => rowsOf(id, 'app')
   const serving = (id) => (status[id]?.runs ?? []).filter(r => r.running)
   const servingApps = (id) => serving(id).filter(r => r.id.startsWith('app:'))
@@ -1412,33 +1461,83 @@ title: Workbench
               {/if}
               {#if isSlim(p.id) && !p.missing}
                 <div class="text-sm workbench-head-chats" role="group" aria-label={`Chats in ${p.name}`}>
-                  {#each chatsOf(p.id) as c (c.id)}
-                    <button type="button" class="workbench-head-chat" data-chat={c.id} data-unread={c.unread ? '' : null}
-                            aria-current={c.id === status[p.id]?.chat ? 'true' : null}
-                            onclick={() => openChat(p, c.id)} title={`${c.title ?? 'Nothing sent here yet'} — ${chatLabel(c)}`}>
-                      <Dot tone={chatTone(c)} hollow={chatHollow(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
-                      <span class="workbench-chat-title">{chatTitle(c)}</span>
-                    </button>
+                  {#each groupsOf(p.id) as g (g.path)}
+                    <span class="workbench-chat-group" data-package={g.path} role={g.label ? 'group' : null} aria-label={g.name}>
+                      {#if g.label}
+                        <button type="button" class="workbench-chat-group-label text-xs" aria-expanded={groupFolded(p.id, g.path) ? 'false' : 'true'}
+                                aria-current={groupFolded(p.id, g.path) && holdsShown(p.id, g) ? 'true' : null}
+                                data-unread={groupFolded(p.id, g.path) && g.chats.some(c => c.unread) ? '' : null}
+                                title={groupFolded(p.id, g.path) ? `${g.name} — show its ${g.chats.length} chats` : `${g.name} — fold its chats`}
+                                onclick={() => foldGroup(p.id, g.path)}>
+                          {#if groupFolded(p.id, g.path) && loudestOf(g)}<Dot tone={chatTone(loudestOf(g))} hollow={chatHollow(loudestOf(g))} pulse={loudestOf(g).state === 'working'} label={chatLabel(loudestOf(g))} />{/if}
+                          {g.label} ·{#if groupFolded(p.id, g.path)} <span class="workbench-chat-group-count">{g.chats.length}</span>{/if}
+                        </button>
+                      {/if}
+                      {#if !groupFolded(p.id, g.path)}
+                      {#each g.chats as c (c.id)}
+                        <button type="button" class="workbench-head-chat" data-chat={c.id} data-unread={c.unread ? '' : null}
+                                aria-current={c.id === status[p.id]?.chat ? 'true' : null}
+                                onclick={() => openChat(p, c.id)} title={`${c.title ?? 'Nothing sent here yet'} — ${chatLabel(c)}`}>
+                          <Dot tone={chatTone(c)} hollow={chatHollow(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
+                          <span class="workbench-chat-title">{chatTitle(c)}</span>
+                        </button>
+                      {/each}
+                      {/if}
+                    </span>
                   {/each}
                   <Button size="xs" treatment="ghost" class="workbench-head-add" onclick={() => addChat(p)}
                           aria-label={`New chat in ${p.name}`} title="Another chat in this checkout, opened">+ New</Button>
                 </div>
               {:else if !p.missing}
                 <div class="text-sm workbench-chats" role="group" aria-label={`Chats in ${p.name}`}>
-                  {#each chatsOf(p.id) as c (c.id)}
-                    <span class="workbench-chat-tab" data-chat={c.id}>
-                      <button type="button" class="workbench-chat-open" onclick={() => openChat(p, c.id)}
-                              aria-current={c.id === status[p.id]?.chat ? 'true' : null}
-                              title={c.title ?? 'Nothing sent here yet'}>
-                        <Dot tone={chatTone(c)} hollow={chatHollow(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
-                        <span class="workbench-chat-title">{chatTitle(c)}</span>
-                      </button>
-                      {#if c.state !== 'working'}
-                        <button type="button" class="workbench-chat-close" aria-label={`Close ${chatTitle(c)}`}
-                                title="Close — Claude Code keeps the session"
-                                data-confirm={c.title ? 'Its transcript here goes; Claude Code keeps the session, and its cost stays in the total.' : null}
-                                data-confirm-title={`Close "${c.title}"?`} data-confirm-label="Close"
-                                onclick={() => closeChat(p, c)}>×</button>
+                  {#each groupsOf(p.id) as g (g.path)}
+                    <span class="workbench-chat-group" data-package={g.path} role={g.label ? 'group' : null} aria-label={g.name}>
+                      {#if g.label}
+                        <button type="button" class="workbench-chat-group-label text-xs" aria-expanded={groupFolded(p.id, g.path) ? 'false' : 'true'}
+                                aria-current={groupFolded(p.id, g.path) && holdsShown(p.id, g) ? 'true' : null}
+                                data-unread={groupFolded(p.id, g.path) && g.chats.some(c => c.unread) ? '' : null}
+                                title={groupFolded(p.id, g.path) ? `${g.name} — show its ${g.chats.length} chats` : `${g.name} — fold its chats`}
+                                onclick={() => foldGroup(p.id, g.path)}>
+                          {#if groupFolded(p.id, g.path) && loudestOf(g)}<Dot tone={chatTone(loudestOf(g))} hollow={chatHollow(loudestOf(g))} pulse={loudestOf(g).state === 'working'} label={chatLabel(loudestOf(g))} />{/if}
+                          {g.label} ·{#if groupFolded(p.id, g.path)} <span class="workbench-chat-group-count">{g.chats.length}</span>{/if}
+                        </button>
+                      {/if}
+                      {#if !groupFolded(p.id, g.path)}
+                      {#each g.chats as c (c.id)}
+                        <span class="workbench-chat-tab" data-chat={c.id}>
+                          <button type="button" class="workbench-chat-open" onclick={() => openChat(p, c.id)}
+                                  aria-current={c.id === status[p.id]?.chat ? 'true' : null}
+                                  title={c.title ?? 'Nothing sent here yet'}>
+                            <Dot tone={chatTone(c)} hollow={chatHollow(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
+                            <span class="workbench-chat-title">{chatTitle(c)}</span>
+                          </button>
+                          {#if p.members?.length}
+                            <DropdownMenu placement="bottom-start" class="workbench-chat-pkg">
+                              {#snippet trigger()}
+                                <button type="button" class="workbench-chat-pkg-open" aria-label={`Package of ${chatTitle(c)}`}
+                                        title={c.package ? `${c.package.name}${c.package.inferred ? ', inferred from its writes' : ''} — choose` : 'Repo-wide — choose a package'}>⌄</button>
+                              {/snippet}
+                              <DropdownItem radio checked={c.chosen == null} suffix={inferredOf(c)} data-package="" onclick={() => choosePackage(p, c, null)}>From its writes</DropdownItem>
+                              <DropdownItem radio checked={c.chosen === '.'} data-package="." onclick={() => choosePackage(p, c, '.')}>Repo-wide</DropdownItem>
+                              <DropdownSeparator />
+                              <DropdownSubmenu heading="A package">
+                                {#each p.members as m (m.path)}
+                                  <DropdownItem radio checked={c.chosen === m.path} data-package={m.path} title={m.name}
+                                                suffix={c.chosen == null && c.package?.path === m.path ? 'inferred' : ''}
+                                                onclick={() => choosePackage(p, c, m.path)}>{shortOf(m.path)}</DropdownItem>
+                                {/each}
+                              </DropdownSubmenu>
+                            </DropdownMenu>
+                          {/if}
+                          {#if c.state !== 'working'}
+                            <button type="button" class="workbench-chat-close" aria-label={`Close ${chatTitle(c)}`}
+                                    title="Close — Claude Code keeps the session"
+                                    data-confirm={c.title ? 'Its transcript here goes; Claude Code keeps the session, and its cost stays in the total.' : null}
+                                    data-confirm-title={`Close "${c.title}"?`} data-confirm-label="Close"
+                                    onclick={() => closeChat(p, c)}>×</button>
+                          {/if}
+                        </span>
+                      {/each}
                       {/if}
                     </span>
                   {/each}
@@ -1552,6 +1651,11 @@ title: Workbench
                         <div class="alert danger"><div class="alert-content text-sm">{it.text}</div></div>
                       {/if}
                     {/each}
+                    {#if status[p.id]?.state === 'working' && !elsewhere(p.id)}
+                      <div class="text-sm text-muted workbench-working" role="status">
+                        <Spinner size="sm" label="Claude is working" /> <span>{doing(p.id)}</span>
+                      </div>
+                    {/if}
                   </div>
 
                   {#if rails[p.id]?.notches.length}
@@ -1646,48 +1750,46 @@ title: Workbench
                 <p class="text-muted">Started in this checkout and left running on the API's machine. A new message does not stop one; {p.from ? 'Archive does' : 'Unpin does'}.</p>
                 {#if !runnables[p.id]}
                   <p class="text-muted">Reading the checkout…</p>
-                {:else if !runnables[p.id].length}
-                  <p class="text-muted">Nothing to run — no app here and no package.json scripts.</p>
+                {:else if !runGroupsOf(p.id).length}
+                  <p class="text-muted">Nothing to run — no app here, no package.json scripts, and no test in this chat's package.</p>
                 {/if}
-                {#each RUN_GROUPS as group (group.of)}
-                  {#if rowsOf(p.id, group.of).length}
-                    <h3 class="text-sm">{group.heading}</h3>
-                    {#each rowsOf(p.id, group.of) as row (row.id)}
-                      <div class="workbench-runrow" data-row={row.id}>
-                        <div class="cluster">
-                          <strong>{row.name}</strong>
-                          <code title={row.script ?? row.start}>{row.start}</code>
-                          {#if row.dir !== '.'}<span class="text-muted">in {row.dir}</span>{/if}
-                          <span class="cluster workbench-runrow-end">
-                            {#if runOf(p.id, row.id)?.running}
-                              {#each runOf(p.id, row.id).ports as s}
-                                <a href={`http://localhost:${s.port}`} target="_blank" rel="noopener">{s.label} :{s.port} ↗</a>
-                              {/each}
-                              <Badge tone="info">{runOf(p.id, row.id).stopped ? 'stopping…' : 'running'}</Badge>
-                              <Button size="xs" treatment="outlined" tone="danger" onclick={() => haltRow(p, row)}>Stop</Button>
-                            {:else}
-                              {#if runOf(p.id, row.id)}
-                                <span class={ended(runOf(p.id, row.id)).tone}>{ended(runOf(p.id, row.id)).text}</span>
-                              {/if}
-                              <Button size="xs" treatment={row.kind === 'app' ? '' : 'outlined'} onclick={() => startRow(p, row)}
-                                      disabled={starting[rowKey(p.id, row.id)]}>{row.kind === 'app' ? '▶ Start' : 'Run'}</Button>
-                              {#if runOf(p.id, row.id)}
-                                <Button size="xs" treatment="ghost" aria-label={`Forget ${row.name}'s last run`} title="Forget this run and its output"
-                                        onclick={() => haltRow(p, row)}>×</Button>
-                              {/if}
+                {#each runGroupsOf(p.id) as group (group.key)}
+                  <h3 class="text-sm" data-group={group.key}>{group.heading}</h3>
+                  {#each group.rows as row (row.id)}
+                    <div class="workbench-runrow" data-row={row.id}>
+                      <div class="cluster">
+                        <strong>{row.name}</strong>
+                        <code title={row.script ?? row.start}>{row.start}</code>
+                        {#if row.dir !== '.'}<span class="text-muted">in {row.dir}</span>{/if}
+                        <span class="cluster workbench-runrow-end">
+                          {#if runOf(p.id, row.id)?.running}
+                            {#each runOf(p.id, row.id).ports as s}
+                              <a href={`http://localhost:${s.port}`} target="_blank" rel="noopener">{s.label} :{s.port} ↗</a>
+                            {/each}
+                            <Badge tone="info">{runOf(p.id, row.id).stopped ? 'stopping…' : 'running'}</Badge>
+                            <Button size="xs" treatment="outlined" tone="danger" onclick={() => haltRow(p, row)}>Stop</Button>
+                          {:else}
+                            {#if runOf(p.id, row.id)}
+                              <span class={ended(runOf(p.id, row.id)).tone}>{ended(runOf(p.id, row.id)).text}</span>
                             {/if}
-                          </span>
-                        </div>
-                        {#if runOf(p.id, row.id)}
-                          <details class="workbench-runlog" open={logOpen[rowKey(p.id, row.id)] ? true : null}
-                                   ontoggle={(e) => { if (e.target.open !== !!logOpen[rowKey(p.id, row.id)]) toggleLog(p.id, row.id, e.target.open) }}>
-                            <summary class="text-muted">Output</summary>
-                            <pre data-log={rowKey(p.id, row.id)}>{(logs[rowKey(p.id, row.id)] ?? []).join('\n')}</pre>
-                          </details>
-                        {/if}
+                            <Button size="xs" treatment={row.kind === 'app' ? '' : 'outlined'} onclick={() => startRow(p, row)}
+                                    disabled={starting[rowKey(p.id, row.id)]}>{startLabel(p.id, row)}</Button>
+                            {#if runOf(p.id, row.id)}
+                              <Button size="xs" treatment="ghost" aria-label={`Forget ${row.name}'s last run`} title="Forget this run and its output"
+                                      onclick={() => haltRow(p, row)}>×</Button>
+                            {/if}
+                          {/if}
+                        </span>
                       </div>
-                    {/each}
-                  {/if}
+                      {#if runOf(p.id, row.id)}
+                        <details class="workbench-runlog" open={logOpen[rowKey(p.id, row.id)] ? true : null}
+                                 ontoggle={(e) => { if (e.target.open !== !!logOpen[rowKey(p.id, row.id)]) toggleLog(p.id, row.id, e.target.open) }}>
+                          <summary class="text-muted">Output</summary>
+                          <pre data-log={rowKey(p.id, row.id)}>{(logs[rowKey(p.id, row.id)] ?? []).join('\n')}</pre>
+                        </details>
+                      {/if}
+                    </div>
+                  {/each}
                 {/each}
               </div>
 
@@ -1877,7 +1979,13 @@ title: Workbench
 
             {:else if tabOf(p) === 'checks'}
               <div class="workbench-panel text-sm workbench-checks" id={`workbench-checks-${p.id}`} role="region" aria-labelledby={`workbench-view-${p.id}`}>
-                <p class="text-muted">This checkout's own <code>fli done</code>, run when the last message finished.</p>
+                <p class="text-muted">This checkout's own <code>fli done</code>, run when the last message finished.
+                  {#if transcripts[p.id]?.checks?.scope}
+                    Graded on the {plural(transcripts[p.id].checks.scope.files, 'file')} {whose(transcripts[p.id].checks.scope, status[p.id]?.chat)} Edit and Write calls touched; a file changed by a shell command is not among them.
+                  {:else if transcripts[p.id]?.checks}
+                    Graded on the whole tree: the chat recorded no Edit or Write.
+                  {/if}
+                </p>
                 {#if transcripts[p.id]?.checks?.error}
                   <p class="text-danger">{transcripts[p.id].checks.error}</p>
                 {/if}
@@ -2272,6 +2380,29 @@ title: Workbench
   .workbench-head-chat[aria-current='true'] { background: var(--surface-sunken); color: inherit; }
   .workbench-head-chat[data-unread] { color: inherit; font-weight: 600; }
   .workbench-head-chats :global(.workbench-head-add) { flex-shrink: 0; }
+  /* A group is only a label in the row: its tabs shrink and scroll beside
+     every other tab, so the wrapper draws no box. */
+  .workbench-chat-group { display: contents; }
+  .workbench-chat-group-label {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-self: center;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 0 var(--space-xs);
+    border: var(--border-width) solid transparent;
+    border-radius: var(--pill-radius);
+    background: none;
+    color: var(--ink-mute);
+    font: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .workbench-chat-group-label:hover { color: inherit; }
+  .workbench-chat-group-label[aria-expanded='false'] { padding-inline: var(--space-sm); border-color: var(--tint-rule); }
+  .workbench-chat-group-label[aria-current='true'] { background: var(--surface-sunken); color: inherit; }
+  .workbench-chat-group-label[data-unread] { color: inherit; font-weight: 600; }
+  .workbench-chat-group-count { font-variant-numeric: tabular-nums; }
   .workbench-fold {
     display: inline-flex;
     align-items: center;
@@ -2372,6 +2503,15 @@ title: Workbench
     cursor: pointer;
   }
   .workbench-chat-close:hover { color: inherit; }
+  .workbench-chat-pkg-open {
+    padding: 0 var(--space-2xs);
+    border: 0;
+    background: none;
+    color: var(--ink-mute);
+    font: inherit;
+    cursor: pointer;
+  }
+  .workbench-chat-pkg-open:hover { color: inherit; }
 
   .workbench-chat {
     flex: 1;
@@ -2505,6 +2645,7 @@ title: Workbench
   .workbench-chevron { margin-inline-start: auto; color: var(--ink-mute); }
   .workbench-tools, .workbench-result { align-self: flex-start; padding-inline: var(--space-sm); }
   .workbench-result { opacity: 0.7; }
+  .workbench-working { display: flex; align-items: center; gap: var(--space-sm); padding-inline: var(--space-sm); }
   .workbench-text { white-space: pre-wrap; overflow-wrap: anywhere; }
   /* A long path or URL in a reply must wrap inside the bubble, and a fence
      scrolls in its own box rather than widening the log. */

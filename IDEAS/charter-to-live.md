@@ -135,12 +135,96 @@ and removed, with each hand step and each failure written under its step.
   back as a `db:migrate` finding. Third run: **settled and green at turn 6, booted (M5)**, $1.48,
   522 s; one fresh migration per database. **Budget a run at about $1.50 and 9 minutes for the
   generate stage alone**, not the figures in the target block.
-- [ ] 0.4 `fli basecamp:app` + `fli basecamp:deploy` that app with the 0.2 key. Write down what
+- [x] 0.4 `fli basecamp:app` + `fli basecamp:deploy` that app with the 0.2 key. Write down what
   `link:` dependencies, the env file, migrations and the first owner each needed.
-- [ ] 0.5 Over the public hostname, log in as the owner and make the `flows.json` move with
+  **Done 2026-11-06** on a copy of 0.3's app (`apps/charter/oracle/01-01-saas-signup`, copied to
+  `~/charter-live-04/app`), run key `charter-run-D1951` throughout, App `saas-signup-0-4` at
+  `https://saas-signup-0-4.maverickmade.tech`: `/api/health` 200, the web app 200, and
+  `POST /api/auth/login` as the owner answers a session with `isAdmin`. The box's listing before
+  (containers, images, volumes, Caddy, ports) is `~/charter-live-04/before.txt`, for 0.6. What each
+  thing needed, in the order a person did it:
+  - **`link:` dependencies: nothing.** The build is `docker build` on the laptop over `deploy/generated/`,
+    which vendors 13 workspace packages as `.tgz` (`core/vendor.js`); the image installs from
+    those. The risk above did not bite. A copied app's `node_modules` symlinks are relative and
+    break, so the copy needed `bun install` (a laptop concern, not the box's).
+  - **Git: the release is HEAD (`FJS-D1968`), and the generated app is not committed.** The oracle
+    run leaves `api/src/` and `db/schema.lite` changes in the working tree; an uncommitted change is
+    left out of the image. One hand `git add -A && git commit` before `basecamp:app`.
+  - **The env file: `basecamp:app` wrote `BASECAMP_APP_ID`; nothing else was needed.** The deploy's
+    set-up planned the rest from the app's own declarations: `ENCRYPTION_KEY` minted, `DATABASE_URL` and
+    `AUDIT_PATH` moved to `/db`, both `FRONTIER_*_URL`s from `--domain`, `NODE_ENV`, port 3000 off
+    the `EXPOSE` (`FJS-4047` is fixed: this run set it), volume `/db`, health check. Warnings only
+    (moving `FROM` tags, `db/.json/` in the image).
+  - **Migrations: the first release failed, `Start container … ECONNREFUSED`,** because the image's
+    `CMD` runs `db:migrate` first and the history did not build the schema: `@frontierjs/auth`
+    gained `session.refreshToken`/`clientId` and `credential.clientId` after the app's migration was
+    written (the MCP sign-in work), so the framework moved under a generated app. The failed
+    container is removed, so its log is gone; **the cause was found by running the image locally**
+    (`docker run` with the Variables, no `--rm`). The fix is `litestone migrate create <label>` and a
+    commit. **Phase 1:** the deploy stage must run `migrate create` (or the 0.3 history reset) on
+    the final schema and commit, and a failed start should keep its last log lines in the release
+    step's message.
+  - **Two releases, not one.** `basecamp:deploy` releases the container App and *sets up* the static
+    App `app` (it holds a 233-byte placeholder) with the Domain on it. The Domain's DNS is pushed only
+    when a release lands on that App (`domain-dns`: "no release has landed"), so until the second
+    run, `fli basecamp:deploy --app <the static App's id>`, the name did not resolve; the first run
+    ends `✓ Released` with the hostname dead. After that run the A record, the CNAME and the
+    certificate came in under a minute. **Phase 1:** the stage runs both, container first.
+  - **The first owner: nothing seeded it.** The container has no `fli`, so `auth:dev-admin`
+    (`FJS-D1897`) could not run there as written. Its upsert script (the `SCRIPT` in
+    `commands/auth/dev-admin.md`) ran in the container instead: `ssh chartered docker exec -i -w /app
+    -e FLI_INPUT=… <container> bun run -`, with a random password. It created the user, the password
+    credential and `isEmailVerified`, `role: admin`; `isSystemAdmin` is not declared by this app so
+    was not set; `isAdmin` came from the app's `standing()`. **Phase 1:** either `auth:dev-admin`
+    gains a `--remote` that does this, or the stage owns the `docker exec`.
+  - **The ssh the deploy holds is `root`** on this box (`root@159.203.150.231`), not a deploy user;
+    the second risk above is therefore as wide as it can be. It also resets intermittently
+    (`kex_exchange_identification`): `docker save | ssh docker load` failed on the first try of two deploys
+    and a re-run recovered both, so the stage needs a retry around the load.
+  - **Time:** a warm build is 3–4 s; the web build 3.5 s; the release steps each a few seconds.
+- [x] 0.5 Over the public hostname, log in as the owner and make the `flows.json` move with
   `drive-browser`. Then point `access-drive.ts` at the live URL.
-- [ ] 0.6 Remove the App, then list the box's containers, Caddy routes and DNS records against
+  **Driven 2026-11-06** against `https://saas-signup-0-4.maverickmade.tech`, owner
+  `owner@charter.test` (0.4's):
+  - **The browser login passes:** `/login`, the owner's email and password, then `/` reads
+    *Signed in as*, `API · REACHABLE` and `SOCKET · OPEN` (so `/ws` routes back through the static
+    App's Domain), with no console error, exception or failed request.
+  - **The move cannot be made in a browser: the app has no screen for it.** `web/src/` is the
+    scaffold's (`routes/` holds login, register, reset, account, users; `resources/` holds
+    `User.mesa`), and *Your models* lists Users only; `/bookings` is the 404 page. Generate and
+    feature write the schema and `api/`, never `web/`, so every preset deploys a UI that reaches
+    none of its own models.
+  - **The move passes over HTTP** with `builder/use.ts` pointed at the URL (1.4's stage, no
+    change): owner login, then `EventType` → `Booking` made and `Booking.cancel` read back
+    `scheduled` → `cancelled` on the live box. flows.json's chain names `Invitee` and
+    `MeetingType`, which this app does not have; the move did not need them.
+  - **`access-drive.ts` takes a directory, not a URL** (`use.ts` says so): it reads at the Data
+    boundary on a scratch copy of the app, so pointed "at the live URL" it grades the image's code
+    and not the box. It passes: 10 models, each refused or empty as anonymous and as another user.
+    `stranger-drive.ts` likewise: 3 reads, `users.find`/`users.get` as a signed-in stranger, the
+    same 3 as the local run. They are the scaffold's `User @@gate(4.4.4.5)`, a signed-in member
+    reading the directory (`FJS-D47`), so the drive grades User stricter than the ruling.
+  **Closed on HTTP** (owner, 2026-11-06): login in the browser and the move over HTTP, as 1.4's
+  stage does. A generated app having no screen for its own models is a gap of its own, not 0.5's.
+- [x] 0.6 Remove the App, then list the box's containers, Caddy routes and DNS records against
   a listing taken before 0.4. That listing is 1.5's check.
+  **Done 2026-11-06** with the run key, in `live.ts` `cleanStage`'s order: the container App's
+  Domains (none: the Domain is on the static App), `DELETE /apps/<container>`, `DELETE
+  /projects/<project>`. Listing: `~/charter-live-04/boxlist.sh | sort` (rows, zone records,
+  containers, images, Caddy route ids, Outpost's directories); `box-live.txt` with the App up,
+  `box-after-clean.txt` after. The project delete took both Apps, the Domain, the container,
+  the three Caddy routes and the static host files within 10 s. **Seven things stayed:**
+  - **Two DNS records**, both of which Basecamp's own `edge.records` lists under `orphans`: the
+    Domain's CNAME (`FJS-4055`: a Domain deleted with its project skips the `domain:dns` job
+    that removes it) and the App's ingress A record (`FJS-4056`: nothing ever removes it).
+  - **The API's data directory** `/var/lib/outpost/apps/<appId>/data`, its `uids.json` entry,
+    and the static App's `/var/lib/outpost/static/apps/<appId>`. The data directory is kept by
+    design, a Volume row deleted on its own (`FJS-D1615`).
+  - **Both images** the releases loaded (`fjs-<appId>:<sha>`, one per commit).
+  **For 1.5:** `cleanStage` deletes Domains by every App the run made, not the container's
+  alone; deletes each Domain through its service before the project; deletes the Volume row; and
+  removes its images. Its listing has to include zone records and the machine's directories and
+  images, since the three Basecamp lists it takes today read clean while all seven stay.
 
 ### Phase 1 — Charter runs the cases unattended
 
@@ -218,6 +302,17 @@ box diff is empty, and each miss is a filed `FJS-###`.
 - [ ] 1.5 The clean stage saves the App's container logs, its digest and the fli output into the
   run record. Unless the run was set to keep, it removes the App and its Domain. It writes the box
   diff from 0.6 into the `Run`: anything beyond a kept App fails the run.
+  **Built 2026-11-06 under `FJS-D1976`, not yet driven on the box.** `builder/live.ts`: deploy
+  keeps both fli commands' whole output under `runs/<date>-live-<case>/deploy/`; clean reads the
+  container's last 500 log lines (`apps.logs`) and every release's `builtImage`/`toImage`, then
+  removes each Domain of every App in the run's project through its own service, each App, the
+  project, and the App's data Volume (polling up to 6 min for Outpost's report). The listing
+  adds `/volumes` and `edge.records` `orphans` over every zone; a list the key cannot read
+  fails the stage by name. Framework side, in this tree: `FJS-4055`, `FJS-4056`, `FJS-4057`
+  closed, and `edge.zones`/`records` are declared reads so `edge:read` reaches them; a
+  Domain-less App's record is `FJS-4061`. **Owed before the drive:** the owner mints the
+  D1976 run key (`basecamp:key` was refused here), and Basecamp on `chartered` carries the
+  three fixes (its image is `basecamp:d76ffe1db`).
 - [x] 1.6 `corpus/live/`: a matrix of charters across shape (`saas` `solo` `team`), entry
   (`signup` `invite` `admin`), sign-in and one vendor. Frozen on the day it is written, like
   `prompts.json`. **Written 2026-11-04:** eight files `01-saas-signup` … `08-saas-signup`, each
@@ -334,6 +429,26 @@ only control on the page that touches the box.
     releases; a second, stronger credential in every run
   - **Recommend A** — the run workspace holds only Charter's own Apps (`FJS-D1899`), and the
     boundary D1896 draws is machines and keys, not per-App config
+- ~~**Q8 — How does the clean stage (1.5) see and remove what Basecamp's App, Domain and project lists miss?**~~ **Answered 2026-11-06 (`FJS-D1976`): A — Basecamp's deletes leave no record (`FJS-4055`, `FJS-4056` fixed) and a deleted App's Volume can be removed (`FJS-4057`), and the run key gains `edge:read` (the zone's `orphans`) and `volumes:*` (a deleted App's data); the diff is the three lists, orphan records and Volumes; images and Outpost's directories are checked by hand once, not per run, and nothing watches them between. `edge:read` reads the whole ingress zone, not only the run's records; `volumes:write` removes a directory under `/var/lib/outpost/apps/` through Outpost. The deploy stage's `/servers` preflight still has to be refused after the widening.**
+  Measured 2026-11-06 (0.6): those three lists read clean while seven things stayed: two zone
+  records (`FJS-4055`, `FJS-4056`), the data Volume, its `uids.json` entry, the static App's
+  directory and two images. The run key can read none of them, and the Volume's removal was
+  refused besides (`FJS-4057`).
+  - **A** — Basecamp's deletes leave no record (`FJS-4055`, `FJS-4056` fixed) and a deleted
+    App's Volume can be removed (`FJS-4057`), and the run key gains `edge:read` (the zone's
+    `orphans`) and `volumes:*` (a deleted App's data); the diff is the three lists, orphan
+    records and Volumes; images and Outpost's directories are checked by hand once, not per
+    run, and nothing watches them between. `edge:read` reads the whole ingress zone, not only
+    the run's records; `volumes:write` removes a directory under `/var/lib/outpost/apps/`
+    through Outpost. The deploy stage's `/servers` preflight still has to be refused after
+    the widening
+  - **B** — the clean stage also takes 0.6's full listing with the admin entry and ssh,
+    read-only; every delete stays the run key's, but a run then holds the admin key and root
+    ssh, which is what D1896 keeps off it
+  - **C** — the diff stays the three lists; what lies outside them is filed and listed by hand
+    from time to time
+  - **Recommend A** — Basecamp is the owner of what its deletes leave, so the fix belongs there;
+    `edge:read` and `volumes:*` touch neither machines nor keys, the boundary D1896 draws
 
 ## See also
 

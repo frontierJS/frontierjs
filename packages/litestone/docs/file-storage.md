@@ -57,6 +57,8 @@ const user = await db.user.create({
 
 // From the server's disk — code only. A string is never read as a path, under
 // asSystem() too, so a request body naming /etc/passwd is refused (FJS-2061).
+// A file on disk under a temp name takes the sender's { name, type, size } as
+// fromStream does: { name: 'IMG_0042.heic', type: 'image/heic', size }.
 await Bun.write('./seed/alice.png', png)
 await db.user.update({ where: { id: 1 }, data: { avatar: fromPath('./seed/alice.png') } })
 

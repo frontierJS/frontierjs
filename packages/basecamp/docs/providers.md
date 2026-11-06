@@ -77,6 +77,19 @@ account does not open is a 409 there. `sync` refuses with a 409 before writing a
 no ingress zone, the App runs nowhere, no connected zone holds the hostname,
 or an unmarked A/AAAA/CNAME sits at the name.
 
+**The zone also holds a wildcard.** Setting the zone dispatches `ingress:cert`
+(`jobs/ingress-cert.job.ts`), which mints `*.<ingressZone>` by DNS-01 through the
+workspace's own edge account: the TXT at `_acme-challenge.<zone>` is appended
+with the same token that writes the A records, so the token never leaves
+Basecamp, and the machine is sent the PEM only. The cert, key and ACME account
+key are one `tlsCert` Secret (`Workspace.ingressCertSecretId`,
+`ingressCertExpiresAt`, both `@system`). A daily sweep re-dispatches it inside
+`certStatusOf()`'s 30 days, a changed zone orders again, and a cleared one drops
+it; each run pushes it to every online machine, and a release pushes it to its
+machine before routing (`FJS-D1954`, `FJS-D1974`, `FJS-D1975`). `ACME_URL`
+points the order at a stand-in (Let's Encrypt when unset); a real CA is refused
+unless production or `ALLOW_CLOUD_SPEND=1`, as a real vendor is.
+
 **Nobody has to press it.** The `domain:dns` job runs `edge.syncStep` on every
 `Domain` create, patch, remove and restore, and for each of an App's Domains
 when a release lands. A deleted Domain's CNAME is removed, only where it
@@ -85,6 +98,16 @@ failed, so a workspace with no edge account writes Domains without a failed job
 for each. A machine entering or leaving `online` pushes each App on it, with
 no release (`FJS-1614`); an App left on no online machine keeps its record
 where it last ran, named `down` in drift (`FJS-D567`). `adopt` is not built.
+
+**The ingress name answers too** (`FJS-D1952`). With `App.isIngressNamePublished`
+on (the default) and the wildcard held, Caddy serves an App with no serving
+Domain at `<appId>.<ingressZone>`, and once one serves it, 308s the name to the
+primary Domain, else the first by hostname (`FJS-D1956`); `routedHosts` and
+`routedRedirects` are the one reader. An App with no Domain has no `domain:dns`
+to write its record, so `ingress:dns` (`edge.ingressStep`) does, on a write of
+the column and, for such an App alone, on a release and a machine moving.
+Turning the column off deletes the record unless a Domain still CNAMEs to it.
+Outpost answers the name `X-Robots-Tag: noindex`.
 
 **The connector writes.** `appendRecords` · `setRecords` ·
 `deleteRecords` (`FJS-D562`), each one batch that applies whole. Every record

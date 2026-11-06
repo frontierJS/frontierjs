@@ -150,7 +150,7 @@ export async function registerAllAccounts(app: App, db: any): Promise<number> {
  * it gets wrong is the one that bills somebody. This asks the fail-closed
  * question instead, so an address nobody recognizes is treated as real.
  */
-function isStandIn(address: string | undefined): boolean {
+export function isStandIn(address: string | undefined): boolean {
   if (!address) return false
   try {
     const host = new URL(address).hostname
@@ -181,7 +181,7 @@ function isStandIn(address: string | undefined): boolean {
  * The same shape `BASECAMP_STUB_OUTPOST` already has here, pointed the other
  * way: that one is refused IN production, this one is only free there.
  */
-function maySpend(): boolean {
+export function maySpend(): boolean {
   return env.NODE_ENV === 'production' || env.ALLOW_CLOUD_SPEND === '1'
 }
 

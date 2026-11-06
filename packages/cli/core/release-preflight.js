@@ -55,7 +55,7 @@ export const RULES = {
 const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\])$/i
 
 // A name that reads as a credential is a secret Variable.
-const SECRET_NAME = /KEY|SECRET|TOKEN|PASSWORD/
+export const SECRET_NAME = /KEY|SECRET|TOKEN|PASSWORD/
 const LOCAL_DB    = /^(?:\.\/)?db\//
 
 /** The first host port from `wanted` up that no other App on the machine
@@ -135,6 +135,19 @@ export function imageRuntime(dockerfile) {
     workdir: final?.workdir && final.workdir !== '/' ? final.workdir : '/',
     env:     Object.fromEntries(df.envs.filter(e => e.line > from && e.value !== null).map(e => [e.key, e.value])),
   }
+}
+
+/**
+ * The static Apps in front of a container App, one entry per Domain: the API
+ * split from web/ is reached through a Domain on the static App and the routes
+ * back to it (`FJS-D1547`), so a Domain routed to another App is that App's.
+ * Unread routes (`null`) count every static Domain as this App's.
+ */
+export function frontingStatics({ app, siblings, routes }) {
+  const statics = (siblings ?? []).filter(s => s.id !== app.id && s.source?.kind === 'inline')
+  return statics.flatMap(s => (s.domains ?? [])
+    .filter(d => !(routes ?? []).some(r => r.domainId === d.id && r.appId !== app.id))
+    .map(d => ({ app: s, domain: d })))
 }
 
 /**
@@ -271,18 +284,15 @@ export function releaseFindings({
       'A health check on a path nothing serves fails every release and puts the previous one back.',
       `Set the App's health check to ${health.path}.`, { app: { healthCheck: health.path } })
 
-  // The API split from web/ is reached through a Domain on the static App and
-  // the routes back to it (`FJS-D1547`); a setup that stopped after the Domain
-  // left none, and the hostname served the page for /api (`FJS-3529`). A
-  // Domain routed to another App is that App's, and left alone.
+  // A setup that stopped after the static App's Domain left no route back, and
+  // the hostname served the page for /api (`FJS-3529`).
   const statics = (siblings ?? []).filter(s => s.id !== app.id && s.source?.kind === 'inline')
   const norm    = (p) => String(p).trim().toLowerCase().replace(/\/+$/, '')
-  let fronted = false
-  for (const s of statics) for (const d of s.domains ?? []) {
-    const on = (routes ?? []).filter(r => r.domainId === d.id)
-    if (on.some(r => r.appId !== app.id)) continue
-    fronted = true
+  const fronts  = frontingStatics({ app, siblings, routes })
+  const fronted = fronts.length > 0
+  for (const { app: s, domain: d } of fronts) {
     if (!routes) continue
+    const on      = routes.filter(r => r.domainId === d.id)
     const have    = new Set(on.map(r => norm(r.pathPrefix)))
     const missing = prefixes.filter(p => !have.has(norm(p)))
     if (!missing.length) continue
@@ -437,7 +447,7 @@ console.log(JSON.stringify(spec ? { spec: out } : { error: 'the env module never
 /** The app's `defineEnv` spec — `{ spec }`, or `{ error }` saying why not. */
 export function readEnvSpec(root, { run = spawnSync } = {}) {
   const entry = ENV_MODULES.map(m => join(root, m)).find(existsSync)
-  if (!entry) return { error: `no env module (${ENV_MODULES.join(', ')})` }
+  if (!entry) return { error: `no env module (${ENV_MODULES.join(', ')})`, absent: true }
   const r = run('bun', ['-e', PROBE, entry], {
     cwd: root, encoding: 'utf8', timeout: 20_000,
     env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '' },
@@ -446,15 +456,43 @@ export function readEnvSpec(root, { run = spawnSync } = {}) {
   try { return JSON.parse(line) } catch { return { error: `the env module did not load: ${String(r.stderr ?? '').trim().split('\n')[0] || `exit ${r.status}`}` } }
 }
 
+/** Where an app with no env module writes its required keys down, in the order read. */
+export const ENV_REFERENCES = ['.env.example', '.env.keys']
+
+/**
+ * The keys a release refuses to go out without: the `defineEnv` spec's
+ * required ones, the set `env-required` grades, so both doors refuse on one
+ * set (`FJS-D1977`). An app with no env module falls back to `.env.example`,
+ * every key of it. `warning` is why an env module that exists was not read —
+ * the fallback then grades a file the app does not boot by.
+ * @returns {{ keys: string[], from: string|null, warning?: string }}
+ */
+export function requiredEnvKeys(root, { run } = {}) {
+  const env = readEnvSpec(root, { run })
+  if (env.spec) return {
+    keys: Object.entries(env.spec).filter(([, f]) => f.required).map(([k]) => k),
+    from: 'defineEnv',
+  }
+  const ref  = ENV_REFERENCES.find(name => existsSync(join(root, name))) ?? null
+  const keys = ref
+    ? readFileSync(join(root, ref), 'utf8').split('\n')
+        .map(l => l.trim())
+        .filter(l => l && !l.startsWith('#'))
+        .map(l => l.split('=')[0].trim())
+        .filter(Boolean)
+    : []
+  return { keys, from: ref, ...(env.absent ? {} : { warning: env.error }) }
+}
+
 /** Everything `releaseFindings` reads from the app's tree. */
-export function gatherReleaseInputs(root, { dockerfile = 'deploy/Dockerfile', run } = {}) {
+export function gatherReleaseInputs(root, { dockerfile = 'deploy/Dockerfile', dockerfileText, run } = {}) {
   const health = resolveHealthPath(root)
   const dfPath = join(root, dockerfile)
   return {
     envSpec:   readEnvSpec(root, { run }),
     databases: declaredDatabasePaths(join(root, 'db')),
     health:    { path: health.path, declared: declaresHealth(root, health.path).declared },
-    image:     imageRuntime(existsSync(dfPath) ? readFileSync(dfPath, 'utf8') : ''),
+    image:     imageRuntime(dockerfileText ?? (existsSync(dfPath) ? readFileSync(dfPath, 'utf8') : '')),
     surfaces:  ['web', 'widgets', 'site'].filter(s => existsSync(join(root, s))),
   }
 }

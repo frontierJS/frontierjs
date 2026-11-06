@@ -181,7 +181,14 @@ describe('fli env:push to an App in Basecamp', () => {
     bc = Bun.serve({ port: 0, async fetch(req) {
       const url = new URL(req.url)
       const json = (data, status = 200) => Response.json({ data }, { status })
-      if (req.method === 'GET' && url.pathname === '/apps/app1') return json({ id: 'app1', name: 'kapp', environmentId: 'env1' })
+      if (req.method === 'GET' && url.pathname === '/apps/app1')
+        return json({ id: 'app1', name: 'kapp', slug: 'kapp', environmentId: 'env1', environment: { tier: 'development', projectId: 'p1' } })
+      if (req.method === 'GET' && url.pathname === '/apps/app2')
+        return json({ id: 'app2', name: 'kapp', slug: 'kapp', environmentId: 'env2', environment: { tier: 'production', projectId: 'p1' } })
+      if (req.method === 'GET' && url.pathname === '/environments')
+        return json(url.searchParams.get('$offset') === '0' ? [{ id: 'env1', tier: 'development' }, { id: 'env2', tier: 'production' }] : [])
+      if (req.method === 'GET' && url.pathname === '/apps')
+        return json(url.searchParams.get('$offset') === '0' && url.searchParams.get('environmentId') === 'env1' ? [{ id: 'app1', slug: 'kapp' }] : [])
       if (req.method === 'GET' && url.pathname.startsWith('/apps/')) return Response.json({ message: 'not found' }, { status: 404 })
       if (req.method === 'GET' && url.pathname === '/variables')
         return json(url.searchParams.get('$offset') === '0'
@@ -223,6 +230,14 @@ describe('fli env:push to an App in Basecamp', () => {
     expect(r.status).toBe(0)
     expect(writes).toEqual([])
     expect(r.output).toMatch(/LINK_KEY\s+would be added as a secret/)
+  })
+
+  test('--production pushes to the production App of the project, not the one named', async () => {
+    const r = await push('--production')
+    expect(r.status).not.toBe(0)
+    expect(r.output).toContain('no App \'kapp\' in the production environment')
+    expect(r.output).toContain('fli basecamp:app --production')
+    expect(writes).toEqual([])
   })
 
   test('a flag for a server\'s env file is refused', async () => {

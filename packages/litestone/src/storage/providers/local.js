@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, createWriteStream, createReadStream } from 'fs'
 import { rename, copyFile, unlink } from 'fs/promises'
 import { createHmac, timingSafeEqual } from 'crypto'
-import { join, resolve, dirname } from 'path'
+import { join, resolve, dirname, sep } from 'path'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import { refUrl } from '../ref-url.js'
@@ -24,8 +24,8 @@ export class LocalProvider {
 
   _filePath(/** @type {string} */ key) {
     const abs = join(this._root, key)
-    // Guard against path traversal
-    if (!abs.startsWith(this._root)) throw new Error(`Invalid key: ${key}`)
+    // The separator matters: /x/storage-evil begins with /x/storage.
+    if (abs !== this._root && !abs.startsWith(this._root + sep)) throw new Error(`Invalid key: ${key}`)
     return abs
   }
 

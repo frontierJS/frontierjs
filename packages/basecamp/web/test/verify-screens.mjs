@@ -1276,6 +1276,23 @@ try {
     'the hostname never appeared', 8_000).catch(() => false)
   check('and the open app screen shows it without a reload', !!liveSeen)
 
+  // The ingress name card: the seeded workspace has no ingress zone, so an App
+  // with the switch on is `waiting`; the switch patches the row and the card
+  // follows the answer.
+  await until(`!!document.getElementById('ingress-name')`, v => v, 'the ingress name card never rendered')
+  check('the domains tab shows the ingress name card, waiting on the workspace zone',
+    (await text('#ingress-name')).includes('answers once'), (await text('#ingress-name')).slice(0, 200))
+  await evaluate(`document.querySelector('#ingress-name-switch').click()`)
+  await until(`document.getElementById('ingress-name')?.textContent.includes('not published')`, v => v,
+    'the card never turned off', 8_000)
+  check('turning the switch off patches the row',
+    (await apiGet(`/apps/${realId}`)).body?.isIngressNamePublished === false)
+  await evaluate(`document.querySelector('#ingress-name-switch').click()`)
+  await until(`document.getElementById('ingress-name')?.textContent.includes('answers once')`, v => v,
+    'the card never came back on', 8_000)
+  check('and on again patches it back',
+    (await apiGet(`/apps/${realId}`)).body?.isIngressNamePublished === true)
+
   // ─── The edit surfaces ─────────────────────────────────────────────────
   // Four screens take their form from the resource file's markup half, and
   // what the schema says about each column is the whole of what decides the

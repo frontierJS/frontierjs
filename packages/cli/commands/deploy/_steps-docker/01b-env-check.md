@@ -1,6 +1,6 @@
 ---
 title: 01b-env-check
-description: Validate that the server's .env.production has all required keys from .env.example
+description: Validate that the server's .env.production has every key the app's defineEnv spec requires (.env.example without one)
 optional: true
 skip: "!$.config.doApi || (!$.config.deployConf.api?.envCheck && !Object.keys({ ...$.config.deployConf?.configuration, ...$.config.deployConf?.secrets, ...$.config.deployConf?.[$.config.target]?.configuration, ...$.config.deployConf?.[$.config.target]?.secrets }).length)"
 ---
@@ -8,17 +8,12 @@ skip: "!$.config.doApi || (!$.config.deployConf.api?.envCheck && !Object.keys({ 
 ```js
 const { target, deployConf } = $.config
 const { host, path: serverPath } = $.config.api
-const { existsSync, readFileSync } = await import('fs')
-const { resolve } = await import('path')
-
-// ─── Find reference file ──────────────────────────────────────────────────────
-// Look for .env.example, then .env.keys — the local declaration of required keys
-const candidates = ['.env.example', '.env.keys']
-let refFile = null
-for (const name of candidates) {
-  const p = resolve($.paths.root, name)
-  if (existsSync(p)) { refFile = p; break }
-}
+// ─── The keys the app requires ────────────────────────────────────────────────
+// The spec Basecamp's preflight grades, so a move from Basecamp is not refused
+// on an optional key Basecamp never held (FJS-D1977).
+const { requiredEnvKeys } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
+const required = requiredEnvKeys($.paths.root)
+if (required.warning) log.warn(`Env check: the app's defineEnv spec did not load (${required.warning}) — checking ${required.from ?? 'deploy.secrets'} instead`)
 
 // ─── The DECLARED keys ────────────────────────────────────────────────────────
 //
@@ -44,33 +39,21 @@ try {
   // runs later and says it better. Nothing is checked from a set that would not
   // resolve, and the deploy is not stopped here.
   if (!(err instanceof ConfigurationError)) throw err
-  log.warn(`Env check: the configuration set does not resolve (${err.message}) — checking .env.example only`)
+  log.warn(`Env check: the configuration set does not resolve (${err.message}) — checking ${required.from ?? 'nothing'} only`)
 }
 
-if (!refFile && !declaredKeys.length && !appliedKeys.length) {
-  log.info('Env check: no .env.example or .env.keys found, and no keys declared — skipping')
-  log.info('  Create one, or declare deploy.configuration / deploy.secrets, to enable pre-deploy env validation')
+if (!required.from && !declaredKeys.length && !appliedKeys.length) {
+  log.info('Env check: no defineEnv spec, .env.example or .env.keys, and no keys declared — skipping')
+  log.info('  Add one, or declare deploy.configuration / deploy.secrets, to enable pre-deploy env validation')
   return
 }
 
-// ─── Parse required keys from reference file ──────────────────────────────────
-// Lines that are not blank and not comments declare required keys.
-// Values in .env.example are placeholders — only the keys matter here.
-const fileKeys = refFile
-  ? readFileSync(refFile, 'utf8')
-      .split('\n')
-      .map(l => l.trim())
-      .filter(l => l && !l.startsWith('#'))
-      .map(l => l.split('=')[0].trim())
-      .filter(Boolean)
-  : []
-
-// Which source named a key is carried, because the fix differs: a key from
-// `.env.example` is a convention somebody wrote down, and a key from the deploy
-// block is a statement this environment carries it.
+// Which source named a key is carried, because the fix differs: a key from the
+// app is one it needs, and a key from the deploy block is a statement this
+// environment carries it.
 const source = new Map()
-for (const k of fileKeys)     source.set(k, refFile.split('/').pop())
-for (const k of declaredKeys) source.set(k, 'deploy.secrets')
+for (const k of required.keys) source.set(k, required.from)
+for (const k of declaredKeys)  source.set(k, 'deploy.secrets')
 
 const requiredKeys = [...source.keys()]
 
@@ -83,7 +66,7 @@ if (!requiredKeys.length && !appliedKeys.length) {
 const { envFile } = apiFiles(deployConf, serverPath)
 let serverEnv = ''
 try {
-  serverEnv = machineFor($, host, serverPath).capture(`cat ${envFile} 2>/dev/null || echo ''`)
+  serverEnv = machineFor($, host, serverPath).capture(`cat ${envFile} 2>/dev/null || echo ''`, { dry: false })
 } catch {
   log.warn(`Env check: could not read ${envFile} on ${host} — skipping`)
   return
@@ -132,7 +115,7 @@ if (missing.length === 0) {
 // ─── Report missing keys ──────────────────────────────────────────────────────
 log.error(`Env check: ${missing.length} key(s) missing from ${envFile} on ${host}:`)
 for (const key of missing) {
-  log.warn(`  ${key.padEnd(28)} declared in ${source.get(key)}`)
+  log.warn(`  ${key.padEnd(28)} ${source.get(key) === 'defineEnv' ? 'required by the defineEnv spec' : `declared in ${source.get(key)}`}`)
 }
 log.info('')
 log.info(`Add the missing keys to ${envFile} on the server, or a secret as its own file in ${secretsDir}/, then redeploy:`)

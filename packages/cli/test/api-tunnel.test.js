@@ -54,8 +54,8 @@ describe('resolveApiTarget on an App Basecamp placed', () => {
     expect(sshArgs({ ...resolved, localPort: 8100 })).toEqual(expect.arrayContaining(['-p', '2222']))
   })
 
-  test('refuses a target in another environment, and an App with no port', () => {
-    expect(resolveApiTarget('stage', deploy, app)).toMatchObject({ ok: false, reason: expect.stringContaining('another environment is another App') })
+  test('takes the App it is handed for any target, and refuses an App with no port', () => {
+    expect(resolveApiTarget('stage', deploy, app)).toMatchObject({ ok: true, port: 10001, target: 'stage' })
     expect(resolveApiTarget('production', deploy, { ...app, port: null }).ok).toBe(false)
     expect(resolveApiTarget('production', null, { ...app, placement: [] }).ok).toBe(false)
   })

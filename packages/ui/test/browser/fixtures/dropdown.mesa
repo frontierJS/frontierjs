@@ -171,3 +171,17 @@
   </DropdownSubmenu>
   <DropdownItem id="sub-last" onclick={pick('last')}>Last</DropdownItem>
 </DropdownMenu>
+
+<!--
+  A submenu taller than any viewport: a workspace's members as rows. Uncapped,
+  the last rows sit below the window's edge and no key or pointer reaches them.
+-->
+<DropdownMenu>
+  {#snippet trigger()}
+    <button type="button" class="btn" id="dd-long">Long</button>
+  {/snippet}
+  <DropdownSubmenu heading="Many" id="long-sub">
+    {#each Array.from({ length: 60 }, (_, i) => i) as i}<DropdownItem>Row {i}</DropdownItem>{/each}
+  </DropdownSubmenu>
+  <DropdownItem>After</DropdownItem>
+</DropdownMenu>

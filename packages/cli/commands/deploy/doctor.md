@@ -379,17 +379,21 @@ if (health.clash) {
 renderHeader('Environment')
 
 const envCheckOn = deployConf.api?.envCheck === true
-const envExample = resolvePath($.paths.root, '.env.example')
-const envKeys    = resolvePath($.paths.root, '.env.keys')
-const refExists  = existsSync(envExample) || existsSync(envKeys)
+// The keys 01b-env-check refuses a deploy without, from the same reader.
+const { requiredEnvKeys } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
+const envRequired = envCheckOn ? requiredEnvKeys($.paths.root) : null
 
 if (envCheckOn) {
-  if (refExists) {
-    renderCheck('.env.example reference exists (envCheck active)', 'pass',
-      existsSync(envExample) ? '.env.example' : '.env.keys')
+  if (envRequired.warning) {
+    renderCheck('defineEnv spec (envCheck active)', 'warn',
+      `did not load (${envRequired.warning}) — checking ${envRequired.from ?? 'nothing'} instead`)
+    warn()
+  }
+  if (envRequired.from) {
+    renderCheck('required keys (envCheck active)', 'pass', `${envRequired.keys.length} from ${envRequired.from}`)
   } else {
-    renderCheck('.env.example reference (envCheck active)', 'warn',
-      'envCheck is enabled but no .env.example/.env.keys found — env validation will skip')
+    renderCheck('required keys (envCheck active)', 'warn',
+      'envCheck is enabled but no defineEnv spec, .env.example or .env.keys found — env validation will skip')
     warn()
   }
 } else {
@@ -527,13 +531,7 @@ if (flag.remote) {
           renderCheck(`${envFile} exists`, 'pass')
 
           // If envCheck is on and we have a local reference, count missing keys
-          if (envCheckOn && refExists) {
-            const refContent = readFileSync(existsSync(envExample) ? envExample : envKeys, 'utf8')
-            const required = refContent.split('\n')
-              .map(l => l.trim())
-              .filter(l => l && !l.startsWith('#'))
-              .map(l => l.split('=')[0].trim())
-              .filter(Boolean)
+          if (envCheckOn && envRequired.from) {
             const remoteContent = ask(`cat "${envFile}"`)
             const remoteKeys = new Set(
               remoteContent.split('\n')
@@ -542,9 +540,9 @@ if (flag.remote) {
                 .map(l => l.split('=')[0].trim())
                 .filter(Boolean)
             )
-            const missing = required.filter(k => !remoteKeys.has(k))
+            const missing = envRequired.keys.filter(k => !remoteKeys.has(k))
             if (missing.length === 0) {
-              renderCheck(`${envFile} has all ${required.length} required keys`, 'pass')
+              renderCheck(`${envFile} has all ${envRequired.keys.length} required keys`, 'pass')
             } else {
               renderCheck(`${envFile} env keys`, 'fail',
                 `${missing.length} missing: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '...' : ''}`)

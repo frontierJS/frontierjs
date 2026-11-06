@@ -5,7 +5,7 @@
 // into a transcript and a status. The fake records its argv and stdin and
 // answers in stream-json, so every one of those is exercised as a process.
 
-import { describe, test, expect, afterAll } from 'bun:test'
+import { describe, test, expect, afterAll, spyOn } from 'bun:test'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -37,6 +37,13 @@ const UNFINISHED_DONE = `export function runDone(root) {
 }
 `
 
+// Answers with what it was asked to narrow to, so a test reads the scope back.
+const SCOPE_DONE = `export function runDone(root, { only = null } = {}) {
+  return { root, changed: only ? only.length : 99, unfinished: 0, drives: [],
+    items: [{ check: 'only', subject: 'only', ok: true, message: JSON.stringify(only) }] }
+}
+`
+
 function fakeClaude({ sleep = 0, exit = 0 } = {}) {
   const bin = join(tmp, `claude-${Math.random().toString(36).slice(2)}`)
   writeFileSync(bin, `#!/usr/bin/env node
@@ -46,6 +53,8 @@ fs.appendFileSync(${JSON.stringify(bin + '.seen')}, JSON.stringify({ argv: proce
 const out = l => process.stdout.write(JSON.stringify(l) + '\\n')
 out({ type: 'system', subtype: 'init', session_id: ${JSON.stringify(SESSION)} })
 out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'bun test' } }] } })
+const wrote = input.match(/write:([\\w./-]+)/)
+if (wrote) out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't2', name: 'Write', input: { file_path: require('path').join(process.cwd(), wrote[1]) } }] } })
 setTimeout(() => {
   out({ type: 'assistant', message: { content: [{ type: 'text', text: 'did: ' + input }] } })
   out({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.12, num_turns: 3 })
@@ -85,6 +94,189 @@ describe('pins', () => {
     if (!('pin' in r)) throw new Error(r.refused)
     expect(wb.configure(r.pin.id, { budget: 0 })).toEqual({ refused: expect.stringContaining('budget') })
     expect(wb.configure(r.pin.id, { budget: 25, hooks: true, name: ' Beta ' })).toMatchObject({ budget: 25, hooks: true, name: 'Beta' })
+  })
+
+  test('members read off the root workspaces, again when package.json moves; a refused list is one log line and none', async () => {
+    const wb  = createWorkbench({ dir: join(tmp, 'wb-members') })
+    const dir = repo('members')
+    const r   = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    expect(await wb.members(r.pin.id)).toEqual([])
+
+    for (const name of ['auth', 'css']) {
+      mkdirSync(join(dir, 'packages', name), { recursive: true })
+      writeFileSync(join(dir, 'packages', name, 'package.json'), JSON.stringify({ name: `@x/${name}` }))
+    }
+    mkdirSync(join(dir, 'packages', 'loose'))
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }))
+    expect(await wb.members(r.pin.id)).toEqual([
+      { name: '@x/auth', path: 'packages/auth' },
+      { name: '@x/css',  path: 'packages/css' },
+    ])
+
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ workspaces: ['packages/**'] }))
+      expect(await wb.members(r.pin.id)).toEqual([])
+      expect(await wb.members(r.pin.id)).toEqual([])
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0][0])).toContain('packages/**')
+    } finally { warn.mockRestore() }
+  })
+
+  test('a chat counts its edit and write paths per member; root files and paths outside count toward none', async () => {
+    const wb  = createWorkbench({ dir: join(tmp, 'wb-writes') })
+    const dir = repo('writes')
+    const r   = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    const chat = r.pin.chats[0].id
+    const call = (name: string, file: string) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id: file, name, input: { file_path: file } }] } })
+    mkdirSync(join(tmp, 'wb-writes', 'logs'), { recursive: true })
+    writeFileSync(join(tmp, 'wb-writes', 'logs', `${r.pin.id}.${chat}.ndjson`), [
+      { type: 'prompt', text: 'fix auth', at: new Date().toISOString() },
+      call('Edit',  join(dir, 'packages/auth/src/a.ts')),
+      call('Edit',  join(dir, 'packages/auth/src/a.ts')),
+      call('Write', join(dir, 'packages/auth/b.ts')),
+      call('Edit',  join(dir, 'packages/auth-ui/c.ts')),
+      call('Edit',  join(dir, 'ISSUES.md')),
+      call('Edit',  join(tmp, 'elsewhere/packages/auth/d.ts')),
+      call('Read',  join(dir, 'packages/css/e.css')),
+    ].map(l => JSON.stringify(l)).join('\n') + '\n')
+
+    expect(await wb.memberWrites(r.pin.id, chat)).toEqual({})
+    for (const name of ['auth', 'auth-ui', 'css']) {
+      mkdirSync(join(dir, 'packages', name), { recursive: true })
+      writeFileSync(join(dir, 'packages', name, 'package.json'), JSON.stringify({ name }))
+    }
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }))
+    expect(await wb.memberWrites(r.pin.id, chat)).toEqual({ 'packages/auth': 3, 'packages/auth-ui': 1 })
+    expect(await wb.memberWrites(r.pin.id, 'nope')).toBeNull()
+  })
+
+  test('a chat resolves its package: the override, else more than half its member writes, else repo-wide; a run reads the writes before it; chats come grouped, repo-wide first', async () => {
+    const dir  = join(tmp, 'wb-package')
+    const wb   = createWorkbench({ dir })
+    const tree = repo('package')
+    const bare = repo('package-bare')
+    const r = wb.pin(tree), b = wb.pin(bare)
+    if (!('pin' in r) || !('pin' in b)) throw new Error('not pinned')
+    for (const name of ['auth', 'css']) {
+      mkdirSync(join(tree, 'packages', name), { recursive: true })
+      writeFileSync(join(tree, 'packages', name, 'package.json'), JSON.stringify({ name: `@x/${name}` }))
+    }
+    writeFileSync(join(tree, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }))
+
+    const edit   = (file: string) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id: file, name: 'Edit', input: { file_path: file } }] } })
+    const prompt = { type: 'prompt', text: 'go', at: new Date().toISOString() }
+    const times  = (n: number, file: string) => Array.from({ length: n }, () => edit(file))
+    const auth = 'packages/auth/a.ts', css = 'packages/css/c.css'
+    const chats: Record<string, { package?: string, log: object[] }> = {
+      inferred: { log: [prompt, ...times(3, auth), edit(css)] },
+      chosen:   { package: 'packages/css', log: [prompt, ...times(3, auth)] },
+      wide:     { package: '.', log: [prompt, ...times(3, auth)] },
+      gone:     { package: 'packages/gone', log: [prompt, ...times(3, auth)] },
+      roots:    { log: [prompt, ...times(4, 'ISSUES.md')] },
+      tie:      { log: [prompt, edit(auth), edit(css)] },
+      oneOfMany: { log: [prompt, ...times(9, 'ISSUES.md'), edit(css)] },
+      running:  { log: [prompt, ...times(2, auth), prompt, ...times(5, css)] },
+    }
+    mkdirSync(join(dir, 'logs'), { recursive: true })
+    for (const [id, c] of Object.entries(chats)) {
+      writeFileSync(join(dir, 'logs', `${r.pin.id}.${id}.ndjson`), c.log.map(l => JSON.stringify(l)).join('\n') + '\n')
+    }
+    writeFileSync(join(dir, 'logs', `${b.pin.id}.${b.pin.chats[0].id}.ndjson`), [prompt, ...times(3, auth)].map(l => JSON.stringify(l)).join('\n') + '\n')
+    const pins = JSON.parse(readFileSync(join(dir, 'pins.json'), 'utf8')).pins
+    pins[0] = { ...pins[0], pid: process.pid, runChat: 'running', chat: 'inferred',
+      chats: Object.entries(chats).map(([id, c]) => ({ id, session: null, forkOf: null, ...(c.package ? { package: c.package } : {}) })) }
+    writeFileSync(join(dir, 'pins.json'), JSON.stringify({ pins }))
+
+    const packages = async () => Object.fromEntries((await wb.status(wb.getPin(r.pin.id)!)).chats.map(c => [c.id, c.package]))
+    const authPkg = { name: '@x/auth', path: 'packages/auth', inferred: true }
+    expect(await packages()).toEqual({
+      inferred:  authPkg,
+      chosen:    { name: '@x/css', path: 'packages/css', inferred: false },
+      wide:      null,
+      gone:      authPkg,
+      roots:     null,
+      tie:       null,
+      oneOfMany: { name: '@x/css', path: 'packages/css', inferred: true },
+      running:   authPkg,
+    })
+    expect((await wb.status(wb.getPin(r.pin.id)!)).chats.map(c => c.id))
+      .toEqual(['wide', 'roots', 'tie', 'inferred', 'gone', 'running', 'chosen', 'oneOfMany'])
+    expect(Object.fromEntries((await wb.status(wb.getPin(r.pin.id)!)).chats.map(c => [c.id, c.chosen])))
+      .toMatchObject({ inferred: null, chosen: 'packages/css', wide: '.', gone: null, roots: null })
+    expect((await wb.status(wb.getPin(b.pin.id)!)).chats[0].package).toBeNull()
+
+    writeFileSync(join(dir, 'pins.json'), JSON.stringify({ pins: [{ ...pins[0], pid: null }, pins[1]] }))
+    expect((await packages()).running).toEqual({ name: '@x/css', path: 'packages/css', inferred: true })
+  })
+
+  test('the override is set to a member or repo-wide, cleared by an explicit null, and refused when left out or naming no member', async () => {
+    const wb   = createWorkbench({ dir: join(tmp, 'wb-set-package') })
+    const tree = repo('set-package')
+    const r = wb.pin(tree)
+    if (!('pin' in r)) throw new Error(r.refused)
+    mkdirSync(join(tree, 'packages', 'auth'), { recursive: true })
+    writeFileSync(join(tree, 'packages', 'auth', 'package.json'), JSON.stringify({ name: '@x/auth' }))
+    writeFileSync(join(tree, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }))
+    const id = r.pin.id, chat = r.pin.chat
+    const chosen = () => wb.getPin(id)!.chats[0]
+
+    expect(await wb.setPackage(id, { chat, package: 'packages/auth' })).toMatchObject({ chats: [{ id: chat, package: 'packages/auth' }] })
+    expect((await wb.status(wb.getPin(id)!)).chats[0].package).toEqual({ name: '@x/auth', path: 'packages/auth', inferred: false })
+    const pins = JSON.parse(readFileSync(join(tmp, 'wb-set-package', 'pins.json'), 'utf8')).pins
+    writeFileSync(join(tmp, 'wb-set-package', 'pins.json'), JSON.stringify({ pins: [{ ...pins[0], pid: process.pid, runChat: chat }] }))
+    await wb.setPackage(id, { chat, package: '.' })
+    expect(chosen().package).toBe('.')
+    expect((await wb.status(wb.getPin(id)!)).chats[0].package).toBeNull()
+
+    expect(await wb.setPackage(id, { chat })).toEqual({ refused: expect.stringContaining('null to infer') })
+    expect(await wb.setPackage(id, { chat, package: undefined })).toEqual({ refused: expect.stringContaining("no workspace member 'undefined'") })
+    expect(await wb.setPackage(id, { chat, package: 'packages/gone' })).toEqual({ refused: expect.stringContaining("no workspace member 'packages/gone'") })
+    expect(await wb.setPackage(id, { chat: 'nope', package: null })).toEqual({ refused: expect.stringContaining("no chat 'nope'") })
+    expect(chosen().package).toBe('.')
+
+    await wb.setPackage(id, { chat, package: null })
+    expect('package' in chosen()).toBe(false)
+    expect('package' in JSON.parse(readFileSync(join(tmp, 'wb-set-package', 'pins.json'), 'utf8')).pins[0].chats[0]).toBe(false)
+  })
+
+  test('a run names its chat\'s package in the appended prompt, with only the notes that are there to read; a repo-wide chat names none', async () => {
+    const { bin, seen } = fakeClaude()
+    const dir  = join(tmp, 'wb-context')
+    const wb   = createWorkbench({ dir, bin })
+    const tree = repo('context')
+    const r = wb.pin(tree)
+    if (!('pin' in r)) throw new Error(r.refused)
+    for (const name of ['auth', 'css']) {
+      mkdirSync(join(tree, 'packages', name), { recursive: true })
+      writeFileSync(join(tree, 'packages', name, 'package.json'), JSON.stringify({ name: `@x/${name}` }))
+    }
+    writeFileSync(join(tree, 'packages', 'auth', 'CLAUDE.md'), '# auth\n')
+    writeFileSync(join(tree, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }))
+    const id = r.pin.id, chat = r.pin.chat
+    const edit = (file: string) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id: file, name: 'Edit', input: { file_path: join(tree, file) } }] } })
+    mkdirSync(join(dir, 'logs'), { recursive: true })
+    writeFileSync(join(dir, 'logs', `${id}.${chat}.ndjson`), [{ type: 'prompt', text: 'go', at: new Date().toISOString() }, edit('packages/auth/a.ts'), edit('packages/auth/b.ts')]
+      .map(l => JSON.stringify(l)).join('\n') + '\n')
+    const context = (n: number) => { const argv = seen()[n].argv; return argv[argv.indexOf('--append-system-prompt') + 1] as string }
+    const run = async (n: number) => { await wb.send(id, 'more'); await until(async () => existsSync(bin + '.seen') && seen().length === n && !wb.getPin(id)!.pid) }
+
+    await run(1)
+    expect(context(0)).toContain('`@x/auth` at `packages/auth`, inferred from the files this chat has written')
+    expect(context(0)).toContain('Read `packages/auth/CLAUDE.md` before working in it.')
+    expect(context(0)).not.toContain('PROJECT_STATE.md')
+
+    await wb.setPackage(id, { chat, package: 'packages/css' })
+    await run(2)
+    expect(context(1)).toContain('`@x/css` at `packages/css`, chosen by the person on its tab.')
+    expect(context(1)).not.toContain(' Read ')
+
+    await wb.setPackage(id, { chat, package: '.' })
+    await run(3)
+    expect(context(2)).toContain('Workbench, not a terminal')
+    expect(context(2)).not.toContain('workspace package')
   })
 
 })
@@ -169,7 +361,7 @@ describe('runs', () => {
 
     const gone = { refused: expect.stringContaining(`'${dir}' is no longer there`) }
     expect(await wb.send(r.pin.id, 'hello')).toEqual(gone)
-    expect(wb.check(r.pin.id)).toEqual(gone)
+    expect(await wb.check(r.pin.id)).toEqual(gone)
     expect(await wb.review(r.pin.id)).toEqual(gone)
     expect(await wb.fork(r.pin.id)).toEqual(gone)
     expect(wb.unpin(r.pin.id)).toBeNull()
@@ -303,6 +495,27 @@ describe('checks', () => {
     expect(t!.checks!.report!.drives[0].run).toEqual(['cd api && bun run verify'])
   })
 
+  test('a chat\'s checks grade the files it wrote and name it; a Bash-only chat is graded on the whole tree', async () => {
+    const { bin } = fakeClaude()
+    const wb = createWorkbench({ dir: join(tmp, 'wb-scope'), bin })
+    const r = wb.pin(repo('scoped', { done: SCOPE_DONE }))
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    const chat = r.pin.chats[0].id
+    const checked = async (after: string) => {
+      await until(async () => { const c = (await wb.status(wb.getPin(id)!)).checks; return c?.state === 'pass' && c.at > after }, 10000)
+      return { status: (await wb.status(wb.getPin(id)!)).checks!, only: (await wb.transcript(id))!.checks!.report!.items[0].message }
+    }
+
+    await wb.send(id, 'look around')
+    expect(await checked('')).toEqual({ status: expect.objectContaining({ changed: 99, scope: null }), only: 'null' })
+
+    const at = new Date().toISOString()
+    await Bun.sleep(5)
+    await wb.send(id, 'write:packages/a.ts')
+    expect(await checked(at)).toEqual({ status: expect.objectContaining({ changed: 1, scope: { chat, files: 1 } }), only: '["packages/a.ts"]' })
+  })
+
   test('the next message makes the last checks stale, so the card does not show them', async () => {
     const { bin } = fakeClaude({ sleep: 400 })
     const wb = createWorkbench({ dir: join(tmp, 'wb-stale'), bin })
@@ -310,12 +523,12 @@ describe('checks', () => {
     if (!('pin' in r)) throw new Error(r.refused)
     const id = r.pin.id
 
-    expect(wb.check(id)).toMatchObject({ started: expect.any(String) })
+    expect(await wb.check(id)).toMatchObject({ started: expect.any(String) })
     await until(async () => (await wb.status(wb.getPin(id)!)).checks?.state === 'fail', 10000)
     await Bun.sleep(5)
     await wb.send(id, 'more')
     expect((await wb.status(wb.getPin(id)!)).checks).toBeNull()
-    expect(wb.check(id)).toEqual({ refused: expect.stringContaining('still working') })
+    expect(await wb.check(id)).toEqual({ refused: expect.stringContaining('still working') })
   })
 
   test('a checkout with no fli done is refused a check by name, and a run there starts none', async () => {
@@ -323,7 +536,7 @@ describe('checks', () => {
     const wb = createWorkbench({ dir: join(tmp, 'wb-nodone'), bin })
     const r = wb.pin(repo('plain'))
     if (!('pin' in r)) throw new Error(r.refused)
-    expect(wb.check(r.pin.id)).toEqual({ refused: expect.stringContaining('carries no fli done') })
+    expect(await wb.check(r.pin.id)).toEqual({ refused: expect.stringContaining('carries no fli done') })
     await wb.send(r.pin.id, 'hi')
     await until(async () => !wb.getPin(r.pin.id)!.pid && (await wb.status(wb.getPin(r.pin.id)!)).state === 'done')
     expect((await wb.status(wb.getPin(r.pin.id)!)).checks).toBeNull()
@@ -1210,6 +1423,34 @@ describe('the Run tab', () => {
     expect(rows[0]).toMatchObject({ kind: 'app', name: 'run-list', start: 'fli dev' })
     expect(rows.every(r => !('argv' in r))).toBe(true)
     expect(await wb.run(id, 'rm -rf /')).toEqual({ refused: expect.stringContaining('nothing to run') })
+  })
+
+  test("a member's own test is a row of its own, once, run where the member is", async () => {
+    const wb  = createWorkbench({ dir: join(tmp, 'wb-run-test') })
+    const dir = runnableRepo('run-test')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'run-test', workspaces: ['packages/*'] }))
+    const member = (name: string, scripts: Record<string, string>, app = false) => {
+      mkdirSync(join(dir, 'packages', name, app ? 'db' : ''), { recursive: true })
+      if (app) writeFileSync(join(dir, 'packages', name, 'db', 'schema.lite'), 'model Note {\n  id Int @id\n}\n')
+      writeFileSync(join(dir, 'packages', name, 'package.json'), JSON.stringify({ name: `@x/${name}`, scripts }))
+    }
+    member('auth', { test: 'echo testing $npm_package_name in $PWD' })
+    member('docs', { build: 'echo build' })
+    member('shop', { test: 'echo shop' }, true)
+    const id = await pinned(wb, dir)
+
+    const rows = (await wb.runnables(id))!.rows
+    expect(rows.filter(r => r.kind === 'test')).toEqual([
+      { id: 'test:packages/auth', kind: 'test', name: '@x/auth', dir: 'packages/auth', start: 'bun run test', script: 'echo testing $npm_package_name in $PWD' },
+    ])
+    // An app member's test is already its script row; a second would be a second process.
+    expect(rows.filter(r => r.dir === 'packages/shop' && r.start === 'bun run test').map(r => r.id)).toEqual(['task:packages/shop/test'])
+
+    expect(await wb.run(id, 'test:packages/docs')).toEqual({ refused: expect.stringContaining('nothing to run') })
+    expect(await wb.run(id, 'test:packages/auth')).toEqual({ started: expect.any(String) })
+    await until(async () => (await runOf(wb, id, 'test:packages/auth'))?.running === false)
+    expect(await runOf(wb, id, 'test:packages/auth')).toMatchObject({ name: '@x/auth', exit: 0 })
+    expect(wb.output(id, 'test:packages/auth')!.lines).toContain(`testing @x/auth in ${join(dir, 'packages', 'auth')}`)
   })
 
   test('a script runs detached into its own log, which outlives it', async () => {

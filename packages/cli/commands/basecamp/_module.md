@@ -730,9 +730,12 @@ deploy:outpost` once the first admin is made.
 ## Releasing through it
 
 `fli basecamp:app`, run in an app's directory, makes it an App in Basecamp —
-a project, its `production` environment and a bare container App placed on a
-server — and writes `BASECAMP_APP_ID` to the app's `.env`, so `fli deploy`
-releases through Basecamp from then on.
+a project, an environment of the target's tier (`--production`, `--stage`, else
+development) and a bare container App placed on a server — and writes
+`BASECAMP_APP_ID` to the app's `.env`, so `fli deploy` releases through
+Basecamp from then on. With `BASECAMP_APP_ID` already set it adds another
+target's environment and App to that project; `fli deploy` picks the App by the
+same target flags (`FJS-D1965`, `FJS-D1966`).
 
 `fli basecamp:deploy --app <id>` builds an app's image here, loads it onto
 every machine Basecamp runs that app on, and asks Basecamp to release it. It

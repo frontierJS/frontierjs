@@ -90,9 +90,11 @@ journal and revert. The verbs that differ differ for a reason each, which is
    the database before the swap (`05-backup`, litestream) and accepts the 3–10 s gap.
 5. **Pause and unpause.** The edge refuses, the app keeps running, the journal records
    who and when. Kamal has no maintenance verb.
-6. **The App is the environment.** With `BASECAMP_APP_ID` set, `fli deploy` becomes
-   `basecamp:deploy` and the target flags are refused: a second environment is a second
-   App. Kamal's `--destination` picks a config file. FJS's nouns (`App`, `Environment`,
+6. **The App is the environment, and the target picks it.** With `BASECAMP_APP_ID` set,
+   `fli deploy` becomes `basecamp:deploy` for the App of the target's tier: the key names
+   any App of the project and the one released is its same-slug sibling in the
+   environment of the target's tier (`FJS-D1965`). Kamal's `--destination` picks a
+   config file. FJS's nouns (`App`, `Environment`,
    `Release`) come from a schema.
 
 ## Where Kamal is ahead

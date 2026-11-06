@@ -32,6 +32,7 @@ text, so a body that elevates through a helper is not listed.
 | `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
+| `edge.ingressStep` | anyone, a stranger included — declared `gate: 0` |
 | `hubBackups.take` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `hubBackups.discard` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `hubConfig.dismissFound` | **any signed-in caller** — floor, read gate 7; standing not graded |
@@ -660,19 +661,21 @@ name when it declares none.
 
 ### `edge` · model `edge`
 
-- **methods** — `zones`, `records`, `sync`, `syncStep`
-- **custom methods** — `zones`, `records`, `sync`, `syncStep`
+- **methods** — `zones`, `records`, `sync`, `syncStep`, `ingressStep`
+- **custom methods** — `zones`, `records`, `sync`, `syncStep`, `ingressStep`
 - **who may call** —
   - `zones` — standing 2 or above — declared `gate: 2`
   - `records` — standing 2 or above — declared `gate: 2`
   - `sync` — standing 5 or above — declared `gate: 5`
   - `syncStep` — anyone, a stranger included — declared `gate: 0`; body writes as the app
+  - `ingressStep` — anyone, a stranger included — declared `gate: 0`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
 | before | `syncStep` | `internalOnly` → `scopedWhenACaller` |
+| before | `ingressStep` | `internalOnly` → `scopedWhenACaller` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

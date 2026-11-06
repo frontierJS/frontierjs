@@ -1857,6 +1857,30 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1976"></a>2026-11-06 · `FJS-D1976` — Q8 — How does the clean stage (1.5) see and remove what Basecamp's App, Domain and project lists miss — Basecamp's deletes leave no record (`FJS-4055`, `FJS-4056` fixed) and a deleted App's Volume can be removed (`FJS-4057`), and the run key gains `edge:read` (the zone's `orphans`) and `volumes:*` (a deleted App's data); the diff is the three lists, orphan records and Volumes; images and Outpost's directories are checked by hand once, not per run, and nothing watches them between. `edge:read` reads the whole ingress zone, not only the run's records; `volumes:write` removes a directory under `/var/lib/outpost/apps/` through Outpost. The deploy stage's `/servers` preflight still has to be refused after the widening.
+
+Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **A** was picked over **B** (the clean stage also takes 0.6's full listing with the admin entry and ssh, read-only; every delete stays the run key's, but a run then holds the admin key and root ssh, which is what D1896 keeps off it), **C** (the diff stays the three lists; what lies outside them is filed and listed by hand from time to time).
+
+The paper's recommendation, taken as written: Basecamp is the owner of what its deletes leave, so the fix belongs there; `edge:read` and `volumes:*` touch neither machines nor keys, the boundary D1896 draws.
+
+### <a id="fjs-d1975"></a>2026-11-06 · `FJS-D1975` — Q10 — What rides on the new certificate push — The wildcard only, pushed on mint, on renewal to every machine, and on each release to its machine.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **A** was picked over **B** (A, and `uploaded` Domain certificates in the same change).
+
+The paper's recommendation, taken as written: 1.1 waits on the push, not on Domain wiring, which brings its own questions (which machine a Domain is on, D4's `proxied` flip). `IDEAS/fleet-ingress.md` Phase 3 stays open for the Domain half.
+
+### <a id="fjs-d1974"></a>2026-11-06 · `FJS-D1974` — Q9 — Where the wildcard is kept — Two `@system` columns on Workspace beside `ingressZone`, `ingressCertSecretId` and `ingressCertExpiresAt`, the material in a `tlsCert` Secret as `Domain.certSecretId` keeps it.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **A** was picked over **B** (A `Certificate` model Domain's cert columns could later move onto).
+
+The paper's recommendation, taken as written: one wildcard per workspace, derived from `ingressZone`, so it has no identity of its own, and `certStatusOf()` reads the pair unchanged. B is a new noun for a one-to-one fact until a workspace has a second zone.
+
+### <a id="fjs-d1973"></a>2026-11-06 · `FJS-D1973` — Q8 — The ACME client that mints `*.<zone>` — Hand-rolled in one basecamp provider module: RFC 8555 JWS over WebCrypto ES256 and a P-256 CSR in DER, proved against Pebble.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **A** was picked over **B** (The `acme-client` package).
+
+The paper's recommendation, taken as written: `acme-client` 5.4.0 runs under Bun but brings 48 packages, axios and node-forge among them, into the process that holds every private key, and last released in July 2024. The protocol is small and stable, and Pebble is stricter than Let's Encrypt.
+
 ### <a id="fjs-d1963"></a>2026-11-05 · `FJS-D1963` — Q17 — Does a refresh extend an authorized app's expiry — Fixed: 30 days from approval however often it refreshes, and the person approves the connector again (the connector re-runs the flow on `invalid_grant`). A forgotten or leaked token ends by itself.
 
 Asked in [`IDEAS/mcp-oauth.md`](IDEAS/mcp-oauth.md) § Open questions. **A** was picked over **B** (sliding: each refresh pushes `expiresAt` forward by `refreshTokenTtl`, so an app in use never ends until a revoke, a credential change or the sweep), **C** (sliding under an absolute ceiling (Auth0's shape): a second TTL and a column or constant).
@@ -8861,6 +8885,18 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1966"></a>2026-11-06 · `FJS-D1966` — Does `fli basecamp:app` take the deploy target flags and add an environment to an existing project — The same flags as `fli deploy`: bare makes development, `--stage` staging, `--production` production. With the project already there (named by `BASECAMP_APP_ID`) it adds the environment and a same-slug App placed on a server, and refuses a tier that already holds one. `fli deploy`'s refusal names this command.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (keep it production-only; another environment is made by hand in Basecamp).
+
+The paper's recommendation, taken as written: making an environment needs a placement, which is this command's job; one target rule across both commands.
+
+### <a id="fjs-d1965"></a>2026-11-06 · `FJS-D1965` — How does `fli deploy` with `BASECAMP_APP_ID` reach the dev, stage and production App — One key, resolved: `BASECAMP_APP_ID` names any App of the project, and the target is the App with the same slug in that project's environment of the target's tier. One resolver, beside `resolveTarget`, that every `BASECAMP_APP_ID` reader calls; a tier with no environment or no same-slug App is refused by name.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (one key per target: `BASECAMP_APP_ID` for dev, `BASECAMP_STAGE_APP_ID`, `BASECAMP_PRODUCTION_APP_ID`. Cost: three keys to keep right, and a stale one releases to the wrong App), **C** (`BASECAMP_PROJECT_ID`, the App found by kind. Cost: an environment holds a static sibling and can hold several containers, so kind is no join key).
+
+The paper's recommendation, taken as written: it adds no key and derives the App from what Basecamp already holds; `FJS-D1717` and `FJS-3938` refuse rather than fall back, and so does this. Cost: bare `fli deploy` on an App made before this targets development and refuses until that environment exists.
 
 ### <a id="fjs-d1883"></a>2026-11-04 · `FJS-D1883` — Q5 — How does yuma get past its pre-squash history — Reinstall yuma fresh only, keeping its archive as insurance; restore mode is proved on a throwaway box built at HEAD.
 
@@ -16693,6 +16729,36 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1977"></a>2026-11-06 · `FJS-D1977` — Q5 — Which keys the SSH door's env check requires — Both doors grade the `defineEnv` spec; `.env.example` is the fallback for an app with no env module, and a spec that does not load warns before it falls back.
+
+Asked in [`IDEAS/deploy-door-parity.md`](IDEAS/deploy-door-parity.md) § Open questions. **A** was picked over **B** (Keep `01b`; `deploy:move --to=ssh` lists the `.env.example` keys Basecamp never held), **C** (Read both: the spec's required keys refuse, the rest of `.env.example` warns on every deploy).
+
+The paper's recommendation, taken as written: one answer to what a release needs, read by `readEnvSpec`, the reader Basecamp's check already uses; an optional key an app wants enforced goes in `deploy.secrets`.
+
+### <a id="fjs-d1970"></a>2026-11-06 · `FJS-D1970` — Q4 — What moves an install across, and which way — One command, both directions, named by the door it moves to.
+
+Asked in [`IDEAS/deploy-door-parity.md`](IDEAS/deploy-door-parity.md) § Open questions. **A** was picked over **B** (SSH → Basecamp only; an install leaves Basecamp by hand).
+
+Picked by the owner through the question tool, 2026-11-05. A team may need to leave either door, and kapp's live install may sit on either one. The command is `fli deploy:move --to=basecamp|ssh` (decision-rules, 2026-11-05): `deploy:` already dispatches to either door on `BASECAMP_APP_ID`, the source door is read from it rather than flagged, and both doors' refusals print the same line.
+
+### <a id="fjs-d1969"></a>2026-11-06 · `FJS-D1969` — Q3 — What the web/ bundle bakes — Both doors pass `FRONTIER_PUBLIC_API_URL` from the target's domain and `VITE_FJS_BUILD` from the commit.
+
+Asked in [`IDEAS/deploy-door-parity.md`](IDEAS/deploy-door-parity.md) § Open questions. **A** was picked over **B** (Both bake whatever `.env` files the build machine holds).
+
+As recommended: Picked by the owner through the question tool, 2026-11-05. The Basecamp door takes the origin from the App's Domain, and 03-build-web's check that the bundle inlined the origin runs on both doors.
+
+### <a id="fjs-d1968"></a>2026-11-06 · `FJS-D1968` — Q2 — What source both doors build — `HEAD` as committed, on both doors; an uncommitted edit is warned and left out.
+
+Asked in [`IDEAS/deploy-door-parity.md`](IDEAS/deploy-door-parity.md) § Open questions. **A** was picked over **B** (The working tree, on both doors; an uncommitted build is tagged `-dirty`).
+
+As recommended: Picked by the owner through the question tool, 2026-11-05. basecamp:deploy's -dirty working-tree build (FJS-3561) goes with no flag kept; a checkout with no commit is refused by name rather than tagged by Date.now().
+
+### <a id="fjs-d1967"></a>2026-11-06 · `FJS-D1967` — Q1 — How far "the same thing" goes — One build module both doors call, plus a guard: each door refuses the other's install of the app on the box, and a command moves an install across.
+
+Asked in [`IDEAS/deploy-door-parity.md`](IDEAS/deploy-door-parity.md) § Open questions. **A** was picked over **B** (The build module only; the two installs may coexist), **C** (Basecamp is the only release path; the `deploy` block stays for an app with no Basecamp), **D** (The SSH door writes Outpost's layout (container name, data dir, route ids), so either door updates one install).
+
+As recommended: Picked by the owner through the question tool, 2026-11-05. The shared build module lives in packages/cli/core/ and calls the existing owners (chooseDockerfile and needsGenerated from @frontierjs/outpost/dockerfile, vendorApp in core/vendor.js); 02-ship's inline git archive moves into it rather than being copied. Q4, the move command's noun and direction, stays open for Phase 2.
 
 ### <a id="fjs-d1964"></a>2026-11-05 · `FJS-D1964` — A failed release gate is retried what-failed-first: `ws:pub` reruns the last attempt's failed phases and suites before the full run, and stops while they are still red
 

@@ -55,6 +55,7 @@ import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
 import { runsAsCaller }         from '../domain/job/job-context.ts'
 import domainDns                from './domain-dns.job.ts'
+import ingressDns, { ownRecordHolders } from './ingress-dns.job.ts'
 import { syncReplicasOn }       from './replicate-sync.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../domain/release/app-source.ts'
 import { siteBranch } from '../domain/site/site-checkout.ts'
@@ -63,8 +64,9 @@ import { releaseSite } from '../domain/site/site-publish.ts'
 import { cloudflareFor } from '../domain/site/site-preview.ts'
 import { SITE_STEP, releaseStatus } from '../domain/release/release-record.ts'
 import { releaseEnv } from '../domain/release/variables.ts'
-import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../domain/release/runtime.ts'
+import { runtimeOf, routedHosts, routedPaths, routedRedirects, noindexHosts, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor, releaseCopyOf, restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from './app-backup-run.job.ts'
+import { pushIngressCert } from './ingress-cert.job.ts'
 import type { App }         from '@frontierjs/junction'
 import type { StepStatus, DeploySwap } from '#db/schema.d.ts'
 
@@ -185,6 +187,8 @@ function runner(app: App) {
       const domains = await app.db!.asSystem().domain.findMany({ where: { appId }, select: { id: true } }) as { id: string }[]
       for (const d of domains)
         await app.jobs.dispatch(domainDns, { domainId: d.id }, { id: `dns:${d.id}:release:${deploymentId}` })
+      if ((await ownRecordHolders(app, [appId])).length)
+        await app.jobs.dispatch(ingressDns, { appId }, { id: `ingress:${appId}:release:${deploymentId}` })
     } catch (err) {
       log.warn('release not pushed to its zones', { id: deploymentId, error: (err as Error).message })
     }
@@ -269,6 +273,16 @@ function runner(app: App) {
     // before every step, because each one acts on the machine and a release
     // somebody cancelled must not go on to swap what is serving (`FJS-3848`).
     const cancelled = async () => (await releaseStatus(app, deploymentId)) === 'cancelled'
+
+    // The wildcard goes to the machine before anything routes to it, so one
+    // enrolled after the mint holds it before it serves. A failure is logged
+    // and the release goes on: what is served is gated on the certificate being
+    // there (`FJS-D1954`), not on this push.
+    if (deploy.workspaceId) {
+      const pushed = await pushIngressCert(app, executor, deploy.workspaceId as string)
+      if (typeof pushed === 'object') log.warn('ingress certificate not pushed', { id: deploymentId, server: executor.serverId, error: pushed.failed })
+      else if (pushed === 'old-outpost') log.warn('outpost too old to hold the ingress certificate', { id: deploymentId, server: executor.serverId })
+    }
 
     try {
       // The digest travels down the steps: whatever /pull reported is what
@@ -355,7 +369,7 @@ function runner(app: App) {
   // the two cannot start a container two ways.
   async function startBody(
     rel: DeploymentRow, config: Record<string, unknown>, service: ServiceRow,
-    image: string, digest: string | null,
+    image: string, digest: string | null, build: string | null = rel.commitSha ?? null,
   ): Promise<Record<string, unknown>> {
     const runtime = runtimeFor(config, service)
     const hosts   = await routedHosts(app.db, rel.appId)
@@ -380,12 +394,20 @@ function runner(app: App) {
       // their ids, so a release record never holds the credential it shipped with.
       config: {
         ...runtime,
-        env: await releaseEnv(app.db as never, config as never),
+        env: {
+          ...await releaseEnv(app.db as never, config as never),
+          // The commit the static App's bundle was stamped with (`FJS-D1969`).
+          // Without it the API states no build, and a browser holding the
+          // last release's bundle is never told it is stale (`FJS-D160`). After
+          // the Variables, so a stored FJS_BUILD cannot name another commit.
+          ...(build ? { FJS_BUILD: build } : {}),
+        },
       },
       source:        config.source ?? service.source ?? {},
       hosts,
       paths,
       redirects:     await routedRedirects(app.db, rel.appId),
+      noindex:       await noindexHosts(app.db, rel.appId),
       // The live App, as the hosts are: a rollback puts back old bytes, never
       // an exposure somebody has since withdrawn. The machine's firewall
       // drops a forwarded port this does not declare (FJS-D930).
@@ -552,7 +574,8 @@ function runner(app: App) {
       }
 
     } else if (name.includes('start') || name.includes('deploy')) {
-      const reply = await executor.call('/deploy', await startBody(deploy, ctx.config, service, image, digest),
+      // A git source's commit is the one /build answered, newer than the row read at the start.
+      const reply = await executor.call('/deploy', await startBody(deploy, ctx.config, service, image, digest, ctx.commit ?? deploy.commitSha ?? null),
         { timeoutMs: DEPLOY_TIMEOUT_MS })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest, ...swapOf(reply.data) }
@@ -655,6 +678,7 @@ function runner(app: App) {
         hosts:         await routedHosts(app.db, deploy.appId),
         paths:         await routedPaths(app.db, deploy.appId),
         redirects:     await routedRedirects(app.db, deploy.appId),
+        noindex:       await noindexHosts(app.db, deploy.appId),
       }, { timeoutMs: ACTIVATE_TIMEOUT_MS })
       if (reply.error) throw new Error(`Activate failed: ${reply.error.message}`)
 

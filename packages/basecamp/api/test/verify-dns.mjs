@@ -31,7 +31,8 @@
 // What `fli prove` queues on: this checkout's ports.
 export const holds = ['ports']
 
-import { spawn }                  from 'node:child_process'
+import { spawn, spawnSync }       from 'node:child_process'
+import { Database }               from 'bun:sqlite'
 import { mkdtempSync, rmSync }    from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { dirname, join }          from 'node:path'
@@ -47,8 +48,25 @@ const CF       = `http://localhost:${CF_PORT}/client/v4`
 const CF_TOKEN = 'cfat_devtoken'
 const SCRATCH  = mkdtempSync(join(tmpdir(), 'basecamp-dns-'))
 
+// Pebble, Let's Encrypt's own test CA, for the wildcard `ingress:cert` mints when
+// the zone is set. Skipped where docker is not there: the job then refuses a
+// real CA (`maySpend`) and nothing below grades the wildcard.
+const PEBBLE    = 'ghcr.io/letsencrypt/pebble:2.9.0'
+const CONTAINER = `verify-dns-pebble-${process.pid}`
+const docker    = (...args) => spawnSync('docker', args, { encoding: 'utf8' })
+const hasDocker = (() => { try { return docker('info', '--format', '{{.ServerVersion}}').status === 0 } catch { return false } })()
+let pebbleUrl = ''
+if (hasDocker) {
+  const run = docker('run', '-d', '--name', CONTAINER, '-e', 'PEBBLE_VA_ALWAYS_VALID=1', '-e', 'PEBBLE_VA_NOSLEEP=1', '-p', '127.0.0.1:0:14000', PEBBLE)
+  if (run.status === 0) pebbleUrl = `https://127.0.0.1:${docker('port', CONTAINER, '14000/tcp').stdout.trim().split(':').pop()}/dir`
+  else console.log(`  (no Pebble: docker run said ${run.stderr.trim()})`)
+}
+
 const ENV = {
   ...process.env,
+  // Pebble's directory is served with a self-signed certificate. Set for this
+  // scratch API alone and only when there is a Pebble to trust.
+  ...(pebbleUrl ? { ACME_URL: pebbleUrl, NODE_TLS_REJECT_UNAUTHORIZED: '0' } : {}),
   DATABASE_URL:          join(SCRATCH, 'basecamp.db'),
   AUDIT_PATH:            join(SCRATCH, 'audit.db'),
   PORT:                  String(API_PORT),
@@ -135,6 +153,7 @@ async function released(appId) {
 const edge = (method, data, id) => call(id ? `/edge/${id}` : '/edge', { serviceMethod: method, body: data ?? {} })
 
 async function cleanup() {
+  if (hasDocker) docker('rm', '-f', CONTAINER)
   for (const c of children) { try { process.kill(-c.pid, 'SIGTERM') } catch {} }
   await sleep(2000)
   for (const c of children) { try { process.kill(-c.pid, 'SIGKILL') } catch {} }
@@ -195,11 +214,38 @@ try {
   const refused = await edge('sync', {}, 'nothing')
   check('sync before anything is set answers, and does not crash', [404, 409].includes(refused.status), JSON.stringify(refused))
 
+  // The TXT is only there while the CA looks, so it is watched for rather than
+  // read afterwards; the zone is asked of the stand-in directly.
+  let txtSeen = false, watching = true
+  const txtAt = async () => (await zone('zone-shop')).filter(r => r.type === 'TXT' && r.name === '_acme-challenge.shop.test')
+  const watch = (async () => { while (watching) { if ((await txtAt()).length) txtSeen = true; await sleep(100) } })()
+
   const ws = (await call(`/workspaces/${chosen.w.id}`)).body
   const set = await call(`/workspaces/${chosen.w.id}`, { method: 'PATCH',
     body: { ingressSecretId: secret?.id, ingressZoneId: 'zone-shop', version: ws?.version } })
   check('the ingress zone is set through /workspaces', set.status === 200 && set.body?.ingressZoneId === 'zone-shop',
     JSON.stringify(set))
+
+  // ── The wildcard: setting the zone is what orders it ──
+  if (pebbleUrl) {
+    const stored = () => {
+      const db = new Database(ENV.DATABASE_URL, { readonly: true })
+      try { return db.query('SELECT ingressCertSecretId AS secretId, ingressCertExpiresAt AS expiresAt FROM workspace WHERE id = ?').get(chosen.w.id) }
+      finally { db.close() }
+    }
+    const minted = await until(async () => !!stored()?.secretId, 90_000)
+    watching = false; await watch
+    check('setting the zone mints `*.shop.test` from Pebble: both cert columns are set', minted && !!stored()?.expiresAt, JSON.stringify(stored()))
+    check('…the sink saw the TXT at _acme-challenge.shop.test appended while the CA looked', txtSeen)
+    check('…and deleted again after', (await txtAt()).length === 0, JSON.stringify(await txtAt()))
+    const loaded = names => names.every(n => api.out.split('\n').some(l => l.includes('[basecamp:ingress-cert]') && l.includes('path=/certs/load') && l.includes(`server=${n} `)))
+    check('…and the machine stand-in was sent /certs/load, on each online machine',
+      await until(async () => loaded(online.filter(o => chosen.servers.some(c => c.id === o.id)).map(o => o.name)), 10_000),
+      api.out.split('\n').filter(l => l.includes('ingress-cert')).join('\n          '))
+  } else {
+    watching = false; await watch
+    console.log('  skip  the wildcard against Pebble -- docker is not available')
+  }
 
   // ── An app, a hostname, and no release yet ──
   const environment = (await call('/environments')).body?.data?.[0]
@@ -307,6 +353,55 @@ try {
   const left = await edge('records', { providerSecretId: secret?.id, zoneId: 'zone-example' })
   check('…leaving no orphan behind', !(left.body?.orphans ?? []).some(r => r.name === hostname), JSON.stringify(left.body?.orphans))
   check('…and the app\'s ingress record stays, for its other hostnames', (await aAt()).length === 1, JSON.stringify(await aAt()))
+
+  // ── The ingress name: an App with no Domain answers at it (FJS-D1952) ──
+  // Served only under the wildcard (FJS-D1954), so only where Pebble minted
+  // one. What reached each machine is read off `routeApp`'s own line, since
+  // the stub executor keeps nothing it was sent.
+  if (pebbleUrl) {
+    const bareName = `bare-${process.pid}`
+    const bare = (await call('/apps', { body: {
+      environmentId: environment?.id, name: bareName, slug: bareName, kind: 'container',
+      source: { kind: 'image', image: 'nginx:alpine' }, port: 7131,
+    } })).body
+    await call(`/apps/${bare.id}`, { serviceMethod: 'place', body: { serverId: one.id, replicaIndex: 0 } })
+    const named  = `${bare.id}.shop.test`
+    const bareA  = async () => (await zone('zone-shop')).filter(r => r.name === named && r.type === 'A')
+    // The logger moves a long line's fields onto indented lines of their own,
+    // so an entry is its header and those, and a field is read in either form.
+    const entries = () => api.out.split(/\n(?=\S)/).filter(e => e.includes('[basecamp:routes]'))
+    const field   = (e, key) => e.match(new RegExp(`(?:^|\\s)${key}(?:=|[ \\t]{2,})(\\S*)`, 'm'))?.[1] ?? ''
+    const lastRoute = () => {
+      const e = entries().filter(e => field(e, 'appId') === bare.id).at(-1)
+      return e ? { hosts: field(e, 'hosts'), redirects: field(e, 'redirects'), noindex: field(e, 'noindex') } : null
+    }
+    const routedTo = async (want, ms = 15_000) => until(async () => { const r = lastRoute(); return !!r && want(r) }, ms)
+
+    const landed = await released(bare.id)
+    check('an App with no Domain is released', landed?.status === 'success', JSON.stringify(landed?.error ?? landed))
+    check('…its ingress record is written with no Domain to push it, marked as the App\'s',
+      await until(async () => (await bareA()).length === 1, 15_000) && (await bareA())[0].comment === `basecamp:app:${bare.id}`,
+      JSON.stringify(await bareA()))
+    check('…and Caddy is told to serve the App at its ingress name, noindex',
+      await routedTo(r => r.hosts === named && r.noindex === named), JSON.stringify(lastRoute()))
+
+    await call(`/apps/${bare.id}`, { method: 'PATCH', body: { isIngressNamePublished: false } })
+    check('turning the column off removes the record, with nobody pressing sync',
+      await until(async () => (await bareA()).length === 0, 15_000), JSON.stringify(await bareA()))
+    check('…and Caddy answers the name no more', await routedTo(r => !r.hosts && !r.redirects && !r.noindex), JSON.stringify(lastRoute()))
+
+    await call(`/apps/${bare.id}`, { method: 'PATCH', body: { isIngressNamePublished: true } })
+    check('turning it back on writes the record again', await until(async () => (await bareA()).length === 1, 15_000),
+      JSON.stringify(await bareA()))
+
+    const own = `${bareName}.example.test`
+    await call('/domains', { body: { appId: bare.id, hostname: own } })
+    check('a Domain attached makes the ingress name a redirect to it, and the Domain the host (FJS-D1956)',
+      await routedTo(r => r.hosts === own && r.redirects === `${named}>https://${own}` && r.noindex === named), JSON.stringify(lastRoute()))
+    check('…keeping the record, which the Domain\'s CNAME points at', (await bareA()).length === 1, JSON.stringify(await bareA()))
+  } else {
+    console.log('  skip  the ingress name -- no wildcard without Pebble')
+  }
 } catch (err) {
   failed++
   console.log(`  FAIL  ${err.message}`)

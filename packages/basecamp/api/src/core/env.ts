@@ -185,6 +185,11 @@ export const spec = {
   HETZNER_URL:      {},
   CLOUDFLARE_URL:   {},
   GITHUB_URL:       {},
+  // The ACME directory `ingress:cert` orders the workspace wildcard from. Unset
+  // is Let's Encrypt; a drive points it at Pebble. Not a vendor account, so it
+  // follows the same rule the others do: anything but loopback needs
+  // ALLOW_CLOUD_SPEND or production.
+  ACME_URL:         {},
 
   // Saying, once, that this process may create and destroy machines somebody
   // pays for. Unset is REFUSE, and `NODE_ENV=production` is the other way

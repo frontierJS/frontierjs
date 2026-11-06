@@ -1062,6 +1062,28 @@ function refuseCombinator(key, val) {
 // point below: a `@from` field is a SUBQUERY and self-qualifying, where a mapped
 // field is an ordinary column that still takes the table alias.
 /**
+ * The keys of a `where` whose scalar equality buildWhere writes into each branch
+ * of its OR: plain columns compared to a primitive or null, beside an OR of two
+ * or more branches. Anything an operator, a relation or a `@from` subquery
+ * answers stays where the caller put it.
+ * @param {any} where
+ * @param {Record<string, string> | null} fromExprMap
+ * @returns {string[] | null}
+ */
+function hoistableKeys(where, fromExprMap) {
+  if (!Array.isArray(where.OR) || where.OR.length < 2) return null
+  /** @type {string[]} */
+  const keys = []
+  for (const key of Object.keys(where)) {
+    if (key === 'AND' || key === 'OR' || key === 'NOT' || key === '$raw' || fromExprMap?.[key] != null) continue
+    const v = where[key]
+    const t = typeof v
+    if (v === null || t === 'string' || t === 'number' || t === 'boolean' || t === 'bigint') keys.push(key)
+  }
+  return keys.length ? keys : null
+}
+
+/**
  * @param {any} where  the caller's filter tree
  * @param {any[]} params  bindings, appended in clause order — the order IS the correctness (`FJS-262`)
  * @param {Record<string, string> | null} [fromExprMap]
@@ -1080,15 +1102,46 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
   const clauses = []
   const aliasPrefix = tableAlias ? `${tableAlias}.` : ''
 
+  // A scalar equality beside an OR is written into every branch. SQLite takes
+  // `ownerId = ? AND (a = ? OR b = ?)` as one scan of the owner's index and
+  // filters the OR over every row of it; `(ownerId = ? AND a = ?) OR (ownerId =
+  // ? AND b = ?)` is a MULTI-INDEX OR, 48x faster over four (ownerId, bandN)
+  // indexes, whenever sqlite_stat1 is empty (FJS-3912).
+  const hoisted = hoistableKeys(where, fromExprMap)
+  /** @type {string | null} */
+  let hoistedSql = null
+  /** @type {any[]} */
+  const hoistedParams = []
+  if (hoisted) {
+    const eq = {}
+    for (const k of hoisted) eq[k] = where[k]
+    hoistedSql = buildWhere(eq, hoistedParams, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)
+  }
 
   // Object.keys, not Object.entries: entries allocates a pair per key and was
   // the largest single cost of a short where (FJS-3752).
   for (const key of Object.keys(where)) {
     const val = where[key]
+    if (hoisted?.includes(key)) continue
     if (key === 'AND') {
       refuseCombinator(key, val)
       const parts = val.map((/** @type {any} */ w) => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' AND ')})`)
+      continue
+    }
+    if (key === 'OR' && hoistedSql) {
+      refuseCombinator(key, val)
+      // Each branch binds the hoisted values again, in the order its SQL reads them.
+      const parts = []
+      for (const w of val) {
+        const own = []
+        const sql = buildWhere(w, own, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)
+        if (!sql) continue
+        parts.push(`(${hoistedSql} AND (${sql}))`)
+        params.push(...hoistedParams, ...own)
+      }
+      if (parts.length) clauses.push(`(${parts.join(' OR ')})`)
+      else { clauses.push(hoistedSql); params.push(...hoistedParams) }
       continue
     }
     if (key === 'OR') {

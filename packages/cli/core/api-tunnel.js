@@ -20,9 +20,6 @@ import { resolveSide, sshHost } from './deploy-target.js'
 
 export const TARGETS = { production: 'production', prod: 'production', stage: 'stage', staging: 'stage' }
 
-// A named target as Basecamp's `EnvironmentTier` spells it.
-const TIERS = { production: 'production', stage: 'staging' }
-
 const DEFAULT_PORT   = 3000
 const DEFAULT_HEALTH = '/health'
 
@@ -62,13 +59,10 @@ export function resolveApiTarget(value, deployConf, app = null) {
 /**
  * A named target on an App Basecamp placed. The machine is the deploy block's
  * ssh destination where it names one, since that is the alias this laptop holds
- * a key for; otherwise the machine Basecamp placed the App on. One App is one
- * environment, so a target in another is refused, as `fli deploy` refuses it.
+ * a key for; otherwise the machine Basecamp placed the App on. `app` is already
+ * the target's App (`resolveBasecampApp`), so no tier is checked here.
  */
 function appTarget(raw, target, app, deployConf) {
-  const tier = app.environment?.tier
-  if (tier && tier !== TIERS[target])
-    return { ok: false, reason: `BASECAMP_APP_ID names App '${app.name}' in ${tier}, and --api ${raw} is ${TIERS[target]} — another environment is another App: run BASECAMP_APP_ID=<id> fli dev --api ${raw}` }
   if (app.port == null)
     return { ok: false, reason: `App '${app.name}' publishes no port on its machine, so there is nothing to forward to` }
 

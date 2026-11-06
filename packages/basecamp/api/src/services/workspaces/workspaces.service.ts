@@ -17,6 +17,7 @@ import { authenticate } from '@frontierjs/junction/hooks'
 import { LEVELS } from '@frontierjs/litestone'
 import { refuseGrantAboveOwn, roleOf, getPagination, WORKSPACE_QUERY, WORKSPACES_SERVICE } from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
+import ingressCert from '../../jobs/ingress-cert.job.ts'
 import { db, actor, slugify, narrowPatch, changesNothing, callerOrder } from '../../core/resource.ts'
 import type { WorkspaceRole }  from '#db/schema.d.ts'
 // The roles are graded in core/gate.ts and the enum lives in schema.lite; the
@@ -221,7 +222,13 @@ export default createService({
     // tenants, which does not belong on a general PATCH.
     const patch = narrowPatch(data)
     if (changesNothing(patch)) return ws
-    return db().workspace.update({ where: { id: $.id as string }, data: patch, system: [...$.system] })
+    const updated = await db().workspace.update({ where: { id: $.id as string }, data: patch, system: [...$.system] })
+    // After the write, and stated by the row's version: a replayed patch is one
+    // mint. The job reads the row, so a zone that cleared is dropped and one
+    // that changed is ordered again.
+    if ('ingressZoneId' in patch && patch.ingressZoneId !== ws.ingressZoneId)
+      await $.app.jobs.dispatch(ingressCert, { workspaceId: updated.id }, { id: `ingress:cert:${updated.id}:${updated.version}`, actor: null })
+    return updated
   },
 
   async remove() {

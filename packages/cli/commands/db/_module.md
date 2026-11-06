@@ -203,8 +203,9 @@ const jsonSchemaDone = ($, json, out) => {
 // set and no archive the refusal stands, never a quiet ssh (`FJS-D1717`). On a
 // Basecamp machine the db is inside the App's volume, which ssh never reaches.
 
-/** The App id when the pull goes through Basecamp, null for ssh. `--dev` names
- *  another server, and another environment is another App, so it is refused. */
+/** The `BASECAMP_APP_ID` when the pull goes through Basecamp, null for ssh,
+ *  false after a refusal. The App pulled is the project's production one, or
+ *  with `--dev` its development one (`pullThroughBasecamp` resolves it). */
 const pullPath = ({ flag, log, echo, chalk }) => {
   const appId = process.env.BASECAMP_APP_ID
   if (!appId && flag.take) {
@@ -213,24 +214,30 @@ const pullPath = ({ flag, log, echo, chalk }) => {
   }
   if (!appId) { echo(chalk`  {dim No BASECAMP_APP_ID — pulling over ssh}`); return null }
   echo(chalk`  {dim BASECAMP_APP_ID} ${appId} {dim detected — pulling through Basecamp}`)
-  if (flag.dev) {
-    log.error('--dev is for the ssh pull — BASECAMP_APP_ID names one Basecamp App, and another environment is another App: run `BASECAMP_APP_ID=<id> fli <command>`')
-    return false
-  }
   return appId
 }
 
 /** The App's newest bucket archive, or one taken now with `--take`, unpacked
  *  under db/backups/<stamp>/. Answers what `pullAppArchive` does, or null after
  *  saying why. */
-const pullThroughBasecamp = async ({ $, flag, log, echo, chalk }, appId) => {
-  const { pullAppArchive } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
-  const { reachBasecamp }  = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
+const pullThroughBasecamp = async ({ $, flag, log, echo, chalk }, anchorId) => {
+  let appId
+  const { pullAppArchive, resolveBasecampApp } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+  const { reachBasecamp, lookupBasecamp }      = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
   // The narrow key (appBackups:read) when the entry holds one, the admin key otherwise.
   const target = reachBasecamp(flag.basecamp, log, { scoped: true })
   if (!target) return null
   const { url: origin, key } = target
   const say = (line) => echo(chalk`  {dim ${line}}`)
+  // Finding the App reads /apps and /environments, which the narrow key does not
+  // cover: the admin key resolves, the narrow one pulls.
+  const reader = lookupBasecamp(flag.basecamp).entry ?? target
+  const goal   = flag.dev ? 'dev' : 'production'
+  try {
+    const app = await resolveBasecampApp(reader.url, reader.key, anchorId, goal, { where: reader.name })
+    appId = app.id
+    if (app.id !== anchorId) say(`${goal} App '${app.name}' (${app.id}) in the same project`)
+  } catch (err) { log.error(err.message); return null }
   const got = await pullAppArchive({ origin, key, appId, take: !!flag.take, dbDir: $.paths.db, dry: flag.dry, log, say })
     .catch(err => { log.error(err.message); return null })
   if (got) echo(chalk`  {green ✓} {dim archive taken} ${got.row.startedAt} {dim unpacked into} ${got.dir}`)

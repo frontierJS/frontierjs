@@ -37,14 +37,23 @@ function wallAt(t: Date, timeZone: string) {
   return { minutes: +p.minute, hours: +p.hour % 24, date: +p.day, month: +p.month, day: WEEKDAY[p.weekday] }
 }
 
-/** The minute walk: every minute of real time, asked in the zone. */
-function walked(expr: string, fromISO: string, timeZone: string, days = 9): string | null {
+type Wall = ReturnType<typeof wallAt>
+
+/** The minute walk: every minute of real time, asked in the zone. `walls` holds
+ *  each minute's wall time already asked, so the eleven expressions a zone is
+ *  checked against share one formatter call per minute instead of making eleven
+ *  — the zone test took seconds, and a loaded machine took it past bun's 5s
+ *  default (`FJS-4037`). */
+function walked(expr: string, fromISO: string, timeZone: string, walls: Map<number, Wall>, days = 9): string | null {
   const fields = parseCron(expr)
   const t = new Date(fromISO)
   t.setSeconds(0, 0)
   for (let i = 0; i < days * 1440; i++) {
     t.setTime(t.getTime() + 60_000)
-    if (cronMatches(fields, wallAt(t, timeZone))) return t.toISOString()
+    const ms = t.getTime()
+    let wall = walls.get(ms)
+    if (!wall) walls.set(ms, wall = wallAt(t, timeZone))
+    if (cronMatches(fields, wall)) return t.toISOString()
   }
   return null
 }
@@ -69,9 +78,10 @@ describe('nextFireTime — the minute walk\'s answer, without walking every minu
   for (const zone of ZONES) {
     it(`agrees with the walk across the daylight transitions, in ${zone}`, () => {
       const wrong: string[] = []
+      const walls = new Map<number, Wall>()
       for (const expr of EXPRESSIONS) for (const from of FROM) {
         const got  = nextFireTime(expr, new Date(from), { timeZone: zone })?.toISOString() ?? null
-        const want = walked(expr, from, zone)
+        const want = walked(expr, from, zone, walls)
         if (got !== want) wrong.push(`${expr} from ${from}: ${got}, walk says ${want}`)
       }
       expect(wrong).toEqual([])

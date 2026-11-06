@@ -9,6 +9,8 @@ import {
   readBasecamps, writeBasecamp, removeBasecamp, resolveBasecamp, designatedBasecamp, basecampsPath, lookupBasecamp, pingBasecamp,
 } from '../core/basecamps.js'
 import { globalEnvPath } from '../core/global-env.js'
+import { resolveBasecampApp } from '../core/basecamp.js'
+import { TIERS } from '../core/deploy-target.js'
 
 let home
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'fli-basecamps-')) })
@@ -121,5 +123,61 @@ describe('pingBasecamp', () => {
     expect((await pingBasecamp(yuma, { fetcher: async () => { throw new Error('ECONNREFUSED') } })).why).toBe('unreachable')
     const hung = (_url, { signal }) => new Promise((_, rej) => signal.addEventListener('abort', () => rej(signal.reason)))
     expect((await pingBasecamp(yuma, { timeout: 20, fetcher: hung })).why).toBe('no answer in 0.02 s')
+  })
+})
+
+// ─── resolveBasecampApp — a deploy target becomes an App ─────────────────────
+describe('resolveBasecampApp', () => {
+  let bc
+  const gets = []
+  const row = (id, tier, slug = 'kapp') => ({ id, name: slug, slug, environmentId: `env-${tier}`, environment: { tier, projectId: 'p1' } })
+  const start = (envTiers, apps) => {
+    gets.length = 0
+    bc = Bun.serve({ port: 0, fetch(req) {
+      const url = new URL(req.url)
+      const first = url.searchParams.get('$offset') !== '0' ? [] : null
+      gets.push(url.pathname + url.search)
+      const json = (data) => Response.json({ data })
+      if (url.pathname === '/apps/anchor') return json(row('anchor', 'development'))
+      if (url.pathname === '/apps/gone') return Response.json({ message: 'not found' }, { status: 404 })
+      if (url.pathname.startsWith('/apps/')) return json(row(url.pathname.slice(6), 'staging'))
+      // Basecamp refuses a tier filter with 400, so the resolver must not send one.
+      if (url.pathname === '/environments')
+        return url.searchParams.has('tier') ? Response.json({ message: 'no tier filter' }, { status: 400 }) : json(first ?? envTiers.map(t => ({ id: `env-${t}`, tier: t })))
+      if (url.pathname === '/apps') return json(first ?? apps.filter(a => `env-${a.tier}` === url.searchParams.get('environmentId')))
+      return Response.json({}, { status: 404 })
+    } })
+    return `http://localhost:${bc.port}`
+  }
+  afterEach(() => bc?.stop(true))
+
+  test('the anchor itself when its tier is the target\'s, in one read', async () => {
+    const origin = start(['development'], [])
+    expect((await resolveBasecampApp(origin, 'k', 'anchor', 'dev')).id).toBe('anchor')
+    expect(gets).toEqual(['/apps/anchor'])
+  })
+
+  test('the same-slug App in the target\'s environment otherwise', async () => {
+    const origin = start(['development', 'staging'], [{ id: 'other', tier: 'staging', slug: 'x' }, { id: 'sib', tier: 'staging', slug: 'kapp' }])
+    expect((await resolveBasecampApp(origin, 'k', 'anchor', 'stage')).id).toBe('sib')
+  })
+
+  test('refuses a tier with no environment, naming the command that makes it', async () => {
+    const origin = start(['development'], [])
+    await expect(resolveBasecampApp(origin, 'k', 'anchor', 'production')).rejects.toThrow(/no production environment.*fli basecamp:app --production/)
+  })
+
+  test('refuses an environment holding no App of the slug, and never falls back', async () => {
+    const origin = start(['development', 'staging'], [{ id: 'other', tier: 'staging', slug: 'x' }])
+    await expect(resolveBasecampApp(origin, 'k', 'anchor', 'stage')).rejects.toThrow(/no App 'kapp' in the staging environment.*fli basecamp:app --stage/)
+  })
+
+  test('an anchor Basecamp does not hold is named, with the way out', async () => {
+    const origin = start([], [])
+    await expect(resolveBasecampApp(origin, 'k', 'gone', 'dev', { where: 'yuma' })).rejects.toThrow('BASECAMP_APP_ID gone is no App on yuma')
+  })
+
+  test('TIERS maps each deploy target to a tier', () => {
+    expect(TIERS).toEqual({ dev: 'development', stage: 'staging', production: 'production' })
   })
 })

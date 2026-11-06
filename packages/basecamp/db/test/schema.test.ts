@@ -2514,7 +2514,7 @@ describe('App runtime columns', () => {
     'id', 'workspaceId', 'environmentId', 'name', 'slug', 'kind', 'status', 'source', 'hasExposedPort', 'swap',
     'isDeployedOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId', 'deployPublicKey', 'blueprintId',
     'backupCron', 'backupDestinationId', 'replicaDestinationId', 'drillCron', 'replicaFoundAt',
-    'replicaSyncedAt', 'createdAt', 'updatedAt', 'deletedAt',
+    'replicaSyncedAt', 'isIngressNamePublished', 'createdAt', 'updatedAt', 'deletedAt',
   ]
   const models = parseFile(SCHEMA).schema.models
   const columns = (name: string) => models.find((m: any) => m.name === name)!.fields

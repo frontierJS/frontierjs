@@ -102,11 +102,21 @@ function checkAccept(mime, accept, model, field, claimed) {
 // read for the hash, and any other provider removes it once its copy is stored.
 // A copy of a multi-GiB resumed upload is its size read and written again
 // (FJS-3971).
+//
+// `name` and `type` are what the sender said, as fromStream takes them: an
+// upload assembled as <id>.part has the temp name on disk and the original in
+// the handshake. `type` is a claim and the head of the bytes wins. `size` is
+// checked against the file before anything moves.
 class FromPath {
-  constructor(path, { move = false } = {}) {
+  constructor(path, { move = false, name, type, size } = {}) {
     if (typeof path !== 'string' || !path) throw new Error('fromPath(path): path must be a non-empty string')
+    if (size != null && !(Number.isSafeInteger(size) && size >= 0))
+      throw new Error('fromPath(path, { size }): size must be a non-negative integer')
     this.path = path
     this.move = move === true
+    this.name = name
+    this.type = type
+    this.size = size ?? null
     Object.freeze(this)
   }
 }
@@ -290,8 +300,12 @@ async function readValue(value, fieldName, model) {
   if (value instanceof FromPath) {
     const { path } = value
     if (!existsSync(path)) throw new Error(`@file: file not found: ${path}`)
-    return blobValue(await openAsBlob(path), {
-      mime: guessMime(path), filename: basename(path), name: displayName(basename(path)),
+    const blob = await openAsBlob(path)
+    if (value.size != null && blob.size !== value.size)
+      throw new Error(`@file: ${path} is ${blob.size} bytes and its stated size is ${value.size}; nothing was kept`)
+    const named = displayName(value.name) ?? displayName(basename(path))
+    return blobValue(blob, {
+      mime: value.type || guessMime(named), filename: named, name: named,
       ...(value.move ? { move: path } : {}),
     })
   }

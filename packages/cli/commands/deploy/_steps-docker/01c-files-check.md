@@ -27,7 +27,7 @@ const machine = machineFor($, host, serverPath)
 
 let env = ''
 try {
-  env = machine.capture(`cat ${envFile} 2>/dev/null || echo ''`)
+  env = machine.capture(`cat ${envFile} 2>/dev/null || echo ''`, { dry: false })
 } catch {
   log.warn(`Files check: could not read ${envFile} on ${host} -- skipping`)
   return

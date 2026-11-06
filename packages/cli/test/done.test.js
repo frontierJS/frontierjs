@@ -146,6 +146,25 @@ describe('the diff', () => {
     } finally { cleanup() }
   })
 
+  test('only keeps the files named, and cuts changed, added, untracked and the diff together', async () => {
+    const { root, cleanup } = tree({ 'a.js': 'one\n', 'r/[id]/x.js': 'one\n' })
+    const git = (...a) => execFileSync('git', ['-C', root, ...a], { stdio: 'ignore' })
+    try {
+      git('init', '-q'); git('add', '.'); git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'x')
+      writeFileSync(join(root, 'a.js'), 'two\n')
+      writeFileSync(join(root, 'r/[id]/x.js'), 'const bracket = 2\n')
+      writeFileSync(join(root, 'b.js'), 'const other = 1\n')
+      writeFileSync(join(root, 'c.js'), 'const mine = 1\n')
+      const c = collectChanges(root, { only: ['r/[id]/x.js', 'c.js', 'gone.js'] })
+      expect(c).toMatchObject({ changed: ['c.js', 'r/[id]/x.js'], added: ['c.js'], untracked: ['c.js'] })
+      expect(c.diff).toContain('+const bracket = 2')
+      expect(c.diff).toContain('+const mine = 1')
+      expect(c.diff).not.toContain('other')
+      expect(c.diff).not.toContain('a.js')
+      expect((await runDone(root, { engines: false, only: ['zzz.js'] })).changed).toBe(0)
+    } finally { cleanup() }
+  })
+
   test('a kept report answers while the tree stands still, and an edit, an untracked file or --fresh builds it again', async () => {
     const { root, cleanup } = tree({ 'a.js': 'one\n' })
     const git = (...a) => execFileSync('git', ['-C', root, ...a], { stdio: 'ignore' })

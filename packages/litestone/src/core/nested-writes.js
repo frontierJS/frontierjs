@@ -68,10 +68,11 @@ export function makeNestedWrites(/** @type {any} */ shape, /** @type {any} */ ct
   function refuseBulkNested(/** @type {any} */ rows, /** @type {any} */ verb) {
     const named = new Set()
     for (const row of rows) for (const k of Object.keys(extractNestedWrites(row).nested)) named.add(k)
-    if (named.size) throw new (/** @type {any} */ (ValidationError))([...named].map(k => ({
+    if (!named.size) return
+    throw Object.assign(new ValidationError([...named].map(k => ({
       path: [k],
       message: `${verb} takes no nested writes. Write ${k} with ${verb === 'updateMany' ? 'update()' : 'create()'}, one row at a time.`,
-    })), { model: modelName, operation: verb === 'updateMany' ? 'update' : 'create' })
+    }))), { model: modelName })
   }
 
   // belongsTo ops — run BEFORE parent insert/update, return FK fields to inject

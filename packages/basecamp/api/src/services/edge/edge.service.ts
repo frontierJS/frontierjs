@@ -7,6 +7,9 @@
 //   sync      push one Domain: its App's ingress record, then its CNAME — the APPLY
 //   syncStep  the same push from `domain:dns`, internal; a deleted Domain's CNAME
 //             is removed, and a Domain that cannot be pushed YET is skipped
+//   ingressStep  one App's ingress record from `ingress:dns`, internal: written
+//             while the App publishes its ingress name, removed when it stops
+//             and no Domain CNAMEs to it
 //
 // Nothing here is stored. A zone and a record are the vendor's to state, and
 // the only copy that cannot drift is the one that is not kept — the catalog
@@ -36,7 +39,7 @@ import { createService, NotFound, BadRequest, BadGateway, Conflict, $ } from '@f
 import { LEVELS }                 from '@frontierjs/litestone'
 import { sessionScope, internalOnly, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws }                 from '../../core/resource.ts'
-import { servingAddresses, servingRefusal } from '../../domain/release/runtime.ts'
+import { servingAddresses, servingRefusal, ingressName } from '../../domain/release/runtime.ts'
 import { actsAsApp }              from '../../core/gate.ts'
 import { edgeConnectorFor, edgeProviders, appMark, domainMark } from '../../providers/edge/index.ts'
 import { targetFor }              from '../../providers/compute/index.ts'
@@ -59,10 +62,6 @@ export interface EdgeAccount {
 const SERVING = new Set(['A', 'AAAA', 'CNAME'])
 
 const fqdn = (name: string) => name.trim().toLowerCase().replace(/\.$/, '')
-
-/** An App's ingress record, named from its id so a rename rewrites nothing —
- *  and a customer who typed the CNAME by hand never has to again (`FJS-D561`). */
-export const ingressName = (appId: string, zone: string) => `${appId}.${fqdn(zone)}`
 
 /** A zone, and the account that can write it. */
 interface ZoneAt { account: EdgeAccount; connector: EdgeConnector; send: AccountSend; zone: EdgeZone }
@@ -119,6 +118,7 @@ class NotYet extends Conflict {}
 interface DomainRow { id: string; appId: string; hostname: string; redirectTo: string | null; isProxied: boolean }
 
 const scoped = sessionScope()
+const scopedWhenACaller = (ctx: { user: unknown }) => actsAsApp(ctx.user as never) ? undefined : scoped(ctx as never)
 
 async function account(id: unknown): Promise<EdgeAccount> {
   if (!id) throw new BadRequest('providerSecretId is required — which edge account to ask')
@@ -247,8 +247,7 @@ async function push(domain: DomainRow) {
 
   const name = ingressName(domain.appId, ingress.zone.name)
   try {
-    const ingressRecords = await ingress.connector.setRecords(ingress.send, ingress.zone.id, appMark(domain.appId),
-      addresses.map(content => ({ type: 'A', name, content })))
+    const ingressRecords = await setIngress(ingress, domain.appId, addresses)
     // Before the CNAME, so the edge never proxies this host under a zone left
     // at Flexible, where Caddy's HTTPS redirect loops forever (FJS-D1422 for
     // every Domain). The zone's own setting is never read or written.
@@ -262,25 +261,98 @@ async function push(domain: DomainRow) {
   }
 }
 
-/** A deleted Domain's CNAME, removed — the one carrying its mark, and no
- *  other. The App's ingress record stays: it is the App's, and another of
- *  its Domains may point at it. */
-async function unpush(domain: DomainRow) {
-  const host = fqdn(domain.hostname)
-  const mark = domainMark(domain.id)
+/** An App's ingress record — an A per address it runs at — the half of a
+ *  Domain's push an App with no Domain needs as well. */
+const setIngress = (ingress: ZoneAt, appId: string, addresses: string[]) =>
+  ingress.connector.setRecords(ingress.send, ingress.zone.id, appMark(appId),
+    addresses.map(content => ({ type: 'A', name: ingressName(appId, ingress.zone.name), content })))
+
+// ── pushIngress — one App's ingress record, on its own ──────────────
+//
+// An App with no Domain has no CNAME to push the record ahead of, and still
+// answers at the name while `isIngressNamePublished` is on (`FJS-D1952`). The
+// column off removes the record only when no Domain CNAMEs to it: a Domain's
+// push writes the record back otherwise. The not-yet refusals are `push`'s,
+// so an App running nowhere keeps its record where it last ran (`FJS-D567`).
+async function pushIngress(appId: string) {
+  const sys = $.app.db!.asSystem()
+  const row = await sys.app.findFirst({ where: { id: appId }, select: { isIngressNamePublished: true } }) as
+    { isIngressNamePublished: boolean } | null
+  if (!row) throw new NotFound(`App '${appId}' not found`)
+  const wanted = row.isIngressNamePublished || (await sys.domain.count({ where: { appId } })) > 0
   try {
-    const home = await zoneOf(await edgeAccounts(), host)
-    if (!home) throw new NotYet(`No connected zone holds ${domain.hostname} — nothing of basecamp's to remove`)
-    const ours = (await home.connector.records(home.send, home.zone.id))
-      .some(r => fqdn(r.name) === host && r.mark?.domainId === domain.id)
-    const removed = ours
-      ? await home.connector.deleteRecords(home.send, home.zone.id, [{ type: 'CNAME', name: host, mark }])
-      : []
-    return { domainId: domain.id, hostname: host, removed }
+    const ingress = await ingressZone(await edgeAccounts())
+    if (!ingress) throw new NotYet(NO_INGRESS)
+    const name = ingressName(appId, ingress.zone.name)
+    if (!wanted) {
+      const removed = await ingress.connector.deleteRecords(ingress.send, ingress.zone.id, [{ type: 'A', name, mark: appMark(appId) }])
+      return { appId, name, removed }
+    }
+    const addresses = await servingAddresses($.app.db!, appId)
+    if (!addresses.length)
+      throw new NotYet(`${name} is not published: ${await servingRefusal($.app.db!, appId)}. A record already there is kept where it last ran`)
+    return { appId, name, addresses, records: await setIngress(ingress, appId, addresses) }
   } catch (err) {
     if (err instanceof Conflict) throw err
     throw new BadGateway(why(err))
   }
+}
+
+/** A deleted Domain's CNAME, removed -- the one carrying its mark, and no
+ *  other. The App's ingress record stays while the App lives: it is the App's,
+ *  and another of its Domains may point at it. */
+async function unpushCname(domain: DomainRow) {
+  const host = fqdn(domain.hostname)
+  const mark = domainMark(domain.id)
+  const home = await zoneOf(await edgeAccounts(), host)
+  if (!home) throw new NotYet(`No connected zone holds ${domain.hostname} — nothing of basecamp's to remove`)
+  const ours = (await home.connector.records(home.send, home.zone.id))
+    .some(r => fqdn(r.name) === host && r.mark?.domainId === domain.id)
+  return ours
+    ? await home.connector.deleteRecords(home.send, home.zone.id, [{ type: 'CNAME', name: host, mark }])
+    : []
+}
+
+/** A deleted App's ingress record, removed -- the one carrying its mark. A
+ *  workspace with no ingress zone, or whose account is gone, has none of ours
+ *  to remove. */
+async function unpushIngress(domain: DomainRow): Promise<EdgeRecord[]> {
+  const gone = await $.app.db!.asSystem().app.findFirst({
+    where: { id: domain.appId }, withDeleted: true, select: { deletedAt: true },
+  }) as { deletedAt: string | null } | null
+  if (!gone?.deletedAt) return []
+  let ingress: ZoneAt | null
+  try {
+    ingress = await ingressZone(await edgeAccounts())
+  } catch (err) {
+    if (err instanceof Conflict) return []
+    throw new BadGateway(why(err))
+  }
+  if (!ingress) return []
+  return ingress.connector.deleteRecords(ingress.send, ingress.zone.id,
+    [{ type: 'A', name: ingressName(domain.appId, ingress.zone.name), mark: appMark(domain.appId) }])
+}
+
+/** What a deleted Domain leaves in the zone: its own CNAME, and its App's
+ *  ingress record when the App went too. */
+async function unpush(domain: DomainRow) {
+  let removed: EdgeRecord[] = [], skipped: NotYet | null = null
+  try {
+    removed = await unpushCname(domain)
+  } catch (err) {
+    if (err instanceof NotYet) skipped = err
+    else if (err instanceof Conflict) throw err
+    else throw new BadGateway(why(err))
+  }
+  let ingress: EdgeRecord[]
+  try {
+    ingress = await unpushIngress(domain)
+  } catch (err) {
+    if (err instanceof BadGateway) throw err
+    throw new BadGateway(why(err))
+  }
+  if (skipped && !ingress.length) throw skipped
+  return { domainId: domain.id, hostname: fqdn(domain.hostname), removed, ingress }
 }
 
 export default createService({
@@ -292,12 +364,13 @@ export default createService({
   // with no model otherwise answers every CRUD verb it was never given.
   // `sync` at `Domain`'s write level: it is the Domain written somewhere else.
   methods: [
-    ...['zones', 'records'].map(method => ({ method, gate: LEVELS.READER })),
+    ...['zones', 'records'].map(method => ({ method, read: true, gate: LEVELS.READER })),
     { method: 'sync', gate: LEVELS.ADMINISTRATOR },
     // `gate: 0` for the app's own push, which has no caller to grade. A
     // caller's push is graded by the Domain read it makes at its standing,
     // and `internalOnly` keeps the method off the wire either way.
     { method: 'syncStep', gate: 0 },
+    { method: 'ingressStep', gate: 0 },
   ],
 
   // ── zones ──────────────────────────────────────────────────────────
@@ -460,13 +533,35 @@ export default createService({
     }
   },
 
+  // ── ingressStep — the `ingress:dns` job's own push ───────────────
+  //
+  // `syncStep`'s two modes, keyed by an App: a caller is confined to its
+  // workspace, and the app's own run takes the App row's.
+  async ingressStep() {
+    const id     = String($.id)
+    const caller = !actsAsApp($.user)
+    const row    = await (caller ? db() : $.app.db!.asSystem()).app.findFirst({
+      where: caller ? { id, workspaceId: ws() } : { id }, select: { id: true, workspaceId: true },
+    }) as { id: string; workspaceId: string } | null
+    if (!row) throw new NotFound(`App '${id}' not found`)
+    if (!caller) $.locals.workspaceId = row.workspaceId
+    try {
+      return await pushIngress(row.id)
+    } catch (err) {
+      if (err instanceof NotYet) return { appId: row.id, skipped: err.message }
+      throw err
+    }
+  },
+
   hooks: {
     before: {
-      // `syncStep` is also the app's own (a machine moving), where there is
-      // no session to authenticate — so it is scoped only when a caller IS
-      // there, and `internalOnly` keeps it off the wire either way.
-      all: [sessionScope({ except: ['syncStep'] })],
-      syncStep: [internalOnly(), function scopedWhenACaller(ctx) { return actsAsApp(ctx.user) ? undefined : scoped(ctx) }],
+      // `syncStep` and `ingressStep` are also the app's own (a machine
+      // moving), where there is no session to authenticate — so they are
+      // scoped only when a caller IS there, and `internalOnly` keeps them off
+      // the wire either way.
+      all: [sessionScope({ except: ['syncStep', 'ingressStep'] })],
+      syncStep:    [internalOnly(), scopedWhenACaller],
+      ingressStep: [internalOnly(), scopedWhenACaller],
     },
   },
 })

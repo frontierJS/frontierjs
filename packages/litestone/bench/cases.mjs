@@ -121,6 +121,28 @@ export const cases = [
     floor: ({ raw }) => raw.all(),
   },
   {
+    // A @from count is one correlated subquery per parent row, and `advise`
+    // asks for @@index on the key it reads (FJS-3823). Without it this is a scan
+    // per row: 7.1 ms per 100 parents against 56 µs. This pins the indexed path
+    // against raw SQL over the same index; the floor scans too when the @@index
+    // is dropped, so the missing index itself is advise's finding, not this ratio.
+    name: 'findMany-from-count-indexed', ceiling: 3, ops: 2_000,
+    async open() {
+      const db = await createClient({
+        schema: `model Post { id Int @id; title String; commentCount Int @from(Comment, count: true); comments Comment[] }
+                 model Comment { id Int @id; postId Int; post Post @relation(fields: [postId], references: [id]); @@index([postId]) }`,
+        db: ':memory:',
+      })
+      const sys = db.asSystem()
+      await sys.post.createMany({ data: Array.from({ length: 1_000 }, (_, i) => ({ title: `p${i}` })) })
+      await sys.comment.createMany({ data: Array.from({ length: ROWS }, (_, i) => ({ postId: (i % 1_000) + 1 })) })
+      const raw = db.$rawDbs.main.query('SELECT id, title, (SELECT COUNT(*) FROM comment WHERE comment.postId = post.id) AS commentCount FROM post LIMIT ?')
+      return { db, raw, close: () => db.$close() }
+    },
+    run:   ({ db })  => db.post.findMany({ limit: 100 }),
+    floor: ({ raw }) => raw.all(100),
+  },
+  {
     // The lexer every schema parse starts with (FJS-112 P4). Its floor is a
     // sticky-regex scan counting the same tokens: no positions, no objects.
     name: 'tokenize-schema', ceiling: 6, ops: 50,

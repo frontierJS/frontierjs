@@ -10,7 +10,7 @@ examples:
 flags:
   dev:
     type: boolean
-    description: Download from the dev server instead of production (ssh only)
+    description: Download from the dev server instead of production — with BASECAMP_APP_ID set, the project's development App
     defaultValue: false
   basecamp:
     type: string
@@ -22,14 +22,16 @@ flags:
     defaultValue: false
 ---
 
-With `BASECAMP_APP_ID` set, the App's newest bucket archive is fetched and
-unpacked under `db/backups/<stamp>/`, or one taken now with `--take`; with no
+With `BASECAMP_APP_ID` set, the project's production App's newest bucket
+archive (`--dev`: its development App's) is fetched and unpacked under `db/backups/<stamp>/`, or one taken now with `--take`; with no
 archive in a bucket it refuses, and never falls back to ssh (`FJS-D1717`).
 This is the one command that takes an App's archive (`FJS-D1848`);
 the Basecamp is an entry in `basecamps.json` (`--basecamp` names it; the local
 dev Basecamp is the reserved entry `dev`, written in by hand), and its key —
 the entry's `scopedKey`, else its `apiKey` — needs `appBackups:read`, and
-`--take` also `appBackups:write` and `apps:read`. Otherwise `production.db*` is copied by
+`--take` also `appBackups:write` and `apps:read`. Finding the App reads
+`/apps` and `/environments` with the entry's `apiKey` (`apps:read`,
+`environments:read`), since the narrow key does not cover them (`FJS-D1965`). Otherwise `production.db*` is copied by
 scp from `PROD_SERVER` (or `DEV_SERVER` with `--dev`) at its `*_SERVER_PATH`.
 
 ```js

@@ -5151,6 +5151,8 @@ describe('nested writes', () => {
     expect(err?.message).toContain(`${verb} takes no nested writes`)
     expect(err?.message).toContain('User')
     expect(err?.message).not.toContain('must be an array')
+    // FJS-3937: the refusal names its model like every other ValidationError that does
+    expect(err?.model).toBe('Account')
   })
 })
 
@@ -16976,7 +16978,7 @@ describe('generateTypeScript', () => {
     expect(dts).toContain('export interface LitestoneClient {')
     expect(dts).toContain('readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, never>')
     expect(dts).toContain('readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, never>')
-    expect(dts).toContain('asSystem(): LitestoneClient')
+    expect(dts).toContain('asSystem(): __Sudo<LitestoneClient>')
     expect(dts).toContain('$tapQuery(')
   })
 

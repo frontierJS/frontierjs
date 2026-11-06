@@ -49,6 +49,7 @@ title: App
   import Json       from '@frontierjs/ui/components/display/Json.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Switch     from '@frontierjs/ui/components/forms/Switch.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
@@ -654,6 +655,18 @@ title: App
     }
   }
 
+  /** `Switch` hands `onchange` a boolean; the patch dispatches the `ingress:dns` job. */
+  async function setIngressPublished(isIngressNamePublished) {
+    error = null; busy = 'ingress'
+    try {
+      app = await apps.service.patch(app.id, { isIngressNamePublished })
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   /** This form points a container app at a prebuilt image; a git source is set through the API. */
   async function saveImage({ ship } = {}) {
     error = null; busy = ship ? 'deploy' : 'save'
@@ -1147,6 +1160,26 @@ title: App
       encrypted at rest and never returned by the API. What stays on the domain is the metadata
       an operator reads — and its status is derived from the expiry, not stored beside it.
     </Callout>
+
+    <Card id="ingress-name">
+      <div class="section-header">
+        <h3 class="h4">Ingress name{#if app.ingress?.name} <code>{app.ingress.name}</code>{/if}</h3>
+        <Switch id="ingress-name-switch" label="Published" checked={app.isIngressNamePublished}
+                disabled={busy === 'ingress'} onchange={setIngressPublished} />
+      </div>
+      {#if app.ingress?.state === 'served'}
+        <p>Publicly available at
+          <a href={`https://${app.ingress.name}`} target="_blank" rel="noopener"><code>https://{app.ingress.name}</code>
+            <NavIcon name="external" /></a></p>
+      {:else if app.ingress?.state === 'redirected'}
+        <p>Redirects to the primary hostname below, since a hostname serves this app.</p>
+      {:else if app.ingress?.state === 'waiting'}
+        <p class="text-muted">The ingress name answers once the workspace's ingress zone and wildcard
+          certificate are set. <a href="/dns/">Open DNS</a></p>
+      {:else}
+        <p class="text-muted">The ingress name is not published.</p>
+      {/if}
+    </Card>
 
     {#if adding}
       <Card>

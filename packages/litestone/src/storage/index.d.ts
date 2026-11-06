@@ -29,7 +29,10 @@ export declare function FileStorage(options?: FileStorageOptions): LitestonePlug
 /** The environment names an option falls back to, keyed by that option (FJS-D1549). */
 export declare const FILES_ENV: Readonly<Record<'provider' | 'bucket' | 'endpoint' | 'accessKeyId' | 'secretAccessKey' | 'publicBase', string>>
 /** A File column value read from the server's disk. A string is never read as a path. `move: true` hands the file over: a local store renames it in after one read for the hash, any other provider removes it once stored. */
-export declare function fromPath(path: string, options?: { move?: boolean }): { readonly path: string; readonly move: boolean }
+export declare function fromPath(
+  path: string,
+  options?: { move?: boolean; name?: string; type?: string; size?: number },
+): { readonly path: string; readonly move: boolean; readonly name?: string; readonly type?: string; readonly size: number | null }
 /** A File column value read from a stream, such as a request's `req.body`. `type` is a claim; the bytes' head decides. A remote provider needs `size` before the first byte, and the byte count is checked against it. */
 export declare function fromStream(
   readable: ReadableStream<Uint8Array> | import('node:stream').Readable,

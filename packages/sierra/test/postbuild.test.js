@@ -389,6 +389,15 @@ describe('runPostBuild — can a browser install this build', () => {
     expect(warned.join('\n')).toMatch(/manifest\.webmanifest will not install: .*"browser".*\(manifest-display-not-supported\)/)
   })
 
+  // An SPA published as an App's files has an Outpost in front of it, which
+  // sends `no-cache` for every file unless `_headers` names the hashed ones.
+  test('an SPA build writes _headers too, so its hashed bundles cache for a year', async () => {
+    const outDir = await setup('headers-spa', { 'index.html': '<!DOCTYPE html><html><body></body></html>', 'assets/index-BkrYyz-d.js': '' })
+    await runPostBuild({ llms: false }, table, outDir, outDir, null)
+    const text = await readFile(join(outDir, '_headers'), 'utf8')
+    expect(text).toMatch(/^\/assets\/\*\n  ! Cache-Control\n  Cache-Control: public, max-age=31536000, immutable$/m)
+  })
+
   test('no manifest anywhere says nothing at all', async () => {
     const outDir = await setup('manifest-none', { 'index.html': '<!DOCTYPE html><html><body></body></html>' })
     const results = await runPostBuild({ llms: false }, table, outDir, outDir)

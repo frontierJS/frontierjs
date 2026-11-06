@@ -195,12 +195,57 @@ Done when: Q1–Q6 are ruled, and 0.1's probe is written under its step.
 Goal: the machine holds `*.<zone>` before any ingress name is served
 (`FJS-D1954`), so there is one certificate path and no per-name ACME to migrate
 off.
-Done when: a fresh App's ingress name is served under `*.<zone>` with no new ACME
-order on the machine.
+Done when: a host under the zone is served by the pushed `*.<zone>` with no ACME
+order on the machine, across a Caddy restart (`verify-docker.mjs`); Basecamp
+mints against Pebble through the edge sink and pushes to every machine in the
+workspace (`verify:dns`). Serving the ingress name itself is Phase 2.
 
-- [ ] 1.1 Basecamp mints `*.<zone>` by DNS-01 with the token it already holds,
-      and pushes it as an `uploaded` certificate. Waits on fleet-ingress Phase 3
-      (the `uploaded` push), which is proposed, not built.
+Probed 2026-11-05 on `caddy:2.10.2`: a `load_pem` wildcard makes Caddy log
+*skipping automatic certificate management because one or more matching
+certificates are already loaded* for a routed host under it, serves the
+wildcard, and keeps it through `caddy run --resume`. So the push suppresses
+per-name ACME with no `automatic_https` setting.
+
+- [x] 1.1 Outpost holds a pushed certificate — the push half of fleet-ingress
+      Phase 3 (`FJS-D1975`). `POST /certs/load { id, cert, key }` writes one
+      `apps.tls.certificates.load_pem` entry by `@id` through `ingress.js`
+      (the one writer of Caddy config), refusing a key that does not match or a
+      certificate already expired, and answers its names and expiry;
+      `POST /certs/drop { id }` removes it. `ingress.js`'s *no wildcard* comment
+      and fleet-ingress D6 amended: the machine holds the minted PEM, never the
+      DNS token. Proof: outpost's test against its fake Caddy, and
+      `verify-docker.mjs` serving a routed host by a pushed wildcard across a
+      restart. **Built 2026-11-06:** `loadCert`/`dropCert` in `ingress.js`,
+      `@id` `fjs-cert-<id>`, so an app id starting `cert-` is now refused (one
+      `/id/` namespace in Caddy). Outpost 452/452, `verify:docker` 89/89. The
+      key sits in Caddy's config and autosave, readable on the loopback admin
+      API only, which `load_pem` cannot avoid.
+- [x] 1.2 Basecamp's ACME client (`FJS-D1973`): one module under
+      `providers/acme/`, WebCrypto and `fetch` only — RFC 8555 account, order,
+      DNS-01 authorization, finalize with a P-256 CSR in DER, download.
+      The DNS half is two callbacks, so the module knows no vendor. Proof: a
+      test issuing `*.<zone>` from Pebble. **Built 2026-11-06:**
+      `providers/acme/index.ts` + `csr.ts`; `acme.test.ts` 5/5 on Pebble 2.9.0
+      (validation skipped), `openssl req -verify` agrees. `dns.set` ADDS a TXT:
+      the apex and the wildcard share `_acme-challenge.<zone>`. A live Let's
+      Encrypt staging issue is owed.
+- [x] 1.3 The wildcard minted and kept (`FJS-D1974`):
+      `Workspace.ingressCertSecretId` and `ingressCertExpiresAt`, `@system`, a
+      `@@check` pairing them; the material — cert, key and the ACME account
+      key renewal reuses — in one `tlsCert` Secret. An `ingress:cert` job mints
+      through 1.2 with the edge connector writing
+      `_acme-challenge.<zone>`, stores, and pushes to every machine in the
+      workspace; `resolveIngressZone` enqueues it when the zone changes, and a
+      daily run renews inside `certStatusOf()`'s 30 days. **Built 2026-11-06:**
+      `jobs/ingress-cert.job.ts` (cron `17 3 * * *` is the sweep); `ACME_URL`
+      points it at a CA, and a non-loopback one is refused unless `maySpend()`.
+      `edge.test.ts` 66/66, `verify:dns` 31/31 minting from Pebble. Open:
+      `FJS-4058` (a foreign `_acme-challenge` TXT), `FJS-4060` (no real-CA
+      order yet).
+- [x] 1.4 A release pushes the wildcard to its machine before routing, so a
+      machine enrolled after the mint holds it before it serves. **Built
+      2026-11-06** in `runDeployment`, before any step; a failure is logged and
+      the release goes on. Unasserted: `FJS-4059`.
 
 ### Phase 2 — The name answers
 
@@ -211,20 +256,41 @@ Done when: `verify:dns` releases an App with no Domain and fetches
 redirect to the primary; turning the column off makes it refuse;
 `edge.test.ts` and `compute.test.ts` grade all three.
 
-- [ ] 2.1 The column on `App`, defaulted on (`FJS-D1952`). Named for what it
+- [x] 2.1 The column on `App`, defaulted on (`FJS-D1952`). Named for what it
       says — the App is served at its ingress name — and kept apart from
-      `hasExposedPort`.
-- [ ] 2.2 The ingress record pushed on its own. Split the A-record half out of
+      `hasExposedPort`. **Built 2026-11-06:** `isIngressNamePublished`. It and
+      Phase 1's two `Workspace` columns are migration
+      `20261106081059_ingress_name.sql`, not an edit of `initial_schema.sql`
+      (`FJS-D1605`); applied to a copy of the dev database, every App on.
+- [x] 2.2 The ingress record pushed on its own. Split the A-record half out of
       `edge.push()` so an App with the column on and no Domain gets its record,
       dispatched on the same three triggers `domain:dns` answers. Turning the
-      column off deletes the record only when no Domain CNAMEs to it.
+      column off deletes the record only when no Domain CNAMEs to it. **Built
+      2026-11-06:** `edge.ingressStep` and an `ingress:dns` job on the `dns`
+      queue, which also re-pushes the App's routes. A release and a machine
+      moving dispatch it only for an App with no Domain (`ownRecordHolders`) —
+      every App on each was enough load on the one-wide queue to time out
+      `edge.test.ts`. The last Domain removed dispatches it too.
 - [ ] 2.3 `routedHosts` adds the ingress name when the column is on and the App
       has no Domain — the one reader, no second list. With a Domain,
       `routedRedirects` sends it to the primary, falling back to the first by
       `hostname` (`FJS-D1956`); the column off drops both; the last Domain
-      removed serves the App again.
-- [ ] 2.4 `X-Robots-Tag: noindex` on the ingress name's route in Outpost.
-- [ ] 2.5 The App page shows the URL when on, and the switch.
+      removed serves the App again. **Built 2026-11-06** in
+      `domain/release/runtime.ts`; a Domain that only redirects does not count
+      as serving. `edge.test.ts` § the ingress name grades it (80/80).
+- [x] 2.4 `X-Robots-Tag: noindex` on the ingress name's route in Outpost.
+      **Built 2026-11-06:** `/deploy`, `/route` and `/static/activate` take
+      `noindex: [host]`, which Basecamp fills from `noindexHosts` in
+      `runtime.ts`. Reading the name off the host's shape was tried first and
+      dropped: an app `shop` would mark its own `shop.example.com`, and
+      `fli deploy`'s app ids are names. `verify:docker` `ingressName.*` fetches
+      it over HTTPS through a real Caddy under a pushed wildcard, served and
+      redirected; `verify:dns` sees Basecamp state it. Overrulable call.
+- [x] 2.5 The App page shows the URL when on, and the switch. **Built
+      2026-11-06:** a card on the domains tab, from `ingressStateOf` on the
+      App detail; `verify:screens` drives the switch (`waiting` ↔ `off`).
+      `served` and `redirected` on the page are not driven: the seeded
+      workspace has no zone.
 
 ### Phase 3 — Posture and the cookie
 
@@ -300,6 +366,32 @@ sees `__Host-session` under `secure` and `session` without it.
     name is checked against nothing, and a wrong one is an A record and a
     certificate request for a host the workspace does not own. A Cloudflare
     zone id never changes name, so the copy cannot go stale.
+- ~~**Q8 — The ACME client that mints `*.<zone>`.**~~ **Answered 2026-11-06 (`FJS-D1973`): A — Hand-rolled in one basecamp provider module: RFC 8555 JWS over WebCrypto ES256 and a P-256 CSR in DER, proved against Pebble.** Step 1.1; Basecamp holds the
+  DNS token, so DNS-01 runs there and no machine sees it (`IDEAS/fleet-ingress.md` D6).
+  - **A** — Hand-rolled in one basecamp provider module: RFC 8555 JWS over
+    WebCrypto ES256 and a P-256 CSR in DER, proved against Pebble.
+  - **B** — The `acme-client` package.
+  - **Recommend A** — `acme-client` 5.4.0 runs under Bun but brings 48
+    packages, axios and node-forge among them, into the process that holds
+    every private key, and last released in July 2024. The protocol is small
+    and stable, and Pebble is stricter than Let's Encrypt.
+- ~~**Q9 — Where the wildcard is kept.**~~ **Answered 2026-11-06 (`FJS-D1974`): A — Two `@system` columns on Workspace beside `ingressZone`, `ingressCertSecretId` and `ingressCertExpiresAt`, the material in a `tlsCert` Secret as `Domain.certSecretId` keeps it.**
+  - **A** — Two `@system` columns on Workspace beside `ingressZone`,
+    `ingressCertSecretId` and `ingressCertExpiresAt`, the material in a
+    `tlsCert` Secret as `Domain.certSecretId` keeps it.
+  - **B** — A `Certificate` model Domain's cert columns could later move onto.
+  - **Recommend A** — one wildcard per workspace, derived from `ingressZone`, so
+    it has no identity of its own, and `certStatusOf()` reads the pair
+    unchanged. B is a new noun for a one-to-one fact until a workspace has a
+    second zone.
+- ~~**Q10 — What rides on the new certificate push.**~~ **Answered 2026-11-06 (`FJS-D1975`): A — The wildcard only, pushed on mint, on renewal to every machine, and on each release to its machine.** Outpost's push is generic:
+  a PEM pair in, Caddy's `load_pem` holds it.
+  - **A** — The wildcard only, pushed on mint, on renewal to every machine, and
+    on each release to its machine.
+  - **B** — A, and `uploaded` Domain certificates in the same change.
+  - **Recommend A** — 1.1 waits on the push, not on Domain wiring, which brings
+    its own questions (which machine a Domain is on, D4's `proxied` flip).
+    `IDEAS/fleet-ingress.md` Phase 3 stays open for the Domain half.
 
 ## Out of scope
 

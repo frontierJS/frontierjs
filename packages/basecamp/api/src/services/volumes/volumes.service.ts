@@ -94,17 +94,25 @@ const appOfBind = (name: string) => /\/([^/]+)\/data$/.exec(name)?.[1] ?? null
  *
  * A stopped App mounts nothing, so `isInUse` is false — and removing its
  * directory is deleting its database before the next start.
+ *
+ * `apps.remove` leaves the App's `AppServer` rows, so a placement only
+ * counts while its App is live — otherwise a deleted
+ * App's folder can never be removed (`FJS-4057`).
  */
 async function placedData(volumes: Record<string, unknown>[]): Promise<Set<string>> {
   const binds = volumes.filter(v => v.kind === 'bind' && appOfBind(v.name as string))
   if (!binds.length) return new Set()
+  const appIds     = binds.map(v => appOfBind(v.name as string))
   const placements = await sys().appServer.findMany({
-    where:  { serverId: { in: [...new Set(binds.map(v => v.serverId))] },
-              appId:    { in: binds.map(v => appOfBind(v.name as string)) } },
+    where:  { serverId: { in: [...new Set(binds.map(v => v.serverId))] }, appId: { in: appIds } },
     select: { appId: true, serverId: true },
     limit:  1_000,
   })
-  const placed = new Set(placements.map((p: { appId: string; serverId: string }) => `${p.serverId}:${p.appId}`))
+  const live   = new Set((await sys().app.findMany({ where: { id: { in: appIds } }, select: { id: true }, limit: 1_000 }))
+    .map((a: { id: string }) => a.id))
+  const placed = new Set(placements
+    .filter((p: { appId: string }) => live.has(p.appId))
+    .map((p: { appId: string; serverId: string }) => `${p.serverId}:${p.appId}`))
   return new Set(binds
     .filter(v => placed.has(`${v.serverId}:${appOfBind(v.name as string)}`))
     .map(v => v.id as string))

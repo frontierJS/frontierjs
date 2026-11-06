@@ -1047,6 +1047,14 @@ model Workspace {
   // changes name. @system: derived by the `patch` hook from a vendor probe, so a
   // client that names it is refused.
   ingressZone     String? @system
+  // The wildcard `*.<ingressZone>` Basecamp minted by DNS-01 (`FJS-D1974`): a
+  // bare id, no @relation, the same shape as `Domain.certSecretId`. The
+  // material -- cert, key and the ACME account key renewal reuses -- is ONE
+  // `tlsCert` Secret, so a renewal cannot replace the key and keep the
+  // account of the old one. @system: the `ingress:cert` job writes both, and
+  // an owner who could move the expiry would stop the renewal that reads it.
+  ingressCertSecretId   String?   @system
+  ingressCertExpiresAt  DateTime? @system
 
   // The ntfy topic every critical kind is published to, once per event
   // (`FJS-D1586`): `<slug>-critical-<12 random chars>`, minted on first use by
@@ -1083,6 +1091,7 @@ model Workspace {
   @@index([accountId])
   @@check("(ingressSecretId IS NULL) = (ingressZoneId IS NULL)", "an ingress zone names its account and its zone together")
   @@check("(ingressSecretId IS NULL) = (ingressZone IS NULL)", "an ingress zone is stored with its name")
+  @@check("(ingressCertSecretId IS NULL) = (ingressCertExpiresAt IS NULL)", "an ingress certificate is stored with its expiry")
   @@check("(kind = 'demo') = (expiresAt IS NOT NULL)", "a demo workspace has an end date and no other kind does")
 
   // @@tenant(none) — the tenant itself. Scoping a workspace by the workspace claim
@@ -1959,6 +1968,12 @@ model App {
   // only through Caddy by hostname (`FJS-D930`). The posture grader reads it:
   // a public listener no app declares is `net.unexpected-listener`.
   hasExposedPort Boolean     @default(false)
+  // Caddy answers the App's ingress name, `<appId>.<ingress zone>` (`FJS-D561`):
+  // it serves the App while no Domain does, and redirects to the primary
+  // Domain once one does (`FJS-D1952`, `FJS-D1956`). Off hides an internal App
+  // and deletes the record unless a Domain CNAMEs to it. Read by `routedHosts`
+  // and `routedRedirects`, and by `ingress:dns` for the record.
+  isIngressNamePublished Boolean @default(true)
   // The swap this app asks for when a release lands (`FJS-D1882`). startFirst is
   // a request: Outpost overlaps only for an expand, and never for an app that
   // exposes its port or names no healthCheck. Read off the live app, rollbacks included.

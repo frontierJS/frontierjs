@@ -43,7 +43,7 @@
 import { defineJob }     from '@frontierjs/caravan'
 import { runsEitherWay } from '../domain/job/job-context.ts'
 import { executorOn, isExecutor } from '../providers/executor.ts'
-import { routedHosts, routedPaths, routedRedirects } from '../domain/release/runtime.ts'
+import { routedHosts, routedPaths, routedRedirects, noindexHosts } from '../domain/release/runtime.ts'
 import { isInline }      from '../domain/release/app-source.ts'
 import type { App }         from '@frontierjs/junction'
 
@@ -54,8 +54,10 @@ const domainDns = defineJob<{ domainId: string }>({
     const log     = app.logger.child('domain-dns')
 
     let dns: unknown = null
+    let gone = false
     try {
-      const out = await app.service('edge').call('syncStep', ctx.data.domainId) as { hostname: string; skipped?: string }
+      const out = await app.service('edge').call('syncStep', ctx.data.domainId) as { hostname: string; skipped?: string; removed?: unknown }
+      gone = 'removed' in out
       if (out.skipped) log.info('not pushed', { id: ctx.data.domainId, hostname: out.hostname, reason: out.skipped })
       else             log.info('pushed', { id: ctx.data.domainId, hostname: out.hostname })
     } catch (err) {
@@ -66,26 +68,17 @@ const domainDns = defineJob<{ domainId: string }>({
     }
 
     const routes = await routeDomainApp(app, ctx.data.domainId)
+
+    // The last Domain gone from an App that does not publish its ingress name
+    // leaves a record nothing CNAMEs to; `ingressStep` removes it, and keeps
+    // it otherwise. An App deleted with its Domains is 404 here, and `unpush`'s.
+    if (gone && routes.appId) await app.service('edge').call('ingressStep', routes.appId).catch((err: Error & { code?: number }) => {
+      if (err.code !== 404) log.warn('ingress record not settled after the Domain went', { appId: routes.appId, error: err.message })
+    })
     if (routes.failed.length)
       log.error('route push failed', { id: ctx.data.domainId, failed: routes.failed })
 
-    // A stale bind is a release (`FJS-D577`), made by whoever wrote the
-    // Domain. A machine moving has nobody to own the restart, so there it
-    // stays a warning until the next release.
-    let rebound: unknown = null
-    const stale = routes.routed.filter(r => r.rebind)
-    if (stale.length && mode === 'caller') {
-      try {
-        const out = await app.service('deployments').call('rebind', routes.appId) as { id?: string; skipped?: string }
-        log.info('bind stale, released to move it', { appId: routes.appId, deployment: out.id ?? null, skipped: out.skipped ?? null, rebind: stale.map(r => r.rebind) })
-      } catch (err) {
-        const code = Number((err as { code?: unknown }).code)
-        if (code >= 400 && code < 500) (err as { retryable?: boolean }).retryable = false
-        log.error('bind stale, and the release to move it was refused', { appId: routes.appId, error: (err as Error).message })
-        rebound = err
-      }
-    } else for (const r of stale)
-      log.warn('routed, bind stale until the next release', { serverId: r.serverId, rebind: r.rebind })
+    const rebound = await rebindStale(app, mode, log, routes)
 
     // A terminal zone refusal stops the retries only when every machine took
     // its route; otherwise the retry is owed to the machines.
@@ -106,6 +99,29 @@ const domainDns = defineJob<{ domainId: string }>({
 export default domainDns
 
 /**
+ * A stale bind is a release (`FJS-D577`), made by whoever changed the hosts.
+ * A machine moving has nobody to own the restart, so there it stays a warning
+ * until the next release. Answers the refusal to throw once the rest is done.
+ */
+export async function rebindStale(app: App, mode: string, log: ReturnType<App['logger']['child']>, routes: RoutePush): Promise<unknown> {
+  const stale = routes.routed.filter(r => r.rebind)
+  if (!stale.length || mode !== 'caller') {
+    for (const r of stale) log.warn('routed, bind stale until the next release', { serverId: r.serverId, rebind: r.rebind })
+    return null
+  }
+  try {
+    const out = await app.service('deployments').call('rebind', routes.appId) as { id?: string; skipped?: string }
+    log.info('bind stale, released to move it', { appId: routes.appId, deployment: out.id ?? null, skipped: out.skipped ?? null, rebind: stale.map(r => r.rebind) })
+    return null
+  } catch (err) {
+    const code = Number((err as { code?: unknown }).code)
+    if (code >= 400 && code < 500) (err as { retryable?: boolean }).retryable = false
+    log.error('bind stale, and the release to move it was refused', { appId: routes.appId, error: (err as Error).message })
+    return err
+  }
+}
+
+/**
  * Push every Domain of every App running on `serverId`, because the machine
  * moved into or out of `online` and each of those Apps' ingress records now
  * names the wrong set. `at` is the move's own instant, so two moves are two
@@ -119,6 +135,10 @@ export async function pushAppsOn(app: App, serverId: string, status: string, at:
   const placed = await sys.appServer.findMany({ where: { serverId, status: 'running' }, select: { appId: true } }) as { appId: string }[]
   const appIds = [...new Set(placed.map(p => p.appId))]
   if (!appIds.length) return 0
+  // An App with no Domain has an ingress record of its own to move (`FJS-D1952`).
+  const { default: ingressDns, ownRecordHolders } = await import('./ingress-dns.job.ts')
+  for (const appId of await ownRecordHolders(app, appIds))
+    await app.jobs.dispatch(ingressDns, { appId }, { id: `ingress:${appId}:server:${serverId}:${status}:${at}`, actor: null })
   const own     = await sys.domain.findMany({ where: { appId: { in: appIds } }, select: { id: true } }) as { id: string }[]
   // An App holding only a path route on someone else's Domain is reached by that Domain.
   const held    = await sys.domainRoute.findMany({ where: { appId: { in: appIds } }, select: { domainId: true } }) as { domainId: string }[]
@@ -129,7 +149,7 @@ export async function pushAppsOn(app: App, serverId: string, status: string, at:
   return domains.length
 }
 
-interface RoutePush {
+export interface RoutePush {
   appId:  string | null
   routed: { serverId: string; appId: string; hosts: string[]; paths: { host: string; prefix: string }[]; redirects: { host: string; to: string }[]; rebind: string | null }[]
   failed: { server: string; error: string }[]
@@ -159,25 +179,33 @@ export async function routeDomainApp(app: App, domainId: string): Promise<RouteP
   out.appId = domain.appId
   const routes = await sys.domainRoute.findMany({ where: { domainId }, select: { appId: true } }) as { appId: string }[]
 
-  for (const appId of new Set([domain.appId, ...routes.map(r => r.appId)])) {
-    const row = await sys.app.findFirst({ where: { id: appId }, select: { source: true } }) as { source: unknown } | null
-    if (!row) continue
-
-    const isStatic  = isInline(row.source)
-    const hosts     = await routedHosts(app.db, appId)
-    const paths     = await routedPaths(app.db, appId)
-    const redirects = await routedRedirects(app.db, appId)
-    const placed = await sys.appServer.findMany({ where: { appId, status: 'running' }, include: { server: true } }) as any[]
-    const servers = new Map<string, string>()
-    for (const p of placed) if (p.server?.status === 'online') servers.set(p.serverId, p.server.name ?? p.serverId)
-
-    for (const [serverId, name] of servers) {
-      const executor = await executorOn(app, serverId, name)
-      if (!isExecutor(executor)) { out.failed.push({ server: name, error: executor.reason }); continue }
-      const reply = await executor.call('/route', { app_id: appId, hosts, paths, redirects, ...(isStatic ? { static: true } : {}) })
-      if (reply.error) { out.failed.push({ server: name, error: reply.error.message }); continue }
-      out.routed.push({ serverId, appId, hosts, paths, redirects, rebind: (reply.data?.rebind as string | null | undefined) ?? null })
-    }
-  }
+  for (const appId of new Set([domain.appId, ...routes.map(r => r.appId)])) await routeApp(app, appId, out)
   return out
+}
+
+/** One App's hostnames to Caddy on every online machine running it — the
+ *  half of `routeDomainApp` an App's own change needs too (`ingress:dns`). */
+export async function routeApp(app: App, appId: string, out: RoutePush): Promise<void> {
+  const sys = (app.db as any).asSystem()
+  const row = await sys.app.findFirst({ where: { id: appId }, select: { source: true } }) as { source: unknown } | null
+  if (!row) return
+
+  const isStatic  = isInline(row.source)
+  const hosts     = await routedHosts(app.db, appId)
+  const paths     = await routedPaths(app.db, appId)
+  const redirects = await routedRedirects(app.db, appId)
+  const noindex   = await noindexHosts(app.db, appId)
+  const placed = await sys.appServer.findMany({ where: { appId, status: 'running' }, include: { server: true } }) as any[]
+  const servers = new Map<string, string>()
+  for (const p of placed) if (p.server?.status === 'online') servers.set(p.serverId, p.server.name ?? p.serverId)
+
+  for (const [serverId, name] of servers) {
+    const executor = await executorOn(app, serverId, name)
+    if (!isExecutor(executor)) { out.failed.push({ server: name, error: executor.reason }); continue }
+    const reply = await executor.call('/route', { app_id: appId, hosts, paths, redirects, noindex, ...(isStatic ? { static: true } : {}) })
+    if (reply.error) { out.failed.push({ server: name, error: reply.error.message }); continue }
+    out.routed.push({ serverId, appId, hosts, paths, redirects, rebind: (reply.data?.rebind as string | null | undefined) ?? null })
+    app.logger.child('routes').info('routed', { appId, server: name, hosts: hosts.join(','),
+      redirects: redirects.map(r => `${r.host}>${r.to}`).join(','), noindex: noindex.join(',') })
+  }
 }

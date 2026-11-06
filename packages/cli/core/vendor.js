@@ -49,9 +49,10 @@ import { readRuns, lastFullRun, retryPlan }                  from './ci-log.js'
 // Dockerfile `fli make:deploy` writes names the same path, and the `file:` specs
 // are written relative to the manifest — which sits at the image's /app — so the
 // tarballs must be copied to the path they are named at.
-// The Dockerfile a build uses, and whether it installs from here: one order
-// for the laptop and the Outpost, owned by the Outpost (`FJS-D1560`).
-export { chooseDockerfile, needsGenerated } from '@frontierjs/outpost/dockerfile'
+// The Dockerfile a build uses, whether it installs from here, and the port it
+// EXPOSEs: one reading for the laptop and the Outpost, owned by the Outpost
+// (`FJS-D1560`, `FJS-D1567`).
+export { chooseDockerfile, needsGenerated, exposedPort } from '@frontierjs/outpost/dockerfile'
 
 export const GENERATED_DIR = 'deploy/generated'
 export const VENDOR_DIR    = 'deploy/generated/vendor'

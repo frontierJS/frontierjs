@@ -49,9 +49,23 @@ The Dockerfile is the one a push would build (`FJS-D1560`): `deploy.api.dockerfi
 in `frontier.config.js` when set, else the Outpost's order — the copy stored on
 the App, `deploy/Dockerfile`, the root's — and `deploy/generated/` is vendored
 only when that file installs from it, so a plain repository with its own
-Dockerfile and no `package.json` builds as it is. A tree with uncommitted
-changes releases as `<sha>-dirty` on the tag and the row (`FJS-3561`): the
-command says so, since a rollback to that row rebuilds a different tree.
+Dockerfile and no `package.json` builds as it is.
+
+**The release is HEAD as committed** (`FJS-D1968`), on this door and on `fli
+deploy`'s SSH one, from the same module (`core/release-build.js`): `git archive`
+of the app's directory into a scratch directory the build reads instead of the
+working tree. An uncommitted change is listed and left out, and an untracked
+Dockerfile is never chosen, so the tag and the row name a commit that a rollback
+rebuilds from the same tree. The App's stored Dockerfile is written into that
+directory and the checkout is not touched.
+
+**A machine holds one door's install of an app** (`FJS-D1967`). The SSH door
+keeps its database in `<path>/db`, its env in `.env.production` and its own
+`ENCRYPTION_KEY`, and never sees this App's volume or Variables. Outpost's
+`/deploy` refuses a release whose hostnames, path hosts or redirect hosts an
+SSH-door route holds on the machine (`@frontierjs/outpost/doors`), and names
+`fli deploy:move --to=basecamp`, which carries that install's database, env
+and key into this App; `fli deploy`'s preflight refuses the reverse.
 
 The image goes to each machine by `docker save | ssh <machine> docker load` —
 no registry. The release names the id the MACHINE's daemon gives the tag after
@@ -66,11 +80,17 @@ daemon, and nothing is shipped to it.
 Then one Basecamp release, `POST /deployments` with the image as `toImage` and
 its id as `builtImage`: a release that names a digest builds nothing, so the
 machine starts the bytes just loaded rather than building the app's source. The
-command waits for the release and prints its steps.
+command waits for the release and prints its steps. Building nothing, the
+machine never reads the Dockerfile, so its last `EXPOSE` is read here
+(`FJS-D1567`): an App storing no container port takes it before the preflight,
+and one stating another number keeps it and is told where the two differ.
 
-**A static App (an inline source) is released as its files.** `web/` is built
-here with `vite build` into a temp directory, never into `web/dist`, with the
-checkout's own `.env` as Vite reads it — the App's Variables in Basecamp are
+**A static App (an inline source) is released as its files.** `web/` of the
+same staged commit is built here with `vite build` into a temp directory, never
+into `web/dist`, resolving its dependencies through the checkout's
+`node_modules`, with `VITE_FJS_BUILD` set to the commit (`FJS-D1969`) and no API
+origin, since the Domain routes the API back (`FJS-D1547`). The `.env` files it
+bakes are the committed ones — the App's Variables in Basecamp are
 not what the bundle carries, and the build is preceded by a line naming the
 `VITE_` / `FRONTIER_PUBLIC_` keys it will bake and the file each comes from
 (never a value; `FJS-3475`). `--dist` names a folder already built and sends
@@ -128,12 +148,12 @@ The Basecamp is an entry in `basecamps.json` (`~/.config/fli/`), whose origin
 and key `--basecamp` chooses: the only entry, or the one named, and with several
 and no flag the command refuses and lists them. The App is `--app` or
 `BASECAMP_APP_ID` in the app's `.env`. With `BASECAMP_APP_ID` set, `fli deploy`
-is this command.
+is this command for that App and then for the static App in front of it.
 
 The key is read from the entry and never from a flag, which
 would put it in shell history. The key needs `apps:read`,
 `deployments:write` and `deployments:read` (to watch the release) — and
-`apps:write` for a static App — and a standing that may release in its
+`apps:write` for a static App, or one that takes its container port — and a standing that may release in its
 workspace. Setting up what the App is missing reads `domainRoutes:read` and
 writes through `apps:write`, `variables:write`, `domains:write` and
 `domainRoutes:write`; a 403 names
@@ -141,7 +161,8 @@ the scope the key lacks.
 
 <script>
 const { loadFrontierConfig }         = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
-const { vendorApp, GENERATED_DIR, chooseDockerfile, needsGenerated } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
+const { GENERATED_DIR, exposedPort } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
+const { stageRelease, webBuildEnv }  = await import(new URL('file://' + global.fliRoot + '/core/release-build.js'))
 const { createMachine }              = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { releaseFindings, gatherReleaseInputs, releasePlan } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
 const { routePrefixes, apiPaths }    = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
@@ -176,6 +197,30 @@ function suggestedHostname(packageName, origin) {
   return `${label}.${parts.slice(1).join('.')}`
 }
 
+/** The App with its container port off the Dockerfile's last EXPOSE (`FJS-D1567`).
+ *  A release naming a digest builds nothing on the machine, so the Outpost's
+ *  /build never reads the file, and an App storing no container port is
+ *  started with its host port mapped to itself — healthy to docker, a 502 at
+ *  Caddy (`FJS-4047`). Written before the preflight and the release, which
+ *  both read the App. One stating a number keeps it, and the line says where
+ *  the two differ. */
+async function withExposedPort({ origin, key, app, text, dockerfile, dry, log, echo }) {
+  const exposed = exposedPort(text)
+  if (exposed == null) return app
+  if (app.containerPort != null) {
+    if (Number(app.containerPort) !== exposed)
+      log.warn(`${dockerfile} says EXPOSE ${exposed} where the App says ${app.containerPort} — the App's number is the one the release starts`)
+    return app
+  }
+  if (dry) {
+    log.dry(`Would set App '${app.name}' container port to ${exposed}, the EXPOSE in ${dockerfile}`)
+  } else {
+    await basecamp(origin, key, `/apps/${encodeURIComponent(app.id)}`, { method: 'PATCH', body: { containerPort: exposed } })
+    echo`  App '${app.name}' container port {bold ${exposed}}{dim , the EXPOSE in ${dockerfile}}`
+  }
+  return { ...app, containerPort: exposed }
+}
+
 async function packageName(root) {
   const { readFileSync } = await import('fs')
   try { return JSON.parse(readFileSync(`${root}/package.json`, 'utf8')).name }
@@ -202,20 +247,20 @@ async function neverReleased(origin, key, app) {
 
 /** Everything the preflight finds for a container App, errors first, with the
  *  API's route prefixes the plan routes back to it. */
-async function preflight({ origin, key, app, root, dockerfile }) {
+async function preflight({ origin, key, app, root, dir, dockerfile, text }) {
   const fs = await import('fs')
   const { spawnSync } = await import('child_process')
   const vars     = await readList(origin, key, `/variables?environmentId=${encodeURIComponent(app.environmentId)}`)
   const siblings = await readList(origin, key, `/apps?environmentId=${encodeURIComponent(app.environmentId)}`)
   const routes   = await readList(origin, key, '/domainRoutes')
   const prefixes = routePrefixes(apiPaths(readAppSnapshot(root)))
-  const build    = gatherLocal({ root, fs, dockerfile })
+  const build    = gatherLocal({ root: dir, fs, dockerfile })
   const level    = { error: 0, warn: 1, info: 2 }
   const findings = [
     ...releaseFindings({
       app, variables: vars.rows, siblings: siblings.rows, routes: routes.rows, prefixes,
       unread: { ...(vars.error ? { variables: vars.error } : {}), ...(routes.error ? { routes: routes.error } : {}) },
-      ...gatherReleaseInputs(root, { dockerfile }),
+      ...gatherReleaseInputs(root, { dockerfile, dockerfileText: text }),
     }),
     ...(build.missing ? [] : inspectBuild(build)),
     ...(build.missing ? [] : inspectIgnored({
@@ -319,6 +364,18 @@ async function settle(origin, key, id) {
 // Sierra's layout first; a plain Vite app keeps its config beside index.html.
 const VITE_CONFIGS = ['config/vite.config.js', 'config/vite.config.ts', 'vite.config.js', 'vite.config.ts', 'vite.config.mjs']
 
+/** The checkout's installed node_modules, linked into the staged tree: a build
+ *  there resolves `link:`/`workspace:` dependencies through the symlink, which
+ *  a git archive does not carry. */
+async function linkNodeModules(root, dir) {
+  const { existsSync, symlinkSync } = await import('fs')
+  const { join } = await import('path')
+  for (const rel of ['node_modules', 'web/node_modules']) {
+    const from = join(root, rel)
+    if (existsSync(from)) symlinkSync(from, join(dir, rel))
+  }
+}
+
 const UTF8 = new TextDecoder('utf-8', { fatal: true })
 
 /** Every file of a static build as Outpost takes it, text as text and the rest
@@ -345,7 +402,7 @@ async function filesUnder(out) {
 ```js
 const { existsSync, mkdtempSync, readFileSync, rmSync } = await import('fs')
 const { tmpdir }           = await import('os')
-const { join, resolve }    = await import('path')
+const { join, relative, resolve } = await import('path')
 
 const root = $.paths.root
 const target = reach(flag.basecamp, log)
@@ -365,12 +422,9 @@ if (flag.server && inline)
 const git    = (args) => { try { return String($.exec({ command: `git -C ${root} ${args}`, dry: false, stdio: ['ignore', 'pipe', 'ignore'] }) ?? '').trim() } catch { return '' } }
 const sha    = git('rev-parse HEAD')
 const branch = git('rev-parse --abbrev-ref HEAD')
-// Read before anything is written into the tree. A row naming HEAD for a build
-// of uncommitted changes is a rollback that rebuilds another tree (`FJS-3561`);
-// the mark is git describe's.
-const dirty  = !!sha && git('status --porcelain') !== ''
-const commit = { trigger: 'laptop', ...(sha ? { commitSha: dirty ? `${sha}-dirty` : sha } : {}), ...(branch && branch !== 'HEAD' ? { branch } : {}) }
-if (dirty) log.warn(`The tree has uncommitted changes — this release is marked ${sha.slice(0, 7)}-dirty, and a rollback to it rebuilds a different tree`)
+// The row names HEAD because the release is HEAD as committed, which
+// `stageRelease` builds; only `--dist` ships files that came from elsewhere.
+const commit = { trigger: 'laptop', ...(sha ? { commitSha: sha } : {}), ...(branch && branch !== 'HEAD' ? { branch } : {}) }
 
 let release, named
 if (inline) {
@@ -388,12 +442,22 @@ if (inline) {
 
   // Into a directory of its own, never web/dist: `vite build` empties its
   // outDir, and a dev server running from this checkout serves that one.
-  const out = flag.dist ? null : mkdtempSync(join(tmpdir(), 'basecamp-deploy-'))
+  const out    = flag.dist ? null : mkdtempSync(join(tmpdir(), 'basecamp-deploy-'))
+  const staged = flag.dist ? null : stageRelease({ appRoot: root, image: false, log })
   try {
     if (out) {
-      log.info(bundleEnvLine(bundleEnvKeys(web)))
-      log.info(`Building ${web}...`)
-      $.exec({ command: 'bun --bun vite build', args: ['-c', config, '--outDir', out, '--emptyOutDir'], cwd: web, env: { ...process.env, NODE_ENV: 'production' } })
+      // Built from HEAD as committed, so the .env files it bakes are the
+      // committed ones. The API is reached through this App's own Domain
+      // (`FJS-D1547`), so no origin is passed (`FJS-D1969`).
+      const stagedWeb = join(staged.dir, 'web')
+      await linkNodeModules(root, staged.dir)
+      log.info(bundleEnvLine(bundleEnvKeys(stagedWeb)))
+      log.info(`Building ${stagedWeb} at ${staged.short}...`)
+      $.exec({
+        command: 'bun --bun vite build', cwd: stagedWeb,
+        args: ['-c', join(stagedWeb, relative(web, config)), '--outDir', out, '--emptyOutDir'],
+        env: { ...process.env, NODE_ENV: 'production', ...webBuildEnv({ commit: staged.sha, apiOrigin: null }) },
+      })
     }
     const files = await filesUnder(out ?? resolve(flag.dist))
     log.info(`Publishing ${files.length} files to App '${app.name}'...`)
@@ -402,6 +466,7 @@ if (inline) {
     })
   } finally {
     if (out) rmSync(out, { recursive: true, force: true })
+    staged?.cleanup()
   }
   named = release.builtImage
 } else {
@@ -415,24 +480,25 @@ if (inline) {
     ? [{ name: placed[0].server.name, host: flag.server }]
     : placed.map(p => ({ name: p.server.name, host: sshDestination(p.server) }))
 
-  // Told by frontier.config.js, else the Outpost's own order (`FJS-D1560`): the
-  // App's stored copy, deploy/Dockerfile, the root's. A stored copy is written
-  // into the tree for the build and removed after, so the next run's
-  // status --porcelain does not read it as the person's change.
-  const told           = (await loadFrontierConfig(root))?.deploy?.api?.dockerfile
-  const dockerfile     = told ?? chooseDockerfile(root, app.source?.dockerfile)
-  const dockerfilePath = resolve(root, dockerfile)
-  const borrowed       = !told && dockerfile === 'Dockerfile.basecamp'
+  // The release is HEAD as committed, staged beside the checkout (`FJS-D1968`).
+  // The Dockerfile is told by frontier.config.js, else the Outpost's own order
+  // (`FJS-D1560`): the App's stored copy, deploy/Dockerfile, the root's, judged
+  // against that staged tree.
+  const told   = (await loadFrontierConfig(root))?.deploy?.api?.dockerfile
+  const staged = stageRelease({ appRoot: root, told, stored: app.source?.dockerfile, dry: flag.dry, log })
+  const { dir, dockerfile, vendors } = staged
   try {
-    if (!existsSync(dockerfilePath)) {
+    if (!staged.present) {
       log.info('fli make:deploy writes one for a scaffolded app; deploy.api.dockerfile in frontier.config.js names one elsewhere')
-      throw new Error(`no Dockerfile: looked for deploy/Dockerfile, then Dockerfile, as the Outpost does`)
+      throw new Error(`no Dockerfile in ${staged.short}: looked for deploy/Dockerfile, then Dockerfile, as the Outpost does — is it committed?`)
     }
-    const vendors = needsGenerated(readFileSync(dockerfilePath, 'utf8'))
+    const dockerfilePath = join(dir, dockerfile)
+    const text    = readFileSync(dockerfilePath, 'utf8')
+    app = await withExposedPort({ origin, key, app, text, dockerfile, dry: flag.dry, log, echo })
 
     // Named for the release rather than reused: a tag two builds share is a tag
     // the older one loses on a machine still running it.
-    const tag = `fjs-${app.id}:${sha ? sha.slice(0, 12) + (dirty ? '-dirty' : '') : Date.now()}`.toLowerCase()
+    const tag = `fjs-${app.id}:${staged.sha.slice(0, 12)}`.toLowerCase()
 
     const mark   = { error: chalk.red('✗'), warn: chalk.yellow('!'), info: chalk.dim('·') }
     // On an App never released, a finding the plan fixes is its first setup
@@ -467,7 +533,7 @@ if (inline) {
     return count
     }
 
-    let { findings, prefixes } = await preflight({ origin, key, app, root, dockerfile })
+    let { findings, prefixes } = await preflight({ origin, key, app, root, dir, dockerfile, text })
     const fresh = await neverReleased(origin, key, app)
     let count = report(findings, { setup: fresh })
 
@@ -508,7 +574,7 @@ if (inline) {
           const { web } = await applyPlan({ origin, key, app, plan })
           log.done(`Set up App '${app.name}'${web ? ` and its static App '${web.name}' (${web.id})` : ''}`)
           app = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
-          ;({ findings } = await preflight({ origin, key, app, root, dockerfile }))
+          ;({ findings } = await preflight({ origin, key, app, root, dir, dockerfile, text }))
           log.info('Preflight again, on what Basecamp now holds:')
           count = report(findings)
         }
@@ -527,12 +593,10 @@ if (inline) {
       return
     }
 
-    if (vendors) {
-      log.info('Vendoring dependencies into the build context...')
-      vendorApp(root, log)
-    }
     log.info(`Building ${tag} from ${dockerfile}...`)
-    $.exec({ command: `docker build -t ${tag} -f ${dockerfilePath} ${root}` })
+    // The context goes over stdin: a snap-installed docker cannot read the
+    // temp directory the release is staged in, and answers `path not found`.
+    $.exec({ command: `tar -C ${dir} -c . | docker build -t ${tag} -f ${dockerfile} -` })
     const imageId = String($.exec({ command: `docker image inspect --format '{{.Id}}' ${tag}`, stdio: ['ignore', 'pipe', 'inherit'] }) ?? '').trim()
     if (!/^sha256:[0-9a-f]{64}$/.test(imageId)) throw new Error(`docker named no image id for ${tag} — got '${imageId}'`)
     log.done(`Built ${tag} → ${imageId.slice(0, 19)}`)
@@ -563,7 +627,7 @@ if (inline) {
     })
     named = `${tag} — ${releasedId.slice(0, 19)}`
   } finally {
-    if (borrowed) rmSync(dockerfilePath, { force: true })
+    staged.cleanup()
   }
 }
 

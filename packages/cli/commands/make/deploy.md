@@ -348,8 +348,10 @@ if (!server && !domain) {
 }
 
 // ─── 4. .env.example hint ─────────────────────────────────────────────────────
+// An app with an env module is graded by its defineEnv spec, and needs neither.
+const { ENV_MODULES } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
 const envExamplePath = resolve($.paths.root, '.env.example')
-if (!existsSync(envExamplePath)) {
+if (!existsSync(envExamplePath) && !ENV_MODULES.some(m => existsSync(resolve($.paths.root, m)))) {
   log.warn(`.env.example not found`)
   log.info('  Create one to enable pre-deploy env validation (deploy.api.envCheck)')
   log.info('  Example: echo "JWT_SECRET=" >> .env.example')

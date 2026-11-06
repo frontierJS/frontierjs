@@ -23,6 +23,11 @@ export const resolveTarget = (flag, git) => {
   return 'dev'
 }
 
+// The target as Basecamp's `EnvironmentTier` spells it. The one map from a
+// deploy target to the environment its App lives in; `resolveBasecampApp`
+// (core/basecamp.js) is its only reader that talks to Basecamp.
+export const TIERS = { dev: 'development', stage: 'staging', production: 'production' }
+
 // ─── sshHost ──────────────────────────────────────────────────────────────────
 // What `ssh` is handed. With no user stated it is the bare server, so an alias in
 // ~/.ssh/config supplies User, Port, IdentityFile and ProxyJump; a stated user

@@ -6,16 +6,16 @@
 // listing: it is Claude Code with every permission, in that folder, as the
 // operator's own account.
 //
-//   POST /workbench               pins        the pins, each with its git state and run status
+//   POST /workbench               pins        the pins, each with its git state, workspace members and run status
 //   POST /workbench               status      every pin's run status — the grid's poll, no git
 //   POST /workbench/:id           transcript  { chat? } — one chat, the shown one by default, folded from its log, with the checkout's checks and review
 //   POST /workbench/:id           diff        the checkout's working tree against HEAD, a branch's against its base
-//   POST /workbench/:id           runnables   `fli dev` per app and every package.json script (`domain/workbench/workbench-run.ts`)
+//   POST /workbench/:id           runnables   `fli dev` per app, every package.json script, each member's test (`domain/workbench/workbench-run.ts`)
 //   POST /workbench/:id           output      { row } — the tail of what a started row wrote
 //   POST /workbench/:id           plan        the shown plan — its path, the steps Go started with what each cost, and the file parsed now (null until written)
 //   POST /workbench               pin         { path }
 //   POST /workbench/:id           send        { prompt, chat?, images? } — queued behind a run in the same chat, refused while another chat runs
-//   POST /workbench/:id           check       the checkout's own `fli done`, now
+//   POST /workbench/:id           check       { chat? } — the checkout's own `fli done`, now, over the files that chat wrote
 //   POST /workbench/:id           review      a read-only Claude Code session over the tree, now
 //   POST /workbench/:id           buildPlan   { goal, path } — a new chat writing the plan at path, allowed to edit that file and no other; that plan shown
 //   POST /workbench/:id           openPlan    { path } — the plan shown: one on the pin, or a file already in the checkout, added
@@ -37,6 +37,7 @@
 //   POST /workbench/:id           fresh       a new chat, shown — or the shown one, when it is still empty
 //   POST /workbench/:id           select      { chat } — the chat shown
 //   POST /workbench/:id           close       { chat } — forgotten here, what it cost kept; Claude Code keeps the session
+//   POST /workbench/:id           setPackage  { chat, package } — a member path, '.' for repo-wide, or null to infer it
 //   POST /workbench/:id           stop · seen · unpin
 //   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy?, preview? }
 //   POST /workbench/:id           run         { row } — started detached by row id, never by command
@@ -55,7 +56,7 @@ import { doneScript }              from '../../domain/workbench/workbench.ts'
 import type { Opened, PreviewSettings } from '../../domain/workbench/workbench-preview.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'setPackage', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt']
 
 const wb = () => $.app.workbench
 
@@ -100,6 +101,8 @@ export default createService({
           // Where Build plan writes by default: IDEAS/<slug>.md beside the
           // other papers, PLAN.md where the checkout has none (FJS-D966).
           hasIdeas:  !missing && existsSync(join(p.path, 'IDEAS')),
+          // The tab menu's choices; the status poll carries only each chat's.
+          members:   missing ? [] : await wb().members(p.id) ?? [],
           status: await wb().status(p),
         }
       })),
@@ -301,7 +304,7 @@ export default createService({
 
   async check() {
     const p = pinned()
-    const r = wb().check(p.id)
+    const r = await wb().check(p.id, body().chat)
     if ('refused' in r) throw new Conflict(r.refused)
     return r
   },
@@ -334,6 +337,13 @@ export default createService({
     const p = pinned()
     const r = await wb().close(p.id, body().chat)
     if ('refused' in r) throw new Conflict(r.refused)
+    return r
+  },
+
+  async setPackage() {
+    const p = pinned()
+    const r = await wb().setPackage(p.id, $.data)
+    if ('refused' in r) throw new BadRequest(r.refused)
     return r
   },
 

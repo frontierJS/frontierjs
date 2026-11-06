@@ -27,7 +27,9 @@
   //
   // Placement: '<side>-<align>' — side top | bottom | left | right, align
   // start | center | end. The side flips when the panel would overflow the
-  // viewport there.
+  // viewport there. A panel taller than the viewport scrolls, or its last
+  // rows sit below the window's edge; a menu that fits neither below nor
+  // above its trigger still runs past the edge (FJS-4063).
 
   import { placeAgainst, FOCUSABLE, overlayHost, menuWalk } from '../../utils.js'
 
@@ -202,6 +204,8 @@
       style:position="fixed"
       style:min-inline-size="10rem"
       style:max-inline-size="16rem"
+      style:max-block-size="calc(100dvh - 16px)"
+      style:overflow-y="auto"
       style:padding="0.25rem"
       style:left="{x}px"
       style:top="{y}px"

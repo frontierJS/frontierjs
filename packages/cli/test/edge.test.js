@@ -12,7 +12,7 @@ import { readFileSync } from 'fs'
 import { createHash } from 'crypto'
 import {
   edgeNames, apiOrigin, edgeRoutes, plainRoutes, applyEdge, routeId, accessLogPath, INGRESS_SERVER, PLAIN_SERVER, CLOUDFLARE_RANGES,
-  parseConfigRead, parseConfigWrite, writeConfigScript, routeDials, EdgeError, inlineScriptHashes, inlineStyleHashes, OAUTH_WELL_KNOWN,
+  parseConfigRead, parseConfigWrite, heldBy, doorRefusal, writeConfigScript, routeDials, EdgeError, inlineScriptHashes, inlineStyleHashes, OAUTH_WELL_KNOWN,
 } from '../core/edge.js'
 import { guardId } from '../core/pause.js'
 import { checkDiscovery } from '../core/discovery-probe.js'
@@ -306,7 +306,7 @@ describe('the steps read the domains here, and nowhere else', () => {
   test('the web build inlines the origin this module names, and checks the bundle carries it', () => {
     const build = src('_steps-docker/03-build-web.md')
     expect(build).toContain('apiOrigin(edgeNames(deployConf))')
-    expect(build).toContain('FRONTIER_PUBLIC_API_URL=${origin}')
+    expect(build).toContain('webBuildEnv({ commit, apiOrigin: origin })')
     expect(build).toMatch(/grep -rl .* '\$\{origin\}'/)
   })
 })
@@ -566,5 +566,33 @@ describe('the discovery probe after the edge is written', () => {
     expect(step).toContain('checkDiscovery(')
     expect(step.indexOf('checkDiscovery(')).toBeGreaterThan(step.indexOf('writeEdge('))
     expect(step).toContain('log.warn(`OAuth discovery:')
+  })
+})
+
+describe('one door per app on a box (FJS-D1967)', () => {
+  const read = (routes) => parseConfigRead(`HTTP/1.1 200 OK\nEtag: x\n\n${JSON.stringify({ apps: { http: { servers: { ingress: { routes } } } } })}`).config
+
+  test('a Basecamp App routing the deploy hostname refuses the release, naming the move to this door', () => {
+    const config = read([
+      { '@id': 'fli-shop', match: [{ host: ['shop.example.com'] }] },
+      { '@id': 'fjs-0b4c', match: [{ host: ['shop.example.com', 'www.example.com'] }] },
+    ])
+    const theirs = heldBy(config, 'basecamp', ['shop.example.com'])
+    expect(theirs).toEqual([{ id: 'fjs-0b4c', hosts: ['shop.example.com'] }])
+    const said = doorRefusal('ssh', theirs)
+    expect(said).toContain('shop.example.com is served on this box by a Basecamp App (fjs-0b4c)')
+    expect(said).toContain('fli deploy:move --to=ssh')
+  })
+
+  test('this door\'s own routes and another hostname are no refusal', () => {
+    const config = read([{ '@id': 'fli-shop', match: [{ host: ['shop.example.com'] }] },
+                         { '@id': 'fjs-0b4c', match: [{ host: ['blog.example.com'] }] }])
+    expect(heldBy(config, 'basecamp', ['shop.example.com'])).toEqual([])
+  })
+
+  test('the preflight asks before the lock, so a refused release holds nothing on the box', () => {
+    const step = readFileSync(new URL('../commands/deploy/_steps-docker/01-preflight.md', import.meta.url), 'utf8')
+    expect(step).toContain("heldBy(config, 'basecamp', names)")
+    expect(step.indexOf("heldBy(config, 'basecamp'")).toBeLessThan(step.indexOf('acquireLock('))
   })
 })

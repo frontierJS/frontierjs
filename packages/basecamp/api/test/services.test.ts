@@ -592,6 +592,27 @@ describe('?search= — a search box over a name, which answered 400 on every use
   })
 })
 
+describe('volumes.remove — a deleted App\'s data is not "still placed" (FJS-4057)', () => {
+  // apps.remove keeps the App's AppServer row, and reading that row alone
+  // refused the one Volume step FJS-D1615 leaves the folder to.
+  test('the refusal holds while the App is live and lifts once it is deleted', async () => {
+    const sys     = env.system as any
+    const tag     = Math.random().toString(36).slice(2, 8)
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Vol', slug: `vol-${tag}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${tag}` } })
+    const app     = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'api', slug: `api-${tag}` } })
+    await sys.appServer.create({ data: { appId: app.id, serverId: machine.id } })
+    const vol     = await sys.volume.create({ data: { serverId: machine.id, kind: 'bind', name: `/var/lib/outpost/apps/${app.id}/data` } })
+    const remove  = () => env.as(owner).service('volumes').remove(vol.id)
+
+    await expect(remove()).rejects.toThrow(/still placed/)
+    await env.as(owner).service('apps').remove(app.id)
+    expect(await sys.appServer.count({ where: { appId: app.id } })).toBe(1)
+    // Past the placement check, the next refusal is the missing outpost.
+    await expect(remove()).rejects.toThrow(/No outpost is registered/)
+  })
+})
+
 describe('apps.find — the caller\'s $orderBy (FJS-2832)', () => {
   const uniq = () => Math.random().toString(36).slice(2, 8)
 

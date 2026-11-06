@@ -20,6 +20,8 @@
  * process's.
  */
 
+import { X509Certificate, createPrivateKey } from 'node:crypto'
+import { heldBy } from './doors.js'
 import { ROOTS } from './layout.js'
 import { repointRoutes, STREAM_CLOSE_DELAY } from './swap.js'
 
@@ -32,10 +34,14 @@ const WRITE_ATTEMPTS = 10
 const backoff = (attempt) => sleep(Math.random() * 10 * attempt)
 /** Sends of one admin call reset by Caddy swapping its admin listener. */
 const RESET_SENDS = 3
+/** Caddy negotiates from Accept-Encoding and passes an answer through unencoded
+ *  when it is already encoded, short, or a type it does not compress. */
+const ENCODE = { handler: 'encode', encodings: { zstd: {}, gzip: {} }, prefer: ['zstd', 'gzip'] }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 const isReset = (err) => err?.code === 'ECONNRESET' || /ECONNRESET/.test(err?.message ?? '')
-/** A DNS name, lowercased. No wildcard: a wildcard certificate is DNS-01, which
- *  would put a DNS vendor's token on every machine (`IDEAS/fleet-ingress.md` D6). */
+/** A DNS name, lowercased. A route names no wildcard host: a wildcard
+ *  CERTIFICATE arrives minted by Basecamp (`loadCert`), so DNS-01 and the DNS
+ *  vendor's token stay off the machine (`FJS-D1975`, `IDEAS/fleet-ingress.md` D6). */
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/
 
 /** The route's `@id`, which is the container's name — one noun for one app. */
@@ -115,6 +121,13 @@ export function redirectsOf(list) {
   })
 }
 
+/** Sent on the hosts a route's `noindex` names: Basecamp lists the App's
+ *  ingress name there (`FJS-D1952`), so a search engine indexes the Domain and
+ *  never the name every App has (`IDEAS/ingress-name.md` § Security 5). The
+ *  caller states it because the zone is the caller's: a guess from the host's
+ *  shape marked an app `shop`'s own `shop.example.com`. */
+const NOINDEX = { 'X-Robots-Tag': ['noindex'] }
+
 /** One path route's `@id` prefix: an app may hold many, and each is its own
  *  route because Caddy answers the first match in order and the order is by
  *  prefix length, which a route holding two prefixes cannot have. */
@@ -131,8 +144,35 @@ const isPathRouteOf = (appId, id) =>
 export function checkRouteAppId(appId) {
   if (typeof appId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(appId))
     throw new Error(`app_id '${appId}' is not a plain name`)
+  if (appId.startsWith('cert-'))
+    throw new Error(`app_id '${appId}' starts the way a certificate id does and would collide with its @id`)
   if (/-redirects$|-path-[0-9]+$/.test(appId))
     throw new Error(`app_id '${appId}' ends the way a route id does and would collide with another app's route`)
+}
+
+/** A pushed certificate's `@id`. It shares Caddy's one `/id/` namespace with
+ *  the routes, which is why `checkRouteAppId` refuses an app id starting `cert-`. */
+export const certId = (id) => `fjs-cert-${id}`
+
+/**
+ * A certificate Caddy can be handed, or a refusal in words, BEFORE anything is
+ * written: a key that is not the certificate's, or a certificate past its end,
+ * would be accepted by `load_pem` only to fail the config load, and Caddy
+ * rejecting the whole config stops every route being written after it.
+ * Answers the SAN's names and the expiry.
+ */
+export function readCert({ id, cert, key }, now = Date.now()) {
+  if (typeof id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id))
+    throw new Error(`cert id '${id}' is not a plain name`)
+  let x509, priv
+  try { x509 = new X509Certificate(String(cert)) } catch { throw new Error('cert is not a PEM certificate') }
+  try { priv = createPrivateKey(String(key)) } catch { throw new Error('key is not a PEM private key') }
+  if (!x509.checkPrivateKey(priv)) throw new Error('key does not match the certificate')
+  const expires = new Date(x509.validTo)
+  if (!(expires.getTime() > now)) throw new Error(`the certificate expired ${expires.toISOString()}`)
+  const names = (x509.subjectAltName ?? '').split(',').map(n => n.trim())
+    .filter(n => n.startsWith('DNS:')).map(n => n.slice(4).toLowerCase())
+  return { id, names, expires_at: expires.toISOString() }
 }
 
 /** A path prefix: segments of URL-safe characters, no wildcard, no trailing
@@ -198,7 +238,7 @@ export function targetsOf(handlers) {
   return out.filter(t => { const k = JSON.stringify(t); return seen.has(k) ? false : seen.add(k) })
 }
 
-export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn = globalThis.fetch } = {}) {
+export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn = globalThis.fetch, now = Date.now } = {}) {
   admin = admin.replace(/\/$/, '')
 
   // Two releases on one machine at once would each read the config, and the
@@ -330,6 +370,21 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
     },
 
     /**
+     * The routes `door` wrote that name any of `hosts` (`doors.js`). A machine
+     * with no Caddy answers none: the route write that follows says so.
+     */
+    async heldBy(door, hosts) {
+      let reply
+      try {
+        reply = await caddy('GET', '/config/')
+      } catch (err) {
+        if (!err.unreachable) throw err
+        return []
+      }
+      return reply.status < 300 ? heldBy(reply.data, door, hosts) : []
+    },
+
+    /**
      * Route `hosts` to the app on `port`, replacing whatever route the app had.
      *
      * A host another route already names is REFUSED rather than shadowed:
@@ -349,8 +404,11 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
      * them with no `hosts` and no port. Each side the call leaves out is
      * removed, since a release that dropped its last redirect would otherwise
      * keep answering it.
+     *
+     * `noindex` names hosts, served or redirected, that answer
+     * `X-Robots-Tag: noindex`.
      */
-    route({ appId, hosts = [], port, host = null, redirects = [], paths = [] }) {
+    route({ appId, hosts = [], port, host = null, redirects = [], paths = [], noindex = [] }) {
       return serially(async () => {
         checkRouteAppId(appId)
         if (!hosts.length && !redirects.length && !paths.length) throw new Error('a route needs at least one hostname')
@@ -397,7 +455,10 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
           const reply = await caddy('DELETE', `/id/${dropId}`)
           if (reply.status !== 404) must(reply, `removing ${dropId}`)
         }
-        const proxy = [{
+        // The static origin answers raw bytes, so without this an SPA's bundle
+        // crosses the wire at four times its size and the first paint waits on
+        // it. A container encodes its own answers and may stream, so it is left alone.
+        const proxy = [...(host ? [ENCODE] : []), {
           handler: 'reverse_proxy', upstreams: [{ dial: `127.0.0.1:${port}` }],
           stream_close_delay: STREAM_CLOSE_DELAY,
           ...(host ? { headers: { request: { set: { Host: [host] } } } } : {}),
@@ -405,10 +466,18 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
 
         // A side the app no longer has is taken out here, so a release that
         // dropped its last redirect does not keep answering it.
+        // A subroute runs its matching routes and then the handler after it,
+        // so the header is set on those hosts alone and the proxy still answers.
+        const ingressHosts = hosts.filter(h => noindex.includes(h))
         if (hosts.length) await put({
           '@id':    id,
           match:    [{ host: hosts }],
-          handle:   proxy,
+          handle:   [
+            ...(ingressHosts.length ? [{ handler: 'subroute', routes: [{
+              match: [{ host: ingressHosts }], handle: [{ handler: 'headers', response: { set: NOINDEX } }],
+            }] }] : []),
+            ...proxy,
+          ],
           terminal: true,
         })
         else await drop(id)
@@ -430,7 +499,9 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
             handler: 'subroute',
             routes:  redirects.map(r => ({
               match:  [{ host: [r.host] }],
-              handle: [{ handler: 'static_response', status_code: 308, headers: { Location: [locationFor(r.to)] } }],
+              handle: [{ handler: 'static_response', status_code: 308, headers: {
+                Location: [locationFor(r.to)], ...(noindex.includes(r.host) ? NOINDEX : {}),
+              } }],
             })),
           }],
           terminal: true,
@@ -519,6 +590,62 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
           headers: { 'cache-control': 'must-revalidate' }, doing: 'reloading its config',
         }))
         return { reloaded: true }
+      })
+    },
+
+    /**
+     * Hold the certificate Basecamp minted: one `load_pem` entry per `id`
+     * (`FJS-D1975`), so a host under a `*.<zone>` it covers is served by it and
+     * Caddy orders nothing for that host. Replaced in place on a repeat push,
+     * and nothing is written when the same pair is already loaded -- a push per
+     * release would otherwise reload Caddy's config each time. `apps.tls` is
+     * made when Caddy has none. Answers `changed`; a machine with no Caddy
+     * answers `loaded: false`.
+     */
+    loadCert({ id, cert, key }) {
+      return serially(async () => {
+        const read = readCert({ id, cert, key }, now())
+        const at   = certId(id)
+        try {
+          const changed = await guarded('/config/', 'its config', (config) => {
+            const held = config?.apps?.tls?.certificates?.load_pem ?? []
+            const live = held.find(p => p['@id'] === at)
+            if (live?.certificate === cert && live?.key === key) return null
+            const next = structuredClone(config ?? {})
+            const list = (((next.apps ??= {}).tls ??= {}).certificates ??= {}).load_pem ??= []
+            const entry = { '@id': at, certificate: cert, key }
+            const i = list.findIndex(p => p['@id'] === at)
+            if (i < 0) list.push(entry)
+            else list[i] = entry
+            return { method: 'POST', path: '/config/', body: next, doing: `loading certificate ${id}` }
+          })
+          return { ...read, changed, loaded: true }
+        } catch (err) {
+          if (!err.unreachable) throw err
+          return { loaded: false, said: err.message }
+        }
+      })
+    },
+
+    /** Take a pushed certificate out. Answers whether one was there; no Caddy is `removed: false`. */
+    dropCert({ id }) {
+      return serially(async () => {
+        if (typeof id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id))
+          throw new Error(`cert id '${id}' is not a plain name`)
+        const at = certId(id)
+        try {
+          const removed = await guarded('/config/', 'its config', (config) => {
+            const held = config?.apps?.tls?.certificates?.load_pem ?? []
+            if (!held.some(p => p['@id'] === at)) return null
+            const next = structuredClone(config)
+            next.apps.tls.certificates.load_pem = held.filter(p => p['@id'] !== at)
+            return { method: 'POST', path: '/config/', body: next, doing: `dropping certificate ${id}` }
+          })
+          return { removed }
+        } catch (err) {
+          if (!err.unreachable) throw err
+          return { removed: false }
+        }
       })
     },
 

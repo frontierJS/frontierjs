@@ -8,9 +8,11 @@
 // session they resume in a real terminal is not in the workbench. Resume does
 // not carry an appended prompt, so it goes on every run, not only the first.
 
-import type { Pin } from './workbench.ts'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import type { ChatStatus, Pin } from './workbench.ts'
 
-export function workbenchContext(p: Pin): string {
+export function workbenchContext(p: Pin, pkg: ChatStatus['package'] = null): string {
   const where = p.from && p.branch
     ? `${p.path}, a git worktree on branch ${p.branch} that Workbench forked from another checkout; Land applies its changes to the parent's tree, uncommitted`
     : p.path
@@ -21,7 +23,7 @@ export function workbenchContext(p: Pin): string {
   return [
     '# Where you are running',
     '',
-    `You are running inside Workbench, not a terminal. Each message is a separate headless \`claude -p\` run, resuming this session, in ${where}, started by Basecamp's API with every permission granted and a budget of $${p.budget} per run.`,
+    `You are running inside Workbench, not a terminal. Each message is a separate headless \`claude -p\` run, resuming this session, in ${where}, started by Workbench's API with every permission granted and a budget of $${p.budget} per run.`,
     '',
     '- The person reads your reply in a browser pane, rendered as Markdown, and answers by sending the next message. Nobody sees a terminal, a TUI or a keystroke, so never ask them to press a key, approve a prompt or paste into Claude Code.',
     '- Images they paste in the Workbench arrive in the message itself.',
@@ -30,5 +32,15 @@ export function workbenchContext(p: Pin): string {
     '- An unruled question in a plan file shows on the pane as "needs you".',
     '- A reply whose last line ends in "?" marks its chat tab as waiting on them. When you stop for an answer or a choice, end on the question itself; otherwise do not end on one.',
     '- They can continue this session in a real terminal with the pane\'s Copy resume.',
+    ...(pkg ? [packageLine(p, pkg)] : []),
   ].join('\n')
+}
+
+// Only a FrontierJS checkout keeps notes per package, so a file is named only
+// where it is there to read.
+function packageLine(p: Pin, pkg: NonNullable<ChatStatus['package']>): string {
+  const how   = pkg.inferred ? 'inferred from the files this chat has written' : 'chosen by the person on its tab'
+  const notes = ['CLAUDE.md', 'PROJECT_STATE.md'].filter(f => existsSync(join(p.path, pkg.path, f))).map(f => `\`${pkg.path}/${f}\``)
+  const read  = notes.length ? ` Read ${notes.join(' and ')} before working in it.` : ''
+  return `- This chat is about the workspace package \`${pkg.name}\` at \`${pkg.path}\`, ${how}.${read} The run still starts at the checkout root.`
 }

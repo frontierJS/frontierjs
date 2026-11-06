@@ -9,7 +9,7 @@ skip: "!$.config.doApi || $.config.deployConf.api?.buildCheck === false"
 // reads, and under a declared `deploy.builder` they are different machines.
 const { host, path: deployRoot } = $.config.builder ?? $.config.api
 const serverPath = `${deployRoot}/src`
-const dockerfile = $.config.deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
+const dockerfile = $.config.dockerfile
 
 const { gather, inspectBuild, refuses, summarize, renderFinding, CONTEXT_FIND } =
   await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))

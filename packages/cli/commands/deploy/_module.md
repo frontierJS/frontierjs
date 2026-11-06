@@ -51,13 +51,14 @@ const CONTAINER_SECRETS_DIR = '/run/secrets'
 // The keys the target's secrets directory holds, one file per key named for it.
 // A name that is not an env key is left out and said, because it goes into a
 // `docker run` line. A directory that exists and cannot be listed is a throw: an
-// empty answer there would start the API without its keys.
+// empty answer there would start the API without its keys. Read under --dry too,
+// or the env check reports every secret as missing.
 const SECRET_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 const secretNames = (machine, secretsDir, log) => {
   const out = machine.capture(`if [ -d ${secretsDir} ]; then
   ls -1A ${secretsDir} 2>/dev/null || sudo -n ls -1A ${secretsDir} 2>/dev/null || echo '?unreadable'
-fi`)
+fi`, { dry: false })
   const names = String(out ?? '').split('\n').map(l => l.trim()).filter(Boolean)
   if (names.includes('?unreadable'))
     throw new Error(`${secretsDir} exists and this login cannot list it — run the deploy as root or as a login with sudo`)
@@ -474,6 +475,17 @@ const releaseLocks = async ($, hosts = []) => {
 const acquireLock = async ($, { hosts, target, takeover = false }) => {
   const { lockPath, acquireScript, parseLock } = await lockCore()
   const { randomUUID } = await import('crypto')
+
+  // --dry writes no lock, but a box with no deploy root is the refusal the real
+  // run meets here, and a dry run that passed it read an empty env file next.
+  if ($.flag?.dry) {
+    for (const h of hosts) {
+      const there = machineFor($, h.host, h.path).capture(`[ -d ${h.path} ] && echo yes || echo no`, { dry: false })
+      if (there !== 'yes') return { ok: false, host: h.host, lockFile: lockPath(h.path), missing: h.path }
+    }
+    $.log?.dry?.(`take ${hosts.map(h => lockPath(h.path)).join(', ')}`)
+    return { ok: true }
+  }
 
   const run = $.config.lockRun ??= {
     run:     randomUUID().slice(0, 8),
@@ -1383,6 +1395,7 @@ fli deploy:run <cmd>    ← run a one-off command inside the running container
 fli deploy:rollback     ← roll back to the previous release
 fli deploy:setup        ← first-time server setup walkthrough
 fli deploy:retire       ← take the app off its server — routes, Outpost, container, images, files
+fli deploy:move --to=basecamp|ssh  ← move the install to the other door, its database and ENCRYPTION_KEY with it
 ```
 
 An app Basecamp runs is released with `fli basecamp:deploy --app <id>` instead.
@@ -1483,8 +1496,8 @@ export default {
       dockerfile: 'deploy/Dockerfile',   // the path make:deploy writes
       env:        '/apps/myapp/.env.production',
 
-      // Validate server env against .env.example before deploying
-      // Aborts with a clear list of missing keys if any are not set
+      // Validate server env against the app's defineEnv spec (.env.example
+      // without one) before deploying; aborts listing the missing keys
       envCheck:   true,        // default: false
     },
 
@@ -1619,8 +1632,8 @@ the failure this is most likely to cause.
 
 ```
 01-preflight   → SSH check, deploy lock, Litestream detection
-01b-env-check  → validate server env against .env.example (if envCheck: true)
-02-ship        → git archive of HEAD at the app's directory + vendored deps → <path>/src
+01b-env-check  → validate server env against the defineEnv spec, else .env.example (if envCheck: true)
+02-ship        → stageRelease: git archive of HEAD at the app's directory, vendored deps when the Dockerfile installs from them → <path>/src
 03-build-web   → bun build on server, create versioned release
 04-build-api   → docker build on server (no registry needed)
 05-backup      → hot backup of the database before any changes

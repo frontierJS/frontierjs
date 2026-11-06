@@ -100,8 +100,10 @@ export function releasableMembers(root) { return packageMembers(root).filter(m =
  * conduit-x/src/a.js` names the grouping folder, not the package, so a walker
  * that attributes a file reads this against a member list it fetched once.
  *
- * @param {WorkspaceMember[]} members
+ * @template {{ path: string }} M
+ * @param {M[]} members
  * @param {string} file root-relative, forward slashes
+ * @returns {M | undefined}
  */
 export function memberOfFile(members, file) {
   let best

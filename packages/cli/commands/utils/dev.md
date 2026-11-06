@@ -130,10 +130,11 @@ fli opens `ssh -L` from this app's own API port to it and starts the rest: the
 proxies already point at that port, so nothing else changes. `production` and
 `stage` resolve off the deploy block the way `fli deploy` does, and the box's
 port is `deploy.api.port`; anything else is an ssh destination, with `:port` to
-name another. With `BASECAMP_APP_ID` set, a named target is that App's, asked of the Basecamp in `basecamps.json` (`--basecamp`, else the only entry; the local dev Basecamp is the reserved entry `dev`, written in by hand; with none resolvable there is no lookup): the
+name another. With `BASECAMP_APP_ID` set, a named target is an App of that project, asked of the Basecamp in `basecamps.json` (`--basecamp`, else the only entry; the local dev Basecamp is the reserved entry `dev`, written in by hand; with none resolvable there is no lookup): the
 port is the one Basecamp allocated it and the health path its `healthCheck`,
-and a target in another environment is refused, since another environment is
-another App (`FJS-3938`). The machine stays the deploy block's ssh destination
+and the App is the target's: the one with the same slug in the project's
+environment of that tier (`FJS-D1965`), refused by name when the project has
+none (`FJS-3938`). The machine stays the deploy block's ssh destination
 where it names one, else the one Basecamp placed the App on. The surfaces start only once the health path answers through the
 tunnel, and the summary names the target, because every write goes to that
 API's database. The key and database preflights are skipped: neither is the
@@ -156,17 +157,17 @@ function readManifest(root) {
   } catch { return {} } // an app with no manifest still has surfaces
 }
 
-// The App `BASECAMP_APP_ID` names, whose port is the one Basecamp allocated
-// on its machine; null for an app Basecamp does not hold, and for a machine
+// The App of `target` in the project `BASECAMP_APP_ID` names, whose port is the
+// one Basecamp allocated on its machine; null for no id, and for a machine
 // with no Basecamp entry to ask (the port is then the deploy block's, never a
-// refusal here).
-async function placedApp(name) {
+// refusal here). A project with no such App throws the resolver's refusal.
+async function placedApp(name, target) {
   const appId = process.env.BASECAMP_APP_ID
   if (!appId) return null
   const { entry } = (await core('basecamps')).lookupBasecamp(name)
   if (!entry) return null
-  const { basecamp } = await core('basecamp')
-  return basecamp(entry.url, entry.key, `/apps/${encodeURIComponent(appId)}`)
+  const { resolveBasecampApp } = await core('basecamp')
+  return resolveBasecampApp(entry.url, entry.key, appId, target, { where: entry.name })
 }
 
 // Before the check, because the slot decides which ports are checked.
@@ -187,7 +188,9 @@ async function resolveRemote($, root, session) {
   const { loadFrontierConfig } = await core('utils')
   const { PLACEHOLDER_SERVER } = await core('deploy-target')
   const target = $.flag.api
-  const app = TARGETS[String(target).trim().toLowerCase()] ? await placedApp($.flag.basecamp) : null
+  const named = TARGETS[String(target).trim().toLowerCase()]
+  let app = null
+  try { app = named ? await placedApp($.flag.basecamp, named) : null } catch (err) { log.error(err.message); process.exit(1) }
   const resolved = resolveApiTarget(target, (await loadFrontierConfig(root))?.deploy ?? null, app)
   if (!resolved.ok) { log.error(resolved.reason); process.exit(1) }
   if (resolved.host.endsWith(PLACEHOLDER_SERVER)) {

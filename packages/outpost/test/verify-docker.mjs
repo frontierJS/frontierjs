@@ -39,6 +39,17 @@
  *   back off the daemon. A WebSocket held to the app through Caddy still
  *   echoes after another app's route is written and removed (`FJS-4016`).
  *
+ *   `cert.*` — a pushed `*.wild.test` wildcard (`POST /certs/load`, `FJS-D1975`)
+ *   is the certificate a routed host under it presents, byte for byte, with
+ *   Caddy logging that it skipped automatic management for the host and no
+ *   order for it; it is still the one presented after Caddy restarts on its
+ *   own, and a drop takes the entry out. The pushed pair is self-signed, so
+ *   curl trusts it as its own root.
+ *   `ingressName.*` — a host under that wildcard named in `/route`'s `noindex`,
+ *   as Basecamp names an App's ingress name (`FJS-D1952`): served, it answers
+ *   200 with `X-Robots-Tag: noindex`, a Domain beside it does not, and as a
+ *   redirect its 308 carries the header too.
+ *
  *   `startFirst.*` — a release with `swap: 'start-first'` answers beside the
  *   old container on a port Docker picks, and the route moves before the old
  *   one stops: a curl loop through Caddy across the swap sees only 200s
@@ -91,7 +102,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { connect }      from 'node:net'
 import { connect as tlsConnect } from 'node:tls'
-import { randomBytes }  from 'node:crypto'
+import { randomBytes, X509Certificate } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
 import { signRequest, verifyRequest, generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { ensureCert }   from '../src/cert.js'
@@ -111,6 +122,7 @@ const CADDY    = 'fjs-verify-caddy'
 const CADDY_IMAGE = 'caddy:2'
 const HOST     = 'verify-docker.test'
 const ALSO     = 'also.verify-docker.test'
+const WILD     = 'shop.wild.test'
 const IMAGE    = 'traefik/whoami:v1.10.3'
 const BUSYBOX  = 'busybox:1.36'
 const BUN_IMAGE   = 'oven/bun:1.4.4-slim'
@@ -409,6 +421,72 @@ try {
   sh('docker', 'restart', CADDY)
   t('ingress.survivesACaddyRestart', await untilHttps())
 
+  // ─── cert ───────────────────────────────────────────────────────────────
+
+  // A host under a pushed wildcard is served BY it: Caddy's own internal CA
+  // would otherwise sign one for the host, and this is the one place that
+  // difference is visible.
+  const wildPem = join(scratch, 'wild.pem')
+  const wildKey = join(scratch, 'wild.key')
+  const minted = sh('openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-days', '2',
+    '-subj', '/CN=wild.test', '-addext', 'subjectAltName=DNS:*.wild.test,DNS:wild.test', '-keyout', wildKey, '-out', wildPem)
+  if (minted.status !== 0) throw new Error(`openssl could not make the wildcard: ${minted.stderr}`)
+  const wild = { cert: readFileSync(wildPem, 'utf8'), key: readFileSync(wildKey, 'utf8') }
+  const presented = (host) => new Promise(done => {
+    const s = tlsConnect({ host: '127.0.0.1', port: CADDY_HTTPS, servername: host, rejectUnauthorized: false }, () => {
+      const raw = s.getPeerCertificate().raw
+      s.destroy()
+      done(raw ? new X509Certificate(raw) : null)
+    })
+    s.on('error', () => done(null))
+  })
+  const untilWild = async () => {
+    for (let i = 0; i < 40; i++) {
+      const r = sh('curl', '-sS', '--max-time', '5', '--resolve', `${WILD}:${CADDY_HTTPS}:127.0.0.1`, '--cacert', wildPem, `https://${WILD}:${CADDY_HTTPS}/`)
+      if (r.status === 0 && /Name: fjs-drive/.test(r.stdout)) return true
+      await sleep(250)
+    }
+    return false
+  }
+  const pushed = await call('/certs/load', { id: 'wild', ...wild })
+  if (pushed.status !== 200) console.log(pushed.body)
+  t('cert.pushAnswersItsNames', pushed.status === 200 && pushed.body?.changed === true
+    && pushed.body?.names?.join() === '*.wild.test,wild.test' && !!pushed.body?.expires_at)
+  t('cert.samePairWritesNothing', (await call('/certs/load', { id: 'wild', ...wild })).body?.changed === false)
+  t('cert.refusesAKeyThatIsNotItsOwn', (await call('/certs/load', { id: 'wild', cert: wild.cert, key: readFileSync(tls.keyPath, 'utf8') })).status === 500)
+  const wildRoute = await call('/route', { app_id: APP, hosts: [HOST, WILD] })
+  if (wildRoute.status !== 200) console.log(wildRoute.body)
+  t('cert.wildcardServesTheRoutedHost', await untilWild())
+  const served = await presented(WILD)
+  t('cert.presentedIsThePushedOne', served?.raw?.equals(new X509Certificate(wild.cert).raw) === true && /\*\.wild\.test/.test(served.subjectAltName ?? ''))
+  const caddyLog = () => sh('docker', 'logs', CADDY)
+  const aboutWild = () => { const l = caddyLog(); return `${l.stdout}\n${l.stderr}`.split('\n').filter(line => line.includes(WILD)) }
+  t('cert.caddySkippedAutomaticManagement', aboutWild().some(l => /skipping automatic certificate management/.test(l)))
+  const INGRESS = `${APP}.wild.test`
+  const overWild = (host, path = '/') => sh('curl', '-sS', '--max-time', '5', '-i', '--resolve', `${host}:${CADDY_HTTPS}:127.0.0.1`,
+    '--cacert', wildPem, `https://${host}:${CADDY_HTTPS}${path}`).stdout
+  const noindex = (res) => /^x-robots-tag: noindex\r?$/im.test(res)
+  await call('/route', { app_id: APP, hosts: [HOST, WILD, INGRESS], noindex: [INGRESS] })
+  let atName = ''
+  for (let i = 0; i < 40 && !/Name: fjs-drive/.test(atName); i++) { atName = overWild(INGRESS); if (!/Name: fjs-drive/.test(atName)) await sleep(250) }
+  t('ingressName.servedAnswersNoindex', /^HTTP\/\S+ 200/.test(atName) && /Name: fjs-drive/.test(atName) && noindex(atName))
+  const domain = sh('curl', '-sS', '--max-time', '5', '-i', '--resolve', `${HOST}:${CADDY_HTTPS}:127.0.0.1`, '--cacert', rootPath,
+    `https://${HOST}:${CADDY_HTTPS}/`).stdout
+  t('ingressName.domainIsIndexable', /Name: fjs-drive/.test(domain) && !noindex(domain))
+  await call('/route', { app_id: APP, hosts: [HOST, WILD], redirects: [{ host: INGRESS, to: `https://${HOST}` }], noindex: [INGRESS] })
+  let hopped = ''
+  for (let i = 0; i < 40 && !/^HTTP\/\S+ 308/.test(hopped); i++) { hopped = overWild(INGRESS, '/a'); if (!/^HTTP\/\S+ 308/.test(hopped)) await sleep(250) }
+  t('ingressName.redirectAnswersNoindex', /^HTTP\/\S+ 308/.test(hopped)
+    && new RegExp(`^location: https://${HOST}/a\\r?$`, 'im').test(hopped) && noindex(hopped))
+  t('cert.noOrderWasMadeForTheHost', !aboutWild().some(l => /obtain|acme|issuer/i.test(l)))
+  sh('docker', 'restart', CADDY)
+  t('cert.survivesACaddyRestart', await untilWild() && (await presented(WILD))?.raw?.equals(new X509Certificate(wild.cert).raw) === true)
+  await call('/route', { app_id: APP, hosts: [HOST] })
+  t('cert.dropTakesTheEntry', (await call('/certs/drop', { id: 'wild' })).body?.removed === true
+    && (await admin('/id/fjs-cert-wild')).status === 404
+    && (await call('/certs/drop', { id: 'wild' })).body?.removed === false)
+  t('ingress.stillAnswersAfterTheCertWentAndCame', await untilHttps())
+
   const healthy = await call('/health-check', { app_id: APP })
   t('health.saysRunning', healthy.body?.healthy === true)
 
@@ -480,6 +558,24 @@ try {
   t('redirect.answers308WithTheRequestUri', /^HTTP\/\S+ 308/.test(hop) && new RegExp(`^location: https://${HOST}/cart\\?x=1\\r?$`, 'im').test(hop))
   await call('/route', { app_id: APP, hosts: [HOST] })
   t('redirect.droppedWithTheLastOne', (await admin(`/id/${ROUTE}-redirects`)).status === 404)
+
+  // The static origin sends raw bytes; Caddy's encode step in front of it is
+  // what a phone on 4G waits on, and only a real Caddy says it negotiates.
+  const FILES = 'static-drive'
+  const BUNDLE = 'static.verify-docker.test'
+  const bundle = `export const words = ${JSON.stringify(Array.from({ length: 400 }, (_, i) => `word-${i}`))}\n`
+  const published = await call('/static/publish', { app_id: FILES, slug: FILES, files: [{ path: 'index.html', content: '<h1>files</h1>' }, { path: 'assets/app-Ab12Cd34.js', content: bundle }] })
+  const activated = await call('/static/activate', { app_id: FILES, slug: FILES, digest: published.body?.digest, hosts: [BUNDLE] })
+  if (activated.status !== 200) console.log(published.body, activated.body)
+  const asset = (encoding) => sh('curl', '-sS', '--max-time', '5', '-o', '/dev/null', '-D', '-',
+    ...(encoding ? ['-H', `accept-encoding: ${encoding}`] : []),
+    '--resolve', `${BUNDLE}:${CADDY_HTTPS}:127.0.0.1`, '--cacert', rootPath, `https://${BUNDLE}:${CADDY_HTTPS}/assets/app-Ab12Cd34.js`).stdout
+  let zstd = ''
+  for (let i = 0; i < 40 && !/^HTTP\/\S+ 200/.test(zstd); i++) { zstd = asset('zstd, gzip'); if (!/^HTTP\/\S+ 200/.test(zstd)) await sleep(250) }
+  t('static.encodesForABrowserThatAsks', /^content-encoding: zstd\r?$/im.test(zstd))
+  t('static.gzipForOneThatAsksNoMore',   /^content-encoding: gzip\r?$/im.test(asset('gzip')))
+  t('static.plainForOneThatAsksNothing', !/^content-encoding:/im.test(asset(null)))
+  await call('/static/retire', { app_id: FILES, slug: FILES })
 
   // Two apps on one hostname (FJS-D1040): Caddy has to accept the path matcher,
   // keep it ahead of the whole-host route that was there first, and answer
@@ -834,12 +930,17 @@ const expected = [
   'deploy.answersOnItsPort',
   'ingress.routeNamesTheHost', 'ingress.answersOverHttpsByName', 'ingress.plainHttpRedirects',
   'ingress.portRefusesOffLoopback', 'ingress.writesItsOwnAccessLog', 'ingress.survivesACaddyRestart',
+  'cert.pushAnswersItsNames', 'cert.samePairWritesNothing', 'cert.refusesAKeyThatIsNotItsOwn', 'cert.wildcardServesTheRoutedHost',
+  'cert.presentedIsThePushedOne', 'cert.caddySkippedAutomaticManagement', 'cert.noOrderWasMadeForTheHost',
+  'ingressName.servedAnswersNoindex', 'ingressName.domainIsIndexable', 'ingressName.redirectAnswersNoindex',
+  'cert.survivesACaddyRestart', 'cert.dropTakesTheEntry', 'ingress.stillAnswersAfterTheCertWentAndCame',
   'health.saysRunning', 'logs.readTheContainer', 'exec.runsOnTheMachine',
   'deploy.replacesRatherThanAdds', 'ingress.redeployKeepsOneRoute',
   'restore.whenDockerRefusesTheRun', 'restore.routeDialsTheRestoredPort',
   'restore.whenTheStartIsNotHealthy', 'restore.answersOverHttpsAgain',
   'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
   'redirect.answers308WithTheRequestUri', 'redirect.droppedWithTheLastOne',
+  'static.encodesForABrowserThatAsks', 'static.gzipForOneThatAsksNoMore', 'static.plainForOneThatAsksNothing',
   'path.sitsAheadOfTheWholeHost', 'path.prefixGoesToItsApp', 'path.restStaysWithTheHost', 'path.stopTakesEveryPrefix',
   'socket.outlivesAnotherAppsWrite', 'race.anotherWritersRoutesSurviveOutposts',
   'startFirst.anExpandOverlaps', 'startFirst.answersOnAPortDockerPicked', 'startFirst.routeDialsTheNewPort', 'startFirst.leavesOneContainerUnderItsName',

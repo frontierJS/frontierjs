@@ -14,6 +14,7 @@ import { fileValue }                from '@frontierjs/toolbelt/env'
 import { chalk }                    from './color.js'
 import { ageOf }                    from './cloud.js'
 import { pipeCommand, shQuote, transportFor } from './machine.js'
+import { TIERS }                    from './deploy-target.js'
 
 /** One call to Basecamp's API, answering the body, or throwing with what Basecamp said. */
 export async function basecamp(origin, key, path, { method = 'GET', body, headers = {} } = {}) {
@@ -48,6 +49,44 @@ export async function basecampAll(origin, key, path) {
     rows.push(...page)
     if (page.length < PAGE) return rows
   }
+}
+
+/**
+ * The App a deploy target releases onto. `BASECAMP_APP_ID` names any App of
+ * the project (the anchor) and the target's App is the one with the
+ * anchor's slug in the project's environment of the target's tier, so one key
+ * serves dev, stage and production. The only place a target becomes an App.
+ *
+ * Refuses by name rather than falling back: a release that lands on another
+ * environment's App is a production deploy by accident. Basecamp refuses a
+ * `tier` filter on /environments with 400, so the tier is matched here.
+ * Answers the full App row.
+ *
+ * @param {string} origin
+ * @param {string} key
+ * @param {string} anchorAppId  `BASECAMP_APP_ID`
+ * @param {'dev'|'stage'|'production'} target  `resolveTarget`'s answer
+ * @param {{ where?: string }} [opts]  how a 404 names the Basecamp (default its origin)
+ */
+export async function resolveBasecampApp(origin, key, anchorAppId, target, { where = origin } = {}) {
+  const tier = TIERS[target]
+  if (!tier) throw new Error(`'${target}' is no deploy target — one of ${Object.keys(TIERS).join(', ')}`)
+  const anchor = await basecamp(origin, key, `/apps/${encodeURIComponent(anchorAppId)}`).catch(err => {
+    // A rebuilt Basecamp keeps no App the old one issued, and its 404 alone reads as a typo.
+    if (err.status === 404) throw new Error(`BASECAMP_APP_ID ${anchorAppId} is no App on ${where} — take it out of .env and run fli basecamp:app`)
+    throw err
+  })
+  if (anchor.environment?.tier === tier) return anchor
+
+  const slug      = anchor.slug
+  const projectId = anchor.environment?.projectId
+  const hint      = `run fli basecamp:app${target === 'stage' ? ' --stage' : target === 'production' ? ' --production' : ''}`
+  if (!projectId) throw new Error(`App '${anchor.name}' (${anchorAppId}) names no project, so its ${tier} App cannot be found — ${hint}`)
+  const environment = (await basecampAll(origin, key, `/environments?projectId=${encodeURIComponent(projectId)}`)).find(e => e.tier === tier)
+  if (!environment) throw new Error(`no ${tier} environment in project '${anchor.environment?.project?.name ?? projectId}' — ${hint}`)
+  const sibling = (await basecampAll(origin, key, `/apps?environmentId=${encodeURIComponent(environment.id)}`)).find(a => a.slug === slug)
+  if (!sibling) throw new Error(`no App '${slug}' in the ${tier} environment — ${hint}`)
+  return basecamp(origin, key, `/apps/${encodeURIComponent(sibling.id)}`)
 }
 
 // A root login on a box with no sudo installed runs the same scripts through a

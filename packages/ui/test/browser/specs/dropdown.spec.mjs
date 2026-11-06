@@ -546,4 +546,19 @@ export async function run(t) {
   await t.hoverAt('#sub-new')
   await t.eventually(menus, 1, 'hovering a sibling of the row shuts the submenu')
   await t.press('Escape')
+
+  /* ── taller than the viewport ─────────────────────────────────────────── */
+
+  await t.eventually(menus, 0, 'every menu closed')
+  await t.clickAt('#dd-long')
+  await t.evaluate(`return await waitVisible('[role=menu]');`)
+  await t.clickAt('#long-sub')
+  await t.eventually(menus, 2, 'a submenu of 60 rows opens')
+  await t.evaluate(`return await waitSettled('body');`)
+  t.ok(await t.evaluate(`
+    const p = document.querySelectorAll('[role=menu]')[1].closest('.popover'), r = p.getBoundingClientRect();
+    return r.top >= 0 && r.bottom <= innerHeight && p.scrollHeight > p.clientHeight;
+  `), 'a submenu taller than the viewport stays inside it and scrolls')
+  await t.press('Escape')
+  await t.press('Escape')
 }

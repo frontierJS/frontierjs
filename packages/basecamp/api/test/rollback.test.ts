@@ -441,6 +441,7 @@ describe('a rollback and the volume', () => {
       expect(started.image).toBe(current.toImage)
       expect(started.digest).toBe(current.builtImage)
       expect(started.deployment_id).toBe(current.id)
+      expect(started.config.env.FJS_BUILD).toBe(current.commitSha)
       expect(paths).not.toContain('/health-check')
     })
 
@@ -460,7 +461,7 @@ describe('how the machine swapped, on the row', () => {
 
   /** A rollback whose one step starts the container, against a machine that answers `/deploy` with `deployed`.
    *  `live` is what the App says now; `shipped` is the runtime the release's snapshot holds. */
-  async function startAgainst(deployed: Record<string, unknown>, live: Record<string, unknown> = {}, shipped: Record<string, unknown> = {}, hostname?: string) {
+  async function startAgainst(deployed: Record<string, unknown>, live: Record<string, unknown> = {}, shipped: Record<string, unknown> = {}, hostname?: string, release: Record<string, unknown> = {}) {
     const { app, first, current } = await anAppWithHistory()
     const sys = env.system as any
     if (Object.keys(live).length) await sys.app.update({ where: { id: app.id }, data: live })
@@ -468,7 +469,8 @@ describe('how the machine swapped, on the row', () => {
     const replacement = await sys.deployment.create({ data: {
       appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
       previousDeploymentId: current.id,
-      configSnapshot: { ...(first.configSnapshot as any), runtime: { ...(first.configSnapshot as any).runtime, ...shipped } } } })
+      configSnapshot: { ...(first.configSnapshot as any), runtime: { ...(first.configSnapshot as any).runtime, ...shipped } },
+      ...release } })
     await sys.deploymentStep.create({ data: { deploymentId: replacement.id, position: 0, name: 'Start container' } })
 
     const sent: any[] = []
@@ -481,8 +483,51 @@ describe('how the machine swapped, on the row', () => {
     await env.app.runAs(admin.id, { tenant: ws.id }, () =>
       (deploymentRun as any).handler({ app: via, data: { deployment_id: replacement.id } }))
     const row = await sys.deployment.findUnique({ where: { id: replacement.id } })
-    return Object.assign(row, { asked: sent.find(c => c.path === '/deploy')?.body?.swap })
+    const body = sent.find(c => c.path === '/deploy')?.body
+    return Object.assign(row, { asked: body?.swap, env: body?.config?.env })
   }
+
+  describe('the build the container states (FJS-D1969)', () => {
+    const sha = 'c'.repeat(40)
+
+    test('the container is started with the release\'s commit as FJS_BUILD', async () => {
+      expect((await startAgainst({}, {}, {}, undefined, { commitSha: sha })).env.FJS_BUILD).toBe(sha)
+    })
+
+    test('a stored FJS_BUILD Variable does not name another commit', async () => {
+      const row = await startAgainst({}, {}, {}, undefined, {
+        commitSha: sha, configSnapshot: { env: { FJS_BUILD: 'stale', KEPT: '1' }, runtime: {} } })
+      expect(row.env).toMatchObject({ FJS_BUILD: sha, KEPT: '1' })
+    })
+
+    test('a git release states the commit /build answered, not the one the row was opened with', async () => {
+      const { app } = await anAppWithHistory()
+      const sys = env.system as any
+      const built = 'd'.repeat(40)
+      const release = await sys.deployment.create({ data: {
+        appId: app.id, workspaceId: ws.id, toImage: `${app.slug}:git`, trigger: 'push', commitSha: 'e'.repeat(40),
+        configSnapshot: { source: { kind: 'git', repo: 'https://example.test/app.git', branch: 'main' }, runtime: {} } } })
+      for (const [position, name] of ['Build image', 'Start container'].entries())
+        await sys.deploymentStep.create({ data: { deploymentId: release.id, position, name } })
+      const sent: any[] = []
+      const conduit = {
+        resolve: async () => ({ pinned_cert: true }),
+        send: async (call: any) => {
+          sent.push(call)
+          return { data: call.path === '/build' ? { digest: 'sha256:' + 'f'.repeat(64), commit_sha: built } : {} }
+        },
+      }
+      const via = new Proxy(env.app, { get: (t, k) =>
+        k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+      await env.app.runAs(admin.id, { tenant: ws.id }, () =>
+        (deploymentRun as any).handler({ app: via, data: { deployment_id: release.id } }))
+      expect(sent.find(c => c.path === '/deploy')?.body?.config?.env?.FJS_BUILD).toBe(built)
+    })
+
+    test('a release that names no commit states no build', async () => {
+      expect((await startAgainst({})).env).not.toHaveProperty('FJS_BUILD')
+    })
+  })
 
   test('a rollback onto the older schema is stop-first, and the row says why', async () => {
     const row = await startAgainst({ swap: 'stop-first', swap_reason: 'this release is a contract' })

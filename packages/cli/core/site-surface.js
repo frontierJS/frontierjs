@@ -193,6 +193,7 @@ import '@frontierjs/css'
 export function siteHomePage({ appName = 'app' } = {}) {
   return `---
 title: ${frontmatterValue(appName)}
+description: ${frontmatterValue(`${appName} -- say in one sentence what this page is for. Search results show it under the title.`)}
 render: static
 ---
 <!--

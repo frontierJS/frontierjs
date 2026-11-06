@@ -34,6 +34,8 @@ it re-resolved when it runs. Survives a restart.
 | `deployment:run` | `deployments` | on dispatch | — | 1 | default | **none** |
 | `domain:dns` | `dns` | on dispatch | — | 5 | 10000, 60000 | 120000ms |
 | `hub-posture` | `default` | `0 9 * * *` | — | 3 | default | **none** |
+| `ingress:cert` | `sync` | `17 3 * * *` | — | 5 | 10000, 60000 | 300000ms |
+| `ingress:dns` | `dns` | on dispatch | — | 5 | 10000, 60000 | 120000ms |
 | `job:run` | `jobs` | on dispatch | — | 3 | 5000, 30000, 120000 | **none** |
 | `maintenance:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `monitor-sweep` | `default` | `* * * * *` | — | 3 | default | 240000ms |
@@ -55,7 +57,7 @@ it re-resolved when it runs. Survives a restart.
 | `site:publish` | `deployments` | on dispatch | — | 1 | default | 2130000ms |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-30 handler(s), 11 of them on a clock.
+32 handler(s), 12 of them on a clock.
 
 **13 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a

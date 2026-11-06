@@ -73,6 +73,10 @@ Every prepared statement is cached by SQL string. The cache is per connection (`
 
 The bound is high enough that almost no workload reaches it under normal use. If one does, restructure queries to reuse shapes — a parameterized `IN (?, ?, ?)` of a fixed width rather than a dynamic-length list, which is a new statement per length.
 
+## An equality beside an OR
+
+`{ ownerId, OR: [{ band0: a }, { band1: b }] }` compiles as `(ownerId = ? AND …) OR (ownerId = ? AND …)`: a scalar equality beside an `OR` of two or more branches is written into each branch, so each one is a range of its own `(ownerId, bandN)` index and SQLite plans a MULTI-INDEX OR. Left as one conjunct it scans the owner's whole index when `sqlite_stat1` is empty, which is the state of a database loaded after its migration. Operators (`gt`, `in`), relations and `@from` fields stay where they were written.
+
 ## ANALYZE runs automatically
 
 After every successful `migrate apply` or `autoMigrate`, Litestone runs `ANALYZE` to populate `sqlite_stat1`. The query planner uses these stats to choose the right index for selective predicates — without them it falls back to coarse heuristics that often miss the optimal index on multi-index tables.

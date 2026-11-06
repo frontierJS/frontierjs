@@ -43,6 +43,51 @@ export function runtimeOf(row: Record<string, unknown>): Runtime {
   return out as Runtime
 }
 
+/** An App's ingress record, named from its id so a rename rewrites nothing —
+ *  and a customer who typed the CNAME by hand never has to again (`FJS-D561`).
+ *  Outpost reads a host whose first label is the app id as this name. */
+export const ingressName = (appId: string, zone: string) => `${appId}.${zone.trim().toLowerCase().replace(/\.$/, '')}`
+
+/**
+ * The App's ingress name when Caddy should answer it, or null. Answered only
+ * while `isIngressNamePublished` is on and the workspace holds its `*.<zone>`
+ * wildcard: no ingress name is served before that certificate exists
+ * (`FJS-D1954`), since Caddy would order one per name and the machine would
+ * have two certificate paths.
+ */
+async function answeredIngressName(sys: any, appId: string): Promise<string | null> {
+  const app = await sys.app.findFirst({ where: { id: appId }, select: { workspaceId: true, isIngressNamePublished: true } }) as
+    { workspaceId: string, isIngressNamePublished: boolean } | null
+  if (!app?.isIngressNamePublished) return null
+  const ws = await sys.workspace.findFirst({ where: { id: app.workspaceId }, select: { ingressZone: true, ingressCertSecretId: true } }) as
+    { ingressZone: string | null, ingressCertSecretId: string | null } | null
+  return ws?.ingressZone && ws.ingressCertSecretId ? ingressName(appId, ws.ingressZone) : null
+}
+
+/**
+ * What the App's ingress name does, for the App page (`FJS-D1952`): `served`
+ * when Caddy fronts the App at it, `redirected` when a Domain serves it,
+ * `waiting` when the workspace has no ingress zone or wildcard yet, `off` when
+ * the column is. Read off the same rows `routedHosts` reads, so the page and
+ * the machine cannot disagree.
+ */
+export async function ingressStateOf(db: any, appId: string): Promise<{ name: string | null, state: 'served' | 'redirected' | 'waiting' | 'off' }> {
+  const sys = db.asSystem()
+  const app = await sys.app.findFirst({ where: { id: appId }, select: { workspaceId: true, isIngressNamePublished: true } }) as
+    { workspaceId: string, isIngressNamePublished: boolean } | null
+  const ws  = app && await sys.workspace.findFirst({ where: { id: app.workspaceId }, select: { ingressZone: true, ingressCertSecretId: true } }) as
+    { ingressZone: string | null, ingressCertSecretId: string | null } | null
+  const name = ws?.ingressZone ? ingressName(appId, ws.ingressZone) : null
+  if (!app?.isIngressNamePublished) return { name, state: 'off' }
+  if (!name || !ws?.ingressCertSecretId) return { name, state: 'waiting' }
+  return { name, state: (await servingDomains(sys, appId)).length ? 'redirected' : 'served' }
+}
+
+/** The App's serving Domains — live, not redirecting — by hostname. */
+async function servingDomains(sys: any, appId: string): Promise<{ hostname: string, isPrimary: boolean }[]> {
+  return sys.domain.findMany({ where: { appId, redirectTo: null }, orderBy: { hostname: 'asc' } })
+}
+
 /**
  * The hostnames Caddy on the machine fronts an app by (`FJS-D564`), sent on
  * every `/deploy`. The live `Domain` rows and never a release's snapshot: a
@@ -50,13 +95,14 @@ export function runtimeOf(row: Record<string, unknown>): Runtime {
  * internet. A Domain that redirects is not a host the app answers: it is in
  * `routedRedirects`. A name sent here is a certificate Caddy asks Let's Encrypt
  * for, so a deleted row must drop out — `@@softDelete` is what takes it out of
- * this read.
+ * this read. With no serving Domain the ingress name is the host (`FJS-D1952`).
  */
 export async function routedHosts(db: any, appId: string): Promise<string[]> {
-  const rows = await db.asSystem().domain.findMany({
-    where: { appId, redirectTo: null }, orderBy: { hostname: 'asc' },
-  })
-  return rows.map((d: { hostname: string }) => d.hostname)
+  const sys   = db.asSystem()
+  const hosts = (await servingDomains(sys, appId)).map(d => d.hostname)
+  if (hosts.length) return hosts
+  const name = await answeredIngressName(sys, appId)
+  return name ? [name] : []
 }
 
 /**
@@ -64,17 +110,36 @@ export async function routedHosts(db: any, appId: string): Promise<string[]> {
  * Caddy answers them itself (`FJS-1615`). `redirectTo` is typed by a person, so
  * a bare hostname is read as `https://` — Outpost refuses anything that is not
  * an absolute http(s) URL, and the release would fail on a form that looked fine.
+ * Once a Domain serves the App its ingress name redirects to the primary one,
+ * or the first by hostname (`FJS-D1956`), so a link shared before keeps working.
  */
 export async function routedRedirects(db: any, appId: string): Promise<{ host: string, to: string }[]> {
-  const rows = await db.asSystem().domain.findMany({
+  const sys  = db.asSystem()
+  const rows = await sys.domain.findMany({
     where: { appId, redirectTo: { not: null } }, orderBy: { hostname: 'asc' },
   })
-  return rows
+  const out = rows
     .filter((d: { redirectTo: string }) => d.redirectTo.trim())
     .map((d: { hostname: string, redirectTo: string }) => {
       const to = d.redirectTo.trim()
       return { host: d.hostname, to: /^[a-z][a-z0-9+.-]*:\/\//i.test(to) ? to : `https://${to}` }
     })
+  const serving = await servingDomains(sys, appId)
+  const name    = serving.length ? await answeredIngressName(sys, appId) : null
+  if (name) out.push({ host: name, to: `https://${(serving.find(d => d.isPrimary) ?? serving[0]).hostname}` })
+  return out
+}
+
+/**
+ * The hosts Caddy answers `X-Robots-Tag: noindex` on, sent beside `hosts` and
+ * `redirects` on every route push: the ingress name, served or redirected, so a
+ * search engine indexes the Domain and never the name every App has
+ * (`IDEAS/ingress-name.md` § Security 5). Stated here because the zone is
+ * Basecamp's; Outpost cannot tell the name from a Domain that starts with the id.
+ */
+export async function noindexHosts(db: any, appId: string): Promise<string[]> {
+  const name = await answeredIngressName(db.asSystem(), appId)
+  return name ? [name] : []
 }
 
 /**

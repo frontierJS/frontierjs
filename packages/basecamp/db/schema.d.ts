@@ -2054,6 +2054,8 @@ export interface Workspace {
   ingressSecretId?: string | null
   ingressZoneId?: string | null
   ingressZone?: string | null
+  ingressCertSecretId?: string | null
+  ingressCertExpiresAt?: string | null
   /** @guarded @encrypted @secret */
   pushTopic?: string | null
   /** @version */
@@ -2093,6 +2095,8 @@ export interface WorkspaceUpdate {
 export interface WorkspaceSystem {
   expiresAt?: string | Date | null
   ingressZone?: string | null
+  ingressCertSecretId?: string | null
+  ingressCertExpiresAt?: string | Date | null
 }
 
 export interface WorkspaceWhere extends WhereBase {
@@ -2107,6 +2111,8 @@ export interface WorkspaceWhere extends WhereBase {
   ingressSecretId?: string | WhereOp<string> | null
   ingressZoneId?: string | WhereOp<string> | null
   ingressZone?: string | WhereOp<string> | null
+  ingressCertSecretId?: string | WhereOp<string> | null
+  ingressCertExpiresAt?: string | Date | WhereOp<string | Date> | null
   pushTopic?: string | WhereOp<string> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -3131,6 +3137,7 @@ export interface App {
   healthTimeoutSeconds?: number | null
   command: string[]
   hasExposedPort: boolean
+  isIngressNamePublished: boolean
   swap: DeploySwap
   isDeployedOnPush: boolean
   /** @encrypted */
@@ -3169,6 +3176,7 @@ export interface AppCreate {
   healthTimeoutSeconds?: number | null
   command?: string[]
   hasExposedPort?: boolean
+  isIngressNamePublished?: boolean
   swap?: DeploySwap
   backupCron?: string | null
   backupDestinationId?: string | null
@@ -3194,6 +3202,7 @@ export interface AppUpdate {
   healthTimeoutSeconds?: number | null
   command?: string[]
   hasExposedPort?: boolean
+  isIngressNamePublished?: boolean
   swap?: DeploySwap
   backupCron?: string | null
   backupDestinationId?: string | null
@@ -3232,6 +3241,7 @@ export interface AppWhere extends WhereBase {
   healthTimeoutSeconds?: number | WhereOp<number> | null
   command?: string[] | WhereOp<string[]> | null
   hasExposedPort?: boolean | WhereOp<boolean> | null
+  isIngressNamePublished?: boolean | WhereOp<boolean> | null
   swap?: DeploySwap | WhereOp<DeploySwap> | null
   isDeployedOnPush?: boolean | WhereOp<boolean> | null
   pushSecret?: string | WhereOp<string> | null
@@ -6440,6 +6450,8 @@ type __Flat<T> = { [K in keyof T]: T[K] }
 
 /** The `@system` columns a write may carry in its data: the ones its `system` names. */
 type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>
+/** The client `asSystem()` returns: it writes a `@system` column with no `system` naming it, so every table takes the column in data. */
+type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D> ? TableClient<R, C & D, U & D, W, Rel, M, S, D> : T[K] }
 
 /** What `include` may name: a relation, or `_count`. A relation takes `true` or its own read options. */
 export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }
@@ -6588,7 +6600,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate'>
   readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, 'kind' | '@@gate', UserSystem>
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, '@@gate'>
-  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'expiresAt' | 'ingressZone' | 'pushTopic' | '@@gate', WorkspaceSystem>
+  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'expiresAt' | 'ingressZone' | 'ingressCertSecretId' | 'ingressCertExpiresAt' | 'pushTopic' | '@@gate', WorkspaceSystem>
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem>
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem>
@@ -6646,7 +6658,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly fleetByProvider: ViewClient<FleetByProvider, FleetByProviderWhere>
 
   // Auth scoping
-  asSystem(): LitestoneClient
+  asSystem(): __Sudo<LitestoneClient>
   $setAuth(user: Record<string, unknown>): LitestoneClient
   $scopedBy(scope: Record<string, unknown>): LitestoneClient
 

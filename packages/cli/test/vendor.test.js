@@ -358,21 +358,26 @@ describe('resolvePackageSource', () => {
 //
 // The laptop release runs the Outpost's own lookup and vendors deploy/generated/
 // only when the file it chose installs from it, so a plain repository with no
-// package.json builds as it is; a tree with uncommitted changes is marked on
-// the tag (FJS-3561). Driven as a process against a stub Basecamp answering one
+// package.json builds as it is; a tree with uncommitted changes is warned and
+// left out of the release (FJS-D1968). Driven as a process against a stub Basecamp answering one
 // git App on one online server, because the choice is made inside the command.
 describe('basecamp:deploy --dry on a plain repository', () => {
-  let stub, stored = null, repo
+  let stub, stored = null, repo, containerPort = 8080, patches = []
 
   const app = () => ({
-    id: 'app-1', name: 'plain', slug: 'plain', environmentId: 'e1', port: 8080, containerPort: 8080,
+    id: 'app-1', name: 'plain', slug: 'plain', environmentId: 'e1', port: 8080, containerPort,
     source: { kind: 'git', repo: 'https://git.example.test/acme/plain.git', branch: 'main', ...(stored ? { dockerfile: stored } : {}) },
     placement: [{ serverId: 's1', server: { id: 's1', name: 'dev', status: 'online', ipAddress: '127.0.0.1', sshUser: 'deploy' } }],
   })
 
   beforeAll(() => {
-    stub = Bun.serve({ port: 0, fetch(req) {
+    stub = Bun.serve({ port: 0, async fetch(req) {
       const u = new URL(req.url)
+      // Refused after it is recorded, so a run stops before docker builds anything.
+      if (u.pathname === '/apps/app-1' && req.method === 'PATCH') {
+        patches.push(await req.json())
+        return Response.json({ message: 'stub refuses the write' }, { status: 403 })
+      }
       if (u.pathname === '/apps/app-1') return Response.json(app())
       if (u.pathname === '/apps' || u.pathname === '/variables') return Response.json([])
       return new Response('not found', { status: 404 })
@@ -395,11 +400,11 @@ describe('basecamp:deploy --dry on a plain repository', () => {
   }
 
   // Spawned asynchronously: a spawnSync would block the loop the stub answers on.
-  const dry = async () => {
+  const dry = async ({ run = false } = {}) => {
     // The origin and key are the entry in basecamps.json under HOME, not the environment.
     const home = mkdtempSync(join(tmpdir(), 'fjs-home-'))
     writeBasecamp('stub', { url: `http://localhost:${stub.port}`, apiKey: 'x' }, { home })
-    const proc = Bun.spawn([process.execPath, resolve(ROOT, 'bin/fli.js'), 'basecamp:deploy', '--dry', '--app', 'app-1'], {
+    const proc = Bun.spawn([process.execPath, resolve(ROOT, 'bin/fli.js'), 'basecamp:deploy', ...(run ? [] : ['--dry']), '--app', 'app-1'], {
       cwd: repo, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
       env: { ...process.env, HOME: home, NO_COLOR: '1' },
     })
@@ -425,13 +430,39 @@ describe('basecamp:deploy --dry on a plain repository', () => {
     stored = null
   }, 90_000)
 
-  test('a tree with uncommitted changes is marked -dirty and told so', async () => {
+  test('a tree with uncommitted changes is told so, and the tag is the plain commit', async () => {
     plainRepo()
     writeFileSync(join(repo, 'www', 'scratch.txt'), 'x\n')
     const out = await dry()
-    expect(out).toContain('uncommitted changes')
-    expect(out).toContain('rebuilds a different tree')
-    expect(out).toMatch(/Would build fjs-app-1:[0-9a-f]{12}-dirty/)
+    expect(out).toContain('uncommitted change(s)')
+    expect(out).toContain('are not shipped')
+    expect(out).toMatch(/Would build fjs-app-1:[0-9a-f]{12} from/)
+    expect(out).not.toContain('-dirty')
+  }, 60_000)
+
+  // FJS-4047: a release naming a digest builds nothing on the machine, so the
+  // Outpost's /build never reads the file, and an App storing no container
+  // port was started with the host port mapped to itself (FJS-D1567).
+  test('an App storing no container port takes its Dockerfile EXPOSE before the release', async () => {
+    plainRepo()
+    containerPort = null
+    patches = []
+    try {
+      expect(await dry()).toContain("Would set App 'plain' container port to 3000")
+      expect(patches).toEqual([])
+
+      const out = await dry({ run: true })
+      expect(patches).toEqual([{ containerPort: 3000 }])
+      expect(out).not.toContain('Building fjs-app-1')
+    } finally { containerPort = 8080 }
+  }, 60_000)
+
+  test('an App stating another container port keeps it, and the run says where the two differ', async () => {
+    plainRepo()
+    patches = []
+    const out = await dry()
+    expect(out).toContain('EXPOSE 3000 where the App says 8080')
+    expect(patches).toEqual([])
   }, 60_000)
 })
 

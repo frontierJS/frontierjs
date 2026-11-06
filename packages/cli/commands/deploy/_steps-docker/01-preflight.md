@@ -59,6 +59,33 @@ for (const h of hosts) {
   }
 }
 
+// ─── One door per app on a box ────────────────────────────────────────────────
+// A Basecamp App serving this app's hostname keeps its own database and
+// ENCRYPTION_KEY, so a release here would run beside it serving neither, and
+// 07b-edge leaves routes it does not hold alone (`FJS-D1967`). A box with no
+// Caddy holds no route of either door. Read under --dry too, which is where an
+// operator asks whether the run would be refused.
+{
+  const { edgeNames, readConfigScript, parseConfigRead, heldBy, doorRefusal, EdgeError } =
+    await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+  let names = []
+  try {
+    const edge = edgeNames(deployConf)
+    names = [edge.web.domain, edge.api.domain].filter(Boolean)
+  } catch (e) { if (!(e instanceof EdgeError)) throw e }
+  for (const m of names.length ? machines.values() : []) {
+    let config
+    try { config = parseConfigRead(m.capture(readConfigScript(), { dry: false })).config }
+    catch (e) { if (e instanceof EdgeError) continue; throw e }
+    const theirs = heldBy(config, 'basecamp', names)
+    if (theirs.length) {
+      log.error(doorRefusal('ssh', theirs))
+      $.config.abort = true
+      return
+    }
+  }
+}
+
 // ─── Acquire deploy lock ──────────────────────────────────────────────────────
 // Prevents two deploys running simultaneously against the same server.
 // One lock per machine+path pair. A split app is two locks; an app whose halves
@@ -68,8 +95,9 @@ let lock = await acquireLock($, { hosts, target, takeover: $.flag.resume })
 
 // A box never set up is offered `deploy:setup` rather than only told about it.
 // It runs as its own command so the env file is written there and nowhere in
-// this pipeline (FJS-D1186); without a terminal the refusal below stands.
-if (!lock.ok && lock.missing && tty.interactive) {
+// this pipeline (FJS-D1186); without a terminal, or under --dry, the refusal
+// below stands.
+if (!lock.ok && lock.missing && tty.interactive && !$.flag.dry) {
   const answer = (await tty.line(`${lock.missing} does not exist on ${lock.host}. Set the server up now? (y/N)`)).trim()
   if (/^y(es)?$/i.test(answer)) {
     const targetFlag = target === 'dev' ? [] : [`--${target}`]

@@ -13,11 +13,12 @@ flags:
     defaultValue: ''
   dev:
     type: boolean
-    description: Import from the dev server instead of production (ssh only)
+    description: Import from the dev server instead of production — with BASECAMP_APP_ID set, the project's development App
     defaultValue: false
 ---
 
-With `BASECAMP_APP_ID` set, the App's newest bucket archive is fetched as
+With `BASECAMP_APP_ID` set, the project's production App's newest bucket
+archive (`--dev`: its development App's) is fetched as
 `fli db:download` fetches it, and each database in it replaces the local one
 of its name — `production.db` as `development.db`. With no archive in a bucket
 it refuses rather than falling back to ssh (`FJS-D1717`). Otherwise

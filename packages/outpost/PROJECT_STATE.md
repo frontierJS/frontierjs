@@ -37,8 +37,11 @@ resolved no executor and every step passed having issued nothing.
   `hosts` gets a route and a Let's Encrypt certificate, and its port binds to
   loopback (`FJS-D565`). An `inline` app is routed too (`static: true` on `/route`,
   `/static/activate`, to the static origin), and `redirects` is a Caddy-answered
-  308. Not yet: a route pushed when a `Domain` changes between releases, and the
-  certificate's expiry reported back (`IDEAS/fleet-ingress.md` Phases 3–5).
+  308. `POST /certs/load` and `/certs/drop` hold a wildcard certificate
+  Basecamp minted (`FJS-D1975`), so the machine never holds a DNS token. Not
+  yet: a route pushed when a `Domain` changes between releases, an `uploaded`
+  certificate pushed, and the certificate's expiry reported back
+  (`IDEAS/fleet-ingress.md` Phases 3–5).
 - No metric endpoint.
   Log streaming is built (`POST /logs`), which is what `FJS-123`'s alert
   evaluator needed and now has.

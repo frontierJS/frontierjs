@@ -776,6 +776,8 @@ rather than refusing the row.
 | `Verification` | `code` | `@guarded` |
 | `Workspace` | `expiresAt` | `@system` |
 | `Workspace` | `ingressZone` | `@system` |
+| `Workspace` | `ingressCertSecretId` | `@system` |
+| `Workspace` | `ingressCertExpiresAt` | `@system` |
 | `Workspace` | `pushTopic` | `@secret` |
 | `WorkspaceMember` | `userId` | `@system` |
 

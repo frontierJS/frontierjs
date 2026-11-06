@@ -19,7 +19,7 @@ import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, slugify }
   from '../../core/resource.ts'
-import { retireAppsIn, placeableServer, placeApp, mintDeployKey, enablePushOn, connectableAccounts, connectRepository,
+import { retireAppsIn, unpublishAppsIn, placeableServer, placeApp, mintDeployKey, enablePushOn, connectableAccounts, connectRepository,
          readForgeDockerfile }
   from '../apps/apps.service.ts'
 import { toZone }               from '../domains/domains.service.ts'
@@ -83,6 +83,7 @@ export default createService({
     const envs    = await db().environment.findMany({ where: { projectId: project.id }, select: { id: true } })
     const apps    = await retireAppsIn($.app, envs.map((e: { id: string }) => e.id))
     const removed = await removeScoped('project', 'Project')
+    await unpublishAppsIn(apps.map(a => a.id))
     await syncReplicasOf($.app, apps.map(a => a.id))
     return { ...removed, apps }
   },

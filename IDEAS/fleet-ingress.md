@@ -80,8 +80,10 @@ A certificate reaches that Caddy from one of three places:
   valid cert, so its first line moves from *no secret* to *no expiry*.
   `IDEAS/uptime-monitoring.md`'s TLS-connect expiry check is the outside view of
   the same date, and a disagreement between the two is a finding.
-- **D6 — DNS-01 and wildcards.** Would put a Cloudflare token on every machine.
-  **Recommend not now**; `origin_ca` covers the proxied case without one.
+- **D6 — DNS-01 and wildcards.** A machine doing DNS-01 would hold a Cloudflare
+  token. **Not on a machine**: Basecamp mints the `*.<zone>` wildcard and
+  pushes the PEM (`FJS-D1975`; Outpost's `POST /certs/load`, built), so the
+  token stays with Basecamp. Per-machine DNS-01 stays out; `origin_ca` covers the proxied case without one.
   Whether HTTP-01 passes Cloudflare's proxy depends on zone settings Basecamp
   does not own, so nothing here depends on it.
 - **D7 — the raw host port.** **Ruled `FJS-D565`, as recommended.** Once Caddy is the way in, `-p port:containerPort`
@@ -103,7 +105,7 @@ A certificate reaches that Caddy from one of three places:
    (`FJS-1616`).
 2. ~~**Loopback bind** — D7.~~ **Built with Phase 1**, per app: an app with no
    hostname keeps its port on every interface.
-3. **Push** — `uploaded` through the channel D2 secured; D5's enum and report.
+3. **Push** — `uploaded` through the channel D2 secured; D5's enum and report. The push half is built for the minted wildcard (`FJS-D1975`, `POST /certs/load`); `uploaded` Domain certs stay open.
 4. **`origin_ca`** — waits on `cloudflare-edge.md` Phases 1–3; D4's ordering in
    its `domain-dns.job.ts`.
 5. **Screen** — `/dns/` and the app's domains tab show `certKind` and where the
