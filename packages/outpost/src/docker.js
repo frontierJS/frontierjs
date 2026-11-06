@@ -23,7 +23,7 @@ import { Readable }                from 'node:stream'
 import { pipeline }                from 'node:stream/promises'
 import { validRelativePath, validName } from './static.js'
 import { ensureDeployKey }         from './deploy-key.js'
-import { chooseDockerfile, needsGenerated, exposedPort } from './dockerfile.js'
+import { chooseDockerfile, needsGenerated, exposedPort, linkedDeps, writeUnlinked, GENERATED_DIR } from './dockerfile.js'
 import { createSwap, portOf as portIn, runFlags, checkStopGrace, checkHealthTimeout, healthBudgetS, healthyStatus, livePivot, swapFor, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } from './swap.js'
 
 export { swapFor }
@@ -893,13 +893,20 @@ export function createDocker({
         throw new Error(`the clone has no deploy/Dockerfile or Dockerfile${source.path != null ? ` under ${source.path}` : ''}. `
           + 'Commit one to the repository, or store a Dockerfile on the App (the FrontierJS template is for a link: app)')
       const text = readFileSync(`${context}/${dockerfile}`, 'utf8')
-      // A Dockerfile that installs from deploy/generated/ names link: packages
-      // nothing in a clone holds (`FJS-D942`): the folder is a laptop's, git
-      // ignores it, and the build otherwise fails deep inside bun install.
-      if (needsGenerated(text) && !existsSync(`${context}/deploy/generated`))
-        throw new Error(`${dockerfile} installs from deploy/generated/, which this clone does not hold. `
-          + 'Release from the workspace with fli basecamp:deploy --app <slug>, '
-          + 'or store a Dockerfile on the App that installs from the repository')
+      // deploy/generated/ is a laptop's and git ignores it. An app that links
+      // nothing gets it written here; a link: package is held by no clone
+      // (`FJS-D942`), and the build would otherwise fail deep inside bun install.
+      if (needsGenerated(text) && !existsSync(`${context}/${GENERATED_DIR}`)) {
+        let manifest = null
+        try { manifest = JSON.parse(readFileSync(`${context}/package.json`, 'utf8')) } catch {}
+        const linked = manifest ? linkedDeps(manifest) : []
+        if (!manifest || linked.length)
+          throw new Error(`${dockerfile} installs from deploy/generated/, which this clone does not hold`
+            + (linked.length ? ` and cannot make: ${linked.join(', ')} ${linked.length === 1 ? 'is' : 'are'} linked` : '') + '. '
+            + 'Release from the workspace with fli basecamp:deploy --app <slug>, '
+            + 'or store a Dockerfile on the App that installs from the repository')
+        writeUnlinked(context, manifest)
+      }
       await docker(['build', '-t', image, ...(dockerfile === 'Dockerfile' ? [] : ['-f', `${context}/${dockerfile}`]), context],
         { timeoutMs: 1_800_000 })
       // The port the file says the image listens on, for an App that stores

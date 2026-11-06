@@ -271,7 +271,7 @@ redirect to the primary; turning the column off makes it refuse;
       moving dispatch it only for an App with no Domain (`ownRecordHolders`) —
       every App on each was enough load on the one-wide queue to time out
       `edge.test.ts`. The last Domain removed dispatches it too.
-- [ ] 2.3 `routedHosts` adds the ingress name when the column is on and the App
+- [x] 2.3 `routedHosts` adds the ingress name when the column is on and the App
       has no Domain — the one reader, no second list. With a Domain,
       `routedRedirects` sends it to the primary, falling back to the first by
       `hostname` (`FJS-D1956`); the column off drops both; the last Domain

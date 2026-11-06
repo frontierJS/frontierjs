@@ -68,6 +68,7 @@ title: Hub settings
   // answer lands here — beside the picker, where the person who typed the key
   // is looking — rather than in the job log at 02:00 (`IDEAS/backups.md` 1.8).
   let testing      = null      // the destination id under test
+  let removing     = null      // the destination id being removed
   let testSaid     = null      // { tone, text } of the last probe
   let addingDest   = false
   let destDraft    = backupDestinations.make()
@@ -192,6 +193,23 @@ title: Hub settings
       toasts.success(`${dest.name}: the lock is attested`)
     } catch (e) {
       testSaid = { tone: 'danger', text: `${dest.name}: ${e.message}` }
+    }
+  }
+
+  // The draft drops the pointer too: a saved config naming a removed row reads
+  // as this disk, and the picker would otherwise show an id nothing labels.
+  async function removeDestination(dest) {
+    removing = dest.id; testSaid = null
+    try {
+      await backupDestinations.service.remove(dest.id)
+      if (draft.backupDestinationId === dest.id)  write('backupDestinationId', null)
+      if (draft.replicaDestinationId === dest.id) write('replicaDestinationId', null)
+      await loadDestinations()
+      toasts.success(`${dest.name} removed — save to keep the new destination`)
+    } catch (e) {
+      testSaid = { tone: 'danger', text: `${dest.name}: ${e.message}` }
+    } finally {
+      removing = null
     }
   }
 
@@ -343,6 +361,9 @@ title: Hub settings
         {:else}
           The bucket did not answer its lock. An R2 bucket lock never does — attest it once it is set.
         {/if}
+        {#if picked.backup_count > 0}
+          {picked.backup_count} backup(s) are recorded in it, so it cannot be removed until those are.
+        {/if}
       </p>
     {/if}
     {#if testSaid}
@@ -364,6 +385,13 @@ title: Hub settings
               The bucket is locked
             </Button>
           {/if}
+          <Button treatment="outlined" tone="danger" id="remove-destination"
+                  disabled={testing !== null || removing !== null || picked.backup_count > 0}
+                  data-confirm={`${picked.name} (${picked.bucket}) stops being a destination and its stored key goes with it. Nothing in the bucket is deleted.`}
+                  data-confirm-title="Remove this bucket?" data-confirm-label="Remove" data-confirm-tone="danger"
+                  onclick={() => removeDestination(picked)}>
+            {removing === picked.id ? 'Removing…' : 'Remove bucket'}
+          </Button>
         {/if}
       </div>
     {:else}

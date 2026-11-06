@@ -466,6 +466,10 @@ class TenantRegistry {
       for (const d of (this.#parseResult.schema.databases ?? [])) {
         if (!d.driver || d.driver === 'sqlite') owned[d.name] = { path }
       }
+      // A database `placeModels` declares is in no schema block, and it is a
+      // tenant's like every other sqlite name, or one tenant's sessions reach another.
+      for (const name of Object.values(this.#clientOptions.placeModels ?? {}))
+        owned[name] = { path }
       const place = this.#placeOf(id)
       if (place != null)
         for (const t of placedTrails(this.#parseResult.schema, this.#places))

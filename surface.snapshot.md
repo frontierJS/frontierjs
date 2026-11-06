@@ -26,15 +26,15 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4424 source file(s) read
+27 package(s) · 4425 source file(s) read
 254 entry point(s), 32 imported by nothing outside their package, 16 emitted
-1736 value export(s), 639 reached by nothing outside, 178 emitted
+1742 value export(s), 639 reached by nothing outside, 179 emitted
 463 type export(s), 338 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `litestone` | 28 | 5 | 268 | 129 | 40 | 1 | 1 |
+| `litestone` | 28 | 5 | 269 | 129 | 41 | 1 | 1 |
 | `junction` | 27 | 3 | 274 | 116 | 13 | 272 | 210 |
 | `mesa` | 19 | 4 | 319 | 110 | 77 | 0 | 0 |
 | `sierra` | 25 | 6 | 200 | 84 | 20 | 0 | 0 |
@@ -42,7 +42,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `toolbelt` | 69 | 0 | 318 | 37 | 12 | 0 | 0 |
 | `ui` | 9 | 0 | 55 | 35 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
-| `outpost` | 11 | 2 | 50 | 18 | 1 | 0 | 0 |
+| `outpost` | 11 | 2 | 55 | 18 | 1 | 0 | 0 |
 | `conduit` | 4 | 1 | 26 | 12 | 0 | 60 | 33 |
 | `site-kit` | 9 | 4 | 36 | 9 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 22 |
@@ -180,7 +180,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · 28 entry point(s) · 268 value, 1 type export(s)
+`packages/litestone` · 28 entry point(s) · 269 value, 1 type export(s)
 
 **Entries imported by nothing outside (5):** `./engines/sqlite-wasm` `./device-schema` `./import` `./transform` `./external-ref`
 
@@ -188,7 +188,7 @@ Every entry is imported and every name reached.
 
 **Unreached values (129):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `describeStanding` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `FILES_ENV` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isSearchModel` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `LITESTREAM_MIN` `LITESTREAM_PIN` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `modifiedRefusal` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `REACHABLE_LEVELS` `readScaleConstraint` `recordReplayed` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `replCommands` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `shadowRefusal` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError`
 
-**Emitted (40):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `BulkTransitionError` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `FORMATS` `fromStream` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isNamedAgg` `isSoftDelete` `isStoredField` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `normalizeDdl` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `TransitionConflictError` `typedAttr` `VersionRequiredError` `VIEW_COLUMN_ATTRS`
+**Emitted (41):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `BulkTransitionError` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `FORMATS` `fromStream` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isNamedAgg` `isSoftDelete` `isStoredField` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `normalizeDdl` `placeModels` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `TransitionConflictError` `typedAttr` `VersionRequiredError` `VIEW_COLUMN_ATTRS`
 
 **Unreached types (1):** `CursorResult`
 
@@ -246,7 +246,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/outpost`
 
-`packages/outpost` · 11 entry point(s) · 50 value, 0 type export(s)
+`packages/outpost` · 11 entry point(s) · 55 value, 0 type export(s)
 
 **Entries imported by nothing outside (2):** `.` `./static`
 

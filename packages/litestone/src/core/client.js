@@ -5303,7 +5303,7 @@ export const CLIENT_OPTIONS = [
   'hooks', 'onEvent', 'announce', 'filters', 'plugins', 'databases', 'access',
   'readOnly', 'busyTimeout', 'pluralize', 'onLog', 'onQuery', 'policyDebug',
   'now', 'scopes', 'allowChildFkOverride', 'logContext', 'claims', 'untrusted',
-  'previousEncryptionKeys',
+  'previousEncryptionKeys', 'placeModels',
 ]
 
 // A key with a real answer says it, rather than being suggested at — the
@@ -5339,6 +5339,25 @@ function assertClientOptions(rest) {
   )
 }
 
+// A database the option declares has no `path` in any file, so its path comes
+// from `databases` or nowhere. Left to default, it would resolve against
+// nothing and throw from deep inside the open, naming no option.
+async function placeModelsFor(parseResult, placement, dbOverrides, untrusted) {
+  if (untrusted)
+    throw new Error('createClient({ untrusted: true }) is held to the one `db` given, so it takes no `placeModels`')
+  const { placeModels } = await import('./parser.js')
+  const placed = placeModels(parseResult, placement)
+  if (!placed.valid)
+    throw new Error(`createClient(): schema.lite has errors once placeModels applies:\n${placed.errors.join('\n')}`)
+  const declared = new Set(parseResult.schema.databases.map(d => d.name))
+  for (const db of new Set(Object.values(placement)))
+    if (!declared.has(db) && dbOverrides !== ':memory:' && !dbOverrides?.[db]?.path)
+      throw new Error(
+        `createClient(): placeModels puts a model in '${db}', which the schema does not declare, so it has no path — ` +
+        `pass databases: { ${db}: { path } }`)
+  return placed
+}
+
 // Said once per distinct set of ungraded claim names, for the life of the process.
 const UNGRADED_CLAIMS_SAID = new Set()
 const FILE_WITHOUT_STORAGE_SAID = new Set()
@@ -5370,6 +5389,10 @@ export async function createClient({
   databases:  dbOverrides,   // ':memory:' | { dbName: { path } } — override db paths
   access:     accessConfig,
   readOnly,              // true — shorthand for access: { '*': 'readonly' } on all SQLite dbs
+  placeModels,           // { Session: 'sessions' } — this client reads and writes each named
+                         // model in the named database, declared here when the schema has
+                         // none. The schema is unchanged; a read-only copy keeps sign-in
+                         // writable this way while main stays readonly (`FJS-D1921`)
   busyTimeout,           // ms a connection waits for another PROCESS's write lock before
                          // SQLITE_BUSY. A number for every connection, or { default, <db> }
                          // per database; 0 means fail immediately. Absent reads
@@ -5476,11 +5499,13 @@ export async function createClient({
     throw new Error(`schema.lite has errors:\n${parseResult.errors.join('\n')}`)
   if (untrusted) refuseUntrustedSchema(parseResult.schema)
 
+  const placed = placeModels == null ? parseResult : await placeModelsFor(parseResult, placeModels, dbOverrides, untrusted)
+
   // ── Build working schema ──────────────────────────────────────────────────
   // Start from the parsed schema, then augment with:
   //   • auto trail models (<dbName>Trail) for driver:trail databases in auto mode
   //   • view-as-model stubs so ctx.models[viewName] works inside makeTable
-  const rawSchema     = parseResult.schema
+  const rawSchema     = placed.schema
   // One working schema per parse: the derived maps are memoized on it, and a
   // tenant registry hands every tenant the same parse.
   const { autoLogModels, schema } = derivedOnce(rawSchema, 'workingSchema', [], () => {

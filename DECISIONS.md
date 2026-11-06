@@ -16736,6 +16736,24 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1981"></a>2026-11-06 · `FJS-D1981` — Q6 — Where does the rule naming an API App's fronting static Apps live, once Basecamp's release job needs it too — Basecamp owns it (`domain/release/`) and an App's detail lists its fronting static Apps; `fli deploy` reads that list.
+
+Asked in [`IDEAS/git-deploy.md`](IDEAS/git-deploy.md) § Open questions. **A** was picked over **B** (`@frontierjs/outpost/fronting`, a subpath both already import).
+
+The paper's recommendation, taken as written: the rule reads Apps, Domains and routes, which are Basecamp's rows and nothing the Outpost sees; a key without `domainRoutes:read` stops mattering. Cost: the laptop door's web half needs a Basecamp that answers the list.
+
+### <a id="fjs-d1980"></a>2026-11-06 · `FJS-D1980` — Q5 — Where does web/ build in the API App's release, and what does its failure do — Built and uploaded before the swap, activated after it; a failed build fails the release and the previous API keeps serving with the previous page.
+
+Asked in [`IDEAS/git-deploy.md`](IDEAS/git-deploy.md) § Open questions. **A** was picked over **B** (built after the swap; a failure marks the release failed and leaves the new API behind the old bundle).
+
+The paper's recommendation, taken as written: the page and the server stay on one build (`FJS-D160`'s skew check is what B would trip), and a failure costs nothing that was serving.
+
+### <a id="fjs-d1979"></a>2026-11-06 · `FJS-D1979` — Q4 — How does a git push release an app's web/ — The API App's git release builds web/ from the commit its image was built from, as one more step, and publishes it to each fronting static App as that App's release.
+
+Asked in [`IDEAS/git-deploy.md`](IDEAS/git-deploy.md) § Open questions. **B** was picked over **A** (the static App takes its own git source and a second build mode, a vite build of web/, beside the site mode), **C** (web/ is baked into the API image and the static App goes away).
+
+The paper's recommendation, taken as written: one push, one release, one commit across the API and its page, the shape `runAppSiteStep` already gives site/. A puts two releases of one push on two commits and adds a mode; C reverses `FJS-4054`'s two containers and needs an `apiPrefix`. Cost of B: `frontingStatics` moves out of the cli to where Basecamp imports it too (Invariant 4), and the Outpost's 24 MiB body limit is stated and refused by name.
+
 ### <a id="fjs-d1977"></a>2026-11-06 · `FJS-D1977` — Q5 — Which keys the SSH door's env check requires — Both doors grade the `defineEnv` spec; `.env.example` is the fallback for an app with no env module, and a spec that does not load warns before it falls back.
 
 Asked in [`IDEAS/deploy-door-parity.md`](IDEAS/deploy-door-parity.md) § Open questions. **A** was picked over **B** (Keep `01b`; `deploy:move --to=ssh` lists the `.env.example` keys Basecamp never held), **C** (Read both: the spec's required keys refuse, the rest of `.env.example` warns on every deploy).

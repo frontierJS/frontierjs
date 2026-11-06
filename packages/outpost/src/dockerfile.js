@@ -1,5 +1,5 @@
-// dockerfile.js — which Dockerfile a build uses, and whether it installs from
-// `deploy/generated/`.
+// dockerfile.js — which Dockerfile a build uses, whether it installs from
+// `deploy/generated/`, and that folder for an app that links nothing.
 //
 // One lookup order for both doors. The Outpost's `build` (`docker.js`) and the
 // laptop's (`fli basecamp:deploy`) ask here, so the image a push builds and the
@@ -7,7 +7,11 @@
 // held beside this one is how the laptop came to refuse a plain repository
 // (`IDEAS/git-deploy.md` Phase 0.3).
 
-import { existsSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+
+export const GENERATED_DIR = 'deploy/generated'
+export const VENDOR_DIR    = 'deploy/generated/vendor'
+export const MANIFEST_FILE = 'deploy/generated/app-manifest.json'
 
 /** Which Dockerfile a build uses, relative to the context. The App's stored
  *  copy wins (`FJS-D1555`) and is written into the context as
@@ -28,6 +32,36 @@ export function chooseDockerfile(context, stored) {
  *  repository's own file for the directory it sat in. A comment does not count. */
 export function needsGenerated(text) {
   return String(text ?? '').split('\n').some(l => !/^\s*#/.test(l) && l.includes('deploy/generated'))
+}
+
+const LINKED = /^(link:|workspace:)/
+
+/** The dependency names no registry can install: `link:` and `workspace:`,
+ *  and a tarball already pointing into the generated directory, which is
+ *  output wiped on every vendor run. Both fields, because an app's own
+ *  `build:web` needs its devDependencies. */
+export function linkedDeps(manifest) {
+  const out = []
+  for (const field of ['dependencies', 'devDependencies'])
+    for (const [name, spec] of Object.entries(manifest?.[field] ?? {}))
+      if (typeof spec === 'string' && (LINKED.test(spec) || spec.startsWith(`file:./${VENDOR_DIR}/`))) out.push(name)
+  return [...new Set(out)]
+}
+
+/** `deploy/generated/` for an app that links nothing: the manifest, and the
+ *  lockfile beside it, which the template's install freezes on. One Dockerfile
+ *  serves both source modes because this half needs no workspace, so a machine
+ *  building a clone writes it as a laptop does (`FJS-4066`). Answers the
+ *  lockfile copied, or null. */
+export function writeUnlinked(root, manifest) {
+  mkdirSync(`${root}/${GENERATED_DIR}`, { recursive: true })
+  writeFileSync(`${root}/${MANIFEST_FILE}`, JSON.stringify(manifest, null, 2) + '\n')
+  for (const lock of ['bun.lock', 'bun.lockb']) {
+    if (!existsSync(`${root}/${lock}`)) continue
+    copyFileSync(`${root}/${lock}`, `${root}/${GENERATED_DIR}/${lock}`)
+    return lock
+  }
+  return null
 }
 
 /** The port the image listens on, read off its last `EXPOSE` — the first

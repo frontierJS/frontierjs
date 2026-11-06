@@ -568,12 +568,13 @@ export default createService({
     const server = await getScoped('server', 'Server') as { id: string, name: string }
 
     const target = await outpostFor($.app, id)
-    if (!target) return { outpost: false, caddy: null, listen: [], servers: [], routes: [] }
+    if (!target) return { outpost: false, caddy: null, listen: [], servers: [], routes: [], config: null }
 
     const res = await outbound($.app).send<{
       caddy: boolean, said?: string, listen: string[]
       routes: { id: string | null, hosts: string[], to: Record<string, unknown>[] }[]
       servers: { name: string, listen: string[], routes: number }[]
+      config?: Record<string, unknown> | null
     }>({ target, method: 'POST', path: '/ingress', body: {} })
     if (res.error)
       throw new BadRequest(`The outpost on '${server.name}' did not answer (${res.error.kind}): ${res.error.message}`)
@@ -598,7 +599,8 @@ export default createService({
         stray: r.hosts.filter(h => !named.has(h.toLowerCase())),
       }
     })
-    return { outpost: true, caddy: live.caddy, said: live.said ?? null, listen: live.listen, servers: live.servers, routes }
+    // An Outpost released before `config` sends none; the card says so.
+    return { outpost: true, caddy: live.caddy, said: live.said ?? null, listen: live.listen, servers: live.servers, routes, config: live.config ?? null }
   },
 
   // ── events — POST /servers/:id  X-Service-Method: events ──────────

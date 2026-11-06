@@ -508,6 +508,42 @@ Each is ruled through `decision-rules` and the answer is cited by its `Q`.
   Forge's *Quick Deploy* which is a click after the site exists. **Recommend
   A** — a git-sourced App with a server and no push is an App waiting for a
   button, and the panel in 1.4 shows the webhook either way.
+- ~~**Q4 — How does a git push release an app's web/?**~~ **Answered 2026-11-06 (`FJS-D1979`): B — the API App's git release builds web/ from the commit its image was built from, as one more step, and publishes it to each fronting static App as that App's release.** (`FJS-4066`) A static
+  App with a git source is a site (`runSiteStep`, a Cloudflare Worker), so
+  nothing builds web/ from git; `fli deploy` builds it on the laptop and
+  uploads it inline to the static Apps in front of the API App
+  (`frontingStatics`).
+  - **A** — the static App takes its own git source and a second build mode,
+    a vite build of web/, beside the site mode.
+  - **B** — the API App's git release builds web/ from the commit its image
+    was built from, as one more step, and publishes it to each fronting static
+    App as that App's release.
+  - **C** — web/ is baked into the API image and the static App goes away.
+  - **Recommend B** — one push, one release, one commit across the API and
+    its page, the shape `runAppSiteStep` already gives site/. A puts two
+    releases of one push on two commits and adds a mode; C reverses
+    `FJS-4054`'s two containers and needs an `apiPrefix`. Cost of B:
+    `frontingStatics` moves out of the cli to where Basecamp imports it too
+    (Invariant 4), and the Outpost's 24 MiB body limit is stated and refused
+    by name.
+- ~~**Q5 — Where does web/ build in the API App's release, and what does its failure do?**~~ **Answered 2026-11-06 (`FJS-D1980`): A — built and uploaded before the swap, activated after it; a failed build fails the release and the previous API keeps serving with the previous page.**
+  - **A** — built and uploaded before the swap, activated after it; a failed
+    build fails the release and the previous API keeps serving with the
+    previous page.
+  - **B** — built after the swap; a failure marks the release failed and
+    leaves the new API behind the old bundle.
+  - **Recommend A** — the page and the server stay on one build (`FJS-D160`'s
+    skew check is what B would trip), and a failure costs nothing that was
+    serving.
+- ~~**Q6 — Where does the rule naming an API App's fronting static Apps live, once Basecamp's release job needs it too?**~~ **Answered 2026-11-06 (`FJS-D1981`): A — Basecamp owns it (`domain/release/`) and an App's detail lists its fronting static Apps; `fli deploy` reads that list.** It is `frontingStatics` in the
+  cli's `release-preflight.js` today, and the cli ships to npm.
+  - **A** — Basecamp owns it (`domain/release/`) and an App's detail lists
+    its fronting static Apps; `fli deploy` reads that list.
+  - **B** — `@frontierjs/outpost/fronting`, a subpath both already import.
+  - **Recommend A** — the rule reads Apps, Domains and routes, which are
+    Basecamp's rows and nothing the Outpost sees; a key without
+    `domainRoutes:read` stops mattering. Cost: the laptop door's web half
+    needs a Basecamp that answers the list.
 
 ## Sources
 

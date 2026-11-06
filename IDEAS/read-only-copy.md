@@ -250,14 +250,28 @@ serves it, a write over HTTP and over MCP is refused, and no job runs.
       replica, so this schedule only decides how often a copy is staged from it.
       It is not a second backup schedule.
 - [ ] 1.4 Serve on any machine that can reach the bucket, not only the App's own.
-- [ ] 1.5 `FJS-4035`: a transaction begins only on handles that can write, so
+- [x] 1.5 `FJS-4035`: a transaction begins only on handles that can write, so
       sign-out works with `main` read-only.
-- [ ] 1.6 `FJS-4034`: under `strategy database`, each database name's migration
+  **Built 2026-11-05**: `FJS-4035` closed, proved by
+  `test/second-database-tx.test.ts` § a readonly main does not refuse a
+  writable sibling.
+- [x] 1.6 `FJS-4034`: under `strategy database`, each database name's migration
       diffs only its own models, so a `sessions` block does not plan to drop
       `main`.
-- [ ] 1.7 Move `Session` on the copy per Q8, with a test that opens a copy and
+  **Built 2026-11-05**: `FJS-4034` closed, proved by `test/tenancy.test.ts`
+  § strategy database — autoMigrate over two sqlite databases in one file.
+- [x] 1.7 Move `Session` on the copy per Q8, with a test that opens a copy and
       shows a `Session` create and delete succeed while a `User` update, a
       `Credential` update and a raw write all throw.
+  **Built 2026-11-06**: `createClient({ placeModels: { Session: 'sessions' } })`
+  copies the parse, moves the named models, declares a missing database and
+  runs the validator again. An undeclared database takes its path from
+  `databases` or is refused by name; the tenant registry puts it in the
+  tenant's file. Proved by litestone `test/place-models.test.ts`: a
+  single-database copy writes sessions to a scratch file, a tenant copy reads
+  its staged sessions and writes new ones into its own file alone, and the
+  refusals are named. The tenant case goes red with the registry line removed.
+  The copy's boot passing the option is 1.1's.
 
 ### Phase 2 — The switch in Basecamp
 

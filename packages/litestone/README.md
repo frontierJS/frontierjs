@@ -740,6 +740,7 @@ const db = await createClient({ path: './schema.lite',
   scopes:  { Customer: CustomerScopes },        // named query fragments — see Scopes
   announce: 'collection',                       // the floor for a bulk write's event
   readOnly: true,                               // every SQLite database, read-only
+  placeModels: { Session: 'sessions' },         // this client keeps Session in its own database
   now:      () => frozenDate,                   // the clock every time-dependent rule reads
   onLog: (entry, ctx) => ({ meta: { requestId: ctx.auth?.requestId } }),
 })
@@ -751,6 +752,14 @@ const db = await createClient({ path: './schema.lite',
 `databases: ':memory:'` is the shorthand that moves every one of them, jsonl and
 trail included. Most specific wins:
 `databases: ':memory:'` > `databases: { main: { path } }` > `db` > the declaration.
+
+**`placeModels` moves models for one client and leaves the schema alone.**
+Each named model is read and written in the named database. A database the
+schema does not declare is declared for that client and needs a path from
+`databases`; under `strategy database` the tenant registry puts it in the
+tenant's file. A read-only copy uses it to keep `Session` writable while `main`
+is readonly (`FJS-D1921`). A move that makes a relation cross databases is
+refused, as it would be in the file.
 
 **`encryptionKey` is parsed as hex**, so 64 *characters* is not necessarily 32
 bytes — non-hex padding decodes short and is rejected with `must be 32 bytes`,

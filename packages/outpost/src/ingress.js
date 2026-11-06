@@ -340,7 +340,9 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
      * is a hand edit), each reduced to its hostnames and where it sends them.
      * `servers` names every OTHER http server in the config: a second one
      * listening on :443 is the Caddyfile conflict, and it is invisible from
-     * the ingress server alone.
+     * the ingress server alone. `config` is every http server as Caddy holds
+     * it, for a reader the reduction hides something from; certificates live
+     * under `apps.tls`, so no key rides along.
      *
      * A machine with no Caddy answers `caddy: false` rather than throwing, so
      * a screen can say so instead of failing.
@@ -351,7 +353,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
         reply = await caddy('GET', '/config/apps/http/servers/')
       } catch (err) {
         if (!err.unreachable) throw err
-        return { caddy: false, said: err.message, listen: [], routes: [], servers: [] }
+        return { caddy: false, said: err.message, listen: [], routes: [], servers: [], config: null }
       }
       const servers = reply.status < 300 ? (reply.data ?? {}) : {}
       const live    = servers[SERVER]
@@ -366,6 +368,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
         })),
         servers: Object.entries(servers).filter(([name]) => name !== SERVER)
           .map(([name, s]) => ({ name, listen: s.listen ?? [], routes: (s.routes ?? []).length })),
+        config:  servers,
       }
     },
 

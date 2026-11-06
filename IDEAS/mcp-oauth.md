@@ -590,11 +590,11 @@ it signed in, until its access token expires, and then handles refresh per Q6.
   **Proved 2026-11-05** in `conformance.test.ts`: a second auth over a fresh
   database with the same key and user accepts the first's access token with
   `authorizedApp` set and no `Session` row.
-- [ ] 6.2 Authorized apps move with `Session` into the copy's `sessions` block
+- [x] 6.2 Authorized apps move with `Session` into the copy's `sessions` block
       (`FJS-D1921`), so a sign-in on the copy can write one.
-  - **Waits on `read-only-copy.md`** Phase 1's `sessions` block, which is not
-    built; an authorized app is a `Session` row, so it moves with the model
-    and nothing here is owed beyond that.
+  **Built 2026-11-06** as `read-only-copy.md` 1.7: an authorized app is a
+  `Session` row, so it moves with the model under `placeModels`, and nothing
+  here was owed beyond that. A live copy serving it waits on that paper's 1.1.
 - [x] 6.3 Refresh on the copy per Q6.
   **Proved 2026-11-05** in `conformance.test.ts`: the live App's refresh token
   on the copy is `invalid_grant`, the copy writes no `app.reuse-refused`, and

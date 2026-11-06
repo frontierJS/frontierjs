@@ -213,6 +213,14 @@ memory; the eight above are the whole list.
 `@scale(2)` with a currency. `Float` is a double and is the wrong type for money
 in this language as in every other.
 
+**`Int @big` reads back and writes as a decimal STRING, never a number or a
+BigInt.** A plain `Int` crosses as a JS number and is exact only to 2^53; `@big`
+(snowflake ids, nanosecond times, a foreign BIGINT) is the whole 64 bits, so
+`row.size` is `'6349'`. Compare it to a number with `===` and it is always
+unequal, with no error — write `BigInt(row.size) === BigInt(n)` or
+`String(n)`. Ordering, `where`, `MAX` and indexes stay numeric in SQL. Not with
+`@scale` or `@money`, which are bounded at 2^53. See `docs/exact-numbers.md`.
+
 **Arrays are `String[]`, `Int[]`, `File[]`, an enum name, or a model name** —
 the last being implicit many-to-many. Anything else is a parse error. An array
 column is JSON TEXT under a `json_type = 'array'` CHECK, not a join table.

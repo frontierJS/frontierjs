@@ -4074,10 +4074,11 @@ describe('a deploy key per app (FJS-D1555)', () => {
   describe('a build clones with the key and builds with the App\'s Dockerfile', () => {
     // What fli make:deploy writes: a file that installs from deploy/generated/.
     const SCAFFOLDED = 'FROM oven/bun\n# deploy/generated/ is written by a laptop\nCOPY deploy/generated/ ./deploy/generated/\n'
-    const buildWith = async (source, { layout = [], deployDockerfile = SCAFFOLDED, rootDockerfile = null } = {}) => {
+    const buildWith = async (source, { layout = [], deployDockerfile = SCAFFOLDED, rootDockerfile = null, files = {} } = {}) => {
       const workDir = mkdtempSync(join(tmpdir(), 'outpost-build-'))
       const keyDir  = freshDir()
       for (const path of layout) mkdirSync(join(workDir, 'app-1', path), { recursive: true })
+      for (const [path, text] of Object.entries(files)) writeFileSync(join(workDir, 'app-1', path), text)
       if (layout.includes('deploy')) writeFileSync(join(workDir, 'app-1', 'deploy', 'Dockerfile'), deployDockerfile)
       mkdirSync(join(workDir, 'app-1', source.path ?? ''), { recursive: true })
       if (rootDockerfile) writeFileSync(join(workDir, 'app-1', 'Dockerfile'), rootDockerfile)
@@ -4152,6 +4153,28 @@ describe('a deploy key per app (FJS-D1555)', () => {
       expect(body.error).toContain('fli basecamp:deploy --app')
       expect(body.error).toContain('store a Dockerfile on the App')
       expect(body.error).not.toContain('commit')
+      expect(build).toBeUndefined()
+    })
+
+    test('a clone that links nothing gets deploy/generated/ written from its own manifest and lockfile, then builds', async () => {
+      // FJS-4066: dependencies from a registry or a tarball URL need no workspace.
+      const manifest = { name: 'kapp', dependencies: { '@frontierjs/junction': 'https://packages.frontierjs.com/j.tgz', hono: '^4.0.0' } }
+      const { res, build, workDir } = await buildWith(GIT, { layout: ['deploy'], files: { 'package.json': JSON.stringify(manifest), 'bun.lock': 'LOCK' } })
+
+      expect(res.status).toBe(200)
+      expect(build).toContain('-f ')
+      expect(JSON.parse(readFileSync(join(workDir, 'app-1', 'deploy/generated/app-manifest.json'), 'utf8'))).toEqual(manifest)
+      expect(readFileSync(join(workDir, 'app-1', 'deploy/generated/bun.lock'), 'utf8')).toBe('LOCK')
+    })
+
+    test('a clone whose manifest links a package is refused naming it, and nothing is written', async () => {
+      const manifest = { dependencies: { '@frontierjs/junction': 'link:@frontierjs/junction' }, devDependencies: { x: 'workspace:*' } }
+      const { res, body, build, workDir } = await buildWith(GIT, { layout: ['deploy'], files: { 'package.json': JSON.stringify(manifest) } })
+
+      expect(res.status).toBe(500)
+      expect(body.error).toContain('cannot make: @frontierjs/junction, x are linked')
+      expect(body.error).toContain('fli basecamp:deploy --app')
+      expect(existsSync(join(workDir, 'app-1', 'deploy/generated'))).toBe(false)
       expect(build).toBeUndefined()
     })
 

@@ -393,6 +393,12 @@ export interface CreateClientOptions {
   access?:     Record<string, 'readwrite' | 'readonly' | false>
   /** Open all SQLite databases read-only — write operations throw immediately. Shorthand for access: { '*': 'readonly' } */
   readOnly?:   boolean
+  /**
+   * Model name → database name: this client reads and writes each named model
+   * in that database, declared for it when the schema has none (its path then
+   * comes from `databases`). The schema is unchanged (`FJS-D1921`).
+   */
+  placeModels?: Record<string, string>
   /** Pluralize snake_case table names (User → users, ServiceAgreement → service_agreements). Default: false */
   pluralize?:  boolean
   /** Policy debug logging */

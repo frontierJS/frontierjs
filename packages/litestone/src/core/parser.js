@@ -9870,6 +9870,59 @@ export function parseFile(filePath) {
   }
 }
 
+// ─── Placing models in another database ──────────────────────────────────────
+
+/**
+ * `createClient({ placeModels })`: the parse with each named model moved into
+ * the named database, declared when the schema has none, for one client
+ * (`FJS-D1921`). It copies rather than edits, because a parse is shared: a
+ * tenant registry hands every tenant the same one, and `parsed:` is the
+ * caller's. The validator runs again over the copy, so a relation the move
+ * makes cross databases is refused as it would be in the file.
+ *
+ * @param {{ schema: any, valid: boolean, errors: string[], warnings: string[], files?: string[] }} parseResult
+ * @param {Record<string, string>} placement  model name → database name
+ */
+export function placeModels(parseResult, placement) {
+  const refuse = (msg) => ({ ...parseResult, valid: false, errors: [`placeModels: ${msg}`] })
+  if (placement == null || typeof placement !== 'object' || Array.isArray(placement))
+    return refuse(`expected { ModelName: 'database' }, got ${Array.isArray(placement) ? 'an array' : typeof placement}`)
+
+  const schema    = parseResult.schema
+  const modelBy   = new Map(schema.models.map(m => [m.name, m]))
+  const declared  = new Map(schema.databases.map(d => [d.name, d]))
+  for (const [model, db] of Object.entries(placement)) {
+    if (!modelBy.has(model))
+      return refuse(`'${model}' names no model in this schema`)
+    if (typeof db !== 'string' || !/^[A-Za-z_]\w*$/.test(db))
+      return refuse(`'${model}' is placed in ${JSON.stringify(db)}, which is not a database name`)
+    // A jsonl or trail database has no update, delete or relation, so a model
+    // moved into one would lose verbs its callers were written against.
+    const target = declared.get(db)
+    if (target && target.driver && target.driver !== 'sqlite')
+      return refuse(`'${model}' is placed in '${db}', a ${target.driver} database — a model can only be placed in a sqlite one`)
+  }
+
+  const databases = [...schema.databases]
+  for (const db of new Set(Object.values(placement)))
+    if (!declared.has(db))
+      databases.push({ name: db, path: null, driver: 'sqlite', replication: false, retention: null,
+                       maxSize: null, trailModel: null, announce: 'inProcess', announceStated: false })
+
+  const models = schema.models.map(m => {
+    const db = placement[m.name]
+    if (db === undefined) return m
+    const copy = { ...m, attributes: [...m.attributes.filter(a => a.kind !== 'db'), { kind: 'db', name: db }] }
+    // Hidden, so a spread drops it, and `advise` would then grade a package's model as the app's.
+    if (m.shippedBy) Object.defineProperty(copy, 'shippedBy', { value: m.shippedBy })
+    return copy
+  })
+
+  const placed = { ...schema, databases, models }
+  const { errors } = validate(placed)
+  return { ...parseResult, schema: placed, valid: errors.length === 0, errors }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export function parse(src) {

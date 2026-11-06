@@ -49,36 +49,13 @@ import { readRuns, lastFullRun, retryPlan }                  from './ci-log.js'
 // Dockerfile `fli make:deploy` writes names the same path, and the `file:` specs
 // are written relative to the manifest — which sits at the image's /app — so the
 // tarballs must be copied to the path they are named at.
-// The Dockerfile a build uses, whether it installs from here, and the port it
-// EXPOSEs: one reading for the laptop and the Outpost, owned by the Outpost
-// (`FJS-D1560`, `FJS-D1567`).
-export { chooseDockerfile, needsGenerated, exposedPort } from '@frontierjs/outpost/dockerfile'
-
-export const GENERATED_DIR = 'deploy/generated'
-export const VENDOR_DIR    = 'deploy/generated/vendor'
-export const MANIFEST_FILE = 'deploy/generated/app-manifest.json'
-
-const LINKED = /^(link:|workspace:)/
-
-// A spec already pointing into the generated directory. It is OUTPUT — this
-// module wrote it — and the directory is wiped on every run, so a manifest
-// carrying one has to be re-derived rather than left naming a tarball that is
-// about to stop existing. An app whose package.json has been replaced by the
-// generated one is the case: it happens the moment somebody installs what the
-// image installs, which is exactly what CI's scaffold phase does.
-const alreadyVendored = (spec) => spec.startsWith(`file:./${VENDOR_DIR}/`)
-
-// ─── linkedDeps ───────────────────────────────────────────────────────────────
-// The dependency names this app cannot install from a registry. Both fields,
-// because a build that runs the app's own `build:web` needs its devDependencies.
-
-export function linkedDeps(manifest) {
-  const out = []
-  for (const field of ['dependencies', 'devDependencies'])
-    for (const [name, spec] of Object.entries(manifest[field] ?? {}))
-      if (typeof spec === 'string' && (LINKED.test(spec) || alreadyVendored(spec))) out.push(name)
-  return [...new Set(out)]
-}
+// The Dockerfile a build uses, whether it installs from here, the port it
+// EXPOSEs, which dependencies are linked and the folder for an app with none:
+// one reading for the laptop and the Outpost, owned by the Outpost
+// (`FJS-D1560`, `FJS-D1567`), since a machine building a clone writes the
+// unlinked half itself (`FJS-4066`).
+import { GENERATED_DIR, VENDOR_DIR, MANIFEST_FILE, linkedDeps, writeUnlinked } from '@frontierjs/outpost/dockerfile'
+export { chooseDockerfile, needsGenerated, exposedPort, linkedDeps, GENERATED_DIR, VENDOR_DIR, MANIFEST_FILE } from '@frontierjs/outpost/dockerfile'
 
 // ─── resolvePackageSource ─────────────────────────────────────────────────────
 // Where the sources those specs point at actually live: `{ dir, packages }`, the
@@ -364,13 +341,7 @@ export function vendorWorkspacePackages({ appRoot, include = [], packagesDir: gi
     // that matches it, and `bun install --frozen-lockfile` refuses rather than
     // resolving — so the Dockerfile freezes when a lock is present and does not
     // when it is not, and the tarball specs are the stronger pin anyway.
-    for (const lock of ['bun.lock', 'bun.lockb']) {
-      if (!existsSync(join(root, lock))) continue
-      copyFileSync(join(root, lock), join(generated, lock))
-      out.lockfile = lock
-      break
-    }
-    writeManifest(out.manifestPath, transform ? transform(manifest) : manifest)
+    out.lockfile = writeUnlinked(root, transform ? transform(manifest) : manifest)
     log(`  · nothing linked — manifest copied${out.lockfile ? ` with ${out.lockfile}` : ''}`)
     return out
   }

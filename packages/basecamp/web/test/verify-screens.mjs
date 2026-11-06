@@ -457,6 +457,17 @@ try {
   const refusedTone = await evaluate(`document.getElementById('destination-test')?.className ?? ''`)
   check('and in the danger tone', /danger/.test(refusedTone), refusedTone)
 
+  // The refused bucket names no archive, so it can go; the Stand-in one is
+  // read again at the hub restore below and stays.
+  await click('#remove-destination')
+  await until(`!!document.querySelector('[role=dialog][aria-modal=false]')`, v => v, 'removing a bucket asked nothing')
+  await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click()`)
+  const pickerAfter = await until(`[...document.querySelectorAll('#cfg-backup-destination option')].map(o => o.textContent).join('|')`,
+    t => /Stand-in bucket/.test(t) && !/Refused bucket/.test(t), 'the removed bucket stayed in the picker').catch(e => String(e.message))
+  check('removing a bucket takes it out of the picker and leaves the other', !/Refused bucket/.test(pickerAfter) && /Stand-in/.test(pickerAfter), pickerAfter)
+  const pickedAfter = await evaluate(`document.getElementById('cfg-backup-destination')?.value ?? null`)
+  check('and the draft no longer names it', pickedAfter === '', String(pickedAfter))
+
   // ─── Hub backups ───────────────────────────────────────────────────────
   console.log('\n  /hub/backups/ — archives')
   await goto('/hub/backups/')

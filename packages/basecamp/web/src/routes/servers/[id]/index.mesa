@@ -920,6 +920,14 @@ title: Server
           </tbody>
         </table>
       {/if}
+      <details id="routes-config">
+        <summary class="text-sm">Caddy's config</summary>
+        {#if ingress.config}
+          <pre class="text-xs scroll-x"><code>{JSON.stringify(ingress.config, null, 2)}</code></pre>
+        {:else}
+          <p class="text-sm text-muted">This machine's Outpost is too old to send it; update the Outpost.</p>
+        {/if}
+      </details>
     {/if}
   </article>
 
