@@ -481,6 +481,24 @@ try {
   await call('/route', { app_id: APP, hosts: [HOST] })
   t('redirect.droppedWithTheLastOne', (await admin(`/id/${ROUTE}-redirects`)).status === 404)
 
+  // The static origin sends raw bytes; Caddy's encode step in front of it is
+  // what a phone on 4G waits on, and only a real Caddy says it negotiates.
+  const FILES = 'static-drive'
+  const BUNDLE = 'static.verify-docker.test'
+  const bundle = `export const words = ${JSON.stringify(Array.from({ length: 400 }, (_, i) => `word-${i}`))}\n`
+  const published = await call('/static/publish', { app_id: FILES, slug: FILES, files: [{ path: 'index.html', content: '<h1>files</h1>' }, { path: 'assets/app-Ab12Cd34.js', content: bundle }] })
+  const activated = await call('/static/activate', { app_id: FILES, slug: FILES, digest: published.body?.digest, hosts: [BUNDLE] })
+  if (activated.status !== 200) console.log(published.body, activated.body)
+  const asset = (encoding) => sh('curl', '-sS', '--max-time', '5', '-o', '/dev/null', '-D', '-',
+    ...(encoding ? ['-H', `accept-encoding: ${encoding}`] : []),
+    '--resolve', `${BUNDLE}:${CADDY_HTTPS}:127.0.0.1`, '--cacert', rootPath, `https://${BUNDLE}:${CADDY_HTTPS}/assets/app-Ab12Cd34.js`).stdout
+  let zstd = ''
+  for (let i = 0; i < 40 && !/^HTTP\/\S+ 200/.test(zstd); i++) { zstd = asset('zstd, gzip'); if (!/^HTTP\/\S+ 200/.test(zstd)) await sleep(250) }
+  t('static.encodesForABrowserThatAsks', /^content-encoding: zstd\r?$/im.test(zstd))
+  t('static.gzipForOneThatAsksNoMore',   /^content-encoding: gzip\r?$/im.test(asset('gzip')))
+  t('static.plainForOneThatAsksNothing', !/^content-encoding:/im.test(asset(null)))
+  await call('/static/retire', { app_id: FILES, slug: FILES })
+
   // Two apps on one hostname (FJS-D1040): Caddy has to accept the path matcher,
   // keep it ahead of the whole-host route that was there first, and answer
   // the prefix from the second app. Its upstream is a dead port, so a 502 on
@@ -840,6 +858,7 @@ const expected = [
   'restore.whenTheStartIsNotHealthy', 'restore.answersOverHttpsAgain',
   'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
   'redirect.answers308WithTheRequestUri', 'redirect.droppedWithTheLastOne',
+  'static.encodesForABrowserThatAsks', 'static.gzipForOneThatAsksNoMore', 'static.plainForOneThatAsksNothing',
   'path.sitsAheadOfTheWholeHost', 'path.prefixGoesToItsApp', 'path.restStaysWithTheHost', 'path.stopTakesEveryPrefix',
   'socket.outlivesAnotherAppsWrite', 'race.anotherWritersRoutesSurviveOutposts',
   'startFirst.anExpandOverlaps', 'startFirst.answersOnAPortDockerPicked', 'startFirst.routeDialsTheNewPort', 'startFirst.leavesOneContainerUnderItsName',

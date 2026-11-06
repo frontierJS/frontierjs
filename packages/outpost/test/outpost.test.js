@@ -2594,8 +2594,22 @@ describe('the ingress — Caddy, through its admin API', () => {
       const res = await routeWith(server, { static: true, hosts: ['shop.example.com'], redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
       expect(res.status).toBe(200)
       const [app] = caddy.config.apps.http.servers.ingress.routes
-      expect(app.handle[0].upstreams[0].dial).toBe('127.0.0.1:7181')
-      expect(app.handle[0].headers.request.set.Host).toEqual(['app-1.localhost'])
+      const [encode, proxy] = app.handle
+      expect(encode).toMatchObject({ handler: 'encode', prefer: ['zstd', 'gzip'] })
+      expect(proxy.upstreams[0].dial).toBe('127.0.0.1:7181')
+      expect(proxy.headers.request.set.Host).toEqual(['app-1.localhost'])
+    })
+
+    // A container encodes its own answers, and an SSE stream held back by
+    // Caddy's minimum length until it fills is an event that never arrives.
+    test('a container app is routed with no encode step', async () => {
+      const caddy = fakeCaddy()
+      const { server } = serverWith(caddy, fakeRunner({
+        'docker run': { stdout: 'container-1\n' },
+        'docker inspect --format': { stdout: JSON.stringify({ '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '7302' }] }) + '\n' },
+      }))
+      await deploy(server, { hosts: ['shop.example.com'] })
+      expect(caddy.config.apps.http.servers.ingress.routes[0].handle.map(h => h.handler)).toEqual(['reverse_proxy'])
     })
   })
 
@@ -2785,7 +2799,8 @@ describe('the ingress — Caddy, through its admin API', () => {
       const res = await send(server, 'POST', '/static/activate', { app_id: 'app-1', slug: 'wb-client', digest, hosts: ['client.preview.example.com'] })
       expect((await res.json()).hosts).toEqual(['client.preview.example.com'])
 
-      const proxy = caddy.config.apps.http.servers.ingress.routes[0].handle[0]
+      const [encode, proxy] = caddy.config.apps.http.servers.ingress.routes[0].handle
+      expect(encode.handler).toBe('encode')
       expect(proxy.upstreams[0].dial).toBe('127.0.0.1:7181')
       // What Caddy sends upstream, asked of the origin itself: the public
       // hostname's own first label is 'client', which names no app here.

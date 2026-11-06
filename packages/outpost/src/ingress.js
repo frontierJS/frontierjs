@@ -32,6 +32,9 @@ const WRITE_ATTEMPTS = 10
 const backoff = (attempt) => sleep(Math.random() * 10 * attempt)
 /** Sends of one admin call reset by Caddy swapping its admin listener. */
 const RESET_SENDS = 3
+/** Caddy negotiates from Accept-Encoding and passes an answer through unencoded
+ *  when it is already encoded, short, or a type it does not compress. */
+const ENCODE = { handler: 'encode', encodings: { zstd: {}, gzip: {} }, prefer: ['zstd', 'gzip'] }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 const isReset = (err) => err?.code === 'ECONNRESET' || /ECONNRESET/.test(err?.message ?? '')
 /** A DNS name, lowercased. No wildcard: a wildcard certificate is DNS-01, which
@@ -397,7 +400,10 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
           const reply = await caddy('DELETE', `/id/${dropId}`)
           if (reply.status !== 404) must(reply, `removing ${dropId}`)
         }
-        const proxy = [{
+        // The static origin answers raw bytes, so without this an SPA's bundle
+        // crosses the wire at four times its size and the first paint waits on
+        // it. A container encodes its own answers and may stream, so it is left alone.
+        const proxy = [...(host ? [ENCODE] : []), {
           handler: 'reverse_proxy', upstreams: [{ dial: `127.0.0.1:${port}` }],
           stream_close_delay: STREAM_CLOSE_DELAY,
           ...(host ? { headers: { request: { set: { Host: [host] } } } } : {}),
