@@ -126,6 +126,52 @@ export function reachBasecamp(name, log, opts) {
 }
 
 /**
+ * `lookupBasecamp` for a command holding an App id: with several entries and no
+ * name, the one Basecamp that answers `/apps/<id>`, asked with each entry's own
+ * key at its own url (`FJS-4065`). App ids are uuids, so two yeses are two
+ * entries for one Basecamp, and which key to use is the operator's to say.
+ * An entry that did not answer is named in the refusal, or a holder that is
+ * down reads as no holder at all.
+ */
+export async function lookupBasecampFor(name, appId, { home, scoped = false, fetcher = fetch, timeout = 3000 } = {}) {
+  const all = readBasecamps({ home })
+  if (name || !appId || Object.keys(all).length < 2) return lookupBasecamp(name, { home, scoped })
+  const keyed = Object.keys(all).filter(n => all[n].apiKey)
+  const asked = await Promise.all(keyed.map(async n => ({ name: n, ...(await holdsApp(all[n], appId, { fetcher, timeout })) })))
+  const yes   = asked.filter(a => a.holds).map(a => a.name)
+  if (yes.length === 1) return lookupBasecamp(yes[0], { home, scoped })
+  if (yes.length > 1) return { error: `App ${appId} is on ${yes.join(' and ')} — pass --basecamp <name>` }
+  const down = asked.filter(a => a.why).map(a => `${a.name} (${a.why})`)
+  return { error: `No Basecamp holds App ${appId} — asked ${keyed.join(', ') || 'none, no entry has an API key'}` +
+    (down.length ? `; no answer from ${down.join(', ')}` : '') + '. Pass --basecamp <name>, or take BASECAMP_APP_ID out of .env and run fli basecamp:app' }
+}
+
+/** `reachBasecamp` over `lookupBasecampFor`. */
+export async function reachBasecampFor(name, appId, log, opts) {
+  const got = await lookupBasecampFor(name, appId, opts)
+  if (got.entry) return got.entry
+  log.error(got.error)
+  process.exitCode = 1
+  return null
+}
+
+// A 404 is the one answer that means *not here*; anything else is a Basecamp
+// that did not say, which the refusal names.
+async function holdsApp(entry, appId, { fetcher, timeout }) {
+  try {
+    const res = await fetcher(`${entry.url}/apps/${encodeURIComponent(appId)}`, {
+      signal:  AbortSignal.timeout(timeout),
+      headers: { accept: 'application/json', authorization: `Bearer ${entry.apiKey}` },
+    })
+    if (res.status === 404) return { holds: false }
+    if (!res.headers.get('content-type')?.includes('json')) return { holds: false, why: 'not the API' }
+    return res.ok ? { holds: true } : { holds: false, why: `HTTP ${res.status}` }
+  } catch (err) {
+    return { holds: false, why: err?.name === 'TimeoutError' ? `no answer in ${timeout / 1000} s` : 'unreachable' }
+  }
+}
+
+/**
  * Whether the Basecamp at `entry.url` answers: one unsigned GET of its `/health`,
  * given up on after `timeout` ms. Answers `{ ok: true, ms }` or `{ ok: false, why }`.
  * A proxy that routes `/health` nowhere hands back the SPA's HTML with a 200, so

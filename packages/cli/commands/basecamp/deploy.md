@@ -15,7 +15,7 @@ flags:
     description: The Basecamp App to release — its id, from the App's page (default is BASECAMP_APP_ID)
   basecamp:
     type: string
-    description: The Basecamp to call, by its name in basecamps.json (default the only one; with several and none named, refused with the names)
+    description: The Basecamp to call, by its name in basecamps.json (default the one holding the App — with several entries each is asked for it, and none or two holding it is refused by name)
     defaultValue: ''
   server:
     type: string
@@ -145,8 +145,9 @@ prints it too. A credential the app requires, a Dockerfile edit and
 credentials from `.env.production`, skipping every key this plan sets.
 
 The Basecamp is an entry in `basecamps.json` (`~/.config/fli/`), whose origin
-and key `--basecamp` chooses: the only entry, or the one named, and with several
-and no flag the command refuses and lists them. The App is `--app` or
+and key `--basecamp` chooses: the one named, else the only entry, else the one
+entry answering for the App when each is asked; none or two holding it is
+refused by name (`FJS-4065`). The App is `--app` or
 `BASECAMP_APP_ID` in the app's `.env`. With `BASECAMP_APP_ID` set, `fli deploy`
 is this command for that App and then for the static App in front of it.
 
@@ -405,11 +406,11 @@ const { tmpdir }           = await import('os')
 const { join, relative, resolve } = await import('path')
 
 const root = $.paths.root
-const target = reach(flag.basecamp, log)
-if (!target) return
-const { url: origin, apiKey: key } = target
 const appId  = flag.app || process.env.BASECAMP_APP_ID
 if (!appId) throw new Error("needs --app or BASECAMP_APP_ID — the App's id, from its page in Basecamp, or fli basecamp:app to make one and store it")
+const target = await reachFor(flag.basecamp, appId, log)
+if (!target) return
+const { url: origin, apiKey: key } = target
 
 let   app    = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
 const inline = app?.source?.kind === 'inline'

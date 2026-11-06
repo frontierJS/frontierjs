@@ -567,6 +567,19 @@ export function gradeRuntimeUnits(reading: RuntimeReading | null | undefined, no
     : control({ ok: true,  message: `${installed.length} unit(s) active` })
 }
 
+// ─── ingress names ────────────────────────────────────────────────────────
+// Declared exposure, never a failure: an ingress name is on by default and
+// public the moment it serves (`IDEAS/ingress-name.md` § Security 3–4), so an
+// App nobody meant to publish is read here, not discovered. Graded on read
+// from the rows, so a stale report cannot hide one and a switch shows at once.
+
+/** The ingress names Caddy on a machine serves an App at (`FJS-D1952`); a redirecting one serves nothing. */
+export function gradeIngressNames(names: string[]): Control {
+  const sorted = [...names].sort()
+  return { id: 'net.ingress-names', group: 'network', severity: 'low', ok: true,
+    message: sorted.length ? `Served to the internet at ${sorted.join(', ')}` : 'No App here is served at an ingress name' }
+}
+
 // ─── the box a Basecamp runs on ───────────────────────────────────────────
 
 // The default `backupCron` is daily, so two days is one missed run and a grace.
@@ -669,6 +682,18 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; fix: string
       ? { ok: true,  message: `Machines enroll with ${apiUrl}` }
       : { ok: false, message: `FRONTIER_API_URL is ${apiUrl} — enrollment carries a machine's key and refuses anything but https` }
   } },
+  // Sibling subdomains are one site, so an App at <appId>.<zone> can set a
+  // Domain=<zone> cookie that Basecamp under the same zone receives: session
+  // fixation against the control plane. A finding, not a refusal (`FJS-D1955`).
+  { id: 'hub.ingress-zone', group: 'hub', severity: 'high', fix: 'On /dns/, move the workspace\'s ingress zone to a domain of its own that Basecamp is not opened under', grade: (_r, host) => {
+    const zones = host.ingressZones ?? []
+    if (!zones.length) return { ok: true, message: 'No workspace has an ingress zone' }
+    const at     = hostnameOf(host.install.appUrl)
+    const shared = at ? zones.filter(z => at === z.zone || at.endsWith(`.${z.zone}`)) : []
+    return shared.length
+      ? { ok: false, message: `${shared.map(z => `${z.workspace}'s ingress zone ${z.zone}`).join(', ')} holds ${at}, so any App served there can set a cookie Basecamp receives` }
+      : { ok: true,  message: `No ingress zone holds ${at ?? host.install.appUrl}` }
+  } },
   // The hub App row (`FJS-D1603`) starts nothing, so a wrong one is wrong in
   // silence: its server is where FJS-3515's address and every hub archive hang,
   // and its port is a record of what the box publishes, not an instruction.
@@ -710,6 +735,11 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; fix: string
   } },
 ]
 
+function hostnameOf(url: string): string | null {
+  try { return new URL(url).hostname.toLowerCase().replace(/\.$/, '') }
+  catch { return null }
+}
+
 function loopback(url: string): boolean {
   try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname) }
   catch { return false }
@@ -732,7 +762,7 @@ function envControl(files: PostureReadings['host_files']): Grade {
 export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
 
 /** Graded from Basecamp's own rows, so a missing or stale report does not hide them. */
-const IN_PROCESS = new Set(['hub.backup-recent', 'app.backup-recent', 'hub.key-escrowed', 'hub.bucket-locked', 'hub.disk-free', 'hub.app-url', 'hub.api-url', 'hub.mailer', 'hub.push', 'hub.app-row-drift'])
+const IN_PROCESS = new Set(['hub.backup-recent', 'app.backup-recent', 'hub.key-escrowed', 'hub.bucket-locked', 'hub.disk-free', 'hub.app-url', 'hub.api-url', 'hub.mailer', 'hub.push', 'hub.app-row-drift', 'hub.ingress-zone'])
 
 /** What the box a Basecamp runs on should look like, beyond any fleet machine. */
 export interface HostDeclared {
@@ -747,6 +777,8 @@ export interface HostDeclared {
   /** The bucket the hub's archives go to and its Object Lock as `test` read it
    *  (`lockDays` null when the bucket could not say); null when the hub names none. */
   bucketLock?:    null | { name: string; tested: boolean; lockDays: number | null; attestedAt: string | null }
+  /** Each workspace's ingress zone (`FJS-D1962`); absent or empty when none has one. */
+  ingressZones?:  Array<{ workspace: string; zone: string }>
   /** The hub App row: null before `useHost` made it, `gone` when the pointer names no live row. */
   hubApp:         null | 'gone' | { placed: boolean; port: number | null; containerPort: number | null }
   /** The disk the hub database lives on; null when it cannot be read (`:memory:`, or statfs failed). */

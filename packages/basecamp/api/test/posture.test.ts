@@ -20,7 +20,7 @@ import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
-import { declaredFor, gradeHub, gradePosture, gradeReplication, gradeRuntimeContainers, gradeRuntimeUnits, HUB_CONTROL_IDS, lastKnownControls, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
+import { declaredFor, gradeHub, gradeIngressNames, gradePosture, gradeReplication, gradeRuntimeContainers, gradeRuntimeUnits, HUB_CONTROL_IDS, lastKnownControls, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
 import { HOST_SLUG, hubApp, placeHub } from '../src/domain/host/host-machine.ts'
 import type { HostDeclared, PostureReadings } from '../src/domain/host/posture.ts'
 import { componentById, matchGithub, rangeOf, versionOf } from '../src/domain/host/components.ts'
@@ -147,6 +147,12 @@ describe('the grader', () => {
     const ok = Object.fromEntries(gradePosture(publicApp, declared, { at: NOW, now: NOW }).map(c => [c.id, c]))
     expect(ok['net.unexpected-listener'].ok).toBe(true)
     expect(ok['net.container-public'].ok).toBe(true)
+  })
+
+  test('a served ingress name is declared exposure, stated and never failing', () => {
+    expect(gradeIngressNames([])).toMatchObject({ ok: true, message: 'No App here is served at an ingress name' })
+    expect(gradeIngressNames(['b1.apps.test', 'a1.apps.test'])).toMatchObject({ id: 'net.ingress-names', ok: true, severity: 'low',
+      message: 'Served to the internet at a1.apps.test, b1.apps.test' })
   })
 
   // FJS-2772: the forward chain drops a published port unless the box's
@@ -326,11 +332,29 @@ describe('a report lands', () => {
     } })
     const stale = await env.as(owner).service('serverPostures').call('latest', lone.id, {})
     expect(stale.stale).toBe(true)
-    // The replica control is read off the heartbeat, which an old report does not age.
-    const [replica, reported] = [stale.controls.filter((c: any) => c.id === 'backup.replica-lag'),
-                                 stale.controls.filter((c: any) => c.id !== 'backup.replica-lag')]
+    // The replica and ingress controls are read off the heartbeat and the rows, which an old report does not age.
+    const onRead = new Set(['backup.replica-lag', 'net.ingress-names'])
+    const [read, reported] = [stale.controls.filter((c: any) => onRead.has(c.id)),
+                              stale.controls.filter((c: any) => !onRead.has(c.id))]
     expect(reported.every((c: any) => c.ok === 'unknown')).toBe(true)
-    expect(replica.map((c: any) => c.ok)).toEqual([true])
+    expect(read.map((c: any) => c.ok)).toEqual([true, true])
+  })
+
+  test('an App placed here and served at its ingress name is listed; once a Domain serves it, it is not', async () => {
+    const sys     = env.system
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'P', slug: `p-${Date.now()}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${Date.now()}` } })
+    const app     = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'web', slug: `web-${Date.now()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    await sys.appServer.create({ data: { appId: app.id, serverId: machine.id, status: 'running' } })
+    await sys.workspace.update({ where: { id: ws.id }, data: { ingressSecretId: 'edge', ingressZoneId: 'zone', ingressZone: 'apps.test',
+      ingressCertSecretId: 'cert', ingressCertExpiresAt: new Date(Date.now() + 60 * 86_400_000) } })
+    // Graded on read, so the Domain below shows with no new report.
+    const listed = async () => (await env.as(owner).service('serverPostures').call('latest', machine.id, {}))
+      .controls.find((c: any) => c.id === 'net.ingress-names').message
+    expect(await listed()).toBe(`Served to the internet at ${app.id}.apps.test`)
+    await sys.domain.create({ data: { workspaceId: ws.id, appId: app.id, hostname: 'web.example.test' } })
+    expect(await listed()).toBe('No App here is served at an ingress name')
   })
 
   test('retention keeps each machine\'s newest however old', async () => {
@@ -413,6 +437,17 @@ describe('the hub grader', () => {
     expect(grade(scheduledApps(null)).ok).toBe(false)
     // A weekly schedule is not late at five days.
     expect(grade(scheduledApps(new Date(NOW - 5 * day).toISOString(), 14)).ok).toBe(true)
+  })
+
+  test('hub.ingress-zone fails a zone holding FRONTIER_APP_URL\'s host, report or none, and accepts one of its own', () => {
+    const grade = (ingressZones: HostDeclared['ingressZones'], at = NOW) => hub(null, null, at, { ingressZones })['hub.ingress-zone']
+    expect(grade(undefined)).toMatchObject({ ok: true, message: 'No workspace has an ingress zone' })
+    expect(grade([{ workspace: 'Fleet', zone: 'hub-apps.test' }]).ok).toBe(true)
+    // `hub.test` is the host itself; `api.hub.test` is FRONTIER_API_URL's, not the one a session lives on.
+    expect(grade([{ workspace: 'Fleet', zone: 'hub.test' }])).toMatchObject({ ok: false, fix: expect.stringContaining('/dns/'),
+      message: expect.stringContaining("Fleet's ingress zone hub.test holds hub.test") })
+    expect(hub(null, null, NOW, { ingressZones: [{ workspace: 'Fleet', zone: 'test' }], install: { ...INSTALL, appUrl: 'https://ops.acme.test/' } })['hub.ingress-zone'].ok).toBe(false)
+    expect(grade([{ workspace: 'Fleet', zone: 'hub.test' }], NOW - 9 * 86_400_000).ok).toBe(false)
   })
 
   test('the URLs and the mailer are graded from the env, report or none', () => {

@@ -17,11 +17,13 @@ const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text
 const webDomain = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
 
-const { resolveBasecamp, readBasecamps, writeBasecamp, reachBasecamp } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
+const { resolveBasecamp, readBasecamps, writeBasecamp, reachBasecamp, reachBasecampFor } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
 
 // The Basecamp a command talks to: `--basecamp <name>`, or the only entry
 // (`reachBasecamp` owns the refusal, which lists the names when several are known).
-const reach = (name, log) => reachBasecamp(name, log)
+// A command holding an App id uses `reachFor`, which asks every entry for it.
+const reach    = (name, log) => reachBasecamp(name, log)
+const reachFor = (name, appId, log) => reachBasecampFor(name, appId, log)
 
 // The entry name a box-taking command talks to: `--basecamp`, else the entry
 // named like the box (the ssh Host an entry is keyed by), else '' so `reach`

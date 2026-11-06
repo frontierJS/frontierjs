@@ -187,6 +187,8 @@ export interface HttpTransportOptions {
    * `config.auth.cookie`) for a hand-rolled IAuth that issues its own cookie.
    */
   authCookie?:  string | null
+  /** Whether that cookie is `Secure`, and so named `__Host-<name>` (`FJS-D1957`). */
+  authCookieSecure?: boolean
   powered?:     string     // X-Powered-By header value
   onError?:     (err: unknown, ctx?: TransportContext) => void
   /** The app's declared error mappers, read live: a failure before a service
@@ -588,16 +590,27 @@ export class HttpTransport {
    * mode in one place and having the transport honor it is what closes that.
    *
    * See extractToken for why this is opt-in rather than always on.
+   *
+   * `secure` names the cookie `__Host-<name>` on the wire, in what is written
+   * and in what is read, and writes it `Secure` with `Path=/` (`FJS-D1957`).
+   * Another App under the same parent domain can set a plain `session` with a
+   * `Domain` attribute and the browser sends it here; a `__Host-` cookie is the
+   * one name such a cookie cannot take. Only that name is read, because a
+   * fallback would take the planted one whenever the person had no session
+   * (`FJS-D1978`).
    */
-  setAuthCookie(name: string | null): void {
-    this._opts.authCookie = name
+  setAuthCookie(name: string | null, opts: { secure?: boolean } = {}): void {
+    this._opts.authCookie       = name
+    this._opts.authCookieSecure = !!opts.secure
   }
 
-  /** The cookie the session is read from, or null when cookie mode is off.
-   *  Read at start, because the mode that opens the CSRF exposure is the one
-   *  that installs `csrf()` (`FJS-D610`). */
+  /** The cookie the session is read from, as the browser holds it, or null
+   *  when cookie mode is off. Read at start, because the mode that opens the
+   *  CSRF exposure is the one that installs `csrf()` (`FJS-D610`). */
   get authCookie(): string | null {
-    return this._opts.authCookie ?? null
+    const name = this._opts.authCookie
+    if (!name) return null
+    return this._opts.authCookieSecure ? `__Host-${name}` : name
   }
 
   /** The origins besides the app's own that may open a socket: the csrf list,
@@ -981,7 +994,7 @@ export class HttpTransport {
         body: parsed.bytes ? new Uint8Array(parsed.bytes) : (parsed.raw ?? ''), host: (headers.host ?? url.host) || null,
       },
       auth:  this._opts.auth,
-      token: this._opts.auth ? extractToken(headers, this._opts.authCookie ?? null) : null,
+      token: this._opts.auth ? extractToken(headers, this.authCookie) : null,
     }).catch(() => null)
     if (principal === REFUSE) return new Response('Unauthorized', { status: 401 })
     user = principal
@@ -1367,7 +1380,8 @@ export class HttpTransport {
         return _cookies ??= parseCookies(req.headers.get('cookie') ?? '')
       },
       setCookie: (name, value, opts = {}) => {
-        pendingCookies.push([name, value, opts])
+        // Named here, so a refusal is the handler's own error.
+        pendingCookies.push(this._asWritten([name, value, opts]))
         ;(ctx as unknown as { __pendingCookies: typeof pendingCookies }).__pendingCookies = pendingCookies
       },
 
@@ -1429,7 +1443,7 @@ export class HttpTransport {
     // Read once here and taken off the headers the socket keeps: those become
     // every frame's `ctx.caller.headers`, and the logger redacts by name, which
     // `sec-websocket-protocol` is not.
-    const credential = this._opts.auth ? extractToken(headers, this._opts.authCookie ?? null) : null
+    const credential = this._opts.auth ? extractToken(headers, this.authCookie) : null
     const search     = url.search.slice(1)
     const offered    = headers['sec-websocket-protocol']
     const rest       = withoutBearer(offered)
@@ -1755,6 +1769,23 @@ export class HttpTransport {
       if (now - (ws.data.verifiedAt ?? 0) < every * 1000) continue
       void this._wsReverify(ws)
     }
+  }
+
+  // The session cookie under the name `setAuthCookie` gave it. A clear names
+  // it too, and a browser refuses a `__Host-` cookie that is not `Secure` with
+  // `Path=/`, so both attributes follow the name rather than the write.
+  private _asWritten(cookie: [string, string, Record<string, unknown>]): [string, string, Record<string, unknown>] {
+    const [name, value, opts] = cookie
+    if (!name || name !== this._opts.authCookie) return cookie
+    if (!this._opts.authCookieSecure) {
+      if (opts.secure) throw new TypeError(
+        `The session cookie ${JSON.stringify(name)} is written Secure, so the browser holds __Host-${name}, ` +
+        `and it is read as ${name}. Pass setAuthCookie(${JSON.stringify(name)}, { secure: true }) (FJS-D1957).`)
+      return cookie
+    }
+    if ((opts.path ?? '/') !== '/') throw new TypeError(
+      `The session cookie ${JSON.stringify(name)} is __Host-${name}, which a browser refuses with Path=${String(opts.path)}.`)
+    return [`__Host-${name}`, value, { ...opts, secure: true, path: '/' }]
   }
 
   // ── A cookie that changed after a socket's upgrade ────────────────

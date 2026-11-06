@@ -23,9 +23,10 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel } from '../../core/hooks.ts'
 import { db, ws }   from '../../core/resource.ts'
-import { declaredFor, gradePosture, gradeReplication, gradeRuntimeContainers, gradeRuntimeUnits, lastKnownControls, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
+import { declaredFor, gradePosture, gradeReplication, gradeRuntimeContainers, gradeRuntimeUnits, gradeIngressNames, lastKnownControls, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
 import type { Control, PostureReadings } from '../../domain/host/posture.ts'
 import { LONG_RUNNING_KINDS } from '../../domain/host/runtime.ts'
+import { ingressStateOf } from '../../domain/release/runtime.ts'
 import { notifyPeople, workspaceMembers } from '../../domain/notification/notify.ts'
 import { statusOf } from '../../core/dependencies.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -125,6 +126,7 @@ export async function postureView(server: any, row: any, { readings = false } = 
     gradeReplication(server.replication, await replicatingOn(server.id), now, host),
     gradeRuntimeContainers(server.runtime, await placedOn(server.id), now),
     gradeRuntimeUnits(server.runtime, now),
+    gradeIngressNames(await servedIngressNames(server.id)),
   ]
   if (!row) return {
     serverId: server.id, serverName: server.name, status: server.status,
@@ -164,6 +166,13 @@ async function placedOn(serverId: string): Promise<{ id: string; slug: string }[
     where:  { id: { in: [...new Set(placed.map(p => p.appId))] }, kind: { in: LONG_RUNNING_KINDS } },
     select: { id: true, slug: true }, orderBy: { slug: 'asc' },
   })
+}
+
+/** The ingress names the running Apps on a machine are served at, by the read the App page's state uses. */
+async function servedIngressNames(serverId: string): Promise<string[]> {
+  const placed = await sys().appServer.findMany({ where: { serverId, status: 'running' }, select: { appId: true } }) as { appId: string }[]
+  const states = await Promise.all([...new Set(placed.map(p => p.appId))].map(id => ingressStateOf($.db, id)))
+  return states.filter(s => s.state === 'served').map(s => s.name as string)
 }
 
 async function scopedServer(id: string) {

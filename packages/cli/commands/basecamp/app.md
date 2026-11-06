@@ -28,7 +28,7 @@ flags:
     defaultValue: ''
   basecamp:
     type: string
-    description: The Basecamp to call, by its name in basecamps.json (default the only one; with several and none named, refused with the names)
+    description: The Basecamp to call, by its name in basecamps.json (default the one holding BASECAMP_APP_ID when it is set, asked of each entry; else the only one, and with several none named is refused with the names)
     defaultValue: ''
   file:
     char: f
@@ -96,11 +96,11 @@ const { setEnvLine } = await import(resolve(global.fliRoot, 'core/global-env.js'
 const { resolveTarget, TIERS } = await import(resolve(global.fliRoot, 'core/deploy-target.js'))
 
 const root = $.paths.root
-const target = reach(flag.basecamp, log)
+const anchorId = process.env.BASECAMP_APP_ID
+const target = await reachFor(flag.basecamp, anchorId, log)
 if (!target) return
 const { url: origin, apiKey: key } = target
 const envPath = resolve(root, flag.file)
-const anchorId = process.env.BASECAMP_APP_ID
 const tier = TIERS[resolveTarget(flag, $.git)]
 
 // ─── Who the App is: the anchor's, or this app's ───────────────────────────

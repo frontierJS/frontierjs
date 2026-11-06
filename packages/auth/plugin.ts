@@ -218,7 +218,12 @@ export function auth(opts: AuthPluginOptions): Plugin {
       // (`FJS-D610`). `SameSite=Lax`, set in respond() below, is not enough on
       // its own: a cross-site form POST to /auth/login carries no cookie and
       // sets one (`FJS-1818`).
-      if (cookieAuth) app.http?.setAuthCookie?.('session')
+      //
+      // `secure` is decided here once, because junction names the cookie by it:
+      // `__Host-session` when Secure, in what it writes and what it reads
+      // (`FJS-D1957`). The writes below leave it to the transport.
+      if (cookieAuth) app.http?.setAuthCookie?.('session', { secure: process.env.NODE_ENV === 'production' })
+      const sessionCookie = (): string => app.http?.authCookie ?? 'session'
 
       // ── A session held to enrollment (`FJS-D1008`) ───────────────────
       //
@@ -319,7 +324,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
         if (!password) throw new BadRequest('password is required')
 
         const result = await auth.login(email, password)
-        await endArrivingSession(auth, ctx, result)
+        await endArrivingSession(auth, ctx, sessionCookie(), result)
         return respond(ctx, result, cookieAuth, cookieMaxAge, grade)
       })
 
@@ -359,14 +364,14 @@ export function auth(opts: AuthPluginOptions): Plugin {
         }
         // Spent either way: the ticket is single-use.
         if (cookieAuth) clearChallengeCookie(ctx)
-        await endArrivingSession(auth, ctx, result)
+        await endArrivingSession(auth, ctx, sessionCookie(), result)
         return respond(ctx, result, cookieAuth, cookieMaxAge, grade)
       })
 
       // ── POST /auth/logout ────────────────────────────────────────────
 
       app.post(`${prefix}/logout`, async (ctx: TransportContext) => {
-        const token = extractToken(ctx)
+        const token = extractToken(ctx, sessionCookie())
         if (token) await auth.logout(token)
         if (cookieAuth) clearCookie(ctx)
         return ctx.json({ ok: true })
@@ -522,7 +527,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
         if (!Number.isFinite(mine) || !Number.isFinite(theirs) || !(theirs <= mine))
           throw new Forbidden('That account stands above yours — acting as it would raise your standing')
 
-        const token = extractToken(ctx)
+        const token = extractToken(ctx, sessionCookie())
         if (!token) throw new Unauthorized('Authentication required')
 
         const { endsAt } = await auth.startSupport(token, subjectId, reason, ttl)
@@ -543,7 +548,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
       // the wrong principal. No guard: getting out is never refused.
 
       app.post(`${prefix}/support/end`, async (ctx: TransportContext) => {
-        const token = extractToken(ctx)
+        const token = extractToken(ctx, sessionCookie())
         if (!token) throw new Unauthorized('Authentication required')
         if (!auth.endSupport) throw new BadRequest('Support sessions are not supported by this auth provider')
 
@@ -575,11 +580,11 @@ export function auth(opts: AuthPluginOptions): Plugin {
         // `/login` does. Confirming an address an account already has signs
         // nobody in. A confirmed CHANGE of address ends every other session of
         // the account (`FJS-D1208`) and keeps the one that posted the click.
-        const arrived  = extractToken(ctx)
+        const arrived  = extractToken(ctx, sessionCookie())
         const clicking = arrived ? (await auth.verifySession(arrived))?.sessionId : undefined
         const verified = await auth.verifyEmail(token, clicking ? { keepSessionId: clicking } : undefined)
         if (!('signedIn' in verified)) return ctx.json({ ok: true })
-        await endArrivingSession(auth, ctx, verified.signedIn)
+        await endArrivingSession(auth, ctx, sessionCookie(), verified.signedIn)
         return respond(ctx, verified.signedIn, cookieAuth, cookieMaxAge, grade)
       })
 
@@ -712,7 +717,6 @@ export function auth(opts: AuthPluginOptions): Plugin {
               ctx.setCookie('session', issued.token, {
                 httpOnly: true,
                 sameSite: 'lax',
-                secure:   process.env.NODE_ENV === 'production',
                 maxAge:   cookieMaxAge,
               })
             }
@@ -742,7 +746,6 @@ export function auth(opts: AuthPluginOptions): Plugin {
             ctx.setCookie('session', resolved.token, {
               httpOnly: true,
               sameSite: 'lax',
-              secure:   process.env.NODE_ENV === 'production',
               maxAge:   cookieMaxAge,
             })
           }
@@ -852,7 +855,6 @@ function respond(
     ctx.setCookie('session', payload.token, {
       httpOnly: true,
       sameSite: 'lax',
-      secure:   process.env.NODE_ENV === 'production',
       maxAge:   cookieMaxAge,
     })
     const { token: _token, ...withoutToken } = payload
@@ -879,10 +881,12 @@ function closeSockets(app: { channels?: { disconnectSession?: (id: string, reaso
   app.channels?.disconnectSession?.(sessionId, reason)
 }
 
-function extractToken(ctx: TransportContext): string | null {
+// The cookie as the transport names it, `__Host-session` when Secure
+// (`FJS-D1957`); `session` where no transport took cookie mode.
+function extractToken(ctx: TransportContext, cookie: string): string | null {
   const header = ctx.headers?.authorization ?? ''
   if (header.startsWith('Bearer ')) return header.slice(7).trim()
-  return ctx.cookies?.session ?? null
+  return ctx.cookies?.[cookie] ?? null
 }
 
 /**
@@ -891,10 +895,10 @@ function extractToken(ctx: TransportContext): string | null {
  * A half-finished login (`challenge`) issued no session and ends nothing.
  * A token that names no live session is not an error: the person is signing in.
  */
-async function endArrivingSession(auth: IAuth, ctx: TransportContext, result: unknown): Promise<void> {
+async function endArrivingSession(auth: IAuth, ctx: TransportContext, cookie: string, result: unknown): Promise<void> {
   const issued = (result as { token?: unknown } | null)?.token
   if (typeof issued !== 'string') return
-  const arrived = extractToken(ctx)
+  const arrived = extractToken(ctx, cookie)
   if (arrived && arrived !== issued) await auth.logout(arrived)
 }
 

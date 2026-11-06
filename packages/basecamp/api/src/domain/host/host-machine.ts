@@ -323,6 +323,11 @@ async function scheduledApps(sys: any, hubAppId: string | null): Promise<HostDec
   return out
 }
 
+async function ingressZones(sys: any): Promise<HostDeclared['ingressZones']> {
+  const rows = await sys.workspace.findMany({ where: { ingressZone: { not: null } }, select: { name: true, ingressZone: true } })
+  return rows.map((w: { name: string, ingressZone: string }) => ({ workspace: w.name, zone: w.ingressZone.trim().toLowerCase().replace(/\.$/, '') }))
+}
+
 /** What the `hub.*` controls grade in process: the newest archive, the key's escrow and the env. */
 async function hostDeclared(sys: any, push: HostDeclared['install']['push'], dbPath: string): Promise<HostDeclared> {
   const config = await sys.hubConfig.findFirst({ where: { id: 'hub' } })
@@ -331,6 +336,7 @@ async function hostDeclared(sys: any, push: HostDeclared['install']['push'], dbP
     bucketLock:     await bucketLockDeclared(sys, config?.appId ?? null),
     lastBackupAt:   await lastBackupAt(sys, config?.appId ?? null),
     scheduledApps:  await scheduledApps(sys, config?.appId ?? null),
+    ingressZones:   await ingressZones(sys),
     dbDisk:         databaseDisk(dbPath),
     keyFingerprint: encryptionKeyFingerprint(),
     keyEscrow:      config?.encryptionKeyEscrowedAt && config.encryptionKeyFingerprint

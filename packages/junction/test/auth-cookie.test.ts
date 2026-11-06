@@ -175,6 +175,105 @@ describe('session from a cookie', () => {
   })
 })
 
+// ── __Host- when Secure (FJS-D1957) ──────────────────────────────────────
+
+describe('a Secure session cookie is __Host-session', () => {
+
+  // Another App under the same parent domain can set `session` with a
+  // `Domain` attribute and the browser sends it here. A `__Host-` cookie is
+  // the one name such a cookie cannot take, and only that name is read, so a
+  // planted `session` signs in nobody even when the person has no session.
+
+  function secureApp(secure: boolean) {
+    const app = createApp({ config: { ...defaultConfig, port: 0 }, auth: oneTokenAuth('tok-1', { id: 'alice' }) })
+    app.http.setAuthCookie('session', { secure })
+    app.get('/whoami', (ctx: any) =>
+      ctx.user ? ctx.json({ userId: ctx.user.id }) : ctx.json({ anon: true }, 401))
+    app.get('/login', (ctx: any) => { ctx.setCookie('session', 'tok-1', { httpOnly: true, sameSite: 'lax' }); return ctx.json({}) })
+    app.get('/logout', (ctx: any) => { ctx.setCookie('session', '', { maxAge: 0 }); return ctx.json({}) })
+    return app
+  }
+  const setCookieOf = async (app: any, path: string) =>
+    (await app.http.fetch(new Request(`http://localhost${path}`))).headers.get('set-cookie') ?? ''
+
+  it('writes __Host-session, Secure with Path=/, under secure', async () => {
+    const app = secureApp(true)
+    await app.start()
+    expect(app.http.authCookie).toBe('__Host-session')
+    const set = await setCookieOf(app, '/login')
+    expect(set).toStartWith('__Host-session=tok-1; Path=/')
+    expect(set).toContain('; Secure')
+    await app.stop()
+  })
+
+  it('writes session, not Secure, without it', async () => {
+    const app = secureApp(false)
+    await app.start()
+    expect(app.http.authCookie).toBe('session')
+    const set = await setCookieOf(app, '/login')
+    expect(set).toStartWith('session=tok-1; Path=/')
+    expect(set).not.toContain('Secure')
+    await app.stop()
+  })
+
+  it('a clear that names no Secure still clears __Host-session', async () => {
+    // A browser refuses a __Host- Set-Cookie without Secure, so a clear
+    // written as the plain name would leave the session in the jar.
+    const app = secureApp(true)
+    await app.start()
+    const set = await setCookieOf(app, '/logout')
+    expect(set).toStartWith('__Host-session=; Path=/; Max-Age=0')
+    expect(set).toContain('; Secure')
+    await app.stop()
+  })
+
+  it('reads only __Host-session under secure', async () => {
+    const app = secureApp(true)
+    await app.start()
+    expect((await hit(app, { cookie: '__Host-session=tok-1' })).status).toBe(200)
+    expect((await hit(app, { cookie: 'session=tok-1' })).status).toBe(401)
+    const both = await hit(app, { cookie: 'session=planted; __Host-session=tok-1' })
+    expect((await both.json()).userId).toBe('alice')
+    await app.stop()
+  })
+
+  it('reads only session without it', async () => {
+    const app = secureApp(false)
+    await app.start()
+    expect((await hit(app, { cookie: 'session=tok-1' })).status).toBe(200)
+    expect((await hit(app, { cookie: '__Host-session=tok-1' })).status).toBe(401)
+    await app.stop()
+  })
+
+  it('a Secure write the transport was not told of is refused, not written', async () => {
+    // The browser would hold __Host-session and the reader would look for
+    // session: every sign-in would answer as signed out.
+    const app = secureApp(false)
+    app.get('/secure-login', (ctx: any) => { ctx.setCookie('session', 'tok-1', { secure: true }); return ctx.json({}) })
+    await app.start()
+    const res = await app.http.fetch(new Request('http://localhost/secure-login'))
+    expect(res.status).toBe(500)
+    expect(res.headers.get('set-cookie') ?? '').not.toContain('tok-1')
+    await app.stop()
+  })
+
+  it('a path other than / is refused under secure', async () => {
+    const app = secureApp(true)
+    app.get('/scoped', (ctx: any) => { ctx.setCookie('session', 'tok-1', { path: '/app' }); return ctx.json({}) })
+    await app.start()
+    expect((await app.http.fetch(new Request('http://localhost/scoped'))).status).toBe(500)
+    await app.stop()
+  })
+
+  it('another cookie keeps its own name and attributes', async () => {
+    const app = secureApp(true)
+    app.get('/theme', (ctx: any) => { ctx.setCookie('theme', 'dark', { secure: true }); return ctx.json({}) })
+    await app.start()
+    expect(await setCookieOf(app, '/theme')).toStartWith('theme=dark; Path=/')
+    await app.stop()
+  })
+})
+
 // ── The WebSocket upgrade ────────────────────────────────────────────────
 
 describe('session from a cookie, over the WebSocket upgrade', () => {

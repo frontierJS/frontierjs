@@ -14,7 +14,7 @@ flags:
     defaultValue: false
   basecamp:
     type: string
-    description: The Basecamp holding the App, by its name in basecamps.json (default the only one; with several and none named, refused with the names) — Basecamp only
+    description: The Basecamp holding the App, by its name in basecamps.json (default the one holding the App — with several entries each is asked for it, and none or two holding it is refused by name) — Basecamp only
     defaultValue: ''
   take:
     type: boolean

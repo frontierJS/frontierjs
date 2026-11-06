@@ -107,7 +107,10 @@ primary Domain, else the first by hostname (`FJS-D1956`); `routedHosts` and
 to write its record, so `ingress:dns` (`edge.ingressStep`) does, on a write of
 the column and, for such an App alone, on a release and a machine moving.
 Turning the column off deletes the record unless a Domain still CNAMEs to it.
-Outpost answers the name `X-Robots-Tag: noindex`.
+Outpost answers the name `X-Robots-Tag: noindex`. A machine's posture states
+every name served on it as `net.ingress-names`, graded on read and never
+failing, and `hub.ingress-zone` fails a zone holding `FRONTIER_APP_URL`'s host,
+which the patch still accepts (`FJS-D1955`).
 
 **The connector writes.** `appendRecords` · `setRecords` ·
 `deleteRecords` (`FJS-D562`), each one batch that applies whole. Every record

@@ -29,7 +29,7 @@ flags:
     defaultValue: false
   basecamp:
     type: string
-    description: The Basecamp an App is released through, by its name in basecamps.json (default the only one) — passed to basecamp:deploy
+    description: The Basecamp an App is released through, by its name in basecamps.json (default the one holding BASECAMP_APP_ID, asked of each entry) — passed to basecamp:deploy
     defaultValue: ''
   site:
     type: boolean
@@ -224,7 +224,7 @@ if (deployConf?.server) {
 const { join } = await import('path')
 const { spawnSync } = await import('child_process')
 const { resolveBasecampApp, basecampAll } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
-const { reachBasecamp }   = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
+const { reachBasecampFor } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
 const { TIERS }           = await import(new URL('file://' + global.fliRoot + '/core/deploy-target.js'))
 const { frontingStatics } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
 
@@ -234,26 +234,27 @@ const { frontingStatics } = await import(new URL('file://' + global.fliRoot + '/
 async function releaseThroughBasecamp({ $, flag, log, echo, goal }) {
   // BASECAMP_APP_ID names any App of the project; the target's is its
   // same-slug sibling in the target's environment.
-  const entry = reachBasecamp(flag.basecamp, log)
+  const entry = await reachBasecampFor(flag.basecamp, process.env.BASECAMP_APP_ID, log)
   if (!entry) return false
   let app
   try { app = await resolveBasecampApp(entry.url, entry.key, process.env.BASECAMP_APP_ID, goal, { where: entry.name }) }
   catch (err) { log.error(err.message); return false }
 
   echo`{dim ${goal} (${TIERS[goal]}) —} releasing App '${app.name}' {dim (${app.id}) through Basecamp}`
-  if (!releaseApp($, flag, app.id)) return false
+  if (!releaseApp($, flag, app.id, entry.name)) return false
   // Read after the release: the first one is what makes the static App.
   for (const web of app.source?.kind === 'inline' ? [] : await staticFronts(entry, app)) {
     echo`{dim web/ —} releasing static App '${web.name}' {dim (${web.id}), in front of '${app.name}'}`
-    if (!releaseApp($, flag, web.id)) return false
+    if (!releaseApp($, flag, web.id, entry.name)) return false
   }
   return true
 }
 
 /** `basecamp:deploy` as a child of THIS checkout's fli, never a bare `fli`,
- *  which would be the global install. */
-function releaseApp($, flag, id) {
-  const args = ['basecamp:deploy', '--app', id, ...(flag.dry ? ['--dry'] : []), ...(flag.basecamp ? ['--basecamp', flag.basecamp] : [])]
+ *  which would be the global install. The entry is named so the child does not
+ *  ask every Basecamp again. */
+function releaseApp($, flag, id, basecamp) {
+  const args = ['basecamp:deploy', '--app', id, '--basecamp', basecamp, ...(flag.dry ? ['--dry'] : [])]
   return spawnSync(process.execPath, [join(global.fliRoot, 'bin/fli.js'), ...args], { cwd: $.paths.root, stdio: 'inherit', env: process.env }).status === 0
 }
 

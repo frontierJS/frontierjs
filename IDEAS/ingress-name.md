@@ -300,10 +300,28 @@ Done when: `posture.test.ts` lists a served ingress name as declared exposure an
 an ingress zone holding Basecamp's host as a finding; junction's transport test
 sees `__Host-session` under `secure` and `session` without it.
 
-- [ ] 3.1 The grader reads the column, and states an ingress zone holding
+- [x] 3.1 The grader reads the column, and states an ingress zone holding
       `FRONTIER_APP_URL`'s host as a finding, not a refusal (`FJS-D1955`).
-- [ ] 3.2 `__Host-` in junction's cookie writer when `secure` (`FJS-D1957`).
-      Independent of Phases 1–2; it can land any time.
+      **Built 2026-11-06:** `net.ingress-names` (`gradeIngressNames`) names the
+      ingress names a machine's running Apps are served at, through the App
+      page's own `ingressStateOf`, so a redirecting name is not listed. It is
+      severity low and never fails. It is graded on read beside the heartbeat
+      controls, because exposure is a row fact: a stale report must not hide
+      it, and flipping the switch shows on the next read. `hub.ingress-zone`
+      is in-process and high: it fails when a workspace's zone is
+      `FRONTIER_APP_URL`'s host or a parent of it. Proved by `posture.test.ts`
+      58/58, including a signed-in `latest` read that lists the name and drops it
+      once a Domain serves the App. Basecamp's suite is 1277/1277.
+- [x] 3.2 `__Host-` in junction's cookie writer when `secure` (`FJS-D1957`).
+      **Built 2026-11-06:** `setAuthCookie(name, { secure })` is the one fact;
+      `@frontierjs/auth` passes `NODE_ENV === 'production'`. The cookie is named
+      when `ctx.setCookie` queues it, so a clear is `__Host-session` too, and is
+      written `Secure` with `Path=/`. The reader reads only that name
+      (`FJS-D1978`), and auth's own token reads (logout, support, the login
+      that ends an arriving session) read `app.http.authCookie`. Proved by
+      `auth-cookie.test.ts` (8 new) and auth's `routes.test.ts` under
+      `NODE_ENV=production` (4 new). Junction is 3539/3539, auth 806/806.
+      Every live app signs its people out once on its next deploy.
 
 ---
 
@@ -392,6 +410,14 @@ sees `__Host-session` under `secure` and `session` without it.
   - **Recommend A** — 1.1 waits on the push, not on Domain wiring, which brings
     its own questions (which machine a Domain is on, D4's `proxied` flip).
     `IDEAS/fleet-ingress.md` Phase 3 stays open for the Domain half.
+- ~~**Q11 — Whether the reader falls back to `session`.**~~ **Answered 2026-11-06 (`FJS-D1978`): B — `setAuthCookie(name, { secure })` states the fact once, and the reader reads only the name the writer writes.** Step 3.2; junction
+  cannot tell a TLS request from a plain one behind Caddy.
+  - **A** — Read `__Host-session`, then `session`. A planted cookie cannot
+    replace a session, and signs in a person who holds none.
+  - **B** — `setAuthCookie(name, { secure })` states the fact once, and the
+    reader reads only the name the writer writes.
+  - **Recommend B** — the case A leaves open is the person who just signed
+    out, and auth already decides `secure` in one place it can hand over.
 
 ## Out of scope
 

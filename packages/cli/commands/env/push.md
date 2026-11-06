@@ -40,7 +40,7 @@ flags:
     defaultValue: ''
   basecamp:
     type: string
-    description: With BASECAMP_APP_ID set, the Basecamp to call, by its name in basecamps.json (default the only one)
+    description: With BASECAMP_APP_ID set, the Basecamp to call, by its name in basecamps.json (default the one holding the App, asked of each entry)
     defaultValue: ''
   overwrite:
     char: o
@@ -144,10 +144,10 @@ if (process.env.BASECAMP_APP_ID) {
   if (refused.length)
     return refuse(`--${refused.join(', --')} ${refused.length === 1 ? 'is' : 'are'} for a server's env file — an App Basecamp runs takes its Variables, and --production or --stage pick which App`)
   const client = await import(resolve(global.fliRoot, 'core/basecamp.js'))
-  const { reachBasecamp } = await import(resolve(global.fliRoot, 'core/basecamps.js'))
+  const { reachBasecampFor } = await import(resolve(global.fliRoot, 'core/basecamps.js'))
   const { gatherReleaseInputs, releaseOwnedKeys, variablePush } = await import(resolve(global.fliRoot, 'core/release-preflight.js'))
 
-  const entry = reachBasecamp(flag.basecamp, log)
+  const entry = await reachBasecampFor(flag.basecamp, process.env.BASECAMP_APP_ID, log)
   if (!entry) return
   let app, rows
   try { ({ app, rows } = await readApp(client, entry, process.env.BASECAMP_APP_ID, resolveTarget(flag, $.git))) } catch (err) { return refuse(err.message) }

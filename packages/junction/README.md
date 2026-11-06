@@ -1126,6 +1126,12 @@ Three rules worth knowing:
   over the cookie, so acting as someone else for one call still works from a
   browser holding a session cookie.
 - **An empty cookie is not a token** — that is what a logout leaves behind.
+- **`secure` names it `__Host-<name>`.** `setAuthCookie('session', { secure: true })`
+  writes and reads `__Host-session`, `Secure` with `Path=/`, a clear included, so
+  another app under the same parent domain cannot plant a session here
+  (`FJS-D1957`). Only that name is read (`FJS-D1978`). `@frontierjs/auth` passes
+  `secure` in production; a `Secure` write of the cookie the transport was not
+  told is secure, or a `Path` other than `/`, throws.
 - **It is off by default for a security reason, not caution.** A bearer token has
   to be attached by script, so a cross-origin page cannot forge one. A cookie is
   attached by the browser automatically, which is what makes CSRF possible at

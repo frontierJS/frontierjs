@@ -24,7 +24,7 @@ flags:
     defaultValue: false
   basecamp:
     type: string
-    description: The Basecamp holding the App, by its name in basecamps.json (default the only one; with several and none named, refused with the names)
+    description: The Basecamp holding the App, by its name in basecamps.json (default the one holding the App — with several entries each is asked for it, and none or two holding it is refused by name)
     defaultValue: ''
   overwrite:
     type: boolean
@@ -35,7 +35,7 @@ flags:
 <script>
 const bc = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const mv = await import(new URL('file://' + global.fliRoot + '/core/deploy-move.js'))
-const { reachBasecamp } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
+const { reachBasecampFor } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
 const { mergeVariables } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
 const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 const { IMAGE_USER, ensureAppUser } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
@@ -55,7 +55,7 @@ async function resolveEnds({ $, flag, log }) {
 
   const anchor = process.env.BASECAMP_APP_ID
   if (!anchor) return refuse('BASECAMP_APP_ID is not set, so there is no App to move to or from — run fli basecamp:app')
-  const entry = reachBasecamp(flag.basecamp, log)
+  const entry = await reachBasecampFor(flag.basecamp, anchor, log)
   if (!entry) { $.config.abort = true; return null }
 
   let app, host

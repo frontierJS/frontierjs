@@ -12,7 +12,7 @@ flags:
     description: The Basecamp App — its id, from the App's page (default is BASECAMP_APP_ID)
   basecamp:
     type: string
-    description: The Basecamp to call, by its name in basecamps.json (default the only one; with several and none named, refused with the names)
+    description: The Basecamp to call, by its name in basecamps.json (default the one holding the App — with several entries each is asked for it, and none or two holding it is refused by name)
     defaultValue: ''
   retry:
     type: boolean
@@ -52,11 +52,11 @@ const hostBlock = (chalk, h) => [
 </script>
 
 ```js
-const target = reach(flag.basecamp, log)
-if (!target) return
-const { url: origin, apiKey: key } = target
 const appId  = flag.app || process.env.BASECAMP_APP_ID
 if (!appId) { log.error("needs --app or BASECAMP_APP_ID — the App's id, from its page in Basecamp"); process.exitCode = 1; return }
+const target = await reachFor(flag.basecamp, appId, log)
+if (!target) return
+const { url: origin, apiKey: key } = target
 
 const path = `/apps/${encodeURIComponent(appId)}`
 if (flag.dry) { log.dry(flag.retry ? `reload Caddy on the machines serving ${appId}, then check it` : `check ${appId}`); return }

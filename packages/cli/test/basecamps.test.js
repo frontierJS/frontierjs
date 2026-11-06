@@ -6,7 +6,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 import {
-  readBasecamps, writeBasecamp, removeBasecamp, resolveBasecamp, designatedBasecamp, basecampsPath, lookupBasecamp, pingBasecamp,
+  readBasecamps, writeBasecamp, removeBasecamp, resolveBasecamp, designatedBasecamp, basecampsPath, lookupBasecamp, lookupBasecampFor, pingBasecamp,
 } from '../core/basecamps.js'
 import { globalEnvPath } from '../core/global-env.js'
 import { resolveBasecampApp } from '../core/basecamp.js'
@@ -123,6 +123,56 @@ describe('pingBasecamp', () => {
     expect((await pingBasecamp(yuma, { fetcher: async () => { throw new Error('ECONNREFUSED') } })).why).toBe('unreachable')
     const hung = (_url, { signal }) => new Promise((_, rej) => signal.addEventListener('abort', () => rej(signal.reason)))
     expect((await pingBasecamp(yuma, { timeout: 20, fetcher: hung })).why).toBe('no answer in 0.02 s')
+  })
+})
+
+describe('lookupBasecampFor', () => {
+  const ID = '0c1f6a2e-0000-4000-8000-000000000001'
+  const json = (status) => new Response('{}', { status, headers: { 'content-type': 'application/json' } })
+  // Answers by origin, and records which key went to which url.
+  const fleet = (answers, sent = []) => async (url, { headers }) => {
+    const origin = new URL(url).origin
+    sent.push([origin, headers.authorization])
+    const a = answers[origin]
+    if (a instanceof Error) throw a
+    return json(a)
+  }
+  const three = () => {
+    writeBasecamp('yuma', yuma, { home })
+    writeBasecamp('chartered', { url: 'https://chartered.test', apiKey: 'c1' }, { home })
+    writeBasecamp('dev', { url: 'http://127.0.0.1:8120' }, { home })
+  }
+
+  test('the one Basecamp holding the App, each key sent only to its own url', async () => {
+    three()
+    const sent = []
+    const got = await lookupBasecampFor(undefined, ID, { home, fetcher: fleet({ 'https://api.yuma.test': 200, 'https://chartered.test': 404 }, sent) })
+    expect(got.entry).toMatchObject({ name: 'yuma', key: 'k1' })
+    expect(sent.sort()).toEqual([['https://api.yuma.test', 'Bearer k1'], ['https://chartered.test', 'Bearer c1']])
+  })
+
+  test('a name, no id, or a single entry asks nobody', async () => {
+    three()
+    const never = async () => { throw new Error('asked') }
+    expect((await lookupBasecampFor('chartered', ID, { home, fetcher: never })).entry.name).toBe('chartered')
+    expect((await lookupBasecampFor(undefined, undefined, { home, fetcher: never })).error).toMatch(/--basecamp <name>/)
+    rmSync(basecampsPath(home)); writeBasecamp('yuma', yuma, { home })
+    expect((await lookupBasecampFor(undefined, ID, { home, fetcher: never })).entry.name).toBe('yuma')
+  })
+
+  test('two entries holding it are refused by name', async () => {
+    writeBasecamp('chartered', { url: 'https://chartered.test', apiKey: 'c1' }, { home })
+    writeBasecamp('chartered-admin', { url: 'https://chartered.test', apiKey: 'c2' }, { home })
+    const got = await lookupBasecampFor(undefined, ID, { home, fetcher: fleet({ 'https://chartered.test': 200 }) })
+    expect(got.error).toMatch(/is on chartered and chartered-admin — pass --basecamp <name>/)
+  })
+
+  test('no holder names what was asked and which did not answer', async () => {
+    three()
+    const got = await lookupBasecampFor(undefined, ID, { home, fetcher: fleet({ 'https://api.yuma.test': 404, 'https://chartered.test': new Error('ECONNREFUSED') }) })
+    expect(got.error).toMatch(/No Basecamp holds App .* asked yuma, chartered; no answer from chartered \(unreachable\)/)
+    const forbidden = await lookupBasecampFor(undefined, ID, { home, fetcher: fleet({ 'https://api.yuma.test': 404, 'https://chartered.test': 403 }) })
+    expect(forbidden.error).toMatch(/chartered \(HTTP 403\)/)
   })
 })
 

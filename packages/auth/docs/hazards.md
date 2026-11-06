@@ -120,7 +120,10 @@ Every hazard in this package, the full `What bites here`; `CLAUDE.md` keeps the 
   cannot import this file — so `test/schema-accessors.test.ts` lifts its arrow
   out of `install.md` and runs it against the shipped bytes.
 - **`cookieAuth: true` works end to end** — the plugin declares the mode via
-  `app.http.setAuthCookie('session')` and Junction reads it (FJS-002).
+  `app.http.setAuthCookie('session', { secure })` and Junction reads it (FJS-002).
+  In production the cookie is `__Host-session` (`FJS-D1957`), so a route reads it
+  as `app.http.authCookie` names it, never `ctx.cookies.session`, and a session
+  write leaves `secure` to the transport.
 - **`User` is `@@gate(4.4.4.5)` and the level is not what makes it safe.** A
   gate is per MODEL, so that alone says *any signed-in caller may write any user
   row*. The fragment ships the two declarations that bound it:

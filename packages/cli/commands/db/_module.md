@@ -223,15 +223,15 @@ const pullPath = ({ flag, log, echo, chalk }) => {
 const pullThroughBasecamp = async ({ $, flag, log, echo, chalk }, anchorId) => {
   let appId
   const { pullAppArchive, resolveBasecampApp } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
-  const { reachBasecamp, lookupBasecamp }      = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
+  const { reachBasecampFor, lookupBasecamp }   = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
   // The narrow key (appBackups:read) when the entry holds one, the admin key otherwise.
-  const target = reachBasecamp(flag.basecamp, log, { scoped: true })
+  const target = await reachBasecampFor(flag.basecamp, anchorId, log, { scoped: true })
   if (!target) return null
   const { url: origin, key } = target
   const say = (line) => echo(chalk`  {dim ${line}}`)
   // Finding the App reads /apps and /environments, which the narrow key does not
   // cover: the admin key resolves, the narrow one pulls.
-  const reader = lookupBasecamp(flag.basecamp).entry ?? target
+  const reader = lookupBasecamp(target.name).entry ?? target
   const goal   = flag.dev ? 'dev' : 'production'
   try {
     const app = await resolveBasecampApp(reader.url, reader.key, anchorId, goal, { where: reader.name })

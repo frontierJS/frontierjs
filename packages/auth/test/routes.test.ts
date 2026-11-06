@@ -521,6 +521,67 @@ describe('cookieAuth mode', () => {
   })
 })
 
+// ─── __Host-session in production (FJS-D1957) ─────────────────────────────
+
+describe('cookie mode in production names the cookie __Host-session', () => {
+  // Another App under the same parent domain can plant `session` with a
+  // `Domain` attribute. Every route that reads the cookie back has to read the
+  // name the transport wrote, or logout and the login that ends an arriving
+  // session see nothing.
+  let scoped: Harness
+  let prodApp: any
+  const tokenOf = (res: any) => String(res.headers['set-cookie']).split(';')[0].split('=')[1]
+
+  beforeAll(async () => {
+    scoped = await makeAuth()
+    prodApp = await createTestApp({ auth: scoped.auth as any })
+    prodApp.setAuth(scoped.auth as any)
+    const was = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      prodApp.configure(authPlugin({ auth: withoutRegistrationMail(scoped.auth), cookieAuth: true }) as any)
+    } finally {
+      if (was === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = was
+    }
+    await request(prodApp).post('/auth/register').send({ email: email('host'), password: 'pw-1' })
+  })
+  afterAll(() => scoped.cleanup())
+
+  const login = () => request(prodApp).post('/auth/login').send({ email: email('host'), password: 'pw-1' })
+
+  test('login sets __Host-session, Secure', async () => {
+    const cookie = String((await login()).headers['set-cookie'])
+    expect(cookie).toStartWith('__Host-session=')
+    expect(cookie).toContain('Path=/')
+    expect(cookie).toContain('Secure')
+  })
+
+  test('only __Host-session authenticates; a planted session does not', async () => {
+    const value = tokenOf(await login())
+    expect((await request(prodApp).get('/account/me').set('cookie', `__Host-session=${value}`)).status).toBe(200)
+    expect((await request(prodApp).get('/account/me').set('cookie', `session=${value}`)).status).toBe(401)
+  })
+
+  test('a login ends the session it arrived with', async () => {
+    const old = tokenOf(await login())
+    const res = await request(prodApp).post('/auth/login').set('cookie', `__Host-session=${old}`)
+      .send({ email: email('host'), password: 'pw-1' })
+    expect(res.status).toBe(200)
+    expect(await scoped.auth.verifySession(old)).toBeNull()
+  })
+
+  test('logout revokes __Host-session and clears it', async () => {
+    const value = tokenOf(await login())
+    const out = await request(prodApp).post('/auth/logout').set('cookie', `__Host-session=${value}`)
+    expect(out.status).toBe(200)
+    expect(await scoped.auth.verifySession(value)).toBeNull()
+    const cleared = String(out.headers['set-cookie'])
+    expect(cleared).toStartWith('__Host-session=; Path=/; Max-Age=0')
+    expect(cleared).toContain('Secure')
+  })
+})
+
 // ─── the error boundary, beyond /auth/* ───────────────────────────────────
 
 describe('auth errors map correctly outside the auth routes', () => {

@@ -1857,6 +1857,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1978"></a>2026-11-06 · `FJS-D1978` — Q11 — Whether the reader falls back to `session` — `setAuthCookie(name, { secure })` states the fact once, and the reader reads only the name the writer writes.
+
+Asked in [`IDEAS/ingress-name.md`](IDEAS/ingress-name.md) § Open questions. **B** was picked over **A** (Read `__Host-session`, then `session`. A planted cookie cannot replace a session, and signs in a person who holds none).
+
+The paper's recommendation, taken as written: the case A leaves open is the person who just signed out, and auth already decides `secure` in one place it can hand over.
+
 ### <a id="fjs-d1976"></a>2026-11-06 · `FJS-D1976` — Q8 — How does the clean stage (1.5) see and remove what Basecamp's App, Domain and project lists miss — Basecamp's deletes leave no record (`FJS-4055`, `FJS-4056` fixed) and a deleted App's Volume can be removed (`FJS-4057`), and the run key gains `edge:read` (the zone's `orphans`) and `volumes:*` (a deleted App's data); the diff is the three lists, orphan records and Volumes; images and Outpost's directories are checked by hand once, not per run, and nothing watches them between. `edge:read` reads the whole ingress zone, not only the run's records; `volumes:write` removes a directory under `/var/lib/outpost/apps/` through Outpost. The deploy stage's `/servers` preflight still has to be refused after the widening.
 
 Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **A** was picked over **B** (the clean stage also takes 0.6's full listing with the admin entry and ssh, read-only; every delete stays the run key's, but a run then holds the admin key and root ssh, which is what D1896 keeps off it), **C** (the diff stays the three lists; what lies outside them is filed and listed by hand from time to time).
