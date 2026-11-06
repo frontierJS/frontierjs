@@ -216,7 +216,7 @@ export async function engineItems(root) {
     for (const w of lacking) out.push({
       check: 'npm', subject: `${w.name}@${w.version}`, ok: false, message: w.from === 'tag'
         ? `${w.name}@${w.version} is tagged and neither npm nor its GitHub Release has it — fli ws:pub finishes the release`
-        : `${w.from} pins ${w.constant} = ${w.version} and its GitHub Release has no ${w.name}@${w.version}, so every machine installed from it fails — publish it, or move the pin back (FJS-D1989)`,
+        : `${w.from} pins ${w.constant} = ${w.version} and neither npm nor its GitHub Release has ${w.name}@${w.version}, so every machine installed from it fails — publish it, or move the pin back (FJS-D1989)`,
     })
     for (const p of await pinsBehindLatest(root)) out.push({
       check: 'npm', subject: p.constant, ok: false,

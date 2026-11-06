@@ -17,8 +17,9 @@ import { hosts }                    from './publish-hosts.js'
 
 const TIMEOUT = 5_000
 
-// Versions written into source that a machine installs from the release host
-// (`FJS-D1989`). A pin follows the tree's bump, and the bump is not the publish.
+// Versions written into source that a machine installs, from npm or else the
+// release host (`FJS-D1989`). A pin follows the tree's bump, and the bump is not
+// the publish.
 export const INSTALL_PINS = [
   { file: 'packages/basecamp/api/src/providers/compute/enrollment.ts', name: '@frontierjs/outpost',
     constant: 'OUTPOST_VERSION', pattern: /\bOUTPOST_VERSION\s*=\s*'([^']+)'/ },
@@ -84,11 +85,10 @@ export async function pinsBehindLatest(root, { latest = latestOn } = {}) {
 }
 
 /**
- * Every `<name>@<version>` tag on a member's current version that neither npm
- * nor the release host holds, and every install pin the release host does not
- * hold. A tag shipped `--to tarballs` (ws:pub's default, `FJS-D1613`) is finished
- * with npm never asked to hold it; a pin is installed from the release alone
- * (`FJS-D1989`), so npm is never asked about one.
+ * Every `<name>@<version>` tag on a member's current version, and every install
+ * pin, that neither npm nor the release host holds. A tag shipped `--to tarballs`
+ * (ws:pub's default, `FJS-D1613`) is finished with npm never asked to hold it,
+ * and a machine installs a pin from npm and falls back to the release (`FJS-D1989`).
  *
  * @returns {{ lacking: [{ name, version, from }], unknown: [{ name, version, from }], asked: number }}
  *   `from` is `tag` or the pin's `file`
@@ -102,7 +102,6 @@ export async function tagsNpmLacks(root, { ask = onRegistry, askRelease = hosts(
   for (const pin of readInstallPins(root)) wanted.push({ ...pin, from: pin.file })
 
   const key    = (w) => `${w.name}@${w.version}`
-  const tag    = (w) => w.from === 'tag'
   const askAll = async (list, asker) => {
     const out = new Map()
     await Promise.all([...new Set(list.map(key))].map(async k => {
@@ -112,15 +111,13 @@ export async function tagsNpmLacks(root, { ask = onRegistry, askRelease = hosts(
     return out
   }
 
-  // The release host is asked only about a tag npm did not hold: held on npm
-  // is finished, and a gh call per package is the cost of a `fli done`.
-  const npm      = await askAll(wanted.filter(tag), ask)
-  const released = await askAll(wanted.filter(w => !tag(w) || npm.get(key(w)) !== true), askRelease)
+  // The release host is asked only about a version npm did not hold: held on
+  // npm is finished, and a gh call per package is the cost of a `fli done`.
+  const npm      = await askAll(wanted, ask)
+  const released = await askAll(wanted.filter(w => npm.get(key(w)) !== true), askRelease)
 
   const held = (w) => {
-    const rel = released.get(key(w))
-    if (!tag(w)) return rel
-    const onNpm = npm.get(key(w))
+    const onNpm = npm.get(key(w)), rel = released.get(key(w))
     if (onNpm === true || rel === true) return true
     return onNpm === false && rel === false ? false : null
   }

@@ -34,20 +34,51 @@ import { layout }            from '@frontierjs/outpost/layout'
 import { litestreamInstall } from '@frontierjs/litestone/replicate'
 
 /** What the install runs on a machine, held here so two machines provisioned a
- *  week apart run the same thing. The Outpost is pinned to a version its GitHub
- *  Release HOLDS and moved by hand after a publish, never to the tree's
+ *  week apart run the same thing. The Outpost is pinned to a version npm or its
+ *  GitHub Release HOLDS and moved by hand after a publish, never to the tree's
  *  (`FJS-D1773`: that is the one version no host has at every graded commit),
- *  and `fli ws:pub` prints the move once the release holds the new one
+ *  and `fli ws:pub` prints the move once a host holds the new one
  *  (`FJS-D1941`, `FJS-D1989`); Docker and Caddy come from signed apt
  *  repositories. */
 export const BUN_VERSION     = '1.4.4'
 export const OUTPOST_VERSION = '0.1.13'
 
-/** The Outpost's tarball on the package host, which redirects to the release
- *  asset (`FJS-D1989`). The cli's `packageHostUrl` spells the same path. Its own
- *  `litestone` and `toolbelt` dependencies still resolve from npm. */
-export const outpostTarball = (version = OUTPOST_VERSION) =>
-  `https://packages.frontierjs.com/@frontierjs/outpost@${version}/frontierjs-outpost-${version}.tgz`
+const NPM_REGISTRY = 'https://registry.npmjs.org'
+const PACKAGE_HOST = 'https://packages.frontierjs.com'
+
+/** A package's tarball on the package host, which redirects to its GitHub
+ *  Release asset (`FJS-D1989`). The cli's `packageHostUrl` spells the same path,
+ *  and so does `OUTPOST_MANIFEST` on the machine. */
+export const packageTarball = (name: string, version: string, host = PACKAGE_HOST) =>
+  `${host}/${name}@${version}/${name.slice(1).replace('/', '-')}-${version}.tgz`
+
+export const outpostTarball = (version = OUTPOST_VERSION) => packageTarball('@frontierjs/outpost', version)
+
+/** Run on the machine by `bun -e` with the pin, the registry and the package
+ *  host as its arguments: writes the program directory's package.json. The
+ *  Outpost and each `@frontierjs` package it pins come from npm where npm holds
+ *  that version and from its GitHub Release where it does not (`FJS-D1989`):
+ *  `bun add` alone asks npm for every dependency, so an Outpost whose litestone
+ *  went only to a release failed to install. The pins are read off the Outpost's
+ *  own manifest rather than held here, so the two cannot disagree. */
+export const OUTPOST_MANIFEST = [
+  'const [version, npm, host] = process.argv.slice(1)',
+  'const release = (name, v) => host + "/" + name + "@" + v + "/" + name.slice(1).replace("/", "-") + "-" + v + ".tgz"',
+  'const onNpm = async (name, v) => {',
+  '  try { const res = await fetch(npm + "/" + name.replace("/", "%2F") + "/" + v); return res.ok ? await res.json() : null } catch { return null }',
+  '}',
+  'let manifest = await onNpm("@frontierjs/outpost", version)',
+  'const outpost = manifest ? version : release("@frontierjs/outpost", version)',
+  'if (!manifest) {',
+  '  const res = await fetch(outpost)',
+  '  if (!res.ok) throw new Error("neither npm nor its GitHub Release has @frontierjs/outpost@" + version + " (" + res.status + ")")',
+  '  manifest = JSON.parse(Bun.spawnSync(["tar", "-xzO", "package/package.json"], { stdin: new Uint8Array(await res.arrayBuffer()) }).stdout.toString())',
+  '}',
+  'const overrides = {}',
+  'for (const [name, v] of Object.entries(manifest.dependencies ?? {}))',
+  '  if (name.startsWith("@frontierjs/") && !(await onNpm(name, v))) overrides[name] = release(name, v)',
+  'await Bun.write("package.json", JSON.stringify({ dependencies: { "@frontierjs/outpost": outpost }, overrides }, null, 2))',
+].join('\n')
 
 /** The box's paths, from the module the Outpost reads its own from, so the
  *  unit's sandbox and the process cannot name two places (`FJS-D1544`). */
@@ -71,25 +102,26 @@ export const UNNEEDED_SERVICES_OFF = [
 const released = new Map<string, boolean>()
 
 /**
- * Why an enrollment must not start, when the release host does not hold the
- * Outpost the install runs; null otherwise.
+ * Why an enrollment must not start, when neither npm nor the release host holds
+ * the Outpost the install runs; null otherwise.
  *
  * A pin moved ahead of the publish: with `0.1.6` tagged and never published,
- * the install's `bun add` failed and the machine never enrolled, with nothing
- * naming why (`FJS-3534`).
+ * the install failed and the machine never enrolled, with nothing naming why
+ * (`FJS-3534`).
  * Asked here and not at boot, so a host outage takes no Basecamp down, and a
  * host it could not ask lets the enrollment through: the machine's own
  * install is then the check.
  */
 export async function outpostUnpublished(version = OUTPOST_VERSION, fetcher: typeof fetch = fetch): Promise<string | null> {
   if (released.get(version)) return null
-  let status = 0
-  try {
-    status = (await fetcher(outpostTarball(version), { method: 'HEAD', signal: AbortSignal.timeout(5_000) })).status
-  } catch { return null }
-  if (status >= 200 && status < 300) released.set(version, true)
-  return status === 404
-    ? `A machine cannot enroll: its install runs @frontierjs/outpost@${version} and its GitHub Release does not have it. ` +
+  const status = async (url: string, method: string) => {
+    try { return (await fetcher(url, { method, signal: AbortSignal.timeout(5_000) })).status } catch { return 0 }
+  }
+  const npm = await status(`${NPM_REGISTRY}/@frontierjs%2Foutpost/${version}`, 'GET')
+  const rel = npm === 404 ? await status(outpostTarball(version), 'HEAD') : 0
+  if ((npm >= 200 && npm < 300) || (rel >= 200 && rel < 300)) released.set(version, true)
+  return npm === 404 && rel === 404
+    ? `A machine cannot enroll: its install runs @frontierjs/outpost@${version} and neither npm nor its GitHub Release has it. ` +
       'Publish it (fli ws:pub), or move OUTPOST_VERSION back to a released one (FJS-3534)'
     : null
 }
@@ -527,9 +559,12 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 
 # The Outpost, installed once where the unit finds it (FJS-D1826). Idempotent: a
 # re-run with a new pin is the upgrade. Before the unit exists, so the first
-# start never races an install.
+# start never races an install. It and the framework packages it pins come from
+# npm, or from their GitHub Releases where npm lacks the version (FJS-D1989).
 install -d -m 0755 ${box.program}
-(cd ${box.program} && bun add ${outpostTarball()})
+(cd ${box.program} \\
+  && bun -e '${OUTPOST_MANIFEST}' ${OUTPOST_VERSION} ${NPM_REGISTRY} ${PACKAGE_HOST} \\
+  && bun install)
 
 # The command port's certificate. Made before the exchange because it rides in
 # it: Basecamp pins this one, and a command reaches no port holding any other.

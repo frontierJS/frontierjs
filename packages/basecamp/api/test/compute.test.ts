@@ -37,7 +37,7 @@ import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join } from 'node:path'
 import { ensureCert }  from '@frontierjs/outpost/cert'
 import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
 import { createTestEnv, session } from '@frontierjs/testing'
 import { GatePlugin }    from '@frontierjs/litestone'
@@ -874,13 +874,64 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain(`bash -s "bun-v${BUN_VERSION}"`)
     // FJS-D1826: installed once into the program directory, so a restart finds
     // its code on disk instead of unpacking into the unit's private /tmp.
-    // FJS-D1989: from the release host, at the pin.
-    expect(script).toContain(`(cd /usr/local/lib/outpost && bun add https://packages.frontierjs.com/@frontierjs/outpost@${OUTPOST_VERSION}/frontierjs-outpost-${OUTPOST_VERSION}.tgz)`)
+    // FJS-D1989: at the pin, from npm or else the release host, its own dependencies too.
+    expect(script).toContain(`(cd /usr/local/lib/outpost \\\n  && bun -e '`)
+    expect(script).toContain(`' ${OUTPOST_VERSION} https://registry.npmjs.org https://packages.frontierjs.com \\\n  && bun install)`)
+    expect(script).not.toContain('bun add')
     const unit = /cat > \/etc\/systemd\/system\/outpost\.service <<UNITEOF\n([\s\S]*?)\nUNITEOF/.exec(script)?.[1] ?? ''
     expect(unit).not.toMatch(/bun x|bunx/)
     expect(unit).toMatch(/^ExecStart=\$BUN_INSTALL\/bin\/bun \/usr\/local\/lib\/outpost\/node_modules\/\.bin\/outpost$/m)
-    expect(script.indexOf('bun add https://')).toBeLessThan(script.indexOf('cat > /etc/systemd/system/outpost.service'))
+    expect(script.indexOf('&& bun install)')).toBeLessThan(script.indexOf('cat > /etc/systemd/system/outpost.service'))
     expect(BUN_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
+  // The machine decides each package's host itself, from the Outpost's manifest;
+  // a release URL spelled apart from packageTarball's is an install that 404s.
+  // One stand-in answers for npm and the package host both.
+  test('the install takes each framework package from npm, and from its release where npm lacks it', async () => {
+    const { OUTPOST_MANIFEST, packageTarball } = await import('../src/providers/compute/enrollment.ts')
+    const deps  = { '@frontierjs/litestone': '1.1.17', '@frontierjs/toolbelt': '0.1.11', 'left-alone': '1.0.0' }
+    const stage = mkdtempSync(join(tmpdir(), 'outpost-tgz-'))
+    mkdirSync(join(stage, 'package'))
+    writeFileSync(join(stage, 'package/package.json'), JSON.stringify({ name: '@frontierjs/outpost', version: '0.1.14', dependencies: deps }))
+    expect(Bun.spawnSync(['tar', '-czf', 'outpost.tgz', 'package'], { cwd: stage }).exitCode).toBe(0)
+
+    let onNpm = new Set<string>()
+    const server = Bun.serve({ port: 0, fetch(req) {
+      const path = decodeURIComponent(new URL(req.url).pathname)
+      if (path.startsWith('/npm/')) {
+        const at = path.lastIndexOf('/'), name = path.slice(5, at), version = path.slice(at + 1)
+        return onNpm.has(`${name}@${version}`)
+          ? Response.json({ name, version, dependencies: name.endsWith('outpost') ? deps : {} })
+          : new Response('', { status: 404 })
+      }
+      return path === '/host/@frontierjs/outpost@0.1.14/frontierjs-outpost-0.1.14.tgz'
+        ? new Response(Bun.file(join(stage, 'outpost.tgz'))) : new Response('', { status: 404 })
+    } })
+    const npm = `http://localhost:${server.port}/npm`, host = `http://localhost:${server.port}/host`
+    // Bun.spawn, not spawnSync: a blocked event loop never answers the stand-in.
+    const install = async (version: string) => {
+      const dir  = mkdtempSync(join(tmpdir(), 'pin-'))
+      const proc = Bun.spawn([process.execPath, '-e', OUTPOST_MANIFEST, version, npm, host], { cwd: dir, stderr: 'pipe' })
+      const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
+      return { exitCode, stderr, manifest: () => JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) }
+    }
+    try {
+      onNpm = new Set(['@frontierjs/toolbelt@0.1.11'])
+      const fromRelease = await install('0.1.14')
+      expect(fromRelease.stderr).toBe('')
+      expect(fromRelease.manifest()).toEqual({
+        dependencies: { '@frontierjs/outpost': packageTarball('@frontierjs/outpost', '0.1.14', host) },
+        overrides:    { '@frontierjs/litestone': packageTarball('@frontierjs/litestone', '1.1.17', host) },
+      })
+
+      onNpm = new Set(['@frontierjs/outpost@0.1.14', '@frontierjs/litestone@1.1.17', '@frontierjs/toolbelt@0.1.11'])
+      expect((await install('0.1.14')).manifest()).toEqual({ dependencies: { '@frontierjs/outpost': '0.1.14' }, overrides: {} })
+
+      const nowhere = await install('0.0.0-missing')
+      expect(nowhere.exitCode).not.toBe(0)
+      expect(nowhere.stderr).toContain('neither npm nor its GitHub Release has @frontierjs/outpost@0.0.0-missing')
+    } finally { server.stop(true) }
   })
 
   // A published port with the proxy on is a nat rule and a docker-proxy
@@ -908,17 +959,23 @@ describe('a machine claims its own credential', () => {
   // The pin is moved by hand after a publish and never held to the workspace
   // (FJS-D1773): the tree's version is the one no host has at every graded commit.
   // A hand-move that gets ahead is still possible (FJS-3534), so an enrollment
-  // asks the release host (FJS-D1989) before a machine is billed for.
-  test('an enrollment is refused by name when the release lacks the pinned Outpost, and let through when it cannot be asked', async () => {
+  // asks npm and then the release host (FJS-D1989) before a machine is billed for.
+  test('an enrollment is refused by name when no host holds the pinned Outpost, and let through when it cannot be asked', async () => {
     const { outpostUnpublished } = await import('../src/providers/compute/enrollment.ts')
     const asked: string[] = []
-    const answering = (status: number) => (async (url: string, init?: RequestInit) => {
-      asked.push(`${init?.method} ${url}`); return new Response('', { status })
+    const answering = (npm: number, release = npm) => (async (url: string, init?: RequestInit) => {
+      asked.push(`${init?.method} ${url}`)
+      return new Response('', { status: url.startsWith('https://registry.npmjs.org/') ? npm : release })
     }) as unknown as typeof fetch
-    expect(await outpostUnpublished('0.0.0-missing', answering(404))).toContain('@frontierjs/outpost@0.0.0-missing and its GitHub Release does not have it')
-    expect(asked[0]).toBe('HEAD https://packages.frontierjs.com/@frontierjs/outpost@0.0.0-missing/frontierjs-outpost-0.0.0-missing.tgz')
-    expect(await outpostUnpublished('0.0.0-present', answering(200))).toBe(null)
-    expect(await outpostUnpublished('0.0.0-down', answering(503))).toBe(null)
+    expect(await outpostUnpublished('0.0.0-missing', answering(404))).toContain('@frontierjs/outpost@0.0.0-missing and neither npm nor its GitHub Release has it')
+    expect(asked).toEqual([
+      'GET https://registry.npmjs.org/@frontierjs%2Foutpost/0.0.0-missing',
+      'HEAD https://packages.frontierjs.com/@frontierjs/outpost@0.0.0-missing/frontierjs-outpost-0.0.0-missing.tgz',
+    ])
+    expect(await outpostUnpublished('0.0.0-npm', answering(200, 404))).toBe(null)
+    expect(await outpostUnpublished('0.0.0-release', answering(404, 200))).toBe(null)
+    expect(await outpostUnpublished('0.0.0-down', answering(503, 404))).toBe(null)
+    expect(await outpostUnpublished('0.0.0-host-down', answering(404, 503))).toBe(null)
     const offline = (async () => { throw new Error('ENOTFOUND') }) as unknown as typeof fetch
     expect(await outpostUnpublished('0.0.0-offline', offline)).toBe(null)
   })

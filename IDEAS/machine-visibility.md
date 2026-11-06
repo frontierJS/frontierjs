@@ -47,10 +47,10 @@ an ssh session? Built one phase at a time, each its own small change.
      and `fli done` ask the release, and 04's *move the pin* follows a tarballs run.
    - **B** — npm stays: every Outpost release also runs `--to npm`.
    - **Recommend A** — `FJS-D1568` already makes the URL the install path and npm the upgrade
-     path, and the public repo needs no token. What is lost: the tarball's own `litestone` and
-     `toolbelt` pins still resolve from npm (package-host 0.1), so a release bumping either needs
-     `--to npm` for that package until the pack rewrites them to URLs. Reopen if the repo goes
-     private: a box would then need a token to fetch.
+     path, and the public repo needs no token. Amended by the owner: npm first and the release
+     the fallback, for the Outpost and each `@frontierjs` package its manifest pins
+     (`enrollment.ts` `OUTPOST_MANIFEST`), so no Outpost release needs `--to npm`. Reopen if the
+     repo goes private: a box would then need a token to fetch.
 
 ## Plan
 
@@ -67,10 +67,12 @@ Done when: `verify:docker` passes and the card renders the JSON from a real Outp
     a seeded scratch API on 7620/7520: the card read `fli-demo` whole. Unbounded JSON ran the page
     long, so the `pre` caps at 32rem and scrolls.
 - [ ] 0.3 Release the Outpost so a fleet machine answers `config`
-  - Per Q2 the install is `bun add` of the release URL (`enrollment.ts` `outpostTarball`), and
-    `fli done`/04 ask the release for the pin. A scratch `bun add` of 0.1.13's URL installed it
-    with its deps from npm. Owed: `fli ws:pub` (tarballs), move `OUTPOST_VERSION`, redeploy
-    Basecamp, re-enroll. `verify:provision` not run: :8020 was taken by a server not this session's.
+  - Per Q2 the install takes the Outpost and each `@frontierjs` dep it pins from npm, or its
+    release asset where npm lacks the version (`enrollment.ts` `OUTPOST_MANIFEST`); `fli done`,
+    `outpostUnpublished()` and 04 accept either host. The rendered install lines in a scratch
+    directory took 0.1.13, litestone 1.1.16 and toolbelt 0.1.11 from npm, and with the registry
+    pointed at a dead port took all three from the release. `verify:provision` 109 pass. Owed: `fli ws:pub patch --filter litestone --filter outpost` (litestone has moved past
+    1.1.16, so outpost alone is refused), move `OUTPOST_VERSION`, redeploy Basecamp, re-enroll.
 
 ### Phase 1 — Every container and unit on the server page
 

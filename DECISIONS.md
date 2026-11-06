@@ -21064,6 +21064,8 @@ Asked in [`IDEAS/machine-visibility.md`](IDEAS/machine-visibility.md) § Open qu
 
 The paper's recommendation, taken as written: `FJS-D1568` already makes the URL the install path and npm the upgrade path, and the public repo needs no token. What is lost: the tarball's own `litestone` and `toolbelt` pins still resolve from npm (package-host 0.1), so a release bumping either needs `--to npm` for that package until the pack rewrites them to URLs. Reopen if the repo goes private: a box would then need a token to fetch.
 
+**Amended 2026-11-06 by the owner — npm first, the release the fallback, for the Outpost and every `@frontierjs` package it pins.** The machine runs `enrollment.ts` `OUTPOST_MANIFEST` under `bun -e`: each package whose version npm holds is taken from npm, and each it lacks is overridden to its release asset, read off the Outpost's own manifest. `outpostUnpublished()` and `fli done` refuse a pin only when neither host holds it, and 04's *move the pin* follows a run to either. The first cut had all three from the release alone; the owner wanted the fallback, so a litestone shipped `--to tarballs` no longer needs `--to npm`.
+
 ### <a id="fjs-d1919"></a>2026-11-05 · `FJS-D1919` — Q11 — `conduit-37signals` — Keep `conduit-37signals`; Basecamp goes in the description, keywords and README title so a search finds it.
 
 Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (rename to `conduit-basecamp`, with the `37signals:event` job id and its callers).
