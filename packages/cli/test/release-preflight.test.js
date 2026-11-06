@@ -9,7 +9,7 @@ import { describe, test, expect } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { releaseFindings, mergeVariables, imageRuntime, readEnvSpec, requiredEnvKeys, releasePlan, frontingStatics } from '../core/release-preflight.js'
+import { releaseFindings, mergeVariables, imageRuntime, readEnvSpec, requiredEnvKeys, releasePlan } from '../core/release-preflight.js'
 
 const SPEC = { spec: {
   ENCRYPTION_KEY:   { type: 'string', required: true },
@@ -282,7 +282,8 @@ describe('a setup that stopped part way is finished by the next run (FJS-3529, F
   // Variables written, the static App and its Domain made, no route back.
   const WEB  = { id: 'w1', name: 'app', source: { kind: 'inline' }, domains: [{ id: 'd1', hostname: 'nela.awe.dev' }] }
   const HALF = { ...SETTLED, domains: [] }
-  const half = (over = {}) => run({ app: HALF, variables: ANSWERED, siblings: [WEB], routes: [], prefixes: ['/api', '/ws'], ...over })
+  // `fronts` is Basecamp's answer on the App's detail (`FJS-D1981`), whose rule is tested there.
+  const half = ({ fronts = [WEB], ...over } = {}) => run({ app: { ...HALF, fronts }, variables: ANSWERED, siblings: [WEB], routes: [], prefixes: ['/api', '/ws'], ...over })
 
   test('a Domain on the static App with no route to the API is a finding whose fix is the routes', () => {
     const f = half().find(f => f.rule === 'route-missing')
@@ -299,22 +300,14 @@ describe('a setup that stopped part way is finished by the next run (FJS-3529, F
     expect(plan.empty).toBe(false)
   })
 
-  test('the static App whose Domain routes to no other App is the one fli deploy releases beside the API (FJS-4054)', () => {
-    const API = { id: 'a1' }
-    const IMG = { id: 'c2', source: { kind: 'image' }, domains: [{ id: 'd2', hostname: 'other.awe.dev' }] }
-    expect(frontingStatics({ app: API, siblings: [WEB, IMG], routes: [{ domainId: 'd1', appId: 'a1', pathPrefix: '/api' }] }).map(f => f.app.id)).toEqual(['w1'])
-    expect(frontingStatics({ app: API, siblings: [WEB], routes: [{ domainId: 'd1', appId: 'other', pathPrefix: '/api' }] })).toEqual([])
-    expect(frontingStatics({ app: API, siblings: [WEB], routes: null }).map(f => f.domain.id)).toEqual(['d1'])
-  })
-
   test('a Domain routed to another App is that App\'s front door, and a routed one is quiet', () => {
-    expect(half({ routes: [{ domainId: 'd1', appId: 'other', pathPrefix: '/api' }] }).some(f => f.rule === 'route-missing')).toBe(false)
+    expect(half({ fronts: [], routes: [{ domainId: 'd1', appId: 'other', pathPrefix: '/api' }] }).some(f => f.rule === 'route-missing')).toBe(false)
     const routed = [{ domainId: 'd1', appId: 'a1', pathPrefix: '/api' }, { domainId: 'd1', appId: 'a1', pathPrefix: '/ws/' }]
     expect(releasePlan(half({ routes: routed }), {}).empty).toBe(true)
   })
 
   test('a static App made with no Domain yet takes the Domain, routed back here', () => {
-    const plan = releasePlan(half({ siblings: [{ ...WEB, domains: [] }] }), { hostname: 'nela.awe.dev' })
+    const plan = releasePlan(half({ fronts: [], siblings: [{ ...WEB, domains: [] }] }), { hostname: 'nela.awe.dev' })
     expect(plan.web).toBe(false)
     expect(plan.domain).toEqual({ hostname: 'nela.awe.dev', on: 'web', webId: 'w1', routes: ['/api', '/ws'] })
   })

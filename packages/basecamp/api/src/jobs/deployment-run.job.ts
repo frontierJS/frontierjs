@@ -62,7 +62,9 @@ import { siteBranch } from '../domain/site/site-checkout.ts'
 import { healthBudgetS, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } from '@frontierjs/outpost/swap'
 import { releaseSite } from '../domain/site/site-publish.ts'
 import { cloudflareFor } from '../domain/site/site-preview.ts'
-import { SITE_STEP, releaseStatus } from '../domain/release/release-record.ts'
+import { SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, releaseStatus } from '../domain/release/release-record.ts'
+import { frontsOf, type Front } from '../domain/release/fronting.ts'
+import { publishStatic, overPublishLimit, type PublishFile } from '../domain/release/static-publish.ts'
 import { releaseEnv } from '../domain/release/variables.ts'
 import { runtimeOf, routedHosts, routedPaths, routedRedirects, noindexHosts, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor, releaseCopyOf, restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from './app-backup-run.job.ts'
@@ -78,6 +80,8 @@ import type { StepStatus, DeploySwap } from '#db/schema.d.ts'
 
 type DeploymentRow = any
 type StepRow       = any
+/** web/ written onto a static App's machine, waiting for its release. */
+type HeldWeb       = { front: Front; digest: string }
 type ServiceRow    = any
 
 /** How `/deploy` replaced the live container. Nothing from a reply that names
@@ -268,6 +272,8 @@ function runner(app: App) {
     // lands, so a failure after the last step does not rewrite one that succeeded.
     let current: string | undefined
     let siteFailed: string | undefined
+    let webFailed: string | undefined
+    const web: HeldWeb[] = []
 
     // A cancel only writes the row; this is where it stops the run. Asked
     // before every step, because each one acts on the machine and a release
@@ -301,11 +307,13 @@ function runner(app: App) {
 
         let result: Awaited<ReturnType<typeof runStep>>
         try {
-          result = await runStep(s, { deploy, service, config, executor, digest, commit })
+          result = await runStep(s, { deploy, service, config, executor, digest, commit, web })
         } catch (err) {
-          if (s.name !== SITE_STEP) throw err
-          siteFailed = (err as Error).message ?? 'unknown error'
-          await step(deploymentId, s.id, 'failed', { output: siteFailed })
+          if (s.name !== SITE_STEP && s.name !== WEB_RELEASE_STEP) throw err
+          const why = (err as Error).message ?? 'unknown error'
+          if (s.name === SITE_STEP) siteFailed = why
+          else webFailed = why
+          await step(deploymentId, s.id, 'failed', { output: why })
           current = undefined
           continue
         }
@@ -354,8 +362,10 @@ function runner(app: App) {
     // A first release is what makes the volume a replica list skips until
     // it exists, so the machine is sent its list again.
     if (service?.replicaDestinationId) await afterward('sync replicas', () => syncReplicasOn(app, [executor.serverId]))
-    log.info('deployment succeeded', { id: deploymentId, durationMs: Date.now() - startedAt, ...(siteFailed ? { site: siteFailed } : {}) })
-    await afterward('notify', () => tellThem('DeploySuccess', deploy, service, siteFailed ? { siteFailed } : {}))
+    log.info('deployment succeeded', { id: deploymentId, durationMs: Date.now() - startedAt,
+      ...(siteFailed ? { site: siteFailed } : {}), ...(webFailed ? { web: webFailed } : {}) })
+    await afterward('notify', () => tellThem('DeploySuccess', deploy, service,
+      { ...(siteFailed ? { siteFailed } : {}), ...(webFailed ? { webFailed } : {}) }))
 
     async function afterward(what: string, fn: () => Promise<unknown>): Promise<void> {
       try { await fn() } catch (err) {
@@ -436,6 +446,7 @@ function runner(app: App) {
       executor: Executor
       digest:   string | null
       commit?:  string | null
+      web?:     HeldWeb[]
     }
   ): Promise<{ output?: string; digest: string | null; commit?: string; containerPort?: number } & Swapped> {
     const { deploy, service, executor, digest } = ctx
@@ -449,6 +460,8 @@ function runner(app: App) {
     if (isInline(source)) return runInlineStep(step, { ...ctx, source })
     if (service.kind === 'static' && isGit(source)) return runSiteStep(step, { ...ctx, source })
     if (step.name === SITE_STEP) return runAppSiteStep({ ...ctx, source })
+    if (step.name === WEB_BUILD_STEP) return runWebBuild({ ...ctx, source, web: ctx.web ?? [] })
+    if (step.name === WEB_RELEASE_STEP) return runWebRelease({ ...ctx, web: ctx.web ?? [] })
     // The image as the app names it. The digest is what identifies bytes, but a
     // registry still needs a name to pull by, so both travel.
     // A git release is named for itself: two builds of one app share nothing
@@ -760,6 +773,62 @@ function runner(app: App) {
     if (reply.data?.stubbed) return { output: String(reply.data.note ?? 'stub executor — nothing was published'), digest }
     if (reply.data?.skipped) return { output: String(reply.data.skipped), digest }
     return { output: `live at ${reply.data?.url ?? 'the site\'s own domain'}`, digest }
+  }
+
+  // An API App's web/ (`FJS-D1979`), from the commit 'Build image' built, onto
+  // each static App in front of it through that App's own machine. Before the
+  // swap (`FJS-D1980`): a throw here fails the release and the old API keeps
+  // serving with the old page. Nothing is live until 'Release web'.
+  async function runWebBuild(
+    ctx: { deploy: DeploymentRow; service: ServiceRow; executor: Executor; digest: string | null; commit?: string | null; source: any; web: HeldWeb[] },
+  ): Promise<{ output?: string; digest: string | null }> {
+    const { deploy, service, executor, digest, source } = ctx
+    const reply = await executor.call('/web/build', {
+      // A real machine refuses a null commit by name; a stub's build names none.
+      app_id: deploy.appId, source, commit: ctx.commit ?? null,
+    }, { timeoutMs: BUILD_TIMEOUT_MS })
+    if (reply.error) throw new Error(`web/ was not built: ${reply.error.message}`)
+    if (reply.data?.stubbed) return { output: String(reply.data.note ?? 'stub executor — web/ was not built'), digest }
+    if (reply.data?.skipped) return { output: String(reply.data.skipped), digest }
+    const files = reply.data?.files as PublishFile[] | undefined
+    if (!Array.isArray(files) || !files.length) throw new Error('web/ was built and the machine answered no files')
+    const over = overPublishLimit(files)
+    if (over) throw new Error(`web/ built ${over}`)
+
+    // As the system, as `routedHosts` reads: the environment is the App's, which `startRun` confined.
+    const fronts = await frontsOf((app.db as any).asSystem(), { id: deploy.appId, environmentId: service.environmentId })
+    const notes: string[] = []
+    for (const front of fronts) {
+      const out = await publishStatic(app, front.id, files)
+      if ('refused' in out) throw new Error(`web/ was not written for '${front.name}': ${out.refused}`)
+      if ('stubbed' in out) { notes.push(`${front.name}: ${out.stubbed}`); continue }
+      ctx.web.push({ front, digest: out.digest })
+    }
+    const onto = ctx.web.map(h => `'${h.front.name}'`).join(', ')
+    return { output: [`${files.length} files${onto ? ` written for ${onto}` : ''}`, ...notes].join('; '), digest }
+  }
+
+  // Each static App's own release of the files 'Build web' wrote, recording the
+  // commit the API was built from. After the health check, so the page goes
+  // live beside the API it was built with.
+  async function runWebRelease(
+    ctx: { deploy: DeploymentRow; digest: string | null; commit?: string | null; web: HeldWeb[] },
+  ): Promise<{ output?: string; digest: string | null }> {
+    const { deploy, digest } = ctx
+    if (!ctx.web.length) return { output: 'no web/ was written, so there is none to release', digest }
+    const failed: string[] = []
+    for (const { front, digest: built } of ctx.web) {
+      try {
+        await deployments.create({
+          appId: front.id, builtImage: built, trigger: deploy.trigger ?? 'push',
+          ...(ctx.commit ? { commitSha: ctx.commit } : {}), ...(deploy.branch ? { branch: deploy.branch } : {}),
+        })
+      } catch (err) {
+        failed.push(`'${front.name}': ${(err as Error).message}`)
+      }
+    }
+    if (failed.length) throw new Error(`web/ was not released for ${failed.join('; ')}`)
+    return { output: `released for ${ctx.web.map(h => `'${h.front.name}'`).join(', ')}`, digest }
   }
 
   // The release, the steps it left behind, the app's status and the event —

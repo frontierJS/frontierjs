@@ -223,10 +223,9 @@ if (deployConf?.server) {
 <script>
 const { join } = await import('path')
 const { spawnSync } = await import('child_process')
-const { resolveBasecampApp, basecampAll } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { resolveBasecampApp, basecamp } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { reachBasecampFor } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
 const { TIERS }           = await import(new URL('file://' + global.fliRoot + '/core/deploy-target.js'))
-const { frontingStatics } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
 
 /** The target's App, then the static App in front of it: the SSH door's one
  *  deploy ships web/ and the API, and a release of the API alone left the
@@ -258,12 +257,9 @@ function releaseApp($, flag, id, basecamp) {
   return spawnSync(process.execPath, [join(global.fliRoot, 'bin/fli.js'), ...args], { cwd: $.paths.root, stdio: 'inherit', env: process.env }).status === 0
 }
 
-/** The static Apps in front of `app`, each once. Unread routes count every
- *  static Domain as this App's, so a key without domainRoutes:read still
- *  releases web/. */
+/** The static Apps in front of `app`, as Basecamp's detail of it lists them
+ *  (`FJS-D1981`). */
 async function staticFronts(entry, app) {
-  const siblings = await basecampAll(entry.url, entry.key, `/apps?environmentId=${encodeURIComponent(app.environmentId)}`)
-  const routes   = await basecampAll(entry.url, entry.key, '/domainRoutes').catch(() => null)
-  return [...new Map(frontingStatics({ app, siblings, routes }).map(f => [f.app.id, f.app])).values()]
+  return (await basecamp(entry.url, entry.key, `/apps/${encodeURIComponent(app.id)}`)).fronts ?? []
 }
 </script>

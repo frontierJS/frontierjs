@@ -224,13 +224,34 @@ Done when: each step below has a line under it saying what was observed and how.
     not a lifeboat.
   - Not found with a first-party source: Stack Overflow's and GitHub.com's
     read-only modes, so neither is cited.
-- [ ] 0.5 Certificates at the main address. Caddy issues an ACME certificate per
+- [x] 0.5 Certificates at the main address. Caddy issues an ACME certificate per
       hostname and Outpost refuses wildcards, so after the flip each Domain needs
       a certificate issued during the outage. Decide whether that is acceptable
       or whether the copy's machine holds them ahead of time. A proxied Domain's
       `origin_ca` certificate is already stored and pushed by Basecamp
       (`fleet-ingress.md` § The shape), so it can be pushed to the copy's machine
       as well; an `acme` Domain cannot.
+  - **Observed 2026-11-06, from yuma's Caddy log** (`journalctl -u caddy-api`,
+    `obtaining certificate` to `certificate obtained successfully`): **issuance
+    is not the wait. A try made before DNS reaches the machine is.**
+    - Once the name resolves to the machine, five issuances took 3.1 s, 3.1 s,
+      3.8 s, 8.6 s and 12.9 s by HTTP-01.
+    - A try made before the record pointed there failed, and Caddy backed
+      off: retries came after 60 s and 120 s, then 30 min, 1 h, 2 h, 3 h and 6 h
+      (`my.kobami.com`, 2026-11-04 to 05, which never issued). Each time
+      `kobami.app` went live it took 316 s and 348 s from first try to
+      certificate, because the route went up before its record did.
+    - The flip changes one record. Every Domain is a CNAME to the App's
+      ingress name (`edge.service.ts` `push()`), and the ingress A record is
+      written at ttl 1, which is Cloudflare's automatic 300 s. Visitors' resolvers
+      hold the old address that long whatever the certificate does.
+    - **An `acme` Domain can be minted ahead after all.** `push()` refuses a
+      Domain no connected zone holds, so every Domain Basecamp publishes is
+      in a zone whose token Basecamp has. That is what DNS-01 needs, and
+      `providers/acme` already issues by DNS-01 for the wildcard
+      (`ingress-cert.job.ts`). Its copy goes to the copy's machine through
+      Outpost's `/certs/load`, which takes any id. Q10 ruled B (`FJS-D1988`):
+      minted ahead, built as 2.4.
 
 ### Phase 1 — Outpost serves a copy
 
@@ -285,6 +306,13 @@ numbers through MCP at the copy's address.
       at all.
 - [ ] 2.3 Posture flags a copy older than its schedule, with a test that feeds
       it a stale copy.
+- [ ] 2.4 Each `acme` Domain's certificate is minted ahead (`FJS-D1988`). With the copy
+      on, Basecamp mints it by DNS-01 through `providers/acme`, keeps it in a
+      `tlsCert` Secret apart from the Domain's `certSecretId`, renews it at
+      30 days and pushes it to the copy's machine with `/certs/load`, in the
+      shape of `ingress-cert.job.ts`. A proxied Domain's `origin_ca` takes the
+      same push. A failed mint fails the job and shows on the card, with a
+      test that runs against Pebble.
 
 ### Phase 3 — The lifeboat
 
@@ -292,8 +320,9 @@ Goal: with the App's machine down, users reach their data at the App's own
 address.
 Done when: a drill stops the App's machine, presses the button, and a connection
 made before the outage keeps answering with the read-only header and an as-of
-time, or asks its person to sign in again once its access token expires. The drill also records which users had to sign in again and how long the
-first certificate took.
+time, or asks its person to sign in again once its access token expires. The
+drill also records which users had to sign in again, and asserts that each
+Domain served the certificate pushed by 2.4, so nothing was issued at the flip.
 
 - [ ] 3.1 "Serve at the main address" is a declared column on the App that
       `domain-dns.job.ts` reads, so the job itself points the ingress record at
@@ -361,31 +390,31 @@ their gate opens, and only the owner's export runs.
     A, `Credential` stays read-only, so a password changed on the copy is refused
     rather than lost at the next refresh. Still to probe: the existing `Session`
     table in a shop file opened under the `sessions` name.
-- **Q2 — What is the copy's address?**
+- ~~**Q2 — What is the copy's address?**~~ **Answered 2026-11-06 (`FJS-D1982`): A — `<appId>-copy.<zone>`, one label under the ingress zone like the ingress name.**
   - **A** — `<appId>-copy.<zone>`, one label under the ingress zone like the
     ingress name.
   - **B** — `copy.<appId>.<zone>`.
   - **C** — a path under the App's ingress name.
   - **Recommend A** — same shape as a name `ingress-name.md` already serves, and
     C cannot serve the copy while the App answers that host.
-- **Q3 — Which machine serves the copy by default?**
+- ~~**Q3 — Which machine serves the copy by default?**~~ **Answered 2026-11-06 (`FJS-D1983`): A — a machine the owner picks, never the App's own unless it is the only one.**
   - **A** — a machine the owner picks, never the App's own unless it is the only
     one.
   - **B** — Basecamp's own box.
   - **Recommend A** — a copy on the App's own machine dies with it, and B puts
     users' traffic on the control plane.
-- **Q4 — Who may run the full export?**
+- ~~**Q4 — Who may run the full export?**~~ **Answered 2026-11-06 (`FJS-D1984`): A — the account owner only.**
   - **A** — the account owner only.
   - **B** — anyone at ADMINISTRATOR.
   - **Recommend A** — export is the one action a gate does not bound, so it goes
     to the one person responsible for the data. Declared as a gate in the schema
     (4.3).
-- **Q5 — Does the lifeboat switch on by itself?**
+- ~~**Q5 — Does the lifeboat switch on by itself?**~~ **Answered 2026-11-06 (`FJS-D1985`): A — a button only.**
   - **A** — a button only.
   - **B** — automatically after the App's health check fails for a set time.
   - **Recommend A** — an automatic flip on a network blip sends every user to
     yesterday's data; B can follow once Phase 3's drill has run.
-- **Q6 — What is it called?**
+- ~~**Q6 — What is it called?**~~ **Answered 2026-11-06 (`FJS-D1986`): A — "Read-only copy", plain words.**
   - **A** — "Read-only copy", plain words.
   - **B** — the field's terms: "read replica" for reporting, "warm standby" or
     "pilot light" for disaster recovery.
@@ -439,3 +468,27 @@ their gate opens, and only the owner's export runs.
     caller and the audit trail cannot name them; it is a stopgap for a
     single-owner App. C adds a vendor to every App and is a live service the
     lifeboat would depend on. B is the largest build of the three.
+- ~~**Q10 — Where do an `acme` Domain's certificates come from after the flip?**~~ **Answered 2026-11-06 (`FJS-D1988`): B — minted ahead: when the copy is turned on, Basecamp mints each `acme` Domain's certificate by DNS-01 through `providers/acme`, keeps it as a `tlsCert` Secret kept apart from the Domain's own `certSecretId` (otherwise `certStatusOf` reports a certificate the live machine does not serve), renews it at 30 days, and pushes it to the copy's machine with `/certs/load`. That is the per-Domain half `ingress-cert.job.ts` left open (`FJS-D1975`). The flip then issues nothing.** (from 0.5)
+  - **A** — issued during the outage: the copy's Caddy orders by HTTP-01 once
+    the flip has happened. The button flips the record first, then routes, then
+    forces the order with `reload()` (`FJS-D1715`), so no try is made early and
+    starts the backoff. Nothing new to build. On a good day it takes seconds,
+    well inside the 300 s the record takes anyway. A failed order (Let's Encrypt
+    down, five failed validations an hour for that host) is a certificate error
+    on each Domain that failed, found out during the outage.
+  - **B** — minted ahead: when the copy is turned on, Basecamp mints each `acme`
+    Domain's certificate by DNS-01 through `providers/acme`, keeps it as a
+    `tlsCert` Secret kept apart from the Domain's own `certSecretId` (otherwise
+    `certStatusOf` reports a certificate the live machine does not serve),
+    renews it at 30 days, and pushes it to the copy's machine with `/certs/load`.
+    That is the per-Domain half `ingress-cert.job.ts` left open (`FJS-D1975`).
+    The flip then issues nothing.
+  - **Recommend B** — Basecamp already owns minting, for the wildcard and for
+    `origin_ca`, and B keeps it there. A puts a new mint for every Domain at
+    once into the outage. Under B a mint that fails shows up when the copy is
+    turned on, as `expiring_soon` or a failed job, long before anyone needs
+    the copy. The cost is one extra certificate per Domain every 60 days,
+    inside Let's Encrypt's five duplicates a week, and a second machine holding
+    the key, which `fleet-ingress.md` D3 already accepted for pushes. If
+    `fleet-ingress.md` Phase 3 waits too long, ship Phase 3 here with A and
+    upgrade to B.

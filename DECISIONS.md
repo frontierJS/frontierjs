@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1986"></a>2026-11-06 · `FJS-D1986` — Q6 — What is it called — "Read-only copy", plain words.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (the field's terms: "read replica" for reporting, "warm standby" or "pilot light" for disaster recovery).
+
+The paper's recommendation, taken as written: "replica" already means the Litestream object, and this is a daily restore, not a live standby. If it becomes a column or a noun in code, it needs a ruling first.
+
 ### <a id="fjs-d1942"></a>2026-11-05 · `FJS-D1942` — Q1 — The noun — *profile*: AWS's word for this exact shape, so nobody has to learn it. It's spelled like `FJS-D1152`'s `Profile`, the claim key for a Provider's person in a conduit, but that is a model name in another realm and this is a CLI word.
 
 Asked in [`IDEAS/fli-profiles.md`](IDEAS/fli-profiles.md) § Open questions. **A** was picked over **B** (*account*: what gh and doctl call one login. But a profile holds one account at each of several vendors, so the word names the wrong level), **C** (*context*: kubectl's word; collides with `ctx`).
@@ -1856,6 +1862,18 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1987"></a>2026-11-06 · `FJS-D1987` — Q1 — Who may follow a machine unit's journal (Phase 3) — Whoever may read the Server row: the `logs` source's rule, `$readAs` under the caller's claim.
+
+Asked in [`IDEAS/machine-visibility.md`](IDEAS/machine-visibility.md) § Open questions. **A** was picked over **B** (admin and above only, a check in the source).
+
+The paper's recommendation, taken as written: the `logs` source already decided this shape, and a check beside the gate is a second answer (Invariant 6). Reopen as B if a journal is found carrying what a Server reader should not see; the access log is a file per route (`FJS-1928`), not the journal.
+
+### <a id="fjs-d1984"></a>2026-11-06 · `FJS-D1984` — Q4 — Who may run the full export — The account owner only.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (anyone at ADMINISTRATOR).
+
+The paper's recommendation, taken as written: export is the one action a gate does not bound, so it goes to the one person responsible for the data. Declared as a gate in the schema (4.3).
 
 ### <a id="fjs-d1978"></a>2026-11-06 · `FJS-D1978` — Q11 — Whether the reader falls back to `session` — `setAuthCookie(name, { secure })` states the fact once, and the reader reads only the name the writer writes.
 
@@ -16735,6 +16753,30 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1988"></a>2026-11-06 · `FJS-D1988` — Q10 — Where do an `acme` Domain's certificates come from after the flip — Minted ahead: when the copy is turned on, Basecamp mints each `acme` Domain's certificate by DNS-01 through `providers/acme`, keeps it as a `tlsCert` Secret kept apart from the Domain's own `certSecretId` (otherwise `certStatusOf` reports a certificate the live machine does not serve), renews it at 30 days, and pushes it to the copy's machine with `/certs/load`. That is the per-Domain half `ingress-cert.job.ts` left open (`FJS-D1975`). The flip then issues nothing.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **B** was picked over **A** (issued during the outage: the copy's Caddy orders by HTTP-01 once the flip has happened. The button flips the record first, then routes, then forces the order with `reload()` (`FJS-D1715`), so no try is made early and starts the backoff. Nothing new to build. On a good day it takes seconds, well inside the 300 s the record takes anyway. A failed order (Let's Encrypt down, five failed validations an hour for that host) is a certificate error on each Domain that failed, found out during the outage).
+
+The paper's recommendation, taken as written: Basecamp already owns minting, for the wildcard and for `origin_ca`, and B keeps it there. A puts a new mint for every Domain at once into the outage. Under B a mint that fails shows up when the copy is turned on, as `expiring_soon` or a failed job, long before anyone needs the copy. The cost is one extra certificate per Domain every 60 days, inside Let's Encrypt's five duplicates a week, and a second machine holding the key, which `fleet-ingress.md` D3 already accepted for pushes. If `fleet-ingress.md` Phase 3 waits too long, ship Phase 3 here with A and upgrade to B.
+
+### <a id="fjs-d1985"></a>2026-11-06 · `FJS-D1985` — Q5 — Does the lifeboat switch on by itself — A button only.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (automatically after the App's health check fails for a set time).
+
+The paper's recommendation, taken as written: an automatic flip on a network blip sends every user to yesterday's data; B can follow once Phase 3's drill has run.
+
+### <a id="fjs-d1983"></a>2026-11-06 · `FJS-D1983` — Q3 — Which machine serves the copy by default — A machine the owner picks, never the App's own unless it is the only one.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (Basecamp's own box).
+
+The paper's recommendation, taken as written: a copy on the App's own machine dies with it, and B puts users' traffic on the control plane.
+
+### <a id="fjs-d1982"></a>2026-11-06 · `FJS-D1982` — Q2 — What is the copy's address — `<appId>-copy.<zone>`, one label under the ingress zone like the ingress name.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (`copy.<appId>.<zone>`), **C** (a path under the App's ingress name).
+
+The paper's recommendation, taken as written: same shape as a name `ingress-name.md` already serves, and C cannot serve the copy while the App answers that host.
 
 ### <a id="fjs-d1981"></a>2026-11-06 · `FJS-D1981` — Q6 — Where does the rule naming an API App's fronting static Apps live, once Basecamp's release job needs it too — Basecamp owns it (`domain/release/`) and an App's detail lists its fronting static Apps; `fli deploy` reads that list.
 

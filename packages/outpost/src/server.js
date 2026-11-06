@@ -147,6 +147,13 @@ export function createOutpostServer(config, {
       })
       return { commit_sha: built.commit, url: built.url, ...(built.skipped ? { skipped: built.skipped } : {}) }
     },
+    // An API App's web/, built from the commit its image was (`FJS-D1979`) and
+    // answered as files: Basecamp publishes them to each static App in front
+    // of it, through that App's own machine.
+    'POST /web/build': async (body) => {
+      const built = await docker.webBuild({ appId: body.app_id, source: body.source, commit: body.commit })
+      return { commit_sha: built.commit, ...(built.skipped ? { skipped: built.skipped } : { files: built.files }) }
+    },
     // The route goes with the container: left behind, Caddy answers the app's
     // hostnames with a 502 from a port nothing holds. A redeploy's own stop
     // takes it too, and its `/deploy` puts it back.

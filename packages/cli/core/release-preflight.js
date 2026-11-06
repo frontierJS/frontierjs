@@ -138,19 +138,6 @@ export function imageRuntime(dockerfile) {
 }
 
 /**
- * The static Apps in front of a container App, one entry per Domain: the API
- * split from web/ is reached through a Domain on the static App and the routes
- * back to it (`FJS-D1547`), so a Domain routed to another App is that App's.
- * Unread routes (`null`) count every static Domain as this App's.
- */
-export function frontingStatics({ app, siblings, routes }) {
-  const statics = (siblings ?? []).filter(s => s.id !== app.id && s.source?.kind === 'inline')
-  return statics.flatMap(s => (s.domains ?? [])
-    .filter(d => !(routes ?? []).some(r => r.domainId === d.id && r.appId !== app.id))
-    .map(d => ({ app: s, domain: d })))
-}
-
-/**
  * @param app        the Basecamp App row, with `environment`, `placement` and `domains`
  * @param variables  Variable rows of the App's environment, or null when they could not be read
  * @param unread     why a read failed, by what was read — `{ variables: 'Basecamp refused …' }`
@@ -288,7 +275,8 @@ export function releaseFindings({
   // the hostname served the page for /api (`FJS-3529`).
   const statics = (siblings ?? []).filter(s => s.id !== app.id && s.source?.kind === 'inline')
   const norm    = (p) => String(p).trim().toLowerCase().replace(/\/+$/, '')
-  const fronts  = frontingStatics({ app, siblings, routes })
+  // Basecamp's answer, on the App's detail (`FJS-D1981`): one entry per Domain that fronts it.
+  const fronts  = (app.fronts ?? []).flatMap(s => (s.domains ?? []).map(d => ({ app: s, domain: d })))
   const fronted = fronts.length > 0
   for (const { app: s, domain: d } of fronts) {
     if (!routes) continue

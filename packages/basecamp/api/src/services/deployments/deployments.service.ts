@@ -17,12 +17,13 @@ import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_
 import { db, getScoped, narrowPatch, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
-import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP, inFlightRelease } from '../../domain/release/release-record.ts'
+import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, inFlightRelease } from '../../domain/release/release-record.ts'
 import { isInline, isGit, imageOf, inlineFilesFor, refuseBranch } from '../../domain/release/app-source.ts'
 import { snapshotVariables } from '../../domain/release/variables.ts'
 import { runtimeOf, type Runtime, CONTAINER_KINDS } from '../../domain/release/runtime.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { refuseHubRelease } from '../../domain/host/host-machine.ts'
+import { frontsOf } from '../../domain/release/fronting.ts'
 
 // A release went to its app's environment, which is `@immutable`, so the app
 // is where a row reads it (`FJS-D1609`).
@@ -74,7 +75,7 @@ const WITH_APP = { app: { include: { environment: true } } }
  * `site/`, if it has one, built against that database and published. A
  * rollback has none, since its clone is the branch as it is now.
  */
-function buildInitialSteps(target: { kind: string; source?: unknown; runtime?: Runtime }, built = false, restoring = false): string[] {
+function buildInitialSteps(target: { kind: string; source?: unknown; runtime?: Runtime }, built = false, restoring = false, fronted = false): string[] {
   if (target.kind === 'static' && isGit(target.source)) return ['Validate', 'Build and deploy']
   if (isInline(target.source))
     return inlineFilesFor(target.source).length
@@ -88,7 +89,8 @@ function buildInitialSteps(target: { kind: string; source?: unknown; runtime?: R
   if ((target.kind === 'container' || target.kind === 'function') && isGit(target.source))
     return built
       ? ['Validate', ...copy, 'Start container', 'Health check']
-      : ['Validate', 'Build image', ...copy, 'Start container', 'Health check', ...(copy.length ? [SITE_STEP] : [])]
+      : ['Validate', 'Build image', ...(fronted ? [WEB_BUILD_STEP] : []), ...copy, 'Start container', 'Health check',
+          ...(fronted ? [WEB_RELEASE_STEP] : []), ...(copy.length ? [SITE_STEP] : [])]
   // An image somebody else built has nothing to build, and a list that says
   // otherwise sends no /pull at all and reports the build as done. A database is
   // a container too: a blueprint app carries an image source, and a list of its
@@ -153,9 +155,12 @@ async function queueRelease(target: { id: string; environmentId: string; kind: s
   if (prev) data.previousDeploymentId = prev.id
 
   const deployment = await db().deployment.create({ data, system: systemKeys(data) })
+  // Asked at queue time: a static App made after this is released by the next one.
+  const fronted = !built && CONTAINER_KINDS.has(target.kind) && isGit(target.source)
+    && (await frontsOf(db(), target)).length > 0
 
   await db().deploymentStep.createMany({
-    data: buildInitialSteps({ kind: target.kind, ...(data.configSnapshot as { source: unknown; runtime: Runtime }) }, built).map((name, position) => ({
+    data: buildInitialSteps({ kind: target.kind, ...(data.configSnapshot as { source: unknown; runtime: Runtime }) }, built, false, fronted).map((name, position) => ({
       deploymentId: deployment.id, position, name, status: 'pending',
     })),
   })

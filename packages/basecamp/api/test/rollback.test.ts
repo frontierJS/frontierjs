@@ -577,3 +577,97 @@ describe('how the machine swapped, on the row', () => {
     })
   })
 })
+
+// ─── web/ from the API's own commit (FJS-D1979, FJS-D1980, FJS-D1981) ────────
+describe('an API App\'s git release builds web/ for the static App in front of it', () => {
+  const API = { id: 'a1' }
+  const WEB = { id: 'w1', name: 'app', source: { kind: 'inline' }, domains: [{ id: 'd1', hostname: 'nela.awe.dev' }] }
+
+  test('the static App whose Domain routes to no other App is the one in front of it', async () => {
+    const { frontingStatics } = await import('../src/domain/release/fronting.ts')
+    const IMG = { id: 'c2', source: { kind: 'image' }, domains: [{ id: 'd2', hostname: 'other.awe.dev' }] }
+    expect(frontingStatics({ app: API, siblings: [WEB, IMG], routes: [{ domainId: 'd1', appId: 'a1' }] }).map(f => f.app.id)).toEqual(['w1'])
+    expect(frontingStatics({ app: API, siblings: [WEB], routes: [{ domainId: 'd1', appId: 'other' }] })).toEqual([])
+    expect(frontingStatics({ app: API, siblings: [WEB], routes: [] }).map(f => f.domain.id)).toEqual(['d1'])
+  })
+
+  const commit = 'c'.repeat(40)
+  const files  = [{ path: 'index.html', content_base64: Buffer.from('<h1>kos</h1>').toString('base64') }]
+
+  /** A git API App with a static App beside it holding a Domain, both on `box`. */
+  async function aSplitApp() {
+    const sys  = env.system as any
+    const slug = `api-${uniq()}`
+    const api = await sys.app.create({ data: { workspaceId: ws.id, environmentId: environment.id, name: slug, slug, kind: 'container',
+      source: { kind: 'git', repo: 'https://example.test/kos.git', branch: 'main' } } })
+    const page = await sys.app.create({ data: { workspaceId: ws.id, environmentId: environment.id, name: `${slug}-web`, slug: `${slug}-web`,
+      kind: 'static', source: { kind: 'inline', files: [] } } })
+    for (const a of [api, page]) await sys.appServer.create({ data: { appId: a.id, serverId: box.id, replicaIndex: 0 } })
+    await sys.domain.create({ data: { workspaceId: ws.id, appId: page.id, hostname: `${slug}.example.test` } })
+    return { api, page }
+  }
+
+  async function release(api: any, answers: Record<string, (body: any) => any>) {
+    const sys = env.system as any
+    const row = await sys.deployment.create({ data: {
+      appId: api.id, workspaceId: ws.id, toImage: `${api.slug}:git`, trigger: 'push',
+      configSnapshot: { source: api.source, runtime: {} } } })
+    // No 'Health check': the stub conduit answers it with nothing, which waits out its budget.
+    for (const [position, name] of ['Build image', 'Build web', 'Start container', 'Release web'].entries())
+      await sys.deploymentStep.create({ data: { deploymentId: row.id, position, name } })
+    const sent: any[] = []
+    const conduit = {
+      resolve: async () => ({ pinned_cert: true }),
+      send: async (call: any) => { sent.push(call); return answers[call.path]?.(call.body) ?? { data: {} } },
+    }
+    const via = new Proxy(env.app, { get: (t, k) =>
+      k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+    await env.app.runAs(admin.id, { tenant: ws.id }, () =>
+      (deploymentRun as any).handler({ app: via, data: { deployment_id: row.id } }))
+    return { row: await sys.deployment.findUnique({ where: { id: row.id } }), sent }
+  }
+
+  const BUILT = { '/build': () => ({ data: { digest: 'sha256:' + 'f'.repeat(64), commit_sha: commit } }) }
+
+  test('web/ is built from the commit /build answered, written before the swap, and released as the static App\'s own row', async () => {
+    const { api, page } = await aSplitApp()
+    const { row, sent } = await release(api, {
+      ...BUILT,
+      '/web/build':      () => ({ data: { commit_sha: commit, files } }),
+      '/static/publish': () => ({ data: { digest: 'sha256:' + 'e'.repeat(64) } }),
+    })
+    expect(row.status).toBe('success')
+    const paths = sent.map(c => c.path)
+    expect(sent.find(c => c.path === '/web/build')?.body).toMatchObject({ app_id: api.id, commit })
+    expect(sent.find(c => c.path === '/static/publish')?.body).toMatchObject({ app_id: page.id, files })
+    expect(paths.indexOf('/static/publish')).toBeLessThan(paths.indexOf('/deploy'))
+    const web = await (env.system as any).deployment.findFirst({ where: { appId: page.id } })
+    expect(web).toMatchObject({ builtImage: 'sha256:' + 'e'.repeat(64), commitSha: commit, trigger: 'push' })
+  })
+
+  test('a failed web build fails the release before the swap', async () => {
+    const { api, page } = await aSplitApp()
+    const { row, sent } = await release(api, {
+      ...BUILT,
+      '/web/build': () => ({ error: { message: 'vite build failed', raw: { error: 'vite: config/vite.config.js not found' } } }),
+    })
+    expect(row.status).toBe('failed')
+    expect(sent.some(c => c.path === '/deploy')).toBe(false)
+    expect(sent.some(c => c.path === '/static/publish')).toBe(false)
+    expect(await (env.system as any).deployment.findFirst({ where: { appId: page.id } })).toBeNull()
+  })
+
+  test('the queued release lists the web steps only when a static App fronts it', async () => {
+    const { api } = await aSplitApp()
+    const lone = await (env.system as any).app.create({ data: { workspaceId: ws.id, environmentId: (await (env.system as any).environment.create({ data: {
+      workspaceId: ws.id, projectId: environment.projectId, name: 'Lone', slug: `e-${uniq()}` } })).id,
+      name: `lone-${uniq()}`, slug: `lone-${uniq()}`, kind: 'container', source: api.source } })
+    await (env.system as any).appServer.create({ data: { appId: lone.id, serverId: box.id, replicaIndex: 0 } })
+    const stepsOf = async (appId: string) => {
+      const made = await env.as(admin).service('deployments').create({ appId })
+      return (await (env.system as any).deploymentStep.findMany({ where: { deploymentId: made.id }, orderBy: { position: 'asc' } })).map((s: any) => s.name)
+    }
+    expect(await stepsOf(api.id)).toEqual(['Validate', 'Build image', 'Build web', 'Start container', 'Health check', 'Release web'])
+    expect(await stepsOf(lone.id)).toEqual(['Validate', 'Build image', 'Start container', 'Health check'])
+  })
+})

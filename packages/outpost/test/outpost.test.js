@@ -4536,3 +4536,76 @@ describe('the Caddy admin client opens a connection per call', () => {
     } finally { server.close() }
   })
 })
+
+// An API App's web/ from the commit its image was built from (FJS-D1979):
+// the clone's own install, a vite build with the build stamp, and the files
+// answered in the shape /static/publish takes.
+describe('a web build', () => {
+  const SOURCE = { kind: 'git', repo: 'git@git.test:acme/kos.git', branch: 'main' }
+  const COMMIT = 'c0ffee'.padEnd(40, '0')
+  const BODY   = { app_id: 'app-1', source: SOURCE, commit: COMMIT }
+  // `web` and `manifest` lay down what the clone would hold; the vite run writes its output.
+  const serverFor = ({ web = true, manifest = { name: 'kos', dependencies: { '@frontierjs/junction': '^0.4.0' } } } = {}) => {
+    const workDir = mkdtempSync(join(tmpdir(), 'outpost-web-'))
+    const dir = `${workDir}/app-1.web`
+    mkdirSync(dir, { recursive: true })
+    if (manifest) writeFileSync(`${dir}/package.json`, JSON.stringify(manifest)), writeFileSync(`${dir}/bun.lock`, '{}')
+    if (web) mkdirSync(`${dir}/web/config`, { recursive: true }), writeFileSync(`${dir}/web/config/vite.config.js`, '')
+    const fake = fakeRunner({ 'git -C': { stdout: COMMIT + '\n' } })
+    const run = async (argv, opts) => {
+      if (argv.includes('vite')) {
+        mkdirSync(`${dir}/.web-release/assets`, { recursive: true })
+        writeFileSync(`${dir}/.web-release/index.html`, '<h1>kos</h1>')
+        writeFileSync(`${dir}/.web-release/assets/app.js`, 'export {}')
+      }
+      return fake.run(argv, opts)
+    }
+    const docker = createDocker({ appsDir: APPS, health: FAST, run, workDir, deployKeyDir: mkdtempSync(join(tmpdir(), 'outpost-web-keys-')) })
+    const server = createOutpostServer(CONFIG, { docker, inspector: createInspector({ run }), log: { warn() {}, error() {} } })
+    return { server, workDir, argv: () => fake.calls.map(c => c.join(' ')) }
+  }
+  const tail = (c) => c.split(` oven/bun:${Bun.version} `)[1]
+
+  test('installs from the clone, builds web/ stamped with the commit, and answers its files', async () => {
+    const { server, workDir, argv } = serverFor()
+    const res = await send(server, 'POST', '/web/build', BODY)
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.commit_sha).toBe(COMMIT)
+    expect(body.files.map(f => f.path).sort()).toEqual(['assets/app.js', 'index.html'])
+    expect(Buffer.from(body.files.find(f => f.path === 'index.html').content_base64, 'base64').toString()).toBe('<h1>kos</h1>')
+    const runs = argv().filter(c => c.startsWith('docker run --rm'))
+    expect(runs.map(tail)).toEqual([
+      'bun install --frozen-lockfile',
+      'bun --bun vite build -c config/vite.config.js --outDir /src/.web-release --emptyOutDir',
+    ])
+    expect(runs[1]).toContain(`-e NODE_ENV=production -e VITE_FJS_BUILD=${COMMIT}`)
+    expect(runs[1]).not.toContain('FRONTIER_PUBLIC_API_URL')
+    expect(argv().some(c => c.startsWith('git ') && c.includes('GIT_SSH_COMMAND'))).toBe(false)
+    expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.web`)
+  })
+
+  test('a commit with no web/ answers skipped and builds nothing', async () => {
+    const { server, argv } = serverFor({ web: false })
+    const res = await send(server, 'POST', '/web/build', BODY)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ commit_sha: COMMIT, skipped: 'c0ffee0 has no web/ surface' })
+    expect(argv().some(c => c.startsWith('docker run'))).toBe(false)
+  })
+
+  test('a linked manifest is refused by name before anything installs', async () => {
+    const { server, argv } = serverFor({ manifest: { name: 'kos', dependencies: { '@frontierjs/junction': 'link:@frontierjs/junction' } } })
+    const res = await send(server, 'POST', '/web/build', BODY)
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain('@frontierjs/junction is linked')
+    expect(argv().some(c => c.startsWith('docker run'))).toBe(false)
+  })
+
+  test('a commit that is not a commit id is refused before anything runs', async () => {
+    const { server, argv } = serverFor()
+    const res = await send(server, 'POST', '/web/build', { ...BODY, commit: '--upload-pack=x' })
+    expect(res.status).toBe(500)
+    expect(argv().some(c => c.startsWith('git ') || c.startsWith('docker '))).toBe(false)
+  })
+})

@@ -21,7 +21,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, createWriteStream 
 import { createHash, randomBytes } from 'node:crypto'
 import { Readable }                from 'node:stream'
 import { pipeline }                from 'node:stream/promises'
-import { validRelativePath, validName } from './static.js'
+import { validRelativePath, validName, LIMITS } from './static.js'
 import { ensureDeployKey }         from './deploy-key.js'
 import { chooseDockerfile, needsGenerated, exposedPort, linkedDeps, writeUnlinked, GENERATED_DIR } from './dockerfile.js'
 import { createSwap, portOf as portIn, runFlags, checkStopGrace, checkHealthTimeout, healthBudgetS, healthyStatus, livePivot, swapFor, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } from './swap.js'
@@ -62,6 +62,10 @@ function uploadErrors(said) {
 // What a site preview builds in: the Bun this Outpost runs, and the `node`
 // wrangler is run under.
 const PREVIEW_IMAGE = `oven/bun:${Bun.version}`
+// Where `fli` looks for web/'s config, in its order.
+const WEB_CONFIGS = ['config/vite.config.js', 'config/vite.config.ts', 'vite.config.js', 'vite.config.ts', 'vite.config.mjs']
+// Inside the checkout, so the build's output goes with it.
+const WEB_OUT = '.web-release'
 
 // The largest file `POST /source/file` answers. A Dockerfile is a few KB; the
 // answer is a JSON body Basecamp stores on the App.
@@ -692,22 +696,11 @@ export function createDocker({
     const cache = `${workDir}/${appId}.preview-cache`
     const root  = source.path != null ? `/src/${source.path}` : '/src'
     const site  = app ? `${root}/site` : root
-    // The container's user is this process's, so the checkout it writes is
-    // one this process can remove, and HOME is somewhere that user can write.
-    const user  = `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`
-    const box   = (extra) => ['run', '--rm', '--user', user, '-e', 'HOME=/tmp',
-      '-e', 'BUN_INSTALL_CACHE_DIR=/cache', '--mount', `type=bind,source=${cache},target=/cache`,
-      '--mount', `type=bind,source=${dir},target=/src`, ...extra, PREVIEW_IMAGE]
+    const box   = boxFor(dir, cache)
 
-    await run(['rm', '-rf', dir])
-    // The install cache outlives the checkout, one per site, so one site's
-    // install scripts never write what another's install reads.
-    await mkdir(cache, { recursive: true })
+    await scratch(dir, cache)
     try {
-      await git(['init', '--quiet', dir])
-      await git(['-C', dir, '-c', 'core.hooksPath=/dev/null', 'fetch', '--quiet', '--depth', '1', '--', source.repo, `+refs/heads/${branch}:refs/heads/build`])
-      await git(['-C', dir, '-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', 'build'])
-      const commit = (await git(['-C', dir, 'rev-parse', 'HEAD'])).trim()
+      const commit = await checkout({ dir, repo: source.repo, branch })
       if (expected != null && commit !== expected)
         throw new Error(`${branch} is at ${commit.slice(0, 7)}, not ${expected.slice(0, 7)} — it moved since the release was decided`)
       // fli's own test for a surface it made (`fli site:build`).
@@ -754,6 +747,117 @@ export function createDocker({
     } finally {
       await run(['rm', '-rf', dir, ...(app ? [`${dir}.db`] : [])])
     }
+  }
+
+  /** `docker run` arguments for a throwaway container over the checkout at
+   *  `dir`. The container's user is this process's, so the checkout it writes
+   *  is one this process can remove, and HOME is somewhere that user can write. */
+  function boxFor(dir, cache) {
+    const user = `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`
+    return (extra) => ['run', '--rm', '--user', user, '-e', 'HOME=/tmp',
+      '-e', 'BUN_INSTALL_CACHE_DIR=/cache', '--mount', `type=bind,source=${cache},target=/cache`,
+      '--mount', `type=bind,source=${dir},target=/src`, ...extra, PREVIEW_IMAGE]
+  }
+
+  /** An empty checkout directory, and the install cache beside it. The cache
+   *  outlives the checkout, one per app, so one app's install scripts never
+   *  write what another's install reads. */
+  async function scratch(dir, cache) {
+    await run(['rm', '-rf', dir])
+    await mkdir(cache, { recursive: true })
+  }
+
+  /** `branch` checked out at `dir` with no hooks, answering its commit. With
+   *  `commit`, a branch that has moved on is fetched again by that id: a push
+   *  landing during a release must not cost the release its own commit. */
+  async function checkout({ dir, repo, branch, commit = null, env }) {
+    const opts = env ? { env } : {}
+    await git(['init', '--quiet', dir], opts)
+    await git(['-C', dir, '-c', 'core.hooksPath=/dev/null', 'fetch', '--quiet', '--depth', '1', '--', repo, `+refs/heads/${branch}:refs/heads/build`], opts)
+    await git(['-C', dir, '-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', 'build'], opts)
+    let head = (await git(['-C', dir, 'rev-parse', 'HEAD'], opts)).trim()
+    if (commit != null && head !== commit) {
+      await git(['-C', dir, '-c', 'core.hooksPath=/dev/null', 'fetch', '--quiet', '--depth', '1', '--', repo, commit], opts)
+      await git(['-C', dir, '-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', 'FETCH_HEAD'], opts)
+      head = (await git(['-C', dir, 'rev-parse', 'HEAD'], opts)).trim()
+    }
+    return head
+  }
+
+  /**
+   * An API App's web/ built from `commit`, the one its image was built from
+   * (`FJS-D1979`), answered as the files `/static/publish` takes. The clone is
+   * the repository's code, so the install and the build run in throwaway
+   * containers and the checkout is removed after. The install is the clone's
+   * own manifest and lockfile; a link: package is held by no clone
+   * (`FJS-D942`) and is refused by name rather than failing deep in bun
+   * install. A commit with no web/ answers `skipped`.
+   */
+  async function webBuild({ appId, source, commit }) {
+    const bad = validName(appId, 'app_id')
+    if (bad) throw new Error(bad)
+    if (source?.kind !== 'git' || !source.repo) throw new Error('a web build needs a git source with a repo')
+    if (source.path != null) {
+      const badPath = validRelativePath(source.path)
+      if (badPath) throw new Error(`source path: ${badPath}`)
+    }
+    const branch = source.branch ?? 'main'
+    if (!BRANCH.test(branch)) throw new Error(`branch: ${JSON.stringify(branch)} is not a branch name`)
+    if (!/^[0-9a-f]{40}$/.test(commit ?? '')) throw new Error(`commit: ${JSON.stringify(commit)} is not a commit id`)
+
+    // The image's clone reached a private repository with the deploy key, so this one does too.
+    const { keyPath } = await ensureDeployKey(deployKeyDir, appId, { run })
+    const dir   = `${workDir}/${appId}.web`
+    const cache = `${workDir}/${appId}.web-cache`
+    const rel   = source.path != null ? `/${source.path}` : ''
+    const box   = boxFor(dir, cache)
+
+    await scratch(dir, cache)
+    try {
+      const head = await checkout({ dir, repo: source.repo, branch, commit, env: gitEnv(keyPath) })
+      if (head !== commit) throw new Error(`the clone is at ${head.slice(0, 7)}, not ${commit.slice(0, 7)}`)
+      const host = `${dir}${rel}`
+      if (!existsSync(`${host}/web`)) return { commit, skipped: `${commit.slice(0, 7)} has no web/ surface` }
+      const config = WEB_CONFIGS.find(c => existsSync(`${host}/web/${c}`))
+      if (!config) throw new Error(`web/ at ${commit.slice(0, 7)} has no vite config (looked for ${WEB_CONFIGS.join(', ')})`)
+
+      let manifest = null
+      try { manifest = JSON.parse(readFileSync(`${host}/package.json`, 'utf8')) } catch {}
+      if (!manifest) throw new Error(`the clone has no package.json${source.path != null ? ` under ${source.path}` : ''} to install web/ from`)
+      const linked = linkedDeps(manifest)
+      if (linked.length)
+        throw new Error(`web/ cannot be built from a clone: ${linked.join(', ')} ${linked.length === 1 ? 'is' : 'are'} linked, `
+          + 'and a clone holds no workspace. Release from the workspace with fli deploy')
+      const frozen = ['bun.lock', 'bun.lockb'].some(l => existsSync(`${host}/${l}`)) ? ['--frozen-lockfile'] : []
+      await docker([...box(['-w', `/src${rel}`]), 'bun', 'install', ...frozen], { timeoutMs: 900_000 })
+      // The API is reached through the static App's own Domain (`FJS-D1969`),
+      // so the build is told no origin; VITE_FJS_BUILD is the stamp the API's
+      // FJS_BUILD is compared against (`FJS-D160`).
+      await docker([...box(['-w', `/src${rel}/web`, '-e', 'NODE_ENV=production', '-e', `VITE_FJS_BUILD=${commit}`]),
+        'bun', '--bun', 'vite', 'build', '-c', config, '--outDir', `/src${rel}/${WEB_OUT}`, '--emptyOutDir'],
+        { timeoutMs: 900_000 })
+      return { commit, files: await builtFiles(`${host}/${WEB_OUT}`) }
+    } finally {
+      await run(['rm', '-rf', dir])
+    }
+  }
+
+  /** The regular files under `out`, as `/static/publish` takes them, refused
+   *  by name over what that route accepts: the whole list travels in one body. */
+  async function builtFiles(out) {
+    if (!existsSync(out)) throw new Error('vite build wrote nothing')
+    const entries = (await readdir(out, { recursive: true, withFileTypes: true })).filter(e => e.isFile())
+    if (entries.length > LIMITS.files) throw new Error(`web/ built ${entries.length} files, over the ${LIMITS.files} a static publish accepts`)
+    const files = []
+    let total = 0
+    for (const e of entries) {
+      const at    = `${e.parentPath ?? e.path}/${e.name}`
+      const bytes = await readFile(at)
+      total += bytes.length
+      if (total > LIMITS.totalBytes) throw new Error(`web/ built over the ${LIMITS.totalBytes} bytes a static publish accepts`)
+      files.push({ path: relative(out, at), content_base64: bytes.toString('base64') })
+    }
+    return files
   }
 
   /**
@@ -952,6 +1056,9 @@ export function createDocker({
      *  with `app`, an API App's `site/` against its own database. */
     sitePublish: ({ appId, source, branch, commit, token, accountId, app }) =>
       siteBuild({ appId, source, branch, commit, alias: null, token, accountId, app }),
+
+    /** An API App's web/ from the commit its image was built from (`FJS-D1979`). */
+    webBuild: ({ appId, source, commit }) => webBuild({ appId, source, commit }),
 
     /** Whether the release in `image` can serve beside the live one
      *  (`livePivot`, `FJS-D1838`). Never throws. */

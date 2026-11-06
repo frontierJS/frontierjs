@@ -30,6 +30,16 @@ export const SWAP_STEPS = new Set(['Start container', 'Activate', 'Build and dep
  */
 export const SITE_STEP = 'Publish site'
 
+/**
+ * An API App's web/, built from the commit its image was and written onto
+ * each static App in front of it BEFORE the swap, so a failed build fails
+ * the release with the old API still serving; released as each static App's
+ * own Deployment after the health check (`FJS-D1979`, `FJS-D1980`). A failure
+ * of the second leaves the release a success, as `SITE_STEP`'s does.
+ */
+export const WEB_BUILD_STEP   = 'Build web'
+export const WEB_RELEASE_STEP = 'Release web'
+
 type Row = Record<string, any>
 
 const sys = (app: App): any => (app.db as any).asSystem()

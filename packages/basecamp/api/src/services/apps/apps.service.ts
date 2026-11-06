@@ -38,6 +38,8 @@ import { createService, NotFound, BadRequest, BadGateway, Conflict, parseWhere, 
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS, AccessDeniedError } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { publishStatic, type PublishFile } from '../../domain/release/static-publish.ts'
+import { frontsOf } from '../../domain/release/fronting.ts'
 import { db, getScoped, removeScoped, restoreScoped, deriveSlug, narrowPatch, changesNothing, ws, actor,
          slugify, }
   from '../../core/resource.ts'
@@ -82,7 +84,6 @@ const _WITH_ENV = { environment: true }
 
 
 /** A build is up to 24 MB written file by file; conduit's 10s default fails it mid-write. */
-const STATIC_PUBLISH_TIMEOUT_MS = 120_000
 
 /** A value for a parameter that says how to mint one. The number is BYTES,
  *  read the way `openssl rand -hex 32` reads it — so `randomHex32` is 64
@@ -515,6 +516,8 @@ async function detail(id: string) {
     jobs,
     portsTaken: [...new Set(holders.map(h => h.port))].sort((a, b) => a - b),
     ingress: await ingressStateOf(db(), row.id),
+    // What `fli deploy` releases beside this App (`FJS-D1981`).
+    fronts: sourceKindOf(row.source) === 'inline' ? [] : await frontsOf(db(), row),
   }
 }
 
@@ -1149,12 +1152,10 @@ export default createService({
     if (!Array.isArray(data.files) || !data.files.length)
       throw new BadRequest('files is the build: a list of { path, content } or { path, content_base64 }')
 
-    const executor = await resolveExecutor($.app, target.id)
-    if (!isExecutor(executor)) throw new BadRequest(executor.reason)
-    const reply = await executor.call('/static/publish', { app_id: target.id, files: data.files }, { timeoutMs: STATIC_PUBLISH_TIMEOUT_MS })
-    if (reply.error) throw new BadRequest(`The machine refused the build: ${reply.error.message}`)
-    const digest = String((reply.data as { digest?: unknown })?.digest ?? '')
-    if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error('The machine wrote the build and reported no digest')
+    const out = await publishStatic($.app, target.id, data.files as PublishFile[])
+    if ('refused' in out) throw new BadRequest(out.refused)
+    if ('stubbed' in out) throw new Error('The machine wrote the build and reported no digest')
+    const digest = out.digest
 
     return $.app.service('deployments').create({
       appId: target.id, builtImage: digest,

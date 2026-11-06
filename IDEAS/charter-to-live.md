@@ -310,9 +310,13 @@ box diff is empty, and each miss is a filed `FJS-###`.
   adds `/volumes` and `edge.records` `orphans` over every zone; a list the key cannot read
   fails the stage by name. Framework side, in this tree: `FJS-4055`, `FJS-4056`, `FJS-4057`
   closed, and `edge.zones`/`records` are declared reads so `edge:read` reaches them; a
-  Domain-less App's record is `FJS-4061`. **Owed before the drive:** the owner mints the
-  D1976 run key (`basecamp:key` was refused here), and Basecamp on `chartered` carries the
-  three fixes (its image is `basecamp:d76ffe1db`).
+  Domain-less App's record is `FJS-4061`.
+  **Driven 2026-11-06** on `chartered` under the D1976 key, `--from deploy --date 2026-11-04`:
+  deploy failed (the 11-04 app's history does not build the auth models' new sign-in columns,
+  `FJS-4071`), and clean ran after it — two Apps, the project and the data Volume removed, every
+  list diff empty, zone orphans none. The container log came back empty because Outpost
+  discards an unhealthy start (`FJS-4070`). **Left:** the log half against a running
+  container, which needs a deploy that lands.
 - [x] 1.6 `corpus/live/`: a matrix of charters across shape (`saas` `solo` `team`), entry
   (`signup` `invite` `admin`), sign-in and one vendor. Frozen on the day it is written, like
   `prompts.json`. **Written 2026-11-04:** eight files `01-saas-signup` … `08-saas-signup`, each
