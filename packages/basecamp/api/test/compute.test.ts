@@ -874,11 +874,12 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain(`bash -s "bun-v${BUN_VERSION}"`)
     // FJS-D1826: installed once into the program directory, so a restart finds
     // its code on disk instead of unpacking into the unit's private /tmp.
-    expect(script).toContain(`(cd /usr/local/lib/outpost && bun add --exact @frontierjs/outpost@${OUTPOST_VERSION})`)
+    // FJS-D1989: from the release host, at the pin.
+    expect(script).toContain(`(cd /usr/local/lib/outpost && bun add https://packages.frontierjs.com/@frontierjs/outpost@${OUTPOST_VERSION}/frontierjs-outpost-${OUTPOST_VERSION}.tgz)`)
     const unit = /cat > \/etc\/systemd\/system\/outpost\.service <<UNITEOF\n([\s\S]*?)\nUNITEOF/.exec(script)?.[1] ?? ''
     expect(unit).not.toMatch(/bun x|bunx/)
     expect(unit).toMatch(/^ExecStart=\$BUN_INSTALL\/bin\/bun \/usr\/local\/lib\/outpost\/node_modules\/\.bin\/outpost$/m)
-    expect(script.indexOf('bun add --exact')).toBeLessThan(script.indexOf('cat > /etc/systemd/system/outpost.service'))
+    expect(script.indexOf('bun add https://')).toBeLessThan(script.indexOf('cat > /etc/systemd/system/outpost.service'))
     expect(BUN_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
   })
 
@@ -905,13 +906,17 @@ describe('a machine claims its own credential', () => {
   })
 
   // The pin is moved by hand after a publish and never held to the workspace
-  // (FJS-D1773): the tree's version is the one npm lacks at every graded commit.
+  // (FJS-D1773): the tree's version is the one no host has at every graded commit.
   // A hand-move that gets ahead is still possible (FJS-3534), so an enrollment
-  // asks before a machine is billed for.
-  test('an enrollment is refused by name when npm lacks the pinned Outpost, and let through when npm cannot be asked', async () => {
+  // asks the release host (FJS-D1989) before a machine is billed for.
+  test('an enrollment is refused by name when the release lacks the pinned Outpost, and let through when it cannot be asked', async () => {
     const { outpostUnpublished } = await import('../src/providers/compute/enrollment.ts')
-    const answering = (status: number) => (async () => new Response('', { status })) as unknown as typeof fetch
-    expect(await outpostUnpublished('0.0.0-missing', answering(404))).toContain('@frontierjs/outpost@0.0.0-missing and npm does not have')
+    const asked: string[] = []
+    const answering = (status: number) => (async (url: string, init?: RequestInit) => {
+      asked.push(`${init?.method} ${url}`); return new Response('', { status })
+    }) as unknown as typeof fetch
+    expect(await outpostUnpublished('0.0.0-missing', answering(404))).toContain('@frontierjs/outpost@0.0.0-missing and its GitHub Release does not have it')
+    expect(asked[0]).toBe('HEAD https://packages.frontierjs.com/@frontierjs/outpost@0.0.0-missing/frontierjs-outpost-0.0.0-missing.tgz')
     expect(await outpostUnpublished('0.0.0-present', answering(200))).toBe(null)
     expect(await outpostUnpublished('0.0.0-down', answering(503))).toBe(null)
     const offline = (async () => { throw new Error('ENOTFOUND') }) as unknown as typeof fetch

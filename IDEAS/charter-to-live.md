@@ -299,7 +299,7 @@ box diff is empty, and each miss is a filed `FJS-###`.
   scratch copy of the image's code (`drivesOn` in the record says so) and only login and the
   move touch the URL; and nothing seeds a first owner on a deployed App's first boot, so login
   against a real box answers 401 until Q6 is ruled.
-- [ ] 1.5 The clean stage saves the App's container logs, its digest and the fli output into the
+- [x] 1.5 The clean stage saves the App's container logs, its digest and the fli output into the
   run record. Unless the run was set to keep, it removes the App and its Domain. It writes the box
   diff from 0.6 into the `Run`: anything beyond a kept App fails the run.
   **Built 2026-11-06 under `FJS-D1976`, not yet driven on the box.** `builder/live.ts`: deploy
@@ -315,8 +315,11 @@ box diff is empty, and each miss is a filed `FJS-###`.
   deploy failed (the 11-04 app's history does not build the auth models' new sign-in columns,
   `FJS-4071`), and clean ran after it — two Apps, the project and the data Volume removed, every
   list diff empty, zone orphans none. The container log came back empty because Outpost
-  discards an unhealthy start (`FJS-4070`). **Left:** the log half against a running
-  container, which needs a deploy that lands.
+  discards an unhealthy start (`FJS-4070`). A fresh full run then landed a deploy
+  (`01-saas-signup-1106-1938`, after `FJS-4072` and the feature commit before deploy): clean saved
+  the running container's log (migrations, boot, health 200) and both images, removed both Apps,
+  the project and the Volume, and failed the run on the one thing left — the App's ingress A record
+  in `maverickmade.tech`, `FJS-4061`. Every live run stays red on that until it is fixed.
 - [x] 1.6 `corpus/live/`: a matrix of charters across shape (`saas` `solo` `team`), entry
   (`signup` `invite` `admin`), sign-in and one vendor. Frozen on the day it is written, like
   `prompts.json`. **Written 2026-11-04:** eight files `01-saas-signup` … `08-saas-signup`, each

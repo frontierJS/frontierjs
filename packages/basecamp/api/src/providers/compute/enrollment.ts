@@ -34,13 +34,20 @@ import { layout }            from '@frontierjs/outpost/layout'
 import { litestreamInstall } from '@frontierjs/litestone/replicate'
 
 /** What the install runs on a machine, held here so two machines provisioned a
- *  week apart run the same thing. The Outpost is pinned to a version npm HOLDS
- *  and moved by hand after a publish, never to the tree's (`FJS-D1773`: that is
- *  the one version npm lacks at every graded commit), and `fli ws:pub` prints
- *  the move once npm holds the new one (`FJS-D1941`); Docker and Caddy come
- *  from signed apt repositories. */
+ *  week apart run the same thing. The Outpost is pinned to a version its GitHub
+ *  Release HOLDS and moved by hand after a publish, never to the tree's
+ *  (`FJS-D1773`: that is the one version no host has at every graded commit),
+ *  and `fli ws:pub` prints the move once the release holds the new one
+ *  (`FJS-D1941`, `FJS-D1989`); Docker and Caddy come from signed apt
+ *  repositories. */
 export const BUN_VERSION     = '1.4.4'
 export const OUTPOST_VERSION = '0.1.13'
+
+/** The Outpost's tarball on the package host, which redirects to the release
+ *  asset (`FJS-D1989`). The cli's `packageHostUrl` spells the same path. Its own
+ *  `litestone` and `toolbelt` dependencies still resolve from npm. */
+export const outpostTarball = (version = OUTPOST_VERSION) =>
+  `https://packages.frontierjs.com/@frontierjs/outpost@${version}/frontierjs-outpost-${version}.tgz`
 
 /** The box's paths, from the module the Outpost reads its own from, so the
  *  unit's sandbox and the process cannot name two places (`FJS-D1544`). */
@@ -61,30 +68,29 @@ export const UNNEEDED_SERVICES_OFF = [
   'systemctl mask --now fwupd.service fwupd-refresh.timer 2>/dev/null || true',
 ].join('\n')
 
-const onNpm = new Map<string, boolean>()
+const released = new Map<string, boolean>()
 
 /**
- * Why an enrollment must not start, when npm does not hold the Outpost the
- * install runs; null otherwise.
+ * Why an enrollment must not start, when the release host does not hold the
+ * Outpost the install runs; null otherwise.
  *
  * A pin moved ahead of the publish: with `0.1.6` tagged and never published,
  * the install's `bun add` failed and the machine never enrolled, with nothing
  * naming why (`FJS-3534`).
- * Asked here and not at boot, so an npm outage takes no Basecamp down, and a
- * registry it could not ask lets the enrollment through: the machine's own
+ * Asked here and not at boot, so a host outage takes no Basecamp down, and a
+ * host it could not ask lets the enrollment through: the machine's own
  * install is then the check.
  */
 export async function outpostUnpublished(version = OUTPOST_VERSION, fetcher: typeof fetch = fetch): Promise<string | null> {
-  if (onNpm.get(version)) return null
+  if (released.get(version)) return null
   let status = 0
   try {
-    status = (await fetcher(`https://registry.npmjs.org/@frontierjs%2Foutpost/${version}`,
-      { signal: AbortSignal.timeout(5_000) })).status
+    status = (await fetcher(outpostTarball(version), { method: 'HEAD', signal: AbortSignal.timeout(5_000) })).status
   } catch { return null }
-  if (status >= 200 && status < 300) onNpm.set(version, true)
+  if (status >= 200 && status < 300) released.set(version, true)
   return status === 404
-    ? `A machine cannot enroll: its install runs @frontierjs/outpost@${version} and npm does not have that version. ` +
-      'Publish it (fli ws:pub), or move OUTPOST_VERSION back to a published one (FJS-3534)'
+    ? `A machine cannot enroll: its install runs @frontierjs/outpost@${version} and its GitHub Release does not have it. ` +
+      'Publish it (fli ws:pub), or move OUTPOST_VERSION back to a released one (FJS-3534)'
     : null
 }
 
@@ -523,7 +529,7 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 # re-run with a new pin is the upgrade. Before the unit exists, so the first
 # start never races an install.
 install -d -m 0755 ${box.program}
-(cd ${box.program} && bun add --exact @frontierjs/outpost@${OUTPOST_VERSION})
+(cd ${box.program} && bun add ${outpostTarball()})
 
 # The command port's certificate. Made before the exchange because it rides in
 # it: Basecamp pins this one, and a command reaches no port holding any other.

@@ -211,12 +211,12 @@ export async function engineItems(root) {
   if (existsSync(join(root, 'packages'))) {
     const { lacking, unknown, asked } = await tagsNpmLacks(root)
     if (asked && !lacking.length) out.push({ check: 'npm', subject: 'npm', ok: true, message: unknown.length
-      ? `npm could not be asked about ${unknown.length} of ${asked} tagged version(s)`
-      : `npm holds all ${asked} tagged version(s)` })
+      ? `npm or the release host could not be asked about ${unknown.length} of ${asked} tagged or pinned version(s)`
+      : `a host holds all ${asked} tagged or pinned version(s)` })
     for (const w of lacking) out.push({
       check: 'npm', subject: `${w.name}@${w.version}`, ok: false, message: w.from === 'tag'
         ? `${w.name}@${w.version} is tagged and neither npm nor its GitHub Release has it — fli ws:pub finishes the release`
-        : `${w.from} pins ${w.constant} = ${w.version} and npm has no ${w.name}@${w.version}, so every machine installed from it fails — publish it, or move the pin back`,
+        : `${w.from} pins ${w.constant} = ${w.version} and its GitHub Release has no ${w.name}@${w.version}, so every machine installed from it fails — publish it, or move the pin back (FJS-D1989)`,
     })
     for (const p of await pinsBehindLatest(root)) out.push({
       check: 'npm', subject: p.constant, ok: false,

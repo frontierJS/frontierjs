@@ -236,6 +236,26 @@ fi`)
     expect(u.reach()).toBe(false)
     expect(calls).toBe(1)
   })
+
+  // FJS-4072: the image upload opened its own connection and died on one drop.
+  test('a command with no live master opens one through the retry, and runs its script once', () => {
+    const dropped = Object.assign(new Error('ssh'), { stderr: 'kex_exchange_identification: Connection closed by remote host\n' })
+    const seen = []
+    let probes = 0
+    const t = createMachine({ host: 'deploy@box', exec: ({ command }) => {
+      seen.push(command)
+      if (command.includes('-O check')) throw new Error('No ControlPath')
+      if (command.endsWith(' true') && probes++ === 0) throw dropped
+    } })
+    t.run('echo hi')
+    expect(seen.filter(c => c.endsWith(' true'))).toHaveLength(2)
+    expect(seen.filter(c => c.endsWith('sh -s'))).toHaveLength(1)
+
+    seen.length = 0
+    const live = createMachine({ host: 'deploy@box', exec: ({ command }) => { seen.push(command) } })
+    live.capture('echo hi')
+    expect(seen.some(c => c.endsWith(' true'))).toBe(false)
+  })
 })
 
 // ─── moving an image ─────────────────────────────────────────────────────────

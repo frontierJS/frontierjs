@@ -21058,6 +21058,12 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d1989"></a>2026-11-06 · `FJS-D1989` — Q2 — Where does a machine's install fetch the Outpost from (0.3) — The release host: `bun add` of `packageHostUrl` (`packages.frontierjs.com`, the GitHub Release asset), the pin held where `ws:pub`'s default `--to tarballs` ships. Amends `FJS-D1773` and `FJS-D1941`: the pin names a version the RELEASE holds, `outpostUnpublished()` and `fli done` ask the release, and 04's *move the pin* follows a tarballs run.
+
+Asked in [`IDEAS/machine-visibility.md`](IDEAS/machine-visibility.md) § Open questions. **A** was picked over **B** (npm stays: every Outpost release also runs `--to npm`).
+
+The paper's recommendation, taken as written: `FJS-D1568` already makes the URL the install path and npm the upgrade path, and the public repo needs no token. What is lost: the tarball's own `litestone` and `toolbelt` pins still resolve from npm (package-host 0.1), so a release bumping either needs `--to npm` for that package until the pack rewrites them to URLs. Reopen if the repo goes private: a box would then need a token to fetch.
+
 ### <a id="fjs-d1919"></a>2026-11-05 · `FJS-D1919` — Q11 — `conduit-37signals` — Keep `conduit-37signals`; Basecamp goes in the description, keywords and README title so a search finds it.
 
 Asked in [`IDEAS/conduits-move.md`](IDEAS/conduits-move.md) § Open questions. **A** was picked over **B** (rename to `conduit-basecamp`, with the `37signals:event` job id and its callers).

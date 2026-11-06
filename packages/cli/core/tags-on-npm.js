@@ -17,8 +17,8 @@ import { hosts }                    from './publish-hosts.js'
 
 const TIMEOUT = 5_000
 
-// Versions written into source that a machine installs from npm. A pin follows
-// the tree's bump, and the bump is not the publish.
+// Versions written into source that a machine installs from the release host
+// (`FJS-D1989`). A pin follows the tree's bump, and the bump is not the publish.
 export const INSTALL_PINS = [
   { file: 'packages/basecamp/api/src/providers/compute/enrollment.ts', name: '@frontierjs/outpost',
     constant: 'OUTPOST_VERSION', pattern: /\bOUTPOST_VERSION\s*=\s*'([^']+)'/ },
@@ -59,12 +59,12 @@ export function readInstallPins(root) {
 }
 
 /**
- * Each install pin a publish to npm left behind: the run shipped `name@shipped`
+ * Each install pin a release left behind: the run shipped `name@shipped`
  * and the pin names another version. The pin is moved by hand after the publish,
  * never in it (`FJS-D1773`), and this is what says the move is owed (`FJS-D1941`): the
  * 2026-11-04 release shipped outpost@0.1.11 with the pin still at 0.1.9.
  *
- * @param {string[]} published `<name>@<version>` the run put on npm
+ * @param {string[]} published `<name>@<version>` the run put on the release host
  */
 export function pinsToMove(root, published = []) {
   const shipped = new Map(published.map(e => [e.slice(0, e.lastIndexOf('@')), e.slice(e.lastIndexOf('@') + 1)]))
@@ -85,9 +85,10 @@ export async function pinsBehindLatest(root, { latest = latestOn } = {}) {
 
 /**
  * Every `<name>@<version>` tag on a member's current version that neither npm
- * nor the release host holds, and every install pin npm does not hold. A tag
- * shipped `--to tarballs` (ws:pub's default, `FJS-D1613`) is finished with npm
- * never asked to hold it; a pin is installed from npm alone.
+ * nor the release host holds, and every install pin the release host does not
+ * hold. A tag shipped `--to tarballs` (ws:pub's default, `FJS-D1613`) is finished
+ * with npm never asked to hold it; a pin is installed from the release alone
+ * (`FJS-D1989`), so npm is never asked about one.
  *
  * @returns {{ lacking: [{ name, version, from }], unknown: [{ name, version, from }], asked: number }}
  *   `from` is `tag` or the pin's `file`
@@ -100,29 +101,33 @@ export async function tagsNpmLacks(root, { ask = onRegistry, askRelease = hosts(
 
   for (const pin of readInstallPins(root)) wanted.push({ ...pin, from: pin.file })
 
-  const answers = new Map()
-  const key = (w) => `${w.name}@${w.version}`
-  await Promise.all([...new Set(wanted.map(key))].map(async k => {
-    const at = k.lastIndexOf('@')
-    answers.set(k, await ask(k.slice(0, at), k.slice(at + 1)))
-  }))
+  const key    = (w) => `${w.name}@${w.version}`
+  const tag    = (w) => w.from === 'tag'
+  const askAll = async (list, asker) => {
+    const out = new Map()
+    await Promise.all([...new Set(list.map(key))].map(async k => {
+      const at = k.lastIndexOf('@')
+      out.set(k, await asker(k.slice(0, at), k.slice(at + 1)))
+    }))
+    return out
+  }
 
   // The release host is asked only about a tag npm did not hold: held on npm
   // is finished, and a gh call per package is the cost of a `fli done`.
-  const released = new Map()
-  await Promise.all(wanted.filter(w => w.from === 'tag' && answers.get(key(w)) !== true).map(async w =>
-    released.set(key(w), await askRelease(w.name, w.version))))
+  const npm      = await askAll(wanted.filter(tag), ask)
+  const released = await askAll(wanted.filter(w => !tag(w) || npm.get(key(w)) !== true), askRelease)
 
   const held = (w) => {
-    const npm = answers.get(key(w))
-    if (w.from !== 'tag' || npm === true) return npm
     const rel = released.get(key(w))
-    return rel === true ? true : npm === false && rel === false ? false : null
+    if (!tag(w)) return rel
+    const onNpm = npm.get(key(w))
+    if (onNpm === true || rel === true) return true
+    return onNpm === false && rel === false ? false : null
   }
 
   return {
     lacking: wanted.filter(w => held(w) === false),
     unknown: wanted.filter(w => held(w) === null),
-    asked:   answers.size,
+    asked:   new Set(wanted.map(key)).size,
   }
 }

@@ -274,7 +274,7 @@ describe('editedIn', () => {
 describe('a tagged version npm does not hold', () => {
   const pin = 'packages/basecamp/api/src/providers/compute/enrollment.ts'
 
-  test('names a tagged version and an install pin npm lacks, and stays quiet where it could not ask', async () => {
+  test('names a tagged version no host holds and an install pin its release lacks, and stays quiet where it could not ask', async () => {
     const { root, cleanup } = tree({
       'package.json': '{"workspaces":["packages/*"]}',
       'packages/a/package.json': '{"name":"@x/a","version":"1.0.0"}',
@@ -289,7 +289,8 @@ describe('a tagged version npm does not hold', () => {
       git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x')
       for (const t of ['@x/a@1.0.0', '@x/b@2.0.0', '@x/c@3.0.0', '@x/p@9.0.0']) git('tag', t)
 
-      const npm = { '@x/a@1.0.0': true, '@x/b@2.0.0': false, '@x/c@3.0.0': false, '@frontierjs/outpost@0.1.6': false }
+      // FJS-D1989: a pin installs from the release, so npm holding it is not enough
+      const npm = { '@x/a@1.0.0': true, '@x/b@2.0.0': false, '@x/c@3.0.0': false, '@frontierjs/outpost@0.1.6': true }
       // FJS-3721: a release published to the package host alone is finished
       const released = { '@x/c@3.0.0': true }
       const askRelease = async (n, v) => released[`${n}@${v}`] ?? false
@@ -306,7 +307,7 @@ describe('a tagged version npm does not hold', () => {
   })
 
   // FJS-D1773 keeps the move by hand; the 2026-11-04 release left the pin two behind with nothing saying so
-  test('names a pin a publish to npm left behind, and one older than npm latest', async () => {
+  test('names a pin a release left behind, and one older than npm latest', async () => {
     const { root, cleanup } = tree({ [pin]: "export const OUTPOST_VERSION = '0.1.9'\n" })
     try {
       expect(pinsToMove(root, ['@frontierjs/toolbelt@0.1.10', '@frontierjs/outpost@0.1.11']))

@@ -261,7 +261,34 @@ export function createMachine({ host, exec, transport = null, path = null, verbo
   // a refused connection says so. maxBuffer because past it execSync kills the
   // child, and a held docker build is what would reach it.
   const holds = (opts) => !verbose && opts?.stdio === undefined
+
+  const reach = () => {
+    const probe = reachCommand(host, kind)
+    if (!probe) return true
+    for (let i = 0; ; i++) {
+      try { exec({ command: probe, stdio: ['ignore', 'ignore', 'pipe'] }); return true }
+      catch (err) {
+        const said = String(err?.stderr ?? '').trim()
+        if (PREAUTH_DROP.test(said) && i < REACH_PAUSES_MS.length) { pause(REACH_PAUSES_MS[i]); continue }
+        // Every caller prints only "Cannot reach", so ssh's own reason is the operator's here.
+        if (said) process.stderr.write(`${said}\n`)
+        return false
+      }
+    }
+  }
+
+  // A command that opens its own connection meets sshd's MaxStartups drop with
+  // no second try, and retrying the command could run a script twice (FJS-4072).
+  // So each one rides the shared master, opened through `reach`'s retry when
+  // `-O check` finds none -- ControlPersist lets it lapse during a long local build.
+  const ready = () => {
+    if (kind === 'local') return
+    try { exec({ command: `ssh ${SSH_MUX} -O check ${host}`, stdio: 'ignore' }) }
+    catch { reach() }
+  }
+
   const call = (script, { cwd = null, stdio, ...opts } = {}) => {
+    ready()
     const body = withCwd(script, cwd)
     const held = holds({ stdio })
     return exec({
@@ -318,21 +345,21 @@ export function createMachine({ host, exec, transport = null, path = null, verbo
 
     /** Run an interactive program there, with the operator's terminal attached. */
     tty: (command, { pty, ...opts } = {}) =>
-      exec({ command: ttyCommand(host, kind, command, { pty }), ...opts }),
+      (ready(), exec({ command: ttyCommand(host, kind, command, { pty }), ...opts })),
 
     /** Run a named program there, with `input` on its stdin. Answers stdout. */
     pipe: (command, input) =>
-      String(exec({ command: pipeCommand(host, kind, command), input, stdio: 'pipe' }) ?? ''),
+      (ready(), String(exec({ command: pipeCommand(host, kind, command), input, stdio: 'pipe' }) ?? '')),
 
     send: (localPath, remotePath) =>
-      exec({ command: sendCommand(host, kind, localPath, remotePath) }),
+      (ready(), exec({ command: sendCommand(host, kind, localPath, remotePath) })),
 
     fetch: (remotePath, localPath) =>
-      exec({ command: fetchCommand(host, kind, remotePath, localPath) }),
+      (ready(), exec({ command: fetchCommand(host, kind, remotePath, localPath) })),
 
     /** Mirror a local directory there. */
     sync: (localDir, remoteDir) =>
-      exec({ command: syncCommand(host, kind, localDir, remoteDir) }),
+      (ready(), exec({ command: syncCommand(host, kind, localDir, remoteDir) })),
 
     /**
      * Send an image from THIS machine to another one, by content.
@@ -342,6 +369,8 @@ export function createMachine({ host, exec, transport = null, path = null, verbo
      */
     shipTo: (other, image, opts) => {
       if (sameMachine({ kind, host }, { kind: other.kind, host: other.host })) return false
+      ready()
+      other.ready?.()
       exec({
         command:  shipCommand({ kind, host }, { kind: other.kind, host: other.host }, image),
         describe: `docker save ${image} on ${host} | docker load on ${other.host}`,
@@ -350,19 +379,7 @@ export function createMachine({ host, exec, transport = null, path = null, verbo
       return true
     },
 
-    reach: () => {
-      const probe = reachCommand(host, kind)
-      if (!probe) return true
-      for (let i = 0; ; i++) {
-        try { exec({ command: probe, stdio: ['ignore', 'ignore', 'pipe'] }); return true }
-        catch (err) {
-          const said = String(err?.stderr ?? '').trim()
-          if (PREAUTH_DROP.test(said) && i < REACH_PAUSES_MS.length) { pause(REACH_PAUSES_MS[i]); continue }
-          // Every caller prints only "Cannot reach", so ssh's own reason is the operator's here.
-          if (said) process.stderr.write(`${said}\n`)
-          return false
-        }
-      }
-    },
+    reach,
+    ready,
   }
 }

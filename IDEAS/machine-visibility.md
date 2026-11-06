@@ -6,7 +6,7 @@ dated: 2026-11-06
 
 # Idea — what a machine holds, readable in Basecamp
 
-**Status: PROPOSED. Q1 ruled (`FJS-D1987`); Phase 0 built and driven uncommitted 2026-11-06, 0.3 Outpost release owed; 1.1 next.**
+**Status: PROPOSED. Q1–Q2 ruled (`FJS-D1987`, `FJS-D1989`); Phase 0 built and driven uncommitted 2026-11-06, Q2's install-from-release built uncommitted, 0.3 Outpost release owed; 1.1 next.**
 Probed against the tree 2026-11-06. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-06): what does a machine hold that Basecamp cannot show, short of
@@ -39,6 +39,18 @@ an ssh session? Built one phase at a time, each its own small change.
    - **Recommend A** — the `logs` source already decided this shape, and a check beside the gate
      is a second answer (Invariant 6). Reopen as B if a journal is found carrying what a Server
      reader should not see; the access log is a file per route (`FJS-1928`), not the journal.
+2. ~~**Q2 — Where does a machine's install fetch the Outpost from (0.3)?**~~ **Answered 2026-11-06 (`FJS-D1989`): A — the release host: `bun add` of `packageHostUrl` (`packages.frontierjs.com`, the GitHub Release asset), the pin held where `ws:pub`'s default `--to tarballs` ships. Amends `FJS-D1773` and `FJS-D1941`: the pin names a version the RELEASE holds, `outpostUnpublished()` and `fli done` ask the release, and 04's *move the pin* follows a tarballs run.** The owner asked
+   2026-11-06, for while the fleet is the team's own.
+   - **A** — the release host: `bun add` of `packageHostUrl` (`packages.frontierjs.com`, the
+     GitHub Release asset), the pin held where `ws:pub`'s default `--to tarballs` ships. Amends
+     `FJS-D1773` and `FJS-D1941`: the pin names a version the RELEASE holds, `outpostUnpublished()`
+     and `fli done` ask the release, and 04's *move the pin* follows a tarballs run.
+   - **B** — npm stays: every Outpost release also runs `--to npm`.
+   - **Recommend A** — `FJS-D1568` already makes the URL the install path and npm the upgrade
+     path, and the public repo needs no token. What is lost: the tarball's own `litestone` and
+     `toolbelt` pins still resolve from npm (package-host 0.1), so a release bumping either needs
+     `--to npm` for that package until the pack rewrites them to URLs. Reopen if the repo goes
+     private: a box would then need a token to fetch.
 
 ## Plan
 
@@ -55,6 +67,10 @@ Done when: `verify:docker` passes and the card renders the JSON from a real Outp
     a seeded scratch API on 7620/7520: the card read `fli-demo` whole. Unbounded JSON ran the page
     long, so the `pre` caps at 32rem and scrolls.
 - [ ] 0.3 Release the Outpost so a fleet machine answers `config`
+  - Per Q2 the install is `bun add` of the release URL (`enrollment.ts` `outpostTarball`), and
+    `fli done`/04 ask the release for the pin. A scratch `bun add` of 0.1.13's URL installed it
+    with its deps from npm. Owed: `fli ws:pub` (tarballs), move `OUTPOST_VERSION`, redeploy
+    Basecamp, re-enroll. `verify:provision` not run: :8020 was taken by a server not this session's.
 
 ### Phase 1 — Every container and unit on the server page
 

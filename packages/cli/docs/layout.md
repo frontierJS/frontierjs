@@ -259,9 +259,10 @@ core/
                 test-files-run, register:check, the snapshots and npm asked about
                 this tree. Grades the close-out, never the change. `stopVerdict` is the Stop hook's whole policy:
                 block only on an item not shown since HEAD moved
-  tags-on-npm.js  a `<name>@<version>` tag, or an install pin (`INSTALL_PINS`:
-                Basecamp's `OUTPOST_VERSION`), that npm does not hold — `fli
-                done` asks it, never CI, so CI never depends on the registry
+  tags-on-npm.js  a `<name>@<version>` tag no host holds, or an install pin
+                (`INSTALL_PINS`: Basecamp's `OUTPOST_VERSION`) its GitHub Release
+                does not hold — `fli done` asks, never CI, so CI never depends
+                on a registry
   decisions.js  what is waiting on the owner — the open questions in ISSUES
                 § Needs a decision and every IDEAS paper's `## Open questions`,
                 each ruled · decidable (lettered options) · open. A READ of
