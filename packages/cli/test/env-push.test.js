@@ -88,6 +88,7 @@ describe('variablePush', () => {
     ])
     expect(r.create.map(v => v.key)).toEqual(['NEW_TOKEN', 'SHARED'])
     expect(r.replaced).toEqual(['PLAIN', 'API_KEY', 'SHARED'])
+    expect(r.secret).toEqual(['NEW_TOKEN', 'API_KEY'])
   })
 
   test('an owned key named exactly is pushed', () => {
@@ -221,7 +222,7 @@ describe('fli env:push to an App in Basecamp', () => {
     const r = await push('--dry')
     expect(r.status).toBe(0)
     expect(writes).toEqual([])
-    expect(r.output).toContain('LINK_KEY')
+    expect(r.output).toMatch(/LINK_KEY\s+would be added as a secret/)
   })
 
   test('a flag for a server\'s env file is refused', async () => {

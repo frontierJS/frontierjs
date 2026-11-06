@@ -66,9 +66,10 @@ const ROWS = [
 
 /** One line a key, marked with what happened to it — never its value. */
 function keyLines(result, chalk, dry) {
-  const width = Math.max(0, ...ROWS.flatMap(([kind]) => (result[kind] ?? []).map(k => k.length)))
+  const width  = Math.max(0, ...ROWS.flatMap(([kind]) => (result[kind] ?? []).map(k => k.length)))
+  const secret = new Set(result.secret ?? [])
   return ROWS.flatMap(([kind, tone, mark, said, wouldSay = said]) => (result[kind] ?? []).map(key =>
-    chalk`${chalk[tone](mark)} ${key.padEnd(width)}  {dim ${dry ? wouldSay : said}}`))
+    chalk`${chalk[tone](mark)} ${key.padEnd(width)}  {dim ${dry ? wouldSay : said}${secret.has(key) ? ' as a secret' : ''}}`))
 }
 
 /** The App `id` names and its environment's Variable rows. A rebuilt Basecamp

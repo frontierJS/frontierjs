@@ -100,11 +100,12 @@ export function releaseOwnedKeys({ envSpec = null, databases = [] } = {}) {
  * secret is never `same`, since its value is not readable. A key in `owned`,
  * or one whose value is under `./db`, is skipped unless `named` holds it by its
  * exact name: naming `ENCRYPTION_KEY` is how an existing database's key travels. `create` and `patch` carry values;
- * the lists beside them are keys only, so the caller never prints a value.
+ * the lists beside them are keys only, so the caller never prints a value —
+ * `secret` the written keys whose row is a secret.
  */
 export function variablePush({ rows, appId, body, owned = new Set(), named = [], overwrite = false }) {
   const held = mergeVariables(rows, appId)
-  const out  = { create: [], patch: [], added: [], replaced: [], same: [], differs: [], skipped: [] }
+  const out  = { create: [], patch: [], added: [], replaced: [], same: [], differs: [], skipped: [], secret: [] }
   for (const [line, value] of Object.entries(parseEnvText(body))) {
     const key = line.replace(/^export\s+/, '')
     // A value under the app's ./db is a laptop's database path, whatever its name.
@@ -115,8 +116,11 @@ export function variablePush({ rows, appId, body, owned = new Set(), named = [],
     if (!row) out.added.push(key)
     else      out.replaced.push(key)
     // An environment-wide row is every App's; this App's own row shadows it.
+    // A patch keeps the row's isSecret, which is frozen.
+    const isSecret = row?.appId === appId ? !!row.isSecret : SECRET_NAME.test(key)
+    if (isSecret) out.secret.push(key)
     if (row?.appId === appId) out.patch.push({ id: row.id, version: row.version, key, value })
-    else                      out.create.push({ appId, key, value, isSecret: SECRET_NAME.test(key) })
+    else                      out.create.push({ appId, key, value, isSecret })
   }
   return out
 }
