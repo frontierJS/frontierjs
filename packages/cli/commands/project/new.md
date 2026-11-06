@@ -160,7 +160,7 @@ const { makeApiIndexTs, makeApiAppTs, makeApiCorePrincipalTs, makeApiEnvTs, make
 const { makeIndexHtml, makeWebManifest, makeIconSvg, makeViteConfig, makeSierraConfig, makeAppMesa,
         makeMainJs, makeControlsJs, makeSugarJs, makeNavJs, makeRouteModule, makeRouteNotFound,
         makeRouteIndex, makeRouteLogin, makeRouteReset, makeRouteVerifyEmail, makeRouteAccount,
-        makeRouteRegister } =
+        makeRouteRegister, makeWebVerify } =
   await import(resolve(global.fliRoot, 'core/scaffold/web.js'))
 
 // ─── Validators ───────────────────────────────────────────────────────────────
@@ -505,6 +505,7 @@ if (flag.ci !== false) dirs.push('.github/workflows')
 if (useWeb) {
   dirs.push('web', 'web/config', 'web/src', 'web/src/lib', 'web/src/routes', 'web/src/components', 'web/public')
   if (useDb) dirs.push('web/src/resources')
+  if (useApi) dirs.push('web/test')
   if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register', 'web/src/routes/reset', 'web/src/routes/verify-email', 'web/src/routes/account')
 }
 
@@ -575,6 +576,7 @@ if (useWeb) {
     ['web/src/routes/index.mesa',           makeRouteIndex(appName, useApi, useAuth)],
     ['web/src/routes/[...404].mesa',        makeRouteNotFound()],
   )
+  if (useApi) filesToWrite.push(['web/test/verify.js', makeWebVerify(useAuth)])
   if (useAuth) {
     filesToWrite.push(
       ['web/src/routes/login/index.mesa',    makeRouteLogin()],

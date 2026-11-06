@@ -1099,3 +1099,58 @@ title: Create an account
 </style>
 `
 }
+
+// The app's first drive: the real API and the real dev server on the TEST
+// slots, and the home page's API badge read in Chrome — the one check that
+// crosses the page, the Vite proxy and the API. Its ports come from portFor()
+// and it declares holds, or the app's own fli check fails test-port-literal
+// and drive-holds on the file the scaffold just wrote.
+export function makeWebVerify(useAuth) {
+  return `// web/test/verify.js -- the app driven in a real browser: bun run verify
+//
+// drive() from @frontierjs/testing/drive starts each server below, waits for
+// its URL, opens Chrome, runs the steps and stops everything however the run
+// ends. It refuses a port that already answers, because a running server
+// serves the code it started with. Chrome is found on PATH or at FJS_CHROME.
+//
+// portFor() hands out the test slots (7100 and 7000 in a main checkout), so
+// this runs beside fli dev on 8100 and 8000, and a second checkout gets its
+// own offset. The servers open the same db/app.db as dev; a step that writes
+// rows leaves them there.
+
+import { drive }   from '@frontierjs/testing/drive'
+import { portFor } from '@frontierjs/cli/core/ports.js'
+
+// What fli prove queues on, so two drives in this checkout never share ports.
+export const holds = ['ports']
+
+const BE  = await portFor(import.meta.url, 'be')
+const FE  = await portFor(import.meta.url, 'fe')
+const API = 'http://localhost:' + BE
+const UI  = 'http://localhost:' + FE
+const env = { FRONTIER_PORT_BE: String(BE), FRONTIER_PORT_FE: String(FE) }
+
+await drive({
+  servers: [
+    { name: 'api', cmd: ['bun', 'run', 'start'], url: API + '/api/health', env },
+    { name: 'web', cmd: ['bun', 'run', 'web'],   url: UI, env },
+  ],
+  open: UI,
+}, async (page, check) => {
+  // The home page's badge reads "API · checking" until a fetch through the Vite
+  // proxy settles, so it says "reachable" only when the page, the proxy and the
+  // API all answered. waitFor takes an expression; evaluate takes a body.
+  const badge = await page.waitFor(
+    \`[...document.querySelectorAll('.badge')].map(b => b.textContent).find(t => /API · (reachable|unreachable)/.test(t))\`,
+    { label: 'the API badge to settle' })
+  check('home page reaches the API', badge, 'API · reachable')
+  check.clean('home')
+${useAuth ? `
+  await page.navigate(UI + '/login/')
+  await page.waitFor(\`document.querySelector('form input[type=email]')\`, { label: 'the sign-in form' })
+  check('sign-in form has a password field',
+    await page.evaluate(\`return !!document.querySelector('form input[type=password]')\`))
+  check.clean('sign in')
+` : ''}})
+`
+}

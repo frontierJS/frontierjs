@@ -78,6 +78,9 @@ export function makePackageJson(spec) {
   // reason it applies to the dependencies.
   const devDeps = {}
   for (const [key, spec] of Object.entries(APP_DEV_DEPS)) {
+    // testing's peers are junction and litestone, and bun installs a missing
+    // peer, so an app with no API would be handed both.
+    if (key === '@frontierjs/testing' && !useApi) continue
     devDeps[key] = key.startsWith('@frontierjs/') ? specFor(key) : spec
   }
   if (useUI) {
@@ -136,6 +139,9 @@ export function makePackageJson(spec) {
   // for and why `fli check` leads. Tests only with auth, the one case that
   // writes api/test/access.test.ts.
   Object.assign(scripts, appCheckScripts({ tests: useApi && useAuth }))
+  // Not in check: it needs Chrome and two free ports, and check is the gate a
+  // machine without either runs.
+  if (useApi && useWeb) scripts.verify = 'bun web/test/verify.js'
 
   // A URL spec reaches the app's own dependencies only. Sierra's `^mesa` and
   // junction's toolbelt are ranges inside the packages, and without this each
@@ -317,7 +323,8 @@ did not make the change hears of it nowhere else.
 ## Checking it
 
 \`\`\`bash
-bun run check     # fli check, then lint, then typecheck${useApi && useAuth ? ', then bun run test' : ''}
+bun run check     # fli check, then lint, then typecheck${useApi && useAuth ? ', then bun run test' : ''}${useApi && useWeb ? `
+bun run verify    # the app in Chrome: web/test/verify.js, on ports 7000 and 7100` : ''}
 \`\`\`
 ${useApi && useAuth ? `
 \`api/test/access.test.ts\` is the first test: who may read, edit, promote and

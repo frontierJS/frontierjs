@@ -27,7 +27,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 
 ```
 27 package(s) · 4412 source file(s) read
-253 entry point(s), 33 imported by nothing outside their package, 16 emitted
+253 entry point(s), 32 imported by nothing outside their package, 16 emitted
 1732 value export(s), 639 reached by nothing outside, 178 emitted
 463 type export(s), 338 reached by nothing outside
 ```
@@ -49,10 +49,10 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
 | `notifications` | 3 | 0 | 16 | 4 | 0 | 30 | 22 |
 | `oracle` | 1 | 0 | 19 | 3 | 2 | 0 | 0 |
-| `testing` | 2 | 1 | 10 | 1 | 0 | 16 | 13 |
 | `caravan` | 1 | 0 | 4 | 1 | 1 | 24 | 21 |
 | `css` | 14 | 1 | 1 | 0 | 0 | 0 | 0 |
 | `print-kit` | 4 | 0 | 6 | 1 | 1 | 0 | 0 |
+| `testing` | 2 | 0 | 10 | 1 | 0 | 16 | 13 |
 | `basecamp` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `cli` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `config` | 3 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -291,8 +291,6 @@ Every entry is imported and every name reached.
 ## `@frontierjs/testing`
 
 `packages/testing` · 2 entry point(s) · 10 value, 16 type export(s)
-
-**Entries imported by nothing outside (1):** `./drive`
 
 **Unreached values (1):** `createTestMailer`
 

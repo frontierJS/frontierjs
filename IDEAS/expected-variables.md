@@ -32,6 +32,11 @@ Only key names leave the laptop. Values stay in `.env.production`.
   key set nowhere, with a fix only for `ENCRYPTION_KEY`; a credential "is
   somebody's and cannot be invented", so its fix is prose. A key the app reads
   straight from `process.env` is never seen at all.
+- **`fli env:push` writes values when asked.** With `BASECAMP_APP_ID` set it
+  posts `.env.production`'s keys to the App's Variables, secret by
+  `FJS-D1940`'s name rule, skipping every key `releasePlan` sets
+  (`releaseOwnedKeys`) and any value under `./db`. It is the explicit value
+  half; this plan stays names-only.
 - **`Variable` holds values only.** A row is a key with a value (or an
   encrypted `secretValue`); `isSecret` is `@immutable`. The pane is
   `components/VariablesEditor.mesa`, mounted on `routes/apps/[id]/index.mesa`

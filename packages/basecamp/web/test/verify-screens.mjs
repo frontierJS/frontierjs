@@ -2219,6 +2219,16 @@ try {
       v => !!v, 'the server screen never listed its apps')
     check('the server screen lists exactly the apps placed on it',
       shown === hosted.map(x => `/apps/${x.id}/`).sort().join(), shown)
+
+    // Reached from the list, the row is already in the store and `subscribe`
+    // answers during the script's first run; a `goto` starts cold and cannot
+    // see a state read before its `let`.
+    await goto('/servers/')
+    await until(`!!document.querySelector('td a[href="/servers/${host.id}/"]')`, v => v, 'the list never showed the machine')
+    await click(`td a[href="/servers/${host.id}/"]`)
+    await until(`!!document.querySelector('#server-apps a')`, v => v, 'the server screen never rendered from the list')
+    const banner = await evaluate(`[...document.querySelectorAll('.alert-content')].map(e => e.textContent).join(' | ')`)
+    check('the server screen opened from the list shows no error', !/before initialization/.test(banner), banner)
   }
 
   // ─── An enrolled machine can be enrolled again ─────────────────────────

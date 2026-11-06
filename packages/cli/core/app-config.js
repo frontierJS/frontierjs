@@ -144,6 +144,7 @@ export const FJS_PACKAGES = {
 export const APP_DEV_DEPS = {
   '@frontierjs/cli':    '0.1.13',
   '@frontierjs/config': '0.1.6',
+  '@frontierjs/testing': '0.1.10',
   '@biomejs/biome':     '^2.5.0',
   'bun-types':          '1.4.2',
   'typescript':         '^5.0.0',
@@ -351,7 +352,7 @@ export const AGENT_DOCS = {
   '@frontierjs/ui':        { when: 'a screen with forms, tables or overlays', lookup: [] },
   '@frontierjs/css':       { when: 'a class list or a `<style>` block',
     lookup: [{ file: 'vocabulary.json', use: 'one term\'s prose; the term list itself is in the AGENTS.md' }] },
-  '@frontierjs/testing':   { when: 'a test — a factory, a session, the API under test', lookup: [] },
+  '@frontierjs/testing':   { when: 'a test — a factory, a session, the API under test, a browser drive', lookup: [] },
 }
 
 // A rule is written here only when a generic habit breaks it. `needs` is the
@@ -400,6 +401,32 @@ const AGENT_GENERATORS = [
   { needs: '@frontierjs/litestone', what: 'a page, wired to a Resource',                  run: 'fli make:route leads --resource Lead' },
   { needs: '@frontierjs/sierra',    what: 'a component',                                  run: 'fli make:component LeadCard' },
 ]
+
+// What an agent asked to "test this" runs. The rows follow what the scaffold
+// wrote: api/test/ exists only with auth, and web/test/verify.js only for an app
+// with an API and a web surface, which is when it is given @frontierjs/testing.
+function testingSection(has) {
+  const unit  = has.has('@frontierjs/auth')
+  const drive = has.has('@frontierjs/testing') && has.has('@frontierjs/sierra')
+  if (!unit && !drive) return ''
+  const rows = [
+    unit  && '| `bun run test` | `api/test/` under bun: who may read, write and promote, against the real schema | nothing |',
+    drive && '| `bun run verify` | `web/test/verify.js`: the app in Chrome, through `drive()` from `@frontierjs/testing/drive` | Chrome on PATH or `FJS_CHROME`; ports 7000 and 7100 free |',
+  ].filter(Boolean)
+  return `
+## Testing
+
+| Run | What it proves | Needs |
+| --- | --- | --- |
+${rows.join('\n')}
+${drive ? `
+A new browser check is a step in \`web/test/verify.js\`, or a sibling
+\`web/test/verify-<thing>.js\` with a \`verify:<thing>\` script. \`drive()\` starts
+and stops the servers and refuses a port that already answers, so never write a
+start, poll and kill wrapper, and never point a drive at a running \`fli dev\`: it
+serves the code it started with. \`bun run verify\` is not part of \`check\`.
+` : ''}`
+}
 
 /** The framework's guidance for an agent writing code in this app.
  *  @param {{ name: string, packages: string[] }} o  every package the manifest names, dev half included */
@@ -488,7 +515,7 @@ bun run check     # fli check, then lint, then typecheck — the same gate CI ru
 
 Fix what it reports before moving on. \`fli check --list\` prints every rule, and
 \`fli check --fix\` applies the ones whose rewrite is the whole fix.
-
+${testingSection(has)}
 ## This project
 
 @AGENTS.project.md

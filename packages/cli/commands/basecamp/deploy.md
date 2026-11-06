@@ -121,7 +121,8 @@ one. The plan is shown, applied on a yes (`--yes` skips
 the asking), and the preflight runs again on what Basecamp now holds. With no
 terminal and no `--yes` the plan is printed and nothing is written; `--dry`
 prints it too. A credential the app requires, a Dockerfile edit and
-`widgets/` stay prose: nothing here can know them.
+`widgets/` stay prose: nothing here can know them. `fli env:push` sets the
+credentials from `.env.production`, skipping every key this plan sets.
 
 The Basecamp is an entry in `basecamps.json` (`~/.config/fli/`), whose origin
 and key `--basecamp` chooses: the only entry, or the one named, and with several

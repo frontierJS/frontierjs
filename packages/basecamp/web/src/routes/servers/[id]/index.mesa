@@ -49,6 +49,11 @@ title: Server
   // store and never this variable (`FJS-533`).
   let rowView = null, unwatch = null
 
+  // Above `load()`: a row already in the store answers `subscribe` at once,
+  // so `prefillBackups` runs before any line below this script's first call
+  // and a later `let` throws "Cannot access before initialization".
+  let backupChoice = null, backupHour = '20', backupDay = 'SUN', backupFor = null
+
   function watchRow() {
     rowView?.release()
     unwatch?.()
@@ -380,8 +385,6 @@ title: Server
     { value: 'weekly',    label: 'On, weekly' },
   ]
   const DO_HOURS = [0, 4, 8, 12, 16, 20].map(h => ({ value: String(h), label: `${String(h).padStart(2, '0')}:00 UTC` }))
-
-  let backupChoice = null, backupHour = '20', backupDay = 'SUN', backupFor = null
 
   // Prefilled from what Basecamp holds, once per machine, so a heartbeat's
   // push does not reset a choice half made.

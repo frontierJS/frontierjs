@@ -33,6 +33,7 @@ import { join, posix } from 'node:path'
 import { declaredDatabasePaths } from './db-preflight.js'
 import { declaresHealth, resolveHealthPath } from './health-target.js'
 import { parseDockerfile } from './build-check.js'
+import { parseEnvText } from './local-env.js'
 
 export const RULES = {
   'env-required':     'a variable the app refuses to boot without, set nowhere',
@@ -53,6 +54,10 @@ export const RULES = {
 
 const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\])$/i
 
+// A name that reads as a credential is a secret Variable.
+const SECRET_NAME = /KEY|SECRET|TOKEN|PASSWORD/
+const LOCAL_DB    = /^(?:\.\/)?db\//
+
 /** The first host port from `wanted` up that no other App on the machine
  *  publishes. Every scaffolded API listens on 8100, so taking the listen port
  *  as the host port gave the second App on a machine a release docker refuses
@@ -70,6 +75,49 @@ export function mergeVariables(rows, appId) {
   const out = new Map()
   for (const row of [...rows.filter(r => !r.appId), ...rows.filter(r => r.appId === appId)])
     out.set(row.key, row)
+  return out
+}
+
+/** The keys a release plans itself — the port, NODE_ENV, the encryption key,
+ *  each database path and each URL on a localhost default. A laptop's env file
+ *  holds a laptop's answer to every one, `./db/app.db` and `localhost:8100`,
+ *  which inside the container point nowhere. */
+export function releaseOwnedKeys({ envSpec = null, databases = [] } = {}) {
+  const owned = new Set(['PORT', 'NODE_ENV', 'ENCRYPTION_KEY'])
+  for (const d of databases) if (d.envVar) owned.add(d.envVar)
+  for (const [key, field] of Object.entries(envSpec ?? {})) {
+    if (/_PATH$/.test(key)) owned.add(key)
+    if (field.type !== 'url' || field.default === undefined) continue
+    try { if (LOCAL_HOST.test(new URL(String(field.default)).hostname)) owned.add(key) } catch {}
+  }
+  return owned
+}
+
+/**
+ * An env file's lines as writes to an App's Variables — `env:push` with
+ * `BASECAMP_APP_ID` set. A key the container lacks is a new row on the App; one
+ * it holds with another value is left alone unless `overwrite`, and a held
+ * secret is never `same`, since its value is not readable. A key in `owned`,
+ * or one whose value is under `./db`, is skipped unless `named` holds it by its
+ * exact name: naming `ENCRYPTION_KEY` is how an existing database's key travels. `create` and `patch` carry values;
+ * the lists beside them are keys only, so the caller never prints a value.
+ */
+export function variablePush({ rows, appId, body, owned = new Set(), named = [], overwrite = false }) {
+  const held = mergeVariables(rows, appId)
+  const out  = { create: [], patch: [], added: [], replaced: [], same: [], differs: [], skipped: [] }
+  for (const [line, value] of Object.entries(parseEnvText(body))) {
+    const key = line.replace(/^export\s+/, '')
+    // A value under the app's ./db is a laptop's database path, whatever its name.
+    if ((owned.has(key) || LOCAL_DB.test(value)) && !named.includes(key)) { out.skipped.push(key); continue }
+    const row = held.get(key)
+    if (row && !row.isSecret && row.value === value) { out.same.push(key); continue }
+    if (row && !overwrite) { out.differs.push(key); continue }
+    if (!row) out.added.push(key)
+    else      out.replaced.push(key)
+    // An environment-wide row is every App's; this App's own row shadows it.
+    if (row?.appId === appId) out.patch.push({ id: row.id, version: row.version, key, value })
+    else                      out.create.push({ appId, key, value, isSecret: SECRET_NAME.test(key) })
+  }
   return out
 }
 
@@ -143,8 +191,8 @@ export function releaseFindings({
       add('env-required', 'error', `${key} is required and set nowhere`,
         `The app's defineEnv spec marks it required, and neither the App, its environment nor the image sets it — ` +
         'the container exits at boot before it answers anything.',
-        `Add ${key} to the App's Variables${/KEY|SECRET|TOKEN|PASSWORD/.test(key) ? ' as a secret' : ''}` +
-        `${key === 'ENCRYPTION_KEY' ? ' (`openssl rand -hex 32`)' : ''}.`,
+        `Add ${key} to the App's Variables${SECRET_NAME.test(key) ? ' as a secret' : ''}` +
+        `${key === 'ENCRYPTION_KEY' ? ' (`openssl rand -hex 32`)' : ` — fli env:push ${key} sets it from .env.production`}.`,
         // A credential is somebody's and cannot be invented; the app's own key can.
         key === 'ENCRYPTION_KEY' ? { variables: [{ key, isSecret: true, generate: 'hex32' }] } : null)
     }

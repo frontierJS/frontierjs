@@ -341,6 +341,40 @@ test('a web-only scaffold writes neither stub, which need a schema and an API', 
   expect(readFileSync(join(app, 'web/src/main.js'), 'utf8')).not.toContain('controls.js')
 }, 60_000)
 
+// The drive is written only where both servers it starts exist, and it asks
+// portFor() and declares holds or the app's own fli check fails on it.
+// Whether it passes in Chrome is proved by scaffolding and running it.
+test('a full-stack scaffold writes a browser drive, a verify script and @frontierjs/testing', () => {
+  const app      = scaffold('drive', '--full')
+  const manifest = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'))
+  expect(manifest.scripts.verify).toBe('bun web/test/verify.js')
+  expect(manifest.scripts.check).not.toContain('verify')
+  expect(manifest.devDependencies['@frontierjs/testing']).toBeTruthy()
+
+  const drive = readFileSync(join(app, 'web/test/verify.js'), 'utf8')
+  expect(() => new Bun.Transpiler({ loader: 'js' }).transformSync(drive)).not.toThrow()
+  expect(drive).toContain("from '@frontierjs/testing/drive'")
+  expect(drive).toContain("export const holds = ['ports']")
+  expect(drive).toMatch(/portFor\(import\.meta\.url, 'be'\)/)
+  expect(drive).not.toMatch(/localhost:[78]\d{3}/)
+  expect(drive).toContain("'/login/'")
+
+  const agents = readFileSync(join(app, 'AGENTS.md'), 'utf8')
+  expect(agents).toContain('## Testing')
+  expect(agents).toContain('`bun run verify`')
+  expect(readFileSync(join(app, 'README.md'), 'utf8')).toContain('bun run verify')
+}, 60_000)
+
+test('an app missing the API or the web surface gets no browser drive', () => {
+  for (const [name, ...args] of [['drive-web-only', '--template', 'web-only'], ['drive-api-only', '--template', 'api-only']]) {
+    const app      = scaffold(name, ...args)
+    const manifest = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'))
+    expect(manifest.scripts.verify).toBeUndefined()
+    expect(existsSync(join(app, 'web/test/verify.js'))).toBe(false)
+    expect(readFileSync(join(app, 'AGENTS.md'), 'utf8')).not.toContain('`bun run verify`')
+  }
+}, 120_000)
+
 // FJS-1287 — `fli dev` claims a slot per app root, so a README that says the
 // api is on 8100 and the web app on 8000 sends a second app's owner to a port
 // the first app holds, and `bun run dev` (which does not claim) dies on it.
