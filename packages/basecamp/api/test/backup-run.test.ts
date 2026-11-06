@@ -29,6 +29,12 @@ import { fetchHubArchive, listHubArchives, readBucket, restoreStaged, stageHubAr
 let env: any
 let hubId: string
 
+// A disk reading, handed in so a test asks nothing of the host's real free
+// space: on a laptop under 10% free every backup is refused (FJS-4067).
+const GB     = 1024 ** 3
+const volume = (free: number) => ({ statfs: () => ({ bavail: free / 4096, bsize: 4096, blocks: 100 * GB / 4096 }) })
+const ROOMY  = volume(50 * GB)
+
 beforeAll(async () => {
   env = await createTestEnv({
     schema:        join(import.meta.dir, '..', '..', 'db', 'schema.lite'),
@@ -58,7 +64,7 @@ describe('a backup archives every database the app keeps', () => {
     for (let i = 0; i < 100 && !existsSync(trail); i++) await Bun.sleep(20)
     expect(existsSync(trail)).toBe(true)
 
-    await takeBackup(env.app, row.id)
+    await takeBackup(env.app, row.id, ROOMY)
 
     const done = await sys.appBackup.findUnique({ where: { id: row.id } })
     expect(done.error).toBeNull()
@@ -89,7 +95,7 @@ describe('the archive is the framework\'s backup', () => {
   test('main.db carries the backup stamp', async () => {
     const sys = env.system as any
     const row = await sys.appBackup.create({ data: { appId: hubId } })
-    await takeBackup(env.app, row.id)
+    await takeBackup(env.app, row.id, ROOMY)
     const done = await sys.appBackup.findUnique({ where: { id: row.id } })
     expect(done.status).toBe('success')
 
@@ -112,7 +118,7 @@ describe('an archive carries a manifest, and a restore refuses what it cannot co
   beforeAll(async () => {
     const sys = env.system as any
     const row = await sys.appBackup.create({ data: { appId: hubId } })
-    await takeBackup(env.app, row.id)
+    await takeBackup(env.app, row.id, ROOMY)
     archive = (await sys.appBackup.findUnique({ where: { id: row.id } })).location
   })
 
@@ -204,7 +210,7 @@ describe('a hub archive is staged at /setup and swapped in at the next boot', ()
   beforeAll(async () => {
     const sys = env.system as any
     const row = await sys.appBackup.create({ data: { appId: hubId } })
-    await takeBackup(env.app, row.id)
+    await takeBackup(env.app, row.id, ROOMY)
     archive = (await sys.appBackup.findUnique({ where: { id: row.id } })).location
     tarball = join(mkdtempSync(join(tmpdir(), 'bc-hubtar-')), `${basename(archive)}.tar.gz`)
     Bun.spawnSync(['tar', '-czf', tarball, '-C', dirname(archive), basename(archive)])
@@ -393,7 +399,7 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
   const run = async () => {
     const sys = env.system as any
     const row = await sys.appBackup.create({ data: { appId: hubId, destinationId } })
-    await takeBackup(env.app, row.id)
+    await takeBackup(env.app, row.id, ROOMY)
     return sys.appBackup.findUnique({ where: { id: row.id } })
   }
 
@@ -698,7 +704,7 @@ describe('the newest remote hub archive is read back and graded', () => {
     // A real archive, tarred the way the job tars one.
     await sys.appBackup.deleteMany({ where: {} })
     const row = await sys.appBackup.create({ data: { appId: hubId } })
-    await takeBackup(env.app, row.id)
+    await takeBackup(env.app, row.id, ROOMY)
     const dir = (await sys.appBackup.findUnique({ where: { id: row.id } })).location as string
     const tar = join(tmpdir(), `${basename(dir)}.tar.gz`)
     expect(await Bun.spawn(['tar', '-czf', tar, '-C', dirname(dir), basename(dir)]).exited).toBe(0)
@@ -799,9 +805,6 @@ describe('the queue database path', () => {
 // ─── FJS-3908 ───────────────────────────────────────────────────────────────
 
 describe('a backup is refused when the disk cannot hold the copy', () => {
-  const GB = 1024 ** 3
-  const volume = (free: number) => ({ statfs: () => ({ bavail: free / 4096, bsize: 4096, blocks: 100 * GB / 4096 }) })
-
   test('nothing is staged, the row is failed with the sentence, and the error is thrown for the retry', async () => {
     const sys    = env.system as any
     const dir    = join(dirname(env.app.sqlite.filename), 'backups')
@@ -821,7 +824,7 @@ describe('a backup is refused when the disk cannot hold the copy', () => {
   test('a disk with room takes the backup', async () => {
     const sys = env.system as any
     const row = await sys.appBackup.create({ data: { appId: hubId } })
-    await takeBackup(env.app, row.id, volume(50 * GB))
+    await takeBackup(env.app, row.id, ROOMY)
     expect((await sys.appBackup.findUnique({ where: { id: row.id } })).status).toBe('success')
   })
 })

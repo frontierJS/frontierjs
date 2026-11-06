@@ -12,6 +12,7 @@
 // about the refusals.
 
 import { describe, test, expect } from 'bun:test'
+import { connect } from 'node:net'
 
 import { createClient } from '../../litestone/src/index.js'
 import { createApp }    from '../src/core/app.ts'
@@ -356,20 +357,30 @@ describe('a caller resumes on the column the schema named', () => {
 describe('the route is bounded, and says so in a way a client can act on', () => {
 
   test('over the cap is 429 with retryable, and the slot comes back', async () => {
-    const { app, port } = await serve({ maxConcurrent: 1 })
+    const { app, db, port } = await serve({ maxConcurrent: 1 })
+    // A slot is held while the extract is still being WRITTEN, not while it is
+    // unread: a small one drains into the socket buffers and frees its slot in
+    // milliseconds, so a loaded runner sent the second request too late. ~14 MB
+    // is past what the kernel buffers on both ends (tcp_rmem + tcp_wmem max).
+    await db.asSystem().sql`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 50000)
+      INSERT INTO "order" (ref, ownerId, placed) SELECT printf('%.200c', 'x'), 'u-shop', '2026-01-01T00:00:00Z' FROM n`
+    const held = connect(port, '127.0.0.1')
     try {
-      // Held open: the body is not read, so the stream stays in flight.
-      const held = await get(port, '/exports/Order', 'tok-staff')
-      const over = await get(port, '/exports/Order', 'tok-staff')
+      held.write(`GET /exports/Order HTTP/1.1\r\nhost: localhost\r\nauthorization: Bearer tok-staff\r\nconnection: close\r\n\r\n`)
+      await new Promise(r => held.once('data', r))
+      held.pause()
 
+      const over = await get(port, '/exports/Order', 'tok-staff')
       expect(over.status).toBe(429)
       expect((await over.json() as any).retryable).toBe(true)
 
-      await held.text()                       // drains, releasing the slot
+      const drained = new Promise(r => held.once('end', r))
+      held.resume()
+      await drained                           // the whole extract read, releasing the slot
       const after = await get(port, '/exports/Order', 'tok-staff')
       expect(after.status).toBe(200)
       await after.text()
-    } finally { await app.stop() }
+    } finally { held.destroy(); await app.stop() }
   })
 })
 

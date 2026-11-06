@@ -1,8 +1,9 @@
 import { execSync, spawn } from 'child_process'
+import { createHash } from 'crypto'
 import { pathToFileURL } from 'url'
 import { compileCliWithMap, extractFrontmatter } from './compiler.js'
 import { registerShim } from './stack.js'
-import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync, rmSync } from 'fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, rmSync } from 'fs'
 import { resolve, dirname, basename, join } from 'path'
 import { logger, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } from './utils.js'
 import { getModule } from './registry.js'
@@ -83,17 +84,23 @@ const _tmpFile = () => join(
 )
 
 // ─── Module cache ─────────────────────────────────────────────────────────────
-// Keyed by "filePath:mtimeMs" — skips recompiling and temp file writes for
-// commands invoked more than once per session (workspace loops, step files, etc).
-// Each entry holds { run, metadata } from the compiled module.
-// The mtime component means edits are always picked up — no stale cache risk.
+// Skips recompiling and temp file writes for commands invoked more than once
+// per session (workspace loops, step files, etc). Each entry holds
+// { run, metadata } from the compiled module.
+//
+// Keyed by what is COMPILED — the file's text and its namespace module's — not
+// by mtime: Linux stamps mtime from a clock that ticks every few ms, so two
+// writes inside one tick shared a key and the second ran the first's body.
 //
 // Bounded LRU: long-running GUI sessions can accumulate entries when files
-// are edited (each mtime gets its own key, prior entries linger). We evict
+// are edited (each edit gets its own key, prior entries linger). We evict
 // the oldest entry when count exceeds MAX. Map preserves insertion order;
 // re-insertion on hit moves an entry to "most recent".
 const _moduleCache = new Map()
 const MODULE_CACHE_MAX = 256
+
+const _cacheKey = (file, template, script) =>
+  `${file}:${createHash('sha1').update(template).update('\0').update(script).digest('hex')}`
 
 function _cacheGet(key) {
   if (!_moduleCache.has(key)) return undefined
@@ -146,18 +153,9 @@ export async function Command({ file, arg, flag, emit }) {
     const ns = (extractedMeta => extractedMeta?.title?.split(':')?.[0])(extractFrontmatter(template, file))
     mod      = ns ? getModule(ns) : null
 
-    // ── Module cache check ────────────────────────────────────────────────────
-    // Skip compilation and temp file entirely on cache hit.
-    // Cache key includes mtime so edits are always reflected immediately.
-    let cacheKey = null
-    try {
-      const stat = statSync(file)
-      cacheKey = `${file}:${stat.mtimeMs}`
-      const cached = _cacheGet(cacheKey)
-      if (cached) {
-        ;({ run, metadata } = cached)
-      }
-    } catch { /* can't stat — fall through to compile */ }
+    const cacheKey = _cacheKey(file, template, mod?.script || '')
+    const cached   = _cacheGet(cacheKey)
+    if (cached) ({ run, metadata } = cached)
 
     if (!run) {
       const { code: source, sourceLineOffset } = compileCliWithMap(template, mod?.script || '', file)
@@ -179,7 +177,7 @@ export async function Command({ file, arg, flag, emit }) {
       // No per-file unlink — the session dir is wiped on process exit.
       // (Per-file sync unlink would also work, but the dir-sweep is simpler
       // and lets us survive a crash without needing every code path to clean up.)
-      if (cacheKey) _cacheSet(cacheKey, { run, metadata })
+      _cacheSet(cacheKey, { run, metadata })
     }
   } else {
     ;({ run, metadata } = await import(pathToFileURL(file)))
@@ -709,15 +707,9 @@ export async function Command({ file, arg, flag, emit }) {
         try {
           // Load and run the step — check cache first, same as Command()
           let stepRun
-          let stepCacheKey = null
-          try {
-            const stat = statSync(stepFile)
-            stepCacheKey = `${stepFile}:${stat.mtimeMs}`
-            const cached = _cacheGet(stepCacheKey)
-            if (cached) {
-              ;({ run: stepRun } = cached)
-            }
-          } catch {}
+          const stepCacheKey = _cacheKey(stepFile, stepTemplate, mod?.script || '')
+          const cached       = _cacheGet(stepCacheKey)
+          if (cached) ({ run: stepRun } = cached)
 
           if (!stepRun) {
             // Steps get the namespace module too. They used to be compiled with
@@ -739,7 +731,7 @@ export async function Command({ file, arg, flag, emit }) {
               wrapped.signal = err.signal
               throw wrapped
             }
-            if (stepCacheKey) _cacheSet(stepCacheKey, { run: stepRun, metadata: stepMeta })
+            _cacheSet(stepCacheKey, { run: stepRun, metadata: stepMeta })
           }
 
           // Build step context — inherits parent flags + shared config.

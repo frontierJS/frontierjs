@@ -13,7 +13,7 @@
  */
 
 import { describe, test, expect, afterEach, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, utimesSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -269,5 +269,18 @@ describe('$.exec args', () => {
 
   test('args that is not an array is refused rather than stringified', async () => {
     await expect(run(`$.exec({ command: 'echo', args: 'a b' })`)).rejects.toThrow('array of words')
+  })
+  test('a file rewritten inside one mtime tick runs its new body, not the cached one', async () => {
+    const file  = join(dir, 'tick.md')
+    const out   = join(dir, 'tick')
+    const tick  = 1_700_000_000
+    const take  = async (word) => {
+      writeFileSync(file, ['---', 'title: probe:tick', '---', '', '```js', `fs.writeFileSync(${JSON.stringify(out)}, '${word}')`, '```', ''].join('\n'))
+      utimesSync(file, tick, tick)
+      await (await Command({ file, arg: [], flag: {}, emit: () => Promise.resolve() }))()
+      return readFileSync(out, 'utf8')
+    }
+    expect(await take('first')).toBe('first')
+    expect(await take('second')).toBe('second')
   })
 })
