@@ -393,6 +393,11 @@ fi
 # here. Its priority runs it before Docker's own chains, and a drop in any base
 # chain is final whatever another accepts. A container's own egress and a
 # loopback-published port are never DNAT'd from outside, so neither is touched.
+#
+# A read-only copy's bridge (Outpost's fjs-copy network) opens nothing but the
+# replies to what the host dialed. Docker's internal network stops its egress
+# and not its packets to the bridge's own address, which is this box: its ssh,
+# its Outpost, and through Caddy every App here, the live one included.
 # posture: net.firewall-default-deny
 SSH_PORTS=$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }' | paste -sd, -) || true
 [ -n "$SSH_PORTS" ] || SSH_PORTS=22
@@ -408,6 +413,7 @@ table inet basecamp {
     type filter hook input priority 0; policy drop;
     ct state established,related accept
     ct state invalid drop
+    iifname "fjs-copy0" drop
     iif lo accept
     meta l4proto { icmp, ipv6-icmp } accept
     udp dport { 68, 546 } accept
@@ -417,6 +423,7 @@ table inet basecamp {
   chain forward {
     type filter hook forward priority -1; policy accept;
     ct state established,related accept
+    iifname "fjs-copy0" drop
     iifname "docker0" accept
     iifname "br-*" accept
     ct status dnat meta l4proto { tcp, udp } ct original proto-dst @exposed accept

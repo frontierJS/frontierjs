@@ -16762,6 +16762,24 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1998"></a>2026-11-07 · `FJS-D1998` — Q7 — How the services fli signs in to are documented on the screens — A sibling catalog, `services.js` beside `packages/cli/core/home.js`: one row per service with how fli signs in (an env key read from `requires:` and `CLOUDS`, a file, or an external CLI with its probe such as `gh auth status`) and a pointer to its Setup section. The actions are DERIVED from the command registry — every command whose `requires:` names the key or whose namespace is the service — never hand-written. Read by a Services tab on Laptop, a "used by" column on Settings' global env, `fli doctor` credential rows, and that configuration doc's § Credentials.
+
+Asked in [`IDEAS/workbench-fli-files.md`](IDEAS/workbench-fli-files.md) § Open questions. **A** was picked over **B** (as A, with a hand-written actions list per service as well), **C** (a description column on the existing Keys and Settings rows; no catalog, doctor and docs unchanged).
+
+The paper's recommendation, taken as written: one authored model (sign-in method and probe), the rest derived from `requires:`, `CLOUDS` and the registry, so nothing is kept in step by hand; `FJS-D1992` chose the same sibling-catalog shape for files. B is a second copy of the registry that drifts; C answers "is fli signed in to GitHub" in four places. Reopen: if derived command titles read poorly, add an optional `blurb` per service, not an actions list.
+
+### <a id="fjs-d1997"></a>2026-11-07 · `FJS-D1997` — Q8 — Whether the Services screen probes external CLI logins — A Check button per service runs its probe (`gh auth status`, `npm whoami`, `cf` profile, `wrangler whoami`, `claude` login) and shows signed-in-as; presence of a key or file shows at once; `fli doctor` runs the same probes. Nothing shells out on page load.
+
+Asked in [`IDEAS/workbench-fli-files.md`](IDEAS/workbench-fli-files.md) § Open questions. **A** was picked over **B** (every probe runs when the tab opens), **C** (no probes; presence only).
+
+The paper's recommendation, taken as written: a page that shells out on load is slow and a hung probe blocks the tab; presence alone never answers the question for a CLI login. A probe never reads or prints a value, and the result is shown as checked or unchecked, never inferred from presence.
+
+### <a id="fjs-d1996"></a>2026-11-07 · `FJS-D1996` — Q11 — How does a release image learn at boot that it is the copy — One env var Outpost sets on the copy's container, `FRONTIER_READ_ONLY_COPY=<as-of ISO time>`, read by one exported `readOnlyCopy()` in litestone. Called from inside `createClient` and `createTenantRegistry`, it opens every database `access: 'readonly'` and passes `placeModels: { Session: 'sessions' }`. Junction imports it for 1.2's startup phase and 3.2's header. No App edits anything. An explicit option still wins, and a malformed value refuses boot. Outpost refuses to route a copy whose API does not answer with the read-only header, because an image on an older framework ignores the var and would run writable.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (the App opts in: the scaffolded `db.ts` spreads `...readOnlyCopy()` into its options, and `app.ts` hands it to junction. Explicit, but every App edits two files, and an App that has not is a copy that runs writable), **C** (Outpost alone: mount the staged files read-only and a sessions scratch writable, with no framework change. `FJS-4033` (a readonly open still writes WAL) makes those opens likely to fail, and it can neither place `Session` nor refuse a job).
+
+The paper's recommendation, taken as written: Outpost already sets `FRONTIER_TRUST_PROXY=1` on a container and junction reads it (`docker.js:1095`, `app.ts:1180`), so this is the same shape. One origin, no App edits, and the header check catches the one way it fails open. Litestone reads no ambient env today, so the read lives in that one function.
+
 ### <a id="fjs-d1995"></a>2026-11-07 · `FJS-D1995` — Q5 — Haven's and Workbench's own files — Each shows as one row (size only) on Disk; their secret files (`~/.fli/haven/key.json`, `~/.config/workbench/peer.json` and `push.json`) are listed on Keys; Workbench's root resolves through one function first (0.4).
 
 Asked in [`IDEAS/workbench-fli-files.md`](IDEAS/workbench-fli-files.md) § Open questions. **A** was picked over **B** (left out).

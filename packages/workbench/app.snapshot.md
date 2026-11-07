@@ -82,8 +82,8 @@ name when it declares none.
 
 ### `basecamps` · model `basecamps`
 
-- **methods** — `list`, `outcome`, `creation`, `backup`, `restart`, `provision`
-- **custom methods** — `list`, `outcome`, `creation`, `backup`, `restart`, `provision`
+- **methods** — `list`, `outcome`, `creation`, `backup`, `restart`, `provision`, `deleteLocal`
+- **custom methods** — `list`, `outcome`, `creation`, `backup`, `restart`, `provision`, `deleteLocal`
 - **who may call** —
   - `list` — standing 5 or above — declared `gate: 5`
   - `outcome` — standing 5 or above — declared `gate: 5`
@@ -91,6 +91,7 @@ name when it declares none.
   - `backup` — standing 5 or above — declared `gate: 5`
   - `restart` — standing 5 or above — declared `gate: 5`
   - `provision` — standing 5 or above — declared `gate: 5`
+  - `deleteLocal` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -161,12 +162,21 @@ name when it declares none.
 
 ### `laptop` · model `laptop`
 
-- **methods** — `disk`, `clear`, `removeLane`
-- **custom methods** — `disk`, `clear`, `removeLane`
+- **methods** — `disk`, `keys`, `globalEnv`, `commands`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `probeService`
+- **custom methods** — `disk`, `keys`, `globalEnv`, `commands`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `probeService`
 - **who may call** —
   - `disk` — standing 5 or above — declared `gate: 5`
+  - `keys` — standing 5 or above — declared `gate: 5`
+  - `globalEnv` — standing 5 or above — declared `gate: 5`
+  - `commands` — standing 5 or above — declared `gate: 5`
+  - `running` — standing 5 or above — declared `gate: 5`
+  - `services` — standing 5 or above — declared `gate: 5`
   - `clear` — standing 5 or above — declared `gate: 5`
   - `removeLane` — standing 5 or above — declared `gate: 5`
+  - `fixMode` — standing 5 or above — declared `gate: 5`
+  - `setGlobalEnv` — standing 5 or above — declared `gate: 5`
+  - `unsetGlobalEnv` — standing 5 or above — declared `gate: 5`
+  - `probeService` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

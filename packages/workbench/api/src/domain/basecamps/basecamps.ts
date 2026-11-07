@@ -9,8 +9,16 @@
 // `domain/atlas/atlas.ts`). A Workbench restart forgets them; Basecamp's own
 // `HubBackup` row is the record that outlives it.
 //
+// Beside each entry sit the backups already pulled to this laptop
+// (`dataDir()/basecamp/<name>`, one directory per backup, `core/basecamp.js`),
+// and Delete removes one. The client names an entry and a bare directory name;
+// the path is resolved here from the listing, so a crafted name can only miss.
+//
 // No credential leaves this module: an entry is answered without `apiKey`,
 // `scopedKey` or `peerKeyId`, only whether it holds one.
+
+import { rmSync, statSync } from 'node:fs'
+import { join }             from 'node:path'
 
 type Entry = {
   url: string, host?: string, cloud?: string, boxId?: string | number, runs?: boolean,
@@ -28,6 +36,8 @@ type Cli = {
   restartApi:    (o: { host: string, container: string }) => Promise<string>
   probeUntil:    (o: { host: string, port: number, until: (p: unknown) => boolean }) => Promise<unknown>
   basecampApi:   () => Promise<{ container: string, port: number }>
+  localBackups:  (dir: string) => Array<{ name: string, kind: string, takenAt: string | null, bytes: number }>
+  dataDir:       (o: { home?: string }) => string
 }
 
 // The cli is a devDependency and the image installs none, so it is reached
@@ -36,6 +46,7 @@ let cli: Promise<Cli> | null = null
 const loadCli = () => cli ??= Promise.all([
   import('@frontierjs/cli/core/basecamps.js'),
   import('@frontierjs/cli/core/basecamp.js'),
+  import('@frontierjs/cli/core/paths.js'),
 ]).then(mods => Object.assign({}, ...mods) as unknown as Cli)
 
 export type Outcome = {
@@ -53,6 +64,9 @@ export type Outcome = {
   error?:     string
 }
 
+/** One backup pulled to this laptop: a directory under the entry's folder. */
+export type LocalCopy = { file: string, kind: string, takenAt: string | null, bytes: number, mtime: string | null }
+
 export type Listed = {
   name: string, url: string, host: string | null, cloud: string | null, boxId: string | number | null, runs: boolean
   hasKey: boolean, hasScopedKey: boolean
@@ -61,6 +75,8 @@ export type Listed = {
   /** Why the newest backup could not be read from a Basecamp that answers. */
   backupError:  string | null
   outcome:      Outcome | null
+  /** The backups on this laptop, oldest first. */
+  local:        LocalCopy[]
 }
 
 export type Options = { home?: string, fetcher?: typeof fetch }
@@ -94,6 +110,30 @@ async function newestBackup(c: Cli, e: Entry): Promise<{ row: HubBackup | null, 
   }
 }
 
+const copiesDir = (c: Cli, name: string, opts: Options) => join(c.dataDir({ home: opts.home }), 'basecamp', name)
+
+function localCopies(c: Cli, name: string, opts: Options): LocalCopy[] {
+  const dir = copiesDir(c, name, opts)
+  return c.localBackups(dir).map(b => {
+    let mtime: string | null = null
+    try { mtime = statSync(join(dir, b.name)).mtime.toISOString() } catch {}
+    return { file: b.name, kind: b.kind, takenAt: b.takenAt, bytes: b.bytes, mtime }
+  })
+}
+
+/** Remove one pulled backup by its entry and directory name; answers `{ freed }` or `{ refused }`. */
+export async function deleteLocal(name: string, file: string, opts: Options = {}): Promise<{ freed: number } | { refused: string }> {
+  if (!await entryOf(name, opts)) return { refused: `No Basecamp named '${name}' in basecamps.json` }
+  // A path from the page must never reach rmSync: only a bare name that the listing itself produced is removed.
+  if (!file || file === '.' || file.includes('/') || file.includes('\\') || file.includes('..') || file.includes('\0'))
+    return { refused: `'${file}' is not a backup name` }
+  const c   = await loadCli()
+  const row = localCopies(c, name, opts).find(b => b.file === file)
+  if (!row) return { refused: `no backup '${file}' on this laptop for '${name}'` }
+  rmSync(join(copiesDir(c, name, opts), file), { recursive: true, force: true })
+  return { freed: row.bytes }
+}
+
 /** Every entry, keys left out, each pinged and its newest backup read in parallel. */
 export async function listBasecamps(opts: Options = {}): Promise<Listed[]> {
   const c   = await loadCli()
@@ -114,6 +154,7 @@ export async function listBasecamps(opts: Options = {}): Promise<Listed[]> {
       newestBackup: newest.row,
       backupError:  newest.error,
       outcome:      outcomeOf(name),
+      local:        localCopies(c, name, opts),
     }
   }))
 }

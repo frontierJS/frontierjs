@@ -8,7 +8,10 @@
  * Skipped when no daemon answers on the socket, and says so.
  */
 import { test, expect, describe } from 'bun:test'
-import { createInspector, spawnRun } from '../src/docker.js'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join }    from 'node:path'
+import { createDocker, createInspector, spawnRun } from '../src/docker.js'
 
 const SOCKET = (process.env.DOCKER_HOST ?? 'unix:///var/run/docker.sock').replace(/^unix:\/\//, '')
 
@@ -71,4 +74,65 @@ describe.skipIf(!df)('the inspector against a real daemon', () => {
       await spawnRun(['docker', 'volume', 'rm', '-f', name])
     }
   }, 60_000)
+})
+
+// A stand-in for a copy-aware release: it answers the header from the variable,
+// writes beside the copy as a sessions file would, and reports whether it can
+// reach the internet and the host's gateway. A real junction image is the
+// read-only-copy drive's; this grades the network, the mount and the wait.
+const COPY_APP = `Bun.serve({ port: 8080, async fetch() {
+  let egress = false
+  try { await fetch('http://1.1.1.1', { signal: AbortSignal.timeout(3000) }); egress = true } catch {}
+  await Bun.write('/data/copy-sessions.db', 'written')
+  const seen = (await Array.fromAsync(new Bun.Glob('*').scan('/data'))).sort()
+  const headers = process.env.FRONTIER_READ_ONLY_COPY && !process.env.OLD_FRAMEWORK ? { 'x-frontier-read-only': process.env.FRONTIER_READ_ONLY_COPY } : {}
+  return Response.json({ egress, seen }, { headers })
+} })`
+
+describe.skipIf(!df)('a read-only copy on a real daemon (FJS-D1996)', () => {
+  // Snap docker binds nothing from /tmp or a dotdir's parent it cannot see.
+  const root = join(homedir(), '.cache', 'outpost-serve-live')
+  mkdirSync(root, { recursive: true })
+  const staged = () => {
+    const dir = mkdtempSync(join(root, 'copy-'))
+    writeFileSync(join(dir, 'app.db'), 'SQLite format 3\0')
+    return dir
+  }
+  const config = (env = {}) => ({ volumePath: '/data', containerPort: 8080, command: ['bun', '-e', COPY_APP], env, healthTimeout: 20 })
+
+  test('the host dials the copy, the copy reaches no internet, and it writes beside its files', async () => {
+    const docker = createDocker()
+    const dir = staged()
+    try {
+      const served = await docker.serveCopy({ appId: 'servelive', dir, image: 'oven/bun:1.4.4-slim', asOf: '2026-10-25T12:00:00Z', config: config() })
+      expect(served.upstream).toMatch(/^\d+\.\d+\.\d+\.\d+:8080$/)
+      const res = await fetch(`http://${served.upstream}/`)
+      expect(res.headers.get('x-frontier-read-only')).toBe('2026-10-25T12:00:00Z')
+      const said = await res.json()
+      expect(said.egress).toBe(false)
+      expect(said.seen).toEqual(['app.db', 'copy-sessions.db'])
+      const { removed } = await docker.unserveCopy({ appId: 'servelive' })
+      expect(removed.map(c => c.container)).toEqual([served.container])
+      expect((await spawnRun(['docker', 'ps', '-a', '--filter', 'label=fjs.copy=servelive', '-q'])).stdout.trim()).toBe('')
+      // Root wrote it in the container; the Outpost still removes it with its dir.
+      rmSync(dir, { recursive: true })
+      expect(readdirSync(root)).not.toContain(dir.split('/').at(-1))
+    } finally {
+      await spawnRun(['sh', '-c', 'docker rm -f $(docker ps -aq --filter label=fjs.copy=servelive) 2>/dev/null; true'])
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 90_000)
+
+  test('an image that ignores the variable is refused and its container removed', async () => {
+    const docker = createDocker()
+    const dir = staged()
+    try {
+      await expect(docker.serveCopy({ appId: 'servelive', dir, image: 'oven/bun:1.4.4-slim', asOf: '2026-10-25T12:00:00Z', config: config({ OLD_FRAMEWORK: '1' }) }))
+        .rejects.toThrow('predates read-only copies')
+      expect((await spawnRun(['docker', 'ps', '-a', '--filter', 'label=fjs.copy=servelive', '-q'])).stdout.trim()).toBe('')
+    } finally {
+      await spawnRun(['sh', '-c', 'docker rm -f $(docker ps -aq --filter label=fjs.copy=servelive) 2>/dev/null; true'])
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 90_000)
 })

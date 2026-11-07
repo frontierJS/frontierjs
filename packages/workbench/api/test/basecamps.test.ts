@@ -7,12 +7,12 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 import { writeBasecamp } from '@frontierjs/cli/core/basecamps.js'
 
-import { listBasecamps, startBackup, startRestart, outcomeOf } from '../src/domain/basecamps/basecamps.ts'
+import { listBasecamps, startBackup, startRestart, outcomeOf, deleteLocal } from '../src/domain/basecamps/basecamps.ts'
 
 const home = mkdtempSync(join(tmpdir(), 'wb-basecamps-'))
 const KEY  = 'bc_admin_secret_key'
@@ -134,5 +134,31 @@ describe('restart', () => {
 
   test('an entry not in the index is refused', async () => {
     expect(await startRestart('nowhere', { home })).toEqual({ refused: expect.stringContaining("No Basecamp named 'nowhere'") })
+  })
+})
+
+describe('local copies', () => {
+  const dir = join(home, '.local', 'share', 'fli', 'basecamp', 'stub')
+  const at  = join(dir, '2026-11-06T10-00-00-000Z')
+
+  test('list shows the backup directories pulled for an entry, with bytes; an entry with none has an empty list', async () => {
+    mkdirSync(at, { recursive: true })
+    writeFileSync(join(at, 'x.tar.gz'), 'z'.repeat(1234))
+    const by = Object.fromEntries((await listBasecamps({ home })).map(e => [e.name, e]))
+    expect(by.stub.local).toEqual([expect.objectContaining({ file: '2026-11-06T10-00-00-000Z', bytes: 1234, kind: 'unreadable' })])
+    expect(typeof by.stub.local[0].mtime).toBe('string')
+    expect(by.nokey.local).toEqual([])
+  })
+
+  test('refuses a path, a traversal, an unknown file and an unknown entry, and removes nothing', async () => {
+    for (const file of ['../stub', '..', '.', '', 'a/b', `${at}`, 'nothing'])
+      expect(await deleteLocal('stub', file, { home })).toHaveProperty('refused')
+    expect(await deleteLocal('../stub', '2026-11-06T10-00-00-000Z', { home })).toHaveProperty('refused')
+    expect(existsSync(at)).toBe(true)
+  })
+
+  test('removes one copy and says what it freed', async () => {
+    expect(await deleteLocal('stub', '2026-11-06T10-00-00-000Z', { home })).toEqual({ freed: 1234 })
+    expect(existsSync(at)).toBe(false)
   })
 })

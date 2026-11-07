@@ -16,7 +16,6 @@
 FLI_PORT=5500              # Web GUI port
 FLI_DEBUG=1                # Enable full stack traces (or pass --debug)
 WORKSPACE_DIR=~/outlaw     # Workspace root (all ws-* commands)
-ANTHROPIC_API_KEY=sk-...
 
 # Project directories (override defaults)
 WEB_DIR=web
@@ -30,6 +29,30 @@ DEV_SERVER, DEV_SERVER_PATH
 STAGE_SERVER, STAGE_SERVER_PATH
 PROD_SERVER, PROD_SERVER_PATH
 ```
+
+### Credentials
+
+Every account fli signs in to, from `core/services.js`. A key goes in the global
+env with `fli eset KEY value --global`; a login is made once with the tool's own
+command. `fli doctor` lists each as present or absent and `fli doctor --probe`
+asks the logins who they are signed in as. A test fails when this table and the
+catalog disagree.
+
+| Service | Signs in with | Keys | Make one | Setup |
+| --- | --- | --- | --- | --- |
+| GitHub (REST) | env | `GITHUB_TOKEN`; optional `GITHUB_DEFAULT_ORG`, `GITHUB_DEFAULT_TEMPLATE` | https://github.com/settings/tokens | `commands/github/_module.md#Setup` |
+| GitHub (gh) | `gh auth login` | | | |
+| npm | `npm login` | | | |
+| DigitalOcean | env | `DIGITALOCEAN_TOKEN` | https://cloud.digitalocean.com/account/api/tokens/new | `commands/server/_module.md#Setup` |
+| Hetzner | env | `HETZNER_TOKEN` | https://console.hetzner.cloud/projects | `commands/server/_module.md#Setup` |
+| Cloudflare (cf) | `cf auth login` | optional `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_DEFAULT_ZONE` | | `commands/cloudflare/_module.md#Setup` |
+| Cloudflare (Basecamp DNS token) | env | `CLOUDFLARE_TOKEN` | https://dash.cloudflare.com/profile/api-tokens | `commands/cloudflare/_module.md#Environment variables` |
+| Cloudflare (wrangler) | `wrangler login` | optional `CLOUDFLARE_API_TOKEN` | | |
+| Basecamp | file `config/basecamps.json` | | | `commands/basecamp/_module.md#Setup` |
+| Frontier network | file `state/frontier` | | | |
+| Vaultwarden | env | `VW_URL`, `VW_PASSWORD`; optional `VW_CLIENT_ID`, `VW_CLIENT_SECRET`, `VW_EMAIL` | | |
+| Anthropic | `claude auth login` | optional `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` | | |
+| ssh | file `~/.ssh/config` | | | |
 
 ### Port schema
 
@@ -47,7 +70,6 @@ fli gui           # Web GUI at http://localhost:5500
 ```bash
 # Recommended .env additions
 WORKSPACE_DIR=~/outlaw
-ANTHROPIC_API_KEY=sk-...
 ```
 
 ---

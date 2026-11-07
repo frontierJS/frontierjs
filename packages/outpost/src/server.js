@@ -420,6 +420,27 @@ export function createOutpostServer(config, {
         return { databases: staged.databases, ...verified }
       } finally { await replicator.unstage(staged.dir) }
     },
+    // The drill's staging, kept for the copy's life and served by the release
+    // image read-only (`FJS-D1996`). A copy without `at` is as of the moment
+    // its staging began: the replica holds nothing newer than that.
+    'POST /replica/serve': async (body) => {
+      const asOf   = body.at ?? new Date().toISOString()
+      const staged = await replicator.stage({ appId: body.app_id, replica: body.replica, databases: body.databases, at: body.at ?? null })
+      let served
+      try {
+        served = await docker.serveCopy({ appId: body.app_id, dir: staged.dir, image: body.image, digest: body.digest, asOf, config: body.config ?? {} })
+      } catch (err) {
+        await replicator.unstage(staged.dir)
+        throw err
+      }
+      for (const old of served.replaced) await replicator.unstage(old.dir)
+      return { databases: staged.databases, as_of: served.asOf, container: served.container, upstream: served.upstream }
+    },
+    'POST /replica/unserve': async (body) => {
+      const { removed } = await docker.unserveCopy({ appId: body.app_id })
+      for (const old of removed) await replicator.unstage(old.dir)
+      return { removed: removed.map(c => c.container) }
+    },
     'POST /replica/restore': async (body) => {
       const appId = body.app_id
       await docker.refuseHeld({ appId })

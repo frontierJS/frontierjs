@@ -37,6 +37,7 @@ import { splitStatements } from './core/migrate.js'
 import { parse, parseFile } from './core/parser.js'
 import { resolveTenancy, tenantFrom, placedTrails } from './core/tenancy.js'
 import { noteMintedDirectory }  from './core/db-path.js'
+import { readOnlyCopy, copyOptions, READ_ONLY_COPY_VAR } from './core/read-only-copy.js'
 
 // ─── Tenant ID sanitization ───────────────────────────────────────────────────
 // Tenant IDs are free-form strings that become filenames.
@@ -297,9 +298,11 @@ class TenantRegistry {
   #inMemory
   #tenancy
   #busyTimeout
+  #copy
 
-  constructor({ dir, places, registryDb, maxOpen, encryptionKey, migrationsDir, inMemory, clientOptions, tenancy }) {
+  constructor({ dir, places, registryDb, maxOpen, encryptionKey, migrationsDir, inMemory, clientOptions, tenancy, copy }) {
     this.#tenancy       = tenancy ?? null
+    this.#copy          = copy ?? null
     this.#dir           = dir
     this.#places        = places ?? {}
     this.#registryDb    = registryDb
@@ -551,6 +554,7 @@ class TenantRegistry {
    */
   async create(id, meta = {}) {
     assertSafeId(id)
+    this.#refuseOnCopy('create', id)
     if (this.exists(id))
       throw new Error(`Tenant "${id}" already exists`)
     this.#assertMeta(id, meta)
@@ -620,6 +624,17 @@ class TenantRegistry {
     return this.#open(id)
   }
 
+  // The tenants' files open readonly on a copy, but this registry's own file
+  // does not, and `create` writes a tenant file before its registry row and
+  // `delete` unlinks one: a copy would mint or remove tenants nobody can see
+  // once it is refreshed.
+  #refuseOnCopy(verb, id) {
+    if (this.#copy)
+      throw new Error(
+        `tenants.${verb}("${id}") refused: this process serves a read-only copy as of ` +
+        `${this.#copy.asOf.toISOString()} (${READ_ONLY_COPY_VAR}). Make the change on the live App.`)
+  }
+
   /**
    * Where a tenant's file is, in its place's directory.
    */
@@ -652,6 +667,7 @@ class TenantRegistry {
    */
   async delete(id) {
     assertSafeId(id)
+    this.#refuseOnCopy('delete', id)
     this.#pool.delete(id)  // closes connection
     const path = this.#dbPath(id)
     if (existsSync(path)) unlinkSync(path)
@@ -679,6 +695,7 @@ class TenantRegistry {
         return JSON.parse(row.meta)
       },
       set: (id, patch) => {
+        this.#refuseOnCopy('meta.set', id)
         const current = JSON.parse(
           db.prepare(`SELECT meta FROM tenants WHERE id = ?`).get(id)?.meta ?? '{}'
         )
@@ -687,6 +704,7 @@ class TenantRegistry {
           .run(JSON.stringify({ ...current, ...patch }), id)
       },
       replace: (id, meta) => {
+        this.#refuseOnCopy('meta.replace', id)
         const current = JSON.parse(
           db.prepare(`SELECT meta FROM tenants WHERE id = ?`).get(id)?.meta ?? '{}'
         )
@@ -1019,6 +1037,15 @@ export async function createTenantRegistry({
   // tenant exists, and refuses a directory whose parent is missing.
   if (!inMemory) for (const at of Object.values(declared?.places ?? {})) mkdirSync(at, { recursive: true })
 
+  // Session moves into each tenant's own file below, which is only so when the
+  // registry knows the placement; left to `createClient`, a single-database
+  // default, it would land in a scratch file beside the tenant's.
+  const copy = readOnlyCopy()
+  if (copy && clientOptions.placeModels == null) {
+    const { placeModels } = copyOptions(parseResult.schema, {})
+    if (placeModels) clientOptions = { ...clientOptions, placeModels }
+  }
+
   // Open registry DB
   const registryDb = openRegistry(registryPath, busyTimeoutFor(clientOptions?.busyTimeout, 'default'))
 
@@ -1032,6 +1059,7 @@ export async function createTenantRegistry({
     inMemory,
     clientOptions,
     tenancy:       declared,
+    copy,
   })
 
   await reg._init(parseResult)

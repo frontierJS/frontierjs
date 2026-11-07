@@ -110,7 +110,7 @@ deploy-plan.js deploy-target.js deps.js desktop-sidecar.js desktop-surface.js de
 done.js edge.js effects.js env-health.js env-preflight.js export-pairs.js exports.snapshot.md 
 extension-surface.js file.js file-kind.js file-tree.js find.js flags.js fli.js fli.json 
 frontier-member.js fs.js functions.js git-history.js git-status.js git.js global-env.js guarded-write.js 
-guarded-write.mjs guard.js HANDOFF.md hazards.md health-target.js image.js index.html index.js 
+guarded-write.mjs guard.js home.js services.js HANDOFF.md hazards.md health-target.js image.js index.html index.js 
 install-preflight.js intent.js intent-recognizer.md ISSUES_ARCHIVE.md ISSUES.md journal.js 
 journal-runner.mjs junction.config.js latency.js lib.js live-view.js lock.js machine.js 
 loop-log.js migration-journal.js autopilot.js map-model.js map-reference.js map-view.js mesa-pack.js _module.md new.md next.js one-console.md open-url.js 

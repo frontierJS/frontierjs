@@ -17,6 +17,11 @@ flags:
     type: string
     description: Check only a specific namespace
     defaultValue: ''
+  probe:
+    char: p
+    type: boolean
+    description: Also ask each external login (gh, npm, cf, claude) who it is signed in as
+    defaultValue: false
   json:
     char: j
     type: boolean
@@ -47,6 +52,7 @@ const report = diagnose({
   root:    $.paths.root,
   fliRoot: global.fliRoot,
   modules,
+  probe:   flag.probe,
 })
 
 if (flag.json) {
@@ -91,6 +97,15 @@ echo(chalk`\n  {bold private files}`)
 if (!report.secrets.length) echo(chalk.dim('    \u00b7  none yet'))
 for (const f of report.secrets) {
   echo(`    ${ICON[f.level]}  ${chalk.cyan(f.label.padEnd(24))} ${f.ok ? chalk.dim('ok') : hint(f.hint)}`)
+}
+
+// A service the laptop does not use is a warning and not a fault, so this
+// section is read-only: it never moves the verdict below.
+echo(chalk`\n  {bold services}${flag.probe ? '' : chalk.dim('  (--probe asks each login who it is)')}`)
+for (const s of report.services) {
+  const state = s.probe ? (s.probe.ok ? `signed in${s.probe.who ? ' as ' + s.probe.who : ''}` : s.present ? 'login failed' : 'not installed')
+              : s.present ? 'present' : s.kind === 'env' ? 'no key' : s.kind === 'cli' ? 'not installed' : 'none yet'
+  echo(`    ${ICON[s.level]}  ${chalk.cyan(s.id.padEnd(16))} ${s.ok ? chalk.dim(state) : state}`)
 }
 
 echo(chalk`\n  {bold where fli keeps your files}`)

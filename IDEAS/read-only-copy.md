@@ -260,17 +260,87 @@ nothing outbound.
 Done when: a drive stages `example`'s replica onto a second stand-in machine,
 serves it, a write over HTTP and over MCP is refused, and no job runs.
 
-- [ ] 1.1 Outpost `/replica/serve`: stage the way the drill does, then run the
+- [x] 1.1 Outpost `/replica/serve`: stage the way the drill does, then run the
       release image's API with data databases `access: 'readonly'`. Inbound
-      traffic only.
-- [ ] 1.2 Jobs, crons, conduits, push and the outbox relay are refused at
+      traffic only. Signalled per `FJS-D1996`, in three steps:
+  - [x] 1.1a Litestone `readOnlyCopy()`: the one reader of
+        `FRONTIER_READ_ONLY_COPY`. `createClient` and `createTenantRegistry`
+        call it, and under it every database opens `access: 'readonly'` and
+        `placeModels: { Session: 'sessions' }` applies; an explicit option
+        wins, and a malformed value refuses. Proved by a test in which a
+        `Session` write succeeds and a `User` write throws, with the var set
+        and no option passed.
+    **Built 2026-11-06**: `src/core/read-only-copy.js` holds `readOnlyCopy()`
+    and `copyOptions()`, and a single-database app's sessions go to
+    `copy-sessions.db` beside main's file. Proved by `test/place-models.test.ts`
+    § FRONTIER_READ_ONLY_COPY with no option passed. The tenant case goes red
+    with the registry's placement line disabled.
+  - [x] 1.1b Junction answers every request on a copy with
+        `x-frontier-read-only: <as-of>`, read through litestone's
+        `readOnlyCopy()`. Proved by a junction test.
+    **Built 2026-11-06**: the `read-only-copy` start phase reads it once, and
+    `HttpTransport._handle` sets the header on every answer, refusals and
+    timeouts included. Proved by `test/read-only-copy.test.ts`.
+  - [x] 1.1c Outpost `/replica/serve`: stages as `/replica/drill` does, runs
+        the image with the var set, on a network that takes inbound traffic
+        and has no egress, keeps it running, and refuses to report it served
+        until its API answers with the header. Proved by an outpost test.
+    **Built 2026-11-06**: `docker.serveCopy`/`unserveCopy` and the routes
+    `POST /replica/serve` and `/replica/unserve`. The copy runs on the
+    `--internal` network `fjs-copy` (bridge `fjs-copy0`), labeled `fjs.copy`
+    and never `fjs.app`, as root over the Outpost's own staged directory. A
+    second serve starts beside the first and removes it only once it answers,
+    which is the swap 1.3 needs. An answer without the header is refused and
+    removed. Proved by `test/outpost.test.js` § /replica/serve (no docker) and
+    `test/docker-live.test.js` § read-only copy against the daemon: the host
+    dials the copy and gets the header, the copy cannot reach 1.1.1.1,
+    `copy-sessions.db` is written beside the data, and an image that ignores
+    the var is refused.
+- [x] 1.2 Jobs, crons, conduits, push and the outbox relay are refused at
       startup, in the one startup phase list every caller runs (Invariant 4),
-      not merely left idle.
+      not merely left idle. Hook it on 1.1b's `read-only-copy` phase, kept in a
+      closure, and have `start-work` refuse when it is set. The tenant
+      registry's own index file is still writable on a copy, so its `create`
+      and `delete` need refusing too.
+  **Built 2026-11-06**: on a copy `start-work` arms no scheduler and calls no
+  plugin's `work()`, so caravan's workers and cron, the outbox relay, orion's
+  watch, auth's session cleanup, metrics and otlp all stay off. It logs one
+  line naming each withheld plugin. It does not throw: every App with caravan
+  would then be unable to run as a copy. The tenant registry refuses `create`,
+  `delete`, `meta.set` and `meta.replace` by name, before `create` writes a
+  tenant file or `delete` unlinks one. Proved by junction
+  `test/read-only-copy.test.ts` § starts no scheduler and litestone
+  `test/place-models.test.ts` § the tenant registry refuses. Each goes red with
+  its guard disabled.
 - [ ] 1.3 Refresh re-stages on a schedule and swaps the copy in one step, so a
       reader never sees half of two days. The copy is never fresher than the
       replica, so this schedule only decides how often a copy is staged from it.
       It is not a second backup schedule.
 - [ ] 1.4 Serve on any machine that can reach the bucket, not only the App's own.
+- [ ] 1.8 The copy's as-of time is the replica's, not the moment it was
+      staged. `/replica/serve` without `at` stamps the staging time today, and
+      `stage` reports no time of its own. If the App's machine stopped
+      replicating yesterday, the copy claims to be current while serving
+      yesterday's data, which is the lifeboat case. Read the newest point the
+      restore reached from Litestream and stamp that.
+- [x] 1.9 The copy cannot reach the host. `--internal` blocks the internet,
+      but the bridge's gateway address still answers. Observed on this laptop:
+      sshd on every interface was open from inside a copy. On a box that means
+      Outpost's command port and Caddy's 80/443, and through Caddy every App
+      on the machine, the live one included. Drop it in the install's firewall
+      by `iifname "fjs-copy0"` (`enrollment.ts` `installScript()`), allowing
+      established replies only, with a drive that dials the gateway from
+      inside a copy.
+  **Built 2026-11-06**: `iifname "fjs-copy0" drop` sits after the
+  established/related accept in both the input and the forward chain. Proved
+  by basecamp `test/compute.test.ts` § the install drops a read-only copy
+  dialing the box. In an unprivileged namespace, the install's own ruleset is
+  loaded, a veth `fjs-copy0` joins a second namespace standing in for the copy,
+  and the copy dials 22, 80, 443 and 8180 on the gateway (all closed) while the
+  box dials the copy (open). With the rule removed, all four open. **Owed:** an
+  enrolled box gets the rule only when the install runs again, so yuma and kapp
+  have none, and posture does not check for it. Until one of those changes, do
+  not serve a copy on a box enrolled before this.
 - [x] 1.5 `FJS-4035`: a transaction begins only on handles that can write, so
       sign-out works with `main` read-only.
   **Built 2026-11-05**: `FJS-4035` closed, proved by
@@ -304,6 +374,9 @@ numbers through MCP at the copy's address.
       ADMINISTRATOR, matching `apps.restoreReplica`.
 - [ ] 2.2 The copy's address per Q2. Waits on `ingress-name.md` serving a name
       at all.
+      The upstream is the copy container's IP on `fjs-copy`, and a restart can
+      move it to another App's copy, so the route reads it from the container
+      each time and does not keep the address `serve` answered with.
 - [ ] 2.3 Posture flags a copy older than its schedule, with a test that feeds
       it a stale copy.
 - [ ] 2.4 Each `acme` Domain's certificate is minted ahead (`FJS-D1988`). With the copy
@@ -492,3 +565,30 @@ their gate opens, and only the owner's export runs.
     the key, which `fleet-ingress.md` D3 already accepted for pushes. If
     `fleet-ingress.md` Phase 3 waits too long, ship Phase 3 here with A and
     upgrade to B.
+- ~~**Q11 — How does a release image learn at boot that it is the copy?**~~ **Answered 2026-11-07 (`FJS-D1996`): A — one env var Outpost sets on the copy's container, `FRONTIER_READ_ONLY_COPY=<as-of ISO time>`, read by one exported `readOnlyCopy()` in litestone. Called from inside `createClient` and `createTenantRegistry`, it opens every database `access: 'readonly'` and passes `placeModels: { Session: 'sessions' }`. Junction imports it for 1.2's startup phase and 3.2's header. No App edits anything. An explicit option still wins, and a malformed value refuses boot. Outpost refuses to route a copy whose API does not answer with the read-only header, because an image on an older framework ignores the var and would run writable.** (from 1.1)
+  The App opens its own litestone client in app code
+  (`example/api/src/core/db.ts`), so nothing today can open its data read-only
+  or move `Session` without the App's say. 1.2 needs the same signal in
+  junction's startup.
+  - **A** — one env var Outpost sets on the copy's container,
+    `FRONTIER_READ_ONLY_COPY=<as-of ISO time>`, read by one exported
+    `readOnlyCopy()` in litestone. Called from inside `createClient` and
+    `createTenantRegistry`, it opens every database `access: 'readonly'` and
+    passes `placeModels: { Session: 'sessions' }`. Junction imports it for 1.2's
+    startup phase and 3.2's header. No App edits anything. An explicit option
+    still wins, and a malformed value refuses boot. Outpost refuses to route a
+    copy whose API does not answer with the read-only header, because an image
+    on an older framework ignores the var and would run writable.
+  - **B** — the App opts in: the scaffolded `db.ts` spreads
+    `...readOnlyCopy()` into its options, and `app.ts` hands it to junction.
+    Explicit, but every App edits two files, and an App that has not is a copy
+    that runs writable.
+  - **C** — Outpost alone: mount the staged files read-only and a sessions
+    scratch writable, with no framework change. `FJS-4033` (a readonly open
+    still writes WAL) makes those opens likely to fail, and it can neither place
+    `Session` nor refuse a job.
+  - **Recommend A** — Outpost already sets `FRONTIER_TRUST_PROXY=1` on a
+    container and junction reads it (`docker.js:1095`, `app.ts:1180`), so this
+    is the same shape. One origin, no App edits, and the header check catches the
+    one way it fails open. Litestone reads no ambient env today, so the read
+    lives in that one function.

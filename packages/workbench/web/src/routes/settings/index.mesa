@@ -2,7 +2,9 @@
 title: Settings
 ---
 <script>
-  // The member's own settings. Only Appearance is here: the Member row is
+  // The member's own settings. Appearance, then this machine's global
+  // environment and the user's own fli commands (api services/laptop, which goes
+  // through fli's `global-env.js` and `registry.js`). The Member row is
   // read-only to its owner (`@@allow(read, ...)` and nothing else), so the nick
   // is shown, not edited, and a theme is a fact about this browser, not the
   // member -- Sierra stores it under the app's prefix in localStorage.
@@ -13,6 +15,8 @@ title: Settings
 
   import { theme, setTheme, themes } from '@frontierjs/sierra/theme'
   import { session } from '../../lib/session.js'
+  import { laptop }  from '../../resources/Laptop.mesa'
+  import { toasts }  from '@frontierjs/ui/stores/toastStore'
   import { textSize, setTextSize, resetTextSize, TEXT_SIZE } from '../../lib/text-size.js'
   var { min, max, step, fallback } = TEXT_SIZE
 
@@ -20,11 +24,76 @@ title: Settings
   import Switch      from '@frontierjs/ui/components/forms/Switch.mesa'
   import Slider      from '@frontierjs/ui/components/forms/Slider.mesa'
   import Button      from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input       from '@frontierjs/ui/components/forms/Input.mesa'
   import ThemePicker from '@frontierjs/ui/components/display/ThemePicker.mesa'
 
   $: (theme.value, theme.preference)
   $: (session.user)
   $: (textSize())
+
+  // Global environment: values arrive masked and are never asked for again.
+  let envKeys   = []
+  let envPath   = ''
+  let envError  = null
+  let newKey    = ''
+  let newValue  = ''
+  let setting   = false
+  let unsetting = {}
+
+  async function loadEnv() {
+    try {
+      const out = await laptop.service.invoke('globalEnv')
+      envKeys  = out.keys
+      envPath  = out.path
+      envError = null
+    } catch (err) {
+      envError = err.message
+    }
+  }
+
+  async function setEnv() {
+    setting = true
+    try {
+      await laptop.service.invoke('setGlobalEnv', null, { key: newKey.trim(), value: newValue })
+      toasts.success(`${newKey.trim()} is set`)
+      newKey   = ''
+      newValue = ''
+      await loadEnv()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      setting = false
+    }
+  }
+
+  async function unsetEnv(key) {
+    unsetting = { ...unsetting, [key]: true }
+    try {
+      await laptop.service.invoke('unsetGlobalEnv', null, { key })
+      toasts.success(`${key} is unset`)
+      await loadEnv()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      unsetting = { ...unsetting, [key]: false }
+    }
+  }
+
+  // The user's own fli commands, read only.
+  let cmds     = null
+  let cmdError = null
+
+  async function loadCommands() {
+    try {
+      cmds     = await laptop.service.invoke('commands')
+      cmdError = null
+    } catch (err) {
+      cmdError = err.message
+    }
+  }
+
+  loadEnv()
+  loadCommands()
 
   const following = () => theme.preference === 'system'
 
@@ -57,4 +126,58 @@ title: Settings
     <Button size="xs" treatment="outlined" onclick={resetTextSize}>Reset to {fallback}px</Button>
   </div>
   <p class="text-sm text-muted">Stored in this browser, not on your account. The terminal picks it up when it opens.</p>
+</Card>
+
+<Card id="settings-env">
+  <h2 class="h5">Global environment</h2>
+  <p class="text-sm text-muted">
+    Keys <code>fli</code> loads under every project's own <code>.env</code>{#if envPath}, kept in <code>{envPath}</code>{/if}. Values are masked here and never sent to this page.
+  </p>
+  {#if envError}
+    <article class="alert danger"><div class="alert-content">{envError}</div></article>
+  {/if}
+  {#if envKeys.length}
+    <table id="settings-env-table">
+      <thead><tr><th>Key</th><th>Value</th><th>Used by</th><th></th></tr></thead>
+      <tbody>
+        {#each envKeys as k (k.key)}
+          <tr data-env={k.key}>
+            <td><code>{k.key}</code></td>
+            <td><code>{k.masked}</code></td>
+            <td class="text-sm" data-used-by={k.key}>{k.usedBy.length ? k.usedBy.join(', ') : '—'}</td>
+            <td><Button size="sm" treatment="outlined" tone="danger" loading={!!unsetting[k.key]} onclick={() => unsetEnv(k.key)}>Unset</Button></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else if !envError}
+    <p class="text-sm text-muted">No keys set.</p>
+  {/if}
+  <form id="settings-env-form" class="cluster" novalidate onsubmit={(e) => { e.preventDefault(); setEnv() }}>
+    <Input id="settings-env-key" name="key" label="Key" placeholder="API_TOKEN" required bind:value={newKey} />
+    <Input id="settings-env-value" name="value" label="Value" type="password" autocomplete="off" required bind:value={newValue} />
+    <Button type="submit" tone="primary" loading={setting}>Set</Button>
+  </form>
+</Card>
+
+<Card id="settings-commands">
+  <h2 class="h5">Your commands</h2>
+  {#if cmdError}
+    <article class="alert danger"><div class="alert-content">{cmdError}</div></article>
+  {:else if cmds && cmds.length}
+    <table id="settings-commands-table">
+      <thead><tr><th>Command</th><th>What it does</th><th>File</th></tr></thead>
+      <tbody>
+        {#each cmds as c (c.filePath)}
+          <tr data-command={c.name}>
+            <td><code>{c.name}</code></td>
+            <td class="text-sm">{c.description}</td>
+            <td class="text-sm"><code>{c.filePath}</code></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else if cmds}
+    <p class="text-sm text-muted">No commands of your own yet. A <code>.md</code> file dropped in the commands folder under <code>~/.config/fli</code> becomes one.</p>
+  {/if}
 </Card>

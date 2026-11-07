@@ -9,6 +9,7 @@ import { currentEngine } from './engine.js'
 import { validateBusyTimeout } from './pragmas.js'
 import { resolve, join, dirname, mkdirSync, rmSync, AsyncLocalStorage, processId, defaultFileStorage } from '#host'
 import { resolveAnchor } from './db-path.js'
+import { readOnlyCopy, copyOptions } from './read-only-copy.js'
 import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns, 
          SEARCH_TABLE, searchModels, searchRankExpr } from './ddl.js'
 import { buildSealMap } from './seal.js'
@@ -59,7 +60,7 @@ import {
   buildSoftDeleteMap, buildHasTemplatesMap, buildEffectiveMap, buildCoFkMap, buildFtsMap, nowISO, aggModelsOf, derivedOnce } from './schema-maps.js'
 import {
   wideDb, mappedDb, narrowedDb, clockedDb, rawHandle, resolveAccessConfig, buildDbRegistry, buildModelDbMap,
-  jsonlFilePath, rowsChanged } from './databases.js'
+  jsonlFilePath, rowsChanged, resolveDbPath } from './databases.js'
 import {
   applyGeneratedDefaults, restampClock, noteStamp, stampFromAuth, applyAuthDefaults, ensureSequenceTable,
   applySequences, authStamped } from './stamps.js'
@@ -5498,6 +5499,19 @@ export async function createClient({
   if (!parseResult.valid)
     throw new Error(`schema.lite has errors:\n${parseResult.errors.join('\n')}`)
   if (untrusted) refuseUntrustedSchema(parseResult.schema)
+
+  // Under a copy the caller's options are the floor's exceptions, never replaced by it.
+  if (readOnlyCopy()) {
+    const main = parseResult.schema.databases.find(d => d.name === 'main')
+    const mainOverride = dbOverrides === ':memory:' ? ':memory:' : (dbOverrides?.main?.path ?? dbPath)
+    const copy = copyOptions(parseResult.schema, {
+      placeModels: untrusted ? {} : placeModels, access: accessConfig, overrides: dbOverrides,
+      mainPath: mainOverride || main ? resolveDbPath(main?.path, mainOverride, resolveAnchor(resolveFrom, schemaFilePath)) : null,
+    })
+    if (!untrusted) placeModels = copy.placeModels ?? undefined
+    accessConfig = copy.access
+    if (Object.keys(copy.paths).length) dbOverrides = { ...dbOverrides, ...copy.paths }
+  }
 
   const placed = placeModels == null ? parseResult : await placeModelsFor(parseResult, placeModels, dbOverrides, untrusted)
 

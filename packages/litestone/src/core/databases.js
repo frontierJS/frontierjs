@@ -471,7 +471,7 @@ const MIN_SAFE = -MAX_SAFE
  * @param {string | undefined} override
  * @param {string | null} [anchor]
  */
-function resolveDbPath(pathDef, override, anchor = null) {
+export function resolveDbPath(pathDef, override, anchor = null) {
   // An override comes from code — `createClient({ db })`, `databases: {…}` —
   // and code is written against the process, not against the schema file.
   if (override) return override === ':memory:' ? ':memory:' : resolve(dbFilePath(override))

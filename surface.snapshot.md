@@ -26,15 +26,15 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4433 source file(s) read
+27 package(s) · 4447 source file(s) read
 254 entry point(s), 31 imported by nothing outside their package, 16 emitted
-1743 value export(s), 639 reached by nothing outside, 178 emitted
+1744 value export(s), 639 reached by nothing outside, 178 emitted
 463 type export(s), 338 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `litestone` | 28 | 5 | 270 | 129 | 41 | 1 | 1 |
+| `litestone` | 28 | 5 | 271 | 129 | 41 | 1 | 1 |
 | `junction` | 27 | 3 | 274 | 116 | 13 | 272 | 210 |
 | `mesa` | 19 | 4 | 319 | 110 | 77 | 0 | 0 |
 | `sierra` | 25 | 6 | 200 | 84 | 20 | 0 | 0 |
@@ -180,7 +180,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · 28 entry point(s) · 270 value, 1 type export(s)
+`packages/litestone` · 28 entry point(s) · 271 value, 1 type export(s)
 
 **Entries imported by nothing outside (5):** `./engines/sqlite-wasm` `./device-schema` `./import` `./transform` `./external-ref`
 

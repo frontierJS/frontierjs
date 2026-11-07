@@ -59,6 +59,50 @@ export function storeGlobal(key, value, { home } = {}) {
   return file
 }
 
+/** The text without `key`'s line; the rest, comments and blank lines included, is left as it was. */
+export function unsetEnvLine(content, key) {
+  const isKey = (line) => {
+    const t = line.trim()
+    return !t.startsWith('#') && t.includes('=') && t.slice(0, t.indexOf('=')).trim() === key
+  }
+  const lines = content.split('\n')
+  const out   = []
+  for (let i = 0; i < lines.length; i++) {
+    if (!isKey(lines[i])) { out.push(lines[i]); continue }
+    // setEnvLine sets a key between two blank lines; taking it back must not leave the pair.
+    if (out[out.length - 1] === '' && lines[i + 1] === '') i++
+  }
+  return out.join('\n')
+}
+
+/** Remove `key` from the global env. Answers whether the file held it; no file is no key. */
+export function unsetGlobal(key, { home } = {}) {
+  const file = globalEnvPath(home)
+  if (!existsSync(file)) return false
+  const text = readFileSync(file, 'utf8')
+  if (!hasEnvLine(text, key)) return false
+  writeEnv(file, unsetEnvLine(text, key))
+  return true
+}
+
+/**
+ * Every key the global env sets, with its value as `setEnvLine` wrote it
+ * (a quoted value unquoted). The values leave this module only for a caller
+ * that masks them; a page or a log is never that caller's reader.
+ */
+export function listGlobal({ home } = {}) {
+  const file = globalEnvPath(home)
+  if (!existsSync(file)) return []
+  const out = []
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    const key = keyOf(line)
+    if (!key) continue
+    const raw = line.trim().slice(line.trim().indexOf('=') + 1).trim()
+    out.push({ key, value: raw.replace(/^(["'])(.*)\1$/, '$2') })
+  }
+  return out
+}
+
 /**
  * The lines a missing key leaves behind, so the file itself says what is
  * wanted and how to supply it. `KEY=` with nothing after it loads as empty,

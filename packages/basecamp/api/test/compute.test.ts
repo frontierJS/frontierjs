@@ -797,6 +797,47 @@ describe('a machine claims its own credential', () => {
     expect(probe.exitCode).toBe(0)
   })
 
+  // A read-only copy's `--internal` network blocks the internet but not the
+  // bridge's gateway, which is the box: sshd, the Outpost and Caddy all answered
+  // a copy before the install dropped its bridge. Drawn in a namespace of its
+  // own: a veth named fjs-copy0 is the host's end, the other end a second
+  // namespace standing in for the copy, under the install's own ruleset.
+  test('the install drops a read-only copy dialing the box, and keeps the box dialing the copy', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const ruleset = (installScript().match(/<<NFTEOF\n([\s\S]*?)\nNFTEOF/)?.[1] ?? '')
+      .replaceAll('$SSH_PORTS', '22').replaceAll('$OUTPOST_PORT', '8180')
+    expect(ruleset).toMatch(/ct state established,related accept\n(?:.*\n)*?\s*iifname "fjs-copy0" drop/)
+
+    const listen = (port: number) =>
+      `'${process.execPath}' -e 'Bun.listen({ hostname: "0.0.0.0", port: ${port}, socket: { data() {} } }); setInterval(() => {}, 1e9)' &`
+    const script = `
+      set -e
+      dial() { if timeout 1 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null; then echo open; else echo closed; fi; }
+      export -f dial
+      ip link set lo up
+      unshare -n sleep 30 & COPY=$!
+      sleep 0.2
+      ip link add fjs-copy0 type veth peer name copy0
+      ip link set copy0 netns $COPY
+      ip addr add 172.21.0.1/16 dev fjs-copy0; ip link set fjs-copy0 up
+      nsenter -t $COPY -n sh -c 'ip link set lo up; ip addr add 172.21.0.2/16 dev copy0; ip link set copy0 up'
+      nft -f - <<'RULES'
+${ruleset}
+RULES
+      ${[22, 80, 443, 8180].map(listen).join('\n      ')}
+      nsenter -t $COPY -n ${listen(8080)}
+      sleep 0.5
+      for port in 22 80 443 8180; do nsenter -t $COPY -n bash -c "dial 172.21.0.1 $port"; done
+      dial 172.21.0.2 8080
+      kill $(jobs -p) 2>/dev/null || true
+    `
+    const probe = Bun.spawnSync(['unshare', '-rn', 'bash', '-c', script])
+    if (probe.exitCode === null || /not found|Operation not permitted|unshare failed/i.test(probe.stderr.toString())) return
+    expect(probe.stderr.toString()).toBe('')
+    // ssh, the web and the Outpost from the copy; then the box dialing the copy.
+    expect(probe.stdout.toString().trim().split('\n')).toEqual(['closed', 'closed', 'closed', 'closed', 'open'])
+  }, 20_000)
+
   // FJS-1761: the process that answers a network port must not be able to write
   // anywhere on the box. `/exec` leaves the unit through systemd-run (FJS-D602),
   // so the sandbox is not what stops an operator's recipe.

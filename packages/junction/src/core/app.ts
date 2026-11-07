@@ -2047,6 +2047,9 @@ export function createApp(opts: AppOptions = {}): App {
     }
     _everStarted = true
 
+    // Set by `read-only-copy`, read by `start-work`.
+    let copyAsOf: string | null = null
+
     const startPhases: StartPhase[] = [
 
       // Load junction.config.js and deep-merge into the live config.
@@ -2086,6 +2089,18 @@ export function createApp(opts: AppOptions = {}): App {
         const id = resolveBuildId(config)
         if (id) config.build = id
         http.setBuildId(id)
+      }},
+
+      // Litestone's `readOnlyCopy()` is the one reader of the var, and junction
+      // takes litestone as an optional peer, so it is imported rather than
+      // named. Without litestone no answer carries the header and Outpost
+      // routes no copy, which is the closed way to fail. A malformed value
+      // throws here and refuses the boot (`FJS-D1996`).
+      { name: 'read-only-copy', run: async () => {
+        const litestone = await import('@frontierjs/litestone').catch(() => null)
+        const copy = litestone?.readOnlyCopy?.() ?? null
+        copyAsOf = copy ? copy.asOf.toISOString() : null
+        http.setReadOnlyCopy(copyAsOf)
       }},
 
       // An attached service the environment does not bind is a refusal HERE,
@@ -2251,7 +2266,20 @@ export function createApp(opts: AppOptions = {}): App {
       // After the pipelines compile, so the first job a worker claims runs
       // through the hooks a request would. A work() that throws fails the
       // start: a serving process whose queue never started is not serving.
+      //
+      // A copy starts none of it. Its data is a day old: a cron would act on
+      // stale state, a relay would send mail the live App already sent, and a
+      // worker would claim jobs from a queue nothing else drains. Each plugin
+      // whose work() is withheld is named, so a copy's log says what it is not
+      // doing rather than looking like a quiet hour.
       { name: 'start-work', isWork: true, run: async () => {
+        if (copyAsOf) {
+          const withheld = plugins.filter(p => p.work).map(p => p.name)
+          logger.info(
+            `[Junction] read-only copy as of ${copyAsOf}: no scheduler` +
+            (withheld.length ? `, and no work() from ${withheld.join(', ')}` : '') + `.`)
+          return
+        }
         scheduler.arm()
         for (const plugin of plugins) {
           try {

@@ -63,6 +63,10 @@ function serializeSetCookie(
   return parts.join('; ')
 }
 
+// The header every answer from a read-only copy carries, its value the copy's
+// as-of ISO time. Outpost reads it before routing a copy (`FJS-D1996`).
+export const READ_ONLY_HEADER = 'x-frontier-read-only'
+
 // Below this threshold compression overhead exceeds the saving
 const MIN_COMPRESS_BYTES = 1024
 
@@ -543,6 +547,14 @@ export class HttpTransport {
     this._buildId = id
   }
 
+  // The as-of time of the read-only copy this process serves, or null for a
+  // writable one. Outpost routes no copy whose answers lack it (`FJS-D1996`).
+  private _readOnlyAsOf: string | null = null
+
+  setReadOnlyCopy(asOf: string | null): void {
+    this._readOnlyAsOf = asOf
+  }
+
   /**
    * From the first line of `app.stop()`. Every answer then carries
    * `Connection: close`, so a client holding a keep-alive socket opens a new
@@ -750,7 +762,25 @@ export class HttpTransport {
     return this._handle(req, mockServer as unknown as ReturnType<typeof Bun.serve>)
   }
 
+  // Every answer passes here, refusals and timeouts included, so the copy's
+  // header is set here and nowhere else.
   private async _handle(req: Request, server: ReturnType<typeof Bun.serve>): Promise<Response> {
+    const response = await this._handleCapped(req, server)
+    const asOf = this._readOnlyAsOf
+    if (!asOf || !response) return response
+    // A Response answered again carries the same value, so setting it in place
+    // is safe; one with immutable headers (a redirect, a fetched one) is copied.
+    try {
+      response.headers.set(READ_ONLY_HEADER, asOf)
+      return response
+    } catch {
+      const headers = new Headers(response.headers)
+      headers.set(READ_ONLY_HEADER, asOf)
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+    }
+  }
+
+  private async _handleCapped(req: Request, server: ReturnType<typeof Bun.serve>): Promise<Response> {
     const cap = this._opts.maxConcurrentRequests
     if (cap && this._inFlight >= cap && req.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
       this.stats.response.error++

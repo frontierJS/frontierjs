@@ -40,6 +40,11 @@ slot. `api/index.ts` states 5501; `web/config/vite.config.js` states 5508 with
   conduit's `ed25519`.
 - `web/src/lib/session.js` is who is signed in (Sierra's `account.me` is not
   mounted); `lib/nav.js` is the nav table.
+- `api/src/domain/laptop/` reads fli's own files on this machine through
+  `@frontierjs/cli/core/home.js` (what files) and `core/services.js` (what
+  accounts); `/laptop/` shows them. A value never leaves the API: the page gets
+  presence, mode and a masked key, and a probe (`gh auth status`) runs only on
+  Check. Workbench's own folder is `workbenchDir()` in `core/env.ts`.
 
 ## Traps
 

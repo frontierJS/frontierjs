@@ -30,6 +30,7 @@ export { listMigrationFiles, unmatchedMigrationFiles,
 export { generateJsonSchema }                     from './jsonschema.js'
 export { generateTypeScript }                     from './tools/typegen.js'
 export { createTenantRegistry }                  from './tenant.js'
+export { readOnlyCopy }                          from './core/read-only-copy.js'
 export { resolveTenancy, tenantFrom, tenantAdmission } from './core/tenancy.js'
 export { parseDuration, parseSize,
          runSqliteRetention, compactJsonl }       from './core/retention.js'

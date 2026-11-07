@@ -28,6 +28,7 @@ import { basecampsPath, readBasecamps } from './basecamps.js'
 import { requiresOf }                 from './requires.js'
 import { esetHint, globalEnvPath }    from './global-env.js'
 import { homeReport, holdsOf, exposed } from './home.js'
+import { servicesReport } from './services.js'
 import { execSync }     from 'node:child_process'
 import { join }         from 'node:path'
 import { MIN_CF }       from './cloudflare.js'
@@ -145,8 +146,9 @@ function basecampRows(home) {
  * @param {Function} o.versionOf   version probe, for the binaries declaring a `min`
  * @param {object}   o.env        environment
  * @param {string}   o.home       home directory; absent, every root follows its XDG variable
+ * @param {boolean}  o.probe      run each external login's probe (`gh auth status`, `npm whoami`); off by default, they shell out
  */
-export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home } = {}) {
+export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home, probe = false } = {}) {
   const globalEnv = globalEnvPath(home)
 
   const system = BINARIES.map(b => {
@@ -194,11 +196,21 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
 
   const secrets = secretRows(found)
 
+  // Warn, never error, and outside `all`: a laptop that never deploys to
+  // Hetzner is not broken, and counting every unused service would read as a
+  // failure on every machine. A probe that fails on a present login is the
+  // same warning with a different hint.
+  const services = servicesReport({ home, probe, env }).map(s => {
+    const failedProbe = s.probe && !s.probe.ok
+    const ok = s.present && !failedProbe
+    return { ...s, ok, level: ok ? 'ok' : 'warn' }
+  })
+
   const all    = [...system, ...config, ...namespaces, ...basecamps, ...secrets]
   const failed = all.filter(c => !c.ok)
 
   return {
-    system, config, namespaces, basecamps, secrets, roots,
+    system, config, namespaces, basecamps, secrets, services, roots,
     checks:  all.length,
     failed:  failed.length,
     // *Nothing here is broken enough to stop you* is a different sentence from

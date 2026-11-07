@@ -41,6 +41,26 @@ export function userCommandsDir() {
   return join(configDir(), 'commands')
 }
 
+/**
+ * The commands in `<configDir>/commands`, read the way `buildRegistry` reads
+ * them (step files and `_module.md` are not commands, a file with no title is
+ * skipped), without the core or project layers. `{ name, description, alias,
+ * filePath }`, sorted by name. `home` pins the root, for tests.
+ */
+export function userCommands({ home } = {}) {
+  let files = []
+  try { files = findFilesPlugin({ directories: [join(configDir({ home }), 'commands')], extensions: ['md'] })() } catch {}
+  const out = []
+  for (const filePath of files) {
+    if (/[\/\\]_steps[^\/\\]*[\/\\]/.test(filePath) || basename(filePath) === '_module.md') continue
+    try {
+      const meta = extractFrontmatter(readFileSync(filePath, 'utf8'), filePath)
+      if (meta.title) out.push({ name: meta.title, description: meta.description ?? '', alias: meta.alias ?? null, filePath })
+    } catch {}
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name))
+}
+
 function cacheFile(routesDir) {
   const key = createHash('sha1')
     .update([global.fliRoot, userCommandsDir(), global.projectRoot, routesDir].join('\0'))

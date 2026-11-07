@@ -1689,6 +1689,13 @@ export interface TenantRegistryOptions {
   clientOptions?: Omit<CreateClientOptions, 'path' | 'schema' | 'parsed' | 'db' | 'encryptionKey'>
 }
 
+/**
+ * Whether this process serves a read-only copy: FRONTIER_READ_ONLY_COPY=<as-of ISO time>,
+ * set by Outpost. Null when unset; throws on a value that is not an ISO time, so a
+ * malformed one refuses boot rather than serving writable (`FJS-D1996`).
+ */
+export declare function readOnlyCopy(env?: Record<string, string | undefined>): { asOf: Date } | null
+
 export declare function createTenantRegistry(options: TenantRegistryOptions): Promise<{
   /** The parsed schema every tenant is built from — declarations only, no connection. */
   readonly schema: ParseResult['schema']

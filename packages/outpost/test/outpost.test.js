@@ -1607,6 +1607,154 @@ describe('what the machine is asked to do', () => {
     })
   })
 
+  describe('/replica/serve — the release image over a staged copy, read-only (FJS-D1996)', () => {
+    const replica = {
+      bucket: 'frontier', path: 'apps/ela', endpoint: 'https://s3.us-west-000.backblazeb2.com',
+      region: 'us-west-000', access_key_id: 'K-ela', secret_access_key: 'S-ela',
+    }
+    const QUICK = { attempts: 3, intervalMs: 1, settleMs: 0 }
+    // A daemon that keeps the copies it ran, so a second serve and an unserve
+    // see the first one. `answers.fetch` is what the copy's API says.
+    const serving = (answers = {}) => {
+      const stageDir = mkdtempSync(join(tmpdir(), 'outpost-serve-'))
+      const calls = [], envs = [], copies = []
+      const run = async (argv, opts = {}) => {
+        calls.push(argv)
+        const ok = (stdout = '') => ({ exitCode: 0, stdout, stderr: '' })
+        if (argv[0] === '/usr/local/bin/litestream') {
+          if (argv[1] === 'ltx') return ok(JSON.stringify([{ timestamp: '2026-10-25T12:00:00Z' }]))
+          writeFileSync(argv[argv.indexOf('-o') + 1], 'SQLite format 3\0')
+          return ok()
+        }
+        const line = argv.join(' ')
+        if (line.startsWith('docker network inspect')) return answers.network ?? { exitCode: 1, stdout: '', stderr: 'network fjs-copy not found' }
+        if (line.startsWith('docker ps -a --filter label=fjs.copy=')) return ok(copies.map(c => `${c.container}\t${c.dir}\n`).join(''))
+        if (line.startsWith('docker run -d')) {
+          envs.push(opts.env)
+          if (answers.run) return answers.run
+          const label = argv.find(a => a.startsWith('fjs.copy.dir='))
+          copies.push({ container: argv[argv.indexOf('--name') + 1], dir: label.slice('fjs.copy.dir='.length) })
+          return ok('abc123\n')
+        }
+        if (line.includes('IPAddress')) return ok('172.30.0.2\n')
+        if (line.includes('{{.State.Running}}')) return ok(answers.state ?? 'true 0\n')
+        if (argv[1] === 'logs') return ok('booting\nerror: no such table: User\n')
+        if (argv[1] === 'rm') { const at = copies.findIndex(c => c.container === argv.at(-1)); if (at >= 0) copies.splice(at, 1) }
+        return ok()
+      }
+      const fetch = answers.fetch ?? (async () => new Response('', { headers: { 'x-frontier-read-only': '2026-10-25T12:00:00Z' } }))
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ appsDir: APPS, health: QUICK, run, fetch }), inspector: createInspector({ run }),
+        replicator: createReplicator({ run, configPath: join(stageDir, 'litestream.yml'), stageDir }),
+        log: { warn() {}, error() {} },
+      })
+      const staged = () => readdirSync(stageDir).filter(f => f.startsWith('ela-'))
+      return { server, calls, envs, copies, staged }
+    }
+    const post = async (server, path, body) => {
+      const res = await send(server, 'POST', path, body)
+      return { status: res.status, body: await res.json() }
+    }
+    const body = (over = {}) => ({
+      app_id: 'ela', replica, databases: ['app.db'], at: '2026-10-25T12:00:00Z', image: 'ghcr.io/x/ela:1',
+      config: { volumePath: '/db', containerPort: 8080, env: { ENCRYPTION_KEY: 'k-secret' } }, ...over,
+    })
+
+    test('the copy runs on an internal network with the variable set, and is answered once its API says read-only', async () => {
+      const { server, calls, envs, staged } = serving()
+      const { status, body: said } = await post(server, '/replica/serve', body())
+      expect(status).toBe(200)
+      expect(said).toMatchObject({ as_of: '2026-10-25T12:00:00Z', upstream: '172.30.0.2:8080', databases: [{ name: 'app.db' }] })
+      expect(said.container).toMatch(/^fjs-copy--ela-/)
+      expect(calls.find(a => a[2] === 'create')).toEqual(['docker', 'network', 'create', '--internal', '-o', 'com.docker.network.bridge.name=fjs-copy0', 'fjs-copy'])
+      const argv = calls.find(a => a[1] === 'run')
+      expect(argv).toEqual(expect.arrayContaining(['--network', 'fjs-copy', '--label', 'fjs.copy=ela', '-e', 'FRONTIER_READ_ONLY_COPY', '-e', 'ENCRYPTION_KEY', 'ghcr.io/x/ela:1']))
+      expect(argv.find(a => a.startsWith('type=bind'))).toMatch(/,dst=\/db$/)
+      // Never the App's label: every release lookup would take it for the App.
+      expect(argv.some(a => a.startsWith('fjs.app='))).toBe(false)
+      expect(argv.join(' ')).not.toContain('k-secret')
+      expect(envs.at(-1)).toMatchObject({ FRONTIER_READ_ONLY_COPY: '2026-10-25T12:00:00Z', ENCRYPTION_KEY: 'k-secret' })
+      // The staged copy is what the container reads, so it stays.
+      expect(staged()).toHaveLength(1)
+    })
+
+    test('a caller cannot unset the variable through the release env', async () => {
+      const { server, envs } = serving()
+      await post(server, '/replica/serve', body({ config: { volumePath: '/db', port: 8080, env: { FRONTIER_READ_ONLY_COPY: '' } } }))
+      expect(envs.at(-1).FRONTIER_READ_ONLY_COPY).toBe('2026-10-25T12:00:00Z')
+    })
+
+    test('an API that answers without the header is an older framework, refused, removed and unstaged', async () => {
+      const { server, calls, copies, staged } = serving({ fetch: async () => new Response('ok') })
+      const { status, body: said } = await post(server, '/replica/serve', body())
+      expect(status).toBe(500)
+      expect(said.error).toContain('predates read-only copies and would serve writable')
+      expect(calls.some(a => a[1] === 'rm' && a[2] === '-f')).toBe(true)
+      expect(copies).toEqual([])
+      expect(staged()).toEqual([])
+    })
+
+    test('a copy that exits, or never answers, is refused with its last log lines', async () => {
+      const exited = serving({ state: 'false 1\n' })
+      const a = await post(exited.server, '/replica/serve', body())
+      expect(a.status).toBe(500)
+      expect(a.body.error).toContain('exited (code 1)')
+      expect(a.body.error).toContain('no such table: User')
+      expect(exited.staged()).toEqual([])
+
+      const silent = serving({ fetch: async () => { throw new Error('ECONNREFUSED') } })
+      const b = await post(silent.server, '/replica/serve', body())
+      expect(b.status).toBe(500)
+      expect(b.body.error).toContain('did not answer within')
+      expect(b.body.error).toContain('no such table: User')
+      expect(silent.copies).toEqual([])
+      expect(silent.staged()).toEqual([])
+    })
+
+    test('a second serve replaces the first only once it answers; a failed one leaves the first serving', async () => {
+      let readOnly = true
+      const fetch = async () => readOnly ? new Response('', { headers: { 'x-frontier-read-only': 'x' } }) : new Response('ok')
+      const { server, copies, staged } = serving({ fetch })
+      const first = (await post(server, '/replica/serve', body())).body
+      await Bun.sleep(2)
+      readOnly = false
+      expect((await post(server, '/replica/serve', body())).status).toBe(500)
+      expect(copies.map(c => c.container)).toEqual([first.container])
+      expect(staged()).toHaveLength(1)
+
+      readOnly = true
+      await Bun.sleep(2)
+      const second = (await post(server, '/replica/serve', body())).body
+      expect(second.container).not.toBe(first.container)
+      expect(copies.map(c => c.container)).toEqual([second.container])
+      expect(staged()).toHaveLength(1)
+    })
+
+    test('unserve removes the copy and its staged files', async () => {
+      const { server, copies, staged } = serving()
+      const { body: served } = await post(server, '/replica/serve', body())
+      const { status, body: said } = await post(server, '/replica/unserve', { app_id: 'ela' })
+      expect(status).toBe(200)
+      expect(said).toEqual({ removed: [served.container] })
+      expect(copies).toEqual([])
+      expect(staged()).toEqual([])
+    })
+
+    test('a network of that name that is not internal, no volume path, or no port is refused before anything runs', async () => {
+      const open = serving({ network: { exitCode: 0, stdout: 'false\n', stderr: '' } })
+      const said = await post(open.server, '/replica/serve', body())
+      expect(said.body.error).toContain('is not --internal')
+      expect(open.calls.some(a => a[1] === 'run')).toBe(false)
+      expect(open.staged()).toEqual([])
+      for (const config of [{ containerPort: 8080 }, { volumePath: '/db' }, { volumePath: '../x', port: 1 }]) {
+        const s = serving()
+        expect((await post(s.server, '/replica/serve', body({ config }))).status).toBe(500)
+        expect(s.calls.some(a => a[1] === 'run')).toBe(false)
+        expect(s.staged()).toEqual([])
+      }
+    })
+  })
+
   describe('/backup — an app\'s data, tarred onto the machine (FJS-1782)', () => {
     const backupDir = join(mkdtempSync(join(tmpdir(), 'outpost-backups-')), 'backups')
     mkdirSync(join(APPS, 'ela', 'data'), { recursive: true })

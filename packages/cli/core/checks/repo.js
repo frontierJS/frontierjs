@@ -715,11 +715,11 @@ function homePathLiteral({ root, home = homedir() }) {
 // `~/.fli`, `~/.config/fli` and `~/.local/share/fli` with no module owning which
 // file belongs where (`FJS-D1990`). `core/paths.js` is the one place.
 //
-// Not fli's to own, so exempt: `~/.bun` (the Bun install), `~/.ssh`, and the CI
-// work base `~/fjs-ci-work`. A file taking `home` as a parameter is not a join.
+// Not fli's to own, so exempt: `~/.bun` (the Bun install), `~/.ssh` (the ssh row
+// in `services.js`), and the CI work base `~/fjs-ci-work`. A file taking `home` as a parameter is not a join.
 
 const HOME_JOIN = /\b(?:join|resolve)\([^)]*\bhomedir\(\)|\$\{homedir\(\)\}/
-const HOME_JOIN_EXEMPT = new Set(['paths.js', 'bun-fence.js', 'install-preflight.js', 'cloud.js', 'docker-context.js'])
+const HOME_JOIN_EXEMPT = new Set(['paths.js', 'bun-fence.js', 'install-preflight.js', 'cloud.js', 'docker-context.js', 'services.js'])
 
 function homeDirJoin({ root }) {
   const findings = []

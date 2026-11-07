@@ -16,6 +16,7 @@ import { join } from 'path'
 import { createClient } from '../src/core/client.js'
 import { parse, placeModels } from '../src/core/parser.js'
 import { createTenantRegistry } from '../src/tenant.js'
+import { readOnlyCopy } from '../src/index.js'
 
 const dirs: string[] = []
 const tmp = () => {
@@ -178,5 +179,123 @@ describe('placeModels refuses by name', () => {
   it('an untrusted schema', async () => {
     await expect(createClient({ schema: MODELS, db: ':memory:', untrusted: true, placeModels: { Session: 'sessions' } }))
       .rejects.toThrow(/untrusted.*placeModels/)
+  })
+})
+
+// The copy's boot passes nothing: Outpost sets the var and the App's own
+// `createClient` call is unchanged (`FJS-D1996`). Every case sets it alone.
+describe('FRONTIER_READ_ONLY_COPY with no option passed', () => {
+  const AS_OF = '2026-11-05T03:00:00.000Z'
+  const asCopy = async (value: string, fn: () => Promise<void>) => {
+    const was = process.env.FRONTIER_READ_ONLY_COPY
+    process.env.FRONTIER_READ_ONLY_COPY = value
+    try { await fn() } finally {
+      if (was === undefined) delete process.env.FRONTIER_READ_ONLY_COPY
+      else process.env.FRONTIER_READ_ONLY_COPY = was
+    }
+  }
+
+  it('reads the var: unset and empty are off, an ISO time is the as-of', () => {
+    expect(readOnlyCopy({})).toBeNull()
+    expect(readOnlyCopy({ FRONTIER_READ_ONLY_COPY: '' })).toBeNull()
+    expect(readOnlyCopy({ FRONTIER_READ_ONLY_COPY: AS_OF })!.asOf.toISOString()).toBe(AS_OF)
+    for (const bad of ['yes', '1', '2026', '2026-11-05T99:00:00Z'])
+      expect(() => readOnlyCopy({ FRONTIER_READ_ONLY_COPY: bad })).toThrow(`FRONTIER_READ_ONLY_COPY=${JSON.stringify(bad)}`)
+  })
+
+  it('a single-database app writes Session to a scratch file beside main and refuses every other write', async () => {
+    const dir  = tmp()
+    const user = await live(dir)
+    await asCopy(AS_OF, async () => {
+      const db: any = await createClient({ schema: SCHEMA, resolveFrom: dir })
+      expect(db.$rawDbs.sessions.filename).toBe(join(dir, 'copy-sessions.db'))
+      expect(await db.session.count()).toBe(0)
+      const s = await db.session.create({ data: { userId: user.id, expiresAt: '2099-01-01T00:00:00.000Z' } })
+      await db.session.delete({ where: { id: s.id } })
+      expect(await db.session.count()).toBe(0)
+      await expect(db.user.update({ where: { id: user.id }, data: { email: 'b@x.test' } })).rejects.toThrow(/readonly/)
+      await expect(db.asSystem().sql`UPDATE "user" SET email = 'c@x.test'`).rejects.toThrow(/readonly/)
+      expect((await db.user.findFirst({ where: { id: user.id } })).email).toBe('a@x.test')
+      await db.$close()
+    })
+  })
+
+  it('a strategy database tenant writes Session into its own file and refuses every other write', async () => {
+    const dir = tmp()
+    await Bun.write(join(dir, 'schema.lite'), `
+      tenancy { strategy database  dir "./fleet"  registry "./fleet-index.db" }
+      ${SCHEMA}
+    `)
+    const fleet: any = await createTenantRegistry({ path: join(dir, 'schema.lite') })
+    await fleet.create('acme')
+    const seeded: any = await fleet.get('acme')
+    const user = await seeded.user.create({ data: { email: 'acme@x.test' } })
+    fleet.close()
+
+    await asCopy(AS_OF, async () => {
+      const copy: any = await createTenantRegistry({ path: join(dir, 'schema.lite') })
+      const acme: any = await copy.get('acme')
+      expect(acme.$rawDbs.sessions.filename).toBe(join(dir, 'fleet', 'acme.db'))
+      const s = await acme.session.create({ data: { userId: user.id, expiresAt: '2099-01-01T00:00:00.000Z' } })
+      await acme.session.delete({ where: { id: s.id } })
+      await expect(acme.user.update({ where: { id: user.id }, data: { email: 'z@x.test' } })).rejects.toThrow(/readonly/)
+      await expect(acme.asSystem().sql`UPDATE "user" SET email = 'c@x.test'`).rejects.toThrow(/readonly/)
+      copy.close()
+    })
+  })
+
+  it('the tenant registry refuses to create, delete or re-describe a tenant on a copy', async () => {
+    const dir = tmp()
+    await Bun.write(join(dir, 'schema.lite'), `
+      tenancy { strategy database  dir "./fleet"  registry "./fleet-index.db" }
+      ${SCHEMA}
+    `)
+    const fleet: any = await createTenantRegistry({ path: join(dir, 'schema.lite') })
+    await fleet.create('acme', { plan: 'pro' })
+    fleet.close()
+
+    await asCopy(AS_OF, async () => {
+      const copy: any = await createTenantRegistry({ path: join(dir, 'schema.lite') })
+      await expect(copy.create('globex')).rejects.toThrow(`tenants.create("globex") refused: this process serves a read-only copy as of ${AS_OF}`)
+      await expect(copy.getOrCreate('globex')).rejects.toThrow(/tenants\.create\("globex"\) refused/)
+      await expect(copy.delete('acme')).rejects.toThrow(/tenants\.delete\("acme"\) refused/)
+      expect(() => copy.meta.set('acme', { plan: 'free' })).toThrow(/tenants\.meta\.set\("acme"\) refused/)
+      expect(() => copy.meta.replace('acme', {})).toThrow(/tenants\.meta\.replace\("acme"\) refused/)
+      expect(existsSync(join(dir, 'fleet', 'globex.db'))).toBe(false)
+      expect(copy.list()).toEqual(['acme'])
+      expect(existsSync(join(dir, 'fleet', 'acme.db'))).toBe(true)
+      expect(copy.meta.get('acme')).toEqual({ plan: 'pro' })
+      copy.close()
+    })
+  })
+
+  it('an option the caller passes wins over the copy', async () => {
+    const dir  = tmp()
+    const user = await live(dir)
+    await asCopy(AS_OF, async () => {
+      const db: any = await createClient({
+        schema: SCHEMA, resolveFrom: dir,
+        access:    { main: 'readwrite' },
+        databases: { sessions: { path: join(dir, 'mine.db') } },
+      })
+      expect(db.$rawDbs.sessions.filename).toBe(join(dir, 'mine.db'))
+      await db.user.update({ where: { id: user.id }, data: { email: 'b@x.test' } })
+      await db.$close()
+
+      const stays: any = await createClient({ schema: SCHEMA, resolveFrom: dir, placeModels: {} })
+      expect(stays.$rawDbs.sessions).toBeUndefined()
+      await expect(stays.session.deleteMany({})).rejects.toThrow(/readonly/)
+      await stays.$close()
+    })
+  })
+
+  it('a malformed value refuses at construction', async () => {
+    const dir = tmp()
+    await live(dir)
+    await Bun.write(join(dir, 'schema.lite'), `tenancy { strategy database  dir "./fleet" }\n${SCHEMA}`)
+    await asCopy('yesterday', async () => {
+      await expect(createClient({ schema: SCHEMA, resolveFrom: dir })).rejects.toThrow(/FRONTIER_READ_ONLY_COPY="yesterday" is not an ISO time/)
+      await expect(createTenantRegistry({ path: join(dir, 'schema.lite') })).rejects.toThrow(/FRONTIER_READ_ONLY_COPY="yesterday"/)
+    })
   })
 })

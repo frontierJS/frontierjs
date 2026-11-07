@@ -5,14 +5,22 @@ title: Laptop
   // What fli keeps on this laptop. Disk lists the four roots of fli's home and
   // Workbench's own folder the way `docker system df` lists its classes — size
   // and what can be given back — with Clear on a cache entry and Remove on an
-  // idle lane. Keys and Running are the next phases of IDEAS/workbench-fli-files.md.
+  // idle lane. Keys lists every secret file with its mode and mends a wrong one
+  // (chmod 600), above a read-only block of who this laptop is on the Frontier
+  // network. Running lists the dev servers `fli dev` has started in any project
+  // and the tree holds a drive or a loop is taking, read only. Services lists
+  // each account fli signs in to, how, whether it is, and the commands that use
+  // it; only a press on Check runs a login probe (nothing shells out on load).
   //
   // The page sends a catalog name or a lane number and never a path; the API
   // resolves what to delete (api services/laptop). Confirmation is in the row.
   import { laptop } from '../../resources/Laptop.mesa'
   import { bytes }  from '../../lib/bytes.js'
+  import { ago, at } from '../../lib/datetime.js'
 
+  import Dot                 from '@frontierjs/ui/components/display/Dot.mesa'
   import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card                from '@frontierjs/ui/components/layout/Card.mesa'
   import Table               from '@frontierjs/ui/components/display/Table.mesa'
   import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
   import Tabs                from '@frontierjs/ui/components/layout/Tabs.mesa'
@@ -71,6 +79,122 @@ title: Laptop
   const clear      = (e) => act(`e:${e.root}:${e.name}`, 'clear', { root: e.root, name: e.name }, `Cleared ${e.name}`)
   const removeLane = (l) => act(`l:${l.n}`, 'removeLane', { lane: l.n }, `Removed lane ${l.n}`)
 
+  // Keys loads when its tab first opens; the walk is cheap but a tab nobody opens costs nothing.
+  let keysReport  = null
+  let keysError   = null
+  let keysLoading = false
+
+  async function loadKeys() {
+    keysLoading = true
+    try {
+      keysReport = await laptop.service.invoke('keys')
+      keysError  = null
+    } catch (err) {
+      keysError = err.message
+    } finally {
+      keysLoading = false
+    }
+  }
+
+  // The page names a row by its label; the API resolves the path.
+  async function fixMode(k) {
+    pressed = { ...pressed, [`k:${k.label}`]: true }
+    try {
+      const out = await laptop.service.invoke('fixMode', null, { label: k.label })
+      toasts.success(`${out.label} is now ${out.mode}`)
+      await loadKeys()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      pressed = { ...pressed, [`k:${k.label}`]: false }
+    }
+  }
+
+  $: ident = keysReport?.identity
+  $: { if (tab === 'keys' && !keysReport && !keysLoading) loadKeys() }
+
+  // Running loads when its tab first opens, and again on Refresh: it is a look at
+  // processes, so it is never cached by the page.
+  let runReport  = null
+  let runError   = null
+  let runLoading = false
+
+  async function loadRunning() {
+    runLoading = true
+    try {
+      runReport = await laptop.service.invoke('running')
+      runError  = null
+    } catch (err) {
+      runError = err.message
+    } finally {
+      runLoading = false
+    }
+  }
+
+  $: { if (tab === 'running' && !runReport && !runLoading) loadRunning() }
+  $: up   = runReport ? runReport.sessions.filter(s => s.running) : []
+  $: idle = runReport ? runReport.sessions.length - up.length : 0
+
+  // Services loads when its tab first opens. A probe runs only on its Check press and the
+  // answer is kept per service id; the object is replaced, not mutated, so the row redraws.
+  let svcReport  = null
+  let svcError   = null
+  let svcLoading = false
+  let checks     = {}   // service id → { pending } | { ok, who, ms } | { error }
+
+  async function loadServices() {
+    svcLoading = true
+    try {
+      svcReport = await laptop.service.invoke('services')
+      svcError  = null
+    } catch (err) {
+      svcError = err.message
+    } finally {
+      svcLoading = false
+    }
+  }
+
+  async function check(s) {
+    checks = { ...checks, [s.id]: { pending: true } }
+    try {
+      const out = await laptop.service.invoke('probeService', null, { id: s.id })
+      checks = { ...checks, [s.id]: out }
+    } catch (err) {
+      checks = { ...checks, [s.id]: { error: err.message } }
+    }
+  }
+
+  $: { if (tab === 'services' && !svcReport && !svcLoading) loadServices() }
+
+  // `commands/github/_module.md#Setup` read as text: the file and its section.
+  const setupText = (p) => p.replace('#', ' § ')
+
+  const branchOf = (s) => s.branch ? `${s.worktree ? s.worktree.split('/').pop() : 'worktree'} (branch ${s.branch})` : 'main checkout'
+
+  const SESSION_COLUMNS = [
+    { name: 'project', label: 'Project' },
+    { name: 'branch',  label: 'Branch' },
+    { name: 'ports',   label: 'Ports' },
+    { name: 'age',     label: 'Age' },
+  ]
+  const HOLD_COLUMNS = [
+    { name: 'tree',   label: 'Tree' },
+    { name: 'by',     label: 'Held by' },
+    { name: 'since',  label: 'Since' },
+    { name: 'alive',  label: 'Alive' },
+  ]
+
+  const when = (iso) => iso ? iso.slice(0, 16).replace('T', ' ') : ''
+
+  const KEY_COLUMNS = [
+    { name: 'label',   label: 'File' },
+    { name: 'present', label: 'Present' },
+    { name: 'mode',    label: 'Mode' },
+    { name: 'owner',   label: 'Owner' },
+    { name: 'mtime',   label: 'Modified' },
+    { name: 'fix',     label: '' },
+  ]
+
   const COLUMNS = [
     { name: 'name',        label: 'Name' },
     { name: 'what',        label: 'What it is' },
@@ -83,9 +207,6 @@ title: Laptop
 
 <div class="section-header">
   <h1>Laptop</h1>
-  <span class="cluster">
-    <Button treatment="outlined" id="laptop-refresh" onclick={load}>Refresh</Button>
-  </span>
 </div>
 
 <Tabs activeId={tab} onchange={(id) => tab = id}>
@@ -93,6 +214,7 @@ title: Laptop
     <Tab id="disk">Disk</Tab>
     <Tab id="keys">Keys</Tab>
     <Tab id="running">Running</Tab>
+    <Tab id="services">Services</Tab>
   </TabList>
 
   <TabPanel id="disk">
@@ -156,11 +278,209 @@ title: Laptop
   </TabPanel>
 
   <TabPanel id="keys">
-    <p class="text-sm text-muted">The secret files fli keeps, and whether their mode is right — next.</p>
+    {#if keysError}
+      <article class="alert danger">
+        <div class="alert-content">{keysError}</div>
+      </article>
+    {/if}
+
+    {#if keysLoading && !keysReport}
+      <p class="text-sm text-muted">Checking…</p>
+    {:else if keysReport}
+      <div id="laptop-identity" class="stack-sm">
+        <h2 class="h5">This laptop on the Frontier network</h2>
+        {#if ident.nick || ident.member}
+          <p class="text-sm">
+            Speaks as <strong>{ident.nick ?? ident.member.name}</strong>{#if ident.member}, member no. {ident.member.id}{/if}.
+            {#if ident.box}<span class="text-muted">Box <code>{ident.box}</code></span>{/if}
+          </p>
+          <p class="text-sm">
+            Peers with
+            {#if ident.peers.length}{ident.peers.map(p => p.nick).join(', ')}{:else}<span class="text-muted">nobody yet</span>{/if}.
+            {#if ident.waiting.from.length}
+              Waiting: {ident.waiting.from.map(w => `${w.count} from ${w.from}`).join(', ')}.
+            {:else}
+              <span class="text-muted">Nothing waiting.</span>
+            {/if}
+          </p>
+        {:else}
+          <p class="text-sm text-muted">This laptop is not a member yet.</p>
+        {/if}
+      </div>
+
+      <Table id="laptop-keys" columns={KEY_COLUMNS} rows={keysReport.keys}>
+        {#snippet row(k)}
+          <tr data-key={k.label} class={k.present ? '' : 'text-muted'}>
+            <td>{k.label}{#if k.kind === 'dir'}/{/if}</td>
+            <td>
+              {#if k.present}
+                <Dot tone={k.exposed ? 'danger' : 'success'} label={k.exposed ? 'exposed' : 'present'} />
+              {:else}
+                <span class="text-sm">not yet made</span>
+              {/if}
+            </td>
+            <td><code>{k.mode ?? ''}</code></td>
+            <td>{k.owner ?? ''}</td>
+            <td class="text-sm">{when(k.mtime)}</td>
+            <td>
+              {#if k.exposed}
+                <Button size="sm" treatment="outlined" tone="danger" loading={!!pressed[`k:${k.label}`]} onclick={() => fixMode(k)}>Fix</Button>
+              {/if}
+            </td>
+          </tr>
+        {/snippet}
+      </Table>
+      <p class="text-sm text-muted">Values never leave the machine's API. Fix sets a file to 600 (a folder to 700).</p>
+    {/if}
   </TabPanel>
 
   <TabPanel id="running">
-    <p class="text-sm text-muted">What fli is running on this laptop across every project — next.</p>
+    <div class="section-header">
+      <h2 class="h5">Dev servers</h2>
+      <Button size="sm" treatment="outlined" id="running-refresh" loading={runLoading} onclick={loadRunning}>Refresh</Button>
+    </div>
+
+    {#if runError}
+      <article class="alert danger">
+        <div class="alert-content">{runError}</div>
+      </article>
+    {/if}
+
+    {#if runLoading && !runReport}
+      <p class="text-sm text-muted">Looking…</p>
+    {:else if runReport}
+      {#if up.length}
+        <Table id="laptop-sessions" columns={SESSION_COLUMNS} rows={up}>
+          {#snippet row(s)}
+            <tr data-session={s.name}>
+              <td>
+                <strong>{s.name}</strong>
+                <div class="text-sm text-muted">{s.root}</div>
+              </td>
+              <td class="text-sm">{branchOf(s)}</td>
+              <td>
+                <span class="cluster">
+                  {#each s.ports as p (p.port)}
+                    <span class="cluster" data-port={p.port}>
+                      <Dot tone={p.answering ? 'success' : ''} hollow={!p.answering} label={p.answering ? 'answering' : 'not answering'} />
+                      <code>{p.port}</code>
+                      <span class="text-sm text-muted">{p.category}</span>
+                    </span>
+                  {/each}
+                </span>
+              </td>
+              <td class="text-sm" title={at(s.startedAt)}>{s.startedAt ? ago(s.startedAt) : ''}{s.pid ? ` · pid ${s.pid}` : ''}</td>
+            </tr>
+          {/snippet}
+        </Table>
+      {:else}
+        <p class="text-sm text-muted" id="running-none">Nothing running</p>
+      {/if}
+      {#if idle}<p class="text-sm text-muted">{idle} more remembered in sessions.lock, not running.</p>{/if}
+
+      <h2 class="h5">Tree holds</h2>
+      {#if runReport.holds.length}
+        <Table id="laptop-holds" columns={HOLD_COLUMNS} rows={runReport.holds}>
+          {#snippet row(h)}
+            <tr data-hold={h.file}>
+              <td>
+                {#if h.tree}{h.tree}{:else}<span class="text-muted">unknown tree <code>{h.key}</code></span>{/if}
+                <div class="text-sm text-muted">{h.resource}</div>
+              </td>
+              <td class="text-sm">{h.pid ? `pid ${h.pid}` : ''}{h.what ? ` · ${h.what}` : ''}</td>
+              <td class="text-sm" title={at(h.since)}>{h.since ? ago(h.since) : ''}</td>
+              <td><Dot tone={h.alive ? 'success' : 'danger'} label={h.alive ? 'alive' : 'holder gone'} /></td>
+            </tr>
+          {/snippet}
+        </Table>
+      {:else}
+        <p class="text-sm text-muted" id="holds-none">No holds</p>
+      {/if}
+    {/if}
+  </TabPanel>
+
+  <TabPanel id="services">
+    {#if svcError}
+      <article class="alert danger">
+        <div class="alert-content">{svcError}</div>
+      </article>
+    {/if}
+
+    {#if svcLoading && !svcReport}
+      <p class="text-sm text-muted">Reading…</p>
+    {:else if svcReport}
+      <p class="text-sm text-muted">Presence is read from this laptop; a value is never sent to this page. Check runs the login's own command, only when pressed.</p>
+      <div class="stack" id="laptop-services">
+        {#each svcReport as s (s.id)}
+          <Card id={`service-${s.id}`} data-service={s.id}>
+            <div class="section-header">
+              <h2 class="h5">{s.name}</h2>
+              {#if s.signIn.kind !== 'cli'}
+                <Dot tone={s.present ? 'success' : ''} hollow={!s.present} label={s.present ? 'ready' : 'not set up'} />
+              {/if}
+            </div>
+
+            <div class="stack-sm">
+              {#if s.signIn.kind === 'env'}
+                <p class="text-sm">Signs in with
+                  {#each s.signIn.keys as k (k.key)}
+                    <span class="cluster" data-key={k.key}>
+                      <Dot tone={k.present ? 'success' : ''} hollow={!k.present} label={k.present ? 'set' : 'not set'} />
+                      <code>{k.key}</code>
+                    </span>
+                  {/each}
+                </p>
+              {:else if s.signIn.kind === 'file'}
+                <p class="text-sm">Signs in with a file
+                  <span class="cluster">
+                    <Dot tone={s.present ? 'success' : ''} hollow={!s.present} label={s.present ? 'present' : 'absent'} />
+                    <code>{s.signIn.entry}</code>
+                  </span>
+                </p>
+              {:else}
+                <p class="text-sm">Signs in through <code>{s.signIn.bin}</code>
+                  <span class="text-muted">{s.signIn.installed ? '(installed)' : '(not installed)'}</span>;
+                  log in with <code>{s.signIn.login}</code>
+                </p>
+                <div class="cluster">
+                  <Button size="sm" treatment="outlined" data-check={s.id} disabled={!s.signIn.installed}
+                          loading={!!checks[s.id]?.pending} onclick={() => check(s)}>Check</Button>
+                  {#if checks[s.id] && !checks[s.id].pending}
+                    <span class="text-sm" data-result={s.id}>
+                      {#if checks[s.id].error}{checks[s.id].error}
+                      {:else if checks[s.id].ok}signed in{checks[s.id].who ? ` as ${checks[s.id].who}` : ''}
+                      {:else}not signed in{/if}
+                      <span class="text-muted"> · {checks[s.id].ms} ms</span>
+                    </span>
+                  {/if}
+                </div>
+              {/if}
+
+              {#if s.vendor}
+                <p class="text-sm">
+                  <a href={s.vendor.url} target="_blank" rel="noopener noreferrer">Make a token</a>
+                  {#if s.vendor.note}<span class="text-muted"> — {s.vendor.note}</span>{/if}
+                </p>
+              {/if}
+              {#if s.setup}
+                <p class="text-sm">Setup: <code>{setupText(s.setup)}</code></p>
+              {/if}
+
+              <h3 class="h6">What fli does with it</h3>
+              {#if s.commands.length}
+                <ul class="text-sm" data-commands={s.id}>
+                  {#each s.commands as c (c.name)}
+                    <li><code>fli {c.name}</code>{#if c.description} <span class="text-muted">{c.description}</span>{/if}</li>
+                  {/each}
+                </ul>
+              {:else}
+                <p class="text-sm text-muted">no command uses it yet</p>
+              {/if}
+            </div>
+          </Card>
+        {/each}
+      </div>
+    {/if}
   </TabPanel>
 </Tabs>
 

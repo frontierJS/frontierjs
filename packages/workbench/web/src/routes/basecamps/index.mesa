@@ -10,8 +10,13 @@ title: Basecamps
   // services/basecamps), so this page polls `outcome` while one is working
   // and reads the list again once it settles; leaving the page does not stop
   // a backup or a restart.
+  //
+  // Under each entry sit the backups already pulled to this laptop, with Delete
+  // on each. The page sends the entry's name and the copy's folder name and
+  // never a path; the API resolves what to remove.
   import { basecamps } from '../../resources/Basecamp.mesa'
   import { ago, at }   from '../../lib/datetime.js'
+  import { bytes }     from '../../lib/bytes.js'
 
   import Button              from '@frontierjs/ui/components/forms/Button.mesa'
   import Dot                 from '@frontierjs/ui/components/display/Dot.mesa'
@@ -74,6 +79,24 @@ title: Basecamps
       toasts.error(err.message)
     } finally {
       pressed = { ...pressed, [r.name]: null }
+    }
+  }
+
+  const copyKey = (r, c) => `${r.name}/${c.file}`
+  const copiesBytes = (r) => r.local.reduce((n, c) => n + c.bytes, 0)
+
+  async function deleteCopy(r, c) {
+    const key = copyKey(r, c)
+    pressed = { ...pressed, [key]: 'delete' }
+    try {
+      const out = await basecamps.service.invoke('deleteLocal', null, { name: r.name, file: c.file })
+      toasts.success(`Deleted ${c.file}: freed ${bytes(out.freed)}`)
+      // The list pings every Basecamp; the copy is gone, so the row is patched instead of read again.
+      rows = rows.map(x => x.name === r.name ? { ...x, local: x.local.filter(y => y.file !== c.file) } : x)
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      pressed = { ...pressed, [key]: null }
     }
   }
 
@@ -142,6 +165,29 @@ title: Basecamps
           {#if r.outcome}
             <div class={`text-sm ${toneOf(r.outcome)}`} data-outcome={r.outcome.state}>{outcomeLine(r.outcome)}</div>
           {/if}
+          <div class="text-sm" data-local={r.name}>
+            {#if r.local.length}
+              <details>
+                <summary>Local copies — {r.local.length}, {bytes(copiesBytes(r))}</summary>
+                <ul class="stack-sm">
+                  {#each r.local as c (c.file)}
+                    <li class="cluster" data-copy={c.file}>
+                      <span title={c.file}>{at(c.takenAt ?? c.mtime)}</span>
+                      <span class="text-muted">{c.kind === 'raw' ? 'raw copy' : c.kind === 'unreadable' ? 'incomplete' : 'archive'}</span>
+                      <span>{bytes(c.bytes)}</span>
+                      <ConfirmationPopover inline title={`Delete ${bytes(c.bytes)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => deleteCopy(r, c)}>
+                        {#snippet trigger()}
+                          <Button size="sm" treatment="outlined" tone="danger" loading={pressed[copyKey(r, c)] === 'delete'}>Delete</Button>
+                        {/snippet}
+                      </ConfirmationPopover>
+                    </li>
+                  {/each}
+                </ul>
+              </details>
+            {:else}
+              <span class="text-muted">Local copies — none on this laptop</span>
+            {/if}
+          </div>
         </td>
         <td class="text-sm">
           {#if r.newestBackup}

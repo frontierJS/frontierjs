@@ -6,7 +6,7 @@ dated: 2026-11-06
 
 # Idea — fli's files, readable in Workbench
 
-**Status: BUILDING. Q1–Q5 ruled (`FJS-D1991`–`FJS-D1995`); Phase 0 and 7.1 done 2026-11-06; 1.1 next.**
+**Status: BUILT 2026-11-06, uncommitted. Q1–Q5, Q7–Q8 ruled (`FJS-D1991`–`FJS-D1998`); every phase done; Q6 (when a lane counts as dirty) is the one open question.**
 Probed against the tree 2026-11-06. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-06): fli keeps a lot in the home folder, and almost
@@ -102,6 +102,61 @@ takes Docker's columns; the four roots are its classes.
   - **Recommend A** — they are on the same disk and hold keys; one row each
     costs nothing and keeps Disk's total honest.
 
+- **Q6 — When a lane counts as dirty.** `syncLane` applies the main tree's
+  uncommitted diff into every lane, so an idle lane is dirty whenever the main
+  tree is — which on this laptop is always. Remove is refused on every real
+  lane today, and Phase 2's "removing an idle lane frees its bytes" is met only
+  on a clean tree. The lane copy is disposable: a session's edits are harvested
+  into the main tree when its row ends.
+  - **A** — keep the strict refusal; the row says "has uncommitted changes —
+    Remove will refuse". Built so.
+  - **B** — dirty means "differs from what `syncLane` last wrote": record a
+    sync marker (the main tree's diff digest) when a lane is opened or synced,
+    and refuse only when the lane's diff differs from it.
+  - **C** — a second confirmation behind a `force` body field.
+  - **Recommend B** — it is the one reading under which the refusal means what
+    the plan says (the lane holds work nothing else has), and a marker is one
+    file per lane written by the writer that already syncs it. A is safe and
+    useless on a working laptop; C puts the judgment on the person every time.
+
+- ~~**Q7 — How the services fli signs in to are documented on the screens.**~~ **Answered 2026-11-07 (`FJS-D1998`): A — a sibling catalog, `services.js` beside `packages/cli/core/home.js`: one row per service with how fli signs in (an env key read from `requires:` and `CLOUDS`, a file, or an external CLI with its probe such as `gh auth status`) and a pointer to its Setup section. The actions are DERIVED from the command registry — every command whose `requires:` names the key or whose namespace is the service — never hand-written. Read by a Services tab on Laptop, a "used by" column on Settings' global env, `fli doctor` credential rows, and that configuration doc's § Credentials.**
+  fli's accounts live in four places: tokens in the global env
+  (`DIGITALOCEAN_TOKEN`, `HETZNER_TOKEN`, `CLOUDFLARE_TOKEN`, `GITHUB_TOKEN`,
+  `VW_*`, `ANTHROPIC_API_KEY`), `basecamps.json` (admin and scoped keys),
+  `~/.fli/frontier/key.json` (the network identity), and the logins of external
+  CLIs (`gh`, `cf`, `npm`, `wrangler`, `claude`, `ssh`). What fli does with each
+  is spread over `commands/*/_module.md` § Setup; `packages/cli/docs/configuration.md`
+  § Environment variables lists no token; `fli doctor` checks only `requires:`
+  keys, the `cf` binary and `basecamps.json` ssh Hosts (probed 2026-11-06).
+  - **A** — a sibling catalog, `services.js` beside `packages/cli/core/home.js`:
+    one row per service with how fli signs in (an env key read from `requires:`
+    and `CLOUDS`, a file, or an external CLI with its probe such as `gh auth
+    status`) and a pointer to its Setup section. The actions are DERIVED from
+    the command registry — every command whose `requires:` names the key or
+    whose namespace is the service — never hand-written. Read by a Services
+    tab on Laptop, a "used by" column on Settings' global env, `fli doctor`
+    credential rows, and that configuration doc's § Credentials.
+  - **B** — as A, with a hand-written actions list per service as well.
+  - **C** — a description column on the existing Keys and Settings rows; no
+    catalog, doctor and docs unchanged.
+  - **Recommend A** — one authored model (sign-in method and probe), the rest
+    derived from `requires:`, `CLOUDS` and the registry, so nothing is kept in
+    step by hand; `FJS-D1992` chose the same sibling-catalog shape for files.
+    B is a second copy of the registry that drifts; C answers "is fli signed
+    in to GitHub" in four places. Reopen: if derived command titles read
+    poorly, add an optional `blurb` per service, not an actions list.
+- ~~**Q8 — Whether the Services screen probes external CLI logins.**~~ **Answered 2026-11-07 (`FJS-D1997`): A — a Check button per service runs its probe (`gh auth status`, `npm whoami`, `cf` profile, `wrangler whoami`, `claude` login) and shows signed-in-as; presence of a key or file shows at once; `fli doctor` runs the same probes. Nothing shells out on page load.**
+  - **A** — a Check button per service runs its probe (`gh auth status`, `npm
+    whoami`, `cf` profile, `wrangler whoami`, `claude` login) and shows
+    signed-in-as; presence of a key or file shows at once; `fli doctor` runs
+    the same probes. Nothing shells out on page load.
+  - **B** — every probe runs when the tab opens.
+  - **C** — no probes; presence only.
+  - **Recommend A** — a page that shells out on load is slow and a hung probe
+    blocks the tab; presence alone never answers the question for a CLI login.
+    A probe never reads or prints a value, and the result is shown as checked
+    or unchecked, never inferred from presence.
+
 ## Plan
 
 ### Phase 0 — The catalog
@@ -143,10 +198,10 @@ Done when: signed in at `/laptop/` (or where Q1 rules), Disk lists the four
 roots with per-entry sizes matching `du -s` to the shown precision, and an
 unknown file seeded in a root shows as unknown. Proved with `drive-browser`.
 
-- [ ] 1.1 A model-less `laptop` service, gated at ADMINISTRATOR like `basecamps`,
+- [x] 1.1 A model-less `laptop` service, gated at ADMINISTRATOR like `basecamps`,
   with a `disk` read over `homeReport()`. Regenerate `app.snapshot.md` so the dev
   proxy routes it (Workbench's `CLAUDE.md` § Traps).
-- [ ] 1.2 The route and nav entry; Disk's columns are Docker's (class, size,
+- [x] 1.2 The route and nav entry; Disk's columns are Docker's (class, size,
   reclaimable), roots first, entries under each.
 
 ### Phase 2 — Reclaim
@@ -157,11 +212,14 @@ rebuilds it; removing an idle lane frees its bytes and `fli autopilot` opens it
 again on the next run; Remove on a lane a loop holds, or a lane with uncommitted
 work, is refused with the reason.
 
-- [ ] 2.1 Clear for `reclaim: 'clear'` entries, inside `cacheDir()` only.
-- [ ] 2.2 A `removeLane(n)` in `scripts/lanes.mjs` (worktree remove + prune),
+- [x] 2.1 Clear for `reclaim: 'clear'` entries, inside `cacheDir()` only.
+- [x] 2.2 A `removeLane(n)` in `scripts/lanes.mjs` (worktree remove + prune),
   refused while a loop holds the lane or its worktree is dirty; Disk calls it.
-- [ ] 2.3 Confirmation is in the page (the row turns into "Remove 1.1 GB? Yes /
-  No"), and the toast says what was freed.
+- [x] 2.3 Confirmation is in the page (the row turns into "Remove 1.1 GB? Yes /
+  No"), and the toast says what was freed. Built 2026-11-06; Clear proved in
+  the browser on real registry files, Remove proved on a throwaway lane 3 by
+  script (clean: freed; a scratch file: refused; a live pid: refused). Q6 is
+  open: on this laptop both real lanes always read dirty.
 
 ### Phase 3 — Keys
 
@@ -171,10 +229,13 @@ Done when: a temp-home test with a 644 `.env` shows it flagged and Fix sets 600;
 no response body from the `laptop` service contains a file's contents (a test
 greps the payload for a seeded secret value).
 
-- [ ] 3.1 `keys` read: each `secret` entry with present/absent, mode, owner, mtime.
+- [x] 3.1 `keys` read: each `secret` entry with present/absent, mode, owner, mtime.
   Values never leave the API.
-- [ ] 3.2 Fix mode (chmod 600) per row.
-- [ ] 3.3 The Frontier network identity (`frontier/member.json`, `peers.json`,
+- [x] 3.2 Fix mode (chmod 600) per row. A secret directory lists only the
+  credential-shaped files inside it (`key`, `token`, `.env`, `.pem`,
+  `study.json`); the rest of an app folder is Disk's, or every log in
+  `state/haven` got a Fix button.
+- [x] 3.3 The Frontier network identity (`frontier/member.json`, `peers.json`,
   `waiting.json`) shown as who this laptop is and who it peers with, read only.
 
 ### Phase 4 — Global env and user commands, in Settings
@@ -183,9 +244,11 @@ Goal: the global `.env` and the user commands can be seen without a terminal.
 Done when: setting a key in the page makes `fli` read it on the next run, values
 are masked in the page, and every user command shows with its file path.
 
-- [ ] 4.1 Global env: keys listed, values masked, Set and Unset through
-  `storeGlobal`.
-- [ ] 4.2 User commands: each command from the registry's user layer, its
+- [x] 4.1 Global env: keys listed, values masked, Set and Unset through
+  `storeGlobal`. `global-env.js` gained `listGlobal` and `unsetGlobal` beside
+  it; Set chmods `.env` to 600 after every write, since `storeGlobal` writes
+  under the umask.
+- [x] 4.2 User commands: each command from the registry's user layer, its
   description and its path.
 
 ### Phase 5 — Running
@@ -194,9 +257,11 @@ Goal: what fli is running on this laptop across every project.
 Done when: a dev server started in `example/` shows with its port and project;
 a tree hold taken by a loop shows with its tree; both disappear when released.
 
-- [ ] 5.1 Sessions and ports from `ports.js` (`readLock`, `listeningPorts`,
+- [x] 5.1 Sessions and ports from `ports.js` (`readLock`, `listeningPorts`,
   `whoHolds`).
-- [ ] 5.2 Holds from `guard.js`'s holds dir.
+- [x] 5.2 Holds from `guard.js`'s holds dir. A guard file names its tree by
+  `sha1(realpath)`, so the tree is recovered by hashing every session root and
+  worktree; one matching none shows as an unknown tree.
 
 ### Phase 6 — Local backups on Basecamps
 
@@ -204,8 +269,11 @@ Goal: each Basecamp's row shows the backups pulled to this laptop.
 Done when: `/basecamps/` lists each entry's local copies under `dataDir()` with
 date and size, and Delete removes one.
 
-- [ ] 6.1 Read `dataDir()/basecamp/<name>` per entry.
-- [ ] 6.2 Delete per copy, with the same in-page confirmation as 2.3.
+- [x] 6.1 Read `dataDir()/basecamp/<name>` per entry. A pulled backup is a
+  directory (`<stamp>/` with the archive and its manifest, or `<stamp>-raw/`),
+  so `core/basecamp.js`'s `localBackups` lists directories and Delete removes
+  one whole; folded into `list` as `local` rather than a second read.
+- [x] 6.2 Delete per copy, with the same in-page confirmation as 2.3.
 
 ### Phase 7 — Strays and leakers
 
@@ -219,3 +287,31 @@ passes or fails.
   at the drive's end removes all three and `~/.cache` holds no `fjs-verify-*`
   dir, so the 2.7 GB were from runs before that landed. No defect to file.
 - [~] 7.2 The Strays list — dropped: Q4 ruled B (`FJS-D1994`); it reopens only if strays keep turning up after 7.1.
+
+### Phase 8 — Services
+
+Goal: every external service fli signs in to is documented on the screens with
+how it signs in, whether it is signed in, and what fli does with it.
+Done when: a Services tab on `/laptop/` lists each service from the catalog
+with its sign-in method, the key or file present or absent, a Check that runs
+its probe and shows signed-in-as, and the commands that use it, derived from
+the registry; Settings' global env shows which service each key belongs to;
+`fli doctor` prints a credential row per service; a test fails when a
+`requires:` key or a `CLOUDS` key is missing from the catalog, and when
+`packages/cli/docs/configuration.md` § Credentials disagrees with it.
+
+- [x] 8.1 `core/services.js`: one row per service — name, how fli signs in
+  (`env` with the key read from `requires:`/`CLOUDS`, `file` with a catalog
+  entry of `home.js`, or `cli` with the binary and its probe argv), the Setup
+  section it points at; `servicesReport({ probe })` answers presence per row
+  and runs a probe only when asked, never reading a value. `commandsUsing
+  (service)` derives the actions from the registry.
+- [x] 8.2 `doctor.js` prints a credential row per service (presence; `--probe`
+  runs the probes).
+- [x] 8.3 `packages/cli/docs/configuration.md` § Credentials generated from or checked
+  against the catalog; its stale token-less § Environment variables retired.
+- [x] 8.4 The Services tab on `/laptop/` and the "used by" column on Settings'
+  global env, through `services` and `probeService` reads on the `laptop`
+  service. The command list comes from a real `buildRegistry()` built once per
+  API process with `projectRoot` at the cli package, so a command added while
+  the API runs shows after a restart, and project-level commands are not listed.

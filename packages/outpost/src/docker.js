@@ -309,6 +309,25 @@ const DRILL_MOUNT = '/fjs-drill'
 // Every row of every model read through the client; a large app is minutes.
 const VERIFY_TIMEOUT_MS = 1_800_000
 
+// ─── a read-only copy ────────────────────────────────────────────────────────
+// `--internal` drops everything the copy sends past the bridge, so its jobs,
+// mail and webhooks reach nothing, while the host still dials its address.
+// It does NOT stop the copy reaching the host itself on the bridge's gateway
+// address: a host listener on every interface (sshd, this command port,
+// Caddy's 80/443 and every app behind it) answers it. The install's firewall
+// drops that by the bridge's interface name (`installScript()` in basecamp's
+// enrollment.ts), so renaming COPY_BRIDGE reopens it; a box the install did
+// not build has no such rule.
+const COPY_NETWORK = 'fjs-copy'
+const COPY_BRIDGE  = 'fjs-copy0'
+// Not `fjs.app`: every lookup by that label (the swap, `/stop`, the exposed
+// set, a data-directory removal) would take a copy for the App's release.
+const COPY_LABEL     = 'fjs.copy'
+const COPY_DIR_LABEL = 'fjs.copy.dir'
+// The one header a copy-aware junction sets on every answer. An image on an
+// older framework ignores the variable and runs writable over the copy.
+const READ_ONLY_HEADER = 'x-frontier-read-only'
+
 // ─── backup ──────────────────────────────────────────────────────────────────
 // The data is mounted read-only and the container has no network, so the
 // capture cannot change the app's data or send it anywhere. The archive is
@@ -644,6 +663,62 @@ export function createDocker({
         port: previous ? (await published({ appId }).catch(() => null))?.port : port,
       }, budgetS),
     })
+  }
+
+  // ─── a read-only copy's container ────────────────────────────────────────────
+
+  /** Made on the first serve. A network of that name that is not internal is
+   *  refused rather than used: the copy would reach the internet through it. */
+  async function copyNetwork() {
+    const seen = await run(['docker', 'network', 'inspect', '--format', '{{.Internal}}', COPY_NETWORK])
+    if (seen.exitCode === 0) {
+      if (seen.stdout.trim() !== 'true') throw new Error(`docker network ${COPY_NETWORK} exists and is not --internal, so a copy on it could reach the internet — remove it and serve again`)
+      return
+    }
+    const made = await run(['docker', 'network', 'create', '--internal', '-o', `com.docker.network.bridge.name=${COPY_BRIDGE}`, COPY_NETWORK])
+    if (made.exitCode !== 0) throw new Error(`docker network ${COPY_NETWORK} was not created (exit ${made.exitCode}): ${(made.stderr ?? '').trim()}`)
+  }
+
+  async function copiesOf(appId) {
+    checkAppId(appId)
+    const listed = await run(['docker', 'ps', '-a', '--filter', `label=${COPY_LABEL}=${appId}`, '--format', `{{.Names}}\t{{.Label "${COPY_DIR_LABEL}"}}`])
+    if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${(listed.stderr ?? '').trim()}`)
+    return String(listed.stdout ?? '').split('\n').map(line => line.trim()).filter(Boolean)
+      .map(line => { const [container, dir = ''] = line.split('\t'); return { container, dir } })
+  }
+
+  async function copyAddress(name) {
+    const read = await run(['docker', 'inspect', '--format', `{{(index .NetworkSettings.Networks "${COPY_NETWORK}").IPAddress}}`, name])
+    const ip = read.stdout?.trim() ?? ''
+    if (read.exitCode !== 0 || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) throw new Error(`the copy's container has no address on ${COPY_NETWORK}: ${(read.stderr || ip).trim()}`)
+    return ip
+  }
+
+  /** Any answer carrying the header passes. An answer WITHOUT it is refused
+   *  at once: that API is up and writable. A container that exits, or an API
+   *  silent past the budget, is refused with the container's last lines. */
+  async function untilReadOnly({ name, url }, budgetS) {
+    const now      = health.now ?? Date.now
+    const sleep    = health.sleep ?? Bun.sleep
+    const deadline = now() + budgetS * 1000
+    const tail = async () => {
+      const logs = await run(['docker', 'logs', '--tail', '5', name])
+      return stripVTControlCharacters(`${logs.stdout ?? ''}\n${logs.stderr ?? ''}`).trim().split('\n').filter(Boolean).slice(-5).join(' | ') || 'no log lines'
+    }
+    for (let asked = 0; asked < (health.attempts ?? Infinity); asked++) {
+      if (asked) {
+        await sleep(health.intervalMs)
+        if (now() >= deadline) break
+      }
+      const state = await run(['docker', 'inspect', '--format', '{{.State.Running}} {{.State.ExitCode}}', name])
+      const [running, code] = (state.stdout ?? '').trim().split(' ')
+      if (running !== 'true') throw new Error(`the copy's API exited (code ${code ?? '?'}) before it answered: ${await tail()}`)
+      let res
+      try { res = await fetchFn(url, { redirect: 'manual', signal: AbortSignal.timeout(2_000) }) } catch { continue }
+      if (res.headers.get(READ_ONLY_HEADER)) return res.headers.get(READ_ONLY_HEADER)
+      throw new Error(`the copy's API answered ${res.status} without ${READ_ONLY_HEADER}, so its image predates read-only copies and would serve writable — release it on a newer framework`)
+    }
+    throw new Error(`the copy's API did not answer within ${budgetS}s: ${await tail()}`)
   }
 
   /**
@@ -1381,6 +1456,78 @@ export function createDocker({
       }
       return { verified: report.ok, verify: report }
     },
+
+    /**
+     * The release image's API over a staged copy (`FJS-D1996`), with
+     * `FRONTIER_READ_ONLY_COPY=<asOf>` set and nothing outbound. It is
+     * answered only once the API says `x-frontier-read-only`; anything else
+     * removes the container and throws, and the caller unstages `dir`.
+     *
+     * Each serve is a new container beside the App's last copy, which is
+     * removed only once this one answers: a refresh never leaves a reader
+     * with no copy, and a refresh that fails leaves the old one serving.
+     * `replaced` names the copies removed, so the caller unstages their dirs.
+     *
+     * The copy is the Outpost's own 0700 directory, so the container runs as
+     * root, as the drill's does: an app uid could neither read the copy nor
+     * write the sessions file beside it.
+     *
+     * A chain of its own, not the App's: a copy touches none of the App's
+     * containers or data, and a deploy must not wait behind a copy's boot.
+     */
+    serveCopy: ({ appId, dir, image, digest, asOf, config = {} }) => serially(`${appId}#copy`, async () => {
+      checkAppId(appId)
+      if (typeof image !== 'string' || !image) throw new Error('a copy needs the image of the release it serves')
+      if (typeof asOf !== 'string' || !Number.isFinite(Date.parse(asOf))) throw new Error(`as_of '${asOf}' is not a time`)
+      const volumePath = config.volumePath
+      if (!VOLUME_PATH.test(volumePath ?? '') || volumePath.split('/').includes('..'))
+        throw new Error(`volume_path: ${JSON.stringify(volumePath)} is not an absolute path — a copy is mounted where the release keeps its data`)
+      const port = Number(config.containerPort ?? config.port)
+      if (!Number.isInteger(port) || port < 1 || port > 65535)
+        throw new Error('a copy needs the port its API listens on — config.containerPort or config.port')
+      const clientEnv = {}
+      const envArgs = []
+      for (const [key, value] of Object.entries({ FRONTIER_TRUST_PROXY: '1', ...config.env ?? {}, FRONTIER_READ_ONLY_COPY: asOf })) {
+        if (!ENV_NAME.test(key)) throw new Error(`env: ${JSON.stringify(key)} is not a variable name`)
+        if (key in process.env || /^(DOCKER_|BUILDKIT_|COMPOSE_|LD_)/.test(key)) envArgs.push('-e', `${key}=${value}`)
+        else { envArgs.push('-e', key); clientEnv[key] = String(value) }
+      }
+      const src = await realpath(dir)
+      if (/[,:]/.test(src) || /[,:]/.test(dir)) throw new Error(`'${src}' has a ':' or ',' that a mount cannot carry`)
+      await copyNetwork()
+      const before = await copiesOf(appId)
+      const ref  = await reference(image, digest)
+      const name = `fjs-copy--${appId}-${Date.now().toString(36)}`
+      const started = await run(['docker', 'run', '-d', '--name', name, '--restart', 'unless-stopped',
+        '--network', COPY_NETWORK, '--user', '0:0',
+        '--label', `${COPY_LABEL}=${appId}`, '--label', `${COPY_DIR_LABEL}=${dir}`,
+        ...runFlags({}), ...envArgs,
+        '--mount', `type=bind,src=${src},dst=${volumePath}`,
+        ref, ...config.command ?? []], { env: clientEnv })
+      if (started.exitCode !== 0) {
+        await run(['docker', 'rm', '-f', name])
+        throw new Error(`the copy's container did not start (exit ${started.exitCode}): ${(started.stderr || started.stdout || '').trim().split('\n').slice(-3).join(' ')}`)
+      }
+      try {
+        const ip = await copyAddress(name)
+        await untilReadOnly({ name, url: `http://${ip}:${port}/` }, healthBudgetS(config.healthTimeout ?? null))
+        for (const old of before) await run(['docker', 'rm', '-f', old.container])
+        return { container: name, upstream: `${ip}:${port}`, asOf, replaced: before }
+      } catch (err) {
+        await run(['docker', 'rm', '-f', name])
+        throw err
+      }
+    }),
+
+    /** Every copy of the App removed; the caller unstages the dirs named. */
+    unserveCopy: ({ appId }) => serially(`${appId}#copy`, async () => {
+      const copies = await copiesOf(appId)
+      for (const c of copies) {
+        const removed = await run(['docker', 'rm', '-f', c.container])
+        if (removed.exitCode !== 0) throw new Error(`${c.container} was not removed (exit ${removed.exitCode}): ${(removed.stderr ?? '').trim()}`)
+      }
+      return { removed: copies }
+    }),
 
     /**
      * The app's data directory tarred into `backupDir` on this machine
