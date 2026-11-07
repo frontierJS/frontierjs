@@ -127,22 +127,22 @@ indent_style = tab
 // MINOR — and `test/app-config.test.js` fails the day it does.
 
 export const FJS_PACKAGES = {
-  '@frontierjs/junction':       '0.1.13',
-  '@frontierjs/sierra':         '0.1.12',
-  '@frontierjs/mesa':           '0.1.11',
-  '@frontierjs/litestone':      '1.1.15',
-  '@frontierjs/css':            '0.16.10',
-  '@frontierjs/ui':             '0.1.10',
-  '@frontierjs/auth':           '1.0.12',
-  '@frontierjs/conduit':        '0.1.8',
-  '@frontierjs/caravan':        '0.1.8',
+  '@frontierjs/junction':       '0.1.14',
+  '@frontierjs/sierra':         '0.1.13',
+  '@frontierjs/mesa':           '0.1.12',
+  '@frontierjs/litestone':      '1.1.18',
+  '@frontierjs/css':            '0.16.11',
+  '@frontierjs/ui':             '0.1.11',
+  '@frontierjs/auth':           '1.0.13',
+  '@frontierjs/conduit':        '0.1.9',
+  '@frontierjs/caravan':        '0.1.9',
   '@frontierjs/notifications':  '0.1.9',
-  '@frontierjs/jetty':          '0.0.10',
-  '@frontierjs/toolbelt':       '0.1.10',
+  '@frontierjs/jetty':          '0.0.11',
+  '@frontierjs/toolbelt':       '0.1.11',
 }
 
 export const APP_DEV_DEPS = {
-  '@frontierjs/cli':    '0.1.13',
+  '@frontierjs/cli':    '0.1.14',
   '@frontierjs/config': '0.1.6',
   '@frontierjs/testing': '0.1.10',
   '@biomejs/biome':     '^2.5.0',
@@ -155,7 +155,7 @@ export const APP_DEV_DEPS = {
 // npm for a version only the host serves, and the install stops. Exact, so
 // `ws:pub` raises it with the rest.
 export const FJS_TRANSITIVE = {
-  '@frontierjs/outpost': '0.1.11',
+  '@frontierjs/outpost': '0.1.15',
 }
 
 // ─── tsconfig.json ────────────────────────────────────────────────────────────
