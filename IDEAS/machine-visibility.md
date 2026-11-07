@@ -6,7 +6,7 @@ dated: 2026-11-06
 
 # Idea — what a machine holds, readable in Basecamp
 
-**Status: PROPOSED. Q1–Q2 ruled (`FJS-D1987`, `FJS-D1989`); Phase 0 built and driven uncommitted 2026-11-06, Q2's install-from-release built uncommitted, 0.3 Outpost release owed; 1.1 next.**
+**Status: PROPOSED. Q1–Q2 ruled (`FJS-D1987`, `FJS-D1989`); Phase 0 built and driven 2026-11-06; Outpost 0.1.14 released and pinned; 0.3's Basecamp redeploy and re-enroll are the owner's; 1.1 next.**
 Probed against the tree 2026-11-06. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-06): what does a machine hold that Basecamp cannot show, short of
@@ -71,8 +71,10 @@ Done when: `verify:docker` passes and the card renders the JSON from a real Outp
     release asset where npm lacks the version (`enrollment.ts` `OUTPOST_MANIFEST`); `fli done`,
     `outpostUnpublished()` and 04 accept either host. The rendered install lines in a scratch
     directory took 0.1.13, litestone 1.1.16 and toolbelt 0.1.11 from npm, and with the registry
-    pointed at a dead port took all three from the release. `verify:provision` 109 pass. Owed: `fli ws:pub patch --filter litestone --filter outpost` (litestone has moved past
-    1.1.16, so outpost alone is refused), move `OUTPOST_VERSION`, redeploy Basecamp, re-enroll.
+    pointed at a dead port took all three from the release. `verify:provision` 109 pass.
+  - Released 0.1.14 with litestone 1.1.17 to the release host only; `OUTPOST_VERSION` = 0.1.14.
+    The real install lines took both from the release and toolbelt 0.1.11 from npm, and the
+    installed `ingress.js` is the tree's. Owed: redeploy Basecamp, re-enroll the machines.
 
 ### Phase 1 — Every container and unit on the server page
 

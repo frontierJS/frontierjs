@@ -34,9 +34,12 @@ const derivedOrigins = ($, deployConf) => crossOrigins(edgeNamesOf(deployConf), 
 // (`FJS-D1484`), made by `deploy:setup`, and nothing on localhost, where the
 // image's user runs. Asked before any container is touched, so a box set up
 // before the user existed is refused while the running release still serves.
-const runAs = (machine, appId) => {
+// A dry run asks nothing, so the uid is named, not read: an empty answer
+// refused every --dry deploy to a box here.
+const runAs = (machine, appId, dry = false) => {
   if (machine.local) return []
   const user = appUser(appId)
+  if (dry) return ['--user', `<uid:gid of ${user}>`]
   const ids  = String(machine.capture(appUserIds(user)) ?? '').trim()
   if (!/^\d+:\d+$/.test(ids)) throw new Error(
     `${user} is not a user on this box, so the API has no uid of its own to run as -- run fli deploy:setup, which makes it and hands it ${appId}'s db directory, then deploy again`)
@@ -635,7 +638,7 @@ const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
 
-  const user    = runAs(machine, appId)
+  const user    = runAs(machine, appId, $.flag?.dry)
   const secrets = secretsDir ? secretNames(machine, secretsDir, log) : []
   if (secrets.length) {
     const inEnv = machine.capture(`for k in ${secrets.join(' ')}; do grep -qs "^$k=" ${envFile} && echo "$k"; done; true`)

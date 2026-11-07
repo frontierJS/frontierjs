@@ -444,7 +444,7 @@ const words = (script) => (script.match(/'(?:[^']|'\\'')*'|\S+/g) ?? [])
 // `dials` collects the API port every write pointed the routes at, and each
 // write is a `route <port>` in the daemon's log, where the table states it. `verdict` is
 // what the new image's `litestone release --json` answers.
-const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '', caddy = null, verdict = null, refuses = [] } = {}) => {
+const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '', caddy = null, verdict = null, refuses = [], dry = false } = {}) => {
   const d = fakeDaemon(before, { refuses })
   const commands = []
   const dials = []
@@ -452,6 +452,7 @@ const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '', caddy = 
   const context = {
     config: {},
     paths: { root: ROOT },
+    flag: { dry },
     exec: ({ command, input }) => {
       const body = String(input ?? command).replace(/^exec 2>&1\n/, '')
       commands.push(body)
@@ -646,6 +647,13 @@ describe('swapContainer — the docker run line', () => {
     const t = onBox({ before: { app: old } })
     await expect(t.go({ host: 'root@203.0.113.7', appId: 'my-app' })).rejects.toThrow(/fjs-my-app is not a user on this box.*fli deploy:setup/)
     expect(t.d.log).toEqual([])
+  })
+
+  test('a dry run names the app\'s user without asking the box, so it is not refused', async () => {
+    const t = onBox({ before: { app: old }, dry: true })
+    await t.go({ host: 'root@203.0.113.7', appId: 'my-app' })
+    expect(t.commands.some(c => c.includes('id -u fjs-'))).toBe(false)
+    expect(t.runCmd()).toContain("--user '<uid:gid of fjs-my-app>'")
   })
 
   test('localhost passes no --user, so the image\'s user runs', async () => {
