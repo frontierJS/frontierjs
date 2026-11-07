@@ -403,11 +403,24 @@ only control on the page that touches the box.
   the admin key reads `/hub-backups`, the run key reads `/apps` and is refused `POST /servers`
   (403). Driven in Chrome: a Plan-only run sent the right argv and read the box, then stopped at
   the Cloudflare preflight, `FJS-4094` (the laptop's token opens no `maverickmade.tech` zone).
-- [ ] 2.3 The page: pick a charter file (Charter's wizard is a link out, `FJS-D2025`), a case set
+- [x] 2.3 The page: pick a charter file (Charter's wizard is a link out, `FJS-D2025`), a case set
   and *destroy when done* or *leave it* (`FJS-D1893`), then Run, and watch each stage arrive
   from the run record. The record's shape is typed on Workbench's side and an unknown stage or
   version is refused by name; a record whose process is gone never reads as running. A kept App
   is listed with a manual Delete.
+  **Built 2026-11-07.** Workbench `domain/charter/`: `live-record.ts` reads the record (version
+  `live: 1`, the six stages, the four outcomes; anything else refused by name) and calls one with
+  no `finishedAt` running only while its `pid` is a `builder/live.ts` process; `live-runs.ts` is
+  the checkout (`CHARTER_DIR`, else `fjs-prototypes/charter` beside this repo), the cases
+  (`corpus/live/` plus a charter.json picked on the page, kept under Workbench's directory), and
+  a queue that spawns one case at a time with `--date` and refuses while any `live.ts` runs on the
+  machine. Service `liveRuns` (`state`, `add`, `run`, `deleteKept`), all `approved: true` where they
+  deploy or delete. Charter `live.ts` now writes `pid`, and `--from clean` on a kept run's record
+  removes that App later, measured against the box as it is then, so Delete is Charter's own clean
+  stage. Driven in Chrome on the real checkout (eight cases, the 2026-11-07 records, the picked
+  file, the confirmation; not confirmed), and the queue over a fake checkout (stages arrive, a
+  second start refused, a killed case reads `stopped`, a kept App listed). **Owed:** a real Run
+  from the page and a real Delete of a kept App, both on chartered and both the owner's to start.
 - [ ] 2.4 Once the owner calls the runner settled, add a test that it calls only the verbs on its
   list.
 

@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-8 services · 19 routes · 7 plugins · prefix (none)
+9 services · 19 routes · 7 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -181,6 +181,26 @@ name when it declares none.
   - `unsetGlobalEnv` — standing 5 or above — declared `gate: 5`
   - `setPing` — standing 5 or above — declared `gate: 5`
   - `probeService` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `liveRuns` · model `liveRuns`
+
+- **methods** — `state`, `add`, `run`, `deleteKept`
+- **custom methods** — `state`, `add`, `run`, `deleteKept`
+- **who may call** —
+  - `state` — standing 5 or above — declared `gate: 5`
+  - `add` — standing 5 or above — declared `gate: 5`
+  - `run` — standing 5 or above — declared `gate: 5`
+  - `deleteKept` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

@@ -8948,6 +8948,11 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2012"></a>2026-11-07 · `FJS-D2012` — An app backup is discarded where it is, and an archive no row names is found and deleted from its Server — `appBackups.discard` deletes the bucket object, then the machine's file (`/backup/remove`, by file name), then the row, and refuses the app's newest good archive as `hubBackups.discard` does (`FJS-3902`). `servers.archives` lists every archive on a machine's disk (`/backups`) with the row naming it; `servers.discardArchive` deletes only one no row names and records `archiveDiscarded`.
+
+Asked in chat through the question tool, after the yuma reinstall left two archives of an App the new hub had no row for, which only ssh could remove. **Discard plus orphans** was picked over row discard only (which never reaches those two files) and over adopting the files as `found` rows (`AppBackup.appId` is required, and their App does not exist). **Refuse the newest good** was picked over no guard. A file a row names cannot be discarded from the Server, so the guard has one door.
+*Lives in:* `packages/basecamp/api/src/services/app-backups/app-backups.service.ts`, `servers.service.ts`, `packages/outpost/src/docker.js`.
+
 ### <a id="fjs-d1966"></a>2026-11-06 · `FJS-D1966` — Does `fli basecamp:app` take the deploy target flags and add an environment to an existing project — The same flags as `fli deploy`: bare makes development, `--stage` staging, `--production` production. With the project already there (named by `BASECAMP_APP_ID`) it adds the environment and a same-slug App placed on a server, and refuses a tier that already holds one. `fli deploy`'s refusal names this command.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (keep it production-only; another environment is made by hand in Basecamp).
@@ -9117,11 +9122,6 @@ Hub restore through `/setup` has run only against SeaweedFS on a laptop (`IDEAS/
 
 Asked in chat through the question tool, while planning [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md). The XDG data directory was picked over the app's own `db/backups/` and over asking each time: outside every checkout, so nothing commits it and it survives the checkout being deleted.
 *Lives in:* `cli/commands/basecamp/backup.md`.
-
-### <a id="fjs-d2012"></a>2026-11-07 · `FJS-D2012` — An app backup is discarded where it is, and an archive no row names is found and deleted from its Server — `appBackups.discard` deletes the bucket object, then the machine's file (`/backup/remove`, by file name), then the row, and refuses the app's newest good archive as `hubBackups.discard` does (`FJS-3902`). `servers.archives` lists every archive on a machine's disk (`/backups`) with the row naming it; `servers.discardArchive` deletes only one no row names and records `archiveDiscarded`.
-
-Asked in chat through the question tool, after the yuma reinstall left two archives of an App the new hub had no row for, which only ssh could remove. **Discard plus orphans** was picked over row discard only (which never reaches those two files) and over adopting the files as `found` rows (`AppBackup.appId` is required, and their App does not exist). **Refuse the newest good** was picked over no guard. A file a row names cannot be discarded from the Server, so the guard has one door.
-*Lives in:* `packages/basecamp/api/src/services/app-backups/app-backups.service.ts`, `servers.service.ts`, `packages/outpost/src/docker.js`.
 
 ### <a id="fjs-d1851"></a>2026-11-03 · `FJS-D1851` — Local Basecamp backups are never pruned; `basecamp:backup --list` shows them.
 

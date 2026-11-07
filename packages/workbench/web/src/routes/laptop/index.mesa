@@ -254,11 +254,11 @@ title: Laptop
 
             {#each report.classes as c (c.root)}
               <TabPanel id={c.root}>
-                <section class="pane" data-class={c.root}>
+                <section class="lp-pane" data-class={c.root} aria-labelledby={`laptop-pane-${c.root}`}>
                   <header class="pane-head">
                     <div class="pane-title">
                       <span class={`swatch ${classOf(c.root).tone}`}></span>
-                      <h2 class="h6">{classOf(c.root).name}</h2>
+                      <h2 class="h6" id={`laptop-pane-${c.root}`}>{classOf(c.root).name}</h2>
                       <span class="text-sm text-muted">{classOf(c.root).what}</span>
                     </div>
                     <code class="path text-xs">{c.path}{c.exists ? '' : ' — not there yet'}</code>
@@ -344,7 +344,7 @@ title: Laptop
             <h2 class="h6">On the Frontier network</h2>
           </header>
           {#if ident.nick || ident.member}
-            <dl class="facts">
+            <dl class="facts lp-facts">
               <dt>Speaks as</dt>
               <dd><strong>{ident.nick ?? ident.member.name}</strong>{#if ident.member}<span class="text-muted"> · member no. {ident.member.id}</span>{/if}</dd>
               {#if ident.box}
@@ -371,10 +371,10 @@ title: Laptop
           {/if}
         </section>
 
-        <section class="pane">
+        <section class="lp-pane" aria-labelledby="laptop-pane-keys">
           <header class="pane-head">
             <div class="pane-title">
-              <h2 class="h6">Secret files</h2>
+              <h2 class="h6" id="laptop-pane-keys">Secret files</h2>
               <span class="text-sm text-muted">{present} of {keysReport.keys.length} present</span>
             </div>
             {#if exposed}
@@ -429,10 +429,10 @@ title: Laptop
       {#if runLoading && !runReport}
         <p class="text-sm text-muted">Looking…</p>
       {:else if runReport}
-        <section class="pane">
+        <section class="lp-pane" aria-labelledby="laptop-pane-servers">
           <header class="pane-head">
             <div class="pane-title">
-              <h2 class="h6">Dev servers</h2>
+              <h2 class="h6" id="laptop-pane-servers">Dev servers</h2>
               <span class="text-sm text-muted">
                 {up.length ? `${up.length} running` : 'none running'}{idle ? ` · ${idle} remembered, not running` : ''}
               </span>
@@ -471,10 +471,10 @@ title: Laptop
           {/if}
         </section>
 
-        <section class="pane">
+        <section class="lp-pane" aria-labelledby="laptop-pane-holds">
           <header class="pane-head">
             <div class="pane-title">
-              <h2 class="h6">Tree holds</h2>
+              <h2 class="h6" id="laptop-pane-holds">Tree holds</h2>
               <span class="text-sm text-muted">{runReport.holds.length ? `${runReport.holds.length} held` : 'a drive or a loop takes one while it works'}</span>
             </div>
           </header>
@@ -526,7 +526,7 @@ title: Laptop
                 <Pill tone={signInTone(s)} dot>{signInWord(s)}</Pill>
               </header>
 
-              <dl class="facts lp-compact">
+              <dl class="facts lp-facts lp-compact">
                 <dt>Signs in</dt>
                 <dd>
                   {#if s.signIn.kind === 'env'}
@@ -615,13 +615,13 @@ title: Laptop
   .figure-value    { font-size: var(--text-3xl); font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
   .figure-value.soft { color: var(--ink-soft); font-weight: 500; }
 
-  .usage { display: flex; block-size: 0.75rem; border-radius: 999px; overflow: hidden; background: var(--surface-sunken); gap: 2px; }
-  .seg { flex: 0 0 auto; min-inline-size: 3px; }
+  .usage { display: flex; block-size: var(--space-lg); border-radius: var(--pill-radius); overflow: hidden; background: var(--surface-sunken); gap: var(--space-3xs); }
+  .seg { flex: 0 0 auto; min-inline-size: var(--space-3xs); }
 
   .legend      { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-2xl); list-style: none; margin: 0; padding: 0; }
   .legend-item { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: var(--text-sm); }
 
-  .swatch { display: inline-block; inline-size: 0.6rem; block-size: 0.6rem; border-radius: 3px; flex-shrink: 0; }
+  .swatch { display: inline-block; inline-size: var(--space-md); block-size: var(--space-md); border-radius: var(--badge-radius); flex-shrink: 0; }
 
   /* Segment and swatch fills: one tone per class, no literal colors. */
   .seg.primary,   .swatch.primary   { background: var(--color-primary); }
@@ -634,9 +634,9 @@ title: Laptop
   .tab-label { display: inline-flex; align-items: center; gap: var(--space-xs); }
   .tab-size  { color: var(--ink-mute); font-size: var(--text-xs); }
   .panes     { display: flex; flex-direction: column; gap: var(--space-xl); }
-  .cards  { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: var(--space-xl); }
+  .cards  { --lp-card-min: 22rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--lp-card-min)), 1fr)); gap: var(--space-xl); }
 
-  .pane {
+  .lp-pane {
     border:        var(--border-width) solid var(--rule);
     border-radius: var(--card-radius);
     background:    var(--surface);
@@ -660,6 +660,8 @@ title: Laptop
 
   .rows-list { list-style: none; margin: 0; padding: 0; }
   .lp-row {
+    --lp-size-col: 5.5rem;
+    --lp-act-col: 5rem;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
@@ -669,24 +671,24 @@ title: Laptop
   }
   .lp-row + .lp-row   { border-block-start: var(--border-width) solid var(--rule); }
   .lp-row:hover    { background: color-mix(in srgb, var(--ink) 3%, var(--surface)); }
-  .row-main     { display: flex; flex-direction: column; gap: 0.125rem; min-inline-size: 0; }
+  .row-main     { display: flex; flex-direction: column; gap: var(--space-3xs); min-inline-size: 0; }
   .row-name     { display: flex; align-items: center; gap: var(--space-sm); font-weight: 500; overflow-wrap: anywhere; }
   .row-sub      { font-size: var(--text-sm); color: var(--ink-mute); overflow-wrap: anywhere; }
-  .row-size     { color: var(--ink-soft); text-align: end; min-inline-size: 5.5rem; }
+  .row-size     { color: var(--ink-soft); text-align: end; min-inline-size: var(--lp-size-col); }
   .row-col      { white-space: nowrap; }
-  .row-act      { min-inline-size: 5rem; display: flex; justify-content: flex-end; }
-  .row-lead     { display: flex; align-items: center; justify-content: center; inline-size: 1rem; }
+  .row-act      { min-inline-size: var(--lp-act-col); display: flex; justify-content: flex-end; }
+  .row-lead     { display: flex; align-items: center; justify-content: center; inline-size: var(--space-2xl); }
 
   /* A lane sits under the entry that owns it: indented, with the entry's rule above it. */
   .lp-row.lp-lane            { padding-inline-start: calc(var(--space-xl) + var(--space-2xl)); background: color-mix(in srgb, var(--surface-sunken) 50%, var(--surface)); }
   .lp-row.lp-lane:hover      { background: color-mix(in srgb, var(--ink) 4%, var(--surface-sunken)); }
 
   .lp-row.key code { background: none; padding: 0; }
-  .lp-row.key    { grid-template-columns: auto minmax(0, 1fr) 3.5rem 7rem auto; }
+  .lp-row.key    { --lp-key-a: 3.5rem; --lp-key-b: 7rem; grid-template-columns: auto minmax(0, 1fr) var(--lp-key-a) var(--lp-key-b) auto; }
   .lp-row.absent { opacity: 0.6; }
   .lp-row.server { grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; }
-  .lp-row.server .row-lead { padding-block-start: 0.35rem; }
-  .lp-row.server .row-col  { padding-block-start: 0.1rem; }
+  .lp-row.server .row-lead { padding-block-start: var(--space-xs); }
+  .lp-row.server .row-col  { padding-block-start: var(--space-3xs); }
   #laptop-holds .lp-row    { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 
   .pane-empty { padding: var(--space-lg) var(--space-xl); margin: 0; }
@@ -696,9 +698,9 @@ title: Laptop
   .lp-chips { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-block-start: var(--space-xs); }
   .lp-chip {
     display: inline-flex; align-items: center; gap: var(--space-xs);
-    padding: 0.15rem var(--space-sm);
+    padding: var(--space-3xs) var(--space-sm);
     border: var(--border-width) solid var(--rule);
-    border-radius: 999px;
+    border-radius: var(--pill-radius);
     font-size: var(--text-xs);
     color: var(--ink-mute);
     background: var(--surface);
@@ -712,9 +714,9 @@ title: Laptop
   .lp-service  { display: flex; flex-direction: column; gap: var(--space-lg); }
   .lp-service > .pane-head { margin: calc(var(--space-3xl) * -1) calc(var(--space-3xl) * -1) 0; }
 
-  .facts.lp-compact { font-size: var(--text-sm); gap: var(--space-sm) var(--space-xl); }
-  .facts dt      { color: var(--ink-mute); }
-  .facts dd      { margin: 0; min-inline-size: 0; }
+  .lp-facts.lp-compact { font-size: var(--text-sm); gap: var(--space-sm) var(--space-xl); }
+  .lp-facts dt   { color: var(--ink-mute); }
+  .lp-facts dd   { margin: 0; min-inline-size: 0; }
 
   .commands      { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-xs) var(--space-md); align-items: baseline; }
   .commands li   { display: contents; }

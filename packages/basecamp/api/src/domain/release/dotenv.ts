@@ -51,7 +51,7 @@ function closing(s: string, q: string): number {
   return -1
 }
 
-function unescape(s: string): string {
+function unescapeQuoted(s: string): string {
   return s.replace(/\\(.)/gs, (_, c) => c === 'n' ? '\n' : c === 'r' ? '\r' : c)
 }
 
@@ -89,7 +89,7 @@ export function parseDotenv(text: string): { entries: DotenvEntry[]; problems: s
       let end = closing(rest, q)
       while (end === -1 && i + 1 < lines.length) { rest += '\n' + lines[++i]; end = closing(rest, q) }
       if (end === -1) { problems.push(`line ${at}: ${key}'s ${q} is never closed`); break }
-      value = q === '"' ? unescape(rest.slice(1, end)) : rest.slice(1, end)
+      value = q === '"' ? unescapeQuoted(rest.slice(1, end)) : rest.slice(1, end)
     } else {
       value = rest.replace(/\s+#.*$/, '').trim()
     }

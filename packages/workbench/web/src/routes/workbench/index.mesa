@@ -2364,6 +2364,7 @@ title: Workbench
      its pane and the message box never leaves the screen. */
   .workbench {
     --workbench-min-block: 34rem;
+    --workbench-touch: 2rem;
     --workbench-pane-max: 48rem;
     --workbench-slot-min: 6rem;
     --workbench-tab-size: 12rem;
@@ -2518,8 +2519,9 @@ title: Workbench
     position: relative;
     display: grid;
     place-items: center;
-    inline-size: 4rem;
-    block-size: 4rem;
+    --workbench-shot-size: 4rem;
+    inline-size: var(--workbench-shot-size);
+    block-size: var(--workbench-shot-size);
     overflow: hidden;
     border: var(--border-width) solid var(--tint-rule);
     border-radius: var(--card-radius);
@@ -2528,8 +2530,8 @@ title: Workbench
   .workbench-shot img { inline-size: 100%; block-size: 100%; object-fit: cover; }
   .workbench-shot-drop {
     position: absolute;
-    inset-block-start: 2px;
-    inset-inline-end: 2px;
+    inset-block-start: var(--space-3xs);
+    inset-inline-end: var(--space-3xs);
     padding: 0 var(--space-xs);
     border: 0;
     border-radius: var(--pill-radius);
@@ -2726,10 +2728,10 @@ title: Workbench
     .workbench-head-chat,
     .workbench-chat-open,
     .workbench-chat-group-label,
-    .workbench-fold { min-block-size: 2rem; }
+    .workbench-fold { min-block-size: var(--workbench-touch); }
     .workbench-chat-close,
-    .workbench-chat-pkg-open { min-block-size: 2rem; min-inline-size: 2rem; }
-    .workbench-head :global(.btn.square) { min-inline-size: 2rem; }
+    .workbench-chat-pkg-open { min-block-size: var(--workbench-touch); min-inline-size: var(--workbench-touch); }
+    .workbench-head :global(.btn.square) { min-inline-size: var(--workbench-touch); }
     .workbench-head > h2 { margin-inline-end: auto; }
   }
 

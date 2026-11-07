@@ -46,6 +46,11 @@ export const spec = {
   // here would outlive a change of Basecamp and send previews to the wrong one,
   // so the entry holds the URL and the peerKeyId.
   BASECAMP: { default: 'dev' },
+
+  // The Charter checkout whose builder/live.ts the Charter page spawns
+  // (FJS-D2025). Absent, `charterDir()` takes fjs-prototypes/charter beside
+  // this repo, where the prototypes are checked out.
+  CHARTER_DIR: {},
 } satisfies EnvSpec
 
 export const env = defineEnv(spec)

@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/LiveRun.mesa — the Resource layer for Charter's live runs
+  // (api services/liveRuns).
+  //
+  // No model: a run is a builder/live.ts process in a Charter checkout and its
+  // record is Charter's runs/<date>-live-<case>.json (FJS-D2025).
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const liveRuns = createResource('liveRuns', { model: null })
+</script>

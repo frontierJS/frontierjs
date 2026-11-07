@@ -799,6 +799,7 @@ title: Atlas
   .atlas-pkg {
     --atlas-pkg-name: 8rem;
     --atlas-pkg-count: 2.5rem;
+    --atlas-pkg-touch: 2rem;
     display: grid;
     grid-template-columns: var(--atlas-pkg-name) 1fr var(--atlas-pkg-count);
     align-items: center;
@@ -812,7 +813,7 @@ title: Atlas
     cursor: pointer;
   }
   /* A bar row was 24px tall: a thumb lands on the row above or below it. */
-  @media (max-width: 40rem) { .atlas-pkg { min-block-size: 2rem; } }
+  @media (max-width: 40rem) { .atlas-pkg { min-block-size: var(--atlas-pkg-touch); } }
   .atlas-pkg > .text-sm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .atlas-pkg > .text-xs { text-align: end; }
   .atlas-track { block-size: var(--track-size); border-radius: var(--pill-radius); background: var(--tint-surface); overflow: hidden; }
