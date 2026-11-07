@@ -110,11 +110,11 @@ are many cards.
 
 **Row 7's place (2026-11-07).** The intake half is built (chat `about`, the `Next` menu, the Atlas tie). Row 7 also says a card's place moves by the person's hand — intake, review, finished — with the run's state and notices overlaid (`FJS-D1176`). Nothing stores that place yet.
 
-- **Q4 — Where the hand-moved place lives.**
+- ~~**Q4 — Where the hand-moved place lives.**~~ **Answered 2026-11-07 (`FJS-D2009`): A — A `place` field on the tied chat (`'intake' | 'review' | 'finished'`, default `intake`), set by a control on the chat tab; the card sorts by its shown chat's place after needs-you and before the state sort, and a chat with no `about` has no place and no control. Named `finished`, not `done`, because `done` is a RunState and the two would read as one thing.**
   - **A** — A `place` field on the tied chat (`'intake' | 'review' | 'finished'`, default `intake`), set by a control on the chat tab; the card sorts by its shown chat's place after needs-you and before the state sort, and a chat with no `about` has no place and no control. Named `finished`, not `done`, because `done` is a RunState and the two would read as one thing.
   - **B** — Derive it from the register: an open row is `intake`, a row with a `review` or `proposed` marker is `review`, a closed row is `finished`; no stored field and no control.
   - **Recommend A** — the row says *by the person's hand*, and a derived place cannot be moved by hand; B also makes a register edit silently move cards, which is the overlay D1176 forbids. The silence to guard: a chat whose row closes while its place stays `intake`, which Q5 is about. Enforcement `none` until a status-row test exists; the shape is one optional field and one three-way control.
-- **Q5 — When the tied row closes.**
+- ~~**Q5 — When the tied row closes.**~~ **Answered 2026-11-07 (`FJS-D2010`): A — Do nothing: the place stays where the hand left it and the badge shows the row as closed.**
   - **A** — Do nothing: the place stays where the hand left it and the badge shows the row as closed.
   - **B** — Suggest `finished` with a one-tap notice when the row closes, never move it unasked.
   - **Recommend A** — a closed row is already visible on the badge, and a notice for it is a fourth notice kind for a case the person caused by closing the row themselves. Revisit if cards pile up in `intake` with closed rows.

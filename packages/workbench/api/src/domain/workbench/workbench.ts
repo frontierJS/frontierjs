@@ -118,10 +118,18 @@ export type Chat = {
   title?:  string
   /** The register row this chat was opened for (`FJS-D1176`). */
   about?:  Ref
+  /** Where the person put a tied chat's card; absent reads as `intake`. Only
+   *  a tied chat has one (`FJS-D2009`). */
+  place?:  Place
 }
 
 /** A register row a chat is for: `FJS-###` or `FJS-D###`, with the title it had then. */
 export type Ref = { id: string, title: string }
+
+/** A card's hand-moved place. `finished`, because `done` is a RunState and a
+ *  run that is done sits on a card that may not be. */
+export type Place = typeof PLACES[number]
+export const PLACES = ['intake', 'review', 'finished'] as const
 
 const REF_ID = /^[\w:.-]{1,80}$/
 
@@ -258,6 +266,8 @@ export type ChatStatus = {
   chosen:  string | null
   /** The register row it was opened for; null for a chat about nothing in particular. */
   about:   Ref | null
+  /** Where the person put it; null for a chat with no row. */
+  place:   Place | null
 }
 
 export type PinStatus = {
@@ -1069,6 +1079,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, conf
         unread: unread(c), session: c.chat.session, package: pkg,
         chosen: c.chat.package === '.' ? '.' : pkg && !pkg.inferred ? pkg.path : null,
         about: c.chat.about ?? null,
+        place: c.chat.about ? c.chat.place ?? 'intake' : null,
       })),
       spent:  {
         total: own.reduce((n, s) => n + s.total, 0) + rev.total,
@@ -1781,13 +1792,26 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, conf
     return updatePin(id, { chats })
   }
 
+  /** Move a tied chat's card by hand (`FJS-D2009`). A chat with no row has no
+   *  place to move, and a word outside the three is refused by name. */
+  function setPlace(id: string, input: unknown): Pin | { refused: string } {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const { chat, place } = (input ?? {}) as { chat?: unknown, place?: unknown }
+    const c = chat == null || chat === '' ? null : chatIn(p, chat)
+    if (!c) return { refused: `${p.name} has no chat '${chat}'` }
+    if (!c.about) return { refused: `that chat is about no register row, so it has no place to move` }
+    if (!PLACES.includes(place as Place)) return { refused: `place is one of ${PLACES.join(', ')}, not '${place}'` }
+    return updateChat(id, c.id, { place: place as Place })
+  }
+
   function seen(id: string) {
     return updatePin(id, { seenAt: new Date().toISOString() })
   }
 
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff, members, memberWrites,
-    send, stop, fresh, tie, select, close, importable, importSession, setPackage, seen, check, review, fork, land, commit, archive, archiveRefusal, recordOpened,
+    send, stop, fresh, tie, select, close, importable, importSession, setPackage, setPlace, seen, check, review, fork, land, commit, archive, archiveRefusal, recordOpened,
     runnables, run, halt, output, shellEnv, readPlan, buildPlan, go, next, tick, file, decide, openPlan, closePlan,
   }
 }

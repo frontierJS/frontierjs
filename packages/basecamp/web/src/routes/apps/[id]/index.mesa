@@ -31,6 +31,7 @@ title: App
   import NoRecord from '../../../components/NoRecord.mesa'
   import LaptopRelease from '../../../components/LaptopRelease.mesa'
   import AppBackups from '../../../components/AppBackups.mesa'
+  import ReadOnlyCopy from '../../../components/ReadOnlyCopy.mesa'
   import LogView from '../../../components/LogView.mesa'
   import VariablesEditor from '../../../components/VariablesEditor.mesa'
 
@@ -1485,6 +1486,7 @@ title: App
 
   {#if tab === 'backups'}
     <AppBackups app={app} />
+    {#if session.level >= 5}<ReadOnlyCopy app={app} />{/if}
   {/if}
 
   {#if tab === 'live'}

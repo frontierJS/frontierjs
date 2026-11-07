@@ -692,6 +692,43 @@ try {
     (wrappedWarned ?? '').slice(0, 200))
   await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:first-child')?.click()`)
 
+  // ─── An App's read-only copy (IDEAS/read-only-copy.md 2.1) ─────────────
+  // The seed's copy, served nightly. No Outpost runs here, so the refresh a
+  // turn-on queues lands as the machine's refusal on the row, and the off
+  // answer says the machine could not be told: both prove the card reached
+  // the service and the job with a real row.
+  console.log('\n  /apps/[id]/ — the read-only copy card')
+  const seededCopy = (await asOwner('GET', '/app-copies'))?.body?.data?.[0]
+  check('the seeded workspace has a read-only copy', !!seededCopy?.appId, JSON.stringify(seededCopy)?.slice(0, 160))
+  const copyOf = async () => (await asOwner('GET', `/app-copies?appId=${seededCopy?.appId}`))?.body?.data?.[0] ?? null
+  await goto(`/apps/${seededCopy?.appId}/?tab=backups`)
+  const asOfLine = await until(`document.getElementById('app-copy-as-of')?.textContent ?? ''`, t => /As of/.test(t),
+    'the card never said how old the copy is').catch(e => e.message)
+  check('the card says the copy is on, as of when, and on which machine',
+    /As of .+ on\s+\S+/s.test(asOfLine) && await evaluate(`document.getElementById('app-copy-on')?.checked`) === true, asOfLine)
+  check('its status is the row\'s', (await text('[data-copy-status]'))?.trim() === 'success', await text('[data-copy-status]'))
+
+  await evaluate(`(() => { const el = document.getElementById('app-copy-cron')
+    el.value = '0 */6 * * *'; el.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  let rescheduled = null
+  for (const deadline = Date.now() + 5000; Date.now() < deadline && rescheduled?.cron !== '0 */6 * * *'; await sleep(250))
+    rescheduled = await copyOf()
+  check('choosing another schedule writes it to the row', rescheduled?.cron === '0 */6 * * *', rescheduled?.cron)
+
+  await click('#app-copy-on')
+  await until(`document.getElementById('app-copy-on')?.checked === false && !document.getElementById('app-copy-as-of')`, v => v,
+    'turning it off never cleared the card').catch(e => bad('the switch turns the copy off', e.message))
+  check('turning it off deletes the row', await copyOf() === null)
+  const offToast = await until(`document.body.textContent`, t => /could not be told to stop serving/.test(t), 'no warning').catch(() => '')
+  check('with no Outpost to reach, the card warns the copy may still be serving', !!offToast)
+
+  await click('#app-copy-on')
+  const failedRefresh = await until(`document.getElementById('app-copy-refresh-error')?.textContent ?? ''`, t => !!t,
+    'the refresh the turn-on queued never landed on the card', 30_000).catch(e => e.message)
+  const turnedOn = await copyOf()
+  check('turning it on writes the row and queues a refresh now', turnedOn?.cron === '0 */6 * * *' && turnedOn?.status === 'failed', JSON.stringify(turnedOn)?.slice(0, 200))
+  check('the machine\'s refusal reaches the card', /The last refresh failed:/.test(failedRefresh), failedRefresh)
+
   // ─── Your settings ─────────────────────────────────────────────────────
   console.log('\n  /settings/ — the caller\'s own account')
   await goto('/settings/')

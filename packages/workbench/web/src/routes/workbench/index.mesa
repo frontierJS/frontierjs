@@ -372,7 +372,9 @@ title: Workbench
       }
     }
     const wants = (p) => p.status.state === 'working' || unreadOf(p.status) || needsYou(p.status) ? 0 : 1
-    const top = ordered(pins).map((p, i) => ({ p, i })).sort((a, b) => wants(a.p) - wants(b.p) || a.i - b.i)
+    // Then the shown chat's hand-moved place: intake before review, finished last, a card with no row between.
+    const place = (p) => { const w = p.status.chats?.find(c => c.id === p.status.chat)?.place; return w === 'intake' ? 0 : w === 'review' ? 1 : w === 'finished' ? 3 : 2 }
+    const top = ordered(pins).map((p, i) => ({ p, i })).sort((a, b) => wants(a.p) - wants(b.p) || place(a.p) - place(b.p) || a.i - b.i)
       .slice(0, FIRST).map(x => x.p.id)
     stage = { cols: Math.max(1, top.length), cells: top }
     keep()
@@ -821,6 +823,12 @@ title: Workbench
   async function choosePackage(p, c, pkg) {
     if (pkg === c.chosen) return
     if (await act('setPackage', p, { chat: c.id, package: pkg })) await loadPins()
+  }
+  // A tied chat's card moves by hand only; the run's state overlays it (FJS-D1176, FJS-D2009).
+  const PLACES = ['intake', 'review', 'finished']
+  async function choosePlace(p, c, place) {
+    if (place === c.place) return
+    if (await act('setPlace', p, { chat: c.id, place })) await loadPins()
   }
   const shortOf    = (path) => path.split('/').at(-1)
   const inferredOf = (c) => c.chosen == null ? (c.package ? `${shortOf(c.package.path)} · inferred` : 'repo-wide') : ''
@@ -1558,6 +1566,15 @@ title: Workbench
                           {#if c.about}
                             <a class="workbench-chat-about text-xs" href={`/atlas/#${encodeURIComponent(c.about.id)}`}
                                data-about={c.about.id} title={`${c.about.title} — open in the Atlas`}>{c.about.id}</a>
+                            <DropdownMenu placement="bottom-start" class="workbench-chat-place">
+                              {#snippet trigger()}
+                                <button type="button" class="workbench-chat-pkg-open text-xs" data-place={c.place} aria-label={`Place of ${chatTitle(c)}`}
+                                        title={`${c.place} — move this card by hand`}>{c.place} ⌄</button>
+                              {/snippet}
+                              {#each PLACES as w (w)}
+                                <DropdownItem radio checked={c.place === w} data-place={w} onclick={() => choosePlace(p, c, w)}>{w}</DropdownItem>
+                              {/each}
+                            </DropdownMenu>
                           {/if}
                           {#if p.members?.length}
                             <DropdownMenu placement="bottom-start" class="workbench-chat-pkg">

@@ -41,6 +41,7 @@
 //   POST /workbench/:id           importSession { session } — a terminal session adopted as a chat, shown; the next message resumes it
 //   POST /workbench/:id           nextFor     { chat? } — the top ready rows of `fli next` (the Atlas's cached ranking) for the chat's chosen package, repo-wide where none
 //   POST /workbench/:id           setPackage  { chat, package } — a member path, '.' for repo-wide, or null to infer it
+//   POST /workbench/:id           setPlace    { chat, place } — a tied chat's card moved by hand: intake, review or finished (FJS-D2009)
 //   POST /workbench/:id           stop · seen · unpin
 //   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy?, preview? }
 //   POST /workbench/:id           run         { row } — started detached by row id, never by command
@@ -60,7 +61,7 @@ import { readAtlas, nextRows }     from '../../domain/atlas/atlas.ts'
 import type { Opened, PreviewSettings } from '../../domain/workbench/workbench-preview.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan', 'importable', 'nextFor']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'importSession', 'setPackage', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'importSession', 'setPackage', 'setPlace', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt']
 
 const wb = () => $.app.workbench
 
@@ -370,6 +371,13 @@ export default createService({
   async setPackage() {
     const p = pinned()
     const r = await wb().setPackage(p.id, $.data)
+    if ('refused' in r) throw new BadRequest(r.refused)
+    return r
+  },
+
+  async setPlace() {
+    const p = pinned()
+    const r = wb().setPlace(p.id, $.data)
     if ('refused' in r) throw new BadRequest(r.refused)
     return r
   },

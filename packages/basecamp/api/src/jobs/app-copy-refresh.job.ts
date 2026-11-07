@@ -1,8 +1,8 @@
 // src/jobs/app-copy-refresh.job.ts
 // Re-stages one app's read-only copy and records the answer on its `AppCopy`
-// row, and is the one place that asks a machine to serve one (`POST
-// /replica/serve`, Invariant 4). Dispatched as `app-copy:refresh` by the
-// row's `cron`.
+// row, and is the one place that asks a machine to serve one or to stop
+// (`POST /replica/serve`, `/replica/unserve`, Invariant 4). Dispatched as
+// `app-copy:refresh` by the row's `cron` and by `appCopies` turning one on.
 //
 // ─── One step, and the old copy stays on failure ──────────────────────────
 //
@@ -85,6 +85,29 @@ export async function refreshCopy(app: App, opts: {
   const asOf = reply.data?.as_of
   if (typeof asOf !== 'string' || !Number.isFinite(Date.parse(asOf))) return failed('the outpost answered no as_of for the copy')
   return finish({ status: 'success', asOf, error: null })
+}
+
+// ─── Off ──────────────────────────────────────────────────────────────────
+//
+// Outpost keeps a copy up until it is told otherwise, so a row turned off, a
+// row moved to another machine and an app deleted each owe its old machine
+// this call. An unreachable machine does not block the change: the answer
+// says the copy may still be serving, the way `retireFromMachine` does.
+
+export type CopyMachineAnswer = { ok: true; removed: string[] } | { ok: false; why: string }
+
+/** Ask the machine a copy was on to stop serving it and drop its staging. */
+export async function unserveCopy(app: App, appId: string, serverId: string, serverName?: string): Promise<CopyMachineAnswer> {
+  const executor = await executorOn(app, serverId, serverName)
+  if (!isExecutor(executor)) {
+    app.logger.warn(`copy of app ${appId} left on ${serverName ?? serverId}: ${executor.reason}`)
+    return { ok: false, why: executor.reason }
+  }
+  const reply = await executor.call('/replica/unserve', { app_id: appId })
+    .catch((err: Error) => ({ error: { message: err.message } }) as Awaited<ReturnType<typeof executor.call>>)
+  if (!reply.error) return { ok: true, removed: (reply.data?.removed as string[] | undefined) ?? [] }
+  app.logger.warn(`copy of app ${appId} still serving on ${serverName ?? serverId}: ${reply.error.message}`)
+  return { ok: false, why: reply.error.message }
 }
 
 // ─── The scheduled fire ───────────────────────────────────────────────────

@@ -1,0 +1,9 @@
+<script module>
+  // src/resources/AppCopy.mesa — the Resource layer.
+  //
+  // No `model:` — `appCopies` is the schema's own plural of `AppCopy`. The
+  // card that writes it is `components/ReadOnlyCopy.mesa`.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const appCopies = createResource('appCopies')
+</script>

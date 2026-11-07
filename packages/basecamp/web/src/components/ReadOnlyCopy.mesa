@@ -1,0 +1,159 @@
+<script>
+  // ReadOnlyCopy.mesa — an App's read-only copy turned on or off, its refresh
+  // schedule and its machine (`IDEAS/read-only-copy.md` 2.1, `FJS-D2001`).
+  //
+  // Drawn for an administrator only: `AppCopy` is `@@gate(5)` for reads as
+  // well, so a developer's card could say nothing true about it.
+  //
+  // It POLLS while a refresh is unsettled, as AppBackups does: the job writes
+  // the outcome at system, and that write announces nothing.
+  import { appCopies } from '../resources/AppCopy.mesa'
+  import { servers }   from '../resources/Server.mesa'
+  import { at, ago }   from '../lib/datetime.js'
+
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card   from '@frontierjs/ui/components/layout/Card.mesa'
+  import Pill   from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select from '@frontierjs/ui/components/forms/Select.mesa'
+  import Switch from '@frontierjs/ui/components/forms/Switch.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
+
+  export let app = null
+
+  const SCHEDULES = [
+    { value: '0 3 * * *',   label: 'Nightly, 03:00' },
+    { value: '0 */6 * * *', label: 'Every 6 hours' },
+    { value: '0 * * * *',   label: 'Hourly' },
+    { value: '0 3 * * 0',   label: 'Weekly, Sunday 03:00' },
+  ]
+  const STATUS_TONE = { success: 'success', failed: 'danger', timeout: 'danger', running: 'info', pending: 'info' }
+
+  let copy     = null
+  let machines = []
+  let loading  = true
+  let error    = null
+  let busy     = false
+  let serverId = ''
+  let cron     = SCHEDULES[0].value
+
+  // A cron set some other way is offered as itself, not snapped to a preset.
+  $: schedules = copy && !SCHEDULES.some(s => s.value === copy.cron)
+    ? [...SCHEDULES, { value: copy.cron, label: copy.cron }]
+    : SCHEDULES
+  $: machineName = (id) => machines.find(m => m.id === id)?.name ?? id
+
+  async function load() {
+    try {
+      const [rows, fleet] = await Promise.all([
+        appCopies.service.find({ appId: app.id }, { limit: 1 }),
+        machines.length ? null : servers.service.find({}, { limit: 200 }),
+      ])
+      if (fleet) machines = fleet.data
+      copy  = rows.data[0] ?? null
+      error = null
+      if (copy) { serverId = copy.serverId; cron = copy.cron }
+      else if (!serverId) serverId = (machines.find(m => m.status === 'online') ?? machines[0])?.id ?? ''
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  // A row with no status is a refresh queued; one the queue never runs would
+  // poll forever, so watching stops ten minutes after the last act.
+  $: unsettled = !!copy && (copy.status == null || copy.status === 'pending' || copy.status === 'running')
+  let poll = null
+  let watchUntil = Date.now() + 600_000
+  function watch() {
+    clearTimeout(poll)
+    if (!unsettled || Date.now() > watchUntil) return
+    poll = setTimeout(async () => { await load(); watch() }, 2000)
+  }
+  $: unsettled, () => watch()
+  $.onDestroy(() => clearTimeout(poll))
+
+  // The off answer and a move say whether the old machine stopped serving;
+  // one that could not be reached may still be, and the person has to know.
+  function leftBehind(machine, name) {
+    if (machine && !machine.ok) toasts.warning(`${name} could not be told to stop serving the copy: ${machine.why}`)
+  }
+
+  async function act(fn) {
+    error = null; busy = true
+    try { await fn() } catch (e) { error = e.message } finally { busy = false }
+  }
+
+  const turnOn = () => act(async () => {
+    copy = await appCopies.service.create({ appId: app.id, serverId, cron })
+    toasts.success(`Copy turned on. ${machineName(serverId)} is staging it now.`)
+    watchUntil = Date.now() + 600_000
+    watch()
+  })
+
+  const turnOff = () => act(async () => {
+    const was = copy
+    const answer = await appCopies.service.remove(was.id)
+    copy = null
+    leftBehind(answer.machine, machineName(was.serverId))
+    toasts.success('Copy turned off')
+  })
+
+  const change = (data) => act(async () => {
+    const from = copy.serverId
+    const answer = await appCopies.service.patch(copy.id, data)
+    copy = answer
+    leftBehind(answer.machine, machineName(from))
+    watchUntil = Date.now() + 600_000
+    watch()
+  })
+</script>
+
+<Card id="app-copy">
+  <div class="section-header">
+    <h2 class="h4">Read-only copy</h2>
+    {#if copy}
+      <Pill tone={STATUS_TONE[copy.status] ?? 'muted'} data-copy-status>{copy.status ?? 'waiting'}</Pill>
+    {/if}
+  </div>
+  <p class="text-sm text-muted">
+    This app's own API over its replica, on a machine of your choosing. It answers reads and refuses
+    every write, and is re-staged on the schedule below.
+  </p>
+
+  {#if error}
+    <article class="alert danger" id="app-copy-error"><div class="alert-content">{error}</div></article>
+  {/if}
+
+  {#if loading}
+    <p class="text-sm text-muted">Loading…</p>
+  {:else if !app.replicaDestinationId && !copy}
+    <p class="text-sm text-muted" id="app-copy-no-replica">
+      A copy is served from the app's replica, and this app names no replica destination.
+    </p>
+  {:else}
+    <Switch id="app-copy-on" label={copy ? 'On' : 'Off'} checked={!!copy} disabled={busy || (!copy && !serverId)}
+            onchange={(on) => on ? turnOn() : turnOff()} />
+
+    {#if copy}
+      <p class="text-sm" id="app-copy-as-of">
+        {#if copy.asOf}As of {at(copy.asOf)}{:else}No copy served yet{/if}
+        on <strong>{machineName(copy.serverId)}</strong>
+        {#if copy.refreshedAt} · last refreshed {ago(copy.refreshedAt)}{/if}
+      </p>
+      {#if copy.error}
+        <p class="text-sm text-danger" id="app-copy-refresh-error">The last refresh failed: {copy.error}</p>
+      {/if}
+    {/if}
+
+    <div class="cluster">
+      <Select id="app-copy-cron" label="Refresh" value={cron} options={schedules} disabled={busy}
+              onchange={(e) => { cron = e.target.value; if (copy && cron !== copy.cron) change({ cron }) }} />
+      <Select id="app-copy-machine" label="Machine" value={serverId} disabled={busy}
+              options={machines.map(m => ({ value: m.id, label: `${m.name} · ${m.status}` }))}
+              onchange={(e) => { serverId = e.target.value; if (copy && serverId !== copy.serverId) change({ serverId }) }} />
+    </div>
+  {/if}
+</Card>

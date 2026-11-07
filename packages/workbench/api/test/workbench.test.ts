@@ -497,6 +497,17 @@ describe('a chat about a register row', () => {
     expect((await wb.status(wb.getPin(id)!)).chats[1].about).toEqual({ id: 'FJS-D7', title: 'Gates' })
     expect(wb.tie(id, 'nope', { id: 'FJS-1', title: '' })).toEqual({ refused: expect.stringContaining("no chat 'nope'") })
 
+    // A tied chat starts in intake and moves only by hand; an untied one has no place (FJS-D2009).
+    const [tied, other] = wb.getPin(id)!.chats.map(c => c.id)
+    await wb.send(id, 'second')
+    const third = (await wb.fresh(id))!.chat
+    expect((await wb.status(wb.getPin(id)!)).chats.map(c => c.place)).toEqual(['intake', 'intake', null])
+    expect(wb.setPlace(id, { chat: tied, place: 'review' })).toHaveProperty('chats')
+    expect(wb.setPlace(id, { chat: tied, place: 'done' })).toEqual({ refused: expect.stringContaining("not 'done'") })
+    expect(wb.setPlace(id, { chat: third, place: 'review' })).toEqual({ refused: expect.stringContaining('no place to move') })
+    expect(wb.setPlace(id, { chat: 'nope', place: 'review' })).toEqual({ refused: expect.stringContaining("no chat 'nope'") })
+    expect((await wb.status(wb.getPin(id)!)).chats.map(c => [c.id, c.place])).toEqual([[tied, 'review'], [other, 'intake'], [third, null]])
+
     expect(() => refOf({ id: 'has space', title: 'x' })).toThrow('about is { id, title }')
     expect(refOf(undefined)).toBeNull()
     expect(refOf({ id: 'FJS-3', title: '  a\n  b  ' })).toEqual({ id: 'FJS-3', title: 'a b' })

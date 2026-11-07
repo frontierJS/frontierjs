@@ -16,7 +16,7 @@
 // environment's own client, so the autoloader, the global hooks and every
 // service definition are the ones production runs.
 
-import { test, expect, describe, beforeAll, afterAll, beforeEach } from 'bun:test'
+import { test, expect, describe, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test'
 import { dirname, join } from 'node:path'
 import { ensureCert }  from '@frontierjs/outpost/cert'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
@@ -6043,6 +6043,62 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         syncAppCopySchedule(env.app, app.id, null)
       }
       expect(onClock()).toBeNull()
+    })
+
+    // IDEAS/read-only-copy.md 2.1: the card's writes, each one leaving the clock
+    // agreeing with the row and the old machine told to stop.
+    describe('a copy turned on, moved and off', () => {
+      const copies  = (who: any) => env.as(who).service('appCopies')
+      const onClock = () => env.app.jobs.nextRuns().find((r: any) => r.name === appCopySchedule(app.id))?.cron ?? null
+      const sys     = () => env.system as any
+      afterEach(async () => {
+        await sys().appCopy.deleteMany({ where: { appId: app.id } })
+        syncAppCopySchedule(env.app, app.id, null)
+      })
+
+      test('an administrator\'s, on a machine of the workspace, with a cron the clock can hold, one per app', async () => {
+        await expect(copies(developer).create({ appId: app.id, serverId: server.id, cron: '0 3 * * *' })).rejects.toThrow()
+        await expect(copies(owner).create({ appId: app.id, serverId: server.id, cron: 'nightly' })).rejects.toThrow(/cron:/)
+        await expect(copies(owner).create({ appId: app.id, serverId: 'nope', cron: '0 3 * * *' })).rejects.toThrow(/Server 'nope' not found/)
+        expect(onClock()).toBeNull()
+
+        const made = await copies(owner).create({ appId: app.id, serverId: machine.id, cron: '0 3 * * *' }) as any
+        expect(made).toMatchObject({ appId: app.id, serverId: machine.id, cron: '0 3 * * *', requestedBy: expect.any(String) })
+        expect(onClock()).toBe('0 3 * * *')
+        await expect(copies(owner).create({ appId: app.id, serverId: server.id, cron: '0 4 * * *' })).rejects.toThrow(/already has a read-only copy/)
+        expect((await copies(owner).find({ appId: app.id }) as any).data.map((c: any) => c.id)).toEqual([made.id])
+        await expect(copies(developer).find({ appId: app.id })).rejects.toThrow()
+      })
+
+      test('a new cron moves the clock; a new machine unserves the old one and clears the as-of', async () => {
+        const made = await copies(owner).create({ appId: app.id, serverId: server.id, cron: '0 3 * * *' }) as any
+        await sys().appCopy.update({ where: { id: made.id }, data: { status: 'success', asOf: '2026-11-06T03:00:00.000Z' } })
+
+        await expect(copies(owner).patch(made.id, { cron: 'later' })).rejects.toThrow(/cron:/)
+        expect(await copies(owner).patch(made.id, { cron: '0 5 * * *' })).toMatchObject({ cron: '0 5 * * *', asOf: '2026-11-06T03:00:00.000Z' })
+        expect(onClock()).toBe('0 5 * * *')
+
+        await expect(copies(owner).patch(made.id, { serverId: 'nope' })).rejects.toThrow(/Server 'nope' not found/)
+        const moved = await copies(owner).patch(made.id, { serverId: machine.id }) as any
+        expect(moved).toMatchObject({ serverId: machine.id, status: null, asOf: null, machine: { ok: true } })
+        expect(onClock()).toBe('0 5 * * *')
+      })
+
+      test('off takes it off the clock and off its machine, and so does deleting the app', async () => {
+        const made = await copies(owner).create({ appId: app.id, serverId: machine.id, cron: '0 3 * * *' }) as any
+        expect(await copies(owner).remove(made.id)).toMatchObject({ id: made.id, machine: { ok: true } })
+        expect(onClock()).toBeNull()
+        expect(await sys().appCopy.findFirst({ where: { appId: app.id } })).toBeNull()
+
+        await copies(owner).create({ appId: app.id, serverId: machine.id, cron: '0 3 * * *' })
+        try {
+          expect(await env.as(owner).service('apps').remove(app.id)).toMatchObject({ copyMachine: { ok: true } })
+          expect(onClock()).toBeNull()
+        } finally {
+          await env.as(owner).service('apps').restore(app.id)
+        }
+        expect(onClock()).toBe('0 3 * * *')
+      })
     })
 
     // A refresh is one serve: the copy is stamped with the replica's time as

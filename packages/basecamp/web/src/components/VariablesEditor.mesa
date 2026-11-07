@@ -7,7 +7,7 @@
   // administrator reveals it on demand (`variables.reveal`, filed in the trail).
   import { variables, revealVariable, exportVariables, importVariables } from '../resources/Variable.mesa'
   import { session } from '../lib/session.js'
-  import { download } from '@frontierjs/ui/utils.js'
+  import { download } from '@frontierjs/ui/utils'
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'

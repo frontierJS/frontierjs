@@ -72,6 +72,7 @@ import ingressDns from '../../jobs/ingress-dns.job.ts'
 import { portHolders, serversOf, assertPortFree, allocatePort, withPortLock } from '../../domain/release/host-port.ts'
 import { restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from '../../jobs/app-backup-run.job.ts'
 import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule, syncAppCopySchedule } from '../../domain/job/job-schedule.ts'
+import { unserveCopy } from '../../jobs/app-copy-refresh.job.ts'
 import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -891,10 +892,13 @@ export default createService({
     syncAppBackupSchedule($.app, { id: target.id, backupCron: null, deletedAt: null })
     syncAppDrillSchedule($.app, { id: target.id, drillCron: null, deletedAt: null })
     syncAppCopySchedule($.app, target.id as string, null)
+    // The row stays for `restore`, whose next cron serves it again.
+    const copy = await $.db.asSystem().appCopy.findFirst({ where: { appId: target.id }, include: { server: true } })
+    const copyMachine = copy ? await unserveCopy($.app, target.id as string, copy.serverId, copy.server?.name) : undefined
     if (target.replicaDestinationId) await syncReplicasOf($.app, [target.id])
     // The Monitor carries no relation to cascade through.
     await syncManagedMonitor($.app, $.db.asSystem(), target.id as string)
-    return { ...removed, machine }
+    return { ...removed, machine, ...(copyMachine ? { copyMachine } : {}) }
   },
 
   async restore() {

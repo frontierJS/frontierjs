@@ -16786,6 +16786,18 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2010"></a>2026-11-07 · `FJS-D2010` — Q5 — When the tied row closes — Do nothing: the place stays where the hand left it and the badge shows the row as closed.
+
+Asked in [`IDEAS/workbench.md`](IDEAS/workbench.md) § Open questions. **A** was picked over **B** (Suggest `finished` with a one-tap notice when the row closes, never move it unasked).
+
+The paper's recommendation, taken as written: a closed row is already visible on the badge, and a notice for it is a fourth notice kind for a case the person caused by closing the row themselves. Revisit if cards pile up in `intake` with closed rows.
+
+### <a id="fjs-d2009"></a>2026-11-07 · `FJS-D2009` — Q4 — Where the hand-moved place lives — A `place` field on the tied chat (`'intake' | 'review' | 'finished'`, default `intake`), set by a control on the chat tab; the card sorts by its shown chat's place after needs-you and before the state sort, and a chat with no `about` has no place and no control. Named `finished`, not `done`, because `done` is a RunState and the two would read as one thing.
+
+Asked in [`IDEAS/workbench.md`](IDEAS/workbench.md) § Open questions. **A** was picked over **B** (Derive it from the register: an open row is `intake`, a row with a `review` or `proposed` marker is `review`, a closed row is `finished`; no stored field and no control).
+
+The paper's recommendation, taken as written: the row says *by the person's hand*, and a derived place cannot be moved by hand; B also makes a register edit silently move cards, which is the overlay D1176 forbids. The silence to guard: a chat whose row closes while its place stays `intake`, which Q5 is about. Enforcement `none` until a status-row test exists; the shape is one optional field and one three-way control.
+
 ### <a id="fjs-d2008"></a>2026-11-07 · `FJS-D2008` — Q3 — Stored rows or a live list — Fetched live on each visit and cached for the tab's lifetime, with a fetched-at time and a Refresh control; the token is the only stored thing.
 
 Asked in [`IDEAS/workbench.md`](IDEAS/workbench.md) § Open questions. **A** was picked over **B** (A `Server`-like table Workbench keeps, refreshed on demand, so the list survives offline and can carry notes).
