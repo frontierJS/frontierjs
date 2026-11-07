@@ -16,10 +16,30 @@ flags:
 ---
 
 <script>
-import { existsSync } from 'fs'
+import { existsSync, readdirSync } from 'fs'
 import { join, relative, resolve } from 'path'
 import { pathToFileURL } from 'url'
 import { spawn } from 'child_process'
+
+// With no accessibility bus, GTK and WebKit each print a warning at launch
+// that reads like a failure. Where the bus runs, a screen reader needs it.
+function shellEnv(url) {
+  const env = { ...process.env, FRONTIER_DESKTOP_URL: url }
+  if (!hasA11yBus()) {
+    env.NO_AT_BRIDGE ??= '1'
+    // WebKit's web process asks for the bus on its own; empty means don't.
+    env.WEBKIT_A11Y_BUS_ADDRESS ??= ''
+  }
+  return env
+}
+
+// The launcher can outlive its socket, so the directory alone proves nothing.
+function hasA11yBus() {
+  const runtime = process.env.XDG_RUNTIME_DIR
+  if (!runtime) return true
+  const dir = join(runtime, 'at-spi')
+  return existsSync(dir) && readdirSync(dir).length > 0
+}
 </script>
 
 **The window loads the screens' dev server, not the bundle.** A debug shell
@@ -129,7 +149,7 @@ if (flag.dry) {
 
 log.info(`window: ${relative(root, binary)} on ${url}${started.length ? ' — closing it stops what this started' : ''}`)
 const code = await new Promise((done) => {
-  const shell = spawn(binary, [], { cwd: surface, stdio: 'inherit', env: { ...process.env, FRONTIER_DESKTOP_URL: url } })
+  const shell = spawn(binary, [], { cwd: surface, stdio: 'inherit', env: shellEnv(url) })
   shell.on('error', (err) => { log.error(`The shell could not be started: ${err.message}`); done(1) })
   shell.on('exit',  (status, signal) => done(status ?? (signal ? 1 : 0)))
 })

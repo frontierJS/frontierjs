@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 74 models · 2 databases
+-- 75 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -1228,6 +1228,24 @@ CREATE TABLE IF NOT EXISTS "app_platform" (
 CREATE INDEX IF NOT EXISTS "idx_app_platform_appId" ON "app_platform" ("appId");
 CREATE INDEX IF NOT EXISTS "idx_app_platform_workspaceId" ON "app_platform" ("workspaceId");
 
+CREATE TABLE IF NOT EXISTS "app_copy" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "appId" TEXT NOT NULL UNIQUE,
+  "serverId" TEXT NOT NULL,
+  "cron" TEXT NOT NULL,
+  "status" TEXT,
+  "asOf" TEXT,
+  "error" TEXT,
+  "refreshedAt" TEXT,
+  "requestedBy" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_app_copy_serverId" ON "app_copy" ("serverId");
+
 CREATE TABLE IF NOT EXISTS "app_network" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "appId" TEXT NOT NULL,
@@ -1254,6 +1272,7 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   "branch" TEXT,
   "commitAuthor" TEXT,
   "builtImage" TEXT,
+  "imageSha256" TEXT,
   "swap" TEXT,
   "swapReason" TEXT,
   "platformVersion" TEXT,

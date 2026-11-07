@@ -233,11 +233,11 @@ title: Workbench
   function announce(s) {
     const p = pins.find(x => x.id === s.id)
     if (!p || document.hasFocus()) return
-    const q = s.questions?.[0]
+    const asking = needsOf(s)
     try {
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
-        new Notification(`${p.name}: ${q ? 'needs you' : s.state === 'done' ? 'done' : 'stopped with an error'}`, {
-          body: q ? markdownText(q.question) + (s.questions.length > 1 ? ` (+${s.questions.length - 1} more)` : '')
+        new Notification(`${p.name}: ${asking.length ? 'needs you' : s.state === 'done' ? 'done' : 'stopped with an error'}`, {
+          body: asking.length ? noticeText(asking[0]) + (asking.length > 1 ? ` (+${asking.length - 1} more)` : '')
             : s.cost != null ? `$${s.cost.toFixed(2)} · ${s.turns} turns` : '',
           tag:  `workbench-${s.id}`,
         })
@@ -280,7 +280,7 @@ title: Workbench
     const all     = Object.values(status)
     const working = all.filter(s => s.state === 'working').length
     const asking  = all.filter(s => needsYou(s)).length
-    const unread  = all.filter(s => s.unread && !needsYou(s)).length
+    const unread  = all.filter(s => unreadOf(s) && !needsYou(s)).length
     document.title = (working ? `● ${working} · ` : '') + (asking ? `? ${asking} · ` : '') + (unread ? `(${unread}) ` : '') + baseTitle
   }
 
@@ -371,7 +371,7 @@ title: Workbench
         return
       }
     }
-    const wants = (p) => p.status.state === 'working' || p.status.unread ? 0 : 1
+    const wants = (p) => p.status.state === 'working' || unreadOf(p.status) || needsYou(p.status) ? 0 : 1
     const top = ordered(pins).map((p, i) => ({ p, i })).sort((a, b) => wants(a.p) - wants(b.p) || a.i - b.i)
       .slice(0, FIRST).map(x => x.p.id)
     stage = { cols: Math.max(1, top.length), cells: top }
@@ -521,7 +521,7 @@ title: Workbench
   // tab did not see end counts as older than any it did.
   function waiting() {
     const asks = (p) => needsYou(status[p.id]) ? 0 : 1
-    return ordered(pins).filter(p => status[p.id]?.unread || needsYou(status[p.id]))
+    return ordered(pins).filter(p => unreadOf(status[p.id]) || needsYou(status[p.id]))
       .sort((a, b) => asks(a) - asks(b) || (endedAt[a.id] ?? 0) - (endedAt[b.id] ?? 0))
   }
 
@@ -708,8 +708,8 @@ title: Workbench
   }
 
   async function markSeen(p) {
-    if (!status[p.id]?.unread) return
-    status = { ...status, [p.id]: { ...status[p.id], unread: false } }
+    if (!unreadOf(status[p.id])) return
+    status = { ...status, [p.id]: { ...status[p.id], notices: status[p.id].notices.filter(n => n.kind !== 'unread') } }
     retitle()
     await act('seen', p)
   }
@@ -885,10 +885,15 @@ title: Workbench
 
   // A step stops on a `Q`; a run is no longer the thing to wait for once it
   // has, and seeing the chat does not answer it.
-  const needsYou = (s) => !!s?.questions?.length && s.state !== 'working'
-  const dotTone  = (id) => needsYou(status[id]) ? 'warning' : status[id]?.unread ? 'success' : TONE[status[id]?.state ?? 'idle']
+  // The notices that are *needs you* (`asks`, `question`) and the quieter one
+  // (`unread`); a `done` card that ended on a question is not finished.
+  const needsOf  = (s) => (s?.notices ?? []).filter(n => n.kind !== 'unread')
+  const unreadOf = (s) => (s?.notices ?? []).some(n => n.kind === 'unread')
+  const noticeText = (n) => n.kind === 'question' ? `${n.plan}: ${markdownText(n.question)}` : n.text
+  const needsYou = (s) => needsOf(s).length > 0 && s.state !== 'working'
+  const dotTone  = (id) => needsYou(status[id]) ? 'warning' : unreadOf(status[id]) ? 'success' : TONE[status[id]?.state ?? 'idle']
   const dotLabel = (id) => needsYou(status[id]) ? 'needs you' : LABEL[status[id]?.state ?? 'idle']
-  const asksOf   = (id) => (status[id]?.questions ?? []).map(q => `${q.plan}: ${markdownText(q.question)}`).join('\n')
+  const asksOf   = (id) => needsOf(status[id]).map(noticeText).join('\n')
 
   // A run is mostly tool calls; the chat shows the last few in a row and how
   // many came before them, so the words are not lost between the calls.
@@ -1176,11 +1181,13 @@ title: Workbench
   const openingOf = (p) => opening[p.id] ?? null
   function setOpening(p, v) { opening = { ...opening, [p.id]: v && { ...openingOf(p), ...v } } }
 
-  // The plan holding the first open question, shown on its Plan tab.
+  // Where the first needs-you notice stands: the chat that asked, or the plan
+  // holding the open question, on its Plan tab.
   async function toQuestion(p) {
-    const q = status[p.id]?.questions?.[0]
-    if (!q) return
-    if (q.plan !== p.plan) await openPlan(p, q.plan)
+    const n = needsOf(status[p.id])[0]
+    if (!n) return
+    if (n.kind === 'asks') return openChat(p, n.chat)
+    if (n.plan !== p.plan) await openPlan(p, n.plan)
     setTab(p, 'plan')
   }
 
@@ -1425,7 +1432,7 @@ title: Workbench
               <Dot tone={dotTone(p.id)} pulse={status[p.id]?.state === 'working'} label={dotLabel(p.id)} />
               <strong class="workbench-tile-name">{p.from ? '↳ ' : ''}{p.name}</strong>
               {#if needsYou(status[p.id])}<Badge tone="warning" class="workbench-needs">needs you</Badge>
-              {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+              {:else if unreadOf(status[p.id])}<Badge tone="success">new</Badge>{/if}
               <Button size="xs" treatment="ghost" onclick={() => toWings(p)} aria-label={`Move ${p.name} to the wings`} title="To the wings — a run there keeps going">⇥</Button>
             </span>
             <span class="text-sm text-muted workbench-now">{doing(p.id)}</span>
@@ -1562,8 +1569,8 @@ title: Workbench
                 {/if}
                 {#if needsYou(status[p.id])}
                   <Button size="xs" treatment="outlined" tone="warning" class="workbench-needs" onclick={() => toQuestion(p)}
-                          title={asksOf(p.id)}>needs you · {status[p.id].questions.length}</Button>
-                {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+                          title={asksOf(p.id)}>needs you · {needsOf(status[p.id]).length}</Button>
+                {:else if unreadOf(status[p.id])}<Badge tone="success">new</Badge>{/if}
                 {#if status[p.id]?.queued}<Badge tone="info">{status[p.id].queued} queued</Badge>{/if}
                 {#if staged().length > 1}
                   <Button size="xs" treatment="ghost" onclick={() => toggleZoom(p.id)} aria-pressed={zoomed() === p.id ? 'true' : 'false'}
@@ -2188,7 +2195,7 @@ title: Workbench
                    label={dotLabel(p.id)} />
               <strong class="workbench-tile-name">{p.from ? '↳ ' : ''}{p.name}</strong>
               {#if needsYou(status[p.id])}<Badge tone="warning" class="workbench-needs" title={asksOf(p.id)}>needs you</Badge>
-              {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+              {:else if unreadOf(status[p.id])}<Badge tone="success">new</Badge>{/if}
               {#if keyOf(p)}<kbd class="text-xs text-muted">{keyOf(p)}</kbd>{/if}
             </span>
             <span class="text-sm text-muted workbench-now">{doing(p.id)}</span>
@@ -2225,7 +2232,7 @@ title: Workbench
                   <Dot tone={dotTone(p.id)} pulse={status[p.id]?.state === 'working'} label={dotLabel(p.id)} />
                   <span class="workbench-tile-name">{p.from ? '↳ ' : ''}{p.name}</span>
                   {#if needsYou(status[p.id])}<Badge tone="warning" title={asksOf(p.id)}>needs you</Badge>
-                  {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+                  {:else if unreadOf(status[p.id])}<Badge tone="success">new</Badge>{/if}
                 </button>
                 <Button size="xs" treatment="ghost" onclick={() => fromBackstage(p.id)}
                         aria-label={`Bring ${p.name} back to the wings`} title="Back to the wings">⤒</Button>

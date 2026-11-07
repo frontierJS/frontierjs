@@ -37,6 +37,8 @@
 //   POST /workbench/:id           fresh       a new chat, shown — or the shown one, when it is still empty
 //   POST /workbench/:id           select      { chat } — the chat shown
 //   POST /workbench/:id           close       { chat } — forgotten here, what it cost kept; Claude Code keeps the session
+//   POST /workbench/:id           importable  the terminal sessions started in this folder that no chat holds, newest first (read from ~/.claude, not the index)
+//   POST /workbench/:id           importSession { session } — a terminal session adopted as a chat, shown; the next message resumes it
 //   POST /workbench/:id           setPackage  { chat, package } — a member path, '.' for repo-wide, or null to infer it
 //   POST /workbench/:id           stop · seen · unpin
 //   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy?, preview? }
@@ -55,8 +57,8 @@ import { describeRepo }            from '../../domain/local/local-git.ts'
 import { doneScript }              from '../../domain/workbench/workbench.ts'
 import type { Opened, PreviewSettings } from '../../domain/workbench/workbench-preview.ts'
 
-const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'setPackage', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt']
+const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan', 'importable']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'importSession', 'setPackage', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt']
 
 const wb = () => $.app.workbench
 
@@ -336,6 +338,18 @@ export default createService({
   async close() {
     const p = pinned()
     const r = await wb().close(p.id, body().chat)
+    if ('refused' in r) throw new Conflict(r.refused)
+    return r
+  },
+
+  async importable() {
+    const p = pinned()
+    return { sessions: await wb().importable(p.id) }
+  },
+
+  async importSession() {
+    const p = pinned()
+    const r = await wb().importSession(p.id, body().session)
     if ('refused' in r) throw new Conflict(r.refused)
     return r
   },

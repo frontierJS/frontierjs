@@ -7,7 +7,7 @@
 // a second store over a service the app already has; running the command does.
 
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, symlinkSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
@@ -417,6 +417,45 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
     const text = await Bun.file(join(CLI, 'commands/auth/create-user.md')).text()
     expect(text).toContain('await import(input.appAuth)')
     expect(text).toContain("'core/auth.ts'")
+  })
+
+  // FJS-D2004 — a deployed App takes its first owner from auth:dev-admin under
+  // NODE_ENV=production; the default login must still never land there.
+  test('auth:dev-admin in production refuses the default login and takes an explicit one', async () => {
+    const root = makeApp()
+    // The guard is the app's own @frontierjs/auth's (FJS-D2005), resolved from the app.
+    mkdirSync(join(root, 'node_modules/@frontierjs'), { recursive: true })
+    symlinkSync(join(CLI, '../auth'), join(root, 'node_modules/@frontierjs/auth'))
+    const saved = { NODE_ENV: process.env.NODE_ENV, ENCRYPTION_KEY: process.env.ENCRYPTION_KEY }
+    process.env.NODE_ENV = 'production'
+    process.env.ENCRYPTION_KEY ??= 'a'.repeat(64)
+    const devAdmin = async (flag) => {
+      global.projectRoot = root
+      global.fliRoot     = CLI
+      const events = []
+      const { Command } = await import('../core/runtime.js')
+      // The auth namespace's prelude (refuse, runAppScript) is read off the registry.
+      ;(await import('../core/registry.js')).buildRegistry()
+      const go = await Command({ file: join(CLI, 'commands/auth/dev-admin.md'), arg: [],
+        flag: { email: 'dev@knight.works', password: 'test1234', name: 'Dev Admin', role: 'admin', generic: false, dry: true, ...flag },
+        emit: (e) => { events.push(e) } })
+      // A refusal ends the run by throwing; the events say why.
+      await go().catch(err => { if (!err.refusal) throw err })
+      return events.map(e => `${e.level ?? e.type}: ${e.text}`).join('\n')
+    }
+    try {
+      expect(await devAdmin({})).toMatch(/error: Refused: this environment points at production/)
+      expect(await devAdmin({ email: 'owner@charter.test' })).toMatch(/error: Refused/)
+      expect(await devAdmin({ password: 'a-long-random-one' })).toMatch(/error: Refused/)
+      const explicit = await devAdmin({ email: 'owner@charter.test', password: 'a-long-random-one' })
+      expect(explicit).not.toMatch(/Refused/)
+      expect(explicit).toMatch(/dry: Would upsert owner@charter\.test/)
+      const text = await Bun.file(join(CLI, 'commands/auth/dev-admin.md')).text()
+      expect(text).not.toMatch(/Bun\.password|credential\.(create|update)/)
+    } finally {
+      for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : process.env[k] = v
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   // FJS-3205 / FJS-D1311 — a token in the query string is read by the analytics

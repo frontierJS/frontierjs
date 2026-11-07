@@ -90,7 +90,7 @@ import { childEnv }                    from '@frontierjs/junction'
 import { createHash, randomBytes }     from 'node:crypto'
 import {
   appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync,
-  readSync, renameSync, rmSync, statSync, writeFileSync,
+  readdirSync, readSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { basename, isAbsolute, join, posix, relative } from 'node:path'
 import { fileURLToPath }               from 'node:url'
@@ -102,6 +102,7 @@ import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings
 import { inventory, resolveArgv, servedBy, tail, type RunRecord, type Served } from './workbench-run.ts'
 import { endShell }                    from './workbench-shell.ts'
 import { workbenchContext }            from './workbench-context.ts'
+import { claudeConfigDir }             from '../claude/claude-scan.ts'
 
 export type Chat = {
   id:      string
@@ -112,6 +113,9 @@ export type Chat = {
   /** The package chosen on the tab: a member path, or `'.'` for repo-wide.
    *  Absent, or naming a member since gone, means inferred from its writes. */
   package?: string
+  /** Set when the chat adopts a terminal session: the title its log cannot
+   *  give yet, because the first message was typed in the terminal. */
+  title?:  string
 }
 
 export type Pin = {
@@ -246,7 +250,6 @@ export type PinStatus = {
   tool:    string | null
   cost:    number | null
   turns:   number | null
-  unread:  boolean
   queued:  number
   /** Moves whenever the transcript would: a screen refetches when it does. */
   rev:     string
@@ -262,13 +265,26 @@ export type PinStatus = {
   review:  { state: RunState, cost: number | null } | null
   /** Each dev server or script the Run tab started, and the ports an app holds. */
   runs:    Array<{ id: string, name: string, running: boolean, exit: number | null, stopped: boolean, ports: Served[] }>
-  /** Every unruled `Q` on every plan here — the plan's `blocking`, read off
-   *  each file. A step stops on one, so a run that ended with one standing is
-   *  waiting on the owner, seen or not. */
-  questions: OpenQuestion[]
+  /** Each condition standing on the run log, which one act clears (`FJS-D1176`
+   *  § 7): not a fifth state, so a card that reads `done` can still owe a
+   *  reply. */
+  notices: Notice[]
 }
 
 export type OpenQuestion = { plan: string, id: string, question: string }
+
+/** `unread`: a finished chat not yet seen; seeing it clears it. `question`:
+ *  an unruled plan `Q`, read off each file (a step stops on one, so a run that
+ *  ended with one standing waits on the owner, seen or not); only a ruling
+ *  clears it. `asks`: the chat's run ended on a question, `text` its last
+ *  line; the next message in that chat clears it. The last two are *needs
+ *  you*. */
+export type Notice =
+  | { kind: 'unread', chat: string }
+  | ({ kind: 'question' } & OpenQuestion)
+  | { kind: 'asks', chat: string, text: string }
+
+const ASK_MAX = 160
 
 type Folded = {
   offset:  number
@@ -317,6 +333,13 @@ const endsOnQuestion = (items: Item[]) => {
   return !!last && /\?[*_)"'`\s]*$/.test((last as { text: string }).text)
 }
 
+/** The question a reply ended on, as the one line a notice has room for. */
+const askOf = (items: Item[]): string => {
+  const last = items.findLast(i => i.kind === 'text') as { text: string } | undefined
+  const line = (last?.text ?? '').trim().split('\n').map(l => l.trim()).filter(Boolean).pop() ?? ''
+  return line.length > ASK_MAX ? `${line.slice(0, ASK_MAX - 1)}…` : line
+}
+
 // The operator's own day: the workbench runs only on their machine, so this
 // process's zone is theirs.
 export function dayOf(at: string | number | Date): string {
@@ -354,6 +377,19 @@ function killGroup(pid: number | null | undefined) {
 export const pinId = (path: string): string => createHash('sha1').update(path).digest('hex').slice(0, 12)
 
 const newChat = (forkOf: string | null = null): Chat => ({ id: randomBytes(4).toString('hex'), session: null, forkOf })
+
+/** What Claude Code names a session: a uuid, the stem of its transcript's file. */
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** A transcript's head is enough for its `cwd` and first prompt; the file can be hundreds of MB. */
+const PEEK_BYTES = 128 * 1024
+/** Claude Code's folder for a working directory: every character that is not a letter or digit becomes `-`. */
+const encodeCwd = (path: string) => path.replace(/[^a-zA-Z0-9]/g, '-')
+type ReadMessages = (text: string, o?: { final?: boolean }) => { file: { cwd: string | null, headless: boolean, title: string | null, firstPrompt: string | null, startedAt: string | null } }
+let usageMod: Promise<ReadMessages> | null = null
+const loadReadMessages = () => usageMod ??= import('@frontierjs/cli/core/claude-usage.js').then(m => (m as { readMessages: ReadMessages }).readMessages)
+
+/** A terminal session as the Import list shows it. */
+export type Importable = { session: string, title: string, at: string, headless: boolean }
 
 const TITLE_MAX = 60
 const titleOf = (text: string): string => {
@@ -444,8 +480,10 @@ const planPath = (input: unknown) => {
 
 export type Workbench = ReturnType<typeof createWorkbench>
 
-export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
+export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, configDir }: {
   dir?: string
+  /** Claude Code's config dir, where its transcripts are; `claudeConfigDir()` when unset. */
+  configDir?: string
   bin?: string
   /** `fli dev`'s sessions lock, where a branch's port block is held; the
    *  cli's own default when unset. */
@@ -996,13 +1034,12 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return {
       id: p.id, state, tool: state === 'working' ? f.run.tool : null,
       cost: f.run.cost, turns: f.run.turns,
-      unread: all.some(unread),
       queued: queues.get(p.id)?.length ?? 0,
       rev:    [shown.chat.id, shown.fold.offset, review?.fold.offset ?? 0, checks ? `${checks.state}@${checks.at}` : ''].join('.'),
       chat:    shown.chat.id,
       running: alive(p.pid) ? p.runChat : null,
       chats:   drawn.map(i => [all[i], pkgs[i]] as const).map(([c, pkg]) => ({
-        id: c.chat.id, title: c.fold.title, state: c.state,
+        id: c.chat.id, title: c.fold.title ?? c.chat.title ?? null, state: c.state,
         tool: c.state === 'working' ? c.fold.run.tool : null,
         asks: c.state === 'done' && c.fold.run.asks,
         unread: unread(c), session: c.chat.session, package: pkg,
@@ -1021,7 +1058,13 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       },
       review: review && { state: review.state, cost: review.fold.run.cost },
       runs:   await runsOf(p),
-      questions: await openQuestions(p),
+      // The needs-you notices lead, so a reader taking the first has the one to act on.
+      notices: [
+        ...all.filter(c => c.state === 'done' && c.fold.run.asks)
+          .map(c => ({ kind: 'asks', chat: c.chat.id, text: askOf(c.fold.items) }) as const),
+        ...(await openQuestions(p)).map(q => ({ kind: 'question', ...q }) as const),
+        ...all.filter(unread).map(c => ({ kind: 'unread', chat: c.chat.id }) as const),
+      ],
     }
   }
 
@@ -1613,6 +1656,76 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return updatePin(id, { chats, chat: shown, closedByDay })
   }
 
+  // ─── terminal sessions ────────────────────────────────────────────────
+
+  /** The head of a transcript, read for where it started and what was asked
+   *  first; null when the file cannot be read or records no `cwd`. */
+  async function peek(path: string): Promise<{ cwd: string, title: string | null, at: string, headless: boolean } | null> {
+    try {
+      const read = await loadReadMessages()
+      const fd = openSync(path, 'r')
+      let text: string
+      try {
+        const buf = Buffer.allocUnsafe(PEEK_BYTES)
+        text = buf.toString('utf8', 0, readSync(fd, buf, 0, PEEK_BYTES, 0))
+      } finally { closeSync(fd) }
+      const { file } = read(text)
+      if (!file.cwd) return null
+      const line = file.firstPrompt ? titleOf(file.firstPrompt) : file.title
+      return { cwd: file.cwd, title: line || null, at: file.startedAt ?? statSync(path).mtime.toISOString(), headless: file.headless }
+    } catch { return null }
+  }
+
+  /** The sessions started in this checkout's folder that no chat here holds,
+   *  newest first. A run of this app's own (`claude -p`, headless) is a
+   *  machine's work and is left out. */
+  async function importable(id: string, limit = 50): Promise<Importable[]> {
+    const p = getPin(id)
+    if (!p) return []
+    const folder = join(claudeConfigDir({ configDir }), 'projects', encodeCwd(p.path))
+    let names: string[]
+    try { names = readdirSync(folder) } catch { return [] }
+    const held = new Set(p.chats.map(c => c.session))
+    const files = names
+      .filter(n => n.endsWith('.jsonl') && SESSION_ID.test(n.slice(0, -6)) && !held.has(n.slice(0, -6)))
+      .map(n => { const path = join(folder, n); try { return { path, session: n.slice(0, -6), mtime: statSync(path).mtimeMs } } catch { return null } })
+      .filter((f): f is { path: string, session: string, mtime: number } => !!f)
+      .sort((a, b) => b.mtime - a.mtime)
+    const out: Importable[] = []
+    for (const f of files) {
+      if (out.length >= limit) break
+      const head = await peek(f.path)
+      if (!head || head.cwd !== p.path || head.headless) continue
+      out.push({ session: f.session, title: head.title ?? `Session ${f.session.slice(0, 8)}`, at: new Date(f.mtime).toISOString(), headless: false })
+    }
+    return out
+  }
+
+  /** Adopt a terminal session as a chat, shown: the next message resumes it,
+   *  and the history stays Claude Code's own. Refused by name for an id that
+   *  is no session, one with no transcript, one started in another folder
+   *  (`claude --resume` only finds a session under the folder it runs in),
+   *  and one a chat here already holds. */
+  async function importSession(id: string, session: unknown): Promise<{ chat: Chat } | { refused: string }> {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const sid = String(session ?? '').trim()
+    if (!SESSION_ID.test(sid)) return { refused: `'${sid}' is not a session id` }
+    const held = p.chats.find(c => c.session === sid)
+    if (held) return { refused: `${p.name} already has that session as a chat` }
+    const projects = join(claudeConfigDir({ configDir }), 'projects')
+    let folders: string[] = []
+    try { folders = readdirSync(projects) } catch { /* no Claude Code history here */ }
+    const path = folders.map(f => join(projects, f, `${sid}.jsonl`)).find(f => existsSync(f))
+    if (!path) return { refused: `no session '${sid}' in Claude Code's history on this machine` }
+    const head = await peek(path)
+    if (!head) return { refused: `session '${sid}' records no folder to resume it in` }
+    if (head.cwd !== p.path) return { refused: `that session ran in ${head.cwd}, not ${p.path} — Claude Code resumes a session only from the folder it started in` }
+    const chat: Chat = { ...newChat(), session: sid, title: head.title ?? `Session ${sid.slice(0, 8)}` }
+    updatePin(id, { chats: [...p.chats, chat], chat: chat.id })
+    return { chat }
+  }
+
   /** Choose a chat's package: a member path, `'.'` for repo-wide, or an
    *  explicit `null` to go back to inferring. A key left out is refused
    *  rather than read as a clear (Invariant 9). */
@@ -1639,7 +1752,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff, members, memberWrites,
-    send, stop, fresh, select, close, setPackage, seen, check, review, fork, land, commit, archive, archiveRefusal, recordOpened,
+    send, stop, fresh, select, close, importable, importSession, setPackage, seen, check, review, fork, land, commit, archive, archiveRefusal, recordOpened,
     runnables, run, halt, output, shellEnv, readPlan, buildPlan, go, next, tick, file, decide, openPlan, closePlan,
   }
 }

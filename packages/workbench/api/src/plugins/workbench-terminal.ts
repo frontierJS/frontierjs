@@ -1,12 +1,14 @@
-// src/plugins/workbench-terminal.ts — a shell in a pinned checkout, over a socket.
+// src/plugins/workbench-terminal.ts — a shell on this machine, over a socket.
 //
-// The Terminal tab of a workbench card: a real terminal (Bun's own PTY, no
-// native addon) in the pin's folder, as the operator's own account, streamed
+// The Terminal tab of a workbench card, and the /terminal/ page: a real
+// terminal (Bun's own PTY, no native addon) in the pin's folder, or in the
+// operator's home folder when there is no pin, as their own account, streamed
 // to xterm.js in the browser. Behind the workbench's refusal (LOCAL_MACHINE=1,
 // never under NODE_ENV=production) and at ADMINISTRATOR like its service —
 // this is the same power as a `claude -p` run with every permission, typed.
 //
-//   WS /ws/terminal/{pin}?workspace=&cols=&rows=
+//   WS /ws/terminal/{pin}?cols=&rows=   the pin's shell
+//   WS /ws/terminal?cols=&rows=         the home folder's shell
 //     ← text   what the terminal wrote
 //     → { i }  keystrokes, a paste
 //     → { r }  [cols, rows] — the pane was resized
@@ -14,7 +16,7 @@
 // Under /ws/ because both proxies already forward that prefix as a socket
 // (web/config/vite.config.js, deploy/caddyfile.mjs) and no other.
 //
-// With tmux on PATH the shell is a tmux session named for the pin
+// With tmux on PATH the shell is a tmux session named for the pin, or one of its own
 // (domain/workbench/workbench-shell.ts), so a closed socket — a tab switch, a reload, a
 // `bun --watch` restart — kills only the tmux CLIENT and the next socket
 // reattaches to the same shell. Without tmux the shell dies with its socket.
@@ -23,6 +25,7 @@
 // operator visits could open this one with their cookie; an Origin that is not
 // this machine is refused at the upgrade, before the credential is read.
 
+import { homedir }               from 'node:os'
 import { shellArgv }             from '../domain/workbench/workbench-shell.ts'
 import type { App }              from '@frontierjs/junction'
 
@@ -46,7 +49,7 @@ const clamp = (n: unknown, lo: number, hi: number, fallback: number) => {
 type Proc = ReturnType<typeof Bun.spawn> & { terminal?: { write(d: string): void, resize(c: number, r: number): void } }
 
 export function workbenchTerminal(app: App) {
-  app.ws('/ws/terminal/{pin}', {
+  const handlers: Parameters<App['ws']>[1] = {
     async open(ctx) {
       const user = ctx.user as (typeof ctx.user & { isAdmin?: boolean }) | null
       if (!user) return ctx.close(4001, 'Sign in first')
@@ -56,17 +59,21 @@ export function workbenchTerminal(app: App) {
       // The door grades its one member ADMINISTRATOR (auth.ts); a socket has no gate of its own.
       if (!user.isAdmin) return ctx.close(4003, 'The terminal is for the machine\'s owner')
 
-      const pin = app.workbench.getPin(ctx.route.pin)
-      if (!pin) return ctx.close(4004, `No pinned checkout '${ctx.route.pin}'`)
+      let shell = { id: null as string | null, path: homedir() }
+      if (ctx.route.pin !== undefined) {
+        const pin = app.workbench.getPin(ctx.route.pin)
+        if (!pin) return ctx.close(4004, `No pinned checkout '${ctx.route.pin}'`)
+        shell = pin
+      }
 
       const cols  = clamp(ctx.query.cols, 2, 500, 80)
       const rows  = clamp(ctx.query.rows, 2, 200, 24)
-      const argv  = shellArgv(pin.id, pin.path)
+      const argv  = shellArgv(shell.id, shell.path)
 
       // A UTF-8 character split across two reads must not become two U+FFFDs.
       const decoder = new TextDecoder()
       const proc = Bun.spawn(argv, {
-        cwd: pin.path,
+        cwd: shell.path,
         env: { ...app.workbench.shellEnv(), TERM: 'xterm-256color', COLORTERM: 'truecolor' },
         terminal: {
           cols, rows,
@@ -90,7 +97,8 @@ export function workbenchTerminal(app: App) {
       // tmux: the client goes and the session stays for the next socket.
       ;(ctx.locals.proc as Proc | undefined)?.kill()
     },
-  }, {
+  }
+  const options: Parameters<App['ws']>[2] = {
     // Typing and a held key are many small frames; the default 100/s would
     // close the socket under a key repeat.
     limits:  { maxFramesPerSecond: 0, maxInFlight: 0 },
@@ -98,5 +106,7 @@ export function workbenchTerminal(app: App) {
       const refused = originRefusal(req.headers.get('origin') ?? undefined)
       if (refused) return new Response(refused, { status: 403 })
     },
-  })
+  }
+  app.ws('/ws/terminal/{pin}', handlers, options)
+  app.ws('/ws/terminal',       handlers, options)
 }

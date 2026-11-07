@@ -33,7 +33,7 @@ import { tmpdir }                 from 'node:os'
 import { createHash }             from 'node:crypto'
 import { spawnSync }              from 'node:child_process'
 import { join }                   from 'node:path'
-import { gzipSync }               from 'node:zlib'
+import { gzipSync, gunzipSync }   from 'node:zlib'
 
 // Each app's data directory, `<APPS>/<app_id>/data`, which a deploy makes.
 const APPS = mkdtempSync(join(tmpdir(), 'outpost-apps-'))
@@ -331,12 +331,12 @@ describe('what the machine is asked to do', () => {
       const fake = fakeRunner({ 'git -C': { stdout: 'c0ffee\n' }, 'docker run --rm': { stdout: UPLOAD }, ...answers })
       const envs = []
       const run = async (argv, opts) => {
-        if (opts?.env) envs.push({ argv: argv.join(' '), env: opts.env })
+        if (opts?.env && argv[0] !== 'git') envs.push({ argv: argv.join(' '), env: opts.env })
         return fake.run(argv)
       }
       const workDir = mkdtempSync(join(tmpdir(), 'outpost-preview-'))
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, health: FAST, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+        docker: createDocker({ appsDir: APPS, health: FAST, run, workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
       })
       return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
     }
@@ -395,7 +395,7 @@ describe('what the machine is asked to do', () => {
         + '  Authentication failed (status: 400) [code: 9106]\n\nIf you think this is a bug, please open an issue\n🪵  Logs were written\n'
       const fake = fakeRunner({ 'git -C': { stdout: 'c0ffee\n' } })
       const run = async (argv) => argv.includes('deploy') ? { exitCode: 1, stdout: '', stderr: said } : fake.run(argv)
-      const docker = createDocker({ appsDir: APPS, health: FAST, run, workDir: mkdtempSync(join(tmpdir(), 'outpost-preview-')) })
+      const docker = createDocker({ appsDir: APPS, health: FAST, run, workDir: mkdtempSync(join(tmpdir(), 'outpost-preview-')), deployKeyDir: CONFIG.deployKeyDir })
       const server = createOutpostServer(CONFIG, { docker, inspector: createInspector({ run }), log: { warn() {}, error() {} } })
 
       const res = await send(server, 'POST', '/site/preview', BODY)
@@ -438,12 +438,12 @@ describe('what the machine is asked to do', () => {
       const fake = fakeRunner({ 'git -C': { stdout: COMMIT + '\n' }, 'docker run --rm': { stdout: DEPLOY }, ...answers })
       const envs = []
       const run = async (argv, opts) => {
-        if (opts?.env) envs.push({ argv: argv.join(' '), env: opts.env })
+        if (opts?.env && argv[0] !== 'git') envs.push({ argv: argv.join(' '), env: opts.env })
         return fake.run(argv)
       }
       const workDir = mkdtempSync(join(tmpdir(), 'outpost-publish-'))
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, health: FAST, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+        docker: createDocker({ appsDir: APPS, health: FAST, run, workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
       })
       return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
     }
@@ -462,6 +462,22 @@ describe('what the machine is asked to do', () => {
       expect(envs).toHaveLength(1)
       expect(argv().some(c => c.includes('cf-secret-token'))).toBe(false)
       expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.release`)
+    })
+
+    // A private repository's site step failed at the fetch while the image's
+    // clone of the same commit had just succeeded with the key.
+    test('every git names the App\'s deploy key', async () => {
+      const gits = []
+      const fake = fakeRunner({ 'git -C': { stdout: COMMIT + '\n' }, 'docker run --rm': { stdout: 'https://harbor.kobami.workers.dev\n' } })
+      const run = async (argv, opts) => { if (argv[0] === 'git') gits.push(opts?.env); return fake.run(argv) }
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ appsDir: APPS, health: FAST, run, workDir: mkdtempSync(join(tmpdir(), 'outpost-publish-')), deployKeyDir: CONFIG.deployKeyDir }),
+        inspector: createInspector({ run }), log: { warn() {}, error() {} },
+      })
+      await send(server, 'POST', '/site/publish', BODY)
+
+      expect(gits.length).toBeGreaterThan(1)
+      for (const env of gits) expect(env?.GIT_SSH_COMMAND).toContain(`-i '${join(CONFIG.deployKeyDir, 'app-1')}'`)
     })
 
     test('a branch no longer at the decided commit is refused before anything runs in a container', async () => {
@@ -498,12 +514,12 @@ describe('what the machine is asked to do', () => {
       const fake = fakeRunner({ 'git -C': { stdout: COMMIT + '\n' }, 'docker run --rm': { stdout: DEPLOY } })
       const envs = []
       const run = async (argv, opts) => {
-        if (opts?.env) envs.push({ argv: argv.join(' '), env: opts.env })
+        if (opts?.env && argv[0] !== 'git') envs.push({ argv: argv.join(' '), env: opts.env })
         if (argv.includes('--deployed')) { await fake.run(argv); return { exitCode: deployed, stdout: deployed === 3 ? '✗ thod-com has no deployment\n' : '', stderr: '' } }
         return fake.run(argv)
       }
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, health: FAST, run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+        docker: createDocker({ appsDir: APPS, health: FAST, run, workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
       })
       return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
     }
@@ -1442,7 +1458,10 @@ describe('what the machine is asked to do', () => {
       const { status, body: said } = await restore(server, body())
       expect(status).toBe(200)
       expect(said).toMatchObject({ data_dir: `${APPS}/ela/data`, files: 2, bytes: 8192, overwrite: false, replication: 'restarted' })
-      expect(said.databases).toEqual([{ name: 'main.db', at: 'latest', bytes: 16 }, { name: 'jobs.db', at: 'latest', bytes: 16 }])
+      expect(said.databases).toEqual([
+        { name: 'main.db', at: 'latest', as_of: '2026-10-25T12:00:00Z', bytes: 16 },
+        { name: 'jobs.db', at: 'latest', as_of: '2026-10-25T12:00:00Z', bytes: 16 },
+      ])
 
       const restores = calls.filter(a => a[1] === 'restore')
       expect(restores.map(a => a.at(-1))).toEqual([
@@ -1466,12 +1485,12 @@ describe('what the machine is asked to do', () => {
       const before = restoring()
       const { body: pinned } = await restore(before.server, body({ databases: ['main.db'], at: '2026-10-25T09:00:00Z' }))
       expect(before.calls.find(a => a[1] === 'restore')).toEqual(expect.arrayContaining(['-timestamp', '2026-10-25T09:00:00Z']))
-      expect(pinned.databases[0].at).toBe('2026-10-25T09:00:00Z')
+      expect(pinned.databases[0]).toMatchObject({ at: '2026-10-25T09:00:00Z', as_of: '2026-10-25T09:00:00Z' })
 
       const after = restoring()
       const { body: latest } = await restore(after.server, body({ databases: ['main.db'], at: '2026-10-25T15:00:00Z' }))
       expect(after.calls.find(a => a[1] === 'restore')).not.toContain('-timestamp')
-      expect(latest.databases[0].at).toBe('latest')
+      expect(latest.databases[0]).toMatchObject({ at: 'latest', as_of: '2026-10-25T12:00:00Z' })
     })
 
     test('a database the replica cannot restore fails the whole call in its words, and the volume is not touched', async () => {
@@ -1565,7 +1584,7 @@ describe('what the machine is asked to do', () => {
       const { status, body: said } = await drill(server, body())
       expect(status).toBe(200)
       expect(said).toMatchObject({ verified: true, verify: { ok: true, files: [{ name: 'main', rows: 12 }] } })
-      expect(said.databases).toEqual([{ name: 'app.db', at: 'latest', bytes: 16 }])
+      expect(said.databases).toEqual([{ name: 'app.db', at: 'latest', as_of: '2026-10-25T12:00:00Z', bytes: 16 }])
       const argv = calls.find(a => a[1] === 'run')
       expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '-e', 'ENCRYPTION_KEY', '-e', 'LOG_LEVEL', 'ghcr.io/x/ela:1', '--verify-only=/fjs-drill', '--json']))
       expect(argv).not.toContain('--without-key')
@@ -1614,19 +1633,30 @@ describe('what the machine is asked to do', () => {
     }
     const QUICK = { attempts: 3, intervalMs: 1, settleMs: 0 }
     // A daemon that keeps the copies it ran, so a second serve and an unserve
-    // see the first one. `answers.fetch` is what the copy's API says.
+    // see the first one. `answers.fetch` is what the copy's API says, and
+    // `answers.ltx` each database's newest LTX time, or null for a failed read.
     const serving = (answers = {}) => {
       const stageDir = mkdtempSync(join(tmpdir(), 'outpost-serve-'))
-      const calls = [], envs = [], copies = []
+      const calls = [], envs = [], copies = [], loadOpts = []
       const run = async (argv, opts = {}) => {
         calls.push(argv)
         const ok = (stdout = '') => ({ exitCode: 0, stdout, stderr: '' })
         if (argv[0] === '/usr/local/bin/litestream') {
-          if (argv[1] === 'ltx') return ok(JSON.stringify([{ timestamp: '2026-10-25T12:00:00Z' }]))
+          if (argv[1] === 'ltx') {
+            const time = answers.ltx?.[argv.at(-1).split('?')[0].split('/').pop()] ?? (answers.ltx ? null : '2026-10-25T12:00:00Z')
+            return time ? ok(JSON.stringify([{ timestamp: time }])) : { exitCode: 1, stdout: '', stderr: 'Error: access denied\n' }
+          }
           writeFileSync(argv[argv.indexOf('-o') + 1], 'SQLite format 3\0')
           return ok()
         }
         const line = argv.join(' ')
+        // `answers.held` is the images this daemon has; a tag lands there once tagged.
+        if (answers.held && line.startsWith('docker image inspect'))
+          return answers.held.includes(argv.at(-1)) ? ok(DIGEST + '\n') : { exitCode: 1, stdout: '', stderr: 'Error: No such image\n' }
+        if (argv[1] === 'tag') answers.held?.push(argv[3])
+        if (argv[1] === 'image' && argv[2] === 'ls') return ok((answers.held ?? []).filter(t => t.startsWith('fjs-copy-image:')).map(t => `${t}\n`).join(''))
+        if (argv[1] === 'load') loadOpts.push(opts)
+        if (argv[1] === 'load') return answers.load ?? ok(`Loaded image ID: sha256:${'cd'.repeat(32)}\n`)
         if (line.startsWith('docker network inspect')) return answers.network ?? { exitCode: 1, stdout: '', stderr: 'network fjs-copy not found' }
         if (line.startsWith('docker ps -a --filter label=fjs.copy=')) return ok(copies.map(c => `${c.container}\t${c.dir}\n`).join(''))
         if (line.startsWith('docker run -d')) {
@@ -1644,12 +1674,13 @@ describe('what the machine is asked to do', () => {
       }
       const fetch = answers.fetch ?? (async () => new Response('', { headers: { 'x-frontier-read-only': '2026-10-25T12:00:00Z' } }))
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, health: QUICK, run, fetch }), inspector: createInspector({ run }),
+        docker: createDocker({ appsDir: APPS, health: QUICK, run, fetch, restoreDir: join(stageDir, 'images') }), inspector: createInspector({ run }),
         replicator: createReplicator({ run, configPath: join(stageDir, 'litestream.yml'), stageDir }),
         log: { warn() {}, error() {} },
       })
       const staged = () => readdirSync(stageDir).filter(f => f.startsWith('ela-'))
-      return { server, calls, envs, copies, staged }
+      const images = () => existsSync(join(stageDir, 'images')) ? readdirSync(join(stageDir, 'images')) : []
+      return { server, calls, envs, copies, staged, images, loadOpts }
     }
     const post = async (server, path, body) => {
       const res = await send(server, 'POST', path, body)
@@ -1676,6 +1707,33 @@ describe('what the machine is asked to do', () => {
       expect(envs.at(-1)).toMatchObject({ FRONTIER_READ_ONLY_COPY: '2026-10-25T12:00:00Z', ENCRYPTION_KEY: 'k-secret' })
       // The staged copy is what the container reads, so it stays.
       expect(staged()).toHaveLength(1)
+    })
+
+    // A machine that stopped replicating on the 5th stages the 5th's data on the
+    // 7th; stamped with the clock it would claim to be current (`FJS-D1999`).
+    test('without `at`, the copy is as of the newest point any database reached, not the clock', async () => {
+      const { server, envs } = serving({ ltx: { 'main.db': '2026-11-05T09:00:00Z', 'audit.db': '2026-10-01T08:00:00Z' } })
+      const { status, body: said } = await post(server, '/replica/serve', body({ at: undefined, databases: ['main.db', 'audit.db'] }))
+      expect(status).toBe(200)
+      expect(said.as_of).toBe('2026-11-05T09:00:00Z')
+      expect(said.databases).toMatchObject([{ name: 'main.db', as_of: '2026-11-05T09:00:00Z' }, { name: 'audit.db', as_of: '2026-10-01T08:00:00Z' }])
+      expect(envs.at(-1).FRONTIER_READ_ONLY_COPY).toBe('2026-11-05T09:00:00Z')
+    })
+
+    test('an `at` past the newest point is stamped with that point, not the `at` asked for', async () => {
+      const { server, envs } = serving({ ltx: { 'app.db': '2026-11-05T09:00:00Z' } })
+      const { body: said } = await post(server, '/replica/serve', body({ at: '2026-11-07T00:00:00Z' }))
+      expect(said.as_of).toBe('2026-11-05T09:00:00Z')
+      expect(envs.at(-1).FRONTIER_READ_ONLY_COPY).toBe('2026-11-05T09:00:00Z')
+    })
+
+    test('a replica whose newest point cannot be read is refused before anything runs, and unstaged', async () => {
+      const { server, calls, staged } = serving({ ltx: {} })
+      const { status, body: said } = await post(server, '/replica/serve', body({ at: undefined }))
+      expect(status).toBe(500)
+      expect(said.error).toContain('cannot say how old it is')
+      expect(calls.some(a => a[1] === 'run')).toBe(false)
+      expect(staged()).toEqual([])
     })
 
     test('a caller cannot unset the variable through the release env', async () => {
@@ -1752,6 +1810,185 @@ describe('what the machine is asked to do', () => {
         expect(s.calls.some(a => a[1] === 'run')).toBe(false)
         expect(s.staged()).toEqual([])
       }
+    })
+
+    // ─── the image comes from the bucket when the machine never built it (FJS-D1914) ───
+    describe('the release image on a machine that does not hold it', () => {
+      const ARCHIVE = gzipSync('docker save bytes')
+      const SUM     = createHash('sha256').update(ARCHIVE).digest('hex')
+      const URL_    = 'https://s3.example.test/images/ela.tar.gz?X-Amz-Signature=abc'
+      const TAG     = `fjs-copy-image:${SUM}`
+      const RO      = { 'x-frontier-read-only': '2026-10-25T12:00:00Z' }
+      /** The image URL answers the archive; everything else is the copy's API. */
+      const bucket = (archive = ARCHIVE, gets = []) => async (u) => {
+        if (u === URL_) { gets.push(u); return new Response(archive) }
+        return new Response('', { headers: RO })
+      }
+      const ran = (calls) => calls.find(a => a[1] === 'run' && a[2] === '-d')
+      const imageArgs = { image: 'fjs-ela:1', digest: DIGEST, image_url: URL_, image_sha256: SUM }
+
+      test('a daemon holding the release digest downloads nothing and runs the digest', async () => {
+        const gets = []
+        const { server, calls } = serving({ held: [DIGEST], fetch: bucket(ARCHIVE, gets) })
+        expect((await post(server, '/replica/serve', body(imageArgs))).status).toBe(200)
+        expect(gets).toEqual([])
+        expect(calls.some(a => a[1] === 'load')).toBe(false)
+        expect(ran(calls)).toContain(DIGEST)
+      })
+
+      test('an archive already loaded under its cache tag is run, not fetched again', async () => {
+        const gets = []
+        const { server, calls } = serving({ held: [TAG], fetch: bucket(ARCHIVE, gets) })
+        expect((await post(server, '/replica/serve', body(imageArgs))).status).toBe(200)
+        expect(gets).toEqual([])
+        expect(calls.some(a => a[1] === 'load')).toBe(false)
+        expect(ran(calls)).toContain(TAG)
+      })
+
+      test('an image_url is fetched, loaded, tagged by its sha256 and the tag is what runs', async () => {
+        const gets = []
+        const { server, calls, images, loadOpts } = serving({ held: [], fetch: bucket(ARCHIVE, gets) })
+        const { status } = await post(server, '/replica/serve', body(imageArgs))
+        expect(status).toBe(200)
+        expect(gets).toEqual([URL_])
+        // The file goes in on stdin: a snap docker client cannot open one under a dotdir.
+        expect(calls.findIndex(a => a[1] === 'load')).toBeGreaterThan(-1)
+        expect(loadOpts.at(-1).stdinFile).toMatch(/\/images\/image-.*\.tar\.gz$/)
+        // The loaded id is the daemon's own, never the release's.
+        expect(calls.find(a => a[1] === 'tag')).toEqual(['docker', 'tag', `sha256:${'cd'.repeat(32)}`, TAG])
+        const argv = ran(calls)
+        expect(argv).toContain(TAG)
+        expect(argv).not.toContain(DIGEST)
+        // The download is removed once loaded.
+        expect(images()).toEqual([])
+      })
+
+      test('a name:tag load line is tagged as well', async () => {
+        const { server, calls } = serving({ held: [], fetch: bucket(), load: { exitCode: 0, stdout: 'Loaded image: fjs-ela:1\n', stderr: '' } })
+        expect((await post(server, '/replica/serve', body(imageArgs))).status).toBe(200)
+        expect(calls.find(a => a[1] === 'tag')).toEqual(['docker', 'tag', 'fjs-ela:1', TAG])
+      })
+
+      test('an object that is not the one saved is refused before docker load runs', async () => {
+        const { server, calls, images, staged } = serving({ held: [], fetch: bucket(gzipSync('someone else')) })
+        const { status, body: said } = await post(server, '/replica/serve', body(imageArgs))
+        expect(status).toBe(500)
+        expect(said.error).toContain('nothing was loaded')
+        expect(calls.some(a => a[1] === 'load')).toBe(false)
+        expect(calls.some(a => a[1] === 'run' && a[2] === '-d')).toBe(false)
+        expect(images()).toEqual([])
+        expect(staged()).toEqual([])
+      })
+
+      test('an image_url with no sha256, a bad sha256 or a non-http scheme is refused before anything is fetched', async () => {
+        for (const over of [{ image_sha256: undefined }, { image_sha256: 'xyz' }, { image_url: 'ftp://x/y' }, { image_url: 'nope' }]) {
+          const gets = []
+          const { server, calls } = serving({ held: [], fetch: bucket(ARCHIVE, gets) })
+          const { status, body: said } = await post(server, '/replica/serve', body({ ...imageArgs, ...over }))
+          expect(status).toBe(500)
+          expect(said.error).toMatch(/sha256|image_url/)
+          expect(gets).toEqual([])
+          expect(calls.some(a => a[1] === 'load' || a[1] === 'run' && a[2] === '-d')).toBe(false)
+        }
+      })
+
+      test('without an image_url the registry reference is used as before', async () => {
+        const { server, calls } = serving({ held: [] })
+        expect((await post(server, '/replica/serve', body({ image: 'ghcr.io/x/ela:1', digest: DIGEST }))).status).toBe(200)
+        expect(ran(calls)).toContain(`ghcr.io/x/ela:1@${DIGEST}`)
+      })
+
+      test('every other cache tag is dropped once the copy answers', async () => {
+        const OLD = `fjs-copy-image:${'9'.repeat(64)}`
+        const { server, calls } = serving({ held: [OLD], fetch: bucket() })
+        expect((await post(server, '/replica/serve', body(imageArgs))).status).toBe(200)
+        const removed = calls.filter(a => a[1] === 'image' && a[2] === 'rm').map(a => a[3])
+        expect(removed).toEqual([OLD])
+      })
+    })
+
+    describe('/image/export — the release image into the bucket', () => {
+      const url = 'https://s3.example.test/images/ela.tar.gz?X-Amz-Signature=abc'
+      const BYTES = 'x'.repeat(5000) + 'image layers'
+      const exporting = ({ held = [DIGEST], fetch, saved = { stdout: BYTES, exitCode: 0, stderr: '' } } = {}) => {
+        const calls = [], saves = []
+        const backupDir = join(mkdtempSync(join(tmpdir(), 'outpost-img-')), 'backups')
+        const run = async (argv) => {
+          calls.push(argv)
+          if (argv[1] === 'image' && argv[2] === 'inspect') return held.includes(argv.at(-1)) ? { exitCode: 0, stdout: 'id\n', stderr: '' } : { exitCode: 1, stdout: '', stderr: 'No such image' }
+          return { exitCode: 0, stdout: '', stderr: '' }
+        }
+        const stream = (argv) => {
+          saves.push(argv)
+          const one = (text) => new ReadableStream({ start(c) { if (text) c.enqueue(new TextEncoder().encode(text)); c.close() } })
+          return { stdout: one(saved.stdout), stderr: one(saved.stderr), exited: Promise.resolve(saved.exitCode), kill() {} }
+        }
+        const server = createOutpostServer(CONFIG, {
+          docker: createDocker({ appsDir: APPS, health: FAST, run, stream, fetch, backupDir }), inspector: createInspector({ run }),
+          log: { warn() {}, error() {} },
+        })
+        return { server, calls, saves, left: () => existsSync(backupDir) ? readdirSync(backupDir) : [] }
+      }
+      const exportIt = async (server, over = {}) => {
+        const res = await send(server, 'POST', '/image/export', { app_id: 'ela', image: 'fjs-ela:1', digest: DIGEST, upload_url: url, ...over })
+        return { status: res.status, body: await res.json() }
+      }
+
+      test('the saved image is gzipped, hashed and PUT to the URL, and nothing is left on disk', async () => {
+        const puts = []
+        const fetch = async (u, init) => {
+          puts.push({ u, init, bytes: new Uint8Array(await init.body.arrayBuffer()) })
+          return new Response(null, { status: 200 })
+        }
+        const { server, saves, left } = exporting({ fetch })
+        const { status, body: said } = await exportIt(server)
+        expect(status).toBe(200)
+        // The digest is saved where the daemon holds it, never the tag.
+        expect(saves).toEqual([['docker', 'save', DIGEST]])
+        expect(puts).toHaveLength(1)
+        expect(puts[0].u).toBe(url)
+        expect(puts[0].init.method).toBe('PUT')
+        expect(puts[0].init.headers['content-type']).toBe('application/gzip')
+        expect(new TextDecoder().decode(gunzipSync(puts[0].bytes))).toBe(BYTES)
+        expect(said).toEqual({ bytes: puts[0].bytes.length, sha256: createHash('sha256').update(puts[0].bytes).digest('hex'), uploaded: true })
+        expect(left()).toEqual([])
+      })
+
+      test('a held tag is saved when the digest is not held, and neither held is refused in plain words', async () => {
+        const a = exporting({ held: ['fjs-ela:1'], fetch: async () => new Response(null, { status: 200 }) })
+        expect((await exportIt(a.server)).status).toBe(200)
+        expect(a.saves).toEqual([['docker', 'save', 'fjs-ela:1']])
+        const b = exporting({ held: [], fetch: async () => { throw new Error('must not be called') } })
+        const { status, body: said } = await exportIt(b.server)
+        expect(status).toBe(500)
+        expect(said.error).toContain('no image to export')
+        expect(b.saves).toEqual([])
+      })
+
+      test('a bucket that refuses is answered in its words, not thrown, and the file is still removed', async () => {
+        const xml = '<?xml version="1.0"?><Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>'
+        const { server, left } = exporting({ fetch: async () => new Response(xml, { status: 403 }) })
+        const { status, body: said } = await exportIt(server)
+        expect(status).toBe(200)
+        expect(said).toMatchObject({ uploaded: false, upload_error: '403 AccessDenied: Access Denied' })
+        expect(said.sha256).toMatch(/^[0-9a-f]{64}$/)
+        expect(left()).toEqual([])
+      })
+
+      test('a docker save that fails is thrown with what docker said, and nothing is uploaded', async () => {
+        const { server, left } = exporting({ saved: { stdout: '', stderr: 'Error response from daemon: unable to export\n', exitCode: 1 }, fetch: async () => { throw new Error('must not be called') } })
+        const { status, body: said } = await exportIt(server)
+        expect(status).toBe(500)
+        expect(said.error).toContain('unable to export')
+        expect(left()).toEqual([])
+      })
+
+      test('a URL that is not http(s) or an option-shaped image is refused before docker runs', async () => {
+        const { server, saves } = exporting({ fetch: async () => { throw new Error('must not be called') } })
+        expect((await exportIt(server, { upload_url: 'ftp://x/y' })).status).toBe(500)
+        expect((await exportIt(server, { image: '--all-tags', digest: undefined })).status).toBe(500)
+        expect(saves).toEqual([])
+      })
     })
   })
 

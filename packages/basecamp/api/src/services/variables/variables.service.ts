@@ -17,6 +17,7 @@ import { sessionScope, workspaceChannel, getPagination, refuseProtectedForDevelo
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws } from '../../core/resource.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
+import { formatDotenv, parseDotenv } from '../../domain/release/dotenv.ts'
 
 /**
  * before/create hook: an app's variable takes its app's environment, which the
@@ -54,6 +55,48 @@ function placeValue(data: Record<string, unknown>, secret: boolean) {
   if (secret) { data.secretValue = data.value; delete data.value }
 }
 
+// ─── .env in and out ─────────────────────────────────────────────────────
+
+/** The scope a call names, `{ appId }` or `{ environmentId }`, as the rows in it and a file name. */
+async function namedScope(data: Record<string, unknown>) {
+  if (data.appId) {
+    const app = await db().app.findFirst({ where: { id: data.appId, workspaceId: ws() } })
+    if (!app) throw new NotFound(`App '${data.appId}' not found in this workspace`)
+    return { owner: { appId: app.id }, environmentId: app.environmentId, appId: app.id as string | null, slug: app.slug }
+  }
+  if (!data.environmentId) throw new BadRequest('Name the variables: appId or environmentId')
+  const env = await db().environment.findFirst({ where: { id: data.environmentId, workspaceId: ws() } })
+  if (!env) throw new NotFound(`Environment '${data.environmentId}' not found in this workspace`)
+  return { owner: { environmentId: env.id }, environmentId: env.id, appId: null, slug: env.slug }
+}
+
+interface VariableRow { id: string; key: string; value: string | null; isSecret: boolean; version: number }
+
+async function rowsIn(scope: { environmentId: string; appId: string | null }): Promise<VariableRow[]> {
+  const where = scope.appId ? { appId: scope.appId } : { environmentId: scope.environmentId, appId: null }
+  return db().variable.findMany({ where, orderBy: { key: 'asc' } }) as Promise<VariableRow[]>
+}
+
+/** Each secret's value through `reveal`, so every one is filed in the trail as a reveal is. */
+async function revealAll(rows: { id: string; isSecret: boolean }[]) {
+  const values: Record<string, string | null> = {}
+  for (const r of rows.filter(r => r.isSecret))
+    values[r.id] = ((await $.app.service('variables').call('reveal', r.id, {})) as { value: string | null }).value
+  return values
+}
+
+async function dotenvOf(withSecrets: boolean) {
+  const scope  = await namedScope(($.data ?? {}) as Record<string, unknown>)
+  const rows   = await rowsIn(scope)
+  const values = withSecrets ? await revealAll(rows) : {}
+  return {
+    filename: `${scope.slug}.env`,
+    text: formatDotenv(rows.map(r => ({ key: r.key, isSecret: r.isSecret, value: r.isSecret ? values[r.id] ?? null : r.value }))),
+  }
+}
+
+type ImportAction = 'create' | 'update' | 'unchanged' | 'skip'
+
 export default createService({
   name:  'variables',
   scope: keyScope('variables'),
@@ -68,6 +111,10 @@ export default createService({
     // Not `read: true`: a reveal is answered once and filed in the trail
     // under who asked, which is what a read is not.
     { method: 'reveal', gate: LEVELS.ADMINISTRATOR },
+    { method: 'export',        gate: LEVELS.READER, read: true },
+    // The call itself is a read; each secret it carries is a reveal of its own.
+    { method: 'exportSecrets', gate: LEVELS.ADMINISTRATOR, read: true },
+    { method: 'import',        gate: LEVELS.USER },
   ],
 
   async find() {
@@ -122,6 +169,70 @@ export default createService({
     // The announcement states the row, so the workspace's other tabs never see the value.
     $.dispatch = row
     return { id: row.id, key: row.key, value: held?.secretValue ?? null }
+  },
+
+  // ── export / exportSecrets — { appId } or { environmentId } → { filename, text } ──
+  //
+  // A secret is `KEY=` under `# secret` in `export`; `exportSecrets` is the
+  // administrator's file with the values in it.
+  export:        () => dotenvOf(false),
+  exportSecrets: () => dotenvOf(true),
+
+  // ── import — { appId | environmentId, text, secrets?, dryRun? } ──────
+  //
+  // Merges: a key in the file is created or its value replaced, and a key not
+  // in it is left alone. `secrets` lists the NEW keys to keep secret and,
+  // absent, the file's suggestion stands; a key already set keeps what it is.
+  // A secret given no value is kept as it is, so the file `export` wrote
+  // imports back without blanking one.
+  //
+  // Each row goes through `create` or `patch` here, so it is guarded, filed and
+  // announced as one typed by hand would be. That is not one transaction, and
+  // every line is checked before the first write; a second run of the same
+  // file finds the rows written and leaves them.
+  async import(ctx: ServiceContext) {
+    const data  = ($.data ?? {}) as Record<string, unknown>
+    if (typeof data.text !== 'string') throw new BadRequest('text is the .env file, as text')
+    const scope = await namedScope(data)
+    await guard(scope, ctx)
+
+    const { entries, problems } = parseDotenv(data.text)
+    if (problems.length) throw new BadRequest(`The file is not a .env this can read — ${problems.join('; ')}`)
+    const chosen = Array.isArray(data.secrets) ? new Set(data.secrets as string[]) : null
+
+    const existing = new Map((await rowsIn(scope)).map(r => [r.key, r]))
+    const heldIds  = [...existing.values()].filter(r => r.isSecret).map(r => r.id)
+    const heldRows = heldIds.length
+      ? await $.db.asSystem().variable.findMany({ where: { id: { in: heldIds } }, select: { id: true, secretValue: true } }) as { id: string; secretValue: string | null }[]
+      : []
+    const held     = new Map(heldRows.map(h => [h.id, h.secretValue]))
+
+    const plan = entries.map(e => {
+      const row = existing.get(e.key)
+      if (row) {
+        const now = row.isSecret ? held.get(row.id) : row.value
+        const action: ImportAction = row.isSecret && e.value === '' ? 'unchanged' : now === e.value ? 'unchanged' : 'update'
+        return { key: e.key, isSecret: row.isSecret, action, value: e.value, row }
+      }
+      const isSecret = chosen ? chosen.has(e.key) : e.suggestSecret
+      const action: ImportAction = isSecret && e.value === '' ? 'skip' : 'create'
+      return { key: e.key, isSecret, action, value: e.value, row: null, suggestSecret: e.suggestSecret }
+    })
+
+    const report = plan.map(({ value: _v, row: _r, ...shown }) =>
+      shown.action === 'skip' ? { ...shown, note: 'a secret with no value in the file — set it by hand' } : shown)
+    if (data.dryRun) { $.dispatch = false; return { applied: false, rows: report } }
+
+    const variables = $.app.service('variables')
+    for (const p of plan) {
+      if (p.action === 'create')
+        await variables.create({ ...scope.owner, key: p.key, value: p.value, isSecret: p.isSecret })
+      else if (p.action === 'update')
+        await variables.patch(p.row!.id, { value: p.value, version: p.row!.version })
+    }
+    // Each row announced itself; the report names no row to announce.
+    $.dispatch = false
+    return { applied: true, rows: report }
   },
 
   hooks: {

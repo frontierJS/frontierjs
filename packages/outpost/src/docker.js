@@ -21,6 +21,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, createWriteStream 
 import { createHash, randomBytes } from 'node:crypto'
 import { Readable }                from 'node:stream'
 import { pipeline }                from 'node:stream/promises'
+import { createGzip }              from 'node:zlib'
 import { validRelativePath, validName, LIMITS } from './static.js'
 import { ensureDeployKey }         from './deploy-key.js'
 import { chooseDockerfile, needsGenerated, exposedPort, linkedDeps, writeUnlinked, GENERATED_DIR } from './dockerfile.js'
@@ -81,8 +82,8 @@ export function isDigest(value) {
 }
 
 /** The default runner: Bun's own spawn, argv only, never a shell. */
-export async function spawnRun(argv, { timeoutMs = 600_000, cwd, env } = {}) {
-  const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe', cwd, ...(env ? { env: { ...process.env, ...env } } : {}) })
+export async function spawnRun(argv, { timeoutMs = 600_000, cwd, env, stdinFile } = {}) {
+  const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe', cwd, ...(stdinFile ? { stdin: Bun.file(stdinFile) } : {}), ...(env ? { env: { ...process.env, ...env } } : {}) })
 
   // A command with no bound is a queue that stalls forever on one wedged pull
   // — the same failure caravan names for a job with no timeout. So 0, null and
@@ -365,6 +366,11 @@ const UPLOAD_TIMEOUT_MS = 3_600_000
 const FETCH_TIMEOUT_MS = 3_600_000
 const SHA256 = /^[0-9a-f]{64}$/
 
+// A copy's machine loads the release image from the bucket and names it by the
+// archive's sha256. A release image id differs between a containerd image store
+// and the classic one, so the release's own id is never the name here.
+const COPY_IMAGE = 'fjs-copy-image'
+
 /** What a bucket said, short enough for a row: its XML `Code` and `Message`
  *  when it answered S3's shape, the first line of the body otherwise. */
 function bucketSaid(status, text) {
@@ -521,6 +527,67 @@ export function createDocker({
     if (!isDigest(digest)) return image
     const local = await run(['docker', 'image', 'inspect', '--format', '{{.Id}}', digest])
     return local.exitCode === 0 ? digest : `${image}@${digest}`
+  }
+
+  /** Whether this daemon holds the image `ref` names. */
+  async function holds(ref) {
+    return (await run(['docker', 'image', 'inspect', '--format', '{{.Id}}', ref])).exitCode === 0
+  }
+
+  /**
+   * The image a read-only copy runs, found in the order that downloads least:
+   * the release's digest where this daemon holds it (the App's own machine),
+   * the cache tag of an archive already loaded, the archive fetched from its
+   * URL, and last the registry reference. A fetched archive is hashed before
+   * `docker load` reads it, since a swapped object would otherwise be loaded
+   * and run with the copy's data mounted.
+   */
+  async function copyImage({ image, digest, imageUrl, imageSha256 }) {
+    if (imageSha256 !== undefined && (typeof imageSha256 !== 'string' || !SHA256.test(imageSha256)))
+      throw new Error('image_sha256 must be the image archive\'s sha256, 64 hex characters')
+    if (imageUrl !== undefined) {
+      let parsed
+      try { parsed = new URL(imageUrl) } catch { throw new Error('image_url is not a URL') }
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error(`image_url is ${parsed.protocol}, not http(s)`)
+      if (imageSha256 === undefined) throw new Error('a copy image by url needs the archive\'s sha256, 64 hex characters')
+    }
+    if (isDigest(digest) && await holds(digest)) return digest
+    const tag = imageSha256 === undefined ? null : `${COPY_IMAGE}:${imageSha256}`
+    if (tag && await holds(tag)) return tag
+    if (imageUrl === undefined) return reference(image, digest)
+
+    await mkdir(restoreDir, { recursive: true, mode: 0o700 })
+    const root = await realpath(restoreDir)
+    const file = `${root}/image-${imageSha256.slice(0, 12)}-${randomBytes(6).toString('hex')}.tar.gz`
+    try {
+      const res = await fetchFn(imageUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+      if (!res.ok) throw new Error(`the bucket refused the image: ${bucketSaid(res.status, await res.text().catch(() => ''))}`)
+      const hash = createHash('sha256')
+      await pipeline(
+        Readable.fromWeb(res.body),
+        async function* (chunks) { for await (const chunk of chunks) { hash.update(chunk); yield chunk } },
+        createWriteStream(file, { mode: 0o600 }),
+      )
+      const got = hash.digest('hex')
+      if (got !== imageSha256) throw new Error(`the image fetched is not the one saved (sha256 ${got}, expected ${imageSha256}) — nothing was loaded`)
+      // Over stdin: a snap docker client cannot open a file under a dotdir.
+      const loaded = await docker(['load'], { timeoutMs: FETCH_TIMEOUT_MS, stdinFile: file })
+      const line = loaded.split('\n').map(l => l.trim()).reverse().find(l => /^Loaded image(?: ID)?: \S+/.test(l))
+      if (!line) throw new Error(`docker load printed no image: ${loaded.slice(-200)}`)
+      await docker(['tag', line.replace(/^Loaded image(?: ID)?: /, ''), tag])
+      return tag
+    } finally {
+      await rm(file, { force: true })
+    }
+  }
+
+  /** Every cache tag but the one in use. A tag a running copy holds refuses
+   *  removal, which keeps that copy's image. */
+  async function dropOtherCopyImages(keep) {
+    const listed = await run(['docker', 'image', 'ls', '--format', '{{.Repository}}:{{.Tag}}', '--filter', `reference=${COPY_IMAGE}`])
+    if (listed.exitCode !== 0) return
+    for (const tag of String(listed.stdout ?? '').split('\n').map(l => l.trim()).filter(l => l.startsWith(`${COPY_IMAGE}:`) && l !== keep))
+      await run(['docker', 'image', 'rm', tag])
   }
 
   /** The bytes of a local image. `Id` rather than `RepoDigests[0]`: an image
@@ -766,6 +833,8 @@ export function createDocker({
     if (editor != null && (!preview || !/^https?:\/\/[^\s"'<>]+$/.test(editor)))
       throw new Error(preview ? `editor: ${JSON.stringify(editor)} is not an http(s) address` : 'a release carries no editor')
 
+    // A private repository answers only the App's deploy key, as the image's clone did.
+    const { keyPath } = await ensureDeployKey(deployKeyDir, appId, { run })
     const dir  = `${workDir}/${appId}.${preview ? 'preview' : 'release'}`
     // One install cache per site, shared by its previews and its releases.
     const cache = `${workDir}/${appId}.preview-cache`
@@ -775,7 +844,7 @@ export function createDocker({
 
     await scratch(dir, cache)
     try {
-      const commit = await checkout({ dir, repo: source.repo, branch })
+      const commit = await checkout({ dir, repo: source.repo, branch, env: gitEnv(keyPath) })
       if (expected != null && commit !== expected)
         throw new Error(`${branch} is at ${commit.slice(0, 7)}, not ${expected.slice(0, 7)} — it moved since the release was decided`)
       // fli's own test for a surface it made (`fli site:build`).
@@ -1472,10 +1541,15 @@ export function createDocker({
      * root, as the drill's does: an app uid could neither read the copy nor
      * write the sessions file beside it.
      *
+     * The image comes from `copyImage`: held here, else fetched from
+     * `imageUrl` (a pre-signed GET of what `exportImage` uploaded) and loaded
+     * under a tag named for `imageSha256`, so a machine that never built the
+     * release can serve it.
+     *
      * A chain of its own, not the App's: a copy touches none of the App's
      * containers or data, and a deploy must not wait behind a copy's boot.
      */
-    serveCopy: ({ appId, dir, image, digest, asOf, config = {} }) => serially(`${appId}#copy`, async () => {
+    serveCopy: ({ appId, dir, image, digest, imageUrl, imageSha256, asOf, config = {} }) => serially(`${appId}#copy`, async () => {
       checkAppId(appId)
       if (typeof image !== 'string' || !image) throw new Error('a copy needs the image of the release it serves')
       if (typeof asOf !== 'string' || !Number.isFinite(Date.parse(asOf))) throw new Error(`as_of '${asOf}' is not a time`)
@@ -1496,7 +1570,7 @@ export function createDocker({
       if (/[,:]/.test(src) || /[,:]/.test(dir)) throw new Error(`'${src}' has a ':' or ',' that a mount cannot carry`)
       await copyNetwork()
       const before = await copiesOf(appId)
-      const ref  = await reference(image, digest)
+      const ref  = await copyImage({ image, digest, imageUrl, imageSha256 })
       const name = `fjs-copy--${appId}-${Date.now().toString(36)}`
       const started = await run(['docker', 'run', '-d', '--name', name, '--restart', 'unless-stopped',
         '--network', COPY_NETWORK, '--user', '0:0',
@@ -1512,10 +1586,56 @@ export function createDocker({
         const ip = await copyAddress(name)
         await untilReadOnly({ name, url: `http://${ip}:${port}/` }, healthBudgetS(config.healthTimeout ?? null))
         for (const old of before) await run(['docker', 'rm', '-f', old.container])
+        await dropOtherCopyImages(ref).catch(() => {})
         return { container: name, upstream: `${ip}:${port}`, asOf, replaced: before }
       } catch (err) {
         await run(['docker', 'rm', '-f', name])
         throw err
+      }
+    }),
+
+    /**
+     * The release image saved, gzipped and PUT to `uploadUrl`, a pre-signed
+     * URL Basecamp minted (`FJS-D1914`): the bytes a copy's machine loads
+     * when it never built the release. `digest` is saved where this daemon
+     * holds it, else `image`. The sha256 is of the gzip bytes, which is what
+     * `copyImage` checks the fetched object against. The file is removed
+     * either way, since the image itself stays on this box; a refused upload
+     * is ANSWERED, as `/backup`'s is.
+     */
+    exportImage: ({ appId, image, digest, uploadUrl }) => serially(`${appId}#image`, async () => {
+      checkAppId(appId)
+      if (typeof uploadUrl !== 'string') throw new Error('upload_url is required')
+      checkUploadUrl(uploadUrl)
+      if (typeof image !== 'string' || !image || image.startsWith('-')) throw new Error('an image export needs the image of the release')
+      const ref = isDigest(digest) && await holds(digest) ? digest : await holds(image) ? image : null
+      if (!ref) throw new Error(`this machine holds neither ${isDigest(digest) ? `${digest} nor ` : ''}${image}, so there is no image to export — build or pull the release here first`)
+
+      await mkdir(backupDir, { recursive: true, mode: 0o700 })
+      const root = await realpath(backupDir)
+      const path = `${root}/image-${appId}-${randomBytes(6).toString('hex')}.tar.gz`
+      const proc = stream(['docker', 'save', ref])
+      const timer = setTimeout(() => proc.kill(), BACKUP_TIMEOUT_MS)
+      const stderr = new Response(proc.stderr).text().catch(() => '')
+      const hash = createHash('sha256')
+      let bytes = 0
+      try {
+        await pipeline(
+          Readable.fromWeb(proc.stdout), createGzip(),
+          async function* (chunks) { for await (const chunk of chunks) { hash.update(chunk); bytes += chunk.length; yield chunk } },
+          createWriteStream(`${path}.partial`, { mode: 0o600 }),
+        ).catch(err => { proc.kill(); throw err })
+        const exitCode = await proc.exited
+        if (exitCode !== 0) {
+          const said = (await stderr).trim().split('\n').slice(-3).join(' ')
+          throw new Error(`docker save ${ref} failed (exit ${exitCode}): ${said}`)
+        }
+        await rename(`${path}.partial`, path)
+        return { bytes, sha256: hash.digest('hex'), ...await putFile(uploadUrl, path) }
+      } finally {
+        clearTimeout(timer)
+        await rm(`${path}.partial`, { force: true })
+        await rm(path, { force: true })
       }
     }),
 
@@ -1624,10 +1744,13 @@ export function createDocker({
       // carries the bound itself and the client's is the backstop. The system
       // manager refuses a non-root caller (a drive, a CI runner) through
       // polkit, so one starts the unit in its own user manager instead —
-      // still a transient unit, run as that user.
+      // still a transient unit, run as that user. A unit with no description
+      // is described by its command line, which the journal then prints whole,
+      // secrets in a Job's command and seedOwner's password included.
       const user   = process.getuid?.() === 0 ? [] : ['--user']
       const result = await run([
         'systemd-run', ...user, '--no-ask-password', '--pipe', '--wait', '--collect', '--quiet',
+        '--description=outpost exec',
         `--property=RuntimeMaxSec=${Math.ceil(timeoutSeconds)}`,
         '--', 'sh', '-c', command,
       ], { timeoutMs: (timeoutSeconds + 10) * 1_000 })

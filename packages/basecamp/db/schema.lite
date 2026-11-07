@@ -2420,6 +2420,37 @@ model AppDrill {
   @@index([deploymentId])
 }
 
+// An app's read-only copy (`FJS-D1996`, `FJS-D2001`): its replica staged on
+// one machine and served by its live release image, re-staged on `cron`. The
+// row is the copy being on; machine and cron are required because a schedule
+// with nothing to serve it is a state no screen can explain. The outcome
+// columns are the newest refresh's: a failed one writes `error` and keeps the
+// `asOf` of the copy still serving, because Outpost leaves that one up.
+model AppCopy {
+  id          String     @id @default(uuid())
+  appId       String     @unique
+  app         App        @relation(fields: [appId], references: [id], onDelete: Cascade)
+  serverId    String
+  server      Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  cron        String     @trim @length(1, 100)
+
+  status      RunStatus? @system
+  // The replica's newest point, as Outpost answered it (`FJS-D1999`); never
+  // the moment it was staged.
+  asOf        DateTime?  @system
+  error       String?    @system @length(0, 2000)
+  refreshedAt DateTime?  @system
+
+  requestedBy String?
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @default(now()) @updatedAt
+
+  @@gate(5)
+  @@trail(audit)
+  @@index([serverId])
+}
+
 model AppNetwork {
   id        String   @id @default(uuid())
   appId     String
@@ -2463,6 +2494,9 @@ model Deployment {
   branch               String?      @system
   commitAuthor         String?      @immutable
   builtImage           String?      @system
+  // sha256 of the gzipped `docker save` in the App's replica bucket; null until
+  // the upload succeeds, and a copy on another machine cannot load without it.
+  imageSha256          String?      @system
   // Null on a release that started no container. `swapReason` is why a
   // stop-first release could not overlap; null on one nobody asked to.
   swap                 DeploySwap?  @system

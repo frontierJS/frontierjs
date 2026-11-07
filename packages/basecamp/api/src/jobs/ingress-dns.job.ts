@@ -5,7 +5,8 @@
 // its record cannot wait for a Domain's push to be written ahead of a CNAME.
 // The triggers are `domain:dns`'s, keyed by the App: `isIngressNamePublished`
 // written, a release landing, a machine entering or leaving `online` -- the last
-// two only for an App with no Domain (`ownRecordHolders`). Each
+// two only for an App with no Domain (`ownRecordHolders`) -- and the App deleted
+// with no Domain, whose record `ingressStep` removes (`FJS-4061`). Each
 // pushes the record through `edge.ingressStep` and the App's hosts to Caddy on
 // every machine running it, since the column decides whether the name is a host
 // or a redirect there.

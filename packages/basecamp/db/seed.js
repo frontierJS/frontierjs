@@ -672,6 +672,14 @@ export class BasecampSeeder extends Seeder {
                       startedAt: at.toISOString(), finishedAt: new Date(at.getTime() + 9_000).toISOString(), durationMs: 9_000,
                     },
                   })
+                  // A read-only copy refreshed nightly from the same replica.
+                  if (!(await sys.appCopy.findFirst({ where: { appId: app.id } })))
+                    await sys.appCopy.create({
+                      data: {
+                        appId: app.id, serverId: host.id, cron: '0 3 * * *', status: 'success',
+                        asOf: at.toISOString(), refreshedAt: new Date(at.getTime() + 60_000).toISOString(),
+                      },
+                    })
                 }
               }
 

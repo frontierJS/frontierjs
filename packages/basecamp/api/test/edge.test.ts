@@ -969,6 +969,36 @@ describe('a deleted App', () => {
     await gone(made)
   })
 
+  // A Charter run's App has no Domain (`FJS-4061`): no `domain:dns` job exists
+  // to carry the delete to the zone, so `ingress:dns` must.
+  const publishedBare = async () => {
+    const project = await sys().project.create({ data: { workspaceId: site.id, name: 'P', slug: `p-${tag()}` } })
+    const e       = await sys().environment.create({ data: { workspaceId: site.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    const lone    = await sys().app.create({ data: { workspaceId: site.id, environmentId: e.id, name: 'lone', slug: `lone-${tag()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    await sys().appServer.create({ data: { appId: lone.id, serverId: online.id, status: 'running' } })
+    await app.service('edge').call('ingressStep', lone.id)
+    expect(await until(() => ingressOf(lone.id), (r: any[]) => r.length > 0)).toMatchObject([{ mark: { appId: lone.id } }])
+    return { project, environment: e, app: lone }
+  }
+  const ingressGone = async (appId: string) =>
+    expect(await until(() => ingressOf(appId), (r: any[]) => r.length === 0, 2_000)).toEqual([])
+
+  test('with no Domain, it still takes its ingress record with it (FJS-4061)', async () => {
+    const made = await publishedBare()
+    await env.as(admin).service('apps').remove(made.app.id)
+    await ingressGone(made.app.id)
+  })
+
+  test('…and so does one deleted with its environment, or with its project', async () => {
+    const inEnv  = await publishedBare()
+    const inProj = await publishedBare()
+    await env.as(admin).service('environments').remove(inEnv.environment.id)
+    await env.as(admin).service('projects').remove(inProj.project.id)
+    await ingressGone(inEnv.app.id)
+    await ingressGone(inProj.app.id)
+  })
+
   test('in a workspace with no ingress zone, the delete still succeeds', async () => {
     const e = await sys().environment.create({ data: { workspaceId: bare.workspaceId, projectId:
       (await sys().project.create({ data: { workspaceId: bare.workspaceId, name: 'P', slug: `p-${tag()}` } })).id,

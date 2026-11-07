@@ -16,8 +16,9 @@ import { queueBackup }      from '../../jobs/backup-run.job.ts'
 import { hubApp, isHubApp } from '../host/host-machine.ts'
 import appBackupRun         from '../../jobs/app-backup-run.job.ts'
 import appDrillRun          from '../../jobs/app-drill-run.job.ts'
+import appCopyRefresh       from '../../jobs/app-copy-refresh.job.ts'
 import type { App }         from '@frontierjs/junction'
-import type { App as AppRow, Job } from '#db/schema.d.ts'
+import type { App as AppRow, AppCopy, Job } from '#db/schema.d.ts'
 
 /**
  * The caravan registration name for a job's schedule.
@@ -190,10 +191,31 @@ export function syncAppDrillSchedule(app: App, row: Pick<AppRow, 'id' | 'drillCr
     app.jobs.unschedule(appDrillSchedule(row.id))
 }
 
+// ─── An app's read-only copy ────────────────────────────────────────────────
+//
+// `AppCopy.cron` (`FJS-D2001`): the fire dispatches `app-copy:refresh`, which
+// reads the row again. Keyed by the app, because the row is one per app and a
+// deleted app's copy must leave the clock with it.
+
+export const appCopySchedule = (appId: string): string => `app:copy:${appId}`
+
+/** Make the copy's clock agree with its row; `null` is no copy. */
+export function syncAppCopySchedule(app: App, appId: string, row: Pick<AppCopy, 'cron'> | null, deleted = false): void {
+  if (row?.cron && !deleted)
+    app.jobs.schedule(
+      appCopySchedule(appId),
+      row.cron,
+      async () => { await app.jobs.dispatch(appCopyRefresh, { appId }, { queue: 'fleet', priority: 5, actor: null }) },
+      { queue: 'fleet' },
+    )
+  else
+    app.jobs.unschedule(appCopySchedule(appId))
+}
+
 // ─── restoreSchedules ────────────────────────────────────────────────────────
 //
 // Re-register every schedule the database holds: each live scheduled job and
-// each app's backup and drill, the hub App's among them.
+// each app's backup, drill and copy, the hub App's among them.
 //
 // A cron registration is in-process in both caravan and junction, so it does not
 // survive a restart on its own — and the only place a Job's schedule was ever
@@ -247,6 +269,16 @@ export async function restoreSchedules(app: App): Promise<number> {
       restored++
     } catch (err) {
       log.error('could not restore an app drill schedule', { appId: row.id, cron: row.drillCron, error: (err as Error).message })
+    }
+  }
+  const copies = await db.appCopy.findMany()
+  const live   = new Set((await db.app.findMany({ where: { id: { in: copies.map(c => c.appId) }, deletedAt: null }, select: { id: true } })).map(a => a.id))
+  for (const row of copies.filter(c => live.has(c.appId))) {
+    try {
+      syncAppCopySchedule(app, row.appId, row)
+      restored++
+    } catch (err) {
+      log.error('could not restore an app copy schedule', { appId: row.appId, cron: row.cron, error: (err as Error).message })
     }
   }
   return restored

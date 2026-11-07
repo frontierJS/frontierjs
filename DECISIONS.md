@@ -1869,6 +1869,30 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d2005"></a>2026-11-07 · `FJS-D2005` — Q11 — Where does the login upsert Q9's method runs live, when an App's image carries no cli — The upsert moves into `@frontierjs/auth` with a runnable entry; `auth:dev-admin` calls it and Q9's method runs it from the App's own `node_modules`; Q10's guard moves with it.
+
+Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **A** was picked over **B** (`@frontierjs/cli` becomes a production dependency of a generated App), **C** (Charter's Apps build from Basecamp's template, which clones the framework's `dev`), **D** (Q9's method sends the upsert inline with `bun -e`).
+
+The paper's recommendation, taken as written: auth owns credentials and every App image vendors it, so there is one first-owner path; B ships the cli in every production image, C serves only template-built Apps and only once pushed, D is a second copy of the upsert.
+
+### <a id="fjs-d2004"></a>2026-11-07 · `FJS-D2004` — Q10 — How does a production App take Q9's first owner, when `auth:dev-admin` refuses under `NODE_ENV=production` — In production `auth:dev-admin` still refuses the default `dev@knight.works` / `test1234` and accepts an explicit `--email` and `--password`.
+
+Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **A** was picked over **B** (a new command seeds a first owner only while the App has no users; `dev-admin` stays development-only), **C** (Q9's method runs it with `docker exec -e NODE_ENV=development`).
+
+The paper's recommendation, taken as written: Q6's ruling already draws the line at the default credentials on a public hostname, not at production; B is a second first-owner path and a new noun; C steps around the guard instead of answering it.
+
+### <a id="fjs-d2002"></a>2026-11-07 · `FJS-D2002` — Q9 — How does the deploy stage reach a deployed App to run Q6's `auth:dev-admin` — A Basecamp method on the run key's scope runs the App's own `auth:dev-admin` through Outpost; the password travels in the call and is kept only in the run record.
+
+Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **A** was picked over **B** (Charter ssh's to the box and runs the command in the container, as `deploy:repl` does; every run then holds root ssh), **C** (an App seeds its first owner at boot from Variables the run key already writes, when no user exists; every App ships that path and the password sits in the box env), **D** (reopen Q6's B: register through `POST /api/auth/register`).
+
+The paper's recommendation, taken as written: Basecamp is the owner of what it does to an App (Q8's reasoning), and D1896 keeps root ssh off a run; Kamal's `app exec`, Fly's `ssh console -C` and Heroku's `run` are each the platform's own call, not the client's ssh.
+
+### <a id="fjs-d2003"></a>2026-11-07 · `FJS-D2003` — A scope's variables go out and come in as a .env file — `variables.export` blanks a secret under `# secret`, `exportSecrets` is an administrator's and reveals each, and `import` previews then merges.
+
+Asked through the question tool, three calls, each the recommendation. **Secrets out:** `KEY=` under a `# secret` line, and an administrator may ask for the values, each one a `reveal` filed in the trail (picked over always blank, and over an administrator always getting values). Vercel's `env pull` blanks a sensitive variable; Heroku and Railway export every value. **A key already set:** the preview names each key new, changed or unchanged, and the apply writes the new and changed ones and removes nothing (picked over an optional sync that removes the rest, and over add-only). Render's *Add from .env* and Netlify's `env:import` merge. **Which keys come in secret:** the export's marker, or a name with a `KEY`, `SECRET`, `TOKEN` or `PASSWORD` segment, pre-ticked, every new row a toggle; a key already set keeps what it is, because `isSecret` is `@immutable` (picked over marker-only, and over every key secret).
+
+Two consequences of building it on the existing methods rather than beside them: a secret given no value (the export's blank) keeps what is set, so an export imports back without blanking a secret; and each row goes through `create` or `patch`, so the import is guarded, filed and announced per row and is not one transaction. Every line is checked before the first write, and a second run finds the rows written. Owner: `packages/basecamp/api/src/domain/release/dotenv.ts`, `variables.service.ts`, `services.test.ts` § variables, `web/test/verify.mjs` § the .env round trip.
+
 ### <a id="fjs-d1987"></a>2026-11-06 · `FJS-D1987` — Q1 — Who may follow a machine unit's journal (Phase 3) — Whoever may read the Server row: the `logs` source's rule, `$readAs` under the caller's claim.
 
 Asked in [`IDEAS/machine-visibility.md`](IDEAS/machine-visibility.md) § Open questions. **A** was picked over **B** (admin and above only, a check in the source).
@@ -16761,6 +16785,42 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2008"></a>2026-11-07 · `FJS-D2008` — Q3 — Stored rows or a live list — Fetched live on each visit and cached for the tab's lifetime, with a fetched-at time and a Refresh control; the token is the only stored thing.
+
+Asked in [`IDEAS/workbench.md`](IDEAS/workbench.md) § Open questions. **A** was picked over **B** (A `Server`-like table Workbench keeps, refreshed on demand, so the list survives offline and can carry notes).
+
+The paper's recommendation, taken as written: the provider's account is the one origin, and a stored list is a second copy of it that can disagree; the Running and Disk tabs already read live and cache nothing. The silence to guard: a cached list can be stale without saying so, which the fetched-at time answers. What must stay true: the screen writes no machine row and calls only list endpoints.
+
+### <a id="fjs-d2007"></a>2026-11-07 · `FJS-D2007` — Q2 — Which providers first — Hetzner and DigitalOcean: the two `ComputeProvider` names (`FJS-D1607`), each with a `list` in its conduit (`packages/conduits/conduit-hetzner`, `conduit-digitalocean`).
+
+Asked in [`IDEAS/workbench.md`](IDEAS/workbench.md) § Open questions. **A** was picked over **B** (Hetzner alone, the smaller slice).
+
+The paper's recommendation, taken as written: both conduits exist and expose the same `list(send)` shape, so the second provider is a row in a table, not a second client. Forge and Ploi both lead with the same two.
+
+### <a id="fjs-d2006"></a>2026-11-07 · `FJS-D2006` — Q1 — Where the list comes from — A, plus `~/.ssh/config` hosts shown beside the cloud machines, for hosts no account lists.
+
+Asked in [`IDEAS/workbench.md`](IDEAS/workbench.md) § Open questions. **C** was picked over **A** (Workbench keeps its own provider tokens as `@encrypted` rows in its own database (it already has `Member` + `Session` and encrypted fields for `ClaudeWrite.before`) and lists machines through a Conduit provider connector. Add and remove an account on the screen), **B** (Workbench keeps no token: it reads each provider's token from the developer's environment or the provider's own CLI config (`hcloud`, `doctl`) and lists through the same connector).
+
+The paper's recommendation, taken as written: the owner's pick in chat on 2026-11-03. A screen that says "no accounts yet, add one" works on a clean laptop, where B depends on what happens to be installed; the cost is a second token store beside Basecamp's `Secret`s, which is the price of independence. The ssh hosts are the machines no account lists, and reading them is the same `ssh -G` read Basecamp's `local-ssh.ts` already makes.
+
+### <a id="fjs-d2001"></a>2026-11-07 · `FJS-D2001` — Q13 — Where does Basecamp keep a copy's machine, schedule and last refresh — An `AppCopy` row, one per App: its existence is "on", `serverId` and `cron` are required, and the newest refresh's `asOf`, `status` and `error` are `@system` columns on it. PlanetScale's `BackupPolicy` keeps `last_ran_at` on the policy the same way, and Coolify added `last_execution_at` to its schedule row because its run history was awkward to alert from.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (A, plus an `AppCopyRefresh` row per run, the shape of Coolify's executions, Dokploy's `deployment` and AWS Backup's restore jobs. A timeline on the card, at the cost of a table and a retention rule from the start (Coolify prunes at 60 days, Dokploy keeps 10)), **C** (`copyCron`, `copyServerId`, `copyAsOf`, `copyError` on `App`, as `drillCron` is. Only Railway (`cronSchedule` on a service) and Dokku (per-service properties) do this, and neither has a control-plane database. A cron with no machine is a state it can write).
+
+The paper's recommendation, taken as written: the copy is a resource and its machine is a required partner of its schedule, which a row holds and two nullable columns do not. A refresh replaces the copy rather than adding evidence, so the newest `asOf` is all a reader needs; B is the reopen if the card wants a timeline.
+
+### <a id="fjs-d2000"></a>2026-11-07 · `FJS-D2000` — Q6 — When a lane counts as dirty — Dirty means "differs from what `syncLane` last wrote": record a sync marker (the main tree's diff digest) when a lane is opened or synced, and refuse only when the lane's diff differs from it.
+
+Asked in [`IDEAS/workbench-fli-files.md`](IDEAS/workbench-fli-files.md) § Open questions. **B** was picked over **A** (keep the strict refusal; the row says "has uncommitted changes — Remove will refuse". Built so), **C** (a second confirmation behind a `force` body field).
+
+The paper's recommendation, taken as written: it is the one reading under which the refusal means what the plan says (the lane holds work nothing else has), and a marker is one file per lane written by the writer that already syncs it. A is safe and useless on a working laptop; C puts the judgment on the person every time.
+
+### <a id="fjs-d1999"></a>2026-11-07 · `FJS-D1999` — Q12 — Which time is a copy of several databases as of — The newest across the databases. 1.8's case, a machine that stopped replicating yesterday, stops every database at yesterday, and a quiet one does not drag the stamp back. One database whose replication stopped while the rest ran is hidden in the header, though `/replica/serve` answers each database's own `as_of`.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (the oldest database's newest time. Never claims more than every database can back, but any quiet database (an audit file, a tenant nobody used this month) pulls it back, so a copy mostly reads older than it is), **C** (a heartbeat (MySQL's `pt-heartbeat`, a heartbeat table read beside Postgres's last replay time): Outpost writes a tick each minute into a small database it replicates per App, and the copy is as of that one. Exact for an idle App, at the cost of a new replicated file and a timer on every machine, and still blind to one database stopped alone).
+
+The paper's recommendation, taken as written: it answers 1.8's case whole and needs nothing new on the machine. B is the safe direction in theory and useless with tenants. C is the upgrade if an idle App's stamp ever misleads someone.
 
 ### <a id="fjs-d1998"></a>2026-11-07 · `FJS-D1998` — Q7 — How the services fli signs in to are documented on the screens — A sibling catalog, `services.js` beside `packages/cli/core/home.js`: one row per service with how fli signs in (an env key read from `requires:` and `CLOUDS`, a file, or an external CLI with its probe such as `gh auth status`) and a pointer to its Setup section. The actions are DERIVED from the command registry — every command whose `requires:` names the key or whose namespace is the service — never hand-written. Read by a Services tab on Laptop, a "used by" column on Settings' global env, `fli doctor` credential rows, and that configuration doc's § Credentials.
 

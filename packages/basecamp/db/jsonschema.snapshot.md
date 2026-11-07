@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-179 definitions · 74 models · 1 view · 44 types · 60 enums · 0 other
+180 definitions · 75 models · 1 view · 44 types · 60 enums · 0 other
 ```
 
 ## Definitions
@@ -66,6 +66,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppPlatform` | model |
 | `AppBackup` | model |
 | `AppDrill` | model |
+| `AppCopy` | model |
 | `AppNetwork` | model |
 | `Deployment` | model |
 | `DeploymentStep` | model |
@@ -1153,6 +1154,26 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `appId`, `serverId` · not accepted — `id`
 
+### `AppCopy`
+
+- gate `read:5 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `app` — belongsTo `App` via `appId` · on delete Cascade
+- relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `appId` | `string` | yes | — | — | — |
+| `serverId` | `string` | yes | — | — | — |
+| `cron` | `string` | yes | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
+| `status` | `RunStatus`? | — | — | `x-litestone-kind` | — |
+| `asOf` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` `x-litestone-kind` | — |
+| `refreshedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `requestedBy` | `string`? | — | — | — | — |
+
+**On create**: required — `appId`, `serverId`, `cron` · not accepted — `id`
+
 ### `AppNetwork`
 
 - gate `read:2 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
@@ -1194,6 +1215,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `branch` | `string`? | — | — | `x-litestone-kind` | — |
 | `commitAuthor` | `string`? | — | — | — | — |
 | `builtImage` | `string`? | — | — | `x-litestone-kind` | — |
+| `imageSha256` | `string`? | — | — | `x-litestone-kind` | — |
 | `swap` | `DeploySwap`? | — | — | `x-litestone-kind` | — |
 | `swapReason` | `string`? | — | — | `x-litestone-kind` | — |
 | `platformVersion` | `string`? | — | — | `x-litestone-kind` | — |

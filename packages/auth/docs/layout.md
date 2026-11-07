@@ -33,6 +33,10 @@ crypto.ts    hashing / token generation; the access token's sign and read
 totp.ts      RFC 6238 codes, base32, recovery codes — clockless, `at` is a
              parameter (`FJS-D261`). Published as `@frontierjs/auth/totp` so a
              seed or drive types a code with this copy, not its own HOTP.
+seed-login.ts  the one login upsert -- `fli auth:dev-admin` and Basecamp's
+             seedOwner run it as `bun node_modules/@frontierjs/auth/seed-login.ts`
+             with JSON on stdin; refuses the default login in production
+             (`FJS-D2004`, `FJS-D2005`)
 cleanup.ts   expired-row pruning — `auth.cleanup` on the instance, started in
              the plugin's work() and stopped at shutdown
 errors.ts    the auth error classes (each carries its own `status`)

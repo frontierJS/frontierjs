@@ -43,6 +43,18 @@ export function runtimeOf(row: Record<string, unknown>): Runtime {
   return out as Runtime
 }
 
+/** How the release's container starts — the snapshot's, falling back to the
+ *  app's columns only for a release that recorded none. */
+export function runtimeFor(snapshot: Record<string, unknown>, service: Record<string, unknown>): Runtime {
+  const runtime = (snapshot.runtime as Runtime | undefined) ?? runtimeOf(service)
+  // A snapshot taken before the App's first build holds no container port;
+  // the build adopted the Dockerfile's onto the App (`adoptContainerPort`),
+  // and a rollback to that release, which builds nothing, reads it there
+  // rather than mapping the host port to itself.
+  return runtime.containerPort == null && service.containerPort != null
+    ? { ...runtime, containerPort: service.containerPort as number } : runtime
+}
+
 /** An App's ingress record, named from its id so a rename rewrites nothing —
  *  and a customer who typed the CNAME by hand never has to again (`FJS-D561`).
  *  Outpost reads a host whose first label is the app id as this name. */

@@ -194,7 +194,16 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   so the install's firewall drops all but replies arriving on `fjs-copy0`, and
   renaming the bridge reopens every host listener to the copy. It is answered only
   once its API sends `x-frontier-read-only`; an answer without it is an older
-  framework running writable, refused and removed.
+  framework running writable, refused and removed. Its as-of is the newest
+  point the replica reached (`stage`'s `as_of`, `FJS-D1999`), never the clock:
+  a box that stopped replicating would otherwise serve old data as current. A
+  replica whose time cannot be read is refused, not stamped now.
+  A machine that never built the release loads its image from the bucket
+  (`FJS-D1914`): `/image/export` uploads a `docker save`, `/replica/serve` takes
+  `image_url` + `image_sha256`, hashes the download BEFORE `docker load`, and
+  tags it `fjs-copy-image:<sha256>`, never the release's own id (a containerd
+  store's differs from the classic one). The App's own machine, holding the
+  digest, downloads nothing.
 - **An image with a non-root `USER` runs as the app's own uid** (`FJS-D1484`),
   handed out from `APP_UID_BASE` and recorded in `uids.json`, never reused. The
   data directory is made root's 0700, so a root one-shot chowns it after the

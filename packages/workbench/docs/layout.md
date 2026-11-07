@@ -19,6 +19,7 @@ The file-by-file map. `CLAUDE.md` keeps the owners and the traps. Paths under
 | `api/src/{domain,services,jobs,plugins}/` | the wing: atlas, claude, workbench and local domains; their services, jobs and the terminal plugin |
 | `api/src/domain/laptop/` | fli's files on this machine, read through `@frontierjs/cli/core/{home,services}.js`: `laptop.ts` (Disk, Clear, Remove lane), `keys.ts` (secret files and their modes, the Frontier identity), `settings.ts` (global env masked, user commands), `running.ts` (dev servers and tree holds), `services.ts` (every service fli signs in to, its probe on request, the commands that use it). The `laptop` service is model-less and gated at ADMINISTRATOR, like `basecamps` |
 | `web/src/routes/laptop/` | `/laptop/`: tabs Disk, Keys, Running, Services; `web/src/resources/Laptop.mesa` is its resource |
+| `web/src/routes/terminal/` | `/terminal/`: one shell in the home folder, outside any pin; `components/Terminal.mesa` with no `pin`, over `WS /ws/terminal` (`api/src/plugins/workbench-terminal.ts`), its tmux session the bare `workbench` |
 | `api/config/junction.config.js` | port and CORS origins |
 | `web/config/` | `sierra.config.js`, `vite.config.js` (5508, `strictPort`), `api-paths.js` (derived from `app.snapshot.md`) |
 | `web/src/App.mesa` | the sign-in guard |

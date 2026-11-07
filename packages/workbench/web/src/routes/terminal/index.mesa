@@ -1,0 +1,24 @@
+---
+title: Terminal
+---
+<script>
+  // A shell in the home folder, belonging to no pinned checkout. With tmux on
+  // the API's machine it is one session (`tmux -L workbench attach -t workbench`),
+  // so leaving the page or reloading lands back in the same shell.
+  import Terminal from '../../components/Terminal.mesa'
+</script>
+
+<div class="terminal-screen">
+  <Terminal />
+</div>
+
+<style>
+  /* The topbar and the screen's padding come off the viewport; a fixed
+     min-block-size alone leaves the shell a strip at the top of a tall window. */
+  .terminal-screen {
+    display: flex;
+    flex-direction: column;
+    block-size: calc(100dvh - 10rem);
+    --terminal-min-block: 20rem;
+  }
+</style>

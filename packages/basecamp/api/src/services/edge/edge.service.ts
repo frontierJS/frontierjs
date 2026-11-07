@@ -274,12 +274,13 @@ const setIngress = (ingress: ZoneAt, appId: string, addresses: string[]) =>
 // column off removes the record only when no Domain CNAMEs to it: a Domain's
 // push writes the record back otherwise. The not-yet refusals are `push`'s,
 // so an App running nowhere keeps its record where it last ran (`FJS-D567`).
+// A deleted App is wanted nowhere: its record goes, Domain or none (`FJS-4061`).
 async function pushIngress(appId: string) {
   const sys = $.app.db!.asSystem()
-  const row = await sys.app.findFirst({ where: { id: appId }, select: { isIngressNamePublished: true } }) as
-    { isIngressNamePublished: boolean } | null
+  const row = await sys.app.findFirst({ where: { id: appId }, withDeleted: true, select: { isIngressNamePublished: true, deletedAt: true } }) as
+    { isIngressNamePublished: boolean; deletedAt: string | null } | null
   if (!row) throw new NotFound(`App '${appId}' not found`)
-  const wanted = row.isIngressNamePublished || (await sys.domain.count({ where: { appId } })) > 0
+  const wanted = !row.deletedAt && (row.isIngressNamePublished || (await sys.domain.count({ where: { appId } })) > 0)
   try {
     const ingress = await ingressZone(await edgeAccounts())
     if (!ingress) throw new NotYet(NO_INGRESS)
@@ -541,7 +542,7 @@ export default createService({
     const id     = String($.id)
     const caller = !actsAsApp($.user)
     const row    = await (caller ? db() : $.app.db!.asSystem()).app.findFirst({
-      where: caller ? { id, workspaceId: ws() } : { id }, select: { id: true, workspaceId: true },
+      where: caller ? { id, workspaceId: ws() } : { id }, withDeleted: true, select: { id: true, workspaceId: true },
     }) as { id: string; workspaceId: string } | null
     if (!row) throw new NotFound(`App '${id}' not found`)
     if (!caller) $.locals.workspaceId = row.workspaceId

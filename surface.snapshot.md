@@ -26,10 +26,10 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4447 source file(s) read
-254 entry point(s), 31 imported by nothing outside their package, 16 emitted
-1744 value export(s), 639 reached by nothing outside, 178 emitted
-463 type export(s), 338 reached by nothing outside
+27 package(s) · 4452 source file(s) read
+255 entry point(s), 32 imported by nothing outside their package, 15 emitted
+1748 value export(s), 640 reached by nothing outside, 180 emitted
+465 type export(s), 340 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
@@ -38,11 +38,11 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `junction` | 27 | 3 | 274 | 116 | 13 | 272 | 210 |
 | `mesa` | 19 | 4 | 319 | 110 | 77 | 0 | 0 |
 | `sierra` | 25 | 6 | 200 | 84 | 20 | 0 | 0 |
-| `auth` | 6 | 1 | 55 | 39 | 3 | 15 | 12 |
+| `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
 | `toolbelt` | 69 | 0 | 318 | 37 | 12 | 0 | 0 |
 | `ui` | 9 | 0 | 55 | 35 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
-| `outpost` | 11 | 1 | 55 | 18 | 0 | 0 | 0 |
+| `outpost` | 11 | 1 | 55 | 16 | 1 | 0 | 0 |
 | `conduit` | 4 | 1 | 26 | 12 | 0 | 60 | 33 |
 | `site-kit` | 9 | 4 | 36 | 9 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 22 |
@@ -64,17 +64,17 @@ surface gains an unreached export or loses its last caller, and not on every imp
 
 ## `@frontierjs/auth`
 
-`packages/auth` · 6 entry point(s) · 55 value, 15 type export(s)
+`packages/auth` · 7 entry point(s) · 59 value, 17 type export(s)
 
-**Entries imported by nothing outside (1):** `./schema`
+**Entries imported by nothing outside (2):** `./schema` `./seed-login`
 
 **Entries not source (2, not graded):** `./schema.lite` `./user.lite`
 
-**Unreached values (39):** `AuthConfigError` `AuthError` `base32Decode` `base32Encode` `beginFlow` `ClientRefusedError` `constantTimeEqual` `createAuthServices` `EmailTakenError` `fetchIdentity` `generateRecoveryCode` `generateRecoveryCodes` `generateTotpSecret` `generateVerifier` `hotp` `InvalidCredentialsError` `InvalidExpiryError` `InvalidGrantError` `InvalidSecondFactorError` `InvalidTokenError` `isAllowedReturnTo` `LastCredentialError` `NoPasswordCredentialError` `normalizeRecoveryCode` `OAUTH_STATE_COOKIE` `OAuthError` `otpauthUri` `ReauthenticationFailedError` `ReauthenticationRequiredError` `RECOVERY_CODE_COUNT` `retargetDb` `SecondFactorEnrollmentOwedError` `stateMatches` `SupportEpisodeError` `TOTP_DIGITS` `TOTP_STEP_SEC` `TotpAlreadyEnabledError` `UserNotFoundError` `WeakPasswordError`
+**Unreached values (42):** `AuthConfigError` `AuthError` `base32Decode` `base32Encode` `beginFlow` `ClientRefusedError` `constantTimeEqual` `createAuthServices` `EmailTakenError` `fetchIdentity` `generateRecoveryCode` `generateRecoveryCodes` `generateTotpSecret` `generateVerifier` `hotp` `InvalidCredentialsError` `InvalidExpiryError` `InvalidGrantError` `InvalidSecondFactorError` `InvalidTokenError` `isAllowedReturnTo` `LastCredentialError` `NoPasswordCredentialError` `normalizeRecoveryCode` `OAUTH_STATE_COOKIE` `OAuthError` `otpauthUri` `productionRefusal` `ReauthenticationFailedError` `ReauthenticationRequiredError` `RECOVERY_CODE_COUNT` `retargetDb` `SecondFactorEnrollmentOwedError` `seedLogin` `SeedLoginRefused` `stateMatches` `SupportEpisodeError` `TOTP_DIGITS` `TOTP_STEP_SEC` `TotpAlreadyEnabledError` `UserNotFoundError` `WeakPasswordError`
 
-**Emitted (3):** `authMachineryModels` `authUserModel` `PROVIDER_PRESETS`
+**Emitted (4):** `authMachineryModels` `authUserModel` `DEFAULT_LOGIN` `PROVIDER_PRESETS`
 
-**Unreached types (12):** `AuthCleanupHandle` `AuthOAuth` `AuthPluginOptions` `AuthServicesOptions` `BeginResult` `ConsoleCommand` `ConsoleCommandContext` `CredentialEvent` `OAuthIdentity` `OAuthProvider` `OAuthProviderOptions` `OAuthProviderSpec`
+**Unreached types (14):** `AuthCleanupHandle` `AuthOAuth` `AuthPluginOptions` `AuthServicesOptions` `BeginResult` `ConsoleCommand` `ConsoleCommandContext` `CredentialEvent` `OAuthIdentity` `OAuthProvider` `OAuthProviderOptions` `OAuthProviderSpec` `SeedLoginInput` `SeedLoginResult`
 
 ## `@frontierjs/basecamp`
 
@@ -250,7 +250,9 @@ Every entry is imported and every name reached.
 
 **Entries imported by nothing outside (1):** `.`
 
-**Unreached values (18):** `BACKUP_SCRIPT` `checkRunConfig` `checkStopGrace` `checkSwap` `containerName` `createInspector` `createStatic` `digestOfFiles` `DRAIN_MS` `followLines` `healthyStatus` `isDigest` `logArgs` `repointRoutes` `spawnRun` `spawnStream` `validName` `validRelativePath`
+**Unreached values (16):** `BACKUP_SCRIPT` `checkRunConfig` `checkStopGrace` `checkSwap` `createInspector` `createStatic` `digestOfFiles` `DRAIN_MS` `followLines` `healthyStatus` `logArgs` `repointRoutes` `spawnRun` `spawnStream` `validName` `validRelativePath`
+
+**Emitted (1):** `isDigest`
 
 ## `@frontierjs/print-kit`
 
@@ -308,7 +310,7 @@ Every entry is imported and every name reached.
 
 `packages/ui` · 9 entry point(s) · 55 value, 0 type export(s)
 
-**Entries emitted (5):** `./utils` `./dnd` `./drag` `./selection` `./rowlist`
+**Entries emitted (4):** `./dnd` `./drag` `./selection` `./rowlist`
 
 **Unreached values (35):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `formControl` `lockedBy` `menuWalk` `nativeValidationGuard` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `sizeClass` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
 

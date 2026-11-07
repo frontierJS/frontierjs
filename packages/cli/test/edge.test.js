@@ -595,4 +595,13 @@ describe('one door per app on a box (FJS-D1967)', () => {
     expect(step).toContain("heldBy(config, 'basecamp', names)")
     expect(step.indexOf("heldBy(config, 'basecamp'")).toBeLessThan(step.indexOf('acquireLock('))
   })
+
+  // An empty deploy.web.domain was refused by 03-build-web, after the ship and
+  // the server install had already run.
+  test('a web domain that is not a hostname is refused in the preflight, not at the web build', () => {
+    expect(() => edgeNames({ web: { domain: '' } })).toThrow(EdgeError)
+    const step = readFileSync(new URL('../commands/deploy/_steps-docker/01-preflight.md', import.meta.url), 'utf8')
+    const refusal = step.slice(step.indexOf('edgeNames(deployConf)'), step.indexOf('acquireLock('))
+    expect(refusal).toMatch(/if \(\$\.config\.doWeb\) \{\s*log\.error\(e\.message\)\s*\$\.config\.abort = true\s*return/)
+  })
 })

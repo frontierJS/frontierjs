@@ -6,7 +6,7 @@ dated: 2026-11-06
 
 # Idea — fli's files, readable in Workbench
 
-**Status: BUILT 2026-11-06, uncommitted. Q1–Q5, Q7–Q8 ruled (`FJS-D1991`–`FJS-D1998`); every phase done; Q6 (when a lane counts as dirty) is the one open question.**
+**Status: DONE. Built 2026-11-06, committed `e021a3409`; Q1–Q8 ruled (`FJS-D1991`–`FJS-D2000`); every phase done. Q6's sync marker (`laneDirty` in `scripts/lanes.mjs`) built 2026-11-07, uncommitted.**
 Probed against the tree 2026-11-06. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-06): fli keeps a lot in the home folder, and almost
@@ -102,7 +102,7 @@ takes Docker's columns; the four roots are its classes.
   - **Recommend A** — they are on the same disk and hold keys; one row each
     costs nothing and keeps Disk's total honest.
 
-- **Q6 — When a lane counts as dirty.** `syncLane` applies the main tree's
+- ~~**Q6 — When a lane counts as dirty.**~~ **Answered 2026-11-07 (`FJS-D2000`): B — dirty means "differs from what `syncLane` last wrote": record a sync marker (the main tree's diff digest) when a lane is opened or synced, and refuse only when the lane's diff differs from it.** `syncLane` applies the main tree's
   uncommitted diff into every lane, so an idle lane is dirty whenever the main
   tree is — which on this laptop is always. Remove is refused on every real
   lane today, and Phase 2's "removing an idle lane frees its bytes" is met only
@@ -218,8 +218,10 @@ work, is refused with the reason.
 - [x] 2.3 Confirmation is in the page (the row turns into "Remove 1.1 GB? Yes /
   No"), and the toast says what was freed. Built 2026-11-06; Clear proved in
   the browser on real registry files, Remove proved on a throwaway lane 3 by
-  script (clean: freed; a scratch file: refused; a live pid: refused). Q6 is
-  open: on this laptop both real lanes always read dirty.
+  script (clean: freed; a scratch file: refused; a live pid: refused). Dirty
+  is measured from the sync marker (`FJS-D2000`, `laneDirty`), so a lane
+  carrying only the main tree's diff is removable; a lane opened before the
+  marker reads dirty until its next sync.
 
 ### Phase 3 — Keys
 

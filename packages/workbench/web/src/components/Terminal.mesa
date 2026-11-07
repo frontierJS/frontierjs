@@ -1,5 +1,6 @@
 <script>
-  // Terminal.mesa — a shell in a pinned checkout, drawn by xterm.js.
+  // Terminal.mesa — a shell in a pinned checkout, or with no pin the home
+  // folder's (the /terminal/ page), drawn by xterm.js.
   //
   // The socket is api/src/plugins/workbench-terminal.ts. With tmux on the API's
   // machine, closing this (a tab switch, a reload) detaches rather than ends the
@@ -36,7 +37,8 @@
   function socketUrl() {
     const origin = getClient().origin || location.origin
     const q = new URLSearchParams({ cols: term.cols, rows: term.rows })
-    return `${origin.replace(/^http/, 'ws')}/ws/terminal/${encodeURIComponent(pin)}?${q}`
+    const path = pin ? `/ws/terminal/${encodeURIComponent(pin)}` : '/ws/terminal'
+    return `${origin.replace(/^http/, 'ws')}${path}?${q}`
   }
 
   function connect() {

@@ -312,17 +312,69 @@ serves it, a write over HTTP and over MCP is refused, and no job runs.
   `test/read-only-copy.test.ts` § starts no scheduler and litestone
   `test/place-models.test.ts` § the tenant registry refuses. Each goes red with
   its guard disabled.
-- [ ] 1.3 Refresh re-stages on a schedule and swaps the copy in one step, so a
+- [x] 1.3 Refresh re-stages on a schedule and swaps the copy in one step, so a
       reader never sees half of two days. The copy is never fresher than the
       replica, so this schedule only decides how often a copy is staged from it.
       It is not a second backup schedule.
-- [ ] 1.4 Serve on any machine that can reach the bucket, not only the App's own.
-- [ ] 1.8 The copy's as-of time is the replica's, not the moment it was
+  **Built 2026-11-07**: per Q13 (`FJS-D2001`), Basecamp's `AppCopy` row (one
+  per App, `serverId` and `cron` required, `@@gate(5)`) is the copy being on.
+  `syncAppCopySchedule` in `job-schedule.ts` puts its cron on the clock,
+  `restoreSchedules` re-registers it after a restart, and an App's remove and
+  restore take it off and back on. The fire dispatches `app-copy:refresh`
+  (`jobs/app-copy-refresh.job.ts`), the one caller of `/replica/serve`: the
+  newest successful release's image and runtime (`runtimeFor`, now in
+  `runtime.ts` beside `runtimeOf`), the bucket's databases, on the row's
+  machine through `executorOn`. The swap is 1.1c's: the old copy is removed
+  only once the new one answers. A refresh records Outpost's `as_of`, never
+  the clock; a failed one writes `error`, keeps the `asOf` of the copy still
+  serving, and sends `AppBackupFailed` with `what: 'copy'`. Proved by
+  basecamp `api/test/services.test.ts` § a copy's cron and § a copy refresh.
+  Each goes red with the restore loop removed, the deleted-app filter
+  dropped, the remove's unschedule dropped, `asOf` cleared on failure, the
+  clock stamped, or the runtime left out. **Owed to 2.1:** nothing writes the
+  row but a test and the seed, and nothing sends `/replica/unserve`, so a copy
+  turned off or an App deleted leaves its container running on the machine.
+- [x] 1.4 Serve on any machine that can reach the bucket, not only the App's own.
+  **Built 2026-11-07**, per Q7 (`FJS-D1914`). Outpost `POST /image/export`
+  `docker save`s the release image, gzipped, and PUTs it to a URL Basecamp
+  minted, answering the sha256 of those bytes. After every successful
+  release of an App with a replica destination, `deployment-run` dispatches
+  `release-image:export` (`domain/release/image-export.ts`). It stores the
+  image at `<replica path>/images/<release id>.tar.gz`, records
+  `Deployment.imageSha256` (`@system`) and deletes every other image under
+  `images/`, since a copy runs only the newest release. A failed export is a
+  warning: the release keeps its status and the sha256 stays null. The
+  refresh sends `image_url` (a minted GET) and `image_sha256`. `copyImage`
+  uses the release digest where the machine holds it, then the cache tag
+  `fjs-copy-image:<sha256>`, then the fetched archive. It checks the hash
+  before `docker load`, loads over stdin because a snap docker cannot open a
+  dotdir path, and tags the result. After a swap it drops the other cache
+  tags. Proved by outpost `test/outpost.test.js` § the release image on a
+  machine that does not hold it and § /image/export. `test/docker-live.test.js`
+  exports a real image, removes it from the daemon, and serves a copy from
+  the URL. Basecamp `api/test/services.test.ts` § a release's image in the
+  replica bucket and `api/test/rollback.test.ts` § the release's image export
+  cover the Basecamp side. Each goes red with its guard removed. Not yet
+  proved: a real bucket, and a containerd image store (this daemon is
+  classic). A release whose export failed has no image off its box, so a
+  copy elsewhere fails in Outpost's words on the `AppCopy` row.
+- [x] 1.8 The copy's as-of time is the replica's, not the moment it was
       staged. `/replica/serve` without `at` stamps the staging time today, and
       `stage` reports no time of its own. If the App's machine stopped
       replicating yesterday, the copy claims to be current while serving
       yesterday's data, which is the lifeboat case. Read the newest point the
       restore reached from Litestream and stamp that.
+  **Built 2026-11-07**: `stage` reads every database's newest LTX time
+  (`ltx -json`, asked always now, not only with `at`) and answers each
+  database's `as_of`. That is `at` where `at` was pinned, else its newest
+  time. The overall `as_of` is the newest across them, per Q12
+  (`FJS-D1999`). `/replica/serve` stamps that and refuses a replica whose
+  time cannot be read, before anything runs. Proved by `test/outpost.test.js`
+  § /replica/serve: without `at`, two databases 5 Nov and 1 Oct stamp
+  5 Nov, an `at` past the newest point stamps the point, and an unreadable
+  replica is refused. All three go red with the clock stamp put back. Probed
+  on litestream 0.5.17: a database with no writes gets no new LTX file or
+  snapshot, so it stays at its last write.
 - [x] 1.9 The copy cannot reach the host. `--internal` blocks the internet,
       but the bridge's gateway address still answers. Observed on this laptop:
       sshd on every interface was open from inside a copy. On a box that means
@@ -372,6 +424,9 @@ numbers through MCP at the copy's address.
 
 - [ ] 2.1 The card above: on or off, refresh schedule, which machine. Gated at
       ADMINISTRATOR, matching `apps.restoreReplica`.
+      The card writes `AppCopy` (`FJS-D2001`) through a service that checks
+      the cron with `cronProblem` and calls `syncAppCopySchedule`. Turning it
+      off, and `apps.remove`, send `/replica/unserve` to the row's machine.
 - [ ] 2.2 The copy's address per Q2. Waits on `ingress-name.md` serving a name
       at all.
       The upstream is the copy container's IP on `fjs-copy`, and a restart can
@@ -592,3 +647,55 @@ their gate opens, and only the owner's export runs.
     is the same shape. One origin, no App edits, and the header check catches the
     one way it fails open. Litestone reads no ambient env today, so the read
     lives in that one function.
+- ~~**Q12 — Which time is a copy of several databases as of?**~~ **Answered 2026-11-07 (`FJS-D1999`): A — the newest across the databases. 1.8's case, a machine that stopped replicating yesterday, stops every database at yesterday, and a quiet one does not drag the stamp back. One database whose replication stopped while the rest ran is hidden in the header, though `/replica/serve` answers each database's own `as_of`.** (from 1.8)
+  Litestream's `ltx -json` lists one database's LTX files with their commit
+  times, and its snapshots with the time they were taken. A database with no
+  writes gets neither, so its newest time is its last write even while
+  replication is healthy (probed on 0.5.17, a file replica idle 30 s past a
+  20 s snapshot interval). Each database's newest time is known; the header
+  carries one.
+  - **A** — the newest across the databases. 1.8's case, a machine that stopped
+    replicating yesterday, stops every database at yesterday, and a quiet one
+    does not drag the stamp back. One database whose replication stopped while
+    the rest ran is hidden in the header, though `/replica/serve` answers each
+    database's own `as_of`.
+  - **B** — the oldest database's newest time. Never claims more than every
+    database can back, but any quiet database (an audit file, a tenant nobody
+    used this month) pulls it back, so a copy mostly reads older than it is.
+  - **C** — a heartbeat (MySQL's `pt-heartbeat`, a heartbeat table read beside
+    Postgres's last replay time): Outpost writes a tick each minute into a small
+    database it replicates per App, and the copy is as of that one. Exact for an
+    idle App, at the cost of a new replicated file and a timer on every machine,
+    and still blind to one database stopped alone.
+  - **Recommend A** — it answers 1.8's case whole and needs nothing new on the
+    machine. B is the safe direction in theory and useless with tenants. C is
+    the upgrade if an idle App's stamp ever misleads someone.
+- ~~**Q13 — Where does Basecamp keep a copy's machine, schedule and last refresh?**~~ **Answered 2026-11-07 (`FJS-D2001`): A — an `AppCopy` row, one per App: its existence is "on", `serverId` and `cron` are required, and the newest refresh's `asOf`, `status` and `error` are `@system` columns on it. PlanetScale's `BackupPolicy` keeps `last_ran_at` on the policy the same way, and Coolify added `last_execution_at` to its schedule row because its run history was awkward to alert from.** (from 1.3)
+  The refresh is a Basecamp job calling `/replica/serve`: Outpost cannot run
+  the timer, because the replica key rides in the body and the machine holds
+  nothing it was not handed. No product refreshes a restored copy on a
+  schedule. The nearest is AWS Backup restore testing: a `RestoreTestingPlan`
+  (`ScheduleExpression`, `LastExecutionTime`) and a restore job per run
+  (`Status`, `RecoveryPointCreationDate`). A copy that serves is its own
+  resource everywhere (an RDS read replica is a `DBInstance`; Heroku followers,
+  Neon and PlanetScale branches). A schedule is its own row wherever a database
+  holds it (Coolify `scheduled_database_backups`, Dokploy `backup` and
+  `schedule`), never a column on the app.
+  - **A** — an `AppCopy` row, one per App: its existence is "on", `serverId`
+    and `cron` are required, and the newest refresh's `asOf`, `status` and
+    `error` are `@system` columns on it. PlanetScale's `BackupPolicy` keeps
+    `last_ran_at` on the policy the same way, and Coolify added
+    `last_execution_at` to its schedule row because its run history was awkward
+    to alert from.
+  - **B** — A, plus an `AppCopyRefresh` row per run, the shape of Coolify's
+    executions, Dokploy's `deployment` and AWS Backup's restore jobs. A
+    timeline on the card, at the cost of a table and a retention rule from the
+    start (Coolify prunes at 60 days, Dokploy keeps 10).
+  - **C** — `copyCron`, `copyServerId`, `copyAsOf`, `copyError` on `App`, as
+    `drillCron` is. Only Railway (`cronSchedule` on a service) and Dokku
+    (per-service properties) do this, and neither has a control-plane
+    database. A cron with no machine is a state it can write.
+  - **Recommend A** — the copy is a resource and its machine is a required
+    partner of its schedule, which a row holds and two nullable columns do not.
+    A refresh replaces the copy rather than adding evidence, so the newest
+    `asOf` is all a reader needs; B is the reopen if the card wants a timeline.

@@ -20,6 +20,7 @@
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
 //   POST /backup       { app_id, upload_url? }             → the volume archived before the swap; sent by jobs/app-backup-run.job.ts, never from here
+//   POST /image/export { app_id, image, digest?, upload_url } → { bytes, sha256, uploaded }; the release's image in the replica bucket, sent by jobs/release-image-export.job.ts after a success
 //
 // A static app built from git speaks one route, `POST /site/publish`
 // { app_id, source, branch, commit, cloudflare } → { commit_sha, url }.
@@ -57,6 +58,7 @@ import { runsAsCaller }         from '../domain/job/job-context.ts'
 import domainDns                from './domain-dns.job.ts'
 import ingressDns, { ownRecordHolders } from './ingress-dns.job.ts'
 import { syncReplicasOn }       from './replicate-sync.job.ts'
+import releaseImageExport   from './release-image-export.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../domain/release/app-source.ts'
 import { siteBranch } from '../domain/site/site-checkout.ts'
 import { healthBudgetS, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } from '@frontierjs/outpost/swap'
@@ -66,7 +68,7 @@ import { SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, releaseStatus } from '../d
 import { frontsOf, type Front } from '../domain/release/fronting.ts'
 import { publishStatic, overPublishLimit, type PublishFile } from '../domain/release/static-publish.ts'
 import { releaseEnv } from '../domain/release/variables.ts'
-import { runtimeOf, routedHosts, routedPaths, routedRedirects, noindexHosts, markRunning, type Runtime } from '../domain/release/runtime.ts'
+import { runtimeFor, routedHosts, routedPaths, routedRedirects, noindexHosts, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor, releaseCopyOf, restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from './app-backup-run.job.ts'
 import { pushIngressCert } from './ingress-cert.job.ts'
 import type { App }         from '@frontierjs/junction'
@@ -91,18 +93,6 @@ function swapOf(data: Record<string, unknown> | undefined): Swapped {
   const swap = data?.swap === 'start-first' ? 'startFirst' : data?.swap === 'stop-first' ? 'stopFirst' : null
   if (!swap) return {}
   return { swap, swapReason: typeof data?.swap_reason === 'string' ? data.swap_reason : null }
-}
-
-/** How the release's container starts — the snapshot's, falling back to the
- *  app's columns only for a release that recorded none. */
-function runtimeFor(snapshot: Record<string, unknown>, service: Record<string, unknown>): Runtime {
-  const runtime = (snapshot.runtime as Runtime | undefined) ?? runtimeOf(service)
-  // A snapshot taken before the App's first build holds no container port;
-  // the build adopted the Dockerfile's onto the App (`adoptContainerPort`),
-  // and a rollback to that release, which builds nothing, reads it there
-  // rather than mapping the host port to itself.
-  return runtime.containerPort == null && service.containerPort != null
-    ? { ...runtime, containerPort: service.containerPort as number } : runtime
 }
 
 // Whether a release may ask Outpost for start-first. Mirrors the conditions of
@@ -362,6 +352,11 @@ function runner(app: App) {
     // A first release is what makes the volume a replica list skips until
     // it exists, so the machine is sent its list again.
     if (service?.replicaDestinationId) await afterward('sync replicas', () => syncReplicasOn(app, [executor.serverId]))
+    // The image goes to the same bucket, so a copy can be served on a machine
+    // that never held this release.
+    if (service?.replicaDestinationId && deploy.toImage)
+      await afterward('export image', () => app.jobs.dispatch(releaseImageExport,
+        { deploymentId, serverId: executor.serverId }, { id: `image-export:${deploymentId}` }))
     log.info('deployment succeeded', { id: deploymentId, durationMs: Date.now() - startedAt,
       ...(siteFailed ? { site: siteFailed } : {}), ...(webFailed ? { web: webFailed } : {}) })
     await afterward('notify', () => tellThem('DeploySuccess', deploy, service,

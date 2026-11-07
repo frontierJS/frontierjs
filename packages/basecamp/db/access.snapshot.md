@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-74 models · 1 view · 75 gated · 0 unrestricted
-60 with row policies · 30 with protected fields · 36 declared moves · 16 @system · 0 @seals
+75 models · 1 view · 76 gated · 0 unrestricted
+61 with row policies · 31 with protected fields · 36 declared moves · 16 @system · 0 @seals
 ```
 
 ## Gates
@@ -28,6 +28,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `ApiKey` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `App` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `AppBackup` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `AppCopy` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AppDrill` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AppEditor` | 1 VISITOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AppNetwork` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -170,6 +171,19 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(destination, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+
+### `AppCopy`
+
+- deny **read** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `AppDrill`
 
@@ -687,6 +701,10 @@ rather than refusing the row.
 | `App` | `blueprintId` | `@system` |
 | `App` | `replicaFoundAt` | `@system` |
 | `App` | `replicaSyncedAt` | `@system` |
+| `AppCopy` | `status` | `@system` |
+| `AppCopy` | `asOf` | `@system` |
+| `AppCopy` | `error` | `@system` |
+| `AppCopy` | `refreshedAt` | `@system` |
 | `AppPlatform` | `hookUrl` | `@encrypted` |
 | `AppPlatform` | `receiverSecret` | `@encrypted` |
 | `AppPlatform` | `status` | `@system` |
@@ -707,6 +725,7 @@ rather than refusing the row.
 | `Deployment` | `commitSha` | `@system` |
 | `Deployment` | `branch` | `@system` |
 | `Deployment` | `builtImage` | `@system` |
+| `Deployment` | `imageSha256` | `@system` |
 | `Deployment` | `swap` | `@system` |
 | `Deployment` | `swapReason` | `@system` |
 | `Deployment` | `platformVersion` | `@system` |

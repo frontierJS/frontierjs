@@ -44,6 +44,7 @@ text, so a body that elevates through a helper is not listed.
 | `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.heartbeat` | anyone, a stranger included — declared `gate: 0` |
 | `variables.reveal` | standing 5 or above — declared `gate: 5` |
+| `variables.import` | standing 4 or above — declared `gate: 4` |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `workspaces.testPing` | standing 5 or above — declared `gate: 5` |
 
@@ -364,8 +365,8 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`, `preview`
-- **custom methods** — `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`, `preview`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`, `preview`, `seedOwner`
+- **custom methods** — `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`, `preview`, `seedOwner`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
 - **input** — `publish` takes `AppPublish`
@@ -393,6 +394,7 @@ name when it declares none.
   - `readRepoDockerfile` — standing 4 or above — declared `gate: 4`
   - `dockerfileTemplate` — standing 4 or above — declared `gate: 4`
   - `preview` — standing 4 or above — declared `gate: 4`
+  - `seedOwner` — standing 5 or above — declared `gate: 5`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -1414,10 +1416,13 @@ name when it declares none.
 
 ### `variables` · model `Variable`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `reveal`
-- **custom methods** — `reveal`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `reveal`, `export`, `exportSecrets`, `import`
+- **custom methods** — `reveal`, `export`, `exportSecrets`, `import`
 - **who may call** —
   - `reveal` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `export` — standing 2 or above — declared `gate: 2`
+  - `exportSecrets` — standing 5 or above — declared `gate: 5`
+  - `import` — standing 4 or above — declared `gate: 4`; body writes as the app
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |

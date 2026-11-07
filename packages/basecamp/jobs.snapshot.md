@@ -27,6 +27,7 @@ it re-resolved when it runs. Survives a restart.
 | `alert-evaluate` | `default` | `* * * * *` | — | 3 | default | 240000ms |
 | `app-archive:rescan` | `fleet` | on dispatch | — | 3 | 30000, 120000 | 7200000ms |
 | `app-backup:run` | `fleet` | on dispatch | — | 1 | default | 3720000ms |
+| `app-copy:refresh` | `fleet` | on dispatch | — | 1 | default | 5580000ms |
 | `app-drill:run` | `fleet` | on dispatch | — | 1 | default | 5580000ms |
 | `backup-verify` | `default` | `0 4 * * 0` | — | 3 | default | 1800000ms |
 | `backup:run` | `fleet` | on dispatch | — | 2 | 30000 | 600000ms |
@@ -44,6 +45,7 @@ it re-resolved when it runs. Survives a restart.
 | `orion.sweep` | `orion` | `* * * * *` | — | 3 | default | **none** |
 | `platform-observe` | `default` | `*/5 * * * *` | — | 3 | default | **none** |
 | `recipe:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
+| `release-image:export` | `fleet` | on dispatch | — | 1 | default | 3720000ms |
 | `release-sweep` | `default` | `* * * * *` | — | 3 | default | 240000ms |
 | `release:follow-up` | `deployments` | on dispatch | — | 208 | 30000 | 60000ms |
 | `replicate:sync` | `fleet` | on dispatch | — | 5 | 10000, 60000 | 240000ms |
@@ -57,7 +59,7 @@ it re-resolved when it runs. Survives a restart.
 | `site:publish` | `deployments` | on dispatch | — | 1 | default | 2130000ms |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-32 handler(s), 12 of them on a clock.
+34 handler(s), 12 of them on a clock.
 
 **13 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a

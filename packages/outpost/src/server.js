@@ -421,14 +421,16 @@ export function createOutpostServer(config, {
       } finally { await replicator.unstage(staged.dir) }
     },
     // The drill's staging, kept for the copy's life and served by the release
-    // image read-only (`FJS-D1996`). A copy without `at` is as of the moment
-    // its staging began: the replica holds nothing newer than that.
+    // image read-only (`FJS-D1996`), stamped with the newest point the replica
+    // reached. A copy that cannot say how old it is is refused, not stamped now.
+    // A machine without the image sends `image_url` and `image_sha256`, what
+    // `/image/export` uploaded (`FJS-D1914`).
     'POST /replica/serve': async (body) => {
-      const asOf   = body.at ?? new Date().toISOString()
       const staged = await replicator.stage({ appId: body.app_id, replica: body.replica, databases: body.databases, at: body.at ?? null })
       let served
       try {
-        served = await docker.serveCopy({ appId: body.app_id, dir: staged.dir, image: body.image, digest: body.digest, asOf, config: body.config ?? {} })
+        if (!staged.as_of) throw new Error(`no database's newest point could be read from ${body.replica?.bucket}/${body.replica?.path} (litestream ltx), so the copy cannot say how old it is`)
+        served = await docker.serveCopy({ appId: body.app_id, dir: staged.dir, image: body.image, digest: body.digest, imageUrl: body.image_url, imageSha256: body.image_sha256, asOf: staged.as_of, config: body.config ?? {} })
       } catch (err) {
         await replicator.unstage(staged.dir)
         throw err
@@ -455,6 +457,9 @@ export function createOutpostServer(config, {
     // An app's data volume, tarred into this machine's backup directory and,
     // given a pre-signed URL, uploaded from there.
     'POST /backup':        (body) => docker.backup({ appId: body.app_id, uploadUrl: body.upload_url }),
+    // The release image saved and PUT to a minted URL, for a copy on a machine
+    // that did not build it.
+    'POST /image/export':  (body) => docker.exportImage({ appId: body.app_id, image: body.image, digest: body.digest, uploadUrl: body.upload_url }),
     // One of those archives sent to a URL, for a Download of an archive no
     // bucket holds; the path must be a backup of this app under backupDir.
     'POST /backup/send':   (body) => docker.sendBackup({ appId: body.app_id, path: body.path, uploadUrl: body.upload_url }),

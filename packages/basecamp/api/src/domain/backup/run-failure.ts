@@ -1,4 +1,4 @@
-// src/domain/backup/run-failure.ts — tell the workspace a scheduled backup or drill failed.
+// src/domain/backup/run-failure.ts — tell the workspace a scheduled backup, drill or copy refresh failed.
 //
 // A scheduled run has no caller to see its error: the failed row sits on a
 // screen nobody opens, and the app's newest good copy quietly ages
@@ -11,7 +11,7 @@ import { notifyPeople, workspaceMembers } from '../notification/notify.ts'
 export async function noticeScheduledRunFailed(
   app:    App,
   target: { id: string; name: string; workspaceId: string },
-  what:   'backup' | 'drill',
+  what:   'backup' | 'drill' | 'copy',
   error:  string | null | undefined,
 ): Promise<void> {
   try {

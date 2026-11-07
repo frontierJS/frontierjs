@@ -104,6 +104,8 @@ export function createReplicator({
     const q = new URLSearchParams({ endpoint: r.endpoint, region: r.region, 'force-path-style': 'true' })
     return `${replicaUrl(`s3://${r.bucket}/${r.path.replace(/^\/+/, '')}`, name)}?${q}`
   }
+  const instant = ms => ms == null ? null : new Date(ms).toISOString().replace(/\.000Z$/, 'Z')
+
   async function lastWrite(r, url) {
     const said = await run([litestream, ...lastWriteArgs(url)], { env: keyEnv(r), timeoutMs: 60_000 })
     return said.exitCode === 0 ? parseLastWrite(said.stdout) : null
@@ -209,7 +211,13 @@ export function createReplicator({
      *  integrity check. No app's data is touched: `docker.restoreFiles`
      *  moves them in, and `unstage` removes the directory either way. The
      *  names are the caller's, read off the bucket: Litestream cannot list a
-     *  replica's databases. */
+     *  replica's databases.
+     *
+     *  `as_of` is the newest point any database reached, never the clock: a
+     *  machine that stopped replicating yesterday stages yesterday's data, and
+     *  a copy stamped with the staging time would call it current. A database
+     *  with no writes gets no new LTX file, so a quiet one stays at its last
+     *  write and the newest across them is the copy's (`FJS-D1999`). */
     async stage({ appId, replica, databases, at = null }) {
       if (typeof appId !== 'string' || !APP_ID.test(appId)) throw new Error(`app_id '${appId}' is not a plain name`)
       if (typeof replica !== 'object' || replica === null || Array.isArray(replica)) throw new Error('replica must be one entry')
@@ -227,16 +235,17 @@ export function createReplicator({
         const restored = []
         for (const name of databases) {
           const url  = urlOf(replica, name)
-          const last = at ? await lastWrite(replica, url) : null
+          const last = await lastWrite(replica, url)
           const { args, pinned } = restoreArgs({ url, out: `${dir}/${name}`, at, last })
           const said = await run([litestream, ...args], { env: keyEnv(replica), timeoutMs: RESTORE_TIMEOUT_MS })
           if (said.exitCode !== 0)
             throw new Error(`${name} was not restored from ${replica.bucket}/${replica.path}: ${restoreError(said.exitCode, said.stderr, said.stdout)}`)
           const bytes = await stat(`${dir}/${name}`).then(s => s.size, () => null)
           if (bytes === null) throw new Error(`${name}: litestream answered success and wrote no file`)
-          restored.push({ name, at: pinned ? at : 'latest', bytes })
+          restored.push({ name, at: pinned ? at : 'latest', as_of: pinned ? at : instant(last), bytes })
         }
-        return { dir, databases: restored }
+        const times = restored.map(d => d.as_of).filter(Boolean).sort()
+        return { dir, databases: restored, as_of: times.at(-1) ?? null }
       } catch (err) {
         await rm(dir, { recursive: true, force: true })
         throw err

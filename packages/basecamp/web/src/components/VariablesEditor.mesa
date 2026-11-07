@@ -5,13 +5,16 @@
   // that app's own, otherwise the environment's (`appId: null`). A secret's
   // value is `@encrypted` and never in the response: it is replaced, or an
   // administrator reveals it on demand (`variables.reveal`, filed in the trail).
-  import { variables, revealVariable } from '../resources/Variable.mesa'
+  import { variables, revealVariable, exportVariables, importVariables } from '../resources/Variable.mesa'
   import { session } from '../lib/session.js'
+  import { download } from '@frontierjs/ui/utils.js'
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
-  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
-  import Input    from '@frontierjs/ui/components/forms/Input.mesa'
-  import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
-  import Table    from '@frontierjs/ui/components/display/Table.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import FileUpload from '@frontierjs/ui/components/forms/FileUpload.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
 
   export let environmentId = null
   export let appId         = null
@@ -108,6 +111,69 @@
     }
   }
 
+  // ─── .env out and in ──────────────────────────────────────────────────
+  let withSecrets = false
+  let importing   = false
+  let envText     = ''
+  let envFiles    = []
+  let preview     = null   // the dry run's rows, until applied or cancelled
+  let secretKeys  = {}     // key -> keep secret, for the keys the file creates
+
+  const named = () => appId ? { appId } : { environmentId }
+
+  async function exportEnv() {
+    error = null; busyId = 'export'
+    try {
+      const out = await exportVariables(named(), { secrets: withSecrets })
+      download(new Blob([out.text], { type: 'text/plain' }), out.filename)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busyId = null
+    }
+  }
+
+  async function readPicked(files) { if (files[0]) { envText = await files[0].text(); preview = null } }
+
+  async function previewImport() {
+    error = null; busyId = 'import'
+    try {
+      const r = await importVariables({ ...named(), text: envText, dryRun: true })
+      preview    = r.rows
+      secretKeys = Object.fromEntries(r.rows.filter(row => row.action !== 'update' && row.action !== 'unchanged')
+        .map(row => [row.key, row.isSecret]))
+    } catch (e) {
+      error = e.message
+    } finally {
+      busyId = null
+    }
+  }
+
+  async function applyImport() {
+    error = null; busyId = 'import'
+    try {
+      const secrets = Object.keys(secretKeys).filter(k => secretKeys[k])
+      await importVariables({ ...named(), text: envText, secrets })
+      closeImport()
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busyId = null
+    }
+  }
+
+  function closeImport() { importing = false; envText = ''; envFiles = []; preview = null; secretKeys = {} }
+
+  const CHANGE = { create: 'new', update: 'changed', unchanged: 'unchanged', skip: 'skipped' }
+  $: changing = preview ? preview.filter(r => r.action === 'create' || r.action === 'update').length : 0
+
+  const PREVIEW_COLUMNS = [
+    { name: 'key',    label: 'Key' },
+    { name: 'action', label: 'Change' },
+    { name: 'secret', label: 'Secret' },
+  ]
+
   const COLUMNS = [
     { name: 'key',     label: 'Key' },
     { name: 'value',   label: 'Value' },
@@ -178,3 +244,51 @@
     <Button tone="primary" type="submit" disabled={busyId !== null}>Set variable</Button>
   </div>
 </form>
+
+<div class="cluster">
+  <Button treatment="outlined" id={`${idPrefix}-export`} disabled={busyId !== null} onclick={exportEnv}>Export .env</Button>
+  {#if mayReveal}
+    <Checkbox id={`${idPrefix}-export-secrets`} label="Include secret values (each is recorded as a reveal)"
+              bind:checked={withSecrets} />
+  {/if}
+  {#if !importing}
+    <Button treatment="outlined" id={`${idPrefix}-import`} onclick={() => importing = true}>Import .env</Button>
+  {/if}
+</div>
+
+{#if importing}
+  <div class="card stack" id={`${idPrefix}-import-panel`}>
+    <FileUpload label="A .env file" name={`${idPrefix}-env-file`} bind:files={envFiles} onchange={readPicked}
+                hint="Or paste it below. Keys in the file are added or updated; keys not in it are left alone." />
+    <Textarea label="Contents" id={`${idPrefix}-env-text`} name={`${idPrefix}-env-text`} rows="8"
+              value={envText} oninput={(e) => { envText = e.target.value; preview = null }} />
+    {#if preview}
+      <Table id={`${idPrefix}-import-preview`} columns={PREVIEW_COLUMNS} rows={preview} striped hover={false}>
+        {#snippet row(r)}
+          <tr data-key={r.key} data-action={r.action}>
+            <td><code>{r.key}</code></td>
+            <td>{CHANGE[r.action]}{#if r.note}<span class="text-muted"> — {r.note}</span>{/if}</td>
+            <td>
+              {#if r.key in secretKeys}
+                <Checkbox id={`${idPrefix}-import-secret-${r.key}`} label="" aria-label={`Keep ${r.key} secret`}
+                          checked={secretKeys[r.key]}
+                          onchange={(checked) => secretKeys = { ...secretKeys, [r.key]: checked }} />
+              {:else}
+                <span class="text-muted">{r.isSecret ? 'secret' : 'plain'}</span>
+              {/if}
+            </td>
+          </tr>
+        {/snippet}
+      </Table>
+    {/if}
+    <div class="cluster">
+      {#if preview}
+        <Button tone="primary" id={`${idPrefix}-import-apply`} disabled={busyId !== null || !changing}
+                onclick={applyImport}>Apply {changing} {changing === 1 ? 'change' : 'changes'}</Button>
+      {/if}
+      <Button treatment={preview ? 'ghost' : 'outlined'} id={`${idPrefix}-import-preview-btn`}
+              disabled={busyId !== null || !envText.trim()} onclick={previewImport}>Preview</Button>
+      <Button treatment="ghost" onclick={closeImport}>Cancel</Button>
+    </div>
+  </div>
+{/if}

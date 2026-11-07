@@ -283,6 +283,31 @@ describe('pins', () => {
 
 describe('runs', () => {
 
+  test('a run that ends on a question is an asks notice, and the next message in that chat clears it', async () => {
+    const { bin } = fakeClaude()
+    const wb = createWorkbench({ dir: join(tmp, 'wb-asks'), bin, env: { PORT: 8120 } })
+    const r = wb.pin(repo('asks'))
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    const settled = () => until(async () => (await wb.status(wb.getPin(id)!)).state === 'done' && !wb.getPin(id)!.pid)
+    const chat = () => wb.getPin(id)!.chats[0].id
+
+    await wb.send(id, 'which of these two should I take?')
+    await settled()
+    // A card that reads `done` is not finished: the notice says whose turn it is.
+    expect((await wb.status(wb.getPin(id)!)).notices).toEqual([
+      { kind: 'asks', chat: chat(), text: 'did: which of these two should I take?' },
+      { kind: 'unread', chat: chat() },
+    ])
+    // Seeing the chat clears the quieter notice and leaves the ask standing.
+    wb.seen(id)
+    expect((await wb.status(wb.getPin(id)!)).notices).toEqual([expect.objectContaining({ kind: 'asks', chat: chat() })])
+
+    await wb.send(id, 'the first one')
+    await settled()
+    expect((await wb.status(wb.getPin(id)!)).notices).toEqual([{ kind: 'unread', chat: chat() }])
+  })
+
   test('a message runs claude in the checkout, folds into a transcript, and the next one resumes', async () => {
     const { bin, seen } = fakeClaude()
     const wb = createWorkbench({ dir: join(tmp, 'wb-run'), bin, env: { PORT: 8120 } })
@@ -295,7 +320,7 @@ describe('runs', () => {
     await until(async () => (await wb.status(wb.getPin(id)!)).state === 'done' && !wb.getPin(id)!.pid)
 
     const s = await wb.status(wb.getPin(id)!)
-    expect(s).toMatchObject({ state: 'done', cost: 0.12, turns: 3, unread: true, tool: null })
+    expect(s).toMatchObject({ state: 'done', cost: 0.12, turns: 3, notices: [{ kind: 'unread', chat: wb.getPin(id)!.chats[0].id }], tool: null })
     expect(wb.getPin(id)!.chats[0].session).toBe(SESSION)
 
     const t = await wb.transcript(id)
@@ -313,7 +338,7 @@ describe('runs', () => {
     expect(call.port).toBeNull()
 
     wb.seen(id)
-    expect((await wb.status(wb.getPin(id)!)).unread).toBe(false)
+    expect((await wb.status(wb.getPin(id)!)).notices).toEqual([])
 
     await wb.send(id, 'again')
     await until(async () => seen().length === 2 && !wb.getPin(id)!.pid)
@@ -823,10 +848,11 @@ describe('the plan', () => {
 
     // The step ended on a question: the status carries it, and seeing the
     // chat does not take it away — only a ruling does.
-    const asked = { plan: 'PLAN.md', id: Q1, question: 'Q1 — Which color is the widget?' }
-    expect((await wb.status(wb.getPin(id)!)).questions).toEqual([asked])
+    const asked = { kind: 'question' as const, plan: 'PLAN.md', id: Q1, question: 'Q1 — Which color is the widget?' }
+    const standing = async () => (await wb.status(wb.getPin(id)!)).notices.filter(n => n.kind === 'question')
+    expect(await standing()).toEqual([asked])
     wb.seen(id)
-    expect(await wb.status(wb.getPin(id)!)).toMatchObject({ unread: false, questions: [asked] })
+    expect((await wb.status(wb.getPin(id)!)).notices).toEqual([asked])
 
     const chats = wb.getPin(id)!.chats.length
     expect(await wb.next(id)).toEqual({ refused: 'PLAN.md has an open question — rule it before Next: Q1 — Which color is the widget?' })
@@ -843,7 +869,7 @@ describe('the plan', () => {
     expect(readFileSync(join(dir, 'PLAN.md'), 'utf8')).toContain('- ~~**Q1 — Which color is the widget?**~~ **Answered ')
     expect(readFileSync(join(dir, 'DECISIONS.md'), 'utf8')).toContain('`NX-D1` — Q1 — Which color is the widget — Red.')
     expect(await wb.decide(id, { question: Q1, pick: 'A', section: 'Widgets' })).toEqual({ refused: `${Q1} is already ruled` })
-    expect((await wb.status(wb.getPin(id)!)).questions).toEqual([])
+    expect(await standing()).toEqual([])
     // By number the ruling is 0.2's: it answers the question that step stopped on.
     expect((await wb.readPlan(id))!.steps['0.2'].filed).toEqual([expect.objectContaining({ id: 'NX-D1', kind: 'ruling' })])
 
@@ -908,6 +934,7 @@ describe('the plan', () => {
     if (!('pin' in r)) throw new Error(r.refused)
     const id = r.pin.id
     const idle = () => until(async () => !wb.getPin(id)!.pid)
+    const standing = async () => (await wb.status(wb.getPin(id)!)).notices.filter(n => n.kind === 'question')
     const file = (row: string) => writeFileSync(join(dir, 'ISSUES.md'),
       readFileSync(join(dir, 'ISSUES.md'), 'utf8').replace('| --- | --- | --- | --- | --- | --- |', `| --- | --- | --- | --- | --- | --- |\n${row}`))
 
@@ -938,15 +965,15 @@ describe('the plan', () => {
     expect(readFileSync(join(dir, 'IDEAS', 'b.md'), 'utf8')).toContain('- [ ] 0.2')
 
     // A question on a plan not shown is still one the owner is waited on for.
-    expect((await wb.status(wb.getPin(id)!)).questions).toEqual([])
+    expect(await standing()).toEqual([])
     writeFileSync(join(dir, 'IDEAS', 'b.md'), [...PLAN, '', '## Open questions (owner)', '', '- **Q1 — Red or blue?**', '  - **A** — red.', ''].join('\n'))
-    expect((await wb.status(wb.getPin(id)!)).questions).toEqual([{ plan: 'IDEAS/b.md', id: 'b:q1-red-or-blue', question: 'Q1 — Red or blue?' }])
+    expect(await standing()).toEqual([{ kind: 'question' as const, plan: 'IDEAS/b.md', id: 'b:q1-red-or-blue', question: 'Q1 — Red or blue?' }])
 
     expect(wb.closePlan(id, 'nope.md')).toEqual({ refused: expect.stringContaining("no plan at 'nope.md'") })
     expect(wb.closePlan(id, 'PLAN.md')).toMatchObject({ plan: 'IDEAS/b.md', plans: [{ path: 'IDEAS/b.md' }] })
     expect(existsSync(join(dir, 'PLAN.md'))).toBe(true)
     expect(wb.closePlan(id, 'IDEAS/b.md')).toMatchObject({ plan: null, plans: [] })
-    expect((await wb.status(wb.getPin(id)!)).questions).toEqual([])
+    expect(await standing()).toEqual([])
     expect(await wb.readPlan(id)).toBeNull()
     expect(await wb.go(id)).toEqual({ refused: expect.stringContaining('has no plan') })
   })
@@ -1514,4 +1541,66 @@ describe('the Run tab', () => {
     expect(await wb.run(bare, 'app:.')).toEqual({ refused: expect.stringContaining('bun install') })
   })
 
+})
+
+describe('import terminal sessions', () => {
+  const TERMINAL = '11111111-2222-4333-8444-555555555555'
+  const ELSEWHERE = '66666666-7777-4888-8999-aaaaaaaaaaaa'
+
+  // A transcript as Claude Code writes it: the folder name is the cwd with
+  // every non-alphanumeric character turned into '-'.
+  function transcript(config: string, cwd: string, session: string, prompt: string, extra: Record<string, unknown> = {}) {
+    const folder = join(config, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'))
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, `${session}.jsonl`), [
+      JSON.stringify({ type: 'user', sessionId: session, cwd, timestamp: '2026-11-01T10:00:00.000Z', message: { role: 'user', content: prompt }, ...extra }),
+      JSON.stringify({ type: 'assistant', sessionId: session, cwd, timestamp: '2026-11-01T10:00:05.000Z', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } }),
+    ].join('\n') + '\n')
+  }
+
+  test('an adopted session is a shown chat titled from its first message, and the next send resumes it', async () => {
+    const config = join(tmp, 'claude-import')
+    const { bin, seen } = fakeClaude()
+    const wb = createWorkbench({ dir: join(tmp, 'wb-import'), bin, configDir: config })
+    const r = wb.pin(repo('import-a'))
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    transcript(config, r.pin.path, TERMINAL, 'port the billing page\nand more')
+    transcript(config, r.pin.path, '99999999-0000-4000-8000-000000000000', 'a headless run', { entrypoint: 'sdk-cli' })
+
+    expect((await wb.importable(id)).map(s => [s.session, s.title])).toEqual([[TERMINAL, 'port the billing page']])
+
+    const got = await wb.importSession(id, TERMINAL)
+    if (!('chat' in got)) throw new Error(got.refused)
+    expect(got.chat).toMatchObject({ session: TERMINAL, forkOf: null, title: 'port the billing page' })
+    const p = wb.getPin(id)!
+    expect(p.chat).toBe(got.chat.id)
+    expect(p.chats).toHaveLength(2)
+    expect((await wb.status(p)).chats.find(c => c.id === got.chat.id)).toMatchObject({ title: 'port the billing page', session: TERMINAL })
+    expect(await wb.importable(id)).toEqual([])
+
+    await wb.send(id, 'carry on')
+    await until(async () => seen().length === 1 && !wb.getPin(id)!.pid)
+    expect(own(seen()[0].argv).slice(-2)).toEqual(['--resume', TERMINAL])
+  })
+
+  test('refused by name: an unknown id, a session from another folder, one already adopted', async () => {
+    const config = join(tmp, 'claude-import-refuse')
+    const wb = createWorkbench({ dir: join(tmp, 'wb-import-refuse'), bin: fakeClaude().bin, configDir: config })
+    const r = wb.pin(repo('import-b'))
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    transcript(config, r.pin.path, TERMINAL, 'here')
+    transcript(config, join(tmp, 'repos', 'somewhere-else'), ELSEWHERE, 'there')
+
+    expect(await wb.importSession(id, 'not-a-session')).toEqual({ refused: expect.stringContaining('not a session id') })
+    expect(await wb.importSession(id, '../../etc/passwd')).toEqual({ refused: expect.stringContaining('not a session id') })
+    expect(await wb.importSession(id, '00000000-0000-4000-8000-000000000000')).toEqual({ refused: expect.stringContaining('no session') })
+    expect(await wb.importSession(id, ELSEWHERE)).toEqual({ refused: expect.stringContaining('somewhere-else') })
+    expect(await wb.importSession('nope', TERMINAL)).toEqual({ refused: expect.stringContaining('no pinned checkout') })
+
+    expect(await wb.importSession(id, TERMINAL)).toHaveProperty('chat')
+    expect(await wb.importSession(id, TERMINAL)).toEqual({ refused: expect.stringContaining('already has that session') })
+    expect(wb.getPin(id)!.chats).toHaveLength(2)
+  })
 })

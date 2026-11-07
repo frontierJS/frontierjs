@@ -1,4 +1,4 @@
-// src/domain/workbench/workbench-shell.ts — which shell a pin's Terminal tab attaches to.
+// src/domain/workbench/workbench-shell.ts — which shell a Terminal socket attaches to.
 //
 // One spelling of the tmux session, read by the socket that attaches to it
 // (plugins/workbench-terminal.ts) and by Unpin and Archive, which end it: a shell
@@ -13,12 +13,13 @@
 const SOCKET = 'workbench'
 
 // tmux refuses `.` and `:` in a session name; a pin id is a slug, so this is
-// a guard rather than a translation.
-const sessionOf = (pinId: string) => `workbench-${pinId.replace(/[^A-Za-z0-9_-]/g, '_')}`
+// a guard rather than a translation. The /terminal/ page's shell belongs to no
+// pin and takes the bare name, which no `workbench-<pin>` can collide with.
+const sessionOf = (pinId: string | null) => pinId ? `workbench-${pinId.replace(/[^A-Za-z0-9_-]/g, '_')}` : SOCKET
 
 /** The argv a Terminal socket spawns: tmux attached-or-created when tmux is
  *  on PATH, so the shell outlives the socket; a login shell when it is not. */
-export function shellArgv(pinId: string, cwd: string): string[] {
+export function shellArgv(pinId: string | null, cwd: string): string[] {
   const tmux = Bun.which('tmux')
   if (!tmux) return [process.env.SHELL || '/bin/bash', '-l']
   return [tmux, '-L', SOCKET, 'start-server', ';', 'set-option', '-s', 'default-terminal', 'tmux-256color', ';',

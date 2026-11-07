@@ -270,7 +270,7 @@ box diff is empty, and each miss is a filed `FJS-###`.
   booted, **$3.84 and 939 s**; a run through `feature` is $5.05. The turn cap is tight at 4;
   raising it is about $0.50 a turn. `clean` now runs after a failed `deploy` or `use` whenever an
   App was made.
-- [ ] 1.3 The deploy stage runs `basecamp:app` and `basecamp:deploy` with `--basecamp <name>`
+- [x] 1.3 The deploy stage runs `basecamp:app` and `basecamp:deploy` with `--basecamp <name>`
   and the run workspace's key, under an App name `<case>-<mmdd>`, on a hostname per Q3.
   **Under `FJS-D1899` (2026-11-04):** the stage makes no Domain — `basecamp:deploy --yes`
   with no `--domain` leaves the hostname unset — and the App's URL is its ingress name, which
@@ -280,6 +280,15 @@ box diff is empty, and each miss is a filed `FJS-###`.
   2026-11-05, `FJS-D1952`–`D1957`), then fleet-ingress Phase 3's `uploaded` push, then
   ingress-name's wildcard (its Phase 1, `FJS-D1954`) and serving (its Phase 2), then this step
   against the box.
+  **Driven 2026-11-07** on `chartered`, reinstalled fresh on Outpost 0.1.14 with a Let's Encrypt
+  wildcard for `maverickmade.tech` (`FJS-4060`'s first real-CA order): after `basecamp:deploy`,
+  `live.ts` reads the App's `ingress` and waits up to 5 min for `served` and a 200 from
+  `https://<appId>.<zone>/api/health`, and records that name as the hostname. App
+  `01-saas-signup-1106-0653` answered at `d47a2a20-….maverickmade.tech` and the use stage ran
+  against it. Left for Phase 1's bar: login 401, because Q6's seeded owner (`FJS-D1897`) is not
+  built — the run key reaches no App's database; the stranger leak is Q7's; clean fails on
+  `FJS-4061`'s A record. On the way: `FJS-4078` (reinstall moved yuma's DNS record),
+  `FJS-4079` (admin step's ssh drop) and `FJS-4082` (a fresh install's port clash).
 - [x] 1.4 The use stage runs owner login, the `flows.json` move and the access and stranger
   drives against the deployed URL, the same drives Phase 6 runs locally. **Built 2026-11-04:**
   `builder/use.ts`, `use(app, { url?, owner?, flow? })` → `{ login, move, access, stranger }`,
@@ -456,6 +465,42 @@ only control on the page that touches the box.
     from time to time
   - **Recommend A** — Basecamp is the owner of what its deletes leave, so the fix belongs there;
     `edge:read` and `volumes:*` touch neither machines nor keys, the boundary D1896 draws
+- ~~**Q9 — How does the deploy stage reach a deployed App to run Q6's `auth:dev-admin`?**~~ **Answered 2026-11-07 (`FJS-D2002`): A — a Basecamp method on the run key's scope runs the App's own `auth:dev-admin` through Outpost; the password travels in the call and is kept only in the run record.**
+  Measured 2026-11-07 (1.3): the run key speaks only Basecamp's API, which runs nothing inside
+  an App's container, so against chartered login answers 401.
+  - **A** — a Basecamp method on the run key's scope runs the App's own `auth:dev-admin`
+    through Outpost; the password travels in the call and is kept only in the run record
+  - **B** — Charter ssh's to the box and runs the command in the container, as `deploy:repl`
+    does; every run then holds root ssh
+  - **C** — an App seeds its first owner at boot from Variables the run key already writes,
+    when no user exists; every App ships that path and the password sits in the box env
+  - **D** — reopen Q6's B: register through `POST /api/auth/register`
+  - **Recommend A** — Basecamp is the owner of what it does to an App (Q8's reasoning), and
+    D1896 keeps root ssh off a run; Kamal's `app exec`, Fly's `ssh console -C` and Heroku's
+    `run` are each the platform's own call, not the client's ssh
+- ~~**Q10 — How does a production App take Q9's first owner, when `auth:dev-admin` refuses under `NODE_ENV=production`?**~~ **Answered 2026-11-07 (`FJS-D2004`): A — in production `auth:dev-admin` still refuses the default `dev@knight.works` / `test1234` and accepts an explicit `--email` and `--password`.**
+  Read 2026-11-07: Basecamp's App image sets `NODE_ENV=production` and carries the framework
+  at `/frontierjs`, so `fli` is there and refuses before it reads `--email`/`--password`.
+  - **A** — in production `auth:dev-admin` still refuses the default `dev@knight.works` /
+    `test1234` and accepts an explicit `--email` and `--password`
+  - **B** — a new command seeds a first owner only while the App has no users; `dev-admin`
+    stays development-only
+  - **C** — Q9's method runs it with `docker exec -e NODE_ENV=development`
+  - **Recommend A** — Q6's ruling already draws the line at the default credentials on a
+    public hostname, not at production; B is a second first-owner path and a new noun; C steps
+    around the guard instead of answering it
+- ~~**Q11 — Where does the login upsert Q9's method runs live, when an App's image carries no cli?**~~ **Answered 2026-11-07 (`FJS-D2005`): A — the upsert moves into `@frontierjs/auth` with a runnable entry; `auth:dev-admin` calls it and Q9's method runs it from the App's own `node_modules`; Q10's guard moves with it.**
+  Read 2026-11-07: `fli make:deploy`'s Dockerfile installs production dependencies only and
+  `@frontierjs/cli` is a devDependency, so `/frontierjs/packages/cli/bin/fli.js` exists only in
+  Basecamp's template image; `auth:dev-admin`'s upsert needs only litestone and Bun.
+  - **A** — the upsert moves into `@frontierjs/auth` with a runnable entry; `auth:dev-admin`
+    calls it and Q9's method runs it from the App's own `node_modules`; Q10's guard moves with it
+  - **B** — `@frontierjs/cli` becomes a production dependency of a generated App
+  - **C** — Charter's Apps build from Basecamp's template, which clones the framework's `dev`
+  - **D** — Q9's method sends the upsert inline with `bun -e`
+  - **Recommend A** — auth owns credentials and every App image vendors it, so there is one
+    first-owner path; B ships the cli in every production image, C serves only template-built
+    Apps and only once pushed, D is a second copy of the upsert
 
 ## See also
 

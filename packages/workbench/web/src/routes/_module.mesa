@@ -63,10 +63,10 @@ siteName: Workbench
 
 <div class="shell">
   <header class="topbar">
-    <span class="cluster">
+    <span class="cluster wb-head">
       <strong>Workbench</strong>
       {#if session.user}
-        <nav class="cluster" aria-label="Workbench">
+        <nav class="cluster wb-nav" aria-label="Workbench">
           {#each entries() as e}
             <a href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}</a>
           {/each}
@@ -74,7 +74,7 @@ siteName: Workbench
       {/if}
     </span>
     {#if session.user}
-      <span class="cluster">
+      <span class="cluster wb-tools">
         <Button treatment="ghost" size="sm" id="palette-open" onclick={() => commandPalette.show()}>
           Search <kbd class="kbd hide-sm">⌘K</kbd>
         </Button>
@@ -112,6 +112,14 @@ siteName: Workbench
      columns: let them take the whole width the screen gives them. */
   .screen-body:has(:global(.workbench)) { max-inline-size: none; }
   .screen-body:has(:global(.autopilot-screen)) { max-inline-size: none; }
+  /* Below 2xl (1536px): brand left and search/bell/owner right on the first line,
+     the nav on a line of its own below. The brand's span dissolves so its
+     children order against the tools as flex items of the topbar. */
+  @media (max-width: 95.99rem) {
+    .wb-head { display: contents; }
+    .wb-tools { order: 1; margin-inline-start: auto; }
+    .wb-nav { order: 2; flex-basis: 100%; }
+  }
   /* The workbench page's Focus sets this, and clears it when the page goes. */
   :global(html[data-workbench-focus] .topbar) { display: none; }
 </style>

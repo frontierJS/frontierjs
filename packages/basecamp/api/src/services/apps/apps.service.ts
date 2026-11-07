@@ -21,6 +21,7 @@
 //   readForgeDockerfile — the repository's Dockerfile now, public or through an account
 //   readRepoDockerfile · dockerfileTemplate — the two seeds the create form offers
 //   preview        — a Workbench branch's preview opened, frozen, thawed or retired, called by a peer (collection-level)
+//   seedOwner      — the App's own @frontierjs/auth seed-login run in its live container, for a first owner (FJS-D2002, FJS-D2005)
 //
 // The table is `app`, not `service`. The old header here said "table name in
 // DB: service (legacy — kept for migration continuity)"; that name was the
@@ -63,13 +64,14 @@ import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, b
   from '../../domain/release/app-source.ts'
 import { fjsDockerfileTemplate, readRepoDockerfile, forgeRepo, DOCKERFILE_PATHS } from '../../domain/release/dockerfile-template.ts'
 import { runtimeOf, CONTAINER_KINDS, servingAddresses, ingressStateOf } from '../../domain/release/runtime.ts'
+import { containerName } from '@frontierjs/outpost/docker'
 import { runLiveCheck } from '../../domain/release/live-check.ts'
 import type { DnsAnswer, HttpsAnswer } from '../../domain/release/live-check.ts'
 import { ingressRefusal } from '../edge/edge.service.ts'
 import ingressDns from '../../jobs/ingress-dns.job.ts'
 import { portHolders, serversOf, assertPortFree, allocatePort, withPortLock } from '../../domain/release/host-port.ts'
 import { restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from '../../jobs/app-backup-run.job.ts'
-import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../../domain/job/job-schedule.ts'
+import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule, syncAppCopySchedule } from '../../domain/job/job-schedule.ts'
 import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -362,9 +364,14 @@ export async function retireAppsIn(app: App, environmentIds: string[]): Promise<
 export async function unpublishAppsIn(appIds: string[]): Promise<void> {
   if (!appIds.length) return
   const domains = await db().domain.findMany({
-    where: { appId: { in: appIds } }, withDeleted: true, select: { id: true, version: true },
-  }) as { id: string, version: number }[]
+    where: { appId: { in: appIds } }, withDeleted: true, select: { id: true, appId: true, version: true },
+  }) as { id: string, appId: string, version: number }[]
   for (const d of domains) await toZone(d.id, `${d.version}:app-removed`)
+  // An App with no Domain has no `domain:dns` to carry its delete: `ingress:dns`
+  // removes its record (`FJS-4061`).
+  const held = new Set(domains.map(d => d.appId))
+  for (const id of appIds.filter(id => !held.has(id)))
+    await $.app.jobs.dispatch(ingressDns, { appId: id }, { id: `ingress:${id}:removed` })
 }
 
 /**
@@ -694,6 +701,59 @@ async function preview(body: Record<string, unknown>): Promise<unknown> {
   return retirePreview($.app, openedOf(body.opened))
 }
 
+// ─── seedOwner ───────────────────────────────────────────────────────────
+// Outpost's `/exec` runs a host shell as root, so the caller names only an
+// email and a password and every word of the command is fixed here.
+
+/** The login upsert every App's image carries in its own `@frontierjs/auth`
+ *  (`FJS-D2005`): vendored by `fli make:deploy`'s image, linked by the template's. */
+export const SEED_LOGIN_ENTRY = 'node_modules/@frontierjs/auth/seed-login.ts'
+const SEED_OWNER_TIMEOUT_S = 120
+// The two answers the command gives before the entry runs, told apart from its own exits.
+const NO_RUNNING_CONTAINER = 3
+const NO_SEED_ENTRY = 4
+const EMAIL = /^[^\s@'"\\-][^\s@'"\\]{0,252}@[^\s@'"\\]+\.[^\s@'"\\]+$/
+
+const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`
+
+// A refusal could echo its input, and a machine's error is read on a screen.
+const scrub = (text: string, password: string) => text.split(password).join('[redacted]')
+
+function seedOwnerInput(raw: unknown): { email: string, password: string } {
+  const data = (raw ?? {}) as Record<string, unknown>
+  const email = typeof data.email === 'string' ? data.email.trim() : ''
+  if (!EMAIL.test(email)) throw new BadRequest('email is an address, with no quote, backslash or leading dash')
+  const password = data.password
+  // A control character is a password no login form can type back.
+  if (typeof password !== 'string' || password.length < 12 || password.length > 256 || /[\x00-\x1f\x7f]/.test(password))
+    throw new BadRequest('password is 12 to 256 printable characters')
+  return { email, password }
+}
+
+/** The host command `/exec` runs: the live container checked, its seed entry
+ *  checked, then the entry with the login as JSON on its stdin. `printf` is a
+ *  shell builtin, so the password is in no process's argv on the machine or in
+ *  the container -- only in the `sh -c` string Outpost runs, which it keeps out
+ *  of its journal (`FJS-4083`). */
+export function seedOwnerCommand(container: string, email: string, password: string): string {
+  const c = shQuote(container)
+  const input = shQuote(JSON.stringify({ email, password, role: 'admin' }))
+  return [
+    `docker inspect --type container --format '{{.State.Running}}' ${c} 2>/dev/null | grep -qx true || exit ${NO_RUNNING_CONTAINER}`,
+    `docker exec ${c} test -f /app/${SEED_LOGIN_ENTRY} || exit ${NO_SEED_ENTRY}`,
+    `printf '%s' ${input} | docker exec -i -w /app ${c} bun ${SEED_LOGIN_ENTRY}`,
+  ].join('; ')
+}
+
+/** The slugs Outpost spells an App's container from, read the way the release
+ *  sent them (`deployment-run.job.ts` `containerSlugs`). */
+async function containerSlugsOf(target: { name: string, environmentId?: string | null, slug: string }) {
+  const env     = target.environmentId ? await db().environment.findFirst({ where: { id: target.environmentId } }) : null
+  const project = env?.projectId ? await db().project.findFirst({ where: { id: env.projectId } }) : null
+  if (!env?.slug || !project?.slug) throw new BadRequest(`App '${target.name}' has no Environment and Project to name its container by`)
+  return { project: project.slug as string, environment: env.slug as string, appSlug: target.slug }
+}
+
 export default createService({
   name:  'apps',
   scope: keyScope('apps'),
@@ -736,6 +796,10 @@ export default createService({
     // their own services, which grade each row; the level is the least of
     // theirs. A scope of its own, so a peer's key reaches this and nothing else.
     { method: 'preview', gate: LEVELS.USER, scope: 'apps:preview' },
+    // Writes a top-standing login into the App's own database, the way
+    // `restoreVolume` replaces what it holds. A scope of its own: a key holding
+    // `apps:write` must not gain a shell in every App's container (`FJS-D2002`).
+    { method: 'seedOwner', gate: LEVELS.ADMINISTRATOR, scope: 'apps:seedOwner' },
   ],
   // Announced by the service DEFINITION, not by an after hook: `callService`
   // is junction's one announcement point and it excludes `find`/`get` by name,
@@ -826,6 +890,7 @@ export default createService({
     // A deleted app's volume is not a thing to archive at 02:00.
     syncAppBackupSchedule($.app, { id: target.id, backupCron: null, deletedAt: null })
     syncAppDrillSchedule($.app, { id: target.id, drillCron: null, deletedAt: null })
+    syncAppCopySchedule($.app, target.id as string, null)
     if (target.replicaDestinationId) await syncReplicasOf($.app, [target.id])
     // The Monitor carries no relation to cascade through.
     await syncManagedMonitor($.app, $.db.asSystem(), target.id as string)
@@ -836,6 +901,7 @@ export default createService({
     const row = await restoreScoped('app', 'App')
     syncAppBackupSchedule($.app, row)
     syncAppDrillSchedule($.app, row)
+    syncAppCopySchedule($.app, row.id, await $.db.asSystem().appCopy.findFirst({ where: { appId: row.id } }))
     if (row.replicaDestinationId) await syncReplicasOf($.app, [row.id])
     await syncManagedMonitor($.app, $.db.asSystem(), row.id as string)
     return detail(row.id)
@@ -1238,6 +1304,39 @@ export default createService({
   // Collection-level: `open` makes the App it would be addressed by.
   async preview() {
     return preview(($.data ?? {}) as Record<string, unknown>)
+  },
+
+  // ── seedOwner — POST /apps/:id  X-Service-Method: seedOwner ───────
+  // The App's own `@frontierjs/auth` seed entry, run in its live container
+  // through the Outpost (`FJS-D2002`, `FJS-D2005`). The answer names the login and never the password:
+  // an Idempotency-Key keeps the answer for a day.
+  async seedOwner() {
+    const target = await getScoped('app', 'App')
+    const { email, password } = seedOwnerInput($.data)
+    if (!CONTAINER_KINDS.has(target.kind))
+      throw new BadRequest(`App '${target.name}' is a ${target.kind} App and runs no container to seed an owner in`)
+
+    const executor = await resolveExecutor($.app, target.id)
+    if (!isExecutor(executor)) throw new BadRequest(`No owner was seeded: ${executor.reason}`)
+    // The stub answers every path and runs nothing, so a seed through it would
+    // report an owner the App does not have.
+    if (executor.kind !== 'outpost') throw new BadRequest(`No owner was seeded: no Outpost reaches the machine holding App '${target.name}'`)
+
+    const container = containerName({ appId: target.id, ...(await containerSlugsOf(target)) })
+    const reply = await executor.call('/exec', {
+      command:   seedOwnerCommand(container, email, password),
+      timeout_s: SEED_OWNER_TIMEOUT_S,
+    }, { timeoutMs: (SEED_OWNER_TIMEOUT_S + 10) * 1_000 })
+    if (reply.error) throw new BadGateway(`No owner was seeded: ${scrub(reply.error.message, password)}`)
+
+    const out = (reply.data ?? {}) as { exit_code?: number, stderr?: string }
+    if (out.exit_code === NO_RUNNING_CONTAINER)
+      throw new BadRequest(`No owner was seeded: container ${container} is not running on the machine`)
+    if (out.exit_code === NO_SEED_ENTRY)
+      throw new BadRequest(`No owner was seeded: the App's image has no @frontierjs/auth seed entry (/app/${SEED_LOGIN_ENTRY} is missing in ${container}) -- the App needs @frontierjs/auth at a release that ships seed-login`)
+    if (out.exit_code !== 0)
+      throw new BadRequest(`seed-login failed in ${container} (exit ${out.exit_code ?? 'unknown'}): ${scrub(String(out.stderr ?? '').trim(), password) || 'no output'}`)
+    return { ...target, seeded: { email, serverId: executor.serverId, container } }
   },
 
   hooks: {

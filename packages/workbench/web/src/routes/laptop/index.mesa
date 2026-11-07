@@ -2,15 +2,15 @@
 title: Laptop
 ---
 <script>
-  // What fli keeps on this laptop. Disk lists the four roots of fli's home and
-  // Workbench's own folder the way `docker system df` lists its classes — size
-  // and what can be given back — with Clear on a cache entry and Remove on an
-  // idle lane. Keys lists every secret file with its mode and mends a wrong one
-  // (chmod 600), above a read-only block of who this laptop is on the Frontier
-  // network. Running lists the dev servers `fli dev` has started in any project
-  // and the tree holds a drive or a loop is taking, read only. Services lists
-  // each account fli signs in to, how, whether it is, and the commands that use
-  // it; only a press on Check runs a login probe (nothing shells out on load).
+  // What fli keeps on this laptop. Disk draws the four roots of fli's home and
+  // Workbench's own folder the way macOS Storage draws a drive — one bar of what
+  // takes the space, then each folder as a group of rows with Clear on a cache
+  // entry and Remove on an idle lane. Keys lists every secret file with its mode
+  // and mends a wrong one (chmod 600), under a card of who this laptop is on the
+  // Frontier network. Running lists the dev servers `fli dev` has started in any
+  // project and the tree holds a drive or a loop is taking, read only. Services
+  // lists each account fli signs in to, how, whether it is, and the commands that
+  // use it; only a press on Check runs a login probe (nothing shells out on load).
   //
   // The page sends a catalog name or a lane number and never a path; the API
   // resolves what to delete (api services/laptop). Confirmation is in the row.
@@ -19,9 +19,9 @@ title: Laptop
   import { ago, at } from '../../lib/datetime.js'
 
   import Dot                 from '@frontierjs/ui/components/display/Dot.mesa'
+  import Pill                from '@frontierjs/ui/components/display/Pill.mesa'
+  import EmptyState          from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Button              from '@frontierjs/ui/components/forms/Button.mesa'
-  import Card                from '@frontierjs/ui/components/layout/Card.mesa'
-  import Table               from '@frontierjs/ui/components/display/Table.mesa'
   import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
   import Tabs                from '@frontierjs/ui/components/layout/Tabs.mesa'
   import TabList             from '@frontierjs/ui/components/layout/TabList.mesa'
@@ -29,33 +29,36 @@ title: Laptop
   import TabPanel            from '@frontierjs/ui/components/layout/TabPanel.mesa'
   import { toasts }          from '@frontierjs/ui/stores/toastStore'
 
-  const CLASS_NAMES = { config: 'config', data: 'data', cache: 'cache', state: 'state', workbench: 'workbench' }
+  // The five classes in the order the bar and the groups draw them; the tone colors each segment.
+  const CLASSES = {
+    config:    { name: 'Config',    tone: 'primary',   what: 'what fli is told' },
+    data:      { name: 'Data',      tone: 'info',      what: 'what fli keeps' },
+    cache:     { name: 'Cache',     tone: 'warning',   what: 'what fli can fetch again' },
+    state:     { name: 'State',     tone: 'secondary', what: 'what fli is doing' },
+    workbench: { name: 'Workbench', tone: 'muted',     what: 'this app\'s own folder' },
+  }
+  const classOf = (root) => CLASSES[root] ?? { name: root, tone: 'muted', what: '' }
 
   let tab     = 'disk'
+  let cls     = ''    // the folder tab open on Disk: a class's root
   let report  = null
   let loading = true
   let error   = null
   let pressed = {}    // row key → true while its request is in flight
 
-  // One flat list the table draws: a class, its entries, and under the lanes entry each lane.
-  function flatten(r) {
-    const out = []
-    for (const c of r.classes) {
-      out.push({ key: `c:${c.root}`, kind: 'class', c })
-      for (const e of c.entries) {
-        out.push({ key: `e:${c.root}:${e.name}`, kind: 'entry', e })
-        if (e.reclaim === 'remove-lane') for (const l of r.lanes) out.push({ key: `l:${l.n}`, kind: 'lane', l })
-      }
-    }
-    return out
-  }
+  const sum = (rows) => rows.reduce((t, r) => t + r.bytes, 0)
 
-  $: rows = report ? flatten(report) : []
+  $: total       = report ? sum(report.classes) : 0
+  $: reclaimable = report ? report.classes.reduce((t, c) => t + c.reclaimable, 0) : 0
+  // A segment under 0.5% is drawn at a hairline so every class stays visible in the legend's bar.
+  $: segments    = report ? report.classes.filter(c => c.bytes > 0).map(c => ({ ...c, pct: Math.max(0.5, total ? c.bytes * 100 / total : 0) })) : []
 
   async function load() {
+    loading = true
     try {
       report = await laptop.service.invoke('disk')
       error  = null
+      if (!report.classes.some(c => c.root === cls)) cls = report.classes[0]?.root ?? ''
     } catch (err) {
       error = err.message
     } finally {
@@ -78,6 +81,10 @@ title: Laptop
 
   const clear      = (e) => act(`e:${e.root}:${e.name}`, 'clear', { root: e.root, name: e.name }, `Cleared ${e.name}`)
   const removeLane = (l) => act(`l:${l.n}`, 'removeLane', { lane: l.n }, `Removed lane ${l.n}`)
+
+  const laneState = (l) => l.held ? `held by pid ${l.held}, a loop is running`
+    : l.dirty ? 'holds work since its last sync — Remove will refuse'
+    : 'idle and clean'
 
   // Keys loads when its tab first opens; the walk is cheap but a tab nobody opens costs nothing.
   let keysReport  = null
@@ -110,7 +117,9 @@ title: Laptop
     }
   }
 
-  $: ident = keysReport?.identity
+  $: ident   = keysReport?.identity
+  $: present = keysReport ? keysReport.keys.filter(k => k.present).length : 0
+  $: exposed = keysReport ? keysReport.keys.filter(k => k.exposed).length : 0
   $: { if (tab === 'keys' && !keysReport && !keysLoading) loadKeys() }
 
   // Running loads when its tab first opens, and again on Refresh: it is a look at
@@ -166,48 +175,23 @@ title: Laptop
 
   $: { if (tab === 'services' && !svcReport && !svcLoading) loadServices() }
 
+  const signInTone = (s) => s.signIn.kind === 'cli' ? (s.signIn.installed ? 'info' : '') : (s.present ? 'success' : '')
+  const signInWord = (s) => s.signIn.kind === 'cli' ? (s.signIn.installed ? 'installed' : 'not installed') : (s.present ? 'ready' : 'not set up')
+
   // `commands/github/_module.md#Setup` read as text: the file and its section.
   const setupText = (p) => p.replace('#', ' § ')
 
-  const branchOf = (s) => s.branch ? `${s.worktree ? s.worktree.split('/').pop() : 'worktree'} (branch ${s.branch})` : 'main checkout'
-
-  const SESSION_COLUMNS = [
-    { name: 'project', label: 'Project' },
-    { name: 'branch',  label: 'Branch' },
-    { name: 'ports',   label: 'Ports' },
-    { name: 'age',     label: 'Age' },
-  ]
-  const HOLD_COLUMNS = [
-    { name: 'tree',   label: 'Tree' },
-    { name: 'by',     label: 'Held by' },
-    { name: 'since',  label: 'Since' },
-    { name: 'alive',  label: 'Alive' },
-  ]
+  const branchOf = (s) => s.branch ? `${s.worktree ? s.worktree.split('/').pop() : 'worktree'} · branch ${s.branch}` : 'main checkout'
 
   const when = (iso) => iso ? iso.slice(0, 16).replace('T', ' ') : ''
-
-  const KEY_COLUMNS = [
-    { name: 'label',   label: 'File' },
-    { name: 'present', label: 'Present' },
-    { name: 'mode',    label: 'Mode' },
-    { name: 'owner',   label: 'Owner' },
-    { name: 'mtime',   label: 'Modified' },
-    { name: 'fix',     label: '' },
-  ]
-
-  const COLUMNS = [
-    { name: 'name',        label: 'Name' },
-    { name: 'what',        label: 'What it is' },
-    { name: 'size',        label: 'Size' },
-    { name: 'reclaimable', label: 'Reclaimable' },
-  ]
 
   load()
 </script>
 
-<div class="section-header">
-  <h1>Laptop</h1>
-</div>
+<header class="page-head">
+  <h1 class="h3">Laptop</h1>
+  <p class="text-muted">What fli keeps on this machine — its files, its secrets, what is running, and the accounts it signs in to.</p>
+</header>
 
 <Tabs activeId={tab} onchange={(id) => tab = id}>
   <TabList>
@@ -217,275 +201,532 @@ title: Laptop
     <Tab id="services">Services</Tab>
   </TabList>
 
+  <!-- ─── Disk ─────────────────────────────────────────────────────── -->
   <TabPanel id="disk">
-    {#if error}
-      <article class="alert danger">
-        <div class="alert-content">{error}</div>
-      </article>
-    {/if}
-
-    {#if loading && !report}
-      <p class="text-sm text-muted">Measuring…</p>
-    {:else if report}
-      <Table id="laptop-disk" columns={COLUMNS} rows={rows}>
-        {#snippet row(r)}
-          {#if r.kind === 'class'}
-            <tr data-class={r.c.root} class="laptop-class">
-              <td colspan="2">
-                <strong>{CLASS_NAMES[r.c.root]}</strong>
-                <span class="text-sm text-muted"> {r.c.path}{r.c.exists ? '' : ' — not there yet'}</span>
-              </td>
-              <td><strong>{bytes(r.c.bytes)}</strong></td>
-              <td><strong>{bytes(r.c.reclaimable)}</strong></td>
-            </tr>
-          {:else if r.kind === 'entry'}
-            <tr data-entry={r.e.name}>
-              <td class="laptop-indent">{r.e.name}</td>
-              <td class="text-sm text-muted">{r.e.known ? r.e.what : r.e.root === 'workbench' ? '' : 'unknown'}</td>
-              <td>{bytes(r.e.bytes)}</td>
-              <td>
-                {#if r.e.reclaim === 'clear' && r.e.present}
-                  <ConfirmationPopover inline title={`Remove ${bytes(r.e.bytes)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => clear(r.e)}>
-                    {#snippet trigger()}
-                      <Button size="sm" treatment="outlined" tone="danger" loading={!!pressed[r.key]}>Clear</Button>
-                    {/snippet}
-                  </ConfirmationPopover>
-                {/if}
-              </td>
-            </tr>
-          {:else}
-            <tr data-lane={r.l.n}>
-              <td class="laptop-indent2">lane {r.l.n}</td>
-              <td class="text-sm text-muted">
-                {#if r.l.held}held by pid {r.l.held}, a loop is running
-                {:else if r.l.dirty}has uncommitted changes — Remove will refuse
-                {:else}idle and clean{/if}
-              </td>
-              <td>{bytes(r.l.bytes)}</td>
-              <td>
-                <ConfirmationPopover inline title={`Remove ${bytes(r.l.bytes)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => removeLane(r.l)}>
-                  {#snippet trigger()}
-                    <Button size="sm" treatment="outlined" tone="danger" disabled={!!r.l.held} loading={!!pressed[r.key]}>Remove</Button>
-                  {/snippet}
-                </ConfirmationPopover>
-              </td>
-            </tr>
-          {/if}
-        {/snippet}
-      </Table>
-      <p class="text-sm text-muted" id="laptop-walk">scanned in {(report.walkMs / 1000).toFixed(1)} s</p>
-    {/if}
-  </TabPanel>
-
-  <TabPanel id="keys">
-    {#if keysError}
-      <article class="alert danger">
-        <div class="alert-content">{keysError}</div>
-      </article>
-    {/if}
-
-    {#if keysLoading && !keysReport}
-      <p class="text-sm text-muted">Checking…</p>
-    {:else if keysReport}
-      <div id="laptop-identity" class="stack-sm">
-        <h2 class="h5">This laptop on the Frontier network</h2>
-        {#if ident.nick || ident.member}
-          <p class="text-sm">
-            Speaks as <strong>{ident.nick ?? ident.member.name}</strong>{#if ident.member}, member no. {ident.member.id}{/if}.
-            {#if ident.box}<span class="text-muted">Box <code>{ident.box}</code></span>{/if}
-          </p>
-          <p class="text-sm">
-            Peers with
-            {#if ident.peers.length}{ident.peers.map(p => p.nick).join(', ')}{:else}<span class="text-muted">nobody yet</span>{/if}.
-            {#if ident.waiting.from.length}
-              Waiting: {ident.waiting.from.map(w => `${w.count} from ${w.from}`).join(', ')}.
-            {:else}
-              <span class="text-muted">Nothing waiting.</span>
-            {/if}
-          </p>
-        {:else}
-          <p class="text-sm text-muted">This laptop is not a member yet.</p>
-        {/if}
-      </div>
-
-      <Table id="laptop-keys" columns={KEY_COLUMNS} rows={keysReport.keys}>
-        {#snippet row(k)}
-          <tr data-key={k.label} class={k.present ? '' : 'text-muted'}>
-            <td>{k.label}{#if k.kind === 'dir'}/{/if}</td>
-            <td>
-              {#if k.present}
-                <Dot tone={k.exposed ? 'danger' : 'success'} label={k.exposed ? 'exposed' : 'present'} />
-              {:else}
-                <span class="text-sm">not yet made</span>
-              {/if}
-            </td>
-            <td><code>{k.mode ?? ''}</code></td>
-            <td>{k.owner ?? ''}</td>
-            <td class="text-sm">{when(k.mtime)}</td>
-            <td>
-              {#if k.exposed}
-                <Button size="sm" treatment="outlined" tone="danger" loading={!!pressed[`k:${k.label}`]} onclick={() => fixMode(k)}>Fix</Button>
-              {/if}
-            </td>
-          </tr>
-        {/snippet}
-      </Table>
-      <p class="text-sm text-muted">Values never leave the machine's API. Fix sets a file to 600 (a folder to 700).</p>
-    {/if}
-  </TabPanel>
-
-  <TabPanel id="running">
-    <div class="section-header">
-      <h2 class="h5">Dev servers</h2>
-      <Button size="sm" treatment="outlined" id="running-refresh" loading={runLoading} onclick={loadRunning}>Refresh</Button>
-    </div>
-
-    {#if runError}
-      <article class="alert danger">
-        <div class="alert-content">{runError}</div>
-      </article>
-    {/if}
-
-    {#if runLoading && !runReport}
-      <p class="text-sm text-muted">Looking…</p>
-    {:else if runReport}
-      {#if up.length}
-        <Table id="laptop-sessions" columns={SESSION_COLUMNS} rows={up}>
-          {#snippet row(s)}
-            <tr data-session={s.name}>
-              <td>
-                <strong>{s.name}</strong>
-                <div class="text-sm text-muted">{s.root}</div>
-              </td>
-              <td class="text-sm">{branchOf(s)}</td>
-              <td>
-                <span class="cluster">
-                  {#each s.ports as p (p.port)}
-                    <span class="cluster" data-port={p.port}>
-                      <Dot tone={p.answering ? 'success' : ''} hollow={!p.answering} label={p.answering ? 'answering' : 'not answering'} />
-                      <code>{p.port}</code>
-                      <span class="text-sm text-muted">{p.category}</span>
-                    </span>
-                  {/each}
-                </span>
-              </td>
-              <td class="text-sm" title={at(s.startedAt)}>{s.startedAt ? ago(s.startedAt) : ''}{s.pid ? ` · pid ${s.pid}` : ''}</td>
-            </tr>
-          {/snippet}
-        </Table>
-      {:else}
-        <p class="text-sm text-muted" id="running-none">Nothing running</p>
+    <div class="panel">
+      {#if error}
+        <article class="alert danger"><div class="alert-content">{error}</div></article>
       {/if}
-      {#if idle}<p class="text-sm text-muted">{idle} more remembered in sessions.lock, not running.</p>{/if}
 
-      <h2 class="h5">Tree holds</h2>
-      {#if runReport.holds.length}
-        <Table id="laptop-holds" columns={HOLD_COLUMNS} rows={runReport.holds}>
-          {#snippet row(h)}
-            <tr data-hold={h.file}>
-              <td>
-                {#if h.tree}{h.tree}{:else}<span class="text-muted">unknown tree <code>{h.key}</code></span>{/if}
-                <div class="text-sm text-muted">{h.resource}</div>
-              </td>
-              <td class="text-sm">{h.pid ? `pid ${h.pid}` : ''}{h.what ? ` · ${h.what}` : ''}</td>
-              <td class="text-sm" title={at(h.since)}>{h.since ? ago(h.since) : ''}</td>
-              <td><Dot tone={h.alive ? 'success' : 'danger'} label={h.alive ? 'alive' : 'holder gone'} /></td>
-            </tr>
-          {/snippet}
-        </Table>
-      {:else}
-        <p class="text-sm text-muted" id="holds-none">No holds</p>
-      {/if}
-    {/if}
-  </TabPanel>
-
-  <TabPanel id="services">
-    {#if svcError}
-      <article class="alert danger">
-        <div class="alert-content">{svcError}</div>
-      </article>
-    {/if}
-
-    {#if svcLoading && !svcReport}
-      <p class="text-sm text-muted">Reading…</p>
-    {:else if svcReport}
-      <p class="text-sm text-muted">Presence is read from this laptop; a value is never sent to this page. Check runs the login's own command, only when pressed.</p>
-      <div class="stack" id="laptop-services">
-        {#each svcReport as s (s.id)}
-          <Card id={`service-${s.id}`} data-service={s.id}>
-            <div class="section-header">
-              <h2 class="h5">{s.name}</h2>
-              {#if s.signIn.kind !== 'cli'}
-                <Dot tone={s.present ? 'success' : ''} hollow={!s.present} label={s.present ? 'ready' : 'not set up'} />
-              {/if}
+      {#if loading && !report}
+        <p class="text-sm text-muted">Measuring…</p>
+      {:else if report}
+        <section class="card summary" id="laptop-summary">
+          <div class="summary-figures">
+            <div>
+              <div class="figure-label">Reclaimable</div>
+              <div class="figure-value">{bytes(reclaimable)}</div>
             </div>
+            <div>
+              <div class="figure-label">In use</div>
+              <div class="figure-value soft">{bytes(total)}</div>
+            </div>
+          </div>
+          <div class="usage" role="img" aria-label={`${bytes(total)} across ${segments.length} folders`}>
+            {#each segments as c (c.root)}
+              <span class={`seg ${classOf(c.root).tone}`} style:flex-basis={`${c.pct}%`} title={`${classOf(c.root).name} · ${bytes(c.bytes)}`}></span>
+            {/each}
+          </div>
+          <ul class="legend">
+            {#each report.classes as c (c.root)}
+              <li class="legend-item">
+                <span class={`swatch ${classOf(c.root).tone}`}></span>
+                <span>{classOf(c.root).name}</span>
+                <span class="text-muted num">{bytes(c.bytes)}</span>
+              </li>
+            {/each}
+          </ul>
+        </section>
 
-            <div class="stack-sm">
-              {#if s.signIn.kind === 'env'}
-                <p class="text-sm">Signs in with
-                  {#each s.signIn.keys as k (k.key)}
-                    <span class="cluster" data-key={k.key}>
-                      <Dot tone={k.present ? 'success' : ''} hollow={!k.present} label={k.present ? 'set' : 'not set'} />
-                      <code>{k.key}</code>
-                    </span>
-                  {/each}
-                </p>
-              {:else if s.signIn.kind === 'file'}
-                <p class="text-sm">Signs in with a file
-                  <span class="cluster">
-                    <Dot tone={s.present ? 'success' : ''} hollow={!s.present} label={s.present ? 'present' : 'absent'} />
-                    <code>{s.signIn.entry}</code>
+        <div class="panes" id="laptop-disk">
+          <Tabs activeId={cls} onchange={(id) => cls = id}>
+            <TabList>
+              {#each report.classes as c (c.root)}
+                <Tab id={c.root}>
+                  <span class="tab-label">
+                    <span class={`swatch ${classOf(c.root).tone}`}></span>
+                    {classOf(c.root).name}
+                    <span class="tab-size num">{bytes(c.bytes)}</span>
                   </span>
-                </p>
-              {:else}
-                <p class="text-sm">Signs in through <code>{s.signIn.bin}</code>
-                  <span class="text-muted">{s.signIn.installed ? '(installed)' : '(not installed)'}</span>;
-                  log in with <code>{s.signIn.login}</code>
-                </p>
-                <div class="cluster">
-                  <Button size="sm" treatment="outlined" data-check={s.id} disabled={!s.signIn.installed}
-                          loading={!!checks[s.id]?.pending} onclick={() => check(s)}>Check</Button>
-                  {#if checks[s.id] && !checks[s.id].pending}
-                    <span class="text-sm" data-result={s.id}>
-                      {#if checks[s.id].error}{checks[s.id].error}
-                      {:else if checks[s.id].ok}signed in{checks[s.id].who ? ` as ${checks[s.id].who}` : ''}
-                      {:else}not signed in{/if}
-                      <span class="text-muted"> · {checks[s.id].ms} ms</span>
-                    </span>
+                </Tab>
+              {/each}
+            </TabList>
+
+            {#each report.classes as c (c.root)}
+              <TabPanel id={c.root}>
+                <section class="pane" data-class={c.root}>
+                  <header class="pane-head">
+                    <div class="pane-title">
+                      <span class={`swatch ${classOf(c.root).tone}`}></span>
+                      <h2 class="h6">{classOf(c.root).name}</h2>
+                      <span class="text-sm text-muted">{classOf(c.root).what}</span>
+                    </div>
+                    <code class="path text-xs">{c.path}{c.exists ? '' : ' — not there yet'}</code>
+                  </header>
+
+                  {#if c.entries.length}
+                    <ul class="rows-list">
+                      {#each c.entries as e (e.name)}
+                        <li class="lp-row" data-entry={e.name}>
+                          <div class="row-main">
+                            <div class="row-name">{e.name}</div>
+                            {#if e.known && e.what}<div class="row-sub">{e.what}</div>
+                            {:else if e.root !== 'workbench'}<div class="row-sub">unknown</div>{/if}
+                          </div>
+                          <div class="row-size num">{bytes(e.bytes)}</div>
+                          <div class="row-act">
+                            {#if e.reclaim === 'clear' && e.present}
+                              <ConfirmationPopover inline title={`Remove ${bytes(e.bytes)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => clear(e)}>
+                                {#snippet trigger()}
+                                  <Button size="sm" treatment="outlined" tone="danger" loading={!!pressed[`e:${e.root}:${e.name}`]}>Clear</Button>
+                                {/snippet}
+                              </ConfirmationPopover>
+                            {/if}
+                          </div>
+                        </li>
+                        {#if e.reclaim === 'remove-lane'}
+                          {#each report.lanes as l (l.n)}
+                            <li class="lp-row lp-lane" data-lane={l.n}>
+                              <div class="row-main">
+                                <div class="row-name">
+                                  <Dot tone={l.held ? 'info' : l.dirty ? 'warning' : ''} hollow={!l.held && !l.dirty} pulse={!!l.held} label={laneState(l)} />
+                                  lane {l.n}
+                                </div>
+                                <div class="row-sub">{laneState(l)}</div>
+                              </div>
+                              <div class="row-size num">{bytes(l.bytes)}</div>
+                              <div class="row-act">
+                                <ConfirmationPopover inline title={`Remove ${bytes(l.bytes)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => removeLane(l)}>
+                                  {#snippet trigger()}
+                                    <Button size="sm" treatment="outlined" tone="danger" disabled={!!l.held} loading={!!pressed[`l:${l.n}`]}>Remove</Button>
+                                  {/snippet}
+                                </ConfirmationPopover>
+                              </div>
+                            </li>
+                          {/each}
+                        {/if}
+                      {/each}
+                    </ul>
+                  {:else}
+                    <p class="row-sub pane-empty">Nothing in it yet.</p>
+                  {/if}
+
+                  <footer class="pane-foot">
+                    <span class="text-sm text-muted">{c.reclaimable ? `${bytes(c.reclaimable)} reclaimable` : 'nothing to reclaim'}</span>
+                    <span class="num">{bytes(c.bytes)}</span>
+                  </footer>
+                </section>
+              </TabPanel>
+            {/each}
+          </Tabs>
+        </div>
+
+        <div class="panel-foot">
+          <span class="text-sm text-muted" id="laptop-walk">Scanned in {(report.walkMs / 1000).toFixed(1)} s</span>
+          <Button size="sm" treatment="outlined" id="disk-rescan" loading={loading} onclick={load}>Rescan</Button>
+        </div>
+      {/if}
+    </div>
+  </TabPanel>
+
+  <!-- ─── Keys ─────────────────────────────────────────────────────── -->
+  <TabPanel id="keys">
+    <div class="panel">
+      {#if keysError}
+        <article class="alert danger"><div class="alert-content">{keysError}</div></article>
+      {/if}
+
+      {#if keysLoading && !keysReport}
+        <p class="text-sm text-muted">Checking…</p>
+      {:else if keysReport}
+        <section class="card identity" id="laptop-identity">
+          <header class="pane-title">
+            <h2 class="h6">On the Frontier network</h2>
+          </header>
+          {#if ident.nick || ident.member}
+            <dl class="facts">
+              <dt>Speaks as</dt>
+              <dd><strong>{ident.nick ?? ident.member.name}</strong>{#if ident.member}<span class="text-muted"> · member no. {ident.member.id}</span>{/if}</dd>
+              {#if ident.box}
+                <dt>Box</dt>
+                <dd><code class="text-xs path">{ident.box}</code></dd>
+              {/if}
+              <dt>Peers</dt>
+              <dd>
+                {#if ident.peers.length}
+                  <span class="cluster">
+                    {#each ident.peers as p (p.nick)}<Pill>{p.nick}</Pill>{/each}
+                  </span>
+                {:else}<span class="text-muted">nobody yet</span>{/if}
+              </dd>
+              <dt>Waiting</dt>
+              <dd>
+                {#if ident.waiting.from.length}
+                  {ident.waiting.from.map(w => `${w.count} from ${w.from}`).join(', ')}
+                {:else}<span class="text-muted">nothing</span>{/if}
+              </dd>
+            </dl>
+          {:else}
+            <p class="text-sm text-muted">This laptop is not a member yet.</p>
+          {/if}
+        </section>
+
+        <section class="pane">
+          <header class="pane-head">
+            <div class="pane-title">
+              <h2 class="h6">Secret files</h2>
+              <span class="text-sm text-muted">{present} of {keysReport.keys.length} present</span>
+            </div>
+            {#if exposed}
+              <Pill tone="danger" dot>{exposed} readable by others</Pill>
+            {:else if present}
+              <Pill tone="success" dot>all private</Pill>
+            {/if}
+          </header>
+
+          <ul class="rows-list" id="laptop-keys">
+            {#each keysReport.keys as k (k.label)}
+              <li class={`lp-row key ${k.present ? '' : 'absent'}`} data-key={k.label}>
+                <div class="row-lead">
+                  {#if k.present}
+                    <Dot tone={k.exposed ? 'danger' : 'success'} label={k.exposed ? 'exposed' : 'private'} />
+                  {:else}
+                    <Dot hollow label="not yet made" />
                   {/if}
                 </div>
-              {/if}
+                <div class="row-main">
+                  <div class="row-name"><code>{k.label}{#if k.kind === 'dir'}/{/if}</code></div>
+                  <div class="row-sub">
+                    {#if !k.present}not yet made
+                    {:else if k.exposed}readable by other accounts on this machine
+                    {:else}{k.kind === 'dir' ? 'folder' : 'file'}, private to {k.owner}{/if}
+                  </div>
+                </div>
+                <div class="row-col num"><code>{k.mode ?? ''}</code></div>
+                <div class="row-col text-sm text-muted" title={k.mtime ? at(k.mtime) : ''}>{k.mtime ? ago(k.mtime) : ''}</div>
+                <div class="row-act">
+                  {#if k.exposed}
+                    <Button size="sm" treatment="outlined" tone="danger" loading={!!pressed[`k:${k.label}`]} onclick={() => fixMode(k)}>Fix</Button>
+                  {/if}
+                </div>
+              </li>
+            {/each}
+          </ul>
+        </section>
 
-              {#if s.vendor}
-                <p class="text-sm">
-                  <a href={s.vendor.url} target="_blank" rel="noopener noreferrer">Make a token</a>
-                  {#if s.vendor.note}<span class="text-muted"> — {s.vendor.note}</span>{/if}
-                </p>
-              {/if}
-              {#if s.setup}
-                <p class="text-sm">Setup: <code>{setupText(s.setup)}</code></p>
-              {/if}
+        <p class="text-sm text-muted">Values never leave this machine's API. Fix sets a file to 600 and a folder to 700.</p>
+      {/if}
+    </div>
+  </TabPanel>
 
-              <h3 class="h6">What fli does with it</h3>
-              {#if s.commands.length}
-                <ul class="text-sm" data-commands={s.id}>
-                  {#each s.commands as c (c.name)}
-                    <li><code>fli {c.name}</code>{#if c.description} <span class="text-muted">{c.description}</span>{/if}</li>
-                  {/each}
-                </ul>
-              {:else}
-                <p class="text-sm text-muted">no command uses it yet</p>
-              {/if}
+  <!-- ─── Running ──────────────────────────────────────────────────── -->
+  <TabPanel id="running">
+    <div class="panel">
+      {#if runError}
+        <article class="alert danger"><div class="alert-content">{runError}</div></article>
+      {/if}
+
+      {#if runLoading && !runReport}
+        <p class="text-sm text-muted">Looking…</p>
+      {:else if runReport}
+        <section class="pane">
+          <header class="pane-head">
+            <div class="pane-title">
+              <h2 class="h6">Dev servers</h2>
+              <span class="text-sm text-muted">
+                {up.length ? `${up.length} running` : 'none running'}{idle ? ` · ${idle} remembered, not running` : ''}
+              </span>
             </div>
-          </Card>
-        {/each}
-      </div>
-    {/if}
+            <Button size="sm" treatment="outlined" id="running-refresh" loading={runLoading} onclick={loadRunning}>Refresh</Button>
+          </header>
+
+          {#if up.length}
+            <ul class="rows-list" id="laptop-sessions">
+              {#each up as s (s.root + (s.pid ?? ''))}
+                <li class="lp-row server" data-session={s.name}>
+                  <div class="row-lead"><Dot tone="success" pulse label="running" /></div>
+                  <div class="row-main">
+                    <div class="row-name">{s.name} <span class="text-sm text-muted">{branchOf(s)}</span></div>
+                    <div class="row-sub"><code class="path text-xs">{s.root}</code></div>
+                    <div class="lp-chips">
+                      {#each s.ports as p (p.port)}
+                        <span class={`lp-chip ${p.answering ? 'lp-on' : ''}`} data-port={p.port}>
+                          <Dot tone={p.answering ? 'success' : ''} hollow={!p.answering} size="xs" label={p.answering ? 'answering' : 'not answering'} />
+                          <code>{p.port}</code>
+                          <span class="text-muted">{p.category}</span>
+                        </span>
+                      {/each}
+                    </div>
+                  </div>
+                  <div class="row-col text-sm text-muted" title={s.startedAt ? at(s.startedAt) : ''}>
+                    {s.startedAt ? `up ${ago(s.startedAt)}` : ''}{s.pid ? ` · pid ${s.pid}` : ''}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <div class="quiet" id="running-none">
+              <EmptyState title="Nothing running">No project has a dev server up. <code>fli dev</code> in a checkout starts one.</EmptyState>
+            </div>
+          {/if}
+        </section>
+
+        <section class="pane">
+          <header class="pane-head">
+            <div class="pane-title">
+              <h2 class="h6">Tree holds</h2>
+              <span class="text-sm text-muted">{runReport.holds.length ? `${runReport.holds.length} held` : 'a drive or a loop takes one while it works'}</span>
+            </div>
+          </header>
+
+          {#if runReport.holds.length}
+            <ul class="rows-list" id="laptop-holds">
+              {#each runReport.holds as h (h.file)}
+                <li class="lp-row" data-hold={h.file}>
+                  <div class="row-lead"><Dot tone={h.alive ? 'success' : 'danger'} label={h.alive ? 'alive' : 'holder gone'} /></div>
+                  <div class="row-main">
+                    <div class="row-name">
+                      {#if h.tree}{h.tree.split('/').pop()}{:else}unknown tree{/if}
+                      <span class="text-sm text-muted">{h.resource}</span>
+                    </div>
+                    <div class="row-sub">
+                      {#if h.tree}<code class="path text-xs">{h.tree}</code>{:else}<code class="text-xs">{h.key}</code>{/if}
+                    </div>
+                  </div>
+                  <div class="row-col text-sm">{h.pid ? `pid ${h.pid}` : ''}{h.what ? ` · ${h.what}` : ''}{#if !h.alive} <span class="text-danger">· gone</span>{/if}</div>
+                  <div class="row-col text-sm text-muted" title={h.since ? at(h.since) : ''}>{h.since ? ago(h.since) : ''}</div>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="row-sub pane-empty" id="holds-none">No holds.</p>
+          {/if}
+        </section>
+      {/if}
+    </div>
+  </TabPanel>
+
+  <!-- ─── Services ─────────────────────────────────────────────────── -->
+  <TabPanel id="services">
+    <div class="panel">
+      {#if svcError}
+        <article class="alert danger"><div class="alert-content">{svcError}</div></article>
+      {/if}
+
+      {#if svcLoading && !svcReport}
+        <p class="text-sm text-muted">Reading…</p>
+      {:else if svcReport}
+        <p class="text-sm text-muted">Presence is read from this laptop; a value is never sent to this page. Check runs the login's own command, only when pressed.</p>
+
+        <div class="cards" id="laptop-services">
+          {#each svcReport as s (s.id)}
+            <article class="card lp-service" id={`service-${s.id}`} data-service={s.id}>
+              <header class="pane-head">
+                <h2 class="h6">{s.name}</h2>
+                <Pill tone={signInTone(s)} dot>{signInWord(s)}</Pill>
+              </header>
+
+              <dl class="facts lp-compact">
+                <dt>Signs in</dt>
+                <dd>
+                  {#if s.signIn.kind === 'env'}
+                    <span class="lp-chips">
+                      {#each s.signIn.keys as k (k.key)}
+                        <span class={`lp-chip ${k.present ? 'lp-on' : ''}`} data-key={k.key}>
+                          <Dot tone={k.present ? 'success' : ''} hollow={!k.present} size="xs" label={k.present ? 'set' : 'not set'} />
+                          <code>{k.key}</code>
+                        </span>
+                      {/each}
+                    </span>
+                  {:else if s.signIn.kind === 'file'}
+                    <span class={`lp-chip ${s.present ? 'lp-on' : ''}`}>
+                      <Dot tone={s.present ? 'success' : ''} hollow={!s.present} size="xs" label={s.present ? 'present' : 'absent'} />
+                      <code>{s.signIn.entry}</code>
+                    </span>
+                  {:else}
+                    <span class="stack gap-xs">
+                      <span>through <code>{s.signIn.bin}</code></span>
+                      <span class="text-sm text-muted">log in with <code>{s.signIn.login}</code></span>
+                      <span class="cluster">
+                        <Button size="sm" treatment="outlined" data-check={s.id} disabled={!s.signIn.installed}
+                                loading={!!checks[s.id]?.pending} onclick={() => check(s)}>Check</Button>
+                        {#if checks[s.id] && !checks[s.id].pending}
+                          <span class="text-sm" data-result={s.id}>
+                            {#if checks[s.id].error}<span class="text-danger">{checks[s.id].error}</span>
+                            {:else if checks[s.id].ok}<span class="text-success">signed in{checks[s.id].who ? ` as ${checks[s.id].who}` : ''}</span>
+                            {:else}not signed in{/if}
+                            <span class="text-muted"> · {checks[s.id].ms} ms</span>
+                          </span>
+                        {/if}
+                      </span>
+                    </span>
+                  {/if}
+                </dd>
+
+                {#if s.vendor}
+                  <dt>Token</dt>
+                  <dd>
+                    <a href={s.vendor.url} target="_blank" rel="noopener noreferrer">Make one</a>
+                    {#if s.vendor.note}<span class="text-sm text-muted"> — {s.vendor.note}</span>{/if}
+                  </dd>
+                {/if}
+                {#if s.setup}
+                  <dt>Setup</dt>
+                  <dd><code class="text-xs path">{setupText(s.setup)}</code></dd>
+                {/if}
+              </dl>
+
+              <div class="used">
+                <div class="kicker">Used by</div>
+                {#if s.commands.length}
+                  <ul class="commands" data-commands={s.id}>
+                    {#each s.commands as c (c.name)}
+                      <li><code>fli {c.name}</code><span class="text-sm text-muted">{c.description ?? ''}</span></li>
+                    {/each}
+                  </ul>
+                {:else}
+                  <span class="text-sm text-muted">no command yet</span>
+                {/if}
+              </div>
+            </article>
+          {/each}
+        </div>
+      {/if}
+    </div>
   </TabPanel>
 </Tabs>
 
 <style>
-  .laptop-class  { background: var(--surface-2, transparent); }
-  .laptop-indent  { padding-inline-start: 1.5rem; }
-  .laptop-indent2 { padding-inline-start: 3rem; }
+  /* ─── Page ───────────────────────────────────────────────────────── */
+  .page-head { display: flex; flex-direction: column; gap: var(--space-2xs); margin-block-end: var(--space-2xl); }
+  .page-head p { margin: 0; max-inline-size: 60ch; }
+
+  .panel      { display: flex; flex-direction: column; gap: var(--space-2xl); padding-block-start: var(--space-xl); }
+  .panel-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+
+  .num  { font-variant-numeric: tabular-nums; }
+  .path { color: var(--ink-mute); background: none; padding: 0; overflow-wrap: anywhere; }
+
+  /* ─── Disk summary ───────────────────────────────────────────────── */
+  .summary         { display: flex; flex-direction: column; gap: var(--space-xl); }
+  .summary-figures { display: flex; flex-wrap: wrap; gap: var(--space-4xl); }
+  .figure-label    { font-size: var(--text-sm); color: var(--ink-mute); font-weight: var(--label-font-weight);
+                     text-transform: var(--label-text-transform); letter-spacing: var(--label-letter-spacing); }
+  .figure-value    { font-size: var(--text-3xl); font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .figure-value.soft { color: var(--ink-soft); font-weight: 500; }
+
+  .usage { display: flex; block-size: 0.75rem; border-radius: 999px; overflow: hidden; background: var(--surface-sunken); gap: 2px; }
+  .seg { flex: 0 0 auto; min-inline-size: 3px; }
+
+  .legend      { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-2xl); list-style: none; margin: 0; padding: 0; }
+  .legend-item { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: var(--text-sm); }
+
+  .swatch { display: inline-block; inline-size: 0.6rem; block-size: 0.6rem; border-radius: 3px; flex-shrink: 0; }
+
+  /* Segment and swatch fills: one tone per class, no literal colors. */
+  .seg.primary,   .swatch.primary   { background: var(--color-primary); }
+  .seg.info,      .swatch.info      { background: var(--color-info); }
+  .seg.warning,   .swatch.warning   { background: var(--color-warning); }
+  .seg.secondary, .swatch.secondary { background: var(--color-secondary); }
+  .seg.muted,     .swatch.muted     { background: var(--color-muted); }
+
+  /* ─── Groups and rows ─────────────────────────────────────────────── */
+  .tab-label { display: inline-flex; align-items: center; gap: var(--space-xs); }
+  .tab-size  { color: var(--ink-mute); font-size: var(--text-xs); }
+  .panes     { display: flex; flex-direction: column; gap: var(--space-xl); }
+  .cards  { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: var(--space-xl); }
+
+  .pane {
+    border:        var(--border-width) solid var(--rule);
+    border-radius: var(--card-radius);
+    background:    var(--surface);
+    overflow:      hidden;
+  }
+  .pane-head {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: var(--space-xs) var(--space-lg);
+    padding: var(--space-md) var(--space-xl);
+    border-block-end: var(--border-width) solid var(--rule);
+    background: var(--surface-sunken);
+  }
+  .pane-title { display: flex; align-items: center; gap: var(--space-sm); min-inline-size: 0; }
+  .pane-title h2 { margin: 0; }
+  .pane-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);
+    padding: var(--space-sm) var(--space-xl);
+    border-block-start: var(--border-width) solid var(--rule);
+    font-size: var(--text-sm); color: var(--ink-soft);
+  }
+
+  .rows-list { list-style: none; margin: 0; padding: 0; }
+  .lp-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-lg);
+    padding: var(--space-md) var(--space-xl);
+    transition: background var(--motion-fast) var(--motion-ease);
+  }
+  .lp-row + .lp-row   { border-block-start: var(--border-width) solid var(--rule); }
+  .lp-row:hover    { background: color-mix(in srgb, var(--ink) 3%, var(--surface)); }
+  .row-main     { display: flex; flex-direction: column; gap: 0.125rem; min-inline-size: 0; }
+  .row-name     { display: flex; align-items: center; gap: var(--space-sm); font-weight: 500; overflow-wrap: anywhere; }
+  .row-sub      { font-size: var(--text-sm); color: var(--ink-mute); overflow-wrap: anywhere; }
+  .row-size     { color: var(--ink-soft); text-align: end; min-inline-size: 5.5rem; }
+  .row-col      { white-space: nowrap; }
+  .row-act      { min-inline-size: 5rem; display: flex; justify-content: flex-end; }
+  .row-lead     { display: flex; align-items: center; justify-content: center; inline-size: 1rem; }
+
+  /* A lane sits under the entry that owns it: indented, with the entry's rule above it. */
+  .lp-row.lp-lane            { padding-inline-start: calc(var(--space-xl) + var(--space-2xl)); background: color-mix(in srgb, var(--surface-sunken) 50%, var(--surface)); }
+  .lp-row.lp-lane:hover      { background: color-mix(in srgb, var(--ink) 4%, var(--surface-sunken)); }
+
+  .lp-row.key code { background: none; padding: 0; }
+  .lp-row.key    { grid-template-columns: auto minmax(0, 1fr) 3.5rem 7rem auto; }
+  .lp-row.absent { opacity: 0.6; }
+  .lp-row.server { grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; }
+  .lp-row.server .row-lead { padding-block-start: 0.35rem; }
+  .lp-row.server .row-col  { padding-block-start: 0.1rem; }
+  #laptop-holds .lp-row    { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+
+  .pane-empty { padding: var(--space-lg) var(--space-xl); margin: 0; }
+  .quiet       { padding: var(--space-3xl) var(--space-xl); }
+
+  /* ─── Chips ──────────────────────────────────────────────────────── */
+  .lp-chips { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-block-start: var(--space-xs); }
+  .lp-chip {
+    display: inline-flex; align-items: center; gap: var(--space-xs);
+    padding: 0.15rem var(--space-sm);
+    border: var(--border-width) solid var(--rule);
+    border-radius: 999px;
+    font-size: var(--text-xs);
+    color: var(--ink-mute);
+    background: var(--surface);
+  }
+  .lp-chip code    { background: none; padding: 0; color: inherit; }
+  .lp-chip.lp-on      { color: var(--ink); border-color: color-mix(in srgb, var(--color-success) 40%, var(--rule)); }
+
+  /* ─── Identity and services ───────────────────────────────────────── */
+  .identity { display: flex; flex-direction: column; gap: var(--space-lg); }
+  .identity h2, .lp-service h2 { margin: 0; }
+  .lp-service  { display: flex; flex-direction: column; gap: var(--space-lg); }
+  .lp-service > .pane-head { margin: calc(var(--space-3xl) * -1) calc(var(--space-3xl) * -1) 0; }
+
+  .facts.lp-compact { font-size: var(--text-sm); gap: var(--space-sm) var(--space-xl); }
+  .facts dt      { color: var(--ink-mute); }
+  .facts dd      { margin: 0; min-inline-size: 0; }
+
+  .commands      { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-xs) var(--space-md); align-items: baseline; }
+  .commands li   { display: contents; }
+  .used          { display: flex; flex-direction: column; gap: var(--space-sm); padding-block-start: var(--space-md); border-block-start: var(--border-width) solid var(--rule); }
+  .commands code { justify-self: start; font-size: var(--text-xs); }
+
+  /* ─── Narrow ──────────────────────────────────────────────────────── */
+  @media (max-width: 40rem) {
+    .lp-row.key     { grid-template-columns: auto minmax(0, 1fr) auto; }
+    .lp-row.key .row-col { display: none; }
+    #laptop-holds .lp-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+    #laptop-holds .lp-row .row-col:last-child { display: none; }
+    .row-size    { min-inline-size: 0; }
+  }
 </style>

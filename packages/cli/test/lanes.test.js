@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { copyIfPresent, lanePatch } from '../../../scripts/lanes.mjs'
+import { copyIfPresent, lanePatch, laneDirty, markSynced } from '../../../scripts/lanes.mjs'
 
 let base
 beforeEach(() => { base = mkdtempSync(join(tmpdir(), 'fjs-lanes-test-')) })
@@ -58,5 +58,39 @@ describe('lanePatch', () => {
     const patch = lanePatch(lane, before).toString()
     expect(patch).toContain('real.js')
     expect(patch).not.toContain('sierra-fresh')
+  })
+})
+
+// FJS-D2000: a sync copies the main tree's uncommitted diff in, so `git status`
+// is dirty on every working laptop; dirty is measured from the sync marker.
+describe('laneDirty', () => {
+  const git = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).stdout.trim()
+  const repo = () => {
+    const dir = join(base, 'repo')
+    mkdirSync(dir, { recursive: true })
+    spawnSync('git', ['init', '-q', dir])
+    git(dir, 'config', 'user.email', 't@t'); git(dir, 'config', 'user.name', 't')
+    writeFileSync(join(dir, 'a.js'), 'a')
+    git(dir, 'add', '-A'); git(dir, 'commit', '-qm', 'base')
+    writeFileSync(join(dir, 'a.js'), 'the main tree\'s uncommitted edit, carried in by the sync')
+    return { dir, linked: false }
+  }
+
+  test('with no marker, any change counts', () => {
+    const lane = repo()
+    expect(laneDirty(lane)).toBe(true)
+    git(lane.dir, 'checkout', '--', 'a.js')
+    expect(laneDirty(lane)).toBe(false)
+  })
+
+  test('what the sync wrote is not dirty; what the lane wrote after it is', () => {
+    const lane = repo()
+    git(lane.dir, 'add', '-A')
+    markSynced(lane, git(lane.dir, 'write-tree'))
+    expect(laneDirty(lane)).toBe(false)
+    writeFileSync(join(lane.dir, 'new.js'), 'a file nothing else has')
+    expect(laneDirty(lane)).toBe(true)
+    rmSync(join(lane.dir, 'new.js'))
+    expect(laneDirty(lane)).toBe(false)
   })
 })

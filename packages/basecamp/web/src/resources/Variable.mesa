@@ -13,6 +13,13 @@
 
   /** A secret's value, once, for an administrator; the server files it in the trail. */
   export const revealVariable = (id) => variables.service.invoke('reveal', id, {})
+
+  /** `{ filename, text }` for `{ appId }` or `{ environmentId }`; with secrets, each one is a reveal in the trail. */
+  export const exportVariables = (scope, { secrets = false } = {}) =>
+    variables.service.invoke(secrets ? 'exportSecrets' : 'export', null, scope)
+
+  /** `{ applied, rows }` — `dryRun` is the preview; `secrets` the new keys to keep secret. */
+  export const importVariables = (input) => variables.service.invoke('import', null, input)
 </script>
 
 <script>

@@ -95,9 +95,8 @@ export function openLane(n) {
 }
 
 /**
- * The lanes this checkout opened, each with who holds it and whether its
- * worktree has changes. A lane is reused, so a clean one is the exception: it
- * carries the main tree's uncommitted diff from the last row.
+ * The lanes this checkout opened, each with who holds it and whether it is
+ * dirty in `laneDirty`'s sense: holding work no sync or harvest accounts for.
  */
 export function describeLanes() {
   let names = []
@@ -107,15 +106,15 @@ export function describeLanes() {
     .map(({ n }) => {
       const dir = join(LANES_DIR, `${basename(ROOT)}-${n}`)
       const pid = alive(holder(n)) ? holder(n) : 0
-      return { n, dir, held: pid || null, dirty: isWorktree(dir) ? dirtyIn(dir) : false }
+      return { n, dir, held: pid || null, dirty: isWorktree(dir) ? laneDirty({ dir }) : false }
     })
     .sort((a, b) => a.n - b.n)
 }
 
 /**
  * Remove lane `n`: its worktree, its `bin-<n>` and its `bun-<n>`. Refused while
- * a loop holds it (the session would lose its tree mid-prove) or while its
- * worktree has changes; the next `openLane(n)` makes it again. The claim is
+ * a loop holds it (the session would lose its tree mid-prove) or while it is
+ * dirty (`laneDirty`); the next `openLane(n)` makes it again. The claim is
  * taken for the removal itself, so a loop starting now finds the lane held
  * rather than half gone. Answers `{ freed }` bytes or `{ refused }` with why.
  */
@@ -126,7 +125,7 @@ export function removeLane(n) {
   if (claimed.has(n) || alive(holder(n))) return { refused: `lane ${n} is held by pid ${holder(n) || process.pid}, a loop still running` }
   if (!claim(n)) return { refused: `lane ${n} is held by pid ${holder(n)}, a loop still running` }
   try {
-    if (dirtyIn(dir)) return { refused: `lane ${n} has uncommitted changes in ${dir}` }
+    if (laneDirty({ dir })) return { refused: `lane ${n} holds work since its last sync in ${dir}` }
     const parts = [dir, join(LANES_DIR, `bin-${n}`), join(LANES_DIR, `bun-${n}`)]
     const freed = parts.reduce((sum, p) => sum + bytesUnder(p), 0)
     git(ROOT, 'worktree', 'remove', '--force', dir)
@@ -187,8 +186,32 @@ export function syncLane(lane, { linked = true } = {}) {
   // A link where the index holds a file reads as a change; the lane's git
   // status then looks as the main tree's does.
   if (linked) git(dir, 'update-index', '--skip-worktree', ...LINKED)
-  return snapshot(lane)
+  return markSynced(lane, snapshot(lane))
 }
+
+/**
+ * Whether the lane holds work nothing else has. A lane is reused and every sync
+ * copies the main tree's uncommitted diff in, so `git status` reads dirty on
+ * any working laptop and says nothing about what the LANE did; dirty means its
+ * files differ from what the last sync or harvest left (FJS-D2000). A lane with
+ * no marker was opened by an older build, and status is the only answer.
+ */
+export function laneDirty(lane) {
+  let marker
+  try { marker = readFileSync(markerOf(lane.dir), 'utf8').trim().split(' ') } catch {}
+  if (!marker) return git(lane.dir, 'status', '--porcelain', '--untracked-files=all') !== ''
+  return snapshot({ dir: lane.dir, linked: marker[1] !== 'copied' }) !== marker[0]
+}
+
+/** Record `tree` as the lane's accounted-for state; answers `tree`. */
+export function markSynced(lane, tree) {
+  writeFileSync(markerOf(lane.dir), `${tree} ${lane.linked === false ? 'copied' : 'linked'}\n`)
+  return tree
+}
+
+// In the worktree's own git dir, so it goes with the lane and never with the
+// main tree's checkout.
+const markerOf = dir => git(dir, 'rev-parse', '--path-format=absolute', '--git-path', 'fli-sync')
 
 /**
  * Copy `src` to `dest`, true when it was copied. A file the main tree lists as
@@ -245,6 +268,8 @@ export function harvest(lane, base) {
     mkdirSync(dirname(join(ROOT, path)), { recursive: true })
     writeFileSync(join(ROOT, path), content)
   }
+  // Harvested work is in the main tree now, so the lane holds nothing of its own.
+  markSynced(lane, after)
   return { written: plan.map(p => p.path), dropped, conflicts }
 }
 
@@ -324,11 +349,6 @@ function blob(dir, tree, path) {
 }
 
 const same = (a, b) => a === null || b === null ? a === b : Buffer.compare(a, b) === 0
-
-// Untracked files count: a lane's session may have written a file nothing has seen.
-function dirtyIn(dir) {
-  return git(dir, 'status', '--porcelain', '--untracked-files=all') !== ''
-}
 
 function bytesUnder(path) {
   let st

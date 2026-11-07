@@ -123,6 +123,48 @@ describe.skipIf(!df)('a read-only copy on a real daemon (FJS-D1996)', () => {
     }
   }, 90_000)
 
+  // The App's machine exports its image; another machine, holding nothing, loads it from the bucket.
+  test('an image exported to a PUT receiver is loaded from a GET of the same bytes on a daemon that no longer holds it', async () => {
+    const docker = createDocker({ restoreDir: join(root, 'images'), backupDir: join(root, 'exports') })
+    const dir  = staged()
+    const base = 'oven/bun:1.4.4-slim'
+    const mine = 'fjs-live-export:1'
+    const held = new Map()
+    const bucket = Bun.serve({ port: 0, async fetch(req) {
+      if (req.method === 'PUT') { held.set('image', new Uint8Array(await req.arrayBuffer())); return new Response(null, { status: 200 }) }
+      return held.has('image') ? new Response(held.get('image')) : new Response('', { status: 404 })
+    } })
+    const url = `http://127.0.0.1:${bucket.port}/images/servelive.tar.gz`
+    let sha256
+    try {
+      expect((await spawnRun(['docker', 'tag', base, mine])).exitCode).toBe(0)
+      const exported = await docker.exportImage({ appId: 'servelive', image: mine, uploadUrl: url })
+      expect(exported).toMatchObject({ uploaded: true })
+      sha256 = exported.sha256
+      expect(held.get('image').length).toBe(exported.bytes)
+
+      // Nothing on this daemon names these bytes any more: the tag, the base's tag and the id.
+      const id = (await spawnRun(['docker', 'image', 'inspect', '--format', '{{.Id}}', mine])).stdout.trim()
+      await spawnRun(['docker', 'rmi', '-f', mine, base, id])
+      expect((await spawnRun(['docker', 'image', 'inspect', id])).exitCode).not.toBe(0)
+
+      const served = await docker.serveCopy({
+        appId: 'servelive', dir, image: mine, digest: id, imageUrl: url, imageSha256: sha256,
+        asOf: '2026-10-25T12:00:00Z', config: config(),
+      })
+      const res = await fetch(`http://${served.upstream}/`)
+      expect(res.headers.get('x-frontier-read-only')).toBe('2026-10-25T12:00:00Z')
+      expect((await spawnRun(['docker', 'image', 'inspect', `fjs-copy-image:${sha256}`])).exitCode).toBe(0)
+    } finally {
+      await spawnRun(['sh', '-c', 'docker rm -f $(docker ps -aq --filter label=fjs.copy=servelive) 2>/dev/null; true'])
+      // The other cases in this file run the base image by its tag.
+      if (sha256) await spawnRun(['docker', 'tag', `fjs-copy-image:${sha256}`, base])
+      await spawnRun(['docker', 'rmi', mine, `fjs-copy-image:${sha256}`])
+      bucket.stop(true)
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 180_000)
+
   test('an image that ignores the variable is refused and its container removed', async () => {
     const docker = createDocker()
     const dir = staged()

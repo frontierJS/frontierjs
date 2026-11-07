@@ -40,7 +40,10 @@ import { NOTIFICATION_KINDS }     from '../src/domain/notification/kinds.ts'
 import { notifyPeople }           from '../src/domain/notification/notify.ts'
 import { createJunctionClient }   from '@frontierjs/junction/client'
 import { snapshotVariables, releaseEnv } from '../src/domain/release/variables.ts'
-import { appBackupSchedule, appDrillSchedule, fireBackup, restoreSchedules } from '../src/domain/job/job-schedule.ts'
+import { formatDotenv, parseDotenv } from '../src/domain/release/dotenv.ts'
+import { appBackupSchedule, appDrillSchedule, appCopySchedule, syncAppCopySchedule, fireBackup, restoreSchedules } from '../src/domain/job/job-schedule.ts'
+import { refreshCopy } from '../src/jobs/app-copy-refresh.job.ts'
+import { exportReleaseImage, imageKey } from '../src/domain/release/image-export.ts'
 import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
 import { mintArchiveUrl } from '../src/plugins/backup-archive.ts'
 import { mintUploadUrl } from '../src/plugins/app-archive-upload.ts'
@@ -3176,6 +3179,79 @@ describe('variables', () => {
     await expect(apps.patch(web.id, { port: null, healthCheck: '/up' })).rejects.toThrow(/health check/)
   })
 
+  test('a .env reads back as what was written: quotes, escapes, the secret marker', () => {
+    const rows = [
+      { key: 'PLAIN',  value: 'x',                    isSecret: false },
+      { key: 'SPACED', value: ' a "b" #c \\ \nd ',    isSecret: false },
+      { key: 'EMPTY',  value: '',                     isSecret: false },
+      { key: 'TOKEN',  value: 's3cr=t',               isSecret: true },
+      { key: 'HIDDEN', value: null,                   isSecret: true },
+    ]
+    const { entries, problems } = parseDotenv(formatDotenv(rows))
+    expect(problems).toEqual([])
+    expect(entries.map(e => [e.key, e.value, e.suggestSecret])).toEqual([
+      ['PLAIN', 'x', false], ['SPACED', ' a "b" #c \\ \nd ', false], ['EMPTY', '', false],
+      ['TOKEN', 's3cr=t', true], ['HIDDEN', '', true],
+    ])
+
+    // A plain .env: `export`, single quotes over two lines, an inline comment, no expansion.
+    const foreign = parseDotenv("export A=1 # one\nB='two\nlines'\nSTRIPE_API_KEY=$HOME\nMONKEY=x\n")
+    expect(foreign.entries.map(e => [e.key, e.value, e.suggestSecret])).toEqual([
+      ['A', '1', false], ['B', 'two\nlines', false], ['STRIPE_API_KEY', '$HOME', true], ['MONKEY', 'x', false],
+    ])
+    expect(parseDotenv('A=1\nnot a line\nA=2\n').problems).toEqual([
+      'line 2: no `=`', 'line 3: A is already set on line 1',
+    ])
+  })
+
+  test('export blanks a secret; exportSecrets is an administrator\'s and reveals each', async () => {
+    const app = await (env.system as any).app.create({ data: {
+      workspaceId: ws.id, environmentId: environment.id, name: 'dotenv', slug: `dotenv-${tag()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    await vars().create({ appId: app.id, key: 'MODE', value: 'live mode' })
+    await vars().create({ appId: app.id, key: 'API_TOKEN', value: 'tok-1', isSecret: true })
+
+    const out = await vars(viewer).call('export', null, { appId: app.id }) as any
+    expect(out.filename).toBe(`${app.slug}.env`)
+    expect(out.text).toBe('# secret\nAPI_TOKEN=\nMODE="live mode"\n')
+
+    await expect(vars().call('exportSecrets', null, { appId: app.id })).rejects.toThrow()
+    const full = await vars(owner).call('exportSecrets', null, { appId: app.id }) as any
+    expect(full.text).toBe('# secret\nAPI_TOKEN=tok-1\nMODE="live mode"\n')
+  })
+
+  test('import previews, then merges: new and changed keys, a blank secret kept, nothing removed', async () => {
+    const app = await (env.system as any).app.create({ data: {
+      workspaceId: ws.id, environmentId: environment.id, name: 'imp', slug: `imp-${tag()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    await vars().create({ appId: app.id, key: 'KEEP_ME', value: 'k' })
+    await vars().create({ appId: app.id, key: 'MODE', value: 'old' })
+    await vars().create({ appId: app.id, key: 'DB_PASSWORD', value: 'pw', isSecret: true })
+
+    const text = 'MODE=new\n# secret\nDB_PASSWORD=\nNEW_PLAIN=1\nSTRIPE_KEY=sk\n# secret\nUNSET_SECRET=\n'
+    const preview = await vars().call('import', null, { appId: app.id, text, dryRun: true }) as any
+    expect(preview.applied).toBe(false)
+    expect(preview.rows.map((r: any) => [r.key, r.action, r.isSecret])).toEqual([
+      ['MODE', 'update', false], ['DB_PASSWORD', 'unchanged', true], ['NEW_PLAIN', 'create', false],
+      ['STRIPE_KEY', 'create', true], ['UNSET_SECRET', 'skip', true],
+    ])
+    expect((await vars().find({ appId: app.id }) as any).data.length).toBe(3)
+
+    // The person unticked STRIPE_KEY in the preview.
+    await vars().call('import', null, { appId: app.id, text, secrets: ['UNSET_SECRET'] })
+    const sys  = env.system as any
+    const rows = Object.fromEntries((await sys.variable.findMany({ where: { appId: app.id } })).map((r: any) => [r.key, r]))
+    expect(Object.keys(rows).sort()).toEqual(['DB_PASSWORD', 'KEEP_ME', 'MODE', 'NEW_PLAIN', 'STRIPE_KEY'])
+    expect(rows.MODE.value).toBe('new')
+    expect(rows.STRIPE_KEY.isSecret).toBe(false)
+    expect(rows.DB_PASSWORD.secretValue).toBe('pw')
+
+    const again = await vars().call('import', null, { appId: app.id, text, secrets: ['UNSET_SECRET'], dryRun: true }) as any
+    expect(again.rows.filter((r: any) => r.action === 'create' || r.action === 'update')).toEqual([])
+    await expect(vars(viewer).call('import', null, { appId: app.id, text })).rejects.toThrow()
+    await expect(vars().call('import', null, { appId: app.id, text: 'A=1\nA=2' })).rejects.toThrow(/already set on line 1/)
+  })
+
   test('an app has no config blob for a setting to hide in', async () => {
     await expect(env.as(developer).service('apps').patch(web.id, { config: { env: { A: 'b' } } }))
       .rejects.toThrow(/config/)
@@ -4707,6 +4783,106 @@ describe('servers.retireApp — stopping an old App the machine still routes', (
   })
 })
 
+// ─── apps.seedOwner — a deployed App's first owner (`FJS-D2002`) ─────────────
+describe('apps.seedOwner — the App\'s own @frontierjs/auth seed entry, run through its Outpost', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let server: any, placed: any, unplaced: any, project: any, e: any
+  const sent: any[] = []
+  let answer: Record<string, unknown> = { exit_code: 0, stdout: '', stderr: '' }
+  const PASSWORD = `pa'ss $(rm -rf /) ${tag()}`
+  const seed = (who: any, id: string, body: Record<string, unknown> = { email: 'owner@charter.test', password: PASSWORD }) =>
+    env.as(who).service('apps').call('seedOwner', id, body)
+
+  const conduit = () => (env.app as any).conduit
+  let real: { resolve: any, send: any }
+  beforeAll(async () => {
+    const sys = env.system as any
+    server  = await serverAt('online', { workspaceId: ws.id, name: 'seed-host', slug: `seed-host-${tag()}` })
+    project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Seed', slug: `seed-${tag()}` } })
+    e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    placed   = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'placed', slug: `placed-${tag()}`, kind: 'container' } })
+    unplaced = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'unplaced', slug: `unplaced-${tag()}`, kind: 'container' } })
+    await sys.appServer.create({ data: { appId: placed.id, serverId: server.id, replicaIndex: 0 } })
+    const c = conduit()
+    real = { resolve: c.resolve, send: c.send }
+    c.resolve = async (target: string, ...rest: unknown[]) => target === `outpost:${server.id}` ? { pinned_cert: true } : real.resolve.call(c, target, ...rest)
+    c.send    = async (call: any) => {
+      if (call.target !== `outpost:${server.id}`) return real.send.call(c, call)
+      sent.push({ path: call.path, body: call.body })
+      return { data: answer }
+    }
+  })
+  afterAll(() => { const c = conduit(); c.resolve = real.resolve; c.send = real.send })
+  beforeEach(() => { sent.length = 0; answer = { exit_code: 0, stdout: '', stderr: '' } })
+
+  test('the one fixed command reaches /exec with the login on stdin, and the answer carries no password', async () => {
+    const out = await seed(owner, placed.id) as any
+    const name = `fjs--${project.slug}-${e.slug}-${placed.slug}-${placed.id.slice(0, 8).toLowerCase()}`
+    expect(sent).toHaveLength(1)
+    expect(sent[0].path).toBe('/exec')
+    const json = JSON.stringify({ email: 'owner@charter.test', password: PASSWORD, role: 'admin' })
+    const quoted = `'${json.replace(/'/g, `'\\''`)}'`
+    const command = sent[0].body.command as string
+    expect(command).toBe([
+      `docker inspect --type container --format '{{.State.Running}}' '${name}' 2>/dev/null | grep -qx true || exit 3`,
+      `docker exec '${name}' test -f /app/node_modules/@frontierjs/auth/seed-login.ts || exit 4`,
+      `printf '%s' ${quoted} | docker exec -i -w /app '${name}' bun node_modules/@frontierjs/auth/seed-login.ts`,
+    ].join('; '))
+    // The entry's stdin is the login, byte for byte: the last segment run with
+    // docker swapped for cat.
+    const piped = command.split('; ').at(-1)!.replace(/\| docker exec .*$/, '| cat')
+    expect(JSON.parse(Bun.spawnSync(['sh', '-c', piped]).stdout.toString()).password).toBe(PASSWORD)
+    expect(command.split('| docker')[1]).not.toContain(PASSWORD)
+    expect(out.id).toBe(placed.id)
+    expect(out.seeded).toEqual({ email: 'owner@charter.test', serverId: server.id, container: name })
+    expect(JSON.stringify(out)).not.toContain(PASSWORD)
+  })
+
+  test('an image with no seed entry, a stopped container and a failed seed are refusals that do not echo the password', async () => {
+    answer = { exit_code: 4, stdout: '', stderr: '' }
+    await expect(seed(owner, placed.id)).rejects.toThrow(/the App's image has no @frontierjs\/auth seed entry/)
+    answer = { exit_code: 3, stdout: '', stderr: '' }
+    await expect(seed(owner, placed.id)).rejects.toThrow(/is not running on the machine/)
+    answer = { exit_code: 1, stdout: '', stderr: `bad --password ${PASSWORD}` }
+    const failed = await seed(owner, placed.id).catch((err: Error) => err)
+    expect(failed.message).toMatch(/seed-login failed .* \(exit 1\): bad --password \[redacted\]/)
+    expect(failed.message).not.toContain(PASSWORD)
+  })
+
+  test('an App on no online machine is refused before anything is sent', async () => {
+    await expect(seed(owner, unplaced.id)).rejects.toThrow(/No owner was seeded: This app is not placed on any server/)
+    expect(sent).toEqual([])
+  })
+
+  test('only an email and a printable password of 12 to 256 characters are taken', async () => {
+    for (const body of [
+      { email: 'owner@charter.test' },
+      { email: '-x@charter.test', password: PASSWORD },
+      { email: "o'wner@charter.test", password: PASSWORD },
+      { email: 'owner@charter.test', password: 'short' },
+      { email: 'owner@charter.test', password: 'line one\nline two' },
+    ]) await expect(seed(owner, placed.id, body)).rejects.toThrow(/email is|password is/)
+    expect(sent).toEqual([])
+  })
+
+  test('a developer is below the gate, and a key needs apps:seedOwner — apps:write is not it', async () => {
+    await expect(seed(developer, placed.id)).rejects.toThrow()
+    const call = async (scopes: string[]) => {
+      const made: any = await env.as(owner).service('apiKeys').create({ name: `seed-${tag()}`, scopes, expiresIn: '30d' })
+      return env.http.post(`/apps/${placed.id}`).set('x-service-method', 'seedOwner')
+        .set('Authorization', `Bearer ${made.token}`).set('X-Workspace-Id', ws.id)
+        .send({ email: 'owner@charter.test', password: PASSWORD })
+    }
+    const broad = await call(['apps:read', 'apps:write'])
+    expect(broad.status).toBe(403)
+    expect(JSON.stringify(broad.body)).toMatch(/apps:seedOwner/)
+    expect(sent).toEqual([])
+    const own = await call(['apps:seedOwner'])
+    expect(own.status).toBe(200)
+    expect(sent).toHaveLength(1)
+  })
+})
+
 // ─── A Server's Secret references stay in its workspace (`FJS-3845`) ─────────
 describe('a server names only its own workspace\'s secrets', () => {
   const uniq = () => Math.random().toString(36).slice(2, 8)
@@ -5842,6 +6018,188 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect(onClock()).toBe('0 4 * * 0')
       await apps.patch(app.id, { drillCron: null })
       expect(onClock()).toBeNull()
+    })
+
+    // IDEAS/read-only-copy.md 1.3 (FJS-D2001): the row's cron puts the copy on
+    // the clock, and an app's delete takes it off with the app.
+    test('a copy\'s cron puts it on the clock, a restart restores it, and the app\'s delete takes it off', async () => {
+      const sys     = env.system as any
+      const onClock = () => env.app.jobs.nextRuns().find((r: any) => r.name === appCopySchedule(app.id))?.cron ?? null
+      const copy    = await sys.appCopy.create({ data: { appId: app.id, serverId: server.id, cron: '0 3 * * *' } })
+      try {
+        syncAppCopySchedule(env.app, app.id, copy)
+        expect(onClock()).toBe('0 3 * * *')
+        env.app.jobs.unschedule(appCopySchedule(app.id))
+        await restoreSchedules(env.app)
+        expect(onClock()).toBe('0 3 * * *')
+        await env.as(owner).service('apps').remove(app.id)
+        expect(onClock()).toBeNull()
+        await restoreSchedules(env.app)
+        expect(onClock()).toBeNull()
+        await env.as(owner).service('apps').restore(app.id)
+        expect(onClock()).toBe('0 3 * * *')
+      } finally {
+        await sys.appCopy.delete({ where: { id: copy.id } })
+        syncAppCopySchedule(env.app, app.id, null)
+      }
+      expect(onClock()).toBeNull()
+    })
+
+    // A refresh is one serve: the copy is stamped with the replica's time as
+    // Outpost answered it, and a refresh that fails leaves the old copy
+    // serving, so the row keeps that copy's as-of beside the error.
+    test('a copy refresh stamps the replica\'s as_of, and a failed one keeps the as-of still serving', async () => {
+      const sys    = env.system as any
+      const bucket = Bun.serve({ port: 0, fetch(req) {
+        const prefix = new URL(req.url).searchParams.get('prefix') ?? ''
+        return new Response(`<ListBucketResult><IsTruncated>false</IsTruncated><CommonPrefixes><Prefix>${prefix}main.db/</Prefix></CommonPrefixes></ListBucketResult>`,
+          { headers: { 'content-type': 'application/xml' } })
+      } })
+      const copy = await sys.appCopy.create({ data: { appId: app.id, serverId: server.id, cron: '0 3 * * *' } })
+      try {
+        const dest = await env.as(owner).service('backupDestinations').create({
+          name: `Copy ${tag()}`, endpoint: `http://127.0.0.1:${bucket.port}`, region: 'auto',
+          bucket: `copy-${tag()}`, secret: 'AKID:secret',
+        }) as any
+        await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
+        const release = await sys.deployment.create({ data: {
+          workspaceId: ws.id, appId: app.id, environmentId: app.environmentId, trigger: 'button', toImage: 'registry.test/copy:1',
+          configSnapshot: { runtime: { containerPort: 3000, volumePath: '/data' } },
+        } })
+        for (const move of ['build', 'succeed']) await sys.deployment.transition(release.id, move)
+        // The newest release serves the copy, and the drill's is still here.
+        await sys.deployment.update({ where: { id: release.id }, data: { finishedAt: new Date().toISOString() } })
+
+        const calls: { path: string; body: any }[] = []
+        let answer: any = { data: { as_of: '2026-11-05T03:00:00.000Z' } }
+        const executor = { kind: 'outpost', serverId: server.id, target: null, stream: null,
+          call: async (path: string, body: any) => { calls.push({ path, body }); return answer } } as any
+        const refresh = async () => refreshCopy(env.app, { copy, target: await sys.app.findFirst({ where: { id: app.id } }), executor }) as any
+
+        expect(await refresh()).toMatchObject({ status: 'success', asOf: '2026-11-05T03:00:00.000Z', error: null })
+        expect(calls[0].path).toBe('/replica/serve')
+        expect(calls[0].body).toMatchObject({ app_id: app.id, databases: ['main.db'], image: 'registry.test/copy:1',
+          config: { containerPort: 3000, volumePath: '/data' } })
+        expect(calls[0].body.replica.app_id).toBeUndefined()
+
+        answer = { error: { message: 'the copy never answered read-only' } }
+        expect(await refresh()).toMatchObject({ status: 'failed', asOf: '2026-11-05T03:00:00.000Z', error: 'the copy never answered read-only' })
+        answer = { data: {} }
+        expect(await refresh()).toMatchObject({ status: 'failed', asOf: '2026-11-05T03:00:00.000Z', error: expect.stringMatching(/no as_of/) })
+      } finally {
+        bucket.stop(true)
+        await sys.appCopy.delete({ where: { id: copy.id } })
+        await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
+      }
+    })
+
+    // IDEAS/read-only-copy.md 1.4 (FJS-D1914): a release's image rides in the
+    // replica bucket beside the databases, so a copy can serve anywhere.
+    describe('a release\'s image in the replica bucket', () => {
+      // A bucket that lists, deletes and remembers; the PUT is the outpost's,
+      // so a test seeds the key the export "uploaded".
+      const aBucket = (seed: string[]) => {
+        const keys = new Set(seed)
+        const server = Bun.serve({ port: 0, fetch(req) {
+          const url = new URL(req.url)
+          if (req.method === 'DELETE') { keys.delete(decodeURIComponent(url.pathname).replace(/^\/[^/]+\//, '')); return new Response(null, { status: 204 }) }
+          const prefix = url.searchParams.get('prefix') ?? ''
+          const delim  = url.searchParams.get('delimiter')
+          const under  = [...keys].filter(k => k.startsWith(prefix))
+          const dirs   = delim ? [...new Set(under.filter(k => k.includes(delim, prefix.length)).map(k => k.slice(0, k.indexOf(delim, prefix.length) + 1)))] : []
+          const files  = delim ? under.filter(k => !k.includes(delim, prefix.length)) : under
+          return new Response(`<ListBucketResult><IsTruncated>false</IsTruncated>${
+            files.map(k => `<Contents><Key>${k}</Key><Size>1</Size></Contents>`).join('')}${
+            dirs.map(d => `<CommonPrefixes><Prefix>${d}</Prefix></CommonPrefixes>`).join('')}</ListBucketResult>`,
+            { headers: { 'content-type': 'application/xml' } })
+        } })
+        return { keys, stop: () => server.stop(true), endpoint: `http://127.0.0.1:${server.port}` }
+      }
+      const withImage = async (opts: { replica?: boolean; seed?: (id: string, path: string) => string[] } = {}) => {
+        const sys     = env.system as any
+        const release = await sys.deployment.create({ data: {
+          workspaceId: ws.id, appId: app.id, environmentId: app.environmentId, trigger: 'button', toImage: 'registry.test/img:1',
+          builtImage: 'sha256:' + 'e'.repeat(64), configSnapshot: { runtime: { containerPort: 3000, volumePath: '/data' } },
+        } })
+        for (const move of ['build', 'succeed']) await sys.deployment.transition(release.id, move)
+        await sys.deployment.update({ where: { id: release.id }, data: { finishedAt: new Date().toISOString() } })
+        const bucket = aBucket(opts.seed?.(release.id, app.id) ?? [])
+        if (opts.replica !== false) {
+          const dest = await env.as(owner).service('backupDestinations').create({
+            name: `Img ${tag()}`, endpoint: bucket.endpoint, region: 'auto', bucket: `img-${tag()}`, secret: 'AKID:secret',
+          }) as any
+          await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
+        }
+        const calls: { path: string; body: any }[] = []
+        let answer: any = { data: { bytes: 10, sha256: 'a'.repeat(64), uploaded: true } }
+        const via = new Proxy(env.app, { get: (t: any, k) => k === 'conduit'
+          ? { resolve: async () => ({ pinned_cert: true }),
+              send: async (call: any) => call.path.startsWith('/image/') || call.path.startsWith('/replica/')
+                ? (calls.push({ path: call.path, body: call.body }), answer)
+                : (t.conduit as any).send(call) }
+          : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+        const row = () => sys.deployment.findFirst({ where: { id: release.id } })
+        return { release, bucket, calls, row, via, answer: (a: any) => { answer = a },
+          done: async () => { bucket.stop(); await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null }) } }
+      }
+
+      test('an export records the sha256 and prunes every other image but not the databases', async () => {
+        const img = await withImage({ seed: (id, a) => [`${a}/main.db/0001.ltx`, `${a}/images/old-1.tar.gz`, `${a}/images/old-2.tar.gz`, `${a}/images/${id}.tar.gz`] })
+        try {
+          const out = await exportReleaseImage(img.via as any, img.release.id, server.id)
+          expect(out).toMatchObject({ uploaded: true, sha256: 'a'.repeat(64), pruned: 2 })
+          expect(img.calls[0].path).toBe('/image/export')
+          expect(img.calls[0].body).toMatchObject({ app_id: app.id, image: 'registry.test/img:1', digest: 'sha256:' + 'e'.repeat(64) })
+          expect(img.calls[0].body.upload_url).toContain(`${app.id}/images/${img.release.id}.tar.gz`)
+          expect(await img.row()).toMatchObject({ imageSha256: 'a'.repeat(64), status: 'success' })
+          expect([...img.bucket.keys].sort()).toEqual([`${app.id}/images/${img.release.id}.tar.gz`, `${app.id}/main.db/0001.ltx`])
+          expect(imageKey(`${app.id}/`, 'x')).toBe(`${app.id}/images/x.tar.gz`)
+        } finally { await img.done() }
+      })
+
+      test('a refused upload leaves imageSha256 null, the release success, and the old images alone', async () => {
+        const img = await withImage({ seed: (_id, a) => [`${a}/images/old-1.tar.gz`] })
+        try {
+          img.answer({ data: { bytes: 10, sha256: 'a'.repeat(64), uploaded: false, upload_error: '403 SignatureDoesNotMatch' } })
+          const out = await exportReleaseImage(img.via as any, img.release.id, server.id)
+          expect(out).toMatchObject({ uploaded: false, reason: expect.stringMatching(/SignatureDoesNotMatch/) })
+          expect(await img.row()).toMatchObject({ imageSha256: null, status: 'success' })
+          expect([...img.bucket.keys]).toEqual([`${app.id}/images/old-1.tar.gz`])
+        } finally { await img.done() }
+      })
+
+      test('an app with no replica destination exports nothing', async () => {
+        const img = await withImage({ replica: false })
+        try {
+          expect(await exportReleaseImage(img.via as any, img.release.id, server.id)).toEqual({ uploaded: false, reason: null })
+          expect(img.calls).toEqual([])
+          expect((await img.row()).imageSha256).toBeNull()
+        } finally { await img.done() }
+      })
+
+      test('a refresh sends the image\'s pre-signed GET and sha256 once the export landed, and neither before', async () => {
+        const img  = await withImage({ seed: (_id, a) => [`${a}/main.db/0001.ltx`] })
+        const sys  = env.system as any
+        const copy = await sys.appCopy.create({ data: { appId: app.id, serverId: server.id, cron: '0 3 * * *' } })
+        try {
+          const executor = { kind: 'outpost', serverId: server.id, target: null, stream: null,
+            call: async (path: string, body: any) => { img.calls.push({ path, body }); return { data: { as_of: '2026-11-05T03:00:00.000Z' } } } } as any
+          const refresh = async () => refreshCopy(env.app, { copy, target: await sys.app.findFirst({ where: { id: app.id } }), executor })
+          expect(await refresh()).toMatchObject({ status: 'success' })
+          expect(img.calls[0].body).not.toHaveProperty('image_url')
+          expect(img.calls[0].body).not.toHaveProperty('image_sha256')
+
+          await sys.deployment.update({ where: { id: img.release.id }, data: { imageSha256: 'b'.repeat(64) } })
+          expect(await refresh()).toMatchObject({ status: 'success' })
+          const sent = img.calls[1].body
+          expect(sent.image_sha256).toBe('b'.repeat(64))
+          expect(new URL(sent.image_url).pathname).toEndWith(`/${app.id}/images/${img.release.id}.tar.gz`)
+          expect(new URL(sent.image_url).searchParams.get('X-Amz-Signature')).toBeTruthy()
+        } finally {
+          await sys.appCopy.delete({ where: { id: copy.id } })
+          await img.done()
+        }
+      })
     })
 
     test('a destination is one app\'s: a second app cannot point at it', async () => {

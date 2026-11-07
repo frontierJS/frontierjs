@@ -321,7 +321,7 @@ describe('generated migration', () => {
     expect(historyGap(r, dir, { dbName: 'audit' }).ok).toBe(true)
   })
 
-  test('applies to a fresh database — 73 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 74 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -370,8 +370,9 @@ describe('generated migration', () => {
     // 71 with `BackupDestination` (`FJS-D1488`). 72 with `AppDrill` (`FJS-D1525`).
     // 71 again with `Backup` merged into `AppBackup` (`FJS-D1606`). 72 with
     // `AppPlatform` (`FJS-D1630`). The three Claude tables went to
-    // `packages/workbench`. 73 with `MonitorUptimeDay` (`FJS-D1800`).
-    expect(tables.length).toBe(73)
+    // `packages/workbench`. 73 with `MonitorUptimeDay` (`FJS-D1800`). 74 with
+    // `AppCopy` (`FJS-D2001`).
+    expect(tables.length).toBe(74)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {

@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-74 model(s) · 60 enum(s) · 2 database(s) · 1 value set(s)
+75 model(s) · 60 enum(s) · 2 database(s) · 1 value set(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -364,6 +364,40 @@ table `app_backup` · db `main` · gate `5.8.8.8`
 @@deny(update, !check(app, tenancy))
 @@deny(update, !check(deployment, tenancy))
 @@deny(update, !check(destination, tenancy))
+@@deny(update, !check(server, tenancy))
+```
+
+### `AppCopy`
+
+table `app_copy` · db `main` · gate `5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `app` | `App` | — | — | relation |
+| `appId` | `String` | no | — | unique · **required on write** |
+| `asOf` | `DateTime` | yes | — | @system |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `cron` | `String` | no | — | **required on write** |
+| `error` | `String` | yes | — | @system |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `refreshedAt` | `DateTime` | yes | — | @system |
+| `requestedBy` | `String` | yes | — | — |
+| `server` | `Server` | — | — | relation |
+| `serverId` | `String` | no | — | **required on write** |
+| `status` | `RunStatus` | yes | — | @system |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+
+```
+@@index(serverId)
+@@deny(create, !check(app, tenancy))
+@@deny(create, !check(server, tenancy))
+@@deny(delete, !check(app, tenancy))
+@@deny(delete, !check(server, tenancy))
+@@deny(postUpdate, !check(app, tenancy))
+@@deny(postUpdate, !check(server, tenancy))
+@@deny(read, !check(app, tenancy))
+@@deny(read, !check(server, tenancy))
+@@deny(update, !check(app, tenancy))
 @@deny(update, !check(server, tenancy))
 ```
 
@@ -876,6 +910,7 @@ table `deployment` · db `main` · gate `2.4.4.4`
 | `finishedAt` | `DateTime` | yes | — | @system |
 | `fromImage` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `imageSha256` | `String` | yes | — | @system |
 | `platformVersion` | `String` | yes | — | @system |
 | `previousDeploymentId` | `String` | yes | — | @system |
 | `queuedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |

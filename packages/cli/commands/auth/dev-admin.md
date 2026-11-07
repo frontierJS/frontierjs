@@ -40,63 +40,29 @@ flags:
 ---
 
 <script>
-const DEFAULT_EMAIL    = 'dev@knight.works'
-const DEFAULT_PASSWORD = 'test1234'
-
-const SCRIPT = `
-import { createClient } from '@frontierjs/litestone'
-
-const input = JSON.parse(process.env.FLI_INPUT)
-
-const db = await createClient({
-  path:          input.schemaPath,
-  resolveFrom:   'schema',
-  encryptionKey: process.env.ENCRYPTION_KEY,
-})
-
-const prod = Object.values(db.$databases ?? {}).find(d => /prod/i.test(d.path ?? ''))
-if (prod) {
-  console.error('REFUSED: ' + prod.path + ' looks like a production database')
-  db.$close()
-  process.exit(1)
+// The upsert and its production guard are @frontierjs/auth's (FJS-D2005), run
+// from the app's own copy: that copy is the auth that verifies the hash.
+const seedEntry = (root) => {
+  try { return Bun.resolveSync('@frontierjs/auth/seed-login', root) } catch { return null }
 }
 
-const model = db.$schema.models.find(m => m.name === 'User')
-if (!model) {
-  console.error('REFUSED: no model User in this schema')
-  db.$close()
-  process.exit(1)
+// The input goes on stdin, never argv, where a password is readable through `ps`.
+const runSeedLogin = ($, entry, input) => {
+  try {
+    const out = $.exec({
+      command: `bun "${entry}"`,
+      cwd:     $.paths.root,
+      input:   JSON.stringify(input),
+      stdio:   ['pipe', 'pipe', 'inherit'],
+      dry:     false,
+    })
+    const line = String(out ?? '').trim().split('\n').findLast(l => l.startsWith('{'))
+    return line ? JSON.parse(line) : null
+  } catch (err) {
+    if (err.interrupt) throw err
+    return null
+  }
 }
-const has = (name, type) => model.fields.some(f => f.name === name && (!type || f.type?.name === type))
-
-const sys  = db.asSystem()
-const done = []
-
-let user = await sys.user.findFirst({ where: { email: input.email } })
-if (!user) {
-  user = await sys.user.create({ data: { email: input.email } })
-  done.push('created')
-}
-
-const cred = await sys.credential.findFirst({ where: { userId: user.id, type: 'password' } })
-if (!cred || !(await Bun.password.verify(input.password, cred.value))) {
-  const value = await Bun.password.hash(input.password, { algorithm: 'bcrypt', cost: 12 })
-  if (cred) await sys.credential.update({ where: { id: cred.id }, data: { value } })
-  else await sys.credential.create({ data: { userId: user.id, type: 'password', value } })
-  done.push('password set')
-}
-
-const data = {}
-if (has('name'))                       data.name = input.name
-if (has('displayName'))                data.displayName = input.name
-if (has('isEmailVerified', 'Boolean'))   data.isEmailVerified = true
-if (has('isSystemAdmin', 'Boolean'))   data.isSystemAdmin = true
-if (has('role', 'String'))             data.role = input.role
-await sys.user.update({ where: { id: user.id }, data })
-
-console.log(JSON.stringify({ id: user.id, email: input.email, done, set: Object.keys(data) }))
-db.$close()
-`
 
 // The app's own seeder knows its standing and its tenant link, which the
 // generic upsert cannot: basecamp needs a WorkspaceMember row, chatwoot an
@@ -119,32 +85,40 @@ a password or role changed, it puts them back. No running server needed.
 
 When the app has its own `db:seed:admin` script (or `db/seed-dev-admin.*`),
 that runs instead — it is the app's authority on what "top standing" means.
-Otherwise the generic upsert sets the password credential, `isEmailVerified`,
+Otherwise the generic upsert -- the app's own `@frontierjs/auth/seed-login`,
+the one Basecamp's seedOwner runs -- sets the password credential, `isEmailVerified`,
 `isSystemAdmin` and `role` where the User model has them, and makes no tenant
 or membership link.
 
-```js
-if (process.env.NODE_ENV === 'production' || /prod/i.test(process.env.DATABASE_URL ?? '')) {
-  return refuse($, 'Refused: this environment points at production')
-}
+In production — `NODE_ENV=production`, or a `DATABASE_URL` or database path
+naming prod — it refuses the default login and takes an explicit `--email` and
+`--password`, which skip the app's own seeder.
 
-const custom = flag.email !== DEFAULT_EMAIL || flag.password !== DEFAULT_PASSWORD
+```js
+const entry = seedEntry($.paths.root)
+if (!entry) return refuse($, 'This app has no @frontierjs/auth seed-login entry', 'Install or update @frontierjs/auth: fli auth:install')
+const { DEFAULT_LOGIN, productionRefusal } = await import(entry)
+
+const refusal = productionRefusal(flag)
+if (refusal) return refuse($, refusal, 'Pass both --email and --password to seed a production login')
+
+const custom = flag.email !== DEFAULT_LOGIN.email || flag.password !== DEFAULT_LOGIN.password
 const seeder = flag.generic ? null : appSeeder($.paths.root)
 
 if (seeder && !custom) {
-  log.info(`Running the app's own dev-admin seeder: ${seeder.describe}`)
+  echo(chalk`  {dim the app's own dev-admin seeder:} ${seeder.describe}`)
   if (flag.dry) return log.dry(seeder.command)
   $.exec({ command: seeder.command, cwd: $.paths.root })
-  return log.done(`${DEFAULT_EMAIL} / ${DEFAULT_PASSWORD}`)
+  return echo(chalk`  {green ✓} ${DEFAULT_LOGIN.email} / ${DEFAULT_LOGIN.password}`)
 }
-if (seeder) log.info(`The app's ${seeder.describe} seeds only its own login — using the generic upsert for ${flag.email}`)
+if (seeder) echo(chalk`  {dim the app's ${seeder.describe} seeds only its own login — the generic upsert for} ${flag.email}`)
 
 const schemaPath = requireSchema($)
 if (!schemaPath || !requireEncryptionKey($)) return
 
 if (flag.dry) return log.dry(`Would upsert ${flag.email} (name ${flag.name}, role ${flag.role}, isSystemAdmin where declared)`)
 
-const out = runAppScript($, 'dev-admin', SCRIPT, {
+const out = runSeedLogin($, entry, {
   schemaPath,
   email:    flag.email,
   password: flag.password,
@@ -153,8 +127,9 @@ const out = runAppScript($, 'dev-admin', SCRIPT, {
 })
 if (!out) return refuse($, `Upserting ${flag.email} failed — the reason is above`)
 
-log.done(`${out.email} / ${flag.password}`)
+// Only the default password is printed: a chosen one is the caller's to keep.
+echo(chalk`  {green ✓} ${out.email}${flag.password === DEFAULT_LOGIN.password ? ` / ${flag.password}` : ''}`)
 echo(chalk`  {dim ${out.done.length ? out.done.join(', ') : 'password already current'} · set ${out.set.join(', ')}}`)
-if (!out.set.includes('isSystemAdmin')) log.info('User has no isSystemAdmin column — standing comes from role alone')
-log.info('No tenant or membership link made — add a db:seed:admin script if the app needs one')
+if (!out.set.includes('isSystemAdmin')) echo(chalk`  {dim no isSystemAdmin column — standing comes from role alone}`)
+echo(chalk`  {dim no tenant or membership link made — add a db:seed:admin script if the app needs one}`)
 ```

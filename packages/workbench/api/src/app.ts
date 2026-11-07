@@ -106,7 +106,7 @@ export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promis
   // Jobs under api/src/jobs register themselves; the app's scheduler arms their crons.
   app.configure(caravan({ db: JOBS_DB }))
 
-  // A shell in a pinned checkout, behind the door's one member (plugins/workbench-terminal.ts).
+  // A shell in a pinned checkout or the home folder, behind the door's one member (plugins/workbench-terminal.ts).
   app.configure(function terminalRoute () { workbenchTerminal(app) })
 
   // The app's scheduler is armed by `start-work`, so a one-shot boot ticks nothing.

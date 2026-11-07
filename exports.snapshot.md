@@ -28,13 +28,14 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/auth`
 
-`packages/auth` · ships `Authorize.mesa` `LICENSE` `README.md` `auth.ts` `authorize-page.snapshot.d.ts` `authorize-page.snapshot.js` `authorize.ts` `cleanup.ts` `clients.ts` `console.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `tenancy.ts` `token.ts` `totp.ts` `types.ts`
+`packages/auth` · ships `Authorize.mesa` `LICENSE` `README.md` `auth.ts` `authorize-page.snapshot.d.ts` `authorize-page.snapshot.js` `authorize.ts` `cleanup.ts` `clients.ts` `console.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `seed-login.ts` `services.ts` `tenancy.ts` `token.ts` `totp.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `index.ts` | yes |
 | exports | `./schema` | `schema.ts` | yes |
 | exports | `./console` | `console.ts` | yes |
+| exports | `./seed-login` | `seed-login.ts` | yes |
 | exports | `./totp` | `totp.ts` | yes |
 | exports | `./schema.lite` | `db/auth.lite` | yes |
 | exports | `./user.lite` | `db/user.lite` | yes |

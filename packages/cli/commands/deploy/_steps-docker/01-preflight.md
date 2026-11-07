@@ -72,7 +72,15 @@ for (const h of hosts) {
   try {
     const edge = edgeNames(deployConf)
     names = [edge.web.domain, edge.api.domain].filter(Boolean)
-  } catch (e) { if (!(e instanceof EdgeError)) throw e }
+  } catch (e) {
+    if (!(e instanceof EdgeError)) throw e
+    // 03-build-web refuses the same names after the ship and the install.
+    if ($.config.doWeb) {
+      log.error(e.message)
+      $.config.abort = true
+      return
+    }
+  }
   for (const m of names.length ? machines.values() : []) {
     let config
     try { config = parseConfigRead(m.capture(readConfigScript(), { dry: false })).config }

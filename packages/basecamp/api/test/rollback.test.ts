@@ -529,6 +529,45 @@ describe('how the machine swapped, on the row', () => {
     })
   })
 
+  // IDEAS/read-only-copy.md 1.4 (FJS-D1914): the image follows the release into
+  // the replica bucket, and only for an App that has one.
+  describe('the release\'s image export', () => {
+    const deployAndWatch = async (replicates: boolean) => {
+      const { app, first, current } = await anAppWithHistory()
+      const sys = env.system as any
+      if (replicates) {
+        const dest = await sys.backupDestination.create({ data: {
+          workspaceId: ws.id, name: `img-${uniq()}`, endpoint: 'http://127.0.0.1:9', region: 'auto', bucket: `img-${uniq()}` } })
+        await sys.app.update({ where: { id: app.id }, data: { replicaDestinationId: dest.id } })
+      }
+      const replacement = await sys.deployment.create({ data: {
+        appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
+        previousDeploymentId: current.id, configSnapshot: first.configSnapshot } })
+      await sys.deploymentStep.create({ data: { deploymentId: replacement.id, position: 0, name: 'Start container' } })
+      const dispatched: { name: string; data: any; opts: any }[] = []
+      const conduit = { resolve: async () => ({ pinned_cert: true }), send: async () => ({ data: {} }) }
+      const via = new Proxy(env.app, { get: (t, k) =>
+        k === 'conduit' ? conduit
+        : k === 'jobs' ? { dispatch: async (job: any, data: any, opts: any) => { dispatched.push({ name: job.name, data, opts }); return {} } }
+        : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+      await env.app.runAs(admin.id, { tenant: ws.id }, () =>
+        (deploymentRun as any).handler({ app: via, data: { deployment_id: replacement.id } }))
+      expect((await sys.deployment.findUnique({ where: { id: replacement.id } })).status).toBe('success')
+      return { dispatched: dispatched.filter(d => d.name === 'release-image:export'), id: replacement.id }
+    }
+
+    test('a release of an App with a replica destination dispatches the export once it succeeds', async () => {
+      const { dispatched, id } = await deployAndWatch(true)
+      expect(dispatched).toHaveLength(1)
+      expect(dispatched[0].data).toMatchObject({ deploymentId: id, serverId: box.id })
+      expect(dispatched[0].opts).toMatchObject({ id: `image-export:${id}` })
+    })
+
+    test('an App with no replica destination dispatches none', async () => {
+      expect((await deployAndWatch(false)).dispatched).toEqual([])
+    })
+  })
+
   test('a rollback onto the older schema is stop-first, and the row says why', async () => {
     const row = await startAgainst({ swap: 'stop-first', swap_reason: 'this release is a contract' })
     expect(row.status).toBe('success')

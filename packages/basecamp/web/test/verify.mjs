@@ -300,6 +300,10 @@ const buildOutpost = (signingKey) => createOutpostServer(
         // Outpost parses this one as JSON, and a digest is not JSON.
         if (argv.includes('{{json .Config.User}}')) return { exitCode: 0, stdout: '""', stderr: '' }
         if (argv.slice(0, 3).join(' ') === 'docker image inspect') return { exitCode: 0, stdout: SINK_DIGEST, stderr: '' }
+        // The settle check reads one state line per container and fails a
+        // release whose container it cannot read as running.
+        if (argv.includes('docker') && argv.some(a => a.includes('{{.RestartCount}}')))
+          return { exitCode: 0, stdout: argv.slice(4).map(n => `/${n} true 2026-01-01T00:00:00Z 0 false 0`).join('\n'), stderr: '' }
         if (argv.slice(0, 2).join(' ') === 'docker inspect')       return { exitCode: 0, stdout: 'true', stderr: '' }
         return { exitCode: 0, stdout: '', stderr: '' }
       },
@@ -336,6 +340,11 @@ const buildOutpost = (signingKey) => createOutpostServer(
         return { hosts }
       },
       unroute: async () => ({ removed: false }),
+      heldBy:  async () => [],
+      dialed:  async ({ appId }) => {
+        const last = outpostSaw.routed.findLast(r => r.appId === appId)
+        return last?.port != null ? [last.port] : []
+      },
     },
     log: { warn: (m) => console.log(`    outpost: ${m}`), error: (m) => console.log(`    outpost: ${m}`) },
   }
@@ -846,6 +855,35 @@ await waitFor(`document.getElementById('var-rows')?.textContent ?? ''`, t => t.i
 check('variables survive a reload',
   await evaluate(`[...document.querySelectorAll('#var-rows td')].map(t => t.textContent.trim()).join('|')`),
   t => t.includes('API_TOKEN'))
+
+// The .env round trip. A download leaves no trace a page can read, so the
+// blob handed to createObjectURL is kept on the window.
+await evaluate(`
+  (() => {
+    const make = URL.createObjectURL.bind(URL)
+    URL.createObjectURL = (blob) => { window.__envBlob = blob; return make(blob) }
+  })()
+`)
+await click('Export .env')
+await waitFor(`!!window.__envBlob`, Boolean)
+check('Export .env writes the secret as a marked blank',
+  await evaluate(`window.__envBlob.text()`),
+  t => t.includes('# secret\nAPI_TOKEN=\n') && !t.includes('tok_live_123'))
+
+await click('Import .env')
+await fill({ 'var-env-text': '# secret\nAPI_TOKEN=\nLOG_LEVEL=warn\nSTRIPE_KEY=sk_test_1\n' })
+await click('Preview')
+await waitFor(`document.getElementById('var-import-preview')?.textContent ?? ''`, t => t.includes('STRIPE_KEY'))
+check('the preview names each change, and a blank secret is left as it is',
+  await evaluate(`[...document.querySelectorAll('#var-import-preview tr[data-key]')].map(r => r.dataset.key + ':' + r.dataset.action).join(' ')`),
+  'API_TOKEN:unchanged LOG_LEVEL:create STRIPE_KEY:create')
+check('a key named like a credential is offered as a secret',
+  await evaluate(`document.getElementById('var-import-secret-STRIPE_KEY')?.checked`), true)
+await click('Apply 2 changes')
+await waitFor(`document.getElementById('var-rows')?.textContent ?? ''`, t => t.includes('STRIPE_KEY') && t.includes('LOG_LEVEL'))
+check('the import lands, the credential secret and the plain value shown',
+  await evaluate(`document.body.innerHTML`),
+  t => t.includes('warn') && !t.includes('sk_test_1') && !t.includes('var-import-panel'))
 
 // ── 10. Deployments, and the live channel ─────────────────────────────
 // This is the one screen the WebSocket exists for. Everything asserted below
@@ -1563,8 +1601,10 @@ check('a notice can be dismissed',
   check('…with the machine\'s reason on the step that stopped',
     await evaluate(`document.getElementById('deploy-steps')?.textContent ?? ''`),
     t => t.includes(caddyDownSaid))
+  // Reading the live container's published port is not touching it.
   check('…and the running container was never touched',
-    outpostSaw.docker.slice(dockerFrom).filter(c => c.includes(appId.slice(0, 8))).join(' | '), '')
+    outpostSaw.docker.slice(dockerFrom)
+      .filter(c => c.includes(appId.slice(0, 8)) && !/^docker (ps|inspect) /.test(c)).join(' | '), '')
   check('…because nothing stopped it first',
     outpostSaw.deploy.slice(sentFrom).map(d => d.path).join(','),
     t => t.includes('/deploy') && !t.includes('/stop'))
