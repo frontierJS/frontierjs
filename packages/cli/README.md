@@ -618,7 +618,7 @@ fli deploy:logs <TAB>      # --production, --stage, --follow, --tail …
 ```
 
 The script calls `fli completion:query` on every Tab press, against a disk cache
-at `~/.fli/cache/registry-<key>.json` that rebuilds when any command file changes.
+at `~/.cache/fli/registry-<key>.json` that rebuilds when any command file changes.
 `completion:generate` prints the script; `completion:refresh` forces a rebuild.
 
 ---

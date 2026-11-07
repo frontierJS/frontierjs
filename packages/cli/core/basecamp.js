@@ -8,7 +8,7 @@
 
 import { spawnSync }                from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { homedir }                  from 'node:os'
+import { configDir, dataDir }          from './paths.js'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileValue }                from '@frontierjs/toolbelt/env'
 import { chalk }                    from './color.js'
@@ -475,11 +475,11 @@ export const apiCannotBackUp = (err) => !!err.unreachable || !!err.noHubApp || e
 
 /** Where a box's key copy lives: its own tree, not the backups'. */
 export const keyDirOf = (server) =>
-  join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'fli', 'basecamp', server)
+  join(configDir(), 'basecamp', server)
 
 /** Where every box's backups land, one directory per box, never pruned (`FJS-D1851`). */
 export const backupsRoot = () =>
-  join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'fli', 'basecamp')
+  join(dataDir(), 'basecamp')
 
 export const backupsOf = (server) => join(backupsRoot(), server)
 

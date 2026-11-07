@@ -406,7 +406,7 @@ describe('basecamp:deploy --dry on a plain repository', () => {
     writeBasecamp('stub', { url: `http://localhost:${stub.port}`, apiKey: 'x' }, { home })
     const proc = Bun.spawn([process.execPath, resolve(ROOT, 'bin/fli.js'), 'basecamp:deploy', ...(run ? [] : ['--dry']), '--app', 'app-1'], {
       cwd: repo, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
-      env: { ...process.env, HOME: home, NO_COLOR: '1' },
+      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), NO_COLOR: '1' },
     })
     const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
     rmSync(home, { recursive: true, force: true })

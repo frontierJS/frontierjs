@@ -5,7 +5,7 @@
 // autopilot-report.ts`), the way the weekly digest counts its week: nothing is
 // stored, so a re-run says what the logs say now. The window is the 24 hours
 // before the send, half-open, and the day figures are the schedule's own
-// calendar day against ~/.fli/autopilot.json's cap -- two different periods,
+// calendar day against ~/.config/fli/autopilot.json's cap -- two different periods,
 // each named for what it is, because the night's runs fall in both and a
 // hand run yesterday evening falls in one.
 

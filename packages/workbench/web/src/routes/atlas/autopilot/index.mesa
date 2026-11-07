@@ -13,7 +13,7 @@ title: Autopilot
   // until somebody moves it off.
   //
   // The Switch turns through the service's `turn`, which writes `on` into
-  // ~/.fli/autopilot.json and nothing else: Turn On is refused until every cap
+  // ~/.config/fli/autopilot.json and nothing else: Turn On is refused until every cap
   // is set, and Off stops no run already going. Run now on a schedule entry starts that loop once,
   // through the service's `run`; whether it is running is the API's pid, and
   // what it did is the log lines that land in its lane.

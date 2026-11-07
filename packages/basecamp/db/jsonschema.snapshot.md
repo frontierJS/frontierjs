@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-178 definitions · 74 models · 1 view · 43 types · 60 enums · 0 other
+179 definitions · 74 models · 1 view · 44 types · 60 enums · 0 other
 ```
 
 ## Definitions
@@ -202,6 +202,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ServerSetBackups` | type |
 | `ServerAdoptShown` | type |
 | `ServerAdopt` | type |
+| `ServerRetireApp` | type |
 | `BackupPolicy` | type |
 
 ## Enums
@@ -226,7 +227,7 @@ validates, and a select that silently drops an option.
 - `SecretKind` — `sshKey`, `providerKey`, `registryAuth`, `tlsCert`, `notification`, `backup`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
-- `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `backupsReadFailed`, `backupsSet`, `backupsRestored`, `backupsRestoreFailed`, `adopted`, `cameOnline`, `unreachable`, `rebooted`, `containerCrashLooping`, `containerRecovered`, `unitFailed`, `unitRestored`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `postureFailed`, `postureRestored`
+- `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `backupsReadFailed`, `backupsSet`, `backupsRestored`, `backupsRestoreFailed`, `adopted`, `cameOnline`, `unreachable`, `rebooted`, `containerCrashLooping`, `containerRecovered`, `unitFailed`, `unitRestored`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `appRetired`, `postureFailed`, `postureRestored`
 - `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`
 - `ComputeProvider` — `custom`, `hetzner`, `digitalocean`
 - `MachineBackupPlan` — `daily`, `weekly`
@@ -2381,6 +2382,16 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `shown` | `ServerAdoptShown` | yes | — | — | — |
 
 **On create**: required — `providerSecretId`, `providerServerId`, `shown`
+
+### `ServerRetireApp`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `appId` | `string` | yes | — | — | — |
+
+**On create**: required — `appId`
 
 ### `BackupPolicy`
 

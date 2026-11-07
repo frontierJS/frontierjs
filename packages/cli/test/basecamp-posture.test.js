@@ -118,7 +118,7 @@ describe('the command', () => {
 
   const run = async (...args) => {
     const child = Bun.spawn([process.execPath, resolve(import.meta.dir, '../bin/fli.js'), 'basecamp:posture', ...args],
-      { env: { ...process.env, HOME: home, NO_COLOR: '1' }, stdout: 'pipe', stderr: 'pipe' })
+      { env: { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), NO_COLOR: '1' }, stdout: 'pipe', stderr: 'pipe' })
     const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
     return { out, code }
   }

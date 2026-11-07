@@ -639,6 +639,7 @@ export const CHECKS = {
   },
 
   'home-path-literal':  ({ root }) => homePathLiteral({ root }),
+  'home-dir-join':      ({ root }) => homeDirJoin({ root }),
 }
 
 /**
@@ -705,6 +706,39 @@ function homePathLiteral({ root, home = homedir() }) {
                  'a fixture that needs a home uses a placeholder such as `/home/user`.' })
     })
   }
+  return { findings }
+}
+
+// ─── home-dir-join ────────────────────────────────────────────────────────────
+//
+// A per-user fli root computed in its own file is how one machine came to hold
+// `~/.fli`, `~/.config/fli` and `~/.local/share/fli` with no module owning which
+// file belongs where (`FJS-D1990`). `core/paths.js` is the one place.
+//
+// Not fli's to own, so exempt: `~/.bun` (the Bun install), `~/.ssh`, and the CI
+// work base `~/fjs-ci-work`. A file taking `home` as a parameter is not a join.
+
+const HOME_JOIN = /\b(?:join|resolve)\([^)]*\bhomedir\(\)|\$\{homedir\(\)\}/
+const HOME_JOIN_EXEMPT = new Set(['paths.js', 'bun-fence.js', 'install-preflight.js', 'cloud.js', 'docker-context.js'])
+
+function homeDirJoin({ root }) {
+  const findings = []
+  const core = join(root, 'packages', 'cli', 'core')
+  if (!existsSync(core)) return { findings }
+  walk(core, 4, dir => {
+    for (const name of safeRead(dir)) {
+      if (!name.endsWith('.js') || HOME_JOIN_EXEMPT.has(name)) continue
+      const file = join(dir, name)
+      let text
+      try { if (!statSync(file).isFile()) continue; text = readFileSync(file, 'utf8') } catch { continue }
+      text.split('\n').forEach((line, i) => {
+        if (/^\s*(\/\/|\*)/.test(line) || !HOME_JOIN.test(line)) return
+        findings.push({ file, line: i + 1,
+          message: 'joins onto `homedir()` itself. A per-user root comes from `core/paths.js` ' +
+                   '(`configDir()`, `dataDir()`, `cacheDir()`, `stateDir()`), or a second layout grows beside the first (FJS-D1990).' })
+      })
+    }
+  })
   return { findings }
 }
 

@@ -1,7 +1,7 @@
 // src/jobs/autopilot-report.job.ts — the morning after the loops.
 //
 // `domain/atlas/autopilot-report.ts` counts and sends; this is the clock. Eight
-// on the host's clock, after the schedule's own cron lines in ~/.fli/autopilot.json
+// on the host's clock, after the schedule's own cron lines in ~/.config/fli/autopilot.json
 // (host clock too, so the night's 00:00 and 01:00 runs are inside the window)
 // and before the nine o'clock hub posture. `at` is a parameter so an operator re-running a morning
 // and a test stand at the same instant.

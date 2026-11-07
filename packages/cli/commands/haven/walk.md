@@ -13,7 +13,7 @@ flags:
   api:
     char: a
     type: string
-    description: Haven's API origin, when it is not haven.api in ~/.fli/config.json or the one Haven's web/ config names
+    description: Haven's API origin, when it is not haven.api in ~/.config/fli/config.json or the one Haven's web/ config names
     defaultValue: ''
   browser:
     char: b
@@ -60,7 +60,7 @@ registry bun is pointed at, which is how it is rehearsed before a publish. A
 machine with no checkout walks into the hosted Haven, `haven.knightly.dev`,
 unless `--api` names another.
 
-`~/.fli/config.json` states this machine's defaults, and a flag wins over it:
+`~/.config/fli/config.json` states this machine's defaults, and a flag wins over it:
 
 ```json
 { "haven": { "api": "https://haven.knightly.dev" } }
@@ -80,7 +80,7 @@ same way. An installed Haven has neither.
 ```js
 const { join, resolve, sep } = await import('node:path')
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = await import('node:fs')
-const { homedir } = await import('node:os')
+const { configDir, stateDir } = await import(resolve(global.fliRoot, 'core/paths.js'))
 const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js'))
 
 // The path the haven's api/src/client.ts serves. Written here rather than
@@ -98,7 +98,7 @@ const signInOf = (haven) => join(haven, 'web', 'src', 'lib', 'session', 'sign-in
 const sibling  = resolve(global.fliRoot, '..', 'haven')
 const checkout = !sibling.split(sep).includes('node_modules') && existsSync(signInOf(sibling))
 
-const CONFIG_FILE = join(homedir(), '.fli', 'config.json')
+const CONFIG_FILE = join(configDir(), 'config.json')
 let config = {}
 if (existsSync(CONFIG_FILE)) {
   try { config = JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) }
@@ -143,8 +143,8 @@ if (checkout) {
       }
       const { spawn } = await import('node:child_process')
       const { openSync } = await import('node:fs')
-      const logFile = join(homedir(), '.fli', 'haven', 'api.log')
-      mkdirSync(join(homedir(), '.fli', 'haven'), { recursive: true })
+      const logFile = join(stateDir(), 'haven', 'api.log')
+      mkdirSync(join(stateDir(), 'haven'), { recursive: true })
       const out = openSync(logFile, 'a')
       // Its own process group: `bun run api` is bun running a script that runs
       // the app, and a signal to the wrapper's pid leaves the server answering.
@@ -191,7 +191,7 @@ if (checkout) {
     process.exitCode = 1
     return
   }
-  root = join(homedir(), '.fli', 'haven', stated.version)
+  root = join(stateDir(), 'haven', stated.version)
   haven = join(root, 'node_modules', '@frontierjs', 'haven')
   if (!existsSync(signInOf(haven))) {
     const spec = `${stated.package}@${stated.version}`

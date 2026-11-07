@@ -89,7 +89,7 @@
 // the register edit inside — the owner applies it with the lane tool
 // (FJS-D1779). A row whose patch is on the Dock after a close or a block is
 // skipped by every later run until that patch is applied or removed. The
-// day's cap in ~/.fli/autopilot.json is read before each row, so a scheduled
+// day's cap in ~/.config/fli/autopilot.json is read before each row, so a scheduled
 // run stops itself with the Basecamp that started it down.
 // ============================================================
 

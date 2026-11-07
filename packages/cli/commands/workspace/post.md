@@ -2,7 +2,7 @@
 title: workspace:post
 description: Deploy the project's post — the tell Worker at network.frontierjs.com, with the maintainer running it as member one
 alias: ws:post
-effects: deploys a Worker and Durable Object to Cloudflare with wrangler, routes network.frontierjs.com to it, and writes ~/.fli/frontier/ and ~/.fli/config.json
+effects: deploys a Worker and Durable Object to Cloudflare with wrangler, routes network.frontierjs.com to it, and writes ~/.fli/frontier/ and ~/.config/fli/config.json
 examples:
   - fli ws:post
   - fli ws:post --nick jordan
@@ -11,7 +11,7 @@ flags:
   nick:
     char: n
     type: string
-    description: The owner's nick — frontier.nick in ~/.fli/config.json, else this machine's user name. 2 to 16 of a-z, 0-9, - and _
+    description: The owner's nick — frontier.nick in ~/.config/fli/config.json, else this machine's user name. 2 to 16 of a-z, 0-9, - and _
     defaultValue: ''
 ---
 

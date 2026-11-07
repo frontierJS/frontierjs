@@ -867,6 +867,10 @@ title: App
     <div class="stack" style:gap="0.25rem">
       <h1>{app.name}</h1>
       <span class="cluster text-sm text-muted">
+        <span class="cluster" style:gap="0.125rem">
+          <code id="app-id" title={app.id}>{app.id.slice(0, 6)}</code>
+          <CopyButton text={app.id} id="app-id-copy" />
+        </span>
         <code id="app-source-line">{app.sourceLabel}</code>
         <Pill tone={STATUS_TONE[app.status] ?? 'muted'} id="app-status">{app.status}</Pill>
         <Badge tone="muted">{app.kind}</Badge>

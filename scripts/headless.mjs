@@ -13,6 +13,7 @@
 import { spawn, spawnSync }                                     from 'node:child_process'
 import { appendFileSync, mkdirSync, readFileSync }             from 'node:fs'
 import { homedir }                                              from 'node:os'
+import { stateDir }                                             from '../packages/cli/core/paths.js'
 import { dirname, join }                                        from 'node:path'
 import { createInterface }                                      from 'node:readline'
 import { fileURLToPath }                                        from 'node:url'
@@ -20,7 +21,7 @@ import { fileURLToPath }                                        from 'node:url'
 import { SOURCE, LOOPS, logFiles, readSchedule, spentToday, overDayCap } from '../packages/cli/core/autopilot.js'
 
 export const ROOT    = dirname(dirname(fileURLToPath(import.meta.url)))
-export const LOG_DIR = join(homedir(), '.fli')
+export const LOG_DIR = stateDir()
 
 /** A loop's own log under LOG_DIR; the names are the schedule reader's (`LOG_NAMES`). */
 export const logOf = loop => join(LOG_DIR, LOOPS[loop].log)

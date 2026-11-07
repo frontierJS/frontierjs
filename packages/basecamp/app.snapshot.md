@@ -1313,11 +1313,12 @@ name when it declares none.
 
 ### `servers` · model `Server`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `setBackups`, `adopt`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
-- **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `setBackups`, `adopt`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `ingress`, `retireApp`, `reboot`, `drain`, `undrain`, `sync`, `setBackups`, `adopt`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `ingress`, `retireApp`, `reboot`, `drain`, `undrain`, `sync`, `setBackups`, `adopt`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
 - **input** — `adopt` takes `ServerAdopt`
 - **input** — `provision` takes `ServerProvision`
 - **input** — `provisionStep` takes `ServerProvisionStep`
+- **input** — `retireApp` takes `ServerRetireApp`
 - **input** — `setBackups` takes `ServerSetBackups`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -1326,6 +1327,7 @@ name when it declares none.
   - `logEvent` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `metrics` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
   - `ingress` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `retireApp` — standing 5 or above — declared `gate: 5`
   - `reboot` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `drain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `undrain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -1360,6 +1362,7 @@ name when it declares none.
 | before | `aggregate` | `autoFilter` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+| before | `retireApp` | `validateInput` |
 | before | `setBackups` | `validateInput` |
 | before | `adopt` | `validateInput` |
 | before | `provision` | `validateInput` |

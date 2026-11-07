@@ -2345,6 +2345,20 @@ describe('home-path-literal', () => {
   })
 })
 
+describe('home-dir-join', () => {
+  test('a join onto homedir() in cli/core is a finding; paths.js and a parameter are not', () => {
+    const root = tree('home-dir-join', {
+      'packages/cli/core/a.js':     "const f = join(homedir(), '.fli', 'x')\n",
+      'packages/cli/core/b.js':     "const home = homedir()\nexport const p = (home) => join(home, 'x')\n",
+      'packages/cli/core/paths.js': "export const s = () => join(homedir(), '.fli')\n",
+      'packages/cli/core/cloud.js': "const c = `${homedir()}/.ssh/config`\n",
+    })
+    const { findings } = only(root, 'home-dir-join', { scope: 'repo' })
+    expect(findings).toHaveLength(1)
+    expect(relative(root, findings[0].file)).toBe('packages/cli/core/a.js')
+  })
+})
+
 describe('the repo scope', () => {
   test('a fourth markdown file at a package root is a WARNING that names it', () => {
     // Ruled 2026-08-14: the four are the standard and a fifth is a question, not

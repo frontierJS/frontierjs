@@ -26,7 +26,7 @@
 //   The Autopilot town is held against the loops' logs read in this process
 //   (`readLoopLog`): five lanes, the Dock's patches, the Registry's tables
 //   against the rings data, the CI gate against .cache/ci-last.txt, the
-//   Switch against ~/.fli/autopilot.json, and one DAY row per event.
+//   Switch against ~/.config/fli/autopilot.json, and one DAY row per event.
 //
 //   The decide screen's queue is `openDecisions`' order, swiped with real
 //   touch events at 390px wide; Explain is the read-only ask (its argv is

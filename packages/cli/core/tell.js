@@ -12,14 +12,14 @@
 
 import { spawn }                                                  from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { homedir }                                                from 'node:os'
+import { configDir, stateDir }                                     from './paths.js'
 import { join }                                                   from 'node:path'
 import { fileURLToPath }                                          from 'node:url'
 import { plural }                                                 from './text.js'
 
-export const FRONTIER_DIR = join(homedir(), '.fli', 'frontier')
+export const FRONTIER_DIR = join(stateDir(), 'frontier')
 export const KEY_FILE     = join(FRONTIER_DIR, 'key.json')
-export const CONFIG_FILE  = join(homedir(), '.fli', 'config.json')
+export const CONFIG_FILE  = join(configDir(), 'config.json')
 /** What the last check found — `{ checked, waiting: [{ from, count }] }`. */
 export const WAITING_FILE = join(FRONTIER_DIR, 'waiting.json')
 /** This member's chain as this machine last saw it — absent on a machine that is a chain of one, whose root is made from `key.json` (FJS-D1418). */
@@ -39,7 +39,7 @@ const CHECK_SECONDS       = 60
 
 const now = () => Math.floor(Date.now() / 1000)
 
-/** `~/.fli/config.json` whole, or {} when there is none. A file that is not JSON is refused, never overwritten. */
+/** `config.json` under `configDir()` whole, or {} when there is none. A file that is not JSON is refused, never overwritten. */
 export const readConfig = () => {
   if (!existsSync(CONFIG_FILE)) return {}
   try { return JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) ?? {} }

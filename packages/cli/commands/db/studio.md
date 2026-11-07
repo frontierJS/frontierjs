@@ -7,11 +7,12 @@ examples:
   - fli studio --test
   - fli studio --port 5502
   - fli studio --schema packages/litestone/test/fixtures/corpus/calcom.lite
+  - fli studio --schema yuma:/srv/apps/kapp/db/schema.lite
 flags:
   schema:
     type: string
     kind: path
-    description: Open this .lite file instead of the project's db/schema.lite, over a throwaway database with a throwaway encryption key
+    description: "Open this .lite file instead of the project's db/schema.lite, over a throwaway database with a throwaway encryption key. host:/path reads it over ssh from a box (an ~/.ssh/config alias or user@host)"
     defaultValue: ''
   port:
     char: p
@@ -29,10 +30,11 @@ flags:
 ---
 
 <script>
-import { join, basename } from 'path'
-import { mkdtempSync } from 'fs'
+import { join, basename, dirname, posix } from 'path'
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { randomBytes } from 'crypto'
+import { spawnSync } from 'child_process'
 
 // The flag's declared default is the global port, so whether --port was typed
 // is read off the argv: a default must not pin an in-project studio to 5502.
@@ -48,12 +50,63 @@ async function studioPortFor($, flag) {
 // project root — the project's own database under someone else's schema — and
 // one with an @encrypted field refuses to start without a key. Both are
 // throwaway: the database is empty, so the key seals nothing worth keeping.
-function scratchFor(schema) {
-  const dir = mkdtempSync(join(tmpdir(), 'fli-studio-'))
+function scratchFor(schema, dir = mkdtempSync(join(tmpdir(), 'fli-studio-'))) {
   return {
     db:  join(dir, `${basename(schema, '.lite')}.db`),
     env: { ...process.env, ENCRYPTION_KEY: randomBytes(32).toString('hex') },
   }
+}
+
+// `host:path` is scp's spelling, so `user@host:path` and an ssh alias both
+// work. A local file wins: `a:b.lite` in the cwd is a file, not a host.
+const REMOTE_SCHEMA = /^([^/\s:]+):(.+)$/
+
+const remoteSchema = (schema) => !schema || existsSync(schema) ? null : schema.match(REMOTE_SCHEMA)
+
+// A schema split across `import "./x.lite"` files is unreadable without its
+// siblings, so each relative import is fetched too, mirrored at its remote path
+// so the parser resolves it unchanged. A package import (`@frontierjs/auth/…`)
+// resolves through node_modules, which a temp dir has none of — it borrows the
+// project's, else the one fli's own litestone came from.
+function fetchRemoteSchema($, host, path) {
+  const dir  = mkdtempSync(join(tmpdir(), 'fli-studio-'))
+  const seen = new Set()
+  const todo = [path]
+  while (todo.length) {
+    const p = todo.shift()
+    if (seen.has(p)) continue
+    seen.add(p)
+    const run = spawnSync('ssh', ['-o', 'BatchMode=yes', host, `cat -- ${remoteQuote(p)}`], { encoding: 'utf8' })
+    if (run.status !== 0) {
+      $.log.error(`could not read ${host}:${p}${run.stderr ? ` — ${run.stderr.trim()}` : ''}`)
+      return null
+    }
+    const local = join(dir, 'remote', p)
+    mkdirSync(dirname(local), { recursive: true })
+    writeFileSync(local, run.stdout)
+    for (const [, spec] of run.stdout.matchAll(/^\s*import\s+"(\.\.?\/[^"]+)"/gm))
+      todo.push(posix.join(posix.dirname(p), spec))
+  }
+  const modules = nodeModulesFor($)
+  if (modules) symlinkSync(modules, join(dir, 'node_modules'))
+  return { dir, schema: join(dir, 'remote', path), files: seen.size }
+}
+
+// Single-quoted for the remote shell; a leading `~/` stays outside the quotes
+// so the remote shell still expands it.
+const remoteQuote = (p) => {
+  const home = p.startsWith('~/')
+  const body = `'${(home ? p.slice(2) : p).replaceAll("'", `'\\''`)}'`
+  return home ? `~/${body}` : body
+}
+
+function nodeModulesFor($) {
+  const has = (d) => existsSync(join(d, '@frontierjs', 'litestone'))
+  const project = join($.paths.root, 'node_modules')
+  if (has(project)) return project
+  for (let d = global.fliRoot; d !== dirname(d); d = dirname(d))
+    if (has(join(d, 'node_modules'))) return join(d, 'node_modules')
+  return null
 }
 
 function studioCommand($, { schema, port, scratch, open }) {
@@ -68,16 +121,25 @@ scaffolded app's `fli dev` slot, so the app on 8001 has its GUI on 8501 and
 its studio on 8503 (`studioPort()`). Outside a project it is the global 5502.
 
 `--schema` opens any `.lite` file — a test fixture, a corpus schema — over an
-empty database in a temp directory, never the project's.
+empty database in a temp directory, never the project's. `--schema
+host:/path` reads one off a box over ssh, with its relative imports, into that
+temp directory: the deployed schema, never the deployed rows.
 
 ```js
-if (!requireSchema($, flag)) return
+const remote  = remoteSchema(flag.schema)
+const fetched = remote ? fetchRemoteSchema($, remote[1], remote[2]) : null
+if (remote && !fetched) { process.exitCode = 1; return }
 
-const { schema } = resolveDb($, flag)
+const local = fetched ? { ...flag, schema: fetched.schema } : flag
+if (!requireSchema($, local)) return
+
+const { schema } = resolveDb($, local)
 const port       = await studioPortFor($, flag)
-const scratch    = flag.schema ? scratchFor(schema) : null
+const scratch    = flag.schema ? scratchFor(schema, fetched?.dir) : null
 
 echo`  {bold Litestone Studio} {cyan http://localhost:${port}}`
+if (fetched) echo`
+  {dim from}   ${flag.schema} {dim (${fetched.files} file${fetched.files === 1 ? '' : 's'})}`
 if (scratch) echo`
   {dim schema} ${schema}
   {dim db}     ${scratch.db} {dim (throwaway)}`

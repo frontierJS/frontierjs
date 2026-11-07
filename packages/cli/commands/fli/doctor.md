@@ -26,7 +26,6 @@ flags:
 
 <script>
 import { resolve } from 'path'
-import { homedir } from 'os'
 </script>
 
 Scans all `_module.md` files for `requires:` declarations and checks whether
@@ -39,6 +38,7 @@ each env var is set. Also verifies system binaries and FLI configuration.
 // front page, the second caller, could not ask at all.
 const { buildRegistry, uniqueCommands, getModule } = await import(resolve(global.fliRoot, 'core/registry.js'))
 const { diagnose, requiringModules }               = await import(resolve(global.fliRoot, 'core/doctor.js'))
+const { globalEnvPath }                            = await import(resolve(global.fliRoot, 'core/global-env.js'))
 
 const modules = requiringModules({ commands: uniqueCommands(buildRegistry()), getModule })
   .filter(m => flag.namespace ? m.ns === flag.namespace : true)
@@ -47,7 +47,6 @@ const report = diagnose({
   root:    $.paths.root,
   fliRoot: global.fliRoot,
   modules,
-  home:    homedir(),
 })
 
 if (flag.json) {
@@ -88,6 +87,11 @@ for (const b of report.basecamps) {
   echo(`    ${ICON[b.level]}  ${chalk.cyan(b.label.padEnd(14))} ${b.ok ? chalk.dim('ok') : hint(b.hint)}`)
 }
 
+echo(chalk`\n  {bold where fli keeps your files}`)
+for (const r of report.roots) {
+  echo(`    ${chalk.cyan(r.name.padEnd(7))} ${r.path}  ${chalk.dim(r.holds)}`)
+}
+
 echo('')
 echo(chalk.dim('  ' + '\u2500'.repeat(45)))
 
@@ -107,6 +111,6 @@ echo('')
 
 if (flag.fix) {
   log.info('Opening global env file\u2026')
-  $.exec({ command: `${process.env.EDITOR || 'vi'} "${resolve(homedir(), '.config', 'fli', '.env')}"` })
+  $.exec({ command: `${process.env.EDITOR || 'vi'} "${globalEnvPath()}"` })
 }
 ```

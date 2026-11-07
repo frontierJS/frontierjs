@@ -16,7 +16,7 @@
 // environment's own client, so the autoloader, the global hooks and every
 // service definition are the ones production runs.
 
-import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
+import { test, expect, describe, beforeAll, afterAll, beforeEach } from 'bun:test'
 import { dirname, join } from 'node:path'
 import { ensureCert }  from '@frontierjs/outpost/cert'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
@@ -4617,6 +4617,94 @@ describe('removing a server that is not online', () => {
       expect(await sys.server.findFirst({ where: { id: server.id } })).toBeNull()
     })
   }
+})
+
+// ─── An App the machine routes and Basecamp has no row for (`FJS-4077`) ──────
+describe('servers.retireApp — stopping an old App the machine still routes', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let server: any, known: any
+  const GONE = 'old-app-id-from-a-fresh-reinstall'
+  const sent: any[] = []
+  let routes: { id: string | null, hosts: string[], to: unknown[] }[]
+  let refuse: string | null = null
+  const retire = (who: any, appId: string) => env.as(who).service('servers').call('retireApp', server.id, { appId })
+
+  const conduit = () => (env.app as any).conduit
+  let real: { resolve: any, send: any }
+  beforeAll(async () => {
+    const sys = env.system as any
+    server = await serverAt('online', { workspaceId: ws.id, name: 'gone-host', slug: `gone-host-${tag()}` })
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Gone', slug: `gone-${tag()}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    known = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'known', slug: `known-${tag()}` } })
+    // `app.conduit` is read-only; its two methods are not.
+    const c = conduit()
+    real = { resolve: c.resolve, send: c.send }
+    c.resolve = async (target: string, ...rest: unknown[]) => target === `outpost:${server.id}` ? { pinned_cert: true } : real.resolve.call(c, target, ...rest)
+    c.send    = async (call: any) => {
+      if (call.target !== `outpost:${server.id}`) return real.send.call(c, call)
+      sent.push({ path: call.path, body: call.body })
+      if (call.path === '/ingress') return { data: { caddy: true, listen: [], servers: [], routes } }
+      if (refuse === call.path) return { error: { kind: 'http', message: 'boom' } }
+      return { data: {} }
+    }
+  })
+  afterAll(() => { const c = conduit(); c.resolve = real.resolve; c.send = real.send })
+  beforeEach(() => {
+    sent.length = 0; refuse = null
+    routes = [
+      { id: `fjs-${GONE}`, hosts: ['a.test'], to: [] },
+      { id: `fjs-${GONE}-path-0`, hosts: ['a.test'], to: [] },
+      { id: `fjs-${known.id}`, hosts: ['k.test'], to: [] },
+      { id: 'fli-thing', hosts: ['f.test'], to: [] },
+    ]
+  })
+  const acts = () => sent.filter(c => c.path !== '/ingress')
+
+  test('the Routes read names the App id of every route the Outpost wrote, and the row for the ones it knows', async () => {
+    const read = await env.as(owner).service('servers').call('ingress', server.id) as any
+    const by = (id: string) => read.routes.find((r: any) => r.id === id)
+    expect(by(`fjs-${GONE}-path-0`)).toMatchObject({ owner: 'outpost', appId: GONE, app: null })
+    expect(by(`fjs-${known.id}`)).toMatchObject({ owner: 'outpost', appId: known.id, app: { id: known.id } })
+    expect(by('fli-thing').appId).toBeUndefined()
+  })
+
+  test('an id with a route and no App row is stopped and retired by the machine, and the trail says so', async () => {
+    expect(await retire(owner, GONE)).toMatchObject({ id: server.id })
+    expect(acts()).toEqual([
+      { path: '/stop',          body: { app_id: GONE } },
+      { path: '/static/retire', body: { app_id: GONE } },
+    ])
+    const events = await (env.system as any).serverEvent.findMany({ where: { serverId: server.id, kind: 'appRetired' } })
+    expect(events).toHaveLength(1)
+    expect(events[0].metadata).toMatchObject({ app_id: GONE })
+  })
+
+  test('an App Basecamp knows is refused, and the machine is not touched', async () => {
+    await expect(retire(owner, known.id)).rejects.toThrow(/one Basecamp knows/)
+    expect(acts()).toEqual([])
+  })
+
+  test('an id Caddy does not route here, a hand route, and a malformed id are refused', async () => {
+    await expect(retire(owner, 'never-routed')).rejects.toThrow(/routes nothing for App never-routed/)
+    await expect(retire(owner, 'fli-thing')).rejects.toThrow(/routes nothing/)
+    await expect(retire(owner, '../etc')).rejects.toThrow(/not an App id/)
+    await expect(retire(owner, '')).rejects.toThrow()
+    expect(acts()).toEqual([])
+  })
+
+  test('a developer is below the gate and another workspace cannot name the server', async () => {
+    await expect(retire(developer, GONE)).rejects.toThrow()
+    await expect(retire(outsider, GONE)).rejects.toThrow()
+    expect(acts()).toEqual([])
+  })
+
+  test('a machine that refuses the stop is the answer, and no trail row claims it worked', async () => {
+    refuse = '/stop'
+    const before = await (env.system as any).serverEvent.count({ where: { serverId: server.id, kind: 'appRetired' } })
+    await expect(retire(owner, GONE)).rejects.toThrow(/did not retire .* \(\/stop: http\): boom/)
+    expect(await (env.system as any).serverEvent.count({ where: { serverId: server.id, kind: 'appRetired' } })).toBe(before)
+  })
 })
 
 // ─── A Server's Secret references stay in its workspace (`FJS-3845`) ─────────

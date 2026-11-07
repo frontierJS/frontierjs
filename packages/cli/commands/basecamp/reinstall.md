@@ -320,7 +320,7 @@ const keepEdge = async ({ host, port, key, ingress, log, echo, chalk }) => {
   if (!token) { log.warn('No CLOUDFLARE_TOKEN in this run — add it on /secrets/ and pick the zone on /dns/'); return }
   try {
     const secret = await onBox({ host, port, key, method: 'POST', path: '/secrets',
-      body: { name: 'Cloudflare', kind: 'providerKey', providerKind: 'cloudflare', data: token } })
+      body: { name: 'cloudflare', kind: 'providerKey', providerKind: 'cloudflare', data: token } })
     const [ws] = [await onBox({ host, port, key, path: '/workspaces' })].flat()
     await onBox({ host, port, key, method: 'PATCH', path: `/workspaces/${ws.id}`,
       body: { ingressSecretId: secret.id, ingressZoneId: ingress.zoneId, version: ws.version } })

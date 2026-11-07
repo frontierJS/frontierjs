@@ -14,7 +14,7 @@
 // over the app's first open box, in a worktree of the app's repo, and ends
 // with the box ticked or the gap filed.
 //
-// Which app: the ones listed under `stressors.apps` in ~/.fli/autopilot.json
+// Which app: the ones listed under `stressors.apps` in ~/.config/fli/autopilot.json
 // and no other — the list is the owner's consent (FJS-D1780), so an app not
 // on it is refused by name whether the run is scheduled or by hand, and
 // `--app` only chooses among the listed. Of those, the app whose first open

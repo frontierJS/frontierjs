@@ -1,7 +1,7 @@
 // src/jobs/autopilot-tick.job.ts — the Switch's clock.
 //
 // `domain/atlas/autopilot-run.ts` is the work; this is the schedule. Every
-// five minutes, while ~/.fli/autopilot.json says On, it starts each entry
+// five minutes, while ~/.config/fli/autopilot.json says On, it starts each entry
 // whose cron line fell inside the window since the last tick, and refuses the
 // pass when the day's cap is spent or an entry's lanes are held. Off, it does
 // nothing at all: a run already going is the loop's own, and this stops none.

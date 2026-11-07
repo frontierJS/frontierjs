@@ -115,4 +115,4 @@ What goes where an argument or a flag's value is typed comes from its declaratio
 
 ## Cache
 
-Completion reads the registry, so it shares the registry's cache under `~/.fli/cache/` — one parsed frontmatter block per command file, keyed by mtime and size. A changed file is re-parsed, a new file is found by the directory walk, and neither needs a refresh. Use `fli completion:refresh` if completions feel stale, or set `FLI_NO_CACHE=1` for one run to bypass the cache entirely.
+Completion reads the registry, so it shares the registry's cache under `~/.cache/fli/` — one parsed frontmatter block per command file, keyed by mtime and size. A changed file is re-parsed, a new file is found by the directory walk, and neither needs a refresh. Use `fli completion:refresh` if completions feel stale, or set `FLI_NO_CACHE=1` for one run to bypass the cache entirely.

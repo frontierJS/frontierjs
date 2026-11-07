@@ -41,7 +41,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { homedir } from 'node:os'
+import { stateDir } from './paths.js'
 import { basename, dirname, join, relative, resolve }      from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -185,7 +185,7 @@ export function withRegisterGuard(root, fn) {
   let issues = join(registerLayout(root).dir, 'ISSUES.md')
   try { issues = realpathSync(issues) } catch {}
   const key = createHash('sha1').update(issues).digest('hex').slice(0, 16)
-  return withGuard(join(homedir(), '.fli', `register-${key}.guard`), fn, 60_000)
+  return withGuard(join(stateDir(), `register-${key}.guard`), fn, 60_000)
 }
 
 /**
@@ -262,7 +262,7 @@ function cachedParse(layout, parse) {
   if (stats.reduce((n, [, size]) => n + Math.max(size, 0), 0) < CACHE_FROM) return parse()
 
   const stamp = JSON.stringify([REGISTERS_VERSION, ...stats, ...READER_SOURCES.map(f => { const s = statSync(f); return [s.size, s.mtimeMs] })])
-  const file  = join(homedir(), '.fli', 'registers', `${createHash('sha1').update(resolve(layout.root)).digest('hex').slice(0, 16)}.json`)
+  const file  = join(stateDir(), 'registers', `${createHash('sha1').update(resolve(layout.root)).digest('hex').slice(0, 16)}.json`)
   try {
     const hit = JSON.parse(readFileSync(file, 'utf8'))
     if (hit.stamp === stamp) return hit.parsed

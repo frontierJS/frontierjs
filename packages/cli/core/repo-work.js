@@ -31,7 +31,7 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join }    from 'node:path'
-import { homedir } from 'node:os'
+import { stateDir } from './paths.js'
 
 import { htmlPage, embedJson } from './html-page.js'
 import { rankNext }      from './next.js'
@@ -45,7 +45,7 @@ const OUTCOMES = ['closed', 'blocked', 'busy', 'failed', 'corrected']
 // ─── the page's data ──────────────────────────────────────────────────────────
 
 /** The counts the map draws, or null when the project does not run the loops. */
-export function workOf(root, model, { today = new Date().toISOString().slice(0, 10), log = join(homedir(), '.fli', LOOPS.fix.log) } = {}) {
+export function workOf(root, model, { today = new Date().toISOString().slice(0, 10), log = join(stateDir(), LOOPS.fix.log) } = {}) {
   if (!existsSync(join(root, '.claude', 'skills', 'fix-next', 'SKILL.md'))) return null
 
   let pkg = {}

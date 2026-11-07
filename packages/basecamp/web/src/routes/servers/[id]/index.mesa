@@ -141,6 +141,26 @@ title: Server
     }
   }
 
+  // An "app gone" route names an App id this database has no row for: a fresh
+  // reinstall, or an App removed while the machine was away. Its container may
+  // still run, and the Outpost refuses a new App on its hostname until it is
+  // stopped. The service refuses any id that is not exactly that.
+  let retireError = null
+
+  async function retireApp(appId) {
+    retireError = null; busy = `retire:${appId}`
+    try {
+      await servers.service.invoke('retireApp', server.id, { appId })
+      toasts.success('Stopped ' + appId + ' and released its routes')
+      await readRoutes()
+      await loadEvents()
+    } catch (e) {
+      retireError = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   const OWNER = { outpost: 'Basecamp', fli: 'fli deploy', hand: 'by hand' }
   const describeTarget = (t) =>
       t.kind === 'proxy'    ? `→ ${t.dial}${t.host ? ` (Host ${t.host})` : ''}`
@@ -688,6 +708,11 @@ title: Server
               {adoptBusy === 'accounts' ? 'Asking…' : 'Find a machine'}
             </Button>
           </div>
+        {:else if !adoptAccounts.length}
+          <p class="text-sm" id="adopt-no-accounts">
+            No cloud account yet. Add the provider's API token as a provider key on
+            <a href="/secrets/">Secrets</a>, then find the machine here.
+          </p>
         {:else}
           <div class="cluster">
             <Select id="adopt-account" label="Account" value={adoptAccountId}
@@ -893,6 +918,9 @@ title: Server
           </div>
         </article>
       {/each}
+      {#if retireError}
+        <p class="text-sm" id="retire-error">{retireError}</p>
+      {/if}
       {#if !ingress.routes.length}
         <p class="text-sm text-muted">Caddy routes nothing here yet. A Domain on an app placed here adds a route.</p>
       {:else}
@@ -911,7 +939,14 @@ title: Server
                 </td>
                 <td class="text-sm">
                   {#if r.app}<a href={`/apps/${r.app.id}/`}>{r.app.name}</a>
-                  {:else if r.owner === 'outpost'}<span class="badge warning">app gone</span>
+                  {:else if r.owner === 'outpost'}
+                    <span class="badge warning">app gone</span>
+                    <Button treatment="outlined" tone="danger" data-retire={r.appId} disabled={busy === 'retire:' + r.appId}
+                            onclick={() => retireApp(r.appId)}
+                            data-confirm={'Stops the container for App ' + r.appId + ' on ' + server.name + ', if one is running, and removes every route it holds. Basecamp has no record of this App.'}
+                            data-confirm-title="Stop and release?" data-confirm-label="Stop and release">
+                      {busy === 'retire:' + r.appId ? 'Stopping…' : 'Stop and release'}
+                    </Button>
                   {:else}{OWNER[r.owner]}{/if}
                   <div class="text-muted"><code>{r.id ?? 'no @id'}</code></div>
                 </td>

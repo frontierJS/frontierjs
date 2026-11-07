@@ -37,7 +37,7 @@ import net from 'net'
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, unlinkSync, readdirSync, readlinkSync } from 'fs'
 import { execSync, execFileSync } from 'child_process'
 import { gitOut }                 from './git.js'
-import { homedir } from 'os'
+import { stateDir } from './paths.js'
 import { basename, dirname, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { stripComments } from './codegraph.js'
@@ -674,7 +674,7 @@ export async function portStatus(p, { lockFile = LOCK_FILE } = {}) {
 // the servers it runs (`context.exec` is synchronous), so ALIVE needs no signal
 // handler. A dead session is an app not running now, and keeps its slot.
 
-const LOCK_DIR  = join(homedir(), '.fli')
+const LOCK_DIR  = stateDir()
 const LOCK_FILE = join(LOCK_DIR, 'sessions.lock')
 
 /** Every session, keyed by app root. */

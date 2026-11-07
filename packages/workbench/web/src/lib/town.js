@@ -66,7 +66,7 @@ export const B = {
   review: { name: 'Review', x: 290, y: 645, w: 170, h: 70, doors: [[370, 645, 'rv370']],
     stands: 'loop-review\'s last report: what repeated.', reads: '~/.fli/fix-loop-review.md' },
   switch: { name: 'Switch', x: 490, y: 645, w: 210, h: 70, doors: [[590, 645, 'sw590']],
-    stands: 'Turn On / Off, the schedule table, today\'s spend against the cap.', reads: '~/.fli/autopilot.json' },
+    stands: 'Turn On / Off, the schedule table, today\'s spend against the cap.', reads: '~/.config/fli/autopilot.json' },
 }
 LANE_Y.forEach((y, i) => {
   const n = i + 1

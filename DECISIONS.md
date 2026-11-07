@@ -2257,7 +2257,7 @@ The paper's recommendation, taken as written: (confidence 3) — four members le
 
 Asked while building [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) 2.4. **A** was picked over **B** (the owner's machine makes the pair, `fli ws:post` uploads the private half as a Worker secret, and the public half is a constant in `fli` beside `POST_ORIGIN` — Certificate Transparency's log keys shipped in browsers, Keybase's hard-coded server key) and **C** (A now, and the public half committed into `fli` once the live post has one).
 
-The recommendation, taken (confidence 2): no second secret on anybody's laptop, and the pin happens on a call the member already trusts — the join, or the first row fetched. *Memory:* SSH host keys, made on the host and pinned on first contact. The operator can read the key either way, since a Worker secret is readable by the code the operator deploys, so B buys no trust against `THREATS.md` B19; what it buys is a first reader that never trusted first contact, and that is the reopen path. The pin is `frontier.postKey` in `~/.fli/config.json`, and a row under another key is refused rather than re-pinned.
+The recommendation, taken (confidence 2): no second secret on anybody's laptop, and the pin happens on a call the member already trusts — the join, or the first row fetched. *Memory:* SSH host keys, made on the host and pinned on first contact. The operator can read the key either way, since a Worker secret is readable by the code the operator deploys, so B buys no trust against `THREATS.md` B19; what it buys is a first reader that never trusted first contact, and that is the reopen path. The pin is `frontier.postKey` in `~/.config/fli/config.json`, and a row under another key is refused rather than re-pinned.
 
 ### <a id="fjs-d1466"></a>2026-10-22 · `FJS-D1466` — The invite allowance — Three joins per member, a code not yet spent counted as one, and the owner uncounted.
 
@@ -16755,6 +16755,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1990"></a>2026-11-07 · `FJS-D1990` — Q1 — Which layout every per-user file moves into — Split by class: run state stays in `~/.fli`, config goes to `$XDG_CONFIG_HOME/fli`, data to `$XDG_DATA_HOME/fli`, cache to `$XDG_CACHE_HOME/fli`, every path resolved by one `core/paths.js`.
+
+Asked in [`IDEAS/fli-home-layout.md`](IDEAS/fli-home-layout.md) § Open questions. **C** was picked over **A** (one root, `~/.fli/{config,state,data,cache}`. Cost: reverses `FJS-D1828`, moves every caller, and backup tools cannot tell the cache is disposable), **B** (the full XDG split: `~/.config/fli`, `~/.local/state/fli`, `~/.local/share/fli`, `~/.cache/fli`. Cost: moves holds, lanes and registers, the paths a person and `fli top` read most, and retires `~/.fli`), **D** (C plus a `~/.fli/cache` symlink to the cache root. Cost: `rm -rf ~/.fli` leaves the cache behind, a backup tool that follows links copies the cache anyway, and `fli doctor` has to repair a dangling link).
+
+The paper's recommendation, taken as written: the code and `FJS-D1828` already split by class, so C moves only the misplaced files, and a `paths.js` owner makes B's last step (state to `$XDG_STATE_HOME`) a one-line change later. D buys `ls` visibility that a printed list of the four roots gives without a link.
 
 ### <a id="fjs-d1988"></a>2026-11-06 · `FJS-D1988` — Q10 — Where do an `acme` Domain's certificates come from after the flip — Minted ahead: when the copy is turned on, Basecamp mints each `acme` Domain's certificate by DNS-01 through `providers/acme`, keeps it as a `tlsCert` Secret kept apart from the Domain's own `certSecretId` (otherwise `certStatusOf` reports a certificate the live machine does not serve), renews it at 30 days, and pushes it to the copy's machine with `/certs/load`. That is the per-Domain half `ingress-cert.job.ts` left open (`FJS-D1975`). The flip then issues nothing.
 

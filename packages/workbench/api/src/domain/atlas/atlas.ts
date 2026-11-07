@@ -13,6 +13,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir }               from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath }         from 'node:url'
+import { configDir, stateDir }   from '@frontierjs/cli/core/paths.js'
 
 import { runningOf, readTick, type Entry, type Running, type Tick } from './autopilot-run.ts'
 
@@ -106,7 +107,7 @@ export type LoopLog = {
 }
 type LogLine = Record<string, unknown>
 type Spent   = { attempts: number, dollars: number }
-/** `autopilot.js`'s read of ~/.fli/autopilot.json, every cap checked. */
+/** `autopilot.js`'s read of ~/.config/fli/autopilot.json, every cap checked. */
 type Schedule = {
   file: string, exists: boolean, on: boolean, missing: string[]
   day: { attempts: number | null, dollars: number | null } | null
@@ -257,7 +258,7 @@ export type Autopilot = Omit<LoopLog, 'dock'> & {
   }
 }
 
-export const FLI_DIR = () => join(homedir(), '.fli')
+export const FLI_DIR = () => stateDir()
 const READY_TOP = 40
 const BENCH_TOP = 12
 
@@ -375,7 +376,7 @@ export async function readAutopilot(root: string): Promise<Autopilot> {
     plans: { papers: readPapers(f, root, atlas), stressors: readStressors(f, root, schedule?.stressors ?? null) },
     ci:    readCi(root),
     switch: {
-      file:    '~/.fli/autopilot.json',
+      file:    join(configDir(), 'autopilot.json').replace(homedir(), '~'),
       exists:  schedule?.exists ?? refused !== null,
       on:      schedule?.on === true,
       refused, missing: schedule?.missing ?? [],

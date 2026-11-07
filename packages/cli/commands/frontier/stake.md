@@ -1,7 +1,7 @@
 ---
 title: frontier:stake
 description: Stake a nick with an invite — this machine becomes a member of the Frontier network under it
-effects: makes ~/.fli/frontier/key.json if absent, spends the invite at the post, writes the signed row to ~/.fli/frontier/member.json, and writes frontier.nick and frontier.postKey to ~/.fli/config.json
+effects: makes ~/.fli/frontier/key.json if absent, spends the invite at the post, writes the signed row to ~/.fli/frontier/member.json, and writes frontier.nick and frontier.postKey to ~/.config/fli/config.json
 examples:
   - fli frontier:stake ada Zp3kQ0x9Lm2fTq8VwXc4bA
   - fli frontier:stake Zp3kQ0x9Lm2fTq8VwXc4bA

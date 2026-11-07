@@ -27,6 +27,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basecampsPath, readBasecamps } from './basecamps.js'
 import { requiresOf }                 from './requires.js'
 import { esetHint, globalEnvPath }    from './global-env.js'
+import { configDir, dataDir, cacheDir, stateDir } from './paths.js'
 import { execSync }     from 'node:child_process'
 import { join }         from 'node:path'
 import { MIN_CF }       from './cloudflare.js'
@@ -106,6 +107,15 @@ const sshHosts = (home) => {
   return names
 }
 
+/** What lives under each per-user root (`core/paths.js`), for the section that prints them. */
+const ROOT_HOLDS = {
+  config: '.env, commands/, basecamps.json, config.json, autopilot.json',
+  data:   'basecamp backups',
+  cache:  'registry cache, safe to delete',
+  state:  'holds, lanes, registers, loop logs, sessions.lock, frontier/, haven/',
+}
+const ROOTS = { config: configDir, data: dataDir, cache: cacheDir, state: stateDir }
+
 function basecampRows(home) {
   const file = basecampsPath(home)
   if (!existsSync(file)) return []
@@ -115,7 +125,7 @@ function basecampRows(home) {
 
   let all
   try { all = readBasecamps({ home }) } catch (err) { rows.push({ label: 'basecamps.json', ok: false, hint: err.message, path: file }) }
-  const hosts = sshHosts(home)
+  const hosts = sshHosts(home ?? homedir())
   for (const [name, entry] of Object.entries(all ?? {})) {
     if (!entry.host) continue
     rows.push({ label: name, ok: hosts.has(entry.host), hint: `no 'Host ${entry.host}' in ~/.ssh/config  \u2192  fli basecamp:create writes it, or add the block by hand`, path: file })
@@ -136,9 +146,9 @@ function basecampRows(home) {
  * @param {Function} o.has        binary probe
  * @param {Function} o.versionOf   version probe, for the binaries declaring a `min`
  * @param {object}   o.env        environment
- * @param {string}   o.home       home directory
+ * @param {string}   o.home       home directory; absent, every root follows its XDG variable
  */
-export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home = homedir() } = {}) {
+export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home } = {}) {
   const globalEnv = globalEnvPath(home)
 
   const system = BINARIES.map(b => {
@@ -180,11 +190,14 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
 
   const basecamps = basecampRows(home)
 
+  // Printed, never counted: a root that does not exist yet is not a fault.
+  const roots = Object.entries(ROOT_HOLDS).map(([name, holds]) => ({ name, path: ROOTS[name]({ home }), holds }))
+
   const all    = [...system, ...config, ...namespaces, ...basecamps]
   const failed = all.filter(c => !c.ok)
 
   return {
-    system, config, namespaces, basecamps,
+    system, config, namespaces, basecamps, roots,
     checks:  all.length,
     failed:  failed.length,
     // *Nothing here is broken enough to stop you* is a different sentence from

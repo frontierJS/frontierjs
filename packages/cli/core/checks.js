@@ -235,6 +235,8 @@ export const RULES = [
     title: 'every skill CLAUDE.md names is a SKILL.md whose frontmatter agrees' },
   { id: 'home-path-literal',    scope: 'repo', severity: 'error', invariant: null,
     title: 'no file names the home directory of the machine it was written on' },
+  { id: 'home-dir-join',        scope: 'repo', severity: 'error', invariant: null,
+    title: 'a per-user fli root comes from core/paths.js, never a join onto homedir()' },
 
   // The notes, graded against the tree — `core/doc-audit.js`. Prose is the one
   // artefact here with no compiler, no test and no snapshot behind it, and it is

@@ -135,7 +135,7 @@ describe('readAutopilot', async () => {
     expect(t.council.bench.length).toBeLessThanOrEqual(12)
     expect(t.plans.papers.every(p => p.next !== null)).toBe(true)
     expect(Date.parse(t.window.end) - Date.parse(t.window.start)).toBe(864e5)
-    expect(t.switch).toMatchObject({ file: '~/.fli/autopilot.json', on: expect.any(Boolean), entries: expect.any(Array), spent: { attempts: expect.any(Number), dollars: expect.any(Number) }, missing: expect.any(Array) })
+    expect(t.switch).toMatchObject({ file: expect.stringMatching(/autopilot\.json$/), on: expect.any(Boolean), entries: expect.any(Array), spent: { attempts: expect.any(Number), dollars: expect.any(Number) }, missing: expect.any(Array) })
     expect(t.switch.refused === null || t.switch.entries.length === 0).toBe(true)
   }, 30_000)
 })

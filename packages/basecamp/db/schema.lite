@@ -530,6 +530,12 @@ type ServerAdopt {
   shown            ServerAdoptShown
 }
 
+// The App id on a machine's Routes card that Basecamp has no row for, named so
+// `retireApp` can stop it and release its routes.
+type ServerRetireApp {
+  appId String
+}
+
 enum SecretKind     { sshKey providerKey registryAuth tlsCert notification backup generic }
 enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroying destroyed }
 enum ServerRole     { general build database gateway worker }
@@ -576,6 +582,8 @@ enum ServerEventKind {
   recipeRan recipeFailed cleanupQueued cleanupRan cleanupFailed
   // Disks.
   volumeRemoved volumesPruned
+  // A route and container for an App id Basecamp has no row for, stopped by a person (`servers.retireApp`).
+  appRetired
   // A posture control moving between passing and failing (`domain/host/posture.ts`).
   postureFailed postureRestored
 }

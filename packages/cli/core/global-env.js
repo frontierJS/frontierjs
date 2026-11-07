@@ -9,12 +9,12 @@
 // walk's defaults live there — machine STATE, never a secret.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { homedir } from 'os'
+import { configDir } from './paths.js'
 import { dirname, join, resolve } from 'path'
 
 export const GLOBAL_ENV_HEADER = '# FLI global environment\n# Add env vars here that apply across all projects\n'
 
-export const globalEnvPath = (home = homedir()) => join(home, '.config', 'fli', '.env')
+export const globalEnvPath = (home) => join(configDir({ home }), '.env')
 
 /** How a person sets `key` by hand — the sentence every refusal and doctor row prints. */
 export const esetHint = (key) => `fli eset ${key} <value> --global`

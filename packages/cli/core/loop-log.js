@@ -27,7 +27,7 @@
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import { basename, join }                                  from 'node:path'
-import { homedir }                                         from 'node:os'
+import { stateDir }                                        from './paths.js'
 
 import { LOOPS } from './autopilot.js'
 
@@ -103,7 +103,7 @@ export function repeatedIn(text) {
  * or from `since` when one is given. `root` names the repo whose lanes these
  * are (`<logDir>/lanes/<basename(root)>-N`); `logDir` defaults to ~/.fli.
  */
-export function readLoopLog({ logDir = join(homedir(), '.fli'), root, since, until } = {}) {
+export function readLoopLog({ logDir = stateDir(), root, since, until } = {}) {
   const name  = root ? basename(root) : 'frontierjs'
   const end   = ms(until, Date.now())
   const start = ms(since, end - DAY_MS)

@@ -17,7 +17,7 @@
 //   GET  /atlas          queue     every question with lettered options, in `fli decide`'s order, with its prose
 //   POST /atlas/:id      explain   { ask? } — Claude, read-only, on one of them; a follow-up resumes its session
 //   GET  /atlas/:id      explanation  what that run has said so far
-//   POST /atlas/:id      run       entry :id (1-based) of ~/.fli/autopilot.json started now, its caps as the script's flags
+//   POST /atlas/:id      run       entry :id (1-based) of ~/.config/fli/autopilot.json started now, its caps as the script's flags
 //   POST /atlas/:id      turn      :id `on` or `off` — the file's switch; On is refused until every cap is set
 
 

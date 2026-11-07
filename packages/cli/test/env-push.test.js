@@ -167,7 +167,7 @@ describe('fli env:push to an App in Basecamp', () => {
 
   // `id` empty leaves BASECAMP_APP_ID to the app's .env, as a real run reads it.
   const run = async (id, args) => {
-    const env = { ...process.env, NO_COLOR: '1', HOME: home, BASECAMP_APP_ID: id }
+    const env = { ...process.env, NO_COLOR: '1', HOME: home, XDG_CONFIG_HOME: join(home, '.config'), BASECAMP_APP_ID: id }
     if (!id) delete env.BASECAMP_APP_ID
     const child = Bun.spawn([process.execPath, resolve(ROOT, 'bin/fli.js'), 'env:push', ...args], { cwd: app, stdout: 'pipe', stderr: 'pipe', env })
     const [out, err] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()])

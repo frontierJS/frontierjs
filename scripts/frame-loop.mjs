@@ -35,7 +35,7 @@
 // has crossed the line the skill exists to hold, and the loop stops there.
 //
 // --source autopilot marks a run the schedule started: the log line carries
-// `source`, and the day's cap in ~/.fli/autopilot.json is read before each
+// `source`, and the day's cap in ~/.config/fli/autopilot.json is read before each
 // paper, so a scheduled run stops itself with the Basecamp that started it down.
 //
 // The session, its log and the ladder are `headless.mjs`. One line per attempt

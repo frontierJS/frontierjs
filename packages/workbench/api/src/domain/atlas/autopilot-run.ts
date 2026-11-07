@@ -19,7 +19,7 @@
 
 import { spawn }                                                                   from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir }                                                                 from 'node:os'
+import { stateDir }                                                                from '@frontierjs/cli/core/paths.js'
 import { join }                                                                    from 'node:path'
 import { parseCron, cronMatches }                                                  from '@frontierjs/toolbelt/cron'
 
@@ -35,7 +35,7 @@ const running = new Map<number, Running>()
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch (err) { return (err as { code?: string }).code === 'EPERM' } }
 
-export const OUT_DIR = () => join(homedir(), '.fli', 'autopilot')
+export const OUT_DIR = () => join(stateDir(), 'autopilot')
 
 /** The entry's run while its pid is alive, else null. */
 export function runningOf(i: number): Running | null {

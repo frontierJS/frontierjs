@@ -7,7 +7,6 @@
 import { parseArgv, BOOL_ARGV } from './argv.js'
 import { requiresOf } from './requires.js'
 import { chalk, amber } from './color.js'
-import { homedir } from 'os'
 import { readFileSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { logger, loadFliEnv, fliVersion } from './utils.js'
@@ -23,7 +22,7 @@ import { nearestAll } from '@frontierjs/toolbelt/typo'
 // ─── .fli.json + .env — load both from project root ──────────────────────────
 loadConfig()
 
-loadFliEnv(global.projectRoot, homedir())
+loadFliEnv(global.projectRoot)
 
 
 

@@ -13,7 +13,7 @@
 // Custom methods dispatch on the X-Service-Method HEADER, not a sub-path
 // (DECISIONS.md). `POST /servers/:id/drain` is a 404; the call is
 // `POST /servers/:id` with `X-Service-Method: drain`.
-//   events · reboot · drain · undrain · sync · setBackups · adopt
+//   events · reboot · drain · undrain · sync · setBackups · adopt · retireApp
 //   heartbeat — the outpost's, HMAC at the transport, exempted from sessionScope
 //
 // The wire contract is the SCHEMA's field names, because autoValidate strips
@@ -366,6 +366,28 @@ function describeReading(reading: MachineBackups, label: string): string {
   return describePolicy({ plan: reading.plan, hour: reading.hour, weekday: reading.weekday } as BackupPolicy, label)
 }
 
+/** An Outpost-written Caddy route is `fjs-<appId>`, with `-redirects` or `-path-<n>` for the ones beside it. */
+const OUTPOST_ROUTE = /^fjs-(.+?)(-redirects|-path-\d+)?$/
+const appOfRoute    = (routeId: string | null) => OUTPOST_ROUTE.exec(routeId ?? '')?.[1] ?? null
+
+/** A name an Outpost will take as a directory and a container label. Anything else never leaves this app. */
+const APP_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/
+
+type LiveIngress = {
+  caddy: boolean, said?: string, listen: string[]
+  routes: { id: string | null, hosts: string[], to: Record<string, unknown>[] }[]
+  servers: { name: string, listen: string[], routes: number }[]
+  config?: Record<string, unknown> | null
+}
+
+/** The machine's Caddy, read live. The one reader, so `ingress` and `release` cannot disagree on what is routed. */
+async function readIngress(target: string, serverName: string): Promise<LiveIngress> {
+  const res = await outbound($.app).send<LiveIngress>({ target, method: 'POST', path: '/ingress', body: {} })
+  if (res.error)
+    throw new BadRequest(`The outpost on '${serverName}' did not answer (${res.error.kind}): ${res.error.message}`)
+  return res.data!
+}
+
 /**
  * Make a named move, then record it — the shape reboot/drain/undrain share.
  *
@@ -423,6 +445,8 @@ export default createService({
     // What the machine's Caddy routes, read live — never stored, because a
     // copy here is a second answer to a question Caddy already holds.
     { method: 'ingress', read: true },
+    // Stops an old App's container on the machine; the weight of `adopt`.
+    { method: 'retireApp', input: 'ServerRetireApp', gate: LEVELS.ADMINISTRATOR },
     'reboot', 'drain', 'undrain',
     // `sync`, `catalog` and `reconcile` act on a machine or SPEND the
     // workspace's vendor token before any write, and a rate limit is per
@@ -570,17 +594,9 @@ export default createService({
     const target = await outpostFor($.app, id)
     if (!target) return { outpost: false, caddy: null, listen: [], servers: [], routes: [], config: null }
 
-    const res = await outbound($.app).send<{
-      caddy: boolean, said?: string, listen: string[]
-      routes: { id: string | null, hosts: string[], to: Record<string, unknown>[] }[]
-      servers: { name: string, listen: string[], routes: number }[]
-      config?: Record<string, unknown> | null
-    }>({ target, method: 'POST', path: '/ingress', body: {} })
-    if (res.error)
-      throw new BadRequest(`The outpost on '${server.name}' did not answer (${res.error.kind}): ${res.error.message}`)
-    const live = res.data!
+    const live = await readIngress(target, server.name)
 
-    const appIds = [...new Set(live.routes.map(r => /^fjs-(.+?)(-redirects|-path-\d+)?$/.exec(r.id ?? '')?.[1]).filter(Boolean))] as string[]
+    const appIds = [...new Set(live.routes.map(r => appOfRoute(r.id)).filter(Boolean))] as string[]
     const apps:    { id: string, name: string }[]        = appIds.length ? await db().app.findMany({ where: { id: { in: appIds } } }) : []
     const domains: { appId: string, hostname: string }[] = appIds.length ? await db().domain.findMany({ where: { appId: { in: appIds } } }) : []
     // A host an App answers only a prefix of is named by a path route, not by a Domain of its own.
@@ -589,18 +605,54 @@ export default createService({
       if (h.domain) domains.push({ appId: h.appId, hostname: h.domain.hostname })
 
     const routes = live.routes.map(r => {
-      const outpost = /^fjs-(.+?)(-redirects|-path-\d+)?$/.exec(r.id ?? '')
-      if (!outpost) return { ...r, owner: r.id?.startsWith('fli-') ? 'fli' : 'hand', app: null, stray: [] }
-      const app   = apps.find(a => a.id === outpost[1]) ?? null
-      const named = new Set(domains.filter(d => d.appId === outpost[1]).map(d => d.hostname.toLowerCase()))
+      const owned = appOfRoute(r.id)
+      if (!owned) return { ...r, owner: r.id?.startsWith('fli-') ? 'fli' : 'hand', app: null, stray: [] }
+      const app   = apps.find(a => a.id === owned) ?? null
+      const named = new Set(domains.filter(d => d.appId === owned).map(d => d.hostname.toLowerCase()))
       return {
-        ...r, owner: 'outpost',
+        ...r, owner: 'outpost', appId: owned,
         app:   app ? { id: app.id, name: app.name } : null,
         stray: r.hosts.filter(h => !named.has(h.toLowerCase())),
       }
     })
     // An Outpost released before `config` sends none; the card says so.
     return { outpost: true, caddy: live.caddy, said: live.said ?? null, listen: live.listen, servers: live.servers, routes, config: live.config ?? null }
+  },
+
+  // ── retireApp — POST /servers/:id  X-Service-Method: retireApp ───────
+  // The Routes card's "app gone" row: Caddy holds routes, and a container may
+  // run, for an App id this database has no row for (a fresh reinstall, an App
+  // removed while the machine was away). The Outpost refuses a new App on a
+  // hostname such a route holds, and nothing else in the fleet can name it.
+  // Refused for any id that is not exactly that: an App Basecamp knows is
+  // stopped by `apps`, and an id Caddy does not route here is not this
+  // machine's to touch. Both Outpost calls run, since the id may be a
+  // container App or a static one, and each is a no-op for the half it lacks.
+  async retireApp() {
+    const id     = $.id as string
+    const server = await getScoped('server', 'Server') as { id: string, name: string }
+    const appId  = String((($.data ?? {}) as Record<string, unknown>).appId ?? '')
+    if (!APP_ID.test(appId)) throw new BadRequest(`'${appId}' is not an App id`)
+
+    const target = await outpostFor($.app, id)
+    if (!target) throw new BadRequest(`'${server.name}' has no outpost to release a route through`)
+
+    const live = await readIngress(target, server.name)
+    if (!live.routes.some(r => appOfRoute(r.id) === appId))
+      throw new BadRequest(`'${server.name}' routes nothing for App ${appId}`)
+    if (await db().app.findFirst({ where: { id: appId } }))
+      throw new BadRequest(`App ${appId} is one Basecamp knows; stop it from the App`)
+
+    // Stop first: it takes the container and every route for the id. The
+    // static retire then takes what a static App held on disk.
+    for (const path of ['/stop', '/static/retire']) {
+      const res = await outbound($.app).send({ target, method: 'POST', path, body: { app_id: appId } })
+      if (res.error)
+        throw new BadGateway(`The outpost on '${server.name}' did not retire ${appId} (${path}: ${res.error.kind}): ${res.error.message}`)
+    }
+    await recordEvent(id, 'appRetired', `Stopped App ${appId}, which Basecamp has no record of, and released its routes`,
+      { app_id: appId, requested_by: actor() })
+    return getScoped('server', 'Server', id)
   },
 
   // ── events — POST /servers/:id  X-Service-Method: events ──────────

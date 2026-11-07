@@ -13,7 +13,7 @@
 
 import { readFileSync, readdirSync, statSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'fs'
 import { resolve, dirname, basename, join } from 'path'
-import { homedir } from 'os'
+import { configDir, cacheDir } from './paths.js'
 import { createHash } from 'crypto'
 import { findFilesPlugin } from './utils.js'
 import { extractFrontmatter, splitFrontmatter, scriptBlockOf, stripScriptBlocks } from './compiler.js'
@@ -38,8 +38,7 @@ const CACHE_VERSION = 1
 // Read per call, not at import: a test points XDG_CONFIG_HOME at a temp dir,
 // or the developer's own commands leak into the suite.
 export function userCommandsDir() {
-  const base = process.env.XDG_CONFIG_HOME || join(homedir(), '.config')
-  return join(base, 'fli', 'commands')
+  return join(configDir(), 'commands')
 }
 
 function cacheFile(routesDir) {
@@ -47,7 +46,7 @@ function cacheFile(routesDir) {
     .update([global.fliRoot, userCommandsDir(), global.projectRoot, routesDir].join('\0'))
     .digest('hex')
     .slice(0, 10)
-  return join(homedir(), '.fli', 'cache', `registry-${key}.json`)
+  return join(cacheDir(), `registry-${key}.json`)
 }
 
 function readCache(path) {

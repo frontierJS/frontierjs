@@ -1,4 +1,4 @@
-// ─── autopilot.js — ~/.fli/autopilot.json, the loops' schedule, read once ────
+// ─── autopilot.js — ~/.config/fli/autopilot.json, the loops' schedule, read once ────
 //
 // IDEAS/autopilot.md: the loops this repo already has (`scripts/fix-loop.mjs`,
 // `frame-loop.mjs`) run on a schedule a person writes. The file is fli's and
@@ -58,13 +58,13 @@
 // Plain ESM, node or bun; imports nothing from `scripts/`.
 
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
-import { homedir }      from 'node:os'
+import { configDir, stateDir } from './paths.js'
 import { join }         from 'node:path'
 
 import { MAX_BRANCH } from './ports.js'
 import { rulingSections } from './decisions.js'
 
-export const SCHEDULE_FILE = join(homedir(), '.fli', 'autopilot.json')
+export const SCHEDULE_FILE = join(configDir(), 'autopilot.json')
 
 /** The one value `--source` takes: a scheduled run is a hand run in the log plus this field. */
 export const SOURCE = 'autopilot'
@@ -147,7 +147,7 @@ export const LOOPS = {
 export const LOG_NAMES = Object.values(LOOPS).map(l => l.log)
 
 /** The loops' log files, in full, under `dir`. */
-export const logFiles = (dir = join(homedir(), '.fli')) => LOG_NAMES.map(n => join(dir, n))
+export const logFiles = (dir = stateDir()) => LOG_NAMES.map(n => join(dir, n))
 
 const CRON_FIELD = /^(\*|[0-9]+)(-[0-9]+)?(\/[0-9]+)?(,(\*|[0-9]+)(-[0-9]+)?(\/[0-9]+)?)*$/
 
