@@ -58,7 +58,7 @@ describe('compact', () => {
     const text = out.join('\n')
     expect(text).not.toContain('::fli')
     const summary = out.findIndex(l => l.includes('http://localhost:1/api'))
-    expect(out[summary]).toContain('Junction · 3 routes')
+    expect(out[summary]).toContain('Junction  · 3 routes')
     expect(out[summary + 1].trim()).toBe('Litestone · 2 models')
     expect(out.some(l => l.includes('http://localhost:2/') && l.includes('Sierra'))).toBe(true)
     // Held until the summary, then printed — not lost.
@@ -67,7 +67,7 @@ describe('compact', () => {
     expect(out.findIndex(l => l.includes('GET /api/x'))).toBeGreaterThan(summary)
     const head = out.findIndex(l => l.includes('probe'))
     expect(head).toBeLessThan(summary)
-    expect(out[head]).toMatch(/^  READY  probe  in \d+\.\ds$/)
+    expect(out[head]).toMatch(/^  probe  READY \(\d+ms\)$/)
   })
 
   // The key footer waits on `summarized`; drawn mid-summary it splits the rows.

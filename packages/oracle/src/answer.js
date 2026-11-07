@@ -71,7 +71,9 @@ const CURRENCY = 'currency'
 
 const IDENT = /^[a-z][a-zA-Z0-9]*$/
 export const an = (name) => `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`
-const VALUE = /^[a-z][a-z0-9_]*$/
+// FJS-D1748: an enum value is camelCase, the spelling fli check's
+// enum-value-case grades the emitted schema by -- two spellings never settle.
+const VALUE = IDENT
 const GUESS = /\binferred\b|\bnot (explicitly )?stated\b/i
 
 // A json default as the JSON text of an object or an array, or null. An answer
@@ -94,7 +96,7 @@ export const RULES = {
   rung:        'The rung agrees with `from`: catalog means the entry\'s own name, variant a different name or a kind, novel and property have no `from`, and a novel entity is not named like a catalog entry.',
   collapse:    'An entity with `from` says what the collapse costs and the escape if it turns out wrong.',
   inferred:    'Anything whose own reasoning says inferred or not stated goes in `open`, never in the answer. So does what you left out: `why` argues for what is in the answer, and an omission is a question in `open`.',
-  field:       'A field has a camelCase name no other column on the entity has, a type from the type table, and an enum has two or more lowercase values.',
+  field:       'A field has a camelCase name no other column on the entity has, a type from the type table, and an enum has two or more camelCase values.',
   state:       'A field named status, state, stage or phase with more than two values is a lifecycle, not an enum field.',
   document:    'A required json field states the document a new row starts with as `default`, `{}` or `[]`, unless it is `system`: no form a person fills can type JSON, so without one nobody can create the row.',
   link:        'A link names an entity in the answer or User; a link to User names the actor reaching the row through it, and a link to anything else names none.',
@@ -215,7 +217,7 @@ export function checkAnswer(answer) {
       if (!TYPES[f.type]) { refuse('field', fat, `\`${f.type}\` is not a type. The types are ${Object.keys(TYPES).join(', ')}.`); continue }
       if (f.type === 'enum') {
         if (!Array.isArray(f.values) || f.values.length < 2) refuse('field', fat, 'An enum lists two or more values.')
-        else for (const v of f.values) if (!VALUE.test(v)) refuse('field', fat, `\`${v}\` is not a lowercase value; write it as ${camel(String(v)).toLowerCase() || 'a lowercase word'}.`)
+        else for (const v of f.values) if (!VALUE.test(v)) refuse('field', fat, `\`${v}\` is not a camelCase value; write it as ${camel(String(v)) || 'a camelCase word'}.`)
         if (f.default != null && !f.values?.includes(f.default)) refuse('field', fat, `The default \`${f.default}\` is not one of the values.`)
         if (STATE_NAMES.includes(f.name) && f.values?.length > 2) refuse('state', fat, `\`${f.name}\` names ${f.values.length} states of one thing. Declare it as the entity's \`lifecycle\` with the moves between them, so a move nobody declared is refused.`)
       } else if (f.values != null) refuse('field', fat, 'Only an enum lists values.')
@@ -461,7 +463,7 @@ function readLifecycle(raw, at, refuse) {
   if (!IDENT.test(field)) refuse('lifecycle', at, `\`${field}\` is not a camelCase field name.`)
   const states = Array.isArray(raw.states) ? raw.states : []
   if (states.length < 2) { refuse('lifecycle', at, 'A lifecycle has two or more states; one state is a constant.'); return null }
-  for (const s of states) if (!VALUE.test(s)) refuse('lifecycle', at, `\`${s}\` is not a lowercase state name.`)
+  for (const s of states) if (!VALUE.test(s)) refuse('lifecycle', at, `\`${s}\` is not a camelCase state name; write it as ${camel(String(s)) || 'a camelCase word'}.`)
   if (new Set(states).size !== states.length) refuse('lifecycle', at, 'A state is listed twice.')
   const initial = raw.initial ?? states[0]
   if (!states.includes(initial)) refuse('lifecycle', at, `\`initial: ${initial}\` is not one of the states.`)

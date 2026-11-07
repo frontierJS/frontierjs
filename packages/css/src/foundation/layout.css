@@ -10,6 +10,7 @@
  *   center    both axes
  *   split     pushed to opposite ends
  *   grid      equal columns, as many as fit
+ *   switcher  side by side above a width, stacked below it
  *
  * Stack, Cluster and Group read the align axis (tokens.css § Align) for
  * where their children sit; Center and Split are an alignment by definition
@@ -119,6 +120,51 @@
 }
 
 /*
+ * Switcher — side by side while there is room, stacked when there is not.
+ *
+ * Every Layout's Switcher and Sidebar in one class. The threshold is
+ * `--switch-at` measured against the Switcher's OWN box: `100%` in a
+ * flex-basis is the container's width, so `(--switch-at - 100%) * 999` is a
+ * huge basis below the threshold, which wraps every child onto its own line,
+ * and a negative one above it, which `max()` floors to the child's `--side`.
+ * A `@media` query would measure the viewport, and a Switcher in a 300px
+ * Sidebar on a 1400px screen would stay side by side; `@container` would need
+ * a `container-type` on an ancestor, which this package does not ship.
+ *
+ * `--fr` on a child weights the split (`--fr: 2` takes twice the share).
+ * `--side` on a child makes it a rail of that width, which does not grow;
+ * the other child takes what is left. Both are registered as non-inheriting
+ * below, so a Switcher inside a rail does not hand its own children the
+ * rail's width.
+ *
+ * `inline-size: 100%` for Grid's reason: inside a centered Stack the box
+ * shrinks to its content, and `100%` in the basis then measures the shrunken
+ * box, so the Switcher stacks on a wide screen.
+ */
+@property --fr {
+  syntax:   '*';
+  inherits: false;
+}
+@property --side {
+  syntax:   '*';
+  inherits: false;
+}
+
+.switcher {
+  display:     flex;
+  flex-wrap:   wrap;
+  gap:         var(--space-2xl);
+  inline-size: 100%;
+}
+.switcher > * {
+  flex-grow:  var(--fr, 1);
+  flex-basis: max(var(--side, 0px), calc((var(--switch-at, 48rem) - 100%) * 999));
+}
+.switcher > [style*="--side:"] {
+  flex-grow: 0;
+}
+
+/*
  * A [hidden] element is display:none by UA default, but the UA sheet sits
  * below every author layer, so each `display` above beats it and a hidden
  * Stack stayed on screen (`FJS-2529`). Restated here, in the layer that
@@ -129,7 +175,8 @@
 .group[hidden],
 .center[hidden],
 .split[hidden],
-.grid[hidden] {
+.grid[hidden],
+.switcher[hidden] {
   display: none;
 }
 

@@ -22,7 +22,15 @@ import { DEV_ENV, parseDevLine } from '@frontierjs/toolbelt/devline'
 import { chalk, colorEnabled } from './color.js'
 import { plain, wrap, visibleLength } from './text.js'
 
-const TONES = [chalk.cyan, chalk.magenta, chalk.yellow, chalk.green, chalk.blue]
+// Magenta is kept out of the rotation: it is the data realm's color, and a
+// surface wearing it would read as the database speaking.
+const TONES = [chalk.cyan, chalk.yellow, chalk.green, chalk.blue]
+
+// A fact is muted but its counts are not, so `19 routes` is read by its number.
+// A whole token must be numeric: an address like 192.168.0.1 stays muted.
+const fact = (text) => text.split(' ')
+  .map(word => /^\(?\d+(\.\d+)?$/.test(word) ? word : chalk.dim(word))
+  .join(' ')
 
 // Lines closer together than this are one burst — a boot, a rebuild. A blank
 // line between bursts, and wherever the surface speaking changes, is what lets
@@ -113,13 +121,16 @@ export function runSurfaces({
     const urls = rows.map(r => g.ready.get(r.surface)?.url ?? '')
     const urlWidth = Math.max(0, ...urls.map(u => u.length))
     const lead = 2 + width + 3 + urlWidth + 3
+    // Names pad to the widest across every surface, so each row's first dot,
+    // and the facts after it, start at one column.
+    const nameWidth = Math.max(0, ...rows.flatMap(r => (g.ready.get(r.surface)?.rows ?? []).map(n => n.name.length)))
     const fit = s => wrap(s, columns ? columns - lead : 0)
     const front = frontUrl(g)
 
     // A surface that never reported is not ready, and its row says so.
     const allReady = rows.every(r => g.ready.has(r.surface))
-    const took = chalk.dim(`in ${((Date.now() - g.started) / 1000).toFixed(1)}s`)
-    const head = [allReady && chalk.bold(chalk.green('READY')), title && chalk.bold(title), allReady && took].filter(Boolean)
+    const took = chalk.dim(`(${Date.now() - g.started}ms)`)
+    const head = [title && chalk.dim(title), allReady && `${chalk.bold(chalk.green('READY'))} ${took}`].filter(Boolean)
     echo('')
     if (head.length) { echo(`  ${head.join('  ')}`); echo('') }
     rows.forEach((row, i) => {
@@ -133,7 +144,11 @@ export function runSurfaces({
       const url = ready.url ?? ''
       const facts = ready.rows.length ? ready.rows : [{ name: '', facts: [] }]
       facts.forEach((r, j) => {
-        const text = [r.name && chalk.bold(r.name), ...r.facts].filter(Boolean).join(chalk.dim(' · '))
+        // A fact carrying an address stacks on its own line: two of them on one
+        // line wrap mid-URL.
+        const inline  = r.facts.filter(f => !f.includes('://'))
+        const stacked = r.facts.filter(f => f.includes('://'))
+        const text = [r.name && chalk.bold(r.name) + ' '.repeat(nameWidth - r.name.length), ...inline.map(fact)].filter(Boolean).join(chalk.dim(' · '))
         const [first = '', ...rest] = fit(text)
         const shown = url && url === front ? chalk.green(url) : url
         const head = j === 0
@@ -141,6 +156,7 @@ export function runSurfaces({
           : ' '.repeat(lead)
         echo(head + first)
         for (const more of rest) echo(' '.repeat(lead + 2) + more)
+        for (const f of stacked) echo(' '.repeat(lead) + fact(f))
       })
     })
     last = 0; speaker = null
@@ -211,7 +227,7 @@ export function runSurfaces({
     if (!g.summarized) g.booting = setTimeout(() => {
       if (g.summarized || g.stopping) return
       echo('')
-      echo(`  ${[title && chalk.bold(title), chalk.dim('gearing up…')].filter(Boolean).join('  ')}`)
+      echo(`  ${[title && chalk.dim(title), chalk.dim('gearing up…')].filter(Boolean).join('  ')}`)
     }, bootingMs)
 
     Promise.all(g.children.map(c => c.exited)).then(codes => {

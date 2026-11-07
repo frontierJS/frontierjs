@@ -9,7 +9,8 @@
  *
  *   VOCAB        which element and which class each term is
  *   ANATOMY      which children it expects, and the markup — further down
- *   BREAKPOINTS  the widths a layout changes at — last, since it is not a term
+ *   BREAKPOINTS  the viewport widths a layout changes at — last, since it is
+ *   CONTAINER_STEPS  not a term; the two box widths density derives at, beside it
  *
  * ── Five readers ─────────────────────────────────────────────────────
  *
@@ -157,6 +158,7 @@ const VOCAB = [
       ["Split", "<div>", "Two-up: first item left, last item right"],
       ["Container", "<div>", "A max-width column with responsive padding"],
       ["Grid", "<div>", "Equal columns, as many as fit at --grid-min each, and one on a phone. The count is derived from the width, so there is no breakpoint to write"],
+      ["Switcher", "<div>", "Children side by side while the Switcher is wider than --switch-at, stacked below it. --fr weights a child, --side makes one a fixed-width rail. It measures its own box, not the viewport"],
     ],
   ],
 ];
@@ -236,8 +238,10 @@ const NOT_A_TERM = {
    * package still ships no positioning ladder. `bleed` reaches both viewport
    * edges from inside a held-width parent, and is one rule with Band's
    * (bands.css), so an image in Prose and a Band escape the same way.
+   * `spare` is content a narrow box does without (utilities.css): it names a
+   * role, not a width, and answers to the viewport and to a `fjs` container.
    */
-  utility: ['relative', 'bleed'],
+  utility: ['relative', 'bleed', 'spare'],
 };
 
 
@@ -770,7 +774,7 @@ const NOT_ANATOMY = {
 };
 
 /*
- * The widths the package's layout changes at, in px — one scale for every
+ * The viewport widths the package's layout changes at, in px — one scale for every
  * `@media` width in src/, and the one an app's own queries match.
  *
  * They cannot be custom properties: `@media (min-width: var(--bp-md))` never
@@ -784,6 +788,15 @@ const NOT_ANATOMY = {
  * the package has one set of breakpoints rather than two that nearly agree.
  */
 const BREAKPOINTS = { sm: 640, md: 768, lg: 1024, xl: 1280, "2xl": 1536 };
+
+/*
+ * The two widths a `fjs` container changes density at, in px — the BOX's
+ * width, not the viewport's (`@container fjs (inline-size < 30rem)` and
+ * `< 20rem`, written as rem in src/). They sit beside BREAKPOINTS rather than
+ * in a scale of their own (FJS-D2021): `vocabulary: every @container width is
+ * on the scale` grades each one against both tables.
+ */
+const CONTAINER_STEPS = { narrow: 480, cramped: 320 };
 
 /*
  * The class a row names, or null for a term carried by its element.

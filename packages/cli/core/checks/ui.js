@@ -1294,6 +1294,79 @@ export const CHECKS = {
     return { findings }
   },
 
+  // FJS-D2022: a width in a condition cannot read a token, so the scale is the
+  // installed package's own table, read rather than copied here.
+  'css-width-off-scale': ({ root }) => {
+    let doc
+    try { doc = JSON.parse(readFileSync(join(root, 'node_modules/@frontierjs/css/vocabulary.json'), 'utf8')) }
+    catch { return { skipped: '@frontierjs/css is not installed' } }
+    if (!doc.breakpoints || !doc.containerSteps) return { skipped: 'the installed @frontierjs/css names no width scale' }
+
+    const viewport = Object.values(doc.breakpoints)
+    const container = Object.values(doc.containerSteps)
+    const steps = [...viewport, ...container]
+    const scale = `${viewport.join(' · ')}; container ${[...container].sort((a, b) => a - b).join(' · ')}`
+    const toPx = (n, unit) => Number(n) * (unit === 'px' ? 1 : 16)
+    // `max-width` and `<=` sit one pixel under the step they stop before, and
+    // `.99` spells the same twin; so any width up to 1px under a step is on it.
+    const onScale = (px) => steps.some(s => px === s || (s - px > 0 && s - px <= 1))
+
+    const LEN = '(\\d*\\.?\\d+)(px|rem|em)'
+    const FEATURE = new RegExp(
+      `\\(\\s*(?:(?:min|max)-(?:width|inline-size)\\s*:\\s*${LEN}` +
+      `|(?:width|inline-size)\\s*(?:>=|<=|>|<)\\s*${LEN}` +
+      `|${LEN}\\s*(?:>=|<=|>|<)\\s*(?:width|inline-size)(?:\\s*(?:>=|<=|>|<)\\s*${LEN})?)\\s*\\)`, 'g')
+
+    const findings = []
+    for (const surface of CLIENT_SURFACES) {
+      walk(join(root, surface), 6, (dir) => {
+        for (const name of safeRead(dir)) {
+          if (!name.endsWith('.mesa')) continue
+          const file = join(dir, name)
+          let text
+          try { text = readFileSync(file, 'utf8') } catch { continue }
+          const scan = text.replace(/<!--[\s\S]*?-->/g, s => s.replace(/[^\n]/g, ' '))
+
+          // A Switcher's `--switch-at` is a width the layout changes at too,
+          // inline or in a rule, and it is the same question as a query's.
+          for (const s of scan.matchAll(new RegExp(`--switch-at\\s*:\\s*${LEN}`, 'g'))) {
+            const px = toPx(s[1], s[2])
+            if (onScale(px)) continue
+            findings.push({
+              file,
+              line: lineOf(text, s.index),
+              message: `${s[0]} — ${+px.toFixed(2)}px is not on the scale (${scale}). ` +
+                       `A companion rule cannot match a width the package and its other apps do not use; take a step.`,
+            })
+          }
+
+          for (const block of scan.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)) {
+            const start = block.index + block[0].indexOf('>') + 1
+            const css = block[1].replace(/\/\*[\s\S]*?\*\//g, s => s.replace(/[^\n]/g, ' '))
+            for (const cond of css.matchAll(/@(media|container)\b([^{;]*)/g)) {
+              for (const f of cond[2].matchAll(FEATURE)) {
+                for (let i = 1; i < f.length; i += 2) {
+                  if (f[i] === undefined) continue
+                  const px = toPx(f[i], f[i + 1])
+                  if (onScale(px)) continue
+                  const at = start + cond.index + cond[0].indexOf(f[0], cond[1].length + 1)
+                  findings.push({
+                    file,
+                    line: lineOf(text, at),
+                    message: `@${cond[1]} ${f[0]} — ${+px.toFixed(2)}px is not on the scale (${scale}). ` +
+                             `A layout change at a width the package and its other apps do not use cannot be matched ` +
+                             `by a companion rule; take a step, or its one-pixel twin for a max-width.`,
+                  })
+                }
+              }
+            }
+          }
+        }
+      })
+    }
+    return { findings }
+  },
+
   'css-raw-utility': ({ root }) => {
     let doc
     try { doc = JSON.parse(readFileSync(join(root, 'node_modules/@frontierjs/css/vocabulary.json'), 'utf8')) }

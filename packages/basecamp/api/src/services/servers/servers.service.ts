@@ -58,6 +58,7 @@ import type { RuntimeEdge, RuntimeReading } from '../../domain/host/runtime.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { listSshHosts, probeSshHost } from '../../domain/local/local-ssh.ts'
 import { outbound, outpostFor } from '../../providers/outpost.ts'
+import { removeOnMachine }       from '../../domain/backup/backup-archives.ts'
 import { asPublicKey }           from '../apps/apps.service.ts'
 
 import type { TargetDescriptor } from '@frontierjs/conduit'
@@ -373,6 +374,18 @@ const appOfRoute    = (routeId: string | null) => OUTPOST_ROUTE.exec(routeId ?? 
 /** A name an Outpost will take as a directory and a container label. Anything else never leaves this app. */
 const APP_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/
 
+type MachineArchive = { app_id: string, name: string, bytes: number, at: string }
+
+/** Each archive file name an AppBackup row of these Apps names, to its row --
+ *  a machine path, or the object key an uploaded copy took the same name to. */
+async function archiveRows(appIds: string[]): Promise<Map<string, string>> {
+  if (!appIds.length) return new Map()
+  const rows = await db().asSystem().appBackup.findMany({
+    where: { appId: { in: appIds }, location: { not: null } }, select: { id: true, location: true },
+  }) as { id: string, location: string }[]
+  return new Map(rows.map(r => [r.location.split('/').pop()!, r.id]))
+}
+
 type LiveIngress = {
   caddy: boolean, said?: string, listen: string[]
   routes: { id: string | null, hosts: string[], to: Record<string, unknown>[] }[]
@@ -447,6 +460,10 @@ export default createService({
     { method: 'ingress', read: true },
     // Stops an old App's container on the machine; the weight of `adopt`.
     { method: 'retireApp', input: 'ServerRetireApp', gate: LEVELS.ADMINISTRATOR },
+    // The archives on the machine's disk, and one deleted that no AppBackup
+    // row names: an App gone with a reinstalled hub left its files behind.
+    { method: 'archives', read: true, gate: LEVELS.ADMINISTRATOR },
+    { method: 'discardArchive', input: 'ServerDiscardArchive', gate: LEVELS.ADMINISTRATOR },
     'reboot', 'drain', 'undrain',
     // `sync`, `catalog` and `reconcile` act on a machine or SPEND the
     // workspace's vendor token before any write, and a rate limit is per
@@ -652,6 +669,60 @@ export default createService({
     }
     await recordEvent(id, 'appRetired', `Stopped App ${appId}, which Basecamp has no record of, and released its routes`,
       { app_id: appId, requested_by: actor() })
+    return getScoped('server', 'Server', id)
+  },
+
+  // ── archives — POST /servers/:id  X-Service-Method: archives ──────
+  /** Every archive `/backup` left on the machine, each with the App and the
+   *  row that name it. `backupId` null is one only `discardArchive` reaches. */
+  async archives() {
+    const id     = $.id as string
+    const server = await getScoped('server', 'Server') as { id: string, name: string }
+    const target = await outpostFor($.app, id)
+    if (!target) return { outpost: false, archives: [] }
+
+    const res = await outbound($.app).send({ target, method: 'POST', path: '/backups', body: {} })
+    if (res.error)
+      throw new BadGateway(`The outpost on '${server.name}' did not list its archives (${res.error.kind}): ${res.error.message}`)
+    const listed = ((res.data ?? {}) as { archives?: MachineArchive[] }).archives ?? []
+    const appIds = [...new Set(listed.map(a => a.app_id))]
+    const apps: { id: string, name: string }[] = appIds.length
+      ? await db().app.findMany({ where: { id: { in: appIds } }, select: { id: true, name: true } }) : []
+    const named = await archiveRows(appIds)
+    return {
+      outpost: true,
+      archives: listed.map(a => ({
+        name: a.name, appId: a.app_id, bytes: a.bytes, at: a.at,
+        app: apps.find(x => x.id === a.app_id) ?? null,
+        backupId: named.get(a.name) ?? null,
+      })),
+    }
+  },
+
+  // ── discardArchive — POST /servers/:id  X-Service-Method: discardArchive ──
+  /** Delete one archive file no AppBackup row names (`FJS-D2012`). A named
+   *  one goes by `appBackups.discard`, which deletes its bucket copy too and
+   *  refuses an app's newest good archive. */
+  async discardArchive() {
+    const id     = $.id as string
+    const server = await getScoped('server', 'Server') as { id: string, name: string }
+    const data   = ($.data ?? {}) as Record<string, unknown>
+    const name   = String(data.name ?? ''), appId = String(data.appId ?? '')
+    // Which file it is, and that it is this App's, is the Outpost's rule.
+    if (!APP_ID.test(appId)) throw new BadRequest(`'${appId}' is not an App id`)
+
+    if ((await archiveRows([appId])).has(name))
+      throw new Conflict(`${name} is an App backup Basecamp lists — discard it from the App's Backups`)
+    // An App of another workspace is not this caller's to clean up after.
+    if (await db().asSystem().app.findFirst({ where: { id: appId } }) && !await db().app.findFirst({ where: { id: appId } }))
+      throw new NotFound(`No archive '${name}' on '${server.name}'`)
+
+    const done = await removeOnMachine($.app, server, appId, name)
+    if ('error' in done) throw new BadGateway(done.error)
+    if (!done.removed) throw new NotFound(`No archive '${name}' on '${server.name}'`)
+
+    await recordEvent(id, 'archiveDiscarded', `Deleted the archive ${name}, which no App backup named`,
+      { name, app_id: appId, bytes: done.bytes, requested_by: actor() })
     return getScoped('server', 'Server', id)
   },
 

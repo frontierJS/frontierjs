@@ -497,6 +497,44 @@ export function gradeReplication(
     : control({ ok: true,  message: `${what} replicating, at most ${Math.round(worst / 1000)}s behind` })
 }
 
+// ─── read-only copies ─────────────────────────────────────────────────────
+// Graded on READ from the `AppCopy` rows naming this machine. Age is the last
+// refresh that served the copy, never `asOf`: a quiet App's newest write stays
+// where it was while every refresh succeeds (`FJS-D1999`).
+
+export interface CopyReading {
+  name:        string
+  /** Two of its cron's intervals: one missed refresh is a notice, two is this control. */
+  maxAgeMs:    number
+  refreshedAt: string | null
+  status:      string | null
+  error:       string | null
+  createdAt:   string
+}
+
+const span = (ms: number) => ms < 72 * 3_600_000 ? `${Math.round(ms / 3_600_000)} h` : `${days(ms)} days`
+
+/** `backup.copy-age`: each read-only copy on this machine was served inside two of its schedule's intervals. */
+export function gradeCopies(copies: CopyReading[], now: number): Control {
+  const control = (g: Grade): Control => ({ id: 'backup.copy-age', group: 'backup', severity: 'medium', ...g,
+    ...(g.ok === false ? { fix: 'Open the App\'s Backups tab: the read-only copy card names the last refresh\'s error, and turning the copy off and on runs one now' } : {}) })
+  if (!copies.length) return control({ ok: true, message: 'No read-only copy is served from this machine' })
+
+  const behind: string[] = []
+  for (const c of copies) {
+    const why = c.error ? `: ${c.error}` : ''
+    if (c.refreshedAt) {
+      const age = now - Date.parse(c.refreshedAt)
+      if (age > c.maxAgeMs) behind.push(`${c.name}'s copy was last refreshed ${span(age)} ago, past its schedule's ${span(c.maxAgeMs)}${why}`)
+    } else if (c.status === 'failed') behind.push(`${c.name}'s copy has never been served here${why}`)
+    else if (c.status !== 'running' && now - Date.parse(c.createdAt) > c.maxAgeMs)
+      behind.push(`${c.name}'s copy has not been refreshed since it was turned on ${span(now - Date.parse(c.createdAt))} ago`)
+  }
+  return behind.length
+    ? control({ ok: false, message: behind.join('; ') })
+    : control({ ok: true,  message: `${copies.length} read-only cop${copies.length === 1 ? 'y' : 'ies'} inside ${copies.length === 1 ? 'its' : 'their'} schedule` })
+}
+
 // ─── runtime ──────────────────────────────────────────────────────────────
 // Graded on READ from `Server.runtime`, which every heartbeat rewrites. A
 // container under `--restart unless-stopped` that keeps crashing still reads

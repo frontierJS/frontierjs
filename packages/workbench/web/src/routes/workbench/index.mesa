@@ -2712,6 +2712,26 @@ title: Workbench
     .workbench-panes > * { grid-area: auto !important; }
     .workbench-pane { block-size: min(85dvh, var(--workbench-pane-max)); }
   }
+  /* A phone: the strip beside the name was left about 130px wide, so Import and
+     Next sat past the edge of a scroller nobody knew to swipe. It takes a row
+     of its own and wraps, and every control in the head is a thumb's height. */
+  @media (max-width: 40rem) {
+    .workbench-head:has(.workbench-chats) > .workbench-chats {
+      order: 1;
+      flex: 1 0 100%;
+      flex-wrap: wrap;
+      overflow-x: visible;
+    }
+    .workbench-head :global(.btn),
+    .workbench-head-chat,
+    .workbench-chat-open,
+    .workbench-chat-group-label,
+    .workbench-fold { min-block-size: 2rem; }
+    .workbench-chat-close,
+    .workbench-chat-pkg-open { min-block-size: 2rem; min-inline-size: 2rem; }
+    .workbench-head :global(.btn.square) { min-inline-size: 2rem; }
+    .workbench-head > h2 { margin-inline-end: auto; }
+  }
 
   .workbench-msg { display: flex; flex-direction: column; gap: var(--space-2xs); }
   .workbench-you { align-self: flex-end; max-inline-size: 88%; }

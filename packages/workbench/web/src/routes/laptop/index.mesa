@@ -728,5 +728,9 @@ title: Laptop
     #laptop-holds .lp-row { grid-template-columns: auto minmax(0, 1fr) auto; }
     #laptop-holds .lp-row .row-col:last-child { display: none; }
     .row-size    { min-inline-size: 0; }
+    /* A max-content column is as wide as the longest fli command, which
+       widened the whole page past the screen. Name over description. */
+    .commands      { grid-template-columns: minmax(0, 1fr); }
+    .commands code { overflow-wrap: anywhere; }
   }
 </style>

@@ -60,7 +60,7 @@ export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' 
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
-export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'backupsReadFailed' | 'backupsSet' | 'backupsRestored' | 'backupsRestoreFailed' | 'adopted' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'appRetired' | 'postureFailed' | 'postureRestored'
+export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'backupsReadFailed' | 'backupsSet' | 'backupsRestored' | 'backupsRestoreFailed' | 'adopted' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'appRetired' | 'archiveDiscarded' | 'postureFailed' | 'postureRestored'
 
 export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github'
 
@@ -503,6 +503,15 @@ export interface ServerAdopt {
 
 export interface ServerRetireApp {
   appId: string
+}
+
+/**
+ * What `servers.discardArchive` accepts: an archive on the machine and the
+ * App id it names, as `servers.archives` listed them.
+ */
+export interface ServerDiscardArchive {
+  appId: string
+  name: string
 }
 
 /**
@@ -3375,6 +3384,8 @@ export interface Domain {
   certKind?: CertKind | null
   certIssuedAt?: string | null
   certExpiresAt?: string | null
+  copyCertSecretId?: string | null
+  copyCertExpiresAt?: string | null
   /** @version */
   version: number
   createdAt: string
@@ -3412,6 +3423,8 @@ export interface DomainSystem {
   certKind?: CertKind | null
   certIssuedAt?: string | Date | null
   certExpiresAt?: string | Date | null
+  copyCertSecretId?: string | null
+  copyCertExpiresAt?: string | Date | null
 }
 
 export interface DomainWhere extends WhereBase {
@@ -3428,6 +3441,8 @@ export interface DomainWhere extends WhereBase {
   certKind?: CertKind | WhereOp<CertKind> | null
   certIssuedAt?: string | Date | WhereOp<string | Date> | null
   certExpiresAt?: string | Date | WhereOp<string | Date> | null
+  copyCertSecretId?: string | WhereOp<string> | null
+  copyCertExpiresAt?: string | Date | WhereOp<string | Date> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -3880,6 +3895,8 @@ export interface AppCopy {
   asOf?: string | null
   error?: string | null
   refreshedAt?: string | null
+  certError?: string | null
+  isServingMainAddress: boolean
   requestedBy?: string | null
   createdAt: string
   updatedAt: string
@@ -3890,6 +3907,7 @@ export interface AppCopyCreate {
   appId: string
   serverId: string
   cron: string
+  isServingMainAddress?: boolean
   requestedBy?: string | null
 }
 
@@ -3898,6 +3916,7 @@ export interface AppCopyUpdate {
   appId?: string
   serverId?: string
   cron?: string
+  isServingMainAddress?: boolean
   requestedBy?: string | null
 }
 
@@ -3906,6 +3925,7 @@ export interface AppCopySystem {
   asOf?: string | Date | null
   error?: string | null
   refreshedAt?: string | Date | null
+  certError?: string | null
 }
 
 export interface AppCopyWhere extends WhereBase {
@@ -3917,6 +3937,8 @@ export interface AppCopyWhere extends WhereBase {
   asOf?: string | Date | WhereOp<string | Date> | null
   error?: string | WhereOp<string> | null
   refreshedAt?: string | Date | WhereOp<string | Date> | null
+  certError?: string | WhereOp<string> | null
+  isServingMainAddress?: boolean | WhereOp<boolean> | null
   requestedBy?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -6495,6 +6517,7 @@ export interface SeedTypes {
   ServerAdoptShown: ServerAdoptShown
   ServerAdopt: ServerAdopt
   ServerRetireApp: ServerRetireApp
+  ServerDiscardArchive: ServerDiscardArchive
   BackupPolicy: BackupPolicy
 }
 
@@ -6689,14 +6712,14 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate'>
   readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'isDeployedOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem>
   readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, '@@gate'>
-  readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | '@@gate', DomainSystem>
+  readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | 'copyCertSecretId' | 'copyCertExpiresAt' | '@@gate', DomainSystem>
   readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate'>
   readonly appEditor: TableClient<AppEditor, AppEditorCreate, AppEditorUpdate, AppEditorWhere, AppEditorRelations, never, '@@gate'>
   readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere, AppServerRelations, never, '@@gate'>
   readonly appPlatform: TableClient<AppPlatform, AppPlatformCreate, AppPlatformUpdate, AppPlatformWhere, AppPlatformRelations, never, 'receiverSecret' | 'status' | 'liveVersion' | 'observedAt' | '@@gate', AppPlatformSystem>
   readonly appBackup: TableClient<AppBackup, AppBackupCreate, AppBackupUpdate, AppBackupWhere, AppBackupRelations, never, '@@gate'>
   readonly appDrill: TableClient<AppDrill, AppDrillCreate, AppDrillUpdate, AppDrillWhere, AppDrillRelations, never, '@@gate'>
-  readonly appCopy: TableClient<AppCopy, AppCopyCreate, AppCopyUpdate, AppCopyWhere, AppCopyRelations, never, 'status' | 'asOf' | 'error' | 'refreshedAt' | '@@gate', AppCopySystem>
+  readonly appCopy: TableClient<AppCopy, AppCopyCreate, AppCopyUpdate, AppCopyWhere, AppCopyRelations, never, 'status' | 'asOf' | 'error' | 'refreshedAt' | 'certError' | '@@gate', AppCopySystem>
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate'>
   readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'imageSha256' | 'swap' | 'swapReason' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem>
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>

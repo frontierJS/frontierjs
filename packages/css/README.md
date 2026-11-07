@@ -353,7 +353,7 @@ never a class
 
 **States** `spinner` `progress` `skeleton` `empty` · `.btn[aria-busy="true"]`
 
-**Layout** `container` `stack` `cluster` `group` `center` `split` `grid` (+ `--grid-min`)
+**Layout** `container` `stack` `cluster` `group` `center` `split` `grid` (+ `--grid-min`) `switcher` (+ `--switch-at`, `--fr`, `--side`)
 
 **Axes** `align-start` `align-center` `align-end` — inherit, like `dense`/`roomy`
 

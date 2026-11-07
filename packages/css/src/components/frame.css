@@ -383,7 +383,9 @@
  * when the control exists. It is deliberately one class tied to this one
  * contract rather than a general responsive-visibility set: the
  * breakpoints are literals, and a full `.md-up`/`.md-down` matrix is ten
- * rules of somebody else's design system.
+ * rules of somebody else's design system. The one exception is `.spare`
+ * (utilities.css), which names a content role -- what a narrow box does
+ * without -- rather than a width.
  */
 .sidebar-toggle {
   display: none;

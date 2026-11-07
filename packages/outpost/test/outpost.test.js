@@ -17,7 +17,7 @@ import { createOutpostServer, MAX_BODY_BYTES } from '../src/server.js'
 import { createDocker, createInspector, containerName, isDigest, BACKUP_SCRIPT, swapFor } from '../src/docker.js'
 import { STREAM_CLOSE_DELAY, HEALTH_CHECK_TIMEOUT_S } from '../src/swap.js'
 import { createReporter }         from '../src/report.js'
-import { createIngress }          from '../src/ingress.js'
+import { createIngress, targetsOf } from '../src/ingress.js'
 import { heldBy, doorOf }         from '../src/doors.js'
 import { createVitals }           from '../src/vitals.js'
 import { createStatic }           from '../src/static.js'
@@ -61,6 +61,60 @@ const FAST = { attempts: 10, intervalMs: 3_000, settleMs: 0 }
 /** The slugs a `/deploy` carries, and the container name they spell for an app. */
 const SLUGS = { project: 'acme', environment: 'prod', app_slug: 'web' }
 const nameFor = (appId) => containerName({ appId, project: 'acme', environment: 'prod', appSlug: 'web' })
+
+function fakeCaddy(initial = null) {
+  let config = structuredClone(initial)
+  let rev    = 0
+  let racer  = null
+  const asked = []
+  const loads = []
+  const routes = () => config?.apps?.http?.servers?.ingress?.routes
+  const answer = (status, body) => new Response(body === undefined ? '' : JSON.stringify(body), { status })
+  const fetch = async (url, init = {}) => {
+    const { method = 'GET', headers = {} } = init
+    const path = new URL(url).pathname
+    if (method !== 'GET' && headers['if-match'] !== undefined && racer?.times > 0) { racer.times--; racer.fn(config); rev++ }
+    if (headers['if-match'] !== undefined && !headers['if-match'].endsWith(` ${rev}"`)) {
+      asked.push(`${method} ${path} 412`)
+      return answer(412, { error: 'If-Match header did not match' })
+    }
+    const reply = await handle(url, init)
+    if (method !== 'GET') { if (reply.status < 300) rev++; return reply }
+    return new Response(await reply.text(), { status: reply.status, headers: { etag: `"${path} ${rev}"` } })
+  }
+  const handle = async (url, { method = 'GET', body, headers = {} } = {}) => {
+    const path = new URL(url).pathname
+    asked.push(`${method} ${path}`)
+    const data = body ? JSON.parse(body) : undefined
+    const id   = path.startsWith('/id/') ? path.slice(4) : null
+    const at   = id ? routes()?.findIndex(r => r['@id'] === id) ?? -1 : -1
+    if (method === 'GET' && path === '/config/') return answer(200, config)
+    if (path === '/config/apps/http/servers/ingress/routes' && method === 'GET') return routes() ? answer(200, routes()) : answer(400, { error: 'invalid traversal path' })
+    if (path === '/config/apps/http/servers/ingress/routes' && method === 'PATCH') { config.apps.http.servers.ingress.routes = data; return answer(200) }
+    if (method === 'PUT' && path === '/config/apps/http/servers/ingress') {
+      config ??= {}; config.apps ??= {}; config.apps.http ??= {}; config.apps.http.servers ??= {}
+      config.apps.http.servers.ingress = data
+      return answer(200)
+    }
+    if (method === 'POST' && path === '/config/apps/http/servers/ingress/routes') {
+      if (!routes()) return answer(400, { error: 'invalid traversal path at: config/apps/http/servers/ingress' })
+      routes().push(data)
+      return answer(200)
+    }
+    if (method === 'POST' && path === '/config/') { if (headers['cache-control'] === 'must-revalidate') loads.push({ body: data, revalidate: true }); config = data; return answer(200) }
+    if (method === 'POST' && path === '/config/logging') { config.logging = data; return answer(200) }
+    if (method === 'POST' && path === '/config/apps/http/servers/ingress/logs') {
+      if (!config?.apps?.http?.servers?.ingress) return answer(400, { error: 'invalid traversal path' })
+      config.apps.http.servers.ingress.logs = data
+      return answer(200)
+    }
+    if (id && at < 0) return answer(404, { error: `unknown object ID '${id}'` })
+    if (method === 'PATCH') { routes()[at] = data; return answer(200) }
+    if (method === 'DELETE') { routes().splice(at, 1); return answer(200) }
+    return answer(400, { error: `unexpected ${method} ${path}` })
+  }
+  return { fetch, asked, loads, interleave: (fn, times = 1) => { racer = { fn, times } }, get config() { return config } }
+}
 
 /** A docker that records argv and answers canned output, so a test can assert
  *  what the MACHINE was asked to do rather than what the route returned. */
@@ -1638,6 +1692,8 @@ describe('what the machine is asked to do', () => {
     const serving = (answers = {}) => {
       const stageDir = mkdtempSync(join(tmpdir(), 'outpost-serve-'))
       const calls = [], envs = [], copies = [], loadOpts = []
+      const address = { ip: '172.30.0.2' }
+      const caddy = fakeCaddy()
       const run = async (argv, opts = {}) => {
         calls.push(argv)
         const ok = (stdout = '') => ({ exitCode: 0, stdout, stderr: '' })
@@ -1659,28 +1715,33 @@ describe('what the machine is asked to do', () => {
         if (argv[1] === 'load') return answers.load ?? ok(`Loaded image ID: sha256:${'cd'.repeat(32)}\n`)
         if (line.startsWith('docker network inspect')) return answers.network ?? { exitCode: 1, stdout: '', stderr: 'network fjs-copy not found' }
         if (line.startsWith('docker ps -a --filter label=fjs.copy=')) return ok(copies.map(c => `${c.container}\t${c.dir}\n`).join(''))
+        // The heartbeat's pass over running copies: the Apps that have one, then one App's name and port.
+        if (line.startsWith('docker ps --filter label=fjs.copy ')) return ok(copies.map(() => 'ela\n').join(''))
+        if (line.startsWith('docker ps --filter label=fjs.copy=ela ')) return ok(copies.map(c => `${c.container}\t${c.port}\n`).join(''))
         if (line.startsWith('docker run -d')) {
           envs.push(opts.env)
           if (answers.run) return answers.run
           const label = argv.find(a => a.startsWith('fjs.copy.dir='))
-          copies.push({ container: argv[argv.indexOf('--name') + 1], dir: label.slice('fjs.copy.dir='.length) })
+          copies.push({ container: argv[argv.indexOf('--name') + 1], dir: label.slice('fjs.copy.dir='.length), port: argv.find(a => a.startsWith('fjs.copy.port=')).slice('fjs.copy.port='.length) })
           return ok('abc123\n')
         }
-        if (line.includes('IPAddress')) return ok('172.30.0.2\n')
+        if (line.includes('IPAddress')) return ok(`${address.ip}\n`)
         if (line.includes('{{.State.Running}}')) return ok(answers.state ?? 'true 0\n')
         if (argv[1] === 'logs') return ok('booting\nerror: no such table: User\n')
         if (argv[1] === 'rm') { const at = copies.findIndex(c => c.container === argv.at(-1)); if (at >= 0) copies.splice(at, 1) }
         return ok()
       }
       const fetch = answers.fetch ?? (async () => new Response('', { headers: { 'x-frontier-read-only': '2026-10-25T12:00:00Z' } }))
+      const docker = createDocker({ appsDir: APPS, health: QUICK, run, fetch, restoreDir: join(stageDir, 'images') })
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, health: QUICK, run, fetch, restoreDir: join(stageDir, 'images') }), inspector: createInspector({ run }),
+        docker, inspector: createInspector({ run }),
         replicator: createReplicator({ run, configPath: join(stageDir, 'litestream.yml'), stageDir }),
+        ingress: createIngress({ fetch: caddy.fetch }),
         log: { warn() {}, error() {} },
       })
       const staged = () => readdirSync(stageDir).filter(f => f.startsWith('ela-'))
       const images = () => existsSync(join(stageDir, 'images')) ? readdirSync(join(stageDir, 'images')) : []
-      return { server, calls, envs, copies, staged, images, loadOpts }
+      return { server, calls, envs, copies, staged, images, loadOpts, caddy, address, docker }
     }
     const post = async (server, path, body) => {
       const res = await send(server, 'POST', path, body)
@@ -1786,6 +1847,209 @@ describe('what the machine is asked to do', () => {
       expect(second.container).not.toBe(first.container)
       expect(copies.map(c => c.container)).toEqual([second.container])
       expect(staged()).toHaveLength(1)
+    })
+
+    describe('the copy answers at a hostname (FJS-D1996)', () => {
+      const routeIn = (caddy, id) => caddy.config?.apps?.http?.servers?.ingress?.routes?.find(r => r['@id'] === id)
+      const appRoute = { '@id': 'fjs-ela', match: [{ host: ['ela.example.com'] }], handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: '127.0.0.1:7300' }] }], terminal: true }
+      const withApp = (caddy) => caddy.fetch('http://x/config/apps/http/servers/ingress', { method: 'PUT', body: JSON.stringify({ listen: [':443'], routes: [appRoute] }) })
+
+      test('a serve with host routes it to the copy, noindex on every answer, and answers the host', async () => {
+        const { server, caddy } = serving()
+        const { status, body: said } = await post(server, '/replica/serve', body({ host: 'Copy.Example.com' }))
+        expect(status).toBe(200)
+        expect(said).toMatchObject({ host: 'copy.example.com', upstream: '172.30.0.2:8080' })
+        expect(routeIn(caddy, 'fjs-ela-copy')).toEqual({
+          '@id': 'fjs-ela-copy', match: [{ host: ['copy.example.com'] }], terminal: true,
+          handle: [{ handler: 'headers', response: { set: { 'X-Robots-Tag': ['noindex'] } } }, { handler: 'reverse_proxy', upstreams: [{ dial: '172.30.0.2:8080' }] }],
+        })
+      })
+
+      test('a serve with the main hostnames routes them too, and only the copy\'s own address answers noindex', async () => {
+        const { server, caddy } = serving()
+        const { body: said } = await post(server, '/replica/serve', body({ host: 'copy.example.com', hosts: ['ELA.example.com', 'copy.example.com'] }))
+        expect(said).toMatchObject({ host: 'copy.example.com', hosts: ['ela.example.com'] })
+        expect(routeIn(caddy, 'fjs-ela-copy')).toEqual({
+          '@id': 'fjs-ela-copy', match: [{ host: ['copy.example.com', 'ela.example.com'] }], terminal: true,
+          handle: [
+            { handler: 'subroute', routes: [{ match: [{ host: ['copy.example.com'] }], handle: [{ handler: 'headers', response: { set: { 'X-Robots-Tag': ['noindex'] } } }] }] },
+            { handler: 'reverse_proxy', upstreams: [{ dial: '172.30.0.2:8080' }] },
+          ],
+        })
+      })
+
+      test('/replica/route moves the main hostnames onto the running copy and back, with no second container', async () => {
+        const { server, caddy, calls } = serving()
+        await post(server, '/replica/serve', body({ host: 'copy.example.com' }))
+        const runs = calls.filter(a => a[1] === 'run').length
+
+        const on = await post(server, '/replica/route', { app_id: 'ela', host: 'copy.example.com', hosts: ['ela.example.com'] })
+        expect(on.status).toBe(200)
+        expect(on.body).toEqual({ host: 'copy.example.com', hosts: ['ela.example.com'], dial: '172.30.0.2:8080' })
+        expect(routeIn(caddy, 'fjs-ela-copy').match).toEqual([{ host: ['copy.example.com', 'ela.example.com'] }])
+
+        await post(server, '/replica/route', { app_id: 'ela', host: 'copy.example.com', hosts: [] })
+        expect(routeIn(caddy, 'fjs-ela-copy')).toMatchObject({
+          match:  [{ host: ['copy.example.com'] }],
+          handle: [{ handler: 'headers', response: { set: { 'X-Robots-Tag': ['noindex'] } } }, { handler: 'reverse_proxy', upstreams: [{ dial: '172.30.0.2:8080' }] }],
+        })
+        expect(calls.filter(a => a[1] === 'run').length).toBe(runs)
+      })
+
+      test('/replica/route with no copy running is refused, and a main hostname the App\'s own route holds is refused', async () => {
+        const { server, caddy } = serving()
+        const none = await post(server, '/replica/route', { app_id: 'ela', hosts: ['ela.example.com'] })
+        expect(none.status).toBe(500)
+        expect(JSON.stringify(none.body)).toContain('no copy of app ela is running')
+
+        await withApp(caddy)
+        await post(server, '/replica/serve', body({ host: 'copy.example.com' }))
+        const held = await post(server, '/replica/route', { app_id: 'ela', host: 'copy.example.com', hosts: ['ela.example.com'] })
+        expect(held.status).toBe(500)
+        expect(JSON.stringify(held.body)).toContain('ela.example.com is already routed to fjs-ela')
+        expect(routeIn(caddy, 'fjs-ela-copy').match).toEqual([{ host: ['copy.example.com'] }])
+      })
+
+      test('a copy routed at the main hostnames alone answers no noindex at all', async () => {
+        const caddy = fakeCaddy()
+        await createIngress({ fetch: caddy.fetch }).routeCopy({ appId: 'ela', hosts: ['ela.example.com'], dial: '172.30.0.2:8080' })
+        expect(caddy.config.apps.http.servers.ingress.routes[0].handle).toEqual([{ handler: 'reverse_proxy', upstreams: [{ dial: '172.30.0.2:8080' }] }])
+      })
+
+      test('the copy container records its port, which the route needs again after a restart', async () => {
+        const { server, calls } = serving()
+        await post(server, '/replica/serve', body())
+        expect(calls.find(a => a[1] === 'run').join(' ')).toContain('--label fjs.copy.port=8080')
+      })
+
+      test('a serve without host takes out the route an earlier serve left', async () => {
+        const { server, caddy } = serving()
+        await post(server, '/replica/serve', body({ host: 'copy.example.com' }))
+        await Bun.sleep(2)
+        const { body: said } = await post(server, '/replica/serve', body())
+        expect(said.host).toBeNull()
+        expect(routeIn(caddy, 'fjs-ela-copy')).toBeUndefined()
+      })
+
+      test('unserve takes the route out with the copy', async () => {
+        const { server, caddy, copies } = serving()
+        await post(server, '/replica/serve', body({ host: 'copy.example.com' }))
+        await post(server, '/replica/unserve', { app_id: 'ela' })
+        expect(copies).toEqual([])
+        expect(routeIn(caddy, 'fjs-ela-copy')).toBeUndefined()
+      })
+
+      test('a host that is not a hostname is refused before anything is staged', async () => {
+        const { server, calls, staged } = serving()
+        const { status, body: said } = await post(server, '/replica/serve', body({ host: 'not a host' }))
+        expect(status).toBe(500)
+        expect(said.error ?? JSON.stringify(said)).toContain('not a hostname')
+        expect(calls.some(a => a[1] === 'run')).toBe(false)
+        expect(staged()).toEqual([])
+      })
+
+      test('a host another route holds fails the call, and the message says the copy is up', async () => {
+        const { server, caddy, copies } = serving()
+        await withApp(caddy)
+        const { status, body: said } = await post(server, '/replica/serve', body({ host: 'ela.example.com' }))
+        expect(status).toBe(500)
+        expect(JSON.stringify(said)).toContain('the copy is up')
+        expect(JSON.stringify(said)).toContain('already routed to fjs-ela')
+        expect(copies).toHaveLength(1)
+        expect(routeIn(caddy, 'fjs-ela-copy')).toBeUndefined()
+      })
+
+      test('the App\'s unroute leaves its copy\'s route, and its route is refused the copy\'s host', async () => {
+        const caddy = fakeCaddy()
+        const ingress = createIngress({ fetch: caddy.fetch })
+        await ingress.route({ appId: 'ela', hosts: ['ela.example.com'], port: 7300 })
+        await ingress.routeCopy({ appId: 'ela', host: 'copy.example.com', dial: '172.30.0.2:8080' })
+        await expect(ingress.route({ appId: 'ela', hosts: ['copy.example.com'], port: 7300 })).rejects.toThrow('copy.example.com is already routed to fjs-ela-copy')
+        await expect(ingress.routeCopy({ appId: 'ela', host: 'ela.example.com', dial: '172.30.0.2:8080' })).rejects.toThrow('ela.example.com is already routed to fjs-ela')
+        expect(await ingress.unroute({ appId: 'ela' })).toEqual({ removed: true })
+        expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-ela-copy'])
+        expect(await ingress.unrouteCopy({ appId: 'ela' })).toEqual({ removed: true })
+        expect(await ingress.unrouteCopy({ appId: 'ela' })).toEqual({ removed: false })
+      })
+
+      test('the copy route is written once, other apps keep theirs, and an app id cannot spell a copy route', async () => {
+        const caddy = fakeCaddy()
+        const ingress = createIngress({ fetch: caddy.fetch })
+        await ingress.routeCopy({ appId: 'ela', host: 'copy.example.com', dial: '172.30.0.2:8080' })
+        await ingress.routeCopy({ appId: 'ela', host: 'copy2.example.com', dial: '172.30.0.3:8080' })
+        expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-ela-copy'])
+        expect(caddy.config.apps.http.servers.ingress.routes[0].match).toEqual([{ host: ['copy2.example.com'] }])
+        await expect(ingress.route({ appId: 'ela-copy', hosts: ['x.example.com'], port: 7300 })).rejects.toThrow('would collide')
+        for (const dial of ['localhost:80', '172.30.0.2', '172.30.0.256:80', '172.30.0.2:0', '172.30.0.2:80;x'])
+          await expect(ingress.routeCopy({ appId: 'ela', host: 'copy.example.com', dial })).rejects.toThrow('<ipv4>:<port>')
+      })
+
+      test('the copy route is kept behind a path route on the same host and reads as a proxy', async () => {
+        const caddy = fakeCaddy()
+        const ingress = createIngress({ fetch: caddy.fetch })
+        await ingress.routeCopy({ appId: 'ela', host: 'copy.example.com', dial: '172.30.0.2:8080' })
+        await ingress.route({ appId: 'shop', paths: [{ host: 'copy.example.com', prefix: '/api' }], port: 7301 })
+        expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-shop-path-0', 'fjs-ela-copy'])
+        const copy = caddy.config.apps.http.servers.ingress.routes.find(r => r['@id'] === 'fjs-ela-copy')
+        expect(targetsOf(copy.handle)).toEqual([{ kind: 'proxy', dial: '172.30.0.2:8080', host: null }])
+      })
+
+      test('the heartbeat moves a copy route whose container has another address, and leaves an unchanged one', async () => {
+        const { server, caddy, address, docker } = serving()
+        await post(server, '/replica/serve', body({ host: 'copy.example.com' }))
+        const said = []
+        const log = { warn: m => said.push(m), error: m => said.push(m) }
+        const ingress = createIngress({ fetch: caddy.fetch })
+        const patches = () => caddy.asked.filter(a => a.startsWith('PATCH /id/fjs-ela-copy')).length
+
+        const before = patches()
+        expect(await docker.repoint({ ingress, log })).toEqual({ moves: [] })
+        expect(patches()).toBe(before)
+
+        address.ip = '172.30.0.9'
+        expect(await docker.repoint({ ingress, log })).toEqual({ moves: [{ appId: 'ela', copy: true, id: 'fjs-ela-copy', from: '172.30.0.2:8080', to: '172.30.0.9:8080' }] })
+        expect(routeIn(caddy, 'fjs-ela-copy').handle[1].upstreams).toEqual([{ dial: '172.30.0.9:8080' }])
+        expect(said).toHaveLength(1)
+        expect(said[0]).toContain('172.30.0.9:8080')
+      })
+
+      test('the heartbeat\'s pass waits behind a serve in progress, so it never reads an address the serve is about to remove', async () => {
+        let open
+        const gate = new Promise(r => { open = r })
+        const fetch = async () => { await gate; return new Response('', { headers: { 'x-frontier-read-only': 'x' } }) }
+        const { server, calls, caddy, docker } = serving({ fetch })
+        const serve = post(server, '/replica/serve', body({ host: 'copy.example.com' }))
+        while (!calls.some(a => a[1] === 'run')) await Bun.sleep(1)
+        const pass = docker.repoint({ ingress: createIngress({ fetch: caddy.fetch }), log: { warn() {}, error() {} } })
+        await Bun.sleep(10)
+        expect(calls.some(a => a.join(' ').startsWith('docker ps --filter label=fjs.copy=ela '))).toBe(false)
+        open()
+        expect((await serve).status).toBe(200)
+        await pass
+        expect(calls.some(a => a.join(' ').startsWith('docker ps --filter label=fjs.copy=ela '))).toBe(true)
+      })
+
+      test('a copy route written behind a path route it would shadow is put back in order', async () => {
+        const caddy = fakeCaddy({ apps: { http: { servers: { ingress: { listen: [':443'], routes: [
+          { '@id': 'fjs-shop', match: [{ host: ['shop.example.com'] }], handle: [] },
+          { '@id': 'fjs-shop-path-0', match: [{ host: ['shop.example.com'], path: ['/api', '/api/*'] }], handle: [] },
+        ] } } } } })
+        await createIngress({ fetch: caddy.fetch }).routeCopy({ appId: 'ela', host: 'copy.example.com', dial: '172.30.0.2:8080' })
+        expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-shop-path-0', 'fjs-shop', 'fjs-ela-copy'])
+      })
+
+      test('a copy with no route moves nothing, and a failing re-point is logged', async () => {
+        const { server, caddy, address, docker } = serving()
+        await post(server, '/replica/serve', body())
+        address.ip = '172.30.0.9'
+        const said = []
+        const log = { warn: m => said.push(m), error: m => said.push(m) }
+        expect(await docker.repoint({ ingress: createIngress({ fetch: caddy.fetch }), log })).toEqual({ moves: [] })
+        expect(said).toEqual([])
+        expect(await docker.repoint({ ingress: { repointCopy: async () => { throw new Error('caddy refused it') } }, log })).toEqual({ moves: [] })
+        expect(said).toHaveLength(1)
+        expect(said[0]).toContain('caddy refused it')
+      })
     })
 
     test('unserve removes the copy and its staged files', async () => {
@@ -2170,6 +2434,84 @@ describe('what the machine is asked to do', () => {
       })
     })
 
+    // Neither Basecamp nor the person had a way to delete an archive here, so
+    // one whose App went with a reinstalled hub stayed until someone ssh'd in.
+    describe('/backup/remove and /backups — an archive deleted, every archive listed', () => {
+      const call = async (server, route, body = {}) => {
+        const res = await send(server, 'POST', route, body)
+        return { status: res.status, body: await res.json() }
+      }
+      const kept = (name) => {
+        mkdirSync(backupDir, { recursive: true })
+        const path = join(realpathSync(backupDir), name)
+        writeFileSync(path, 'archive-bytes')
+        return path
+      }
+
+      test('deletes the archive and answers what it removed', async () => {
+        const path = kept('ela-2026-11-06T06-27-50-248Z.tar.gz')
+        const { server } = backing()
+        const { status, body } = await call(server, '/backup/remove', { app_id: 'ela', path })
+        expect(status).toBe(200)
+        expect(body).toEqual({ path, removed: true, bytes: 13 })
+        expect(existsSync(path)).toBe(false)
+      })
+
+      test('a bare file name is taken under the backup directory', async () => {
+        const path = kept('ela-2026-11-06T08-46-08-560Z.tar.gz')
+        const { server } = backing()
+        const { body } = await call(server, '/backup/remove', { app_id: 'ela', path: 'ela-2026-11-06T08-46-08-560Z.tar.gz' })
+        expect(body).toEqual({ path, removed: true, bytes: 13 })
+        expect((await call(server, '/backup/remove', { app_id: 'ela', path: '..' })).status).toBe(500)
+      })
+
+      test('an archive already gone answers removed: false, so its row can still go', async () => {
+        const path = join(realpathSync(backupDir), 'ela-2026-01-01T00-00-00-000Z.tar.gz')
+        const { server } = backing()
+        const { status, body } = await call(server, '/backup/remove', { app_id: 'ela', path })
+        expect(status).toBe(200)
+        expect(body).toEqual({ path, removed: false, bytes: 0 })
+      })
+
+      test('a path outside the directory, another app\'s archive, or a non-archive is refused and nothing goes', async () => {
+        const outside = join(mkdtempSync(join(tmpdir(), 'outpost-outside-')), 'ela-2026-11-06T06-27-50-248Z.tar.gz')
+        writeFileSync(outside, 'x')
+        const rival = kept('ela-x-2026-11-06T06-27-50-248Z.tar.gz')
+        const plain = kept('ela-notes.tar.gz')
+        const { server } = backing()
+        for (const path of [outside, rival, plain, '/etc/passwd', join(backupDir, '..', 'ela-2026-11-06T06-27-50-248Z.tar.gz')]) {
+          const { status, body } = await call(server, '/backup/remove', { app_id: 'ela', path })
+          expect(status).toBe(500)
+          expect(body.error).toContain('is not a backup of ela on this machine')
+        }
+        for (const path of [outside, rival, plain]) expect(existsSync(path)).toBe(true)
+      })
+
+      test('a symlink out of the directory is followed and refused; its target stays', async () => {
+        const target = join(mkdtempSync(join(tmpdir(), 'outpost-outside-')), 'secret')
+        writeFileSync(target, 'secret')
+        const link = join(realpathSync(backupDir), 'ela-2026-11-06T08-46-08-560Z.tar.gz')
+        symlinkSync(target, link)
+        const { server } = backing()
+        expect((await call(server, '/backup/remove', { app_id: 'ela', path: link })).status).toBe(500)
+        expect(existsSync(target)).toBe(true)
+        rmSync(link)
+      })
+
+      test('/backups lists every archive whichever app it names, and nothing that is not one', async () => {
+        rmSync(backupDir, { recursive: true, force: true })
+        const a = kept('23da988f-56f1-4dd8-a417-a7b326efa321-2026-11-06T06-27-50-248Z.tar.gz')
+        kept('ela-2026-11-06T08-46-08-560Z.tar.gz.partial')
+        kept('image-ela-abc123.tar.gz')
+        const { server } = backing()
+        const { status, body } = await call(server, '/backups')
+        expect(status).toBe(200)
+        expect(body.archives).toEqual([{
+          app_id: '23da988f-56f1-4dd8-a417-a7b326efa321', name: a.split('/').pop(), path: a, bytes: 13, at: '2026-11-06T06:27:50.248Z',
+        }])
+      })
+    })
+
     // The script itself, run by the host's sh over temp directories, with a
     // `tar` ahead of the real one on PATH that writes to the database's -wal
     // while it runs -- the write landing mid-tar (FJS-3178).
@@ -2229,60 +2571,6 @@ describe('the ingress — Caddy, through its admin API', () => {
    *  per path, so this one refuses a superset). `interleave(fn, times)` runs
    *  `fn(config)` as another writer's write just before each of the next
    *  `times` guarded writes is judged. */
-  function fakeCaddy(initial = null) {
-    let config = structuredClone(initial)
-    let rev    = 0
-    let racer  = null
-    const asked = []
-    const loads = []
-    const routes = () => config?.apps?.http?.servers?.ingress?.routes
-    const answer = (status, body) => new Response(body === undefined ? '' : JSON.stringify(body), { status })
-    const fetch = async (url, init = {}) => {
-      const { method = 'GET', headers = {} } = init
-      const path = new URL(url).pathname
-      if (method !== 'GET' && headers['if-match'] !== undefined && racer?.times > 0) { racer.times--; racer.fn(config); rev++ }
-      if (headers['if-match'] !== undefined && !headers['if-match'].endsWith(` ${rev}"`)) {
-        asked.push(`${method} ${path} 412`)
-        return answer(412, { error: 'If-Match header did not match' })
-      }
-      const reply = await handle(url, init)
-      if (method !== 'GET') { if (reply.status < 300) rev++; return reply }
-      return new Response(await reply.text(), { status: reply.status, headers: { etag: `"${path} ${rev}"` } })
-    }
-    const handle = async (url, { method = 'GET', body, headers = {} } = {}) => {
-      const path = new URL(url).pathname
-      asked.push(`${method} ${path}`)
-      const data = body ? JSON.parse(body) : undefined
-      const id   = path.startsWith('/id/') ? path.slice(4) : null
-      const at   = id ? routes()?.findIndex(r => r['@id'] === id) ?? -1 : -1
-      if (method === 'GET' && path === '/config/') return answer(200, config)
-      if (path === '/config/apps/http/servers/ingress/routes' && method === 'GET') return routes() ? answer(200, routes()) : answer(400, { error: 'invalid traversal path' })
-      if (path === '/config/apps/http/servers/ingress/routes' && method === 'PATCH') { config.apps.http.servers.ingress.routes = data; return answer(200) }
-      if (method === 'PUT' && path === '/config/apps/http/servers/ingress') {
-        config ??= {}; config.apps ??= {}; config.apps.http ??= {}; config.apps.http.servers ??= {}
-        config.apps.http.servers.ingress = data
-        return answer(200)
-      }
-      if (method === 'POST' && path === '/config/apps/http/servers/ingress/routes') {
-        if (!routes()) return answer(400, { error: 'invalid traversal path at: config/apps/http/servers/ingress' })
-        routes().push(data)
-        return answer(200)
-      }
-      if (method === 'POST' && path === '/config/') { if (headers['cache-control'] === 'must-revalidate') loads.push({ body: data, revalidate: true }); config = data; return answer(200) }
-      if (method === 'POST' && path === '/config/logging') { config.logging = data; return answer(200) }
-      if (method === 'POST' && path === '/config/apps/http/servers/ingress/logs') {
-        if (!config?.apps?.http?.servers?.ingress) return answer(400, { error: 'invalid traversal path' })
-        config.apps.http.servers.ingress.logs = data
-        return answer(200)
-      }
-      if (id && at < 0) return answer(404, { error: `unknown object ID '${id}'` })
-      if (method === 'PATCH') { routes()[at] = data; return answer(200) }
-      if (method === 'DELETE') { routes().splice(at, 1); return answer(200) }
-      return answer(400, { error: `unexpected ${method} ${path}` })
-    }
-    return { fetch, asked, loads, interleave: (fn, times = 1) => { racer = { fn, times } }, get config() { return config } }
-  }
-
   const serverWith = (caddy, fake = fakeRunner({ 'docker run': { stdout: 'container-1\n' } })) => ({
     fake,
     server: createOutpostServer(CONFIG, {

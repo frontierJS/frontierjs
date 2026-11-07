@@ -13,11 +13,10 @@
  */
 
 import { readFileSync }    from 'node:fs'
-import { readdir, stat }   from 'node:fs/promises'
 import { version }         from '../package.json' with { type: 'json' }
 import { readConfig }      from './config.js'
 import { layout }          from './layout.js'
-import { createInspector } from './docker.js'
+import { createInspector, archivesIn } from './docker.js'
 import { createReplicator } from './replicate.js'
 import { createIngress }   from './ingress.js'
 import { createVitals }    from './vitals.js'
@@ -56,21 +55,14 @@ async function trafficOf(routes, analytics, now) {
   return out
 }
 
-/** The newest archive `/backup` left for each app, named `<app>-<instant>.tar.gz`
- *  by `docker.js`. An archive that was uploaded stays here too. */
+/** The newest archive `/backup` left for each app, and how many it has. */
 async function backupsOf(dir) {
-  const names = await readdir(dir).catch(err => { if (err.code === 'ENOENT') return []; throw err })
-  const newest = new Map()
-  for (const name of names) {
-    const m = /^(.+)-(\d{4}-\d{2}-\d{2}T[\d-]+Z)\.tar\.gz$/.exec(name)
-    if (m && !(newest.get(m[1])?.name > name)) newest.set(m[1], { name, at: m[2] })
+  const newest = new Map(), count = new Map()
+  for (const a of await archivesIn(dir)) {
+    newest.set(a.app_id, a)
+    count.set(a.app_id, (count.get(a.app_id) ?? 0) + 1)
   }
-  // The instant is the name's, put back into ISO: a copied archive's mtime is the copy's.
-  const iso = (stamp) => stamp.replace(/T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/, 'T$1:$2:$3.$4Z')
-  return Promise.all([...newest].map(async ([app, { name, at }]) => {
-    const info = await stat(`${dir}/${name}`).catch(() => null)
-    return { app_id: app, name, size_bytes: info?.size ?? null, at: iso(at), count: names.filter(n => n.startsWith(`${app}-`)).length }
-  }))
+  return [...newest.values()].map(a => ({ app_id: a.app_id, name: a.name, size_bytes: a.bytes, at: a.at, count: count.get(a.app_id) }))
 }
 
 /**

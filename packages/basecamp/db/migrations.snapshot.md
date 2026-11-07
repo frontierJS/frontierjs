@@ -11,3 +11,6 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 | `migrations/main/20261107022646_server_event_app_retired.sql` | `ca3f376573e2ddc4` |
 | `migrations/main/20261107065827_app_copy.sql` | `58dfdd1c0d885afd` |
 | `migrations/main/20261107074322_release_image_sha256.sql` | `3043dbbdcac10235` |
+| `migrations/main/20261107155857_server_event_archive_discarded.sql` | `6c0b9016d000f112` |
+| `migrations/main/20261107175146_copy_certificates.sql` | `cc76c4fd2fb40344` |
+| `migrations/main/20261107185908_copy_serves_main_address.sql` | `7d6640f03dd92e7e` |

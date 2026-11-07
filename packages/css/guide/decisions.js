@@ -223,6 +223,7 @@ var QUESTIONS = {
       { label: 'Children flow across and wrap', on: 'Cluster' },
       { label: 'One child, dead center both ways', on: 'Center' },
       { label: 'Two things pushed to opposite ends', on: 'Split' },
+      { label: 'Side by side when there is room, stacked when there is not', hint: 'text beside a rail, two panels', on: 'Switcher' },
       { label: 'Equal columns, as many as fit', hint: 'a grid of cards, one column on a phone', on: 'Grid' },
       { label: 'A max-width page column', on: 'Container' },
     ],
@@ -1006,6 +1007,22 @@ var OUTCOMES = {
       { term: 'Split', when: 'there are exactly two and they go to opposite ends' },
     ],
     note: 'The column count is derived from the width: raise --grid-min for wider cells and the count follows. There is no breakpoint to write and no cols-3.',
+  },
+
+  Switcher: {
+    page: 'layouts',
+    lead: 'Side by side while there is room, stacked when there is not.',
+    markup: function (c) {
+      return '<div class="' + c + '" style="--switch-at: 40rem">\n  <aside style="--side: 16rem">…</aside>\n  <main>…</main>\n</div>'
+    },
+    tones: false,
+    treatments: [],
+    states: [],
+    instead: [
+      { term: 'Grid', when: 'there are many equal cells and the count should follow the width' },
+      { term: 'Split', when: 'there are exactly two and they go to opposite ends on one line' },
+    ],
+    note: 'The threshold is the Switcher\'s own width, not the viewport\'s: one in a narrow column stacks on a wide screen. --fr on a child weights the split, --side on a child makes it a fixed-width rail.',
   },
 
   Container: {

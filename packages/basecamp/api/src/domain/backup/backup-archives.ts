@@ -48,6 +48,7 @@ import { deleteEveryVersion, listObjects, putObject } from '../../providers/stor
 import type { ListedObject }  from '../../providers/storage/s3.ts'
 import { destinationFor, mintDownload } from '../../jobs/app-backup-run.job.ts'
 import { requireHubAppId } from '../host/host-machine.ts'
+import { executorOn, isExecutor } from '../../providers/executor.ts'
 import { NotFound }           from '@frontierjs/junction'
 import type { App }           from '@frontierjs/junction'
 import type { BackupDestination } from '#db/schema.d.ts'
@@ -169,24 +170,50 @@ export function localArchive(app: App, row: ArchiveRow): string | null {
 }
 
 /**
+ * Delete the bucket object a remote row names, every version of it. Answers
+ * why not when it could not, and null once it is gone.
+ */
+export async function deleteRemote(app: App, row: ArchiveRow): Promise<string | null> {
+  const sys = app.db!.asSystem()
+  const dest = await sys.backupDestination.findFirst({ where: { id: row.destinationId } })
+  if (!dest) return `Destination '${row.destinationId}' is gone, so ${row.location} cannot be reached`
+  if (writerOf(row.location!) && isForeign(row.location!, await hubInstallId(sys)))
+    return `${row.location} belongs to another Basecamp on this prefix; left in place`
+  if (!('conduit' in app)) return 'This process has no conduit'
+  const done = await deleteEveryVersion(sendFor(app, dest.id), dest.bucket, row.location!)
+  if ('locked' in done)
+    return `locked: '${dest.name}' holds ${row.location} under its Object Lock${done.locked.until ? ` until ${done.locked.until}` : ''}`
+  if ('error' in done) {
+    const { error } = done
+    return `'${dest.name}' refused the delete (${error.kind}${error.code ? `, ${error.code}` : ''}): ${error.message}`
+  }
+  return null
+}
+
+/**
+ * One archive file deleted on a machine by its Outpost's `/backup/remove`, by
+ * file name (`FJS-D2012`): `appBackups.discard` and `servers.discardArchive`
+ * both come through here. Answers what went, or why not.
+ */
+export async function removeOnMachine(app: App, server: { id: string; name: string }, appId: string, name: string):
+  Promise<{ removed: boolean; bytes: number } | { error: string }> {
+  const executor = await executorOn(app, server.id, server.name)
+  if (!isExecutor(executor)) return { error: executor.reason }
+  const res = await executor.call('/backup/remove', { app_id: appId, path: name })
+  if (res.error) return { error: `${server.name} did not delete it: ${res.error.message}` }
+  const done = (res.data ?? {}) as { removed?: boolean; bytes?: number }
+  return { removed: done.removed === true, bytes: done.bytes ?? 0 }
+}
+
+/**
  * Delete the archive a row names, then the row. Answers why not when it could
  * not; the row is kept then, so nothing that still exists loses its index.
  */
 export async function deleteArchive(app: App, row: ArchiveRow): Promise<{ deleted: true } | { kept: string }> {
   const sys = app.db!.asSystem()
   if (row.location && isRemote(row)) {
-    const dest = await sys.backupDestination.findFirst({ where: { id: row.destinationId } })
-    if (!dest) return { kept: `Destination '${row.destinationId}' is gone, so ${row.location} cannot be reached` }
-    if (writerOf(row.location) && isForeign(row.location, await hubInstallId(sys)))
-      return { kept: `${row.location} belongs to another Basecamp on this prefix; left in place` }
-    if (!('conduit' in app)) return { kept: 'This process has no conduit' }
-    const done = await deleteEveryVersion(sendFor(app, dest.id), dest.bucket, row.location)
-    if ('locked' in done)
-      return { kept: `locked: '${dest.name}' holds ${row.location} under its Object Lock${done.locked.until ? ` until ${done.locked.until}` : ''}` }
-    if ('error' in done) {
-      const { error } = done
-      return { kept: `'${dest.name}' refused the delete (${error.kind}${error.code ? `, ${error.code}` : ''}): ${error.message}` }
-    }
+    const kept = await deleteRemote(app, row)
+    if (kept) return { kept }
   }
   if (row.location) {
     const dir = localDir(app, row.location)

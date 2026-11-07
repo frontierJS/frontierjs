@@ -157,6 +157,34 @@
  */
 .relative { position: relative; }
 
+/*
+ * ── Spare ─────────────────────────────────────────────────────────────
+ *
+ * Content a narrow box does without: a snippet beside a title, a search
+ * button's word, a URL under a bookmark. It drops below sm (640px), or
+ * inside a `fjs` container narrower than `narrow` (30rem).
+ *
+ * Six apps wrote this hide by hand, each with its own `@media`, and five
+ * of the six were a narrow COMPONENT, not a narrow screen -- a viewport
+ * query is wrong for a panel that sits in a 300px column on a 1400px
+ * window. The container branch is what makes `.spare` answer for the box
+ * it is in; it only fires inside `container: fjs / inline-size`, so a
+ * page without one gets the viewport branch alone.
+ *
+ * It names a role, not a width, which is why it is the one responsive
+ * visibility class the package ships (see `.sidebar-toggle`, which is a
+ * width tied to one contract). It sits in this layer so its `display: none`
+ * beats a `.btn` or `.cluster` that sets its own `display`, without
+ * `!important`. A condition a class cannot carry (`:not([aria-pressed])`)
+ * stays the app's own query.
+ */
+@media (max-width: 639px) {
+  .spare { display: none; }
+}
+@container fjs (inline-size < 30rem) {
+  .spare { display: none; }
+}
+
 /* ── Text color ───────────────────────────────────────────────────── */
 .text-body    { color: var(--ink); }
 .text-muted   { color: var(--ink-mute); }

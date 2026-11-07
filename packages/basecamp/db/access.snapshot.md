@@ -705,6 +705,7 @@ rather than refusing the row.
 | `AppCopy` | `asOf` | `@system` |
 | `AppCopy` | `error` | `@system` |
 | `AppCopy` | `refreshedAt` | `@system` |
+| `AppCopy` | `certError` | `@system` |
 | `AppPlatform` | `hookUrl` | `@encrypted` |
 | `AppPlatform` | `receiverSecret` | `@encrypted` |
 | `AppPlatform` | `status` | `@system` |
@@ -737,6 +738,8 @@ rather than refusing the row.
 | `Domain` | `certKind` | `@system` |
 | `Domain` | `certIssuedAt` | `@system` |
 | `Domain` | `certExpiresAt` | `@system` |
+| `Domain` | `copyCertSecretId` | `@system` |
+| `Domain` | `copyCertExpiresAt` | `@system` |
 | `Flow` | `currentVersion` | `@allow(write, status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
 | `HubConfig` | `installId` | `@system` |

@@ -147,7 +147,7 @@ deploy something different from what the file says.
 
 ## Open questions
 
-1. **The file's name and its extension key.** One file is shareable by paste; a folder
+1. ~~**The file's name and its extension key.**~~ **Answered 2026-11-07 (`FJS-D2014`): A — one file, `<slug>.blueprint.yml`, with the block under `x-blueprint:`.** One file is shareable by paste; a folder
    can carry a logo and extra mounted files (Dokploy's shape).
    - **A** — one file, `<slug>.blueprint.yml`, with the block under `x-blueprint:`.
    - **B** — a folder, `<slug>/docker-compose.yml` plus a logo, block under `x-blueprint:`.
@@ -163,7 +163,7 @@ deploy something different from what the file says.
    - **Recommend A** — an exported App with its values replaced by params IS a
      blueprint, so B is two origins for one truth (§ V *origin*), and the two would
      drift on the first field added to one of them.
-3. **The noun for several services.** "Stack" is a CSS layout tier in
+3. ~~**The noun for several services.**~~ **Answered 2026-11-07 (`FJS-D2015`): A — no new noun: a Blueprint simply has one or more services, and the group of Apps it creates goes unnamed until phase 4 shows it needs a name.** "Stack" is a CSS layout tier in
    `VOCABULARY.md`, and compose's word, *project*, collides here too.
    - **A** — no new noun: a Blueprint simply has one or more services, and the
      group of Apps it creates goes unnamed until phase 4 shows it needs a name.
@@ -172,7 +172,7 @@ deploy something different from what the file says.
    - **Recommend A** — the template already has a name, and the deployed group's
      needs (does it start, stop or delete as one?) are a phase-4 finding. Coining
      now is § V *concept* paid before the demand exists.
-4. **Built-in values** for the app's URL, host and slug, which a param's default or an
+4. ~~**Built-in values**~~ **Answered 2026-11-07 (`FJS-D2016`): C — a small reserved set under one prefix (`BLUEPRINT_URL`, `BLUEPRINT_HOST`, `BLUEPRINT_SLUG`, and `<SERVICE>_HOST` for a sibling). A param declared under that prefix is refused.** for the app's URL, host and slug, which a param's default or an
    env value can reference.
    - **A** — Coolify's style: one magic name per service, `SERVICE_URL_<SERVICE>`.
    - **B** — Dokploy's style: helper calls such as `${domain}` and `${password:32}`
@@ -183,7 +183,7 @@ deploy something different from what the file says.
    - **Recommend C** — plain compose interpolation stays plain, with no second template
      language as in B. One prefix means a param can never shadow a built-in. A and B
      both map onto it on import. Generated secrets stay on the param's `generate`.
-5. **Where an imported blueprint lands.** `Blueprint` is `@@tenant(none)`, and a table
+5. ~~**Where an imported blueprint lands.**~~ **Answered 2026-11-07 (`FJS-D2017`): C — B now, and A when a workspace asks for private blueprints.** `Blueprint` is `@@tenant(none)`, and a table
    mixing shared rows with one workspace's rows is two models wearing one name.
    - **A** — a second, tenant-scoped model for a workspace's own blueprints.
    - **B** — imports go into the shared catalog only, written by the hub tier (gate 7).

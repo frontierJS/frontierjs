@@ -219,7 +219,7 @@ title: Deployment
     </article>
   {/if}
 
-  <div class="deploy-body">
+  <div class="deploy-body switcher" style="--switch-at: 64rem">
     <!--
       .feed, not .steps: .steps is a wizard indicator and draws its connector
       through the labels; a release is an event stream (css patterns/feed.css).
@@ -258,7 +258,7 @@ title: Deployment
       {/if}
     </section>
 
-    <aside class="card deploy-details">
+    <aside class="card deploy-details" style="--side: 24rem">
       <h2 class="h5">Release</h2>
       <dl class="facts" style="--fact-label-max: 45%">
         <dt>Started</dt>   <dd>{at(deployment.startedAt, 'not yet')}</dd>
@@ -325,15 +325,11 @@ title: Deployment
 
 <style>
   .deploy-head { flex-wrap: wrap; align-items: flex-start; }
-  .deploy-body {
-    display: grid;
-    --deploy-aside-min: 18rem;
-    --deploy-aside-max: 24rem;
-    grid-template-columns: minmax(0, 1fr) minmax(var(--deploy-aside-min), var(--deploy-aside-max));
-    gap: var(--space-2xl);
-    align-items: start;
-  }
-  @media (max-width: 64rem) { .deploy-body { grid-template-columns: minmax(0, 1fr); } }
+  /* A Switcher: the steps beside a 24rem rail of facts, stacked below 64rem of
+     the body's own width. The rail was a 18-24rem range; the ceiling is the
+     rail and it shrinks when it must. */
+  .deploy-body { align-items: start; }
+  .deploy-steps { min-width: 0; }
 
   .deploy-step-head { flex-wrap: wrap; align-items: baseline; }
   .deploy-output { white-space: pre-wrap; overflow-wrap: anywhere; }

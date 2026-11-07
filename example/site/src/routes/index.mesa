@@ -78,8 +78,8 @@ render: static
   put the day that padding moves, and the seam under the topbar would reopen.
 -->
 <section class="hero theme-dark">
-  <div class="container hero-inner">
-    <div class="hero-copy stack">
+  <div class="container hero-inner switcher" style="--switch-at: 64rem">
+    <div class="hero-copy stack" style="--fr: 1.05">
       <p class="hero-kicker">FrontierJS · Built for The Wild</p>
       <h1 class="hero-title">Let’s get our hands dirty</h1>
       <p class="hero-lede">
@@ -106,7 +106,7 @@ render: static
       Framed, the whole animal is in shot, the hawk is still in the sky behind
       him, and at 2× it is sharp.
     -->
-    <figure class="hero-art">
+    <figure class="hero-art" style="--fr: .95">
       <img src="/brand/hero.jpg" alt="A wolf standing on a canyon overlook at sunset, a hawk circling behind him" width="968" height="720" />
     </figure>
   </div>
@@ -282,22 +282,18 @@ render: static
     linear-gradient( 100deg, color-mix(in srgb, var(--surface-sunken) 95%, transparent) 0%, color-mix(in srgb, var(--surface-sunken) 55%, transparent) 46%, color-mix(in srgb, var(--surface-sunken) 74%, transparent) 100% )
   }
 
+  /* A Switcher: the copy leads and the plate is a shade narrower (`--fr` on the
+     two children) so the headline keeps the measure it was set for; they stack
+     below 64rem of the band's own width. The band is a named container so the
+     plate's cap below can ask the same width (FJS-D2024). */
   .hero-inner {
-    display:       grid;
+    container:     hero / inline-size;
     gap:           var(--space-5xl);
     align-items:   center;
     --band-min:    24rem;
     --band-max:    33rem;
     min-height:    clamp(var(--band-min), 44vw, var(--band-max));
     padding-block: var(--space-5xl);
-  }
-
-  @media (min-width: 900px) {
-    .hero-inner {
-      /* The copy leads; the plate is a shade narrower so the headline keeps the
-         measure it was set for. */
-      grid-template-columns: 1.05fr 0.95fr;
-    }
   }
 
   .hero-copy {
@@ -366,7 +362,7 @@ render: static
     --bg-mix: var(--sand);
   }
 
-  @media (max-width: 899px) {
+  @container hero (inline-size < 64rem) {
     /* One column: the plate stacks under the copy, and at that width it is the
        first thing scrolled past rather than a companion to the headline. */
     .hero-art {

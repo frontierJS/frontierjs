@@ -63,9 +63,13 @@ export interface RecordMark {
   fleet:     string
   /** Which `Domain` asked for it — the CNAME at its hostname. */
   domainId?: string
-  /** Which `App`'s INGRESS RECORD it is (`FJS-D561`). At most one of the two;
-   *  neither is a record marked by the fleet alone. */
+  /** Which `App`'s INGRESS RECORD it is (`FJS-D561`). At most one of the
+   *  three; none is a record marked by the fleet alone. */
   appId?:    string
+  /** Which `App`'s read-only copy's address it is (`FJS-D1982`). Not `appId`:
+   *  it points at the copy's machine, and read as the ingress record it would
+   *  be stale against every machine the App runs on. */
+  copyOf?:   string
 }
 
 /** The mark a `Domain`'s records carry. */
@@ -76,6 +80,11 @@ export function domainMark(domainId: string): RecordMark {
 /** The mark an App's ingress record carries. */
 export function appMark(appId: string): RecordMark {
   return { fleet: FLEET, appId }
+}
+
+/** The mark an App's read-only copy's address carries. */
+export function copyMark(appId: string): RecordMark {
+  return { fleet: FLEET, copyOf: appId }
 }
 
 /** A record to write. `name` is the full hostname; `ttl` 1 is the vendor's

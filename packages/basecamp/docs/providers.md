@@ -117,7 +117,9 @@ which the patch still accepts (`FJS-D1955`).
 written carries a mark, the caller's `RecordMark` spelled by the connector
 (`basecamp:domain:<id>` in Cloudflare's `comment`), and a set or delete naming a
 (name, type) set that holds an unmarked record is refused before anything is sent
-(`FJS-D560`).
+(`FJS-D560`). A read-only copy's address is `basecamp:copy:<appId>`, never the
+App's own `basecamp:app:<appId>`: it points at the copy's machine, and read as the
+ingress record it would be stale against every machine the App runs on.
 
 ### `cloudSpend` — `ICloudSpend`, behind `/cloud-spend/`
 

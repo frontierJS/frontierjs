@@ -1,7 +1,7 @@
 {
   "$comment": "Generated from vocabulary.js by build-vocabulary.js — do not edit. vocabulary.js is the source and is a classic script by necessity; see that file.",
   "counts": {
-    "terms": 61,
+    "terms": 62,
     "tiers": 8,
     "anatomy": 29
   },
@@ -493,6 +493,14 @@
       "element": "<div>",
       "meaning": "Equal columns, as many as fit at --grid-min each, and one on a phone. The count is derived from the width, so there is no breakpoint to write",
       "class": "grid"
+    },
+    {
+      "term": "Switcher",
+      "tier": "Layout",
+      "tierBlurb": "Composition helpers. They own one arrangement each and no skin, so they compose onto anything, including a term from another tier. The names are Every Layout's — the vocabulary people already have.",
+      "element": "<div>",
+      "meaning": "Children side by side while the Switcher is wider than --switch-at, stacked below it. --fr weights a child, --side makes one a fixed-width rail. It measures its own box, not the viewport",
+      "class": "switcher"
     }
   ],
   "anatomy": {
@@ -1072,7 +1080,8 @@
     ],
     "utility": [
       "relative",
-      "bleed"
+      "bleed",
+      "spare"
     ]
   },
   "breakpoints": {
@@ -1081,5 +1090,9 @@
     "lg": 1024,
     "xl": 1280,
     "2xl": 1536
+  },
+  "containerSteps": {
+    "narrow": 480,
+    "cramped": 320
   }
 }

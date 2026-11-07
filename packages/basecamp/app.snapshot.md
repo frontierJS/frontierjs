@@ -24,6 +24,7 @@ text, so a body that elevates through a helper is not listed.
 | --- | --- |
 | `apiKeys.owners` | standing 5 or above — declared `gate: 5` |
 | `appBackups.take` | standing 5 or above — declared `gate: 5` |
+| `appBackups.discard` | standing 5 or above — declared `gate: 5` |
 | `appBackups.download` | standing 5 or above — declared `gate: 5` |
 | `appBackups.upload` | standing 5 or above — declared `gate: 5` |
 | `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
@@ -31,8 +32,10 @@ text, so a body that elevates through a helper is not listed.
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
 | `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `edge.records` | standing 2 or above — declared `gate: 2` |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
 | `edge.ingressStep` | anyone, a stranger included — declared `gate: 0` |
+| `edge.copyStep` | anyone, a stranger included — declared `gate: 0` |
 | `hubBackups.take` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `hubBackups.discard` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `hubConfig.dismissFound` | **any signed-in caller** — floor, read gate 7; standing not graded |
@@ -41,6 +44,7 @@ text, so a body that elevates through a helper is not listed.
 | `monitors.resume` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `notificationChannels.test` | standing 5 or above — declared `gate: 5` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.discardArchive` | standing 5 or above — declared `gate: 5` |
 | `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.heartbeat` | anyone, a stranger included — declared `gate: 0` |
 | `variables.reveal` | standing 5 or above — declared `gate: 5` |
@@ -299,14 +303,15 @@ name when it declares none.
 
 ### `appBackups` · model `AppBackup`
 
-- **methods** — `find`, `get`, `take`, `rescan`, `download`, `upload`
-- **custom methods** — `take`, `rescan`, `download`, `upload`
+- **methods** — `find`, `get`, `take`, `discard`, `rescan`, `download`, `upload`
+- **custom methods** — `take`, `discard`, `rescan`, `download`, `upload`
 - **also answers to** — `app-backups`
 - **input** — `rescan` takes `AppBackupRescan`
 - **input** — `take` takes `AppBackupTake`
 - **input** — `upload` takes `AppBackupUpload`
 - **who may call** —
   - `take` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `discard` — standing 5 or above — declared `gate: 5`; body writes as the app
   - `rescan` — standing 5 or above — declared `gate: 5`
   - `download` — standing 5 or above — declared `gate: 5`; body writes as the app
   - `upload` — standing 5 or above — declared `gate: 5`; body writes as the app
@@ -680,14 +685,15 @@ name when it declares none.
 
 ### `edge` · model `edge`
 
-- **methods** — `zones`, `records`, `sync`, `syncStep`, `ingressStep`
-- **custom methods** — `zones`, `records`, `sync`, `syncStep`, `ingressStep`
+- **methods** — `zones`, `records`, `sync`, `syncStep`, `ingressStep`, `copyStep`
+- **custom methods** — `zones`, `records`, `sync`, `syncStep`, `ingressStep`, `copyStep`
 - **who may call** —
   - `zones` — standing 2 or above — declared `gate: 2`
-  - `records` — standing 2 or above — declared `gate: 2`
+  - `records` — standing 2 or above — declared `gate: 2`; body writes as the app
   - `sync` — standing 5 or above — declared `gate: 5`
   - `syncStep` — anyone, a stranger included — declared `gate: 0`; body writes as the app
   - `ingressStep` — anyone, a stranger included — declared `gate: 0`; body writes as the app
+  - `copyStep` — anyone, a stranger included — declared `gate: 0`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -695,6 +701,7 @@ name when it declares none.
 | before | `all` | `sessionScope` |
 | before | `syncStep` | `internalOnly` → `scopedWhenACaller` |
 | before | `ingressStep` | `internalOnly` → `scopedWhenACaller` |
+| before | `copyStep` | `internalOnly` → `scopedWhenACaller` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -1332,9 +1339,10 @@ name when it declares none.
 
 ### `servers` · model `Server`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `ingress`, `retireApp`, `reboot`, `drain`, `undrain`, `sync`, `setBackups`, `adopt`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
-- **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `ingress`, `retireApp`, `reboot`, `drain`, `undrain`, `sync`, `setBackups`, `adopt`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `ingress`, `retireApp`, `archives`, `discardArchive`, `reboot`, `drain`, `undrain`, `sync`, `setBackups`, `adopt`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `ingress`, `retireApp`, `archives`, `discardArchive`, `reboot`, `drain`, `undrain`, `sync`, `setBackups`, `adopt`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
 - **input** — `adopt` takes `ServerAdopt`
+- **input** — `discardArchive` takes `ServerDiscardArchive`
 - **input** — `provision` takes `ServerProvision`
 - **input** — `provisionStep` takes `ServerProvisionStep`
 - **input** — `retireApp` takes `ServerRetireApp`
@@ -1347,6 +1355,8 @@ name when it declares none.
   - `metrics` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
   - `ingress` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `retireApp` — standing 5 or above — declared `gate: 5`
+  - `archives` — standing 5 or above — declared `gate: 5`
+  - `discardArchive` — standing 5 or above — declared `gate: 5`; body writes as the app
   - `reboot` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `drain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `undrain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -1382,6 +1392,7 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `retireApp` | `validateInput` |
+| before | `discardArchive` | `validateInput` |
 | before | `setBackups` | `validateInput` |
 | before | `adopt` | `validateInput` |
 | before | `provision` | `validateInput` |

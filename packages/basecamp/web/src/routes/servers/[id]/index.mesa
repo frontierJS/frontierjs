@@ -7,6 +7,7 @@ title: Server
   import Server, { servers } from '../../../resources/Server.mesa'
   import { apps } from '../../../resources/App.mesa'
   import { at, ago } from '../../../lib/datetime.js'
+  import { formatBytes } from '@frontierjs/toolbelt/units'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
@@ -156,6 +157,38 @@ title: Server
       await loadEvents()
     } catch (e) {
       retireError = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // ─── Archives ────────────────────────────────────────────────────────
+  // Every archive `/backup` left on this machine's disk, read when asked. One
+  // no App backup names (an App gone with a reinstalled hub) is discarded
+  // here; a named one goes from its App's Backups, which keeps the newest.
+  let archives      = null
+  let archivesError = null
+
+  async function readArchives() {
+    archivesError = null; busy = 'archives'
+    try {
+      archives = await servers.service.invoke('archives', server.id)
+    } catch (e) {
+      archivesError = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function discardArchive({ appId, name }) {
+    archivesError = null; busy = `archive:${name}`
+    try {
+      await servers.service.invoke('discardArchive', server.id, { appId, name })
+      toasts.success('Deleted ' + name)
+      await readArchives()
+      await loadEvents()
+    } catch (e) {
+      archivesError = e.message
     } finally {
       busy = null
     }
@@ -963,6 +996,49 @@ title: Server
           <p class="text-sm text-muted">This machine's Outpost is too old to send it; update the Outpost.</p>
         {/if}
       </details>
+    {/if}
+  </article>
+
+  <article class="card stack" id="server-archives">
+    <div class="cluster">
+      <h2 class="h4">Archives</h2>
+      <Button treatment="outlined" id="archives-read" disabled={busy === 'archives'} onclick={readArchives}>
+        {busy === 'archives' ? 'Reading…' : archives ? 'Read again' : 'Read from the machine'}
+      </Button>
+    </div>
+    {#if archivesError}
+      <p class="text-sm" id="archives-error">{archivesError}</p>
+    {/if}
+    {#if !archives}
+      <p class="text-sm text-muted">The app backups on this machine's disk. Read live; nothing here is stored.</p>
+    {:else if !archives.outpost}
+      <p class="text-sm text-muted">No Outpost has checked in from this machine, so there is nothing to ask.</p>
+    {:else if !archives.archives.length}
+      <p class="text-sm text-muted">No archives on this machine.</p>
+    {:else}
+      <table class="table" id="archives-table">
+        <thead><tr><th>Archive</th><th>Taken</th><th>Size</th><th>App</th></tr></thead>
+        <tbody>
+          {#each archives.archives as a}
+            <tr data-archive={a.name}>
+              <td class="text-sm"><code>{a.name}</code></td>
+              <td class="text-sm">{ago(a.at)}</td>
+              <td class="text-sm">{formatBytes(a.bytes)}</td>
+              <td class="text-sm">
+                {#if a.app}<a href={`/apps/${a.app.id}/`}>{a.app.name}</a>{:else}<span class="badge warning">app gone</span>{/if}
+                {#if !a.backupId}
+                  <Button treatment="outlined" tone="danger" data-discard-archive={a.name} disabled={busy === 'archive:' + a.name}
+                          onclick={() => discardArchive(a)}
+                          data-confirm={'Deletes ' + a.name + ' from ' + server.name + '. No App backup names it, so nothing else holds this copy.'}
+                          data-confirm-title="Delete this archive?" data-confirm-label="Delete" data-confirm-tone="danger">
+                    {busy === 'archive:' + a.name ? 'Deleting…' : 'Discard'}
+                  </Button>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     {/if}
   </article>
 

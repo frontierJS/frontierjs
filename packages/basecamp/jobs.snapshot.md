@@ -27,6 +27,8 @@ it re-resolved when it runs. Survives a restart.
 | `alert-evaluate` | `default` | `* * * * *` | — | 3 | default | 240000ms |
 | `app-archive:rescan` | `fleet` | on dispatch | — | 3 | 30000, 120000 | 7200000ms |
 | `app-backup:run` | `fleet` | on dispatch | — | 1 | default | 3720000ms |
+| `app-copy:cert` | `sync` | `47 3 * * *` | — | 5 | 10000, 60000 | 900000ms |
+| `app-copy:dns` | `dns` | on dispatch | — | 5 | 10000, 60000 | 120000ms |
 | `app-copy:refresh` | `fleet` | on dispatch | — | 1 | default | 5580000ms |
 | `app-drill:run` | `fleet` | on dispatch | — | 1 | default | 5580000ms |
 | `backup-verify` | `default` | `0 4 * * 0` | — | 3 | default | 1800000ms |
@@ -59,7 +61,7 @@ it re-resolved when it runs. Survives a restart.
 | `site:publish` | `deployments` | on dispatch | — | 1 | default | 2130000ms |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-34 handler(s), 12 of them on a clock.
+36 handler(s), 13 of them on a clock.
 
 **13 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a

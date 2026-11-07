@@ -24,7 +24,7 @@ title: Sign in
   // the form), so once this page has made an attempt the banner would repeat
   // the form's message under a "could not reach the server" title — a wrong
   // password reported as an outage. `attempted` hands the message to the form.
-  $: (session.error, session.awaitingCode, session.oauthError, session.oauthMessage)
+  $: (session.user, session.error, session.awaitingCode, session.oauthError, session.oauthMessage)
 
   // A plain `let` is already component state — it must NOT go in a `$:` path
   // watch, which is for fields of plain objects (Mesa RULE 43). Listing one
@@ -96,6 +96,11 @@ title: Sign in
   }
 </script>
 
+<!-- The session is adopted before the landing page has loaded, so the shell's
+     signed-in chrome mounts around this form a round trip or more before the
+     route changes. `leaving` fades the form out over that gap; the shell fades
+     its chrome in under `.shell:has(.signin)`. -->
+<div class="signin" class:leaving={attempted && session.user}>
 <div class="section-header">
   <h1>Sign in</h1>
   <span class="text-sm text-muted">Basecamp</span>
@@ -169,3 +174,9 @@ title: Sign in
   {/if}
   {/if}
 </div>
+</div>
+
+<style>
+  .signin { transition: opacity var(--motion-slow) var(--motion-ease-out); }
+  .signin.leaving { opacity: 0; pointer-events: none; }
+</style>

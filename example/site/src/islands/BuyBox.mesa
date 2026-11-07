@@ -148,7 +148,7 @@
 </script>
 
 <div class="card buy" id="buy-box">
-  <div class="buy-grid">
+  <div class="buy-grid switcher" style="--switch-at: 30rem">
     <div class="field-group">
       <label for="buy-color">Color</label>
       <select id="buy-color" class="field" bind:value={color}>
@@ -163,7 +163,7 @@
       </select>
     </div>
 
-    <div class="field-group">
+    <div class="field-group" style="--side: 5rem">
       <label for="buy-qty">Qty</label>
       <input id="buy-qty" class="field" type="number" min="1" max={avail || 1} bind:value={qty} />
     </div>
@@ -209,10 +209,7 @@
 <style>
   .buy { padding: var(--space-4xl); }
   .buy-grid {
-    display: grid;
     gap: var(--space-2xl);
-    --qty-width: 5rem;
-    grid-template-columns: 1fr 1fr var(--qty-width);
     margin-block-end: var(--space-2xl);
   }
   .buy-line {
@@ -223,7 +220,4 @@
     margin-block-end: var(--space-2xl);
   }
   #buy-add { width: 100%; }
-  @media (max-width: 30rem) {
-    .buy-grid { grid-template-columns: 1fr; }
-  }
 </style>

@@ -672,14 +672,6 @@ export class BasecampSeeder extends Seeder {
                       startedAt: at.toISOString(), finishedAt: new Date(at.getTime() + 9_000).toISOString(), durationMs: 9_000,
                     },
                   })
-                  // A read-only copy refreshed nightly from the same replica.
-                  if (!(await sys.appCopy.findFirst({ where: { appId: app.id } })))
-                    await sys.appCopy.create({
-                      data: {
-                        appId: app.id, serverId: host.id, cron: '0 3 * * *', status: 'success',
-                        asOf: at.toISOString(), refreshedAt: new Date(at.getTime() + 60_000).toISOString(),
-                      },
-                    })
                 }
               }
 
@@ -1066,6 +1058,26 @@ async function seedInstallation(sys, owner, users) {
         finishedAt: found.toISOString(),
       },
     })
+
+    // A read-only copy is served from the app's replica, so this app gets a
+    // bucket of its own to replicate to and the one copy the seed has. An app
+    // with neither offers no switch to turn one on.
+    const replicaTo = await sys.backupDestination.create({
+      data: {
+        workspaceId: acme.id, name: 'Replica bucket', endpoint: offBox.endpoint, region: offBox.region,
+        bucket: 'frontier-replicas', prefix: 'apps/', secretId: offBoxKey.id,
+      },
+    })
+    await sys.app.update({ where: { id: onDisk.appId }, data: { replicaDestinationId: replicaTo.id } })
+    const host = await sys.appServer.findFirst({ where: { appId: onDisk.appId } })
+    const asOf = new Date(Date.now() - 13 * 3_600_000)
+    if (host && !(await sys.appCopy.findFirst({ where: { appId: onDisk.appId } })))
+      await sys.appCopy.create({
+        data: {
+          appId: onDisk.appId, serverId: host.serverId, cron: '0 3 * * *', status: 'success',
+          asOf: asOf.toISOString(), refreshedAt: new Date(asOf.getTime() + 60_000).toISOString(),
+        },
+      })
   }
 
   // ── One person who has chosen ───────────────────────────────────────

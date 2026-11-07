@@ -4648,6 +4648,65 @@ function layoutsPage() {
       )}
 
       ${section(
+        'Switcher — side by side, then stacked',
+        `
+        <p>
+          <code>switcher</code> is Every Layout's Switcher and Sidebar in one
+          class. Children sit side by side while the Switcher is wider than
+          <code>--switch-at</code> (48rem unless you set it) and stack below
+          it. The width it measures is its own box, not the viewport's, so one
+          in a narrow column stacks on a wide screen. <code>--fr</code> on a
+          child weights the split; <code>--side</code> on one makes it a rail
+          of that width while the other child takes the rest.
+        </p>
+        ${preview(`
+          <div class="switcher" style="--switch-at: 30rem; min-width: 320px">
+            <article class="card" style="--side: 10rem">Rail</article>
+            <article class="card">Fluid — takes what the rail leaves.</article>
+          </div>`)}
+        ${code(`<div class="switcher" style="--switch-at: 40rem">
+  <aside style="--side: 16rem">…</aside>
+  <main>…</main>
+</div>
+
+<!-- uneven split: twice the share -->
+<div class="switcher">
+  <section style="--fr: 2">…</section>
+  <section>…</section>
+</div>`)}
+        <p>
+          <code>--side</code> is found by an inline <code>style</code>
+          attribute on the child; set from a stylesheet it still sets the width but
+          does not stop the child growing.
+        </p>
+        <p>
+          A child cannot see which state it is in: the wrap is not observable.
+          A rule that holds only side by side — a divider, a sticky rail — is
+          a <strong>companion rule</strong>: the app names the Switcher as a
+          container and asks it the same width. A container query measures the
+          content box, which is the box <code>--switch-at</code> is measured
+          against, so the two agree to the pixel.
+        </p>
+        ${code(`<div class="switcher record" style="--switch-at: 64rem">
+  <aside style="--side: 16rem">…</aside>
+  <main>…</main>
+</div>
+
+<style>
+  .record { container: record / inline-size; }
+  @container record (inline-size >= 64rem) {
+    .record > aside { border-inline-end: var(--border-width) solid var(--rule); }
+  }
+</style>`)}
+        <p>
+          Not for a split that fixes its height and scrolls each pane inside
+          itself, an editor beside its preview: a wrapped flex line is as tall
+          as its content, so the pane stops scrolling. That layout is a
+          column-count query of its own.
+        </p>`
+      )}
+
+      ${section(
         'Align — the fourth axis',
         `
         <p>
@@ -4729,6 +4788,7 @@ function layoutsPage() {
             <tr><td>Page header with title + actions</td><td><code>split</code></td></tr>
             <tr><td>Modal centered on screen, empty states</td><td><code>center</code></td></tr>
             <tr><td>Cards in columns, one column on a phone</td><td><code>grid</code></td></tr>
+            <tr><td>Text beside a rail or two panels, stacked on a narrow box</td><td><code>switcher</code></td></tr>
             <tr><td>A stripe of a website page</td><td><code>band</code> holding a <code>container</code></td></tr>
             <tr><td>Anything else</td><td>Compose Uno utilities directly</td></tr>
           </tbody>
@@ -4740,7 +4800,7 @@ function layoutsPage() {
         `
         ${code(
           ['/* layout.css — read from the live stylesheet, not copied */']
-            .concat(['.stack', '.cluster', '.center', '.split', '.grid'].map(ruleText).filter(Boolean))
+            .concat(['.stack', '.cluster', '.center', '.split', '.grid', '.switcher', '.switcher > *'].map(ruleText).filter(Boolean))
             .join('\n\n')
         )}
         <p>
@@ -9260,6 +9320,11 @@ function disclosurePage() {
    3. Pages — Responsive & Accessibility
    ══════════════════════════════════════════════════════════════════════ */
 
+const CONTAINER_STEPS = [
+  ["narrow", "480px", "30rem — a <code>fjs</code> container below this derives a lighter density"],
+  ["cramped", "320px", "20rem — a <code>fjs</code> container below this derives the lightest"],
+];
+
 const BREAKPOINTS = [
   ["sm", "640px", "large phone, landscape"],
   ["md", "768px", "tablet — container gutter steps to 1.5rem"],
@@ -9298,6 +9363,15 @@ function responsivePage() {
             ).join("")}
           </tbody>
         </table>
+        <p>
+          Two more steps sit beside the scale, and they are the
+          <em>box&rsquo;s</em> width, not the viewport&rsquo;s &mdash; the
+          widths a <code>fjs</code> container
+          (<code>container: fjs / inline-size</code>) derives density at:
+          ${CONTAINER_STEPS.map(
+            ([n, w, use]) => `<code>${n}</code> <code>${w}</code> (${use})`,
+          ).join("; ")}.
+        </p>
         <div class="alert warning">
           <div class="alert-icon" aria-hidden="true">!</div>
           <div class="alert-content">
@@ -9348,6 +9422,46 @@ function responsivePage() {
 }
 @media (min-width: 768px)  { .container { --container-pad: 1.5rem; } }
 @media (min-width: 1280px) { .container { --container-pad: 2rem;   } }`)}`,
+      )}
+
+      ${section(
+        "Spare content",
+        `
+        <p>
+          <code>.spare</code> marks content a narrow box does without &mdash; a
+          snippet beside a title, the word on a search button, a URL under a
+          bookmark. It drops below <code>sm</code> (640px), and inside a
+          <code>fjs</code> container narrower than <code>narrow</code>
+          (<code>30rem</code>). The second branch is the one that matters: most
+          secondary content sits in a panel, and a panel can be narrow on a wide
+          window.
+        </p>
+        ${code(`<button class="btn">Search <span class="spare">everything</span></button>
+
+<!-- opt in to the box's width, not the window's -->
+<aside style="container: fjs / inline-size"> … </aside>`)}
+        ${preview(`
+          <div style="display: grid; gap: 8px; width: 100%">
+            <div style="container: fjs / inline-size; inline-size: 100%; max-inline-size: 560px">
+              <div class="cluster"><span class="badge info">560px wide</span><span class="spare text-muted">kept: this box is wide</span></div>
+            </div>
+            <div style="container: fjs / inline-size; inline-size: 240px">
+              <div class="cluster"><span class="badge info">240px wide</span><span class="spare text-muted">dropped: this box is narrow</span></div>
+            </div>
+          </div>`)}
+        <p>
+          It is a role, not a width, so it is the one visibility class the
+          package ships; it sits in the utilities layer, so it beats the
+          <code>display</code> a <code>.btn</code> or <code>.cluster</code> sets
+          for itself. A condition a class cannot carry &mdash;
+          <code>:not([aria-pressed])</code> &mdash; stays your own query, at
+          <code>max-width: 639px</code> so it agrees with <code>.spare</code>.
+          Containment has a cost: a <code>container-type</code> box cannot be
+          sized by its contents, so opt in on a box whose width is set by its
+          parent, not on a flex item.
+        </p>
+        ${code(`@media (max-width: 639px)               { .spare { display: none } }
+@container fjs (inline-size < 30rem)    { .spare { display: none } }`)}`,
       )}
 
       ${section(

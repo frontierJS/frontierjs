@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d2017"></a>2026-11-07 · `FJS-D2017` — Where an imported blueprint lands — B now, and A when a workspace asks for private blueprints.
+
+Asked in [`IDEAS/blueprint-catalog.md`](IDEAS/blueprint-catalog.md) § Open questions. **C** was picked over **A** (a second, tenant-scoped model for a workspace's own blueprints), **B** (imports go into the shared catalog only, written by the hub tier (gate 7)).
+
+The paper's recommendation, taken as written: B needs no schema change and fits a curated catalog. A is the right shape for private blueprints, but nobody has asked for them yet.
+
 ### <a id="fjs-d1991"></a>2026-11-07 · `FJS-D1991` — Q1 — Where the screens live — One nav entry, **Laptop** (`/laptop/`), with tabs Disk, Keys and Running; global env and user commands go in Settings; local backups go on the Basecamps screen beside the Basecamp they came from.
 
 Asked in [`IDEAS/workbench-fli-files.md`](IDEAS/workbench-fli-files.md) § Open questions. **A** was picked over **B** (everything under Settings, as sections), **C** (a nav entry per screen (Disk, Keys, Running)).
@@ -9112,6 +9118,11 @@ Hub restore through `/setup` has run only against SeaweedFS on a laptop (`IDEAS/
 Asked in chat through the question tool, while planning [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md). The XDG data directory was picked over the app's own `db/backups/` and over asking each time: outside every checkout, so nothing commits it and it survives the checkout being deleted.
 *Lives in:* `cli/commands/basecamp/backup.md`.
 
+### <a id="fjs-d2012"></a>2026-11-07 · `FJS-D2012` — An app backup is discarded where it is, and an archive no row names is found and deleted from its Server — `appBackups.discard` deletes the bucket object, then the machine's file (`/backup/remove`, by file name), then the row, and refuses the app's newest good archive as `hubBackups.discard` does (`FJS-3902`). `servers.archives` lists every archive on a machine's disk (`/backups`) with the row naming it; `servers.discardArchive` deletes only one no row names and records `archiveDiscarded`.
+
+Asked in chat through the question tool, after the yuma reinstall left two archives of an App the new hub had no row for, which only ssh could remove. **Discard plus orphans** was picked over row discard only (which never reaches those two files) and over adopting the files as `found` rows (`AppBackup.appId` is required, and their App does not exist). **Refuse the newest good** was picked over no guard. A file a row names cannot be discarded from the Server, so the guard has one door.
+*Lives in:* `packages/basecamp/api/src/services/app-backups/app-backups.service.ts`, `servers.service.ts`, `packages/outpost/src/docker.js`.
+
 ### <a id="fjs-d1851"></a>2026-11-03 · `FJS-D1851` — Local Basecamp backups are never pruned; `basecamp:backup --list` shows them.
 
 Asked in chat through the question tool, while planning [`IDEAS/basecamp-reinstall.md`](IDEAS/basecamp-reinstall.md). **Never prune, list them** was picked over keeping the newest N and over asking after each run. They are a few MB each and the only undo for a fresh reinstall.
@@ -13838,6 +13849,36 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2024"></a>2026-11-07 · `FJS-D2024` — Q5 — How does a child learn the Switcher stacked — The app names a container and writes `@container <name> (inline-size >= …)` on the scale.
+
+Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **A** was picked over **B** (`.switcher` ships `container-type`).
+
+The paper's recommendation, taken as written: B is refused by `packages/css/docs/quirks.md`: containment changes how a box is sized, which breaks layouts nobody changed.
+
+### <a id="fjs-d2023"></a>2026-11-07 · `FJS-D2023` — Q4 — What replaces hiding secondary content at a width — One class that names the content and drops it below sm or inside a narrow `fjs` container (working name `.droppable`).
+
+Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **A** was picked over **B** (a `.md-down-hidden`/`.md-up-hidden` pair), **C** (keep the refusal; apps keep writing the query).
+
+The paper's recommendation, taken as written: names the content rather than the width, as a tone does, and a viewport query gets the five narrow components wrong.
+
+### <a id="fjs-d2022"></a>2026-11-07 · `FJS-D2022` — Q3 — How does an app keep its widths on the scale — Literals stay (`FJS-D1099`); a `fli check` warn, scope app, reports a width off the scale, its `-1px` and `.99` twins allowed.
+
+Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **B** was picked over **A** (`@media (--md-down)` expanded by a Vite transform reading `BREAKPOINTS`, refusing an unknown name), **C** (neither).
+
+The paper's recommendation, taken as written: keeps `FJS-D1099`, adds no spelling, and is the same shape as `css-raw-literal`; A spells one fact a third way and matches nothing when unexpanded.
+
+### <a id="fjs-d2021"></a>2026-11-07 · `FJS-D2021` — Q2 — Do container queries get their own width scale — One scale: `BREAKPOINTS`, with the two density steps named beside it and graded by the vocabulary spec.
+
+Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **A** was picked over **B** (a container scale in `vocabulary.js`).
+
+The paper's recommendation, taken as written: no second consumer, and the Switcher needs no query.
+
+### <a id="fjs-d2020"></a>2026-11-07 · `FJS-D2020` — Q1 — What is the Switcher called — `.switcher`, Every Layout's name.
+
+Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **A** was picked over **B** (`.columns`).
+
+The paper's recommendation, taken as written: discovered, not invented, as `.grid` is; *columns* reads as a count the class does not take.
+
 ### <a id="fjs-d1901"></a>2026-11-04 · `FJS-D1901` — A terminal page has a bottom pane beside its side pane, one pane registry owns both, and Haven runs `fli top` in it through a pty
 
 The owner asked for `fli top` at the bottom of Haven without rebuilding it, and approved the plan as a whole. The plan followed `decision-rules`' recommendation, with both of its changes taken. Four parts:
@@ -16103,6 +16144,12 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d2013"></a>2026-11-07 · `FJS-D2013` — Q1 — Where does the Shell live — `@frontierjs/ui`, props-driven. The route, the session, `isActive` and sign-out are passed in.
+
+Asked in [`IDEAS/app-shell.md`](IDEAS/app-shell.md) § Open questions. **A** was picked over **B** (`@frontierjs/sierra/shell`, reading the router and session directly. Sierra would then import ui's `Drawer`, which is a new edge).
+
+The paper's recommendation, taken as written: ui peers on mesa and css only, and `Form.mesa` already keeps that line for the same reason. Every prop is a read the `_module.mesa` already makes in its `$:` line.
+
 ### <a id="fjs-d1782"></a>2026-11-02 · `FJS-D1782` — A kit component's `size` is its own scale and stays; on a component whose size is only a font size (Button, Badge, Pill, Kbd, Mono) it writes a `.text-*` class, never an inline `font-size`, so a caller's `class="text-*"` overrides it.
 
 Asked in chat, through the question tool. **Keep `size`, write the rule down** was picked over **drop `size` on the five** (every caller rewritten to `class="text-*"`, a leftover `size=` warning by name) and **keep it as an unstated shorthand**. The prompt was a Basecamp filter chip: `<Button size="sm">` wrote `style="font-size: var(--text-sm)"`, which no class can beat, so `class="text-xs"` on a Button did nothing. `size` is the kit-wide prop — on Avatar, Spinner, Modal and nine others it sets dimensions no class names — and on Badge, Pill and Kbd `size="md"` is `text-sm`, a step relative to the component's own default rather than a rung name. `.text-2xs` joined `utilities.css` so `size="xs"` there has a class to write (the name matches `--text-2xs` and the `2xl`–`4xl` rungs). `display-fixes.mjs` fails a sized component that renders any inline `font-size`. Reopen path: drop `size` on the five, if two spellings start to disagree in practice.
@@ -16785,6 +16832,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2019"></a>2026-11-07 · `FJS-D2019` — Q15 — Which hostnames does the copy mark `noindex` once it serves the main address — Only `<appId>-copy.<zone>`. The App's Domains and ingress name are served without it, as the live App serves them, so a crawl during an outage does not drop the App's pages from search.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (every hostname the copy answers. One rule, at the cost of telling search engines to forget the App's own Domains for the length of an outage).
+
+The paper's recommendation, taken as written: the main hostnames are the App's; the copy borrows them.
+
+### <a id="fjs-d2018"></a>2026-11-07 · `FJS-D2018` — Q14 — Where does "serve at the main address" live — `AppCopy.isServingMainAddress`. Turning the copy off or moving it is refused while it serves, so the switch cannot outlive the copy it sends users to, and it follows `FJS-D2001`'s row.
+
+Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (a column on `App`, as 3.1 is written. A flip with no copy behind it is a state it can write, and every reader joins the row anyway).
+
+The paper's recommendation, taken as written: the switch only means something while the copy exists, and a row it belongs to cannot be removed under it.
 
 ### <a id="fjs-d2010"></a>2026-11-07 · `FJS-D2010` — Q5 — When the tied row closes — Do nothing: the place stays where the hand left it and the badge shows the row as closed.
 
@@ -21185,6 +21244,24 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2016"></a>2026-11-07 · `FJS-D2016` — Built-in values — A small reserved set under one prefix (`BLUEPRINT_URL`, `BLUEPRINT_HOST`, `BLUEPRINT_SLUG`, and `<SERVICE>_HOST` for a sibling). A param declared under that prefix is refused.
+
+Asked in [`IDEAS/blueprint-catalog.md`](IDEAS/blueprint-catalog.md) § Open questions. **C** was picked over **A** (Coolify's style: one magic name per service, `SERVICE_URL_<SERVICE>`), **B** (Dokploy's style: helper calls such as `${domain}` and `${password:32}` inside values).
+
+The paper's recommendation, taken as written: plain compose interpolation stays plain, with no second template language as in B. One prefix means a param can never shadow a built-in. A and B both map onto it on import. Generated secrets stay on the param's `generate`.
+
+### <a id="fjs-d2015"></a>2026-11-07 · `FJS-D2015` — The noun for several services — No new noun: a Blueprint simply has one or more services, and the group of Apps it creates goes unnamed until phase 4 shows it needs a name.
+
+Asked in [`IDEAS/blueprint-catalog.md`](IDEAS/blueprint-catalog.md) § Open questions. **A** was picked over **B** ("Stack", with a ruling that it means one thing in Basecamp and another in css), **C** (a new word for the deployed group, coined now).
+
+The paper's recommendation, taken as written: the template already has a name, and the deployed group's needs (does it start, stop or delete as one?) are a phase-4 finding. Coining now is § V *concept* paid before the demand exists.
+
+### <a id="fjs-d2014"></a>2026-11-07 · `FJS-D2014` — The file's name and its extension key — One file, `<slug>.blueprint.yml`, with the block under `x-blueprint:`.
+
+Asked in [`IDEAS/blueprint-catalog.md`](IDEAS/blueprint-catalog.md) § Open questions. **A** was picked over **B** (a folder, `<slug>/docker-compose.yml` plus a logo, block under `x-blueprint:`), **C** (one file, with the block under a product key (`x-frontier:` or `x-basecamp:`)).
+
+The paper's recommendation, taken as written: export, paste and download all want one thing. The key names the noun the file is rather than the product that reads it, which is also the word Dokploy's catalog already uses. A logo goes in as a URL or a data URI.
 
 ### <a id="fjs-d1989"></a>2026-11-06 · `FJS-D1989` — Q2 — Where does a machine's install fetch the Outpost from (0.3) — The release host: `bun add` of `packageHostUrl` (`packages.frontierjs.com`, the GitHub Release asset), the pin held where `ws:pub`'s default `--to tarballs` ships. Amends `FJS-D1773` and `FJS-D1941`: the pin names a version the RELEASE holds, `outpostUnpublished()` and `fli done` ask the release, and 04's *move the pin* follows a tarballs run.
 

@@ -240,3 +240,41 @@ test('vocabulary: every @media width is on the breakpoint scale', function () {
   assert.ok(seen >= 4, 'found ' + seen + ' @media widths — the walk is not reaching src/');
   assert.equal(off.length, 0, '@media width off BREAKPOINTS:\n        ' + off.join('\n        '));
 });
+
+/* ── Every @container width is on the scale ────────────────────────── */
+
+test('vocabulary: every @container width is on the scale', function () {
+  /*
+   * Only a `fjs` container is the package's (tokens.css requires the name), so
+   * only those are graded. The same table as @media plus CONTAINER_STEPS, and
+   * the same under-by-one rule; a rem is read at 16px, as the CSS writes it.
+   */
+  var steps = Object.keys(BREAKPOINTS).map(function (k) { return BREAKPOINTS[k]; })
+    .concat(Object.keys(CONTAINER_STEPS).map(function (k) { return CONTAINER_STEPS[k]; }));
+  var feature = /\(\s*(?:(min|max)-(?:inline-size|width)\s*:\s*([^)]+?)|(?:inline-size|width)\s*(>=|<=|>|<)\s*([^)]+?))\s*\)/g;
+  var seen = 0;
+  var off = [];
+
+  allRules().forEach(function (rule) {
+    if (!(rule instanceof CSSContainerRule)) return;
+    var sheet = rule.parentStyleSheet;
+    if (!sheet || !sheet.href) return;
+    if (rule.containerName !== 'fjs') return;
+    var text = rule.conditionText;
+    var m;
+    feature.lastIndex = 0;
+    while ((m = feature.exec(text))) {
+      seen++;
+      var op = m[1] || m[3];
+      var raw = (m[2] || m[4]).trim();
+      var unit = /^(\d+(?:\.\d+)?)(px|rem)$/.exec(raw);
+      var px = unit && Number(unit[1]) * (unit[2] === 'rem' ? 16 : 1);
+      var under = op === 'max' || op === '<=' || op === '>';
+      var ok = px !== null && px !== undefined && steps.indexOf(px + (under ? 1 : 0)) !== -1;
+      if (!ok) off.push(sheet.href.split('/src/').pop() + ': @container ' + rule.containerName + ' ' + text);
+    }
+  });
+
+  assert.ok(seen >= 3, 'found ' + seen + ' @container widths — the walk is not reaching src/');
+  assert.equal(off.length, 0, '@container width off the scale:\n        ' + off.join('\n        '));
+});

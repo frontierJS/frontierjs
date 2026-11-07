@@ -15,7 +15,7 @@
  */
 
 import { stripVTControlCharacters } from 'node:util'
-import { dirname, relative }    from 'node:path'
+import { basename, dirname, relative } from 'node:path'
 import { mkdir, readdir, readFile, realpath, rename, rm, stat, symlink } from 'node:fs/promises'
 import { existsSync, readFileSync, writeFileSync, renameSync, createWriteStream } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
@@ -325,6 +325,9 @@ const COPY_BRIDGE  = 'fjs-copy0'
 // set, a data-directory removal) would take a copy for the App's release.
 const COPY_LABEL     = 'fjs.copy'
 const COPY_DIR_LABEL = 'fjs.copy.dir'
+// The port its API listens on: nothing else remembers it, and the route needs
+// it again each time the container's address changes.
+const COPY_PORT_LABEL = 'fjs.copy.port'
 // The one header a copy-aware junction sets on every answer. An image on an
 // older framework ignores the variable and runs writable over the copy.
 const READ_ONLY_HEADER = 'x-frontier-read-only'
@@ -365,6 +368,30 @@ const UPLOAD_TIMEOUT_MS = 3_600_000
 // The fetch of an archive a restore names by URL: an hour, as the upload's.
 const FETCH_TIMEOUT_MS = 3_600_000
 const SHA256 = /^[0-9a-f]{64}$/
+
+/** `<app>-<instant>.tar.gz`, the name `backup` gives an archive; `.partial` and
+ *  an image export's `image-…` are not archives. */
+const ARCHIVE_NAME = /^(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)\.tar\.gz$/
+
+/**
+ * Every archive `backup` left in `dir`, oldest first. `at` is the instant in
+ * the name put back into ISO, because a copied archive's mtime is the copy's.
+ * An archive whose app no longer exists is listed like any other: Basecamp
+ * keeps no row for it, and this listing is the only way it is found.
+ */
+export async function archivesIn(dir) {
+  const names = await readdir(dir).catch(err => { if (err.code === 'ENOENT') return []; throw err })
+  const out = []
+  for (const name of names.sort()) {
+    const m = ARCHIVE_NAME.exec(name)
+    if (!m) continue
+    const info = await stat(`${dir}/${name}`).catch(() => null)
+    if (!info?.isFile()) continue
+    const at = m[2].replace(/T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/, 'T$1:$2:$3.$4Z')
+    out.push({ app_id: m[1], name, path: `${dir}/${name}`, bytes: info.size, at })
+  }
+  return out
+}
 
 // A copy's machine loads the release image from the bucket and names it by the
 // archive's sha256. A release image id differs between a containerd image store
@@ -411,6 +438,29 @@ export function createDocker({
   function checkAppId(appId) {
     if (typeof appId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(appId))
       throw new Error(`app_id '${appId}' is not a plain name`)
+  }
+
+  /**
+   * The archive a caller's `path` names, which must be one `backup` wrote for
+   * this app directly under `backupDir` (`FJS-D943`'s fixed root): a signature
+   * proves Basecamp sent the path, not that it is one to read or delete. A
+   * symlink is followed to where it lands. A bare file name is taken under
+   * `backupDir`: once an upload lands the row holds the object key, and the
+   * hub never knew this directory. `file` is null when no such file is there,
+   * checked by the name it was asked by; `root` is null with no `backupDir`.
+   */
+  async function archiveOf(appId, path) {
+    checkAppId(appId)
+    if (typeof path !== 'string' || !path) throw new Error('path is required')
+    const root = await realpath(backupDir).catch(() => null)
+    if (!root) return { root: null, file: null }
+    const asked = path.includes('/') ? path : `${root}/${path}`
+    const file  = await realpath(asked).catch(() => null)
+    const named = file ?? `${await realpath(dirname(asked)).catch(() => dirname(asked))}/${basename(asked)}`
+    const m = ARCHIVE_NAME.exec(basename(named))
+    if (dirname(named) !== root || m?.[1] !== appId)
+      throw new Error(`${path} is not a backup of ${appId} on this machine`)
+    return { root, file }
   }
 
   /** The app's data directory, bind-mounted at its volumePath (`FJS-D1544`).
@@ -759,6 +809,43 @@ export function createDocker({
     const ip = read.stdout?.trim() ?? ''
     if (read.exitCode !== 0 || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) throw new Error(`the copy's container has no address on ${COPY_NETWORK}: ${(read.stderr || ip).trim()}`)
     return ip
+  }
+
+  /** The running copy's `<ipv4>:<port>` on `fjs-copy`, read off the container
+   *  each time, or null when no copy of the App is running. The caller holds
+   *  the copy's chain, so a serve cannot remove the container mid-read. */
+  async function copyDial(appId) {
+    const running = await run(['docker', 'ps', '--filter', `label=${COPY_LABEL}=${appId}`, '--filter', 'status=running', '--format', `{{.Names}}\t{{.Label "${COPY_PORT_LABEL}"}}`])
+    if (running.exitCode !== 0) throw new Error(`docker ps failed (exit ${running.exitCode}): ${(running.stderr ?? '').trim()}`)
+    const [name, port] = String(running.stdout ?? '').split('\n').map(l => l.trim()).filter(Boolean).sort().at(-1)?.split('\t') ?? []
+    return name && port ? `${await copyAddress(name)}:${port}` : null
+  }
+
+  /**
+   * Each running copy's route onto the address its container holds now. A
+   * restart can give a copy another IP on `fjs-copy`, even one another App's
+   * copy had, so the address is read from the container and never kept from
+   * what `serveCopy` answered. Runs in the copy's own chain, so it cannot
+   * read an address a serve is about to remove. A copy with no route moves
+   * nothing; a failure is logged per App.
+   */
+  async function repointCopies({ ingress, log }) {
+    const listed = await run(['docker', 'ps', '--filter', `label=${COPY_LABEL}`, '--filter', 'status=running', '--format', `{{.Label "${COPY_LABEL}"}}`])
+    if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${(listed.stderr ?? '').trim()}`)
+    const apps = new Set(String(listed.stdout ?? '').split('\n').map(line => line.trim()).filter(Boolean))
+    const moves = []
+    for (const appId of apps) {
+      await serially(`${appId}#copy`, async () => {
+        const dial = await copyDial(appId)
+        if (!dial) return
+        const { moved } = await ingress.repointCopy({ appId, dial })
+        for (const m of moved) {
+          log.warn?.(`outpost: app ${appId}'s copy route ${m.id} dialed ${m.from} and its container is on ${m.to} — re-pointed`)
+          moves.push({ appId, copy: true, ...m })
+        }
+      }).catch(err => log.error?.(`outpost: app ${appId}'s copy route was not re-pointed — ${err.message}`))
+    }
+    return moves
   }
 
   /** Any answer carrying the header passes. An answer WITHOUT it is refused
@@ -1574,7 +1661,7 @@ export function createDocker({
       const name = `fjs-copy--${appId}-${Date.now().toString(36)}`
       const started = await run(['docker', 'run', '-d', '--name', name, '--restart', 'unless-stopped',
         '--network', COPY_NETWORK, '--user', '0:0',
-        '--label', `${COPY_LABEL}=${appId}`, '--label', `${COPY_DIR_LABEL}=${dir}`,
+        '--label', `${COPY_LABEL}=${appId}`, '--label', `${COPY_DIR_LABEL}=${dir}`, '--label', `${COPY_PORT_LABEL}=${port}`,
         ...runFlags({}), ...envArgs,
         '--mount', `type=bind,src=${src},dst=${volumePath}`,
         ref, ...config.command ?? []], { env: clientEnv })
@@ -1637,6 +1724,21 @@ export function createDocker({
         await rm(`${path}.partial`, { force: true })
         await rm(path, { force: true })
       }
+    }),
+
+    /**
+     * The running copy's route written again with `host` and `hosts`
+     * (`ingress.routeCopy`), without restaging it: how the App's main
+     * hostnames move onto the copy and back (`IDEAS/read-only-copy.md` 3.1).
+     * Inside the copy's chain, so the dial is the container a serve left.
+     * Neither takes the route out, as a serve without them does.
+     */
+    rerouteCopy: ({ appId, ingress, host = null, hosts = [] }) => serially(`${appId}#copy`, async () => {
+      checkAppId(appId)
+      if (!host && !hosts?.length) return ingress.unrouteCopy({ appId })
+      const dial = await copyDial(appId)
+      if (!dial) throw new Error(`no copy of app ${appId} is running on this machine — refresh it first`)
+      return ingress.routeCopy({ appId, host, hosts, dial })
     }),
 
     /** Every copy of the App removed; the caller unstages the dirs named. */
@@ -1705,22 +1807,15 @@ export function createDocker({
     /**
      * One archive already on this machine, PUT to a URL Basecamp minted: the
      * pull behind a Download button, for an archive no bucket holds. `path`
-     * is a caller's string and the request is signed, but a signature proves
-     * Basecamp sent it, not that the path is one to read, so it must be a
-     * file `backup` wrote for this app, directly under `backupDir`
-     * (`FJS-D943`'s fixed root). Throws a sentence for a refusal, and for a
-     * PUT that did not land, since there is nothing else to answer.
+     * is held to `archiveOf`. Throws a sentence for a refusal, and for a PUT
+     * that did not land, since there is nothing else to answer.
      */
     async sendBackup({ appId, path, uploadUrl }) {
-      checkAppId(appId)
-      if (typeof path !== 'string' || !path) throw new Error('path is required')
       if (typeof uploadUrl !== 'string') throw new Error('upload_url is required')
       checkUploadUrl(uploadUrl)
-      const root = await realpath(backupDir).catch(() => null)
+      const { root, file } = await archiveOf(appId, path)
       if (!root) throw new Error(`${backupDir} does not exist on this machine — it holds no backups`)
-      const file = await realpath(path).catch(() => null)
-      if (!file || dirname(file) !== root || !file.slice(root.length + 1).startsWith(`${appId}-`) || !file.endsWith('.tar.gz'))
-        throw new Error(`${path} is not a backup of ${appId} on this machine`)
+      if (!file) throw new Error(`${path} is no longer on this machine`)
       const info = await stat(file)
       if (!info.isFile()) throw new Error(`${path} is not a file`)
 
@@ -1729,6 +1824,27 @@ export function createDocker({
       const sent = await putFile(uploadUrl, file)
       if (!sent.uploaded) throw new Error(`the upload of ${path} failed: ${sent.upload_error}`)
       return { bytes: info.size, sha256: hash.digest('hex') }
+    },
+
+    /**
+     * One archive deleted, held to `archiveOf`. Answers what it removed: a file
+     * already gone is `removed: false`, so Basecamp can still drop a row whose
+     * archive went another way. It does not join the app's chain: `backup`
+     * writes a new name and renames it in, so no run of it holds this file.
+     */
+    async removeBackup({ appId, path }) {
+      const { file } = await archiveOf(appId, path)
+      if (!file) return { path, removed: false, bytes: 0 }
+      const info = await stat(file)
+      if (!info.isFile()) throw new Error(`${path} is not a file`)
+      await rm(file)
+      return { path: file, removed: true, bytes: info.size }
+    },
+
+    /** Every archive on this machine, whichever app it names. */
+    async listBackups() {
+      const root = await realpath(backupDir).catch(() => null)
+      return { dir: backupDir, archives: root ? await archivesIn(root) : [] }
     },
 
     /** An operator's script, as root over the box. The unit is sandboxed and the
@@ -1808,6 +1924,7 @@ export function createDocker({
           }
         }).catch(err => log.error?.(`outpost: app ${appId}'s route was not re-pointed — ${err.message}`))
       }
+      moves.push(...await repointCopies({ ingress, log }))
       return { moves }
     },
 

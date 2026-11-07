@@ -62,7 +62,7 @@ export function field(spec) {
 
 // ─── lifecycle spec ───────────────────────────────────────────────────────────
 //
-//   'submit: draft -> submitted; reject: [submitted, under_review] -> rejected system'
+//   'submit: draft -> submitted; reject: [submitted, underReview] -> rejected system'
 //
 // The first state named is the one a row is created at. `system` marks a move
 // the application makes rather than a person (`@system` on the move).
@@ -162,7 +162,7 @@ export const ENTITIES = [
       { name: 'form', to: 'Form', required: true },
       { name: 'submitter', to: 'User', actor: 'author' },
     ],
-    lifecycle: lifecycle('submit: draft -> submitted; pickUp: submitted -> under_review; approve: under_review -> approved; reject: under_review -> rejected'),
+    lifecycle: lifecycle('submit: draft -> submitted; pickUp: submitted -> underReview; approve: underReview -> approved; reject: underReview -> rejected'),
   },
   {
     name: 'Note', category: 'capture',
@@ -201,7 +201,7 @@ export const ENTITIES = [
     lifecycles: {
       quote:    lifecycle('send: draft -> sent; view: sent -> viewed system; accept: [sent, viewed] -> accepted; decline: [sent, viewed] -> declined; expire: [sent, viewed] -> expired system'),
       estimate: lifecycle('send: draft -> sent; view: sent -> viewed system; accept: [sent, viewed] -> accepted; decline: [sent, viewed] -> declined; expire: [sent, viewed] -> expired system'),
-      invoice:  lifecycle('send: draft -> sent; pay: [sent, overdue] -> paid; lapse: sent -> overdue system; escalate: overdue -> in_collections; refund: paid -> refunded'),
+      invoice:  lifecycle('send: draft -> sent; pay: [sent, overdue] -> paid; lapse: sent -> overdue system; escalate: overdue -> inCollections; refund: paid -> refunded'),
       contract: lifecycle('send: draft -> sent; view: sent -> viewed system; execute: [sent, viewed] -> executed; decline: [sent, viewed] -> declined; terminate: executed -> terminated'),
       order:    lifecycle('place: draft -> placed; fulfill: placed -> fulfilled; cancel: [draft, placed] -> cancelled'),
     },
@@ -210,7 +210,7 @@ export const ENTITIES = [
     name: 'Offer', category: 'commerce_value',
     desc: 'What is sold to a customer — a service, product, or package they CHOOSE. Imposed charges (cancellation fees, late fees, taxes, discounts) are not Offers: they are inline line items on a Document',
     rules: ['Pricing mode determines required fields', 'Packages compose child offers via a parent link'],
-    fields: F('name text!', 'description longtext', 'price money', 'unit text', 'mode enum(flat,hourly,per_unit) =flat', 'isActive bool =true'),
+    fields: F('name text!', 'description longtext', 'price money', 'unit text', 'mode enum(flat,hourly,perUnit) =flat', 'isActive bool =true'),
     links: [
       { name: 'owner', to: 'User', actor: 'owner', required: true },
       { name: 'parent', to: 'Offer', why: 'the package this offer is part of' },
@@ -220,7 +220,7 @@ export const ENTITIES = [
     name: 'Payment', category: 'commerce_value',
     desc: 'A transfer of value with a timestamp',
     rules: ['Irreversible without explicit refund', 'Auditable always'],
-    fields: F('amount money!', 'method enum(card,bank_transfer,cash,other) =card', 'paidAt datetime system', 'externalRef text system'),
+    fields: F('amount money!', 'method enum(card,bankTransfer,cash,other) =card', 'paidAt datetime system', 'externalRef text system'),
     links: [
       { name: 'document', to: 'Document', why: 'what it settles' },
       { name: 'payer', to: 'Contact', actor: 'subject' },
@@ -248,7 +248,7 @@ export const ENTITIES = [
       { name: 'location', to: 'Location' },
       { name: 'resource', to: 'Resource' },
     ],
-    lifecycle: lifecycle('confirm: scheduled -> confirmed; start: confirmed -> in_progress; complete: in_progress -> complete; cancel: [scheduled, confirmed] -> cancelled; markNoShow: confirmed -> no_show'),
+    lifecycle: lifecycle('confirm: scheduled -> confirmed; start: confirmed -> inProgress; complete: inProgress -> complete; cancel: [scheduled, confirmed] -> cancelled; markNoShow: confirmed -> noShow'),
   },
   {
     name: 'Task', category: 'service_scheduling',
@@ -259,7 +259,7 @@ export const ENTITIES = [
       { name: 'assignee', to: 'User', actor: 'performer' },
       { name: 'coordinator', to: 'User', actor: 'coordinator' },
     ],
-    lifecycle: lifecycle('assign: backlog -> assigned; accept: assigned -> accepted; decline: assigned -> backlog; start: accepted -> in_progress; complete: in_progress -> completed; cancel: [backlog, assigned, accepted, in_progress] -> cancelled'),
+    lifecycle: lifecycle('assign: backlog -> assigned; accept: assigned -> accepted; decline: assigned -> backlog; start: accepted -> inProgress; complete: inProgress -> completed; cancel: [backlog, assigned, accepted, inProgress] -> cancelled'),
   },
   {
     name: 'Resource', category: 'service_scheduling',
@@ -284,7 +284,7 @@ export const ENTITIES = [
       { name: 'owner', to: 'User', actor: 'owner', required: true },
       { name: 'location', to: 'Location' },
     ],
-    lifecycle: lifecycle('deploy: acquired -> in_service; service: in_service -> maintenance; reinstate: maintenance -> in_service; retire: in_service -> retired; dispose: [acquired, in_service, maintenance, retired] -> disposed'),
+    lifecycle: lifecycle('deploy: acquired -> inService; service: inService -> maintenance; reinstate: maintenance -> inService; retire: inService -> retired; dispose: [acquired, inService, maintenance, retired] -> disposed'),
   },
 
   // ── communication ──
@@ -292,7 +292,7 @@ export const ENTITIES = [
     name: 'Message', category: 'communication',
     desc: 'A single piece of communication, point-to-point or broadcast. A conversation is a chain of Messages through a parent link, not a separate entity',
     rules: ['Has a sender and recipient(s)', 'Channel-specific format', 'Threading is a parent link; no Thread entity'],
-    fields: F('subject text', 'body longtext!', 'channel enum(in_app,email,sms) =in_app', 'sentAt datetime system'),
+    fields: F('subject text', 'body longtext!', 'channel enum(inApp,email,sms) =inApp', 'sentAt datetime system'),
     links: [
       { name: 'sender', to: 'User', actor: 'author', required: true },
       { name: 'recipient', to: 'User', actor: 'subject' },

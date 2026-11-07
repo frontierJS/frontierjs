@@ -811,6 +811,24 @@ export const CHECKS = {
       if (literal(m.move) || literal(m.to)) continue
       const over = served.get(m.model)
       if (!over) continue
+      if (m.system) {
+        // Junction leaves a `@system` move out of the methods it serves (a
+        // caller cannot make it), so a service over the model is NOT a way to
+        // reach it -- only a method the app wrote for it is. Booking.cancel
+        // shipped with a service and no code, and answered 404 to everyone.
+        const authored = new RegExp(`(?:\\basync\\s+|^\\s*|[,{]\\s*)${m.move}\\s*(?:\\(|:\\s*(?:async\\b|\\())`, 'm')
+        if (over.some(svc => authored.test(code[files.indexOf(svc.path)]))) continue
+        findings.push({
+          file: schema.path, line: m.line,
+          message: `${m.model}.${m.move} -> ${m.to} is @system and nothing under api/ runs it -- no ` +
+                   `'${m.move}' or '${m.to}' passed to transition(), update() or asSystem(), and no method ` +
+                   `named ${m.move} in ${over.map(svc => basename(svc.path)).join(', ')}. A @system move is ` +
+                   `not served as a service method and no user can make it, so nobody can ever ` +
+                   `${m.move}. Write the code that runs it (a service method calling ` +
+                   `transition(id, '${m.move}', { system: true }), or a job), or drop @system.`,
+        })
+        continue
+      }
       if (over.some(svc => svc.servesAll)) continue
       const gate = m.gate ? ` @gate(${m.gate})` : ''
       findings.push({
@@ -1571,7 +1589,8 @@ function declaredTransitions({ text }) {
       const gate  = clause.match(/@gate\s*\(\s*['"`]?([A-Za-z0-9_]+)['"`]?\s*\)/)
       const from  = clause.slice(named ? clause.indexOf(':') + 1 : 0, clause.indexOf('->'))
         .match(/[A-Za-z_*][A-Za-z0-9_]*|\*/g) ?? []
-      out.push({ model, move: named ? named[1] : to[1], from, to: to[1], gate: gate ? gate[1] : null, line: i + 1 })
+      out.push({ model, move: named ? named[1] : to[1], from, to: to[1], gate: gate ? gate[1] : null,
+                 system: /@system\b/.test(clause), line: i + 1 })
     }
     i = j
   }

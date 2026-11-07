@@ -19,14 +19,14 @@
 // `@@gate(5.8.8.8)` and `take` at ADMINISTRATOR: an administrator reads and
 // asks, and the outcome columns are the service's, as `Backup`'s are.
 
-import { createService, BadRequest, NotFound, $ }            from '@frontierjs/junction'
+import { createService, BadRequest, Conflict, NotFound, $ }  from '@frontierjs/junction'
 import { LEVELS }                                          from '@frontierjs/litestone'
 import { sessionScope, getPagination, WORKSPACE_QUERY }       from '../../core/hooks.ts'
 import { db, getScoped, actor, callerOrder, callerSelect }   from '../../core/resource.ts'
 import { executorOn, isExecutor }                            from '../../providers/executor.ts'
 import { takeAppBackup }                                     from '../../jobs/app-backup-run.job.ts'
 import { queueAppArchiveRescan }                             from '../../jobs/app-archive-rescan.job.ts'
-import { bucketDownload, isRemote }                          from '../../domain/backup/backup-archives.ts'
+import { bucketDownload, deleteRemote, isRemote, removeOnMachine } from '../../domain/backup/backup-archives.ts'
 import { mintUploadUrl }                                     from '../../plugins/app-archive-upload.ts'
 import { mintPullUrls }                                      from '../../plugins/app-archive-pull.ts'
 import { BODY_CEILING_BYTES }                                from '../../plugins/signed-link.ts'
@@ -62,6 +62,20 @@ async function pullFromMachine(row: AppBackup, app: { id: string }, name: string
   return { url: urls.get, name }
 }
 
+/**
+ * The machine's copy of an archive deleted, by its file name: once an upload
+ * lands the row holds the object key. Answers why not, or null once it is
+ * gone. A machine whose row is gone took its archives along.
+ */
+async function removeFromMachine(row: AppBackup, name: string): Promise<string | null> {
+  const server = await db().asSystem().server.findFirst({ where: { id: row.serverId! } })
+  if (!server) return null
+  if (server.status !== 'online')
+    return `${server.name} is ${server.status}, so its copy cannot be deleted — try again when it is online`
+  const done = await removeOnMachine($.app, server, row.appId, name)
+  return 'error' in done ? done.error : null
+}
+
 export default createService({
   name:  'appBackups',
   scope: keyScope('appBackups'),
@@ -71,9 +85,11 @@ export default createService({
   // `create`, `update` and `remove` are absent on purpose: the row is what the
   // machine reported, and the base would otherwise answer all three with
   // whatever the caller wrote. `take` writes at SYSTEM, so a model gate on
-  // `create` could never grade it and the method states its own.
+  // `create` could never grade it and the method states its own; `discard`
+  // deletes the archive before the row, which a base `remove` would not.
   methods: ['find', 'get',
     { method: 'take',   gate: LEVELS.ADMINISTRATOR, input: 'AppBackupTake' },
+    { method: 'discard', gate: LEVELS.ADMINISTRATOR },
     { method: 'rescan', gate: LEVELS.ADMINISTRATOR, input: 'AppBackupRescan' },
     { method: 'download', gate: LEVELS.ADMINISTRATOR, read: true },
     { method: 'upload',   gate: LEVELS.ADMINISTRATOR, input: 'AppBackupUpload' }],
@@ -158,6 +174,42 @@ export default createService({
     $.app.logger.info('app backup link minted', { backupId: row.id, appId: app.id, by: actor() })
     if (keptOnMachine) return pullFromMachine(row, app, name)
     return bucketDownload($.app, row, name)
+  },
+
+  // ── discard — POST /app-backups/{id}  X-Service-Method: discard ──
+  /** Delete an archive, then its row (`FJS-D2012`): the bucket's object, then
+   *  the machine's file, the only copy of a machine-kept archive and a warm
+   *  one of an uploaded archive. A delete that fails keeps the row and answers
+   *  409 with why; a warm copy left behind is listed by `servers.archives`. */
+  async discard() {
+    const row = await db().appBackup.findFirst({ where: { id: $.id as string } })
+    const hub = (await hubIds(db().asSystem())).app
+    if (!row || row.appId === hub) throw new NotFound(`App backup '${$.id}' not found`)
+    if (row.status === 'pending' || row.status === 'running')
+      throw new Conflict(`That backup is still ${row.status} — wait for it to finish.`)
+
+    // The newest good archive is the app's way back, as the hub's is (`FJS-3902`).
+    if (row.status === 'success') {
+      const newest = await db().asSystem().appBackup.findFirst({
+        where: { appId: row.appId, status: 'success' }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { id: true },
+      })
+      if (newest?.id === row.id) throw new Conflict(
+        `That is the app's newest good backup, and the way back if its data is lost — take another and discard this one once it succeeds.`)
+    }
+
+    const remote = isRemote(row)
+    if (remote) {
+      const kept = await deleteRemote($.app, row)
+      if (kept) throw new Conflict(`The backup was kept: ${kept}`)
+    }
+    const name = row.location?.split('/').pop()
+    if (row.status === 'success' && row.serverId && name?.endsWith('.tar.gz')) {
+      const left = await removeFromMachine(row, name)
+      if (left && !remote) throw new Conflict(`The backup was kept: ${left}`)
+      if (left) $.app.logger.warn('app backup warm copy left on its machine', { backupId: row.id, why: left })
+    }
+    await db().asSystem().appBackup.delete({ where: { id: row.id } })
+    return row
   },
 
   // ── upload — POST /app-backups  X-Service-Method: upload ──

@@ -62,6 +62,7 @@
     inline-size: 100%; min-inline-size: var(--tile-min, 12rem); padding: var(--space-3xs) var(--space-xs);
     border: 0; border-radius: var(--card-radius); background: none; font: inherit; color: inherit; cursor: pointer; text-align: start;
   }
+  @media (max-width: 40rem) { .atlas-rings-key { min-block-size: 2rem; } }
   .atlas-rings-key[aria-pressed='true'] { background: var(--tint-surface); font-weight: 600; }
   .atlas-rings-dot { inline-size: var(--space-xs); block-size: var(--space-xs); border-radius: 50%; background: var(--tone-ink); }
 </style>

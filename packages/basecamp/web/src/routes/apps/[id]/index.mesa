@@ -1486,7 +1486,7 @@ title: App
 
   {#if tab === 'backups'}
     <AppBackups app={app} />
-    {#if session.level >= 5}<ReadOnlyCopy app={app} />{/if}
+    <ReadOnlyCopy app={app} />
   {/if}
 
   {#if tab === 'live'}

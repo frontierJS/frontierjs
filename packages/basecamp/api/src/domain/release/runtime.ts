@@ -60,6 +60,22 @@ export function runtimeFor(snapshot: Record<string, unknown>, service: Record<st
  *  Outpost reads a host whose first label is the app id as this name. */
 export const ingressName = (appId: string, zone: string) => `${appId}.${zone.trim().toLowerCase().replace(/\.$/, '')}`
 
+/** An App's read-only copy's address, one label under the ingress zone like
+ *  the ingress name (`FJS-D1982`), so the workspace's wildcard covers it. */
+export const copyName = (appId: string, zone: string) => ingressName(`${appId}-copy`, zone)
+
+/**
+ * The copy's address when its machine should answer it, or null: the rule
+ * `answeredIngressName` keeps, that no name is served before the workspace
+ * holds its `*.<zone>` wildcard (`FJS-D1954`).
+ */
+export async function copyAddressOf(sys: any, appId: string): Promise<string | null> {
+  const app = await sys.app.findFirst({ where: { id: appId }, withDeleted: true, select: { workspaceId: true } }) as { workspaceId: string } | null
+  const ws  = app && await sys.workspace.findFirst({ where: { id: app.workspaceId }, select: { ingressZone: true, ingressCertSecretId: true } }) as
+    { ingressZone: string | null, ingressCertSecretId: string | null } | null
+  return ws?.ingressZone && ws.ingressCertSecretId ? copyName(appId, ws.ingressZone) : null
+}
+
 /**
  * The App's ingress name when Caddy should answer it, or null. Answered only
  * while `isIngressNamePublished` is on and the workspace holds its `*.<zone>`
@@ -175,6 +191,12 @@ export async function routedPaths(db: any, appId: string): Promise<{ host: strin
     .sort((a, b) => (a.host + a.prefix).localeCompare(b.host + b.prefix))
 }
 
+/** The App's read-only copy with its machine while it serves the main
+ *  address, or null. */
+export async function copyServingMain(sys: any, appId: string): Promise<{ serverId: string; server: { name: string | null; status: string; ipAddress: string | null } | null } | null> {
+  return sys.appCopy.findFirst({ where: { appId, isServingMainAddress: true }, include: { server: true } })
+}
+
 /**
  * The addresses an app's INGRESS RECORD holds (`FJS-D561`): each server this
  * app has a `running` placement on that is `online` — the executor's rule for
@@ -184,8 +206,21 @@ export async function routedPaths(db: any, appId: string): Promise<{ host: strin
  * has deployed to yet is `unknown`, and naming its machine would send traffic
  * to a Caddy with no route. Sorted and unique, because two replicas on one
  * machine are one address and the drift read compares this as a set.
+ *
+ * While the App's read-only copy serves its main address, the record holds
+ * the copy's machine alone (`IDEAS/read-only-copy.md` 3.1), whatever the
+ * placements say, so a release landing or a machine coming back does not
+ * move users off the copy before the switch is turned back.
  */
 export async function servingAddresses(db: any, appId: string): Promise<string[]> {
+  const copy = await copyServingMain(db.asSystem(), appId)
+  if (copy) return copy.server?.status === 'online' && copy.server.ipAddress ? [String(copy.server.ipAddress)] : []
+  return placementAddresses(db, appId)
+}
+
+/** `servingAddresses` from the App's own placements, the copy aside: where
+ *  switching the main address back would point the record. */
+export async function placementAddresses(db: any, appId: string): Promise<string[]> {
   const rows = await db.asSystem().appServer.findMany({
     where: { appId, status: 'running' }, include: { server: true },
   })
@@ -202,6 +237,18 @@ export async function servingAddresses(db: any, appId: string): Promise<string[]
  * that was up while its IP address was the thing unset.
  */
 export async function servingRefusal(db: any, appId: string): Promise<string> {
+  const copy = await copyServingMain(db.asSystem(), appId)
+  if (copy) {
+    const name = `'${copy.server?.name ?? copy.serverId}'`
+    return copy.server?.status !== 'online'
+      ? `the read-only copy serves the main address and its machine ${name} is ${copy.server?.status ?? 'missing'}`
+      : `the read-only copy serves the main address and its machine ${name} has no IP address recorded`
+  }
+  return placementRefusal(db, appId)
+}
+
+/** Why `placementAddresses` is empty. */
+export async function placementRefusal(db: any, appId: string): Promise<string> {
   const rows = await db.asSystem().appServer.findMany({ where: { appId }, include: { server: true } }) as any[]
   const named = (ps: any[]) => [...new Set(ps.map(p => `'${p.server?.name ?? p.serverId}'`))].join(', ')
   if (!rows.length) return 'the app is placed on no server — place it on one, then deploy'

@@ -10,6 +10,8 @@
 //   ingressStep  one App's ingress record from `ingress:dns`, internal: written
 //             while the App publishes its ingress name, removed when it stops
 //             and no Domain CNAMEs to it
+//   copyStep  one App's read-only copy's address from `app-copy:dns`, internal:
+//             written to the copy's machine while its `AppCopy` row exists
 //
 // Nothing here is stored. A zone and a record are the vendor's to state, and
 // the only copy that cannot drift is the one that is not kept — the catalog
@@ -39,9 +41,9 @@ import { createService, NotFound, BadRequest, BadGateway, Conflict, $ } from '@f
 import { LEVELS }                 from '@frontierjs/litestone'
 import { sessionScope, internalOnly, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws }                 from '../../core/resource.ts'
-import { servingAddresses, servingRefusal, ingressName } from '../../domain/release/runtime.ts'
+import { servingAddresses, servingRefusal, ingressName, copyName } from '../../domain/release/runtime.ts'
 import { actsAsApp }              from '../../core/gate.ts'
-import { edgeConnectorFor, edgeProviders, appMark, domainMark } from '../../providers/edge/index.ts'
+import { edgeConnectorFor, edgeProviders, appMark, domainMark, copyMark } from '../../providers/edge/index.ts'
 import { targetFor }              from '../../providers/compute/index.ts'
 import { sendVia }                from '../../providers/compute/accounts.ts'
 import type { EdgeConnector, EdgeRecord, EdgeZone } from '../../providers/edge/index.ts'
@@ -64,7 +66,7 @@ const SERVING = new Set(['A', 'AAAA', 'CNAME'])
 const fqdn = (name: string) => name.trim().toLowerCase().replace(/\.$/, '')
 
 /** A zone, and the account that can write it. */
-interface ZoneAt { account: EdgeAccount; connector: EdgeConnector; send: AccountSend; zone: EdgeZone }
+export interface ZoneAt { account: EdgeAccount; connector: EdgeConnector; send: AccountSend; zone: EdgeZone }
 
 /**
  * This workspace's edge accounts — the `providerKey` Secrets at a vendor this
@@ -72,11 +74,11 @@ interface ZoneAt { account: EdgeAccount; connector: EdgeConnector; send: Account
  * entry share, so *is edge configured* and *which zones are there* cannot
  * disagree about which rows count.
  */
-export async function edgeAccounts(workspaceId: string = ws()): Promise<EdgeAccount[]> {
+export async function edgeAccounts(workspaceId: string = ws(), client: any = db()): Promise<EdgeAccount[]> {
   const kinds = edgeProviders().map(p => p.kind)
   // The REQUEST's client elevated, not the app's: it keeps the caller's
   // tenant, where the app client's bypass would read every tenant.
-  const rows  = await db().asSystem().secret.findMany({
+  const rows  = await client.asSystem().secret.findMany({
     where:   { workspaceId, kind: 'providerKey', providerKind: { in: kinds } },
     select:  { id: true, name: true, providerKind: true, verifiedAt: true },
     orderBy: { name: 'asc' },
@@ -127,9 +129,9 @@ async function account(id: unknown): Promise<EdgeAccount> {
   return found
 }
 
-const sendFor = (a: EdgeAccount) => {
+const sendFor = (a: EdgeAccount, app: App = $.app) => {
   const connector = edgeConnectorFor(a.providerKind)!
-  return { connector, send: sendVia($.app, targetFor(connector.kind, a.id)) }
+  return { connector, send: sendVia(app, targetFor(connector.kind, a.id)) }
 }
 
 /** The name of a zone an edge account opens, as the vendor answers it -- what
@@ -189,12 +191,12 @@ async function ingressZone(accounts: EdgeAccount[]): Promise<ZoneAt | null> {
 
 /** The connected zone a hostname lives in — the LONGEST zone name it ends
  *  with, so `a.shop.example.test` belongs to `shop.example.test` where both
- *  are connected. Null when no account opens one. */
-async function zoneOf(accounts: EdgeAccount[], hostname: string): Promise<ZoneAt | null> {
+ *  are connected. Null when no account opens one. A job passes its `app`. */
+export async function zoneOf(accounts: EdgeAccount[], hostname: string, app: App = $.app): Promise<ZoneAt | null> {
   const host = fqdn(hostname)
   let best: ZoneAt | null = null
   for (const account of accounts) {
-    const { connector, send } = sendFor(account)
+    const { connector, send } = sendFor(account, app)
     for (const zone of await connector.zones(send)) {
       const apex = fqdn(zone.name)
       if ((host === apex || host.endsWith(`.${apex}`)) && apex.length > fqdn(best?.zone.name ?? '').length)
@@ -299,6 +301,38 @@ async function pushIngress(appId: string) {
   }
 }
 
+// ── pushCopy — one App's read-only copy's address ───────────────────
+//
+// The `AppCopy` row is the copy being on, so the record follows the row: an A
+// to the copy's machine while there is one, removed once the row or the App is
+// gone. A move rewrites it before the new machine has served, the same gap the
+// refresh the move queues closes. A machine with no IP recorded is not-yet, and
+// the record stays where it last pointed.
+async function pushCopy(appId: string) {
+  const sys  = $.app.db!.asSystem()
+  const row  = await sys.app.findFirst({ where: { id: appId }, withDeleted: true, select: { deletedAt: true } }) as { deletedAt: string | null } | null
+  if (!row) throw new NotFound(`App '${appId}' not found`)
+  const copy = row.deletedAt ? null : await sys.appCopy.findFirst({ where: { appId }, include: { server: true } }) as
+    { server: { name: string | null; ipAddress: string | null } | null } | null
+  try {
+    const ingress = await ingressZone(await edgeAccounts())
+    if (!ingress) throw new NotYet(NO_INGRESS)
+    const name = copyName(appId, ingress.zone.name)
+    if (!copy) {
+      const removed = await ingress.connector.deleteRecords(ingress.send, ingress.zone.id, [{ type: 'A', name, mark: copyMark(appId) }])
+      return { appId, name, removed }
+    }
+    const address = copy.server?.ipAddress
+    if (!address)
+      throw new NotYet(`${name} is not published: machine '${copy.server?.name ?? '?'}' has no IP address recorded. A record already there is kept where it last pointed`)
+    const records = await ingress.connector.setRecords(ingress.send, ingress.zone.id, copyMark(appId), [{ type: 'A', name, content: address }])
+    return { appId, name, addresses: [address], records }
+  } catch (err) {
+    if (err instanceof Conflict || err instanceof NotYet) throw err
+    throw new BadGateway(why(err))
+  }
+}
+
 /** A deleted Domain's CNAME, removed -- the one carrying its mark, and no
  *  other. The App's ingress record stays while the App lives: it is the App's,
  *  and another of its Domains may point at it. */
@@ -372,6 +406,7 @@ export default createService({
     // and `internalOnly` keeps the method off the wire either way.
     { method: 'syncStep', gate: 0 },
     { method: 'ingressStep', gate: 0 },
+    { method: 'copyStep', gate: 0 },
   ],
 
   // ── zones ──────────────────────────────────────────────────────────
@@ -448,6 +483,10 @@ export default createService({
     const foreign = new Set(serving.filter(r => !r.mark).map(r => fqdn(r.name)))
     const liveDomain = new Set(domains.map(d => d.id))
     const liveApp    = new Set(apps.map(x => x.id))
+    // `AppCopy` is read at 5; which Apps have one is not what that gate guards.
+    const copied     = new Set((await db().asSystem().appCopy.findMany({
+      where: { appId: { in: [...liveApp] } }, select: { appId: true },
+    }) as { appId: string }[]).map(c => c.appId))
 
     // An ingress record's addresses against where its App runs — one read
     // per App marked in this zone, which is the ingress zone or none.
@@ -483,7 +522,8 @@ export default createService({
       missing,
       conflicts: inZone.filter(d => foreign.has(fqdn(d.hostname))),
       orphans:   records.filter(r =>
-        (r.mark?.domainId && !liveDomain.has(r.mark.domainId)) || (r.mark?.appId && !liveApp.has(r.mark.appId))),
+        (r.mark?.domainId && !liveDomain.has(r.mark.domainId)) || (r.mark?.appId && !liveApp.has(r.mark.appId))
+        || (r.mark?.copyOf && !copied.has(r.mark.copyOf))),
       stale,
     }
   },
@@ -554,15 +594,33 @@ export default createService({
     }
   },
 
+  // ── copyStep — the `app-copy:dns` job's own push ─────────────────
+  async copyStep() {
+    const id     = String($.id)
+    const caller = !actsAsApp($.user)
+    const row    = await (caller ? db() : $.app.db!.asSystem()).app.findFirst({
+      where: caller ? { id, workspaceId: ws() } : { id }, withDeleted: true, select: { id: true, workspaceId: true },
+    }) as { id: string; workspaceId: string } | null
+    if (!row) throw new NotFound(`App '${id}' not found`)
+    if (!caller) $.locals.workspaceId = row.workspaceId
+    try {
+      return await pushCopy(row.id)
+    } catch (err) {
+      if (err instanceof NotYet) return { appId: row.id, skipped: err.message }
+      throw err
+    }
+  },
+
   hooks: {
     before: {
-      // `syncStep` and `ingressStep` are also the app's own (a machine
-      // moving), where there is no session to authenticate — so they are
-      // scoped only when a caller IS there, and `internalOnly` keeps them off
-      // the wire either way.
-      all: [sessionScope({ except: ['syncStep', 'ingressStep'] })],
+      // `syncStep`, `ingressStep` and `copyStep` are also the app's own (a
+      // machine moving), where there is no session to authenticate — so they
+      // are scoped only when a caller IS there, and `internalOnly` keeps them
+      // off the wire either way.
+      all: [sessionScope({ except: ['syncStep', 'ingressStep', 'copyStep'] })],
       syncStep:    [internalOnly(), scopedWhenACaller],
       ingressStep: [internalOnly(), scopedWhenACaller],
+      copyStep:    [internalOnly(), scopedWhenACaller],
     },
   },
 })

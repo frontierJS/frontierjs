@@ -182,3 +182,71 @@ describe('a snippet the parent passes, reading the PARENT\'s state', () => {
     expect(text(c, '.own') + '|' + text(c, '.badge')).toBe('7|7,0')
   })
 })
+
+// A snippet whose frame the CHILD decides, from a prop the parent passes. The
+// kit Shell draws its frame under {#if framed}, framed derived from `user`, and
+// an app's foot snippet reads session.user.name unguarded because the frame
+// only exists for a signed-in person. Signing out set session.user to null and
+// the foot redrew from it before the frame dropped: ELA's Logout landed on the
+// error boundary (FJS-4090). A parent's {#if} has to settle before the
+// content it guards redraws, wherever the value it tests was derived.
+describe('a frame the child decides from a prop, over a snippet that reads the store', () => {
+  const FRAMED = (test) => `<script>
+  export let user = null
+  export let foot = null
+  $: framed = Boolean(user)
+</script>
+{#if ${test}}<footer class="foot">{@render foot?.()}</footer>{/if}`
+
+  const signOut = async (test) => {
+    const Shell = await build(FRAMED(test), 'Shell.mesa')
+    const store = { user: { name: 'ada' } }
+    const Parent = await build(`<script>
+  import Child from './Shell.mesa'
+  import { store } from './store.js'
+  $: store.user
+</script>
+<Child user={store.user}>
+  {#snippet foot()}<span class="who">{store.user.name}</span>{/snippet}
+</Child>`, 'Parent.mesa', Shell, store)
+    const c = mount(Parent)
+    expect(text(c, '.foot .who')).toBe('ada')
+    const errors = []
+    const was = console.error
+    console.error = (...a) => { errors.push(a.map(String).join(' ')) }
+    let thrown = null
+    try { $rt.watchProxy(store).user = null; $rt.flushSync() }
+    catch (e) { thrown = e }
+    finally { console.error = was }
+    return { c, thrown, errors }
+  }
+
+  it('CONTROL: one component, the guard and the read on the same source', async () => {
+    const store = { user: { name: 'ada' } }
+    const Own = await build(`<script>
+  import { store } from './store.js'
+  $: store.user
+</script>
+{#if store.user}<footer class="foot"><span class="who">{store.user.name}</span></footer>{/if}`, 'Own.mesa', null, store)
+    const c = mount(Own)
+    const errors = []
+    const was = console.error
+    console.error = (...a) => { errors.push(a.map(String).join(' ')) }
+    try { $rt.watchProxy(store).user = null; $rt.flushSync() }
+    finally { console.error = was }
+    expect(errors).toEqual([])
+    expect(c.querySelector('.foot')).toBe(null)
+  })
+  it('{#if user}, the prop itself', async () => {
+    const { c, thrown, errors } = await signOut('user')
+    expect(thrown).toBe(null)
+    expect(errors).toEqual([])
+    expect(c.querySelector('.foot')).toBe(null)
+  })
+  it('{#if framed}, a value the child derives from the prop', async () => {
+    const { c, thrown, errors } = await signOut('framed')
+    expect(thrown).toBe(null)
+    expect(errors).toEqual([])
+    expect(c.querySelector('.foot')).toBe(null)
+  })
+})

@@ -387,7 +387,7 @@ const AGENT_RULES = [
     text: 'A Resource is a `.mesa` file in `src/resources/`, one per file and named for its model (`Lead.mesa`). '
         + 'Its `<script module>` calls `createResource` with, and exports, the model\'s camelCase plural (`export const leads = createResource(\'leads\')`; a one-row model, its `@id` defaulting to a constant, stays singular); '
         + 'its markup, when present, is the model\'s default form.' },
-  { needs: '@frontierjs/css', rules: ['css-token-undefined', 'css-raw-literal', 'css-raw-utility', 'css-class-collision'],
+  { needs: '@frontierjs/css', rules: ['css-token-undefined', 'css-raw-literal', 'css-width-off-scale', 'css-raw-utility', 'css-class-collision'],
     text: 'Style with what a thing is and what is true about it — `class="btn outlined danger"` — never with a '
         + 'color, a size or a spacing value.' },
 ]

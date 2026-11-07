@@ -87,6 +87,94 @@ test('layout: a Grid inside a centered Stack keeps the full width', function () 
   cleanup();
 });
 
+/* ── Switcher ─────────────────────────────────────────────────────── */
+
+function switcherBoxes(width, attrs, kids) {
+  var host = el('<div style="inline-size: ' + width + 'px"><div class="switcher"' + attrs + '>' +
+    kids + '</div></div>', '.switcher');
+  return Array.prototype.map.call(host.children, function (c) { return c.getBoundingClientRect(); });
+}
+
+function switcherSideBySide(r) { return r[0].top === r[1].top && r[1].left > r[0].right }
+function switcherStacked(r, width) {
+  return r[1].top >= r[0].bottom && Math.round(r[0].width) === width && Math.round(r[1].width) === width
+}
+
+test('layout: a Switcher sits side by side above --switch-at and stacks below it', function () {
+  var kids = '<div>a</div><div>b</div>';
+  var wide = switcherBoxes(900, ' style="--switch-at: 48rem"', kids);
+  var narrow = switcherBoxes(500, ' style="--switch-at: 48rem"', kids);
+  assert.ok(switcherSideBySide(wide), 'two children share a row in 900px');
+  assert.ok(switcherStacked(narrow, 500), 'two children stack in 500px at ' +
+    Math.round(narrow[0].width) + 'px and ' + Math.round(narrow[1].width) + 'px');
+  assert.ok(switcherSideBySide(switcherBoxes(500, ' style="--switch-at: 20rem"', kids)),
+    'a lower --switch-at keeps the same 500px side by side');
+  cleanup();
+});
+
+test('layout: a Switcher measures its container, not the viewport', function () {
+  assert.ok(window.innerWidth > 500, 'the viewport is wider than the wrapper (' + window.innerWidth + 'px)');
+  var r = switcherBoxes(500, ' style="--switch-at: 40rem"', '<div>a</div><div>b</div>');
+  assert.ok(switcherStacked(r, 500), 'a 500px wrapper stacks at 40rem in a ' + window.innerWidth + 'px viewport');
+  cleanup();
+});
+
+test('layout: --fr weights a Switcher child', function () {
+  var r = switcherBoxes(900, '', '<div style="--fr: 2">a</div><div style="--fr: 1">b</div>');
+  var gap = r[1].left - r[0].right;
+  var ratio = r[0].width / r[1].width;
+  assert.ok(switcherSideBySide(r) && Math.abs(ratio - 2) < 0.05,
+    'widths ' + Math.round(r[0].width) + ' : ' + Math.round(r[1].width) + ' (gap ' + Math.round(gap) + ')');
+  cleanup();
+});
+
+test('layout: --side makes a Switcher child a rail and the other fills the rest', function () {
+  var kids = '<div style="--side: 16rem">rail</div><div>main</div>';
+  var wide = switcherBoxes(900, '', kids);
+  var gap = wide[1].left - wide[0].right;
+  assert.ok(switcherSideBySide(wide) && Math.round(wide[0].width) === 256, 'rail is ' + Math.round(wide[0].width) + 'px');
+  assert.equal(Math.round(wide[1].width), 900 - 256 - Math.round(gap), 'main takes the remainder');
+  var narrow = switcherBoxes(500, '', kids);
+  assert.ok(switcherStacked(narrow, 500), 'rail and main stack full width in 500px: ' +
+    Math.round(narrow[0].width) + ', ' + Math.round(narrow[1].width));
+  cleanup();
+});
+
+test('layout: a rail is a child with an inline --side:, so a --sidebar-width or a class does not make one', function () {
+  var style = el('<style>.switcher-rail-by-class { --side: 16rem }</style>');
+  var r = switcherBoxes(900, '', '<div style="--sidebar-width: 16rem">a</div><div>b</div>');
+  assert.ok(switcherSideBySide(r) && Math.abs(r[0].width - r[1].width) < 1,
+    'an inline --sidebar-width is not a --side: both children grow, measured ' +
+    Math.round(r[0].width) + ' and ' + Math.round(r[1].width));
+  var c = switcherBoxes(900, '', '<div class="switcher-rail-by-class">a</div><div>b</div>');
+  assert.ok(switcherSideBySide(c) && c[0].width > 256 + 1,
+    'a --side set from a stylesheet is the floor, and the child still grows: ' + Math.round(c[0].width) + 'px');
+  style.remove();
+  cleanup();
+});
+
+test('layout: a Switcher inside a centered Stack keeps the full width and stays side by side', function () {
+  var stack = el('<div class="stack align-center" style="inline-size: 900px">' +
+    '<div class="switcher" style="--switch-at: 48rem"><div>a</div><div>b</div></div></div>');
+  var sw = stack.querySelector('.switcher');
+  var r = Array.prototype.map.call(sw.children, function (c) { return c.getBoundingClientRect(); });
+  assert.equal(Math.round(sw.getBoundingClientRect().width), 900,
+    'a centered Stack shrinks its children to content, and 100% in the basis then measures the shrunken box');
+  assert.ok(switcherSideBySide(r), 'two children share a row in a 900px centered Stack');
+  cleanup();
+});
+
+test('layout: a Switcher inside a rail does not hand its children the rail width', function () {
+  var host = el('<div style="inline-size: 900px"><div class="switcher">' +
+    '<div style="--side: 16rem"><div class="switcher" style="--switch-at: 1rem"><div>x</div><div>y</div></div></div>' +
+    '<div>main</div></div></div>');
+  var inner = host.querySelectorAll('.switcher .switcher > div');
+  var a = inner[0].getBoundingClientRect(), b = inner[1].getBoundingClientRect();
+  assert.ok(a.top === b.top && a.width < 256 / 2 + 1, 'inner children measure ' +
+    Math.round(a.width) + 'px and ' + Math.round(b.width) + 'px inside a 256px rail');
+  cleanup();
+});
+
 /* ── The align axis ───────────────────────────────────────────────── */
 
 test('align: a centered region centers its text, a Stack child and a Cluster', function () {
@@ -171,11 +259,55 @@ test('layout: a chip holding a sentence wraps with .wrap and widens its box with
 
 /* ── [hidden] ─────────────────────────────────────────────────────── */
 
-test('layout: a hidden Stack, Cluster, Group, Center, Split or Grid is not displayed', function () {
-  ['stack', 'cluster', 'group', 'center', 'split', 'grid'].forEach(function (term) {
+test('layout: a hidden Stack, Cluster, Group, Center, Split, Grid or Switcher is not displayed', function () {
+  ['stack', 'cluster', 'group', 'center', 'split', 'grid', 'switcher'].forEach(function (term) {
     var node = el('<div class="' + term + '" hidden><span>x</span></div>');
     assert.equal(style(node, 'display'), 'none',
       '.' + term + ' states a display, which beats the UA rule behind [hidden]');
     cleanup();
   });
+});
+
+/* ── Spare ────────────────────────────────────────────────────────── */
+
+/*
+ * `.spare` drops below sm or inside a narrow `fjs` container. The test page
+ * is wide, so the viewport branch is read from the rule text and the
+ * container branch is measured, in a box of each width.
+ */
+function spareIn(width, cls) {
+  var tag = cls === 'btn' ? 'button' : 'div';
+  return el(
+    '<div style="container: fjs / inline-size; inline-size: ' + width + 'px">' +
+      '<' + tag + ' class="' + cls + ' spare">x</' + tag + '>' +
+    '</div>',
+    '.spare'
+  );
+}
+
+test('spare: a Cluster and a Button vanish inside a narrow fjs container', function () {
+  ['cluster', 'btn'].forEach(function (cls) {
+    assert.equal(style(spareIn(400, cls), 'display'), 'none',
+      '.' + cls + '.spare still draws in a 400px container, which .cluster/.btn display beats');
+    cleanup();
+  });
+});
+
+test('spare: the same two stay in a wide fjs container', function () {
+  ['cluster', 'btn'].forEach(function (cls) {
+    assert.notEqual(style(spareIn(600, cls), 'display'), 'none', '.' + cls + '.spare is gone from a 600px container');
+    cleanup();
+  });
+});
+
+test('spare: the viewport branch is the sm step', function () {
+  assert.ok(innerWidth >= 640, 'this page is a wide viewport, so the branch is read rather than measured');
+  var media = allRules().filter(function (r) {
+    return window.CSSMediaRule && r instanceof CSSMediaRule &&
+      /max-width:\s*639px/.test(r.conditionText || r.media.mediaText) &&
+      Array.prototype.some.call(r.cssRules, function (c) {
+        return c.selectorText === '.spare' && /display:\s*none/.test(c.cssText);
+      });
+  });
+  assert.equal(media.length, 1, 'expected one `@media (max-width: 639px) { .spare { display: none } }`, found ' + media.length);
 });

@@ -288,8 +288,9 @@ function emitModel(m, backs, access, currency, declares) {
 
   attrs.push(`@@gate(${access.gate.join('.')})`)
   if (m.lifecycle) attrs.push(transitions(m.lifecycle))
-  const opWidth = Math.max(0, ...access.policies.map(([op]) => op.length + 1))
-  for (const [op, expr] of access.policies) attrs.push(`@@allow(${`${op},`.padEnd(opWidth)} ${expr})`)
+  const rules = [...access.policies, ...access.gateOnly]
+  const opWidth = Math.max(0, ...rules.map(([op]) => op.length + 1))
+  for (const [op, expr] of rules) attrs.push(`@@allow(${`${op},`.padEnd(opWidth)} ${expr})`)
 
   for (const e of enums) out.push(...e, '')
   out.push(`model ${m.name} {`, ...body, '', ...attrs.flatMap(a => a.split('\n').map(line => `  ${line}`)), '}')
@@ -337,7 +338,7 @@ const OPS = ['read', 'create', 'update', 'delete']
  */
 function accessTable(models, backs) {
   const byName = new Map(models.map(m => [m.name, m]))
-  /** @type {Map<string, { gate: number[], policies: [string, string][] }>} */
+  /** @type {Map<string, { gate: number[], policies: [string, string][], gateOnly: [string, string][] }>} */
   const memo = new Map()
   const of = (name) => {
     if (!memo.has(name)) memo.set(name, accessFor(byName.get(name), of, backs.get(name) ?? []))
@@ -351,7 +352,7 @@ function accessTable(models, backs) {
  * @param {import('./answer.js').Model} m
  * @param {(name: string) => { gate: number[], policies: [string, string][] }} of
  * @param {{ name: string, source: string, link: string }[]} backs  this model's back-relation lists
- * @returns {{ gate: number[], policies: [string, string][] }}
+ * @returns {{ gate: number[], policies: [string, string][], gateOnly: [string, string][] }}
  */
 function accessFor(m, of, backs) {
   const a = m.access
@@ -422,12 +423,17 @@ function accessFor(m, of, backs) {
 
   const gate = []
   const policies = []
+  // An op the gate alone decides is said with @@allow(op, true): silent, advise
+  // reads an owned row with no policy as everybody's by mistake, and the answer
+  // has no other way to say it is meant. Kept apart from `policies`, which
+  // changeOp reads to pick what a child delegates to.
+  const gateOnly = []
   for (const op of OPS) {
     // `shared` opens the read to every signed-in caller and nothing else: a
     // write stays with the actor links that hold it, and one no link holds is
     // an administrator's. It once returned before the links were read, so an
     // instructor could not post the class every member reads.
-    if (a.shared && op === 'read') { gate.push(4); continue }
+    if (a.shared && op === 'read') { gate.push(4); gateOnly.push(['read', 'true']); continue }
     // On a container, `system` is the onboarding that creates it and the
     // teardown that deletes it; renaming it stays with its members.
     const system = a.system && op !== 'read' && !(m.members && op === 'update')
@@ -440,8 +446,18 @@ function accessFor(m, of, backs) {
     }
     gate.push(system ? 8 : pub.includes(op) ? 0 : expr ? 4 : a.shared ? 5 : 8)
     if (expr) policies.push([op, expr])
+    else if (!system && gate.at(-1) < 8) gateOnly.push([op, 'true'])
   }
-  return { gate, policies }
+  // An update policy grades the row as it IS, so a PATCH moving the parent key
+  // into somebody else's parent is admitted by the parent it is leaving.
+  // postUpdate grades where it lands: the create's parent rule there, and the
+  // update's own.
+  const update = policies.find(([op]) => op === 'update')?.[1]
+  if (update && (a.via || m.container) && (createParent || update.includes('check('))) {
+    const lands = createParent && !update.includes(`check(${a.via},`) ? `${createParent} && (${update})` : update
+    policies.push(['postUpdate', lands])
+  }
+  return { gate, policies, gateOnly }
 }
 
 // ─── onboarding ───────────────────────────────────────────────────────────────

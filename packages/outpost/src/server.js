@@ -423,9 +423,15 @@ export function createOutpostServer(config, {
     // The drill's staging, kept for the copy's life and served by the release
     // image read-only (`FJS-D1996`), stamped with the newest point the replica
     // reached. A copy that cannot say how old it is is refused, not stamped now.
+    // With `host`, and `hosts` while the copy serves the App's main hostnames,
+    // the copy is routed there (`fjs-<app>-copy`); without either a route left
+    // by an earlier serve is taken out, so a switched-off address never
+    // reaches the copy that replaced it.
     // A machine without the image sends `image_url` and `image_sha256`, what
     // `/image/export` uploaded (`FJS-D1914`).
     'POST /replica/serve': async (body) => {
+      const [host = null] = hostsOf(body.host == null ? [] : [body.host])
+      const hosts = hostsOf(body.hosts).filter(h => h !== host)
       const staged = await replicator.stage({ appId: body.app_id, replica: body.replica, databases: body.databases, at: body.at ?? null })
       let served
       try {
@@ -436,11 +442,22 @@ export function createOutpostServer(config, {
         throw err
       }
       for (const old of served.replaced) await replicator.unstage(old.dir)
-      return { databases: staged.databases, as_of: served.asOf, container: served.container, upstream: served.upstream }
+      if (host || hosts.length) {
+        try { await ingress.routeCopy({ appId: body.app_id, host, hosts, dial: served.upstream }) }
+        catch (err) {
+          const names = [host, ...hosts].filter(Boolean)
+          throw new Error(`the copy is up (${served.container}) but ${names.join(', ')} ${names.length > 1 ? 'were' : 'was'} not routed to it: ${err.message}`)
+        }
+      } else await ingress.unrouteCopy({ appId: body.app_id })
+      return { databases: staged.databases, as_of: served.asOf, container: served.container, upstream: served.upstream, host, hosts }
     },
+    // The running copy's route rewritten with no restage: the App's main
+    // hostnames onto it and back (`IDEAS/read-only-copy.md` 3.1).
+    'POST /replica/route': (body) => docker.rerouteCopy({ appId: body.app_id, ingress, host: body.host ?? null, hosts: body.hosts ?? [] }),
     'POST /replica/unserve': async (body) => {
       const { removed } = await docker.unserveCopy({ appId: body.app_id })
       for (const old of removed) await replicator.unstage(old.dir)
+      await ingress.unrouteCopy({ appId: body.app_id })
       return { removed: removed.map(c => c.container) }
     },
     'POST /replica/restore': async (body) => {
@@ -463,6 +480,10 @@ export function createOutpostServer(config, {
     // One of those archives sent to a URL, for a Download of an archive no
     // bucket holds; the path must be a backup of this app under backupDir.
     'POST /backup/send':   (body) => docker.sendBackup({ appId: body.app_id, path: body.path, uploadUrl: body.upload_url }),
+    // One of those archives deleted, held to the same rule; and every archive
+    // here, including those of an app the hub no longer knows.
+    'POST /backup/remove': (body) => docker.removeBackup({ appId: body.app_id, path: body.path }),
+    'POST /backups':       () => docker.listBackups(),
     // Every app this machine replicates, each with its own key; the list
     // replaces the last one whole, so an app left out stops replicating.
     'POST /replicate':     (body) => replicator.apply({ replicas: body.replicas, host: body.host }),

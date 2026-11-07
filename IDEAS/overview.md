@@ -734,6 +734,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `demo-box.md` — the demo box: one shared Basecamp + Outpost, a 24-hour demo Workspace per visitor, the site streams `fli basecamp:demo <name>`
 - `agent-client-ui.md` — a Resource rendered inside the agent's client: MCP Apps and A2UI as Mesa targets
 - `api-ontology.md` — the API realm's primitives: the words Junction spells and no register defines
+- `shared-servers.md` — one server, more than one workspace: row tenancy makes a Server one workspace's; Q1 recommend A (a project per co-tenant), B owner-and-grant on reopening
 - `box-ssh-keys.md` — whose SSH key a new box carries: `fli` boxes get the runner's key, API-made boxes get none, and `sshKeyId` only grades; Q1 install it at create
 - `fli-profiles.md` — one machine, several clients: `FLI_PROFILE` in a project `.env` loads `~/.config/fli/profiles/<name>.env` between project and global; no sticky switch; Q1–Q3 ruled (profile, .env key, global fallback kept); Phase 4 = manage from Workbench (owner direction); 0.1 next
 - `box-health.md` — the bottom two layers of a box reach Basecamp: container state and systemd units in the heartbeat, graded as posture controls, edges as events; a managed Monitor per App hostname

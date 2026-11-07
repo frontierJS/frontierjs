@@ -773,7 +773,7 @@ CREATE TABLE IF NOT EXISTS "server_event" (
   "metadata" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "noticeOwedAt" TEXT,
-  CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'backupsReadFailed', 'backupsSet', 'backupsRestored', 'backupsRestoreFailed', 'adopted', 'cameOnline', 'unreachable', 'rebooted', 'containerCrashLooping', 'containerRecovered', 'unitFailed', 'unitRestored', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'appRetired', 'postureFailed', 'postureRestored')),
+  CHECK ("kind" IN ('created', 'removed', 'rebootRequested', 'drainStarted', 'drainCancelled', 'provisionRequested', 'provisionCreated', 'provisionReady', 'provisionTimeout', 'destroyRequested', 'destroyFinished', 'enrollmentIssued', 'syncRequested', 'statusSynced', 'statusSyncIgnored', 'syncFailed', 'syncNoAccount', 'syncUnsupported', 'syncUnrecognized', 'backupsReadFailed', 'backupsSet', 'backupsRestored', 'backupsRestoreFailed', 'adopted', 'cameOnline', 'unreachable', 'rebooted', 'containerCrashLooping', 'containerRecovered', 'unitFailed', 'unitRestored', 'recipeRan', 'recipeFailed', 'cleanupQueued', 'cleanupRan', 'cleanupFailed', 'volumeRemoved', 'volumesPruned', 'appRetired', 'archiveDiscarded', 'postureFailed', 'postureRestored')),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_event_serverId" ON "server_event" ("serverId");
@@ -1159,6 +1159,8 @@ CREATE TABLE IF NOT EXISTS "domain" (
   "certKind" TEXT,
   "certIssuedAt" TEXT,
   "certExpiresAt" TEXT,
+  "copyCertSecretId" TEXT,
+  "copyCertExpiresAt" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -1166,6 +1168,7 @@ CREATE TABLE IF NOT EXISTS "domain" (
   CHECK ("sslMode" IN ('off', 'flexible', 'full', 'fullStrict')),
   CHECK ("certKind" IN ('acme', 'originCa', 'uploaded')),
   UNIQUE ("workspaceId", "hostname"),
+  CHECK ((copyCertSecretId IS NULL) = (copyCertExpiresAt IS NULL)),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_domain_appId" ON "domain" ("appId") WHERE "deletedAt" IS NULL;
@@ -1237,6 +1240,8 @@ CREATE TABLE IF NOT EXISTS "app_copy" (
   "asOf" TEXT,
   "error" TEXT,
   "refreshedAt" TEXT,
+  "certError" TEXT,
+  "isServingMainAddress" INTEGER NOT NULL DEFAULT 0,
   "requestedBy" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

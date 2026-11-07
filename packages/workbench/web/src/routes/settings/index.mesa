@@ -14,7 +14,8 @@ title: Settings
   // would claim a pick nobody made.
 
   import { theme, setTheme, themes } from '@frontierjs/sierra/theme'
-  import { session } from '../../lib/session.js'
+  import { goto }    from '@frontierjs/sierra/router'
+  import { session, signOut } from '../../lib/session.js'
   import { laptop }  from '../../resources/Laptop.mesa'
   import { toasts }  from '@frontierjs/ui/stores/toastStore'
   import { textSize, setTextSize, resetTextSize, TEXT_SIZE } from '../../lib/text-size.js'
@@ -79,6 +80,35 @@ title: Settings
     }
   }
 
+  // The ntfy topic Claude Code's Stop hook pings when a long turn ends.
+  let pingInfo  = null
+  let pingTopic = ''
+  let pingError = null
+  let pinging   = false
+
+  async function loadPing() {
+    try {
+      pingInfo  = await laptop.service.invoke('ping')
+      pingTopic = pingInfo.topic ?? ''
+      pingError = null
+    } catch (err) {
+      pingError = err.message
+    }
+  }
+
+  async function savePing() {
+    pinging = true
+    try {
+      pingInfo  = await laptop.service.invoke('setPing', null, { topic: pingTopic.trim() })
+      pingTopic = pingInfo.topic ?? ''
+      toasts.success(pingInfo.topic ? `Pinging ${pingInfo.topic}` : 'Ping is off')
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      pinging = false
+    }
+  }
+
   // The user's own fli commands, read only.
   let cmds     = null
   let cmdError = null
@@ -93,7 +123,13 @@ title: Settings
   }
 
   loadEnv()
+  loadPing()
   loadCommands()
+
+  async function leave() {
+    await signOut()
+    goto('/login/')
+  }
 
   const following = () => theme.preference === 'system'
 
@@ -107,7 +143,10 @@ title: Settings
 <header class="stack-sm">
   <h1 class="h3">Settings</h1>
   {#if session.user}
-    <p class="text-muted">Signed in as <strong>{session.user.nick}</strong>.</p>
+    <p class="cluster text-muted">
+      <span>Signed in as <strong>{session.user.nick}</strong>.</span>
+      <Button treatment="outlined" size="sm" id="sign-out" onclick={leave}>Sign out</Button>
+    </p>
   {/if}
 </header>
 
@@ -158,6 +197,24 @@ title: Settings
     <Input id="settings-env-value" name="value" label="Value" type="password" autocomplete="off" required bind:value={newValue} />
     <Button type="submit" tone="primary" loading={setting}>Set</Button>
   </form>
+</Card>
+
+<Card id="settings-ping">
+  <h2 class="h5">Phone ping</h2>
+  <p class="text-sm text-muted">
+    The <a href="https://ntfy.sh" target="_blank" rel="noreferrer">ntfy</a> topic Claude Code posts to when a long Fable turn ends. Subscribe to the same name in the ntfy app. Anyone who knows a topic name can read it, so keep it hard to guess.{#if pingInfo}
+    Kept in <code>{pingInfo.path}</code>.{/if}
+  </p>
+  {#if pingError}
+    <article class="alert danger"><div class="alert-content">{pingError}</div></article>
+  {/if}
+  <form id="settings-ping-form" class="cluster" novalidate onsubmit={(e) => { e.preventDefault(); savePing() }}>
+    <Input id="settings-ping-topic" name="topic" label="Topic" placeholder="leave empty to turn off" autocomplete="off" bind:value={pingTopic} />
+    <Button type="submit" tone="primary" loading={pinging}>Save</Button>
+  </form>
+  {#if pingInfo}
+    <p class="text-sm text-muted" data-ping-state>{pingInfo.url ? `Pinging ${pingInfo.url}` : 'Off: no topic is set.'}</p>
+  {/if}
 </Card>
 
 <Card id="settings-commands">

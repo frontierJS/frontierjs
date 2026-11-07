@@ -536,6 +536,13 @@ type ServerRetireApp {
   appId String
 }
 
+/// What `servers.discardArchive` accepts: an archive on the machine and the
+/// App id it names, as `servers.archives` listed them.
+type ServerDiscardArchive {
+  appId String
+  name  String @length(1, 300)
+}
+
 enum SecretKind     { sshKey providerKey registryAuth tlsCert notification backup generic }
 enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroying destroyed }
 enum ServerRole     { general build database gateway worker }
@@ -584,6 +591,8 @@ enum ServerEventKind {
   volumeRemoved volumesPruned
   // A route and container for an App id Basecamp has no row for, stopped by a person (`servers.retireApp`).
   appRetired
+  // An archive file on it that no AppBackup row named, deleted by a person (`servers.discardArchive`).
+  archiveDiscarded
   // A posture control moving between passing and failing (`domain/host/posture.ts`).
   postureFailed postureRestored
 }
@@ -2175,6 +2184,12 @@ model Domain {
   certIssuedAt  DateTime? @system
   certExpiresAt DateTime? @system
 
+  // What the App's read-only copy's machine holds for this hostname
+  // (`FJS-D1988`), minted ahead by `app-copy:cert`. Apart from `certSecretId`,
+  // which `certStatusOf` reads as what the live machine serves.
+  copyCertSecretId  String?   @system
+  copyCertExpiresAt DateTime? @system
+
   version       Int       @version
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @default(now()) @updatedAt
@@ -2186,6 +2201,7 @@ model Domain {
   @@trail(audit)
   @@unique([workspaceId, hostname])
   @@index([appId])
+  @@check("(copyCertSecretId IS NULL) = (copyCertExpiresAt IS NULL)", "a copy's certificate is stored with its expiry")
 }
 
 // A prefix of a Domain that another App answers (`FJS-D1040`): `/api` and
@@ -2439,7 +2455,15 @@ model AppCopy {
   // the moment it was staged.
   asOf        DateTime?  @system
   error       String?    @system @length(0, 2000)
+  // The last refresh that served the copy; a failed one leaves it.
   refreshedAt DateTime?  @system
+  // Why the last `app-copy:cert` left a Domain without a certificate on the
+  // machine; null once every Domain holds one.
+  certError   String?    @system @length(0, 2000)
+  // The App's ingress record points at this machine and its main hostnames
+  // are routed to the copy (`IDEAS/read-only-copy.md` 3.1). On the copy and
+  // not the App, so the switch cannot outlive the copy it sends users to.
+  isServingMainAddress Boolean @default(false)
 
   requestedBy String?
 

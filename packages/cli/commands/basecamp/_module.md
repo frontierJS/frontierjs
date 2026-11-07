@@ -351,10 +351,11 @@ const replLine = async (code, extra = []) => {
 }
 
 // Who may hold the key: a person, not a bot, who is an owner or admin of a
-// workspace. A `sys` read, so it needs no --force.
+// workspace that still exists: a deleted one leaves its member rows behind, and
+// they would read as a second seat. A `sys` read, so it needs no --force.
 const holders = async (extra = []) =>
   (await replLine(`sys.workspaceMember.findMany({ where: { role: { in: ['owner', 'admin'] } }, select: { role: true, workspaceId: true, workspace: { select: { name: true } }, user: { select: { email: true, kind: true } } } })`, extra))
-    .filter(m => m.user?.kind === 'user')
+    .filter(m => m.user?.kind === 'user' && m.workspace)
     .map(m => ({ email: m.user.email, role: m.role, workspaceId: m.workspaceId, workspace: m.workspace?.name }))
 
 // The service's own create, called as the holder in their workspace, so the

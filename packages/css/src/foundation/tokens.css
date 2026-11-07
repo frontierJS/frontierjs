@@ -743,6 +743,9 @@
 
   --align:                initial;
   --grid-min:             initial;
+  --switch-at:            initial;
+  --fr:                   initial;
+  --side:                 initial;
   --app-bg:               initial;
   --app-depth:            initial;
   --topbar-bg:            initial;

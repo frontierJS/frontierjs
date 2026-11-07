@@ -303,7 +303,7 @@ siteName: Basecamp
         <strong>{page.siteName}</strong>
       </a>
       {#if session.user}
-        <span class="hide-sm">
+        <span class="spare">
           <Button treatment="ghost" size="sm" id="focus-toggle"
                   aria-pressed="false" title="Hide the header and side panels (Ctrl+.)"
                   onclick={toggleFocus}>Focus</Button>
@@ -312,9 +312,9 @@ siteName: Basecamp
     </span>
 
     <!-- The few screens opened all day. Below 767px the drawer repeats them
-         and this row is hidden (`.hide-sm`, the style block below). -->
+         and this row is hidden (`.topbar-nav`, frame.css). -->
     {#if session.user}
-      <nav class="cluster hide-sm" aria-label="Primary">
+      <nav class="cluster topbar-nav" aria-label="Primary">
         {#each TOPBAR as link}
           <a class="navlink" href={link.href}
              aria-current={(page.route, current(link)) ? 'page' : null}
@@ -336,7 +336,7 @@ siteName: Basecamp
         <!-- The custom property is set on a wrapper rather than passed as a
              prop: --field-inline-size inherits, and a kit component takes the
              props it declares — it is not a div with a style attribute. -->
-        <span class="hide-sm" style="--field-inline-size: auto">
+        <span class="spare" style="--field-inline-size: auto">
           <Select
             id="workspace-switch"
             value={session.workspaceId}
@@ -349,7 +349,7 @@ siteName: Basecamp
 
       {#if session.user}
         <Button treatment="ghost" id="palette-open" onclick={() => commandPalette.show()}>
-          Search <kbd class="kbd hide-sm">⌘K</kbd>
+          Search <kbd class="kbd spare">⌘K</kbd>
         </Button>
 
         {#if !session.user.isEnrollmentOnly}<Bell />{/if}
@@ -375,7 +375,7 @@ siteName: Basecamp
            width between 'live' and 'offline' shifted every control after it.
            It opens only once a token is stored, so offline before sign-in is
            correct. -->
-      <Dot class="hide-sm" tone={status.connected ? 'success' : 'muted'}
+      <Dot class="spare" tone={status.connected ? 'success' : 'muted'}
            role="status"
            title={status.connected ? 'Live' : 'Offline'}
            label={status.connected ? 'Live' : 'Offline'} />
@@ -475,9 +475,10 @@ siteName: Basecamp
 
 <style>
   /* The topbar below 767px is the drawer button, the name, search, the bell
-     and the account menu. The rest is in the drawer or one search away. */
+     and the account menu. The rest is in the drawer or one search away: the
+     nav row is `.topbar-nav` (gone where the toggle appears), the small
+     extras are `.spare` (gone below 640px). */
   @media (max-width: 767px) {
-    .hide-sm { display: none; }
     .topbar {
       gap:            var(--space-sm);
       padding-inline: var(--space-md);
@@ -485,6 +486,18 @@ siteName: Basecamp
     .topbar .cluster { flex-wrap: nowrap; gap: var(--space-xs); }
   }
   .drawer-switch { margin-block-end: var(--space-lg); }
+
+  /* The signed-in chrome mounts the moment sign-in adopts the user, while
+     the sign-in page is still showing. Under .signin it enters from
+     transparent; on any other first paint it is simply there. */
+  :global(.sidebar, .topbar .sidebar-toggle, .topbar :is(.spare, .topbar-nav), .topbar > .cluster:last-child > *) {
+    transition: opacity var(--motion-slow) var(--motion-ease-out);
+  }
+  @starting-style {
+    :global(.shell:has(.signin) :is(.sidebar, .topbar .sidebar-toggle, .topbar :is(.spare, .topbar-nav), .topbar > .cluster:last-child > *)) {
+      opacity: 0;
+    }
+  }
 
   /* The tone only sets --bg-mix; a navlink reads it just when current. */
   .nav-direct { color: var(--bg-mix); }

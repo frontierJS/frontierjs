@@ -133,20 +133,33 @@ const NOINDEX = { 'X-Robots-Tag': ['noindex'] }
  *  prefix length, which a route holding two prefixes cannot have. */
 export const pathRouteId = (appId) => `${routeId(appId)}-path-`
 
+/** The read-only copy's route (`FJS-D1996`). Its own id, so an App and its copy
+ *  on one machine hold two routes and neither `route` nor `unroute` touches the
+ *  other's; `checkRouteAppId` refuses an app id ending `-copy` for the same reason. */
+export const copyRouteId = (appId) => `${routeId(appId)}-copy`
+
+/** A copy's upstream: the container's IPv4 on the internal network and its port. */
+export function checkCopyDial(dial) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3}):(\d{1,5})$/.exec(String(dial))
+  if (!m || m.slice(1, 5).some(o => Number(o) > 255) || Number(m[5]) < 1 || Number(m[5]) > 65535)
+    throw new Error(`a copy's route needs an <ipv4>:<port> to dial — got '${dial}'`)
+  return String(dial)
+}
+
 /** Is `id` one of THIS app's path routes. Matched whole: a prefix test took
  *  `fjs-a-path-0`, app `a-path-0`'s own route, for app `a`'s path route. */
 const isPathRouteOf = (appId, id) =>
   typeof id === 'string' && id.startsWith(pathRouteId(appId)) && /^[0-9]+$/.test(id.slice(pathRouteId(appId).length))
 
 /** An app id a route may be written for: a plain name, and not one that spells
- *  another app's `-redirects` or `-path-<n>` route id, which would be that
- *  app's route to Caddy. */
+ *  another app's `-redirects`, `-copy` or `-path-<n>` route id, which would be
+ *  that app's route to Caddy. */
 export function checkRouteAppId(appId) {
   if (typeof appId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(appId))
     throw new Error(`app_id '${appId}' is not a plain name`)
   if (appId.startsWith('cert-'))
     throw new Error(`app_id '${appId}' starts the way a certificate id does and would collide with its @id`)
-  if (/-redirects$|-path-[0-9]+$/.test(appId))
+  if (/-redirects$|-copy$|-path-[0-9]+$/.test(appId))
     throw new Error(`app_id '${appId}' ends the way a route id does and would collide with another app's route`)
 }
 
@@ -333,6 +346,42 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
     return { method: 'POST', path: '/config/', body: next, doing: `setting ${id}'s access log` }
   })
 
+  // PATCH by id replaces in place; Caddy answers 404 for an id it has not
+  // seen, which is a first deploy. An append reset on the way back may
+  // have landed, so the next send starts over at the PATCH.
+  const put = async (route) => {
+    for (let sent = 1; ; sent++) {
+      const replaced = await caddy('PATCH', `/id/${route['@id']}`, route)
+      if (replaced.status !== 404) return must(replaced, `replacing ${route['@id']}`)
+      try {
+        return must(await caddy('POST', `/config/apps/http/servers/${SERVER}/routes`, route), `adding ${route['@id']}`)
+      } catch (err) {
+        if (!(err.reset && sent < RESET_SENDS)) throw err
+      }
+    }
+  }
+  const drop = async (dropId) => {
+    const reply = await caddy('DELETE', `/id/${dropId}`)
+    if (reply.status !== 404) must(reply, `removing ${dropId}`)
+  }
+
+  /** Appended routes land behind a whole-host route that would answer their
+   *  prefix, so the order is read back and settled after every write. */
+  const settleOrder = () => guarded(`/config/apps/http/servers/${SERVER}/routes`, 'its routes', (read) => {
+    const now  = read ?? []
+    const sort = ordered(now)
+    return sort.some((r, i) => r !== now[i])
+      ? { method: 'PATCH', path: `/config/apps/http/servers/${SERVER}/routes`, body: sort, doing: 'ordering its routes' }
+      : null
+  })
+
+  const ensureServer = async (http, live) => {
+    if (!live) must(await caddy('PUT', `/config/apps/http/servers/${SERVER}`, {
+      listen: [`:${http.https_port ?? 443}`],
+      routes: [],
+    }), 'creating the ingress server')
+  }
+
   return {
     /**
      * What the ingress server routes, as read off Caddy — every route, whoever
@@ -435,29 +484,8 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
             throw new Error(`${taken.join(', ')} is already routed to ${otherId ?? 'a route outpost did not write'}`)
         }
 
-        if (!live) must(await caddy('PUT', `/config/apps/http/servers/${SERVER}`, {
-          listen: [`:${http.https_port ?? 443}`],
-          routes: [],
-        }), 'creating the ingress server')
+        await ensureServer(http, live)
 
-        // PATCH by id replaces in place; Caddy answers 404 for an id it has not
-        // seen, which is a first deploy. An append reset on the way back may
-        // have landed, so the next send starts over at the PATCH.
-        const put = async (route) => {
-          for (let sent = 1; ; sent++) {
-            const replaced = await caddy('PATCH', `/id/${route['@id']}`, route)
-            if (replaced.status !== 404) return must(replaced, `replacing ${route['@id']}`)
-            try {
-              return must(await caddy('POST', `/config/apps/http/servers/${SERVER}/routes`, route), `adding ${route['@id']}`)
-            } catch (err) {
-              if (!(err.reset && sent < RESET_SENDS)) throw err
-            }
-          }
-        }
-        const drop = async (dropId) => {
-          const reply = await caddy('DELETE', `/id/${dropId}`)
-          if (reply.status !== 404) must(reply, `removing ${dropId}`)
-        }
         // The static origin answers raw bytes, so without this an SPA's bundle
         // crosses the wire at four times its size and the first paint waits on
         // it. A container encodes its own answers and may stream, so it is left alone.
@@ -511,15 +539,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
         })
         else await drop(redirectsId(appId))
 
-        // Appended routes land behind a whole-host route that would answer
-        // their prefix, so the order is read back and settled after every write.
-        await guarded(`/config/apps/http/servers/${SERVER}/routes`, 'its routes', (read) => {
-          const now  = read ?? []
-          const sort = ordered(now)
-          return sort.some((r, i) => r !== now[i])
-            ? { method: 'PATCH', path: `/config/apps/http/servers/${SERVER}/routes`, body: sort, doing: 'ordering its routes' }
-            : null
-        })
+        await settleOrder()
         await logAccess(id, hosts)
         return { hosts, paths, redirects }
       })
@@ -576,6 +596,103 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
           .filter(r => r['@id'] === routeId(appId) || isPathRouteOf(appId, r['@id']))
         // A port no route dials is not one: moving every loopback upstream to 0 reads them all.
         return [...new Set(repointRoutes(own, 0).moved.map(m => m.from))]
+      })
+    },
+
+    /**
+     * Route the App's read-only copy (`FJS-D1996`), replacing the copy's last
+     * route. `host` is the copy's own address, and `hosts` the App's main
+     * hostnames while the copy serves them (`IDEAS/read-only-copy.md` 3.1).
+     * `dial` is the copy container's `<ipv4>:<port>` on the internal network.
+     * The route is `fjs-<app>-copy`, apart from the App's own, so both live on
+     * one machine; a host ANY other route names is refused, the App's
+     * included, as `route` refuses it. The copy's own address answers
+     * `X-Robots-Tag: noindex`, because a search engine that indexed yesterday's
+     * data there would keep serving it. The main hostnames do not, because an
+     * outage would otherwise drop the App's pages from search. No access log is
+     * mapped for it.
+     */
+    routeCopy({ appId, host = null, hosts = [], dial }) {
+      return serially(async () => {
+        checkRouteAppId(appId)
+        const [own = null] = hostsOf(host == null ? [] : [host])
+        const main  = hostsOf(hosts).filter(h => h !== own)
+        const names = [...(own ? [own] : []), ...main]
+        if (!names.length) throw new Error('a copy\'s route needs a hostname')
+        checkCopyDial(dial)
+        const id     = copyRouteId(appId)
+        const config = must(await caddy('GET', '/config/'), 'reading its config')
+        const http   = config?.apps?.http ?? {}
+        const live   = http.servers?.[SERVER]
+
+        for (const other of live?.routes ?? []) {
+          const otherId = other['@id']
+          if (otherId === id) continue
+          const taken = (other.match ?? []).filter(m => !m.path).flatMap(m => m.host ?? []).filter(h => names.includes(h))
+          if (taken.length)
+            throw new Error(`${taken.join(', ')} ${taken.length > 1 ? 'are' : 'is'} already routed to ${otherId ?? 'a route outpost did not write'}`)
+        }
+
+        const noindex = { handler: 'headers', response: { set: NOINDEX } }
+        await ensureServer(http, live)
+        await put({
+          '@id':    id,
+          match:    [{ host: names }],
+          handle:   [
+            ...(own && main.length ? [{ handler: 'subroute', routes: [{ match: [{ host: [own] }], handle: [noindex] }] }]
+              : own ? [noindex] : []),
+            { handler: 'reverse_proxy', upstreams: [{ dial }] },
+          ],
+          terminal: true,
+        })
+        await settleOrder()
+        return { host: own, hosts: main, dial }
+      })
+    },
+
+    /**
+     * Point the copy's route at the address its container has now: a restart
+     * gives it another IP on the internal network, which another App's copy may
+     * have held. Answers `{ moved: [{ id, from, to }] }`, empty when the route
+     * already dials `dial`, there is no route, or there is no Caddy.
+     */
+    repointCopy({ appId, dial }) {
+      return serially(async () => {
+        checkRouteAppId(appId)
+        checkCopyDial(dial)
+        let reply
+        try {
+          reply = await caddy('GET', `/config/apps/http/servers/${SERVER}/routes`)
+        } catch (err) {
+          if (!err.unreachable) throw err
+          return { moved: [] }
+        }
+        const id    = copyRouteId(appId)
+        const route = (reply.status < 300 ? reply.data ?? [] : []).find(r => r['@id'] === id)
+        const proxy = route?.handle?.find(h => h.handler === 'reverse_proxy')
+        const from  = proxy?.upstreams?.[0]?.dial
+        if (!proxy || from === dial) return { moved: [] }
+        proxy.upstreams = [{ dial }]
+        must(await caddy('PATCH', `/id/${id}`, route), `re-pointing ${id}`)
+        return { moved: [{ id, from: from ?? null, to: dial }] }
+      })
+    },
+
+    /** Take the copy's route out. Answers whether one was there; no Caddy is `removed: false`. */
+    unrouteCopy({ appId }) {
+      return serially(async () => {
+        checkRouteAppId(appId)
+        const id = copyRouteId(appId)
+        let reply
+        try {
+          reply = await caddy('DELETE', `/id/${id}`)
+        } catch (err) {
+          if (!err.unreachable) throw err
+          return { removed: false }
+        }
+        if (reply.status === 404) return { removed: false }
+        must(reply, `removing ${id}`)
+        return { removed: true }
       })
     },
 

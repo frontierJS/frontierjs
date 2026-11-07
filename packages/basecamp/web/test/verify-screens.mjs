@@ -707,6 +707,26 @@ try {
   check('the card says the copy is on, as of when, and on which machine',
     /As of .+ on\s+\S+/s.test(asOfLine) && await evaluate(`document.getElementById('app-copy-on')?.checked`) === true, asOfLine)
   check('its status is the row\'s', (await text('[data-copy-status]'))?.trim() === 'success', await text('[data-copy-status]'))
+  // Serving at the main address asks once more on the card, and the machine
+  // routes the App's hostnames before the row says so (3.1): with no Outpost
+  // to route them, the refusal reaches the card and the row stays as it was.
+  await click('#app-copy-serve')
+  const confirmLine = await until(`document.getElementById('app-copy-confirm')?.textContent ?? ''`, t => !!t,
+    'Serve at the main address asked nothing').catch(e => e.message)
+  check('Serve at the main address asks first, saying users get the copy as of when',
+    /Every user of this app will be sent to this copy, read-only and as of/.test(confirmLine), confirmLine.slice(0, 200))
+  await click('#app-copy-serve-confirm')
+  const unrouted = await until(`document.getElementById('app-copy-error')?.textContent ?? ''`, t => !!t,
+    'confirming never answered').catch(e => e.message)
+  check('…and with no Outpost to route the hostnames, the refusal reaches the card and nothing is switched',
+    /did not route the App's hostnames to the copy/.test(unrouted) && (await copyOf())?.isServingMainAddress === false
+      && !(await evaluate(`!!document.getElementById('app-copy-serving')`)), unrouted.slice(0, 200))
+  await evaluate(`[...document.querySelectorAll('#app-copy button')].find(b => b.textContent.trim() === 'Cancel')?.click()`)
+
+  // The seed holds no ingress zone, so the copy has no address (2.2, FJS-D1982).
+  const addressLine = await text('#app-copy-address')
+  check('with no ingress zone the row answers no address, and the card says what it waits on',
+    seededCopy?.address === null && /needs an ingress zone/.test(addressLine ?? ''), `${seededCopy?.address} · ${addressLine}`)
 
   await evaluate(`(() => { const el = document.getElementById('app-copy-cron')
     el.value = '0 */6 * * *'; el.dispatchEvent(new Event('change', { bubbles: true })) })()`)
@@ -722,12 +742,26 @@ try {
   const offToast = await until(`document.body.textContent`, t => /could not be told to stop serving/.test(t), 'no warning').catch(() => '')
   check('with no Outpost to reach, the card warns the copy may still be serving', !!offToast)
 
+  // A Domain gives the turn-on a certificate to put on the copy's machine
+  // (2.4, FJS-D1988); with no Outpost there, that failure reaches the card too.
+  const copyDomain = await asOwner('POST', '/domains', { appId: seededCopy?.appId, hostname: `copy-${process.pid}.example.test` })
+  check('a Domain is added to the copied App', copyDomain?.status === 201 || copyDomain?.status === 200, JSON.stringify(copyDomain)?.slice(0, 200))
+
   await click('#app-copy-on')
   const failedRefresh = await until(`document.getElementById('app-copy-refresh-error')?.textContent ?? ''`, t => !!t,
     'the refresh the turn-on queued never landed on the card', 30_000).catch(e => e.message)
   const turnedOn = await copyOf()
   check('turning it on writes the row and queues a refresh now', turnedOn?.cron === '0 */6 * * *' && turnedOn?.status === 'failed', JSON.stringify(turnedOn)?.slice(0, 200))
   check('the machine\'s refusal reaches the card', /The last refresh failed:/.test(failedRefresh), failedRefresh)
+  // The card polls only while the refresh is unsettled, and the certificate
+  // job runs on another queue, so it is read as a person coming back reads it.
+  for (const deadline = Date.now() + 30_000; Date.now() < deadline && !(await copyOf())?.certError; await sleep(500));
+  await goto(`/apps/${seededCopy?.appId}/?tab=backups`)
+  const failedCert = await until(`document.getElementById('app-copy-cert-error')?.textContent ?? ''`, t => !!t,
+    'the certificate job the turn-on queued never landed on the card', 30_000).catch(e => e.message)
+  check('…and so does the Domain\'s certificate that could not be put there, by hostname',
+    failedCert.includes(`copy-${process.pid}.example.test:`) && /Not every hostname/.test(failedCert), failedCert.slice(0, 240))
+  check('a copy that has never served cannot be sent users', await evaluate(`document.getElementById('app-copy-serve')?.disabled`) === true)
 
   // ─── Your settings ─────────────────────────────────────────────────────
   console.log('\n  /settings/ — the caller\'s own account')

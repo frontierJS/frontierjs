@@ -23,8 +23,9 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel } from '../../core/hooks.ts'
 import { db, ws }   from '../../core/resource.ts'
-import { declaredFor, gradePosture, gradeReplication, gradeRuntimeContainers, gradeRuntimeUnits, gradeIngressNames, lastKnownControls, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
-import type { Control, PostureReadings } from '../../domain/host/posture.ts'
+import { declaredFor, gradePosture, gradeReplication, gradeCopies, gradeRuntimeContainers, gradeRuntimeUnits, gradeIngressNames, lastKnownControls, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
+import type { Control, CopyReading, PostureReadings } from '../../domain/host/posture.ts'
+import { cronGapMs } from '../../domain/host/host-machine.ts'
 import { LONG_RUNNING_KINDS } from '../../domain/host/runtime.ts'
 import { ingressStateOf } from '../../domain/release/runtime.ts'
 import { notifyPeople, workspaceMembers } from '../../domain/notification/notify.ts'
@@ -127,6 +128,7 @@ export async function postureView(server: any, row: any, { readings = false } = 
     gradeRuntimeContainers(server.runtime, await placedOn(server.id), now),
     gradeRuntimeUnits(server.runtime, now),
     gradeIngressNames(await servedIngressNames(server.id)),
+    gradeCopies(await copiesOn(server.id), now),
   ]
   if (!row) return {
     serverId: server.id, serverName: server.name, status: server.status,
@@ -155,6 +157,20 @@ async function replicatingOn(serverId: string): Promise<{ id: string; slug: stri
   return sys().app.findMany({
     where:  { id: { in: [...new Set(placed.map(p => p.appId))] }, replicaDestinationId: { not: null } },
     select: { id: true, slug: true }, orderBy: { slug: 'asc' },
+  })
+}
+
+/** The read-only copies a machine serves, each with the age its schedule allows — what `backup.copy-age` grades. */
+async function copiesOn(serverId: string): Promise<CopyReading[]> {
+  const rows = await sys().appCopy.findMany({ where: { serverId } }) as
+    { appId: string; cron: string; refreshedAt: string | null; status: string | null; error: string | null; createdAt: string }[]
+  if (!rows.length) return []
+  const apps = await sys().app.findMany({
+    where: { id: { in: rows.map(r => r.appId) } }, select: { id: true, slug: true }, orderBy: { slug: 'asc' },
+  }) as { id: string; slug: string }[]
+  return apps.map(a => {
+    const r = rows.find(r => r.appId === a.id)!
+    return { name: a.slug, maxAgeMs: 2 * cronGapMs(r.cron), refreshedAt: r.refreshedAt, status: r.status, error: r.error, createdAt: r.createdAt }
   })
 }
 

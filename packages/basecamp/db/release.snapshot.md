@@ -67,7 +67,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `RegisterMethod` | `adopted` · `imported` · `provisioned` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `backup` · `generic` · `notification` · `providerKey` · `registryAuth` · `sshKey` · `tlsCert` |
-| `ServerEventKind` | `adopted` · `appRetired` · `backupsReadFailed` · `backupsRestoreFailed` · `backupsRestored` · `backupsSet` · `cameOnline` · `cleanupFailed` · `cleanupQueued` · `cleanupRan` · `containerCrashLooping` · `containerRecovered` · `created` · `destroyFinished` · `destroyRequested` · `drainCancelled` · `drainStarted` · `enrollmentIssued` · `postureFailed` · `postureRestored` · `provisionCreated` · `provisionReady` · `provisionRequested` · `provisionTimeout` · `rebootRequested` · `rebooted` · `recipeFailed` · `recipeRan` · `removed` · `statusSyncIgnored` · `statusSynced` · `syncFailed` · `syncNoAccount` · `syncRequested` · `syncUnrecognized` · `syncUnsupported` · `unitFailed` · `unitRestored` · `unreachable` · `volumeRemoved` · `volumesPruned` |
+| `ServerEventKind` | `adopted` · `appRetired` · `archiveDiscarded` · `backupsReadFailed` · `backupsRestoreFailed` · `backupsRestored` · `backupsSet` · `cameOnline` · `cleanupFailed` · `cleanupQueued` · `cleanupRan` · `containerCrashLooping` · `containerRecovered` · `created` · `destroyFinished` · `destroyRequested` · `drainCancelled` · `drainStarted` · `enrollmentIssued` · `postureFailed` · `postureRestored` · `provisionCreated` · `provisionReady` · `provisionRequested` · `provisionTimeout` · `rebootRequested` · `rebooted` · `recipeFailed` · `recipeRan` · `removed` · `statusSyncIgnored` · `statusSynced` · `syncFailed` · `syncNoAccount` · `syncRequested` · `syncUnrecognized` · `syncUnsupported` · `unitFailed` · `unitRestored` · `unreachable` · `volumeRemoved` · `volumesPruned` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
 | `ServerStatus` | `destroyed` · `destroying` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
 | `SslMode` | `flexible` · `full` · `fullStrict` · `off` |
@@ -376,10 +376,12 @@ table `app_copy` · db `main` · gate `5`
 | `app` | `App` | — | — | relation |
 | `appId` | `String` | no | — | unique · **required on write** |
 | `asOf` | `DateTime` | yes | — | @system |
+| `certError` | `String` | yes | — | @system |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `cron` | `String` | no | — | **required on write** |
 | `error` | `String` | yes | — | @system |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `isServingMainAddress` | `Boolean` | no | `0` | — |
 | `refreshedAt` | `DateTime` | yes | — | @system |
 | `requestedBy` | `String` | yes | — | — |
 | `server` | `Server` | — | — | relation |
@@ -1011,6 +1013,8 @@ table `domain` · db `main` · gate `2.5` · @@softDelete
 | `certIssuedAt` | `DateTime` | yes | — | @system |
 | `certKind` | `CertKind` | yes | — | @system |
 | `certSecretId` | `String` | yes | — | @system |
+| `copyCertExpiresAt` | `DateTime` | yes | — | @system |
+| `copyCertSecretId` | `String` | yes | — | @system |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `hostname` | `String` | no | — | **required on write** |
@@ -1028,6 +1032,7 @@ table `domain` · db `main` · gate `2.5` · @@softDelete
 ```
 @@unique(hostname, workspaceId)
 @@index(appId)
+@@check((copyCertSecretId IS NULL) = (copyCertExpiresAt IS NULL))
 @@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(delete, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(postUpdate, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)

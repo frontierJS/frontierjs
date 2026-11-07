@@ -424,7 +424,7 @@ app it writes builds.
 
 ## Open questions
 
-- **Q1 — Where does the Shell live?**
+- ~~**Q1 — Where does the Shell live?**~~ **Answered 2026-11-07 (`FJS-D2013`): A — `@frontierjs/ui`, props-driven. The route, the session, `isActive` and sign-out are passed in.**
   - **A** — `@frontierjs/ui`, props-driven. The route, the session, `isActive` and
     sign-out are passed in.
   - **B** — `@frontierjs/sierra/shell`, reading the router and session directly.

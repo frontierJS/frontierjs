@@ -86,6 +86,7 @@ function toZone(z: Row): EdgeZone {
 function spell(mark: RecordMark): string {
   if (mark.domainId) return `${mark.fleet}:domain:${mark.domainId}`
   if (mark.appId)    return `${mark.fleet}:app:${mark.appId}`
+  if (mark.copyOf)   return `${mark.fleet}:copy:${mark.copyOf}`
   return mark.fleet
 }
 
@@ -93,9 +94,11 @@ function spell(mark: RecordMark): string {
  *  not ours: the fleet word must be the whole comment or end at a colon. */
 function read(comment: string): RecordMark | null {
   if (comment === FLEET) return { fleet: FLEET }
-  const m = comment.match(new RegExp(`^${FLEET}:(domain|app):(.+)$`))
+  const m = comment.match(new RegExp(`^${FLEET}:(domain|app|copy):(.+)$`))
   if (!m) return null
-  return m[1] === 'domain' ? { fleet: FLEET, domainId: m[2] } : { fleet: FLEET, appId: m[2] }
+  return m[1] === 'domain' ? { fleet: FLEET, domainId: m[2] }
+    : m[1] === 'copy' ? { fleet: FLEET, copyOf: m[2] }
+    : { fleet: FLEET, appId: m[2] }
 }
 
 function toRecord(r: Row): EdgeRecord {

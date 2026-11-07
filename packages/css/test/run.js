@@ -148,8 +148,8 @@ const vocabularyJsonState = (() => {
     return { present: false, fresh: false, terms: 0 };
   }
   try {
-    const { VOCAB, ANATOMY, BREAKPOINTS } = new Function(
-      `${vocabulary}\n;return { VOCAB, ANATOMY, BREAKPOINTS };`
+    const { VOCAB, ANATOMY, BREAKPOINTS, CONTAINER_STEPS } = new Function(
+      `${vocabulary}\n;return { VOCAB, ANATOMY, BREAKPOINTS, CONTAINER_STEPS };`
     )();
     const terms = VOCAB.reduce((n, [, , rows]) => n + rows.length, 0);
     const parsed = JSON.parse(onDisk);
@@ -166,7 +166,8 @@ const vocabularyJsonState = (() => {
         parsed.counts?.terms === terms &&
         parsed.counts?.anatomy === Object.keys(ANATOMY).length &&
         parsed.terms?.length === terms &&
-        JSON.stringify(parsed.breakpoints) === JSON.stringify(BREAKPOINTS),
+        JSON.stringify(parsed.breakpoints) === JSON.stringify(BREAKPOINTS) &&
+        JSON.stringify(parsed.containerSteps) === JSON.stringify(CONTAINER_STEPS),
       terms,
     };
   } catch (err) {

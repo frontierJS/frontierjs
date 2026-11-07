@@ -1,7 +1,7 @@
 <script>
   // AppBackups.mesa — an App's archives of its data volume: the rows, Back up
-  // now, Restore, Download, Rescan bucket (`IDEAS/backups.md` 5.3) and Upload
-  // (`IDEAS/app-archives.md` 3.2).
+  // now, Restore, Download, Discard, Rescan bucket (`IDEAS/backups.md` 5.3) and
+  // Upload (`IDEAS/app-archives.md` 3.2).
   //
   // Every action names a MACHINE, because the volume is per machine: *Back up
   // now* archives that placement's copy, and *Restore* extracts onto it. One
@@ -105,6 +105,24 @@
     try {
       const { url } = await appBackups.service.invoke('download', b.id, {})
       location.assign(url)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const discardText = (b) => inBucket(b) ? 'The archive is deleted from the bucket, and its copy from the machine.'
+    : onMachine(b) ? 'The archive is deleted from the machine that holds it, which is its only copy.'
+    : 'No archive was kept, so only this row goes.'
+
+  // The server refuses the app's newest good archive and says why (`FJS-3902`).
+  async function discard(b) {
+    error = null; busy = b.id
+    try {
+      await appBackups.service.invoke('discard', b.id, {})
+      toasts.success(`Discarded the backup taken ${when(b)}`)
+      await load()
     } catch (e) {
       error = e.message
     } finally {
@@ -269,6 +287,12 @@
                       data-confirm={confirmText(b)}
                       data-confirm-title="Restore this backup?" data-confirm-label="Restore" data-confirm-tone="danger"
                       onclick={() => restore(b)}>Restore</Button>
+            {/if}
+            {#if SETTLED.has(b.status)}
+              <Button treatment="ghost" tone="danger" disabled={!!busy} aria-label={`Discard the backup taken ${when(b)}`}
+                      data-confirm={discardText(b)}
+                      data-confirm-title="Discard this backup?" data-confirm-label="Discard" data-confirm-tone="danger"
+                      onclick={() => discard(b)}>Discard</Button>
             {/if}
           </td>
         </tr>

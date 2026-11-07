@@ -242,9 +242,9 @@ title: Product
     <Mono>{product.slug}</Mono>
   </div>
 
-  <div class="detail">
+  <div class="detail switcher">
     <!-- ── Gallery ────────────────────────────────────────────────────── -->
-    <div class="gallery">
+    <div class="gallery" style="--side: 22rem">
       {#if hero}
         <img class="hero" src={hero.file} alt={hero.alt} />
       {:else}
@@ -296,7 +296,7 @@ title: Product
 
     <div class="right">
       <!-- ── Numbers ──────────────────────────────────────────────────── -->
-      <div class="stats">
+      <div class="stats grid">
         <StatCard label="Price" value={priceLo === priceHi ? money(priceLo) : `${money(priceLo)}–${money(priceHi)}`} />
         <!-- Two numbers and not one, because they are two facts and the shop
              acts on the second. `On hand` is the warehouse; `Available` is on
@@ -428,17 +428,17 @@ title: Product
      `minmax(0, 22rem)`: an <img> at `width: 100%` contributes no intrinsic
      width, so a max-only track collapses to nothing and the photograph
      renders at thumbnail size inside a square hole the aspect-ratio reserved. */
-  .detail  { --gallery: 22rem; display: grid; grid-template-columns: var(--gallery) minmax(0, 1fr); gap: var(--space-4xl); align-items: start }
+  .detail  { --gallery: 22rem; gap: var(--space-4xl); align-items: start }
   .gallery { display: grid; gap: var(--space-lg) }
   .add-photo {
     padding: var(--space-lg);
     border: 1px solid var(--rule);
     border-radius: var(--card-radius);
   }
-  .right   { display: grid; gap: var(--space-2xl); align-content: start }
-  /* Three across, so the numbers sit beside the photograph rather than
-     stacking into a column as tall as it. */
-  .stats   { display: grid; gap: var(--space-lg); grid-template-columns: repeat(3, minmax(0, 1fr)) }
+  .right   { display: grid; gap: var(--space-2xl); align-content: start; min-width: 0 }
+  /* A Grid, so the count follows the box this sits in: three across beside the
+     photograph, two on a phone, instead of stacking into a column as tall as it. */
+  .stats   { --grid-min: 10rem; gap: var(--space-lg) }
 
   .hero {
     width: 100%; aspect-ratio: 1; max-height: var(--gallery);
@@ -479,9 +479,4 @@ title: Product
   }
   .variants td { display: table-cell }
   .cell-price { display: block; font-weight: 600 }
-
-  @media (max-width: 48rem) {
-    .detail { grid-template-columns: 1fr }
-    .stats  { grid-template-columns: repeat(2, minmax(0, 1fr)) }
-  }
 </style>

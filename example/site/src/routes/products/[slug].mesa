@@ -37,8 +37,8 @@ render: static
   const rest     = (data?.images ?? [])
 </script>
 
-<article class="container product">
-  <div class="product-media stack">
+<article class="container product switcher">
+  <div class="product-media stack" style="--side: 22rem">
     {#if hero}
       <img class="product-hero" src={hero.src} alt={hero.alt} />
     {/if}
@@ -55,7 +55,7 @@ render: static
     {/if}
   </div>
 
-  <div class="stack">
+  <div class="product-body stack">
     <header class="stack">
       <p class="text-sm text-muted" id="product-brand">{data?.brand}</p>
       <h1 id="product-name">{data?.name}</h1>
@@ -110,15 +110,12 @@ render: static
     background: var(--color-primary);
   }
   .product {
-    display: grid;
     gap: var(--space-4xl);
-    --gallery: 22rem;
-    grid-template-columns: minmax(0, var(--gallery)) minmax(0, 1fr);
     align-items: start;
   }
-  @media (max-width: 48rem) {
-    .product { grid-template-columns: minmax(0, 1fr) }
-  }
+
+  /* The flex item a wide table would otherwise stretch past the row. */
+  .product-body { min-width: 0 }
 
   .product-hero {
     width: 100%;

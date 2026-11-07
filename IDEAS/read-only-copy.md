@@ -422,25 +422,82 @@ Goal: the owner turns a copy on from the App page and reads it.
 Done when: the owner turns it on from the screen, and Claude reads yesterday's
 numbers through MCP at the copy's address.
 
-- [ ] 2.1 The card above: on or off, refresh schedule, which machine. Gated at
+- [x] 2.1 The card above: on or off, refresh schedule, which machine. Gated at
       ADMINISTRATOR, matching `apps.restoreReplica`.
       The card writes `AppCopy` (`FJS-D2001`) through a service that checks
       the cron with `cronProblem` and calls `syncAppCopySchedule`. Turning it
       off, and `apps.remove`, send `/replica/unserve` to the row's machine.
-- [ ] 2.2 The copy's address per Q2. Waits on `ingress-name.md` serving a name
+  **Built 2026-11-07**: the `appCopies` service (ADMINISTRATOR by the model's
+  `@@gate(5)`) and `components/ReadOnlyCopy.mesa` on the App's Backups tab,
+  which is drawn only for an App with a volume. Turning a copy on or moving it
+  queues a refresh at once, dispatched with `actor: null` because the job runs
+  as the app. A move or an off unserves the old machine through `unserveCopy`
+  in `app-copy-refresh.job.ts`, and an unreachable machine is a warning, not a
+  refusal. A non-administrator's card says who manages the copy, read off the
+  server's 403. Proved by `services.test.ts` § a copy turned on, moved and off
+  (each guard removed once goes red) and `verify:screens` § the read-only
+  copy card. The seed's one copy now sits on the App with a volume and a
+  replica bucket. The Address line waits on 2.2.
+- [x] 2.2 The copy's address per Q2. Waits on `ingress-name.md` serving a name
       at all.
       The upstream is the copy container's IP on `fjs-copy`, and a restart can
       move it to another App's copy, so the route reads it from the container
       each time and does not keep the address `serve` answered with.
-- [ ] 2.3 Posture flags a copy older than its schedule, with a test that feeds
+  **Built 2026-11-07**: once the workspace holds its wildcard, `refreshCopy`
+  pushes it to the copy's machine with `/certs/load` and sends `host`
+  (`copyAddressOf`) with `/replica/serve`. Outpost routes it as
+  `fjs-<app>-copy`, a route of its own, so an App and its copy share a machine.
+  Its noindex is always on, and `docker.repoint` re-reads each copy's IP at start
+  and on every heartbeat, from the `fjs.copy.port` label. `app-copy:dns` (`edge.copyStep`) points
+  `<appId>-copy.<zone>` at the copy's machine under the `copyOf` record mark, so
+  `records` never reads it as the ingress record. It follows the row: after a
+  served refresh, and from `unserveCopy` on off, a move and an App's delete. The
+  card's Address line reads `appCopies`' `address`. Proved by `edge.test.ts` §
+  copyStep and `services.test.ts` § a copy refresh (each guard removed once goes
+  red), outpost's § the copy answers at a hostname, `verify:dns` 39/39 and
+  `verify:screens` § the read-only copy card. No drive runs a copy behind a real
+  Caddy. FJS-4089 is the window after a box restart.
+- [x] 2.3 Posture flags a copy older than its schedule, with a test that feeds
       it a stale copy.
-- [ ] 2.4 Each `acme` Domain's certificate is minted ahead (`FJS-D1988`). With the copy
+  **Built 2026-11-07**: `backup.copy-age` (group `backup`, medium), a control
+  on the copy's machine graded on read beside `backup.replica-lag`
+  (`gradeCopies`, fed by `copiesOn` in `server-postures.service.ts`). It fails
+  once the last refresh that served the copy is older than two of its cron's
+  intervals (`cronGapMs`), and also when a copy never served has a failed
+  refresh, or has had none started inside that allowance. It never reads `asOf`, because a
+  quiet App's newest write stays put while every refresh succeeds. So
+  `refreshedAt` now means the last refresh that served the copy, and a failed
+  refresh leaves it, as it leaves `asOf`. Proved by `posture.test.ts` § the
+  copy grader and § a read-only copy on this machine (a stale nightly copy,
+  through `serverPostures.latest`), and `services.test.ts` § a copy refresh
+  (stamping `refreshedAt` on a failure goes red).
+- [x] 2.4 Each `acme` Domain's certificate is minted ahead (`FJS-D1988`). With the copy
       on, Basecamp mints it by DNS-01 through `providers/acme`, keeps it in a
       `tlsCert` Secret apart from the Domain's `certSecretId`, renews it at
       30 days and pushes it to the copy's machine with `/certs/load`, in the
       shape of `ingress-cert.job.ts`. A proxied Domain's `origin_ca` takes the
       same push. A failed mint fails the job and shows on the card, with a
       test that runs against Pebble.
+  **Built 2026-11-07**: `app-copy:cert` (`ensureCopyCerts`), dispatched by
+  `appCopies` on turn-on, move and off, and swept daily for every live copy
+  and every App holding a minted one no copy needs. The sweep sends every
+  copy, owed a mint or not, because a re-uploaded certificate, a Domain added
+  and a reinstalled machine are each a push that nothing else sends. A Domain whose own
+  certificate is `originCa` or `uploaded` has that one pushed as it is: the
+  ruling names `origin_ca`, and an owner's upload is not replaced either. Every
+  other Domain is minted by DNS-01 in the connected zone holding it (`zoneOf`,
+  now callable from a job). The cert lives in `Domain.copyCertSecretId` /
+  `copyCertExpiresAt`, a checked pair, under the machine id `copy-<domainId>`.
+  The order itself is `orderByDns`, which `ingress:cert` shares. Every Domain
+  is tried. Those that fail are written to `AppCopy.certError` by hostname,
+  the card shows them, and the job throws so the queue retries. `unserveCopy`
+  drops the certificates from the machine the copy left. Proved by
+  `edge.test.ts` § a read-only copy's Domains, minted against Pebble (each
+  guard removed once goes red), `verify:screens` § the read-only copy card (a
+  Domain added, the machine's refusal on the card by hostname) and `verify:dns`
+  39/39. Pebble's default profile issues 6-day certificates, so its test moves
+  the row to what a 90-day order stores. A Domain added while the copy is on
+  waits for the sweep, up to a day.
 
 ### Phase 3 — The lifeboat
 
@@ -452,10 +509,32 @@ time, or asks its person to sign in again once its access token expires. The
 drill also records which users had to sign in again, and asserts that each
 Domain served the certificate pushed by 2.4, so nothing was issued at the flip.
 
-- [ ] 3.1 "Serve at the main address" is a declared column on the App that
-      `domain-dns.job.ts` reads, so the job itself points the ingress record at
-      the copy's machine and does not overwrite the flip on its next run. Domains
-      are CNAMEs to the record, so no Domain changes.
+- [x] 3.1 "Serve at the main address" is a declared column on the copy's row
+      (`FJS-D2018`) that `domain-dns.job.ts` reads, so the job itself points the
+      ingress record at the copy's machine and does not overwrite the flip on
+      its next run. Domains are CNAMEs to the record, so no Domain changes.
+  **Built 2026-11-07**: `AppCopy.isServingMainAddress`. `servingAddresses` is
+  the one reader: a flipped copy's record is its machine's IP, and nothing
+  while that machine is offline, so a release or a machine coming back cannot
+  undo the flip. The copy's machine must also route the App's hostnames, which
+  no step named: `/replica/serve` takes `hosts` and a new `/replica/route`
+  moves them without a second `docker run`. Only the copy's own address keeps
+  `noindex` (`FJS-D2019`), as a subroute ahead of the proxy. `appCopies.patch`
+  routes the machine first and refuses the flip when it fails, then dispatches
+  `ingress:dns`. `routeApp` re-routes a flipped copy, so a Domain written
+  during the outage reaches it. A refresh while flipped keeps the hostnames.
+  Refused while serving: turning the copy off and moving it. Refused for the
+  flip: a copy that never served. The card's button asks once before it acts and shows a banner
+  while serving. 3.3's switch back is built in part: the record goes home,
+  refused while the App runs nowhere, and the copy answers the main hostnames
+  until its next refresh, so a resolver still holding its address reaches it.
+  Proved by `edge.test.ts` § a copy serving the main address (the record
+  holds through its machine going down), `services.test.ts` § a copy turned
+  on, moved and off (every refusal), outpost's § the copy answers at a
+  hostname (the subroute, `/replica/route` on and back) and `verify:screens` §
+  the read-only copy card. No drive runs the copy's subroute behind a real
+  Caddy, and a copy on the App's own machine is refused by Outpost's host
+  conflict, since both routes would claim the App's hostnames.
 - [ ] 3.2 Every answer says it is read-only and gives the as-of time: the MCP
       server's instructions, the viewer's banner, and a header on the API that
       the Phase 3 drill asserts.
@@ -699,3 +778,21 @@ their gate opens, and only the owner's export runs.
     partner of its schedule, which a row holds and two nullable columns do not.
     A refresh replaces the copy rather than adding evidence, so the newest
     `asOf` is all a reader needs; B is the reopen if the card wants a timeline.
+- ~~**Q14 — Where does "serve at the main address" live?**~~ **Answered 2026-11-07 (`FJS-D2018`): A — `AppCopy.isServingMainAddress`. Turning the copy off or moving it is refused while it serves, so the switch cannot outlive the copy it sends users to, and it follows `FJS-D2001`'s row.** (from 3.1)
+  3.1 names a column on the App. `servingAddresses` is the one function that
+  decides the ingress record, so either place makes `ingress:dns` keep the flip.
+  - **A** — `AppCopy.isServingMainAddress`. Turning the copy off or moving it
+    is refused while it serves, so the switch cannot outlive the copy it sends
+    users to, and it follows `FJS-D2001`'s row.
+  - **B** — a column on `App`, as 3.1 is written. A flip with no copy behind it
+    is a state it can write, and every reader joins the row anyway.
+  - **Recommend A** — the switch only means something while the copy exists,
+    and a row it belongs to cannot be removed under it.
+- ~~**Q15 — Which hostnames does the copy mark `noindex` once it serves the main address?**~~ **Answered 2026-11-07 (`FJS-D2019`): A — only `<appId>-copy.<zone>`. The App's Domains and ingress name are served without it, as the live App serves them, so a crawl during an outage does not drop the App's pages from search.** (from 3.1)
+  2.2 built the copy's own address with `X-Robots-Tag: noindex` always.
+  - **A** — only `<appId>-copy.<zone>`. The App's Domains and ingress name are
+    served without it, as the live App serves them, so a crawl during an outage
+    does not drop the App's pages from search.
+  - **B** — every hostname the copy answers. One rule, at the cost of telling
+    search engines to forget the App's own Domains for the length of an outage.
+  - **Recommend A** — the main hostnames are the App's; the copy borrows them.

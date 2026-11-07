@@ -2399,8 +2399,8 @@ export function createApp(opts: AppOptions = {}): App {
             url:  `http://${_host}:${_port}${_prefix}`,
             rows: [
               { name: 'Junction', facts: [
-                `${http.router.routeCount} routes`,
                 `${services.list().length} services`,
+                `${http.router.routeCount} routes`,
                 ...(_servicesMissed ? [`autoload ${describeServicesDir(_servicesDir)}`] : []),
                 ...(app._devtools.status === 'on' ? [`devtools ${app._devtools.url}`] : []),
                 ...(app._devtools.status === 'refused' ? [`devtools refused — ${app._devtools.reason}`] : []),

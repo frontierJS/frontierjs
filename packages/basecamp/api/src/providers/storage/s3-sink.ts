@@ -146,6 +146,9 @@ export function startS3Sink(opts: S3SinkOptions = {}) {
 
       const listing = path.match(/^\/([^/]+)\/?$/)
       if (listing && req.method === 'GET' && url.searchParams.get('list-type') === '2') return record(list(decodeURIComponent(listing[1]), url.searchParams))
+      // No versioning here, answered as a provider without it answers, so
+      // `deleteEveryVersion`'s plain-DELETE fallback is what runs.
+      if (listing && req.method === 'GET' && url.searchParams.has('versions')) return record(xml('NotImplemented', 'versions are not kept here', 501))
       if (listing && req.method === 'GET' && url.searchParams.has('object-lock')) return record(armed.lockDays == null
         ? xml('ObjectLockConfigurationNotFoundError', 'Object Lock configuration does not exist for this bucket', 404)
         : new Response(`<ObjectLockConfiguration><ObjectLockEnabled>Enabled</ObjectLockEnabled><Rule><DefaultRetention><Mode>COMPLIANCE</Mode><Days>${armed.lockDays}</Days></DefaultRetention></Rule></ObjectLockConfiguration>`,

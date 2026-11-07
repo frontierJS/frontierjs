@@ -2,11 +2,15 @@
   // ReadOnlyCopy.mesa — an App's read-only copy turned on or off, its refresh
   // schedule and its machine (`IDEAS/read-only-copy.md` 2.1, `FJS-D2001`).
   //
-  // Drawn for an administrator only: `AppCopy` is `@@gate(5)` for reads as
-  // well, so a developer's card could say nothing true about it.
+  // `AppCopy` is `@@gate(5)` for reads as well, and `session.level` does not
+  // know the workspace role, so the server's 403 is what tells this card the
+  // caller is not an administrator.
   //
   // It POLLS while a refresh is unsettled, as AppBackups does: the job writes
   // the outcome at system, and that write announces nothing.
+  //
+  // "Serve at the main address" sends every user of the App to yesterday's
+  // data (3.1), so the button asks once more on the card before it writes.
   import { appCopies } from '../resources/AppCopy.mesa'
   import { servers }   from '../resources/Server.mesa'
   import { at, ago }   from '../lib/datetime.js'
@@ -31,10 +35,12 @@
   let copy     = null
   let machines = []
   let loading  = true
+  let denied   = false
   let error    = null
   let busy     = false
   let serverId = ''
   let cron     = SCHEDULES[0].value
+  let confirm  = false
 
   // A cron set some other way is offered as itself, not snapped to a preset.
   $: schedules = copy && !SCHEDULES.some(s => s.value === copy.cron)
@@ -54,7 +60,8 @@
       if (copy) { serverId = copy.serverId; cron = copy.cron }
       else if (!serverId) serverId = (machines.find(m => m.status === 'online') ?? machines[0])?.id ?? ''
     } catch (e) {
-      error = e.message
+      if (e.status === 403) denied = true
+      else error = e.message
     } finally {
       loading = false
     }
@@ -101,6 +108,14 @@
     toasts.success('Copy turned off')
   })
 
+  const serveMain = (on) => act(async () => {
+    copy = await appCopies.service.patch(copy.id, { isServingMainAddress: on })
+    confirm = false
+    toasts.success(on
+      ? `The main address now points at ${machineName(copy.serverId)}. Resolvers follow within about five minutes.`
+      : 'The main address points back at the app. The copy keeps answering it until its next refresh.')
+  })
+
   const change = (data) => act(async () => {
     const from = copy.serverId
     const answer = await appCopies.service.patch(copy.id, data)
@@ -129,12 +144,14 @@
 
   {#if loading}
     <p class="text-sm text-muted">Loading…</p>
+  {:else if denied}
+    <p class="text-sm text-muted" id="app-copy-denied">An administrator of this workspace turns the copy on or off.</p>
   {:else if !app.replicaDestinationId && !copy}
     <p class="text-sm text-muted" id="app-copy-no-replica">
       A copy is served from the app's replica, and this app names no replica destination.
     </p>
   {:else}
-    <Switch id="app-copy-on" label={copy ? 'On' : 'Off'} checked={!!copy} disabled={busy || (!copy && !serverId)}
+    <Switch id="app-copy-on" label={copy ? 'On' : 'Off'} checked={!!copy} disabled={busy || (!copy && !serverId) || copy?.isServingMainAddress}
             onchange={(on) => on ? turnOn() : turnOff()} />
 
     {#if copy}
@@ -143,15 +160,52 @@
         on <strong>{machineName(copy.serverId)}</strong>
         {#if copy.refreshedAt} · last refreshed {ago(copy.refreshedAt)}{/if}
       </p>
+      <p class="text-sm" id="app-copy-address">
+        {#if copy.address && copy.asOf}
+          Address <a href={`https://${copy.address}/`} target="_blank" rel="noopener"><code>{copy.address}</code></a>
+        {:else if copy.address}
+          Will answer at <code>{copy.address}</code> once a refresh has served it
+        {:else}
+          <span class="text-muted">No address yet: the workspace needs an ingress zone and its wildcard certificate</span>
+        {/if}
+      </p>
       {#if copy.error}
         <p class="text-sm text-danger" id="app-copy-refresh-error">The last refresh failed: {copy.error}</p>
+      {/if}
+      {#if copy.certError}
+        <p class="text-sm text-danger" id="app-copy-cert-error">
+          Not every hostname's certificate is on the copy's machine, so serving at the main address would order them then: {copy.certError}
+        </p>
+      {/if}
+
+      {#if copy.isServingMainAddress}
+        <article class="alert warning" id="app-copy-serving">
+          <div class="alert-content">
+            Users reach this copy at the app's own address, read-only, as of {copy.asOf ? at(copy.asOf) : 'its last refresh'}.
+            Switch back once the app is running again.
+          </div>
+        </article>
+        <Button id="app-copy-switch-back" treatment="outlined" disabled={busy} onclick={() => serveMain(false)}>Switch back to the app</Button>
+      {:else if confirm}
+        <p class="text-sm" id="app-copy-confirm">
+          Every user of this app will be sent to this copy, read-only and as of {copy.asOf ? at(copy.asOf) : 'its last refresh'}.
+          Anything written since then is not there.
+        </p>
+        <div class="cluster">
+          <Button id="app-copy-serve-confirm" tone="danger" disabled={busy} onclick={() => serveMain(true)}>Send users to the copy</Button>
+          <Button treatment="outlined" disabled={busy} onclick={() => confirm = false}>Cancel</Button>
+        </div>
+      {:else}
+        <Button id="app-copy-serve" treatment="outlined" disabled={busy || !copy.refreshedAt}
+                title={copy.refreshedAt ? null : 'Waits for the first refresh to serve the copy'}
+                onclick={() => confirm = true}>Serve at the main address</Button>
       {/if}
     {/if}
 
     <div class="cluster">
       <Select id="app-copy-cron" label="Refresh" value={cron} options={schedules} disabled={busy}
               onchange={(e) => { cron = e.target.value; if (copy && cron !== copy.cron) change({ cron }) }} />
-      <Select id="app-copy-machine" label="Machine" value={serverId} disabled={busy}
+      <Select id="app-copy-machine" label="Machine" value={serverId} disabled={busy || copy?.isServingMainAddress}
               options={machines.map(m => ({ value: m.id, label: `${m.name} · ${m.status}` }))}
               onchange={(e) => { serverId = e.target.value; if (copy && serverId !== copy.serverId) change({ serverId }) }} />
     </div>

@@ -26,10 +26,10 @@ render: static
     grow on the left — and what each line buys you on the right.
   </p>
 
-  <div class="stage">
+  <div class="stage switcher" style="--switch-at: 64rem">
 
     <!-- Left — every step, named -->
-    <nav class="rail" data-steps aria-label="Walkthrough steps">
+    <nav class="rail" data-steps aria-label="Walkthrough steps" style="--side: 17.5rem">
       {#each d.acts as a}
         <p class="act-head"><strong>{a.name}</strong><span class="pkg">{a.pkgShort}</span></p>
         {#each a.steps as s}
@@ -102,9 +102,13 @@ h2 { font-size: 1.15rem; margin: 0; letter-spacing: -.01em; }
 /* Not .steps/.step — @frontierjs/css owns both as its stepper component, and
    .step sets text-align:center, which inherits into the <pre> and centers
    every line of code inside it. */
-.stage { display: grid; gap: 2rem; align-items: start; margin-top: 2rem; }
-@media (min-width: 62rem) {
-  .stage { grid-template-columns: 17.5rem 1fr; }
+/* A Switcher: the rail (--side on the nav) beside the work column, stacked
+   below 64rem of the stage's own width. The stage is a named container so the
+   sticky rail can ask the same width (FJS-D2024); stuck while stacked, the
+   rail would ride over the code. */
+.stage { container: stage / inline-size; gap: 2rem; align-items: start; margin-top: 2rem; }
+.work  { min-inline-size: 0; }
+@container stage (inline-size >= 64rem) {
   .rail { position: sticky; top: 5.25rem; }
 }
 

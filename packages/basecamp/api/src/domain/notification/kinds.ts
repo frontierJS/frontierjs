@@ -61,9 +61,11 @@ export const NOTIFICATION_KINDS: NotificationKindDef[] = [
     description: 'A URL Basecamp probes stopped answering, past its retries.',
     email: true,  inApp: true, push: true },
 
+  // Emailed although it is good news: `MonitorDown` was emailed, and without
+  // its close the inbox says the monitor is still down.
   { kind: 'MonitorUp',   label: 'Monitor recovered',
     description: 'A monitor that was down is answering again.',
-    email: false, inApp: true, push: false },
+    email: true,  inApp: true, push: false },
 
   { kind: 'PostureFailed', label: 'Server posture failing',
     description: 'A security control on a machine stopped holding — password SSH, an unexpected listener, updates pending.',

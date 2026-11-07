@@ -22,6 +22,7 @@ import { pathToFileURL } from 'url'
 import { diffSchemaModes } from '../resource/schema-registry.js'
 import { wantsLocalDb }    from './local-db-plugin.js'
 import { refusal }         from './refusal.js'
+import { discoverResources } from './resource-files.js'
 import { RESOLVED_BOOT_ID } from '../virtual/virtual-sierra.js'
 import { formatBytes }    from '@frontierjs/toolbelt/units'
 
@@ -472,9 +473,10 @@ export function schemaPlugin(config, sierraContext) {
         // measurement rather than a discovery. Refusing to project the table is
         // a ruling (`FJS-D204`), and a ruling that hides its own cost is the
         // shape that gets quietly reversed.
-        // Under `fli dev` the same two numbers ride the ready line instead.
+        // Under `fli dev` the size rides the ready line, beside the resource count.
         if (viteConfig.command === 'serve' && process.env[DEV_ENV]) {
-          sierraContext.devFacts = [`${generated.models.length} models`, `schema ${emittedSize(generated)}`]
+          const resources = discoverResources(resolve(root, 'src/resources')).length
+          sierraContext.devFacts = [`${resources} resources`, `schema ${emittedSize(generated)}`]
         } else {
           console.log(
             `  [Sierra] schema: ${generated.models.length} models from ` +

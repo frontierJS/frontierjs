@@ -42,6 +42,14 @@ test('a skill colors its whole turn, and a turn carries across a chunk', () => {
   const head = readMessages(lines.slice(0, 4).join(''))
   const tail = readMessages(lines.slice(4).join(''), { skills: head.file.skills })
   expect(tail.messages.map(m => m.skills)).toEqual([['fix-next'], []])
+
+  // The editor's tag block is longer than the 200 kept characters, so the
+  // typing after it is the prompt and the block is nothing.
+  const wrapped = `<ide_selection>The user selected lines 58 to 58 from /repo/x.ts:\n${'ir\n'.repeat(100)}</ide_selection> fix the selected loop`
+  expect(readMessages([prompt(wrapped), reply('m9', 'T9', U)].map(l => l + '\n').join('')).file.firstPrompt).toBe('fix the selected loop')
+  expect(readMessages([prompt('<ide_opened_file>a.ts</ide_opened_file>'), prompt('then this')].map(l => l + '\n').join('')).file.firstPrompt).toBe('then this')
+  const blocks = JSON.stringify({ type: 'user', timestamp: 'T', message: { role: 'user', content: [{ type: 'text', text: '<ide_opened_file>a.ts</ide_opened_file>' }, { type: 'image' }, { type: 'text', text: 'second block typing' }] } })
+  expect(readMessages(blocks + '\n').file.firstPrompt).toBe('second block typing')
 })
 
 test('a resumed session repeating a reply does not count it again', () => {

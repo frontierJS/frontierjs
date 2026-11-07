@@ -46,9 +46,8 @@
  * the wrapper states neither.
  */
 
-import { readdirSync, statSync } from 'node:fs'
 import { mkdir, writeFile, rm, readdir, readFile, stat } from 'node:fs/promises'
-import { resolve, join, basename, extname } from 'node:path'
+import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ENV_PREFIX } from './env-prefix.js'
 
@@ -66,41 +65,10 @@ import { localDbPlugin } from './local-db-plugin.js'
 import { createSierraViteConfig, resolveHtmlClass } from './index.js'
 import { DEFAULT_LANG } from './prerender.js'
 import { resolveSchemaPath, clientSchemas }         from './schema-plugin.js'
+import { discoverResources }                        from './resource-files.js'
 
 /** The runtime a generated entry imports — `src/mcp/index.js`. */
 export const VIEW_RUNTIME = '@frontierjs/sierra/mcp'
-
-/**
- * Everything under `dir` that is a Resource.
- *
- * A flat listing on purpose: a Resource is one file (Invariant 19), so a
- * directory here is something else — a resource's own parts, or a mistake —
- * and is left alone rather than guessed at. Leading `.` and `_` are skipped,
- * as the widget build skips them.
- *
- * @param {string} dir  absolute path to the resources directory
- * @returns {Array<{ name: string, entry: string }>} sorted by name
- */
-export function discoverResources(dir) {
-  let names
-  try {
-    names = readdirSync(dir)
-  } catch {
-    return []
-  }
-
-  const found = []
-  for (const name of names.sort()) {
-    if (name.startsWith('.') || name.startsWith('_')) continue
-    if (extname(name) !== '.mesa') continue
-    const full = join(dir, name)
-    let stat
-    try { stat = statSync(full) } catch { continue }
-    if (!stat.isFile()) continue
-    found.push({ name: basename(name, '.mesa'), entry: full })
-  }
-  return found
-}
 
 /**
  * The boot every view shares.

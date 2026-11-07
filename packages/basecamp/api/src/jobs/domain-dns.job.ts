@@ -43,7 +43,7 @@
 import { defineJob }     from '@frontierjs/caravan'
 import { runsEitherWay } from '../domain/job/job-context.ts'
 import { executorOn, isExecutor } from '../providers/executor.ts'
-import { routedHosts, routedPaths, routedRedirects, noindexHosts } from '../domain/release/runtime.ts'
+import { routedHosts, routedPaths, routedRedirects, noindexHosts, copyServingMain } from '../domain/release/runtime.ts'
 import { isInline }      from '../domain/release/app-source.ts'
 import type { App }         from '@frontierjs/junction'
 
@@ -184,7 +184,9 @@ export async function routeDomainApp(app: App, domainId: string): Promise<RouteP
 }
 
 /** One App's hostnames to Caddy on every online machine running it — the
- *  half of `routeDomainApp` an App's own change needs too (`ingress:dns`). */
+ *  half of `routeDomainApp` an App's own change needs too (`ingress:dns`).
+ *  While its read-only copy serves the main address the copy's machine is
+ *  one of them, since the record sends every hostname there. */
 export async function routeApp(app: App, appId: string, out: RoutePush): Promise<void> {
   const sys = (app.db as any).asSystem()
   const row = await sys.app.findFirst({ where: { id: appId }, select: { source: true } }) as { source: unknown } | null
@@ -207,5 +209,11 @@ export async function routeApp(app: App, appId: string, out: RoutePush): Promise
     out.routed.push({ serverId, appId, hosts, paths, redirects, rebind: (reply.data?.rebind as string | null | undefined) ?? null })
     app.logger.child('routes').info('routed', { appId, server: name, hosts: hosts.join(','),
       redirects: redirects.map(r => `${r.host}>${r.to}`).join(','), noindex: noindex.join(',') })
+  }
+
+  if (await copyServingMain(sys, appId)) {
+    const { routeCopyHosts } = await import('./app-copy-refresh.job.ts')
+    const refused = await routeCopyHosts(app, appId, true)
+    if (refused) out.failed.push(refused)
   }
 }

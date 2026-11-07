@@ -289,8 +289,8 @@ async function bucketLockDeclared(sys: any, appId: string | null): Promise<HostD
   return { name: dest.name, tested: !!dest.lastTestAt, lockDays: dest.lockDays ?? null, attestedAt: dest.lockAttestedAt ?? null }
 }
 
-/** The days between two fires of a cron line, measured on a UTC walk; 1 where it cannot be read. */
-export function cronGapDays(expr: string): number {
+/** The milliseconds between two fires of a cron line, measured on a UTC walk; a day where it cannot be read. */
+export function cronGapMs(expr: string): number {
   try {
     const fields = parseCron(expr)
     const start  = Date.UTC(2026, 0, 1)
@@ -299,11 +299,14 @@ export function cronGapDays(expr: string): number {
       const d = new Date(start + m * 60_000)
       if (!cronMatches(fields, { minutes: d.getUTCMinutes(), hours: d.getUTCHours(), date: d.getUTCDate(), month: d.getUTCMonth() + 1, day: d.getUTCDay() })) continue
       if (first === null) first = m
-      else return Math.max(1, Math.ceil((m - first) / 1440))
+      else return (m - first) * 60_000
     }
   } catch { /* an unreadable line grades on the daily floor */ }
-  return 1
+  return 86_400_000
 }
+
+/** `cronGapMs` in whole days, at least 1. */
+export const cronGapDays = (expr: string): number => Math.max(1, Math.ceil(cronGapMs(expr) / 86_400_000))
 
 /** Every other app with a backup or drill schedule, and when its newest good run finished (`app.backup-recent`).
  *  Good is the hub's own test: `success` with no `error`. A run is owed twice per interval before it is called missed, floor two days. */

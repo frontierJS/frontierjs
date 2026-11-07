@@ -34,6 +34,8 @@ const parses = (text) => {
 }
 
 const clone = (x) => structuredClone(x)
+// The policy column pads to the longest op, so an assertion reads it unpadded.
+const flat = (text) => text.replace(/@@allow\((\w+), +/g, '@@allow($1, ')
 
 // Charter's studio, 2026-10-09: a yoga studio's classes, read by every member
 // and posted by their instructor.
@@ -112,9 +114,9 @@ describe('emit', () => {
   })
 
   test('a membership delegates to the container\'s update rule where it has one', () => {
-    const text = emit(hiring, { scaffold: SCAFFOLD }).text
+    const text = flat(emit(hiring, { scaffold: SCAFFOLD }).text)
     expect(text).toContain("@@allow(create, check(company, 'update'))")
-    expect(text).toContain("@@allow(read,   memberships.some(userId == auth().id))")
+    expect(text).toContain("@@allow(read, memberships.some(userId == auth().id))")
     expect(text).toContain("@@allow(update, memberships.some(userId == auth().id && role == 'recruiter'))")
     expect(text).toContain('@@relator([companyId, userId], once)')
   })
@@ -152,7 +154,7 @@ describe('emit', () => {
   test('two administering roles are either one', () => {
     const a = clone(hiring)
     a.entities[0].access.roles.update = ['recruiter', 'manager']
-    expect(emit(a, { scaffold: SCAFFOLD }).text).toContain("@@allow(update, memberships.some(userId == auth().id && (role == 'recruiter' || role == 'manager')))")
+    expect(flat(emit(a, { scaffold: SCAFFOLD }).text)).toContain("@@allow(update, memberships.some(userId == auth().id && (role == 'recruiter' || role == 'manager')))")
   })
 
   // check(parent, 'update') against a parent held only by a gate compiles to
@@ -162,7 +164,7 @@ describe('emit', () => {
       { name: 'Account', rung: 'novel', why: 'probe', links: [{ name: 'holder', to: 'User', actor: 'subject', required: true }], access: { system: true } },
       { name: 'Statement', rung: 'novel', why: 'probe', links: [{ name: 'account', to: 'Account', required: true }], access: { via: 'account' } },
     ] }
-    const text = emit(a, { scaffold: SCAFFOLD }).text
+    const text = flat(emit(a, { scaffold: SCAFFOLD }).text)
     expect(text).not.toContain("check(account, 'update')")
     expect(text).toContain("@@allow(update, check(account, 'read'))")
   })
@@ -174,7 +176,7 @@ describe('emit', () => {
       { name: 'Order', rung: 'novel', why: 'probe', links: [{ name: 'shop', to: 'Shop', required: true }, { name: 'buyer', to: 'User', actor: 'author', required: true }], access: { via: 'shop' } },
       { name: 'OrderItem', rung: 'novel', why: 'probe', links: [{ name: 'order', to: 'Order', required: true }], access: { via: 'order' } },
     ] }
-    const { text } = emit(a, { scaffold: SCAFFOLD })
+    const text = flat(emit(a, { scaffold: SCAFFOLD }).text)
     expect(text).toMatch(/@@allow\(read, +buyerId == auth\(\)\.id \|\| check\(shop, 'update'\)\)/)
     expect(text).toContain("@@allow(create, check(shop, 'read') && (buyerId == auth().id))")
     expect(text).toMatch(/@@allow\(read, +check\(order\)\)/)
@@ -187,7 +189,7 @@ describe('emit', () => {
   test('a membership whose person is optional keeps pending rows distinct', () => {
     const a = clone(hiring)
     a.entities[1].links[1].required = false
-    const text = emit(a, { scaffold: SCAFFOLD }).text
+    const text = flat(emit(a, { scaffold: SCAFFOLD }).text)
     expect(text).toContain('@@unique([companyId, userId], nullsDistinct: true)')
     expect(parses(text)).toBe(true)
   })
@@ -197,19 +199,19 @@ describe('emit', () => {
   test('a unique secret is deterministic, so it parses and can be looked up', () => {
     const a = clone(hiring)
     a.entities[0].fields = [...(a.entities[0].fields ?? []), { name: 'statusToken', type: 'secret', unique: true, why: 'the private link an applicant checks their application with' }]
-    const text = emit(a, { scaffold: SCAFFOLD }).text
+    const text = flat(emit(a, { scaffold: SCAFFOLD }).text)
     expect(text).toContain('@secret(deterministic: true) @unique')
     expect(parses(text)).toBe(true)
   })
 
   test('a create names its caller AND reaches the parent', () => {
-    const text = emit(hiring, { scaffold: SCAFFOLD }).text
+    const text = flat(emit(hiring, { scaffold: SCAFFOLD }).text)
     expect(text).toContain("@@allow(create, check(application, 'read') && (interviewerId == auth().id))")
     expect(text).toContain('interviewerId  String       @default(auth().id)')
   })
 
   test('a public create stamps no owner, since a visitor has no id to stamp (FJS-1793)', () => {
-    const text = emit(PUBLIC_OWNED, { scaffold: SCAFFOLD }).text
+    const text = flat(emit(PUBLIC_OWNED, { scaffold: SCAFFOLD }).text)
     expect(text).toContain('@@gate(4.0.4.4)')
     expect(text).toMatch(/ownerId +String\n/)
     expect(text).not.toContain('@default(auth().id)')
@@ -217,17 +219,18 @@ describe('emit', () => {
 
   test('an op nobody holds is raised to 8, not left signed-in', () => {
     const a = { entities: [{ name: 'Receipt', rung: 'novel', why: 'probe', fields: [{ name: 'total', type: 'money', required: true }], links: [{ name: 'customer', to: 'User', actor: 'subject', required: true }], access: { system: true } }] }
-    const text = emit(a, { scaffold: SCAFFOLD }).text
+    const text = flat(emit(a, { scaffold: SCAFFOLD }).text)
     expect(text).toContain('@@gate(4.8.8.8)')
     expect(text).toContain("@@allow(read, customerId == auth().id)")
   })
 
   test('shared opens the read only; the writes stay with the links, and an administrator holds the rest', () => {
-    const text = emit(TIMETABLE, { scaffold: SCAFFOLD }).text
+    const text = flat(emit(TIMETABLE, { scaffold: SCAFFOLD }).text)
     expect(text).toContain('@@gate(4.4.4.5)')
     expect(text).toContain("@@allow(create, instructorId == auth().id)")
     expect(text).toContain("@@allow(update, instructorId == auth().id)")
-    expect(text).not.toContain("@@allow(read")
+    expect(text).toContain("@@allow(read, true)")
+    expect(text).toContain("@@allow(delete, true)")
     const bare = clone(TIMETABLE)
     bare.entities[0].links = []
     expect(emit(bare, { scaffold: SCAFFOLD }).text).toContain('@@gate(4.5.5.5)')
@@ -249,7 +252,7 @@ describe('emit', () => {
     const said = r.findings.map(f => f.message).join('\n')
     expect(said).toContain('Anyone, signed in or not, creates a BookingRequest')
     expect(said).toContain('Every signed-in user reads every BookingRequest')
-    const text = emit(BOOKING, { scaffold: SCAFFOLD }).text
+    const text = flat(emit(BOOKING, { scaffold: SCAFFOLD }).text)
     expect(parses(text)).toBe(true)
     expect(text).toContain('@@gate(4.0.4.5)')
     const both = clone(BOOKING)
@@ -258,7 +261,7 @@ describe('emit', () => {
   })
 
   test('public is the gate at 0, and a condition narrows it', () => {
-    const text = emit(hiring, { scaffold: SCAFFOLD }).text
+    const text = flat(emit(hiring, { scaffold: SCAFFOLD }).text)
     expect(text).toContain('@@gate(0.4.4.4)')
     expect(text).toMatch(/@@allow\(read, +managerId == auth\(\)\.id \|\| check\(company\) \|\| status == 'open'\)/)
   })
@@ -319,6 +322,30 @@ describe('emitted access, on a real client', () => {
     } finally {
       env.close()
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  // An update policy grades the row as it IS, so a recruiter moved their own
+  // candidate into a company they only sit in and the PATCH was admitted. A
+  // company they cannot read is refused before any policy, as a key naming
+  // no row they can see.
+  test('a recruiter cannot move a row into a company they do not administer', async () => {
+    const env = await createTestEnv({ schema: emit(hiring, { scaffold: SCAFFOLD }).text })
+    try {
+      const sys = env.system
+      const user = await sys.user.create({ data: { email: 'a@example.com' } })
+      const mine = await sys.company.create({ data: { name: 'a co' } })
+      const theirs = await sys.company.create({ data: { name: 'b co' } })
+      await sys.membership.create({ data: { companyId: mine.id, userId: user.id, role: 'recruiter' } })
+      await sys.membership.create({ data: { companyId: theirs.id, userId: user.id } })
+      const candidate = await sys.candidate.create({ data: { name: 'Ada', companyId: mine.id } })
+      const as = env.actingAs(user)
+      await as.candidate.update({ where: { id: candidate.id }, data: { name: 'Ada L' } })
+      await as.candidate.update({ where: { id: candidate.id }, data: { companyId: theirs.id } }).catch(() => null)
+      const row = await sys.candidate.findUnique({ where: { id: candidate.id } })
+      expect([row.name, row.companyId]).toEqual(['Ada L', mine.id])
+    } finally {
+      env.close()
     }
   })
 
@@ -469,7 +496,7 @@ describe('emitted access, on a real client', () => {
       { name: 'Shop', rung: 'novel', why: 'probe', fields: [{ name: 'published', type: 'bool', required: true }], links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }], access: { public: ['read'], publicWhen: { published: true }, why: 'the storefront' } },
       { name: 'Listing', rung: 'novel', why: 'probe', fields: [{ name: 'isActive', type: 'bool', required: true }], links: [{ name: 'shop', to: 'Shop', required: true }], access: { via: 'shop', public: ['read'], publicWhen: { isActive: true }, why: 'active listings are for sale' } },
     ] }
-    const { text } = emit(a, { scaffold: SCAFFOLD })
+    const text = flat(emit(a, { scaffold: SCAFFOLD }).text)
     expect(text).toContain('check(shop) && isActive == true')
     const env = await createTestEnv({ schema: text })
     try {

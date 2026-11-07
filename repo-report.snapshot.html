@@ -284,6 +284,9 @@ html {
 
   --align:                initial;
   --grid-min:             initial;
+  --switch-at:            initial;
+  --fr:                   initial;
+  --side:                 initial;
   --app-bg:               initial;
   --app-depth:            initial;
   --topbar-bg:            initial;
@@ -1462,12 +1465,37 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 }
 
 
+@property --fr {
+  syntax:   '*';
+  inherits: false;
+}
+@property --side {
+  syntax:   '*';
+  inherits: false;
+}
+
+.switcher {
+  display:     flex;
+  flex-wrap:   wrap;
+  gap:         var(--space-2xl);
+  inline-size: 100%;
+}
+.switcher > * {
+  flex-grow:  var(--fr, 1);
+  flex-basis: max(var(--side, 0px), calc((var(--switch-at, 48rem) - 100%) * 999));
+}
+.switcher > [style*="--side:"] {
+  flex-grow: 0;
+}
+
+
 .stack[hidden],
 .cluster[hidden],
 .group[hidden],
 .center[hidden],
 .split[hidden],
-.grid[hidden] {
+.grid[hidden],
+.switcher[hidden] {
   display: none;
 }
 
@@ -2190,7 +2218,7 @@ code[language] > span::before {
 .card { padding: var(--space-3xl); }
 
 
-:is(.card, .screen, .container, .pane):where(:not(.stack, .cluster, .group, .center, .split, .grid, .bar, .toolbar, .navlist, .pagination, .section)) > :where(:not(:first-child)) {
+:is(.card, .screen, .container, .pane):where(:not(.stack, .cluster, .group, .center, .split, .grid, .switcher, .bar, .toolbar, .navlist, .pagination, .section)) > :where(:not(:first-child)) {
   margin-block-start: var(--space-2xl);
 }
 
@@ -4585,6 +4613,14 @@ details[open]:has(> summary.navlist-label)::details-content {
 
 
 .relative { position: relative; }
+
+
+@media (max-width: 639px) {
+  .spare { display: none; }
+}
+@container fjs (inline-size < 30rem) {
+  .spare { display: none; }
+}
 
 
 .text-body    { color: var(--ink); }

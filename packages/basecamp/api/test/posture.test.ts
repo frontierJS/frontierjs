@@ -20,8 +20,8 @@ import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
-import { declaredFor, gradeHub, gradeIngressNames, gradePosture, gradeReplication, gradeRuntimeContainers, gradeRuntimeUnits, HUB_CONTROL_IDS, lastKnownControls, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
-import { HOST_SLUG, hubApp, placeHub } from '../src/domain/host/host-machine.ts'
+import { declaredFor, gradeCopies, gradeHub, gradeIngressNames, gradePosture, gradeReplication, gradeRuntimeContainers, gradeRuntimeUnits, HUB_CONTROL_IDS, lastKnownControls, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
+import { HOST_SLUG, cronGapDays, cronGapMs, hubApp, placeHub } from '../src/domain/host/host-machine.ts'
 import type { HostDeclared, PostureReadings } from '../src/domain/host/posture.ts'
 import { componentById, matchGithub, rangeOf, versionOf } from '../src/domain/host/components.ts'
 import { prunePosture } from '../src/jobs/retention.job.ts'
@@ -333,11 +333,11 @@ describe('a report lands', () => {
     const stale = await env.as(owner).service('serverPostures').call('latest', lone.id, {})
     expect(stale.stale).toBe(true)
     // The replica and ingress controls are read off the heartbeat and the rows, which an old report does not age.
-    const onRead = new Set(['backup.replica-lag', 'net.ingress-names'])
+    const onRead = new Set(['backup.replica-lag', 'net.ingress-names', 'backup.copy-age'])
     const [read, reported] = [stale.controls.filter((c: any) => onRead.has(c.id)),
                               stale.controls.filter((c: any) => !onRead.has(c.id))]
     expect(reported.every((c: any) => c.ok === 'unknown')).toBe(true)
-    expect(read.map((c: any) => c.ok)).toEqual([true, true])
+    expect(read.map((c: any) => c.ok)).toEqual([true, true, true])
   })
 
   test('an App placed here and served at its ingress name is listed; once a Domain serves it, it is not', async () => {
@@ -357,6 +357,35 @@ describe('a report lands', () => {
     expect(await listed()).toBe('No App here is served at an ingress name')
   })
 
+  test('a read-only copy on this machine past two of its schedule\'s intervals fails, graded on read', async () => {
+    const sys     = env.system as any
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'C', slug: `c-${Date.now()}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `ce-${Date.now()}` } })
+    const app     = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'shop', slug: `shop-${Date.now()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    const copy    = await sys.appCopy.create({ data: { appId: app.id, serverId: machine.id, cron: '0 3 * * *' } })
+    const graded  = async () => (await env.as(owner).service('serverPostures').call('latest', machine.id, {}))
+      .controls.find((c: any) => c.id === 'backup.copy-age')
+    try {
+      await sys.appCopy.update({ where: { id: copy.id }, data: { status: 'failed', error: 'the bucket said 403',
+        asOf: hoursAgo(80), refreshedAt: hoursAgo(72) } })
+      const stale = await graded()
+      expect(stale.ok).toBe(false)
+      expect(stale.message).toBe(`${app.slug}'s copy was last refreshed 3 days ago, past its schedule's 48 h: the bucket said 403`)
+      expect(stale.fix).toContain('Backups tab')
+
+      // A quiet App's as-of stays at its last write while every refresh serves it.
+      await sys.appCopy.update({ where: { id: copy.id }, data: { status: 'success', error: null, refreshedAt: hoursAgo(1) } })
+      expect((await graded()).ok).toBe(true)
+
+      // Its App deleted, the copy is no longer this machine's to grade.
+      await sys.appCopy.update({ where: { id: copy.id }, data: { refreshedAt: hoursAgo(72) } })
+      await sys.app.remove({ where: { id: app.id } })
+      expect((await graded()).ok).toBe(true)
+    } finally { await sys.appCopy.delete({ where: { id: copy.id } }) }
+  })
+
   test('retention keeps each machine\'s newest however old', async () => {
     const lone = await env.system.server.create({ data: { workspaceId: ws.id, name: 'old', slug: `o-${Date.now()}`, status: 'pending' } })
     for (const daysAgo of [90, 60])
@@ -364,6 +393,39 @@ describe('a report lands', () => {
     await prunePosture(env.system)
     const left = await env.system.serverPosture.findMany({ where: { serverId: lone.id } })
     expect(left).toHaveLength(1)
+  })
+})
+
+describe('the copy grader', () => {
+  const HOUR  = 3_600_000
+  const ago   = (ms: number) => new Date(NOW - ms).toISOString()
+  const copy  = (extra: object) => ({ name: 'shop', maxAgeMs: 48 * HOUR, refreshedAt: ago(HOUR), status: 'success', error: null, createdAt: ago(30 * 24 * HOUR), ...extra })
+
+  test('no copy here passes; one served inside its allowance passes', () => {
+    expect(gradeCopies([], NOW).ok).toBe(true)
+    expect(gradeCopies([copy({})], NOW)).toMatchObject({ ok: true, message: '1 read-only copy inside its schedule' })
+    // One missed night is the run-failure notice's, not this control's.
+    expect(gradeCopies([copy({ refreshedAt: ago(30 * HOUR), status: 'failed', error: 'x' })], NOW).ok).toBe(true)
+  })
+
+  test('a copy past its allowance fails, naming it and its last error', () => {
+    const c = gradeCopies([copy({ refreshedAt: ago(50 * HOUR), status: 'failed', error: 'the bucket said 403' }), copy({ name: 'blog' })], NOW)
+    expect(c).toMatchObject({ id: 'backup.copy-age', ok: false, severity: 'medium' })
+    expect(c.message).toBe('shop\'s copy was last refreshed 50 h ago, past its schedule\'s 48 h: the bucket said 403')
+  })
+
+  test('a copy never served fails on a failed refresh, and once its allowance passes with none started', () => {
+    expect(gradeCopies([copy({ refreshedAt: null, status: 'failed', error: 'no release' })], NOW).message).toBe('shop\'s copy has never been served here: no release')
+    expect(gradeCopies([copy({ refreshedAt: null, status: 'running' })], NOW).ok).toBe(true)
+    expect(gradeCopies([copy({ refreshedAt: null, status: null, createdAt: ago(HOUR) })], NOW).ok).toBe(true)
+    expect(gradeCopies([copy({ refreshedAt: null, status: null })], NOW).message).toMatch(/not been refreshed since it was turned on 30 days ago/)
+  })
+
+  test('the allowance is two of the cron\'s intervals, an hourly one included', () => {
+    expect(2 * cronGapMs('0 * * * *')).toBe(2 * HOUR)
+    expect(2 * cronGapMs('0 3 * * *')).toBe(48 * HOUR)
+    expect(cronGapDays('0 * * * *')).toBe(1)
+    expect(cronGapDays('0 3 * * 0')).toBe(7)
   })
 })
 

@@ -199,6 +199,8 @@ export const RULES = [
     title: 'a styled value names a token the stylesheets define' },
   { id: 'css-raw-literal',      scope: 'app',  severity: 'warn',  invariant: 13,
     title: 'a .mesa <style> holds no raw color, size or spacing value' },
+  { id: 'css-width-off-scale',  scope: 'app',  severity: 'warn',  invariant: 13,
+    title: 'a .mesa <style> changes layout only at a width on the @frontierjs/css scale' },
   { id: 'css-raw-utility',      scope: 'app',  severity: 'warn',  invariant: 13,
     title: 'an app\'s markup holds more raw color utilities than semantic classes' },
   { id: 'css-class-collision', scope: 'app',  severity: 'warn',  invariant: 13,

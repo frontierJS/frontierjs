@@ -424,13 +424,6 @@ const titleOf = (text: string): string => {
   const line = text.trim().split('\n')[0].trim()
   return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1)}…` : line
 }
-
-// A terminal's first prompt opens with what the editor and the harness wrapped
-// around it (an ide_selection, a system-reminder, a local-command block), so the
-// first line of the raw text is a tag and not what the person typed.
-const untagged = (text: string): string =>
-  text.replace(/<(ide_selection|system-reminder|local-command-[a-z-]+|command-[a-z-]+)>[\s\S]*?<\/\1>/g, '').trim()
-
 function alive(pid: number | null): boolean {
   if (!pid) return false
   try { process.kill(pid, 0); return true } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM' }
@@ -1717,7 +1710,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, conf
       } finally { closeSync(fd) }
       const { file } = read(text)
       if (!file.cwd) return null
-      const line = file.firstPrompt ? titleOf(untagged(file.firstPrompt)) || file.title : file.title
+      const line = file.firstPrompt ? titleOf(file.firstPrompt) : file.title
       return { cwd: file.cwd, title: line || null, at: file.startedAt ?? statSync(path).mtime.toISOString(), headless: file.headless }
     } catch { return null }
   }

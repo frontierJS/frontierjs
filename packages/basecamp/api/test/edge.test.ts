@@ -1264,6 +1264,59 @@ describe('the ingress name', () => {
     expect(await edge().call('ingressStep', idle.id)).toMatchObject({ appId: idle.id, skipped: expect.stringContaining('is not published') })
   })
 
+  // IDEAS/read-only-copy.md 2.2 (FJS-D1982): the copy's address points at the
+  // copy's machine under a mark of its own, so it is never read as the
+  // ingress record and judged stale against where the App runs.
+  test('copyStep points the copy\'s address at its machine and follows the row away', async () => {
+    const web   = await mkApp('copied')
+    const name  = `${web.id}-copy.shop.test`
+    const named = async () => (await cloudflare.records(sendVia(app, `provider:cloudflare:${good.id}`), 'zone-shop'))
+      .filter((r: any) => r.type === 'A' && r.name === name)
+    const view  = async () => await edge().call('records', null, { providerSecretId: good.id, zoneId: 'zone-shop' }) as any
+    let two = await sys().server.create({ data: { workspaceId: site.id, name: 'two', slug: `two-${tag()}`, ipAddress: '203.0.113.22', providerKind: 'custom' } })
+    two = await sys().server.transition(two.id, 'checkIn')
+    const copy = await sys().appCopy.create({ data: { appId: web.id, serverId: two.id, cron: '0 3 * * *' } })
+
+    expect(await edge().call('copyStep', web.id)).toMatchObject({ name, addresses: ['203.0.113.22'] })
+    expect(await named()).toMatchObject([{ content: '203.0.113.22', mark: { fleet: 'basecamp', copyOf: web.id } }])
+    await edge().call('ingressStep', web.id)
+    expect(await aOf(web.id)).toMatchObject([{ content: '203.0.113.21', mark: { appId: web.id } }])
+    expect((await view()).stale.filter((s: any) => s.appId === web.id)).toEqual([])
+    expect((await view()).orphans.map((r: any) => r.name)).not.toContain(name)
+
+    await sys().appCopy.delete({ where: { id: copy.id } })
+    expect((await view()).orphans.map((r: any) => r.name)).toContain(name)
+    expect((await edge().call('copyStep', web.id) as any).removed).toHaveLength(1)
+    expect(await named()).toEqual([])
+    expect(await aOf(web.id)).toHaveLength(1)
+  })
+
+  // IDEAS/read-only-copy.md 3.1: the ingress record follows the copy's row, so
+  // the next push of any kind -- a release, a machine back online -- keeps it
+  // on the copy's machine until the switch is turned back.
+  test('a copy serving the main address holds the ingress record, and keeps it while its machine is down', async () => {
+    const web = await mkApp('lifeboat')
+    await domain(web.id, 'lifeboat.example.test')
+    const view = async () => await edge().call('records', null, { providerSecretId: good.id, zoneId: 'zone-shop' }) as any
+    let two = await sys().server.create({ data: { workspaceId: site.id, name: 'boat', slug: `boat-${tag()}`, ipAddress: '203.0.113.23', providerKind: 'custom' } })
+    two = await sys().server.transition(two.id, 'checkIn')
+    const copy = await sys().appCopy.create({ data: { appId: web.id, serverId: two.id, cron: '0 3 * * *' } })
+
+    expect(await edge().call('ingressStep', web.id)).toMatchObject({ addresses: ['203.0.113.21'] })
+    await sys().appCopy.update({ where: { id: copy.id }, data: { isServingMainAddress: true } })
+    expect(await edge().call('ingressStep', web.id)).toMatchObject({ addresses: ['203.0.113.23'] })
+    expect(await aOf(web.id)).toMatchObject([{ content: '203.0.113.23', mark: { appId: web.id } }])
+    expect((await view()).stale.filter((s: any) => s.appId === web.id)).toEqual([])
+
+    await sys().server.transition(two.id, 'loseContact')
+    expect(await edge().call('ingressStep', web.id)).toMatchObject({ skipped: expect.stringContaining('the read-only copy serves the main address and its machine \'boat\'') })
+    expect(await aOf(web.id)).toMatchObject([{ content: '203.0.113.23' }])
+
+    await sys().appCopy.update({ where: { id: copy.id }, data: { isServingMainAddress: false } })
+    expect(await edge().call('ingressStep', web.id)).toMatchObject({ addresses: ['203.0.113.21'] })
+    await sys().appCopy.delete({ where: { id: copy.id } })
+  })
+
   test('turning the column off through `apps` removes the record with nobody pressing sync', async () => {
     const bare = await mkApp('patched')
     await edge().call('ingressStep', bare.id)
@@ -1271,5 +1324,176 @@ describe('the ingress name', () => {
     const deadline = Date.now() + 10_000
     while ((await aOf(bare.id)).length && Date.now() < deadline) await new Promise(r => setTimeout(r, 50))
     expect(await aOf(bare.id)).toEqual([])
+  })
+})
+
+// ─── A copy's Domains (`app-copy:cert`) ──────────────────────────────────
+//
+// Against Pebble, which `acme.test.ts` runs the same way: the CA is real and
+// only its DNS lookup is skipped, so a refusal here is the CA's own. The TXT
+// is graded at the sink, as the wildcard's is.
+
+const docker = (...args: string[]) => spawnSync('docker', args, { encoding: 'utf8' })
+const hasDocker = (() => { try { return docker('info', '--format', '{{.ServerVersion}}').status === 0 } catch { return false } })()
+
+describe.skipIf(!hasDocker)('a read-only copy\'s Domains, minted against Pebble', () => {
+  const PEBBLE = `edge-test-pebble-${process.pid}`
+  let site: any, good: any, one: any, target: any, copy: any, directoryUrl = ''
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  const sys = () => env.system as any
+  const trusting = ((url: any, init: any) => fetch(url, { ...init, tls: { rejectUnauthorized: false } })) as typeof fetch
+  const pebble = (seen: { accountKey?: unknown }[] = []) => (async (o: any) => {
+    seen.push({ accountKey: o.accountKey })
+    const { issue } = await import('../src/providers/acme/index.ts')
+    return issue({ ...o, directoryUrl, fetch: trusting })
+  }) as any
+  const quick = async () => {}
+  const ensure = async (deps: any = { issue: pebble(), waitForDns: quick }) => {
+    const { ensureCopyCerts } = await import('../src/jobs/app-copy-cert.job.ts')
+    return ensureCopyCerts(app, target.id, deps)
+  }
+  const domainNamed = async (hostname: string) => await sys().domain.findFirst({ where: { workspaceId: site.id, hostname }, withDeleted: true })
+  const txts = async () => (await cloudflare.records(sendVia(app, `provider:cloudflare:${good.id}`), 'zone-shop'))
+    .filter((r: any) => r.type === 'TXT' && r.name.startsWith('_acme-challenge.'))
+
+  beforeAll(async () => {
+    const run = docker('run', '-d', '--name', PEBBLE, '-e', 'PEBBLE_VA_ALWAYS_VALID=1', '-e', 'PEBBLE_VA_NOSLEEP=1',
+      '-p', '127.0.0.1:0:14000', 'ghcr.io/letsencrypt/pebble:2.9.0')
+    if (run.status !== 0) throw new Error(`docker run: ${run.stderr}`)
+    directoryUrl = `https://127.0.0.1:${docker('port', PEBBLE, '14000/tcp').stdout.trim().split(':').pop()}/dir`
+    for (let i = 0; i < 50; i++) {
+      try { if ((await trusting(directoryUrl)).ok) break } catch {}
+      await new Promise(r => setTimeout(r, 200))
+    }
+
+    const acct = await sys().account.create({ data: { slug: `copy-${tag()}`, displayName: 'Copy' } })
+    site = await sys().workspace.create({ data: { accountId: acct.id, name: 'Copy', slug: `copy-${tag()}` } })
+    good = await sys().secret.create({ data: { workspaceId: site.id, name: 'cf-copy', kind: 'providerKey', providerKind: 'cloudflare',
+      data: JSON.stringify({ token: CF_TOKEN }) } })
+    await registerAtSink(good)
+    one = await sys().server.create({ data: { workspaceId: site.id, name: 'spare', slug: `spare-${tag()}`, ipAddress: '203.0.113.31', providerKind: 'custom' } })
+    one = await sys().server.transition(one.id, 'checkIn')
+    const project = await sys().project.create({ data: { workspaceId: site.id, name: 'P', slug: `p-${tag()}` } })
+    const env1 = await sys().environment.create({ data: { workspaceId: site.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    target = await sys().app.create({ data: { workspaceId: site.id, environmentId: env1.id, name: 'shop', slug: `shop-${tag()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    await new Promise(r => setImmediate(() => setImmediate(r)))
+    copy = await sys().appCopy.create({ data: { appId: target.id, serverId: one.id, cron: '0 3 * * *' } })
+
+    const own = await sys().secret.create({ data: { workspaceId: site.id, name: `origin-${tag()}`, kind: 'tlsCert',
+      data: JSON.stringify({ certPem: '-----BEGIN CERTIFICATE-----\norigin\n-----END CERTIFICATE-----', keyPem: '-----BEGIN PRIVATE KEY-----\nk\n-----END PRIVATE KEY-----' }) } })
+    for (const [hostname, extra] of [
+      ['www.shop.test', {}],
+      ['proxied.shop.test', { isProxied: true }],
+      ['bad_name.shop.test', {}],
+      ['shop.nowhere.test', {}],
+    ] as const) await sys().domain.create({ data: { workspaceId: site.id, appId: target.id, hostname, ...extra } })
+    const proxied = await domainNamed('proxied.shop.test')
+    await sys().domain.update({ where: { id: proxied.id }, data: { certSecretId: own.id, certKind: 'originCa',
+      certExpiresAt: new Date(Date.now() + 365 * 86_400_000).toISOString(), version: proxied.version },
+      system: ['certSecretId', 'certKind', 'certExpiresAt'] })
+  }, 120_000)
+
+  afterAll(() => { docker('rm', '-f', PEBBLE) })
+
+  test('mints by DNS-01, pushes an origin certificate as it is, and names each failure on the row the card reads', async () => {
+    const out = await ensure()
+    expect(out.minted).toEqual(['www.shop.test'])
+    expect([...out.pushed].sort()).toEqual(['proxied.shop.test', 'www.shop.test'])
+    expect(out.failed.map(f => f.hostname).sort()).toEqual(['bad_name.shop.test', 'shop.nowhere.test'])
+    expect(out.failed.find(f => f.hostname === 'shop.nowhere.test')!.error).toContain('no connected zone holds it')
+    expect(await txts()).toEqual([])
+
+    const www = await domainNamed('www.shop.test')
+    expect(www.copyCertSecretId).toBeString()
+    const material = JSON.parse((await sys().secret.findFirst({ where: { id: www.copyCertSecretId } })).data)
+    expect(new X509Certificate(material.cert).subjectAltName).toBe('DNS:www.shop.test')
+    expect(Date.parse(www.copyCertExpiresAt)).toBe(Date.parse(new X509Certificate(material.cert).validTo))
+    // What the live machine serves is untouched: the copy's is not its certificate.
+    expect(www.certSecretId).toBeNull()
+    const { certStatusOf } = await import('../src/services/domains/domains.service.ts')
+    expect(certStatusOf(www).cert_status).toBe('none')
+    expect((await domainNamed('proxied.shop.test')).copyCertSecretId).toBeNull()
+
+    const { grantsFor } = await import('../src/core/capabilities.ts')
+    const user = await sys().user.create({ data: { email: `copy-${tag()}@x.co`, accountId: site.accountId } })
+    await sys().workspaceMember.create({ data: { workspaceId: site.id, userId: user.id, role: 'owner', capabilities: grantsFor('owner') } })
+    const read = await env.as(session({ id: user.id, workspaceId: site.id })).service('appCopies').find({ appId: target.id })
+    expect(read.data[0].certError).toContain('bad_name.shop.test: ')
+    expect(read.data[0].certError).toContain('shop.nowhere.test: no connected zone holds it')
+  }, 60_000)
+
+  // Pebble's default profile is six days, always inside the 30-day renewal;
+  // Let's Encrypt's is 90. The row is moved to what a 90-day order stores.
+  const asIfNinetyDays = async () => {
+    const d = await domainNamed('www.shop.test')
+    await sys().domain.update({ where: { id: d.id }, data: { copyCertExpiresAt: new Date(Date.now() + 80 * 86_400_000).toISOString(),
+      version: d.version }, system: ['copyCertExpiresAt'] })
+  }
+
+  test('the job fails while a Domain is owed, and the row clears once none is', async () => {
+    await asIfNinetyDays()
+    const job = (await import('../src/jobs/app-copy-cert.job.ts')).default as any
+    const ctx = { data: { appId: target.id }, app, user: null }
+    await expect(job.handler(ctx)).rejects.toThrow(/bad_name\.shop\.test/)
+
+    for (const hostname of ['bad_name.shop.test', 'shop.nowhere.test']) {
+      const d = await domainNamed(hostname)
+      await sys().domain.delete({ where: { id: d.id } })
+    }
+    const seen: any[] = []
+    const out = await ensure({ issue: pebble(seen), waitForDns: quick })
+    expect(out).toMatchObject({ minted: [], failed: [] })
+    expect(seen).toEqual([])
+    expect((await sys().appCopy.findFirst({ where: { id: copy.id } })).certError).toBeNull()
+  }, 60_000)
+
+  test('inside 30 days it renews on the same ACME account and replaces the Secret', async () => {
+    const before = await domainNamed('www.shop.test')
+    const held = JSON.parse((await sys().secret.findFirst({ where: { id: before.copyCertSecretId } })).data)
+    await sys().domain.update({ where: { id: before.id }, data: { copyCertExpiresAt: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+      version: before.version }, system: ['copyCertExpiresAt'] })
+    const seen: any[] = []
+    const out = await ensure({ issue: pebble(seen), waitForDns: quick })
+    expect(out.minted).toEqual(['www.shop.test'])
+    expect(seen[0].accountKey).toEqual(held.accountKey)
+    const after = await domainNamed('www.shop.test')
+    expect(after.copyCertSecretId).not.toBe(before.copyCertSecretId)
+    expect(await sys().secret.findFirst({ where: { id: before.copyCertSecretId } })).toBeNull()
+  }, 60_000)
+
+  // What the sweep dispatched, read off the queue's own call.
+  const swept = async () => {
+    const { sweep } = await import('../src/jobs/app-copy-cert.job.ts')
+    const ids: string[] = []
+    const real = app.jobs.dispatch
+    app.jobs.dispatch = async (_job: any, data: any) => { ids.push(data.appId) }
+    try { await sweep(app) } finally { app.jobs.dispatch = real }
+    return ids
+  }
+
+  test('the daily sweep sends every live copy, owed a mint or not', async () => {
+    // Only its own certificate, re-uploaded: no mint owed, and a push is.
+    const other = await sys().app.create({ data: { workspaceId: site.id, environmentId: target.environmentId, name: 'quiet',
+      slug: `quiet-${tag()}`, source: { kind: 'image', image: 'nginx:alpine' } } })
+    await sys().appCopy.create({ data: { appId: other.id, serverId: one.id, cron: '0 3 * * *' } })
+    expect(await swept()).toContain(other.id)
+  })
+
+  test('a copy turned off drops what was minted for it', async () => {
+    const before = await domainNamed('www.shop.test')
+    await sys().appCopy.delete({ where: { id: copy.id } })
+    expect(await swept()).toContain(target.id)
+    const out = await ensure()
+    expect(out.dropped).toEqual(['www.shop.test'])
+    expect(await domainNamed('www.shop.test')).toMatchObject({ copyCertSecretId: null, copyCertExpiresAt: null })
+    expect(await sys().secret.findFirst({ where: { id: before.copyCertSecretId } })).toBeNull()
+    expect(await swept()).not.toContain(target.id)
+  }, 60_000)
+
+  test('the columns are a pair', async () => {
+    const d = await domainNamed('www.shop.test')
+    await expect(sys().domain.update({ where: { id: d.id }, data: { copyCertSecretId: 'x', version: d.version }, system: ['copyCertSecretId'] }))
+      .rejects.toThrow(/copy's certificate is stored with its expiry/)
   })
 })

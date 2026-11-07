@@ -56,7 +56,7 @@ export interface LiveHost {
 export interface LiveFacts {
   /** The App's newest Deployment, or null when it has never been released. */
   release:   { status: string } | null
-  /** `servingAddresses` — the online machines holding a running placement. */
+  /** `servingAddresses` — the addresses the ingress record should hold. */
   addresses: string[]
   /** Why a push would be refused for want of an ingress zone, or null. */
   ingress:   string | null

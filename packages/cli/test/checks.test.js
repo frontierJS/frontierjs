@@ -161,9 +161,11 @@ const CLEAN = {
     JSON.stringify({ name: '@acme/skin', exports: { './index.css': './src/index.css' } }),
   'node_modules/@acme/skin/src/index.css':
     ':root { --gap: 1rem; --rule: #ddd; }\n',
-  // The vocabulary `css-raw-utility` counts semantic classes against.
+  // The vocabulary `css-raw-utility` counts semantic classes against, and the
+  // width scale `css-width-off-scale` grades a condition against.
   'node_modules/@frontierjs/css/vocabulary.json':
-    JSON.stringify({ terms: [{ term: 'Button', class: 'btn' }, { term: 'Toolbar', class: 'toolbar' }], notATerm: { tone: ['danger'] } }),
+    JSON.stringify({ terms: [{ term: 'Button', class: 'btn' }, { term: 'Toolbar', class: 'toolbar' }], notATerm: { tone: ['danger'] },
+                     breakpoints: { sm: 640, md: 768, lg: 1024, xl: 1280, '2xl': 1536 }, containerSteps: { narrow: 480, cramped: 320 } }),
   'node_modules/@acme/kit/package.json':
     JSON.stringify({ name: '@acme/kit', exports: { './schema.lite': './db/kit.lite' } }),
   'node_modules/@acme/kit/db/kit.lite':
@@ -4074,6 +4076,37 @@ describe('transition-methods', () => {
     expect(only(root, 'transition-methods').findings).toHaveLength(0)
   })
 
+  // ── A @system move is not served, so a service over the model excuses nothing ──
+  //
+  // Junction leaves it out of the methods it derives, so `createService({})`
+  // gives a caller no way to make it; only code the app wrote does.
+  test('a @system move behind a base service nothing runs is reported', () => {
+    const root = tree('tm-system-unrun', app(
+      'qualify: new -> qualified,\n    close: qualified -> closed @system',
+      QUALIFY, { service: 'createService({})' }))
+    const { findings } = only(root, 'transition-methods')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/Lead\.close -> closed is @system and nothing under api\/ runs it/)
+    expect(findings[0].message).toMatch(/drop @system/)
+    expect(findings[0].file).toMatch(/schema\.lite$/)
+  })
+
+  test('a @system move the app runs is silent, by call, by state or by an authored method', () => {
+    const moves = 'qualify: new -> qualified,\n    close: qualified -> closed @system'
+    for (const [name, drives] of [
+      ['tm-system-call',   "export const c = () => $.db.lead.transition($.id, 'close', { system: true })\n"],
+      ['tm-system-state',  "export const c = () => $.db.lead.update({ where: {}, data: { status: 'closed' }, system: ['status'] })\n"],
+      ['tm-system-method', 'export const m = { async close(ctx) { return ctx.id } }\n'],
+    ]) expect(only(tree(name, app(moves, QUALIFY + drives, { service: 'createService({})' })),
+      'transition-methods').findings).toHaveLength(0)
+  })
+
+  test('the same move without @system is still reached by the base service', () => {
+    expect(only(tree('tm-system-paired', app(
+      'qualify: new -> qualified,\n    close: qualified -> closed', QUALIFY,
+      { service: 'createService({})' })), 'transition-methods').findings).toHaveLength(0)
+  })
+
   // ── A service over the model serves the moves by name (FJS-1255) ──────
   //
   // Paired throughout: the same machine behind a `methods:` list that leaves
@@ -5906,6 +5939,49 @@ describe('a .mesa <style> holds no raw color, size or spacing value', () => {
     scaffoldWidgetSurface({ root })
     scaffoldExtensionSurface({ root })
     expect(only(root, 'css-raw-literal').findings.map(f => [relative(root, f.file), f.message.split(' ')[0]])).toEqual([])
+  })
+})
+
+describe('a .mesa <style> changes layout only at a width on the @frontierjs/css scale', () => {
+  // FJS-D2022: a width cannot read a token, so the installed package's own
+  // vocabulary.json is the scale, and the -1px and .99 twins are on it.
+  const scaled = (css) => tree('width-' + Math.abs([...css].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7)), {
+    ...CLEAN,
+    'web/src/pages/panel.mesa': `<p>x</p>\n<style>\n${css}\n</style>\n`,
+  })
+
+  test('a width off the scale is reported with its line, and the scale is named', () => {
+    const { findings } = only(scaled('@media (max-width: 900px) {\n  .p { gap: var(--space) }\n}'), 'css-width-off-scale')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(3)
+    expect(findings[0].message).toMatch(/^@media \(max-width: 900px\) — 900px is not on the scale \(640 · 768 · 1024 · 1280 · 1536; container 320 · 480\)/)
+  })
+
+  test('a step, its twins and a container step are on it; a non-width feature is skipped', () => {
+    const css = [
+      '@media (min-width: 768px) { .a { gap: var(--space) } }',
+      '@media (max-width: 767px) { .b { gap: var(--space) } }',
+      '@media (max-width: 47.99rem) { .c { gap: var(--space) } }',
+      '@media (width >= 64rem) { .d { gap: var(--space) } }',
+      '@container fjs (inline-size < 30rem) { .e { gap: var(--space) } }',
+      '@media (prefers-reduced-motion) { .f { gap: var(--space) } }',
+      '@media (hover: hover) and (orientation: landscape) { .g { gap: var(--space) } }',
+    ].join('\n')
+    expect(only(scaled(css), 'css-width-off-scale').findings).toEqual([])
+  })
+
+  test('a range, a rem and a container width off the scale are each reported', () => {
+    const css = '@media (min-width: 50rem) and (max-width: 63.99rem) { .a { gap: var(--space) } }\n' +
+                '@container fjs (inline-size < 25rem) { .b { gap: var(--space) } }'
+    const { findings } = only(scaled(css), 'css-width-off-scale')
+    expect(findings.map(f => f.message.split(' — ')[1].split(' ')[0])).toEqual(['800px', '400px'])
+  })
+
+  test('an app with no installed @frontierjs/css is skipped', () => {
+    const root = tree('width-nopkg', without('node_modules/@frontierjs/css/', { 'web/src/pages/panel.mesa': '<style>\n@media (max-width: 900px) { .p { gap: 0 } }\n</style>\n' }))
+    const out = only(root, 'css-width-off-scale')
+    expect(out.findings).toEqual([])
+    expect(out.skipped).toBeTruthy()
   })
 })
 

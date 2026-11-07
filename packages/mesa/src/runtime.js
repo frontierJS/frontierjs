@@ -134,6 +134,7 @@ function _scheduleFlush() {
 // for one on every event and every prop push, and a parent pushes its child's
 // props from inside its own render (`FJS-1329`).
 let _flushing = false
+let _derivedWoken = false
 function _flush() {
   if (_flushing) return
   _flushing = true
@@ -226,10 +227,18 @@ function _drain() {
     for (const node of pending) _queue.delete(node)
     // Shallowest first, so a prop push that queues a block runs before the
     // block's own cells, which `_ownerPending` below then holds back.
-    if (yielded && pending.length > 1) {
-      const depthOf = new Map()
-      for (const node of pending) depthOf.set(node, _domDepth(node))
-      pending.sort((a, b) => depthOf.get(a) - depthOf.get(b))
+    // Most passes already are, so the sort is only paid when one is not.
+    let depths = null
+    if (pending.length > 1) {
+      depths = pending.map(_domDepth)
+      let i = 1
+      while (i < depths.length && depths[i] >= depths[i - 1]) i++
+      if (i < depths.length) {
+        const order = depths.map((_, k) => k).sort((a, b) => depths[a] - depths[b])
+        const nodes = order.map(k => pending[k])
+        depths = order.map(k => depths[k])
+        for (let k = 0; k < nodes.length; k++) pending[k] = nodes[k]
+      }
     }
 
     // The same rule for the DOM-building tier, and it is needed here for a
@@ -237,11 +246,21 @@ function _drain() {
     // end of each signal's subscriber set — so the creation order this pass
     // relies on inverts as soon as an outer block has re-run once, and the
     // queue then holds a branch's own nodes ahead of the block that owns them.
+    //
+    // A run that wakes a derivation holds back everything deeper than itself:
+    // the guard that derivation feeds is not queued until the derived layer
+    // settles it, so `_ownerPending` cannot see it yet. A child's {#if framed}
+    // over a pushed `user` let a snippet inside it read `user.name` after
+    // sign-out (`FJS-4090`).
     let deferred = null
-    for (const node of pending) {
+    let holdBelow = Infinity
+    for (let k = 0; k < pending.length; k++) {
+      const node = pending[k]
       if (node._isUserEffect) continue
-      if (_ownerPending(node, gen)) { (deferred ??= []).push(node); continue }
+      if (_ownerPending(node, gen) || (depths && depths[k] > holdBelow)) { (deferred ??= []).push(node); continue }
+      _derivedWoken = false
       _runNode(node)
+      if (_derivedWoken && holdBelow === Infinity) holdBelow = depths ? depths[k] : 0
     }
     if (_halted) break
 
@@ -595,6 +614,11 @@ function _makeNode(fn) {
       // cycle guard abandons the update (`FJS-2652`).
       if (this._running && this._isUserEffect) return
       if (_devOn) this._cause = _devCause
+      // Woken mid-pass, it is pending for the rest of this pass too. A parent's
+      // prop push queues the child's {#if} after the pass was marked, and a
+      // snippet inside that branch reading the source directly ran first and
+      // read through the value the guard was about to remove (`FJS-4090`).
+      if (_flushing) this._pendGen = _pendGen
       _queue.add(this)
       _scheduleFlush()
     },
@@ -855,6 +879,7 @@ export function createMemo(fn, opts) {
     _notify() {
       if ((dirty && error === NONE) || this._disposed) return
       if (_devOn) this._cause = _devCause
+      if (_flushing) _derivedWoken = true
       error = NONE
       dirty = true
       _queue.add(this)

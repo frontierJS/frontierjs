@@ -117,6 +117,13 @@ line that stops a wide table taking the layout with it. Pair it with
 `.table-wrap` so the table scrolls in its own box. Any new grid child that can
 hold wide content needs the same.
 
+### An unlayered `display` beats `.spare`
+`.spare` hides secondary content from the `utilities` layer. An app or component
+rule outside every layer that sets the element's own `display` — DatePicker's
+presets panel, `display: flex` — wins over any layered declaration, so the class
+is silently ignored there. Put the element's `display` in a layer, or keep the
+width query on that component.
+
 ### `!important` reverses layer order
 Normal declarations resolve later-layer-wins. **Important declarations resolve
 the other way** — an `!important` in the *first* layer beats one in the last.

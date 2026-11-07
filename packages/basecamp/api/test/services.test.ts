@@ -43,6 +43,7 @@ import { snapshotVariables, releaseEnv } from '../src/domain/release/variables.t
 import { formatDotenv, parseDotenv } from '../src/domain/release/dotenv.ts'
 import { appBackupSchedule, appDrillSchedule, appCopySchedule, syncAppCopySchedule, fireBackup, restoreSchedules } from '../src/domain/job/job-schedule.ts'
 import { refreshCopy } from '../src/jobs/app-copy-refresh.job.ts'
+import { routedHosts } from '../src/domain/release/runtime.ts'
 import { exportReleaseImage, imageKey } from '../src/domain/release/image-export.ts'
 import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
 import { mintArchiveUrl } from '../src/plugins/backup-archive.ts'
@@ -5726,6 +5727,107 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       rmSync(fresh, { force: true })
     })
 
+    // FJS-D2012: an archive is deleted where it is -- the bucket's object, the
+    // machine's file, or both -- before its row, and never the app's newest
+    // good one. A fake conduit plays the Outpost; the bucket is a real sink.
+    test('discard deletes the archive then the row; the newest good, a running one, a refusing machine or another workspace\'s is kept', async () => {
+      const sys  = env.system as any
+      const sink = startS3Sink({ port: 0 })
+      const sent: any[] = []
+      let answer: any = { data: { removed: true, bytes: 11 } }
+      const conduit = (env.app as any).conduit, real = { resolve: conduit.resolve, send: conduit.send }
+      conduit.resolve = (target: string, ...rest: unknown[]) => target === `outpost:${server.id}` ? Promise.resolve({ pinned_cert: true }) : real.resolve.call(conduit, target, ...rest)
+      // Placement also sends `/replicate` and routes to the machine; only a remove is counted.
+      conduit.send    = (call: any) => !String(call.target).startsWith('outpost:') ? real.send.call(conduit, call)
+        : call.path === '/backup/remove' ? (sent.push(call), Promise.resolve(answer)) : Promise.resolve({ data: {} })
+      const discard = (who: any, id: string) => env.as(who).service('appBackups').call('discard', id)
+      // Past every row the describe's other tests stamp now.
+      const at      = (n: number) => new Date(Date.UTC(2100, 0, 1, 0, 0, n)).toISOString()
+      const row     = (over: Record<string, unknown>) => sys.appBackup.create({ data: {
+        appId: app.id, serverId: server.id, status: 'success', sizeBytes: 11, ...over,
+      } })
+      try {
+        const dest   = await env.as(owner).service('backupDestinations').create(bucket({ endpoint: sink.url, region: sink.region, secret: sink.credential })) as any
+        const name   = `${app.id}-2026-01-01T00-00-01-000Z.tar.gz`
+        const kept   = await row({ location: `/var/lib/outpost/backups/${name}`, createdAt: at(1) })
+        const key    = `apps/${app.id}-2026-01-01T00-00-02-000Z.tar.gz`
+        await fetch(`${sink.url}/frontier-basecamp/${key}`, { method: 'PUT', body: 'x' })
+        const remote = await row({ destinationId: dest.id, location: key, createdAt: at(2) })
+        const newest = await row({ location: `/var/lib/outpost/backups/${app.id}-2026-01-01T00-00-09-000Z.tar.gz`, createdAt: at(9) })
+
+        await expect(discard(owner, newest.id)).rejects.toThrow(/newest good backup/)
+        const running = await row({ status: 'running', createdAt: at(10) })
+        await expect(discard(owner, running.id)).rejects.toThrow(/still running/)
+        await expect(discard(developer, kept.id)).rejects.toThrow()
+        await expect(discard(outsider, kept.id)).rejects.toThrow()
+        expect(sent).toHaveLength(0)
+
+        // A machine that refuses keeps the only copy's row.
+        answer = { error: { kind: 'http', message: 'x is not a backup of y on this machine' } }
+        await expect(discard(owner, kept.id)).rejects.toThrow(/kept: bk-host did not delete it: x is not a backup/)
+        expect(await sys.appBackup.findFirst({ where: { id: kept.id } })).not.toBeNull()
+
+        answer = { data: { removed: true, bytes: 11 } }
+        await discard(owner, kept.id)
+        expect(sent.at(-1)).toMatchObject({ path: '/backup/remove', body: { app_id: app.id, path: name } })
+        expect(await sys.appBackup.findFirst({ where: { id: kept.id } })).toBeNull()
+
+        // An uploaded one: the object goes, then the machine's warm copy by the same name.
+        await discard(owner, remote.id)
+        expect(((await fetch(`${sink.url}/_sink/seen`).then(r => r.json())) as { keys: string[] }).keys).not.toContain(`frontier-basecamp/${key}`)
+        expect(sent.at(-1).body.path).toBe(key.split('/').pop())
+        expect(await sys.appBackup.findFirst({ where: { id: remote.id } })).toBeNull()
+
+        // A failed run never wrote a file, so only its row goes.
+        const before = sent.length
+        const failed = await row({ status: 'failed', location: null, createdAt: at(3) })
+        await discard(owner, failed.id)
+        expect(sent).toHaveLength(before)
+        await sys.appBackup.deleteMany({ where: { id: { in: [newest.id, running.id] } } })
+      } finally { Object.assign(conduit, real); sink.stop() }
+    })
+
+    // FJS-D2012: an archive no row names -- an App gone with a reinstalled hub
+    // -- is found on the server and deleted there, and recorded on it.
+    test('servers.archives lists the machine\'s archives with their rows; discardArchive deletes only one no row names', async () => {
+      const sys    = env.system as any
+      const orphan = '23da988f-56f1-4dd8-a417-a7b326efa321-2026-11-06T06-27-50-248Z.tar.gz'
+      const listed = `${app.id}-2026-01-01T00-00-05-000Z.tar.gz`
+      const named  = await sys.appBackup.create({ data: { appId: app.id, serverId: server.id, status: 'success', location: `/var/lib/outpost/backups/${listed}` } })
+      const sent: any[] = []
+      const conduit = (env.app as any).conduit, real = { resolve: conduit.resolve, send: conduit.send }
+      conduit.resolve = (target: string, ...rest: unknown[]) => target === `outpost:${server.id}` ? Promise.resolve({ pinned_cert: true }) : real.resolve.call(conduit, target, ...rest)
+      conduit.send    = async (call: any) => {
+        sent.push(call)
+        if (call.path === '/backups') return { data: { archives: [
+          { app_id: '23da988f-56f1-4dd8-a417-a7b326efa321', name: orphan, path: `/x/${orphan}`, bytes: 87_000, at: '2026-11-06T06:27:50.248Z' },
+          { app_id: app.id, name: listed, path: `/x/${listed}`, bytes: 11, at: '2026-01-01T00:00:05.000Z' },
+        ] } }
+        return { data: { path: `/x/${call.body.path}`, removed: call.body.path === orphan, bytes: 87_000 } }
+      }
+      const servers = (who: any) => env.as(who).service('servers')
+      try {
+        const { archives } = await servers(owner).call('archives', server.id) as any
+        expect(archives).toEqual([
+          { name: orphan, appId: '23da988f-56f1-4dd8-a417-a7b326efa321', bytes: 87_000, at: '2026-11-06T06:27:50.248Z', app: null, backupId: null },
+          { name: listed, appId: app.id, bytes: 11, at: '2026-01-01T00:00:05.000Z', app: { id: app.id, name: 'bk' }, backupId: named.id },
+        ])
+        await expect(servers(developer).call('archives', server.id)).rejects.toThrow()
+
+        const gone = '23da988f-56f1-4dd8-a417-a7b326efa321'
+        await expect(servers(owner).call('discardArchive', server.id, { appId: app.id, name: listed })).rejects.toThrow(/discard it from the App's Backups/)
+        await expect(servers(owner).call('discardArchive', server.id, { appId: '../etc', name: orphan })).rejects.toThrow(/not an App id/)
+        await expect(servers(owner).call('discardArchive', server.id, { appId: app.id, name: `${app.id}-2026-01-01T00-00-06-000Z.tar.gz` })).rejects.toThrow(/No archive/)
+        await expect(servers(developer).call('discardArchive', server.id, { appId: gone, name: orphan })).rejects.toThrow()
+        expect(sent.filter(c => c.path === '/backup/remove').map(c => c.body.path)).toEqual([`${app.id}-2026-01-01T00-00-06-000Z.tar.gz`])
+
+        expect(await servers(owner).call('discardArchive', server.id, { appId: gone, name: orphan })).toMatchObject({ id: server.id })
+        expect(sent.at(-1)).toMatchObject({ path: '/backup/remove', body: { app_id: '23da988f-56f1-4dd8-a417-a7b326efa321', path: orphan } })
+        const event = await sys.serverEvent.findFirst({ where: { serverId: server.id, kind: 'archiveDiscarded' } })
+        expect(event?.message).toContain(orphan)
+      } finally { Object.assign(conduit, real); await sys.appBackup.delete({ where: { id: named.id } }) }
+    })
+
     // IDEAS/app-archives.md 3.1: the method grades the caller and signs a
     // link; the stream route refuses a file that is not an app archive before
     // anything lands, so a garbage upload never reads as restorable.
@@ -6084,6 +6186,38 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         expect(onClock()).toBe('0 5 * * *')
       })
 
+      // IDEAS/read-only-copy.md 3.1: the switch is refused wherever it would
+      // send users to nothing, and the machine routes before the row says so.
+      test('serving the main address: refused unserved or unrouted, and it refuses a move, an off, and a switch back to nowhere', async () => {
+        const made = await copies(owner).create({ appId: app.id, serverId: machine.id, cron: '0 3 * * *' }) as any
+        const serving = async () => (await sys().appCopy.findFirst({ where: { id: made.id } })).isServingMainAddress
+        await expect(copies(owner).patch(made.id, { isServingMainAddress: true })).rejects.toThrow(/has not served yet/)
+        await sys().appCopy.update({ where: { id: made.id }, data: { status: 'success', refreshedAt: new Date().toISOString() } })
+
+        delete process.env.BASECAMP_STUB_OUTPOST
+        try {
+          await expect(copies(owner).patch(made.id, { isServingMainAddress: true })).rejects.toThrow(/did not route the App's hostnames to the copy: No outpost is registered/)
+        } finally { process.env.BASECAMP_STUB_OUTPOST = '1' }
+        expect(await serving()).toBe(false)
+
+        await expect(copies(developer).patch(made.id, { isServingMainAddress: true })).rejects.toThrow()
+        expect(await copies(owner).patch(made.id, { isServingMainAddress: true })).toMatchObject({ isServingMainAddress: true })
+        await expect(copies(owner).patch(made.id, { serverId: server.id })).rejects.toThrow(/switch it back before moving/)
+        await expect(copies(owner).remove(made.id)).rejects.toThrow(/switch it back before turning the copy off/)
+        expect(await sys().appCopy.findFirst({ where: { id: made.id } })).toMatchObject({ serverId: machine.id, isServingMainAddress: true })
+
+        await expect(copies(owner).patch(made.id, { isServingMainAddress: false })).rejects.toThrow(/runs on no machine to switch back to: .* has no IP address recorded/)
+        const host = await sys().server.findFirst({ where: { id: server.id } })
+        await sys().server.update({ where: { id: server.id }, data: { ipAddress: '203.0.113.40', version: host.version } })
+        try {
+          expect(await copies(owner).patch(made.id, { isServingMainAddress: false })).toMatchObject({ isServingMainAddress: false })
+        } finally {
+          const now = await sys().server.findFirst({ where: { id: server.id } })
+          await sys().server.update({ where: { id: server.id }, data: { ipAddress: null, version: now.version } })
+        }
+        expect(await copies(owner).remove(made.id)).toMatchObject({ id: made.id })
+      })
+
       test('off takes it off the clock and off its machine, and so does deleting the app', async () => {
         const made = await copies(owner).create({ appId: app.id, serverId: machine.id, cron: '0 3 * * *' }) as any
         expect(await copies(owner).remove(made.id)).toMatchObject({ id: made.id, machine: { ok: true } })
@@ -6132,7 +6266,9 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
           call: async (path: string, body: any) => { calls.push({ path, body }); return answer } } as any
         const refresh = async () => refreshCopy(env.app, { copy, target: await sys.app.findFirst({ where: { id: app.id } }), executor }) as any
 
-        expect(await refresh()).toMatchObject({ status: 'success', asOf: '2026-11-05T03:00:00.000Z', error: null })
+        const served = await refresh()
+        expect(served).toMatchObject({ status: 'success', asOf: '2026-11-05T03:00:00.000Z', error: null })
+        expect(served.refreshedAt).toBeTruthy()
         expect(calls[0].path).toBe('/replica/serve')
         expect(calls[0].body).toMatchObject({ app_id: app.id, databases: ['main.db'], image: 'registry.test/copy:1',
           config: { containerPort: 3000, volumePath: '/data' } })
@@ -6141,7 +6277,42 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         answer = { error: { message: 'the copy never answered read-only' } }
         expect(await refresh()).toMatchObject({ status: 'failed', asOf: '2026-11-05T03:00:00.000Z', error: 'the copy never answered read-only' })
         answer = { data: {} }
-        expect(await refresh()).toMatchObject({ status: 'failed', asOf: '2026-11-05T03:00:00.000Z', error: expect.stringMatching(/no as_of/) })
+        expect(await refresh()).toMatchObject({ status: 'failed', asOf: '2026-11-05T03:00:00.000Z', error: expect.stringMatching(/no as_of/),
+          refreshedAt: served.refreshedAt })
+
+        // Once the workspace holds its wildcard the copy answers at its own
+        // name (FJS-D1982), and the wildcard reaches the machine first, since
+        // the copy's machine may run nothing of the App's.
+        expect(calls[0].body.host).toBeUndefined()
+        const cert  = await sys.secret.create({ data: { workspaceId: ws.id, name: `wild-${tag()}`, kind: 'tlsCert', data: JSON.stringify({ cert: 'C', key: 'K' }) } })
+        const zoned = (data: Record<string, unknown>) => sys.workspace.findFirst({ where: { id: ws.id } }).then((w: any) =>
+          sys.workspace.update({ where: { id: ws.id }, data: { ...data, version: w.version }, system: ['ingressZone', 'ingressCertSecretId', 'ingressCertExpiresAt'] }))
+        await zoned({ ingressSecretId: cert.id, ingressZoneId: 'zone-copy', ingressZone: 'copy.test', ingressCertSecretId: cert.id,
+          ingressCertExpiresAt: new Date(Date.now() + 80 * 86_400_000).toISOString() })
+        try {
+          calls.length = 0
+          answer = { data: { as_of: '2026-11-06T03:00:00.000Z' } }
+          expect(await refresh()).toMatchObject({ status: 'success', asOf: '2026-11-06T03:00:00.000Z' })
+          expect(calls.map(c => c.path)).toEqual(['/certs/load', '/replica/serve'])
+          expect(calls[1].body.host).toBe(`${app.id}-copy.copy.test`)
+          expect(await env.as(owner).service('appCopies').get(copy.id)).toMatchObject({ address: `${app.id}-copy.copy.test` })
+          expect(calls[1].body.hosts).toBeUndefined()
+
+          // A refresh while the copy serves the main address keeps routing the
+          // App's hostnames (read-only-copy.md 3.1).
+          calls.length = 0
+          const target = await sys.app.findFirst({ where: { id: app.id } })
+          await refreshCopy(env.app, { copy: { ...copy, isServingMainAddress: true }, target, executor })
+          expect(calls[1].body).toMatchObject({ host: `${app.id}-copy.copy.test`, hosts: await routedHosts(env.app.db, app.id) })
+          expect(calls[1].body.hosts.length).toBeGreaterThan(0)
+
+          calls.length = 0
+          answer = { error: { message: 'disk full' } }
+          expect(await refresh()).toMatchObject({ status: 'failed', error: expect.stringMatching(/wildcard certificate did not reach the machine: disk full/) })
+          expect(calls.map(c => c.path)).toEqual(['/certs/load'])
+        } finally {
+          await zoned({ ingressSecretId: null, ingressZoneId: null, ingressZone: null, ingressCertSecretId: null, ingressCertExpiresAt: null })
+        }
       } finally {
         bucket.stop(true)
         await sys.appCopy.delete({ where: { id: copy.id } })

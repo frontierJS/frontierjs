@@ -23,9 +23,10 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
 import {
-  discoverResources, viewBootSource, viewEntrySource, viewDocument, viewDocumentPlugin,
+  viewBootSource, viewEntrySource, viewDocument, viewDocumentPlugin,
   hasMarkupHalf, viewFormSource, buildViews, buildViewsFor, VIEW_RUNTIME,
 } from '../src/build/mcp-build.js'
+import { discoverResources } from '../src/build/resource-files.js'
 import { clientSchemas } from '../src/build/schema-plugin.js'
 import { resourceIn, applyHostContext } from '../src/mcp/index.js'
 import { initTheme, theme } from '../src/theme/index.js'

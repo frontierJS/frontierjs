@@ -289,6 +289,36 @@ box diff is empty, and each miss is a filed `FJS-###`.
   built — the run key reaches no App's database; the stranger leak is Q7's; clean fails on
   `FJS-4061`'s A record. On the way: `FJS-4078` (reinstall moved yuma's DNS record),
   `FJS-4079` (admin step's ssh drop) and `FJS-4082` (a fresh install's port clash).
+  **Rerun 2026-11-07 16:17** on Basecamp `7c70e4770` with the run key re-minted to add
+  `apps:seedOwner` (Q9–Q11, `FJS-D2002`, `FJS-D2004`, `FJS-D2005`; Q7's A built in
+  `builder/declared.ts`): login, access, stranger and clean passed, box diff empty
+  (`FJS-4061` fixed). Move failed on the generated app: `Booking` declares
+  `cancel: scheduled -> cancelled @system` and no code runs it, so nobody can cancel. Next: a
+  `fli check` rule that refuses a `@system` transition nothing runs, so the settle loop fixes
+  it before deploy. On the way: `FJS-4083` (Outpost's journal held `/exec` commands),
+  `FJS-4084` (Basecamp's image refused `@frontierjs/ui/utils.js`).
+  Built after it: `transition-methods` reports a `@system` move nothing runs, and Charter's
+  writer is fed that one finding. Three reruns since, none reached deploy: the oracle stage
+  alternated `noShow`/`no_show` between `checkAnswer` and `enum-value-case` (`FJS-4088`,
+  fixed); then a feature-writer flail; then a run graded against another session's
+  `live.ts --from deploy` restoring its app into the same `apps/charter/oracle/<slug>/`.
+  Next: rerun with no other Charter run in that directory. That other run was ELA's 3.4 proof
+  (`ela/docs/deploy-chartered.md`, 17:47 UTC): the 11-04 settled copy deployed, login, access
+  and stranger passed, the move failed (`Organization.create` SYSTEM-only), and clean passed
+  with ELA standing, box diff empty. It left the earlier attempt beside the directory as
+  `01-01-saas-signup.feature-attempt-1107/`. Two Charter runs never share that directory.
+  **Passed 2026-11-07 18:09 UTC, `01-saas-signup` end to end, no hand step, $3.29 in model
+  calls:** F1 call 1 was fed `transition-methods` for `Booking.cancel` and call 2 wrote the
+  method; deployed as App `01-saas-signup-1107-1809`, then login, move (`Booking.cancel:
+  scheduled → cancelled`), access and stranger (0 leaks, 3 declared exposures) all passed,
+  and clean left the box diff empty. **The bar met 2026-11-07 20:24 UTC:** `02`–`08` each ran
+  with no hand step and every box diff came back empty. `01`–`05`, `07` and `08` passed every
+  stage. Their misses on the way: `FJS-4091` (postUpdate on a parent-walking update), `FJS-4092`
+  (a gate-only op said as `@@allow(op, true)`), and Charter's `run.ts` mounting FileStorage for a
+  File column. `06-team-invite` failed access and stranger: the feature writer added `Booking`
+  with `@@allow(read, true)` and the feature stage grades no access, filed as `FJS-4093`. Closed
+  the same night: the feature stage runs the access drive on a turn that changes the schema,
+  and the 20:41 rerun of `06` passed every stage after the drive turned the writer back once.
 - [x] 1.4 The use stage runs owner login, the `flows.json` move and the access and stranger
   drives against the deployed URL, the same drives Phase 6 runs locally. **Built 2026-11-04:**
   `builder/use.ts`, `use(app, { url?, owner?, flow? })` → `{ login, move, access, stranger }`,
