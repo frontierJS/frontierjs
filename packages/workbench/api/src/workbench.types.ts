@@ -5,6 +5,7 @@
 import type { Workbench } from './domain/workbench/workbench.ts'
 import type { PushServer } from './push.ts'
 import type { Basecamp }   from './domain/peer/basecamp.ts'
+import type { SendFor }    from './domain/servers/servers.ts'
 
 declare module '@frontierjs/junction' {
   interface App {
@@ -13,5 +14,7 @@ declare module '@frontierjs/junction' {
     push:      PushServer
     /** The Basecamp a preview is cut in, dialed as a signed peer. */
     basecamp:  Basecamp
+    /** How the Servers screen reaches a provider with one account's token. */
+    servers:   { sendFor: SendFor }
   }
 }

@@ -34,11 +34,12 @@
 //                                             checkout's HEAD; refused on a branch, while a run is live, and where a file moved since
 //   POST /workbench/:id           archive     { discard? } — a branch's worktree removed, its git branch kept;
 //                                             a preview is RETIRED first — off the machine, its Environment removed
-//   POST /workbench/:id           fresh       a new chat, shown — or the shown one, when it is still empty
+//   POST /workbench/:id           fresh       { about? } — a new chat, shown — or the shown one, when it is still empty; about is the register row { id, title } it is for
 //   POST /workbench/:id           select      { chat } — the chat shown
 //   POST /workbench/:id           close       { chat } — forgotten here, what it cost kept; Claude Code keeps the session
 //   POST /workbench/:id           importable  the terminal sessions started in this folder that no chat holds, newest first (read from ~/.claude, not the index)
 //   POST /workbench/:id           importSession { session } — a terminal session adopted as a chat, shown; the next message resumes it
+//   POST /workbench/:id           nextFor     { chat? } — the top ready rows of `fli next` (the Atlas's cached ranking) for the chat's chosen package, repo-wide where none
 //   POST /workbench/:id           setPackage  { chat, package } — a member path, '.' for repo-wide, or null to infer it
 //   POST /workbench/:id           stop · seen · unpin
 //   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy?, preview? }
@@ -54,10 +55,11 @@ import { LEVELS }                  from '@frontierjs/litestone'
 import { existsSync }              from 'node:fs'
 import { dirname, join }           from 'node:path'
 import { describeRepo }            from '../../domain/local/local-git.ts'
-import { doneScript }              from '../../domain/workbench/workbench.ts'
+import { doneScript, refOf }       from '../../domain/workbench/workbench.ts'
+import { readAtlas, nextRows }     from '../../domain/atlas/atlas.ts'
 import type { Opened, PreviewSettings } from '../../domain/workbench/workbench-preview.ts'
 
-const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan', 'importable']
+const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan', 'importable', 'nextFor']
 const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'importSession', 'setPackage', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt']
 
 const wb = () => $.app.workbench
@@ -325,7 +327,9 @@ export default createService({
 
   async fresh() {
     const p = pinned()
-    return wb().fresh(p.id)
+    let about
+    try { about = refOf(body().about) } catch (e) { throw new BadRequest((e as Error).message) }
+    return wb().fresh(p.id, about)
   },
 
   async select() {
@@ -345,6 +349,15 @@ export default createService({
   async importable() {
     const p = pinned()
     return { sessions: await wb().importable(p.id) }
+  },
+
+  async nextFor() {
+    const p = pinned()
+    const chat = p.chats.find(c => c.id === (body().chat ?? p.chat)) ?? p.chats[0]
+    const member = chat?.package && chat.package !== '.' ? (await wb().members(p.id))?.find(m => m.path === chat.package) ?? null : null
+    let atlas
+    try { atlas = await readAtlas(p.path) } catch (e) { throw new Conflict(`${p.name} has no registers to rank: ${(e as Error).message}`) }
+    return { package: member, rows: nextRows(atlas, { member }) }
   },
 
   async importSession() {

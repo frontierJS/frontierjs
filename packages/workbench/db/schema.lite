@@ -197,3 +197,33 @@ model Notification {
   @@allow(read,   userId == auth().id)
   @@allow(update, userId == auth().id)
 }
+
+// ── ProviderAccount — a cloud token the Servers screen lists through ─────────
+//
+// The ONLY thing the Servers screen stores (`FJS-D2006`, `FJS-D2008`): the
+// machines are fetched live from the provider through its conduit on each
+// visit, so there is no machine table to disagree with the account it came
+// from. Workbench keeps its own tokens because it runs before any Basecamp
+// exists; it never reads Basecamp's.
+//
+// `token` is `@encrypted @guarded`: sealed at rest, and redacted for every
+// reader but `asSystem()`, which `domain/servers/servers.ts` uses to bind the
+// conduit target. A member's read of the row never carries it. Not `@secret`:
+// that adds `@trail`, and Workbench declares no trail database.
+//
+// @@gate(5.8): the Workbench's ADMINISTRATOR reads; the servers service writes
+// through `asSystem()` after the token's `verify` answered, as ClaudeWrite does.
+model ProviderAccount {
+  id        Int             @id
+  label     String          @trim @length(1, 60)
+  provider  ComputeProvider
+  token     String          @encrypted @guarded
+  createdAt DateTime        @default(now())
+
+  @@gate(5.8)
+}
+
+// The vendors that sell machines — Basecamp's name for the same set
+// (`FJS-D1607`), without its `custom`: a custom machine has no list endpoint,
+// and an ssh host is how the screen shows one.
+enum ComputeProvider { hetzner digitalocean }

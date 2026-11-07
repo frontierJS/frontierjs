@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 6 models · 1 database
+-- 7 models · 1 database
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -77,6 +77,15 @@ CREATE TABLE IF NOT EXISTS "claude_write" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_claude_write_createdAt" ON "claude_write" ("createdAt");
+
+CREATE TABLE IF NOT EXISTS "provider_account" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "label" TEXT NOT NULL,
+  "provider" TEXT NOT NULL,
+  "token" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("provider" IN ('hetzner', 'digitalocean'))
+) STRICT;
 
 -- What the login mints (`api/src/login.ts`), and what `verifySession` reads a
 -- token back to. A Grant: the token leaves in the login's answer and only its

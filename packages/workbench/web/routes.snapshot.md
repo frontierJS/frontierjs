@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-12 routes · 1 layout · target spa · trailing slash always
+14 routes · 1 layout · target spa · trailing slash always
 ```
 
 ## Routes
@@ -32,7 +32,9 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/laptop/` | `src/routes/laptop/index.mesa` | `src/routes/_module.mesa` | — |
 | `/login/` | `src/routes/login/index.mesa` | `src/routes/_module.mesa` | — |
 | `/notifications/` | `src/routes/notifications/index.mesa` | `src/routes/_module.mesa` | — |
+| `/servers/` | `src/routes/servers/index.mesa` | `src/routes/_module.mesa` | — |
 | `/settings/` | `src/routes/settings/index.mesa` | `src/routes/_module.mesa` | — |
+| `/terminal/` | `src/routes/terminal/index.mesa` | `src/routes/_module.mesa` | — |
 | `/workbench/` | `src/routes/workbench/index.mesa` | `src/routes/_module.mesa` | — |
 
 ## Declared meta
@@ -52,7 +54,9 @@ this section exists to show.
 - `/laptop/` — siteName: `Workbench` · title: `Laptop`
 - `/login/` — siteName: `Workbench` · title: `Sign in`
 - `/notifications/` — siteName: `Workbench` · title: `Notifications`
+- `/servers/` — siteName: `Workbench` · title: `Servers`
 - `/settings/` — siteName: `Workbench` · title: `Settings`
+- `/terminal/` — siteName: `Workbench` · title: `Terminal`
 - `/workbench/` — siteName: `Workbench` · title: `Workbench`
 
 ## Layouts
@@ -60,4 +64,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 12 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/git-activity/local/`, `/laptop/`, `/login/`, `/notifications/`, `/settings/`, `/workbench/`
+- `src/routes/_module.mesa` — 14 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/git-activity/local/`, `/laptop/`, `/login/`, `/notifications/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`

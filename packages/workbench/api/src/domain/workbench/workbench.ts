@@ -116,6 +116,22 @@ export type Chat = {
   /** Set when the chat adopts a terminal session: the title its log cannot
    *  give yet, because the first message was typed in the terminal. */
   title?:  string
+  /** The register row this chat was opened for (`FJS-D1176`). */
+  about?:  Ref
+}
+
+/** A register row a chat is for: `FJS-###` or `FJS-D###`, with the title it had then. */
+export type Ref = { id: string, title: string }
+
+const REF_ID = /^[\w:.-]{1,80}$/
+
+/** A row reference off the wire, or null where none was given. A malformed one
+ *  throws rather than reading as none, so a typo never opens an untied chat. */
+export function refOf(input: unknown): Ref | null {
+  if (input == null) return null
+  const { id, title } = input as { id?: unknown, title?: unknown }
+  if (typeof id !== 'string' || !REF_ID.test(id)) throw new Error("about is { id, title }: the register row's id and its title")
+  return { id, title: String(title ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) }
 }
 
 export type Pin = {
@@ -240,6 +256,8 @@ export type ChatStatus = {
   /** The choice the tab menu reads back: a member path, `'.'`, or null
    *  while inferred, as a choice naming a member since gone is. */
   chosen:  string | null
+  /** The register row it was opened for; null for a chat about nothing in particular. */
+  about:   Ref | null
 }
 
 export type PinStatus = {
@@ -396,6 +414,12 @@ const titleOf = (text: string): string => {
   const line = text.trim().split('\n')[0].trim()
   return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1)}…` : line
 }
+
+// A terminal's first prompt opens with what the editor and the harness wrapped
+// around it (an ide_selection, a system-reminder, a local-command block), so the
+// first line of the raw text is a tag and not what the person typed.
+const untagged = (text: string): string =>
+  text.replace(/<(ide_selection|system-reminder|local-command-[a-z-]+|command-[a-z-]+)>[\s\S]*?<\/\1>/g, '').trim()
 
 function alive(pid: number | null): boolean {
   if (!pid) return false
@@ -1044,6 +1068,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, conf
         asks: c.state === 'done' && c.fold.run.asks,
         unread: unread(c), session: c.chat.session, package: pkg,
         chosen: c.chat.package === '.' ? '.' : pkg && !pkg.inferred ? pkg.path : null,
+        about: c.chat.about ?? null,
       })),
       spent:  {
         total: own.reduce((n, s) => n + s.total, 0) + rev.total,
@@ -1617,14 +1642,24 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, conf
 
   /** A new chat, shown. One shown with nothing in it yet is kept rather than
    *  joined by another, and forks nothing. A run elsewhere keeps going. */
-  async function fresh(id: string): Promise<Pin | null> {
+  async function fresh(id: string, about: Ref | null = null): Promise<Pin | null> {
     const p = getPin(id)
     if (!p) return null
     const shown = chatIn(p)
     if (shown && !shown.session && !(await fold(logFile(id, shown.id))).items.length)
-      return updateChat(id, shown.id, { forkOf: null })
-    const next = newChat()
+      return updateChat(id, shown.id, { forkOf: null, ...(about ? { about } : {}) })
+    const next = { ...newChat(), ...(about ? { about } : {}) }
     return updatePin(id, { chats: [...p.chats, next], chat: next.id })
+  }
+
+  /** Tie a chat to the row it is for, where it is for none yet: a chat keeps
+   *  the row it was opened for, however the talk wanders. */
+  function tie(id: string, chat: unknown, about: Ref): Pin | { refused: string } {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const c = chatIn(p, chat)
+    if (!c) return { refused: `${p.name} has no chat '${chat}'` }
+    return c.about ? p : updateChat(id, c.id, { about })
   }
 
   /** Show another chat. */
@@ -1671,7 +1706,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, conf
       } finally { closeSync(fd) }
       const { file } = read(text)
       if (!file.cwd) return null
-      const line = file.firstPrompt ? titleOf(file.firstPrompt) : file.title
+      const line = file.firstPrompt ? titleOf(untagged(file.firstPrompt)) || file.title : file.title
       return { cwd: file.cwd, title: line || null, at: file.startedAt ?? statSync(path).mtime.toISOString(), headless: file.headless }
     } catch { return null }
   }
@@ -1752,7 +1787,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, conf
 
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff, members, memberWrites,
-    send, stop, fresh, select, close, importable, importSession, setPackage, seen, check, review, fork, land, commit, archive, archiveRefusal, recordOpened,
+    send, stop, fresh, tie, select, close, importable, importSession, setPackage, seen, check, review, fork, land, commit, archive, archiveRefusal, recordOpened,
     runnables, run, halt, output, shellEnv, readPlan, buildPlan, go, next, tick, file, decide, openPlan, closePlan,
   }
 }

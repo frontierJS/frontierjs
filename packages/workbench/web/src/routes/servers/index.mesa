@@ -1,0 +1,191 @@
+---
+title: Servers
+---
+<script>
+  // The machines and IPs this laptop's provider accounts reach, listed live
+  // through each provider's conduit (`FJS-D2006`–`FJS-D2008`), and the hosts
+  // ~/.ssh/config names beside them.
+  //
+  // Read once on arrival and held for the tab's lifetime: a stale list says so
+  // through its fetched-at line, and Refresh reads again. An account whose
+  // provider refused answers with its own error; the rest still list.
+  //
+  // The token field is sent once on Add and cleared; no answer carries it back.
+  import { servers }   from '../../resources/Server.mesa'
+  import { ago, at }   from '../../lib/datetime.js'
+
+  import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input               from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select              from '@frontierjs/ui/components/forms/Select.mesa'
+  import Dot                 from '@frontierjs/ui/components/display/Dot.mesa'
+  import EmptyState          from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Table               from '@frontierjs/ui/components/display/Table.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore'
+
+  // The `ComputeProvider` names in db/schema.lite.
+  const PROVIDERS = [
+    { value: 'hetzner',      label: 'Hetzner' },
+    { value: 'digitalocean', label: 'DigitalOcean' },
+  ]
+  const PROVIDER_LABEL = { hetzner: 'Hetzner', digitalocean: 'DigitalOcean' }
+
+  let list     = null   // { fetchedAt, accounts, sshHosts }
+  let loading  = true
+  let error    = null
+  let removing = {}     // account id → true while its remove is in flight
+
+  let provider = 'hetzner'
+  let label    = ''
+  let token    = ''
+  let adding   = false
+
+  async function load() {
+    loading = true
+    try {
+      list  = await servers.service.invoke('list')
+      error = null
+    } catch (err) {
+      error = err.message
+    } finally {
+      loading = false
+    }
+  }
+
+  async function add() {
+    adding = true
+    try {
+      const row = await servers.service.invoke('add', null, { provider, label, token })
+      toasts.success(`Added ${row.label}`)
+      label = ''
+      token = ''
+      await load()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      // Never left in the field after a refusal either: a pasted token sits on screen otherwise.
+      token  = ''
+      adding = false
+    }
+  }
+
+  async function remove(a) {
+    removing = { ...removing, [a.id]: true }
+    try {
+      await servers.service.invoke('remove', a.id, {})
+      list = { ...list, accounts: list.accounts.filter(x => x.id !== a.id) }
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      removing = { ...removing, [a.id]: false }
+    }
+  }
+
+  const statusTone = (s) => s === 'running' ? 'success' : s === 'off' ? 'danger' : 'warning'
+
+  const MACHINE_COLUMNS = [
+    { name: 'name',     label: 'Machine' },
+    { name: 'ip',       label: 'IP' },
+    { name: 'status',   label: 'Status' },
+    { name: 'size',     label: 'Size' },
+    { name: 'location', label: 'Location' },
+  ]
+  const SSH_COLUMNS = [
+    { name: 'alias',    label: 'Host' },
+    { name: 'hostname', label: 'Address' },
+    { name: 'user',     label: 'User' },
+    { name: 'port',     label: 'Port' },
+  ]
+
+  load()
+</script>
+
+<div class="section-header">
+  <h1>Servers</h1>
+  <span class="cluster">
+    {#if list}
+      <span class="text-sm text-muted" id="servers-fetched" title={at(list.fetchedAt)}>fetched {ago(list.fetchedAt)}</span>
+    {/if}
+    <Button treatment="outlined" id="servers-refresh" loading={loading} onclick={load}>Refresh</Button>
+  </span>
+</div>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading && !list}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if list}
+  {#if !list.accounts.length}
+    <EmptyState title="No accounts yet">
+      No accounts yet, add one: a Hetzner or DigitalOcean API token below lists the machines it opens.
+    </EmptyState>
+  {:else}
+    <div class="stack" id="servers-accounts">
+      {#each list.accounts as a (a.id)}
+        <section class="stack-sm" data-account={a.id}>
+          <div class="section-header">
+            <h2>{a.label} <span class="text-sm text-muted">{PROVIDER_LABEL[a.provider]}</span></h2>
+            <ConfirmationPopover inline title={`Remove ${a.label}?`} message="Its token is deleted from this laptop; the machines are untouched."
+              confirmLabel="Remove" tone="danger" onconfirm={() => remove(a)}>
+              {#snippet trigger()}
+                <Button size="sm" treatment="ghost" tone="danger" loading={!!removing[a.id]}>Remove</Button>
+              {/snippet}
+            </ConfirmationPopover>
+          </div>
+          {#if a.error}
+            <article class="alert danger"><div class="alert-content">{a.error}</div></article>
+          {:else if !a.machines.length}
+            <p class="text-sm text-muted">This account lists no machines.</p>
+          {:else}
+            <Table columns={MACHINE_COLUMNS} rows={a.machines}>
+              {#snippet row(m)}
+                <tr data-machine={m.id}>
+                  <td><strong>{m.name ?? m.id}</strong></td>
+                  <td><code>{m.ip ?? '—'}</code></td>
+                  <td><span class="cluster"><Dot tone={statusTone(m.status)} label={m.status} /> {m.status}</span></td>
+                  <td class="text-sm">{m.size ?? '—'}</td>
+                  <td class="text-sm">{m.location ?? '—'}</td>
+                </tr>
+              {/snippet}
+            </Table>
+          {/if}
+        </section>
+      {/each}
+    </div>
+  {/if}
+
+  <section class="stack-sm" id="servers-ssh">
+    <h2>ssh hosts</h2>
+    {#if list.sshHosts.length}
+      <Table columns={SSH_COLUMNS} rows={list.sshHosts}>
+        {#snippet row(h)}
+          <tr data-host={h.alias}>
+            <td><strong>{h.alias}</strong></td>
+            <td><code>{h.hostname}</code></td>
+            <td class="text-sm">{h.user ?? '—'}</td>
+            <td class="text-sm">{h.port}</td>
+          </tr>
+        {/snippet}
+      </Table>
+    {:else}
+      <p class="text-sm text-muted">~/.ssh/config names no Host.</p>
+    {/if}
+  </section>
+{/if}
+
+<section class="stack-sm">
+  <h2>Add account</h2>
+  <form class="stack" id="servers-add" onsubmit={(e) => { e.preventDefault(); add() }}>
+    <Select id="add-provider" label="Provider" placeholder="" options={PROVIDERS} bind:value={provider} />
+    <Input id="add-label" label="Label" placeholder="personal" bind:value={label} />
+    <Input id="add-token" label="API token" type="password" autocomplete="off" bind:value={token}
+      hint="Checked with the provider before it is kept; stored encrypted on this laptop and never shown again. A read-only token is enough." />
+    <div class="cluster">
+      <Button id="add-submit" type="submit" disabled={(label, token, adding, !label.trim() || !token.trim() || adding)} loading={adding}>Add account</Button>
+    </div>
+  </form>
+</section>

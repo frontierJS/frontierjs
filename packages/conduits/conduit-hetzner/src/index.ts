@@ -38,7 +38,7 @@ export interface Size   { slug: string; label: string; vcpu: number; memoryMb: n
 export interface Image  { slug: string; label: string }
 export interface Catalog { regions: Region[]; sizes: Size[]; images: Image[] }
 export type MachineState = 'running' | 'starting' | 'stopping' | 'off' | 'rebuilding' | 'deleting' | 'unknown'
-export interface Machine { providerServerId: string; status: MachineState; ipAddress: string | null; region: string | null; labels: Record<string, string> }
+export interface Machine { providerServerId: string; name: string | null; size: string | null; status: MachineState; ipAddress: string | null; region: string | null; labels: Record<string, string> }
 export interface MachineSpec { name: string; region: string; size: string; image: string; userData: string; labels: Record<string, string> }
 
 /** `indeterminate` is a create Hetzner accepted without naming the server: it may exist, and only the label finds it. */
@@ -87,7 +87,8 @@ export function toSize(t: Row): Size {
 const toRegion = (l: Row): Region => ({ slug: str(l.name), label: str(l.description) || str(l.name), available: true })
 const toImage  = (i: Row): Image  => ({ slug: str(i.name), label: str(i.description) || str(i.name) })
 const toMachine = (s: Row, fallback = ''): Machine => ({
-  providerServerId: String(s.id ?? fallback), status: STATES[str(s.status)] ?? 'unknown',
+  providerServerId: String(s.id ?? fallback), name: str(s.name) || null,
+  size: str((s.server_type as Row | undefined)?.name) || null, status: STATES[str(s.status)] ?? 'unknown',
   ipAddress: str(((s.public_net as Row | undefined)?.ipv4 as Row | undefined)?.ip) || null,
   region: str(((s.datacenter as Row | undefined)?.location as Row | undefined)?.name) || null,
   labels: (s.labels ?? {}) as Record<string, string>,

@@ -12,7 +12,7 @@
 //   GET  /atlas          rings     the project half of `fli ws:atlas --as=rings`: documents, invariants and proof, ring counts
 //   GET  /atlas          autopilot the project's loops as a town: lanes, attempts in the last day, Registry and Council tables, papers with an open box, the Dock, the last CI run
 //   GET  /atlas/:id      record    every record holding that id, whole
-//   POST /atlas          discuss   { text, intent, branch? } — a workbench send to this checkout or a new branch of it
+//   POST /atlas          discuss   { text, intent, branch? } — a workbench send to this checkout or a new branch of it; the chat is tied to the first register row the text names
 //   POST /atlas/:id      decide    { pick, why?, section } — fli's own `decide`
 //   GET  /atlas          queue     every question with lettered options, in `fli decide`'s order, with its prose
 //   POST /atlas/:id      explain   { ask? } — Claude, read-only, on one of them; a follow-up resumes its session
@@ -28,7 +28,7 @@ import { branchName }              from '../../domain/workbench/workbench-branch
 import { startEntry }              from '../../domain/atlas/autopilot-run.ts'
 import { inProcess }               from '../../domain/atlas/autopilot-post.ts'
 import {
-  loadFli, registerRoot, readAtlas, readRings, readAutopilot, forgetAtlas, recordsFor, composePrompt, branchSlug,
+  loadFli, registerRoot, readAtlas, readRings, readAutopilot, forgetAtlas, recordsFor, composePrompt, aboutOf, branchSlug,
   readQueue, explain, explanationOf,
 } from '../../domain/atlas/atlas.ts'
 
@@ -140,7 +140,8 @@ export default createService({
   async discuss() {
     const root  = await workspace()
     const input = body()
-    const out   = composePrompt(await readAtlas(root), input)
+    const atlas = await readAtlas(root)
+    const out   = composePrompt(atlas, input)
     if ('refused' in out) throw new BadRequest(out.refused)
 
     const wb     = $.app.workbench
@@ -159,6 +160,8 @@ export default createService({
 
     const sent = await wb.send(target.id, out.prompt)
     if ('refused' in sent) throw new BadRequest(sent.refused)
+    const about = aboutOf(atlas, String(input.text ?? ''))
+    if (about) wb.tie(target.id, null, about)
     return { pin: { id: target.id, name: target.name, branch: target.branch }, queued: sent.queued, ids: out.ids }
   },
 

@@ -10,9 +10,17 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-6 model(s) · 0 enum(s) · 1 database(s)
+7 model(s) · 1 enum(s) · 1 database(s)
 main → sqlite
 ```
+
+## Enums
+
+A member is a CHECK constraint. Removing one refuses every write of it.
+
+| Enum | Members |
+| --- | --- |
+| `ComputeProvider` | `digitalocean` · `hetzner` |
 
 ## Models
 
@@ -132,6 +140,18 @@ table `notification` · db `main` · gate `0.8.4.8`
 @@allow(read, userId == auth().id)
 @@allow(update, userId == auth().id)
 ```
+
+### `ProviderAccount`
+
+table `provider_account` · db `main` · gate `5.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `Int` | no | — | id |
+| `label` | `String` | no | — | **required on write** |
+| `provider` | `ComputeProvider` | no | — | **required on write** |
+| `token` | `String` | no | — | @encrypted · **required on write** |
 
 ### `Session`
 

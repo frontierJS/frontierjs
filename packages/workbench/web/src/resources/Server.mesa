@@ -1,0 +1,12 @@
+<script module>
+  // src/resources/Server.mesa — the Resource layer for the Servers
+  // screen (api services/servers): the provider accounts this laptop holds
+  // tokens for, and the machines each one lists, fetched live.
+  //
+  // The service is model-less because the machines are the provider's; the
+  // one stored row is a ProviderAccount, written by the service's `add` after
+  // the token verified. No token is ever in an answer.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const servers = createResource('servers', { model: null })
+</script>

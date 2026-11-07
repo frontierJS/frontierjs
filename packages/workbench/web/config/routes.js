@@ -105,6 +105,16 @@ export const tree = {
       children: [],
     },
   {
+      id: "servers",
+      path: "/servers/",
+      file: "src/routes/servers/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: JSON.parse("{\"siteName\":\"Workbench\",\"title\":\"Servers\",\"isIndex\":true}"),
+      params: [],
+      children: [],
+    },
+  {
       id: "settings",
       path: "/settings/",
       file: "src/routes/settings/index.mesa",
@@ -149,6 +159,7 @@ export const components = {
   'laptop': () => import('../src/routes/laptop/index.mesa'),
   'login': () => import('../src/routes/login/index.mesa'),
   'notifications': () => import('../src/routes/notifications/index.mesa'),
+  'servers': () => import('../src/routes/servers/index.mesa'),
   'settings': () => import('../src/routes/settings/index.mesa'),
   'terminal': () => import('../src/routes/terminal/index.mesa'),
   'workbench': () => import('../src/routes/workbench/index.mesa'),
@@ -181,6 +192,7 @@ export const all = [
   "/laptop/",
   "/login/",
   "/notifications/",
+  "/servers/",
   "/settings/",
   "/terminal/",
   "/workbench/"
@@ -197,6 +209,7 @@ export const published = [
   "/laptop/",
   "/login/",
   "/notifications/",
+  "/servers/",
   "/settings/",
   "/terminal/",
   "/workbench/"
@@ -213,6 +226,7 @@ export const indexed = [
   "/laptop/",
   "/login/",
   "/notifications/",
+  "/servers/",
   "/settings/",
   "/terminal/",
   "/workbench/"

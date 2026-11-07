@@ -79,6 +79,13 @@ each review is paid, and it has a button as well. A line comment waits above the
 message box and goes with the next message. Verified against a stand-in claude
 only; no real `claude -p` has run through any of it yet.
 
+**5, 8 and 14 built on 2026-11-07** (uncommitted; browser-driven on spare ports, never 5501/5508):
+
+- **5** — the third notice landed, so `PinStatus.notices` replaced `unread` and `questions` as `FJS-D1176` § 7 said: `{ kind: 'asks', chat, text }` for a run that ended on a question, `question` for an unruled plan `Q`, `unread` for a finished chat not yet seen, in that order. The chat-level `asks` flag already existed; the gap was that the card's dot, the `needs you · N` button, the sort, the title rollup and the notification read only plan questions. Kept: a card shows no needs-you while another chat in it is working; a run's question outranks a plan's; the count is per notice.
+- **7** — the intake half. A chat carries `about: { id, title }`, the register row it is for; `Next` beside `+ New` lists `fli next` for the pin (`nextFor`, the chosen package only) and a pick opens a fresh chat tied to the row with the draft pre-filled; the Atlas door's `discuss` ties the shown chat through `aboutOf`; the tie shows as a badge linking `/atlas/#<id>`. The first tie wins; a later `about` on a tied chat is ignored. Not built: the hand-moved place (Q4) and anything on row close (Q5). Driven: Next rows, the tied chat's draft and badge. Not driven: `discuss` and `nextFor` from the Atlas screen.
+- **8** — `Import` beside `+ New` on the chat strip, and `Open as chat` on the Claude Code tab. Adopting is opening a chat whose `session` is the terminal's id, so the next message resumes it; the title is seeded from the transcript head (read directly, not from the index, which fills only on demand). Exact-`cwd` only, because `claude --resume` is folder-scoped; a branch imports into its own pin. Open: show Claude Code's own history in an adopted chat's pane, which is empty until the first send.
+- **14** — `/servers/` (`web/src/routes/servers/`, `api/src/domain/servers/`): `ProviderAccount { label, provider, token @encrypted @guarded }` is the one stored row, `@@gate(5.8)` so only the system writes it and no read returns the token; `add` verifies the token with the provider before keeping it and refuses a bad one by name. Only `list` and `verify` are imported from the conduits. The ssh hosts are Workbench's own `local-ssh.ts`, a copy of Basecamp's. Driven: the empty state, the ssh table, a bogus DigitalOcean token refused in a toast with the field cleared. Not driven: a real account listing, since no token was on hand. The conduits' `Machine` type gained `name` and `size`, which Workbench shows. Workbench's `db:check` had no `migrations.snapshot.md` lock at all; `litestone migrate lock` wrote one, so the check passes now.
+
 **Not on the list:** agent-to-agent messaging, other agents (Codex, Gemini), cloud
 VMs, and a live channel in place of the 1.5-second poll. The poll holds until there
 are many cards.
@@ -100,6 +107,17 @@ are many cards.
   - **A** — Fetched live on each visit and cached for the tab's lifetime, with a fetched-at time and a Refresh control; the token is the only stored thing.
   - **B** — A `Server`-like table Workbench keeps, refreshed on demand, so the list survives offline and can carry notes.
   - **Recommend A** — the provider's account is the one origin, and a stored list is a second copy of it that can disagree; the Running and Disk tabs already read live and cache nothing. The silence to guard: a cached list can be stale without saying so, which the fetched-at time answers. What must stay true: the screen writes no machine row and calls only list endpoints.
+
+**Row 7's place (2026-11-07).** The intake half is built (chat `about`, the `Next` menu, the Atlas tie). Row 7 also says a card's place moves by the person's hand — intake, review, finished — with the run's state and notices overlaid (`FJS-D1176`). Nothing stores that place yet.
+
+- **Q4 — Where the hand-moved place lives.**
+  - **A** — A `place` field on the tied chat (`'intake' | 'review' | 'finished'`, default `intake`), set by a control on the chat tab; the card sorts by its shown chat's place after needs-you and before the state sort, and a chat with no `about` has no place and no control. Named `finished`, not `done`, because `done` is a RunState and the two would read as one thing.
+  - **B** — Derive it from the register: an open row is `intake`, a row with a `review` or `proposed` marker is `review`, a closed row is `finished`; no stored field and no control.
+  - **Recommend A** — the row says *by the person's hand*, and a derived place cannot be moved by hand; B also makes a register edit silently move cards, which is the overlay D1176 forbids. The silence to guard: a chat whose row closes while its place stays `intake`, which Q5 is about. Enforcement `none` until a status-row test exists; the shape is one optional field and one three-way control.
+- **Q5 — When the tied row closes.**
+  - **A** — Do nothing: the place stays where the hand left it and the badge shows the row as closed.
+  - **B** — Suggest `finished` with a one-tap notice when the row closes, never move it unasked.
+  - **Recommend A** — a closed row is already visible on the badge, and a notice for it is a fourth notice kind for a case the person caused by closing the row themselves. Revisit if cards pile up in `intake` with closed rows.
 
 ## Before any of it
 

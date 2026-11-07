@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-6 definitions · 6 models · 0 enums · 0 other
+8 definitions · 7 models · 1 enum · 0 other
 ```
 
 ## Definitions
@@ -31,6 +31,15 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ClaudeMessage` | model |
 | `ClaudeWrite` | model |
 | `Notification` | model |
+| `ProviderAccount` | model |
+| `ComputeProvider` | enum |
+
+## Enums
+
+A value removed here is a row already in the database that no longer
+validates, and a select that silently drops an option.
+
+- `ComputeProvider` — `hetzner`, `digitalocean`
 
 ## Models
 
@@ -149,3 +158,15 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `readAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `userId`, `type`, `data` · not accepted — `id`
+
+### `ProviderAccount`
+
+- gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `label` | `string` | yes | — | `minLength: 1` `maxLength: 60` `x-transforms` | — |
+| `provider` | `ComputeProvider` | yes | — | — | — |
+
+**On create**: required — `label`, `provider` · not accepted — `id`

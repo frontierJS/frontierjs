@@ -39,7 +39,7 @@ export interface Size   { slug: string; label: string; vcpu: number; memoryMb: n
 export interface Image  { slug: string; label: string }
 export interface Catalog { regions: Region[]; sizes: Size[]; images: Image[] }
 export type MachineState = 'running' | 'starting' | 'stopping' | 'off' | 'rebuilding' | 'deleting' | 'unknown'
-export interface Machine { providerServerId: string; status: MachineState; ipAddress: string | null; region: string | null; tags: string[] }
+export interface Machine { providerServerId: string; name: string | null; size: string | null; status: MachineState; ipAddress: string | null; region: string | null; tags: string[] }
 export interface MachineSpec { name: string; region: string; size: string; image: string; userData: string; tags: string[] }
 
 /** `indeterminate` is a create DO accepted without naming the machine: it may exist, and only the tag finds it. */
@@ -82,7 +82,7 @@ export function toSize(s: Row): Size {
 const toRegion = (r: Row): Region => ({ slug: str(r.slug), label: str(r.name) || str(r.slug), available: r.available !== false })
 const toImage  = (i: Row): Image  => ({ slug: str(i.slug), label: [str(i.distribution), str(i.name)].filter(Boolean).join(' ') || str(i.slug) })
 function publicIp(d: Row): string | null { const v4 = (d.networks as Row | undefined)?.v4; if (!Array.isArray(v4)) return null; const p = (v4 as Row[]).find(n => str(n.type) === 'public'); return p ? str(p.ip_address) || null : null }
-const toMachine = (d: Row, fallback = ''): Machine => ({ providerServerId: String(d.id ?? fallback), status: STATES[str(d.status)] ?? 'unknown', ipAddress: publicIp(d), region: str((d.region as Row | undefined)?.slug) || null, tags: Array.isArray(d.tags) ? (d.tags as unknown[]).map(str) : [] })
+const toMachine = (d: Row, fallback = ''): Machine => ({ providerServerId: String(d.id ?? fallback), name: str(d.name) || null, size: str(d.size_slug) || null, status: STATES[str(d.status)] ?? 'unknown', ipAddress: publicIp(d), region: str((d.region as Row | undefined)?.slug) || null, tags: Array.isArray(d.tags) ? (d.tags as unknown[]).map(str) : [] })
 
 export async function catalog(send: Send): Promise<Catalog> {
   const [regions, sizes, images] = await Promise.all([

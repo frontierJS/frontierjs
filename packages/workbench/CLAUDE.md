@@ -45,6 +45,9 @@ slot. `api/index.ts` states 5501; `web/config/vite.config.js` states 5508 with
   accounts); `/laptop/` shows them. A value never leaves the API: the page gets
   presence, mode and a masked key, and a probe (`gh auth status`) runs only on
   Check. Workbench's own folder is `workbenchDir()` in `core/env.ts`.
+- `api/src/domain/servers/` lists the machines each `ProviderAccount` token opens,
+  live through the Hetzner and DigitalOcean conduits, list and verify only; the
+  token is `@encrypted @guarded`, read by `asSystem()` alone (`FJS-D2006`–`FJS-D2008`).
 
 ## Traps
 

@@ -24,6 +24,10 @@ export interface WhereBase {
   $raw?: { _litestoneRaw: true; sql: string; params: unknown[] }
 }
 
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+export type ComputeProvider = 'hetzner' | 'digitalocean'
+
 // ── Models ───────────────────────────────────────────────────────────────────
 
 // ─── Member ──────────────────────────────────────────────────────
@@ -450,6 +454,49 @@ export interface NotificationRelations {
   member: Member | null
 }
 
+// ─── ProviderAccount ─────────────────────────────────────────────
+
+export interface ProviderAccount {
+  id: number
+  label: string
+  provider: ComputeProvider
+  /** @guarded @encrypted */
+  token: string
+  createdAt: string
+}
+
+export interface ProviderAccountCreate {
+  id?: number
+  label: string
+  provider: ComputeProvider
+  token: string
+}
+
+export interface ProviderAccountUpdate {
+  id?: number
+  label?: string
+  provider?: ComputeProvider
+  token?: string
+}
+
+export interface ProviderAccountWhere extends WhereBase {
+  id?: number | WhereOp<number> | null
+  label?: string | WhereOp<string> | null
+  provider?: ComputeProvider | WhereOp<ComputeProvider> | null
+  token?: string | WhereOp<string> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  AND?: ProviderAccountWhere[]
+  OR?:  ProviderAccountWhere[]
+  NOT?: ProviderAccountWhere
+}
+
+export type ProviderAccountOrderBy =
+  | { [K in keyof Omit<ProviderAccount, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<ProviderAccount, never>]?: OrderDir }>
+
+export interface ProviderAccountRelations {
+}
+
 // ── Services ─────────────────────────────────────────────────────────────────
 
 /**
@@ -463,6 +510,7 @@ export interface ServiceTypes {
   claudeMessages: ClaudeMessage
   claudeWrites: ClaudeWrite
   notifications: Notification
+  providerAccounts: ProviderAccount
 }
 
 // ── Cursor pagination result ─────────────────────────────────────────────────
@@ -598,13 +646,14 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'member' | 'session' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'notification' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'member' | 'session' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'notification' | 'providerAccount' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly member: TableClient<Member, MemberCreate, MemberUpdate, MemberWhere, MemberRelations, never, '@@gate'>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'tokenHash' | 'lastUsedAt' | '@@gate', SessionSystem>
   readonly claudeTranscript: TableClient<ClaudeTranscript, ClaudeTranscriptCreate, ClaudeTranscriptUpdate, ClaudeTranscriptWhere, ClaudeTranscriptRelations, never, '@@gate'>
   readonly claudeMessage: TableClient<ClaudeMessage, ClaudeMessageCreate, ClaudeMessageUpdate, ClaudeMessageWhere, ClaudeMessageRelations, never, '@@gate'>
   readonly claudeWrite: TableClient<ClaudeWrite, ClaudeWriteCreate, ClaudeWriteUpdate, ClaudeWriteWhere, ClaudeWriteRelations, never, '@@gate'>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>
+  readonly providerAccount: TableClient<ProviderAccount, ProviderAccountCreate, ProviderAccountUpdate, ProviderAccountWhere, ProviderAccountRelations, never, 'token' | '@@gate'>
 
   // Auth scoping
   asSystem(): __Sudo<LitestoneClient>

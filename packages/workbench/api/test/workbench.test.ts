@@ -10,7 +10,8 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWorkbench, pinId, shownPlan } from '../src/domain/workbench/workbench.ts'
+import { createWorkbench, pinId, refOf, shownPlan } from '../src/domain/workbench/workbench.ts'
+import { aboutOf, nextRows, type Atlas } from '../src/domain/atlas/atlas.ts'
 import { treeOf } from '../src/domain/workbench/workbench-branch.ts'
 import { parseUnifiedDiff, readDiff } from '../src/domain/workbench/workbench-diff.ts'
 
@@ -469,6 +470,69 @@ describe('runs', () => {
     expect(await wb.send(id, 'now')).toEqual({ queued: 0 })
   })
 
+})
+
+describe('a chat about a register row', () => {
+
+  test('fresh with about carries it in status; tie sets it once; a plain chat has none; a malformed one is refused', async () => {
+    const { bin } = fakeClaude()
+    const wb = createWorkbench({ dir: join(tmp, 'wb-about'), bin })
+    const r = wb.pin(repo('about'))
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+
+    // The empty chat the pin opened with is reused, and is the row's.
+    const p = (await wb.fresh(id, { id: 'FJS-12', title: 'A retry writes twice' }))!
+    expect(p.chats).toHaveLength(1)
+    expect((await wb.status(wb.getPin(id)!)).chats[0].about).toEqual({ id: 'FJS-12', title: 'A retry writes twice' })
+
+    await wb.send(id, 'first')
+    const plain = (await wb.fresh(id))!
+    expect(plain.chats).toHaveLength(2)
+    expect((await wb.status(wb.getPin(id)!)).chats.map(c => c.about)).toEqual([{ id: 'FJS-12', title: 'A retry writes twice' }, null])
+
+    // A discussion's tie lands on the shown chat once, and the first row stays.
+    expect(wb.tie(id, null, { id: 'FJS-D7', title: 'Gates' })).toMatchObject({ chat: plain.chat })
+    wb.tie(id, null, { id: 'FJS-99', title: 'Other' })
+    expect((await wb.status(wb.getPin(id)!)).chats[1].about).toEqual({ id: 'FJS-D7', title: 'Gates' })
+    expect(wb.tie(id, 'nope', { id: 'FJS-1', title: '' })).toEqual({ refused: expect.stringContaining("no chat 'nope'") })
+
+    expect(() => refOf({ id: 'has space', title: 'x' })).toThrow('about is { id, title }')
+    expect(refOf(undefined)).toBeNull()
+    expect(refOf({ id: 'FJS-3', title: '  a\n  b  ' })).toEqual({ id: 'FJS-3', title: 'a b' })
+  })
+})
+
+describe('fli next, for a chat', () => {
+  const issue = (id: string, pkg: string[], n: number | null, o: Record<string, unknown> = {}) =>
+    ({ id, pkg, aliases: [], title: `Row ${id}`, severity: 'S2', closed: false, rank: n == null ? null : { n, score: 1, terms: [] }, ...o })
+  const ranking = { issues: [
+    issue('FJS-5', ['workbench'], 3), issue('FJS-1', ['cli'], 1), issue('FJS-2', ['workbench', 'cli'], 2),
+    issue('FJS-6', ['workbench'], null),                  // blocked
+    issue('FJS-7', ['workbench'], 4, { closed: true }),
+    issue('FJS-8', ['junction'], 5, { title: 'long  \n title '.repeat(40) }),
+  ] } as unknown as Atlas
+
+  test('the ready rows in ranking order, a line each; blocked and closed rows never', () => {
+    const rows = nextRows(ranking)
+    expect(rows.map(r => r.id)).toEqual(['FJS-1', 'FJS-2', 'FJS-5', 'FJS-8'])
+    expect(rows[3].title).not.toContain('\n')
+    expect(rows[3].title.length).toBeLessThanOrEqual(140)
+    expect(nextRows(ranking, { limit: 2 }).map(r => r.id)).toEqual(['FJS-1', 'FJS-2'])
+  })
+
+  test("a member's package lists only the rows whose area names it, by short name, scoped name or folder", () => {
+    expect(nextRows(ranking, { member: { name: '@frontierjs/workbench', path: 'packages/workbench' } }).map(r => r.id)).toEqual(['FJS-2', 'FJS-5'])
+    expect(nextRows(ranking, { member: { name: '@frontierjs/cli', path: 'packages/cli' } }).map(r => r.id)).toEqual(['FJS-1', 'FJS-2'])
+    expect(nextRows(ranking, { member: { name: 'nothing', path: 'packages/nothing' } })).toEqual([])
+  })
+
+  test('aboutOf: the first row the text names, titled; plain text or an unknown id is none', () => {
+    const atlas = { prefix: 'FJS', issues: ranking.issues, rulings: [], questions: [], ideas: [] } as unknown as Atlas
+    expect(aboutOf(atlas, 'see fjs-2 then FJS-1')).toEqual({ id: 'FJS-2', title: 'Row FJS-2' })
+    expect(aboutOf(atlas, 'something new')).toBeNull()
+    expect(aboutOf(atlas, 'FJS-404 bites')).toBeNull()
+  })
 })
 
 describe('running cost', () => {
@@ -1567,8 +1631,11 @@ describe('import terminal sessions', () => {
     const id = r.pin.id
     transcript(config, r.pin.path, TERMINAL, 'port the billing page\nand more')
     transcript(config, r.pin.path, '99999999-0000-4000-8000-000000000000', 'a headless run', { entrypoint: 'sdk-cli' })
+    // The editor wraps what the person typed in tags; the title is the typing, not the tag.
+    const WRAPPED = '22222222-3333-4444-8555-666666666666'
+    transcript(config, r.pin.path, WRAPPED, '<ide_selection>The user selected lines 1 to 3\nfrom foo.ts</ide_selection>\n<system-reminder>\nstuff\n</system-reminder>\nfix the selected loop')
 
-    expect((await wb.importable(id)).map(s => [s.session, s.title])).toEqual([[TERMINAL, 'port the billing page']])
+    expect((await wb.importable(id)).map(s => [s.session, s.title]).sort()).toEqual([[TERMINAL, 'port the billing page'], [WRAPPED, 'fix the selected loop']])
 
     const got = await wb.importSession(id, TERMINAL)
     if (!('chat' in got)) throw new Error(got.refused)
@@ -1577,10 +1644,10 @@ describe('import terminal sessions', () => {
     expect(p.chat).toBe(got.chat.id)
     expect(p.chats).toHaveLength(2)
     expect((await wb.status(p)).chats.find(c => c.id === got.chat.id)).toMatchObject({ title: 'port the billing page', session: TERMINAL })
-    expect(await wb.importable(id)).toEqual([])
+    expect((await wb.importable(id)).map(s => s.session)).toEqual([WRAPPED])
 
     await wb.send(id, 'carry on')
-    await until(async () => seen().length === 1 && !wb.getPin(id)!.pid)
+    await until(async () => existsSync(`${bin}.seen`) && seen().length === 1 && !wb.getPin(id)!.pid)
     expect(own(seen()[0].argv).slice(-2)).toEqual(['--resume', TERMINAL])
   })
 

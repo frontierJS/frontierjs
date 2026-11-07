@@ -18,6 +18,7 @@ import { resolvePush }                        from './push.ts'
 import { notificationChannelName }        from './core/channels.ts'
 import { peerKeys, peerRoute, PEER_PATH }     from './peer.ts'
 import { createBasecamp }                     from './domain/peer/basecamp.ts'
+import { conduitSend, type SendFor }          from './domain/servers/servers.ts'
 import { resolveBasecamp, DEV_BASECAMP } from '@frontierjs/cli/core/basecamps.js'
 import './workbench.types.ts'
 
@@ -33,6 +34,8 @@ export interface WorkbenchAppOptions {
   port?: number
   /** How a push leaves. A test hands a stub so a report never reaches the real ntfy.sh under the developer's own topic. */
   deliver?: typeof fetch
+  /** How the Servers screen reaches a provider. A test hands a stub so a list never dials Hetzner or DigitalOcean. */
+  serversSend?: SendFor
 }
 
 // A machine that never ran `fli basecamp:create` still has the dev Basecamp on
@@ -72,6 +75,7 @@ export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promis
   const entry    = previewBasecamp(env.BASECAMP)
   const basecamp = createBasecamp({ name: entry.name, url: entry.url, keyId: entry.peerKeyId ?? null, keys: () => peerKeys() })
   app.own('basecamp', basecamp)
+  app.own('servers', { sendFor: opts.serversSend ?? conduitSend })
 
   const login = loginRoute(db, auth, { key })
   app.configure(a => {

@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-6 models · 6 gated · 0 unrestricted
-2 with row policies · 2 with protected fields · 0 declared moves · 0 @system · 0 @seals
+7 models · 7 gated · 0 unrestricted
+2 with row policies · 3 with protected fields · 0 declared moves · 0 @system · 0 @seals
 ```
 
 ## Gates
@@ -26,6 +26,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `ClaudeWrite` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Member` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Notification` | 0 STRANGER | 8 SYSTEM | 4 USER | 8 SYSTEM |
+| `ProviderAccount` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 
 ## Row policies
@@ -52,6 +53,7 @@ rather than refusing the row.
 | Model | Field | Rule |
 | --- | --- | --- |
 | `ClaudeWrite` | `before` | `@encrypted` |
+| `ProviderAccount` | `token` | `@encrypted` |
 | `Session` | `tokenHash` | `@guarded @system` |
 | `Session` | `lastUsedAt` | `@system` |
 

@@ -644,11 +644,12 @@ title: Workbench
     } catch (err) { error = err.message } finally { pinning = false }
   }
 
+  // The error clears before the call, not after: a click also fires `seen`, and
+  // its success landing after a refused close wiped the refusal unread.
   async function act(method, p, data) {
+    error = null
     try {
-      const out = await workbench.service.invoke(method, p.id, data)
-      error = null
-      return out
+      return await workbench.service.invoke(method, p.id, data)
     } catch (err) { error = `${p.name}: ${err.message}`; return null }
   }
 
@@ -774,6 +775,41 @@ title: Workbench
     slimmed = { ...slimmed, [p.id]: false }
     if (!blank(p.id)) return fresh(p)
     setTab(p, 'chat')
+    afterDraw(() => document.getElementById(`workbench-draft-${p.id}`)?.focus())
+  }
+
+  // Terminal sessions started in this folder that no chat holds. Read when the
+  // menu is opened: they come from ~/.claude and change under a running terminal.
+  let importables = {}
+  async function loadImportable(p) {
+    const out = await act('importable', p)
+    if (out) importables = { ...importables, [p.id]: out.sessions }
+  }
+  async function importChat(p, s) {
+    if (!await act('importSession', p, { session: s.session })) return loadImportable(p)
+    importables = { ...importables, [p.id]: (importables[p.id] ?? []).filter(x => x.session !== s.session) }
+    fetchedAt[p.id] = -1
+    tabs = { ...tabs, [p.id]: 'chat' }
+    await loadPins()
+    document.getElementById(`workbench-draft-${p.id}`)?.focus()
+  }
+
+  // The top ready rows of `fli next` for the shown chat's package, read when
+  // the menu opens: the ranking moves as rows are filed and closed.
+  let nexts = {}
+  async function loadNext(p) {
+    const out = await act('nextFor', p)
+    if (out) nexts = { ...nexts, [p.id]: out }
+  }
+  // A new chat tied to the row, its draft ready and not sent: the person reads
+  // the line and adds what they know before Claude is asked anything.
+  async function openNext(p, row) {
+    if (!await act('fresh', p, { about: { id: row.id, title: row.title } })) return
+    fetchedAt[p.id] = -1
+    tabs   = { ...tabs, [p.id]: 'chat' }
+    await loadPins()
+    const held = (drafts[p.id] ?? '').trim()
+    drafts = { ...drafts, [p.id]: `${held ? `${held}\n\n` : ''}${row.id} — ${row.title}\n\n— from fli next` }
     afterDraw(() => document.getElementById(`workbench-draft-${p.id}`)?.focus())
   }
 
@@ -1487,6 +1523,7 @@ title: Workbench
                                 onclick={() => openChat(p, c.id)} title={`${c.title ?? 'Nothing sent here yet'} — ${chatLabel(c)}`}>
                           <Dot tone={chatTone(c)} hollow={chatHollow(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
                           <span class="workbench-chat-title">{chatTitle(c)}</span>
+                          {#if c.about}<span class="workbench-chat-about text-xs" data-about={c.about.id} title={c.about.title}>{c.about.id}</span>{/if}
                         </button>
                       {/each}
                       {/if}
@@ -1518,6 +1555,10 @@ title: Workbench
                             <Dot tone={chatTone(c)} hollow={chatHollow(c)} pulse={c.state === 'working'} label={chatLabel(c)} />
                             <span class="workbench-chat-title">{chatTitle(c)}</span>
                           </button>
+                          {#if c.about}
+                            <a class="workbench-chat-about text-xs" href={`/atlas/#${encodeURIComponent(c.about.id)}`}
+                               data-about={c.about.id} title={`${c.about.title} — open in the Atlas`}>{c.about.id}</a>
+                          {/if}
                           {#if p.members?.length}
                             <DropdownMenu placement="bottom-start" class="workbench-chat-pkg">
                               {#snippet trigger()}
@@ -1536,7 +1577,7 @@ title: Workbench
                               </DropdownSubmenu>
                             </DropdownMenu>
                           {/if}
-                          {#if c.state !== 'working'}
+                          {#if c.state !== 'working' && chatsOf(p.id).length > 1}
                             <button type="button" class="workbench-chat-close" aria-label={`Close ${chatTitle(c)}`}
                                     title="Close — Claude Code keeps the session"
                                     data-confirm={c.title ? 'Its transcript here goes; Claude Code keeps the session, and its cost stays in the total.' : null}
@@ -1554,6 +1595,28 @@ title: Workbench
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
                   </Button>
+                  <DropdownMenu placement="bottom-start" class="workbench-chat-import">
+                    {#snippet trigger()}
+                      <Button size="xs" treatment="ghost" onclick={() => loadImportable(p)} data-import={p.id}
+                              title="Adopt a Claude Code terminal session started in this checkout as a chat">Import</Button>
+                    {/snippet}
+                    {#each importables[p.id] ?? [] as s (s.session)}
+                      <DropdownItem data-session={s.session} suffix={ago(s.at)} onclick={() => importChat(p, s)}>{s.title}</DropdownItem>
+                    {:else}
+                      <DropdownItem disabled>{importables[p.id] ? 'No terminal sessions to import here' : 'Reading…'}</DropdownItem>
+                    {/each}
+                  </DropdownMenu>
+                  <DropdownMenu placement="bottom-start" class="workbench-chat-next">
+                    {#snippet trigger()}
+                      <Button size="xs" treatment="ghost" onclick={() => loadNext(p)} data-next={p.id}
+                              title="Open a chat on one of the top rows of fli next">Next</Button>
+                    {/snippet}
+                    {#each nexts[p.id]?.rows ?? [] as r (r.id)}
+                      <DropdownItem data-row={r.id} suffix={r.severity} title={r.title} onclick={() => openNext(p, r)}>{r.id} · {r.title.length > 80 ? `${r.title.slice(0, 79)}…` : r.title}</DropdownItem>
+                    {:else}
+                      <DropdownItem disabled>{nexts[p.id] ? `No ready rows${nexts[p.id].package ? ` for ${nexts[p.id].package.name}` : ''}` : 'Reading…'}</DropdownItem>
+                    {/each}
+                  </DropdownMenu>
                 </div>
               {/if}
               <span class="cluster">
@@ -2501,6 +2564,8 @@ title: Workbench
   }
   .workbench-chat-open[aria-current='true'] { color: var(--ink-soft); }
   .workbench-chat-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .workbench-chat-about { flex-shrink: 0; color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+  a.workbench-chat-about:hover { color: inherit; }
   .workbench-chat-close {
     padding: 0 var(--space-xs);
     border: 0;

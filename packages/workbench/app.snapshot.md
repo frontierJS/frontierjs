@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-7 services · 19 routes · 7 plugins · prefix (none)
+8 services · 19 routes · 7 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -206,10 +206,29 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `servers` · model `servers`
+
+- **methods** — `remove`, `list`, `add`
+- **custom methods** — `list`, `add`
+- **who may call** —
+  - `remove` — standing 5 or above — declared `gate: 5`
+  - `list` — standing 5 or above — declared `gate: 5`
+  - `add` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `workbench` · model `workbench`
 
-- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `setPackage`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
-- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `setPackage`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
+- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `importable`, `nextFor`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `importSession`, `setPackage`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
+- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `importable`, `nextFor`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `importSession`, `setPackage`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
 - **who may call** —
   - `pins` — standing 5 or above — declared `gate: 5`
   - `status` — standing 5 or above — declared `gate: 5`
@@ -218,6 +237,8 @@ name when it declares none.
   - `runnables` — standing 5 or above — declared `gate: 5`
   - `output` — standing 5 or above — declared `gate: 5`
   - `plan` — standing 5 or above — declared `gate: 5`
+  - `importable` — standing 5 or above — declared `gate: 5`
+  - `nextFor` — standing 5 or above — declared `gate: 5`
   - `pin` — standing 5 or above — declared `gate: 5`
   - `unpin` — standing 5 or above — declared `gate: 5`
   - `configure` — standing 5 or above — declared `gate: 5`
@@ -226,6 +247,7 @@ name when it declares none.
   - `fresh` — standing 5 or above — declared `gate: 5`
   - `select` — standing 5 or above — declared `gate: 5`
   - `close` — standing 5 or above — declared `gate: 5`
+  - `importSession` — standing 5 or above — declared `gate: 5`
   - `setPackage` — standing 5 or above — declared `gate: 5`
   - `seen` — standing 5 or above — declared `gate: 5`
   - `check` — standing 5 or above — declared `gate: 5`

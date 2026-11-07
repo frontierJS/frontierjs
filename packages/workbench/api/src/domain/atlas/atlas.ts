@@ -538,6 +538,35 @@ export function namedIds(atlas: Atlas, text: string): string[] {
   })
 }
 
+/** The register row `text` is or names, for a chat to be tied to: the first id the registers hold. */
+export function aboutOf(atlas: Atlas, text: string): { id: string, title: string } | null {
+  const id = namedIds(atlas, text)[0]
+  if (!id) return null
+  const r = recordsFor(atlas, id)
+  const title = r.issues[0]?.title ?? r.questions[0]?.question ?? r.rulings[0]?.title ?? r.ideas[0]?.title ?? ''
+  return { id, title: title.replace(/\s+/g, ' ').trim().slice(0, 200) }
+}
+
+// ─── `fli next`, for a chat ───────────────────────────────────────────────────
+
+export type NextRow = { n: number, id: string, severity: string, title: string, pkg: string[] }
+
+/** An issue's `pkg` is the short name the register's area cell carries (`cli`), a member's is `@frontierjs/cli`. */
+function inMember(pkg: string[], member: { name: string, path: string }): boolean {
+  const names = new Set([member.name, member.name.split('/').pop()!, member.path.split('/').pop()!].map(n => n.toLowerCase()))
+  return pkg.some(p => names.has(p.toLowerCase()))
+}
+
+/** The ready rows of the cached ranking in `fli next`'s order, a line each; with a
+ *  member, only the rows whose area names it. A blocked row has no `rank.n`. */
+export function nextRows(atlas: Atlas, o: { member?: { name: string, path: string } | null, limit?: number } = {}): NextRow[] {
+  return atlas.issues
+    .filter(i => !i.closed && i.rank?.n != null && (!o.member || inMember(i.pkg, o.member)))
+    .sort((a, b) => a.rank!.n! - b.rank!.n!)
+    .slice(0, o.limit ?? 8)
+    .map(i => ({ n: i.rank!.n!, id: i.id, severity: i.severity, title: i.title.replace(/\s+/g, ' ').trim().slice(0, 140), pkg: i.pkg }))
+}
+
 // ─── what Claude is handed ────────────────────────────────────────────────────
 
 export const INTENTS = ['discuss', 'file', 'fix', 'frame'] as const

@@ -6,6 +6,7 @@
   import { at, ago } from '../lib/datetime.js'
   import { count, usd, tokensOf, tilde } from '../lib/claude-format.js'
   import { claude }  from '../resources/Claude.mesa'
+  import { workbench } from '../resources/Workbench.mesa'
   import ClaudeIndexBuild from './ClaudeIndexBuild.mesa'
 
   import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
@@ -57,6 +58,25 @@
       : []
   }
 
+  // ─── open as a chat ──────────────────────────────────────────────────────────
+  // A session started in a pinned checkout's folder can be adopted as a chat
+  // there (workbench: importSession); `claude --resume` only finds it from that folder.
+
+  let pinByPath  = {}   // absolute path -> pin id
+  let adopted    = {}   // session id -> true once opened
+  let adoptError = null
+  async function loadPins() {
+    try { pinByPath = Object.fromEntries((await workbench.service.invoke('pins')).pins.map(p => [p.path, p.id])) } catch { pinByPath = {} }
+  }
+  loadPins()
+  async function adopt(pinId, row) {
+    adoptError = null
+    try {
+      await workbench.service.invoke('importSession', pinId, { session: row.sessionId })
+      adopted = { ...adopted, [row.sessionId]: true }
+    } catch (err) { adoptError = err.message }
+  }
+
   // ─── transcript drawer ───────────────────────────────────────────────────────
 
   let drawer = false
@@ -97,6 +117,7 @@
     <p class="text-sm text-muted">Reading…</p>
   {:else}
     {#if error}<Callout tone="warning" title="Refresh failed, showing the last read">{error}</Callout>{/if}
+    {#if adoptError}<Callout tone="warning" title="Could not open it as a chat">{adoptError}</Callout>{/if}
     {#if !result.indexedAt}<ClaudeIndexBuild onbuilt={() => load(cwd)} />{/if}
     {#each groups as g}
       <h3><code class="wrap">{g.label}</code> <span class="text-sm text-muted">{g.rows.length} {g.rows.length === 1 ? 'session' : 'sessions'}</span></h3>
@@ -106,6 +127,14 @@
             <td>
               <Button treatment="link" size="sm" onclick={() => open(s)}>{s.shown}</Button>
               {#if s.isGone}<Badge tone="warning" title="Claude Code has deleted this transcript; its spend is still counted">gone</Badge>{/if}
+              {#if !s.isGone && g.cwd && pinByPath[g.cwd]}
+                {#if adopted[s.sessionId]}
+                  <a class="text-sm" href="/workbench/" data-adopted={s.sessionId}>Opened — see the chat</a>
+                {:else}
+                  <Button treatment="outlined" size="xs" data-adopt={s.sessionId} onclick={() => adopt(pinByPath[g.cwd], s)}
+                          title="Adopt this session as a chat in the pinned checkout; the next message resumes it">Open as chat</Button>
+                {/if}
+              {/if}
             </td>
             <td class="text-sm" title={at(s.startedAt)}>{s.startedAt ? at(s.startedAt) : '—'}</td>
             <td class="text-sm text-muted" title={at(s.lastAt)}>{ago(s.lastAt)}</td>
