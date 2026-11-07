@@ -75,10 +75,10 @@ describe('resolveBasecamp', () => {
 
 describe('designatedBasecamp', () => {
   test('returns the runs entry; naming a second moves the designation', () => {
-    writeBasecamp('yuma', { ...yuma, runs: true }, { home })
+    writeBasecamp('yuma', { ...yuma, scopedKey: 'r1', runs: true }, { home })
     writeBasecamp('dev', { url: 'http://127.0.0.1:8120', apiKey: 'd' }, { home })
     expect(designatedBasecamp({ home }).name).toBe('yuma')
-    writeBasecamp('dev', { url: 'http://127.0.0.1:8120', apiKey: 'd', runs: true }, { home })
+    writeBasecamp('dev', { url: 'http://127.0.0.1:8120', apiKey: 'd', scopedKey: 'r2', runs: true }, { home })
     expect(designatedBasecamp({ home }).name).toBe('dev')
     expect(readBasecamps({ home }).yuma.runs).toBeUndefined()
   })
@@ -88,6 +88,16 @@ describe('designatedBasecamp', () => {
     expect(() => designatedBasecamp({ home })).toThrow(/No Basecamp is designated for runs — known: yuma/)
     writeFileSync(basecampsPath(home), JSON.stringify({ a: { url: 'u', runs: true }, b: { url: 'v', runs: true } }))
     expect(() => designatedBasecamp({ home })).toThrow(/More than one.*a, b/)
+  })
+
+  // FJS-D2031: the admin key would let a run write servers and the hub.
+  test('answers the run key and never the admin key; no run key is refused by name', () => {
+    writeBasecamp('yuma', { ...yuma, runs: true }, { home })
+    expect(() => designatedBasecamp({ home })).toThrow(/"yuma" runs Charter's Apps and holds no run key/)
+    writeBasecamp('yuma', { ...yuma, scopedKey: 'r1', runs: true }, { home })
+    const got = designatedBasecamp({ home })
+    expect(got.key).toBe('r1')
+    expect(JSON.stringify(got)).not.toContain('k1')
   })
 })
 
@@ -100,6 +110,14 @@ describe('lookupBasecamp', () => {
     writeBasecamp('dev', { url: 'http://127.0.0.1:8120' }, { home })
     expect(lookupBasecamp('dev', { home }).error).toMatch(/has no API key/)
     expect(lookupBasecamp(undefined, { home }).error).toMatch(/--basecamp <name>/)
+  })
+
+  test('a runs entry answers its run key to every reader, and without one is refused, not given the admin key', () => {
+    writeBasecamp('yuma', { ...yuma, runs: true }, { home })
+    expect(lookupBasecamp('yuma', { home }).error).toMatch(/holds no run key/)
+    writeBasecamp('yuma', { ...yuma, scopedKey: 'r1', runs: true }, { home })
+    expect(lookupBasecamp('yuma', { home }).entry.key).toBe('r1')
+    expect(lookupBasecamp('yuma', { home, scoped: true }).entry.key).toBe('r1')
   })
 })
 

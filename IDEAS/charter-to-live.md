@@ -386,15 +386,28 @@ listed beside it.
 Done when: the Phase 1 matrix runs from the Workbench page, and the reinstall toggle is the
 only control on the page that touches the box.
 
-- [ ] 2.1 Rule what leaves Charter. `charter.md`'s first open question recommends promoting the
+- [x] 2.1 Rule what leaves Charter. `charter.md`'s first open question recommends promoting the
   charter format "when a second caller of `fli new` needs it", and this page is that caller.
-  Run `decision-rules` on it before anything moves.
-- [ ] 2.2 The page reads the designated entry from `basecamps.json`. *Reinstall* and *New box*
+  Run `decision-rules` on it before anything moves. **Ruled 2026-11-07, Q12 = B (`FJS-D2025`):
+  nothing leaves.** Workbench spawns `builder/live.ts` in a Charter checkout and reads its record.
+- [x] 2.2 The page reads the designated entry from `basecamps.json`. *Reinstall* and *New box*
   run `basecamp:reinstall` / `basecamp:create`, each with `confirm: human`, under the admin key
-  `workbench-basecamps.md` holds, never the run key.
-- [ ] 2.3 The page: pick a charter (the wizard or a file), a case set and *destroy when done* or
-  *leave it* (`FJS-D1893`), then Run, and watch each stage arrive. A kept App is listed with a
-  manual Delete.
+  `workbench-basecamps.md` holds, never the run key. **Built 2026-11-07** under Q13 = C
+  (`FJS-D2031`): `chartered` holds the admin key as `apiKey` and the run key as `scopedKey`
+  (`chartered-admin` folded in and removed); `lookupBasecamp` and `designatedBasecamp` answer a
+  `runs: true` entry's run key and refuse one without it, and `designatedBasecamp` leaves the
+  admin key out; Charter's `live.ts` reads `entry.key`; the ring-0 backup reads `apiKey` through
+  `adminEntry`; a fresh reinstall drops `scopedKey`. Workbench `/charter/` lists the entry with
+  which keys are filed, *New box* links to `/basecamps/new/`, and *Reinstall* (restore or fresh,
+  Plan only on by default) spawns the command with `--basecamp <entry>`. Probed on chartered:
+  the admin key reads `/hub-backups`, the run key reads `/apps` and is refused `POST /servers`
+  (403). Driven in Chrome: a Plan-only run sent the right argv and read the box, then stopped at
+  the Cloudflare preflight, `FJS-4094` (the laptop's token opens no `maverickmade.tech` zone).
+- [ ] 2.3 The page: pick a charter file (Charter's wizard is a link out, `FJS-D2025`), a case set
+  and *destroy when done* or *leave it* (`FJS-D1893`), then Run, and watch each stage arrive
+  from the run record. The record's shape is typed on Workbench's side and an unknown stage or
+  version is refused by name; a record whose process is gone never reads as running. A kept App
+  is listed with a manual Delete.
 - [ ] 2.4 Once the owner calls the runner settled, add a test that it calls only the verbs on its
   list.
 
@@ -531,6 +544,41 @@ only control on the page that touches the box.
   - **Recommend A** — auth owns credentials and every App image vendors it, so there is one
     first-owner path; B ships the cli in every production image, C serves only template-built
     Apps and only once pushed, D is a second copy of the upsert
+- ~~**Q12 — What leaves Charter for the Workbench page that runs the matrix (2.1)?**~~ **Answered 2026-11-07 (`FJS-D2025`): B — nothing: Workbench spawns `bun builder/live.ts <case>` in a Charter checkout its config names and shows each stage from the `runs/<date>-live-<case>.json` record live.ts already rewrites after every stage; the page picks a file and links to Charter's wizard.**
+  Read 2026-11-07: the runner (`builder/live.ts` and its `ask`, `writer`, `use` and drives) calls
+  the model through `claude -p`; the format's checker reads Charter's own `builder/catalog.js`,
+  a second copy beside `packages/oracle/src/catalog.js`; the wizard is Charter's web.
+  - **A** — all of it: the format, the catalog and the runner move into the framework (a `fli`
+    verb or a Workbench domain), the wizard into Workbench's web
+  - **B** — nothing: Workbench spawns `bun builder/live.ts <case>` in a Charter checkout its config
+    names and shows each stage from the `runs/<date>-live-<case>.json` record live.ts already
+    rewrites after every stage; the page picks a file and links to Charter's wizard
+  - **C** — the format only: the format, `checkCharter` and the catalog move into
+    `packages/oracle` behind `fli new --charter`; the runner stays in Charter and is spawned
+  - **Recommend B** (`decision-rules` 2026-11-07, confidence 2) — Workbench is a caller of the
+    runner, not of `fli new`, so `charter.md`'s promotion trigger has not fired; A puts a model
+    runner in the framework against `FJS-D601` before 2.4 calls it settled, and C merges two
+    catalogs for a format with no second caller. B costs a typed record shape on Workbench's
+    side that refuses an unknown stage or version by name, and a check that the spawned process
+    is alive so a crashed run's record never reads as running. Reopen at C, then A, when
+    `fli new --charter` has a second caller or the owner calls the runner settled.
+- ~~**Q13 — How does the designated entry pair its run key with the admin key 2.2's Reinstall takes?**~~ **Answered 2026-11-07 (`FJS-D2031`): C — one entry, two keys: `apiKey` is the admin key and `scopedKey` the run key, the slot `basecamps.js` already defines as the narrow key beside the admin one; a `runs: true` entry's run path (`basecamp:app`, `basecamp:deploy`, `live.ts`) reads `scopedKey` and refuses by name without one, never falling back to `apiKey`; a fresh reinstall drops the stale `scopedKey`.** Read 2026-11-07: they are two entries, `chartered` (`runs: true`, the run key) and
+  `chartered-admin` (same url, a `host` that is no ssh Host), linked only by name; `ela-chartered`
+  shares the url. `basecamp:reinstall chartered` defaults `--basecamp` to the entry named like the
+  box, so a fresh install would file its new admin key over the run key.
+  - **A** — the runs entry gains `admin: '<entry>'` naming the admin entry; Reinstall refuses when
+    it is missing or holds no key
+  - **B** — derive: the one other entry with the same url and a key; several are refused
+  - **C** — one entry, two keys: `apiKey` is the admin key and `scopedKey` the run key, the slot
+    `basecamps.js` already defines as the narrow key beside the admin one; a `runs: true` entry's
+    run path (`basecamp:app`, `basecamp:deploy`, `live.ts`) reads `scopedKey` and refuses by name
+    without one, never falling back to `apiKey`; a fresh reinstall drops the stale `scopedKey`
+  - **D** — the Reinstall form lists the same-url entries and the person picks one each time
+  - **Recommend C** (`decision-rules` 2026-11-07, confidence 2) — the shape and its picker
+    (`lookupBasecamp(name, { scoped })`) exist and `db` already reads the narrow key that way; A
+    is a second pointer beside a field that means this, B refuses today's file, D asks a person
+    for what the file can state once. C's two silent failures are closed by refusing a
+    `runs: true` entry without `scopedKey` and by fresh mode dropping it.
 
 ## See also
 

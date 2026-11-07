@@ -82,15 +82,17 @@ name when it declares none.
 
 ### `basecamps` · model `basecamps`
 
-- **methods** — `list`, `outcome`, `creation`, `backup`, `restart`, `provision`, `deleteLocal`
-- **custom methods** — `list`, `outcome`, `creation`, `backup`, `restart`, `provision`, `deleteLocal`
+- **methods** — `list`, `outcome`, `creation`, `reinstallation`, `backup`, `restart`, `provision`, `reinstall`, `deleteLocal`
+- **custom methods** — `list`, `outcome`, `creation`, `reinstallation`, `backup`, `restart`, `provision`, `reinstall`, `deleteLocal`
 - **who may call** —
   - `list` — standing 5 or above — declared `gate: 5`
   - `outcome` — standing 5 or above — declared `gate: 5`
   - `creation` — standing 5 or above — declared `gate: 5`
+  - `reinstallation` — standing 5 or above — declared `gate: 5`
   - `backup` — standing 5 or above — declared `gate: 5`
   - `restart` — standing 5 or above — declared `gate: 5`
   - `provision` — standing 5 or above — declared `gate: 5`
+  - `reinstall` — standing 5 or above — declared `gate: 5`
   - `deleteLocal` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |

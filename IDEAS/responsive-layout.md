@@ -8,9 +8,11 @@ dated: 2026-11-07
 
 **Status: BUILT, uncommitted.** Dated 2026-11-07. Every phase is ticked and
 driven (css 762, cli 4498, example 72/36/47, workbench atlas 99, basecamp and
-ELA build, website verify); Q6–Q10 wait on the owner, each built as its
-recommendation. Do not cite this file as describing behavior — see
-`VERIFYING.md`.
+ELA build, website verify); Q1–Q10 ruled (`FJS-D2020`–`FJS-D2030`), and Q9's
+Booking rework (`FJS-D2029`) is built and driven: on a 1400px page the widget
+is one column in a 320, 400 and 470px slot and two in 490 and 700 (stub API;
+the real one was mid-rename). Do not cite this file as describing behavior —
+see `VERIFYING.md`.
 
 The want (owner, 2026-11-07): some version of Uno/Tailwind-style breakpointing
 that covers most cases without going all the way to a utility matrix. FCSS
@@ -220,7 +222,7 @@ Done when: QuoteAside and the walkthrough rail use it.
   - **B** — `.switcher` ships `container-type`.
   - **Recommend A** — B is refused by `packages/css/docs/quirks.md`: containment changes how
     a box is sized, which breaks layouts nobody changed.
-- **Q6 — How does a Switcher child become a rail that does not grow?** `--side`
+- ~~**Q6 — How does a Switcher child become a rail that does not grow?**~~ **Answered 2026-11-07 (`FJS-D2026`): A — `.switcher > [style*="--side:"] { flex-grow: 0 }`: the rail is spelled inline. A `--side` from a stylesheet sets the floor and the child still grows; `layout.spec.js` pins both that limit and that `--sidebar-width` does not match.** `--side`
   gives the width; something must also zero `flex-grow`, and CSS cannot read
   "is `--side` set" without `sign()`. Built as A in 1.1, pending the ports.
   - **A** — `.switcher > [style*="--side:"] { flex-grow: 0 }`: the rail is
@@ -234,7 +236,7 @@ Done when: QuoteAside and the walkthrough rail use it.
   - **Recommend A** — one declaration says "rail"; B restates it twice. Reopen
     for B if a 1.2/1.3 port sets `--side` from a class, for C when `sign()` is
     baseline.
-- **Q8 — Four equal cards in a Grid: is the 3+1 band acceptable?** Every
+- ~~**Q8 — Four equal cards in a Grid: is the 3+1 band acceptable?**~~ **Answered 2026-11-07 (`FJS-D2028`): A — accept it; a card row is not a table of pairs. Applied to the transit fixture provisionally 2026-11-07.** Every
   Layout's Grid fits as many columns as `--grid-min` allows, so four cards
   pass through a band one `--grid-min` plus a gap wide where three fit and the
   fourth wraps (transit's KPI cards: boxes 464–623px). The old query pair
@@ -245,7 +247,7 @@ Done when: QuoteAside and the walkthrough rail use it.
   - **C** — that file keeps its query pair.
   - **Recommend A** — B is the breakpoint matrix by another name (`FJS-D2020`
     chose derived counts); C is one fixture.
-- **Q7 — Does a full-height split pane use the Switcher?** darkroom's editor
+- ~~**Q7 — Does a full-height split pane use the Switcher?**~~ **Answered 2026-11-07 (`FJS-D2027`): B — a two-line query: one column and `block-size: auto` below 48rem. Applied provisionally 2026-11-07; the page carries the pointer here.** darkroom's editor
   fixes its block-size to the window and scrolls each pane inside itself. The
   Switcher port measured in 1.3 needed the class, an inline `--side`, `gap: 0`,
   `inline-size: calc(100% + 2 * pad)` (its own `100%` stops a negative-margin
@@ -259,7 +261,7 @@ Done when: QuoteAside and the walkthrough rail use it.
     a column shape; A needs its own escape hatches and still the query. The
     guide's Switcher page gets a "not for" line in 4.1. Reopen when a second
     fixed-height split appears (charter's collapse is in JS).
-- **Q9 — calendly's Booking widget: two queries at 34rem for one column.**
+- ~~**Q9 — calendly's Booking widget: two queries at 34rem for one column.**~~ **Answered 2026-11-07 (`FJS-D2029`): A — the widget root takes `container: fjs / inline-size`; one `@container fjs (inline-size < 30rem)` carries every rule; the media twin goes. The threshold moves 544→480px, so it needs a drive in a narrow slot on a wide page before it lands.**
   `widgets/src/Embeds/Booking.mesa:588` writes `@container (max-width: 34rem)`
   and `:591` a `@media` twin that also restyles `.times`, `.head` and `.body`.
   Nothing in the widget declares a `container-type`, so the container query
@@ -275,7 +277,7 @@ Done when: QuoteAside and the walkthrough rail use it.
   - **Recommend A** — one measure for one layout state, and the step
     (`CONTAINER_STEPS.narrow`) already exists; B keeps two origins, C hides
     the finding. Nothing built.
-- **Q10 — Does the website's topbar nav join the `.topbar-nav` contract?**
+- ~~**Q10 — Does the website's topbar nav join the `.topbar-nav` contract?**~~ **Answered 2026-11-07 (`FJS-D2030`): A — keep the measured 56rem query (its comment says re-measure when a link joins); baseline the one `css-width-off-scale` finding with a note. Built as A — nothing changed.**
   3.1 named the website; its menu row measures 650px of links plus a 77px
   brand and gaps, so it needs about 791px and overflows by up to 23px in
   768–790, the band `.topbar-nav` would show it in. The website also has no

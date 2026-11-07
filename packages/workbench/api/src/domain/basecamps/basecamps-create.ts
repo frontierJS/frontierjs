@@ -116,13 +116,16 @@ export async function startCreate(input: CreateInput, opts: CreateOptions = {}):
   const name = clean(input.name)
   if (await entryOf(name, { home: opts.home })) return { refused: `A Basecamp named '${name}' is already in basecamps.json` }
 
-  const dir  = logDir(opts.dir)
-  const log  = join(dir, `basecamp-create.${name}.${new Date().toISOString().replace(/[:.]/g, '-')}.log`)
-  mkdirSync(dir, { recursive: true })
+  held = spawnFli('basecamp-create', name, [...argv, '--approved'], opts)
+  return { ...held }
+}
 
-  const full = [...argv, '--approved']
+/** Start `fli <argv>` detached, its output to a log under Workbench's directory; answers the record it updates on exit. */
+export function spawnFli(verb: string, name: string, full: string[], opts: CreateOptions = {}): Creation {
+  const dir  = logDir(opts.dir)
+  const log  = join(dir, `${verb}.${name}.${new Date().toISOString().replace(/[:.]/g, '-')}.log`)
+  mkdirSync(dir, { recursive: true })
   const rec: Creation = { name, argv: ['fli', ...full], startedAt: new Date().toISOString(), pid: null, exit: null, log }
-  held = rec
 
   const fd = openSync(log, 'a')
   let child
@@ -136,7 +139,7 @@ export async function startCreate(input: CreateInput, opts: CreateOptions = {}):
   rec.pid = child.pid ?? null
   child.on('error', e => { rec.exit = { code: null, signal: null }; rec.error = e.message })
   child.on('exit', (code, signal) => { rec.exit = { code, signal } })
-  return { ...rec }
+  return rec
 }
 
 /** The held run with the end of its log, or null before any. */

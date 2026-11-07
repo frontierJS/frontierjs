@@ -13849,6 +13849,36 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2030"></a>2026-11-07 · `FJS-D2030` — Q10 — Does the website's topbar nav join the `.topbar-nav` contract — Keep the measured 56rem query (its comment says re-measure when a link joins); baseline the one `css-width-off-scale` finding with a note. Built as A — nothing changed.
+
+Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **A** was picked over **B** (adopt `.topbar-nav`/`.sidebar-toggle` and trim a link or the gaps so the row fits at 768), **C** (move the query to `lg` (`max-width: 1023px`): on the scale, no overflow, but no inline row in 768–1023).
+
+The paper's recommendation, taken as written: B lets layout dictate content and stretches `.sidebar-toggle` past its name; "the contract grows to fit them" wants a second consumer first, as Q2 argued. C if the one baseline entry bothers.
+
+### <a id="fjs-d2029"></a>2026-11-07 · `FJS-D2029` — Q9 — calendly's Booking widget: two queries at 34rem for one column — The widget root takes `container: fjs / inline-size`; one `@container fjs (inline-size < 30rem)` carries every rule; the media twin goes. The threshold moves 544→480px, so it needs a drive in a narrow slot on a wide page before it lands.
+
+Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **A** was picked over **B** (keep both measures, moved to 480px and 640px), **C** (baseline the two findings).
+
+The paper's recommendation, taken as written: one measure for one layout state, and the step (`CONTAINER_STEPS.narrow`) already exists; B keeps two origins, C hides the finding. Nothing built.
+
+### <a id="fjs-d2028"></a>2026-11-07 · `FJS-D2028` — Q8 — Four equal cards in a Grid: is the 3+1 band acceptable — Accept it; a card row is not a table of pairs. Applied to the transit fixture provisionally 2026-11-07.
+
+Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **A** was picked over **B** (a `--cols-md` knob on `.grid`, the count at a width), **C** (that file keeps its query pair).
+
+The paper's recommendation, taken as written: B is the breakpoint matrix by another name (`FJS-D2020` chose derived counts); C is one fixture.
+
+### <a id="fjs-d2027"></a>2026-11-07 · `FJS-D2027` — Q7 — Does a full-height split pane use the Switcher — A two-line query: one column and `block-size: auto` below 48rem. Applied provisionally 2026-11-07; the page carries the pointer here.
+
+Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **B** was picked over **A** (the Switcher plus that companion query).
+
+The paper's recommendation, taken as written: a fixed height with inner scrolling is the layout, not a column shape; A needs its own escape hatches and still the query. The guide's Switcher page gets a "not for" line in 4.1. Reopen when a second fixed-height split appears (charter's collapse is in JS).
+
+### <a id="fjs-d2026"></a>2026-11-07 · `FJS-D2026` — Q6 — How does a Switcher child become a rail that does not grow — `.switcher > [style*="--side:"] { flex-grow: 0 }`: the rail is spelled inline. A `--side` from a stylesheet sets the floor and the child still grows; `layout.spec.js` pins both that limit and that `--sidebar-width` does not match.
+
+Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **A** was picked over **B** (a second knob (`--side-grow: 0`) or a `.rail` class, so a stylesheet can declare the rail), **C** (`flex-grow: calc(1 - sign(var(--side)))`; `sign()` is not a baseline function yet).
+
+The paper's recommendation, taken as written: one declaration says "rail"; B restates it twice. Reopen for B if a 1.2/1.3 port sets `--side` from a class, for C when `sign()` is baseline.
+
 ### <a id="fjs-d2024"></a>2026-11-07 · `FJS-D2024` — Q5 — How does a child learn the Switcher stacked — The app names a container and writes `@container <name> (inline-size >= …)` on the scale.
 
 Asked in [`IDEAS/responsive-layout.md`](IDEAS/responsive-layout.md) § Open questions. **A** was picked over **B** (`.switcher` ships `container-type`).
@@ -16832,6 +16862,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2031"></a>2026-11-07 · `FJS-D2031` — Q13 — How does the designated entry pair its run key with the admin key 2.2's Reinstall takes — One entry, two keys: `apiKey` is the admin key and `scopedKey` the run key, the slot `basecamps.js` already defines as the narrow key beside the admin one; a `runs: true` entry's run path (`basecamp:app`, `basecamp:deploy`, `live.ts`) reads `scopedKey` and refuses by name without one, never falling back to `apiKey`; a fresh reinstall drops the stale `scopedKey`.
+
+Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **C** was picked over **A** (the runs entry gains `admin: '<entry>'` naming the admin entry; Reinstall refuses when it is missing or holds no key), **B** (derive: the one other entry with the same url and a key; several are refused), **D** (the Reinstall form lists the same-url entries and the person picks one each time).
+
+The paper's recommendation, taken as written: (`decision-rules` 2026-11-07, confidence 2) — the shape and its picker (`lookupBasecamp(name, { scoped })`) exist and `db` already reads the narrow key that way; A is a second pointer beside a field that means this, B refuses today's file, D asks a person for what the file can state once. C's two silent failures are closed by refusing a `runs: true` entry without `scopedKey` and by fresh mode dropping it.
+
+### <a id="fjs-d2025"></a>2026-11-07 · `FJS-D2025` — Q12 — What leaves Charter for the Workbench page that runs the matrix (2.1) — Nothing: Workbench spawns `bun builder/live.ts <case>` in a Charter checkout its config names and shows each stage from the `runs/<date>-live-<case>.json` record live.ts already rewrites after every stage; the page picks a file and links to Charter's wizard.
+
+Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **B** was picked over **A** (all of it: the format, the catalog and the runner move into the framework (a `fli` verb or a Workbench domain), the wizard into Workbench's web), **C** (the format only: the format, `checkCharter` and the catalog move into `packages/oracle` behind `fli new --charter`; the runner stays in Charter and is spawned).
+
+The paper's recommendation, taken as written: (`decision-rules` 2026-11-07, confidence 2) — Workbench is a caller of the runner, not of `fli new`, so `charter.md`'s promotion trigger has not fired; A puts a model runner in the framework against `FJS-D601` before 2.4 calls it settled, and C merges two catalogs for a format with no second caller. B costs a typed record shape on Workbench's side that refuses an unknown stage or version by name, and a check that the spawned process is alive so a crashed run's record never reads as running. Reopen at C, then A, when `fli new --charter` has a second caller or the owner calls the runner settled.
 
 ### <a id="fjs-d2019"></a>2026-11-07 · `FJS-D2019` — Q15 — Which hostnames does the copy mark `noindex` once it serves the main address — Only `<appId>-copy.<zone>`. The App's Domains and ingress name are served without it, as the live App serves them, so a crawl during an outage does not drop the App's pages from search.
 

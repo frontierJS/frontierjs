@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-14 routes · 1 layout · target spa · trailing slash always
+15 routes · 1 layout · target spa · trailing slash always
 ```
 
 ## Routes
@@ -28,6 +28,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/atlas/decide/` | `src/routes/atlas/decide/index.mesa` | `src/routes/_module.mesa` | — |
 | `/basecamps/` | `src/routes/basecamps/index.mesa` | `src/routes/_module.mesa` | — |
 | `/basecamps/new/` | `src/routes/basecamps/new/index.mesa` | `src/routes/_module.mesa` | — |
+| `/charter/` | `src/routes/charter/index.mesa` | `src/routes/_module.mesa` | — |
 | `/git-activity/local/` | `src/routes/git-activity/local.mesa` | `src/routes/_module.mesa` | — |
 | `/laptop/` | `src/routes/laptop/index.mesa` | `src/routes/_module.mesa` | — |
 | `/login/` | `src/routes/login/index.mesa` | `src/routes/_module.mesa` | — |
@@ -50,6 +51,7 @@ this section exists to show.
 - `/atlas/decide/` — siteName: `Workbench` · title: `Decide`
 - `/basecamps/` — siteName: `Workbench` · title: `Basecamps`
 - `/basecamps/new/` — siteName: `Workbench` · title: `New Basecamp`
+- `/charter/` — siteName: `Workbench` · title: `Charter`
 - `/git-activity/local/` — siteName: `Workbench` · title: `Local repositories`
 - `/laptop/` — siteName: `Workbench` · title: `Laptop`
 - `/login/` — siteName: `Workbench` · title: `Sign in`
@@ -64,4 +66,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 14 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/git-activity/local/`, `/laptop/`, `/login/`, `/notifications/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`
+- `src/routes/_module.mesa` — 15 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/charter/`, `/git-activity/local/`, `/laptop/`, `/login/`, `/notifications/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`

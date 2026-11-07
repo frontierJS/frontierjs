@@ -15,6 +15,7 @@ export const groups = [
     { href: '/terminal/',           label: 'Terminal',        icon: 'workbench',     sub: 'a shell in your home folder that outlives the tab' },
     { href: '/notifications/',      label: 'Notifications',   icon: 'atlas',         sub: 'what you have been told' },
     { href: '/basecamps/',          label: 'Basecamps',       icon: 'workbench',     sub: 'every Basecamp this laptop made — whether it answers, Back up now, Restart' },
+    { href: '/charter/',            label: 'Charter',         icon: 'workbench',     sub: 'the Basecamp Charter runs go to — Reinstall its box' },
     { href: '/servers/',            label: 'Servers',         icon: 'workbench',     sub: 'the machines and IPs this laptop\'s accounts reach' },
     { href: '/laptop/',             label: 'Laptop',          icon: 'workbench',     sub: 'fli\'s files on this machine — disk, keys, what is running' },
   ] },

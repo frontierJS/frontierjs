@@ -37,6 +37,26 @@ const fileBasecamp = (name, fields) => {
   return writeBasecamp(name, { ...readBasecamps()[name], ...set })
 }
 
+// The entry with its admin `apiKey`, or null after printing why there is none.
+const adminEntry = (name, log) => {
+  let entry
+  try { entry = resolveBasecamp(name || undefined) } catch (err) { log.error(err.message); process.exitCode = 1; return null }
+  if (entry.apiKey) return entry
+  log.error(`Basecamp "${entry.name}" has no admin API key — fli basecamp:key --server ${entry.host ?? '<box>'} files one`)
+  process.exitCode = 1
+  return null
+}
+
+// A fresh install is a new database, so the narrow key kept beside the admin one
+// names a key that no longer exists, and its next use fails 401 with nothing
+// pointing at the reinstall. Answers whether there was one.
+const dropScopedKey = (name) => {
+  const { scopedKey, ...rest } = readBasecamps()[name] ?? {}
+  if (!scopedKey) return false
+  writeBasecamp(name, rest)
+  return true
+}
+
 // The box `fli deploy` ships Basecamp to, as ssh reaches it.
 const deployServer = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.server
@@ -581,7 +601,9 @@ const takeBackup = async ({ server, out, basecamp: name, raw, how, dry, tty, log
   const say = (line) => echo(chalk`  {dim ${line}}`)
   if (raw) return await copyRaw({ server, out, say, how, dry, tty, log, echo, chalk })
 
-  const target = reach(name, log)
+  // A ring-0 verb takes the admin key, so it never goes through `reach`, which
+  // answers a runs entry's run key and refuses one that has none (FJS-D2031).
+  const target = adminEntry(name, log)
   if (!target) { log.info('--raw copies the files over ssh with no key'); return null }
   const { url: origin, apiKey: key } = target
 

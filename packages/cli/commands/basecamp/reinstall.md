@@ -81,7 +81,7 @@ made here and kept off the box the way the backup kept the old. The install is
 the box in the restored fleet again, whose row would otherwise answer that it
 heard the box before.
 
-**After**, fresh mode mints an API key for the new admin and files it in `basecamps.json` under that entry's name (the box's, when no `--basecamp` names another), keeps the
+**After**, fresh mode mints an API key for the new admin and files it in `basecamps.json` under that entry's name (the box's, when no `--basecamp` names another), drops the entry's `scopedKey` (a key on the old database, the run key on a `runs: true` entry, `FJS-D2031`), keeps the
 install's Cloudflare token as the new Basecamp's provider key with the zone
 picked for app records (`FJS-D1855`), and prints the old Basecamp's App ids, as
 a `BASECAMP_APP_ID` still naming one is stale (`FJS-D1854`). Restore mode's
@@ -405,6 +405,7 @@ try {
     if (install.outpost && !await joinFleet(server, install.domain, tty)) process.exitCode = 1
     await reportFindings({ basecamp: entryName, takenAt: kept.picked.manifest.takenAt, log, echo, chalk })
   } else {
+    if (dropScopedKey(entryName || server)) echo`  {yellow !} {bold scoped key dropped} {dim — it was the old Basecamp's; mint a new one and file it as ${entryName || server}'s scopedKey}`
     const token = await adminKey({ dest: server, admin: install.admin, entry: { name: entryName || server, host: server.includes('@') ? undefined : server, domain: install.domain }, yes: async () => false, log, echo, chalk })
     if (!token) process.exitCode = 1
     if (token && install.ingress) await keepEdge({ host: files.host, port, key: token, ingress: install.ingress, log, echo, chalk })

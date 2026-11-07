@@ -9,7 +9,9 @@
 // `peerKeyId` is the id Basecamp's "Add a peer" form answers for Workbench's
 // public key; Workbench's preview peer signs with it.
 // `runs: true` marks the one Basecamp Charter runs go to; a run's App is named
-// by its ingress name there, so the entry carries no zone (`FJS-D1899`).
+// by its ingress name there, so the entry carries no zone (`FJS-D1899`). Its
+// `scopedKey` is the run key and every App-side reach of it uses that one,
+// never falling back to `apiKey`, which the ring-0 verbs keep (`FJS-D2031`).
 //
 // The file holds admin keys, so it is written 0600 and the directory is
 // whatever `global-env.js` owns, never a second spelling of it.
@@ -88,25 +90,36 @@ export function resolveBasecamp(name, { home } = {}) {
   return { name: names[0], ...all[names[0]] }
 }
 
-/** The entry marked `runs: true`, or a throw saying none is, or that more than one is. */
+const noRunKey = (name, home) =>
+  `Basecamp "${name}" runs Charter's Apps and holds no run key — a run never takes its admin apiKey (FJS-D2031); ` +
+  `mint one with the run scopes on its API keys screen and file it as the entry's scopedKey in ${basecampsPath(home)}`
+
+/**
+ * The entry marked `runs: true` as `{ name, url, host, key }`, `key` its run
+ * key; the admin `apiKey` is left out so a run never holds it. Throws saying
+ * none is designated, that more than one is, or that it holds no run key.
+ */
 export function designatedBasecamp({ home } = {}) {
   const all   = readBasecamps({ home })
   const found = Object.keys(all).filter(n => all[n].runs === true)
   if (found.length === 0) throw new Error(`No Basecamp is designated for runs${Object.keys(all).length ? ` — known: ${named(all)}` : ''}`)
   if (found.length > 1) throw new Error(`More than one Basecamp is designated for runs: ${found.join(', ')}`)
-  return { name: found[0], ...all[found[0]] }
+  const name = found[0], entry = all[name]
+  if (!entry.scopedKey) throw new Error(noRunKey(name, home))
+  return { name, url: entry.url, ...(entry.host ? { host: entry.host } : {}), key: entry.scopedKey }
 }
 
 /**
  * `resolveBasecamp` for a reader that can do without: `{ entry }`, or `{ error }`
  * saying why there is none (unknown, ambiguous, empty), so it can carry on and
  * say so rather than refuse. `scoped` picks the narrow key when the entry holds
- * one, the admin key otherwise.
+ * one, the admin key otherwise; a `runs: true` entry answers its run key always.
  */
 export function lookupBasecamp(name, { home, scoped = false } = {}) {
   try {
     const entry = resolveBasecamp(name || undefined, { home })
-    const key   = scoped ? entry.scopedKey ?? entry.apiKey : entry.apiKey
+    if (entry.runs === true && !entry.scopedKey) return { error: noRunKey(entry.name, home) }
+    const key   = entry.runs === true || scoped ? entry.scopedKey ?? entry.apiKey : entry.apiKey
     if (!key) return { error: `Basecamp "${entry.name}" has no API key — fli basecamp:key --server ${entry.host ?? '<box>'} files one` }
     return { entry: { ...entry, key } }
   } catch (err) { return { error: err.message } }
