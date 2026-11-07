@@ -18,10 +18,11 @@ const uniq = () => Math.random().toString(36).slice(2, 8)
 const WIRE: PathName[] = ['http', 'ws', 'mcp', 'job-caller-svc', 'job-caller-db']
 const MEMBERS: Who2[] = ['outsider', 'viewer', 'developer', 'admin', 'owner']
 // The Driver connects an MCP client per standing on first use, so the first
-// 'via mcp' case paid five handshakes inside bun's 5s default timeout.
+// 'via mcp' case paid five handshakes inside bun's 5s default timeout, and the
+// sysadmin exception its own.
 beforeAll(async () => {
   fx = await build(); d = new Driver(fx)
-  for (const w of MEMBERS) await d.mcpClient(w)
+  for (const w of [...MEMBERS, 'sysadmin'] as Who2[]) await d.mcpClient(w)
 }, 180_000)
 afterAll(async () => { await d?.close(); await fx?.env?.close() })
 const LEVEL: Record<string, number> = { stranger: 0, outsider: 1, viewer: 2, developer: 4, admin: 5, owner: 6 }

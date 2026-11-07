@@ -86,6 +86,24 @@ for (const h of hosts) {
   }
 }
 
+// ─── The release's migrations against the box's journal ───────────────────────
+// A file edited after it was applied builds into an image and then keeps the
+// new container from booting, five minutes later. The running container's own
+// journal answers it now. Nothing to compare on a first deploy or with no API.
+if ($.config.doApi) {
+  const { checkJournal } = await import(new URL('file://' + global.fliRoot + '/core/migration-journal.js'))
+  const verdict = checkJournal({
+    machine:        machines.get(host) ?? machineFor($, host),
+    container:      apiContainer(appId, deployConf),
+    migrationsRoot: `${$.paths.root}/db/migrations`,
+  })
+  if (!verdict.ok) {
+    for (const line of verdict.message.split('\n')) log.error(line)
+    $.config.abort = true
+    return
+  }
+}
+
 // ─── Acquire deploy lock ──────────────────────────────────────────────────────
 // Prevents two deploys running simultaneously against the same server.
 // One lock per machine+path pair. A split app is two locks; an app whose halves

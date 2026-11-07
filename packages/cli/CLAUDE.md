@@ -113,7 +113,7 @@ frontier-member.js fs.js functions.js git-history.js git-status.js git.js global
 guarded-write.mjs guard.js HANDOFF.md hazards.md health-target.js image.js index.html index.js 
 install-preflight.js intent.js intent-recognizer.md ISSUES_ARCHIVE.md ISSUES.md journal.js 
 journal-runner.mjs junction.config.js latency.js lib.js live-view.js lock.js machine.js 
-loop-log.js autopilot.js map-model.js map-reference.js map-view.js mesa-pack.js _module.md new.md next.js one-console.md open-url.js 
+loop-log.js migration-journal.js autopilot.js map-model.js map-reference.js map-view.js mesa-pack.js _module.md new.md next.js one-console.md open-url.js 
 outline-hint.mjs outline.js package-table.js package.json parser.js pause.js pgp-words.js pin-bump.js plan.js PLAN.md png.js 
 ports.js preflight.js preview.js proofs.js prose.js prove.js proxy.js publish-hosts.js publish-view.js 
 register-atlas.js register-check.js registers.js registry.js release.js release-preflight.js release-view.js repo.js 

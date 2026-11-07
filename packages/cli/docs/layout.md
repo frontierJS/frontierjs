@@ -730,6 +730,11 @@ core/
                 need, so the two read one answer. Those two are the only roads to
                 a browser (`FJS-D1214`): a playwright or puppeteer dependency is
                 named as off them, never read as a third kind of Chrome
+  migration-journal.js  the deploy preflight's question: do this release's
+                migration files agree with the journal of the database the box
+                runs? Asked through the running container and graded by
+                litestone's own `status()`, so an edited applied file refuses
+                before the build
   argv.js       the command line into `{ _, ...flags }`, read before the command
                 is known, so a value's type is how it LOOKS and getConfig
                 coerces toward the declaration after. `BOOL_ARGV` never takes a
