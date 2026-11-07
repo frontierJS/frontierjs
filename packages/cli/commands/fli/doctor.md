@@ -87,6 +87,12 @@ for (const b of report.basecamps) {
   echo(`    ${ICON[b.level]}  ${chalk.cyan(b.label.padEnd(14))} ${b.ok ? chalk.dim('ok') : hint(b.hint)}`)
 }
 
+echo(chalk`\n  {bold private files}`)
+if (!report.secrets.length) echo(chalk.dim('    \u00b7  none yet'))
+for (const f of report.secrets) {
+  echo(`    ${ICON[f.level]}  ${chalk.cyan(f.label.padEnd(24))} ${f.ok ? chalk.dim('ok') : hint(f.hint)}`)
+}
+
 echo(chalk`\n  {bold where fli keeps your files}`)
 for (const r of report.roots) {
   echo(`    ${chalk.cyan(r.name.padEnd(7))} ${r.path}  ${chalk.dim(r.holds)}`)

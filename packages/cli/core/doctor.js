@@ -23,11 +23,11 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { basecampsPath, readBasecamps } from './basecamps.js'
 import { requiresOf }                 from './requires.js'
 import { esetHint, globalEnvPath }    from './global-env.js'
-import { configDir, dataDir, cacheDir, stateDir } from './paths.js'
+import { homeReport, holdsOf, exposed } from './home.js'
 import { execSync }     from 'node:child_process'
 import { join }         from 'node:path'
 import { MIN_CF }       from './cloudflare.js'
@@ -107,22 +107,20 @@ const sshHosts = (home) => {
   return names
 }
 
-/** What lives under each per-user root (`core/paths.js`), for the section that prints them. */
-const ROOT_HOLDS = {
-  config: '.env, commands/, basecamps.json, config.json, autopilot.json',
-  data:   'basecamp backups',
-  cache:  'registry cache, safe to delete',
-  state:  'holds, lanes, registers, loop logs, sessions.lock, frontier/, haven/',
+/** A mode row per secret entry that exists. `chmod 600` is the fix for a file and for a directory alike: nobody but the owner reads a key. */
+function secretRows(report) {
+  return Object.values(report.roots).flatMap(r => r.entries)
+    .filter(e => e.secret && e.present)
+    .map(e => {
+      const ok = !exposed(parseInt(e.mode, 8))
+      return { label: `${e.root}/${e.name}`, ok, level: ok ? 'ok' : 'warn', hint: `mode ${e.mode}, it holds keys  \u2192  chmod 600 ${e.path}`, path: e.path }
+    })
 }
-const ROOTS = { config: configDir, data: dataDir, cache: cacheDir, state: stateDir }
 
 function basecampRows(home) {
   const file = basecampsPath(home)
   if (!existsSync(file)) return []
   const rows = []
-  const mode = statSync(file).mode & 0o777
-  rows.push({ label: 'basecamps.json', ok: (mode & 0o077) === 0, hint: `mode ${mode.toString(8)}, it holds admin keys  \u2192  chmod 600 ${file}`, path: file })
-
   let all
   try { all = readBasecamps({ home }) } catch (err) { rows.push({ label: 'basecamps.json', ok: false, hint: err.message, path: file }) }
   const hosts = sshHosts(home ?? homedir())
@@ -191,13 +189,16 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
   const basecamps = basecampRows(home)
 
   // Printed, never counted: a root that does not exist yet is not a fault.
-  const roots = Object.entries(ROOT_HOLDS).map(([name, holds]) => ({ name, path: ROOTS[name]({ home }), holds }))
+  const found = homeReport({ home })
+  const roots = Object.entries(found.roots).map(([name, r]) => ({ name, path: r.path, holds: holdsOf(name).join(', ') }))
 
-  const all    = [...system, ...config, ...namespaces, ...basecamps]
+  const secrets = secretRows(found)
+
+  const all    = [...system, ...config, ...namespaces, ...basecamps, ...secrets]
   const failed = all.filter(c => !c.ok)
 
   return {
-    system, config, namespaces, basecamps, roots,
+    system, config, namespaces, basecamps, secrets, roots,
     checks:  all.length,
     failed:  failed.length,
     // *Nothing here is broken enough to stop you* is a different sentence from

@@ -14,5 +14,6 @@ export const groups = [
     { href: '/atlas/autopilot/',    label: 'Autopilot',       icon: 'atlas',         sub: 'the project\'s loops as a town — lanes, the Dock, the Switch, and a replay of the day' },
     { href: '/notifications/',      label: 'Notifications',   icon: 'atlas',         sub: 'what you have been told' },
     { href: '/basecamps/',          label: 'Basecamps',       icon: 'workbench',     sub: 'every Basecamp this laptop made — whether it answers, Back up now, Restart' },
+    { href: '/laptop/',             label: 'Laptop',          icon: 'workbench',     sub: 'fli\'s files on this machine — disk, keys, what is running' },
   ] },
 ]

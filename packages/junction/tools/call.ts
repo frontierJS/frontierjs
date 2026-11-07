@@ -23,8 +23,6 @@
 import { flag, getFlag, fatal, loadApp, quietly, stopApp, writeOut } from './app-module.ts'
 import { actAs, callAs, readable }                                from '../src/core/call-as.ts'
 import { WRITE_VERBS }                                            from '../src/core/litestone.ts'
-import { homedir }                                                from 'node:os'
-import { join }                                                   from 'node:path'
 
 // ─── args ─────────────────────────────────────────────────────────────────────
 
@@ -84,7 +82,7 @@ const app = await loadApp(appPath, getFlag('export'))
 if (prompting) {
   // Litestone is an optional peer of junction; without it the prompt has no
   // loop, and a bare module-not-found names neither.
-  const [{ startRepl, evalOnce, replOperator }, { modelToAccessor }] = await Promise.all([
+  const [{ startRepl, evalOnce, replOperator, historyFile }, { modelToAccessor }] = await Promise.all([
     import('@frontierjs/litestone/repl'), import('@frontierjs/litestone'),
   ]).catch(() =>
     fatal('The prompt is @frontierjs/litestone/repl, and litestone is not installed here. Name a method to call it once.'))
@@ -221,7 +219,7 @@ if (prompting) {
     hints:        [`  Standing: ${standing}`, ''],
     standing:     () => standing,
     prompt:       promptLine,
-    history:      join(homedir(), '.junction_call_history'),
+    history:      historyFile('junction'),
     commandsFrom: null,
   })
   await stopApp(app)

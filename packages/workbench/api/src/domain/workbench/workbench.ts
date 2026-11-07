@@ -8,7 +8,7 @@
 //
 // Nothing here is in the database. A pin names a folder on THIS machine, which
 // no workspace owns, and `db:reset` must not take a chat with it. The state is a
-// directory — `WORKBENCH_DIR`, default ~/.config/workbench:
+// directory — `WORKBENCH_DIR`, default `$XDG_CONFIG_HOME/workbench` (`core/env.ts`):
 //
 //   pins.json                 the pinned checkouts, in pin order
 //   logs/<id>.<chat>.ndjson   every run in one chat of that checkout, appended —
@@ -92,9 +92,9 @@ import {
   appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync,
   readSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
-import { homedir }                     from 'node:os'
 import { basename, isAbsolute, join, posix, relative } from 'node:path'
 import { fileURLToPath }               from 'node:url'
+import { workbenchDir }                from '../../core/env.ts'
 import { resolveRoot }                 from '../local/local-git.ts'
 import { commitFiles, readDiff }       from './workbench-diff.ts'
 import { addWorktree, branchName, copyIgnored, land as landBranch, pendingFiles, removeWorktree, snapshot } from './workbench-branch.ts'
@@ -454,7 +454,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
    *  server the run starts does not bind this API's PORT. */
   env?: Record<string, unknown>
 } = {}) {
-  const root     = dir || join(homedir(), '.config', 'workbench')
+  const root     = dir || workbenchDir()
   const pinsFile = join(root, 'pins.json')
   const logFile    = (id: string, chat: string) => join(root, 'logs', `${id}.${chat}.ndjson`)
   const reviewFile = (id: string) => join(root, 'logs', `${id}.review.ndjson`)

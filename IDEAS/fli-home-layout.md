@@ -1,12 +1,12 @@
 ---
 id: fli-home-layout
-status: proposed
+status: shipped
 dated: 2026-11-06
 ---
 
 # Idea — where fli keeps a person's files
 
-**Status: PROPOSED.** The layout is ruled below; the move is not started.
+**Status: SHIPPED 2026-11-06.** Ruled by `FJS-D1990`; every phase built.
 
 fli writes per-user files to four roots, and no module owns which one. About a
 dozen files in `packages/cli/core` each build their own `join(homedir(), …)`,
@@ -101,7 +101,8 @@ their new roots.
 - [x] 2.2 `config.json` and `autopilot.json` to `configDir()`.
 - [x] 2.3 `logs.db` to `stateDir()`.
   - No code writes `logs.db`; nothing to change (see 0.1).
-- [ ] 2.4 Delete the old copies on this machine; pre-alpha keeps no migration step.
+- [x] 2.4 Move the old copies on this machine; pre-alpha keeps no migration step.
+  - `config.json` and `autopilot.json` moved by hand to `~/.config/fli`; `~/.fli/cache` (32 registry files) deleted and rebuilt in `~/.cache/fli`; `logs.db` was already gone.
 
 ### Phase 3 — Kept true
 
@@ -113,3 +114,19 @@ outside `paths.js`, and passes on the tree.
   - `home-dir-join` in `core/checks/repo.js`; exempt files are `paths.js`, `bun-fence.js`, `install-preflight.js`, `cloud.js`, `docker-context.js`.
 - [x] 3.2 A `fli doctor` section prints the four roots.
   - `report.roots` in `core/doctor.js`, printed by `commands/fli/doctor.md`. `diagnose` no longer defaults `home` to `homedir()`: an absent home follows the XDG variables.
+
+### Phase 4 — REPL histories into the state root
+
+Goal: the two REPL histories stop sitting loose in `~` and live in `~/.fli`, the
+state root.
+Done when: a fresh `litestone` REPL and a `junction` call session each write their
+history under `~/.fli`, and nothing new appears in `~`.
+
+- [x] 4.1 `~/.litestone_repl_history` and `~/.junction_call_history` move to
+  `~/.fli/history/litestone` and `~/.fli/history/junction`.
+  - The owner chose `~/.fli` over a dotfile in `~` (every REPL's convention) and
+    over XDG state: fli is how FrontierJS is used, so its state root is where a
+    person looks. Litestone owns the path, `historyFile(name)` in
+    `src/tools/repl.js`, because it cannot import `cli/core/paths.js`
+    (Invariant 1) and junction already imports its REPL; the write makes the
+    directory first, since a failed append is swallowed.

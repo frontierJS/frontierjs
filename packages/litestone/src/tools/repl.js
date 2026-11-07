@@ -28,11 +28,16 @@
 // Never imported by application code.
 
 import { createInterface }        from 'node:readline'
-import { appendFileSync, readFileSync, existsSync } from 'node:fs'
+import { appendFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { homedir, userInfo }      from 'node:os'
-import { join }                   from 'node:path'
+import { join, dirname }          from 'node:path'
 
-const HISTORY  = join(homedir(), '.litestone_repl_history')
+// fli's state root (`FJS-D1990`), spelled here because litestone cannot import
+// cli's `core/paths.js` (Invariant 1). Every REPL's history comes from this one
+// function, so junction's lands beside litestone's rather than loose in `~`.
+export const historyFile = (/** @type {string} */ name) => join(homedir(), '.fli', 'history', name)
+
+const HISTORY  = historyFile('litestone')
 const MAX_KEPT = 500
 
 const NAMES = {
@@ -334,7 +339,10 @@ function loadHistory(/** @type {string} */ file) {
 }
 
 function remember(/** @type {string} */ file, /** @type {string} */ line) {
-  try { appendFileSync(file, `${line}\n`) } catch { /* a read-only home is not a reason to refuse a session */ }
+  try {
+    mkdirSync(dirname(file), { recursive: true })
+    appendFileSync(file, `${line}\n`)
+  } catch { /* a read-only home is not a reason to refuse a session */ }
 }
 
 // ─── help ─────────────────────────────────────────────────────────────────────

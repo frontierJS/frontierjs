@@ -24,7 +24,7 @@ function machine({ dotenv = false, globalEnv = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'fli-doctor-root-'))
   if (globalEnv) {
     mkdirSync(join(home, '.config', 'fli'), { recursive: true })
-    writeFileSync(join(home, '.config', 'fli', '.env'), '')
+    writeFileSync(join(home, '.config', 'fli', '.env'), '', { mode: 0o600 })
   }
   if (dotenv) writeFileSync(join(root, '.env'), '')
   return {
@@ -143,6 +143,37 @@ describe('namespace env vars', () => {
 
 })
 
+describe('private files', () => {
+
+  const doctor = (m) => diagnose({ ...m, has: ALL, env: {}, fliRoot: m.root })
+
+  test('a secret entry anyone else can read fails the check and names the chmod', () => {
+    const m = machine()
+    try {
+      const file = join(m.home, '.config', 'fli', 'env')
+      writeFileSync(file, 'PASSWORD=x')
+      chmodSync(file, 0o664)
+      const r = doctor(m)
+      const row = r.secrets.find(s => s.label === 'config/env')
+      expect(row.ok).toBe(false)
+      expect(row.hint).toContain(`chmod 600 ${file}`)
+      expect(r.ok).toBe(false)
+
+      chmodSync(file, 0o600)
+      expect(doctor(m).secrets.find(s => s.label === 'config/env').ok).toBe(true)
+    } finally { m.cleanup() }
+  })
+
+  test('the roots section is the catalog\'s names, not a table of its own', () => {
+    const m = machine()
+    try {
+      const roots = doctor(m).roots
+      expect(roots.map(r => r.name)).toEqual(['config', 'data', 'cache', 'state'])
+      expect(roots.find(r => r.name === 'config').holds).toContain('basecamps.json')
+    } finally { m.cleanup() }
+  })
+})
+
 describe('the index of Basecamps', () => {
 
   const withSsh = (m, text) => {
@@ -161,10 +192,10 @@ describe('the index of Basecamps', () => {
     try {
       withSsh(m, 'Host yuma\n  HostName 203.0.113.9\n')
       writeBasecamp('yuma', { url: 'https://yuma.test', host: 'yuma', apiKey: 'k' }, { home: m.home })
-      expect(doctor(m).basecamps.find(r => r.label === 'basecamps.json').ok).toBe(true)
+      expect(doctor(m).secrets.find(r => r.label === 'config/basecamps.json').ok).toBe(true)
 
       chmodSync(basecampsPath(m.home), 0o644)
-      const row = doctor(m).basecamps.find(r => r.label === 'basecamps.json')
+      const row = doctor(m).secrets.find(r => r.label === 'config/basecamps.json')
       expect(row.level).toBe('warn')
       expect(row.hint).toContain(`chmod 600 ${basecampsPath(m.home)}`)
     } finally { m.cleanup() }
@@ -207,7 +238,7 @@ describe('the summary', () => {
         modules: [{ ns: 'a', requires: ['T'] }] })
       expect(r.ok).toBe(true)
       expect(r.failed).toBe(0)
-      expect(r.checks).toBe(r.system.length + r.config.length + r.namespaces.length + r.basecamps.length)
+      expect(r.checks).toBe(r.system.length + r.config.length + r.namespaces.length + r.basecamps.length + r.secrets.length)
     } finally { m.cleanup() }
   })
 

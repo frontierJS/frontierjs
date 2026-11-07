@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Laptop.mesa — the Resource layer for what fli keeps on this
+  // laptop (api services/laptop).
+  //
+  // No model, like Basecamp: the files are the machine's, read by the API that
+  // runs on it, not anything in this app's database.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const laptop = createResource('laptop', { model: null })
+</script>

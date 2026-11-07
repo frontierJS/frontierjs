@@ -34,7 +34,7 @@
 // ============================================================
 
 import { spawnSync }                                                         from 'node:child_process'
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync,
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
          rmSync, symlinkSync, unlinkSync, writeFileSync, chmodSync }         from 'node:fs'
 import { basename, dirname, join }                                          from 'node:path'
 
@@ -92,6 +92,51 @@ export function openLane(n) {
   writeFileSync(join(bin, 'fli'), `#!/bin/sh\nexec bun ${JSON.stringify(join(dir, 'packages', 'cli', 'bin', 'fli.js'))} "$@"\n`)
   chmodSync(join(bin, 'fli'), 0o755)
   return { n, dir, bin, env: laneEnv(bin, join(LANES_DIR, `bun-${n}`)) }
+}
+
+/**
+ * The lanes this checkout opened, each with who holds it and whether its
+ * worktree has changes. A lane is reused, so a clean one is the exception: it
+ * carries the main tree's uncommitted diff from the last row.
+ */
+export function describeLanes() {
+  let names = []
+  try { names = readdirSync(LANES_DIR) } catch { return [] }
+  const mine = new RegExp(`^${basename(ROOT).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`)
+  return names.map(name => ({ name, n: Number(name.match(mine)?.[1]) })).filter(l => l.n)
+    .map(({ n }) => {
+      const dir = join(LANES_DIR, `${basename(ROOT)}-${n}`)
+      const pid = alive(holder(n)) ? holder(n) : 0
+      return { n, dir, held: pid || null, dirty: isWorktree(dir) ? dirtyIn(dir) : false }
+    })
+    .sort((a, b) => a.n - b.n)
+}
+
+/**
+ * Remove lane `n`: its worktree, its `bin-<n>` and its `bun-<n>`. Refused while
+ * a loop holds it (the session would lose its tree mid-prove) or while its
+ * worktree has changes; the next `openLane(n)` makes it again. The claim is
+ * taken for the removal itself, so a loop starting now finds the lane held
+ * rather than half gone. Answers `{ freed }` bytes or `{ refused }` with why.
+ */
+export function removeLane(n) {
+  if (!Number.isInteger(n) || n < 1 || n > MAX_LANES) return { refused: `lane ${n} is not a lane number (1 to ${MAX_LANES})` }
+  const dir = join(LANES_DIR, `${basename(ROOT)}-${n}`)
+  if (!isWorktree(dir)) return { refused: `lane ${n} has no worktree at ${dir}` }
+  if (claimed.has(n) || alive(holder(n))) return { refused: `lane ${n} is held by pid ${holder(n) || process.pid}, a loop still running` }
+  if (!claim(n)) return { refused: `lane ${n} is held by pid ${holder(n)}, a loop still running` }
+  try {
+    if (dirtyIn(dir)) return { refused: `lane ${n} has uncommitted changes in ${dir}` }
+    const parts = [dir, join(LANES_DIR, `bin-${n}`), join(LANES_DIR, `bun-${n}`)]
+    const freed = parts.reduce((sum, p) => sum + bytesUnder(p), 0)
+    git(ROOT, 'worktree', 'remove', '--force', dir)
+    git(ROOT, 'worktree', 'prune')
+    for (const p of parts) rmSync(p, { recursive: true, force: true })
+    return { freed }
+  } finally {
+    claimed.delete(n)
+    rmSync(lockOf(n), { force: true })
+  }
 }
 
 /**
@@ -279,6 +324,20 @@ function blob(dir, tree, path) {
 }
 
 const same = (a, b) => a === null || b === null ? a === b : Buffer.compare(a, b) === 0
+
+// Untracked files count: a lane's session may have written a file nothing has seen.
+function dirtyIn(dir) {
+  return git(dir, 'status', '--porcelain', '--untracked-files=all') !== ''
+}
+
+function bytesUnder(path) {
+  let st
+  try { st = lstatSync(path) } catch { return 0 }
+  if (!st.isDirectory()) return st.size
+  let total = 0
+  try { for (const name of readdirSync(path)) total += bytesUnder(join(path, name)) } catch {}
+  return total
+}
 
 function isWorktree(dir) {
   const out = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' })

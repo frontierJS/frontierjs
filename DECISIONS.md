@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1991"></a>2026-11-07 · `FJS-D1991` — Q1 — Where the screens live — One nav entry, **Laptop** (`/laptop/`), with tabs Disk, Keys and Running; global env and user commands go in Settings; local backups go on the Basecamps screen beside the Basecamp they came from.
+
+Asked in [`IDEAS/workbench-fli-files.md`](IDEAS/workbench-fli-files.md) § Open questions. **A** was picked over **B** (everything under Settings, as sections), **C** (a nav entry per screen (Disk, Keys, Running)).
+
+The paper's recommendation, taken as written: "laptop" is already the vernacular (`/basecamps/` says "every Basecamp this laptop made"; Workbench's `CLAUDE.md` calls it "a laptop tool"), while "machine" and "box" mean a server in Basecamp (`IDEAS/machine-visibility.md`). Settings stays for things a person sets; Disk and Running are things a person watches.
+
 ### <a id="fjs-d1986"></a>2026-11-06 · `FJS-D1986` — Q6 — What is it called — "Read-only copy", plain words.
 
 Asked in [`IDEAS/read-only-copy.md`](IDEAS/read-only-copy.md) § Open questions. **A** was picked over **B** (the field's terms: "read replica" for reporting, "warm standby" or "pilot light" for disaster recovery).
@@ -16755,6 +16761,30 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1995"></a>2026-11-07 · `FJS-D1995` — Q5 — Haven's and Workbench's own files — Each shows as one row (size only) on Disk; their secret files (`~/.fli/haven/key.json`, `~/.config/workbench/peer.json` and `push.json`) are listed on Keys; Workbench's root resolves through one function first (0.4).
+
+Asked in [`IDEAS/workbench-fli-files.md`](IDEAS/workbench-fli-files.md) § Open questions. **A** was picked over **B** (left out).
+
+The paper's recommendation, taken as written: they are on the same disk and hold keys; one row each costs nothing and keeps Disk's total honest.
+
+### <a id="fjs-d1994"></a>2026-11-07 · `FJS-D1994` — Q4 — Files outside the four roots — No list; fix the leakers instead.
+
+Asked in [`IDEAS/workbench-fli-files.md`](IDEAS/workbench-fli-files.md) § Open questions. **B** was picked over **A** (a Strays list on Disk, matched by named patterns (`~/fjs-*`, `~/ci-clone-fjs-*`, `~/.cache/fjs-*`), each row with size and Delete), **C** (both).
+
+The paper's recommendation, taken as written: a pattern list is a second catalog of things fli does not own, deletes by glob in `~`, and misses any scratch dir named differently; fixing the leaker (7.1) has a check that fails. A reopens if strays keep turning up after 7.1; built then, the client sends a row id and the server resolves the path, never a path from the page.
+
+### <a id="fjs-d1993"></a>2026-11-07 · `FJS-D1993` — Q3 — What Workbench may change — Reclaim (Clear a cache entry, remove an idle lane), Fix a file's mode to 600, and set or unset a global env key. User commands stay read-only, with their path to open in an editor.
+
+Asked in [`IDEAS/workbench-fli-files.md`](IDEAS/workbench-fli-files.md) § Open questions. **B** was picked over **A** (read only), **C** (B plus editing user commands in the page).
+
+The paper's recommendation, taken as written: each write goes through an owner that already exists or is one function (`storeGlobal`, `chmod`, a new lane remover). An editor already edits a `.md` command file better than a textarea would.
+
+### <a id="fjs-d1992"></a>2026-11-07 · `FJS-D1992` — Q2 — Where the catalog of entries lives — A new `core/home.js` beside `paths.js`: one row per known entry (root, name, what it is, writer, secret, how it is reclaimed) and a `homeReport()` that walks the roots. `doctor.js` and Workbench both read it, and `ROOT_HOLDS` goes.
+
+Asked in [`IDEAS/workbench-fli-files.md`](IDEAS/workbench-fli-files.md) § Open questions. **A** was picked over **B** (the rows inside `paths.js`).
+
+The paper's recommendation, taken as written: `paths.js` stays the thing every writer imports to find a root; the catalog is read by two reporters only. Invariant 4 holds either way.
 
 ### <a id="fjs-d1990"></a>2026-11-07 · `FJS-D1990` — Q1 — Which layout every per-user file moves into — Split by class: run state stays in `~/.fli`, config goes to `$XDG_CONFIG_HOME/fli`, data to `$XDG_DATA_HOME/fli`, cache to `$XDG_CACHE_HOME/fli`, every path resolved by one `core/paths.js`.
 

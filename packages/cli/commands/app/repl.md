@@ -91,7 +91,7 @@ nobody · flagship > await db.order.count()
 | `app` | the booted app |
 
 `.help` lists them, `.standing` prints the whole standing, `.exit` stops the
-app. History is `~/.junction_call_history`.
+app. History is `~/.fli/history/junction`.
 
 **Who, which app, what the boot skips** are `app:call`'s answers: no `--as` is
 nobody (`STRANGER(0)`), never the app itself; the module is `--app` or the

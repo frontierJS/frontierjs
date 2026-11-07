@@ -11,8 +11,15 @@ global.projectRoot = resolve(__dir, '..')
 
 // The user command source reads XDG_CONFIG_HOME, and a developer's own
 // commands there would show up as `_source: 'user'` in every list assertion.
+// Bun runs every file in one process, so the variable is put back after.
 const XDG = mkdtempSync(join(tmpdir(), 'fli-xdg-'))
+const XDG_WAS = process.env.XDG_CONFIG_HOME
 process.env.XDG_CONFIG_HOME = XDG
+afterAll(() => {
+  if (XDG_WAS === undefined) delete process.env.XDG_CONFIG_HOME
+  else process.env.XDG_CONFIG_HOME = XDG_WAS
+  rmSync(XDG, { recursive: true, force: true })
+})
 
 // Use a port that won't clash with a running dev server
 process.env.FLI_PORT = '13141'
@@ -46,7 +53,6 @@ beforeAll(async () => {
 
 afterAll(() => {
   server?.close()
-  rmSync(XDG, { recursive: true, force: true })
 })
 
 // ─── Helper: collect all SSE events from a streaming response ─────────────────

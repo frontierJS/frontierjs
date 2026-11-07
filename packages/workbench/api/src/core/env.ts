@@ -3,6 +3,8 @@
 // All env var access goes through this file -- no process.env.XYZ scattered
 // through app code. Missing required vars throw at startup with a clear message.
 
+import { homedir }      from 'node:os'
+import { join }         from 'node:path'
 import { defineEnv }    from '@frontierjs/junction'
 import type { EnvSpec } from '@frontierjs/junction'
 
@@ -47,3 +49,12 @@ export const spec = {
 } satisfies EnvSpec
 
 export const env = defineEnv(spec)
+
+/**
+ * Workbench's own folder: pins, logs, peer.json, push.json, claude-trash.
+ * `WORKBENCH_DIR`, else `$XDG_CONFIG_HOME/workbench`, so a test that points
+ * XDG at a temp dir takes this folder with it. Read per call, as the cli's
+ * `core/paths.js` does: a test sets the variable after this module loaded.
+ */
+export const workbenchDir = () =>
+  process.env.WORKBENCH_DIR || join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'workbench')

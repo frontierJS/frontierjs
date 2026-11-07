@@ -14,10 +14,9 @@
 
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { env } from './core/env.ts'
+import { env, workbenchDir } from './core/env.ts'
 
 export const PUBLIC_NTFY = 'https://ntfy.sh'
 
@@ -41,7 +40,7 @@ export function mintSuffix (): string {
 }
 
 /** A test points this elsewhere so it never writes the developer's own file. */
-export const pushFile = () => process.env.WORKBENCH_PUSH_FILE || join(homedir(), '.config', 'workbench', 'push.json')
+export const pushFile = () => process.env.WORKBENCH_PUSH_FILE || join(workbenchDir(), 'push.json')
 
 const TOPIC = /^workbench-[a-z0-9]{12}$/
 const REPLY = /^workbench-reply-[a-z0-9]{12}$/

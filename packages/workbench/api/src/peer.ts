@@ -7,8 +7,8 @@
 // answers is the `peerKeyId` of the Basecamp's entry in `basecamps.json`.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { workbenchDir } from './core/env.ts'
 import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import type { TransportContext } from '@frontierjs/junction'
 
@@ -18,7 +18,7 @@ export interface PeerKeys {
 }
 
 /** A test points this elsewhere so it never writes the developer's own file. */
-export const peerFile = () => process.env.WORKBENCH_PEER_FILE || join(homedir(), '.config', 'workbench', 'peer.json')
+export const peerFile = () => process.env.WORKBENCH_PEER_FILE || join(workbenchDir(), 'peer.json')
 
 const B64URL = /^[A-Za-z0-9_-]+$/
 

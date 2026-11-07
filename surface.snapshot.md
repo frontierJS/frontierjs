@@ -26,15 +26,15 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4429 source file(s) read
+27 package(s) · 4433 source file(s) read
 254 entry point(s), 31 imported by nothing outside their package, 16 emitted
-1742 value export(s), 639 reached by nothing outside, 179 emitted
+1743 value export(s), 639 reached by nothing outside, 178 emitted
 463 type export(s), 338 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `litestone` | 28 | 5 | 269 | 129 | 41 | 1 | 1 |
+| `litestone` | 28 | 5 | 270 | 129 | 41 | 1 | 1 |
 | `junction` | 27 | 3 | 274 | 116 | 13 | 272 | 210 |
 | `mesa` | 19 | 4 | 319 | 110 | 77 | 0 | 0 |
 | `sierra` | 25 | 6 | 200 | 84 | 20 | 0 | 0 |
@@ -42,7 +42,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `toolbelt` | 69 | 0 | 318 | 37 | 12 | 0 | 0 |
 | `ui` | 9 | 0 | 55 | 35 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
-| `outpost` | 11 | 1 | 55 | 18 | 1 | 0 | 0 |
+| `outpost` | 11 | 1 | 55 | 18 | 0 | 0 | 0 |
 | `conduit` | 4 | 1 | 26 | 12 | 0 | 60 | 33 |
 | `site-kit` | 9 | 4 | 36 | 9 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 22 |
@@ -180,7 +180,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · 28 entry point(s) · 269 value, 1 type export(s)
+`packages/litestone` · 28 entry point(s) · 270 value, 1 type export(s)
 
 **Entries imported by nothing outside (5):** `./engines/sqlite-wasm` `./device-schema` `./import` `./transform` `./external-ref`
 
@@ -251,8 +251,6 @@ Every entry is imported and every name reached.
 **Entries imported by nothing outside (1):** `.`
 
 **Unreached values (18):** `BACKUP_SCRIPT` `checkRunConfig` `checkStopGrace` `checkSwap` `containerName` `createInspector` `createStatic` `digestOfFiles` `DRAIN_MS` `followLines` `healthyStatus` `isDigest` `logArgs` `repointRoutes` `spawnRun` `spawnStream` `validName` `validRelativePath`
-
-**Emitted (1):** `ROOTS`
 
 ## `@frontierjs/print-kit`
 

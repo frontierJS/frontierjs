@@ -1,0 +1,171 @@
+---
+title: Laptop
+---
+<script>
+  // What fli keeps on this laptop. Disk lists the four roots of fli's home and
+  // Workbench's own folder the way `docker system df` lists its classes — size
+  // and what can be given back — with Clear on a cache entry and Remove on an
+  // idle lane. Keys and Running are the next phases of IDEAS/workbench-fli-files.md.
+  //
+  // The page sends a catalog name or a lane number and never a path; the API
+  // resolves what to delete (api services/laptop). Confirmation is in the row.
+  import { laptop } from '../../resources/Laptop.mesa'
+  import { bytes }  from '../../lib/bytes.js'
+
+  import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import Table               from '@frontierjs/ui/components/display/Table.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import Tabs                from '@frontierjs/ui/components/layout/Tabs.mesa'
+  import TabList             from '@frontierjs/ui/components/layout/TabList.mesa'
+  import Tab                 from '@frontierjs/ui/components/layout/Tab.mesa'
+  import TabPanel            from '@frontierjs/ui/components/layout/TabPanel.mesa'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore'
+
+  const CLASS_NAMES = { config: 'config', data: 'data', cache: 'cache', state: 'state', workbench: 'workbench' }
+
+  let tab     = 'disk'
+  let report  = null
+  let loading = true
+  let error   = null
+  let pressed = {}    // row key → true while its request is in flight
+
+  // One flat list the table draws: a class, its entries, and under the lanes entry each lane.
+  function flatten(r) {
+    const out = []
+    for (const c of r.classes) {
+      out.push({ key: `c:${c.root}`, kind: 'class', c })
+      for (const e of c.entries) {
+        out.push({ key: `e:${c.root}:${e.name}`, kind: 'entry', e })
+        if (e.reclaim === 'remove-lane') for (const l of r.lanes) out.push({ key: `l:${l.n}`, kind: 'lane', l })
+      }
+    }
+    return out
+  }
+
+  $: rows = report ? flatten(report) : []
+
+  async function load() {
+    try {
+      report = await laptop.service.invoke('disk')
+      error  = null
+    } catch (err) {
+      error = err.message
+    } finally {
+      loading = false
+    }
+  }
+
+  async function act(key, verb, body, label) {
+    pressed = { ...pressed, [key]: true }
+    try {
+      const out = await laptop.service.invoke(verb, null, body)
+      toasts.success(`${label}: freed ${bytes(out.freed)}`)
+      await load()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      pressed = { ...pressed, [key]: false }
+    }
+  }
+
+  const clear      = (e) => act(`e:${e.root}:${e.name}`, 'clear', { root: e.root, name: e.name }, `Cleared ${e.name}`)
+  const removeLane = (l) => act(`l:${l.n}`, 'removeLane', { lane: l.n }, `Removed lane ${l.n}`)
+
+  const COLUMNS = [
+    { name: 'name',        label: 'Name' },
+    { name: 'what',        label: 'What it is' },
+    { name: 'size',        label: 'Size' },
+    { name: 'reclaimable', label: 'Reclaimable' },
+  ]
+
+  load()
+</script>
+
+<div class="section-header">
+  <h1>Laptop</h1>
+  <span class="cluster">
+    <Button treatment="outlined" id="laptop-refresh" onclick={load}>Refresh</Button>
+  </span>
+</div>
+
+<Tabs activeId={tab} onchange={(id) => tab = id}>
+  <TabList>
+    <Tab id="disk">Disk</Tab>
+    <Tab id="keys">Keys</Tab>
+    <Tab id="running">Running</Tab>
+  </TabList>
+
+  <TabPanel id="disk">
+    {#if error}
+      <article class="alert danger">
+        <div class="alert-content">{error}</div>
+      </article>
+    {/if}
+
+    {#if loading && !report}
+      <p class="text-sm text-muted">Measuring…</p>
+    {:else if report}
+      <Table id="laptop-disk" columns={COLUMNS} rows={rows}>
+        {#snippet row(r)}
+          {#if r.kind === 'class'}
+            <tr data-class={r.c.root} class="laptop-class">
+              <td colspan="2">
+                <strong>{CLASS_NAMES[r.c.root]}</strong>
+                <span class="text-sm text-muted"> {r.c.path}{r.c.exists ? '' : ' — not there yet'}</span>
+              </td>
+              <td><strong>{bytes(r.c.bytes)}</strong></td>
+              <td><strong>{bytes(r.c.reclaimable)}</strong></td>
+            </tr>
+          {:else if r.kind === 'entry'}
+            <tr data-entry={r.e.name}>
+              <td class="laptop-indent">{r.e.name}</td>
+              <td class="text-sm text-muted">{r.e.known ? r.e.what : r.e.root === 'workbench' ? '' : 'unknown'}</td>
+              <td>{bytes(r.e.bytes)}</td>
+              <td>
+                {#if r.e.reclaim === 'clear' && r.e.present}
+                  <ConfirmationPopover inline title={`Remove ${bytes(r.e.bytes)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => clear(r.e)}>
+                    {#snippet trigger()}
+                      <Button size="sm" treatment="outlined" tone="danger" loading={!!pressed[r.key]}>Clear</Button>
+                    {/snippet}
+                  </ConfirmationPopover>
+                {/if}
+              </td>
+            </tr>
+          {:else}
+            <tr data-lane={r.l.n}>
+              <td class="laptop-indent2">lane {r.l.n}</td>
+              <td class="text-sm text-muted">
+                {#if r.l.held}held by pid {r.l.held}, a loop is running
+                {:else if r.l.dirty}has uncommitted changes — Remove will refuse
+                {:else}idle and clean{/if}
+              </td>
+              <td>{bytes(r.l.bytes)}</td>
+              <td>
+                <ConfirmationPopover inline title={`Remove ${bytes(r.l.bytes)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => removeLane(r.l)}>
+                  {#snippet trigger()}
+                    <Button size="sm" treatment="outlined" tone="danger" disabled={!!r.l.held} loading={!!pressed[r.key]}>Remove</Button>
+                  {/snippet}
+                </ConfirmationPopover>
+              </td>
+            </tr>
+          {/if}
+        {/snippet}
+      </Table>
+      <p class="text-sm text-muted" id="laptop-walk">scanned in {(report.walkMs / 1000).toFixed(1)} s</p>
+    {/if}
+  </TabPanel>
+
+  <TabPanel id="keys">
+    <p class="text-sm text-muted">The secret files fli keeps, and whether their mode is right — next.</p>
+  </TabPanel>
+
+  <TabPanel id="running">
+    <p class="text-sm text-muted">What fli is running on this laptop across every project — next.</p>
+  </TabPanel>
+</Tabs>
+
+<style>
+  .laptop-class  { background: var(--surface-2, transparent); }
+  .laptop-indent  { padding-inline-start: 1.5rem; }
+  .laptop-indent2 { padding-inline-start: 3rem; }
+</style>

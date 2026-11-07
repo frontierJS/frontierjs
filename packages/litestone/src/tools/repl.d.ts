@@ -3,6 +3,9 @@
 
 type Command = { help?: string; run(ctx: Record<string, unknown> & { args: string[]; out: (line: string) => void; tenant: string | null }): unknown }
 
+/** A REPL's history file, `~/.fli/history/<name>`. */
+export declare function historyFile(name: string): string
+
 export declare function startRepl(opts: {
   /** Every name an expression can read, and all `.help` lists. */
   binds:         Record<string, unknown>

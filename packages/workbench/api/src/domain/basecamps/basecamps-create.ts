@@ -20,9 +20,9 @@
 
 import { spawn }                                   from 'node:child_process'
 import { closeSync, mkdirSync, openSync }          from 'node:fs'
-import { homedir }                                 from 'node:os'
 import { dirname, join, resolve }                  from 'node:path'
 import { fileURLToPath }                           from 'node:url'
+import { workbenchDir }                            from '../../core/env.ts'
 import { entryOf }                                 from './basecamps.ts'
 import { tail }                                    from '../workbench/workbench-run.ts'
 
@@ -73,7 +73,7 @@ function fliBin(): string {
   return resolve(dirname(core), '..', 'bin', 'fli.js')
 }
 
-const logDir = (dir?: string) => join(dir || process.env.WORKBENCH_DIR || join(homedir(), '.config', 'workbench'), 'logs')
+const logDir = (dir?: string) => join(dir || workbenchDir(), 'logs')
 
 // A value that begins with `-` would be read as a flag of its own.
 const WORD   = /^[A-Za-z0-9][A-Za-z0-9._-]*$/

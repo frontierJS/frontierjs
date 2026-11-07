@@ -25,8 +25,8 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { workbenchDir } from '../../core/env.ts'
 import { runClaude } from '../local/local-claude.ts'
 import { read, readJsonObject, unreadable, type Read } from './claude-read.ts'
 
@@ -71,7 +71,7 @@ export const undoable = (row: { action: string, undoneAt: unknown }): boolean =>
   !row.undoneAt && (FILE_ACTIONS.has(row.action) || row.action === 'file.trash' || row.action in CLI_INVERSE)
 
 /** Where trashed items wait, beside the Workbench's own folder. A browser has no OS trash. */
-export const TRASH_DIR = join(homedir(), '.config', 'workbench', 'claude-trash')
+export const trashDir = () => join(workbenchDir(), 'claude-trash')
 
 /** The largest file the tab writes; a skill past this is not something a form should hold. */
 export const MAX_WRITE_BYTES = 500 * 1024
@@ -227,7 +227,7 @@ export async function saveFile(db: any, o: Where & { action: string, path: strin
 export async function trashPath(db: any, o: Where & { path: string, trashDir?: string }): Promise<Read<WriteRow>> {
   if (!existsSync(o.path)) return unreadable('gone since the scan')
   const id = randomUUID()
-  move(o.path, join(o.trashDir ?? TRASH_DIR, id))
+  move(o.path, join(o.trashDir ?? trashDir(), id))
   return read(await sys(db).create({
     data:   { id, action: 'file.trash', target: o.path, project: o.project ?? null, scope: o.scope ?? null },
     select: WRITE_SELECT,
@@ -261,7 +261,7 @@ export async function undoWrite(db: any, id: string, opts: { trashDir?: string }
     if (row.before === null) rmSync(row.target)
     else writeAtomic(row.target, row.before)
   } else if (row.action === 'file.trash') {
-    const held = join(opts.trashDir ?? TRASH_DIR, row.id)
+    const held = join(opts.trashDir ?? trashDir(), row.id)
     if (!existsSync(held)) return unreadable('no longer in the trash')
     if (existsSync(row.target)) return unreadable(`${row.target} exists again; move it before restoring`)
     move(held, row.target)

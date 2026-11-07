@@ -13,11 +13,17 @@ global.fliRoot = ROOT
 global.projectRoot = ROOT
 
 // The user source reads XDG_CONFIG_HOME, and the developer's own commands
-// there would otherwise show up in every assertion below.
+// there would otherwise show up in every assertion below. Bun runs every file in
+// one process, so the variable is put back or the next file reads a deleted dir.
 const XDG = mkdtempSync(join(tmpdir(), 'fli-xdg-'))
+const XDG_WAS = process.env.XDG_CONFIG_HOME
 process.env.XDG_CONFIG_HOME = XDG
 const USER_DIR = join(XDG, 'fli', 'commands')
-afterAll(() => rmSync(XDG, { recursive: true, force: true }))
+afterAll(() => {
+  if (XDG_WAS === undefined) delete process.env.XDG_CONFIG_HOME
+  else process.env.XDG_CONFIG_HOME = XDG_WAS
+  rmSync(XDG, { recursive: true, force: true })
+})
 const fliEnv = { ...process.env, XDG_CONFIG_HOME: XDG }
 
 describe('buildRegistry', () => {
