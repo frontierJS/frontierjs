@@ -5,10 +5,10 @@
   // Claude Code has no disable for a user or local server, so Disable removes it
   // and keeps its config on the write row; Enable puts it back from there. A
   // plugin's servers have no controls here -- they go with the plugin.
-  import { ago }    from '../lib/datetime.js'
-  import { lines, pairs, slug } from '../lib/claude-edit.js'
-  import { tilde }  from '../lib/claude-format.js'
-  import { claude } from '../resources/Claude.mesa'
+  import { ago }    from '../../lib/datetime.js'
+  import { lines, pairs, slug } from '../../lib/claude-edit.js'
+  import { tilde }  from '../../lib/claude-format.js'
+  import { claude } from '../../resources/Claude.mesa'
 
   import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'

@@ -7,9 +7,9 @@
   // the user ones and the claude.ai connectors -- the list differs per project. A
   // `.mcp.json` server shows only once the folder is trusted in Claude Code, and
   // a plugin's server never does, so its absence here is not a failure.
-  import { ago }    from '../lib/datetime.js'
-  import { tilde }  from '../lib/claude-format.js'
-  import { claude } from '../resources/Claude.mesa'
+  import { ago }    from '../../lib/datetime.js'
+  import { tilde }  from '../../lib/claude-format.js'
+  import { claude } from '../../resources/Claude.mesa'
 
   import Badge   from '@frontierjs/ui/components/display/Badge.mesa'
   import Button  from '@frontierjs/ui/components/forms/Button.mesa'

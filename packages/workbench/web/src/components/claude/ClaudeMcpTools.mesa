@@ -4,7 +4,7 @@
   // The server is started for the answer and stopped after it, so the list is
   // asked for on a click. An OAuth server, or a project server Claude Code has
   // not approved, answers *unavailable* with the reason rather than starting.
-  import { claude } from '../resources/Claude.mesa'
+  import { claude } from '../../resources/Claude.mesa'
 
   import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'

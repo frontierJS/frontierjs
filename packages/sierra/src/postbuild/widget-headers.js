@@ -87,7 +87,7 @@ export async function generateWidgetOrigin(outDir, entries, { origin = '*' } = {
 const INDEX_MARK = '<!-- written by sierra widgets -->'
 
 function indexPage(entries) {
-  const items = [...entries].sort().map(e => `<li><a href="${encodeURI(e)}">${escape(e)}</a></li>`).join('\n')
+  const items = [...entries].sort().map(e => `<li><a href="${encodeURI(e)}">${escapeHtml(e)}</a></li>`).join('\n')
   return `<!doctype html>
 ${INDEX_MARK}
 <meta charset="utf-8">
@@ -100,7 +100,7 @@ ${items}
 `
 }
 
-const escape = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const escapeHtml = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 
 async function filesUnder(dir, rel) {
   let entries

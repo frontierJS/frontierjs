@@ -8,6 +8,7 @@ const member = ({ user }) => !!user
 
 export const groups = [
   { label: 'Workbench', icon: 'workbench', open: true, show: member, entries: [
+    { href: '/home/',               label: 'Home',            icon: 'workbench',     sub: 'what needs you, what is working, and what ran lately' },
     { href: '/workbench/',          label: 'Chats',           icon: 'workbench',     sub: 'a Claude Code chat per pinned checkout' },
     { href: '/atlas/',              label: 'Atlas',           icon: 'atlas',         sub: 'issues, open questions and rulings — and Claude to talk one through', exact: true },
     { href: '/atlas/decide/',       label: 'Decide',          icon: 'atlas',         sub: 'the open questions one card at a time — swipe to rule, Claude to explain' },

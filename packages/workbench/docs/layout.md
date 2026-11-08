@@ -32,6 +32,7 @@ The file-by-file map. `CLAUDE.md` keeps the owners and the traps. Paths under
 | `web/src/App.mesa` | the sign-in guard |
 | `web/src/routes/_module.mesa` | the shell: topbar, nav, sign out |
 | `web/src/routes/{index,login,workbench}/` | root redirect, the sign-in page, the empty state |
+| `web/src/routes/home/` | `/home/`, where `/` and sign-in land: needs-you, working chats, pins (idle ones as chips), recent sessions, dev servers, Autopilot, unread. Reads other screens' services and writes nothing; a row links `/workbench/#workbench-<pin>/<chat>`, which stages the pin and opens the chat |
 | `web/src/lib/{nav,session}.js` | the nav table; who is signed in |
 | `desktop/` | the Tauri shell around `web/` (`wraps: 'web'`, `api` 5501): `config/desktop.config.js`, `deploy/build.mjs`, `shell/` (crate `workbench-desktop`, window `Workbench`, icon from `brand/assets/icons/`), `test/verify.mjs` + `probe.js` (sign in at the door, scan a fake `~/code`) |
 | `config/api-origin.js` | turns `FRONTIER_PORT_BE` into the build's `FRONTIER_PUBLIC_API_URL`, read by `desktop.config.js` |

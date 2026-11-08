@@ -311,7 +311,8 @@ function nextRow() {
   const running = [...inFlight.values()].flatMap(f => f.pkg)
   let wait = false
   for (const r of JSON.parse(fli(argv)).ready) {
-    if (skipped.has(r.id) || inFlight.has(r.id) || r.byHand || r.env || (ids && !ids.includes(r.id))) continue
+    // An env row is skipped because the load that failed it is still running; naming it is how a quiet run gets one (FJS-3019).
+    if (skipped.has(r.id) || inFlight.has(r.id) || r.byHand || (r.env && !ids) || (ids && !ids.includes(r.id))) continue
     if (r.pkg.some(p => running.includes(p))) { wait = true; continue }
     if (stillBusy(r, log)) { console.log(`[fix-loop] ${r.id} skipped — busy last time, and the files that made it so are still dirty`); skipped.add(r.id); continue }
     if (!ids && onDock(r.id, log)) { console.log(`[fix-loop] ${r.id} skipped — its patch is on the Dock, waiting to be applied (${join(LANES_DIR, 'patches', `${r.id}.patch`)})`); skipped.add(r.id); continue }

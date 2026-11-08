@@ -157,7 +157,7 @@ in a browser.
   - `claude` joins `OFF_LIMITS` and `NOT_FOR_AGENTS` in `api-key/scopes.ts`
     beside `workbench`: hook commands and MCP server shapes are the operator's
     machine, and a key or an agent has no business reading them.
-- [x] 1.3 `resources/Claude.mesa`, `components/ClaudeCode.mesa` and a *Claude Code* tab on
+- [x] 1.3 `resources/Claude.mesa`, `components/claude/ClaudeCode.mesa` and a *Claude Code* tab on
   `routes/workbench/` (`FJS-D1708`), its sections Overview · Plugins ·
   Marketplaces · Skills & agents · Hooks · MCP · Settings, each a kit table with
   search. No nav entry of its own; the Workbench's ⌘K row reaches it.

@@ -697,174 +697,191 @@ title: Server
     <dt>Last heartbeat</dt><dd id="server-heartbeat">{at(server.lastHeartbeatAt)}</dd>
   </dl>
 
-  <div class="tiles" style="--tile-min: 18rem">
-    <article class="card stack" id="server-apps">
-      <h2 class="h4">Apps on this machine</h2>
-      {#if placed === null}
-        <p class="text-sm text-muted">The apps placed here could not be read.</p>
-      {:else if !placed.length}
-        <p class="text-sm text-muted">Nothing is placed here. An app's own screen places it on a machine.</p>
-      {:else}
-        <ul class="stack">
-          {#each placed as a}
-            <li><a href={`/apps/${a.id}/`}>{a.name}</a>
-              <span class="text-sm text-muted">{a.environment?.name ?? ''} · {a.kind}</span></li>
-          {/each}
-        </ul>
-      {/if}
-    </article>
-
-    <article class="card stack">
-      <h2 class="h4">Plan</h2>
-      {#if entries(server.plan).length}
-        <dl class="facts">
-          {#each entries(server.plan) as [key, value]}
-            <dt>{key}</dt><dd>{value}</dd>
-          {/each}
-        </dl>
-      {:else}
-        <p class="text-sm text-muted">No plan recorded.</p>
-      {/if}
-    </article>
-
-    {#if canAdopt}
-      <article class="card stack" id="server-adopt">
-        <h2 class="h4">Link to a cloud machine</h2>
-        <p class="text-sm text-muted">
-          Points this row at a machine Basecamp did not buy, so its backups can be read and set.
-          Basecamp changes nothing there and will not destroy it. Only machines carrying
-          Basecamp's tag at the provider can be listed.
-        </p>
-        {#if !adoptOpen}
-          <div class="cluster">
-            <Button treatment="outlined" id="adopt-open" disabled={adoptBusy === 'accounts'} onclick={openAdopt}>
-              {adoptBusy === 'accounts' ? 'Asking…' : 'Find a machine'}
-            </Button>
-          </div>
-        {:else if !adoptAccounts.length}
-          <p class="text-sm" id="adopt-no-accounts">
-            No cloud account yet. Add the provider's API token as a provider key on
-            <a href="/secrets/">Secrets</a>, then find the machine here.
-          </p>
+  <!-- Health is a rail, not a cell: in the grid its height would stretch every
+       short card in its row. -->
+  <div class="switcher" style="--switch-at: 56rem; align-items: start">
+    <div class="grid" style="--grid-min: 16rem; align-items: start">
+      <article class="card stack" id="server-apps">
+        <h2 class="h4">Apps on this machine</h2>
+        {#if placed === null}
+          <p class="text-sm text-muted">The apps placed here could not be read.</p>
+        {:else if !placed.length}
+          <p class="text-sm text-muted">Nothing is placed here. An app's own screen places it on a machine.</p>
         {:else}
-          <div class="cluster">
-            <Select id="adopt-account" label="Account" value={adoptAccountId}
-                    options={adoptAccounts.map(a => ({ value: a.id, label: `${a.name} (${a.providerKind})` }))}
-                    onchange={(e) => { adoptAccountId = e.target.value; adoptSweep = null; adoptPicked = null }} />
-            <Button tone="primary" id="adopt-find" disabled={!adoptAccountId || adoptBusy === 'find'} onclick={findCandidates}>
-              {adoptBusy === 'find' ? 'Asking…' : 'List machines'}
-            </Button>
-          </div>
-          {#if adoptSweep}
-            {#if !candidates.length}
-              <p class="text-sm text-muted" id="adopt-none">No tagged machine at {adoptSweep.account.name} lacks a row here.</p>
-            {:else}
-              <ul class="stack" id="adopt-candidates">
-                {#each candidates as o}
-                  <li class="cluster" data-machine={o.providerServerId}>
-                    <strong>{o.name ?? o.providerServerId}</strong>
-                    <span class="text-sm text-muted">{o.ipAddress ?? 'no address'} · {o.region ?? '—'}</span>
-                    {#if server.ipAddress && o.ipAddress === server.ipAddress}
-                      <span class="badge info">same address as this row</span>
-                    {/if}
-                    <Button treatment="outlined" onclick={() => adoptPicked = o}>Choose</Button>
-                  </li>
-                {/each}
-              </ul>
+          <ul class="stack">
+            {#each placed as a}
+              <li><a href={`/apps/${a.id}/`}>{a.name}</a>
+                <span class="text-sm text-muted">{a.environment?.name ?? ''} · {a.kind}</span></li>
+            {/each}
+          </ul>
+        {/if}
+      </article>
+
+      <article class="card stack">
+        <h2 class="h4">Plan</h2>
+        {#if entries(server.plan).length}
+          <dl class="facts">
+            {#each entries(server.plan) as [key, value]}
+              <dt>{key}</dt><dd>{value}</dd>
+            {/each}
+          </dl>
+        {:else}
+          <p class="text-sm text-muted">No plan recorded.</p>
+        {/if}
+      </article>
+
+      {#if canAdopt}
+        <article class="card stack" id="server-adopt">
+          <h2 class="h4">Link to a cloud machine</h2>
+          <p class="text-sm text-muted">
+            Points this row at a machine Basecamp did not buy, so its backups can be read and set.
+            Basecamp changes nothing there and will not destroy it. Only machines carrying
+            Basecamp's tag at the provider can be listed.
+          </p>
+          {#if !adoptOpen}
+            <div class="cluster">
+              <Button treatment="outlined" id="adopt-open" disabled={adoptBusy === 'accounts'} onclick={openAdopt}>
+                {adoptBusy === 'accounts' ? 'Asking…' : 'Find a machine'}
+              </Button>
+            </div>
+          {:else if !adoptAccounts.length}
+            <p class="text-sm" id="adopt-no-accounts">
+              No cloud account yet. Add the provider's API token as a provider key on
+              <a href="/secrets/">Secrets</a>, then find the machine here.
+            </p>
+          {:else}
+            <div class="cluster">
+              <Select id="adopt-account" label="Account" value={adoptAccountId}
+                      options={adoptAccounts.map(a => ({ value: a.id, label: `${a.name} (${a.providerKind})` }))}
+                      onchange={(e) => { adoptAccountId = e.target.value; adoptSweep = null; adoptPicked = null }} />
+              <Button tone="primary" id="adopt-find" disabled={!adoptAccountId || adoptBusy === 'find'} onclick={findCandidates}>
+                {adoptBusy === 'find' ? 'Asking…' : 'List machines'}
+              </Button>
+            </div>
+            {#if adoptSweep}
+              {#if !candidates.length}
+                <p class="text-sm text-muted" id="adopt-none">No tagged machine at {adoptSweep.account.name} lacks a row here.</p>
+              {:else}
+                <ul class="stack" id="adopt-candidates">
+                  {#each candidates as o}
+                    <li class="cluster" data-machine={o.providerServerId}>
+                      <strong>{o.name ?? o.providerServerId}</strong>
+                      <span class="text-sm text-muted">{o.ipAddress ?? 'no address'} · {o.region ?? '—'}</span>
+                      {#if server.ipAddress && o.ipAddress === server.ipAddress}
+                        <span class="badge info">same address as this row</span>
+                      {/if}
+                      <Button treatment="outlined" onclick={() => adoptPicked = o}>Choose</Button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            {/if}
+            {#if adoptPicked}
+              <div class="card outlined stack" id="adopt-confirm">
+                <p class="text-sm">Link <strong>{server.name}</strong> to this machine?</p>
+                <dl class="facts">
+                  <dt>Name</dt><dd>{adoptPicked.name ?? '—'}</dd>
+                  <dt>Address</dt><dd>{adoptPicked.ipAddress ?? 'no address'}</dd>
+                  <dt>Region</dt><dd>{adoptPicked.region ?? '—'}</dd>
+                </dl>
+                <div class="cluster">
+                  <Button tone="primary" id="adopt-link" disabled={adoptBusy === 'link'} onclick={link}>
+                    {adoptBusy === 'link' ? 'Linking…' : 'Link'}
+                  </Button>
+                  <Button treatment="ghost" onclick={() => adoptPicked = null}>Cancel</Button>
+                </div>
+              </div>
             {/if}
           {/if}
-          {#if adoptPicked}
-            <div class="card outlined stack" id="adopt-confirm">
-              <p class="text-sm">Link <strong>{server.name}</strong> to this machine?</p>
-              <dl class="facts">
-                <dt>Name</dt><dd>{adoptPicked.name ?? '—'}</dd>
-                <dt>Address</dt><dd>{adoptPicked.ipAddress ?? 'no address'}</dd>
-                <dt>Region</dt><dd>{adoptPicked.region ?? '—'}</dd>
-              </dl>
-              <div class="cluster">
-                <Button tone="primary" id="adopt-link" disabled={adoptBusy === 'link'} onclick={link}>
-                  {adoptBusy === 'link' ? 'Linking…' : 'Link'}
+          {#if adoptError}
+            <article class="alert danger" id="adopt-error"><div class="alert-content">{adoptError}</div></article>
+          {/if}
+        </article>
+      {/if}
+
+      {#if cloudMade}
+        <article class="card stack" id="server-backups">
+          <h2 class="h4">Machine backups</h2>
+          {#if !backups}
+            <p class="text-sm text-muted">Not read yet. Sync from provider reads them.</p>
+          {:else if !backups.enabled}
+            <p id="backups-state"><strong>Off</strong></p>
+          {:else}
+            <p id="backups-state"><strong>On</strong>, {schedule(backups)}</p>
+            <dl class="facts">
+              <dt>Last taken</dt><dd>{ago(backups.taken[0]?.at, 'none yet')}</dd>
+              <dt>Kept</dt>
+              <dd>{backups.taken.length}{#if backups.retentionDays} · for {backups.retentionDays} days{/if}</dd>
+              <dt>Cost</dt>      <dd id="backups-cost">{backupCost(backups.cost)}</dd>
+            </dl>
+          {/if}
+          {#if backups}
+            <p class="text-sm text-muted">
+              Read {ago(backups.readAt)} from {server.providerKind}.
+              {#if backups.pending}<span id="backups-pending">A change is still applying there, so this may be the old state.</span>{/if}
+              {#if !server.backupPolicy}Not managed: Basecamp shows what the vendor says and changes nothing.{/if}
+            </p>
+          {/if}
+          <div class="cluster" id="backups-switch">
+            <Select label="Basecamp keeps this machine" name="backupChoice" id="backups-choice" placeholder=""
+                    options={backupOptions} value={backupChoice}
+                    onchange={(e) => backupChoice = e.target.value} />
+            {#if picksHour && (backupChoice === 'daily' || backupChoice === 'weekly')}
+              <Select label="Window opens" name="backupHour" id="backups-hour" placeholder=""
+                      options={DO_HOURS} value={backupHour}
+                      onchange={(e) => backupHour = e.target.value} />
+            {/if}
+            {#if backupChoice === 'weekly'}
+              <Select label="On" name="backupDay" id="backups-day" placeholder=""
+                      options={weekdayOptions} value={backupDay}
+                      onchange={(e) => backupDay = e.target.value} />
+            {/if}
+            {#if backupChoice !== 'off' || offDeletes === 0}
+              <Button treatment="outlined" id="backups-save" disabled={busy === 'backups'} onclick={saveBackups}>
+                {busy === 'backups' ? 'Saving…' : 'Save'}
+              </Button>
+            {/if}
+          </div>
+          {#if backupChoice === 'off' && offDeletes == null}
+            <p class="text-sm text-muted" id="backups-off-unread">
+              Sync from provider first, so Basecamp can say how many backups Off deletes.
+            </p>
+          {:else if backupChoice === 'off' && offDeletes > 0}
+            <div class="card outlined danger stack" id="backups-off-confirm">
+              <p class="text-sm">
+                {server.providerKind} deletes the <strong>{offDeletes} backup{offDeletes === 1 ? '' : 's'}</strong>
+                it has taken of <strong>{server.name}</strong>. This cannot be undone. Type the machine's name to confirm.
+              </p>
+              <form class="cluster" onsubmit={e => { e.preventDefault(); saveBackups() }}>
+                <Input id="backups-off-name" name="backups-off-name" label="Machine name" autocomplete="off"
+                       placeholder={server.name} bind:value={offName} />
+                <Button type="submit" tone="danger" id="backups-off-submit"
+                        disabled={offName !== server.name || busy === 'backups'}>
+                  {busy === 'backups' ? 'Turning off…' : 'Turn off backups'}
                 </Button>
-                <Button treatment="ghost" onclick={() => adoptPicked = null}>Cancel</Button>
-              </div>
+              </form>
             </div>
           {/if}
-        {/if}
-        {#if adoptError}
-          <article class="alert danger" id="adopt-error"><div class="alert-content">{adoptError}</div></article>
-        {/if}
-      </article>
-    {/if}
+        </article>
+      {/if}
 
-    {#if cloudMade}
-      <article class="card stack" id="server-backups">
-        <h2 class="h4">Machine backups</h2>
-        {#if !backups}
-          <p class="text-sm text-muted">Not read yet. Sync from provider reads them.</p>
-        {:else if !backups.enabled}
-          <p id="backups-state"><strong>Off</strong></p>
-        {:else}
-          <p id="backups-state"><strong>On</strong>, {schedule(backups)}</p>
-          <dl class="facts">
-            <dt>Last taken</dt><dd>{ago(backups.taken[0]?.at, 'none yet')}</dd>
-            <dt>Kept</dt>
-            <dd>{backups.taken.length}{#if backups.retentionDays} · for {backups.retentionDays} days{/if}</dd>
-            <dt>Cost</dt>      <dd id="backups-cost">{backupCost(backups.cost)}</dd>
-          </dl>
-        {/if}
-        {#if backups}
-          <p class="text-sm text-muted">
-            Read {ago(backups.readAt)} from {server.providerKind}.
-            {#if backups.pending}<span id="backups-pending">A change is still applying there, so this may be the old state.</span>{/if}
-            {#if !server.backupPolicy}Not managed: Basecamp shows what the vendor says and changes nothing.{/if}
-          </p>
-        {/if}
-        <div class="cluster" id="backups-switch">
-          <Select label="Basecamp keeps this machine" name="backupChoice" id="backups-choice" placeholder=""
-                  options={backupOptions} value={backupChoice}
-                  onchange={(e) => backupChoice = e.target.value} />
-          {#if picksHour && (backupChoice === 'daily' || backupChoice === 'weekly')}
-            <Select label="Window opens" name="backupHour" id="backups-hour" placeholder=""
-                    options={DO_HOURS} value={backupHour}
-                    onchange={(e) => backupHour = e.target.value} />
-          {/if}
-          {#if backupChoice === 'weekly'}
-            <Select label="On" name="backupDay" id="backups-day" placeholder=""
-                    options={weekdayOptions} value={backupDay}
-                    onchange={(e) => backupDay = e.target.value} />
-          {/if}
-          {#if backupChoice !== 'off' || offDeletes === 0}
-            <Button treatment="outlined" id="backups-save" disabled={busy === 'backups'} onclick={saveBackups}>
-              {busy === 'backups' ? 'Saving…' : 'Save'}
-            </Button>
-          {/if}
-        </div>
-        {#if backupChoice === 'off' && offDeletes == null}
-          <p class="text-sm text-muted" id="backups-off-unread">
-            Sync from provider first, so Basecamp can say how many backups Off deletes.
-          </p>
-        {:else if backupChoice === 'off' && offDeletes > 0}
-          <div class="card outlined danger stack" id="backups-off-confirm">
-            <p class="text-sm">
-              {server.providerKind} deletes the <strong>{offDeletes} backup{offDeletes === 1 ? '' : 's'}</strong>
-              it has taken of <strong>{server.name}</strong>. This cannot be undone. Type the machine's name to confirm.
-            </p>
-            <form class="cluster" onsubmit={e => { e.preventDefault(); saveBackups() }}>
-              <Input id="backups-off-name" name="backups-off-name" label="Machine name" autocomplete="off"
-                     placeholder={server.name} bind:value={offName} />
-              <Button type="submit" tone="danger" id="backups-off-submit"
-                      disabled={offName !== server.name || busy === 'backups'}>
-                {busy === 'backups' ? 'Turning off…' : 'Turn off backups'}
-              </Button>
-            </form>
+      <article class="card stack">
+        <h2 class="h4">Labels</h2>
+        {#if entries(server.labels).length}
+          <div class="cluster">
+            {#each entries(server.labels) as [key, value]}
+              <span class="badge muted">{key}={value}</span>
+            {/each}
           </div>
+        {:else}
+          <p class="text-sm text-muted">No labels.</p>
         {/if}
       </article>
-    {/if}
+    </div>
 
     <!-- The dashboard's card, for the readings it knows and a day of each;
          the rest of what the outpost sent is listed under it, in its own words. -->
-    <article class="card stack" id="server-health">
+    <article class="card stack" id="server-health" style="--side: 28rem">
       <h2 class="h4">Health</h2>
       <ServerHealthBody tile={{ serverId: server.id }} />
       {#if breakdown?.rows?.length}
@@ -880,19 +897,6 @@ title: Server
             {/each}
           </dl>
         </details>
-      {/if}
-    </article>
-
-    <article class="card stack">
-      <h2 class="h4">Labels</h2>
-      {#if entries(server.labels).length}
-        <div class="cluster">
-          {#each entries(server.labels) as [key, value]}
-            <span class="badge muted">{key}={value}</span>
-          {/each}
-        </div>
-      {:else}
-        <p class="text-sm text-muted">No labels.</p>
       {/if}
     </article>
   </div>

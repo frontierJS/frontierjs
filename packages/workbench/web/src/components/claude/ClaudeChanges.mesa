@@ -5,9 +5,9 @@
   // Undo is offered only where the service says it can be taken back, and a
   // refusal -- the file changed since, a running `claude` edited it -- shows on
   // that row. An undone row says so and keeps its place.
-  import { at, ago } from '../lib/datetime.js'
-  import { tilde }   from '../lib/claude-format.js'
-  import { claude }  from '../resources/Claude.mesa'
+  import { at, ago } from '../../lib/datetime.js'
+  import { tilde }   from '../../lib/claude-format.js'
+  import { claude }  from '../../resources/Claude.mesa'
 
   import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'

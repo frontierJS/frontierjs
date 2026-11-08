@@ -96,7 +96,13 @@ Done when: `widgets/test/lawn-estimator.html`, served from a third origin agains
 Goal: `fli deploy` over ssh builds, ships, routes and rolls back widgets/ the way it does web/.
 Done when: the cli suite covers the steps, and `verify:docker` (or the deploy drive) answers a widget script with CORS and the entry cache.
 
-- [ ] 3.1 `deploy.widgets` read and graded beside `deploy.web` (`edgeNames`, `resolveSide`, `makeDeployBlock`, the docs).
-- [ ] 3.2 Build and release steps beside `03-build-web` and `08-release-web`, under their own `releases/` and `current`.
-- [ ] 3.3 A widget route in `core/edge.js` from Sierra's rule, plus setup (directories, DNS), rollback, revert and the journal.
-- [ ] 3.4 The scaffold writes `deploy.widgets` and stops writing `widgets/deploy/`.
+- [x] 3.1 `deploy.widgets` read and graded beside `deploy.web` (`edgeNames`, `resolveSide`, `makeDeployBlock`, the docs).
+  - `edgeNames` grades a third name, which may equal neither of the others; the route is `fli-<app>-widgets`. The preflight refuses `deploy.widgets` with no domain or no `widgets/`.
+  - Widgets ride with `--web` (a full run and rollback too); there is no `--widgets` flag, and `deploy:revert` stays API-only. The releases live at `<serverPath>/widgets/{releases,current}`, built on the edge's host from the shipped tree; `deploy.widgets.path` overrides it.
+- [x] 3.2 Build and release steps beside `03-build-web` and `08-release-web`, under their own `releases/` and `current`.
+- [x] 3.3 A widget route in `core/edge.js` from Sierra's rule, plus setup (directories, DNS), rollback, revert and the journal.
+  - The cli now depends on `@frontierjs/sierra` and imports `./widget-headers`, a new Sierra export, so the route's CORS is `widgetHeaders()` and each file's cache is `cacheFor()` over the release's file list. The scaffold's tag check imports Sierra's `isLegalTag` instead of mirroring it. A deploy that adds `deploy.widgets` to an app set up earlier points no DNS until `deploy:setup` runs again.
+- [x] 3.4 The scaffold writes `deploy.widgets` and stops writing `widgets/deploy/`.
+  - `make:deploy --widgets-domain <host>` writes `deploy.widgets: { domain, keep_releases: 3 }`. With `widgets/` and no flag it writes no key and prints a hint (`FJS-D2033`), and `fli new` does not forward the flag yet.
+- [ ] 3.5 A drive answers a widget script through the SSH door's Caddy route with CORS and the entry cache. This is the phase's done-when, and nothing has run it.
+- [ ] 3.6 `deploy.widgets` in `docs/deploy.md` and `make:deploy`'s docs; only `commands/deploy/_module.md` describes it so far.

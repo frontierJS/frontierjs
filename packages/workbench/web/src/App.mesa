@@ -14,8 +14,8 @@
     // `next` brings the person back to the link they followed.
     if (!session.user) return path === '/login/' ? undefined
       : `/login/?next=${encodeURIComponent(path + (to.search ?? ''))}`
-    if (path === '/login/') return '/workbench/'
-    if (path === '/') return '/workbench/'
+    if (path === '/login/') return '/home/'
+    if (path === '/') return '/home/'
   })
 </script>
 

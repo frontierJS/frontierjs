@@ -2,6 +2,6 @@
 title: Workbench
 ---
 <script>
-  // The guard in App.mesa sends `/` to the chats screen; this file exists so the
+  // The guard in App.mesa sends `/` to the home screen; this file exists so the
   // router has a root to match.
 </script>

@@ -78,7 +78,7 @@ title: Workbench
   import Tabs       from '@frontierjs/ui/components/layout/Tabs.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import Terminal   from '../../components/Terminal.mesa'
-  import ClaudeCode from '../../components/ClaudeCode.mesa'
+  import ClaudeCode from '../../components/claude/ClaudeCode.mesa'
 
   const POLL_MS   = 2000
   const SHOW_TOOLS = 4
@@ -246,9 +246,14 @@ title: Workbench
 
   // `#workbench-<id>` names a card — the Atlas screen links to the chat it
   // sent to — and it may be in the wings, so the link puts it on stage.
+  // `#workbench-<id>/<chat>` also opens that chat (the home screen's rows).
   function reveal() {
-    const id = location.hash.startsWith('#workbench-') && decodeURIComponent(location.hash.slice('#workbench-'.length))
-    if (id && pins.some(p => p.id === id)) stageOn(id)
+    if (!location.hash.startsWith('#workbench-')) return
+    const [id, chat] = location.hash.slice('#workbench-'.length).split('/').map(decodeURIComponent)
+    const p = pins.find(x => x.id === id)
+    if (!p) return
+    stageOn(id)
+    if (chat && status[id]?.chats?.some(c => c.id === chat)) openChat(p, chat)
   }
 
   loadPins().then(() => { reveal(); schedule() })
