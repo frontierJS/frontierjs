@@ -39,7 +39,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
-import { PORTS } from '../../web/test/lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from '../../web/test/lib/preflight.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -63,7 +63,7 @@ const servers = []
 function start(cmd, args, name, cwd = ROOT) {
   const p = spawn(cmd, args, {
     cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-    env: { ...process.env, API_PORT },
+    env: { ...process.env, ...TEST_SINK_ENV, API_PORT },
   })
   p.stdout.on('data', d => { if (process.env.DEBUG) process.stdout.write(`[${name}] ${d}`) })
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })

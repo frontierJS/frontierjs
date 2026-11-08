@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url'
 import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { SESSION_MODULE } from './lib/session.mjs'
-import { PORTS } from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -59,7 +59,7 @@ function start(cmd, args, name) {
   // SIGTERM to the handle here leaves vite itself holding the port.
   const p = spawn(cmd, args, {
     cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-    env: { ...process.env, API_PORT, UI_PORT },
+    env: { ...process.env, ...TEST_SINK_ENV, API_PORT, UI_PORT },
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })

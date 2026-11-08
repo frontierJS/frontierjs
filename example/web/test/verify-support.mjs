@@ -51,12 +51,12 @@ import { spawn, execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PORTS } from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
 const API_PORT       = process.env.API_PORT       ?? String(PORTS.api)
-const MAIL_SINK_PORT = process.env.MAIL_SINK_PORT ?? String(PORTS.mail)
+const MAIL_SINK_PORT = process.env.MAIL_SINK_PORT ?? TEST_SINK_ENV.MAIL_SINK_PORT
 const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const MAIL = process.env.MAIL_SINK_URL ?? `http://localhost:${MAIL_SINK_PORT}`
 const BASE = `${API}/api`
@@ -71,7 +71,7 @@ const procs = []
 function start(cmd, args, name) {
   const p = spawn(cmd, args, {
     cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-    env: { ...process.env, API_PORT, MAIL_SINK_PORT },
+    env: { ...process.env, ...TEST_SINK_ENV, API_PORT, MAIL_SINK_PORT },
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })

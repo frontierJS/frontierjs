@@ -116,7 +116,8 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           a column added there and not applied by outpost is `FJS-1605` again
           domain/release/host-port.ts is which host ports a machine's Apps
           publish, and `allocatePort`, the one allocator: `placeApp` picks the
-          port when a container App lands on a machine (`FJS-D1557`); patch
+          port when a container App lands on a machine (`FJS-D1557`), past
+          what the machine's posture report says is bound (`FJS-4082`); patch
           and place refuse a taken one (`FJS-3563`)
           domain/release/variables.ts is what a container's environment IS — the
           environment's `Variable` rows with the app's own on top, snapshotted

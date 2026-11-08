@@ -43,7 +43,7 @@ import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { portFor } from '@frontierjs/cli/core/ports.js'
-import { PORTS } from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -72,7 +72,7 @@ const servers = []
 function start(cmd, args, name) {
   const p = spawn(cmd, args, {
     cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-    env: { ...process.env, API_PORT, SHOP_MCP_UI: '1' },
+    env: { ...process.env, ...TEST_SINK_ENV, API_PORT, SHOP_MCP_UI: '1' },
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })

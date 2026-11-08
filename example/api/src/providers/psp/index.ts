@@ -24,11 +24,12 @@
 import { verifyRequest } from '@frontierjs/toolbelt/signature'
 import type { App }      from '@frontierjs/junction'
 import type { Dialect, ReceivedEvent } from '@frontierjs/conduit'
+import { sinkPort }      from '../../core/sink-ports.ts'
 
 export const PSP_TARGET = 'provider:payments'
 
 /** Where the provider lives. api/src/providers/psp/sink.ts unless pointed elsewhere. */
-export const PSP_URL = process.env.PSP_URL ?? `http://localhost:${process.env.PSP_SINK_PORT ?? 8112}`
+export const PSP_URL = process.env.PSP_URL ?? `http://localhost:${sinkPort(2, 'PSP_SINK_PORT')}`
 
 /** The path the provider POSTs to. One constant, because it is written down in
  *  three places that must agree — the route, the sink's default, and the

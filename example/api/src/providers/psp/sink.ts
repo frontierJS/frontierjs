@@ -39,9 +39,10 @@
 // app imports it except that one line.
 
 import { signRequest, verifyRequest } from '@frontierjs/toolbelt/signature'
+import { API_PORT, sinkPort }            from '../../core/sink-ports.ts'
 
-// dev/be/project 1/service 2 — see mail-sink.ts on where the number comes from.
-const PORT = Number(process.env.PSP_SINK_PORT ?? 8112)
+// dev/be/project 1/service 2 — see core/sink-ports.ts.
+const PORT = sinkPort(2, 'PSP_SINK_PORT')
 
 /** How the provider addresses ITSELF, for the one link it hands out. A
  *  challenge URL is followed by a person's browser, so it cannot be derived
@@ -64,7 +65,7 @@ const OUTBOUND_KEY = process.env.SHOP_PSP_WEBHOOK_SECRET ?? 'dev-psp-webhook-sec
  *  (`docs/PORTS.md`) has no API on 8110, and a webhook posted there is
  *  refused, so no card is ever filed. */
 const HOOK_URL = process.env.PSP_HOOK_URL
-  ?? `http://localhost:${process.env.API_PORT ?? 8110}/api/webhooks/payments`
+  ?? `http://localhost:${API_PORT}/api/webhooks/payments`
 
 export interface Intent {
   id:       string

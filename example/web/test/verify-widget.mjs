@@ -37,7 +37,7 @@ import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { portFor } from '@frontierjs/cli/core/ports.js'
-import { PORTS } from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
@@ -118,7 +118,7 @@ await new Promise((res, rej) => {
 // database costs one pass of existence checks.
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
-const PORT_ENV = { API_PORT, UI_PORT }
+const PORT_ENV = { ...TEST_SINK_ENV, API_PORT, UI_PORT }
 start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
 start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 

@@ -34,7 +34,7 @@ import { writeFileSync, rmSync } from 'node:fs'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
 import { portFor }             from '@frontierjs/cli/core/ports.js'
-import { PORTS }               from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV }               from './lib/preflight.mjs'
 import { watchReloads } from './lib/reload.mjs'
 import { openChrome, createNetwork } from '../../../packages/mesa/src/drive.js'
 
@@ -102,7 +102,7 @@ console.log('  building…')
 execFileSync('npx', ['vite', 'build', '-c', 'web/config/vite.config.js'], { cwd: ROOT, stdio: 'ignore' })
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
-start('bun', ['run', 'api/index.ts'], 'api', { API_PORT })
+start('bun', ['run', 'api/index.ts'], 'api', { ...TEST_SINK_ENV, API_PORT })
 start(process.execPath, [join(HERE, 'verify-preview.mjs')], 'preview',
       { PREVIEW_PORT: PORT, FRONTIER_API_URL: API })
 

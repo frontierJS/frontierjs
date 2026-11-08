@@ -70,7 +70,7 @@ export const holds = ['ports']
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
-import { PORTS } from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { authenticator, wrongCode, enrolledAccount } from './lib/authenticator.mjs'
 import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
@@ -84,7 +84,7 @@ const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.uiTest)
 const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 const BASE   = `${API}/api`
-const MAIL_SINK_PORT = process.env.MAIL_SINK_PORT ?? String(PORTS.mail)
+const MAIL_SINK_PORT = process.env.MAIL_SINK_PORT ?? TEST_SINK_ENV.MAIL_SINK_PORT
 const MAIL   = process.env.MAIL_SINK_URL ?? `http://localhost:${MAIL_SINK_PORT}`
 
 const PASSWORD = 'correct-horse-battery'
@@ -134,7 +134,7 @@ execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
 // SHOP_CONSOLE_URL because a password-reset link is minted by the API and points
 // at the CONSOLE, which the app otherwise assumes is on 8010.
-const PORT_ENV = { API_PORT, UI_PORT, MAIL_SINK_PORT, SHOP_CONSOLE_URL: UI }
+const PORT_ENV = { ...TEST_SINK_ENV, API_PORT, UI_PORT, MAIL_SINK_PORT, SHOP_CONSOLE_URL: UI }
 start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
 start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 

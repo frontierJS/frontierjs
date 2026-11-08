@@ -38,6 +38,7 @@ import { joinChannels }                         from './core/channels.ts'
 import { vapid }                                from './core/push.ts'
 import { deliverToSink }                        from './providers/push/sink.ts'
 import { cartClaim, CART_HEADER }              from './domain/shop'
+import { API_PORT, sinkPort }                   from './core/sink-ports.ts'
 import { IDP_URL }                              from './providers/idp/sink.ts'
 import { createConduitMailer, MAIL_TARGET }     from './providers/mail/mailer.ts'
 import { PSP_TARGET, PSP_URL, WEBHOOK_PATH, pspDialect }   from './providers/psp/index.ts'
@@ -48,7 +49,8 @@ import { stripeTarget, stripeDialect, STRIPE_WEBHOOK_PATH } from './providers/st
 // (7110) instead of needing one hand-started on the dev row, which is the
 // difference between `verify:cart` and every drive with a preamble.
 // FRONTIER_PORT_BE is what `fli dev` hands a second checkout (18110 in branch 1).
-const PORT = Number(process.env.API_PORT ?? process.env.FRONTIER_PORT_BE ?? 8110)
+// core/sink-ports.ts owns the reading, so the sinks follow the same port.
+const PORT = API_PORT
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
 //
@@ -553,7 +555,7 @@ app.configure(orion({
 // provider's shape. Pointing this at api.resend.com is a change of `address`
 // and `ref` here, and nothing else anywhere.
 
-export const MAIL_SINK = process.env.MAIL_SINK_URL ?? `http://localhost:${process.env.MAIL_SINK_PORT ?? 8111}`
+export const MAIL_SINK = process.env.MAIL_SINK_URL ?? `http://localhost:${sinkPort(1, 'MAIL_SINK_PORT')}`
 
 app.configure(conduit({
   targets: [{

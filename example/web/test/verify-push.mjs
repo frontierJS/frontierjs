@@ -54,7 +54,7 @@ import { dirname, join }                  from 'node:path'
 import { createInterface }                from 'node:readline'
 import { fileURLToPath }                  from 'node:url'
 import { portFor }                        from '@frontierjs/cli/core/ports.js'
-import { PORTS }                          from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV }                          from './lib/preflight.mjs'
 import { results, report }                from './lib/report.mjs'
 import { openChrome }                     from '../../../packages/mesa/src/drive.js'
 
@@ -132,7 +132,7 @@ if (!existsSync(join(ROOT, 'web/dist/client/sw.js'))) {
 }
 
 start('bun', ['api/src/providers/push/sink.ts'], 'sink', { PUSH_SINK_PORT: SINK_PORT })
-start('bun', ['run', 'api/index.ts'], 'api', { API_PORT, PUSH_SINK_URL: SINK })
+start('bun', ['run', 'api/index.ts'], 'api', { ...TEST_SINK_ENV, API_PORT, PUSH_SINK_URL: SINK })
 start('node', ['web/test/verify-preview.mjs'], 'preview', { PREVIEW_PORT: UI_PORT, FRONTIER_API_URL: API })
 await waitFor(`${SINK}/outbox`, 'the push sink')
 await waitFor(`${API}/api/products`, 'the API')

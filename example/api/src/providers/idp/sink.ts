@@ -26,9 +26,10 @@
 // own provider process.
 
 import { createHash, randomBytes } from 'crypto'
+import { sinkPort }               from '../../core/sink-ports.ts'
 
-// dev/be/project 1/service 3 — see mail-sink.ts on where the number comes from.
-const PORT = Number(process.env.IDP_SINK_PORT ?? 8113)
+// dev/be/project 1/service 3 — see core/sink-ports.ts.
+const PORT = sinkPort(3, 'IDP_SINK_PORT')
 
 const CLIENT_ID     = process.env.IDP_CLIENT_ID     ?? 'dev-idp-client'
 const CLIENT_SECRET = process.env.IDP_CLIENT_SECRET ?? 'dev-idp-secret'

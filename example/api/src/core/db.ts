@@ -9,6 +9,7 @@ import { createTenantRegistry, autoMigrate, GatePlugin } from '@frontierjs/lites
 import { FileStorage } from '@frontierjs/litestone/storage'
 
 import { shopGateLevel } from './gate.ts'
+import { API_PORT }      from './sink-ports.ts'
 
 const HERE = import.meta.dir
 
@@ -90,7 +91,7 @@ if (!process.env.ENCRYPTION_KEY) {
 // unless one is stated, so it resolves to null, `<img src={null}>` renders a
 // broken image, and nothing anywhere reports an error.
 export const STORAGE_ROOT = join(HERE, '../../../db/public')
-export const STORAGE_BASE = process.env.STORAGE_BASE ?? `http://localhost:${process.env.API_PORT ?? 8110}`
+export const STORAGE_BASE = process.env.STORAGE_BASE ?? `http://localhost:${API_PORT}`
 
 // ─── The fleet ────────────────────────────────────────────────────────────
 //

@@ -16,10 +16,10 @@
 // Started by api/app.ts unless MAIL_SINK_URL points somewhere else. Nothing in
 // the app imports it except that one line.
 
+import { sinkPort } from '../../core/sink-ports.ts'
+
 // 8111 is dev/be/project 1/service 1 by `packages/cli/core/ports.js`'s formula.
-// The number is derived rather than chosen: a sibling app growing a mail sink
-// takes its own project's service slot, not this one.
-const PORT = Number(process.env.MAIL_SINK_PORT ?? 8111)
+const PORT = sinkPort(1, 'MAIL_SINK_PORT')
 
 /** What the provider is willing to accept as its API key. */
 const KEY = process.env.SHOP_MAIL_KEY ?? 'dev-mail-key'

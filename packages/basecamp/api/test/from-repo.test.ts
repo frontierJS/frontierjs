@@ -262,6 +262,44 @@ describe('a host port is one App\'s on a machine', () => {
     expect(again.port).toBe(placed.port)
   })
 
+  // FJS-4082: a container the old install left behind has no row here, so only
+  // the machine's own report says its port is bound.
+  describe('a port the machine reports bound', () => {
+    const reported = async (serverId: string, at: string, readings: any) =>
+      env.system.serverPosture.create({ data: { serverId, at, readings } })
+    const freshBox = async () => {
+      const made = await env.system.server.create({ data: { workspaceId: ws.id, name: `box-${uniq()}`, slug: `box-${uniq()}` } })
+      return env.system.server.transition(made.id, 'checkIn')
+    }
+    const placeOn = async (server: any) => {
+      const loose = await fromRepo(admin, { name: `Left ${uniq()}`, repo: `https://gitlab.com/acme/l-${uniq()}.git` })
+      return (await env.as(developer).service('apps').call('place', loose.app.id, { serverId: server.id }) as any).port
+    }
+
+    test('a listening socket and a published container port are both skipped', async () => {
+      const server = await freshBox()
+      await reported(server.id, new Date().toISOString(), {
+        listening:  [{ address: '127.0.0.1', port: 10000, process: 'docker-proxy' }],
+        containers: [{ name: 'fjs--old', published: [{ host_ip: '127.0.0.1', host_port: 10001, container_port: 3000, proto: 'tcp' }] }],
+      })
+      expect(await placeOn(server)).toBe(10002)
+    })
+
+    test('only the newest report counts, so a port since freed is free again', async () => {
+      const server = await freshBox()
+      await reported(server.id, '2026-01-01T00:00:00.000Z', { listening: [{ address: '127.0.0.1', port: 10000, process: null }], containers: [] })
+      await reported(server.id, '2026-01-02T00:00:00.000Z', { listening: [], containers: [] })
+      expect(await placeOn(server)).toBe(10000)
+    })
+
+    test('a machine with no report, or one whose readers failed, picks as before', async () => {
+      expect(await placeOn(await freshBox())).toBe(10000)
+      const server = await freshBox()
+      await reported(server.id, new Date().toISOString(), { listening: null, containers: null })
+      expect(await placeOn(server)).toBe(10000)
+    })
+  })
+
   test('every kind the release starts as a container is given a port; a static App is not', async () => {
     const apps = env.as(admin).service('apps')
     const made: Record<string, any> = {}

@@ -21,12 +21,13 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { App }                    from '@frontierjs/junction'
 import type { TargetDescriptor, Dialect, ReceivedEvent } from '@frontierjs/conduit'
+import { sinkPort }                    from '../../core/sink-ports.ts'
 
 export const STRIPE_TARGET = 'provider:stripe'
 
 /** Where Stripe is. `api/src/providers/stripe/sink.ts` unless pointed at the real one. */
 export const STRIPE_URL = process.env.STRIPE_URL
-  ?? `http://localhost:${process.env.STRIPE_SINK_PORT ?? 8114}`
+  ?? `http://localhost:${sinkPort(4, 'STRIPE_SINK_PORT')}`
 
 /**
  * The API version this connector is written against.

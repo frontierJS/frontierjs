@@ -52,7 +52,7 @@ export const holds = ['ports']
 import { spawn, execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PORTS } from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { db } from '../../api/src/core/db.ts'
 import { sweepPayroll } from './verify-payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
@@ -120,7 +120,7 @@ for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server']])
 // database every assertion here fails as *the row is not there*.
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
-const PORT_ENV = { API_PORT, UI_PORT }
+const PORT_ENV = { ...TEST_SINK_ENV, API_PORT, UI_PORT }
 start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
 start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 

@@ -332,6 +332,14 @@
     if (wait <= 0) { synced = Date.now(); here.updateMeta(meta()); return }
     held = setTimeout(() => { held = null; synced = Date.now(); here.updateMeta(meta()) }, wait)
   }
+  /** The held step sent now, for a caller that is about to leave the room: the destroy below drops it, and a figure who sat down is never seen sitting. */
+  function settle() {
+    if (!held) return
+    clearTimeout(held)
+    held = null
+    synced = Date.now()
+    here.updateMeta(meta())
+  }
 
   function meta() {
     return { x, y, facing, ...(typing && { typing: true }), ...(shape && { shape }), ...(ink && { ink }), ...(hushed && { hushed }), ...(emote && { emote }), ...(pet && { pet: true }) }
@@ -554,7 +562,7 @@
     {#if !paned}<Bubbles {here} {x} {y} {view} {spawn} {hushed} {nicks} lines={roomLines?.rows ?? []} />{/if}
     <WorldMap {stage} route={page.pathname} {x} {y} box={PANE} />
     <History {room} {nicks} box={PANE} {askNicks} {roomLines} />
-    <Sitting {stage} {here} {x} {y} {spawn} tell={(text) => { note = text }} />
+    <Sitting {stage} {here} {x} {y} {spawn} {settle} tell={(text) => { note = text }} />
     <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} keyed={(k) => { homeKeys = k }} />
     <Stops {stage} {view} {draft} {where} {stepTo} box={PANE} tell={(text) => { note = text }} />
     <Whisper {room} {here} />

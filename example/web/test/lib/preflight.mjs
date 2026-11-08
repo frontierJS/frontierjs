@@ -37,9 +37,10 @@ const APP_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 // tree does not have (`FJS-2277`). These are the servers more than one drive
 // reaches; a port only one drive starts is asked for in that drive.
 //
-// The sinks are bound by the API process from variables of their own, which
-// `fli dev` does not set, so under it they keep the main checkout's numbers in
-// a branch. A drive that starts the API hands them over as `env:`.
+// The API binds each sink at its own port plus the service digit
+// (api/src/core/sink-ports.ts), so a branch's `mail` below is where its API put
+// it. A drive that starts the API on the test tier still hands the sink ports
+// over as `env:`.
 const at = (category, opts) => portFor(import.meta.url, category, opts)
 
 export const PORTS = {

@@ -62,7 +62,10 @@ const FLI  = resolve(CLI, 'bin/fli.js')
 // drives and a `fli gui` somebody has open on their dev slot never meet.
 const PORT   = Number(process.env.FLI_CONSOLE_TEST_PORT ?? 7501)
 const origin = `http://localhost:${PORT}`
-const ROWS = 400, COLS = 160
+// The terminal paints every inventory row (wrapped lines included) and the
+// grid replays only ROWS of them, so a workspace taller than ROWS reads as
+// rows "only the browser has".
+const ROWS = 1200, COLS = 160
 const DEVTOOLS = Number(process.env.FLI_CONSOLE_DEVTOOLS_PORT ?? 7503)
 const APP_PORT = Number(process.env.FLI_CONSOLE_APP_PORT ?? 7961)
 

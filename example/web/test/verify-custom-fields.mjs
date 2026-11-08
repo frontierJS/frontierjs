@@ -72,7 +72,7 @@ import { compileSegment, matchesAudience }
 import { withCustomFields, shownFields } from '../../web/src/lib/custom-fields.js'
 import { discountProblem, priceBasket } from '../../api/src/domain/shop/pricing.ts'
 import { results, report } from './lib/report.mjs'
-import { PORTS }           from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV }           from './lib/preflight.mjs'
 
 const sys = db.asSystem()
 
@@ -112,7 +112,7 @@ async function withApi(body) {
     `stop it first (\`bun run stop\`); this drive starts its own.`)
 
   const proc = spawn('bun', ['run', 'api/index.ts'],
-    { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, API_PORT } })
+    { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, ...TEST_SINK_ENV, API_PORT } })
   proc.stdout.on('data', () => {})
   proc.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[api] ${d}`) })
   const stop = () => { try { process.kill(-proc.pid, 'SIGTERM') } catch { try { proc.kill('SIGTERM') } catch {} } }

@@ -41,7 +41,7 @@ export const holds = ['ports']
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PORTS } from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { Client } from '@modelcontextprotocol/client'
 import { StreamableHTTPClientTransport, discoverOAuthProtectedResourceMetadata, discoverAuthorizationServerMetadata } from '@modelcontextprotocol/client'
 
@@ -61,7 +61,7 @@ const procs = []
 function start(cmd, args, name) {
   const p = spawn(cmd, args, {
     cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-    env: { ...process.env, API_PORT, SHOP_MCP_UI: '1' },
+    env: { ...process.env, ...TEST_SINK_ENV, API_PORT, SHOP_MCP_UI: '1' },
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })

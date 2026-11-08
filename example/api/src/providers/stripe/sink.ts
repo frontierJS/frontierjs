@@ -21,8 +21,9 @@
 // Started by api/index.ts unless STRIPE_URL points somewhere else.
 
 import { createHmac } from 'node:crypto'
+import { API_PORT, sinkPort } from '../../core/sink-ports.ts'
 
-const PORT = Number(process.env.STRIPE_SINK_PORT ?? 8114)
+const PORT = sinkPort(4, 'STRIPE_SINK_PORT')
 
 /** What this stand-in accepts as a secret key. */
 const KEY = process.env.STRIPE_SECRET_KEY ?? 'sk_test_dev'
@@ -31,8 +32,8 @@ const KEY = process.env.STRIPE_SECRET_KEY ?? 'sk_test_dev'
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? 'whsec_dev'
 
 /** Where the shop listens. The sink is TOLD this, exactly as Stripe is — a
- *  literal default with an env override, which is what psp-sink.ts does. */
-const HOOK_URL = process.env.STRIPE_HOOK_URL ?? 'http://localhost:8110/api/webhooks/stripe'
+ *  default with an env override, which is what psp-sink.ts does. */
+const HOOK_URL = process.env.STRIPE_HOOK_URL ?? `http://localhost:${API_PORT}/api/webhooks/stripe`
 
 interface Intent {
   id: string; object: 'payment_intent'; amount: number; currency: string

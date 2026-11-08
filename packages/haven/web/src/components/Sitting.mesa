@@ -17,6 +17,10 @@
   export let spawn
   // Says why a sitting went nowhere.
   export let tell
+  // Sends this figure's held step: the walk to the stool is often inside the
+  // sync window, and leaving the room for the booth would drop it, so the
+  // other member never sees this one sit and is never asked.
+  export let settle
 
   let sat = ''
   async function sitAcross(sx, sy, others) {
@@ -26,6 +30,7 @@
     if (pair === sat) return
     sat = pair
     if (!mate) return
+    settle()
     try {
       const booth = await rooms.service.invoke('booth', null, { withId: Number(mate.userId) })
       goto('/booth/', { room: booth.slug, from: page.pathname, x: seat.stand.x, y: seat.stand.y })

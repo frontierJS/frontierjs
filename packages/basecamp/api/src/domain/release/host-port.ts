@@ -27,12 +27,25 @@ export async function portHolders(serverIds: string[], exceptAppId?: string): Pr
     .map((r: any) => ({ port: r.app.port, appId: r.app.id, appName: r.app.name, serverId: r.serverId, serverName: r.server?.name ?? r.serverId }))
 }
 
-/** The lowest host port a machine publishes nothing on, from `HOST_PORT_BASE`
- *  up. The base sits above every dev slot in `docs/PORTS.md` and above the
- *  port any scaffolded app listens on, so an allocated port never collides
- *  with the Basecamp or Outpost a machine also runs, which are not Apps and
- *  which this reader cannot see. */
+/** The lowest host port neither an App nor the machine holds, from
+ *  `HOST_PORT_BASE` up. The base sits above every dev slot in `docs/PORTS.md`
+ *  and above the port any scaffolded app listens on, so an allocated port never
+ *  collides with the Basecamp or Outpost a machine also runs, which may not
+ *  have reported yet. */
 export const HOST_PORT_BASE = 10000
+
+/** The ports the machine's newest posture report says are bound. A container a
+ *  previous install left running has no row in this database, and docker
+ *  refuses its port all the same (`FJS-4082`). A port freed since the report
+ *  costs one skipped number; a reader that failed reports `null`. */
+async function reportedPorts(serverId: string): Promise<number[]> {
+  const report = await db().serverPosture.findMany({ where: { serverId }, orderBy: { at: 'desc' }, limit: 1 })
+  const { listening, containers } = (report[0]?.readings ?? {}) as { listening?: any[] | null, containers?: any[] | null }
+  return [
+    ...(listening ?? []).map(s => s.port),
+    ...(containers ?? []).flatMap(c => c.published ?? []).map(p => p.host_port),
+  ]
+}
 
 /** Runs `work` once no other allocation on `serverId` is in flight. The port
  *  an App takes lives on `App.port`, so there is no row a unique index could
@@ -50,7 +63,7 @@ export async function withPortLock<T>(serverId: string, work: () => Promise<T>):
 }
 
 export async function allocatePort(serverId: string, exceptAppId?: string): Promise<number> {
-  const held = new Set((await portHolders([serverId], exceptAppId)).map(h => h.port))
+  const held = new Set([...(await portHolders([serverId], exceptAppId)).map(h => h.port), ...await reportedPorts(serverId)])
   let port = HOST_PORT_BASE
   while (held.has(port)) port++
   if (port > 65535) throw new Conflict(`Every host port from ${HOST_PORT_BASE} up is published on this machine`)

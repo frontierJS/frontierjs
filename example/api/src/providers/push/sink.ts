@@ -19,8 +19,9 @@
 //   POST   /answer          { endpoint, status } — the status that endpoint gets from now on
 
 import type { PushRequest } from '@frontierjs/notifications'
+import { sinkPort }          from '../../core/sink-ports.ts'
 
-const PORT = Number(process.env.PUSH_SINK_PORT ?? 8119)
+const PORT = sinkPort(9, 'PUSH_SINK_PORT')
 
 interface Received { url: string; headers: Record<string, string>; body: string; status: number; at: string }
 

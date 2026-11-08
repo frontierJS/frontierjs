@@ -8,9 +8,8 @@
  *
  *   node packages/litestone/test/verify-studio-explore.mjs
  *
- * Starts and stops its own server on 7503 — test-tier tooling, inside the port
- * scheme so `fli ps` can see it. Nothing to launch first. Needs
- * Chrome on PATH or $FJS_CHROME.
+ * Starts and stops its own server on a port the OS names ($STUDIO_PORT pins
+ * one). Nothing to launch first. Needs Chrome on PATH or $FJS_CHROME.
  *
  * The server is spawned from `src/tools/cli.js` by path rather than through
  * `bunx litestone`, because bun resolves a workspace dependency to a COPY under
@@ -23,16 +22,29 @@
  */
 
 import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
 import { openChrome } from '../../mesa/src/drive.js'
 import { join, resolve as pathResolve } from 'node:path'
 import { CATALOG, UNDOCUMENTED } from '../src/core/catalog.js'
 import { RULES, VISIBILITY } from '../src/core/advise.js'
 import { OPPORTUNITIES } from '../src/core/opportunities.js'
 
-const PORT   = process.env.STUDIO_PORT ?? '7503'
+// A fixed port is shared with the cli console drive, the benches and any
+// parallel lane, and anything answering it 200s /api/catalog: the readiness
+// poll below passes against the wrong process and the drive reports on it.
+// The OS names a port nothing holds; STUDIO_PORT pins one.
+const PORT   = process.env.STUDIO_PORT ?? String(await freePort())
 const UI     = `http://localhost:${PORT}`
 const REPO   = pathResolve(import.meta.dirname, '../../..')
 const SCHEMA = join(REPO, 'example/db/schema.lite')
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const s = createServer()
+    s.once('error', reject)
+    s.listen(0, () => { const { port } = s.address(); s.close(() => resolve(port)) })
+  })
+}
 
 const results = []
 const t = (name, actual, expected) => results.push({ name, actual, expected })

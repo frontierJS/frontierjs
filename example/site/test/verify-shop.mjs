@@ -64,7 +64,7 @@ import { serveSite } from '@frontierjs/sierra/site/serve'
 import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { portFor } from '@frontierjs/cli/core/ports.js'
-import { PORTS } from '../../web/test/lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from '../../web/test/lib/preflight.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
@@ -84,7 +84,7 @@ const procs = [], servers = []
 function start(cmd, args, name, cwd = ROOT) {
   const p = spawn(cmd, args, {
     cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-    env: { ...process.env, API_PORT },
+    env: { ...process.env, ...TEST_SINK_ENV, API_PORT },
   })
   p.stdout.on('data', d => { if (process.env.DEBUG) process.stdout.write(`[${name}] ${d}`) })
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })

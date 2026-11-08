@@ -43,13 +43,13 @@ export const holds = ['ports']
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PORTS } from './lib/preflight.mjs'
+import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { authenticator } from './lib/authenticator.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
 const API_PORT      = process.env.API_PORT      ?? String(PORTS.api)
-const IDP_SINK_PORT = process.env.IDP_SINK_PORT ?? String(PORTS.idp)
+const IDP_SINK_PORT = process.env.IDP_SINK_PORT ?? TEST_SINK_ENV.IDP_SINK_PORT
 const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const IDP  = process.env.IDP_URL ?? `http://localhost:${IDP_SINK_PORT}`
 
@@ -161,7 +161,7 @@ console.log('\nverify:oauth — signing in with a provider\n')
 // The seeded admin marks § 7's account verified: this app mails no
 // verification, and only a verified account is linked to a provider.
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
-start('bun', ['run', 'api/index.ts'], 'api', { SHOP_COOKIE_AUTH: '1', API_PORT, IDP_SINK_PORT })
+start('bun', ['run', 'api/index.ts'], 'api', { ...TEST_SINK_ENV, SHOP_COOKIE_AUTH: '1', API_PORT, IDP_SINK_PORT })
 if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
 // Every real endpoint on the IdP answers 401 or 404 without a credential, so
 // the readiness probe is the control endpoint — the one thing that is 200 by
