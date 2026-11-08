@@ -352,7 +352,7 @@ t('recent.somethingCold', typeof cold === 'string', true)
 // old variant would put the colorway in the list at the old row's instant,
 // which is exactly where it does not belong.
 const moved = await (await asStaff(`/api/productVariants/${newest.id}`, {
-  method: 'PATCH', body: JSON.stringify({ color: cold }),
+  method: 'PATCH', body: JSON.stringify({ color: cold, version: newest.version }),
 })).json()
 
 t('recent.variantMoved', moved?.color, cold)
@@ -369,7 +369,7 @@ t('recent.appearsOnce',  afterCut.labels.filter(n => n === cold).length, 1)
 // And nothing was written down: putting the variant back where it was restores
 // the picker exactly, with no rank to invalidate and nothing to recompute.
 await asStaff(`/api/productVariants/${newest.id}`, {
-  method: 'PATCH', body: JSON.stringify({ color: newest.color }),
+  method: 'PATCH', body: JSON.stringify({ color: newest.color, version: moved.version }),
 })
 const afterPull = await askAgain()
 t('recent.headWentBack', afterPull.labels, offered.labels)

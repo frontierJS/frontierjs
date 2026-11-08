@@ -45,6 +45,7 @@ siteName: Workbench
     return [
       ...pageCommands(),
       ...paletteItems(groups, { user: session.user }, goto),
+      { id: 'nav:/home/',               group: 'Navigate', label: 'Home',        action: () => goto('/home/') },
       { id: 'nav:/git-activity/local/', group: 'Navigate', label: 'Local repos', action: () => goto('/git-activity/local/') },
       { id: 'nav:/settings/',           group: 'Navigate', label: 'Settings',    action: () => goto('/settings/') },
       ...themes().map(t => ({
@@ -79,7 +80,7 @@ siteName: Workbench
           </svg>
         </button>
       {/if}
-      <strong>Workbench</strong>
+      <a href="/home/" class="wb-brand" title="Home"><strong>Workbench</strong></a>
       {#if session.user}
         <nav class="cluster wb-nav topbar-nav" aria-label="Workbench">
           {#each entries() as e}
@@ -135,6 +136,7 @@ siteName: Workbench
 <ConfirmProvider />
 
 <style>
+  .wb-brand { color: inherit; text-decoration: none; }
   /* The workbench and Autopilot's town are working surfaces, not reading
      columns: let them take the whole width the screen gives them. */
   .screen-body:has(:global(.workbench)) { max-inline-size: none; }

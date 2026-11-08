@@ -264,8 +264,13 @@ export function createStatic({ staticDir = layout().static, staticUrl = '' } = {
         }
       }
 
-      // The release just written is the newest whatever its mtime ties with.
-      const kept = [digest, ...(await digests(dir, live)).filter(d => d !== digest)]
+      // The release just written and the live one fill the window first,
+      // whatever order their mtimes put them in: left to the sort, a live
+      // release that is not among the newest falls outside the window and
+      // survives it as one extra.
+      const found = await digests(dir, live)
+      const kept  = [digest, ...(found.includes(live) && live !== digest ? [live] : []),
+                     ...found.filter(d => d !== digest && d !== live)]
       // `keep` arrives off the wire: a non-number is NaN here, and slice(NaN)
       // keeps nothing — every rollback target gone.
       const window = Number.isFinite(Number(keep)) && keep !== null && keep !== '' ? Math.max(Math.floor(Number(keep)), 1) : KEEP_DEFAULT

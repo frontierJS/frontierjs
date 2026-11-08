@@ -50,6 +50,13 @@ async function serve(port, body) {
 const badge = (id, part) =>
   `document.querySelector('#dash-groups [data-id="${id}"] [${part}]')`
 
+// Poll with health until `done` holds. The fli server runs in THIS process, so
+// its synchronous registry scans can hold the event loop past the 2s the server
+// gives a health ask, and the stand-in's answer reads as no answer. A
+// real app is its own process; asking again is what the page does a tick later.
+const ask = done =>
+  `for (let i = 0; i < 8; i++) { await pollState({ health: true }); if (${done}) break }`
+
 export async function run(t) {
   // The page's own 3s interval also calls `pollState`, and health is refreshed
   // on one tick in five — so an interval tick landing between setting up a
@@ -80,9 +87,7 @@ export async function run(t) {
     /* ── healthy ───────────────────────────────────────────────────────── */
 
     const ok = await t.evaluate(`
-      const { state } = await fetch('/api/state').then(r => r.json());
-      await refreshHealth(state);     // asked for, rather than left to the tick
-      await pollState();
+      ${ask(`!${badge(row.id, 'data-health')}.hidden`)}
       const el = ${badge(row.id, 'data-health')};
       const st = ${badge(row.id, 'data-state')};
       return { hidden: el.hidden, text: el.textContent, tone: el.className, title: el.title,
@@ -102,9 +107,7 @@ export async function run(t) {
     // sends somebody to the logs for a fact this already has.
     body.current = DEGRADED
     const bad = await t.evaluate(`
-      const { state } = await fetch('/api/state').then(r => r.json());
-      await refreshHealth(state);
-      await pollState();
+      ${ask(`/failing/.test(${badge(row.id, 'data-health')}.textContent)`)}
       const el = ${badge(row.id, 'data-health')};
       const st = ${badge(row.id, 'data-state')};
       return { text: el.textContent, tone: el.className, title: el.title, state: st.textContent };
@@ -143,9 +146,7 @@ export async function run(t) {
     } else {
       try {
         const quiet = await t.evaluate(`
-          const { state } = await fetch('/api/state').then(r => r.json());
-          await refreshHealth(state);
-          await pollState();
+          await pollState({ health: true });
           const li = document.querySelector('#dash-groups [data-id="' + ${JSON.stringify(other.id)} + '"]');
           return { state: li.querySelector('[data-state]').textContent,
                    hidden: li.querySelector('[data-health]').hidden };
@@ -166,9 +167,7 @@ export async function run(t) {
   // dropping the answer, the badge shows the previous process's verdict about a
   // process that has not been asked anything.
   const down = await t.evaluate(`
-    const { state } = await fetch('/api/state').then(r => r.json());
-    await refreshHealth(state);
-    await pollState();
+    await pollState({ health: true });
     return { state: ${badge(row.id, 'data-state')}.textContent,
              hidden: ${badge(row.id, 'data-health')}.hidden };
   `)

@@ -13,7 +13,7 @@
  */
 
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, rm, writeFile, readFile, readdir, readlink, stat, symlink } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, readFile, readdir, readlink, stat, symlink, utimes } from 'node:fs/promises'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 import { createStatic, digestOfFiles, validRelativePath, LIMITS } from '../src/static.js'
@@ -197,6 +197,23 @@ describe('activating what is already here', () => {
     expect(digests.length).toBe(2)
     expect(current).toBe(live.digest)
     expect(digests).toContain(live.digest)
+  })
+
+  // FJS-1381: the window is the new release and the live one, whatever order
+  // their directories' mtimes put the others in.
+  test('the live release fills a slot of the keep window even when it is the oldest by mtime', async () => {
+    const v0 = await release({ appId: 'app-1', files: page('v0'), keep: 5 })
+    const v1 = await release({ appId: 'app-1', files: page('v1'), keep: 5 })
+    const v2 = await release({ appId: 'app-1', files: page('v2'), keep: 5 })
+    const at = (d, s) => utimes(join(dir, 'apps/app-1', d), s, s)
+    await at(v2.digest, 1000)
+    await at(v1.digest, 3000)
+    await at(v0.digest, 2000)
+
+    const next = await release({ appId: 'app-1', files: page('v3'), keep: 2 })
+    const { current, digests } = await statics.releases({ appId: 'app-1' })
+    expect(current).toBe(next.digest)
+    expect(digests.sort()).toEqual([next.digest, v2.digest].sort())
   })
 
   test('a keep that is not a number falls back to the default instead of pruning every rollback target', async () => {

@@ -1,16 +1,26 @@
 ---
 title: Home
 ---
+<script module>
+  // What the page last read, held for the life of the tab: coming back from
+  // another screen draws it at once, and the indicator says when it is re-read.
+  const cache = {
+    pins: [], status: {}, sessions: null, running: null, autopilot: null, quota: null,
+    errors: {}, readAt: 0, quotaAt: 0,
+  }
+</script>
+
 <script>
   // What is live on this laptop, on one screen: the chats that need you, the
   // ones working, each pinned checkout, the latest Claude Code sessions, the dev
   // servers, Autopilot and the unread notifications. Every panel reads a service
   // another screen already owns and links there; nothing here writes.
   //
-  // Each panel loads on its own, so a slow or failing read (the quota endpoint
-  // is rate limited and shared with every running `claude`) blanks one panel
+  // Each panel loads on its own, so a slow or failing read blanks one panel
   // and not the page. Only the chats' status is polled fast, as the chats
-  // screen does; the rest is read again on an interval and on Refresh.
+  // screen does; the rest is read again on an interval and on Refresh. The
+  // quota endpoint is rate limited and shared with every running `claude`, so
+  // only Refresh or a five-minute-old read asks it again.
   import { workbench } from '../../resources/Workbench.mesa'
   import { claude }    from '../../resources/Claude.mesa'
   import { atlas }     from '../../resources/Atlas.mesa'
@@ -27,81 +37,95 @@ title: Home
 
   const STATUS_MS = 3000
   const SLOW_MS   = 60_000
+  const QUOTA_MS  = 5 * 60_000
   const SESSIONS  = 8
 
-  let pins      = []
-  let status    = {}       // pin id → PinStatus
-  let sessions  = null
-  let running   = null
-  let autopilot = null
-  let quota     = null
-  let errors    = {}       // panel → message
-  let loaded    = false
+  let pins      = cache.pins
+  let status    = cache.status       // pin id → PinStatus
+  let sessions  = cache.sessions
+  let running   = cache.running
+  let autopilot = cache.autopilot
+  let quota     = cache.quota
+  let errors    = cache.errors       // panel → message
+  let readAt    = cache.readAt
+  let loaded    = readAt > 0
+  let now       = Date.now()
   let destroyed = false
   let fast = null, slow = null
 
   const inbox = notifications.tethered({ state: 'local', directives: INBOX })
 
   // ─── reads ──────────────────────────────────────────────────────────────
+  // Every read writes the cache as well as the page, so a read that lands
+  // after the page is left still serves the next visit.
 
   async function read(panel, fn) {
-    try { await fn(); errors = { ...errors, [panel]: null } }
-    catch (err) { errors = { ...errors, [panel]: err.message } }
+    try { await fn(); cache.errors = errors = { ...errors, [panel]: null } }
+    catch (err) { cache.errors = errors = { ...errors, [panel]: err.message } }
   }
 
   const loadPins = () => read('pins', async () => {
-    pins   = (await workbench.service.invoke('pins', null)).pins
-    status = Object.fromEntries(pins.map(p => [p.id, p.status]))
+    cache.pins   = pins   = (await workbench.service.invoke('pins', null)).pins
+    cache.status = status = Object.fromEntries(pins.map(p => [p.id, p.status]))
   })
 
   const loadStatus = () => read('pins', async () => {
     const answer = await workbench.service.invoke('status', null)
-    status = { ...status, ...Object.fromEntries(answer.status.map(s => [s.id, s])) }
+    cache.status = status = { ...status, ...Object.fromEntries(answer.status.map(s => [s.id, s])) }
   })
 
   const loadSessions = () => read('sessions', async () => {
-    sessions = await claude.service.invoke('sessions', null, { limit: SESSIONS })
+    cache.sessions = sessions = await claude.service.invoke('sessions', null, { limit: SESSIONS })
   })
 
   const loadRunning = () => read('running', async () => {
-    running = await laptop.service.invoke('running', null)
+    cache.running = running = await laptop.service.invoke('running', null)
   })
 
   const loadAutopilot = () => read('autopilot', async () => {
-    autopilot = await atlas.service.invoke('autopilot', null)
+    cache.autopilot = autopilot = await atlas.service.invoke('autopilot', null)
   })
 
   const loadQuota = () => read('quota', async () => {
-    quota = await claude.service.invoke('quota', null)
+    cache.quota = quota = await claude.service.invoke('quota', null)
+    cache.quotaAt = Date.now()
   })
 
-  const loadSlow = () => Promise.all([loadPins(), loadSessions(), loadRunning(), loadAutopilot(), loadQuota()])
+  let refreshing = false
+  async function loadSlow({ withQuota = false } = {}) {
+    refreshing = true
+    const reads = [loadPins(), loadSessions(), loadRunning(), loadAutopilot()]
+    if (withQuota || Date.now() - cache.quotaAt > QUOTA_MS) reads.push(loadQuota())
+    await Promise.all(reads)
+    cache.readAt = readAt = Date.now()
+    loaded = true
+    refreshing = false
+  }
+
+  const refresh = () => loadSlow({ withQuota: true })
 
   async function tick() {
     if (destroyed) return
     if (!document.hidden) await loadStatus()
+    now = Date.now()
     fast = setTimeout(tick, STATUS_MS)
   }
 
   async function slowTick() {
     if (destroyed) return
-    if (!document.hidden) await Promise.all([loadPins(), loadSessions(), loadRunning(), loadAutopilot()])
+    if (!document.hidden) await loadSlow()
     slow = setTimeout(slowTick, SLOW_MS)
   }
 
-  let refreshing = false
-  async function refresh() {
-    refreshing = true
-    await loadSlow()
-    refreshing = false
-  }
-
-  loadSlow().then(() => {
-    loaded = true
-    fast = setTimeout(tick, STATUS_MS)
-    slow = setTimeout(slowTick, SLOW_MS)
-  })
+  // A visit inside the minute draws the cache and waits out the rest of it;
+  // an older one draws the cache and re-reads behind the indicator.
+  const age = Date.now() - readAt
+  if (loaded && age < SLOW_MS) slow = setTimeout(slowTick, SLOW_MS - age)
+  else loadSlow().then(() => { slow = setTimeout(slowTick, SLOW_MS) })
+  tick()
   $.onDestroy(() => { destroyed = true; clearTimeout(fast); clearTimeout(slow) })
+
+  $: since = now && readAt ? ago(new Date(readAt).toISOString()) : ''
 
   // ─── chats ──────────────────────────────────────────────────────────────
 
@@ -214,6 +238,9 @@ title: Home
 <div class="section-header">
   <h1>Home</h1>
   <span class="cluster">
+    <span class="cluster text-sm text-muted home-fresh" id="home-fresh" aria-live="polite">
+      {#if refreshing}<Dot tone="info" pulse label="updating" /> updating…{:else if since}updated {since}{/if}
+    </span>
     <Button id="home-refresh" treatment="outlined" size="sm" loading={refreshing} disabled={refreshing} onclick={refresh}>Refresh</Button>
   </span>
 </div>
@@ -480,6 +507,7 @@ title: Home
   }
   .home-pin { display: grid; gap: var(--space-2xs); color: inherit; text-decoration: none; min-inline-size: 0; }
   .home-pin:hover { outline: var(--border-width) solid var(--rule-strong); }
+  .home-fresh { align-items: center; gap: var(--space-2xs); }
   .home-quiet { align-items: center; gap: var(--space-2xs); }
   .home-chip {
     padding: var(--space-3xs) var(--space-sm);

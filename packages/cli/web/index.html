@@ -2894,14 +2894,35 @@ function dashRow(r) {
     </li>`
 }
 
-async function pollState() {
+// One poll at a time. A health refresh outlasts the 3s interval, and a poll
+// asked before a port was bound would finish after one asked later and draw
+// `down` over it. A caller that arrives mid-poll waits for ONE follow-up that
+// starts after it asked, so what it reads is never older than its call.
+let polling = null
+let queued  = null
+
+// `health` asks every up row for its health now, rather than on every fifth tick.
+function pollState({ health = false } = {}) {
+  if (!polling) {
+    polling = runPoll(health).finally(() => { polling = null })
+    return polling
+  }
+  if (!queued) {
+    const q = queued = { health: false }
+    q.done = polling.then(() => { queued = null; return pollState({ health: q.health }) })
+  }
+  queued.health ||= health
+  return queued.done
+}
+
+async function runPoll(health) {
   try {
     const { state, at } = await fetch(`${API}/api/state`).then(r => r.json())
     dashState = state
 
     // Before the render, so the badge is drawn from this tick's answer rather
     // than from the one before it.
-    if (healthTick++ % HEALTH_EVERY === 0) await refreshHealth(state)
+    if (healthTick++ % HEALTH_EVERY === 0 || health) await refreshHealth(state)
 
     for (const li of document.querySelectorAll('#dash-groups [data-id]')) {
       const s     = state[li.dataset.id]?.state ?? 'unknown'
