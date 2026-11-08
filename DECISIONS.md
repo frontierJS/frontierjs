@@ -16863,6 +16863,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2036"></a>2026-11-08 · `FJS-D2036` — Q5 — Who answers where `sierra widgets` wrote — Sierra takes `--out-dir`, and both doors pass a directory they own. It needs a Sierra release, and both readers below are deleted.
+
+Asked in [`IDEAS/widgets-deploy.md`](IDEAS/widgets-deploy.md) § Open questions. **A** was picked over **B** (Keep two readers: `basecamp:deploy` reads the `widget(s) → <dir>` line `sierra widgets` prints, and Outpost runs the app's config in the build container to read `widgets.outDir`).
+
+The paper's recommendation, taken as written: B has two owners of one fact, and the cli's half breaks silently when the printed line's wording changes. A costs one Sierra publish and an ELA bump, the path Phase 0 already took.
+
 ### <a id="fjs-d2035"></a>2026-11-08 · `FJS-D2035` — Q4 — One plan for both doors — Both doors in this plan: the Basecamp door first, because ELA waits on it, then the SSH door.
 
 Asked in [`IDEAS/widgets-deploy.md`](IDEAS/widgets-deploy.md) § Open questions. **A** was picked over **B** (The Basecamp door only, with the SSH door's gap filed as a defect).

@@ -136,12 +136,16 @@ async function cmdWidgets() {
   const { buildWidgets }           = await import('../build/widget-build.js')
 
   const viteConfig = createSierraViteConfig({ ...config, target: 'widget' })
-  const w = config.widgets ?? {}
+  const w      = config.widgets ?? {}
+  const root   = resolve(viteConfig.root ?? process.cwd())
+  // A deploy door names the directory it reads (`FJS-D2036`), so it never
+  // re-derives this app's config to find the build.
+  const outDir = resolve(root, getFlag('out-dir') ?? w.outDir ?? 'dist/embeds')
 
   const built = await buildWidgets({
-    root:      resolve(viteConfig.root ?? process.cwd()),
+    root,
     dir:       w.dir    ?? 'src/embeds',
-    outDir:    w.outDir ?? 'dist/embeds',
+    outDir,
     prefix:    w.prefix ?? '',
     minify:    w.minify !== false,
     plugins:   viteConfig.plugins ?? [],
@@ -151,19 +155,15 @@ async function cmdWidgets() {
 
   if (!built.length) process.exit(0)
   const { generateWidgetOrigin } = await import('../postbuild/widget-headers.js')
-  const origin = await generateWidgetOrigin(
-    resolve(viteConfig.root ?? process.cwd(), w.outDir ?? 'dist/embeds'),
-    built.map(b => b.fileName),
-  )
+  const origin = await generateWidgetOrigin(outDir, built.map(b => b.fileName))
   console.log(`  ·  ${origin}`)
-  console.log(`\n  ✓  ${built.length} widget(s) → ${w.outDir ?? 'dist/embeds'}/\n`)
+  console.log(`\n  ✓  ${built.length} widget(s) → ${rel(outDir)}/\n`)
 
   // `--serve` is the other half of the surface: a widget is deployed as static
   // files on an origin that is not the host page's, so serving it from anything
   // that does not send CORS proves nothing about the thing that ships.
   if (flag('serve')) {
     const { serveWidgets } = await import('../widget/serve.js')
-    const outDir = resolve(viteConfig.root ?? process.cwd(), w.outDir ?? 'dist/embeds')
     const port   = Number(getFlag('port') ?? 0) || 0
     const server = await serveWidgets({ dir: outDir, port })
     console.log(`  ·  serving ${rel(outDir)} at ${server.url}\n`)
@@ -334,6 +334,7 @@ if (cmd === 'routes') {
   console.log('  routes    write the route table snapshot (--check in CI)')
   console.log('  widgets   build one embeddable script per widget in src/embeds/')
   console.log('            --serve [--port N]  serve dist/embeds with the CORS + cache headers it deploys with')
+  console.log('            --out-dir <dir>     build there instead of widgets.outDir')
   console.log('  mcp       --out <absolute dir>  build one HTML document per src/resources/ file')
   console.log('            for an agent host to draw; `fli mcp:build` supplies api/dist/mcp')
   console.log('  site      --serve [--port N]  serve a prerendered site with the directory-index,')

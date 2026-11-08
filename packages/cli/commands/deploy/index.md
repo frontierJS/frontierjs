@@ -62,8 +62,9 @@ Needs a `deploy` block in `frontier.config.js` (Docker/SSH/Caddy); without one
 it refuses — unless `BASECAMP_APP_ID` is set (the app's `.env`, the shell, or
 `~/.config/fli/.env`), which makes the app one Basecamp runs: the run is then
 `fli basecamp:deploy` for that App, preflight and all, and after it for each
-static App whose Domain routes back to it — the `app` holding web/, so one
-deploy ships web/ and the API as the SSH door does (`FJS-4054`). A failed
+static App in front of it — the `app` holding web/ and the `widgets` App
+holding widgets/, each built from its own surface — so one deploy ships every
+surface and the API as the SSH door does (`FJS-4054`). A failed
 release stops the run before the next, and `--dry` is passed through. The target picks the App: `BASECAMP_APP_ID` names any App of the
 project, and the one released is the App with the same slug in the project's
 environment of the target's tier (`dev` is development, `stage` staging) —
@@ -243,7 +244,7 @@ async function releaseThroughBasecamp({ $, flag, log, echo, goal }) {
   if (!releaseApp($, flag, app.id, entry.name)) return false
   // Read after the release: the first one is what makes the static App.
   for (const web of app.source?.kind === 'inline' ? [] : await staticFronts(entry, app)) {
-    echo`{dim web/ —} releasing static App '${web.name}' {dim (${web.id}), in front of '${app.name}'}`
+    echo`{dim static —} releasing static App '${web.name}' {dim (${web.id}), in front of '${app.name}'}`
     if (!releaseApp($, flag, web.id, entry.name)) return false
   }
   return true

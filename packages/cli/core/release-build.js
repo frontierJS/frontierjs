@@ -90,17 +90,55 @@ export function stageRelease({ appRoot, told, stored, vendor = false, dry = fals
 /**
  * The env web/'s build is given: the build stamp the client compares against
  * what the server states (`FJS-D160`) and, where the API is its own origin,
- * the address the bundle calls. Both are interpolated into a command line, so
+ * the address the bundle calls, and the widget origin its embed snippet names.
+ * All are interpolated into a command line, so
  * the commit is asserted to be a sha rather than trusted (Invariant 8's
  * reasoning applies to a shell as it does to SQL).
  */
-export function webBuildEnv({ commit, apiOrigin = null }) {
+export function webBuildEnv({ commit, apiOrigin = null, widgetsOrigin = null }) {
   if (!SHA.test(String(commit)))
     throw new Error(`refusing to build: the commit "${commit}" is not a sha`)
   return {
     VITE_FJS_BUILD: String(commit),
     ...(apiOrigin ? { FRONTIER_PUBLIC_API_URL: apiOrigin } : {}),
+    ...(widgetsOrigin ? { FRONTIER_PUBLIC_WIDGETS_URL: widgetsOrigin } : {}),
   }
+}
+
+/**
+ * The env widgets/'s build is given. A widget runs on a stranger's page, so it
+ * cannot reach the API through its own origin: the API origin is always baked,
+ * and a build with none would call whatever the bundle defaults to.
+ */
+export function widgetsBuildEnv({ commit, apiOrigin }) {
+  if (!apiOrigin) throw new Error("refusing to build widgets/: no API origin to bake, and a widget on another site has no origin of its own to call")
+  return webBuildEnv({ commit, apiOrigin })
+}
+
+// A hostname, and nothing a shell could read as syntax: the origin is baked
+// into a build environment and may be echoed into a shell line.
+const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/i
+
+/** `https://<hostname>`, or a refusal naming where the hostname came from. */
+export function originOf(hostname, from) {
+  const host = String(hostname ?? '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase()
+  if (!HOSTNAME.test(host)) throw new Error(`${from} is ${JSON.stringify(hostname)}, which is not a hostname`)
+  return `https://${host}`
+}
+
+/** The hostname offered for widgets/ at a terminal; null where the web
+ *  hostname is not known, since a guess writes DNS. */
+export function suggestedWidgetsHostname(webHostname) {
+  const host = String(webHostname ?? '').trim().toLowerCase()
+  return HOSTNAME.test(host) ? `widgets.${host}` : null
+}
+
+/** Where `sierra widgets` wrote, read off the line it prints. Its outDir is
+ *  the widget config's and the CLI takes no flag for it; `dist/embeds` is
+ *  Sierra's default when the line is absent. */
+export function widgetsOutDir(output) {
+  const m = /widget\(s\) → (.+?)\/?\s*$/m.exec(String(output ?? ''))
+  return m ? m[1] : 'dist/embeds'
 }
 
 /** `webBuildEnv` as a `K=v K=v` prefix for a shell line the target runs. */

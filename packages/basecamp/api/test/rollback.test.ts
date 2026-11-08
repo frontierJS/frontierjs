@@ -634,12 +634,12 @@ describe('an API App\'s git release builds web/ for the static App in front of i
   const files  = [{ path: 'index.html', content_base64: Buffer.from('<h1>kos</h1>').toString('base64') }]
 
   /** A git API App with a static App beside it holding a Domain, both on `box`. */
-  async function aSplitApp() {
+  async function aSplitApp(environmentId = environment.id) {
     const sys  = env.system as any
     const slug = `api-${uniq()}`
-    const api = await sys.app.create({ data: { workspaceId: ws.id, environmentId: environment.id, name: slug, slug, kind: 'container',
+    const api = await sys.app.create({ data: { workspaceId: ws.id, environmentId, name: slug, slug, kind: 'container',
       source: { kind: 'git', repo: 'https://example.test/kos.git', branch: 'main' } } })
-    const page = await sys.app.create({ data: { workspaceId: ws.id, environmentId: environment.id, name: `${slug}-web`, slug: `${slug}-web`,
+    const page = await sys.app.create({ data: { workspaceId: ws.id, environmentId, name: `${slug}-web`, slug: `${slug}-web`,
       kind: 'static', source: { kind: 'inline', files: [] } } })
     for (const a of [api, page]) await sys.appServer.create({ data: { appId: a.id, serverId: box.id, replicaIndex: 0 } })
     await sys.domain.create({ data: { workspaceId: ws.id, appId: page.id, hostname: `${slug}.example.test` } })
@@ -682,6 +682,54 @@ describe('an API App\'s git release builds web/ for the static App in front of i
     expect(paths.indexOf('/static/publish')).toBeLessThan(paths.indexOf('/deploy'))
     const web = await (env.system as any).deployment.findFirst({ where: { appId: page.id } })
     expect(web).toMatchObject({ builtImage: 'sha256:' + 'e'.repeat(64), commitSha: commit, trigger: 'push' })
+  })
+
+  /** A split app alone in an environment of its own, with a widgets App holding a Domain beside it. */
+  async function aSplitAppWithWidgets() {
+    const sys = env.system as any
+    const own = await sys.environment.create({ data: { workspaceId: ws.id, projectId: environment.projectId, name: 'Widgets', slug: `e-${uniq()}` } })
+    const { api, page } = await aSplitApp(own.id)
+    const widgets = await sys.app.create({ data: { workspaceId: ws.id, environmentId: own.id, name: `${api.slug}-widgets`, slug: `${api.slug}-widgets`,
+      kind: 'static', source: { kind: 'inline', files: [], surface: 'widgets' } } })
+    await sys.appServer.create({ data: { appId: widgets.id, serverId: box.id, replicaIndex: 0 } })
+    await sys.domain.create({ data: { workspaceId: ws.id, appId: widgets.id, hostname: `widgets.${api.slug}.example.test` } })
+    return { api, page, widgets }
+  }
+
+  test('a widgets front is built from widgets/ once, each bundle told the other origin, and released beside web/ (FJS-D2032, FJS-D2034)', async () => {
+    const { api, page, widgets } = await aSplitAppWithWidgets()
+    const sys = env.system as any
+    const embeds = [{ path: 'lawn.js', content_base64: Buffer.from('void 0').toString('base64') }]
+    const { row, sent } = await release(api, {
+      ...BUILT,
+      '/web/build':      (body) => ({ data: { commit_sha: commit, surface: body.surface, files: body.surface === 'widgets' ? embeds : files } }),
+      '/static/publish': (body) => ({ data: { digest: 'sha256:' + (body.app_id === widgets.id ? 'b' : 'e').repeat(64) } }),
+    })
+    expect(row.status).toBe('success')
+    const builds = sent.filter(c => c.path === '/web/build').map(c => c.body)
+    expect(builds.map(b => b.surface).sort()).toEqual(['web', 'widgets'])
+    expect(builds.find(b => b.surface === 'web')).toMatchObject({ widgets_url: `https://widgets.${api.slug}.example.test` })
+    expect(builds.find(b => b.surface === 'web')).not.toHaveProperty('api_url')
+    expect(builds.find(b => b.surface === 'widgets')).toMatchObject({ api_url: `https://${api.slug}.example.test` })
+    expect(builds.find(b => b.surface === 'widgets')).not.toHaveProperty('widgets_url')
+    const published = sent.filter(c => c.path === '/static/publish').map(c => c.body)
+    expect(published.find(b => b.app_id === widgets.id)).toMatchObject({ files: embeds })
+    expect(published.find(b => b.app_id === page.id)).toMatchObject({ files })
+    expect(await sys.deployment.findFirst({ where: { appId: widgets.id } })).toMatchObject({ builtImage: 'sha256:' + 'b'.repeat(64), commitSha: commit })
+  })
+
+  test('a machine that answers web/ for a widgets build fails the release before the swap', async () => {
+    const { api } = await aSplitAppWithWidgets()
+    const sys = env.system as any
+    const { row, sent } = await release(api, {
+      ...BUILT,
+      '/web/build':      () => ({ data: { commit_sha: commit, files } }),
+      '/static/publish': () => ({ data: { digest: 'sha256:' + 'e'.repeat(64) } }),
+    })
+    expect(row.status).toBe('failed')
+    const steps = await sys.deploymentStep.findMany({ where: { deploymentId: row.id } })
+    expect(JSON.stringify(steps)).toContain('predates the surface')
+    expect(sent.some(c => c.path === '/deploy')).toBe(false)
   })
 
   test('a failed web build fails the release before the swap', async () => {

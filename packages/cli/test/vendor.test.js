@@ -362,11 +362,11 @@ describe('resolvePackageSource', () => {
 // left out of the release (FJS-D1968). Driven as a process against a stub Basecamp answering one
 // git App on one online server, because the choice is made inside the command.
 describe('basecamp:deploy --dry on a plain repository', () => {
-  let stub, stored = null, repo, containerPort = 8080, patches = []
+  let stub, stored = null, repo, containerPort = 8080, patches = [], inline = null
 
   const app = () => ({
     id: 'app-1', name: 'plain', slug: 'plain', environmentId: 'e1', port: 8080, containerPort,
-    source: { kind: 'git', repo: 'https://git.example.test/acme/plain.git', branch: 'main', ...(stored ? { dockerfile: stored } : {}) },
+    source: inline ?? { kind: 'git', repo: 'https://git.example.test/acme/plain.git', branch: 'main', ...(stored ? { dockerfile: stored } : {}) },
     placement: [{ serverId: 's1', server: { id: 's1', name: 'dev', status: 'online', ipAddress: '127.0.0.1', sshUser: 'deploy' } }],
   })
 
@@ -400,11 +400,11 @@ describe('basecamp:deploy --dry on a plain repository', () => {
   }
 
   // Spawned asynchronously: a spawnSync would block the loop the stub answers on.
-  const dry = async ({ run = false } = {}) => {
+  const dry = async ({ run = false, args = [] } = {}) => {
     // The origin and key are the entry in basecamps.json under HOME, not the environment.
     const home = mkdtempSync(join(tmpdir(), 'fjs-home-'))
     writeBasecamp('stub', { url: `http://localhost:${stub.port}`, apiKey: 'x' }, { home })
-    const proc = Bun.spawn([process.execPath, resolve(ROOT, 'bin/fli.js'), 'basecamp:deploy', ...(run ? [] : ['--dry']), '--app', 'app-1'], {
+    const proc = Bun.spawn([process.execPath, resolve(ROOT, 'bin/fli.js'), 'basecamp:deploy', ...(run ? [] : ['--dry']), '--app', 'app-1', ...args], {
       cwd: repo, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
       env: { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), NO_COLOR: '1' },
     })
@@ -455,6 +455,34 @@ describe('basecamp:deploy --dry on a plain repository', () => {
       expect(patches).toEqual([{ containerPort: 3000 }])
       expect(out).not.toContain('Building fjs-app-1')
     } finally { containerPort = 8080 }
+  }, 60_000)
+
+  // widgets-deploy 1.2–1.4: widgets/ is a surface with its own static App.
+  test('an app with widgets/ plans a widgets App and a Domain that routes nothing back, once a hostname is stated', async () => {
+    plainRepo()
+    mkdirSync(join(repo, 'widgets'), { recursive: true })
+    const out = await dry({ args: ['--domain', 'x.example.test', '--widgets-domain', 'https://widgets.x.example.test/'] })
+    expect(out).toContain("Static App 'widgets' for widgets/")
+    expect(out).toContain("Domain widgets.x.example.test on 'widgets', routing nothing back")
+    expect(out).not.toMatch(/widgets\.x\.example\.test.*→/)
+  }, 60_000)
+
+  test('with no widgets hostname stated, nothing is planned for widgets/ and the run says what it waits on', async () => {
+    plainRepo()
+    mkdirSync(join(repo, 'widgets'), { recursive: true })
+    const out = await dry({ args: ['--domain', 'x.example.test'] })
+    expect(out).not.toContain("Static App 'widgets'")
+    expect(out).toContain('widgets/ waits on a hostname')
+  }, 60_000)
+
+  test('a static App releases its own surface: widgets/ is built with sierra widgets, and a missing tree is refused', async () => {
+    plainRepo()
+    inline = { kind: 'inline', surface: 'widgets', files: [] }
+    try {
+      expect(await dry()).toContain('releases widgets/, and')
+      mkdirSync(join(repo, 'widgets'), { recursive: true })
+      expect(await dry()).toContain('with sierra widgets')
+    } finally { inline = null }
   }, 60_000)
 
   test('an App stating another container port keeps it, and the run says where the two differ', async () => {

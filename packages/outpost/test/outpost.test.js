@@ -5218,14 +5218,21 @@ describe('a web build', () => {
   const COMMIT = 'c0ffee'.padEnd(40, '0')
   const BODY   = { app_id: 'app-1', source: SOURCE, commit: COMMIT }
   // `web` and `manifest` lay down what the clone would hold; the vite run writes its output.
-  const serverFor = ({ web = true, manifest = { name: 'kos', dependencies: { '@frontierjs/junction': '^0.4.0' } } } = {}) => {
+  const serverFor = ({ web = true, widgets = false, manifest = { name: 'kos', dependencies: { '@frontierjs/junction': '^0.4.0' } } } = {}) => {
     const workDir = mkdtempSync(join(tmpdir(), 'outpost-web-'))
     const dir = `${workDir}/app-1.web`
     mkdirSync(dir, { recursive: true })
     if (manifest) writeFileSync(`${dir}/package.json`, JSON.stringify(manifest)), writeFileSync(`${dir}/bun.lock`, '{}')
     if (web) mkdirSync(`${dir}/web/config`, { recursive: true }), writeFileSync(`${dir}/web/config/vite.config.js`, '')
+    if (widgets) mkdirSync(`${dir}/widgets/config`, { recursive: true }), writeFileSync(`${dir}/widgets/config/sierra.config.js`, '')
     const fake = fakeRunner({ 'git -C': { stdout: COMMIT + '\n' } })
     const run = async (argv, opts) => {
+      // The copy step stands for `sierra widgets` and the config's outDir together.
+      if (argv.includes('-e') && argv.at(-2) === '-e') {
+        mkdirSync(`${dir}/.web-release`, { recursive: true })
+        writeFileSync(`${dir}/.web-release/lawn.js`, 'void 0')
+        writeFileSync(`${dir}/.web-release/_headers`, '/*\n  Access-Control-Allow-Origin: *\n')
+      }
       if (argv.includes('vite')) {
         mkdirSync(`${dir}/.web-release/assets`, { recursive: true })
         writeFileSync(`${dir}/.web-release/index.html`, '<h1>kos</h1>')
@@ -5263,8 +5270,58 @@ describe('a web build', () => {
     const { server, argv } = serverFor({ web: false })
     const res = await send(server, 'POST', '/web/build', BODY)
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ commit_sha: COMMIT, skipped: 'c0ffee0 has no web/ surface' })
+    expect(await res.json()).toEqual({ commit_sha: COMMIT, surface: 'web', skipped: 'c0ffee0 has no web/ surface' })
     expect(argv().some(c => c.startsWith('docker run'))).toBe(false)
+  })
+
+  test('web/ is told the widget origin and never the API\'s', async () => {
+    const { server, argv } = serverFor()
+    const res = await send(server, 'POST', '/web/build', { ...BODY, surface: 'web', widgets_url: 'https://widgets.kos.test', api_url: 'https://kos.test' })
+    expect(res.status).toBe(200)
+    const build = argv().filter(c => c.startsWith('docker run --rm'))[1]
+    expect(build).toContain('-e FRONTIER_PUBLIC_WIDGETS_URL=https://widgets.kos.test')
+    expect(build).not.toContain('FRONTIER_PUBLIC_API_URL')
+  })
+
+  test('widgets/ is built by sierra widgets with the API origin, and its out dir answered with the surface', async () => {
+    const { server, workDir, argv } = serverFor({ web: false, widgets: true })
+    const res = await send(server, 'POST', '/web/build', { ...BODY, surface: 'widgets', api_url: 'https://kos.test', widgets_url: 'https://widgets.kos.test' })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.surface).toBe('widgets')
+    expect(body.files.map(f => f.path).sort()).toEqual(['_headers', 'lawn.js'])
+    const runs = argv().filter(c => c.startsWith('docker run --rm'))
+    expect(runs.map(tail).map(c => c.split('\n')[0])).toEqual([
+      'bun install --frozen-lockfile',
+      'bun --bun sierra widgets',
+      "bun -e import { cpSync, rmSync } from 'node:fs'",
+    ])
+    expect(runs[1]).toContain('-w /src/widgets')
+    expect(runs[1]).toContain(`-e NODE_ENV=production -e VITE_FJS_BUILD=${COMMIT} -e FRONTIER_PUBLIC_API_URL=https://kos.test`)
+    expect(runs[1]).not.toContain('FRONTIER_PUBLIC_WIDGETS_URL')
+    expect(runs[2]).toContain("config.widgets?.outDir ?? 'dist/embeds'")
+    expect(runs[2]).toContain('"/src/.web-release"')
+    expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.web`)
+  })
+
+  test('a commit with no widgets/ answers skipped, and one with no widget config is refused by name', async () => {
+    const none = serverFor()
+    expect(await (await send(none.server, 'POST', '/web/build', { ...BODY, surface: 'widgets' })).json())
+      .toEqual({ commit_sha: COMMIT, surface: 'widgets', skipped: 'c0ffee0 has no widgets/ surface' })
+    const bare = serverFor({ widgets: true })
+    rmSync(`${bare.workDir}/app-1.web/widgets/config/sierra.config.js`)
+    const res = await send(bare.server, 'POST', '/web/build', { ...BODY, surface: 'widgets' })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain('widgets/ at c0ffee0 has no config/sierra.config.js')
+  })
+
+  test('an unknown surface or an origin that is not one is refused before anything runs', async () => {
+    for (const extra of [{ surface: 'site' }, { surface: 'web', widgets_url: 'https://w.test/x?y' }, { surface: 'widgets', api_url: 'http://kos.test' }]) {
+      const { server, argv } = serverFor()
+      const res = await send(server, 'POST', '/web/build', { ...BODY, ...extra })
+      expect(res.status).toBe(500)
+      expect(argv().some(c => c.startsWith('git ') || c.startsWith('docker '))).toBe(false)
+    }
   })
 
   test('a linked manifest is refused by name before anything installs', async () => {

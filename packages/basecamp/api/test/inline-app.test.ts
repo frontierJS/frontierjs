@@ -28,7 +28,7 @@ import { GatePlugin }             from '@frontierjs/litestone'
 import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
-import { parseAppSource, describeSource, INLINE_LIMITS } from '../src/domain/release/app-source.ts'
+import { parseAppSource, describeSource, summarizeSource, appSurface, INLINE_LIMITS } from '../src/domain/release/app-source.ts'
 
 process.env.BASECAMP_STUB_OUTPOST = '1'
 
@@ -102,6 +102,27 @@ describe('what a source may be', () => {
   test('an unknown key cannot ride into the column and be read back as though it meant something', () => {
     const parsed = parseAppSource({ kind: 'git', repo: 'git@host:a/b.git', branch: 'main', deployKey: 'sneaky' })
     expect(parsed).toEqual({ kind: 'git', repo: 'git@host:a/b.git', branch: 'main' })
+  })
+
+  test('an inline source states the surface it builds, and a row with none is web (FJS-D2032)', () => {
+    const files = [{ path: 'index.html', content: PAGE }]
+    expect(parseAppSource({ kind: 'inline', files, surface: 'widgets' })).toEqual({ kind: 'inline', files, surface: 'widgets' })
+    expect(parseAppSource({ kind: 'inline', files })).toEqual({ kind: 'inline', files })
+    expect(() => parseAppSource({ kind: 'inline', files, surface: 'site' })).toThrow(/source\.surface must be one of web, widgets/)
+    expect(appSurface({ kind: 'inline', files })).toBe('web')
+    expect(appSurface({ kind: 'inline', files, surface: 'widgets' })).toBe('widgets')
+    expect(appSurface(null)).toBe('web')
+    expect(summarizeSource({ kind: 'inline', files, surface: 'widgets' })).toMatchObject({ surface: 'widgets' })
+  })
+
+  test('a create and a patch keep the surface', async () => {
+    const created = await apps().create({
+      workspaceId: ws.id, environmentId: environment.id, name: 'w', slug: `w-${uniq()}`, kind: 'static',
+      source: { kind: 'inline', files: [{ path: 'index.html', content: PAGE }], surface: 'widgets' },
+    })
+    expect(created.source.surface).toBe('widgets')
+    const patched = await apps().patch(created.id, { source: { kind: 'inline', files: [{ path: 'index.html', content: PAGE }], surface: 'web' } })
+    expect(patched.source.surface).toBe('web')
   })
 
   test('an empty source is a real answer — an app created and not yet pointed at anything', () => {

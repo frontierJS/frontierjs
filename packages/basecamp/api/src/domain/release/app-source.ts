@@ -30,6 +30,13 @@ import { BadRequest } from '@frontierjs/junction'
 
 export type AppSourceKind = 'git' | 'image' | 'inline'
 
+/** The app surface a static App's release builds (`FJS-D2032`). A slug is a
+ *  label any App may take, so the tree a release builds is stated, never read
+ *  off the name: a renamed App would otherwise get the wrong tree, silently. */
+export type AppSurface = 'web' | 'widgets'
+
+export const SURFACES: AppSurface[] = ['web', 'widgets']
+
 export interface InlineFile {
   path:    string
   content: string
@@ -38,7 +45,7 @@ export interface InlineFile {
 export type AppSource =
   | { kind: 'git';    repo: string; branch?: string; path?: string; dockerfile?: string }
   | { kind: 'image';  image: string }
-  | { kind: 'inline'; files: InlineFile[] }
+  | { kind: 'inline'; files: InlineFile[]; surface?: AppSurface }
 
 /**
  * What the paste box accepts. Deliberately tighter than the machine's, so the
@@ -205,7 +212,23 @@ export function parseAppSource(raw: unknown): AppSource | null {
     return { kind: 'image', image: source.image.trim() }
   }
 
-  return { kind: 'inline', files: parseInlineFiles(source.files) }
+  return { kind: 'inline', files: parseInlineFiles(source.files), ...parseSurface(source.surface) }
+}
+
+/** Absent stays absent: the rows written before the field read as `web`
+ *  through `appSurface`, and a backfill would state what nobody chose. */
+function parseSurface(raw: unknown): { surface?: AppSurface } {
+  if (raw === undefined || raw === null) return {}
+  if (!SURFACES.includes(raw as AppSurface))
+    throw new BadRequest(`source.surface must be one of ${SURFACES.join(', ')} — got '${String(raw)}'`)
+  return { surface: raw as AppSurface }
+}
+
+/** The surface a static App builds. Never throws, for the same reason as
+ *  `sourceKindOf`: a stored row that predates the field is a web App. */
+export function appSurface(raw: unknown): AppSurface {
+  const surface = (raw as Record<string, unknown> | null)?.surface
+  return SURFACES.includes(surface as AppSurface) ? surface as AppSurface : 'web'
 }
 
 /** The kind, asked of a blob that has already been stored. Never throws: a row
@@ -274,8 +297,10 @@ export function summarizeSource(raw: unknown): unknown {
     return { ...rest, dockerfileBytes: byteLength(dockerfile) }
   }
   if (!isInline(raw)) return raw
+  const surface = (raw as { surface?: unknown }).surface
   return {
     kind:  'inline',
     files: inlineFilesFor(raw).map(f => ({ path: f.path, bytes: byteLength(f.content ?? '') })),
+    ...(surface === undefined ? {} : { surface }),
   }
 }

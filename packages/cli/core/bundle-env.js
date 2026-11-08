@@ -39,7 +39,7 @@ export function bundleEnvKeys(webDir, shell = process.env) {
 }
 
 /** The line the deploy prints before it builds. */
-export function bundleEnvLine(keys) {
-  if (!keys.length) return "Bundle env: none baked — no VITE_ or FRONTIER_PUBLIC_ key in web/'s .env files or the shell (the App's Variables in Basecamp are not read)"
+export function bundleEnvLine(keys, surface = 'web') {
+  if (!keys.length) return `Bundle env: none baked — no VITE_ or FRONTIER_PUBLIC_ key in ${surface}/'s .env files or the shell (the App's Variables in Basecamp are not read)`
   return `Bundle env baked from the checkout, not the App's Variables: ${keys.map(k => `${k.key} (${k.from})`).join(', ')}`
 }

@@ -3,10 +3,12 @@
 // An API split from web/ is reached through a Domain on a static App and the
 // routes back to the API (`FJS-D1547`), so the static App is released beside
 // it: by `fli deploy`, which reads the list off the App's detail, and by the
-// API's own git release, which builds web/ for it (`FJS-D1979`). One rule for
-// both (`FJS-D1981`), because they read the same rows.
+// API's own git release, which builds each front from its own surface
+// (`FJS-D1979`, `FJS-D2032`). One rule for both (`FJS-D1981`), because they
+// read the same rows. A widgets App with a Domain is a front like any other.
 
-import { isInline } from './app-source.ts'
+import { isInline, appSurface } from './app-source.ts'
+import type { AppSurface } from './app-source.ts'
 
 type DomainLike = { id: string; hostname?: string }
 type AppLike    = { id: string; name?: string; slug?: string; source?: unknown; domains?: DomainLike[] }
@@ -23,7 +25,7 @@ export function frontingStatics({ app, siblings, routes }: { app: { id: string }
     .map(d => ({ app: s, domain: d })))
 }
 
-export type Front = { id: string; name: string; slug: string; domains: Array<{ id: string; hostname: string }> }
+export type Front = { id: string; name: string; slug: string; surface: AppSurface; domains: Array<{ id: string; hostname: string }> }
 
 /** Each static App in front of `app` once, with the Domains that front it. */
 export async function frontsOf(db: any, app: { id: string; environmentId: string }): Promise<Front[]> {
@@ -34,7 +36,7 @@ export async function frontsOf(db: any, app: { id: string; environmentId: string
     : []
   const fronts = new Map<string, Front>()
   for (const { app: s, domain: d } of frontingStatics({ app, siblings, routes })) {
-    const front = fronts.get(s.id) ?? { id: s.id, name: String(s.name ?? ''), slug: String(s.slug ?? ''), domains: [] }
+    const front = fronts.get(s.id) ?? { id: s.id, name: String(s.name ?? ''), slug: String(s.slug ?? ''), surface: appSurface(s.source), domains: [] }
     front.domains.push({ id: d.id, hostname: String(d.hostname ?? '') })
     fronts.set(s.id, front)
   }

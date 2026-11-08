@@ -33,6 +33,10 @@ flags:
     type: string
     description: "The App's hostname, when it has no Domain: the Domain, and what both FRONTIER_*_URLs derive from (asked at a terminal)"
     defaultValue: ''
+  widgets-domain:
+    type: string
+    description: "The widgets App's hostname, when the app has widgets/ and no Domain for it (default deploy.widgets.domain in frontier.config; asked at a terminal, and never guessed under --yes)"
+    defaultValue: ''
   yes:
     char: y
     type: boolean
@@ -85,11 +89,19 @@ machine never reads the Dockerfile, so its last `EXPOSE` is read here
 (`FJS-D1567`): an App storing no container port takes it before the preflight,
 and one stating another number keeps it and is told where the two differ.
 
-**A static App (an inline source) is released as its files.** `web/` of the
+**A static App (an inline source) is released as its files, from its own
+surface.** The source's `surface` says which (`web` when absent). `web/` of the
 same staged commit is built here with `vite build` into a temp directory, never
 into `web/dist`, resolving its dependencies through the checkout's
 `node_modules`, with `VITE_FJS_BUILD` set to the commit (`FJS-D1969`) and no API
-origin, since the Domain routes the API back (`FJS-D1547`). The `.env` files it
+origin, since the Domain routes the API back (`FJS-D1547`); where the app has a
+widgets App the build bakes `FRONTIER_PUBLIC_WIDGETS_URL` with its hostname.
+`widgets/` is built with `sierra widgets` in the staged tree, and bakes
+`FRONTIER_PUBLIC_API_URL` with web's hostname, because a widget runs on a
+stranger's page and has no origin of its own to call; the folder it wrote is
+read off the line it prints, since its `outDir` is the widget config's. The
+hostnames are the Domains Basecamp holds, else `deploy.web.domain` and
+`deploy.widgets.domain` in `frontier.config`. The `.env` files it
 bakes are the committed ones — the App's Variables in Basecamp are
 not what the bundle carries, and the build is preceded by a line naming the
 `VITE_` / `FRONTIER_PUBLIC_` keys it will bake and the file each comes from
@@ -125,7 +137,12 @@ and never printed. One question is asked, the hostname — `--domain` answers
 it, and both `FRONTIER_*_URL`s derive from it. At a terminal it offers the
 package's name under Basecamp's own domain (`@acme/kos` beside
 `yuma.acme.cloud` offers `kos.acme.cloud`) and `-` leaves it unset; `--yes`
-offers nothing, since a guessed hostname would write DNS unasked. An app with `web/` gets a
+offers nothing, since a guessed hostname would write DNS unasked. An app with
+`widgets/` gets a second static App, `widgets`, beside the first, on the same
+machines, once a widgets hostname is stated: `--widgets-domain`, else
+`deploy.widgets.domain`, else at a terminal `widgets.<the web hostname>` is
+offered. Its Domain carries no route back to the API (the prefixes go to web's
+Domain only). An app with `web/` gets a
 static App for it beside this one, placed on the same machines and named
 `app`, and this one is renamed `api` — the front door is the one called the
 app. A slug never changes, so the static App's is `app`, or `web` where this
@@ -140,8 +157,8 @@ plan cannot set; the error count that stops the release still counts every
 one. The plan is shown, applied on a yes (`--yes` skips
 the asking), and the preflight runs again on what Basecamp now holds. With no
 terminal and no `--yes` the plan is printed and nothing is written; `--dry`
-prints it too. A credential the app requires, a Dockerfile edit and
-`widgets/` stay prose: nothing here can know them. `fli env:push` sets the
+prints it too. A credential the app requires and a Dockerfile edit
+stay prose: nothing here can know them. `fli env:push` sets the
 credentials from `.env.production`, skipping every key this plan sets.
 
 The Basecamp is an entry in `basecamps.json` (`~/.config/fli/`), whose origin
@@ -157,15 +174,15 @@ would put it in shell history. The key needs `apps:read`,
 `apps:write` for a static App, or one that takes its container port — and a standing that may release in its
 workspace. Setting up what the App is missing reads `domainRoutes:read` and
 writes through `apps:write`, `variables:write`, `domains:write` and
-`domainRoutes:write`; a 403 names
+`domainRoutes:write`; a static App's build also reads `domains:read` for the hostnames it bakes; a 403 names
 the scope the key lacks.
 
 <script>
 const { loadFrontierConfig }         = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { GENERATED_DIR, exposedPort } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
-const { stageRelease, webBuildEnv }  = await import(new URL('file://' + global.fliRoot + '/core/release-build.js'))
+const { stageRelease, webBuildEnv, widgetsBuildEnv, originOf, suggestedWidgetsHostname, widgetsOutDir } = await import(new URL('file://' + global.fliRoot + '/core/release-build.js'))
 const { createMachine }              = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
-const { releaseFindings, gatherReleaseInputs, releasePlan } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
+const { releaseFindings, gatherReleaseInputs, releasePlan, surfaceOf } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
 const { routePrefixes, apiPaths }    = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { readAppSnapshot }            = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
 const { bundleEnvKeys, bundleEnvLine } = await import(new URL('file://' + global.fliRoot + '/core/bundle-env.js'))
@@ -272,15 +289,16 @@ async function preflight({ origin, key, app, root, dir, dockerfile, text }) {
   return { findings, prefixes }
 }
 
-/** The page a static App serves until web/ is released onto it. */
-const PLACEHOLDER = (name, id) => `<!doctype html>
+/** The page a static App serves until its surface is released onto it. */
+const PLACEHOLDER = (name, id, surface = 'web') => `<!doctype html>
 <meta charset="utf-8"><title>${name}</title>
-<body><p>web/ of ${name} is not released yet — <code>fli basecamp:deploy --app ${id}</code> releases it.</p></body></html>
+<body><p>${surface}/ of ${name} is not released yet — <code>fli basecamp:deploy --app ${id}</code> releases it.</p></body></html>
 `
 
 /** An app split in two: the image is `api`, and the static App the Domain sits on is `app`. */
 const API_NAME = 'api'
 const WEB_NAME = 'app'
+const WIDGETS_NAME = 'widgets'
 
 /** The lines a plan prints, each a write it would make; empty when there is nothing to do. */
 function planLines(plan, app, servers) {
@@ -294,6 +312,8 @@ function planLines(plan, app, servers) {
   if (plan.domain)
     lines.push(`Domain ${plan.domain.hostname} on '${plan.domain.on === 'web' ? WEB_NAME : apiName}'` +
       (plan.domain.routes.length ? `, ${plan.domain.routes.join(' and ')} → '${apiName}'` : ''))
+  if (plan.widgets) lines.push(`Static App '${WIDGETS_NAME}' for widgets/${servers.length ? `, placed on ${servers.join(', ')}` : ''}`)
+  if (plan.widgetsDomain) lines.push(`Domain ${plan.widgetsDomain.hostname} on '${WIDGETS_NAME}', routing nothing back`)
   for (const r of plan.routes) lines.push(`Routes on ${r.hostname}: ${r.prefixes.join(' and ')} → '${apiName}'`)
   return lines
 }
@@ -308,32 +328,46 @@ async function applyPlan({ origin, key, app, plan }) {
       environmentId: app.environmentId, appId: app.id, key: v.key, isSecret: !!v.isSecret,
       value: v.generate === 'hex32' ? randomBytes(32).toString('hex') : v.value,
     } })
-  let web = null
-  if (plan.web) {
-    const page = (id) => ({ kind: 'inline', files: [{ path: 'index.html', content: PLACEHOLDER(app.name, id) }] })
-    web = await basecamp(origin, key, '/apps', { method: 'POST', body: {
-      environmentId: app.environmentId, name: WEB_NAME, slug: app.slug === WEB_NAME ? 'web' : WEB_NAME, kind: 'static', source: page('<its id>'),
-    } })
-    // The page names the command that replaces it, and that needs the id just issued.
-    await basecamp(origin, key, `/apps/${encodeURIComponent(web.id)}`, { method: 'PATCH', body: { source: page(web.id) } })
-    // Caddy routes a prefix only between Apps on one machine (`FJS-D1040`).
-    for (const p of app.placement ?? [])
-      await basecamp(origin, key, `/apps/${encodeURIComponent(web.id)}`, { method: 'POST', headers: { 'x-service-method': 'place' }, body: { serverId: p.serverId } })
-  }
+  const web     = plan.web ? await makeStatic({ origin, key, app, name: WEB_NAME, altSlug: 'web', surface: 'web' }) : null
+  const widgets = plan.widgets ? await makeStatic({ origin, key, app, name: WIDGETS_NAME, altSlug: 'widgets-static', surface: 'widgets' }) : null
   if (plan.domain) {
     const owner  = plan.domain.on === 'web' ? (web ?? { id: plan.domain.webId }) : app
-    // A run that stopped after this write finds its own row on the rerun, and
-    // a second POST is refused by the per-workspace unique hostname. Basecamp's
-    // find filters on appId only, so the hostname is matched here.
-    const host   = plan.domain.hostname.toLowerCase()
-    const found  = (await basecampAll(origin, key, '/domains')).find(d => d.hostname.toLowerCase() === host)
-    if (found && found.appId !== owner.id)
-      throw new Error(`${plan.domain.hostname} is already a Domain of another App (${found.appId}) — move it in Basecamp, or pass a different --domain`)
-    const domain = found ?? await basecamp(origin, key, '/domains', { method: 'POST', body: { appId: owner.id, hostname: plan.domain.hostname } })
+    const domain = await domainOn({ origin, key, ownerId: owner.id, hostname: plan.domain.hostname })
     await routeBack({ origin, key, app, domainId: domain.id, hostname: plan.domain.hostname, prefixes: plan.domain.routes })
   }
+  // The widget origin is cross-origin by definition: its Domain routes nothing
+  // back to the API (`FJS-D1547` puts the prefixes on web's Domain only).
+  if (plan.widgetsDomain)
+    await domainOn({ origin, key, ownerId: (widgets ?? { id: plan.widgetsDomain.widgetsId }).id, hostname: plan.widgetsDomain.hostname })
   for (const r of plan.routes) await routeBack({ origin, key, app, ...r })
-  return { web }
+  return { web, widgets }
+}
+
+/** A static App for one surface, serving a placeholder until that surface is
+ *  released onto it, and placed on the API's machines. */
+async function makeStatic({ origin, key, app, name, altSlug, surface }) {
+  const source = (id) => ({ kind: 'inline', ...(surface === 'web' ? {} : { surface }), files: [{ path: 'index.html', content: PLACEHOLDER(app.name, id, surface) }] })
+  const made = await basecamp(origin, key, '/apps', { method: 'POST', body: {
+    environmentId: app.environmentId, name, slug: app.slug === name ? altSlug : name, kind: 'static', source: source('<its id>'),
+  } })
+  // The page names the command that replaces it, and that needs the id just issued.
+  await basecamp(origin, key, `/apps/${encodeURIComponent(made.id)}`, { method: 'PATCH', body: { source: source(made.id) } })
+  // Caddy routes a prefix only between Apps on one machine (`FJS-D1040`).
+  for (const p of app.placement ?? [])
+    await basecamp(origin, key, `/apps/${encodeURIComponent(made.id)}`, { method: 'POST', headers: { 'x-service-method': 'place' }, body: { serverId: p.serverId } })
+  return made
+}
+
+/** The Domain row for `hostname` on `ownerId`: its own when a run that stopped
+ *  after this write left it, since a second POST is refused by the
+ *  per-workspace unique hostname. Basecamp's find filters on appId only, so
+ *  the hostname is matched here. */
+async function domainOn({ origin, key, ownerId, hostname }) {
+  const host  = hostname.toLowerCase()
+  const found = (await basecampAll(origin, key, '/domains')).find(d => d.hostname.toLowerCase() === host)
+  if (found && found.appId !== ownerId)
+    throw new Error(`${hostname} is already a Domain of another App (${found.appId}) — move it in Basecamp, or pass a different hostname`)
+  return found ?? await basecamp(origin, key, '/domains', { method: 'POST', body: { appId: ownerId, hostname } })
 }
 
 /** Each of `prefixes` on the Domain routed to `app`, posting only what is not
@@ -350,6 +384,74 @@ async function routeBack({ origin, key, app, domainId, hostname, prefixes }) {
       throw new Error(`${hostname}${pathPrefix} already routes to another App (${have.appId}) — change it in Basecamp, or remove the route`)
     if (!have) await basecamp(origin, key, '/domainRoutes', { method: 'POST', body: { domainId, pathPrefix, appId: app.id } })
   }
+}
+
+/** What frontier.config states for the two public hostnames, or null where it
+ *  states none. */
+async function configuredHosts(root) {
+  const deploy = (await loadFrontierConfig(root))?.deploy
+  return { web: deploy?.web?.domain ?? null, widgets: deploy?.widgets?.domain ?? null }
+}
+
+/** The hostname each static surface answers on, as Basecamp holds it. A read
+ *  that fails answers nothing and the config's word stands. */
+async function staticHostnames({ origin, key, app }) {
+  const siblings = (await readList(origin, key, `/apps?environmentId=${encodeURIComponent(app.environmentId)}`)).rows ?? []
+  const domains  = (await readList(origin, key, '/domains')).rows ?? []
+  const hostOf   = (surface) => {
+    const front = siblings.find(s => s.source?.kind === 'inline' && surfaceOf(s) === surface)
+    return domains.find(d => front && d.appId === front.id)?.hostname ?? null
+  }
+  return { web: hostOf('web'), widgets: hostOf('widgets') }
+}
+
+/** The origins one surface's bundle bakes (`FJS-D1969`): web/ the widget
+ *  origin when there is one, and widgets/ the API origin, which a widget on
+ *  another site cannot take from its own page. web/ reaches the API through
+ *  its own Domain (`FJS-D1547`), so the API origin is that Domain's. */
+async function bundleOrigins({ surface, origin, key, app, root }) {
+  const held   = await staticHostnames({ origin, key, app })
+  const config = await configuredHosts(root)
+  if (surface === 'widgets') {
+    const web = held.web ?? config.web
+    return { apiOrigin: web ? originOf(web, 'the web hostname') : null }
+  }
+  const widgets = held.widgets ?? config.widgets
+  return { widgetsOrigin: widgets ? originOf(widgets, 'the widgets hostname') : null }
+}
+
+/** web/ built with vite into `out`. The API is reached through this App's own
+ *  Domain (`FJS-D1547`), so no API origin is passed (`FJS-D1969`). */
+async function buildWeb({ $, staged, tree, config, out, origins, log }) {
+  const { join, relative } = await import('path')
+  const stagedWeb = join(staged.dir, 'web')
+  log.info(bundleEnvLine(bundleEnvKeys(stagedWeb)))
+  log.info(`Building ${stagedWeb} at ${staged.short}...`)
+  $.exec({
+    command: 'bun --bun vite build', cwd: stagedWeb,
+    args: ['-c', join(stagedWeb, relative(tree, config)), '--outDir', out, '--emptyOutDir'],
+    env: { ...process.env, NODE_ENV: 'production', ...webBuildEnv({ commit: staged.sha, widgetsOrigin: origins.widgetsOrigin }) },
+  })
+  return out
+}
+
+/** widgets/ built with `sierra widgets`, which takes its outDir from the widget
+ *  config and has no flag for it: the folder it wrote is read off the line it
+ *  prints. Staged with the commit, so it is built into a tree the checkout's
+ *  dev server does not serve. */
+async function buildWidgets({ $, staged, origins, log, echo }) {
+  const { join } = await import('path')
+  const stagedWidgets = join(staged.dir, 'widgets')
+  if (!origins.apiOrigin)
+    throw new Error("widgets/ bakes the API's origin, and none is known: the web App holds no Domain in Basecamp and deploy.web.domain is not set in frontier.config")
+  log.info(bundleEnvLine(bundleEnvKeys(stagedWidgets), 'widgets'))
+  log.info(`Building ${stagedWidgets} at ${staged.short} against ${origins.apiOrigin}...`)
+  const output = String($.exec({
+    command: 'bunx --bun sierra widgets', cwd: stagedWidgets, stdio: ['ignore', 'pipe', 'inherit'],
+    env: { ...process.env, NODE_ENV: 'production', ...widgetsBuildEnv({ commit: staged.sha, apiOrigin: origins.apiOrigin }) },
+  }) ?? '')
+  echo(output.trimEnd())
+  return join(stagedWidgets, widgetsOutDir(output))
 }
 
 /** The release once it stops moving, or as it stands after WAIT_MS. */
@@ -371,7 +473,7 @@ const VITE_CONFIGS = ['config/vite.config.js', 'config/vite.config.ts', 'vite.co
 async function linkNodeModules(root, dir) {
   const { existsSync, symlinkSync } = await import('fs')
   const { join } = await import('path')
-  for (const rel of ['node_modules', 'web/node_modules']) {
+  for (const rel of ['node_modules', 'web/node_modules', 'widgets/node_modules']) {
     const from = join(root, rel)
     if (existsSync(from)) symlinkSync(from, join(dir, rel))
   }
@@ -430,37 +532,38 @@ const commit = { trigger: 'laptop', ...(sha ? { commitSha: sha } : {}), ...(bran
 let release, named
 if (inline) {
   // ─── A static App: its files ───────────────────────────────────────────────
-  const web    = join(root, 'web')
-  const config = flag.dist ? null : VITE_CONFIGS.map(c => join(web, c)).find(existsSync)
-  if (!flag.dist && !config)
-    throw new Error(`${web} has no vite config (looked for ${VITE_CONFIGS.join(', ')}) — pass --dist with a folder already built`)
+  // Each static App builds its own surface (`widgets-deploy`): the row's
+  // source says which, and a row without one is web/'s.
+  const surface = surfaceOf(app)
+  const tree    = join(root, surface)
+  const config  = flag.dist || surface !== 'web' ? null : VITE_CONFIGS.map(c => join(tree, c)).find(existsSync)
+  if (!flag.dist && !existsSync(tree))
+    throw new Error(`App '${app.name}' releases ${surface}/, and ${tree} does not exist — pass --dist with a folder already built`)
+  if (!flag.dist && surface === 'web' && !config)
+    throw new Error(`${tree} has no vite config (looked for ${VITE_CONFIGS.join(', ')}) — pass --dist with a folder already built`)
 
   if (flag.dry) {
-    log.dry(flag.dist ? `Would send ${resolve(flag.dist)} as it is` : `Would build ${web} with ${config}`)
+    log.dry(flag.dist ? `Would send ${resolve(flag.dist)} as it is` : surface === 'web' ? `Would build ${tree} with ${config}` : `Would build ${tree} with sierra widgets`)
     log.dry(`Would publish the files to App '${app.name}' on ${origin} and release their digest`)
     return
   }
 
   // Into a directory of its own, never web/dist: `vite build` empties its
   // outDir, and a dev server running from this checkout serves that one.
-  const out    = flag.dist ? null : mkdtempSync(join(tmpdir(), 'basecamp-deploy-'))
+  const out    = flag.dist || surface !== 'web' ? null : mkdtempSync(join(tmpdir(), 'basecamp-deploy-'))
   const staged = flag.dist ? null : stageRelease({ appRoot: root, image: false, log })
   try {
-    if (out) {
+    let built = null
+    if (staged) {
       // Built from HEAD as committed, so the .env files it bakes are the
-      // committed ones. The API is reached through this App's own Domain
-      // (`FJS-D1547`), so no origin is passed (`FJS-D1969`).
-      const stagedWeb = join(staged.dir, 'web')
+      // committed ones.
       await linkNodeModules(root, staged.dir)
-      log.info(bundleEnvLine(bundleEnvKeys(stagedWeb)))
-      log.info(`Building ${stagedWeb} at ${staged.short}...`)
-      $.exec({
-        command: 'bun --bun vite build', cwd: stagedWeb,
-        args: ['-c', join(stagedWeb, relative(web, config)), '--outDir', out, '--emptyOutDir'],
-        env: { ...process.env, NODE_ENV: 'production', ...webBuildEnv({ commit: staged.sha, apiOrigin: null }) },
-      })
+      const origins = await bundleOrigins({ surface, origin, key, app, root })
+      built = surface === 'web'
+        ? await buildWeb({ $, staged, tree, config, out, origins, log })
+        : await buildWidgets({ $, staged, origins, log, echo })
     }
-    const files = await filesUnder(out ?? resolve(flag.dist))
+    const files = await filesUnder(built ?? resolve(flag.dist))
     log.info(`Publishing ${files.length} files to App '${app.name}'...`)
     release = await basecamp(origin, key, `/apps/${encodeURIComponent(app.id)}`, {
       method: 'POST', headers: { 'x-service-method': 'publish' }, body: { files, ...commit },
@@ -541,8 +644,11 @@ if (inline) {
     // ─── What the App is missing, from what the app declares ──────────────────
     // On every run, so a setup that stopped part way is finished by the next
     // one rather than skipped (`FJS-3529`); a settled App plans nothing.
-    const missing = releasePlan(findings, { prefixes })
-    if (!missing.empty || missing.asked.length) {
+    // The widgets hostname is stated by the flag or frontier.config; neither is
+    // ever guessed past a terminal (a guessed hostname writes DNS).
+    const stated  = flag['widgets-domain'] || (await configuredHosts(root)).widgets || ''
+    const missing = releasePlan(findings, { prefixes, widgetsHostname: stated })
+    if (!missing.empty || missing.asked.length || missing.askedWidgets) {
       const asking   = process.stdin.isTTY && !flag.yes
       const ask      = async (q, hint) => (await tty.line(`  ${q} ${chalk.dim(hint)}\n  ${chalk.cyan('›')}`)).trim()
       let hostname = flag.domain
@@ -555,7 +661,17 @@ if (inline) {
         if (offered && !hostname) hostname = offered
         if (hostname === '-') hostname = ''
       }
-      const plan    = releasePlan(findings, { hostname, prefixes })
+      let widgetsHostname = stated
+      if (!widgetsHostname && asking && missing.askedWidgets) {
+        echo(`  App '${app.name}' has a widgets/ surface, and no hostname for its widget origin.`)
+        const offered = suggestedWidgetsHostname(hostname || (await configuredHosts(root)).web)
+        widgetsHostname = await ask('The widgets hostname', offered
+          ? `Enter: ${offered} — '-': none yet, widgets/ is not released`
+          : "e.g. widgets.example.com — Enter: none yet, widgets/ is not released")
+        if (offered && !widgetsHostname) widgetsHostname = offered
+        if (widgetsHostname === '-') widgetsHostname = ''
+      }
+      const plan    = releasePlan(findings, { hostname, widgetsHostname, prefixes })
       if (plan.web && app.name !== API_NAME) plan.app = { name: API_NAME, ...plan.app }
       const servers = (app.placement ?? []).map(p => p.server?.name).filter(Boolean)
       const lines   = planLines(plan, app, servers)
@@ -566,19 +682,23 @@ if (inline) {
           : `  ${chalk.bold(apply ? 'Setting up' : 'Would set up')} App '${app.name}' from what the app declares:`)
         for (const l of lines) echo(`    ${chalk.cyan('+')} ${l}`)
         if (plan.asked.length) echo(chalk.dim(`    ${plan.asked.join(', ')} wait on a hostname — pass --domain <hostname>.`))
+        if (plan.askedWidgets) echo(chalk.dim('    widgets/ waits on a hostname — pass --widgets-domain <hostname>, or set deploy.widgets.domain in frontier.config.'))
         echo('')
         if (!apply) {
           if (!flag.dry) log.info('No terminal — pass --yes (and --domain <hostname>) to apply this, or set the App in Basecamp')
         } else if (!flag.yes && (await ask('Apply it?', '[Y/n]')).toLowerCase().startsWith('n')) {
           log.info('Left as it is — nothing was written')
         } else {
-          const { web } = await applyPlan({ origin, key, app, plan })
-          log.done(`Set up App '${app.name}'${web ? ` and its static App '${web.name}' (${web.id})` : ''}`)
+          const { web, widgets } = await applyPlan({ origin, key, app, plan })
+          const made = [web, widgets].filter(Boolean).map(a => `'${a.name}' (${a.id})`)
+          log.done(`Set up App '${app.name}'${made.length ? ` and its static App${made.length > 1 ? 's' : ''} ${made.join(' and ')}` : ''}`)
           app = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
           ;({ findings } = await preflight({ origin, key, app, root, dir, dockerfile, text }))
           log.info('Preflight again, on what Basecamp now holds:')
           count = report(findings)
         }
+      } else if (plan.askedWidgets) {
+        log.info('widgets/ waits on a hostname — pass --widgets-domain <hostname>, or set deploy.widgets.domain in frontier.config')
       }
     }
 

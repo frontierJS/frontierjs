@@ -67,6 +67,27 @@ const PREVIEW_IMAGE = `oven/bun:${Bun.version}`
 const WEB_CONFIGS = ['config/vite.config.js', 'config/vite.config.ts', 'vite.config.js', 'vite.config.ts', 'vite.config.mjs']
 // Inside the checkout, so the build's output goes with it.
 const WEB_OUT = '.web-release'
+// The app surfaces a static App builds (`FJS-D2032`), and the config
+// `sierra widgets` reads when it is named no other.
+const SURFACES       = ['web', 'widgets']
+const WIDGETS_CONFIG = 'config/sierra.config.js'
+// An origin baked into a bundle: the scheme and a hostname, nothing a path or
+// a query could smuggle into the page.
+const ORIGIN = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/
+
+/** The script that copies a widget build from the config's `widgets.outDir`
+ *  (Sierra's default `dist/embeds`) to `to`. Run in the build container,
+ *  because answering the out dir means executing the app's config. */
+function widgetsCopy(to) {
+  return [
+    "import { cpSync, rmSync } from 'node:fs'",
+    "import { resolve } from 'node:path'",
+    `const mod = await import(resolve(${JSON.stringify(WIDGETS_CONFIG)}))`,
+    'const config = mod.default ?? mod',
+    `rmSync(${JSON.stringify(to)}, { recursive: true, force: true })`,
+    `cpSync(resolve(config.widgets?.outDir ?? 'dist/embeds'), ${JSON.stringify(to)}, { recursive: true })`,
+  ].join('\n')
+}
 
 // The largest file `POST /source/file` answers. A Dockerfile is a few KB; the
 // answer is a JSON body Basecamp stores on the App.
@@ -1016,17 +1037,22 @@ export function createDocker({
   }
 
   /**
-   * An API App's web/ built from `commit`, the one its image was built from
-   * (`FJS-D1979`), answered as the files `/static/publish` takes. The clone is
+   * An API App's `surface` — web/ by `vite build`, widgets/ by `sierra
+   * widgets` (`FJS-D2032`) — built from `commit`, the one its image was built
+   * from (`FJS-D1979`), answered as the files `/static/publish` takes and the
+   * surface it built, which a caller checks an older Outpost against. The clone is
    * the repository's code, so the install and the build run in throwaway
    * containers and the checkout is removed after. The install is the clone's
    * own manifest and lockfile; a link: package is held by no clone
    * (`FJS-D942`) and is refused by name rather than failing deep in bun
-   * install. A commit with no web/ answers `skipped`.
+   * install. A commit with no such surface answers `skipped`.
    */
-  async function webBuild({ appId, source, commit }) {
+  async function webBuild({ appId, source, commit, surface = 'web', apiUrl = null, widgetsUrl = null }) {
     const bad = validName(appId, 'app_id')
     if (bad) throw new Error(bad)
+    if (!SURFACES.includes(surface)) throw new Error(`surface: ${JSON.stringify(surface)} is not one of ${SURFACES.join(', ')}`)
+    for (const [field, url] of [['api_url', apiUrl], ['widgets_url', widgetsUrl]])
+      if (url != null && !ORIGIN.test(url)) throw new Error(`${field}: ${JSON.stringify(url)} is not an https origin`)
     if (source?.kind !== 'git' || !source.repo) throw new Error('a web build needs a git source with a repo')
     if (source.path != null) {
       const badPath = validRelativePath(source.path)
@@ -1048,9 +1074,13 @@ export function createDocker({
       const head = await checkout({ dir, repo: source.repo, branch, commit, env: gitEnv(keyPath) })
       if (head !== commit) throw new Error(`the clone is at ${head.slice(0, 7)}, not ${commit.slice(0, 7)}`)
       const host = `${dir}${rel}`
-      if (!existsSync(`${host}/web`)) return { commit, skipped: `${commit.slice(0, 7)} has no web/ surface` }
-      const config = WEB_CONFIGS.find(c => existsSync(`${host}/web/${c}`))
-      if (!config) throw new Error(`web/ at ${commit.slice(0, 7)} has no vite config (looked for ${WEB_CONFIGS.join(', ')})`)
+      if (!existsSync(`${host}/${surface}`)) return { commit, surface, skipped: `${commit.slice(0, 7)} has no ${surface}/ surface` }
+      const config = surface === 'web'
+        ? WEB_CONFIGS.find(c => existsSync(`${host}/web/${c}`))
+        : existsSync(`${host}/widgets/${WIDGETS_CONFIG}`) && WIDGETS_CONFIG
+      if (!config) throw new Error(surface === 'web'
+        ? `web/ at ${commit.slice(0, 7)} has no vite config (looked for ${WEB_CONFIGS.join(', ')})`
+        : `widgets/ at ${commit.slice(0, 7)} has no ${WIDGETS_CONFIG}`)
 
       let manifest = null
       try { manifest = JSON.parse(readFileSync(`${host}/package.json`, 'utf8')) } catch {}
@@ -1061,13 +1091,25 @@ export function createDocker({
           + 'and a clone holds no workspace. Release from the workspace with fli deploy')
       const frozen = ['bun.lock', 'bun.lockb'].some(l => existsSync(`${host}/${l}`)) ? ['--frozen-lockfile'] : []
       await docker([...box(['-w', `/src${rel}`]), 'bun', 'install', ...frozen], { timeoutMs: 900_000 })
-      // The API is reached through the static App's own Domain (`FJS-D1969`),
-      // so the build is told no origin; VITE_FJS_BUILD is the stamp the API's
+      // web/ reaches the API through its own Domain (`FJS-D1969`), so it is
+      // told only the widget origin; a widget runs on a stranger's page and is
+      // told the API's (`FJS-D2034`). VITE_FJS_BUILD is the stamp the API's
       // FJS_BUILD is compared against (`FJS-D160`).
-      await docker([...box(['-w', `/src${rel}/web`, '-e', 'NODE_ENV=production', '-e', `VITE_FJS_BUILD=${commit}`]),
-        'bun', '--bun', 'vite', 'build', '-c', config, '--outDir', `/src${rel}/${WEB_OUT}`, '--emptyOutDir'],
-        { timeoutMs: 900_000 })
-      return { commit, files: await builtFiles(`${host}/${WEB_OUT}`) }
+      const env = ['-e', 'NODE_ENV=production', '-e', `VITE_FJS_BUILD=${commit}`,
+        ...(surface === 'web'     && widgetsUrl ? ['-e', `FRONTIER_PUBLIC_WIDGETS_URL=${widgetsUrl}`] : []),
+        ...(surface === 'widgets' && apiUrl     ? ['-e', `FRONTIER_PUBLIC_API_URL=${apiUrl}`]         : [])]
+      if (surface === 'web') {
+        await docker([...box(['-w', `/src${rel}/web`, ...env]),
+          'bun', '--bun', 'vite', 'build', '-c', config, '--outDir', `/src${rel}/${WEB_OUT}`, '--emptyOutDir'],
+          { timeoutMs: 900_000 })
+      } else {
+        // `sierra widgets` writes where the app's config says (`widgets.outDir`),
+        // which only the config can answer, so the copy to a known place runs
+        // in the container that may execute it.
+        await docker([...box(['-w', `/src${rel}/widgets`, ...env]), 'bun', '--bun', 'sierra', 'widgets'], { timeoutMs: 900_000 })
+        await docker([...box(['-w', `/src${rel}/widgets`]), 'bun', '-e', widgetsCopy(`/src${rel}/${WEB_OUT}`)], { timeoutMs: 120_000 })
+      }
+      return { commit, surface, files: await builtFiles(`${host}/${WEB_OUT}`, surface) }
     } finally {
       await run(['rm', '-rf', dir])
     }
@@ -1075,17 +1117,17 @@ export function createDocker({
 
   /** The regular files under `out`, as `/static/publish` takes them, refused
    *  by name over what that route accepts: the whole list travels in one body. */
-  async function builtFiles(out) {
-    if (!existsSync(out)) throw new Error('vite build wrote nothing')
+  async function builtFiles(out, surface = 'web') {
+    if (!existsSync(out)) throw new Error(`the ${surface}/ build wrote nothing`)
     const entries = (await readdir(out, { recursive: true, withFileTypes: true })).filter(e => e.isFile())
-    if (entries.length > LIMITS.files) throw new Error(`web/ built ${entries.length} files, over the ${LIMITS.files} a static publish accepts`)
+    if (entries.length > LIMITS.files) throw new Error(`${surface}/ built ${entries.length} files, over the ${LIMITS.files} a static publish accepts`)
     const files = []
     let total = 0
     for (const e of entries) {
       const at    = `${e.parentPath ?? e.path}/${e.name}`
       const bytes = await readFile(at)
       total += bytes.length
-      if (total > LIMITS.totalBytes) throw new Error(`web/ built over the ${LIMITS.totalBytes} bytes a static publish accepts`)
+      if (total > LIMITS.totalBytes) throw new Error(`${surface}/ built over the ${LIMITS.totalBytes} bytes a static publish accepts`)
       files.push({ path: relative(out, at), content_base64: bytes.toString('base64') })
     }
     return files
@@ -1289,7 +1331,7 @@ export function createDocker({
       siteBuild({ appId, source, branch, commit, alias: null, token, accountId, app }),
 
     /** An API App's web/ from the commit its image was built from (`FJS-D1979`). */
-    webBuild: ({ appId, source, commit }) => webBuild({ appId, source, commit }),
+    webBuild: (args) => webBuild(args),
 
     /** Whether the release in `image` can serve beside the live one
      *  (`livePivot`, `FJS-D1838`). Never throws. */

@@ -11,7 +11,7 @@ import { tmpdir }                                        from 'os'
 import { join }                                          from 'path'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 
-import { stageRelease, webBuildEnv, envPrefix } from '../core/release-build.js'
+import { stageRelease, webBuildEnv, widgetsBuildEnv, originOf, suggestedWidgetsHostname, widgetsOutDir, envPrefix } from '../core/release-build.js'
 
 let repo
 const warnings = []
@@ -137,12 +137,43 @@ describe('stageRelease', () => {
   })
 })
 
+describe('widgets/ build helpers (widgets-deploy 1.4)', () => {
+  test('widgets/ always bakes the API origin, since a widget on another site has none of its own', () => {
+    expect(widgetsBuildEnv({ commit: 'abc1234', apiOrigin: 'https://ela.example.com' }))
+      .toEqual({ VITE_FJS_BUILD: 'abc1234', FRONTIER_PUBLIC_API_URL: 'https://ela.example.com' })
+    expect(() => widgetsBuildEnv({ commit: 'abc1234', apiOrigin: null })).toThrow('no API origin')
+    expect(() => widgetsBuildEnv({ commit: 'main', apiOrigin: 'https://a.example.com' })).toThrow('is not a sha')
+  })
+
+  test('originOf takes a hostname and refuses anything a shell could read', () => {
+    expect(originOf('https://Widgets.Example.com/', 'x')).toBe('https://widgets.example.com')
+    expect(() => originOf('a.example.com; rm -rf /', 'the web hostname')).toThrow('the web hostname')
+  })
+
+  test('the offered hostname is widgets.<web hostname>, and nothing where the web hostname is unknown', () => {
+    expect(suggestedWidgetsHostname('ela.maverickmade.tech')).toBe('widgets.ela.maverickmade.tech')
+    expect(suggestedWidgetsHostname(null)).toBeNull()
+    expect(suggestedWidgetsHostname('bad host')).toBeNull()
+  })
+
+  test('the folder sierra widgets wrote is read off its line, else its default', () => {
+    expect(widgetsOutDir('  ·  built\n\n  ✓  2 widget(s) → build/embeds/\n')).toBe('build/embeds')
+    expect(widgetsOutDir('  ✓  1 widget(s) → dist/embeds/\n')).toBe('dist/embeds')
+    expect(widgetsOutDir('')).toBe('dist/embeds')
+  })
+})
+
 describe('webBuildEnv', () => {
   test('carries the build stamp, and the API origin only when there is one', () => {
     expect(webBuildEnv({ commit: 'abc1234', apiOrigin: null })).toEqual({ VITE_FJS_BUILD: 'abc1234' })
     expect(webBuildEnv({ commit: 'abc1234' })).toEqual({ VITE_FJS_BUILD: 'abc1234' })
     expect(webBuildEnv({ commit: 'abc1234', apiOrigin: 'https://api.example.com' }))
       .toEqual({ VITE_FJS_BUILD: 'abc1234', FRONTIER_PUBLIC_API_URL: 'https://api.example.com' })
+  })
+
+  test('web/ bakes the widget origin when there is one (widgets-deploy 1.4)', () => {
+    expect(webBuildEnv({ commit: 'abc1234', widgetsOrigin: 'https://widgets.example.com' }))
+      .toEqual({ VITE_FJS_BUILD: 'abc1234', FRONTIER_PUBLIC_WIDGETS_URL: 'https://widgets.example.com' })
   })
 
   test('refuses a commit that is not a sha', () => {

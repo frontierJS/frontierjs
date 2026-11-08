@@ -147,6 +147,65 @@ test('web/ is answered by a static App in the environment', () => {
   expect(found([{ id: 'w1', source: { kind: 'inline' } }])).toBe(false)
 })
 
+describe('widgets/ is a surface of its own (widgets-deploy 1.2)', () => {
+  const WEB     = { id: 'w1', name: 'app', source: { kind: 'inline' }, domains: [{ id: 'd1', hostname: 'ela.example.com' }] }
+  const WIDGETS = { id: 'x1', name: 'widgets', source: { kind: 'inline', surface: 'widgets' }, domains: [] }
+  const rules   = (siblings, over = {}) => run({ surfaces: ['web', 'widgets'], siblings, ...over })
+
+  test('a static App answers only its own surface, and a row without one is web/', () => {
+    const open = (siblings) => rules(siblings).filter(f => f.rule === 'surface-unreleased').map(f => f.title.split('/')[0])
+    expect(open([])).toEqual(['web', 'widgets'])
+    expect(open([WEB])).toEqual(['widgets'])
+    expect(open([WEB, WIDGETS])).toEqual([])
+    expect(open([WIDGETS])).toEqual(['web'])
+  })
+
+  test('the unreleased widgets finding carries a fix', () => {
+    expect(rules([WEB]).find(f => f.rule === 'surface-unreleased').fix).toEqual({ widgets: true })
+  })
+
+  test('a widgets App with no Domain is a finding whose fix names it', () => {
+    const f = rules([WEB, WIDGETS]).find(f => f.rule === 'widgets-unrouted')
+    expect(f.fix).toEqual({ widgetsApp: 'x1' })
+    expect(rules([WEB, { ...WIDGETS, domains: [{ id: 'd2', hostname: 'widgets.ela.example.com' }] }]).some(f => f.rule === 'widgets-unrouted')).toBe(false)
+  })
+
+  test('the widgets App is not the API\'s front door: its Domain needs no route back and does not make the API routed', () => {
+    const wd = { ...WIDGETS, domains: [{ id: 'd2', hostname: 'widgets.ela.example.com' }] }
+    const app = { ...SETTLED, domains: [], fronts: [{ id: 'x1', name: 'widgets', domains: [{ id: 'd2', hostname: 'widgets.ela.example.com' }] }] }
+    const found = run({ app, variables: ANSWERED, surfaces: ['web', 'widgets'], siblings: [wd], routes: [] })
+    expect(found.some(f => f.rule === 'route-missing')).toBe(false)
+    expect(found.find(f => f.rule === 'unrouted').fix).toEqual({ domain: true })
+  })
+
+  test('a lone widgets App is not taken for web/\'s when the API has no Domain', () => {
+    const f = run({ app: { ...SETTLED, domains: [] }, variables: ANSWERED, siblings: [WIDGETS] }).find(f => f.rule === 'unrouted')
+    expect(f.fix).toEqual({ domain: true })
+  })
+
+  test('the plan makes the widgets App with a Domain that routes nothing back, only once a hostname is stated', () => {
+    const found = rules([])
+    const plan = releasePlan(found, { hostname: 'ela.example.com', widgetsHostname: 'https://widgets.ela.example.com/' })
+    expect(plan.web).toBe(true)
+    expect(plan.widgets).toBe(true)
+    expect(plan.widgetsDomain).toEqual({ hostname: 'widgets.ela.example.com' })
+    expect(plan.domain.routes).toEqual(['/api', '/ws'])
+    expect(plan.askedWidgets).toBe(false)
+
+    const unstated = releasePlan(found, { hostname: 'ela.example.com' })
+    expect(unstated.widgets).toBe(false)
+    expect(unstated.widgetsDomain).toBeNull()
+    expect(unstated.askedWidgets).toBe(true)
+  })
+
+  test('an existing widgets App without a Domain takes the Domain and is not made twice', () => {
+    const plan = releasePlan(rules([WEB, WIDGETS], { app: SETTLED, variables: ANSWERED }), { widgetsHostname: 'widgets.ela.example.com' })
+    expect(plan.widgets).toBe(false)
+    expect(plan.widgetsDomain).toEqual({ hostname: 'widgets.ela.example.com', widgetsId: 'x1' })
+    expect(plan.empty).toBe(false)
+  })
+})
+
 test('mergeVariables: the App\'s own row wins over the environment\'s', () => {
   const merged = mergeVariables([v('A', 'app'), { ...v('A', 'env'), appId: null }, v('B', 'other', { appId: 'a2' })], 'a1')
   expect(merged.get('A').value).toBe('app')

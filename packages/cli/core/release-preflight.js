@@ -49,8 +49,13 @@ export const RULES = {
   'node-env':         'NODE_ENV resolving to development in a release',
   'unreadable':       'something the check could not read, so its rules did not run',
   'surface-unreleased': 'a surface of the app that no App in this environment releases',
+  'widgets-unrouted': "a widgets App with no Domain, so the widget origin answers no one",
   'target':           'where the release is going',
 }
+
+/** The surface a static App builds: its inline source states it, and a row made
+ *  before the field existed is web/'s. */
+export const surfaceOf = (app) => app?.source?.surface ?? 'web'
 
 const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\])$/i
 
@@ -273,10 +278,15 @@ export function releaseFindings({
 
   // A setup that stopped after the static App's Domain left no route back, and
   // the hostname served the page for /api (`FJS-3529`).
-  const statics = (siblings ?? []).filter(s => s.id !== app.id && s.source?.kind === 'inline')
+  // Per surface: a widgets App's Domain routes nothing back (`FJS-D1547`), so
+  // only web/'s static App is the API's front door.
+  const staticApps = (siblings ?? []).filter(s => s.id !== app.id && s.source?.kind === 'inline')
+  const statics    = staticApps.filter(s => surfaceOf(s) === 'web')
   const norm    = (p) => String(p).trim().toLowerCase().replace(/\/+$/, '')
   // Basecamp's answer, on the App's detail (`FJS-D1981`): one entry per Domain that fronts it.
-  const fronts  = (app.fronts ?? []).flatMap(s => (s.domains ?? []).map(d => ({ app: s, domain: d })))
+  const fronts  = (app.fronts ?? [])
+    .filter(s => surfaceOf(staticApps.find(a => a.id === s.id)) === 'web')
+    .flatMap(s => (s.domains ?? []).map(d => ({ app: s, domain: d })))
   const fronted = fronts.length > 0
   for (const { app: s, domain: d } of fronts) {
     if (!routes) continue
@@ -335,16 +345,24 @@ export function releaseFindings({
 
   // ── what else ─────────────────────────────────────────────────────────────
   if (siblings) {
-    const statics = siblings.filter(s => s.id !== app.id && s.source?.kind === 'inline')
+    const released = (surface) => staticApps.filter(s => surfaceOf(s) === surface)
     for (const surface of surfaces) {
-      if (surface === 'web' && statics.length) continue
+      if ((surface === 'web' || surface === 'widgets') && released(surface).length) continue
+      const fixable = surface === 'web' || surface === 'widgets'
       add('surface-unreleased', 'info', `${surface}/ is released by nothing in ${app.environment?.name ?? 'this environment'}`,
         `This App is the API image, and ${surface}/ is not in it.`,
-        surface === 'web'
+        fixable
           ? 'Create a static App for it and release it with `fli basecamp:deploy --app <its id>`.'
           : `Release ${surface}/ on its own, or ignore this if it is not meant to be live here.`,
-        surface === 'web' ? { web: true } : null)
+        surface === 'web' ? { web: true } : surface === 'widgets' ? { widgets: true } : null)
     }
+    // A setup that stopped after the widgets App left the widget origin with no hostname.
+    const widgets = released('widgets')
+    if (surfaces.includes('widgets') && widgets.length && !widgets.some(s => s.domains?.length))
+      add('widgets-unrouted', 'info', `the widgets App '${widgets[0].name}' has no Domain`,
+        'Its files are released, and no hostname reaches them.',
+        'Give it a hostname with --widgets-domain, or deploy.widgets.domain in frontier.config.js.',
+        { widgetsApp: widgets[0].id })
   }
 
   const servers = (app.placement ?? []).map(p => `${p.server?.name} (${p.server?.ipAddress ?? 'no address'})`)
@@ -373,16 +391,20 @@ export function releaseFindings({
  *              routed here, or on this App without one
  *   routes     `{ domainId, hostname, prefixes }` — routes back to this App
  *              on a Domain that already exists
+ *   widgets    create a static App for widgets/ — only with a widgets hostname
+ *   widgetsDomain  `{ hostname, widgetsId? }` — on the widgets App, and no
+ *              route back: the widget origin is cross-origin by definition
+ *   askedWidgets  widgets/ is waiting on a hostname, which a guess would write to DNS
  *
  * `hostname` empty leaves `domain` null and the `derive` rows out, and says so
  * in `asked`, so a run with no terminal prints what one answer would unlock.
  * `prefixes` is `routePrefixes(apiPaths(snapshot))` from `core/edge.js`.
  */
-export function releasePlan(findings, { hostname = '', prefixes = ['/api', '/ws'] } = {}) {
+export function releasePlan(findings, { hostname = '', widgetsHostname = '', prefixes = ['/api', '/ws'] } = {}) {
   const app  = {}
   const vars = new Map()
   const routes = []
-  let web = false, domain = false, webId = null
+  let web = false, domain = false, webId = null, widgets = false, widgetsId = null
   for (const f of findings) {
     if (!f.fix) continue
     Object.assign(app, f.fix.app ?? {})
@@ -391,9 +413,14 @@ export function releasePlan(findings, { hostname = '', prefixes = ['/api', '/ws'
     web    ||= !!f.fix.web
     domain ||= !!f.fix.domain
     webId  ??= f.fix.webApp ?? null
+    widgets ||= !!f.fix.widgets
+    widgetsId ??= f.fix.widgetsApp ?? null
   }
   const fronted = web || !!webId
-  const host = hostname.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  const bare = (h) => h.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  const host = bare(hostname)
+  const widgetsHost = bare(widgetsHostname)
+  const wantsWidgets = widgets || !!widgetsId
   const variables = [...vars.values()].flatMap(v => {
     if (v.derive !== 'origin') return [v]
     return host ? [{ key: v.key, value: `https://${host}` }] : []
@@ -401,11 +428,14 @@ export function releasePlan(findings, { hostname = '', prefixes = ['/api', '/ws'
   const asked = [...vars.values()].filter(v => v.derive === 'origin').map(v => v.key)
   return {
     app, variables, web, routes,
+    widgets: widgets && !!widgetsHost,
+    widgetsDomain: wantsWidgets && widgetsHost ? { hostname: widgetsHost, ...(widgetsId && !widgets ? { widgetsId } : {}) } : null,
+    askedWidgets: wantsWidgets && !widgetsHost,
     domain: domain && host
       ? { hostname: host, on: fronted ? 'web' : 'api', ...(webId && !web ? { webId } : {}), routes: fronted ? prefixes : [] }
       : null,
     asked:  host ? [] : [...(domain ? ['Domain'] : []), ...asked],
-    empty:  !Object.keys(app).length && !variables.length && !web && !routes.length && !(domain && host),
+    empty:  !Object.keys(app).length && !variables.length && !web && !routes.length && !(domain && host) && !(wantsWidgets && widgetsHost),
   }
 }
 

@@ -42,7 +42,9 @@ import { createServer } from 'node:http'
 import { readFile, readdir } from 'node:fs/promises'
 import { join, extname, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 
 import { serveWidgets } from '../../../../src/widget/serve.js'
 import { openChrome } from '../../../../../mesa/src/drive.js'
@@ -73,8 +75,16 @@ const listed  = (await readdir(EMBEDS)).sort()
 const emitted = listed.filter(f => !ORIGIN_FILES.includes(f))
 const counterSrc = await readFile(join(EMBEDS, 'Counter.js'), 'utf8')
 
+// A deploy door passes the directory it reads (`FJS-D2036`); a build that
+// ignored the flag would leave the door reading an empty one.
+const doorDir = mkdtempSync(join(tmpdir(), 'widgets-out-'))
+execFileSync('node', [join(SURFACE, '../../../src/tools/cli.js'), 'widgets', '--out-dir', doorDir], { cwd: SURFACE, stdio: 'ignore' })
+const doorFiles = readdirSync(doorDir).sort()
+rmSync(doorDir, { recursive: true, force: true })
+
 const fileChecks = {
   emitted,
+  outDirFlag: doorFiles,
   originFiles: ORIGIN_FILES.filter(f => listed.includes(f)),
   // A bare `import`/`export` statement means the file is a module, and a
   // classic <script> tag cannot run it.
@@ -398,6 +408,7 @@ const EXPECTED = {
   // request the host page was never told to make.
   emitted:            ['Counter.js', 'Kit.js', 'LeadForm.js'],
   originFiles:        ['_headers', 'index.html'],
+  outDirFlag:         ['Counter.js', 'Kit.js', 'LeadForm.js', '_headers', 'index.html'].sort(),
   hasModuleSyntax:    false,   // IIFE — a classic <script> can run it
   hasOwnCss:          true,    // the component's <style>, inside the script
   leadHasImportedCss: true,    // an imported stylesheet, folded in

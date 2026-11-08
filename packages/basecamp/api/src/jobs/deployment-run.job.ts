@@ -770,37 +770,60 @@ function runner(app: App) {
     return { output: `live at ${reply.data?.url ?? 'the site\'s own domain'}`, digest }
   }
 
-  // An API App's web/ (`FJS-D1979`), from the commit 'Build image' built, onto
-  // each static App in front of it through that App's own machine. Before the
-  // swap (`FJS-D1980`): a throw here fails the release and the old API keeps
-  // serving with the old page. Nothing is live until 'Release web'.
+  // An API App's static fronts (`FJS-D1979`), each built from its own surface
+  // (`FJS-D2032`) at the commit 'Build image' built, once per surface, and
+  // written through each front's own machine. Before the swap (`FJS-D1980`): a
+  // throw here fails the release and the old API keeps serving with the old
+  // page. Nothing is live until 'Release web'.
   async function runWebBuild(
     ctx: { deploy: DeploymentRow; service: ServiceRow; executor: Executor; digest: string | null; commit?: string | null; source: any; web: HeldWeb[] },
   ): Promise<{ output?: string; digest: string | null }> {
     const { deploy, service, executor, digest, source } = ctx
-    const reply = await executor.call('/web/build', {
-      // A real machine refuses a null commit by name; a stub's build names none.
-      app_id: deploy.appId, source, commit: ctx.commit ?? null,
-    }, { timeoutMs: BUILD_TIMEOUT_MS })
-    if (reply.error) throw new Error(`web/ was not built: ${reply.error.message}`)
-    if (reply.data?.stubbed) return { output: String(reply.data.note ?? 'stub executor — web/ was not built'), digest }
-    if (reply.data?.skipped) return { output: String(reply.data.skipped), digest }
-    const files = reply.data?.files as PublishFile[] | undefined
-    if (!Array.isArray(files) || !files.length) throw new Error('web/ was built and the machine answered no files')
-    const over = overPublishLimit(files)
-    if (over) throw new Error(`web/ built ${over}`)
-
     // As the system, as `routedHosts` reads: the environment is the App's, which `startRun` confined.
-    const fronts = await frontsOf((app.db as any).asSystem(), { id: deploy.appId, environmentId: service.environmentId })
+    const fronts   = await frontsOf((app.db as any).asSystem(), { id: deploy.appId, environmentId: service.environmentId })
+    const origins  = frontOrigins(fronts)
+    const surfaces = [...new Set(fronts.map(f => f.surface))]
     const notes: string[] = []
-    for (const front of fronts) {
-      const out = await publishStatic(app, front.id, files)
-      if ('refused' in out) throw new Error(`web/ was not written for '${front.name}': ${out.refused}`)
-      if ('stubbed' in out) { notes.push(`${front.name}: ${out.stubbed}`); continue }
-      ctx.web.push({ front, digest: out.digest })
+    let built = 0
+    for (const surface of surfaces.length ? surfaces : ['web' as const]) {
+      const reply = await executor.call('/web/build', {
+        // A real machine refuses a null commit by name; a stub's build names none.
+        app_id: deploy.appId, source, commit: ctx.commit ?? null, surface,
+        ...(surface === 'web'     && origins.widgets ? { widgets_url: origins.widgets } : {}),
+        ...(surface === 'widgets' && origins.api     ? { api_url:     origins.api     } : {}),
+      }, { timeoutMs: BUILD_TIMEOUT_MS })
+      if (reply.error) throw new Error(`${surface}/ was not built: ${reply.error.message}`)
+      if (reply.data?.stubbed) { notes.push(String(reply.data.note ?? `stub executor — ${surface}/ was not built`)); continue }
+      if (reply.data?.skipped) { notes.push(String(reply.data.skipped)); continue }
+      // An Outpost that predates the surface builds web/ whatever it is asked,
+      // and web/'s files on the widget origin would release green.
+      const answered = reply.data?.surface ?? 'web'
+      if (answered !== surface) throw new Error(`${surface}/ was not built: the machine built ${answered}/ — its Outpost predates the surface`)
+      const files = reply.data?.files as PublishFile[] | undefined
+      if (!Array.isArray(files) || !files.length) throw new Error(`${surface}/ was built and the machine answered no files`)
+      const over = overPublishLimit(files)
+      if (over) throw new Error(`${surface}/ built ${over}`)
+      built += files.length
+
+      for (const front of fronts.filter(f => f.surface === surface)) {
+        const out = await publishStatic(app, front.id, files)
+        if ('refused' in out) throw new Error(`${surface}/ was not written for '${front.name}': ${out.refused}`)
+        if ('stubbed' in out) { notes.push(`${front.name}: ${out.stubbed}`); continue }
+        ctx.web.push({ front, digest: out.digest })
+      }
     }
     const onto = ctx.web.map(h => `'${h.front.name}'`).join(', ')
-    return { output: [`${files.length} files${onto ? ` written for ${onto}` : ''}`, ...notes].join('; '), digest }
+    return { output: [...(built ? [`${built} files${onto ? ` written for ${onto}` : ''}`] : []), ...notes].join('; '), digest }
+  }
+
+  // The origins each bundle bakes (`FJS-D2034`). The API is reached through a
+  // web front's Domain (`FJS-D1547`), so web/ is told no API origin; a widget
+  // runs on a stranger's page and must be told it. web/ is told the widget
+  // origin for its embed snippet.
+  function frontOrigins(fronts: Front[]): { api?: string; widgets?: string } {
+    const host = (surface: string) => fronts.find(f => f.surface === surface && f.domains[0]?.hostname)?.domains[0].hostname
+    const api = host('web'), widgets = host('widgets')
+    return { ...(api ? { api: `https://${api}` } : {}), ...(widgets ? { widgets: `https://${widgets}` } : {}) }
   }
 
   // Each static App's own release of the files 'Build web' wrote, recording the

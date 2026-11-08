@@ -50,6 +50,11 @@ Groundwork already built (uncommitted): `sierra widgets` writes `_headers` and a
   - **B** — The Basecamp door only, with the SSH door's gap filed as a defect.
   - **Recommend A** — `FJS-D1967` has both doors build one release, and the scaffold can stop writing `widgets/deploy/` only once both serve widgets as static files.
 
+- ~~**Q5 — Who answers where `sierra widgets` wrote?**~~ **Answered 2026-11-08 (`FJS-D2036`): A — Sierra takes `--out-dir`, and both doors pass a directory they own. It needs a Sierra release, and both readers below are deleted.**
+  - **A** — Sierra takes `--out-dir`, and both doors pass a directory they own. It needs a Sierra release, and both readers below are deleted.
+  - **B** — Keep two readers: `basecamp:deploy` reads the `widget(s) → <dir>` line `sierra widgets` prints, and Outpost runs the app's config in the build container to read `widgets.outDir`.
+  - **Recommend A** — B has two owners of one fact, and the cli's half breaks silently when the printed line's wording changes. A costs one Sierra publish and an ELA bump, the path Phase 0 already took.
+
 ## Plan
 
 ### Phase 0 — Groundwork
@@ -68,11 +73,13 @@ Done when: `bun run build:widgets` in ELA leaves `_headers` and `index.html` in 
 Goal: `fli deploy` through Basecamp makes and releases a widgets static App from `widgets/`.
 Done when: `basecamp:deploy --dry` against a fixture app with `widgets/` plans the App and its Domain, and the cli suite covers the plan and the build.
 
-- [ ] 1.1 The App's surface (Q1) in Basecamp's app source, with existing rows read as `web`.
-- [ ] 1.2 Preflight: `surface-unreleased` for widgets carries a fix, `releasePlan` gains `widgets`, and the checks that assume one static App count per surface.
-- [ ] 1.3 `applyPlan` makes `widgets` beside `app`, places it on the API's machines, and adds its Domain with no routes back.
-- [ ] 1.4 The static branch builds the App's surface into a temp dir with the origins baked (Q3). `fli deploy` releases each static App from its own surface.
-- [ ] 1.5 The API's git release (`FJS-D1979`) builds each front from its surface too.
+- [x] 1.1 The App's surface (Q1) in Basecamp's app source, with existing rows read as `web`.
+- [x] 1.2 Preflight: `surface-unreleased` for widgets carries a fix, `releasePlan` gains `widgets`, and the checks that assume one static App count per surface.
+- [x] 1.3 `applyPlan` makes `widgets` beside `app`, places it on the API's machines, and adds its Domain with no routes back.
+- [x] 1.4 The static branch builds the App's surface into a temp dir with the origins baked (Q3). `fli deploy` releases each static App from its own surface.
+- [x] 1.5 The API's git release (`FJS-D1979`) builds each front from its surface too.
+
+**Done 2026-11-07.** `appSurface()` in `app-source.ts` is the one reader of the field. `frontingStatics` keeps its rule and carries each front's surface, and the git release sends one Outpost `/web/build` per surface with the two origins crossed. An Outpost whose reply names no `surface` fails a widgets release before the swap. `basecamp:deploy` takes `--widgets-domain` or `deploy.widgets.domain`, plans `widgets` (slug `widgets-static` if the API holds `widgets`) with a Domain carrying no routes, and builds each static App from its own surface. A new info rule, `widgets-unrouted`, finishes a widgets App left without a Domain. Proved by cli 4508/0 (with `vendor.test.js` driving `--dry` against a stub Basecamp), Basecamp API 1330/0, Outpost 514/0 and `verify:docker` 95/95. Outpost's widgets path was run by hand in `oven/bun:1.4.4` on an ELA clone: the install, `bun --bun sierra widgets` and the copy to `.web-release` left the two bundles, `_headers` and `index.html`, with the API origin baked. `basecamp verify` was not run, because port 8020 was held by another process. Left open: `/web/build` keeps its name until the next Outpost upgrade; `fli deploy` reads only `deploy.widgets.domain` and does not forward `--widgets-domain`; Q5.
 
 ### Phase 2 — ELA live
 
