@@ -6,7 +6,7 @@ dated: 2026-11-07
 
 # Idea — widgets/ deploys like web/: a static App per surface, in both doors
 
-**Status: PROPOSED.** Dated 2026-11-07, raised by ELA's widget release (`fjs-prototypes/ela/docs/deploy-chartered.md` Phase 4). The owner ruled the direction: widgets are a surface like web, declared in `frontier.config`, and get the same treatment as api and web. Q1–Q4 are open.
+**Status: PROPOSED.** Dated 2026-11-07, raised by ELA's widget release (`fjs-prototypes/ela/docs/deploy-chartered.md` Phase 4). The owner ruled the direction: widgets are a surface like web, declared in `frontier.config`, and get the same treatment as api and web. Q1–Q4 are ruled A (`FJS-D2032`–`FJS-D2035`).
 
 ## The problem
 
@@ -30,10 +30,25 @@ Groundwork already built (uncommitted): `sierra widgets` writes `_headers` and a
 
 ## Open questions
 
-- **Q1 — How does a static App know its surface?** **A**: a `surface` field on the App's inline source, stated when the plan creates it, absent read as `web` for the rows that exist. **B**: a slug convention (`widgets` builds widgets/, anything else builds web/). **Recommend A**: a slug is a label any App may take, and a convention read off one would build the wrong tree into a renamed App with nothing saying so. A also leaves `frontingStatics` as it is, because a widgets App is legitimately released beside the API, just from its own surface.
-- **Q2 — Where does the widgets hostname come from?** **A**: `deploy.widgets.domain`, read by both doors, plus a `--widgets-domain` flag for `basecamp:deploy`. At a terminal it offers `widgets.<web domain>`, and with `--yes` it offers nothing (a guessed hostname writes DNS). **B**: always derived as `widgets.<web domain>`. **Recommend A**, which is the rule web's hostname already follows.
-- **Q3 — Which variable names carry the origins?** **Recommend** `FRONTIER_PUBLIC_WIDGETS_URL` into web/ and `FRONTIER_PUBLIC_API_URL` into widgets/, set by both doors the way `FJS-D1969` sets web's API origin. `bundle-env.js` already bakes the `FRONTIER_PUBLIC_` prefix. ELA renames `VITE_WIDGETS_URL`.
-- **Q4 — One plan for both doors?** **Recommend yes**, Basecamp door first because ELA waits on it, then the SSH door in the same plan (`FJS-D1967`: both doors build one release). Once both doors serve widgets as static files, the scaffold stops writing `widgets/deploy/`.
+- ~~**Q1 — How does a static App know which surface it builds?**~~ **Answered 2026-11-08 (`FJS-D2032`): A — A `surface` field on the App's inline source, stated when the setup plan makes the App. Absent reads as `web` for the rows that exist.**
+  - **A** — A `surface` field on the App's inline source, stated when the setup plan makes the App. Absent reads as `web` for the rows that exist.
+  - **B** — A slug convention: `widgets` builds widgets/, anything else builds web/.
+  - **Recommend A** — A slug is a label any App may take, and a convention read off one would build the wrong tree into a renamed App with nothing saying so. A leaves `frontingStatics` as it is, because a widgets App is legitimately released beside the API, just from its own surface.
+
+- ~~**Q2 — Where does the widgets hostname come from?**~~ **Answered 2026-11-08 (`FJS-D2033`): A — `deploy.widgets.domain` in `frontier.config`, read by both doors, plus `--widgets-domain` on `basecamp:deploy`. At a terminal the command offers `widgets.<web domain>`, and with `--yes` it offers nothing, because a guessed hostname writes DNS.**
+  - **A** — `deploy.widgets.domain` in `frontier.config`, read by both doors, plus `--widgets-domain` on `basecamp:deploy`. At a terminal the command offers `widgets.<web domain>`, and with `--yes` it offers nothing, because a guessed hostname writes DNS.
+  - **B** — Always derived as `widgets.<web domain>`, with no key.
+  - **Recommend A** — It is the rule web's hostname already follows, and B writes DNS for a name nobody stated.
+
+- ~~**Q3 — How do the two origins reach the bundles?**~~ **Answered 2026-11-08 (`FJS-D2034`): A — Both doors bake `FRONTIER_PUBLIC_WIDGETS_URL` into web/ and `FRONTIER_PUBLIC_API_URL` into widgets/, the way `FJS-D1969` bakes web's API origin.**
+  - **A** — Both doors bake `FRONTIER_PUBLIC_WIDGETS_URL` into web/ and `FRONTIER_PUBLIC_API_URL` into widgets/, the way `FJS-D1969` bakes web's API origin.
+  - **B** — Each app states the origins in its committed `.env` files, and the framework bakes nothing new.
+  - **Recommend A** — The doors already know both hostnames, so B states a hostname in two places that can drift. `bundle-env.js` already bakes the `FRONTIER_PUBLIC_` prefix. ELA renames `VITE_WIDGETS_URL`.
+
+- ~~**Q4 — One plan for both doors?**~~ **Answered 2026-11-08 (`FJS-D2035`): A — Both doors in this plan: the Basecamp door first, because ELA waits on it, then the SSH door.**
+  - **A** — Both doors in this plan: the Basecamp door first, because ELA waits on it, then the SSH door.
+  - **B** — The Basecamp door only, with the SSH door's gap filed as a defect.
+  - **Recommend A** — `FJS-D1967` has both doors build one release, and the scaffold can stop writing `widgets/deploy/` only once both serve widgets as static files.
 
 ## Plan
 
@@ -42,9 +57,11 @@ Groundwork already built (uncommitted): `sierra widgets` writes `_headers` and a
 Goal: ELA's own build writes the widget origin's files.
 Done when: `bun run build:widgets` in ELA leaves `_headers` and `index.html` in `widgets/dist/embeds`.
 
-- [x] 0.1 `sierra widgets` writes `_headers` and `index.html` from `postbuild/widget-headers.js`; `serveWidgets` imports the same rule. Proved by `widget-serve.test.js` (the file read Cloudflare's way equals what the server sends), `test:widgets` 51/51 and `example` `verify:widget` 40/40.
-- [ ] 0.2 Commit, and the owner publishes Sierra (the `gh release` step is the owner's).
-- [ ] 0.3 ELA moves `@frontierjs/sierra` to that tarball.
+- [x] 0.1 `sierra widgets` writes `_headers` and `index.html` from `postbuild/widget-headers.js`; `serveWidgets` imports the same rule. Proved by `widget-serve.test.js` (the file read Cloudflare's way equals what the server sends), `test:widgets` 51/51. `example` `verify:widget` passes 40/40 and still exits 1 on a page reload at `/cart/`, three runs alike; the drive builds widgets before Vite starts, so the reload is not this change's, and it is unexplained.
+- [x] 0.2 Commit, and the owner publishes Sierra (the `gh release` step is the owner's). Committed in `ebdf03502`, released as sierra 0.1.13.
+- [x] 0.3 ELA moves `@frontierjs/sierra` to that tarball.
+
+**Done 2026-11-07.** ELA on sierra 0.1.13: `bun run build:widgets` writes `_headers` (one rule, since its two IIFE entries carry no hashed assets) and `index.html` beside `BasicForm.js` and `LawnEstimator.js`.
 
 ### Phase 1 — Basecamp door
 

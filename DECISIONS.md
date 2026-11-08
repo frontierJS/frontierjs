@@ -16863,6 +16863,30 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2035"></a>2026-11-08 · `FJS-D2035` — Q4 — One plan for both doors — Both doors in this plan: the Basecamp door first, because ELA waits on it, then the SSH door.
+
+Asked in [`IDEAS/widgets-deploy.md`](IDEAS/widgets-deploy.md) § Open questions. **A** was picked over **B** (The Basecamp door only, with the SSH door's gap filed as a defect).
+
+The paper's recommendation, taken as written: `FJS-D1967` has both doors build one release, and the scaffold can stop writing `widgets/deploy/` only once both serve widgets as static files.
+
+### <a id="fjs-d2034"></a>2026-11-08 · `FJS-D2034` — Q3 — How do the two origins reach the bundles — Both doors bake `FRONTIER_PUBLIC_WIDGETS_URL` into web/ and `FRONTIER_PUBLIC_API_URL` into widgets/, the way `FJS-D1969` bakes web's API origin.
+
+Asked in [`IDEAS/widgets-deploy.md`](IDEAS/widgets-deploy.md) § Open questions. **A** was picked over **B** (Each app states the origins in its committed `.env` files, and the framework bakes nothing new).
+
+The paper's recommendation, taken as written: The doors already know both hostnames, so B states a hostname in two places that can drift. `bundle-env.js` already bakes the `FRONTIER_PUBLIC_` prefix. ELA renames `VITE_WIDGETS_URL`.
+
+### <a id="fjs-d2033"></a>2026-11-08 · `FJS-D2033` — Q2 — Where does the widgets hostname come from — `deploy.widgets.domain` in `frontier.config`, read by both doors, plus `--widgets-domain` on `basecamp:deploy`. At a terminal the command offers `widgets.<web domain>`, and with `--yes` it offers nothing, because a guessed hostname writes DNS.
+
+Asked in [`IDEAS/widgets-deploy.md`](IDEAS/widgets-deploy.md) § Open questions. **A** was picked over **B** (Always derived as `widgets.<web domain>`, with no key).
+
+The paper's recommendation, taken as written: It is the rule web's hostname already follows, and B writes DNS for a name nobody stated.
+
+### <a id="fjs-d2032"></a>2026-11-08 · `FJS-D2032` — Q1 — How does a static App know which surface it builds — A `surface` field on the App's inline source, stated when the setup plan makes the App. Absent reads as `web` for the rows that exist.
+
+Asked in [`IDEAS/widgets-deploy.md`](IDEAS/widgets-deploy.md) § Open questions. **A** was picked over **B** (A slug convention: `widgets` builds widgets/, anything else builds web/).
+
+The paper's recommendation, taken as written: A slug is a label any App may take, and a convention read off one would build the wrong tree into a renamed App with nothing saying so. A leaves `frontingStatics` as it is, because a widgets App is legitimately released beside the API, just from its own surface.
+
 ### <a id="fjs-d2031"></a>2026-11-07 · `FJS-D2031` — Q13 — How does the designated entry pair its run key with the admin key 2.2's Reinstall takes — One entry, two keys: `apiKey` is the admin key and `scopedKey` the run key, the slot `basecamps.js` already defines as the narrow key beside the admin one; a `runs: true` entry's run path (`basecamp:app`, `basecamp:deploy`, `live.ts`) reads `scopedKey` and refuses by name without one, never falling back to `apiKey`; a fresh reinstall drops the stale `scopedKey`.
 
 Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **C** was picked over **A** (the runs entry gains `admin: '<entry>'` naming the admin entry; Reinstall refuses when it is missing or holds no key), **B** (derive: the one other entry with the same url and a key; several are refused), **D** (the Reinstall form lists the same-url entries and the person picks one each time).
