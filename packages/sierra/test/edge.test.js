@@ -83,6 +83,7 @@ const POSTBUILD = {
   'redirects.js':        'build',
   'headers.js':          'build',
   'hashed-asset.js':     'build',
+  'widget-headers.js':   'build',
   'functions.js':        'site',
   'function-handler.js': 'site',
   'inject-theme.js':     'build',

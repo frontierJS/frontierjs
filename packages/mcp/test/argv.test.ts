@@ -127,6 +127,8 @@ describe('every published tool is a command', () => {
     }
   })
 
+  // Every tool of two real apps through the SDK's validator: about 1.5 s alone,
+  // 6.5 s under the full CI's parallel suites, past bun's 5 s default.
   test('every flag set at once parses, and the server\'s own validator takes the result', () => {
     const refused: string[] = []
     for (const t of ALL) {
@@ -136,7 +138,7 @@ describe('every published tool is a command', () => {
       if (why) refused.push(`${t.name}: ${why}`)
     }
     expect(refused).toEqual([])
-  })
+  }, 30_000)
 
   test('a tool with no described payload still takes one, through --data', () => {
     const undescribed = ALL.map(commandFor).filter(c => c.payload === 'undescribed')

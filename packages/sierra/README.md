@@ -1176,6 +1176,11 @@ vite --config config/vite.config.js                      # dev, over the surface
 the fixture, starts that server and loads the bundles **cross-origin** through it, so the
 CORS and cache answers under test are the ones that ship.
 
+A host that serves `dist/embeds` as plain files (Outpost's static origin, Cloudflare)
+gets the same answers from the `_headers` the build writes beside the scripts, plus an
+`index.html` listing them, because a static release needs one at its root. An
+`index.html` the app put there is kept.
+
 An element that arrives after the script has run is mounted too (a tag manager, a CMS,
 a host-page route change), and a script included twice produces one widget, not two.
 

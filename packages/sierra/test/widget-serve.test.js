@@ -10,11 +10,14 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { serveWidgets } from '../src/widget/serve.js'
+import { generateWidgetOrigin } from '../src/postbuild/widget-headers.js'
+import { headerUnder } from '../src/postbuild/headers.js'
+import { ALLOWED_METHODS } from '../src/serve/http-answers.js'
 
 let DIR, OUTSIDE, server
 
@@ -203,5 +206,43 @@ describe('what it costs the host page', () => {
   test('a preflight is cached, so a widget does not pay two round trips per call', async () => {
     const res = await get('/buy-button.js', { method: 'OPTIONS' })
     expect(Number(res.headers.get('access-control-max-age'))).toBeGreaterThan(0)
+  })
+})
+
+describe('what a host serving the files as plain files is told', () => {
+  // Outpost's static origin and Cloudflare serve dist/embeds with no Sierra in
+  // front of it, so `_headers` is the only way the rule reaches them.
+  let rules
+
+  beforeAll(async () => {
+    await generateWidgetOrigin(DIR, ['buy-button.js', 'cta-featured.js', 'big.js'])
+    rules = readFileSync(join(DIR, '_headers'), 'utf8')
+  })
+
+  test('every path gets the cache and CORS answer serveWidgets sends', async () => {
+    const paths = ['/buy-button.js', '/cta-featured.js', '/assets/chunk-A1b2C3d4.js',
+      '/assets/chunk-A1b2C3d4.js.map', '/assets/my-file-name.js.map']
+    for (const path of paths) {
+      const served = (await get(path)).headers
+      for (const name of ['cache-control', 'access-control-allow-origin', 'access-control-allow-methods', 'timing-allow-origin'])
+        expect(headerUnder(rules, path, name), `${path} ${name}`).toBe(served.get(name))
+    }
+  })
+
+  test('the methods it names are the ones the origin answers', () => {
+    expect(headerUnder(rules, '/buy-button.js', 'access-control-allow-methods')).toBe(ALLOWED_METHODS)
+  })
+
+  test('the root answers a list, which a static release needs and a later build replaces', async () => {
+    const first = readFileSync(join(DIR, 'index.html'), 'utf8')
+    expect(first).toContain('buy-button.js')
+    await generateWidgetOrigin(DIR, ['only.js'])
+    expect(readFileSync(join(DIR, 'index.html'), 'utf8')).toContain('only.js')
+  })
+
+  test("…but an app's own index.html is kept", async () => {
+    writeFileSync(join(DIR, 'index.html'), '<p>ours</p>')
+    await generateWidgetOrigin(DIR, ['buy-button.js'])
+    expect(readFileSync(join(DIR, 'index.html'), 'utf8')).toBe('<p>ours</p>')
   })
 })

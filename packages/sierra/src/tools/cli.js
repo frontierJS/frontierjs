@@ -150,6 +150,12 @@ async function cmdWidgets() {
   })
 
   if (!built.length) process.exit(0)
+  const { generateWidgetOrigin } = await import('../postbuild/widget-headers.js')
+  const origin = await generateWidgetOrigin(
+    resolve(viteConfig.root ?? process.cwd(), w.outDir ?? 'dist/embeds'),
+    built.map(b => b.fileName),
+  )
+  console.log(`  ·  ${origin}`)
   console.log(`\n  ✓  ${built.length} widget(s) → ${w.outDir ?? 'dist/embeds'}/\n`)
 
   // `--serve` is the other half of the surface: a widget is deployed as static

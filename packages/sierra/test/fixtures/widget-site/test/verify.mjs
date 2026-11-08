@@ -66,11 +66,16 @@ if (!existsSync(join(EMBEDS, 'Counter.js'))) {
 // Asserted off the FILES, before a browser is involved: a widget that is not one
 // self-contained classic script has already failed, whatever the page then does.
 
-const emitted = (await readdir(EMBEDS)).sort()
+// `_headers` and `index.html` are the origin's, for a host serving these as
+// plain files; anything else beside the scripts is a request nobody asked for.
+const ORIGIN_FILES = ['_headers', 'index.html']
+const listed  = (await readdir(EMBEDS)).sort()
+const emitted = listed.filter(f => !ORIGIN_FILES.includes(f))
 const counterSrc = await readFile(join(EMBEDS, 'Counter.js'), 'utf8')
 
 const fileChecks = {
   emitted,
+  originFiles: ORIGIN_FILES.filter(f => listed.includes(f)),
   // A bare `import`/`export` statement means the file is a module, and a
   // classic <script> tag cannot run it.
   hasModuleSyntax: /^\s*(import|export)\s/m.test(counterSrc),
@@ -392,6 +397,7 @@ const EXPECTED = {
   // Two widgets in, two scripts out — and nothing else. A .css beside them is a
   // request the host page was never told to make.
   emitted:            ['Counter.js', 'Kit.js', 'LeadForm.js'],
+  originFiles:        ['_headers', 'index.html'],
   hasModuleSyntax:    false,   // IIFE — a classic <script> can run it
   hasOwnCss:          true,    // the component's <style>, inside the script
   leadHasImportedCss: true,    // an imported stylesheet, folded in

@@ -731,6 +731,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 
 ### proposed
 
+- `widget-loader.md` — one pasted `<script data-form=KEY>`: a loader asks the API what the key is and imports that widget's hashed bundle; Q1 recommend Sierra emits it; decide before ELA's cutover
 - `demo-box.md` — the demo box: one shared Basecamp + Outpost, a 24-hour demo Workspace per visitor, the site streams `fli basecamp:demo <name>`
 - `agent-client-ui.md` — a Resource rendered inside the agent's client: MCP Apps and A2UI as Mesa targets
 - `api-ontology.md` — the API realm's primitives: the words Junction spells and no register defines

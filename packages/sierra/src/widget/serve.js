@@ -25,9 +25,9 @@ import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
-import { isHashedAsset } from '../postbuild/hashed-asset.js'
+import { cacheFor, widgetHeaders } from '../postbuild/widget-headers.js'
 import { relativePathFor, withinRoot } from '../serve/served-path.js'
-import { bodyAnswer, methodAnswer, ALLOWED_METHODS } from '../serve/http-answers.js'
+import { bodyAnswer, methodAnswer } from '../serve/http-answers.js'
 
 import { contentTypeFor } from '@frontierjs/toolbelt/mime'
 
@@ -38,13 +38,6 @@ import { contentTypeFor } from '@frontierjs/toolbelt/mime'
 // With `nosniff` set, an `application/octet-stream` is not a guess the browser
 // recovers from — a `.wasm` served that way cannot be `instantiateStreaming`'d
 // at all, and `.woff` (not `2`) is still what an older face ships as.
-
-function cacheFor(path) {
-  if (isHashedAsset(path)) return 'public, max-age=31536000, immutable'
-  // The entry: a host page's <script src> is written once and never updated, so
-  // a long max-age here is a widget nobody can ship a fix to.
-  return 'public, max-age=300, must-revalidate'
-}
 
 /**
  * Serve `dir` as a widget origin.
@@ -67,20 +60,8 @@ export async function serveWidgets({
   const rootDir = resolve(dir)
 
   const server = createServer(async (req, res) => {
-    const headers = {
-      'Access-Control-Allow-Origin': origin,
-      // A widget fetching its own API from the host page sends these; answering
-      // them here costs nothing and a missing one is a blank widget with a
-      // console message on somebody else's site.
-      'Access-Control-Allow-Methods': ALLOWED_METHODS,
-      'Access-Control-Allow-Headers': 'Content-Type',
-      // Without this a browser preflights EVERY cross-origin fetch this widget
-      // makes, so a page that loads the widget once pays two round trips for
-      // every one it needs. Ten minutes is the ceiling Chromium honors.
-      'Access-Control-Max-Age': '600',
-      'Timing-Allow-Origin': origin,
-      'X-Content-Type-Options': 'nosniff',
-    }
+    // The same headers `_headers` gives a host serving the build as plain files.
+    const headers = widgetHeaders(origin)
 
     // Everything below is inside one try. The handler is `async`, so anything
     // that throws becomes an unhandled rejection — which node answers by
