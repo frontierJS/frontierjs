@@ -34,6 +34,24 @@ if ($.config.doWeb) {
   }
 }
 
+// widgets/ is built by sierra's own command from its own directory, so the
+// directory is what a widgets side needs (the same check as web/ above).
+if ($.config.doWidgets) {
+  const { existsSync } = await import('fs')
+  if (!existsSync(`${$.paths.root}/widgets`)) {
+    log.error('deploy.widgets is set and this app has no widgets/ to deploy. Set deploy.widgets = false in frontier.config.js, or remove the key.')
+    $.config.abort = true
+    return
+  }
+  // Built and released with no domain, a widget origin answers nobody, and a
+  // guessed hostname would write DNS (FJS-D2033).
+  if (!deployConf.widgets?.domain) {
+    log.error('deploy.widgets names no domain. Set deploy.widgets.domain in frontier.config.js, or set deploy.widgets = false.')
+    $.config.abort = true
+    return
+  }
+}
+
 $.config.host       = host
 $.config.appId      = appId
 $.config.apiPort    = apiPort
@@ -71,11 +89,11 @@ for (const h of hosts) {
   let names = []
   try {
     const edge = edgeNames(deployConf)
-    names = [edge.web.domain, edge.api.domain].filter(Boolean)
+    names = [edge.web.domain, edge.api.domain, edge.widgets.domain].filter(Boolean)
   } catch (e) {
     if (!(e instanceof EdgeError)) throw e
     // 03-build-web refuses the same names after the ship and the install.
-    if ($.config.doWeb) {
+    if ($.config.doWeb || $.config.doWidgets) {
       log.error(e.message)
       $.config.abort = true
       return

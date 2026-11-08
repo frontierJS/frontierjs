@@ -138,6 +138,8 @@ if (deployConf?.server) {
   const bothSides = !flag.api && !flag.web && !siteOnly
   const doApi     = bothSides || flag.api
   const doWeb     = (bothSides || flag.web) && deployConf.web !== false
+  // widgets/ rides with the web side: `--web` and a full deploy release it, `--api` does not.
+  const doWidgets = (bothSides || flag.web) && widgetsOn(deployConf)
 
   if (flag.site && target !== 'production') {
     log.error(`--site publishes siteUrl's domain, which only a production deploy does — add --production`)
@@ -163,10 +165,19 @@ if (deployConf?.server) {
     return
   }
 
+  // The widget origin is served from the machine and path the edge is written
+  // for (`api ?? web`), so it needs one of them to exist.
+  if (doWidgets && !api && !web) {
+    log.error(`deploy.widgets needs a web or API side to build from; neither resolved on target: ${target}`)
+    $.config.abort = true
+    return
+  }
+
   const hosts = distinctHosts([api, web, builder])
   const split = api && web && (api.host !== web.host || api.path !== web.path)
 
-  const scope = siteOnly ? 'site only' : doApi && web ? 'api + web' : doApi ? 'api only' : 'web only'
+  const sides = siteOnly ? 'site only' : doApi && web ? 'api + web' : doApi ? 'api only' : 'web only'
+  const scope = doWidgets ? `${sides} + widgets` : sides
   log.info(`Deploying ${scope} to ${target}${branchStr}`)
   for (const h of hosts) log.info(`  ${h.host}:${h.path}`)
   if (builder && api && (builder.host !== api.host || builder.path !== api.path))
@@ -180,6 +191,7 @@ if (deployConf?.server) {
   $.config.doApi      = Boolean(api) && !siteOnly
   $.config.siteOnly   = siteOnly
   $.config.doWeb      = Boolean(web)
+  $.config.doWidgets  = doWidgets
   $.config.hosts      = hosts
   $.config.split      = split
   // The API side is the one that carries the database, the container and the
@@ -201,7 +213,7 @@ if (deployConf?.server) {
   // leaves 09-cleanup as the only step that executes, and it releases locks
   // this run never took.
   if (flag.plan) {
-    const plan = await deployPlan($, flag, { target, deployConf, doApi, doWeb })
+    const plan = await deployPlan($, flag, { target, deployConf, doApi, doWeb, doWidgets })
     if (plan.error) log.error(plan.error)
     else {
       console.log()

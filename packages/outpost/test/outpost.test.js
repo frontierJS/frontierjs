@@ -5218,7 +5218,7 @@ describe('a web build', () => {
   const COMMIT = 'c0ffee'.padEnd(40, '0')
   const BODY   = { app_id: 'app-1', source: SOURCE, commit: COMMIT }
   // `web` and `manifest` lay down what the clone would hold; the vite run writes its output.
-  const serverFor = ({ web = true, widgets = false, manifest = { name: 'kos', dependencies: { '@frontierjs/junction': '^0.4.0' } } } = {}) => {
+  const serverFor = ({ web = true, widgets = false, outDirFlag = true, manifest = { name: 'kos', dependencies: { '@frontierjs/junction': '^0.4.0' } } } = {}) => {
     const workDir = mkdtempSync(join(tmpdir(), 'outpost-web-'))
     const dir = `${workDir}/app-1.web`
     mkdirSync(dir, { recursive: true })
@@ -5227,8 +5227,7 @@ describe('a web build', () => {
     if (widgets) mkdirSync(`${dir}/widgets/config`, { recursive: true }), writeFileSync(`${dir}/widgets/config/sierra.config.js`, '')
     const fake = fakeRunner({ 'git -C': { stdout: COMMIT + '\n' } })
     const run = async (argv, opts) => {
-      // The copy step stands for `sierra widgets` and the config's outDir together.
-      if (argv.includes('-e') && argv.at(-2) === '-e') {
+      if (argv.includes('sierra') && argv.includes('--out-dir') && outDirFlag) {
         mkdirSync(`${dir}/.web-release`, { recursive: true })
         writeFileSync(`${dir}/.web-release/lawn.js`, 'void 0')
         writeFileSync(`${dir}/.web-release/_headers`, '/*\n  Access-Control-Allow-Origin: *\n')
@@ -5293,15 +5292,19 @@ describe('a web build', () => {
     const runs = argv().filter(c => c.startsWith('docker run --rm'))
     expect(runs.map(tail).map(c => c.split('\n')[0])).toEqual([
       'bun install --frozen-lockfile',
-      'bun --bun sierra widgets',
-      "bun -e import { cpSync, rmSync } from 'node:fs'",
+      'bun --bun sierra widgets --out-dir /src/.web-release',
     ])
     expect(runs[1]).toContain('-w /src/widgets')
     expect(runs[1]).toContain(`-e NODE_ENV=production -e VITE_FJS_BUILD=${COMMIT} -e FRONTIER_PUBLIC_API_URL=https://kos.test`)
     expect(runs[1]).not.toContain('FRONTIER_PUBLIC_WIDGETS_URL')
-    expect(runs[2]).toContain("config.widgets?.outDir ?? 'dist/embeds'")
-    expect(runs[2]).toContain('"/src/.web-release"')
     expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.web`)
+  })
+
+  test('a Sierra that ignores --out-dir leaves nothing where it was told, and is refused by name', async () => {
+    const { server } = serverFor({ web: false, widgets: true, outDirFlag: false })
+    const res = await send(server, 'POST', '/web/build', { ...BODY, surface: 'widgets', api_url: 'https://kos.test' })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain('a Sierra older than --out-dir')
   })
 
   test('a commit with no widgets/ answers skipped, and one with no widget config is refused by name', async () => {

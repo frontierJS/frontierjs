@@ -75,20 +75,6 @@ const WIDGETS_CONFIG = 'config/sierra.config.js'
 // a query could smuggle into the page.
 const ORIGIN = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/
 
-/** The script that copies a widget build from the config's `widgets.outDir`
- *  (Sierra's default `dist/embeds`) to `to`. Run in the build container,
- *  because answering the out dir means executing the app's config. */
-function widgetsCopy(to) {
-  return [
-    "import { cpSync, rmSync } from 'node:fs'",
-    "import { resolve } from 'node:path'",
-    `const mod = await import(resolve(${JSON.stringify(WIDGETS_CONFIG)}))`,
-    'const config = mod.default ?? mod',
-    `rmSync(${JSON.stringify(to)}, { recursive: true, force: true })`,
-    `cpSync(resolve(config.widgets?.outDir ?? 'dist/embeds'), ${JSON.stringify(to)}, { recursive: true })`,
-  ].join('\n')
-}
-
 // The largest file `POST /source/file` answers. A Dockerfile is a few KB; the
 // answer is a JSON body Basecamp stores on the App.
 const SOURCE_FILE_MAX = 64 * 1024
@@ -1103,11 +1089,8 @@ export function createDocker({
           'bun', '--bun', 'vite', 'build', '-c', config, '--outDir', `/src${rel}/${WEB_OUT}`, '--emptyOutDir'],
           { timeoutMs: 900_000 })
       } else {
-        // `sierra widgets` writes where the app's config says (`widgets.outDir`),
-        // which only the config can answer, so the copy to a known place runs
-        // in the container that may execute it.
-        await docker([...box(['-w', `/src${rel}/widgets`, ...env]), 'bun', '--bun', 'sierra', 'widgets'], { timeoutMs: 900_000 })
-        await docker([...box(['-w', `/src${rel}/widgets`]), 'bun', '-e', widgetsCopy(`/src${rel}/${WEB_OUT}`)], { timeoutMs: 120_000 })
+        await docker([...box(['-w', `/src${rel}/widgets`, ...env]),
+          'bun', '--bun', 'sierra', 'widgets', '--out-dir', `/src${rel}/${WEB_OUT}`], { timeoutMs: 900_000 })
       }
       return { commit, surface, files: await builtFiles(`${host}/${WEB_OUT}`, surface) }
     } finally {
@@ -1118,7 +1101,10 @@ export function createDocker({
   /** The regular files under `out`, as `/static/publish` takes them, refused
    *  by name over what that route accepts: the whole list travels in one body. */
   async function builtFiles(out, surface = 'web') {
-    if (!existsSync(out)) throw new Error(`the ${surface}/ build wrote nothing`)
+    // A Sierra older than `--out-dir` (`FJS-D2036`) builds into its own outDir.
+    if (!existsSync(out)) throw new Error(surface === 'widgets'
+      ? 'the widgets/ build wrote nothing where it was told: a Sierra older than --out-dir builds into its own outDir, so move @frontierjs/sierra to a release with it'
+      : `the ${surface}/ build wrote nothing`)
     const entries = (await readdir(out, { recursive: true, withFileTypes: true })).filter(e => e.isFile())
     if (entries.length > LIMITS.files) throw new Error(`${surface}/ built ${entries.length} files, over the ${LIMITS.files} a static publish accepts`)
     const files = []

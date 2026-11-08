@@ -14,6 +14,9 @@ const dirs = [
   serverPath,
   dbDir,
   `${serverPath}/releases`,
+  // The widget origin's own releases/ and current, so a rollback of one never
+  // reads the other's history.
+  ...(widgetsOn($.config.deployConf) ? [`${widgetsPathOf($.config.deployConf, serverPath)}/releases`] : []),
 ].join(' ')
 
 machine.run(`mkdir -p ${dirs} && (umask 077 && mkdir -p ${secretsDir})`)
@@ -105,6 +108,7 @@ machine.run(`chown -R ${owner} ${secretsDir} 2>/dev/null || sudo chown -R ${owne
 log.done('Directories ready')
 log.info(`  ${serverPath}/db          ← SQLite database, owned by ${owner.split(':')[0]}`)
 log.info(`  ${serverPath}/releases/   ← web release history`)
+if (widgetsOn($.config.deployConf)) log.info(`  ${widgetsPathOf($.config.deployConf, serverPath)}/releases/   ← widget release history`)
 log.info(`  ${serverPath}/src/        ← the app as committed, written by each deploy`)
 log.info(`  ${envFile}  ← ${envNote}`)
 log.info(`  ${secretsDir}/  ← a secret as its own file (mode 400), passed to the API as <KEY>_FILE`)

@@ -15,7 +15,8 @@ import { join }   from 'path'
 import { tmpdir } from 'os'
 
 import { fenceBunGlobal } from '../core/bun-fence.js'
-import { scaffoldWidgetSurface, widgetTag, isLegalWidgetTag } from '../core/widget-surface.js'
+import { scaffoldWidgetSurface, widgetTag } from '../core/widget-surface.js'
+import { isLegalTag } from '@frontierjs/sierra/widget'
 
 const NEW_MD = readFileSync(join(import.meta.dir, '../commands/project/new.md'), 'utf8')
 const roots = []
@@ -24,7 +25,7 @@ afterAll(() => { for (const r of roots) rmSync(r, { recursive: true, force: true
 test('the widget `fli new --widgets` names is a tag a browser will register', () => {
   const call = NEW_MD.match(/scaffoldWidgetSurface\(\{[^}]*name:\s*'([^']+)'/)
   expect(call).not.toBeNull()
-  expect(isLegalWidgetTag(widgetTag(call[1], ''))).toBe(true)
+  expect(isLegalTag(widgetTag(call[1], ''))).toBe(true)
 })
 
 test('scaffoldWidgetSurface with no name scaffolds rather than refusing', () => {
@@ -428,3 +429,24 @@ test('fli new <name> --here names the app <name>, not the folder', () => {
   expect(pkg.name).toMatch(/\/transit$/)
   expect(readFileSync(join(dir, '.fli.json'), 'utf8')).not.toContain('transit-next')
 }, 60_000)
+
+// widgets-deploy 3.4: the widget origin is static files released by
+// `deploy.widgets`, so the scaffold no longer writes a container for it.
+test('scaffoldWidgetSurface writes no widgets/deploy/ (Dockerfile and serve.js)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'fjs-new-widget-nodeploy-'))
+  roots.push(root)
+  const { written } = scaffoldWidgetSurface({ root })
+  expect(written.some(f => String(f).includes('deploy/'))).toBe(false)
+  expect(existsSync(join(root, 'widgets/deploy'))).toBe(false)
+  expect(existsSync(join(root, 'widgets/config/sierra.config.js'))).toBe(true)
+})
+
+test('make:deploy writes deploy.widgets only when it is given the hostname', () => {
+  const text = readFileSync(new URL('../commands/make/deploy.md', import.meta.url), 'utf8')
+  const fn = text.slice(text.indexOf('const makeDeployBlock ='), text.indexOf('// ─── Inject deploy block'))
+  const makeDeployBlock = new Function(`${fn}; return makeDeployBlock`)()
+  const without = makeDeployBlock('shop', 'box', 'shop.example.com', '/api/health', true)
+  const withIt  = makeDeployBlock('shop', 'box', 'shop.example.com', '/api/health', true, 'widgets.shop.example.com')
+  expect(without).not.toContain('widgets')
+  expect(withIt).toContain("widgets: {\n      domain: 'widgets.shop.example.com',\n      keep_releases: 3,")
+})

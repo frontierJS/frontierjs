@@ -12,6 +12,7 @@ import { readFileSync } from 'fs'
 import { createHash } from 'crypto'
 import {
   edgeNames, apiOrigin, edgeRoutes, plainRoutes, applyEdge, routeId, accessLogPath, INGRESS_SERVER, PLAIN_SERVER, CLOUDFLARE_RANGES,
+  widgetsOrigin, widgetsApiOrigin, widgetsOn, widgetsPathOf, holdsRoute,
   parseConfigRead, parseConfigWrite, heldBy, doorRefusal, writeConfigScript, routeDials, EdgeError, inlineScriptHashes, inlineStyleHashes, OAUTH_WELL_KNOWN,
 } from '../core/edge.js'
 import { guardId } from '../core/pause.js'
@@ -305,8 +306,8 @@ describe('the steps read the domains here, and nowhere else', () => {
 
   test('the web build inlines the origin this module names, and checks the bundle carries it', () => {
     const build = src('_steps-docker/03-build-web.md')
-    expect(build).toContain('apiOrigin(edgeNames(deployConf))')
-    expect(build).toContain('webBuildEnv({ commit, apiOrigin: origin })')
+    expect(build).toContain('origin  = apiOrigin(names)')
+    expect(build).toContain('webBuildEnv({ commit, apiOrigin: origin, widgetsOrigin: widgets })')
     expect(build).toMatch(/grep -rl .* '\$\{origin\}'/)
   })
 })
@@ -446,14 +447,14 @@ describe('routeDials (FJS-D1890)', () => {
 
 // FJS-4026: a release copied every asset its predecessor held, merged ones
 // included, so release N carried release 1's files and pruning freed none.
-// Runs the step's own merge and prune scripts against a directory, three deploys.
+// Runs `mergeAndPrune`'s own scripts (the web and widgets steps share them) against a directory, three deploys.
 describe('the web release merge (FJS-4026)', () => {
   const { execFileSync } = require('child_process')
   const { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, utimesSync, rmSync } = require('fs')
   const { tmpdir } = require('os')
   const { join } = require('path')
 
-  const step    = src('_steps-docker/03-build-web.md')
+  const step    = src('_module.md')
   const merge   = step.match(/machine\.run\(`(\[ -d "\$\{releaseDir\}[^`]*)`\)/)[1]
   const prune   = step.match(/machine\.run\(`(ls -1dt [^`]*xargs rm -rf --)`\)/)[1]
   const render  = (script, vars) => new Function(...Object.keys(vars), `return \`${script}\``)(...Object.values(vars))
@@ -470,7 +471,7 @@ describe('the web release merge (FJS-4026)', () => {
         writeFileSync(`${releaseDir}/index.html`, commit)
         writeFileSync(`${releaseDir}/${assetDir}/${commit}.js`, commit)
         utimesSync(releaseDir, tick, tick++)
-        const vars = { serverPath, releaseDir, assetDir, keepReleases }
+        const vars = { releasesRoot: `${serverPath}/releases`, releaseDir, assetDir, keep: keepReleases }
         execFileSync('bash', ['-c', render(merge, vars)])
         execFileSync('bash', ['-c', render(prune, vars)])
       }
@@ -602,6 +603,132 @@ describe('one door per app on a box (FJS-D1967)', () => {
     expect(() => edgeNames({ web: { domain: '' } })).toThrow(EdgeError)
     const step = readFileSync(new URL('../commands/deploy/_steps-docker/01-preflight.md', import.meta.url), 'utf8')
     const refusal = step.slice(step.indexOf('edgeNames(deployConf)'), step.indexOf('acquireLock('))
-    expect(refusal).toMatch(/if \(\$\.config\.doWeb\) \{\s*log\.error\(e\.message\)\s*\$\.config\.abort = true\s*return/)
+    expect(refusal).toMatch(/if \(\$\.config\.doWeb \|\| \$\.config\.doWidgets\) \{\s*log\.error\(e\.message\)\s*\$\.config\.abort = true\s*return/)
+  })
+
+  // Built and released with no domain, the widget origin answers nobody.
+  test('deploy.widgets with no domain is refused in the preflight, before the lock', () => {
+    const step = readFileSync(new URL('../commands/deploy/_steps-docker/01-preflight.md', import.meta.url), 'utf8')
+    const refusal = step.indexOf('if (!deployConf.widgets?.domain)')
+    expect(refusal).toBeGreaterThan(step.indexOf('if ($.config.doWidgets)'))
+    expect(refusal).toBeLessThan(step.indexOf('acquireLock('))
+  })
+})
+
+// ─── the widget origin (widgets-deploy 3.1–3.3) ──────────────────────────────
+
+describe('deploy.widgets: the third name', () => {
+  const deploy = { web: { domain: 'app.example.com' }, widgets: { domain: 'Widgets.Example.com', keep_releases: 2 } }
+
+  test('graded like the other two, and lowercased', () => {
+    const names = edgeNames(deploy)
+    expect(names.widgets.domain).toBe('widgets.example.com')
+    expect(widgetsOrigin(names)).toBe('https://widgets.example.com')
+    expect(() => edgeNames({ ...deploy, widgets: { domain: 'not a host' } })).toThrow(/deploy\.widgets\.domain/)
+    expect(() => edgeNames({ ...deploy, widgets: { domain: 'x.example.com', ssl: true } })).toThrow(/deploy\.widgets\.ssl/)
+  })
+
+  test('absent and false name no widget origin', () => {
+    for (const widgets of [undefined, false]) {
+      const names = edgeNames({ web: { domain: 'app.example.com' }, widgets })
+      expect(names.widgets.domain).toBeNull()
+      expect(widgetsOrigin(names)).toBeNull()
+      expect(widgetsOn({ widgets })).toBe(false)
+    }
+    expect(widgetsOn(deploy)).toBe(true)
+  })
+
+  test('the web or API domain is not a widget origin', () => {
+    expect(() => edgeNames({ web: { domain: 'a.example.com' }, widgets: { domain: 'a.example.com' } })).toThrow(/web domain/)
+    expect(() => edgeNames({ web: { domain: 'a.example.com' }, api: { domain: 'api.example.com' }, widgets: { domain: 'api.example.com' } })).toThrow(/API domain/)
+  })
+
+  test('the widgets bundle bakes the API origin: the API domain, else the web domain', () => {
+    expect(widgetsApiOrigin(edgeNames(deploy))).toBe('https://app.example.com')
+    expect(widgetsApiOrigin(edgeNames({ ...deploy, api: { domain: 'api.example.com' } }))).toBe('https://api.example.com')
+    expect(widgetsApiOrigin(edgeNames({ widgets: { domain: 'w.example.com' } }))).toBeNull()
+  })
+
+  test('releases live beside the app\'s own unless the config says where', () => {
+    expect(widgetsPathOf(deploy, '/apps/shop')).toBe('/apps/shop/widgets')
+    expect(widgetsPathOf({ widgets: { path: '/srv/w' } }, '/apps/shop')).toBe('/srv/w')
+  })
+})
+
+describe('the widget route', () => {
+  const names = edgeNames({ web: { domain: 'app.example.com' }, widgets: { domain: 'widgets.example.com' } })
+  const files = ['LeadForm.js', 'assets/chunk-abcd1234.js', 'assets/plain.css', 'index.html']
+  const routes = edgeRoutes({ appId: 'shop', serverPath: '/apps/shop', apiPort: 3000, web: names.web, api: names.api, widgets: { ...names.widgets, path: '/apps/shop/widgets', files } })
+  const widget = routes.find(r => r['@id'] === routeId('shop', 'widgets'))
+  const text   = JSON.stringify(widget)
+
+  test('is a third route on its own host, rooted at its own current', () => {
+    expect(routes).toHaveLength(2)
+    expect(widget.match[0].host).toEqual(['widgets.example.com'])
+    expect(inner(widget)[0].handle[0]).toEqual({ handler: 'vars', root: '/apps/shop/widgets/current' })
+  })
+
+  test('has no CSP, no SPA fallback, no API proxy and no pause guard', () => {
+    expect(text).not.toMatch(/Content-Security-Policy|index\.html"\}|try_files|reverse_proxy|X-Frame-Options/)
+  })
+
+  test('its headers are Sierra\'s: CORS from widgetHeaders, cache from cacheFor per file', async () => {
+    const { widgetHeaders, cacheFor, ENTRY } = await import('@frontierjs/sierra/widget-headers')
+    const setOf = (route) => route.handle.find(h => h.handler === 'headers').response.set
+    const rules = inner(widget).filter(x => x.handle.some(h => h.handler === 'headers'))
+    const hashed = rules.find(x => x.match)
+    expect(hashed.match[0].path).toEqual(['/assets/chunk-abcd1234.js'])
+    expect(setOf(hashed)['Cache-Control']).toEqual([cacheFor('assets/chunk-abcd1234.js')])
+    const dflt = rules.find(x => !x.match)
+    expect(setOf(dflt)['Cache-Control']).toEqual([ENTRY])
+    for (const [k, v] of Object.entries(widgetHeaders())) {
+      expect(setOf(hashed)[k]).toEqual([v])
+      expect(setOf(dflt)[k]).toEqual([v])
+    }
+  })
+
+  test('answers a preflight and leaves a missing file a 404', () => {
+    const options = inner(widget).find(x => x.match?.[0].method)
+    expect(options.handle[0].status_code).toBe(204)
+    expect(handlers(widget)).not.toContain('rewrite')
+  })
+
+  test('an app with the web route removed also loses the widget route, and holdsRoute sees it', () => {
+    const config = applyEdge({}, { appId: 'shop', routes })
+    expect(holdsRoute(config, 'shop')).toBe(true)
+    const cleared = applyEdge(config, { appId: 'shop', routes: [] })
+    expect(cleared.apps.http.servers[INGRESS_SERVER].routes).toEqual([])
+  })
+
+  test('another route\'s hostname is refused for the widget origin too', () => {
+    const config = { apps: { http: { servers: { [INGRESS_SERVER]: { routes: [{ '@id': 'fjs-x', match: [{ host: ['widgets.example.com'] }] }] } } } } }
+    expect(() => applyEdge(config, { appId: 'shop', routes })).toThrow(/already routed/)
+  })
+})
+
+describe('the steps carry the widget side', () => {
+  const read = (rel) => src(rel)
+  test('build, release and rollback steps exist, skipped without doWidgets', () => {
+    for (const f of ['_steps-docker/03b-build-widgets.md', '_steps-docker/08-release-widgets.md', '_steps-rollback/01b-rollback-widgets.md'])
+      expect(read(f)).toContain('skip: "!$.config.doWidgets"')
+  })
+
+  test('the build asks sierra for a directory it owns and refuses an empty one', () => {
+    const build = read('_steps-docker/03b-build-widgets.md')
+    expect(build).toContain('sierra widgets --out-dir "${building}"')
+    expect(build).toContain('widgetsBuildEnv({ commit, apiOrigin: origin })')
+    expect(build).toContain('older than --out-dir')
+  })
+
+  test('the web build bakes the widget origin, and routes written anywhere keep the widget route', () => {
+    expect(read('_steps-docker/03-build-web.md')).toContain('widgetsOrigin: widgets')
+    for (const f of ['_steps-docker/07b-edge.md', '_steps-setup/05-caddy.md'])
+      expect(read(f)).toContain('widgetsFor(')
+    expect(read('_module.md')).toMatch(/const widgets = widgetsFor\(machine, deployConf, serverPath\)\n\s+const \{ routes, plain, error \} = await edgeRoutesFor/)
+  })
+
+  test('setup makes the directories and points the DNS for the widget host', () => {
+    expect(read('_steps-setup/03-directories.md')).toContain('widgetsPathOf(')
+    expect(read('_steps-setup/06-dns.md')).toContain('edge.widgets.domain')
   })
 })

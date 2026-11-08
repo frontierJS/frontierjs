@@ -133,13 +133,5 @@ export function suggestedWidgetsHostname(webHostname) {
   return HOSTNAME.test(host) ? `widgets.${host}` : null
 }
 
-/** Where `sierra widgets` wrote, read off the line it prints. Its outDir is
- *  the widget config's and the CLI takes no flag for it; `dist/embeds` is
- *  Sierra's default when the line is absent. */
-export function widgetsOutDir(output) {
-  const m = /widget\(s\) → (.+?)\/?\s*$/m.exec(String(output ?? ''))
-  return m ? m[1] : 'dist/embeds'
-}
-
 /** `webBuildEnv` as a `K=v K=v` prefix for a shell line the target runs. */
 export const envPrefix = (env) => Object.entries(env).map(([k, v]) => `${k}=${v}`).join(' ')

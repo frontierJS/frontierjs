@@ -24,6 +24,7 @@
     "./devtools": "./src/devtools/index.js",
     "./widget": "./src/widget/index.js",
     "./widget/serve": "./src/widget/serve.js",
+    "./widget-headers": "./src/postbuild/widget-headers.js",
     "./mcp": "./src/mcp/index.js",
     "./site/serve": "./src/site/serve.js",
     "./site/compile": "./src/site/compile.js",

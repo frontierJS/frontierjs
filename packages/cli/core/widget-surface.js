@@ -7,7 +7,7 @@
  *
  * ── Why widgets are a surface and not a folder in web/ ────────────────────
  *
- * `widgets/` sits at the app root beside `api/` and `web/`, with the same six
+ * `widgets/` sits at the app root beside `api/` and `web/`, with the same
  * directories every sub-project has. That is not symmetry for its own sake —
  * every answer differs from the SPA's:
  *
@@ -27,8 +27,9 @@
  */
 
 import {
-  scaffoldPort, writeAbsent, viteScript, surfaceViteConfig, surfaceIndexHtml, surfaceServe, surfaceDockerfile,
+  scaffoldPort, writeAbsent, viteScript, surfaceViteConfig, surfaceIndexHtml,
 } from './scaffold/surface.js'
+import { isLegalTag } from '@frontierjs/sierra/widget'
 
 /** The six, minus the ones a build writes. `dist/` is output, never scaffolded. */
 export const WIDGET_SURFACE_DIRS = [
@@ -37,7 +38,6 @@ export const WIDGET_SURFACE_DIRS = [
   'src/styles',
   'public',
   'test',
-  'deploy',
 ]
 
 /**
@@ -47,20 +47,6 @@ export const WIDGET_SURFACE_DIRS = [
  */
 export function isWidgetName(name) {
   return /^[A-Z][A-Za-z0-9]*$/.test(name)
-}
-
-/**
- * Is this a tag a browser will register?
- *
- * Mirrors sierra's `isLegalTag`, which owns the runtime half — the cli does not
- * depend on sierra, the same reason `widgetTag` mirrors `kebab`. A custom
- * element name must contain a dash, and the prefix defaults to empty, so a
- * one-word widget scaffolds a tag that builds, deploys and then throws on every
- * page that embeds it. The check exists; without this it runs in a stranger's
- * browser.
- */
-export function isLegalWidgetTag(tag) {
-  return /^[a-z][a-z0-9._]*-[a-z0-9._-]*$/.test(String(tag))
 }
 
 /** `LeadForm` → `lead-form`. Mirrors sierra's `kebab`, which owns the runtime half. */
@@ -196,33 +182,6 @@ export function widgetHostPage({ name, prefix = '', appName = 'app', servePort =
 `
 }
 
-// ─── deployment ───────────────────────────────────────────────────────────────
-
-export function widgetServeEntry({ servePort = scaffoldPort('widgetServe') } = {}) {
-  return surfaceServe({
-    surface: 'widgets', dist: 'dist/embeds', label: 'widgets', servePort,
-    serve: 'serveWidgets', from: '@frontierjs/sierra/widget/serve',
-    about: `
-Static files and nothing else, with the two headers an embed depends on: CORS
-(the host page is on another origin by definition) and a cache answer per file
-kind (the entry's URL was pasted into a CMS a year ago and cannot change, so
-only content-addressed assets may be immutable).
-`,
-  })
-}
-
-export function widgetDockerfile({ servePort = scaffoldPort('widgetServe') } = {}) {
-  return surfaceDockerfile({
-    surface: 'widgets', dist: 'dist/embeds', servePort,
-    script: 'build:widgets',
-    about: `
-It is not in the API's image: a widget is released when the pages embedding it
-are ready, which is not when the API is, and a static origin is a different
-thing to run from an application server.
-`,
-  })
-}
-
 // ─── writing it ───────────────────────────────────────────────────────────────
 
 /**
@@ -249,7 +208,7 @@ export function scaffoldWidgetSurface({
   }
 
   const scaffoldTag = widgetTag(name, prefix)
-  if (!isLegalWidgetTag(scaffoldTag)) {
+  if (!isLegalTag(scaffoldTag)) {
     throw new Error(
       `"${name}" under prefix ${JSON.stringify(prefix)} is the tag <${scaffoldTag}>, which no ` +
       `browser will register — a custom element name must contain a dash. Pass ` +
@@ -264,8 +223,6 @@ export function scaffoldWidgetSurface({
     ['src/dev.js',                   widgetDevEntry()],
     [`src/embeds/${name}.mesa`,      widgetStarter({ name, prefix })],
     [`test/${scaffoldTag}.html`,     widgetHostPage({ name, prefix, appName, servePort })],
-    ['deploy/serve.js',              widgetServeEntry({ servePort })],
-    ['deploy/Dockerfile',            widgetDockerfile({ servePort })],
   ] })
 }
 

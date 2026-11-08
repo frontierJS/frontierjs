@@ -31,6 +31,10 @@
  * text/html and gets the page, the client asks for JSON and is proxied — the
  * call basecamp's dev proxy and image Caddy make. No snapshot keeps `/api/`.
  *
+ * **Three** — `deploy.widgets.domain` adds a third host, a static origin for
+ * the app's embeddable scripts (`widgetRoute`): no CSP, no SPA fallback, and
+ * the CORS and cache headers are Sierra's rule, never restated here.
+ *
  * **Two origins** — `deploy.api.domain` as well (`api.example.com` beside
  * `app.example.com`). The web route serves the SPA and proxies nothing; the API
  * route proxies every path. The web build is run with `FRONTIER_PUBLIC_API_URL` set to the
@@ -53,6 +57,7 @@
  */
 
 import { createHash } from 'crypto'
+import { ENTRY, cacheFor, widgetHeaders } from '@frontierjs/sierra/widget-headers'
 import { caddyGuard, guardId } from './pause.js'
 import { STREAM_CLOSE_DELAY } from './swap.js'
 
@@ -103,7 +108,7 @@ const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[
 /**
  * The two sides' names, graded.
  *
- * @returns {{ web: Side, api: Side }} where Side is `{ domain }`
+ * @returns {{ web: Side, api: Side, widgets: Side }} where Side is `{ domain }`
  * @throws {EdgeError} naming the key
  */
 export function edgeNames(deployConf) {
@@ -113,7 +118,9 @@ export function edgeNames(deployConf) {
     if (domain !== null && !HOSTNAME.test(String(domain))) {
       const fix = name === 'web'
         ? `Set it in frontier.config.js, or pass --domain <host> for this run.`
-        : `Set it in frontier.config.js, or remove the key to serve the API on the web domain.`
+        : name === 'widgets'
+          ? `Set it in frontier.config.js, or set deploy.widgets = false to deploy without a widget origin.`
+          : `Set it in frontier.config.js, or remove the key to serve the API on the web domain.`
       throw new EdgeError(`deploy.${name}.domain is ${JSON.stringify(domain)}, which is not a hostname. It is written into a Caddy route and a shell line, so it is refused rather than quoted. ${fix}`)
     }
     if (conf.ssl !== undefined)
@@ -122,11 +129,15 @@ export function edgeNames(deployConf) {
   }
   const web = side('web')
   const api = side('api')
+  const widgets = side('widgets')
 
   if (api.domain && api.domain === web.domain)
     throw new EdgeError(`deploy.api.domain is the web domain. One origin is what leaving it unset means — the web route already proxies /api/ and /ws.`)
+  // A widget origin that is the page's own would serve the SPA's CSP and fallback to a stranger's <script>.
+  if (widgets.domain && [web.domain, api.domain].includes(widgets.domain))
+    throw new EdgeError(`deploy.widgets.domain is the ${widgets.domain === web.domain ? 'web' : 'API'} domain. A widget runs on other sites' pages, so its origin is its own: give it a hostname of its own (widgets.<your domain>).`)
 
-  return { web, api }
+  return { web, api, widgets }
 }
 
 /** The API's public origin under two origins; null under one, where the page's own origin is right. */
@@ -134,12 +145,32 @@ export function apiOrigin(names) {
   return names.api.domain ? `https://${names.api.domain}` : null
 }
 
+/** The widget origin, or null where `deploy.widgets` names none. */
+export function widgetsOrigin(names) {
+  return names.widgets?.domain ? `https://${names.widgets.domain}` : null
+}
+
+/**
+ * The origin a widget bundle bakes for its API calls: the API's own under two
+ * origins, else the web domain, which proxies it. Null when neither is named,
+ * and a widget on another site has no origin of its own to fall back on.
+ */
+export function widgetsApiOrigin(names) {
+  return apiOrigin(names) ?? (names.web.domain ? `https://${names.web.domain}` : null)
+}
+
+/** Whether `deploy.widgets` asks for a widget origin: absent and `false` both mean no. */
+export const widgetsOn = (deployConf) => Boolean(deployConf?.widgets)
+
+/** Where the widget releases live on the box: `deploy.widgets.path`, else beside the app's own `releases/`. */
+export const widgetsPathOf = (deployConf, serverPath) => deployConf?.widgets?.path ?? `${serverPath}/widgets`
+
 /**
  * A route's `@id`, which is also its access logger's name. `fli-`, so it never
  * meets Outpost's `fjs-<app>`. `plain` is the route on the :80 server.
  */
 export const routeId = (appId, side = 'web', plain = false) =>
-  `fli-${appId}${side === 'api' ? '-api' : ''}${plain ? '-http' : ''}`
+  `fli-${appId}${side === 'api' ? '-api' : side === 'widgets' ? '-widgets' : ''}${plain ? '-http' : ''}`
 
 /** Where a route's access log is written. Caddy rolls it itself, so nothing else has to. */
 export const accessLogPath = (id) => `/var/log/caddy/${id}.access.log`
@@ -176,7 +207,7 @@ export const OAUTH_WELL_KNOWN = '/.well-known/oauth-*'
  * @throws {EdgeError} when no side names a domain: Caddy routes by hostname, and
  *   a route matching every host would take over whatever else the machine serves.
  */
-export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null, scripts = [], styles = [] }) {
+export function edgeRoutes({ appId, serverPath, apiPort, web, api, widgets = null, paths = null, scripts = [], styles = [] }) {
   const split = Boolean(api?.domain)
   if (!web?.domain && !split)
     throw new EdgeError('deploy.web.domain is not set. Caddy routes by hostname and fetches a certificate for it, so the edge needs one.')
@@ -193,6 +224,10 @@ export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null,
   if (split) routes.push(route({
     id: routeId(appId, 'api'), host: api.domain,
     inner: [caddyGuard(serverPath, guardId(appId, 'api')), apiRoute(apiPort)],
+  }))
+  if (widgets?.domain) routes.push(route({
+    id: routeId(appId, 'widgets'), host: widgets.domain,
+    inner: widgetFiles(`${widgets.path}/current`, widgets.files ?? []),
   }))
   return routes
 }
@@ -284,6 +319,35 @@ const navigation = (roots) => ({
   match:  [{ path: roots.flatMap(p => [p, `${p}/*`]), header: { Accept: ['*text/html*'] }, not: [{ path: NAVIGATED }] }],
   handle: [{ handler: 'rewrite', uri: '/index.html' }],
 })
+
+// The widget origin: static files and nothing else. No CSP (the scripts run on
+// other sites' pages, and a policy here would govern nothing but the index), no
+// SPA fallback (a missing script must be a 404, not a 200 of HTML that fails as
+// a MIME error on a stranger's site). The headers are `widgetHeaders()`; each
+// file's Cache-Control is `cacheFor()` asked of the real release's file list,
+// so the hashed-asset rule stays Sierra's and is never parsed back out of
+// `_headers` or restated as a pattern.
+const widgetFiles = (root, files) => {
+  const cors  = Object.fromEntries(Object.entries(widgetHeaders()).map(([k, v]) => [k, [v]]))
+  const serve = (cache) => [
+    { handler: 'headers', response: { set: { ...cors, 'Cache-Control': [cache] } } },
+    { handler: 'encode', encodings: { gzip: {} }, prefer: ['gzip'] },
+    { handler: 'file_server' },
+  ]
+  const byCache = new Map()
+  for (const f of files) {
+    const cache = cacheFor(f)
+    if (cache !== ENTRY) byCache.set(cache, [...(byCache.get(cache) ?? []), '/' + f])
+  }
+  return [
+    { handle: [{ handler: 'vars', root }] },
+    { match:  [{ method: ['OPTIONS'] }],
+      handle: [{ handler: 'static_response', status_code: 204, headers: { ...cors, 'Cache-Control': [ENTRY] } }],
+      terminal: true },
+    ...[...byCache].map(([cache, paths]) => ({ match: [{ path: paths }], handle: serve(cache), terminal: true })),
+    { handle: serve(ENTRY) },
+  ]
+}
 
 const ASSET_CACHE = 'public, max-age=31536000, immutable'
 const PAGE_CACHE  = 'no-cache'
@@ -412,7 +476,7 @@ const documentHeaders = ({ scripts = [], styles = [], api = null } = {}) => ({
  * rewritten.
  */
 export function holdsRoute(config, appId) {
-  const ours = new Set([routeId(appId), routeId(appId, 'api')])
+  const ours = new Set([routeId(appId), routeId(appId, 'api'), routeId(appId, 'widgets')])
   return (config?.apps?.http?.servers?.[INGRESS_SERVER]?.routes ?? []).some(r => ours.has(r['@id']))
 }
 
@@ -445,7 +509,7 @@ export function routeDials(config, appId) {
 
 export function applyEdge(config, { appId, routes, plain = [] }) {
   const out    = structuredClone(config ?? {})
-  const ours   = new Set([routeId(appId), routeId(appId, 'api')])
+  const ours   = new Set([routeId(appId), routeId(appId, 'api'), routeId(appId, 'widgets')])
   const oursPlain = new Set([routeId(appId, 'web', true), routeId(appId, 'api', true)])
   const http   = (out.apps ??= {}).http ??= {}
   const server = (http.servers ??= {})[INGRESS_SERVER] ??= { listen: [`:${http.https_port ?? 443}`], routes: [] }

@@ -756,7 +756,7 @@ if (useExample) {
 
 // make:deploy — Dockerfile + frontier.config.js deploy block. It containerizes
 // the API, so a project with none has nothing for it to write: the widget
-// surface ships its own static origin from widgets/deploy/.
+// surface is static files, released by `deploy.widgets`.
 if (useDeploy && useApi) {
   try {
     const args = ['make:deploy']

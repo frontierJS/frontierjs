@@ -17,6 +17,10 @@ flags:
     type: string
     description: Web domain to pre-fill in frontier.config.js
     defaultValue: ''
+  widgets-domain:
+    type: string
+    description: Widget origin's domain, written as deploy.widgets.domain when widgets/ exists
+    defaultValue: ''
   open:
     char: o
     type: boolean
@@ -186,10 +190,13 @@ const { imageNeeds, CHROME_RUN, IMAGE_USER } =
 // commented-out key here is a line to delete. A server or domain nobody named
 // is absent rather than a placeholder: `ssh your-server.com` reaches a stranger.
 //
+// widgets/ is written only with a hostname: a widget origin is routed by name
+// and a name nobody stated would write DNS for a guess (FJS-D2033).
+//
 // An app with no web/ gets `web: false` and its domain on the API: a web block
 // sent the first deploy to build a web/ that does not exist, and it refused at
 // 08-release-web after the API was already live (FJS-4003).
-const makeDeployBlock = (appId, server, domain, healthPath, hasWeb) => {
+const makeDeployBlock = (appId, server, domain, healthPath, hasWeb, widgetsDomain = '') => {
   const serverLine = server ? `    server: '${server}',\n` : ''
   const domainLine = domain ? `      domain: '${domain}',\n` : ''
   const apiDomain  = domain && !hasWeb ? `      domain:     '${domain}',\n` : ''
@@ -211,7 +218,13 @@ ${apiDomain}      port:       3000,
     },
 
 ${web}
-
+${widgetsDomain ? `
+    // widgets/ is static files on a hostname of its own, served beside web/.
+    widgets: {
+      domain: '${widgetsDomain}',
+      keep_releases: 3,
+    },
+` : ''}
     db: {
       path:         '/apps/${appId}/db',
       file:         'production.db',
@@ -316,7 +329,10 @@ if (existsSync(dockerignorePath)) {
 // ─── 3. frontier.config.js deploy block ──────────────────────────────────────
 const configPath = resolve($.paths.root, 'frontier.config.js')
 const health      = resolveHealthPath($.paths.root)
-const deployBlock = makeDeployBlock(appId, server, domain, health.path, existsSync(resolve($.paths.root, 'web')))
+const widgetsDomain = existsSync(resolve($.paths.root, 'widgets')) ? flag['widgets-domain'] || '' : ''
+if (existsSync(resolve($.paths.root, 'widgets')) && !widgetsDomain)
+  log.info('widgets/ is not deployed yet -- pass --widgets-domain <host> to write deploy.widgets')
+const deployBlock = makeDeployBlock(appId, server, domain, health.path, existsSync(resolve($.paths.root, 'web')), widgetsDomain)
 
 // Written when the caller says where it deploys. Without a server or a domain
 // the block would be a file of defaults an app already has, and a missing config

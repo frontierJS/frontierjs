@@ -24,11 +24,7 @@ const machine      = machineFor($, host, serverPath)
 // rewrote has no lock that matches, so it installs as the image does. The
 // shipped tree's own lock goes first: the image never copies it, and frozen
 // against the rewritten manifest it refuses, so vite is never installed (FJS-3587).
-log.info('Installing dependencies on server...')
-machine.run(`rm -f bun.lock bun.lockb &&
-  cp ${GENERATED_DIR}/app-manifest.json package.json &&
-  (cp ${GENERATED_DIR}/bun.lock* ./ 2>/dev/null || true) &&
-  if [ -f bun.lock ] || [ -f bun.lockb ]; then bun install --frozen-lockfile; else bun install; fi`, { cwd: src })
+installOnBox(machine, $, src, log)
 
 // ─── Build on server ──────────────────────────────────────────────────────────
 // `build:web` where the app names one, because `build` may be more than the
@@ -58,10 +54,16 @@ const { webBuildEnv, envPrefix } = await import(new URL('file://' + global.fliRo
 // web surface's sierra.config.js reads for junction.url. Taken from the same
 // declaration the route is written from, so the two cannot name different
 // hosts. Graded as a hostname before it reaches the target's shell.
-const { edgeNames, apiOrigin, EdgeError } =
+const { edgeNames, apiOrigin, widgetsOrigin, EdgeError } =
   await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
-let origin
-try { origin = apiOrigin(edgeNames(deployConf)) }
+// The widget origin is baked too (FJS-D2034): the embed snippet a web page shows
+// names it, and a hostname pasted into the app's .env drifts from the route.
+let origin, widgets
+try {
+  const names = edgeNames(deployConf)
+  origin  = apiOrigin(names)
+  widgets = widgetsOrigin(names)
+}
 catch (e) {
   if (!(e instanceof EdgeError)) throw e
   log.error(e.message)
@@ -70,7 +72,7 @@ catch (e) {
 }
 
 log.info(origin ? `Building web on server, calling the API at ${origin}...` : 'Building web on server...')
-machine.run(`${envPrefix(webBuildEnv({ commit, apiOrigin: origin }))} ${buildCmd}`, { cwd: buildCwd })
+machine.run(`${envPrefix(webBuildEnv({ commit, apiOrigin: origin, widgetsOrigin: widgets }))} ${buildCmd}`, { cwd: buildCwd })
 
 // A build that never inlined FRONTIER_PUBLIC_API_URL ships a bundle calling its own
 // origin, where nothing proxies /api/ any more. Asked of the output, because
@@ -98,39 +100,13 @@ machine.run(`out=${src}/web/dist
 if [ ! -f "$out/index.html" ]; then echo "the web build wrote no index.html under ${src}/web/dist" >&2; exit 1; fi
 rm -rf "${releaseDir}.next" && cp -a "$out" "${releaseDir}.next" && rm -rf "${releaseDir}" && mv "${releaseDir}.next" "${releaseDir}"`)
 
-// ─── Merge previous release assets ───────────────────────────────────────────
-// SPA clients cache their HTML and keep requesting old content-hashed assets
-// (e.g. app-x9y8z7.js) after a deploy. Those files no longer exist in the new
-// release → 404s until the client reloads.
-//
-// Fix: copy the asset files each of the previous keep_releases-1 releases BUILT
-// that are not already present in the new one. Content-hash filenames mean no
-// collisions — new files always win, old-but-still-referenced files survive.
-//
-// What a release built is listed in `.built-assets`, written before the merge.
-// Copying a predecessor's whole assets/ would carry what IT merged, so release
-// N would hold release 1's files and pruning release 1 would free none of them.
-// A predecessor with no list (built before the list existed) is copied whole once.
-//
-// `$prev` and the quotes below are the target's — `machine.run` pipes the
-// script to its shell, so nothing here needs escaping and a temp file on the
-// server would buy nothing. xargs -d and cp --parents are GNU's.
+// ─── Merge previous release assets, prune old releases ───────────────────────
+// SPA clients cache their HTML and keep requesting old content-hashed assets after
+// a deploy; `mergeAndPrune` carries the last keep_releases-1 releases' assets
+// forward, and keeps that many releases on disk for rollback.
 const assetDir = deployConf.web?.assets_dir ?? 'assets'
-
-machine.run(`[ -d "${releaseDir}/${assetDir}" ] && (cd "${releaseDir}/${assetDir}" && find . -type f) > "${releaseDir}/.built-assets" || : > "${releaseDir}/.built-assets"
-for prev in $(ls -1dt ${serverPath}/releases/* 2>/dev/null | grep -vxF "${releaseDir}" | head -n ${keepReleases - 1}); do
-  [ -d "$prev/${assetDir}" ] || continue
-  if [ -f "$prev/.built-assets" ]; then
-    (cd "$prev/${assetDir}" && xargs -r -d '\\n' -a "$prev/.built-assets" cp -n --parents -t "${releaseDir}/${assetDir}/") 2>/dev/null || true
-  else
-    cp -rn "$prev/${assetDir}/." "${releaseDir}/${assetDir}/" 2>/dev/null || true
-  fi
-done`)
+mergeAndPrune(machine, { releasesRoot: `${serverPath}/releases`, releaseDir, assetDir, keep: keepReleases })
 log.info(`Merged the assets of the last ${keepReleases - 1} release(s) from ${assetDir}/ (stale client protection)`)
-
-// ─── Prune old releases ───────────────────────────────────────────────────────
-// Keep the last N releases on disk for rollback and the asset merge window above.
-machine.run(`ls -1dt ${serverPath}/releases/* 2>/dev/null | tail -n +${keepReleases + 1} | xargs rm -rf --`)
 
 $.config.releaseDir = releaseDir
 log.done(`Web release ready → releases/${commit} (keeping ${keepReleases})`)

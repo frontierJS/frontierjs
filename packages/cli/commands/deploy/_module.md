@@ -20,7 +20,7 @@ const { createMachine, shQuote } = await import(new URL('file://' + global.fliRo
 const { createSwap, runFlags, sshRunner, shWord, portOf, livePivot, swapFor, swapSetting, healthBudgetS, checkHealthTimeout, HEALTHY_STATUS, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
 const { apiContainer } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
-const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+const { EDGE_HOPS, edgeNames: edgeNamesOf, widgetsOn, widgetsPathOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { crossOrigins } = await import(new URL('file://' + global.fliRoot + '/core/shell-origins.js'))
 const { installOutpost, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { PLACEHOLDER_SERVER, resolveTarget, sshHost, resolveDeployConf, resolveSide, apiFiles } = await import(new URL('file://' + global.fliRoot + '/core/deploy-target.js'))
@@ -396,7 +396,7 @@ const distinctHosts = (sides) => {
 //
 // It mints rather than being handed a Release, so `--plan` needs no separate
 // `release:mint` run and cannot disagree with one.
-const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, digest = null }) => {
+const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, doWidgets = false, digest = null }) => {
   const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
   const { readdirSync, readFileSync } = await import('fs')
 
@@ -443,7 +443,7 @@ const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, digest = 
   // predicate threw and the plan could not grade the journal step itself.
   const steps = planSteps(metas, {
     flag,
-    $: { flag, config: { doApi, doWeb, deployConf, target } },
+    $: { flag, config: { doApi, doWeb, doWidgets, deployConf, target } },
   })
 
   const plan = planTransition({ release, steps, actor: release.createdBy })
@@ -827,7 +827,8 @@ const routeMover = async ($, machine, { appId, serverPath, deployConf }) => {
 
   const move = async (port) => {
     const html = machine.capture(`find ${serverPath}/current/ -name '*.html' -type f -exec cat {} + 2>/dev/null || true`)
-    const { routes, plain, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort: port, edge, html })
+    const widgets = widgetsFor(machine, deployConf, serverPath)
+    const { routes, plain, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort: port, edge, html, widgets })
     const written = error ? { error } : await writeEdge(machine, { appId, routes, plain, ifPresent: true })
     if (written === 'absent') throw new Error(`Caddy no longer holds a route for ${appId}`)
     if (written?.error) throw new Error(written.error)
@@ -937,12 +938,14 @@ const showContainerTail = (machine, container, log, lines = 40) => {
 // a path the edge would hand the SPA.
 //
 // `{ routes, plain, paths }`, or `{ error }` for an EdgeError. `plain` is the
-// :80 refusals for the API's paths. `paths` null means no
+// :80 refusals for the API's paths. `widgets` is `widgetsFor`'s answer, or null for an
+// app with no widget origin; a route written without it would drop the widget
+// route, since `applyEdge` replaces every route the app owns. `paths` null means no
 // snapshot, and the routes fall back to `/api/`. `html` is every page the route
 // will serve, prerendered ones included, read off the target: its inline scripts
 // and `style=` values are hashed into the CSP, and a page whose hash is missing
 // has its theme and service worker, or that style, refused.
-const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge, html = '' }) => {
+const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge, html = '', widgets = null }) => {
   const { edgeRoutes, plainRoutes, apiPaths, inlineScriptHashes, inlineStyleHashes, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
   const { readAppSnapshot } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
   const paths   = apiPaths(readAppSnapshot(root))
@@ -950,12 +953,62 @@ const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge, html = ''
   const styles  = inlineStyleHashes(html)
   try {
     return {
-      routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths, scripts, styles }),
+      routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, widgets: edge.widgets.domain && widgets ? { ...edge.widgets, ...widgets } : null, paths, scripts, styles }),
       plain:  plainRoutes({ appId, web: edge.web, api: edge.api, paths }),
       paths,
     }
   }
   catch (e) { if (e instanceof EdgeError) return { error: e.message }; throw e }
+}
+
+// The widget origin's `{ path, files }` for `edgeRoutesFor`: where its releases
+// live on the box, and the files of the release being served (or about to be, with
+// `releaseDir`), whose names `cacheFor` is asked about. Null with no `deploy.widgets`.
+const widgetsFor = (machine, deployConf, serverPath, releaseDir = null) => {
+  if (!widgetsOn(deployConf)) return null
+  const path = widgetsPathOf(deployConf, serverPath)
+  const dir  = releaseDir ?? `${path}/current`
+  const files = machine.capture(`cd ${dir} 2>/dev/null && find . -type f | sed 's|^\\./||' || true`, { dry: false })
+  return { path, files: String(files ?? '').split('\n').filter(Boolean) }
+}
+
+// `bun install` on the box against the GENERATED manifest, as the image does
+// (02-ship extracted a fresh tree with no node_modules). Once per deploy: the
+// web and widgets builds both need it, and the second finds it done.
+const installOnBox = (machine, $, src, log) => {
+  if ($.config.depsInstalled) return
+  log.info('Installing dependencies on server...')
+  machine.run(`rm -f bun.lock bun.lockb &&
+  cp ${GENERATED_DIR}/app-manifest.json package.json &&
+  (cp ${GENERATED_DIR}/bun.lock* ./ 2>/dev/null || true) &&
+  if [ -f bun.lock ] || [ -f bun.lockb ]; then bun install --frozen-lockfile; else bun install; fi`, { cwd: src })
+  $.config.depsInstalled = true
+}
+
+// The assets each of the previous `keep - 1` releases BUILT that this one lacks,
+// copied in, then the releases past `keep` pruned. Content-hash names mean no
+// collisions: new files always win, old-but-still-referenced ones survive. A page
+// (or a widget on a stranger's site, whose entry is cached for minutes) keeps
+// requesting the chunks it loaded before the swap.
+//
+// What a release built is listed in `.built-assets`, written before the merge.
+// Copying a predecessor's whole assets/ would carry what IT merged, so release N
+// would hold release 1's files and pruning release 1 would free none of them. A
+// predecessor with no list (built before the list existed) is copied whole once.
+//
+// `$prev` and the quotes are the target's -- `machine.run` pipes the script to its
+// shell. xargs -d and cp --parents are GNU's.
+const mergeAndPrune = (machine, { releasesRoot, releaseDir, assetDir = 'assets', keep }) => {
+  machine.run(`[ -d "${releaseDir}/${assetDir}" ] && (cd "${releaseDir}/${assetDir}" && find . -type f) > "${releaseDir}/.built-assets" || : > "${releaseDir}/.built-assets"
+for prev in $(ls -1dt ${releasesRoot}/* 2>/dev/null | grep -vxF "${releaseDir}" | head -n ${keep - 1}); do
+  [ -d "$prev/${assetDir}" ] || continue
+  if [ -f "$prev/.built-assets" ]; then
+    (cd "$prev/${assetDir}" && xargs -r -d '\\n' -a "$prev/.built-assets" cp -n --parents -t "${releaseDir}/${assetDir}/") 2>/dev/null || true
+  else
+    cp -rn "$prev/${assetDir}/." "${releaseDir}/${assetDir}/" 2>/dev/null || true
+  fi
+done`)
+  machine.run(`ls -1dt ${releasesRoot}/* 2>/dev/null | tail -n +${keep + 1} | xargs rm -rf --`)
 }
 
 // Read, merge, write back with If-Match. Outpost writes to the same Caddy, so a
@@ -1552,6 +1605,13 @@ export default {
 
 ### The API on a domain of its own
 
+`widgets: { domain, keep_releases }` (or `false`) adds a third origin for `widgets/`: static
+files on a host of their own, built by `sierra widgets --out-dir`, released under
+`<path>/widgets/releases` with their own `current`, and routed with no CSP and no SPA
+fallback -- the CORS and cache headers are Sierra's `widget-headers.js`. The web build
+bakes it as `FRONTIER_PUBLIC_WIDGETS_URL`, the widgets build bakes the API origin. It
+rides with `--web` (and a full deploy and rollback); `deploy:revert` is API-only.
+
 `api.domain` gives the API its own origin — `api.myapp.com` beside `web.domain`. Unset, the
 web domain proxies the API's paths and `/ws` and the page and the API share an origin. The
 paths are read off `app.snapshot.md`; with no `apiPrefix`, a request asking for HTML is
@@ -1638,11 +1698,13 @@ the failure this is most likely to cause.
 01b-env-check  → validate server env against the defineEnv spec, else .env.example (if envCheck: true)
 02-ship        → stageRelease: git archive of HEAD at the app's directory, vendored deps when the Dockerfile installs from them → <path>/src
 03-build-web   → bun build on server, create versioned release
+03b-build-widgets → `sierra widgets --out-dir` on server, its own releases/ (deploy.widgets)
 04-build-api   → docker build on server (no registry needed)
 05-backup      → hot backup of the database before any changes
 06-swap        → stop old container, start new (migrations run in entrypoint), poll deploy.api.health — puts the previous container back on failure; deploy.swap startFirst on an expand starts it beside the old one and moves the routes
 07b-edge      → rewrite this app's Caddy routes for the API's current paths, then probe /.well-known/oauth-authorization-server on the public origin (App with an OAuth server only) and warn, never abort, when it does not answer JSON naming that origin
 08-release-web → atomic symlink swap; Caddy reads the root per request
+08-release-widgets → the same swap for the widget origin's own current
 08b-outpost    → enroll the API's box in the app's fleet (if outpost: true; --no-outpost skips)
 08c-site       → production only: build site/ against a copy of the db and publish it, once its Worker has a deployment
 09-cleanup     → prune images, release deploy lock

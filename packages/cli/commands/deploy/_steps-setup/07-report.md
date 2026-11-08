@@ -38,7 +38,7 @@ echo('')
 let n = 1
 
 // 06-dns pointed these at Cloudflare; a domain it could not point stays here.
-const unpointed = [edge.web.domain, edge.api.domain].filter(d => d && !($.config.dnsPointed ?? []).includes(d))
+const unpointed = [edge.web.domain, edge.api.domain, edge.widgets.domain].filter(d => d && !($.config.dnsPointed ?? []).includes(d))
 if (unpointed.length) {
   echo(chalk`{bold ${++n}.} Point DNS for ${unpointed.join(' and ')} at this server — Caddy fetches the certificate`)
   echo(chalk.dim(`   on the first request, and cannot before the name resolves here`))
@@ -56,6 +56,9 @@ echo('')
 
 if (edge.web.domain) {
   echo(chalk`   {dim App will be live at:} https://${edge.web.domain}`)
+}
+if (edge.widgets.domain) {
+  echo(chalk`   {dim Widgets will be live at:} https://${edge.widgets.domain} {dim — the web build names it as FRONTIER_PUBLIC_WIDGETS_URL}`)
 }
 if (edge.api.domain) {
   echo(chalk`   {dim API will be live at:} https://${edge.api.domain} {dim — the web build names it. If the API}`)

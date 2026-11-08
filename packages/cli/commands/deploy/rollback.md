@@ -47,6 +47,7 @@ const { target, deployConf, resolved, appId } = head
 const both   = !flag.web && !flag.api
 const doWeb  = both || flag.web
 const doApi  = both || flag.api
+const doWidgets = doWeb && widgetsOn(deployConf)
 
 const { path, host } = resolved
 
@@ -68,6 +69,7 @@ $.config.target     = target
 $.config.appId      = appId
 $.config.deployConf = deployConf
 $.config.doWeb      = doWeb
+$.config.doWidgets  = doWidgets
 $.config.doApi      = doApi
 $.config.startTime  = Date.now()
 ```

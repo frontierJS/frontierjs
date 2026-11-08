@@ -98,8 +98,8 @@ origin, since the Domain routes the API back (`FJS-D1547`); where the app has a
 widgets App the build bakes `FRONTIER_PUBLIC_WIDGETS_URL` with its hostname.
 `widgets/` is built with `sierra widgets` in the staged tree, and bakes
 `FRONTIER_PUBLIC_API_URL` with web's hostname, because a widget runs on a
-stranger's page and has no origin of its own to call; the folder it wrote is
-read off the line it prints, since its `outDir` is the widget config's. The
+stranger's page and has no origin of its own to call; it is built into a folder
+this command names with `--out-dir` (`FJS-D2036`). The
 hostnames are the Domains Basecamp holds, else `deploy.web.domain` and
 `deploy.widgets.domain` in `frontier.config`. The `.env` files it
 bakes are the committed ones — the App's Variables in Basecamp are
@@ -180,7 +180,7 @@ the scope the key lacks.
 <script>
 const { loadFrontierConfig }         = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { GENERATED_DIR, exposedPort } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
-const { stageRelease, webBuildEnv, widgetsBuildEnv, originOf, suggestedWidgetsHostname, widgetsOutDir } = await import(new URL('file://' + global.fliRoot + '/core/release-build.js'))
+const { stageRelease, webBuildEnv, widgetsBuildEnv, originOf, suggestedWidgetsHostname } = await import(new URL('file://' + global.fliRoot + '/core/release-build.js'))
 const { createMachine }              = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { releaseFindings, gatherReleaseInputs, releasePlan, surfaceOf } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
 const { routePrefixes, apiPaths }    = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
@@ -435,23 +435,24 @@ async function buildWeb({ $, staged, tree, config, out, origins, log }) {
   return out
 }
 
-/** widgets/ built with `sierra widgets`, which takes its outDir from the widget
- *  config and has no flag for it: the folder it wrote is read off the line it
- *  prints. Staged with the commit, so it is built into a tree the checkout's
- *  dev server does not serve. */
-async function buildWidgets({ $, staged, origins, log, echo }) {
+/** widgets/ built with `sierra widgets` into `out` (`FJS-D2036`). A Sierra
+ *  older than `--out-dir` writes to its own outDir and leaves `out` empty, so an
+ *  empty one is refused by name rather than published as an empty release. */
+async function buildWidgets({ $, staged, out, origins, log }) {
   const { join } = await import('path')
+  const { readdirSync } = await import('fs')
   const stagedWidgets = join(staged.dir, 'widgets')
   if (!origins.apiOrigin)
     throw new Error("widgets/ bakes the API's origin, and none is known: the web App holds no Domain in Basecamp and deploy.web.domain is not set in frontier.config")
   log.info(bundleEnvLine(bundleEnvKeys(stagedWidgets), 'widgets'))
   log.info(`Building ${stagedWidgets} at ${staged.short} against ${origins.apiOrigin}...`)
-  const output = String($.exec({
-    command: 'bunx --bun sierra widgets', cwd: stagedWidgets, stdio: ['ignore', 'pipe', 'inherit'],
+  $.exec({
+    command: 'bunx --bun sierra widgets', cwd: stagedWidgets, args: ['--out-dir', out],
     env: { ...process.env, NODE_ENV: 'production', ...widgetsBuildEnv({ commit: staged.sha, apiOrigin: origins.apiOrigin }) },
-  }) ?? '')
-  echo(output.trimEnd())
-  return join(stagedWidgets, widgetsOutDir(output))
+  })
+  if (!readdirSync(out).some(f => f.endsWith('.js')))
+    throw new Error(`sierra widgets wrote no script to ${out} — a Sierra older than --out-dir builds into its own outDir; move @frontierjs/sierra to a release with --out-dir (FJS-D2036)`)
+  return out
 }
 
 /** The release once it stops moving, or as it stands after WAIT_MS. */
@@ -550,7 +551,7 @@ if (inline) {
 
   // Into a directory of its own, never web/dist: `vite build` empties its
   // outDir, and a dev server running from this checkout serves that one.
-  const out    = flag.dist || surface !== 'web' ? null : mkdtempSync(join(tmpdir(), 'basecamp-deploy-'))
+  const out    = flag.dist ? null : mkdtempSync(join(tmpdir(), 'basecamp-deploy-'))
   const staged = flag.dist ? null : stageRelease({ appRoot: root, image: false, log })
   try {
     let built = null
@@ -561,7 +562,7 @@ if (inline) {
       const origins = await bundleOrigins({ surface, origin, key, app, root })
       built = surface === 'web'
         ? await buildWeb({ $, staged, tree, config, out, origins, log })
-        : await buildWidgets({ $, staged, origins, log, echo })
+        : await buildWidgets({ $, staged, out, origins, log })
     }
     const files = await filesUnder(built ?? resolve(flag.dist))
     log.info(`Publishing ${files.length} files to App '${app.name}'...`)

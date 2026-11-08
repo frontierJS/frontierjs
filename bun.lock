@@ -113,6 +113,7 @@
         "@frontierjs/litestone": "workspace:*",
         "@frontierjs/mesa": "workspace:*",
         "@frontierjs/outpost": "workspace:*",
+        "@frontierjs/sierra": "workspace:*",
         "@frontierjs/toolbelt": "workspace:*",
         "@frontierjs/ui": "workspace:*",
       },

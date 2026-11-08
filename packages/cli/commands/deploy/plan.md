@@ -51,8 +51,9 @@ if (!deployConf?.server) {
 const bothSides = !flag.api && !flag.web
 const doApi     = bothSides || flag.api
 const doWeb     = (bothSides || flag.web) && deployConf.web !== false
+const doWidgets = (bothSides || flag.web) && widgetsOn(deployConf)
 
-const plan = await deployPlan($, flag, { target, deployConf, doApi, doWeb })
+const plan = await deployPlan($, flag, { target, deployConf, doApi, doWeb, doWidgets })
 
 if (plan.error) {
   log.error(plan.error)

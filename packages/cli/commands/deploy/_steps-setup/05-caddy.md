@@ -22,7 +22,8 @@ const html    = machine.capture(`find ${serverPath}/current/ -name '*.html' -typ
 // A setup run again after a start-first release routes where it answers.
 const apiPort = await livePort(machine, apiContainer(appId, deployConf), $.config.apiPort)
 
-const { routes, plain, paths, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
+const widgets = widgetsFor(machine, deployConf, serverPath)
+const { routes, plain, paths, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html, widgets })
 if (error) {
   log.error(error)
   $.config.abort = true
@@ -33,7 +34,8 @@ if (!paths) log.warn('No app.snapshot.md — only /api/ and /ws are routed to th
 // ─── Show what will be routed ─────────────────────────────────────────────────
 echo('')
 for (const r of routes) {
-  const what = r['@id'] === routeId(appId, 'api') ? `every path → :${apiPort}`
+  const what = r['@id'] === routeId(appId, 'widgets') ? `${widgetsPathOf(deployConf, serverPath)}/current · static, CORS, no CSP`
+    : r['@id'] === routeId(appId, 'api') ? `every path → :${apiPort}`
     : edge.api.domain ? `${serverPath}/current`
     : `${serverPath}/current · ${paths?.prefix === null ? `${paths.roots.length} API paths (pages by Accept)` : `${paths?.prefix ?? '/api'}/`} and /ws → :${apiPort}`
   echo(`  ${chalk.cyan(`https://${r.match[0].host[0]}`)}  ${chalk.dim(what)}`)

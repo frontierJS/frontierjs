@@ -3,7 +3,7 @@ title: 06-dns
 description: Point each domain's A record at this server, through the cf login
 ---
 
-Points `deploy.web.domain` and `deploy.api.domain` at the box, through the
+Points `deploy.web.domain`, `deploy.api.domain` and `deploy.widgets.domain` at the box, through the
 same `cf` login `fli cf:dns` runs on. A domain with no record gets an A
 record, DNS-only — Caddy's certificate challenge has to reach the box itself.
 A domain already pointed here is left alone. A record pointing somewhere else
@@ -25,7 +25,7 @@ const { spawnSync } = await import('node:child_process')
 if (!$.flag['next-steps']) return
 if (machineFor($, host, serverPath).local) return
 
-const domains = [edge.web.domain, edge.api.domain].filter(Boolean)
+const domains = [edge.web.domain, edge.api.domain, edge.widgets.domain].filter(Boolean)
 if (!domains.length) return
 
 // Only a literal address or the one ssh's config names. The resolver would

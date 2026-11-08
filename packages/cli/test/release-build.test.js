@@ -11,7 +11,7 @@ import { tmpdir }                                        from 'os'
 import { join }                                          from 'path'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 
-import { stageRelease, webBuildEnv, widgetsBuildEnv, originOf, suggestedWidgetsHostname, widgetsOutDir, envPrefix } from '../core/release-build.js'
+import { stageRelease, webBuildEnv, widgetsBuildEnv, originOf, suggestedWidgetsHostname, envPrefix } from '../core/release-build.js'
 
 let repo
 const warnings = []
@@ -154,12 +154,6 @@ describe('widgets/ build helpers (widgets-deploy 1.4)', () => {
     expect(suggestedWidgetsHostname('ela.maverickmade.tech')).toBe('widgets.ela.maverickmade.tech')
     expect(suggestedWidgetsHostname(null)).toBeNull()
     expect(suggestedWidgetsHostname('bad host')).toBeNull()
-  })
-
-  test('the folder sierra widgets wrote is read off its line, else its default', () => {
-    expect(widgetsOutDir('  ·  built\n\n  ✓  2 widget(s) → build/embeds/\n')).toBe('build/embeds')
-    expect(widgetsOutDir('  ✓  1 widget(s) → dist/embeds/\n')).toBe('dist/embeds')
-    expect(widgetsOutDir('')).toBe('dist/embeds')
   })
 })
 

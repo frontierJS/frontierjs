@@ -5,7 +5,7 @@ skip: "$.config.siteOnly"
 ---
 
 ```js
-const { hosts, doApi, doWeb, deployConf } = $.config
+const { hosts, doApi, doWeb, doWidgets, deployConf } = $.config
 
 // ─── Pushed from here, never pulled there ─────────────────────────────────────
 // A pull needs the server to hold the repository and a key that reads it, and
@@ -20,11 +20,11 @@ const { join } = await import('path')
 const { tmpdir } = await import('os')
 const { stageRelease } = await import(new URL('file://' + global.fliRoot + '/core/release-build.js'))
 
-// web/ is built on the box from the generated manifest, so a web deploy ships
-// it whatever the Dockerfile says.
+// web/ and widgets/ are built on the box from the generated manifest, so either
+// deploy ships it whatever the Dockerfile says.
 let release
 try {
-  release = stageRelease({ appRoot: realpathSync($.paths.root), told: deployConf.api?.dockerfile, vendor: Boolean(doWeb), log })
+  release = stageRelease({ appRoot: realpathSync($.paths.root), told: deployConf.api?.dockerfile, vendor: Boolean(doWeb || doWidgets), log })
 } catch (e) {
   log.error(e.message)
   $.config.abort = true
