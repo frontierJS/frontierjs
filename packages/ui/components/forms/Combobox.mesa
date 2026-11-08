@@ -27,7 +27,7 @@
   // label does not show):
   //   <Combobox {options} search={(q, signal) => findOffers(q, signal)} onchange={pick} />
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy, RECENT_GROUP, REST_GROUP } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy, fitDropdown, RECENT_GROUP, REST_GROUP } from '../../utils.js'
 
   export let value       = undefined    // scalar — bindable
   export let options     = []           // string[] | { value, label, disabled? }[]
@@ -205,7 +205,19 @@
   let activeIdx = 0
   let inputEl
   let containerEl
+  let panelEl
+  let flip = false          // open above the control: no room below
+  let capH = null           // set only when neither side holds the panel
   var _clickHandler = null
+
+  // The panel hangs off the control by CSS, so the window is asked once it
+  // renders. Left unasked, a control near the window's foot opens past it.
+  $: open, () => { if (open) fitPanel(); else { flip = false; capH = null } }
+  async function fitPanel() {
+    const [cr, pr, vp] = await Promise.all([$.measure(containerEl), $.measure(panelEl), $.viewport()])
+    if (!cr || !pr || !open) return
+    ;({ flip, maxHeight: capH } = fitDropdown(cr, pr.height, vp))
+  }
 
   const showClear = clearable && !resolvedDisabled && (value != null || !!query)
 
@@ -421,7 +433,14 @@
 
     {#if open}
       <!-- .popover is the surface; .items.menu is the interactive list. -->
-      <div class="popover fjs-combobox-panel" {@attach dropdownAnim}>
+      <div
+        bind:this={panelEl}
+        class="popover fjs-combobox-panel"
+        style:inset-block-start={flip ? 'auto' : null}
+        style:inset-block-end={flip ? 'calc(100% + 0.25rem)' : null}
+        style:max-block-size={capH == null ? null : `min(12rem, ${capH}px)`}
+        {@attach dropdownAnim}
+      >
         <ul class="items menu" id={listId} role="listbox" aria-label="Options">
           {#if rows.length === 0}
             <li class="item text-muted" aria-disabled="true">No options</li>

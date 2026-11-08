@@ -524,3 +524,19 @@ export function gatherReleaseInputs(root, { dockerfile = 'deploy/Dockerfile', do
     migrations: existsSync(join(root, 'db', 'schema.lite')) ? runChecks({ root, only: ['migration-history'] }) : null,
   }
 }
+
+/**
+ * Does `db/migrations` build `db/schema.lite`? The one question both doors ask
+ * before a build (`FJS-4071`, `FJS-4102`): the same `migration-history` rule
+ * `fli check` runs, graded the way `releaseFindings` grades it. A rule that
+ * could not ask is a warning, a gap is an error. An app with no schema has no
+ * history to ask about.
+ * @returns {{ errors: string[], warnings: string[] }}
+ */
+export function migrationHistoryVerdict(root) {
+  const migrations = gatherReleaseInputs(root).migrations
+  return {
+    errors:   (migrations?.findings ?? []).map(f => f.message),
+    warnings: (migrations?.skipped ?? []).map(s => s.why),
+  }
+}

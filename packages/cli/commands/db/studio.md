@@ -34,7 +34,8 @@ import { join, basename, dirname, posix } from 'path'
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { randomBytes } from 'crypto'
-import { spawnSync } from 'child_process'
+
+const bc = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 
 // The flag's declared default is the global port, so whether --port was typed
 // is read off the argv: a default must not pin an in-project studio to 5502.
@@ -76,28 +77,21 @@ function fetchRemoteSchema($, host, path) {
     const p = todo.shift()
     if (seen.has(p)) continue
     seen.add(p)
-    const run = spawnSync('ssh', ['-o', 'BatchMode=yes', host, `cat -- ${remoteQuote(p)}`], { encoding: 'utf8' })
-    if (run.status !== 0) {
-      $.log.error(`could not read ${host}:${p}${run.stderr ? ` — ${run.stderr.trim()}` : ''}`)
+    let text
+    try { text = bc.readBoxFile(host, p) }
+    catch (err) {
+      $.log.error(`could not read ${host}:${p}${err.message ? ` — ${err.message}` : ''}`)
       return null
     }
     const local = join(dir, 'remote', p)
     mkdirSync(dirname(local), { recursive: true })
-    writeFileSync(local, run.stdout)
-    for (const [, spec] of run.stdout.matchAll(/^\s*import\s+"(\.\.?\/[^"]+)"/gm))
+    writeFileSync(local, text)
+    for (const [, spec] of text.matchAll(/^\s*import\s+"(\.\.?\/[^"]+)"/gm))
       todo.push(posix.join(posix.dirname(p), spec))
   }
   const modules = nodeModulesFor($)
   if (modules) symlinkSync(modules, join(dir, 'node_modules'))
   return { dir, schema: join(dir, 'remote', path), files: seen.size }
-}
-
-// Single-quoted for the remote shell; a leading `~/` stays outside the quotes
-// so the remote shell still expands it.
-const remoteQuote = (p) => {
-  const home = p.startsWith('~/')
-  const body = `'${(home ? p.slice(2) : p).replaceAll("'", `'\\''`)}'`
-  return home ? `~/${body}` : body
 }
 
 function nodeModulesFor($) {

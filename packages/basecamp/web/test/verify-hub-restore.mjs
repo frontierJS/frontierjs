@@ -374,6 +374,8 @@ try {
   check('Restore this stages it and says to restart', staged, await textOf('#setup-restore'))
 
   await stop(api)
+  // FJS-3952: the page polls every 3s; hold the API down across a poll so a failed probe must not end the watch.
+  await sleep(7000)
   api = await startApi(hubB, restoreEnv)
   const done = await seen(`document.querySelector('#setup-restore .alert.success')?.textContent.includes('Restored from the archive')`, 20_000)
   check('after the restart, the open page notices the restore by itself', done, await textOf('#setup-restore'))

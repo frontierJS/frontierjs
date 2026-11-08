@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict'
 
-const { placeAgainst } = await import('../utils.js')
+const { placeAgainst, fitDropdown } = await import('../utils.js')
 
 const vp = { width: 1000, height: 800 }
 const box = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height })
@@ -49,6 +49,30 @@ check('top-start preference gives way to the side with more room', () => {
   const r = placeAgainst(box(10, 100, 80, 30), tall, vp, { placement: 'top-start' })
   assert.equal(r.y, 134)
   assert.equal(r.maxHeight, 800 - 134 - 8)
+})
+
+// FJS-4103: an in-flow dropdown under a trigger (Combobox, MultiSelect) asks
+// the same question placeAgainst answers for a fixed panel.
+check('dropdown fits below: stays below, no cap', () => {
+  const r = fitDropdown(box(10, 100, 200, 30), 192, vp)
+  assert.deepEqual(r, { flip: false, maxHeight: null })
+})
+
+check('dropdown near the bottom edge flips above when that side holds it', () => {
+  const r = fitDropdown(box(10, 700, 200, 30), 192, vp)
+  assert.deepEqual(r, { flip: true, maxHeight: null })
+})
+
+check('dropdown held by neither side takes the larger side, capped to it', () => {
+  const r = fitDropdown(box(10, 100, 200, 30), 1920, vp)
+  assert.equal(r.flip, false)
+  assert.equal(r.maxHeight, 800 - 134 - 8)
+})
+
+check('dropdown held by neither side, more room above: flips and caps', () => {
+  const r = fitDropdown(box(10, 500, 200, 30), 1920, { width: 1000, height: 600 })
+  assert.equal(r.flip, true)
+  assert.equal(r.maxHeight, 500 - 4 - 8)
 })
 
 let failed = 0

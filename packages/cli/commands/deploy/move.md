@@ -225,6 +225,9 @@ async function writeVariables({ entry }, vars) {
   } catch (err) { throw new Error(`${done.length ? `wrote ${done.join(', ')}, then ` : ''}${err.message}`) }
 }
 
+/** `mv.rootPipe`, after the shared ssh master is up through the pre-auth retry: the stream's own connection has none (FJS-4100). */
+const rootPipeOn = (host, script) => (bc.readyBox(host), mv.rootPipe(host, script))
+
 /** The SSH container stopped and this app's `fli-` routes dropped, in that order, so nothing is routed into a stopping container. */
 async function stopSsh({ log }, plan) {
   const { machine, appId, deployConf, api } = plan
@@ -239,7 +242,7 @@ async function restoreInto(plan) {
   const { entry, app, api, files, boxHost, flag } = plan
   const path = `${mv.outpostRestoreDir()}/${mv.archiveName(app.id, hex())}`
   try {
-    await mv.streamTar({ from: mv.rootPipe(api.host, mv.tarOutScript(files.dbDir)), to: mv.rootPipe(boxHost, mv.stageArchiveScript(path)) })
+    await mv.streamTar({ from: rootPipeOn(api.host, mv.tarOutScript(files.dbDir)), to: rootPipeOn(boxHost, mv.stageArchiveScript(path)) })
     const serverId = app.placement.find(p => p.server?.status === 'online').serverId
     return await bc.basecamp(entry.url, entry.key, `/apps/${encodeURIComponent(app.id)}`, {
       method: 'POST', headers: { 'x-service-method': 'restoreVolume' },
@@ -360,8 +363,8 @@ try {
     if (still?.length) log.warn(`Basecamp's routes still hold ${[...new Set(still.flatMap(s => s.hosts))].join(', ')} on ${plan.api.host} (${still.map(s => s.id).join(', ')}) — fli deploy will refuse until they go`)
     const left = await leaving(plan.boxHost, plan.dataDir)
     await mv.streamTar({
-      from: mv.rootPipe(plan.boxHost, mv.tarOutScript(plan.dataDir)),
-      to:   mv.rootPipe(plan.api.host, mv.tarInScript({ dir: plan.files.dbDir, overwrite: flag.overwrite, owner })),
+      from: rootPipeOn(plan.boxHost, mv.tarOutScript(plan.dataDir)),
+      to:   rootPipeOn(plan.api.host, mv.tarInScript({ dir: plan.files.dbDir, overwrite: flag.overwrite, owner })),
     })
     const landed = mv.parseTreeStat(await bc.asRootOn(plan.api.host, mv.treeStatScript(plan.files.dbDir), 'read the size of the copy'))
     checkCounts(left, landed, `${plan.files.dbDir} on ${plan.api.host}`)

@@ -297,6 +297,26 @@ export function placeAgainst(tr, pr, vp, { placement = 'bottom-start', offset = 
 }
 
 /**
+ * Which side of its trigger an in-flow dropdown (Combobox, MultiSelect) opens
+ * on, and the height it is capped to when neither side holds it. The panel is
+ * positioned by CSS under its container, so only the side and the cap are
+ * answered here: `flip` opens it above, `maxHeight` (px, or null for the
+ * panel's own cap) keeps it inside the window. `ph` is the panel's natural
+ * height.
+ *
+ *   const { flip, maxHeight } = fitDropdown(containerRect, panelHeight, vp)
+ */
+export function fitDropdown(cr, ph, vp, { offset = 4 } = {}) {
+  const roomBelow = vp.height - cr.bottom - offset - 8
+  const roomAbove = cr.top - offset - 8
+  if (ph <= roomBelow) return { flip: false, maxHeight: null }
+  if (ph <= roomAbove) return { flip: true, maxHeight: null }
+  return roomBelow >= roomAbove
+    ? { flip: false, maxHeight: Math.max(0, roomBelow) }
+    : { flip: true, maxHeight: Math.max(0, roomAbove) }
+}
+
+/**
  * Where a kit overlay mounts: the topmost open modal `<dialog>`, else `<body>`
  * (`FJS-D904`). `showModal()` puts the dialog in the top layer and makes the
  * rest of the document inert, so an overlay on `<body>` is drawn beneath it

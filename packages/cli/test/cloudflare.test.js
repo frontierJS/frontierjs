@@ -257,6 +257,21 @@ describe('writes', () => {
     expect(calls()[0].argv).toEqual(['dns', 'records', 'edit', 'rec-apex', '-z', 'zone-own', '--body', '{"content":"192.0.2.20"}', '--profile', 'default'])
   })
 
+  // FJS-3775: console.mjs sends each key to two frames, so each write reaches
+  // the kept state twice; it passed only while the two spawns raced.
+  test('a kept write sent twice by two frames lands once', async () => {
+    process.env.CF_STATE = join(dir, 'state.json')
+    try {
+      const body = { type: 'TXT', name: '_twice.own.example', content: 'hi', ttl: 1 }
+      await createRecord(DEFAULT, 'zone-own', body)
+      await createRecord(DEFAULT, 'zone-own', body)
+      const kept = (await records(DEFAULT, 'zone-own')).filter(r => r.name === body.name)
+      expect(kept.length).toBe(1)
+      await deleteRecord(DEFAULT, 'zone-own', 'rec-mx')
+      expect(await deleteRecord(DEFAULT, 'zone-own', 'rec-mx')).toEqual({ id: 'rec-mx' })
+    } finally { delete process.env.CF_STATE }
+  })
+
   test('delete is forced, because the asking happened before it', async () => {
     expect(await deleteRecord(DEFAULT, 'zone-own', 'rec-mx')).toEqual({ id: 'rec-mx' })
     expect(calls()[0].argv).toEqual(['dns', 'records', 'delete', 'rec-mx', '-z', 'zone-own', '--force', '--profile', 'default'])

@@ -18,7 +18,7 @@
   //   <MultiSelect bind:value asyncOptions={{ trigger: searchFn, delay: 200, min: 1 }} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError, resolveRule, stated, truncationNote, withNote, optionsNote, lockedBy } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, truncationNote, withNote, optionsNote, lockedBy, fitDropdown } from '../../utils.js'
   import { rank, segments } from '@frontierjs/toolbelt/search'
   import { parseCell }      from '@frontierjs/toolbelt/cells'
 
@@ -109,7 +109,19 @@
   let activeIndex = 0       // keyboard cursor in filtered list
   let inputEl
   let containerEl
+  let panelEl
+  let flip = false          // open above the control: no room below
+  let capH = null           // set only when neither side holds the panel
   var _debounceTimer = undefined
+
+  // The panel hangs off the control by CSS, so the window is asked once it
+  // renders. Left unasked, a control near the window's foot opens past it.
+  $: open, () => { if (open) fitPanel(); else { flip = false; capH = null } }
+  async function fitPanel() {
+    const [cr, pr, vp] = await Promise.all([$.measure(containerEl), $.measure(panelEl), $.viewport()])
+    if (!cr || !pr || !open) return
+    ;({ flip, maxHeight: capH } = fitDropdown(cr, pr.height, vp))
+  }
 
   // Coerce value to correct type
   function coerce(v) {
@@ -579,7 +591,14 @@
 
     <!-- Dropdown -->
     {#if open}
-      <div class="popover fjs-multiselect-panel" {@attach dropdownAnim}>
+      <div
+        bind:this={panelEl}
+        class="popover fjs-multiselect-panel"
+        style:inset-block-start={flip ? 'auto' : null}
+        style:inset-block-end={flip ? 'calc(100% + 0.25rem)' : null}
+        style:max-block-size={capH == null ? null : `min(12rem, ${capH}px)`}
+        {@attach dropdownAnim}
+      >
         <ul class="items menu" id={listId} role="listbox" aria-label="Options" aria-multiselectable={multiple}>
           {#if filtered.length === 0}
             <li class="item text-muted" aria-disabled="true">

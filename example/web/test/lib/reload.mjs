@@ -55,7 +55,9 @@ export function watchReloads(browser) {
 
   const message = () => reloaded &&
     `the page was RELOADED under the drive (navigated to ${reloaded} with no navigation in flight) -- ` +
-    'a watched file changed; see "[vite] (client) page reload" in the web server log, and rerun when the tree is quiet'
+    'a watched file changed, or vite re-optimized its dependencies or restarted; look in the web server log for ' +
+    '"[vite] (client) page reload", "optimized dependencies changed" or "server restarted" (none of them logs when ' +
+    'a sibling session edits and reverts inside one run), and rerun when the tree is quiet'
 
   process.on('exit', () => {
     if (!reloaded) return

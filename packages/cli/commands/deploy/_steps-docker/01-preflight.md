@@ -130,6 +130,24 @@ if ($.config.doApi) {
   }
 }
 
+// ─── The migrations against the schema ────────────────────────────────────────
+// The journal above compares files with the box. This asks whether the files
+// build db/schema.lite at all, the rule basecamp:deploy asks, so a `db:push`
+// change in no migration is refused here and not by the image's db:migrate
+// after the build and the upload (FJS-4102).
+if ($.config.doApi) {
+  const { migrationHistoryVerdict } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
+  const history = migrationHistoryVerdict($.paths.root)
+  for (const line of history.warnings) log.warn(`Migration history not checked: ${line}`)
+  if (history.errors.length) {
+    log.error('db/migrations does not build db/schema.lite — the container would refuse to start:')
+    for (const line of history.errors) log.error(`  ${line}`)
+    log.error("Run 'fli db:migrate' to write the missing migration.")
+    $.config.abort = true
+    return
+  }
+}
+
 // ─── Acquire deploy lock ──────────────────────────────────────────────────────
 // Prevents two deploys running simultaneously against the same server.
 // One lock per machine+path pair. A split app is two locks; an app whose halves

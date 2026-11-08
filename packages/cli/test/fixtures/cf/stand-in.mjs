@@ -16,7 +16,9 @@
 // Each spawn is a fresh process, so a write is forgotten unless `CF_STATE`
 // names a file: then a zone's records are read from it once written, and
 // create, edit and delete write it — a drive rereading after a write sees the
-// table change, as against the real one.
+// table change, as against the real one. A kept write is IDEMPOTENT: the
+// console drive sends each key to two frames, so a create of a record already
+// kept answers that record and a delete of one already gone answers done.
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'fs'
 
@@ -101,6 +103,8 @@ if (verb.startsWith('dns records')) {
   if (verb === 'dns records get') answer(target())
   if (verb === 'dns records create') {
     const body = JSON.parse(flags.body)
+    const twin = process.env.CF_STATE && rows.find(r => r.id.startsWith('rec-created') && r.name === body.name && r.type === body.type && r.content === body.content)
+    if (twin) answer(twin)
     const id = rows.some(r => r.id === 'rec-created') ? `rec-created-${rows.length}` : 'rec-created'
     const made = { id, proxiable: ['A', 'AAAA', 'CNAME'].includes(body.type), settings: {}, meta: {}, comment: null, tags: [], ...body, ...stamp }
     keep([...rows, made], made)
@@ -109,6 +113,7 @@ if (verb.startsWith('dns records')) {
     const edited = { ...target(), ...JSON.parse(flags.body), modified_on: stamp.modified_on }
     keep(rows.map(r => r.id === edited.id ? edited : r), edited)
   }
+  if (verb === 'dns records delete' && process.env.CF_STATE && !rows.some(r => r.id === words[3])) answer({ id: words[3] })
   if (verb === 'dns records delete') keep(rows.filter(r => r.id !== target().id), { id: words[3] })
 }
 

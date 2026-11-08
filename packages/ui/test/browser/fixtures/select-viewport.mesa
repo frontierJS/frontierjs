@@ -1,0 +1,15 @@
+<script>
+  // select-viewport.mesa — a Combobox and a MultiSelect pinned to the window's
+  // foot, each with a list longer than the room under it (`FJS-4103`).
+  import Combobox    from '../../../components/forms/Combobox.mesa'
+  import MultiSelect from '../../../components/forms/MultiSelect.mesa'
+
+  export let foot = 60   // px between the control and the window's bottom edge
+
+  const OPTIONS = Array.from({ length: 40 }, (_, i) => ({ value: i, label: 'Option ' + i }))
+</script>
+
+<div style:position="fixed" style:inset-inline="2rem" style:inset-block-end="{foot}px" style:display="flex" style:gap="1rem">
+  <div id="combo" style:flex="1"><Combobox label="" aria-label="Pick one" options={OPTIONS} value={null} /></div>
+  <div id="multi" style:flex="1"><MultiSelect label="" aria-label="Pick many" options={OPTIONS} value={[]} multiple /></div>
+</div>

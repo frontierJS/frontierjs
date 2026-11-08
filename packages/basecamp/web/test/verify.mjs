@@ -520,6 +520,12 @@ async function waitFor(expression, predicate, ms = 15_000) {
   return value
 }
 
+// A picker read once after goto()'s fixed sleep is absent under load, and
+// `sel.options` then threw "reading 'options' of null" and ended the drive
+// (FJS-3964). The element is waited for; the caller then reads it as before.
+const pickerReady = selector =>
+  waitFor(`!!document.querySelector(${JSON.stringify(selector)})`, v => v === true)
+
 const results = []
 function check(name, got, want) {
   const ok = typeof want === 'function' ? want(got) : got === want
@@ -1216,6 +1222,7 @@ await apiCall(`/servers/${releaseServer.id}`, {
 // workspace and writes it through asSystem(), which is why there is no
 // placements service to POST to.
 await goto(appDetailPath)
+await pickerReady('#place-on')
 await evaluate(`
   (() => {
     const sel = document.getElementById('place-on')
@@ -1788,7 +1795,7 @@ check('a network is created',
 // The join table is the point of the service — a network nothing is on tells
 // an operator nothing.
 await click('Attach a server')
-await sleep(600)
+await pickerReady('#network-list select')
 await evaluate(`
   (() => {
     const sel = document.querySelector('#network-list select')
@@ -1924,6 +1931,7 @@ check('a rule with no channel reports that it reaches nobody',
   await waitFor(`document.body.textContent`, t => t.includes('Delivers to')),
   t => t.includes('nobody'))
 
+await pickerReady('select[id^="attach-"]')
 await evaluate(`
   (() => {
     const sel = [...document.querySelectorAll('select')].find(s => s.id.startsWith('attach-'))
@@ -1981,6 +1989,7 @@ check('with no override, every environment follows the default',
   await waitFor(`document.getElementById('flag-list')?.textContent ?? ''`, t => t.includes('follows the default')),
   t => t.includes('follows the default'))
 
+await pickerReady('select[id^="env-"]')
 await evaluate(`
   (() => {
     const sel = [...document.querySelectorAll('select')].find(s => s.id.startsWith('env-'))
@@ -3096,8 +3105,10 @@ const wsBefore = await evaluate(`localStorage.getItem('basecamp_workspace')`)
 const mailBefore = mailbox.length
 
 await goto('/admin/')
+// goto()'s fixed sleep loses to load: the form was absent on one read and
+// #invite-email threw next (FJS-3982). A missing form is waited for.
 check('an owner is offered a way to invite somebody',
-  await evaluate(`!!document.getElementById('invite-send')`), true)
+  await waitFor(`!!document.getElementById('invite-send')`, v => v === true), true)
 
 await fill({ 'invite-email': 'grace@example.test' })
 await evaluate(`

@@ -78,4 +78,19 @@ export async function run(t) {
   `), 'a trigger at the end of the region places its card inside the viewport')
   await t.press('Escape')
   await t.eventually(cards, 0, 'closed again')
+
+  // FJS-4103: a card taller than either side of its trigger kept the
+  // preferred side and opened past the window's edge.
+  await t.mount('hover-card', { tallRows: 80 })
+  await t.hover('#word3')
+  await t.evaluate(`return await waitVisible('body > .popover');`)
+  await t.evaluate(`return await waitSettled('body');`)
+  const tall = await t.evaluate(`
+    const el = document.querySelector('body > .popover');
+    const p = el.getBoundingClientRect();
+    return { top: Math.round(p.top), bottom: Math.round(p.bottom), winH: innerHeight, scrolls: el.scrollHeight > el.clientHeight };
+  `)
+  t.ok(tall.top >= 0 && tall.bottom <= tall.winH,
+    `a card taller than the window stays inside it (${tall.top}..${tall.bottom} of ${tall.winH}px)`)
+  t.ok(tall.scrolls, 'and scrolls its content inside the capped card')
 }

@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4480 source file(s) read
+27 package(s) · 4482 source file(s) read
 256 entry point(s), 32 imported by nothing outside their package, 14 emitted
-1754 value export(s), 641 reached by nothing outside, 181 emitted
+1755 value export(s), 642 reached by nothing outside, 181 emitted
 465 type export(s), 340 reached by nothing outside
 ```
 
@@ -40,7 +40,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `sierra` | 26 | 6 | 204 | 84 | 20 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
 | `toolbelt` | 69 | 0 | 318 | 37 | 12 | 0 | 0 |
-| `ui` | 9 | 0 | 55 | 35 | 3 | 0 | 0 |
+| `ui` | 9 | 0 | 56 | 36 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `outpost` | 11 | 1 | 56 | 17 | 1 | 0 | 0 |
 | `conduit` | 4 | 1 | 26 | 12 | 0 | 60 | 33 |
@@ -308,11 +308,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/ui`
 
-`packages/ui` · 9 entry point(s) · 55 value, 0 type export(s)
+`packages/ui` · 9 entry point(s) · 56 value, 0 type export(s)
 
 **Entries emitted (4):** `./dnd` `./drag` `./selection` `./rowlist`
 
-**Unreached values (35):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `formControl` `lockedBy` `menuWalk` `nativeValidationGuard` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `sizeClass` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
+**Unreached values (36):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `fitDropdown` `formControl` `lockedBy` `menuWalk` `nativeValidationGuard` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `sizeClass` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
 
 **Emitted (3):** `dndzone` `registerFilterComponent` `rowlist`
 

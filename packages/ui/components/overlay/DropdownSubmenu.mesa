@@ -67,6 +67,7 @@
   let placed = false
   let x      = 0
   let y      = 0
+  let maxH   = null      // set only when neither side of the row holds the panel
   let rowEl
   let labelEl
   let panelEl
@@ -100,10 +101,15 @@
     // Rendered hidden and shown by the frame that places it, so it never
     // paints at the previous open's coordinates.
     placed = false
+    maxH   = null
     open   = true
     requestAnimationFrame(async () => {
       const [tr, pr, vp] = await Promise.all([$.measure(rowEl), $.measure(panelEl), $.viewport()])
-      if (tr && pr) ({ x, y } = placeAgainst(tr, pr, vp, { placement, offset }))
+      if (tr && pr) {
+        const at = placeAgainst(tr, pr, vp, { placement, offset })
+        ;({ x, y } = at)
+        maxH = at.maxHeight ?? null
+      }
       placed = true
       queueMicrotask(() => {
         $.focus(menuEl)
@@ -201,7 +207,7 @@
       style:position="fixed"
       style:min-inline-size="10rem"
       style:max-inline-size="16rem"
-      style:max-block-size="calc(100dvh - 16px)"
+      style:max-block-size={maxH == null ? 'calc(100dvh - 16px)' : `${maxH}px`}
       style:overflow-y="auto"
       style:padding="0.25rem"
       style:left="{x}px"

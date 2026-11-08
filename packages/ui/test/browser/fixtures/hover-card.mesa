@@ -4,6 +4,8 @@
   // forces the card to be placed rather than left at the origin.
   import HoverCard from '../../../components/overlay/HoverCard.mesa'
 
+  export let tallRows = 0   // rows added to the card, to outgrow the window
+
   const words = Array.from({ length: 300 }, (_, i) => 'word' + i)
 </script>
 
@@ -19,6 +21,9 @@
     {#snippet content(el)}
       <p id="card-body">card for {el?.dataset?.word}</p>
       <a href="#x" id="card-link">link</a>
+      {#each Array.from({ length: tallRows }, (_, i) => i) as n}
+        <p class="text-sm">Row {n}</p>
+      {/each}
     {/snippet}
   </HoverCard>
 </div>

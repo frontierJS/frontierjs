@@ -295,6 +295,13 @@ describe('a call to a box meets a pre-auth drop (FJS-4079)', () => {
     expect(scripts(calls)).toHaveLength(1)
   }, 15000)
 
+  // deploy:move's tar stream and db:studio's read build their own ssh command (FJS-4100).
+  test('readyBox opens the master through the retry before a caller opens its own connection', () => {
+    const { answer, calls } = onFakeSsh(`(bc) => bc.readyBox('deploy@box')`)
+    expect(answer).toBe(true)
+    expect(calls.filter(c => c.endsWith(' true'))).toHaveLength(2)
+  }, 15000)
+
   test('a script with a key opens the master with that key, and a failure answers what it said', () => {
     const { answer, calls } = onFakeSsh(`(bc, dir) => {
       const key = dir + '/key'

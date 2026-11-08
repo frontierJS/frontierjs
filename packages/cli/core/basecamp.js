@@ -612,6 +612,24 @@ const boxMachine = (host, identity = null) => createMachine({
   exec: ({ command, describe, ...opts }) => execSync(command, { ...opts, encoding: 'utf8' }),
 })
 
+/**
+ * Open the shared ssh master to `host` through the pre-auth retry, answering
+ * whether it is up. A caller that builds its own `ssh` command (a tar stream,
+ * a remote read) calls this first, so its connection rides the master rather
+ * than meeting an sshd MaxStartups drop alone (FJS-4100).
+ */
+export const readyBox = (host, identity = null) => boxMachine(host, identity).ready()
+
+// Single-quoted for the remote shell; a leading `~/` stays outside the quotes
+// so the remote shell still expands it.
+const homeQuote = (p) => p.startsWith('~/') ? `~/${shQuote(p.slice(2))}` : shQuote(p)
+
+/** `host`'s file at `path`, read over the shared master; a failed read throws what ssh said. */
+export const readBoxFile = (host, path) => {
+  try { return boxMachine(host).pipe(shQuote(`cat -- ${homeQuote(path)}`), '') }
+  catch (err) { throw new Error(String(err.stderr ?? '').trim() || err.message) }
+}
+
 const spawnOnBox = (host, command, io) => {
   const machine = boxMachine(host)
   machine.ready()

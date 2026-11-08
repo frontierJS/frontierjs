@@ -27,6 +27,7 @@
   let x      = 0
   let y      = 0
   let placed = false                   // has THIS open been positioned yet
+  let maxH   = null                    // set only when neither side of the anchor holds the panel
   let panelEl
   let confirmEl
 
@@ -47,7 +48,11 @@
   async function position() {
     const [ar, pr, vp] = await Promise.all([$.measure(anchor), $.measure(panelEl), $.viewport()])
     if (!ar || !pr) return
-    ;({ x, y } = placeAgainst(ar, pr, vp, { offset: 8 }))
+    const at = placeAgainst(ar, pr, vp, { offset: 8 })
+    ;({ x, y } = at)
+    // Kept across the second pass, which measures the panel already capped and
+    // so finds it fitting.
+    maxH = at.maxHeight ?? maxH
   }
 
   function onClickAway(e) {
@@ -97,6 +102,8 @@
     style:max-width="16rem"
     style:left="{x}px"
     style:top="{y}px"
+    style:max-block-size={maxH == null ? null : `${maxH}px`}
+    style:overflow-y={maxH == null ? null : 'auto'}
     style:visibility="{placed ? 'visible' : 'hidden'}"
     {@attach panelAnim}
     role="dialog"

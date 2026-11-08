@@ -46,6 +46,7 @@
   let x       = 0
   let y       = 0
   let placed  = false
+  let maxH    = null     // set only when neither side of the trigger holds the card
   let panelEl
 
   var openTimer  = 0
@@ -85,6 +86,7 @@
     // A card already open follows the pointer from word to word; a closed one
     // renders hidden first, because it cannot be measured until it exists.
     placed  = open
+    maxH    = null
     open    = true
     current = el
     describe(el)
@@ -95,7 +97,9 @@
     const [tr, pr, vp] = await Promise.all([$.measure(el), $.measure(panelEl), $.viewport()])
     // The pointer has since moved to another trigger, which has its own frame.
     if (!tr || !pr || current !== el) return
-    ;({ x, y } = placeAgainst(tr, pr, vp, { placement, offset }))
+    const at = placeAgainst(tr, pr, vp, { placement, offset })
+    ;({ x, y } = at)
+    maxH = at.maxHeight ?? null
   }
 
   function hide() {
@@ -177,6 +181,8 @@
       style:position="fixed"
       style:left="{x}px"
       style:top="{y}px"
+      style:max-block-size={maxH == null ? null : `${maxH}px`}
+      style:overflow-y={maxH == null ? null : 'auto'}
       style:visibility="{placed ? 'visible' : 'hidden'}"
       onpointerenter={() => clearTimeout(closeTimer)}
       onpointerleave={onCardLeave}

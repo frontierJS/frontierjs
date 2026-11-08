@@ -1384,7 +1384,10 @@ export function collectTerms({ root }) {
           const [head, tail] = r.term.split(' ')
           if (/(?:ed|ing)$/.test(head) && !byTerm.has(head.toLowerCase())) return false
           const singular = singularize(tail.toLowerCase())
-          return singular === tail.toLowerCase() || pairs.has(`${head} ${tail[0]}${singular.slice(1)}`)
+          if (singular === tail.toLowerCase()) return true
+          // Twice, not once: one stray singular in a source comment let a verb's
+          // subject through as a plural.
+          return (pairs.get(`${head} ${tail[0]}${singular.slice(1)}`)?.count ?? 0) >= 2
         })
         .map((r) => ({ term: r.term, count: r.count, spread: r.owners.size }))
         .sort((a, b) => b.spread - a.spread || b.count - a.count)

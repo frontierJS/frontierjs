@@ -6,10 +6,10 @@
 // that cannot go quiet fails here and not on the next app.
 
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { releaseFindings, mergeVariables, imageRuntime, readEnvSpec, requiredEnvKeys, releasePlan, gatherReleaseInputs } from '../core/release-preflight.js'
+import { releaseFindings, mergeVariables, imageRuntime, readEnvSpec, requiredEnvKeys, releasePlan, gatherReleaseInputs, migrationHistoryVerdict } from '../core/release-preflight.js'
 
 const SPEC = { spec: {
   ENCRYPTION_KEY:   { type: 'string', required: true },
@@ -425,5 +425,54 @@ describe('migration-history: the history is asked before the build', () => {
     const f = found.find(f => f.rule === 'unreadable' && f.title.includes('migration history'))
     expect(f.level).toBe('warn')
     expect(f.detail).toContain('litestone')
+  })
+})
+
+// FJS-4102: fli deploy's SSH door shipped the same history basecamp:deploy
+// refused. The step asks the verdict of the one rule, before the lock.
+describe('migration-history: the SSH door asks the same rule', () => {
+  const THING = 'model Thing {\n  id Int @id\n  name String\n}\n'
+  const BUILT = 'CREATE TABLE IF NOT EXISTS "thing" (\n  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,\n  "name" TEXT NOT NULL\n) STRICT;\n'
+  const app = (files, { litestone = true } = {}) => {
+    const root = mkdtempSync(join(tmpdir(), 'deploy-history-'))
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, dirname(path)), { recursive: true })
+      writeFileSync(join(root, path), text)
+    }
+    if (litestone) {
+      mkdirSync(join(root, 'node_modules', '@frontierjs'), { recursive: true })
+      symlinkSync(join(import.meta.dir, '..', '..', 'litestone'), join(root, 'node_modules', '@frontierjs', 'litestone'))
+    }
+    return root
+  }
+  const asked = (root) => {
+    try { return migrationHistoryVerdict(root) }
+    finally { rmSync(root, { recursive: true, force: true }) }
+  }
+
+  test('a schema the migrations do not build refuses, naming the gap', () => {
+    const v = asked(app({ 'db/schema.lite': THING + 'model Extra {\n  id Int @id\n}\n', 'db/migrations/20260101000000_init.sql': BUILT }))
+    expect(v.errors.join('\n')).toContain('Extra')
+    expect(v.warnings).toEqual([])
+  })
+
+  test('a history that builds the schema is quiet', () => {
+    expect(asked(app({ 'db/schema.lite': THING, 'db/migrations/20260101000000_init.sql': BUILT }))).toEqual({ errors: [], warnings: [] })
+  })
+
+  test('an app with no schema has nothing to ask', () => {
+    expect(asked(app({ 'api/package.json': '{}' }, { litestone: false }))).toEqual({ errors: [], warnings: [] })
+  })
+
+  test('a rule that could not ask warns rather than passing silently', () => {
+    const v = asked(app({ 'db/schema.lite': THING }, { litestone: false }))
+    expect(v.errors).toEqual([])
+    expect(v.warnings.join('\n')).toContain('litestone')
+  })
+
+  test('the pipeline asks it before the lock', () => {
+    const step = readFileSync(new URL('../commands/deploy/_steps-docker/01-preflight.md', import.meta.url), 'utf8')
+    expect(step).toContain('migrationHistoryVerdict(')
+    expect(step.indexOf('migrationHistoryVerdict(')).toBeLessThan(step.indexOf('acquireLock('))
   })
 })

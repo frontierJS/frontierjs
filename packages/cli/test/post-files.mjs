@@ -90,7 +90,7 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex')
 /** One `fli` run from this checkout, as the owner under the drive's HOME: `{ code, out }`. */
 const fli = (home, cwd, ...args) => fliPiped(null, home, cwd, ...args)
 const fliPiped = (input, home, cwd, ...args) => new Promise(resolve => {
-  const child = spawn('bun', [fliBin, ...args], { cwd, env: { ...process.env, HOME: home, FLI_FRONTIER_POST: ORIGIN, NO_COLOR: '1' } })
+  const child = spawn('bun', [fliBin, ...args], { cwd, env: { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), FLI_FRONTIER_POST: ORIGIN, NO_COLOR: '1' } })
   if (input) child.stdin.end(input)
   let out = ''
   child.stdout.on('data', d => { out += d })
@@ -177,7 +177,8 @@ try {
   console.log('the client: fli up, fli and Chrome down')
   const home = join(dir, 'home')
   mkdirSync(join(home, '.fli', 'frontier'), { recursive: true })
-  writeFileSync(join(home, '.fli', 'config.json'), JSON.stringify({ frontier: { nick: 'drive' } }))
+  mkdirSync(join(home, '.config', 'fli'), { recursive: true })
+  writeFileSync(join(home, '.config', 'fli', 'config.json'), JSON.stringify({ frontier: { nick: 'drive' } }))
   writeFileSync(join(home, '.fli', 'frontier', 'key.json'), JSON.stringify(owner))
   const NAME = 'drive-sealed-name.txt'
   const MARK = 'the plaintext the post must never hold'

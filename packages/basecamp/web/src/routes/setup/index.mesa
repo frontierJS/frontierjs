@@ -79,7 +79,12 @@ title: First run
   function watch() {
     clearTimeout(poll)
     if (restoring !== 'staged') return
-    poll = setTimeout(async () => { readProbe(await setupProbe().catch(() => null)); watch() }, 3000)
+    // The restart this waits for takes the API down: a failed probe keeps the state, or the watch ends before the boot.
+    poll = setTimeout(async () => {
+      const p = await setupProbe().catch(() => null)
+      if (typeof p?.needs_setup === 'boolean') readProbe(p)
+      watch()
+    }, 3000)
   }
   $: restoring, () => watch()
   $.onDestroy(() => clearTimeout(poll))
