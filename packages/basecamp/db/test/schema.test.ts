@@ -236,6 +236,8 @@ describe('schema.lite', () => {
   test('every model name is PascalCase singular — Invariant 2', () => {
     const r = parseFile(SCHEMA)
     const bad = r.schema.models
+      // An @@external table is named by whoever creates it (conduit's store).
+      .filter((m: any) => !m.attributes?.some((a: any) => a.kind === 'external'))
       .map((m: any) => m.name)
       // `singularize` and not `endsWith('s')`. The regex was a sixth hand copy
       // of a fact `@frontierjs/toolbelt/inflect` owns, and it reads `Series` as

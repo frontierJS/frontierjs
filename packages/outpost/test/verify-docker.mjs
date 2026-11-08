@@ -720,9 +720,18 @@ try {
   const adoptCodes = (await new Response(adoptLoop.stdout).text()).trim().split('\n')
   if (adopted.status !== 200) console.log(adopted.body)
   if (adoptCodes.some(c => c !== '200')) console.log('adopting a serving _next:', Object.groupBy(adoptCodes, c => c))
-  t('startFirst.theNextReleaseNamesAServingNextInsteadOfRemovingIt', adopted.status === 200 && adoptCodes.length > 5 && adoptCodes.every(c => c === '200')
-    && appContainers().join() === appName && inspect('{{.Id}}') === adopted.body?.containerId && inspect('{{.Id}}') !== stuckNext
-    && await untilHttps())
+  // Each part is named so a red run says which one it was (FJS-4095).
+  const adoption = {
+    released:   adopted.status === 200,
+    looped:     adoptCodes.length > 5,
+    allServed:  adoptCodes.every(c => c === '200'),
+    oneNamed:   appContainers().join() === appName,
+    isNewOne:   inspect('{{.Id}}') === adopted.body?.containerId,
+    notStuck:   inspect('{{.Id}}') !== stuckNext,
+    answers:    await untilHttps(),
+  }
+  if (!Object.values(adoption).every(Boolean)) console.log('adopting a serving _next:', adoption, { containers: appContainers(), adoptCodes: adoptCodes.length })
+  t('startFirst.theNextReleaseNamesAServingNextInsteadOfRemovingIt', Object.values(adoption).every(Boolean))
 
   // A restart gives a `127.0.0.1::80` container a new host port and nothing
   // the daemon does tells Caddy; the running Outpost's heartbeat pass moves the

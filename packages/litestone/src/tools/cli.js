@@ -3196,9 +3196,10 @@ async function cmdDoctor() {
           } : null
         )
       } else {
-        const { parse: parseSchema } = await import('../core/parser.js')
-        const { readFileSync: rfs } = await import('fs')
-        const result = parseSchema(rfs(schemaPath, 'utf8'))
+        // parseFile: an imported model is undeclared to parse(), so every
+        // `extend model` over one reads as an error.
+        const { parseFile } = await import('../core/parser.js')
+        const result = parseFile(schemaPath)
         if (!result.valid) {
           fail('SCHEMA', 'schema.lite has errors', result.errors[0])
           for (const e of result.errors.slice(1)) fail('SCHEMA', '', e)

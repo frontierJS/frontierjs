@@ -43,13 +43,13 @@ function prune(set, id) {
   if (!set.size) _registry.delete(id)
 }
 
-export function __mesa_register(id, hmrMark, anchor, props, fn) {
+export function __mesa_register(id, hmrMark, anchor, props, fn, remount) {
   if (!_registry.has(id)) _registry.set(id, new Set())
   const set = _registry.get(id)
   // On the way in, so a component that mounts and unmounts repeatedly — a route
   // the developer keeps navigating back to — cannot accumulate.
   prune(set, id)
-  const entry = { hmrMark, anchor, props, fn }
+  const entry = { hmrMark, anchor, props, fn, remount }
   _registry.set(id, set)
   set.add(entry)
   return () => {

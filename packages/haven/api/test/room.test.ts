@@ -63,6 +63,13 @@ const events = (s: Sock, name: string) => s.frames.filter(f => f.type === 'event
 const move   = (s: Sock, roomId: number, x: number, y: number) =>
   send(s, { type: 'subscribe', channel: roomChannelName(roomId), meta: { x, y } })
 
+/** A move is never answered, but the subscriber is handed the roster; two sockets' moves are not ordered, so a listener waits for it before anyone acts. */
+async function settle (s: Sock, roomId: number, x: number, y: number): Promise<void> {
+  const seen = events(s, 'presence:sync').length
+  move(s, roomId, x, y)
+  for (let i = 0; i < 200 && events(s, 'presence:sync').length === seen; i++) await sleep(5)
+}
+
 async function call (s: Sock, service: string, method: string, frame: Record<string, unknown>): Promise<any> {
   const id = String(++s.callId)
   send(s, { type: 'service_call', id, service, method, ...frame })
@@ -243,7 +250,7 @@ describe('a banned member', () => {
     const r = await enter(rex)
     const a = await enter(ana)
 
-    move(a, square.id, 3, 2)
+    await settle(a, square.id, 3, 2)
     move(s, square.id, 2, 2)
     expect((await say(s, square.id, 'hello')).type).toBe('service_result')
     move(r, square.id, 5, 5)

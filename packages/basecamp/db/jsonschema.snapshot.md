@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-181 definitions · 75 models · 1 view · 45 types · 60 enums · 0 other
+183 definitions · 77 models · 1 view · 45 types · 60 enums · 0 other
 ```
 
 ## Definitions
@@ -52,6 +52,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Server` | model |
 | `ServerEvent` | model |
 | `OutpostNonce` | model |
+| `conduit_targets` | model |
+| `conduit_receipts` | model |
 | `Volume` | model |
 | `Network` | model |
 | `ServerNetwork` | model |
@@ -821,6 +823,38 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `seenAt` | `string` | — | — | `format: "date-time"` | — |
 
 **On create**: required — `nonce`
+
+### `conduit_targets`
+
+- gate `read:9 create:9 update:9 delete:9` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | yes | — | — | — |
+| `kind` | `string` | yes | — | — | — |
+| `protocol` | `string` | yes | — | — | — |
+| `address` | `string` | yes | — | — | — |
+| `auth` | `string` | yes | — | — | — |
+| `extra` | `string`? | — | — | — | — |
+| `registered_at` | `integer` | yes | — | — | — |
+| `last_seen_at` | `integer`? | — | — | — | — |
+
+**On create**: required — `id`, `kind`, `protocol`, `address`, `auth`, `registered_at`
+
+### `conduit_receipts`
+
+- gate `read:9 create:9 update:9 delete:9` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `provider` | `string` | yes | — | — | — |
+| `key` | `string` | yes | — | — | — |
+| `event_type` | `string` | yes | — | — | — |
+| `owner` | `string`? | — | — | — | — |
+| `received_at` | `integer` | yes | — | — | — |
+| `applied_at` | `integer`? | — | — | — | — |
+
+**On create**: required — `provider`, `key`, `event_type`, `received_at`
 
 ### `Volume`
 

@@ -593,6 +593,23 @@ only control on the page that touches the box.
     for what the file can state once. C's two silent failures are closed by refusing a
     `runs: true` entry without `scopedKey` and by fresh mode dropping it.
 
+- ~~**Q14 — How does the use stage get its owner, now that a seeded owner skips the app's sign-up?**~~ **Answered 2026-11-08 (`FJS-D2037`): A — the use stage signs the owner up through `POST /api/auth/register` on both paths and the deploy stage only mints the owner; on a 202 it seeds instead (`auth:dev-admin` on the local copy, Q9's `apps.seedOwner` on a deployed App) and the login detail says so.**
+  Read 2026-11-08 on `01-01-saas-signup`: the schema says sign-up makes the person's
+  Organization, the move needs one to reach a Booking, and the seeded owner (Q6, Q9) never signs
+  up, so the move 403s on a create only the system may make. The 403 is a generate-stage gap
+  (nothing in that app makes the Organization), but a seeded owner cannot tell it from a passing
+  app that does. Every scaffolded app wires `onEmailVerificationRequested`, so its
+  `/auth/register` answers 202 and makes the account at the link (`FJS-D1310`).
+  - **A** — the use stage signs the owner up through `POST /api/auth/register` on both paths
+    and the deploy stage only mints the owner; on a 202 it seeds instead (`auth:dev-admin` on the
+    local copy, Q9's `apps.seedOwner` on a deployed App) and the login detail says so
+  - **B** — sign up on both paths and fail the login on a 202
+  - **C** — sign up on the local path only; a deployed App keeps Q9's seed
+  - **Recommend A** — sign-up is what a person does, so an app that makes the Organization at
+    sign-up passes and one that does not fails at the move rather than being masked; the 202
+    fallback keeps Q6's reason (most apps answer 202) from failing every run. A signed-up owner
+    has the app's default role, not admin, so a move only an admin can make now fails.
+
 ## See also
 
 `charter.md` (the plan and its features) · `zero-to-live.md` (the deploy chain, never run end

@@ -475,10 +475,18 @@ export async function createTestEnv(opts = {}) {
       // that look like findings and are noise, which is the surest way to make
       // people stop reading the ones that are not. The refusal itself is
       // covered where it lives, in litestone's own view tests.
+      //
+      // An `@@external` model keeps its read rows and loses its writes: its
+      // table is created by someone else, so `_chains` builds it no factory
+      // and every write row would read *no fixture could be built*. Its read
+      // still runs, so a table missing where the gate should answer is an error.
+      const external = new Set(schema.models
+        .filter(m => m.attributes?.some(a => a.kind === 'external')).map(m => m.name))
       const rows   = access.models.filter(m => m.gate)
         .flatMap(m => gateLadder(m).map(r => ({ model: m.name, isView: m.isView, ...r })))
         .filter(r => wanted.has(r.op))
         .filter(r => !r.isView || r.op === 'read')
+        .filter(r => !external.has(r.model) || r.op === 'read')
       if (!rows.length) return []
 
       // A gate REFUSES and a policy FILTERS, and on a write both arrive as the

@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-75 model(s) · 60 enum(s) · 2 database(s) · 1 value set(s)
+77 model(s) · 60 enum(s) · 2 database(s) · 1 value set(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -730,6 +730,34 @@ table `blueprint_param` · db `main` · gate `1.7`
 @@index(blueprintId)
 ```
 
+### `conduit_receipts`
+
+table `conduit_receipts` · db `main` · gate `9` · @@external
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `applied_at` | `Int` | yes | — | — |
+| `event_type` | `String` | no | — | **required on write** |
+| `key` | `String` | no | — | id |
+| `owner` | `String` | yes | — | — |
+| `provider` | `String` | no | — | id |
+| `received_at` | `Int` | no | — | **required on write** |
+
+### `conduit_targets`
+
+table `conduit_targets` · db `main` · gate `9` · @@external
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `address` | `String` | no | — | **required on write** |
+| `auth` | `String` | no | — | **required on write** |
+| `extra` | `String` | yes | — | — |
+| `id` | `String` | no | — | id |
+| `kind` | `String` | no | — | **required on write** |
+| `last_seen_at` | `Int` | yes | — | — |
+| `protocol` | `String` | no | — | **required on write** |
+| `registered_at` | `Int` | no | — | **required on write** |
+
 ### `Credential`
 
 table `credential` · db `main` · gate `8`
@@ -1190,6 +1218,7 @@ table `flow` · db `main` · gate `4.4.4.5` · @@softDelete
 ```
 @@index(ownerId)
 @@index(status)
+@@index(workspaceId)
 @@allow(create, true)
 @@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(create, ownerId != null && ownerId != auth().id)

@@ -8,9 +8,10 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 75 models · 2 databases
+-- 77 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
+-- @@external, managed outside litestone: conduit_targets, conduit_receipts
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS "verification" (
@@ -346,6 +347,7 @@ CREATE TABLE IF NOT EXISTS "flow" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_flow_status" ON "flow" ("status") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_flow_ownerId" ON "flow" ("ownerId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_flow_workspaceId" ON "flow" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_flow_deletedAt" ON "flow" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "flow_credential" (

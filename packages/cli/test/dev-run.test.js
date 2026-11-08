@@ -70,6 +70,19 @@ describe('compact', () => {
     expect(out[head]).toMatch(/^  probe  READY \(\d+ms\)$/)
   })
 
+  // FJS-3355: a surface that reported and exited (a probe) is not a surface that
+  // is gone; the summary waits for the one still starting.
+  test('a surface that reported and exited does not draw the summary before a slower one reports', async () => {
+    const root = app({
+      api: 'setTimeout(() => {' + say(formatDevLine({ ready: { url: 'http://localhost:1/api', rows: [{ name: 'Junction', facts: [] }] } })) + '}, 400)',
+      web: say(formatDevLine({ ready: { url: 'http://localhost:2/', rows: [{ name: 'Sierra', facts: [] }] } })),
+    })
+    const { out } = await run(root, ['api', 'web'], { title: 'probe' })
+    expect(out.some(l => l.includes('http://localhost:1/api') && l.includes('Junction'))).toBe(true)
+    expect(out.some(l => l.includes('no ready line'))).toBe(false)
+    expect(out.some(l => /READY/.test(l))).toBe(true)
+  })
+
   // The key footer waits on `summarized`; drawn mid-summary it splits the rows.
   test('summarized is false for every summary line and true when onSummary runs', async () => {
     const root = app({

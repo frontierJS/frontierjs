@@ -34,7 +34,13 @@
  * because the new render registers a fresh entry of its own. Working from a
  * snapshot is what makes that safe — re-rendering adds to the same Set.
  *
- * @param {Set<{hmrMark: Node, anchor: Node, props: any}>} entries
+ * An entry's `remount` is the runtime's, captured where the instance mounted:
+ * it re-renders under the parent that owns the instance, with the props that
+ * parent last pushed, and re-maps the anchor so later pushes reach the new
+ * render. Without it the new render took mount-time props and the parent kept
+ * writing to the old instance, off screen (`FJS-4097`).
+ *
+ * @param {Set<{hmrMark: Node, anchor: Node, props: any, remount?: Function}>} entries
  * @param {Function} newFn        the new component fn — `(anchor, props)`
  * @param {Function} [newSetMark] the new module's `__setMark`, seeded before each call
  * @param {string} [label]        what to name in a remount error
@@ -45,7 +51,7 @@ export function swapInstances(entries, newFn, newSetMark, label = 'component') {
   let count = 0
 
   for (const entry of snapshot) {
-    const { hmrMark, anchor, props } = entry
+    const { hmrMark, anchor, props, remount } = entry
 
     // An instance whose anchor has been detached is gone for good — the page
     // navigated, a parent block tore it down. Dropping it here is what keeps
@@ -69,7 +75,8 @@ export function swapInstances(entries, newFn, newSetMark, label = 'component') {
 
     try {
       if (typeof newSetMark === 'function') newSetMark(hmrMark)
-      newFn(anchor, props)
+      if (typeof remount === 'function') remount(newFn, props)
+      else newFn(anchor, props)
       count++
     } catch (err) {
       // One instance throwing must not cost the others their update — the

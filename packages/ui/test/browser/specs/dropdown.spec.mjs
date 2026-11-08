@@ -424,6 +424,23 @@ export async function run(t) {
   await t.eventually(focused, 'Bravo 3 ⌘B', 'letters typed together narrow the match')
   await t.press('Escape')
 
+  /* ── a menu taller than either side of its trigger ────────────────────── */
+
+  // FJS-4063: it kept the preferred side and opened past the window's edge.
+  await t.mount('dropdown', { tallRows: 60 })
+  await t.evaluate(`document.querySelector('#dd-side').scrollIntoView({ block: 'center' }); return true;`)
+  await t.clickAt('#dd-side')
+  await t.evaluate(`return await waitVisible('[role=menu]');`)
+  await t.evaluate(`return await waitSettled('body');`)
+  const tallAt = await t.evaluate(`
+    const p = document.querySelector('.popover').getBoundingClientRect();
+    return { top: Math.round(p.top), bottom: Math.round(p.bottom), winH: innerHeight, scrolls: document.querySelector('.popover').scrollHeight > document.querySelector('.popover').clientHeight };
+  `)
+  t.ok(tallAt.top >= 0 && tallAt.bottom <= tallAt.winH,
+    `a menu taller than the window stays inside it (${tallAt.top}..${tallAt.bottom} of ${tallAt.winH}px)`)
+  t.ok(tallAt.scrolls, 'and scrolls its rows inside the capped panel')
+  await t.press('Escape')
+
   /* ── a side and an alignment ──────────────────────────────────────────── */
 
   const placed = async (placement) => {

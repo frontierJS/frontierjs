@@ -18,6 +18,7 @@
 
   export let placement = 'bottom-start'
   export let side      = 'bottom-center'   // the menu at the end of the page, scrolled to mid-viewport
+  export let tallRows  = 0                 // rows added to that menu, to outgrow the window
 
   let chose = ''
   let runs  = 0
@@ -68,6 +69,9 @@
     <DropdownItem>One</DropdownItem>
     <DropdownItem>Two</DropdownItem>
     <DropdownItem>Three</DropdownItem>
+    {#each Array.from({ length: tallRows }, (_, i) => i) as n}
+      <DropdownItem>Row {n}</DropdownItem>
+    {/each}
   </DropdownMenu>
 </div>
 

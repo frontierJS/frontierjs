@@ -20,6 +20,8 @@ import { parse }                  from 'acorn'
 
 import { compileSource }             from '../src/compiler.js'
 import { injectHMR, canInject }      from '../mesa-vite/hmr.js'
+import * as client                   from '../mesa-vite/client.js'
+import * as runtime                  from '../src/runtime.js'
 
 const CLIENT = '/@test/hmr-client'
 const ROOT   = '/app'
@@ -120,5 +122,80 @@ describe('injectHMR', () => {
   test('an id outside the root is left absolute rather than mangled', async () => {
     const js = injectHMR(await compiled(), '/elsewhere/Counter.mesa', ROOT, CLIENT)
     expect(js).toContain(`__mesa_register('/elsewhere/Counter.mesa'`)
+  })
+})
+
+// ─── a swapped child keeps hearing its parent ───────────────────────────────
+
+// Runs injected output for real: the runtime and the HMR client are the ones a
+// page loads, and `import.meta.hot` is a stub whose accept callback the test
+// fires with the next version of the module, as Vite would.
+const evalModule = (js, imports) => {
+  const hot = { accept: (cb) => { hot.onUpdate = cb } }
+  const names = [], values = []
+  const body = js
+    .replace(/^import \* as \$\$runtime from '[^']+';$/m, '')
+    .replace(/^import \{ __mesa_register, __mesa_hot_update \} from '[^']+';$/m, '')
+    .replace(/^import\s+(\w+)\s+from\s+'([^']+)';$/gm, (_, name, from) => {
+      names.push(name)
+      values.push(imports[from])
+      return ''
+    })
+    .replaceAll('import.meta.hot', '__hot')
+    .replace('export default function __mesaHMRWrap', 'function __mesaHMRWrap')
+    .replace('export function __setMark', 'function __setMark')
+    .replace('export { __mesaOrigFn }', '')
+  const mod = new Function('$$runtime', '__mesa_register', '__mesa_hot_update', '__hot', ...names,
+    `${body}\nreturn { default: __mesaHMRWrap, __mesaOrigFn, __setMark }`,
+  )(runtime, client.__mesa_register, client.__mesa_hot_update, hot, ...values)
+  return { mod, hot }
+}
+
+const childVersion = (tag) =>
+  `<script>\n  export let value = ''\n</script>\n<i>${tag}:{value}</i>`
+
+const PARENT = `<script>
+  import Child from './Child.mesa'
+  let row = 'a'
+</script>
+<button class="b" onclick={() => (row = 'b')}>b</button>
+<button class="c" onclick={() => (row = 'c')}>c</button>
+<Child value={row} />`
+
+describe('FJS-4097: a hot-swapped child', () => {
+  const ID = `${ROOT}/src/Child.mesa`
+  const build = async (src) =>
+    injectHMR((await compileSource(src, { filename: 'Child.mesa', debug: false, css: false })).result, ID, ROOT, CLIENT)
+
+  test('renders the parent\'s latest props and keeps receiving its pushes', async () => {
+    const child = evalModule(await build(childVersion('v1')), {})
+    const parentJs = (await compileSource(PARENT, { filename: 'Parent.mesa', debug: false, css: false })).result
+    const parentFn = new Function('$$runtime', 'Child', parentJs
+      .replace(/^import\s+.+?from\s+'[^']+';$/gm, '')
+      .replace(/^export default\s+/m, 'const __component = ') + '\nreturn __component',
+    )(runtime, child.mod.default)
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const anchor = document.createComment('')
+    container.appendChild(anchor)
+    runtime.createRoot(() => parentFn(anchor, {}))
+    runtime.flushSync()
+    const shown = () => [...container.querySelectorAll('i')].map((i) => i.textContent)
+    const click = (sel) => { container.querySelector(sel).__click(); runtime.flushSync() }
+
+    expect(shown()).toEqual(['v1:a'])
+    click('.b')
+    expect(shown()).toEqual(['v1:b'])
+
+    const next = evalModule(await build(childVersion('v2')), {})
+    child.hot.onUpdate(next.mod)
+    runtime.flushSync()
+    // Mount-time props would read v2:a.
+    expect(shown()).toEqual(['v2:b'])
+
+    click('.c')
+    expect(shown()).toEqual(['v2:c'])
+    container.remove()
   })
 })

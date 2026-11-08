@@ -351,15 +351,24 @@ export class QueueWorker {
           now:    failedAt,
           owner:  this._owner,
         }))
-        if (changes > 0) this._telemetry?.emit('caravan.job.failed', {
-          id:         record.id,
-          queue:      record.queue,
-          name:       record.name,
-          error,
-          attempts:   attempt,
-          status:     'dead',
-          durationMs: failedAt - startMs,
-        })
+        if (changes > 0) {
+          // Said out loud as well as emitted and stored: an app with no
+          // telemetry wired shows a container log with no trace of a job that
+          // dies on every fire, and jobs.db is not where an operator looks first.
+          console.error(
+            `[Caravan] job '${record.name}' (${record.id}) on queue '${record.queue}' ` +
+            `is dead after ${attempt} attempt${attempt === 1 ? '' : 's'}: ${error}`
+          )
+          this._telemetry?.emit('caravan.job.failed', {
+            id:         record.id,
+            queue:      record.queue,
+            name:       record.name,
+            error,
+            attempts:   attempt,
+            status:     'dead',
+            durationMs: failedAt - startMs,
+          })
+        }
       } else {
         // The ladder is the floor when the provider named nothing, and the
         // provider's own window is the floor when it did -- never the shorter.

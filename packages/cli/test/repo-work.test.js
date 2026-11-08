@@ -19,8 +19,10 @@ import { esc }                           from '../core/html-page.js'
 
 const REPO = new URL('../../..', import.meta.url).pathname
 
-let ROOT, LOG, model, work
+let ROOT, LOG, model, work, next, queue, absent
 
+// Every read of the registers happens here, under the hook's 30 s: a test that
+// re-reads them runs inside the default 5 s and fails when lanes share the CPU.
 beforeAll(() => {
   ROOT = mkdtempSync(join(tmpdir(), 'fli-repo-work-'))
   LOG  = join(ROOT, 'fix-loop.jsonl')
@@ -32,6 +34,9 @@ beforeAll(() => {
   ].map(e => JSON.stringify(e)).join('\n') + '\nnot json\n')
   model = collect({ root: REPO })
   work  = workOf(REPO, model, { today: '2026-10-06', log: LOG })
+  next   = rankNext(REPO)
+  queue  = openDecisions(REPO)
+  absent = workOf(REPO, model, { log: join(ROOT, 'absent.jsonl') })
 }, 30_000)
 afterAll(() => { try { rmSync(ROOT, { recursive: true, force: true }) } catch {} })
 
@@ -47,7 +52,7 @@ describe('the counts', () => {
   })
 
   test('the queue counts are the ones fli next and fli decisions print', () => {
-    const next = rankNext(REPO), q = openDecisions(REPO)
+    const q = queue
     expect(work.ready).toBe(next.ready.length)
     expect(work.blocked).toBe(next.blocked.length)
     expect(work.top?.id).toBe(next.ready[0]?.id)
@@ -59,7 +64,7 @@ describe('the counts', () => {
   })
 
   test('a missing log draws the loop with no figures', () => {
-    expect(workOf(REPO, model, { log: join(ROOT, 'absent.jsonl') }).loop).toBeNull()
+    expect(absent.loop).toBeNull()
   })
 
   test('papers are counted by their own status, and the index is not one', () => {

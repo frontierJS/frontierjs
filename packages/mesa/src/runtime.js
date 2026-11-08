@@ -5833,6 +5833,48 @@ export function registerComponentAnchor(anchor) {
   }
 }
 
+// What the parent last pushed to each anchor — a remount starts from it, since
+// the props the child was mounted with are as old as the page.
+const _lastPushed = new WeakMap()
+
+/**
+ * captureRemount — how a hot update re-renders one instance in place.
+ *
+ * Called by the HMR boundary right after `pop_component`, when the parent's
+ * owner and context stack are still the ones this instance was mounted under.
+ * A swap runs from the HMR client with neither in place, so a bare
+ * `newFn(anchor, props)` mounted a child no parent owned: it rendered the
+ * mount-time props, `registerComponentAnchor` found nothing to map, and every
+ * later push went to the old instance's signals, off screen (`FJS-4097`).
+ *
+ * The returned function disposes the old instance, mounts `fn` under the same
+ * owner and context with the parent's latest props, and re-maps the anchor if
+ * the parent had registered it.
+ *
+ * @param {Comment} anchor
+ * @returns {(fn: Function, props: any) => void}
+ */
+export function captureRemount(anchor) {
+  const owner = _owner
+  const child = owner?._children?.[owner._children.length - 1]
+  const withContext = captureContext()
+  return (fn, props) => {
+    const registered = _componentRegistry.has(anchor) || _componentExports.has(anchor)
+    const latest = _lastPushed.get(anchor) ?? props
+    if (child) _disposeNode(child, true)
+    const prevOwner = _owner, prevListener = _listener
+    _owner = owner
+    _listener = null
+    try {
+      withContext(() => fn(anchor, latest))
+      if (registered) registerComponentAnchor(anchor)
+    } finally {
+      _owner = prevOwner
+      _listener = prevListener
+    }
+  }
+}
+
 /**
  * componentApi — what `bind:this={ref}` on a component resolves to (VISION
  * §10.2, RULE 36): the child's exported interface, never a DOM node.
@@ -5911,6 +5953,7 @@ export function pushProps(anchor, newProps) {
   if (!newProps) return
   const registry = _componentRegistry.get(anchor)
   if (!registry) return
+  _lastPushed.set(anchor, newProps)
   batch(() => {
     // Everything the child did NOT declare is its `$attributes`, and it has no
     // prop signal to receive it — so without this the undeclared half of a push

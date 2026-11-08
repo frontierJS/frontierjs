@@ -62,7 +62,9 @@ import { pickWorkBase, daemonCanRead, workBaseCandidates } from '../packages/cli
 import { apiContainerName }                            from '../packages/cli/core/ports.js'
 import { pointAtLocalServer, makeContainerDir, removeContainerWritten } from '../packages/cli/core/tutor.js'
 import { DEFAULT_PAGE, guardProbeScript, queueScript, queueVerdict, queueStateLine, jobsVolumeVerdict } from '../packages/cli/core/pause.js'
-import { edgeRoutes, applyEdge, readConfigScript, parseConfigRead, writeConfigScript, parseConfigWrite, INGRESS_SERVER } from '../packages/cli/core/edge.js'
+import { edgeRoutes, applyEdge, readConfigScript, parseConfigRead, writeConfigScript, parseConfigWrite, INGRESS_SERVER,
+         releaseFilesScript, parseReleaseFiles } from '../packages/cli/core/edge.js'
+import { ENTRY, cacheFor }                             from '../packages/sierra/src/postbuild/widget-headers.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 import { fenceThisProcess }                            from '../packages/cli/core/bun-fence.js'
 import { scaffoldVerificationToken }                   from '../packages/cli/core/probe.js'
@@ -1433,6 +1435,10 @@ function indent(text) {
 // answers 502 through the proxy and *paused* answers 503. A guard that refused
 // everything would be indistinguishable from a working one otherwise.
 //
+// The split app also has a widget origin (`deploy.widgets`), whose file list is
+// read off the target by the script `widgetsFor` runs, since each file's cache
+// is chosen per name and a list read some other way proves a different route.
+//
 // Returns { findings, skipped } like its siblings.
 
 export function pauseEdgeCycle({ keep = false, verbose = false, log = console.log } = {}) {
@@ -1454,6 +1460,11 @@ export function pauseEdgeCycle({ keep = false, verbose = false, log = console.lo
   // The path INSIDE the container, which is what the routes are written for.
   const SERVER_PATH = '/srv/app'
   const srv  = join(work, 'srv', 'app')
+
+  const WIDGETS = `${SERVER_PATH}/widgets`
+  const shelf   = join(srv, 'widgets', 'current')
+  // Vite's name for a lazy chunk, hyphen in the hash included (hashed-asset.js).
+  const CHUNK   = 'assets/form-C_TQPJ-f.js'
 
   const curl = (host, path, extra = []) => exec('curl',
     ['-s', ...extra, '--max-time', '10', '-H', `Host: ${host}`, `http://127.0.0.1:${PORT}${path}`], { verbose: false }).output
@@ -1477,6 +1488,10 @@ export function pauseEdgeCycle({ keep = false, verbose = false, log = console.lo
     mkdirSync(join(srv, 'current'), { recursive: true })
     writeFileSync(join(srv, 'current', 'index.html'), '<h1>the app</h1>\n')
     writeFileSync(join(srv, '.fli', 'maintenance.html'), DEFAULT_PAGE)
+    mkdirSync(join(shelf, 'assets'), { recursive: true })
+    writeFileSync(join(shelf, 'LeadForm.js'), 'import("./assets/form-C_TQPJ-f.js")\n')
+    writeFileSync(join(shelf, CHUNK), 'export const form = 1\n')
+    writeFileSync(join(shelf, 'index.html'), '<ul><li>LeadForm.js</li></ul>\n')
     // The server Outpost would have made, with one of its routes already in it.
     writeFileSync(join(work, 'caddy.json'), JSON.stringify({
       apps: { http: { servers: {
@@ -1496,13 +1511,17 @@ export function pauseEdgeCycle({ keep = false, verbose = false, log = console.lo
     if (code('blog.test', '/') !== '200') return fail('Caddy never answered for the Outpost route', exec('docker', ['logs', name], { verbose: false }).output)
 
     // ── write the routes the way 05-caddy does ────────────
-    const push = (appId, web, api, apiPort = UPSTREAM) => {
-      const routes = edgeRoutes({ appId, serverPath: SERVER_PATH, apiPort, web: { domain: web }, api: { domain: api } })
+    const push = (appId, web, api, apiPort = UPSTREAM, widgets = null) => {
+      const routes = edgeRoutes({ appId, serverPath: SERVER_PATH, apiPort, web: { domain: web }, api: { domain: api }, widgets })
       const read   = parseConfigRead(onTarget(readConfigScript()).output)
       return { read, routes, result: parseConfigWrite(onTarget(writeConfigScript(applyEdge(read.config, { appId, routes }), read.etag)).output) }
     }
-    for (const [appId, web, api, port] of [['one', 'one.test', null], ['two', 'app.test', 'api.test'], ['dead', 'dead.test', null, DEAD]]) {
-      const { result } = push(appId, web, api, port)
+    const files = parseReleaseFiles(onTarget(releaseFilesScript(`${WIDGETS}/current`)).output)
+    if (!files.includes(CHUNK) || !files.includes('LeadForm.js'))
+      return fail(`the release's files read off the target as ${JSON.stringify(files)}`, '')
+    const widgets = { domain: 'widgets.test', path: WIDGETS, files }
+    for (const [appId, web, api, port, w] of [['one', 'one.test', null], ['two', 'app.test', 'api.test', UPSTREAM, widgets], ['dead', 'dead.test', null, DEAD]]) {
+      const { result } = push(appId, web, api, port, w)
       if (!result.ok) return fail(`Caddy refused the routes for ${appId}`, result.error ?? 'a 412 with nothing else writing')
     }
     if (code('blog.test', '/') !== '200')
@@ -1552,6 +1571,43 @@ export function pauseEdgeCycle({ keep = false, verbose = false, log = console.lo
       return fail(`under two origins /ws on the API name reaches ${JSON.stringify(curl('api.test', '/ws'))}`, '')
     log('  ✓ two origins: the web name serves the SPA and proxies nothing, the API name proxies every path')
 
+    // ── the widget origin ─────────────────────────────────
+    // Each row is asked of the web name too: the SPA's route answering the same
+    // request with CORS, or with no CSP, would mean the pair proves nothing.
+    const from    = ['-H', 'Origin: https://customer.test']
+    const entry   = curl('widgets.test', '/LeadForm.js', ['-D-', ...from])
+    const header  = (h, name) => h.match(new RegExp(`^${name}:\\s*(.*?)\\s*$`, 'mi'))?.[1] ?? null
+    if (!/^HTTP\/\S+ 200/.test(entry) || !/import\("\.\/assets/.test(entry))
+      return fail('the widget origin does not serve the entry script', entry)
+    if (header(entry, 'Access-Control-Allow-Origin') !== '*' || header(entry, 'X-Content-Type-Options') !== 'nosniff')
+      return fail('the entry script carries no CORS — a lazy import() fails on the customer\'s page', entry)
+    if (!/javascript/.test(header(entry, 'Content-Type') ?? ''))
+      return fail(`the entry script is served as ${header(entry, 'Content-Type')} — a nosniff script with another type is refused`, entry)
+    if (header(entry, 'Content-Security-Policy') !== null)
+      return fail('the widget origin sends a CSP — it governs nothing but its own index', entry)
+    const page = headers('app.test', '/')
+    if (header(page, 'Content-Security-Policy') === null || header(page, 'Access-Control-Allow-Origin') !== null)
+      return fail('the web name answers with no CSP or with CORS, so the widget rows above are not told apart from it', page)
+    log('  ✓ the widget origin serves a script with CORS, nosniff and no CSP, beside a web name with a CSP and no CORS')
+
+    if (header(entry, 'Cache-Control') !== ENTRY)
+      return fail(`the entry script is cached as ${JSON.stringify(header(entry, 'Cache-Control'))}, not ${ENTRY} — a host page's <script src> is never updated`, entry)
+    const chunk = headers('widgets.test', `/${CHUNK}`)
+    if (cacheFor(CHUNK) === ENTRY || header(chunk, 'Cache-Control') !== cacheFor(CHUNK))
+      return fail(`the hashed chunk is cached as ${JSON.stringify(header(chunk, 'Cache-Control'))}, not ${cacheFor(CHUNK)}`, chunk)
+    if (header(chunk, 'Access-Control-Allow-Origin') !== '*')
+      return fail('the hashed chunk carries no CORS — the entry\'s import() of it fails cross-origin', chunk)
+    log('  ✓ the entry revalidates every five minutes and the hashed chunk is immutable, both with CORS')
+
+    const pre = curl('widgets.test', '/LeadForm.js', ['-X', 'OPTIONS', '-D-', '-o', '/dev/null', ...from, '-H', 'Access-Control-Request-Method: GET'])
+    if (!/^HTTP\/\S+ 204/.test(pre) || header(pre, 'Access-Control-Allow-Methods') === null)
+      return fail('a preflight to the widget origin is not a 204 carrying the allowed methods', pre)
+    if (code('widgets.test', '/Missing.js') !== '404')
+      return fail(`a missing widget script answers ${code('widgets.test', '/Missing.js')} and not 404 — a 200 of HTML fails as a MIME error on someone else's site`, headers('widgets.test', '/Missing.js'))
+    if (!/the app/.test(curl('app.test', '/Missing.js')))
+      return fail('the web name does not fall back to the SPA, so the 404 above is not told apart from it', curl('app.test', '/Missing.js'))
+    log('  ✓ a preflight is a 204, and a missing script is a 404 where the web name falls back to the SPA')
+
     // ── paused ────────────────────────────────────────────
     writeFileSync(join(srv, '.fli', 'paused'), '')
 
@@ -1590,7 +1646,7 @@ export function pauseEdgeCycle({ keep = false, verbose = false, log = console.lo
 
     // ── per-app access logs ───────────────────────────────
     const logs = exec('docker', ['exec', name, 'ls', '/var/log/caddy'], { verbose: false }).output.split('\n')
-    const want = ['fli-one.access.log', 'fli-two.access.log', 'fli-two-api.access.log']
+    const want = ['fli-one.access.log', 'fli-two.access.log', 'fli-two-api.access.log', 'fli-two-widgets.access.log']
     if (!want.every(f => logs.includes(f)))
       return fail(`the routes do not each write an access log of their own — found ${JSON.stringify(logs.filter(Boolean))}`, '')
     log('  ✓ each app logs to a file of its own')

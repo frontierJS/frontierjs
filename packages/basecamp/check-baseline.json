@@ -4,7 +4,7 @@
   "app-layout": 2,
   "//css-class-collision": "Adopted when CI first graded the rule (FJS-D1009), and each is a rename, not a defence: .topbar, .cluster and .sidebar in routes/_module.mesa. Each takes the kit's rules as well as its own, so a kit change restyles the shell. A ceiling that falls as they are renamed.",
   "css-class-collision": 3,
-  "schema-runs": 7,
+  "schema-runs": 6,
   "allow": {
     "capability-ladder:db/schema.lite:Environment": "The exemption FJS-D146 names: a deliberately high floor under a grid. Environment carries @@capabilities and @@gate(2.4.4.5), and the failure the rule warns about needs a role that HOLDS a grant and sits BELOW the write level. Basecamp has none: api/src/core/gate.ts maps viewer and billing to 2 and developer to 4, and api/src/core/capabilities.ts grants viewer [] and billing [] here, so every grant is held at 4 or above, where the gate writes. Flattening to @@gate(2) would leave the hand-stamped grant table as the only thing between a viewer and Environment.delete. A role gaining a grant below level 4 makes this entry false.",
     "capability-ladder:db/schema.lite:Server": "The exemption FJS-D146 names: a deliberately high floor under a grid. Server carries @@capabilities and @@gate(2.4.4.5), and the failure the rule warns about needs a role that HOLDS a grant and sits BELOW the write level. Basecamp has none: api/src/core/gate.ts maps viewer and billing to 2 and developer to 4, and api/src/core/capabilities.ts grants viewer [] and billing [] here, so every grant is held at 4 or above, where the gate writes. Flattening to @@gate(2) would leave the hand-stamped grant table as the only thing between a viewer and Server.delete. A role gaining a grant below level 4 makes this entry false.",

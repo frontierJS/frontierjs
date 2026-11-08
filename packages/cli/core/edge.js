@@ -165,6 +165,10 @@ export const widgetsOn = (deployConf) => Boolean(deployConf?.widgets)
 /** Where the widget releases live on the box: `deploy.widgets.path`, else beside the app's own `releases/`. */
 export const widgetsPathOf = (deployConf, serverPath) => deployConf?.widgets?.path ?? `${serverPath}/widgets`
 
+/** The files of a release on the box, root-relative as a request names them; `[]` for no such directory. */
+export const releaseFilesScript = (dir) => `cd ${dir} 2>/dev/null && find . -type f | sed 's|^\\./||' || true`
+export const parseReleaseFiles = (output) => String(output ?? '').split('\n').filter(Boolean)
+
 /**
  * A route's `@id`, which is also its access logger's name. `fli-`, so it never
  * meets Outpost's `fjs-<app>`. `plain` is the route on the :80 server.

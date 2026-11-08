@@ -1875,6 +1875,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d2037"></a>2026-11-08 · `FJS-D2037` — Q14 — How does the use stage get its owner, now that a seeded owner skips the app's sign-up — The use stage signs the owner up through `POST /api/auth/register` on both paths and the deploy stage only mints the owner; on a 202 it seeds instead (`auth:dev-admin` on the local copy, Q9's `apps.seedOwner` on a deployed App) and the login detail says so.
+
+Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **A** was picked over **B** (sign up on both paths and fail the login on a 202), **C** (sign up on the local path only; a deployed App keeps Q9's seed).
+
+The paper's recommendation, taken as written: sign-up is what a person does, so an app that makes the Organization at sign-up passes and one that does not fails at the move rather than being masked; the 202 fallback keeps Q6's reason (most apps answer 202) from failing every run. A signed-up owner has the app's default role, not admin, so a move only an admin can make now fails.
+
 ### <a id="fjs-d2005"></a>2026-11-07 · `FJS-D2005` — Q11 — Where does the login upsert Q9's method runs live, when an App's image carries no cli — The upsert moves into `@frontierjs/auth` with a runnable entry; `auth:dev-admin` calls it and Q9's method runs it from the App's own `node_modules`; Q10's guard moves with it.
 
 Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **A** was picked over **B** (`@frontierjs/cli` becomes a production dependency of a generated App), **C** (Charter's Apps build from Basecamp's template, which clones the framework's `dev`), **D** (Q9's method sends the upsert inline with `bun -e`).
@@ -13848,6 +13854,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d1026"></a>2026-11-08 · `FJS-D1026` — How does a keyboard drag in `dndzone` cross into another zone, and how does a host word its announcements — Cross: the arrows PERPENDICULAR to the zone's axis hop to the nearest zone of the same type in that direction (by measured rect), landing at the index nearest the item's current position; no new key. Wording: one option `announcements: (event, info) => string | undefined` where `event` is `lifted | moved | dropped | cancelled` and `info` is `{ label, position, total, zone }`; `undefined` falls back to the English default. Cost: a wrapped or grid zone already reads by line, and perpendicular arrows there are ambiguous with line moves.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Cross: a modifier on the axis arrows (Shift+Arrow along the axis hops to the previous/next zone of the type in registry order). Unambiguous in wrapped zones and needs no geometry, but the key is undiscoverable and the order is the DOM's, not the screen's. Wording: an `announcements` object of one function per event, each returning a string — four options to state instead of one), **C** (Cross: a drop-target cycle on `[` / `]` (or PageUp/PageDown), announced on lift; geometry-free like B, no collision with arrows. Wording: a `messages` object of template strings (`'{label}, lifted, {position} of {total}'`). Cost: a template syntax is a second mini-language, and a language with plural or word-order rules needs a function anyway).
+
+The paper's recommendation, taken as written: a kanban's columns sit across the axis of its lists, so the perpendicular arrow is what a sighted user already expects, and one `announcements` function is the single seam both English and another language need; the wrapped-zone ambiguity is answered by taking the perpendicular arrow as a zone hop only when no item lies that way within the current zone.
 
 ### <a id="fjs-d2030"></a>2026-11-07 · `FJS-D2030` — Q10 — Does the website's topbar nav join the `.topbar-nav` contract — Keep the measured 56rem query (its comment says re-measure when a link joins); baseline the one `css-width-off-scale` finding with a note. Built as A — nothing changed.
 

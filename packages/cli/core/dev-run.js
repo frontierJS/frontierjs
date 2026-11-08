@@ -215,8 +215,9 @@ export function runSurfaces({
         child.on('close', (code, signal) => {
           if (!signal) say((code ? chalk.red : chalk.dim)(`exited with code ${code}`))
           // A surface that is gone will never report, and what it said on the
-          // way out is the thing to read.
-          if (!g.stopping) summarize(g)
+          // way out is the thing to read. One that reported and then exited (a
+          // probe) is done, and the others are still starting.
+          if (!g.stopping && !g.ready.has(row.surface)) summarize(g)
           resolve(code ?? 0)
         })
       })

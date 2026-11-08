@@ -959,6 +959,7 @@ extend model Flow {
   owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   deletedAt   DateTime?
   @@softDelete
+  @@index([workspaceId])
 }
 extend model FlowCredential {
   workspaceId String
@@ -1743,6 +1744,41 @@ model OutpostNonce {
   @@gate(8)
   @@tenant(none)
   @@index([seenAt])
+}
+
+// Conduit's registry and receipts, which its SQLite store creates in this
+// database with its own DDL (`@frontierjs/conduit/stores/sqlite`, handed the
+// main db in `app.ts`). Undeclared, `migrate verify` called the database
+// drifted and `db push` offered to drop the targets every machine's commands
+// are addressed by (`FJS-2758`). @@external: Litestone emits no DDL for them.
+// @@gate(9): conduit reads them raw, and nothing has a reason to through the ORM.
+model conduit_targets {
+  id            String  @id
+  kind          String
+  protocol      String
+  address       String
+  auth          String
+  extra         String?
+  registered_at Int
+  last_seen_at  Int?
+
+  @@external
+  @@gate(9)
+  @@tenant(none)
+}
+
+model conduit_receipts {
+  provider    String
+  key         String
+  event_type  String
+  owner       String?
+  received_at Int
+  applied_at  Int?
+
+  @@id([provider, key])
+  @@external
+  @@gate(9)
+  @@tenant(none)
 }
 
 
@@ -3691,7 +3727,7 @@ model BlueprintParam {
 //
 // **This commits to MIRRORING a registry rather than querying it live**, which
 // is the choice `screens.md` left open for `RegistryView`. Mirroring is what
-// makes `inUse` answerable at all — it is a join against this workspace's
+// makes `isInUse` answerable at all — it is a join against this workspace's
 // deployments, and a live registry API knows nothing about who deployed what.
 // The cost is staleness, which `observedAt` is here to make visible rather than
 // hide: a repository nobody has synced reads as empty, and the screen can tell

@@ -124,16 +124,22 @@ describe('the key is the schema, not the client', () => {
     const svc = app.service('docs')
     const admin = { id: 1, isAdmin: true }
     const time = async (mk: () => any, n: number) => {
-      for (let i = 0; i < 3; i++) await svc.create({ title: 'w', ownerId: 1 }, { user: mk() })
       const t0 = Bun.nanoseconds()
       for (let i = 0; i < n; i++) await svc.create({ title: 'w', ownerId: 1 }, { user: mk() })
       return (Bun.nanoseconds() - t0) / n / 1e6
     }
-    // 60 writes a side: with 20, one scheduler stall under the full suite's
-    // lanes moved the ratio past the bound, and the bound sits where the
-    // measured 1.3x of the fix and the 6.6x of its reversal both stay clear.
-    const fresh  = await time(() => ({ id: 1, isAdmin: true }), 60)
-    const reused = await time(() => admin, 60)
+    for (let i = 0; i < 3; i++) await svc.create({ title: 'w', ownerId: 1 }, { user: admin })
+    // Interleaved rounds, each side's fastest kept: a scheduler stall under
+    // the full suite's lanes lands in one round of one side and inflates a
+    // mean (FJS-3334), but it cannot make a round faster than the work is, so
+    // the minimum is the work. A miss costs every call, so the 6.6x of the
+    // reversal survives it; the bound sits clear of that and the fix's 1.3x.
+    let fresh = Infinity
+    let reused = Infinity
+    for (let r = 0; r < 6; r++) {
+      fresh  = Math.min(fresh,  await time(() => ({ id: 1, isAdmin: true }), 15))
+      reused = Math.min(reused, await time(() => admin, 15))
+    }
 
     // A RATIO, not a budget: absolute numbers move with the machine and the
     // schema; what must stay true is that the two are the SAME WORK. Measured

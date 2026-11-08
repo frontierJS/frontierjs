@@ -29,6 +29,8 @@ export interface ServerMachine {
   status:   string
   size:     string | null
   location: string | null
+  /** The machine's page in the provider's console; null where its URL needs more than the token reveals. */
+  consoleUrl: string | null
 }
 
 export interface ServerAccount {
@@ -45,9 +47,11 @@ export interface ServersList {
   sshHosts:  SshHost[]
 }
 
+// Hetzner's console URL carries the project id, which no API call made with a
+// project's own token returns, so a Hetzner machine has no link.
 const CONNECTORS = {
-  hetzner:      { label: 'Hetzner',      target: hz.hetznerTarget,      list: hz.list,  verify: hz.verify },
-  digitalocean: { label: 'DigitalOcean', target: dO.digitaloceanTarget, list: dO.list,  verify: dO.verify },
+  hetzner:      { label: 'Hetzner',      target: hz.hetznerTarget,      list: hz.list,  verify: hz.verify, consoleUrl: (_id: string) => null },
+  digitalocean: { label: 'DigitalOcean', target: dO.digitaloceanTarget, list: dO.list,  verify: dO.verify, consoleUrl: (id: string) => `https://cloud.digitalocean.com/droplets/${encodeURIComponent(id)}` },
 } as const
 
 export const PROVIDERS = Object.keys(CONNECTORS) as ComputeProvider[]
@@ -66,8 +70,9 @@ export const conduitSend: SendFor = async (provider, token, accountId) => {
   return hz.bindSend(conduit, target.id)
 }
 
-const toRow = (m: Machine): ServerMachine => ({
+const toRow = (provider: ComputeProvider, m: Machine): ServerMachine => ({
   id: m.providerServerId, name: m.name, ip: m.ipAddress, status: m.status, size: m.size, location: m.region,
+  consoleUrl: m.providerServerId ? CONNECTORS[provider].consoleUrl(m.providerServerId) : null,
 })
 
 // A connector's thrown failure names its kind and the vendor's sentence; a
@@ -92,7 +97,7 @@ export async function listServers (db: Db, opts: ServersOptions = {}): Promise<S
       try {
         const send     = await sendFor(row.provider, row.token, String(row.id))
         const machines = await CONNECTORS[row.provider].list(send)
-        return { ...base, machines: machines.map(toRow), error: null }
+        return { ...base, machines: machines.map(m => toRow(row.provider, m)), error: null }
       } catch (err) {
         return { ...base, machines: [], error: sentence(err) }
       }

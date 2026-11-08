@@ -22,7 +22,8 @@
  *   import { __mesa_register, __mesa_hot_update } from '<client>'
  *   function __mesaOrigFn(__anchor, __props) {
  *     …
- *     if (import.meta.hot) __mesa_register(id, __hmrMark, __anchor, __props, __mesaOrigFn)
+ *     if (import.meta.hot) __mesa_register(id, __hmrMark, __anchor, __props, __mesaOrigFn,
+ *                                          $$runtime.captureRemount(__anchor))
  *   }
  *   let __hmrMark
  *   export function __setMark(mark) { __hmrMark = mark }
@@ -74,13 +75,16 @@ export function injectHMR(js, id, root, clientId) {
   let out = js.replace(RE_DEFAULT_FN, 'function __mesaOrigFn(__anchor, __props)')
 
   // Registration goes after pop_component(), and takes __hmrMark explicitly so
-  // the client never has to search the DOM for it.
+  // the client never has to search the DOM for it. After pop_component is also
+  // the one moment the parent's owner and context are current, which is what
+  // captureRemount must see — a swap runs with neither (`FJS-4097`).
   out = out.replace(RE_POP, (_, pop, rest) => {
     const reg = `
   if (import.meta.hot) {
-    __mesa_register('${escapedId}', __hmrMark, __anchor, __props, __mesaOrigFn)
+    __mesa_register('${escapedId}', __hmrMark, __anchor, __props, __mesaOrigFn, $$runtime.captureRemount(__anchor))
   }`
-    return `${pop}${rest.replace(/^(\n\})/, `${reg}$1`)}`
+    // A function, not a replacement string: in one, `$$runtime` reads as `$runtime`.
+    return `${pop}${rest.replace(/^(\n\})/, (close) => reg + close)}`
   })
 
   // __hmrMark is module-level so both the wrapper and __mesaOrigFn see it. On a

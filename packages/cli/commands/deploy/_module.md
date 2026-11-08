@@ -20,7 +20,7 @@ const { createMachine, shQuote } = await import(new URL('file://' + global.fliRo
 const { createSwap, runFlags, sshRunner, shWord, portOf, livePivot, swapFor, swapSetting, healthBudgetS, checkHealthTimeout, HEALTHY_STATUS, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } = await import(new URL('file://' + global.fliRoot + '/core/swap.js'))
 const { apiContainer } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
-const { EDGE_HOPS, edgeNames: edgeNamesOf, widgetsOn, widgetsPathOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+const { EDGE_HOPS, edgeNames: edgeNamesOf, widgetsOn, widgetsPathOf, releaseFilesScript, parseReleaseFiles } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { crossOrigins } = await import(new URL('file://' + global.fliRoot + '/core/shell-origins.js'))
 const { installOutpost, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { PLACEHOLDER_SERVER, resolveTarget, sshHost, resolveDeployConf, resolveSide, apiFiles } = await import(new URL('file://' + global.fliRoot + '/core/deploy-target.js'))
@@ -968,8 +968,7 @@ const widgetsFor = (machine, deployConf, serverPath, releaseDir = null) => {
   if (!widgetsOn(deployConf)) return null
   const path = widgetsPathOf(deployConf, serverPath)
   const dir  = releaseDir ?? `${path}/current`
-  const files = machine.capture(`cd ${dir} 2>/dev/null && find . -type f | sed 's|^\\./||' || true`, { dry: false })
-  return { path, files: String(files ?? '').split('\n').filter(Boolean) }
+  return { path, files: parseReleaseFiles(machine.capture(releaseFilesScript(dir), { dry: false })) }
 }
 
 // `bun install` on the box against the GENERATED manifest, as the image does

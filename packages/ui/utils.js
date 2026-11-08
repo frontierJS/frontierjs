@@ -276,11 +276,24 @@ export function placeAgainst(tr, pr, vp, { placement = 'bottom-start', offset = 
   const fitsBelow = below + pr.height <= winH
   const fitsAbove = above >= 0
 
+  const x = along(pr.width, tr.left, tr.width, winW)
+
+  // Neither side holds it: take the side with more room and hand back the
+  // height that side has, 8px inside the viewport, for the caller to cap the
+  // panel to. Left to the preference it opened past the window's edge.
+  if (!fitsBelow && !fitsAbove) {
+    const roomBelow = winH - below - 8
+    const roomAbove = tr.top - offset - 8
+    return roomBelow >= roomAbove
+      ? { x, y: below, maxHeight: Math.max(0, roomBelow) }
+      : { x, y: tr.top - offset - Math.max(0, roomAbove), maxHeight: Math.max(0, roomAbove) }
+  }
+
   const y = side === 'top'
     ? (fitsAbove || !fitsBelow ? above : below)
     : (fitsBelow || !fitsAbove ? below : above)
 
-  return { x: along(pr.width, tr.left, tr.width, winW), y }
+  return { x, y }
 }
 
 /**

@@ -144,7 +144,13 @@ title: Servers
             <Table columns={MACHINE_COLUMNS} rows={a.machines}>
               {#snippet row(m)}
                 <tr data-machine={m.id}>
-                  <td><strong>{m.name ?? m.id}</strong></td>
+                  <td>
+                    {#if m.consoleUrl}
+                      <a href={m.consoleUrl} target="_blank" rel="noopener noreferrer" title={`Open in ${PROVIDER_LABEL[a.provider]}`}><strong>{m.name ?? m.id}</strong> ↗</a>
+                    {:else}
+                      <strong>{m.name ?? m.id}</strong>
+                    {/if}
+                  </td>
                   <td><code>{m.ip ?? '—'}</code></td>
                   <td><span class="cluster"><Dot tone={statusTone(m.status)} label={m.status} /> {m.status}</span></td>
                   <td class="text-sm">{m.size ?? '—'}</td>
