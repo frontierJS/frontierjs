@@ -117,6 +117,35 @@ export async function run(t) {
   await t.eventually(state, '3,1,2|5,4|9', 'Escape puts it back where it was lifted')
   t.match(await t.evaluate(`return ${live};`), /cancel/i, 'and says so')
   await t.eventually(active, '2', 'with focus on the item again')
+
+  /* ── the keyboard crosses into another zone of the type (FJS-D1026) ───── */
+
+  // todo and done sit side by side and both list down, so the arrows across
+  // their axis are the hop. `other` is another type: no hop reaches it.
+  await focus('#todo li[data-id="3"]')
+  await t.press(' ')
+  await t.press('ArrowLeft')
+  t.is(await t.evaluate(`return ${state};`), `${ph},1,2|5,4|9`, 'an arrow toward no zone moves nothing')
+  await t.press('ArrowRight')
+  await t.eventually(state, `1,2|${ph},5,4|9`, 'the arrow across the axis hops into the nearest zone of the type, at the index nearest where it was')
+  t.is(await t.evaluate(`return ${active};`), ph, 'and focus goes with it')
+  await t.press('ArrowDown')
+  await t.eventually(state, `1,2|5,${ph},4|9`, 'the arrows along the axis then move it inside the new zone')
+  await t.press('ArrowRight')
+  t.is(await t.evaluate(`return ${state};`), `1,2|5,${ph},4|9`, 'a zone of another type is not a hop')
+  await t.press(' ')
+  await t.eventually(state, '1,2|5,3,4|9', 'Space drops it in the zone it reached')
+  t.match(await t.evaluate(`return ${live};`), /^déposé 2\/3 dans done$/, 'and the zone\'s own wording is spoken for the event it words')
+  await t.eventually(active, '3', 'with focus on the item in its new list')
+
+  await focus('#done li[data-id="5"]')
+  await t.press(' ')
+  t.match(await t.evaluate(`return ${live};`), /lifted, position 1 of 3/, 'an event the host does not word falls back to English')
+  await t.press('ArrowLeft')
+  await t.eventually(state, `${ph},1,2|3,4|9`, 'a hop back lands at the index nearest where it was')
+  await t.press('Escape')
+  await t.eventually(state, '1,2|5,3,4|9', 'Escape after a hop puts it back in the zone it was lifted from')
+  await t.eventually(active, '5', 'and the focus with it')
   /* ── a wrapped row is indexed by line, then along it ──────────────────── */
 
   // Nine chips, three to a line. One axis reads the pointer on the third line

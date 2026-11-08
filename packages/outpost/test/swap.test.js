@@ -98,6 +98,46 @@ describe('createSwap — the contract table', () => {
     expect(d.log).toEqual([])
   })
 
+  describe('the failed container\'s log', () => {
+    const failing = (logs) => {
+      const d = fakeDaemon({ app: { image: 'img:old', running: true } })
+      const run = async (a) => a[0] === 'sh' ? logs() : d.argv(a)
+      const swap = createSwap({ run, find: async () => d.find(), health: async ({ name }) => d.healthOf(name) })
+      return { d, go: swap.stopFirst({ name: NAME, argv: runArgv(NAME, 'img:sick'), port: 7300 }).then(() => null, e => e) }
+    }
+
+    test('colors are stripped, and only the last lines of a long log are kept', async () => {
+      const lines = Array.from({ length: 200 }, (_, i) => `line ${i}`)
+      const { go } = failing(() => ({ exitCode: 0, stdout: `${lines.join('\n')}\n\x1b[31mdb:migrate refused\x1b[0m\n`, stderr: '' }))
+      const err = await go
+      expect(err.message).toEndWith('line 199\ndb:migrate refused')
+      expect(err.message).not.toContain('\x1b')
+      expect(err.message).not.toContain('line 100\n')
+    })
+
+    test('one enormous line is cut to its end', async () => {
+      const { go } = failing(() => ({ exitCode: 0, stdout: `${'x'.repeat(100_000)}the end\n`, stderr: '' }))
+      const err = await go
+      expect(err.message).toEndWith('the end')
+      expect(err.message.length).toBeLessThan(5_000)
+    })
+
+    test('a log that cannot be read leaves the put-back and its sentence as they were', async () => {
+      for (const logs of [() => ({ exitCode: 1, stdout: '', stderr: 'Error: daemon gone' }), () => { throw new Error('runner died') }]) {
+        const { d, go } = failing(logs)
+        const err = await go
+        expect(err.restored).toBe(true)
+        expect(err.message).toEndWith('the previous container is serving again')
+        expect(imagesOn(d.box)).toEqual({ app: 'img:old' })
+      }
+    })
+
+    test('a container that wrote nothing adds nothing', async () => {
+      const err = await failing(() => ({ exitCode: 0, stdout: '', stderr: '' })).go
+      expect(err.message).toEndWith('the previous container is serving again')
+    })
+  })
+
   test('the put-back is asked about as the previous container', async () => {
     const d = fakeDaemon({ app: { image: 'img:old', running: true } })
     const asked = []

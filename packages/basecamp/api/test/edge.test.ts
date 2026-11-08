@@ -14,6 +14,9 @@ import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { X509Certificate } from 'node:crypto'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:https'
+import { tmpdir } from 'node:os'
 import { createTestEnv, session } from '@frontierjs/testing'
 import { GatePlugin }    from '@frontierjs/litestone'
 import { basecampGateLevel }       from '../src/core/gate.ts'
@@ -1107,6 +1110,25 @@ describe('the ingress wildcard', () => {
     expect(await sys().secret.findFirst({ where: { id: before.ingressCertSecretId } })).toBeNull()
   })
 
+  test('a TXT somebody else wrote at the challenge name survives the mint, and the mint is not retried', async () => {
+    const send    = sendVia(app, `provider:cloudflare:${good.id}`)
+    const batch   = '/zones/zone-shop/dns_records/batch'
+    const foreign = ((await send({ method: 'POST', path: batch,
+      body: { posts: [{ type: 'TXT', name: '_acme-challenge.shop.test', content: 'somebody-elses', ttl: 1 }] } })).data as any).result.posts[0]
+    try {
+      const before = await fresh()
+      await sys().workspace.update({ where: { id: site.id }, data: { ingressCertExpiresAt: new Date(Date.now() + 5 * 86_400_000).toISOString(), version: before.version },
+        system: ['ingressCertExpiresAt'] })
+      orders = []
+      const out = await ensureIngressCert(app, site.id, { issue: issue(), waitForDns: quick })
+      expect(out).toMatchObject({ minted: true, failed: [] })
+      expect(orders).toHaveLength(1)
+      expect((await txts()).map((r: any) => r.content)).toEqual(['somebody-elses'])
+    } finally {
+      await send({ method: 'POST', path: batch, body: { deletes: [{ id: foreign.id }] } })
+    }
+  })
+
   test('a certificate naming another zone is ordered again', async () => {
     const before = await fresh()
     const other = await sys().secret.create({ data: { workspaceId: site.id, name: `other-${tag()}`, kind: 'tlsCert', data: JSON.stringify(pem('*.elsewhere.test', 90)) } })
@@ -1495,5 +1517,119 @@ describe.skipIf(!hasDocker)('a read-only copy\'s Domains, minted against Pebble'
     const d = await domainNamed('www.shop.test')
     await expect(sys().domain.update({ where: { id: d.id }, data: { copyCertSecretId: 'x', version: d.version }, system: ['copyCertSecretId'] }))
       .rejects.toThrow(/copy's certificate is stored with its expiry/)
+  })
+})
+
+// ─── Basecamp's own record never moves off another live Basecamp (FJS-4078) ──
+//
+// host-record.ts as fli runs it: a real process against the sink. The address a
+// record holds cannot be a listener on this machine, so a preload answers the
+// probe of it and passes every Cloudflare call through.
+
+describe('host-record.ts, with a record already at another address', () => {
+  const recordSink = startCfSink(0)
+  const script     = join(import.meta.dir, '..', 'src', 'domain', 'host', 'host-record.ts')
+  const dir        = mkdtempSync(join(tmpdir(), 'host-record-'))
+  const preload    = join(dir, 'probe-stub.ts')
+  writeFileSync(preload, `const real = globalThis.fetch
+globalThis.fetch = ((url, init) => String(url).includes('/setup/probe')
+  ? (process.env.STUB_PROBE === 'basecamp'
+      ? Promise.resolve(Response.json({ workspaces: 1, users: 1, needs_setup: false }))
+      : Promise.reject(new Error('nothing listening')))
+  : real(url, init))
+`)
+  const YUMA = '203.0.113.7', CHARTERED = '203.0.113.8'
+
+  // Not spawnSync: the sink listens in this process, and a blocked loop never answers it.
+  const run = async (input: object, probe: 'basecamp' | 'nothing') => {
+    const child = Bun.spawn(['bun', '--preload', preload, script, JSON.stringify(input)], {
+      stdout: 'pipe', stderr: 'inherit',
+      env: { ...process.env, CLOUDFLARE_TOKEN: CF_TOKEN, CLOUDFLARE_URL: `http://localhost:${recordSink.port}/client/v4`, STUB_PROBE: probe },
+    })
+    const out = await new Response(child.stdout).text()
+    return { status: await child.exited, ...JSON.parse(out.trim().split('\n').pop()!) }
+  }
+  const holds = async (host: string) => {
+    const { bearerSend } = await import('../src/domain/host/bearer-send.ts')
+    const records = await cloudflare.records(bearerSend(`http://localhost:${recordSink.port}/client/v4`, CF_TOKEN), 'zone-example')
+    return records.filter((r: any) => r.type === 'A' && r.name === host).map((r: any) => r.content)
+  }
+
+  afterAll(() => { recordSink.stop?.(true); rmSync(dir, { recursive: true, force: true }) })
+
+  test('refuses to move a record whose address answers as a Basecamp, and the record stays', async () => {
+    const host = 'yuma.example.test'
+    expect((await run({ host, ip: YUMA }, 'nothing')).ip).toBe(YUMA)
+
+    const moved = await run({ host, ip: CHARTERED }, 'basecamp')
+    expect(moved.status).toBe(1)
+    expect(moved.error).toContain(YUMA)
+    expect(moved.error).toContain(CHARTERED)
+    expect(moved.live).toBe(YUMA)
+    expect(await holds(host)).toEqual([YUMA])
+  })
+
+  test('the same refusal answers the check an install asks before it touches a box', async () => {
+    const host = 'check.example.test'
+    await run({ host, ip: YUMA }, 'nothing')
+    expect(await run({ host, check: true, ip: CHARTERED }, 'basecamp')).toMatchObject({ status: 1, live: YUMA })
+    expect(await run({ host, check: true, ip: YUMA }, 'basecamp')).toMatchObject({ status: 0, points: YUMA })
+    expect(await run({ host, check: true }, 'basecamp')).toMatchObject({ status: 0, points: YUMA })
+  })
+
+  test('an address nothing answers at is a rerun moving its record, and a record already here is not asked', async () => {
+    const host = 'rerun.example.test'
+    await run({ host, ip: YUMA }, 'nothing')
+    expect((await run({ host, ip: CHARTERED }, 'nothing')).ip).toBe(CHARTERED)
+    expect(await holds(host)).toEqual([CHARTERED])
+    expect(await run({ host, ip: CHARTERED }, 'basecamp')).toMatchObject({ status: 0, ip: CHARTERED })
+  })
+})
+
+describe('answersAsBasecamp', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'probe-tls-'))
+  const made = spawnSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-subj', '/CN=self-signed', '-days', '1', '-keyout', join(dir, 'k'), '-out', join(dir, 'c')], { encoding: 'utf8' })
+  if (made.status !== 0) throw new Error(made.stderr)
+
+  // Caddy picks a certificate by SNI and a route by Host, and a request to a bare
+  // address carries neither unless the probe sets them.
+  const listen = (answer: (req: any, res: any) => void) => new Promise<any>((done) => {
+    const server = createServer({ key: readFileSync(join(dir, 'k')), cert: readFileSync(join(dir, 'c')) }, answer)
+    server.listen(0, '127.0.0.1', () => done(server))
+  })
+  const answering = (body: object) => (_req: any, res: any) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(body)) }
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('reaches the address under the hostname, past a certificate it cannot check, and reads a Basecamp', async () => {
+    const { answersAsBasecamp } = await import('../src/domain/host/live-basecamp.ts')
+    const seen: any = {}
+    const server = await listen((req, res) => {
+      Object.assign(seen, { sni: req.socket.servername, host: req.headers.host, path: req.url, accept: req.headers.accept })
+      answering({ workspaces: 1, users: 1, needs_setup: false })(req, res)
+    })
+    try {
+      expect(await answersAsBasecamp('127.0.0.1', 'yuma.example.test', { port: server.address().port })).toBe(true)
+      expect(seen).toEqual({ sni: 'yuma.example.test', host: 'yuma.example.test', path: '/setup/probe', accept: 'application/json' })
+    } finally { server.close() }
+  })
+
+  test('a proxied record is asked through its name when the origin answers nothing at its address', async () => {
+    const { answersAsBasecamp } = await import('../src/domain/host/live-basecamp.ts')
+    const server = await listen(answering({ workspaces: 1, users: 1, needs_setup: false }))
+    const opts   = { port: server.address().port, timeoutMs: 1000 }
+    try {
+      expect(await answersAsBasecamp('192.0.2.1', 'localhost', { ...opts, proxied: true })).toBe(true)
+      expect(await answersAsBasecamp('192.0.2.1', 'localhost', opts)).toBe(false)
+    } finally { server.close() }
+  })
+
+  test('another app on the box, and nothing at all, are not a Basecamp', async () => {
+    const { answersAsBasecamp } = await import('../src/domain/host/live-basecamp.ts')
+    const server = await listen(answering({ ok: true }))
+    const port   = server.address().port
+    try { expect(await answersAsBasecamp('127.0.0.1', 'a.example.test', { port })).toBe(false) }
+    finally { server.close() }
+    expect(await answersAsBasecamp('127.0.0.1', 'a.example.test', { port, timeoutMs: 1000 })).toBe(false)
   })
 })

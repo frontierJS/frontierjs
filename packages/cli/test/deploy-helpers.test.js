@@ -475,7 +475,7 @@ const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '', caddy = 
         if (d.healthOf(body.includes(':49153') && d.box.has('app_next') ? 'app_next' : 'app').healthy) return 'ok'
         throw new Error('fail')
       }
-      if (body.startsWith('docker ')) {
+      if (body.startsWith('docker ') || body.startsWith('sh -c ')) {
         const r = d.argv(words(body))
         if (r.exitCode !== 0) throw Object.assign(new Error(r.stderr), { status: r.exitCode, stderr: r.stderr, stdout: '' })
         return r.stdout

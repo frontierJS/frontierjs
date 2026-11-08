@@ -19,6 +19,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { globalEnvPath } from './global-env.js'
+import { hostOfUrl } from './local-env.js'
 
 export const DEV_BASECAMP = 'dev'
 
@@ -93,6 +94,20 @@ export function resolveBasecamp(name, { home } = {}) {
 const noRunKey = (name, home) =>
   `Basecamp "${name}" runs Charter's Apps and holds no run key — a run never takes its admin apiKey (FJS-D2031); ` +
   `mint one with the run scopes on its API keys screen and file it as the entry's scopedKey in ${basecampsPath(home)}`
+
+/**
+ * The hostname a reinstall installs under: `--domain`, else the one its entry
+ * files, else the one the box's env file names. An entry and a box that disagree
+ * are refused rather than ranked, since a box's file can be another Basecamp's
+ * name (FJS-4078). Answers `{ domain }`, '' with none of the three, or `{ refusal }`.
+ */
+export function reinstallDomain({ domain, entry, box }) {
+  if (domain) return { domain }
+  const filed = entry?.url ? hostOfUrl(entry.url) : ''
+  if (filed && box && filed !== box.toLowerCase())
+    return { refusal: `basecamps.json files this Basecamp at ${filed}, and the box's env file names ${box}. Pass --domain with the hostname this install answers at` }
+  return { domain: filed || box || '' }
+}
 
 /**
  * The entry marked `runs: true` as `{ name, url, host, key }`, `key` its run

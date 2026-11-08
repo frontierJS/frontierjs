@@ -44,6 +44,7 @@
 
   let x      = 0
   let y      = 0
+  let maxH   = null                      // set only when neither side of the trigger holds the panel
   let placed = false                     // has THIS open been positioned yet
   let afloat = true                      // false: no trigger on screen, so a sheet everywhere
   let shown  = false                     // listeners and focus are set up for this open
@@ -88,6 +89,7 @@
   function show(fromTrigger) {
     shown     = true
     placed    = false
+    maxH      = null
     byTrigger = fromTrigger
     opener    = fromTrigger ? null : document.activeElement
     requestAnimationFrame(async () => {
@@ -104,7 +106,10 @@
     // A trigger hidden on a phone measures 0x0, and a panel placed against it sits at the origin.
     afloat = !!(tr && (tr.width || tr.height))
     if (!afloat || !pr) return
-    ;({ x, y } = placeAgainst(tr, pr, vp, { placement, offset }))
+    const at = placeAgainst(tr, pr, vp, { placement, offset })
+    x    = at.x
+    y    = at.y
+    maxH = at.maxHeight ?? null
   }
 
   function hide(restoreFocus) {
@@ -173,6 +178,8 @@
       style:--popover-x="{x}px"
       style:--popover-y="{y}px"
       style:visibility="{placed ? 'visible' : 'hidden'}"
+      style:max-block-size={maxH == null ? null : `${maxH}px`}
+      style:overflow-y={maxH == null ? null : 'auto'}
       {@attach panelAnim}
     >
       {#if title || action}

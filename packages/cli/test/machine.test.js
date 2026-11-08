@@ -258,6 +258,55 @@ fi`)
   })
 })
 
+// ─── a Basecamp box's own ssh calls ──────────────────────────────────────────
+
+describe('a call to a box meets a pre-auth drop (FJS-4079)', () => {
+  // Drops every connection until a second probe has opened the master.
+  const FAKE_SSH = [
+    '#!/bin/sh',
+    'dir=$(dirname "$0")',
+    'echo "$*" >> "$dir/calls"',
+    'case "$*" in *"-O check"*) [ -f "$dir/master" ]; exit $? ;; esac',
+    'if [ ! -f "$dir/master" ]; then',
+    '  case "$*" in *" true") [ -f "$dir/dropped" ] && { touch "$dir/master"; exit 0; }; touch "$dir/dropped" ;; esac',
+    '  echo "kex_exchange_identification: Connection closed by remote host" >&2',
+    '  exit 255',
+    'fi',
+    'exec sh -s',
+    '',
+  ].join('\n')
+
+  // A child, since a PATH assigned on process.env does not reach Bun.spawn (FJS-1378).
+  const onFakeSsh = (body) => {
+    const dir = mkdtempSync(join(tmpdir(), 'fli-fake-ssh-'))
+    writeFileSync(join(dir, 'ssh'), FAKE_SSH, { mode: 0o755 })
+    const module = pathToFileURL(join(HERE, '../core/basecamp.js')).href
+    const out = execFileSync(process.execPath, ['-e', `import * as bc from ${JSON.stringify(module)}\nconsole.log(JSON.stringify(await (${body})(bc, ${JSON.stringify(dir)})))`],
+      { encoding: 'utf8', env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } })
+    const calls = readFileSync(join(dir, 'calls'), 'utf8').trim().split('\n')
+    rmSync(dir, { recursive: true })
+    return { answer: JSON.parse(out), calls }
+  }
+  const scripts = (calls) => calls.filter(c => !c.includes('-O check') && !c.endsWith(' true'))
+
+  test('a script as root opens the master through the retry and runs once', () => {
+    const { answer, calls } = onFakeSsh(`(bc) => bc.asRootOn('deploy@box', 'echo hi', 'say hi')`)
+    expect(answer).toBe('hi\n')
+    expect(scripts(calls)).toHaveLength(1)
+  }, 15000)
+
+  test('a script with a key opens the master with that key, and a failure answers what it said', () => {
+    const { answer, calls } = onFakeSsh(`(bc, dir) => {
+      const key = dir + '/key'
+      require('node:fs').writeFileSync(key, '')
+      return bc.scriptOnBox('deploy@box', 'echo out; echo why >&2; exit 3', { identity: key })
+    }`)
+    expect(answer).toEqual({ ok: false, out: 'out', said: 'why' })
+    expect(calls.find(c => c.endsWith(' true'))).toMatch(/-i \S+\/key /)
+    expect(scripts(calls)).toHaveLength(1)
+  }, 15000)
+})
+
 // ─── moving an image ─────────────────────────────────────────────────────────
 
 describe('moving an image between machines', () => {

@@ -43,8 +43,10 @@ Once Basecamp is up the run points the hostname at the box — `fli
 basecamp:dns`'s write, DNS-only, under the fleet's mark — at the address ssh
 resolves the box to, so an alias works. The token is checked before the install:
 one that opens no zone holding the hostname refuses before anything is
-installed. With no `CLOUDFLARE_TOKEN` a terminal takes the paste, and a run with
-no terminal warns, installs, and prints the `fli basecamp:dns` line instead.
+installed, and so does a hostname whose record holds another address where a
+Basecamp still answers, since that name is another install's. With no
+`CLOUDFLARE_TOKEN` a terminal takes the paste, and a run with no terminal warns,
+installs, and prints the `fli basecamp:dns` line instead.
 
 Once Basecamp install, the box is marked as Basecamp's host at its cloud,
 found by its address among the boxes every stored cloud token reaches, so a
@@ -72,7 +74,7 @@ if (!dest) { log.error('Pass the box: fli basecamp:install <ssh alias or user@ho
 
 if (process.stdin.isTTY) echo(chalk`\n  {bold fli basecamp:install}  {dim Basecamp on ${dest}}\n`)
 
-const install = await askInstall({ flag, tty, log, echo, chalk })
+const install = await askInstall({ flag, dest, tty, log, echo, chalk })
 if (install.refusal) {
   log.error(`${install.refusal}. Nothing was installed`)
   if (install.rejected) await tokenHint({ echo, chalk })

@@ -99,7 +99,9 @@ export interface EdgeRecordInput {
 
 /** A record to delete: its set, and one value in it when the set has several.
  *  `mark` narrows it to the records one owner wrote — a Domain deleted after
- *  another took its hostname must not remove the newcomer's CNAME. */
+ *  another took its hostname must not remove the newcomer's CNAME. A marked ref
+ *  can match no unmarked record, so an unmarked one beside it does not refuse
+ *  the delete; an unmarked ref still does. */
 export interface EdgeRecordRef {
   type:     string
   name:     string

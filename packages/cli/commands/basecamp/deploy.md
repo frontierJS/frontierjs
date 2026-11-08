@@ -117,8 +117,9 @@ are read against what the app declares — its `defineEnv` spec, its schema's
 `database` blocks, its health route, its Dockerfile — and the build context
 against what git ignores (`core/release-preflight.js`, `core/build-check.js`).
 A required variable set nowhere, a database written inside the container, no
-published port or one the app does not listen on, and an env file or database
-in the image are errors, and an error stops the release before the build;
+published port or one the app does not listen on, a schema its migrations do
+not build (`fli check`'s `migration-history`), and an env file or database in
+the image are errors, and an error stops the release before the build;
 `--force` releases anyway. A URL left on a default that is a real outside
 service, a health route the App never asks, and a git-ignored file the image
 would carry are warnings. `--dry` prints the whole report and builds nothing.

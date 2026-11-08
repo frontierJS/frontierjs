@@ -21,6 +21,9 @@
   let clicks = 0
   let sources = []
 
+  // Only `dropped` is reworded, and only on `done`: the rest must fall back to English.
+  const wording = (event, info) => (event === 'dropped' ? `déposé ${info.position}/${info.total} dans ${info.zone.id}` : undefined)
+
   const record = (list, which) => ({ items, info }) => {
     log = [...log, `${list}:${which}:${info.trigger}`]
     sources = [...sources, info.source]
@@ -36,7 +39,7 @@
       <li data-id={it.id}>{it.t} <button class="poke" onclick={() => clicks++}>·</button></li>
     {/each}
   </ul>
-  <ul id="done" {@attach dndzone(() => ({ items: done, type: 'task', onconsider: record('done', 'c'), onfinalize: record('done', 'f') }))}>
+  <ul id="done" {@attach dndzone(() => ({ items: done, type: 'task', announcements: wording, onconsider: record('done', 'c'), onfinalize: record('done', 'f') }))}>
     {#each done as it (it.id)}
       <li data-id={it.id}>{it.t}</li>
     {/each}

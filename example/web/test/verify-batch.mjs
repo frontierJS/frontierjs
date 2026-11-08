@@ -40,6 +40,12 @@ import { plainDateIn, addToDate }       from '@frontierjs/toolbelt/datetime'
 import { sweepPayroll }                from './verify-payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 
+// A job is named by its file and only autoload stamps it; these two are imported
+// directly, so the recorder's `job.name` would throw. Stamped the way the loader does.
+const stampJob = (job, name) => job[Symbol.for('frontierjs.caravan.stamp')](name)
+stampJob(calculatePayslip, 'payslip-calculate')
+stampJob(sendPayslip,      'payslip-send')
+
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
 // Days, not instants (`FJS-D288`). UTC is the calendar every drive here runs

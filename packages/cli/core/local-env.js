@@ -62,3 +62,29 @@ export function strayDatabasePaths(text, mountDir) {
   }
   return out
 }
+
+/** The hostname of a URL, or of a bare host written where a URL goes; '' when it is neither. */
+export function hostOfUrl(value) {
+  try { return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`).hostname }
+  catch { return '' }
+}
+
+const OWN_ADDRESSES = ['FRONTIER_APP_URL', 'FRONTIER_API_URL']
+
+/**
+ * The app's own two addresses in an env file, where they name a host the deploy
+ * being seeded does not serve (FJS-4078). `env:push` never replaces a key the box
+ * has, so a laptop's address seeded here stays on the box, and a reinstall reads
+ * it back as the box's own name. No hosts is a deploy with no hostname, which
+ * has nothing to compare against.
+ *
+ * @param {(string|null|undefined)[]} hosts
+ * @returns {{ key: string, value: string }[]}
+ */
+export function foreignOrigins(text, hosts) {
+  const served = new Set(hosts.filter(Boolean).map(h => h.toLowerCase()))
+  if (!served.size) return []
+  return Object.entries(parseEnvText(String(text ?? '')))
+    .filter(([key, value]) => OWN_ADDRESSES.includes(key) && value && !served.has(hostOfUrl(value)))
+    .map(([key, value]) => ({ key, value }))
+}

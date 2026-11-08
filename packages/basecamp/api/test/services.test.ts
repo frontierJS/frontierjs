@@ -4217,6 +4217,21 @@ describe('the trash lists what was deleted, and each service brings its own back
     expect(removed.apps.map((x: any) => x.id).sort()).toEqual([a.id, b.id].sort())
   })
 
+  test('removing a workspace retires the apps of every project in it (FJS-4062)', async () => {
+    const sys  = env.system as any
+    const acct = await sys.account.findFirst({ where: { id: (await sys.workspace.findFirst({ where: { id: ws.id } })).accountId } })
+    const doomed = await sys.workspace.create({ data: { accountId: acct.id, name: 'Doomed', slug: `doomed-${uniq()}` } })
+    await sys.workspaceMember.create({ data: { workspaceId: doomed.id, userId: owner.id, role: 'owner',
+      capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() } })
+    const proj = await sys.project.create({ data: { workspaceId: doomed.id, name: 'P', slug: `p-${uniq()}` } })
+    const e    = await sys.environment.create({ data: { workspaceId: doomed.id, projectId: proj.id, name: 'staging', slug: 'staging' } })
+    const a    = await sys.app.create({ data: { workspaceId: doomed.id, environmentId: e.id, name: 'Web', slug: `web-${uniq()}`, kind: 'static' } })
+
+    const removed = await env.as(session({ id: owner.id, workspaceId: doomed.id })).service('workspaces').remove(doomed.id)
+    expect(removed.apps.map((x: any) => x.id)).toEqual([a.id])
+    expect(removed.apps[0].machine).toMatchObject({ ok: false, why: expect.any(String) })
+  })
+
   test('a viewer sees the trash without the kinds it cannot read, and cannot restore', async () => {
     const sys    = env.system as any
     const secret = await sys.secret.create({ data: { workspaceId: ws.id, name: `gone-${uniq()}`, kind: 'generic' } })

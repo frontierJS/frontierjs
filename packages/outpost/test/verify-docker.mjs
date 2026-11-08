@@ -534,6 +534,8 @@ try {
   if (sick.status !== 500) console.log(sick.body)
   t('restore.whenTheStartIsNotHealthy', sick.status === 500
     && /not healthy/.test(sick.body?.error ?? '') && /serving again/.test(sick.body?.error ?? '') && await putBack())
+  // whoami says this on stderr, the pipe a boot failure uses.
+  t('restore.theErrorEndsWithTheLog', /its log ended:\n[\s\S]*Starting up on port 81/.test(sick.body?.error ?? ''))
   t('restore.answersOverHttpsAgain', await untilHttps())
 
   // ─── route, between releases ────────────────────────────────────────────
@@ -693,7 +695,7 @@ try {
   const serving  = inspect('{{.Id}}')
   const sickNext = await release('v2', { healthCheck: '/', env: { WHOAMI_PORT_NUMBER: '81' } })
   if (sickNext.status !== 500) console.log(sickNext.body)
-  t('startFirst.refusesASickRelease',  sickNext.status === 500 && /not touched and is still serving/.test(sickNext.body?.error ?? ''))
+  t('startFirst.refusesASickRelease',  sickNext.status === 500 && /not touched and is still serving\n[\s\S]*Starting up on port 81/.test(sickNext.body?.error ?? ''))
   t('startFirst.leavesTheOldOneAlone', inspect('{{.Id}}') === serving && appContainers().length === 1
     && await dial() === `127.0.0.1:${moved}` && await untilHttps())
 
@@ -946,7 +948,7 @@ const expected = [
   'health.saysRunning', 'logs.readTheContainer', 'exec.runsOnTheMachine',
   'deploy.replacesRatherThanAdds', 'ingress.redeployKeepsOneRoute',
   'restore.whenDockerRefusesTheRun', 'restore.routeDialsTheRestoredPort',
-  'restore.whenTheStartIsNotHealthy', 'restore.answersOverHttpsAgain',
+  'restore.whenTheStartIsNotHealthy', 'restore.theErrorEndsWithTheLog', 'restore.answersOverHttpsAgain',
   'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
   'redirect.answers308WithTheRequestUri', 'redirect.droppedWithTheLastOne',
   'static.encodesForABrowserThatAsks', 'static.gzipForOneThatAsksNoMore', 'static.plainForOneThatAsksNothing',

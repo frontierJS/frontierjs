@@ -6,7 +6,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 import {
-  readBasecamps, writeBasecamp, removeBasecamp, resolveBasecamp, designatedBasecamp, basecampsPath, lookupBasecamp, lookupBasecampFor, pingBasecamp,
+  reinstallDomain, readBasecamps, writeBasecamp, removeBasecamp, resolveBasecamp, designatedBasecamp, basecampsPath, lookupBasecamp, lookupBasecampFor, pingBasecamp,
 } from '../core/basecamps.js'
 import { globalEnvPath } from '../core/global-env.js'
 import { resolveBasecampApp } from '../core/basecamp.js'
@@ -247,5 +247,29 @@ describe('resolveBasecampApp', () => {
 
   test('TIERS maps each deploy target to a tier', () => {
     expect(TIERS).toEqual({ dev: 'development', stage: 'staging', production: 'production' })
+  })
+})
+
+// FJS-4078: the box's env file named another Basecamp, and the reinstall took
+// that name and moved its DNS record.
+describe('reinstallDomain', () => {
+  const entry = { url: 'https://chartered.maverickmade.tech' }
+
+  test("the entry's url is the default, with no box env to compare", () => {
+    expect(reinstallDomain({ domain: '', entry, box: null })).toEqual({ domain: 'chartered.maverickmade.tech' })
+    expect(reinstallDomain({ domain: '', entry, box: 'Chartered.Maverickmade.Tech' })).toEqual({ domain: 'chartered.maverickmade.tech' })
+  })
+
+  test('a box env that disagrees with the entry is refused, naming both', () => {
+    const { refusal } = reinstallDomain({ domain: '', entry, box: 'yuma.kobami.cloud' })
+    expect(refusal).toContain('chartered.maverickmade.tech')
+    expect(refusal).toContain('yuma.kobami.cloud')
+    expect(refusal).toContain('--domain')
+  })
+
+  test('--domain settles it, and no entry falls to the box', () => {
+    expect(reinstallDomain({ domain: 'new.example.com', entry, box: 'yuma.kobami.cloud' })).toEqual({ domain: 'new.example.com' })
+    expect(reinstallDomain({ domain: '', entry: undefined, box: 'yuma.kobami.cloud' })).toEqual({ domain: 'yuma.kobami.cloud' })
+    expect(reinstallDomain({ domain: '', entry: undefined, box: null })).toEqual({ domain: '' })
   })
 })

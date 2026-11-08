@@ -6,14 +6,14 @@
 // archive is fetched for the `db:` verbs and Basecamp's own for
 // `basecamp:backup`, and each machine's stored grade for `basecamp:posture`.
 
-import { spawnSync }                from 'node:child_process'
+import { execSync, spawnSync }      from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { configDir, dataDir }          from './paths.js'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileValue }                from '@frontierjs/toolbelt/env'
 import { chalk }                    from './color.js'
 import { ageOf }                    from './cloud.js'
-import { pipeCommand, shQuote, transportFor } from './machine.js'
+import { createMachine, pipeCommand, shQuote } from './machine.js'
 import { TIERS }                    from './deploy-target.js'
 
 /** One call to Basecamp's API, answering the body, or throwing with what Basecamp said. */
@@ -601,10 +601,39 @@ if [ -f "$key" ]; then cat "$key"; elif [ -f "$env" ]; then grep -E '^[[:space:]
 
 const AS_ROOT = 'if [ "$(id -u)" = 0 ]; then sh -s; else sudo -n sh -s; fi'
 
+// ─── a call to a box ─────────────────────────────────────────────────────────
+// A call that opens its own connection dies on the first sshd MaxStartups drop,
+// and repeating it could run a script twice. So each one first opens the shared
+// master, which `createMachine` retries (FJS-4072, FJS-4079).
+
+const boxMachine = (host, identity = null) => createMachine({
+  host,
+  identity: identity && existsSync(identity) ? identity : null,
+  exec: ({ command, describe, ...opts }) => execSync(command, { ...opts, encoding: 'utf8' }),
+})
+
+const spawnOnBox = (host, command, io) => {
+  const machine = boxMachine(host)
+  machine.ready()
+  return Bun.spawn(['sh', '-c', pipeCommand(host, machine.kind, machine.local ? command : shQuote(command))], io)
+}
+
+/**
+ * Run `script` on `dest`, answering `{ ok, out, said }` and never throwing:
+ * `out` its stdout, `said` its stderr. `identity` is the key where it is not
+ * one ssh offers by itself. With no master the script is not attempted, since
+ * its own connection would carry no key.
+ */
+export function scriptOnBox(dest, script, { identity = null } = {}) {
+  const machine = boxMachine(dest, identity)
+  if (!machine.ready()) return { ok: false, out: '', said: `could not reach ${dest} over ssh` }
+  try { return { ok: true, out: machine.capture(script), said: '' } }
+  catch (err) { return { ok: false, out: String(err.stdout ?? '').trim(), said: String(err.stderr ?? '').trim() } }
+}
+
 /** Basecamp's ENCRYPTION_KEY read off `host` over ssh, or null where it keeps none. */
 export async function readBoxKey({ host, envFile, secretsDir }) {
-  const transport = transportFor(host)
-  const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? AS_ROOT : shQuote(AS_ROOT))], {
+  const proc = spawnOnBox(host, AS_ROOT, {
     stdin: new Blob([keyScript({ envFile, secretsDir })]), stdout: 'pipe', stderr: 'pipe',
   })
   const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()])
@@ -655,8 +684,7 @@ export async function pullRawBackup({ server, host = server, dbDir, envFile, sec
   say(`Copying ${dbDir} and ${envFile} off ${host} over ssh`)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const tar = join(dir, 'raw.tar.gz')
-  const transport = transportFor(host)
-  const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? AS_ROOT : shQuote(AS_ROOT))], {
+  const proc = spawnOnBox(host, AS_ROOT, {
     stdin: new Blob([rawScript({ dbDir, envFile, secretsDir })]), stdout: Bun.file(tar), stderr: 'pipe',
   })
   const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
@@ -754,9 +782,7 @@ export async function checkArchive({ archive, keyFile, basecampRoot }) {
 
 /** Run `script` on `host` as root, answering its stdout; a non-zero exit throws with its last stderr line. */
 export async function asRootOn(host, script, what) {
-  const transport = transportFor(host)
-  const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? AS_ROOT : shQuote(AS_ROOT))],
-    { stdin: new Blob([script]), stdout: 'pipe', stderr: 'pipe' })
+  const proc = spawnOnBox(host, AS_ROOT, { stdin: new Blob([script]), stdout: 'pipe', stderr: 'pipe' })
   const [code, out, err] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()])
   if (code !== 0) throw new Error(`could not ${what} on ${host} (exit ${code}): ${err.trim().split('\n').pop() || 'no reason given'}`)
   return out
@@ -764,10 +790,8 @@ export async function asRootOn(host, script, what) {
 
 /** A curl on the box against its own API, since `/setup` is only ever asked from there. */
 async function boxApi(host, port, path, { method = 'GET', body = null, type = null } = {}) {
-  const transport = transportFor(host)
   const curl = `curl -sS -w '\\n%{http_code}' -X ${method}${type ? ` -H 'content-type: ${type}'` : ''}${body ? ' --data-binary @-' : ''} http://localhost:${port}${path}`
-  const proc = Bun.spawn(['sh', '-c', pipeCommand(host, transport, transport === 'local' ? curl : shQuote(curl))],
-    { stdin: body ?? 'ignore', stdout: 'pipe', stderr: 'pipe' })
+  const proc = spawnOnBox(host, curl, { stdin: body ?? 'ignore', stdout: 'pipe', stderr: 'pipe' })
   const [, out, err] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()])
   const [code, ...rest] = out.trimEnd().split('\n').reverse()
   const text = rest.reverse().join('\n')

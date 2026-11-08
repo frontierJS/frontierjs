@@ -1713,6 +1713,9 @@ describe('what the machine is asked to do', () => {
         if (argv[1] === 'image' && argv[2] === 'ls') return ok((answers.held ?? []).filter(t => t.startsWith('fjs-copy-image:')).map(t => `${t}\n`).join(''))
         if (argv[1] === 'load') loadOpts.push(opts)
         if (argv[1] === 'load') return answers.load ?? ok(`Loaded image ID: sha256:${'cd'.repeat(32)}\n`)
+        if (line.startsWith('docker network inspect') && line.includes('IPAM')) return ok(answers.subnet ?? '172.30.0.0/24 \n')
+        // Every copy's fixed address, running or not: a stopped copy's is still its own.
+        if (line.startsWith('docker ps -a --filter label=fjs.copy --format')) return ok([...(answers.heldIps ?? []), ...copies.map(c => c.ip)].filter(Boolean).map(ip => `${ip}\n`).join(''))
         if (line.startsWith('docker network inspect')) return answers.network ?? { exitCode: 1, stdout: '', stderr: 'network fjs-copy not found' }
         if (line.startsWith('docker ps -a --filter label=fjs.copy=')) return ok(copies.map(c => `${c.container}\t${c.dir}\n`).join(''))
         // The heartbeat's pass over running copies: the Apps that have one, then one App's name and port.
@@ -1722,7 +1725,7 @@ describe('what the machine is asked to do', () => {
           envs.push(opts.env)
           if (answers.run) return answers.run
           const label = argv.find(a => a.startsWith('fjs.copy.dir='))
-          copies.push({ container: argv[argv.indexOf('--name') + 1], dir: label.slice('fjs.copy.dir='.length), port: argv.find(a => a.startsWith('fjs.copy.port=')).slice('fjs.copy.port='.length) })
+          copies.push({ container: argv[argv.indexOf('--name') + 1], dir: label.slice('fjs.copy.dir='.length), port: argv.find(a => a.startsWith('fjs.copy.port=')).slice('fjs.copy.port='.length), ip: argv[argv.indexOf('--ip') + 1] })
           return ok('abc123\n')
         }
         if (line.includes('IPAddress')) return ok(`${address.ip}\n`)
@@ -2050,6 +2053,24 @@ describe('what the machine is asked to do', () => {
         expect(said).toHaveLength(1)
         expect(said[0]).toContain('caddy refused it')
       })
+    })
+
+    // FJS-4089: an address docker picks on restart can be another App's copy's.
+    test('a copy holds a fixed address of its own on the network, never one another copy holds', async () => {
+      const { server, calls } = serving({ heldIps: ['172.30.0.2', '172.30.0.3'] })
+      expect((await post(server, '/replica/serve', body())).status).toBe(200)
+      const argv = calls.find(a => a[1] === 'run')
+      expect(argv).toContain('--ip')
+      expect(argv[argv.indexOf('--ip') + 1]).toBe('172.30.0.4')
+      expect(argv.indexOf('--ip')).toBeGreaterThan(argv.indexOf('--network'))
+      expect(argv.join(' ')).toContain('--label fjs.copy.ip=172.30.0.4')
+    })
+
+    test('a network with no room left for a copy refuses before anything runs', async () => {
+      const { server, calls } = serving({ subnet: '172.30.0.0/30 \n', heldIps: ['172.30.0.2'] })
+      const said = await post(server, '/replica/serve', body())
+      expect(said.body.error).toContain('no free address')
+      expect(calls.some(a => a[1] === 'run')).toBe(false)
     })
 
     test('unserve removes the copy and its staged files', async () => {

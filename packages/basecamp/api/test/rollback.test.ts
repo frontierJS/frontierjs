@@ -758,3 +758,56 @@ describe('an API App\'s git release builds web/ for the static App in front of i
     expect(await stepsOf(lone.id)).toEqual(['Validate', 'Build image', 'Start container', 'Health check'])
   })
 })
+
+// FJS-4059: `pushIngressCert` is tested directly; this is the release calling it.
+describe('the ingress wildcard a release pushes (FJS-D1975)', () => {
+  const sys = () => env.system as any
+
+  /** One release of a fresh app, its machine answering through a recording conduit. */
+  async function releaseWith(material: Record<string, unknown> | null) {
+    const { app, first } = await anAppWithHistory()
+    const before = await sys().workspace.findFirst({ where: { id: ws.id } })
+    let secretId: string | null = null
+    if (material) {
+      const secret = await sys().secret.create({ data: { workspaceId: ws.id, name: `wild-${uniq()}`, kind: 'tlsCert', data: JSON.stringify(material) } })
+      secretId = secret.id
+      await sys().workspace.update({ where: { id: ws.id }, data: { ingressCertSecretId: secretId, ingressCertExpiresAt: new Date(Date.now() + 80 * 86_400_000).toISOString(), version: before.version },
+        system: ['ingressCertSecretId', 'ingressCertExpiresAt'] })
+    }
+    try {
+      const replacement = await sys().deployment.create({ data: {
+        appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
+        configSnapshot: first.configSnapshot } })
+      await sys().deploymentStep.create({ data: { deploymentId: replacement.id, position: 0, name: 'Start container' } })
+      const sent: any[] = []
+      const conduit = {
+        resolve: async () => ({ pinned_cert: true }),
+        send: async (call: any) => { sent.push(call); return { data: {} } },
+      }
+      const via = new Proxy(env.app, { get: (t, k) =>
+        k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+      await env.app.runAs(admin.id, { tenant: ws.id }, () =>
+        (deploymentRun as any).handler({ app: via, data: { deployment_id: replacement.id } }))
+      return sent
+    } finally {
+      if (secretId) {
+        const now = await sys().workspace.findFirst({ where: { id: ws.id } })
+        await sys().workspace.update({ where: { id: ws.id }, data: { ingressCertSecretId: null, ingressCertExpiresAt: null, version: now.version },
+          system: ['ingressCertSecretId', 'ingressCertExpiresAt'] })
+        await sys().secret.delete({ where: { id: secretId } })
+      }
+    }
+  }
+
+  test('the stored wildcard reaches the machine before the first step acts', async () => {
+    const sent  = await releaseWith({ cert: 'CERT-PEM', key: 'KEY-PEM' })
+    const paths = sent.map(c => c.path)
+    expect(paths).toContain('/certs/load')
+    expect(paths.indexOf('/certs/load')).toBeLessThan(paths.indexOf('/deploy'))
+    expect(sent.find(c => c.path === '/certs/load').body).toEqual({ id: 'ingress', cert: 'CERT-PEM', key: 'KEY-PEM' })
+  })
+
+  test('a workspace with no wildcard sends no /certs/load', async () => {
+    expect((await releaseWith(null)).map(c => c.path)).not.toContain('/certs/load')
+  })
+})

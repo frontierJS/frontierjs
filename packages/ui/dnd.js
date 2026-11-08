@@ -53,15 +53,20 @@
  * axis move it through the same `onconsider` calls, Space drops it into
  * `onfinalize` and Escape or Tab cancels, each with `info.source` `'keyboard'`.
  * The lifted item is NOT hidden: its placeholder is what is on screen and
- * what holds focus, since a hidden element cannot. One shared live region says
- * where it is, in English. A keyboard move stays inside its own zone.
+ * what holds focus, since a hidden element cannot. The arrows ACROSS the zone's
+ * axis hop to the nearest zone of the same type that way, at the index nearest
+ * where the item was; in a wrapped zone one is a hop only when no line lies
+ * that way. One shared live region says where it is: in English, or as the
+ * zone's `announcements(event, info)` words it — `event` is `lifted`, `moved`,
+ * `dropped` or `cancelled`, `info` is `{ label, position, total, zone }`, and
+ * a return that is not a string falls back to the English line.
  *
  * A wrapped zone — a flex-wrap in either direction, or a grid filled along
  * one axis — is read by line and then along it, and is re-measured after each
  * move of its placeholder, because the reflow shifts everything after it by
  * more than one span.
  *
- * Not built: moving between zones by keyboard, nested zones of one type, and a
+ * Not built: nested zones of one type, and a
  * grid whose cells span tracks (a flow list or a wrap is detected per zone from
  * its children's rects).
  */
@@ -108,6 +113,7 @@ const DEFAULTS = {
   centerOnCursor:          false,
   delayTouchStart:         false,
   dragHandleSelector:      undefined,
+  announcements:           undefined,
   onconsider:              undefined,
   onfinalize:              undefined,
 }
@@ -428,6 +434,21 @@ function createGhost(sourceEl, rect, pointer, centerOnCursor) {
 
 // ─── the drag ─────────────────────────────────────────────────────────────
 
+/** Measure every zone of `type` that takes a drop from `originNode` into the
+ *  session, deepest first for overlap. Reads `session.grabbedEl`, so it runs
+ *  before that is cleared. */
+function collectZones(originNode, type) {
+  for (const node of typeIndex.get(type) || []) {
+    const zc = zoneRegistry.get(node)?.config
+    if (!zc) continue
+    if (zc.dropFromOthersDisabled && node !== originNode) continue
+    const meta = { node, config: zc, depth: getDepth(node), placeholderIndex: null, expectedSig: sig(zc.items) }
+    measureZone(meta)
+    session.zones.push(meta)
+  }
+  session.zones.sort((a, b) => b.depth - a.depth)
+}
+
 function startDrag(arm, e) {
   const { zoneNode, itemEl, itemIdx, pointerId } = arm
   const entry = zoneRegistry.get(zoneNode)
@@ -464,15 +485,7 @@ function startDrag(arm, e) {
     finalizing:  false,
   }
 
-  for (const node of typeIndex.get(cfg.type) || []) {
-    const zc = zoneRegistry.get(node)?.config
-    if (!zc) continue
-    if (zc.dropFromOthersDisabled && node !== zoneNode) continue
-    const meta = { node, config: zc, depth: getDepth(node), placeholderIndex: null, expectedSig: sig(zc.items) }
-    measureZone(meta)
-    session.zones.push(meta)
-  }
-  session.zones.sort((a, b) => b.depth - a.depth)   // deepest first, for overlap
+  collectZones(zoneNode, cfg.type)
   session.grabbedEl = null                          // the shadow attribute marks the slot from here
   session.current = session.zones.find((z) => z.node === zoneNode)
 
@@ -541,8 +554,24 @@ function announce(message) {
   liveRegion.textContent = message
 }
 
-function where(meta) {
-  return `position ${meta.placeholderIndex + 1} of ${itemsWithoutShadow(meta).length + 1}`
+const ENGLISH = {
+  lifted:    (i) => `${i.label}, lifted, position ${i.position} of ${i.total}. Arrow keys move it, Space drops it, Escape cancels.`,
+  moved:     (i) => `${i.label}, position ${i.position} of ${i.total}.`,
+  dropped:   (i) => `${i.label}, dropped at position ${i.position} of ${i.total}.`,
+  cancelled: (i) => `${i.label}, cancelled, back at position ${i.position} of ${i.total}.`,
+}
+
+/** Speak `event` for the zone `meta`, worded by that zone's `announcements`
+ *  when it returns a string for it and in English otherwise. */
+function say(event, meta) {
+  const info = {
+    label:    session.label,
+    position: meta.placeholderIndex + 1,
+    total:    itemsWithoutShadow(meta).length + 1,
+    zone:     meta.node,
+  }
+  const worded = meta.config.announcements?.(event, info)
+  announce(typeof worded === 'string' ? worded : ENGLISH[event](info))
 }
 
 function labelOf(el) {
@@ -579,12 +608,11 @@ function startKeyboardDrag(zoneNode, itemEl, liftEvent) {
     liftEvent,   // still bubbling to the window listener added below, which would drop it at once
     finalizing:  false,
   }
-  const meta = { node: zoneNode, config: cfg, depth: getDepth(zoneNode), placeholderIndex: null, expectedSig: sig(cfg.items) }
-  measureZone(meta)
-  session.zones.push(meta)
+  collectZones(zoneNode, cfg.type)
+  const meta = session.zones.find((z) => z.node === zoneNode)
   session.grabbedEl = null
   session.current   = meta
-  zoneNode.setAttribute(TARGET_ATTR, '')
+  for (const z of session.zones) z.node.setAttribute(TARGET_ATTR, '')
 
   considerWithShadowAt(meta, itemIdx, TRIGGERS.DRAG_STARTED)
 
@@ -592,7 +620,7 @@ function startKeyboardDrag(zoneNode, itemEl, liftEvent) {
   // A press elsewhere ends it: a lifted item that outlived the focus would
   // refuse every pointer drag after, with nothing on screen saying why.
   window.addEventListener('pointerdown', onKeyboardPointer, true)
-  announce(`${session.label}, lifted, ${where(meta)}. Arrow keys move it, Space drops it, Escape cancels.`)
+  say('lifted', meta)
 }
 
 function onKeyboardPointer() {
@@ -607,7 +635,7 @@ function keyboardKey(e) {
   if (e.key === ' ') {
     e.preventDefault()
     if (e.repeat) return
-    announce(`${session.label}, dropped at ${where(meta)}.`)
+    say('dropped', meta)
     finishDrag(true)
     return
   }
@@ -620,13 +648,90 @@ function keyboardKey(e) {
   let step = 0
   if (e.key === (horizontal ? 'ArrowRight' : 'ArrowDown')) step = 1
   else if (e.key === (horizontal ? 'ArrowLeft' : 'ArrowUp')) step = -1
-  if (!step) return
+  if (!step) {
+    const hop = HOP_KEYS[e.key]
+    if (!hop) return
+    e.preventDefault()
+    hopZone(meta, hop)
+    return
+  }
   e.preventDefault()
   if (meta.neg) step = -step
   const idx = Math.min(itemsWithoutShadow(meta).length, Math.max(0, meta.placeholderIndex + step))
   if (idx === meta.placeholderIndex) return
   considerWithShadowAt(meta, idx, TRIGGERS.DRAGGED_OVER_INDEX)
-  announce(`${session.label}, ${where(meta)}.`)
+  say('moved', meta)
+}
+
+// ─── crossing zones by keyboard ───────────────────────────────────────────
+
+const HOP_KEYS = {
+  ArrowLeft:  { horizontal: true,  sign: -1 },
+  ArrowRight: { horizontal: true,  sign: 1 },
+  ArrowUp:    { horizontal: false, sign: -1 },
+  ArrowDown:  { horizontal: false, sign: 1 },
+}
+
+/** Whether a sibling of the placeholder lies in `hop`'s direction on screen.
+ *  A wrapped zone has lines that way, and its arrow is the host zone's own
+ *  business before it is a hop. */
+function itemLiesToward(meta, hop) {
+  const ph = meta.node.children[meta.placeholderIndex]
+  if (!ph) return false
+  const at = (r) => (hop.horizontal ? (r.left + r.right) / 2 : (r.top + r.bottom) / 2)
+  const mine = at(docRectNoTransform(ph))
+  for (const k of meta.node.children) {
+    if (k === ph) continue
+    const d = (at(docRectNoTransform(k)) - mine) * hop.sign
+    const size = hop.horizontal ? k.offsetWidth : k.offsetHeight
+    if (d > size / 2) return true
+  }
+  return false
+}
+
+/** The zone of the dragged item's type nearest `meta` in `hop`'s direction,
+ *  by the centers of their rects as they are on screen now. */
+function neighborZone(meta, hop) {
+  const here = docRect(meta.node)
+  const hx = (here.left + here.right) / 2
+  const hy = (here.top + here.bottom) / 2
+  let best = null
+  let bestD = Infinity
+  for (const z of session.zones) {
+    if (z === meta) continue
+    const r = docRect(z.node)
+    const dx = (r.left + r.right) / 2 - hx
+    const dy = (r.top + r.bottom) / 2 - hy
+    if ((hop.horizontal ? dx : dy) * hop.sign <= 0) continue
+    const d = dx * dx + dy * dy
+    if (d < bestD) { best = z; bestD = d }
+  }
+  return best
+}
+
+/** Move the lifted item into the nearest zone that way, at the index nearest
+ *  where it is now. The same hand-over a pointer makes entering a zone. */
+function hopZone(meta, hop) {
+  if (meta.lines && itemLiesToward(meta, hop)) return
+  const target = neighborZone(meta, hop)
+  if (!target) return
+  const ph = meta.node.children[meta.placeholderIndex]
+  const from = ph ? docRectNoTransform(ph) : null
+
+  measureZone(target)
+  let idx = itemsWithoutShadow(target).length
+  if (from) {
+    const m = target.axis === 'y' ? (from.top + from.bottom) / 2 : (from.left + from.right) / 2
+    const c = target.axis === 'y' ? (from.left + from.right) / 2 : (from.top + from.bottom) / 2
+    // One pixel before the slot: a placeholder level with an item takes its index
+    // and the item moves down, rather than landing after it on a tie.
+    idx = indexForPointer(target, (target.neg ? -m : m) - 1, c)
+  }
+  leave(meta)
+  considerWithShadowAt(target, idx, TRIGGERS.DRAGGED_ENTERED)
+  session.current = target
+  scheduleRemeasure()
+  say('moved', target)
 }
 
 /** A full re-measure one frame after a cross-zone notify — by then the host
@@ -772,7 +877,7 @@ function cancelToOrigin() {
     session.current = origin
   }
   session.outside = true
-  if (session.keyboard) announce(`${session.label}, cancelled, back at ${where(origin)}.`)
+  if (session.keyboard) say('cancelled', origin)
   finishDrag(true)
 }
 
@@ -855,6 +960,7 @@ function finishDrag(skipAnimation) {
  *   centerOnCursor?: boolean,
  *   delayTouchStart?: boolean | number,
  *   dragHandleSelector?: string,
+ *   announcements?: (event: 'lifted' | 'moved' | 'dropped' | 'cancelled', info: {label: string, position: number, total: number, zone: HTMLElement}) => string | undefined,
  *   onconsider?: (e: {items: any[], info: {trigger: string, id: any, source: string}}) => void,
  *   onfinalize?: (e: {items: any[], info: {trigger: string, id: any, source: string}}) => void,
  * }} getOptions

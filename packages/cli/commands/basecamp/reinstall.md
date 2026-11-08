@@ -32,7 +32,7 @@ flags:
     description: Fresh mode only — install under a new ENCRYPTION_KEY, so the old Basecamp's encrypted values and older backups do not open on the new one
   domain:
     type: string
-    description: The new install's hostname (default the one the old Basecamp answers at)
+    description: The new install's hostname (default the one its basecamps.json entry files, else the one the box's env file names; the two disagreeing is refused)
     defaultValue: ''
   admin:
     type: string
@@ -62,6 +62,10 @@ heartbeat, the Apps and containers on its own box, and the box's Outpost
 against the `OUTPOST_VERSION` HEAD installs. The fleet is read over ssh with
 `fli deploy:repl`, so no API key is needed for it; a Basecamp that does not
 answer there is named and the run goes on.
+
+**The hostname** is `--domain`, else the url of the `basecamps.json` entry the
+run is for, else what the box's env file names. An entry and a box that disagree
+stop the run before anything is asked: that file can be another Basecamp's name.
 
 **Both modes back up first** (`FJS-D1849`). **Restore** round-trips through
 the archive, checked on this machine against this checkout before the box is
@@ -362,9 +366,12 @@ echo(chalk`\n  {bold fli basecamp:reinstall}  {dim Basecamp on} ${files.host}\n`
 const old = await readOld({ server, files, container })
 echo.lines([...oldRows(old, chalk), ''], { indent: 2 })
 
+const named = reinstallDomain({ domain: flag.domain, entry: readBasecamps()[entryName], box: old.box.hostname })
+if (named.refusal) { log.error(`${named.refusal}. Nothing was changed`); process.exitCode = 1; return }
+
 const mode = await pickMode({ flag, asking, tty, chalk })
 if (mode === 'restore' && flag['new-key']) { log.error('--new-key is fresh mode only: a restored archive opens under the key it was taken with. Pass --fresh'); process.exitCode = 1; return }
-const install = await askInstall({ flag: { ...flag, domain: flag.domain || old.box.hostname || '' }, restore: mode === 'restore', edge: true, asking, tty, log, echo, chalk })
+const install = await askInstall({ flag: { ...flag, domain: named.domain }, dest: server, restore: mode === 'restore', edge: true, asking, tty, log, echo, chalk })
 if (install.refusal) {
   log.error(`${install.refusal}. Nothing was changed`)
   if (install.rejected) await tokenHint({ echo, chalk })

@@ -8,7 +8,7 @@ const { host, serverPath } = $.config
 const machine = machineFor($, host, serverPath)
 const { dbDir, envFile, secretsDir } = apiFiles($.config.deployConf, serverPath)
 
-log.info(`Creating directory structure at ${serverPath}...`)
+echo`  {dim Creating directory structure at ${serverPath}}`
 
 const dirs = [
   serverPath,
@@ -54,7 +54,7 @@ const keyFile  = `${secretsDir}/ENCRYPTION_KEY`
 // then carries up, so the operator holds the copy a restore needs.
 if (!present && machine.capture(`[ -e ${keyFile} ] && echo yes || echo no`).trim() === 'no') {
   const { fillKey } = await import(new URL('file://' + global.fliRoot + '/core/env-preflight.js'))
-  if (fillKey($.paths.root, localEnv) === 'made') log.info(`  Made a new ENCRYPTION_KEY in ${localEnv} — it is the one copy off the box: keep it`)
+  if (fillKey($.paths.root, localEnv) === 'made') echo`  Made a new ENCRYPTION_KEY in ${localEnv} {dim — it is the one copy off the box: keep it}`
 }
 
 let envNote = 'populate before first deploy'
@@ -67,18 +67,22 @@ else if (existsSync(localEnv)) {
   // again after, because scp may carry the laptop's looser mode onto the file.
   const { readFileSync, writeFileSync, mkdtempSync, rmSync } = await import('fs')
   const { tmpdir } = await import('os')
-  const lines   = readFileSync(localEnv, 'utf8').split('\n')
+  const written = readFileSync(localEnv, 'utf8')
+  const { strayDatabasePaths, foreignOrigins } = await import(new URL('file://' + global.fliRoot + '/core/local-env.js'))
   // The seed carries the file as written, so a copy older than the mount at
   // CONTAINER_DB_DIR is named here rather than found after a build (FJS-3438).
-  const { strayDatabasePaths } = await import(new URL('file://' + global.fliRoot + '/core/local-env.js'))
-  for (const { key, value } of strayDatabasePaths(lines.join('\n'), CONTAINER_DB_DIR))
+  for (const { key, value } of strayDatabasePaths(written, CONTAINER_DB_DIR))
     log.warn(`  ${localEnv}: ${key}=${value} is outside ${CONTAINER_DB_DIR}, which a swap does not keep — the first deploy will refuse it; fix it before or after the seed`)
+  const foreign = foreignOrigins(written, [$.config.edge.web.domain, $.config.edge.api.domain])
+  for (const { key, value } of foreign)
+    log.warn(`  ${localEnv}: ${key}=${value} names a host this deploy does not serve — left out of the seed; set it on the box with fli env:push`)
+  const lines   = written.split('\n').filter(l => !foreign.some(({ key }) => l.trim().startsWith(`${key}=`)))
   const keyAt   = lines.findIndex(l => /^ENCRYPTION_KEY=./.test(l.trim()))
   const tmp     = mkdtempSync(resolve(tmpdir(), 'fli-setup-'))
   try {
     if (keyAt >= 0) {
       const keyThere = machine.capture(`[ -e ${keyFile} ] && echo yes || echo no`).trim() === 'yes'
-      if (keyThere) log.info(`  ${keyFile} is already there — left as it is, and your local ENCRYPTION_KEY is not sent`)
+      if (keyThere) echo`  ${keyFile} {dim is already there — left as it is, and your local ENCRYPTION_KEY is not sent}`
       else {
         writeFileSync(resolve(tmp, 'key'), lines[keyAt].trim().slice('ENCRYPTION_KEY='.length) + '\n', { mode: 0o600 })
         machine.run(`umask 077 && : > ${keyFile}`)
@@ -105,11 +109,13 @@ $.config.envSeeded = !present && existsSync(localEnv)
 // above, which the login writes as itself.
 machine.run(`chown -R ${owner} ${secretsDir} 2>/dev/null || sudo chown -R ${owner} ${secretsDir}`)
 
-log.done('Directories ready')
-log.info(`  ${serverPath}/db          ← SQLite database, owned by ${owner.split(':')[0]}`)
-log.info(`  ${serverPath}/releases/   ← web release history`)
-if (widgetsOn($.config.deployConf)) log.info(`  ${widgetsPathOf($.config.deployConf, serverPath)}/releases/   ← widget release history`)
-log.info(`  ${serverPath}/src/        ← the app as committed, written by each deploy`)
-log.info(`  ${envFile}  ← ${envNote}`)
-log.info(`  ${secretsDir}/  ← a secret as its own file (mode 400), passed to the API as <KEY>_FILE`)
+echo`  {green ✓} Directories ready`
+echo.lines([
+  `${serverPath}/db          ← SQLite database, owned by ${owner.split(':')[0]}`,
+  `${serverPath}/releases/   ← web release history`,
+  widgetsOn($.config.deployConf) && `${widgetsPathOf($.config.deployConf, serverPath)}/releases/   ← widget release history`,
+  `${serverPath}/src/        ← the app as committed, written by each deploy`,
+  `${envFile}  ← ${envNote}`,
+  `${secretsDir}/  ← a secret as its own file (mode 400), passed to the API as <KEY>_FILE`,
+], { indent: 4 })
 ```

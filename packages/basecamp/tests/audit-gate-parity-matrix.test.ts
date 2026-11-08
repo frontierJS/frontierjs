@@ -8,7 +8,7 @@
 // job-app (asSystem(), what a runsAsApp job does).
 //
 // AUDIT_DUMP=<file> writes the full cell matrix as JSON.
-import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
+import { test, expect, describe, beforeAll, afterAll, setDefaultTimeout } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { build, type Fixture } from './audit-parity-harness.ts'
 import { Driver, summarize, type PathName, type Who2 } from './audit-parity-paths.ts'
@@ -20,6 +20,10 @@ const MEMBERS: Who2[] = ['outsider', 'viewer', 'developer', 'admin', 'owner']
 // The Driver connects an MCP client per standing on first use, so the first
 // 'via mcp' case paid five handshakes inside bun's 5s default timeout, and the
 // sysadmin exception its own.
+// A stateless /mcp call costs ~0.2-0.3s, so a case making five of them (0.9s
+// alone) crosses 5s when the machine is busy: the cases are timing-bound by the
+// transport, not by anything they assert.
+setDefaultTimeout(30_000)
 beforeAll(async () => {
   fx = await build(); d = new Driver(fx)
   for (const w of [...MEMBERS, 'sysadmin'] as Who2[]) await d.mcpClient(w)

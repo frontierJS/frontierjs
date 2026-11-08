@@ -80,6 +80,8 @@ model Post {
 }
 `
 
+const AMBIENT_KEYS = ['ENCRYPTION_KEY', 'ENCRYPTION_KEY_FILE', 'NEW_ENCRYPTION_KEY', 'NEW_ENCRYPTION_KEY_FILE', 'LITESTONE_KEY']
+
 /**
  * Run the CLI to completion. Returns stdout, stderr, exit code.
  * Throws if the process exceeds the timeout.
@@ -90,9 +92,13 @@ async function runCli(
   opts: { timeoutMs?: number; env?: Record<string, string> } = {},
 ): Promise<{ stdout: string; stderr: string; exit: number }> {
   const timeoutMs = opts.timeoutMs ?? 15_000
+  // A key in the CI machine's environment makes a schema that must fail for want
+  // of one build (FJS-3933); a test that needs a key passes it in opts.env.
+  const inherited = { ...process.env }
+  for (const k of AMBIENT_KEYS) delete inherited[k]
   const proc = Bun.spawn(['bun', CLI, ...args], {
     cwd,
-    env:    { ...process.env, ...(opts.env ?? {}) },
+    env:    { ...inherited, ...(opts.env ?? {}) },
     stdout: 'pipe',
     stderr: 'pipe',
   })

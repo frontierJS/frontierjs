@@ -6,10 +6,10 @@
 // that cannot go quiet fails here and not on the next app.
 
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { releaseFindings, mergeVariables, imageRuntime, readEnvSpec, requiredEnvKeys, releasePlan } from '../core/release-preflight.js'
+import { join, dirname } from 'node:path'
+import { releaseFindings, mergeVariables, imageRuntime, readEnvSpec, requiredEnvKeys, releasePlan, gatherReleaseInputs } from '../core/release-preflight.js'
 
 const SPEC = { spec: {
   ENCRYPTION_KEY:   { type: 'string', required: true },
@@ -374,5 +374,56 @@ describe('a setup that stopped part way is finished by the next run (FJS-3529, F
   test('a Variable the App already holds is never written again, even when its value is the finding', () => {
     const f = run({ variables: [v('NODE_ENV', 'development')] }).find(f => f.rule === 'node-env')
     expect(f.fix.variables).toEqual([])
+  })
+})
+
+// FJS-4071: the image's db:migrate refused a history that no longer built the
+// schema, on the box, after the build and the upload had been paid for.
+describe('migration-history: the history is asked before the build', () => {
+  const THING = 'model Thing {\n  id Int @id\n  name String\n}\n'
+  const BUILT = 'CREATE TABLE IF NOT EXISTS "thing" (\n  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,\n  "name" TEXT NOT NULL\n) STRICT;\n'
+  const app = (files, { litestone = true } = {}) => {
+    const root = mkdtempSync(join(tmpdir(), 'release-history-'))
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, dirname(path)), { recursive: true })
+      writeFileSync(join(root, path), text)
+    }
+    if (litestone) {
+      mkdirSync(join(root, 'node_modules', '@frontierjs'), { recursive: true })
+      symlinkSync(join(import.meta.dir, '..', '..', 'litestone'), join(root, 'node_modules', '@frontierjs', 'litestone'))
+    }
+    return root
+  }
+  const graded = (root) => {
+    try { return run({ migrations: gatherReleaseInputs(root).migrations }) }
+    finally { rmSync(root, { recursive: true, force: true }) }
+  }
+
+  test('a schema the migrations do not build is an error naming the gap', () => {
+    const found = graded(app({
+      'db/schema.lite': THING + 'model Extra {\n  id Int @id\n}\n',
+      'db/migrations/20260101000000_init.sql': BUILT,
+    }))
+    const f = found.find(f => f.rule === 'migration-history')
+    expect(f.level).toBe('error')
+    expect(f.detail).toContain('Extra')
+  })
+
+  test('a history that builds the schema is no finding', () => {
+    const found = graded(app({ 'db/schema.lite': THING, 'db/migrations/20260101000000_init.sql': BUILT }))
+    expect(found.filter(f => f.rule === 'migration-history')).toEqual([])
+    expect(found.filter(f => f.title.includes('migration history'))).toEqual([])
+  })
+
+  test('an app with no schema has no history to ask about', () => {
+    const found = graded(app({ 'api/package.json': '{}' }, { litestone: false }))
+    expect(found.filter(f => f.title.includes('migration history'))).toEqual([])
+  })
+
+  test('a history nothing could replay says so rather than passing', () => {
+    const found = graded(app({ 'db/schema.lite': THING }, { litestone: false }))
+    const f = found.find(f => f.rule === 'unreadable' && f.title.includes('migration history'))
+    expect(f.level).toBe('warn')
+    expect(f.detail).toContain('litestone')
   })
 })

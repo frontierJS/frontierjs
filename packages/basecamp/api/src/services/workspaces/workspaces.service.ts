@@ -18,6 +18,8 @@ import { LEVELS } from '@frontierjs/litestone'
 import { refuseGrantAboveOwn, roleOf, getPagination, WORKSPACE_QUERY, WORKSPACES_SERVICE } from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import ingressCert from '../../jobs/ingress-cert.job.ts'
+import { syncReplicasOf } from '../../jobs/replicate-sync.job.ts'
+import { retireAppsIn, unpublishAppsIn } from '../apps/apps.service.ts'
 import { db, actor, slugify, narrowPatch, changesNothing, callerOrder } from '../../core/resource.ts'
 import type { WorkspaceRole }  from '#db/schema.d.ts'
 // The roles are graded in core/gate.ts and the enum lives in schema.lite; the
@@ -236,9 +238,15 @@ export default createService({
     if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
 
     // @@softDelete(cascade) — projects, servers, secrets and jobs are stamped
-    // with it rather than left live under a deleted parent.
+    // with it rather than left live under a deleted parent. It tells no
+    // machine and no zone, so the Apps are retired first and their records
+    // unpublished after.
+    const envs    = await db().environment.findMany({ where: { workspaceId: ws.id }, select: { id: true } })
+    const apps    = await retireAppsIn($.app, envs.map((e: { id: string }) => e.id))
     const removed = await db().workspace.remove({ where: { id: $.id as string } })
-    return Array.isArray(removed) ? removed[0] : removed
+    await unpublishAppsIn(apps.map(a => a.id))
+    await syncReplicasOf($.app, apps.map(a => a.id))
+    return { ...(Array.isArray(removed) ? removed[0] : removed), apps }
   },
 
   // ── members ───────────────────────────────────────────────────────

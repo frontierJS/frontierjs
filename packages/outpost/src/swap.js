@@ -257,6 +257,12 @@ export function swapFor({ verdict = null, reason = null } = {}) {
 // entrypoint opens the database to migrate. Start-first runs the new one as
 // `_next` on a port Docker picks and stops the old one only once the route has
 // moved, so a failure before then removes `_next` and the old one never stopped.
+//
+// How much of a failed release's log its error carries: a stack trace fits,
+// and a deployment step stores the whole of it.
+const LAST_LOG_LINES = 30
+const LAST_LOG_CHARS = 4000
+
 export function createSwap({ run, health, find }) {
   /** A docker command, or throw with what the machine actually said: swallowing
    *  it is how a deploy reports success having done nothing (`FJS-257`). */
@@ -267,6 +273,21 @@ export function createSwap({ run, health, find }) {
       throw new Error(`docker ${args[0]} failed (exit ${result.exitCode}): ${said}`)
     }
     return String(result.stdout ?? '').trim()
+  }
+
+  /** The end of a failed container's log, as the block its error closes with,
+   *  or `''`. Removing the container takes the log with it, and then an app
+   *  that exited at boot reads only as a health path that did not answer
+   *  (`FJS-4070`). Never throws, since the put-back runs next. Merged by the
+   *  shell because a boot failure is on stderr, which `fli deploy`'s runner
+   *  discards from a command that succeeds. */
+  async function lastLog(container) {
+    let read
+    try { read = await run(['sh', '-c', `docker logs --tail ${LAST_LOG_LINES} "$1" 2>&1`, 'sh', container]) } catch { return '' }
+    if (read.exitCode !== 0) return ''
+    const said = stripVTControlCharacters(String(read.stdout ?? '')).trim()
+    if (!said) return ''
+    return `\n\nits log ended:\n${said.split('\n').slice(-LAST_LOG_LINES).join('\n').slice(-LAST_LOG_CHARS)}`
   }
 
   /** Finish a start-first swap that died after its route moved. The route
@@ -332,9 +353,9 @@ export function createSwap({ run, health, find }) {
   /** Take the failed container away and start the set-aside one again, the
    *  route following it: one a start-first published comes back on a new port.
    *  Answers the error to throw: `restored` says whether the old container is
-   *  back, and `none` that there was none. */
-  async function putBack({ name, held, port, path, why, route }) {
-    const fail = (said, restored) => Object.assign(new Error(`the new container ${why}; ${said}`), { restored, none: !held })
+   *  back, and `none` that there was none. `log` is `lastLog`'s block. */
+  async function putBack({ name, held, port, path, why, route, log = '' }) {
+    const fail = (said, restored) => Object.assign(new Error(`the new container ${why}; ${said}${log}`), { restored, none: !held })
     await run(['docker', 'rm', '-f', name])
     if (!held) return fail('there was no previous container to put back', false)
     try {
@@ -387,7 +408,7 @@ export function createSwap({ run, health, find }) {
       }
       const fresh = await health({ name, port, path })
       if (!fresh.healthy)
-        throw await putBack({ name, held, port, path, route, why: `started and is not healthy — ${fresh.reason}` })
+        throw await putBack({ name, held, port, path, route, why: `started and is not healthy — ${fresh.reason}`, log: await lastLog(name) })
       if (route) {
         try {
           await route(port)
@@ -422,9 +443,9 @@ export function createSwap({ run, health, find }) {
 
       // `untouched` tells a caller the old container never stopped, apart from
       // a failure after the route moved, which leaves the new one serving.
-      const refuse = async (why) => {
+      const refuse = async (why, log = '') => {
         await run(['docker', 'rm', '-f', next])
-        return Object.assign(new Error(`the new container ${why}; ${live ? 'the previous container was not touched and is still serving' : 'there was no previous container'}`),
+        return Object.assign(new Error(`the new container ${why}; ${live ? 'the previous container was not touched and is still serving' : 'there was no previous container'}${log}`),
           { untouched: true, none: !live })
       }
       let containerId
@@ -436,9 +457,9 @@ export function createSwap({ run, health, find }) {
         throw await refuse(`did not start — ${err.message}`)
       }
       const port = (await portOf(run, next).catch(() => null))?.port
-      if (!port) throw await refuse('published no port for the route to follow')
+      if (!port) throw await refuse('published no port for the route to follow', await lastLog(next))
       const fresh = await health({ name: next, port, path })
-      if (!fresh.healthy) throw await refuse(`started and is not healthy — ${fresh.reason}`)
+      if (!fresh.healthy) throw await refuse(`started and is not healthy — ${fresh.reason}`, await lastLog(next))
 
       try {
         await route(port)

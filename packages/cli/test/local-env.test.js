@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'fs'
-import { parseEnvText, containerEnvOverrides, strayDatabasePaths } from '../core/local-env.js'
+import { parseEnvText, containerEnvOverrides, strayDatabasePaths, foreignOrigins } from '../core/local-env.js'
 
 const LOCAL = readFileSync(new URL('../commands/deploy/local.md', import.meta.url), 'utf8')
 
@@ -80,5 +80,32 @@ describe('the shipped steps grade the server env file', () => {
   test('03-directories names the local file before it seeds from it', () => {
     const step = readFileSync(new URL('../commands/deploy/_steps-setup/03-directories.md', import.meta.url), 'utf8')
     expect(step).toContain('strayDatabasePaths(')
+  })
+})
+
+// FJS-4078: deploy:setup carried the laptop's packages/basecamp/.env.production
+// onto a second box, so that box named the first Basecamp as its own address.
+describe('foreignOrigins', () => {
+  const YUMA = 'FRONTIER_APP_URL=https://yuma.kobami.cloud\nFRONTIER_API_URL="https://yuma.kobami.cloud/"\nDATABASE_URL=/db/x.db\n'
+
+  test('the two addresses naming a host this deploy does not serve are named', () => {
+    expect(foreignOrigins(YUMA, ['chartered.example.com', undefined])).toEqual([
+      { key: 'FRONTIER_APP_URL', value: 'https://yuma.kobami.cloud' },
+      { key: 'FRONTIER_API_URL', value: 'https://yuma.kobami.cloud/' },
+    ])
+  })
+
+  test("the deploy's own web and api hosts are kept, whatever the case", () => {
+    expect(foreignOrigins('FRONTIER_APP_URL=https://App.Example.com\nFRONTIER_API_URL=https://api.example.com/v1\n', ['app.example.com', 'api.example.com'])).toEqual([])
+  })
+
+  test('a deploy with no hostname has nothing to compare, and a bare value is read as a host', () => {
+    expect(foreignOrigins(YUMA, [undefined, null])).toEqual([])
+    expect(foreignOrigins('FRONTIER_APP_URL=yuma.kobami.cloud\n', ['chartered.example.com'])).toEqual([{ key: 'FRONTIER_APP_URL', value: 'yuma.kobami.cloud' }])
+  })
+
+  test('deploy:setup leaves them out of the seed', () => {
+    const step = readFileSync(new URL('../commands/deploy/_steps-setup/03-directories.md', import.meta.url), 'utf8')
+    expect(step).toContain('foreignOrigins(')
   })
 })

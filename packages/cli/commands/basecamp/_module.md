@@ -10,14 +10,14 @@ description: Basecamp itself — make its box at a cloud, install it, point its 
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, provisionScript, markHost,
   cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine, ageOf }
   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-const { basecamp, basecampAll, pullHubArchive, basecampApi, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, keyDirOf, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, pickArchive, checkArchive, asRootOn, seedBoxKey, probeBox, putBoxKey, restartApi, probeUntil, stageOnBox, restoreFindings, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, pullHubArchive, basecampApi, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, keyDirOf, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, pickArchive, checkArchive, asRootOn, scriptOnBox, seedBoxKey, probeBox, putBoxKey, restartApi, probeUntil, stageOnBox, restoreFindings, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 
 // Basecamp's own hostname, the one `pointHost` points at the box.
 const webDomain = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
 
-const { resolveBasecamp, readBasecamps, writeBasecamp, reachBasecamp, reachBasecampFor } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
+const { resolveBasecamp, readBasecamps, writeBasecamp, reachBasecamp, reachBasecampFor, reinstallDomain } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
 
 // The Basecamp a command talks to: `--basecamp <name>`, or the only entry
 // (`reachBasecamp` owns the refusal, which lists the names when several are known).
@@ -74,12 +74,15 @@ const deployFiles = async (server) => {
 // refusal — the record can come later. Answers `{ refusal, points, zone, zones }`,
 // points being the address Basecamp's record there holds now (null with none),
 // zone the one holding the hostname and zones every `{ id, name }` the token opens.
-const zoneRefusal = async ({ domain, log, echo, chalk }) => {
+// With the box's address it also refuses a name another live Basecamp holds, before
+// the install rather than at its dns step, where the old install is already gone.
+const zoneRefusal = async ({ domain, ip, log, echo, chalk }) => {
   if (!await cloudflareToken({ interactive: !!process.stdin.isTTY, say: (t) => log.warn(t) })) {
     log.warn(`No CLOUDFLARE_TOKEN: the install leaves ${domain} without a DNS record and prints the line that writes it`)
     return { refusal: null, points: null, zone: null, zones: [] }
   }
-  const found = await hostRecord({ host: domain, check: true })
+  const found = await hostRecord({ host: domain, check: true, ...(ip ? { ip } : {}) })
+  if (found.live) return { refusal: found.error, points: found.live }
   if (found.error) return { refusal: `Cloudflare: ${found.error.replace(/^Cloudflare:\s*/, '')}`, points: null, rejected: /HTTP 40[13]|invalid access token/i.test(found.error) }
   echo(`  ${chalk.green('✓')} ${chalk.dim(`${found.zone} is at Cloudflare`)}\n`)
   return { refusal: null, points: found.points ?? null, zone: found.zone, zones: found.zones ?? [] }
@@ -274,15 +277,10 @@ const unneededKept = (on, outpost, log) => {
   if (!on && outpost) log.warn('The Outpost install turns fwupd and multipathd off on every machine it enrolls; --no-outpost leaves them as they are')
 }
 const turnOffUnneeded = async (dest, identity, log) => {
-  const { spawnSync }  = await import('node:child_process')
-  const { existsSync } = await import('node:fs')
   const { UNNEEDED_SERVICES_OFF } = await import(provisionScript().root + 'api/src/providers/compute/enrollment.ts')
-  const run = spawnSync('ssh', ['-o', 'BatchMode=yes', ...(identity && existsSync(identity) ? ['-i', identity] : []), dest, 'sh -s'], {
-    encoding: 'utf8',
-    input: `${SUDO}\nsudo sh -s <<'FLI_UNNEEDED_EOF'\n${UNNEEDED_SERVICES_OFF}\nFLI_UNNEEDED_EOF\n`,
-  })
-  if (run.status === 0) log.done('fwupd and multipathd are off')
-  else log.warn(`Could not turn off fwupd and multipathd on ${dest}${run.stderr.trim() ? `: ${run.stderr.trim()}` : ''}. As root there: ${UNNEEDED_SERVICES_OFF.split('\n').join('; ')}`)
+  const run = scriptOnBox(dest, `${SUDO}\nsudo sh -s <<'FLI_UNNEEDED_EOF'\n${UNNEEDED_SERVICES_OFF}\nFLI_UNNEEDED_EOF\n`, { identity })
+  if (run.ok) log.done('fwupd and multipathd are off')
+  else log.warn(`Could not turn off fwupd and multipathd on ${dest}${run.said ? `: ${run.said}` : ''}. As root there: ${UNNEEDED_SERVICES_OFF.split('\n').join('; ')}`)
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+$/
@@ -314,18 +312,13 @@ const hostnameOf = async (domain) => {
 // argv another process on either machine can read. An empty password is
 // generated and printed once. Answers false when no admin was made.
 const makeAdmin = async ({ dest, identity, workspace, admin, password, log, echo, chalk }) => {
-  const { spawnSync }  = await import('node:child_process')
-  const { existsSync } = await import('node:fs')
   const generated = !password
   if (generated) password = (await import('node:crypto')).randomBytes(18).toString('base64url')
   const { default: conf } = await import(provisionScript().root + 'frontier.config.js')
   const body = JSON.stringify({ workspace_name: workspace, name: admin.split('@')[0], email: admin, password })
-  const setup = spawnSync('ssh', ['-o', 'BatchMode=yes', ...(identity && existsSync(identity) ? ['-i', identity] : []), dest, 'sh -s'], {
-    encoding: 'utf8',
-    input: `curl -sS -w '\\n%{http_code}' -X POST -H 'content-type: application/json' --data-binary @- http://localhost:${conf.deploy.api.port}/setup <<'FLI_SETUP_EOF'\n${body}\nFLI_SETUP_EOF\n`,
-  })
-  const [code, ...rest] = (setup.stdout || '').trimEnd().split('\n').reverse()
-  const said = (() => { try { return JSON.parse(rest.reverse().join('\n')).message } catch { return setup.stderr.trim() } })()
+  const setup = scriptOnBox(dest, `curl -sS -w '\\n%{http_code}' -X POST -H 'content-type: application/json' --data-binary @- http://localhost:${conf.deploy.api.port}/setup <<'FLI_SETUP_EOF'\n${body}\nFLI_SETUP_EOF\n`, { identity })
+  const [code, ...rest] = setup.out.split('\n').reverse()
+  const said = (() => { try { return JSON.parse(rest.reverse().join('\n')).message } catch { return setup.said } })()
   if (code === '409') { log.warn(`  ${workspace} already has an admin — ${admin} was not made`); return true }
   if (code !== '201') {
     log.error(`POST /setup answered ${code || 'nothing'}${said ? `: ${said}` : ''}. Make the admin at /setup in the browser`)
@@ -431,8 +424,9 @@ const questionLine = (chalk, q, hint) => `${chalk.cyan('?')} ${chalk.bold(q)}${h
 
 /** Answers `{ domain, configured, admin, password, outpost, unneeded, ingress }`,
  *  or `{ refusal, rejected }` before anything is installed. `edge` asks Q4's
- *  question (`FJS-D1855`); `ingress` is then the zone picked, or null. */
-const askInstall = async ({ flag, restore = false, edge = false, asking = !!process.stdin.isTTY, tty, log, echo, chalk }) => {
+ *  question (`FJS-D1855`); `ingress` is then the zone picked, or null. `dest` is
+ *  the box the hostname is about to point at. */
+const askInstall = async ({ flag, dest, restore = false, edge = false, asking = !!process.stdin.isTTY, tty, log, echo, chalk }) => {
   const configured = (await webDomain()) || ''
   const asked = flag.domain || configured
   if (!asked) return { refusal: `Installing needs Basecamp's hostname: Caddy routes by it and fetches its certificate. Pass --domain` }
@@ -458,7 +452,7 @@ const askInstall = async ({ flag, restore = false, edge = false, asking = !!proc
   const unneeded = !asking || await yes(UNNEEDED_QUESTION)
   unneededKept(unneeded, outpost, log)
 
-  const { refusal, rejected, zone, zones } = await zoneRefusal({ domain, log, echo, chalk })
+  const { refusal, rejected, zone, zones } = await zoneRefusal({ domain, ip: await boxAddress(dest), log, echo, chalk })
   if (refusal) return { refusal, rejected }
   if (!edge || restore) return { domain, configured, admin, password, outpost, unneeded }
   const ingress = zones.length ? await askIngress({ zone, zones, asking, tty, echo, chalk }) : null

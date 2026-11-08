@@ -27,7 +27,9 @@ Writes `A <host> → <ip>`, DNS-only unless `--proxied`, through Basecamp's own 
 connector, run from this checkout as `fli basecamp:create` runs a cloud's compute one.
 The record carries Basecamp's fleet mark in its comment, so Basecamp manages it
 later rather than refusing it as somebody else's. A rerun moves the record to
-the new address; a record somebody made by hand at that name is refused, never
+the new address, unless a Basecamp still answers at the old one: every install
+carries that same mark, so a live answer is what says the name is another
+install's. A record somebody made by hand at that name is refused, never
 overwritten.
 
 `fli basecamp:create` and `basecamp:install` make this same write once Basecamp is
@@ -55,5 +57,5 @@ if (flag.dry) { log.dry(`A ${host} → ${ip}, ${flag.proxied ? 'proxied, Full (s
 
 const done = await hostRecord({ host, ip, ...(flag.proxied ? { proxied: true } : {}) })
 if (done.error) { log.error(done.error); process.exitCode = 1; return }
-log.done(`${done.host} → ${done.ip} in ${done.zone}, ${done.proxied ? 'behind the proxy, Full (strict) for this host' : 'DNS-only'}`)
+echo`  {green ✓} ${done.host} {dim →} ${done.ip} {dim in ${done.zone}, ${done.proxied ? 'behind the proxy, Full (strict) for this host' : 'DNS-only'}}`
 ```

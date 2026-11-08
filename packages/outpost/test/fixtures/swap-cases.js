@@ -17,6 +17,13 @@
 
 export const NAME = 'app'
 
+// What a release that cannot boot wrote before the swap removed it. `img:dead`
+// exits at boot, so like a real one it has no port for `inspect` to answer.
+const BOOT_LOG = {
+  'img:sick': 'booting\ndb:migrate refused\n',
+  'img:dead': 'db:migrate refused\n',
+}
+
 /** A fake daemon answering argv. `healthy(image)` decides a health check. */
 export function fakeDaemon(initial = {}, { dials = 7300, refuses = [] } = {}) {
   const box = new Map(Object.entries(initial).map(([name, c]) => [name, { ...c }]))
@@ -25,6 +32,11 @@ export function fakeDaemon(initial = {}, { dials = 7300, refuses = [] } = {}) {
   const no  = (stderr) => ({ exitCode: 1, stdout: '', stderr })
 
   function argv([bin, verb, ...rest]) {
+    if (bin === 'sh' && /^docker logs .*2>&1$/.test(rest[0])) {
+      const c = box.get(rest[rest.length - 1])
+      if (!c) return no(`Error: No such container: ${rest[rest.length - 1]}`)
+      return ok(BOOT_LOG[c.image] ?? '')
+    }
     if (bin !== 'docker') return no(`not docker: ${bin}`)
     if (verb === 'ps') return ok([...box.keys()].join('\n'))
     if (verb === 'inspect') {
@@ -32,6 +44,7 @@ export function fakeDaemon(initial = {}, { dials = 7300, refuses = [] } = {}) {
       const c = box.get(name)
       if (!c) return no(`Error: No such object: ${name}`)
       if (rest.includes('{{.State.Running}}')) return ok(String(c.running))
+      if (c.image === 'img:dead') return ok('{}')
       return ok(JSON.stringify({ '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(c.port ?? 7300) }] }))
     }
     if (verb === 'rm') {
@@ -142,7 +155,7 @@ export const CASES = [
     swap: 'stop-first', image: 'img:sick', before: { app: old },
     log: ['rm app_replaced', 'rename app app_replaced', 'stop app_replaced', 'run app img:sick',
           'rm app', 'rename app_replaced app', 'start app', 'route 7300'],
-    throws: /the new container started and is not healthy — .*; the previous container is serving again/,
+    throws: /the new container started and is not healthy — .*; the previous container is serving again\n[\s\S]*booting\ndb:migrate refused$/,
     restored: true,
     after: { app: 'img:old' },
   },
@@ -159,7 +172,7 @@ export const CASES = [
     case: 'unhealthy first deploy → nothing to put back',
     swap: 'stop-first', image: 'img:sick', before: {},
     log: ['run app img:sick', 'rm app'],
-    throws: /not healthy — .*; there was no previous container to put back/,
+    throws: /not healthy — .*; there was no previous container to put back\n[\s\S]*db:migrate refused$/,
     restored: false, none: true,
     after: {},
   },
@@ -181,7 +194,16 @@ export const CASES = [
     case: 'start-first unhealthy → old untouched',
     swap: 'start-first', image: 'img:sick', before: { app: old },
     log: ['run app_next img:sick', 'rm app_next'],
-    throws: /not healthy — .*; the previous container was not touched and is still serving/,
+    throws: /not healthy — .*; the previous container was not touched and is still serving\n[\s\S]*db:migrate refused$/,
+    after: { app: 'img:old' },
+  },
+  {
+    // An exited container holds no port, so this is how a boot failure reads
+    // on a start-first, before any health check.
+    case: 'start-first exits at boot → old untouched, the log kept',
+    swap: 'start-first', image: 'img:dead', before: { app: old },
+    log: ['run app_next img:dead', 'rm app_next'],
+    throws: /published no port for the route to follow; the previous container was not touched and is still serving\n[\s\S]*db:migrate refused$/,
     after: { app: 'img:old' },
   },
   {

@@ -137,13 +137,16 @@ function toBody(r: EdgeRecordInput, mark: RecordMark): Row {
  * The records of the sets named, refused if one of them holds a record this
  * app did not mark (`FJS-D560`). Checked for EVERY set before anything is sent:
  * a refusal on the second set after the first was written is the half-write the
- * batch exists to prevent.
+ * batch exists to prevent. `unguarded` names sets whose every ref carries a
+ * mark: those can match only marked records, so a foreign record beside them
+ * is left alone rather than a reason to refuse.
  */
-async function ownedSets(send: AccountSend, zoneId: string, keys: Set<string>): Promise<Map<string, EdgeRecord[]>> {
+async function ownedSets(send: AccountSend, zoneId: string, keys: Set<string>, unguarded = new Set<string>()): Promise<Map<string, EdgeRecord[]>> {
   const sets = new Map<string, EdgeRecord[]>([...keys].map(k => [k, []]))
   for (const r of await cloudflare.records(send, zoneId)) sets.get(setKey(r.type, r.name))?.push(r)
 
   for (const [key, recs] of sets) {
+    if (unguarded.has(key)) continue
     const foreign = recs.find(r => !r.mark)
     if (foreign)
       throw new Error(`Cloudflare: ${key} holds a record basecamp did not write (${foreign.id}, `
@@ -257,8 +260,10 @@ export const cloudflare: EdgeConnector = {
   },
 
   async deleteRecords(send, zoneId, refs): Promise<EdgeRecord[]> {
-    const sets = await ownedSets(send, zoneId, new Set(refs.map(r => setKey(r.type, r.name))))
-    const gone = new Map<string, EdgeRecord>()
+    const keys   = new Set(refs.map(r => setKey(r.type, r.name)))
+    const bare   = new Set(refs.filter(r => !r.mark).map(r => setKey(r.type, r.name)))
+    const sets   = await ownedSets(send, zoneId, keys, new Set([...keys].filter(k => !bare.has(k))))
+    const gone   = new Map<string, EdgeRecord>()
     for (const ref of refs)
       for (const r of sets.get(setKey(ref.type, ref.name))!)
         if ((ref.content === undefined || sameContent(r.type, r.content, ref.content))

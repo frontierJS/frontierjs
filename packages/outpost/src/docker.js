@@ -335,6 +335,9 @@ const COPY_DIR_LABEL = 'fjs.copy.dir'
 // The port its API listens on: nothing else remembers it, and the route needs
 // it again each time the container's address changes.
 const COPY_PORT_LABEL = 'fjs.copy.port'
+// The address the copy was started with, so the next copy can pick one no
+// copy holds; a restart gives a container without `--ip` whatever is free.
+const COPY_IP_LABEL   = 'fjs.copy.ip'
 // The one header a copy-aware junction sets on every answer. An image on an
 // older framework ignores the variable and runs writable over the copy.
 const READ_ONLY_HEADER = 'x-frontier-read-only'
@@ -803,6 +806,30 @@ export function createDocker({
     if (made.exitCode !== 0) throw new Error(`docker network ${COPY_NETWORK} was not created (exit ${made.exitCode}): ${(made.stderr ?? '').trim()}`)
   }
 
+  /** The lowest address on `fjs-copy` no copy holds, running or stopped. A
+   *  copy started with it keeps it across a restart, so no copy is handed
+   *  another App's address. Two serves picking at once collide in docker,
+   *  which refuses the second `--ip`. */
+  async function freeCopyIp() {
+    const seen = await run(['docker', 'network', 'inspect', '--format', '{{range .IPAM.Config}}{{.Subnet}} {{end}}', COPY_NETWORK])
+    const cidr = String(seen.stdout ?? '').split(/\s+/).find(s => /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(s))
+    if (seen.exitCode !== 0 || !cidr) throw new Error(`docker network ${COPY_NETWORK} has no IPv4 subnet to give a copy an address in: ${(seen.stderr ?? '').trim()}`)
+    const [net, bits] = cidr.split('/')
+    const octets = net.split('.').map(Number)
+    if (octets.some(o => o > 255) || Number(bits) < 8 || Number(bits) > 30) throw new Error(`docker network ${COPY_NETWORK}'s subnet ${cidr} cannot hold copies`)
+    const base = octets.reduce((n, o) => n * 256 + o, 0)
+    const size = 2 ** (32 - Number(bits))
+    const listed = await run(['docker', 'ps', '-a', '--filter', `label=${COPY_LABEL}`, '--format', `{{.Label "${COPY_IP_LABEL}"}}`])
+    if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${(listed.stderr ?? '').trim()}`)
+    const held = new Set(String(listed.stdout ?? '').split('\n').map(line => line.trim()).filter(Boolean))
+    // .1 is the gateway and the last address is the broadcast.
+    for (let n = base + 2; n < base + size - 1; n++) {
+      const ip = [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.')
+      if (!held.has(ip)) return ip
+    }
+    throw new Error(`docker network ${COPY_NETWORK} (${cidr}) has no free address for a copy`)
+  }
+
   async function copiesOf(appId) {
     checkAppId(appId)
     const listed = await run(['docker', 'ps', '-a', '--filter', `label=${COPY_LABEL}=${appId}`, '--format', `{{.Names}}\t{{.Label "${COPY_DIR_LABEL}"}}`])
@@ -830,9 +857,9 @@ export function createDocker({
 
   /**
    * Each running copy's route onto the address its container holds now. A
-   * restart can give a copy another IP on `fjs-copy`, even one another App's
-   * copy had, so the address is read from the container and never kept from
-   * what `serveCopy` answered. Runs in the copy's own chain, so it cannot
+   * copy started with a fixed `--ip` keeps it; one started without (an older
+   * Outpost's) can get another App's after a restart, so the address is read
+   * from the container and never kept from what `serveCopy` answered. Runs in the copy's own chain, so it cannot
    * read an address a serve is about to remove. A copy with no route moves
    * nothing; a failure is logged per App.
    */
@@ -1684,12 +1711,13 @@ export function createDocker({
       const src = await realpath(dir)
       if (/[,:]/.test(src) || /[,:]/.test(dir)) throw new Error(`'${src}' has a ':' or ',' that a mount cannot carry`)
       await copyNetwork()
+      const fixedIp = await freeCopyIp()
       const before = await copiesOf(appId)
       const ref  = await copyImage({ image, digest, imageUrl, imageSha256 })
       const name = `fjs-copy--${appId}-${Date.now().toString(36)}`
       const started = await run(['docker', 'run', '-d', '--name', name, '--restart', 'unless-stopped',
-        '--network', COPY_NETWORK, '--user', '0:0',
-        '--label', `${COPY_LABEL}=${appId}`, '--label', `${COPY_DIR_LABEL}=${dir}`, '--label', `${COPY_PORT_LABEL}=${port}`,
+        '--network', COPY_NETWORK, '--ip', fixedIp, '--user', '0:0',
+        '--label', `${COPY_LABEL}=${appId}`, '--label', `${COPY_DIR_LABEL}=${dir}`, '--label', `${COPY_PORT_LABEL}=${port}`, '--label', `${COPY_IP_LABEL}=${fixedIp}`,
         ...runFlags({}), ...envArgs,
         '--mount', `type=bind,src=${src},dst=${volumePath}`,
         ref, ...config.command ?? []], { env: clientEnv })

@@ -135,9 +135,12 @@ async function runBlock(block: Block) {
     const file = join(dir, block.lang === 'ts' ? 'example.ts' : 'example.mjs')
     writeFileSync(file, moduleFor(block))
     const proc = Bun.spawn(['bun', file], { cwd: dir, stdout: 'pipe', stderr: 'pipe', env: { ...process.env, NODE_ENV: 'test', S3_KEY: 'key', S3_SECRET: 'secret' } })
-    const timer = setTimeout(() => proc.kill(), TIMEOUT)
+    let timedOut = false
+    const timer = setTimeout(() => { timedOut = true; proc.kill() }, TIMEOUT)
     const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
     clearTimeout(timer)
+    // A kill reads as a bare `exit 143`, which looks like the example crashing; under a loaded host it is the clock.
+    if (timedOut) throw new Error(`timed out after ${TIMEOUT}ms (host load, not the example — it runs in seconds alone)`)
     if (code !== 0) throw new Error(stderr.trim() || `exit ${code}`)
     return stderr
   } finally {

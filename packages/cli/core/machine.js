@@ -147,9 +147,12 @@ export const shipCommand = (from, to, image) =>
 export const sameMachine = (a, b) =>
   a.kind === b.kind && (a.kind === 'local' || a.host === b.host)
 
-/** The reachability probe. Local is reachable by construction; saying otherwise would be theater. */
-export const reachCommand = (host, transport) =>
-  transport === 'local' ? null : `ssh -o ConnectTimeout=5 -o BatchMode=yes ${SSH_MUX} ${host} true`
+/**
+ * The reachability probe. Local is reachable by construction; saying otherwise would be theater.
+ * `identity` is here alone: this connection becomes the master, and every other command rides it.
+ */
+export const reachCommand = (host, transport, identity = null) =>
+  transport === 'local' ? null : `ssh -o ConnectTimeout=5 -o BatchMode=yes ${identity ? `-i ${shQuote(identity)} ` : ''}${SSH_MUX} ${host} true`
 
 /** Put a local file on the target. */
 export const sendCommand = (host, transport, localPath, remotePath) =>
@@ -233,7 +236,7 @@ const tail = (out) => {
  * `run` and `capture` are the ones to reach for. `tty` and `pipe` exist because
  * stdin can only carry one thing, and those two need it for something else.
  */
-export function createMachine({ host, exec, transport = null, path = null, verbose = isVerbose() }) {
+export function createMachine({ host, exec, transport = null, path = null, identity = null, verbose = isVerbose() }) {
   const kind = transportFor(host, transport)
   const cmd  = runCommand(host, kind)
 
@@ -263,7 +266,7 @@ export function createMachine({ host, exec, transport = null, path = null, verbo
   const holds = (opts) => !verbose && opts?.stdio === undefined
 
   const reach = () => {
-    const probe = reachCommand(host, kind)
+    const probe = reachCommand(host, kind, identity)
     if (!probe) return true
     for (let i = 0; ; i++) {
       try { exec({ command: probe, stdio: ['ignore', 'ignore', 'pipe'] }); return true }
@@ -282,9 +285,9 @@ export function createMachine({ host, exec, transport = null, path = null, verbo
   // So each one rides the shared master, opened through `reach`'s retry when
   // `-O check` finds none -- ControlPersist lets it lapse during a long local build.
   const ready = () => {
-    if (kind === 'local') return
-    try { exec({ command: `ssh ${SSH_MUX} -O check ${host}`, stdio: 'ignore' }) }
-    catch { reach() }
+    if (kind === 'local') return true
+    try { exec({ command: `ssh ${SSH_MUX} -O check ${host}`, stdio: 'ignore' }); return true }
+    catch { return reach() }
   }
 
   const call = (script, { cwd = null, stdio, ...opts } = {}) => {

@@ -30,6 +30,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
 
+import { runChecks } from './checks.js'
 import { declaredDatabasePaths } from './db-preflight.js'
 import { declaresHealth, resolveHealthPath } from './health-target.js'
 import { parseDockerfile } from './build-check.js'
@@ -47,6 +48,7 @@ export const RULES = {
   'external-default': 'a URL left on its default, which is a real outside service',
   'local-default':    'a URL left on a localhost default, which inside the container is the container',
   'node-env':         'NODE_ENV resolving to development in a release',
+  'migration-history': 'a schema the migrations do not build, which the container refuses at boot',
   'unreadable':       'something the check could not read, so its rules did not run',
   'surface-unreleased': 'a surface of the app that no App in this environment releases',
   'widgets-unrouted': "a widgets App with no Domain, so the widget origin answers no one",
@@ -152,11 +154,12 @@ export function imageRuntime(dockerfile) {
  * @param health     `{ path, declared }`
  * @param image      `imageRuntime()` of the Dockerfile
  * @param surfaces   the app's surfaces beside api/ — `['web', 'widgets']`
+ * @param migrations `runChecks()` of `migration-history`, or null for an app with no schema
  */
 export function releaseFindings({
   app, variables = null, siblings = null, envSpec = null, unread = {},
   databases = [], health = null, image = { workdir: '/', env: {} }, surfaces = [],
-  routes = null, prefixes = ['/api', '/ws'],
+  routes = null, prefixes = ['/api', '/ws'], migrations = null,
 }) {
   const findings = []
   // A fix fills what is missing and never rewrites a row the App holds
@@ -343,6 +346,12 @@ export function releaseFindings({
     }
   }
 
+  // ── will it migrate ───────────────────────────────────────────────────────
+  for (const f of migrations?.findings ?? [])
+    add('migration-history', 'error', 'the migration history does not build the schema', f.message, null)
+  for (const s of migrations?.skipped ?? [])
+    add('unreadable', 'warn', 'could not ask whether the migration history builds the schema', s.why, null)
+
   // ── what else ─────────────────────────────────────────────────────────────
   if (siblings) {
     const released = (surface) => staticApps.filter(s => surfaceOf(s) === surface)
@@ -512,5 +521,6 @@ export function gatherReleaseInputs(root, { dockerfile = 'deploy/Dockerfile', do
     health:    { path: health.path, declared: declaresHealth(root, health.path).declared },
     image:     imageRuntime(dockerfileText ?? (existsSync(dfPath) ? readFileSync(dfPath, 'utf8') : '')),
     surfaces:  ['web', 'widgets', 'site'].filter(s => existsSync(join(root, s))),
+    migrations: existsSync(join(root, 'db', 'schema.lite')) ? runChecks({ root, only: ['migration-history'] }) : null,
   }
 }

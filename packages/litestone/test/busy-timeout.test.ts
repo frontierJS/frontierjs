@@ -46,25 +46,31 @@ afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, f
  * A second process makes progress on its own, which is the only situation where
  * `busy_timeout` is any use at all, and the situation the crash came from.
  *
- * Resolves once the lock is actually HELD, so a caller cannot race the taking.
+ * Resolves once the lock is actually HELD, so a caller cannot race the taking,
+ * with the wall-clock time the holder will release it. The hold runs on the
+ * child's clock from the moment it prints, and a loaded machine can delay this
+ * process past that moment, so a wait measured from "after we read HELD" can be
+ * shorter than `ms` through no fault of the code under test. Compare against
+ * the release time instead.
  */
-async function holdWriteLock(path: string, ms: number): Promise<void> {
+async function holdWriteLock(path: string, ms: number): Promise<number> {
   const child = Bun.spawn(['bun', '-e', `
     const { Database } = require('bun:sqlite')
     const db = new Database(${JSON.stringify(path)})
     db.run('BEGIN IMMEDIATE')
-    console.log('HELD')
+    console.log('HELD ' + (Date.now() + ${ms}) + ' END')
     setTimeout(() => { db.run('ROLLBACK'); db.close() }, ${ms})
   `], { stdout: 'pipe' })
 
   const reader = child.stdout.getReader()
   const decoder = new TextDecoder()
   let seen = ''
-  while (!seen.includes('HELD')) {
+  while (!/HELD \d+ END/.test(seen)) {
     const { value, done } = await reader.read()
     if (done) break
     seen += decoder.decode(value)
   }
+  return Number(/HELD (\d+) END/.exec(seen)?.[1])
 }
 
 describe('the floor is one number, in one place', () => {
@@ -117,13 +123,12 @@ describe('every database a client opens waits', () => {
     // Seeded first, so the table exists before the lock is taken.
     await db.asSystem().note.create({ data: { id: 1, body: 'seed' } })
 
-    await holdWriteLock(path, 250)
-    const started = Date.now()
+    const releaseAt = await holdWriteLock(path, 250)
     await db.asSystem().note.create({ data: { id: 2, body: 'after the lock' } })
-    const waited = Date.now() - started
 
-    // It waited for the holder rather than failing in a millisecond…
-    expect(waited).toBeGreaterThan(150)
+    // It waited for the holder rather than failing in a millisecond: the write
+    // cannot have committed before the holder let go.
+    expect(Date.now()).toBeGreaterThanOrEqual(releaseAt - 5)
     // …and the row is really there.
     expect((await db.asSystem().note.findMany({})).length).toBe(2)
     db.$close()

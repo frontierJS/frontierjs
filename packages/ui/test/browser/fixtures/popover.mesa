@@ -10,6 +10,7 @@
 
   export let placement   = 'bottom-start'
   export let hideTrigger = false
+  export let tallRows    = 0             // rows added to the first panel, to outgrow the window
 
   let panelOpen = false
   let bareOpen  = false
@@ -22,6 +23,9 @@
     {/snippet}
     {#snippet content()}
       <p id="pop-body" class="text-sm">Popover body</p>
+      {#each Array.from({ length: tallRows }, (_, i) => i) as n}
+        <p class="text-sm">Row {n}</p>
+      {/each}
     {/snippet}
   </Popover>
 </div>

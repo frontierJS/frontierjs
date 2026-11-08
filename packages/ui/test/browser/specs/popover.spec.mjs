@@ -346,4 +346,19 @@ export async function run(t) {
   await t.evaluate(`return window.kitUnmount();`)
   t.is(await t.evaluate(`return document.querySelectorAll('body > .popover').length;`), 0,
     'unmounting takes the portaled panel with it')
+
+  // FJS-4096: a panel taller than either side of its trigger kept the
+  // preferred side and opened past the window's edge.
+  await t.mount('popover', { tallRows: 80 })
+  await t.clickAt('#stage #pop-trigger')
+  await t.evaluate(`return await waitVisible('body > .popover');`)
+  await t.evaluate(`return await waitSettled('body');`)
+  const tall = await t.evaluate(`
+    const el = document.querySelector('body > .popover');
+    const p = el.getBoundingClientRect();
+    return { top: Math.round(p.top), bottom: Math.round(p.bottom), winH: innerHeight, scrolls: el.scrollHeight > el.clientHeight };
+  `)
+  t.ok(tall.top >= 0 && tall.bottom <= tall.winH,
+    `a panel taller than the window stays inside it (${tall.top}..${tall.bottom} of ${tall.winH}px)`)
+  t.ok(tall.scrolls, 'and scrolls its content inside the capped panel')
 }
