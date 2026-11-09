@@ -343,8 +343,10 @@ const buildOutpost = (signingKey) => createOutpostServer(
         outpostSaw.routed.push({ appId, hosts, port })
         return { hosts }
       },
-      unroute: async () => ({ removed: false }),
-      heldBy:  async () => [],
+      unroute:   async () => ({ removed: false }),
+      withdraw:  async () => ({ removed: false }),
+      checkDrop: async () => {},
+      heldBy:    async () => [],
       dialed:  async ({ appId }) => {
         const last = outpostSaw.routed.findLast(r => r.appId === appId)
         return last?.port != null ? [last.port] : []

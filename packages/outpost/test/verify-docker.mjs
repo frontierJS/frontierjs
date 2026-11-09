@@ -965,6 +965,7 @@ const expected = [
   'deploy.replacesRatherThanAdds', 'ingress.redeployKeepsOneRoute',
   'restore.whenDockerRefusesTheRun', 'restore.routeDialsTheRestoredPort',
   'restore.whenTheStartIsNotHealthy', 'restore.theErrorEndsWithTheLog', 'restore.answersOverHttpsAgain',
+  'route.refusesADropItDoesNotNameAndKeepsServing',
   'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
   'redirect.answers308WithTheRequestUri', 'redirect.droppedWithTheLastOne',
   'static.encodesForABrowserThatAsks', 'static.gzipForOneThatAsksNoMore', 'static.plainForOneThatAsksNothing',

@@ -153,9 +153,9 @@ Done when: each step's case has a test that kills or stales the hub at the named
 - [x] 3.2 Confirm, then fix, a release marked `failed` while Outpost finishes it live
   - Confirmed by test: `rebind` queued the last success. It now skips while a release since then
     began a swap and did not succeed; the row stays `failed` and says the machine may have finished.
-- [ ] 3.3 Confirm, then guard, a stale hub dropping hostnames from Caddy at its next route push
-  - Confirmed 2026-11-09 by running `ingress.route` against an in-memory Caddy. The guard is ruled
-    (`FJS-D2045`) and not built.
+- [x] 3.3 Confirm, then guard, a stale hub dropping hostnames from Caddy at its next route push
+  - Built per `FJS-D2045`. `verify:docker` proves the refusal on a real Caddy, which keeps serving
+    the name. A refusal is a failed job until step 1.2's finding exists.
 - [x] 3.4 Outside production, refuse an Outpost write to a non-loopback target, under the same
       `ALLOW_CLOUD_SPEND` that opens vendor writes
   - The guard sits on the vendor transport only, so a dev hub holding a restored yuma database and
