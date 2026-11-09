@@ -37,6 +37,7 @@ Object.assign(session, {
   workspaces:  [],     // the caller's memberships — what the switcher offers
   needsSetup:  false,  // no account exists yet — the wizard owns the app
   canMail:     true,   // false only when the API said it has no mail provider
+  logoUrl:     null,   // the image the topbar draws; null draws the word
 })
 
 const _w = watchProxy(session)
@@ -72,6 +73,7 @@ async function restore() {
     const probe = await rawJson('/setup/probe')
     _w.needsSetup = Boolean(probe?.needs_setup)
     _w.canMail    = probe?.mail !== false
+    _w.logoUrl    = probe?.logo_url ?? null
   } catch {
     // The probe is also the API's liveness check from the browser's side. If it
     // fails there is nothing to route on — leave needsSetup false and let the
@@ -145,6 +147,11 @@ export async function reloadWorkspaces() {
 export function switchWorkspace(id) {
   if (!id || id === session.workspaceId) return
   adoptWorkspace(id)
+}
+
+/** A saved logo reaches the topbar now; the probe would bring it at the next load. */
+export function adoptLogo(url) {
+  _w.logoUrl = url ?? null
 }
 
 export function currentWorkspace() {

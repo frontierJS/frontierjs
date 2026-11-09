@@ -402,6 +402,31 @@ try {
     'the heartbeat timeout did not survive a reload')
   ok('a save round-trips through the singleton')
 
+  // The word goes the moment a logo saves, comes back for an address that is no
+  // image (the dev server answers one with the SPA shell), and after a clear.
+  const topbarBrand = `[document.querySelector('.topbar-logo')?.getAttribute('src') ?? null, document.querySelector('.topbar strong')?.textContent ?? null]`
+  const LOGO = `${BASE}/favicon.svg`
+  await fill({ 'cfg-logo-url': LOGO })
+  await click('#save-settings')
+  await until(topbarBrand, v => v[0] === LOGO && v[1] === null, 'a saved logo did not replace the word')
+  await goto('/hub/settings/')
+  await until(topbarBrand, v => v[0] === LOGO && v[1] === null, 'the logo did not survive a reload')
+  ok('a saved logo replaces the word in the topbar, across a reload')
+
+  await fill({ 'cfg-logo-url': `${BASE}/no-such-logo.png` })
+  await click('#save-settings')
+  await until(topbarBrand, v => v[0] === null && v[1] === 'Basecamp', 'an address that is no image did not fall back to the word')
+  ok('a logo that does not load draws the word')
+
+  await fill({ 'cfg-logo-url': '' })
+  await click('#save-settings')
+  await until(`document.getElementById('cfg-logo-url')?.value ?? 'x'`, v => v === '', 'the logo field never cleared')
+  await until(topbarBrand, v => v[0] === null && v[1] === 'Basecamp', 'clearing the logo did not bring the word back')
+  ok('clearing the logo draws the word')
+  // A toast still up would answer the next save's wait for one.
+  await goto('/hub/settings/')
+  await until(`!!document.getElementById('cfg-keep-local-count')`, v => v, 'the settings form never came back')
+
   // Retention is four numbers on the same form; an empty days field is no age limit.
   await fill({ 'cfg-keep-local-count': '3' })
   await click('#save-settings')

@@ -3897,9 +3897,10 @@ model HubConfig {
   // hub IS that install.
   installId                 String   @unique @default(uuid()) @system @immutable
 
-  // No name: the one place it would show is the sign-in screen, which is read
-  // before anyone is signed in, and that is a public endpoint for a label
-  // (`FJS-D1591`).
+  // No name (`FJS-D1591`). An image the topbar draws in place of the word
+  // Basecamp, answered by the public `/setup/probe` because every member and
+  // the signed-out topbar draw it and this row is level 7 (`FJS-D2050`).
+  logoUrl                   String?  @trim @url
 
   // No base URL and no mail sender: FRONTIER_APP_URL, FRONTIER_API_URL and
   // MAIL_FROM are read at boot, before any row is, and a column beside them

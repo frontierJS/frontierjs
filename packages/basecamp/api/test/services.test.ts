@@ -1778,6 +1778,23 @@ describe('the installation settings are one row, behind the hub tier', () => {
     expect(await (env.system as any).hubConfig.count()).toBe(1)
   })
 
+  // FJS-D2050: the row is level 7 and the probe is public, so this is the one
+  // column of it a signed-out caller may be answered.
+  test('the probe answers the logo signed out, and nothing else of the row', async () => {
+    const current = await env.as(sysadmin).service('hubConfig').call('current')
+    await expect(env.as(sysadmin).service('hubConfig').call('save', null, { logoUrl: 'javascript:alert(1)', version: current.version }))
+      .rejects.toThrow()
+
+    const saved = await env.as(sysadmin).service('hubConfig')
+      .call('save', null, { logoUrl: 'https://cdn.example.test/logo.png', version: current.version })
+    const probe = await env.http.get('/setup/probe')
+    expect(probe.body.logo_url).toBe('https://cdn.example.test/logo.png')
+    for (const key of ['installId', 'heartbeatTimeoutSeconds', 'encryptionKeyFingerprint']) expect(probe.body).not.toHaveProperty(key)
+
+    await env.as(sysadmin).service('hubConfig').call('save', null, { logoUrl: null, version: saved.version })
+    expect((await env.http.get('/setup/probe')).body.logo_url).toBeNull()
+  })
+
   // FJS-D1592: each switch is one refusal at one door. Written at system and put
   // back, so the tests after these see the defaults.
   const uniq   = () => Math.random().toString(36).slice(2, 8)

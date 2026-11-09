@@ -1881,6 +1881,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` = `"hub"` | — | — | — | — |
 | `installId` | `string` | — | — | `x-litestone-kind` | — |
+| `logoUrl` | `string`? | — | — | `format: "uri"` `x-transforms` | — |
 | `heartbeatTimeoutSeconds` | `integer` = `120` | — | — | `minimum: 30` `maximum: 3600` | — |
 | `isTwoFactorRequiredForOwners` | `boolean` = `false` | — | — | — | — |
 | `isApiKeyAuthAllowed` | `boolean` = `true` | — | — | — | — |

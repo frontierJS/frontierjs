@@ -1334,6 +1334,7 @@ table `hub_config` · db `main` · gate `7`
 | `isApiKeyAuthAllowed` | `Boolean` | no | `1` | — |
 | `isBotUserAllowed` | `Boolean` | no | `1` | — |
 | `isTwoFactorRequiredForOwners` | `Boolean` | no | `0` | — |
+| `logoUrl` | `String` | yes | — | — |
 | `retentionAlertDays` | `Int` | no | `90` | — |
 | `retentionCheckDays` | `Int` | no | `30` | — |
 | `retentionEventDays` | `Int` | no | `90` | — |

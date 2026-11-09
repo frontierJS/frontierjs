@@ -763,16 +763,20 @@ export async function buildBasecampApp(
 
     // GET /setup/probe — first-run detection for the setup wizard
     a.get('/setup/probe', async (ctx) => {
-      const [workspaces, users] = await Promise.all([
+      const [workspaces, users, hub] = await Promise.all([
         sys.workspace.count(),
         sys.user.count({ where: { status: 'active' } }),
+        sys.hubConfig.findFirst({ where: { id: 'hub' }, select: { logoUrl: true } }),
       ])
       // `mail` is whether a Forgot password link can reach anybody. The reset
       // route answers ok either way, against enumeration, so this is the only
       // place the sign-in screen can learn it before promising a message.
+      // `logo_url` is the one HubConfig column this route may answer: the row
+      // is level 7 and every member and the signed-out topbar draw it.
       const needsSetup = workspaces === 0 || users === 0
       const restore    = restoreState(dbPath)
       return ctx.json({ workspaces, users, needs_setup: needsSetup, mail: mailProvider() != null,
+        logo_url: hub?.logoUrl ?? null,
         restore: restore?.state ?? null, restore_message: restore && 'message' in restore ? restore.message : null,
         restore_taken_at: restore && 'takenAt' in restore ? restore.takenAt : null,
         ...(needsSetup ? { restore_bucket: bucketFromEnv() } : {}) })

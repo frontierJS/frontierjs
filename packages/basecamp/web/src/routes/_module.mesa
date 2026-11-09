@@ -31,8 +31,13 @@ siteName: Basecamp
   var TOPBAR = primary.entries
 
   $: (page.siteName, page.route, page.pathname, page.title)
-  $: (status.connected, session.user, session.level, session.workspaceId, session.workspaces)
+  $: (status.connected, session.user, session.level, session.workspaceId, session.workspaces, session.logoUrl)
   $: commandPalette.open
+
+  // A dead address draws the word, not a broken-image glyph in every header,
+  // and a corrected address is tried again.
+  let logoBroken = false
+  $: session.logoUrl, () => { logoBroken = false }
 
   // ── The attention system's data ──────────────────────────────────────────
   // The shell holds three tethers rather than polling: each is the resource's
@@ -300,7 +305,11 @@ siteName: Basecamp
       {/if}
       <a class="cluster" href="/" aria-label="{page.siteName} home" style:text-decoration="none" style:color="inherit">
         <img src="/favicon.svg" alt="" width="20" height="20" />
-        <strong>{page.siteName}</strong>
+        {#if session.logoUrl && !logoBroken}
+          <img class="topbar-logo" src={session.logoUrl} alt="" onerror={() => logoBroken = true} />
+        {:else}
+          <strong>{page.siteName}</strong>
+        {/if}
       </a>
       {#if session.user}
         <span class="spare">
@@ -486,6 +495,14 @@ siteName: Basecamp
     .topbar .cluster { flex-wrap: nowrap; gap: var(--space-xs); }
   }
   .drawer-switch { margin-block-end: var(--space-lg); }
+
+  /* An image of any size at an address somebody typed. */
+  .topbar-logo {
+    block-size:      1.5rem;
+    inline-size:     auto;
+    max-inline-size: 10rem;
+    object-fit:      contain;
+  }
 
   /* The signed-in chrome mounts the moment sign-in adopts the user, while
      the sign-in page is still showing. Under .signin it enters from

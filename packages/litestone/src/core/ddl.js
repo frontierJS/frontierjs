@@ -735,8 +735,8 @@ function createIndexes(model, softDelete = false, tableName) {
     // undeclarable, and the refusal offered two ways out — different columns,
     // or one predicate covering both — neither of which exists for that pair
     // (`FJS-614`). A partial unique covers only the rows its predicate admits,
-    // so it cannot stand in for the lookup, which is the same reason `advise`
-    // does not count one as foreign-key coverage.
+    // so it cannot stand in for the lookup, which is why `advise` counts one as
+    // foreign-key coverage only over the predicate every `@@index` here carries.
     //
     // The prefix IS the ownership test in `migrate.js`, so a new one has to be
     // recognized there or litestone stops dropping its own index.

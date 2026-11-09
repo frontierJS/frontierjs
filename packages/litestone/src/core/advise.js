@@ -537,9 +537,12 @@ export const RULES = [
         // lookup binds every column, so the prefix is the whole set, in any order.
         // A PARTIAL unique is deliberately not on this list: it indexes only the
         // rows its predicate admits, so a foreign-key lookup over the others is
-        // still a scan.
+        // still a scan. The predicate @@softDelete writes is the exception, since
+        // every @@index on that model carries it too and would reach no more rows.
+        const live = modelAttr(model, 'softDelete') ? '"deletedAt" IS NULL' : null
         const indexes = (model.attributes ?? [])
-          .filter(a => (a.kind === 'index' || a.kind === 'uniqueIndex') && a.fields?.length)
+          .filter(a => (a.kind === 'index' || a.kind === 'uniqueIndex' ||
+            (a.kind === 'partialUnique' && a.whereSql === live)) && a.fields?.length)
           .map(a => a.fields)
 
         for (const f of model.fields ?? []) {

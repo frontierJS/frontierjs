@@ -37,7 +37,7 @@ title: Hub settings
   import { hubConfig }          from '../../../resources/HubConfig.mesa'
   import { hub }                from '../../../resources/Hub.mesa'
   import { backupDestinations } from '../../../resources/BackupDestination.mesa'
-  import { session }            from '../../../lib/session.js'
+  import { session, adoptLogo } from '../../../lib/session.js'
   import { at }                 from '../../../lib/datetime.js'
 
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
@@ -254,6 +254,7 @@ title: Hub settings
       if (!unset) payload.version = config.version
 
       adopt(await hubConfig.service.invoke('save', null, payload))
+      adoptLogo(config.logoUrl)
       unset  = false
       toasts.success('Settings saved')
     } catch (e) {
@@ -304,6 +305,10 @@ title: Hub settings
     {:else}
       <p class="text-sm text-muted">Not enrolled yet. <a href="/servers/">Use this Basecamp server</a> makes it an App on its own box.</p>
     {/if}
+    <Input name="logoUrl" id="cfg-logo-url" type="url" label="Logo URL" value={draft.logoUrl ?? ''}
+           error={fieldErrs.logoUrl}
+           hint="An image shown in the header in place of the word Basecamp, to every member and on the sign-in screen, so the address is public. Empty shows the word."
+           oninput={(e) => write('logoUrl', e.target.value.trim() || null)} />
   </Card>
 
   <Card id="hub-settings-limits">

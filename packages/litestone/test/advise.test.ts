@@ -480,6 +480,26 @@ describe('foreign-key-without-index', () => {
       ID)).toEqual([])
   })
 
+  const SOFT = (attrs: string, column = '') => REL + `
+    model Post {
+      id        Int @id
+      authorId  Int
+      slug      String
+      deletedAt DateTime? ${column}
+      author    User @relation(fields: [authorId], references: [id])
+      ${attrs}
+    }`
+
+  test('a partial unique over the @@softDelete predicate covers it, as any @@index there would', () => {
+    expect(findings(SOFT('@@softDelete  @@unique([authorId, slug], where: deletedAt == null)'), ID)).toEqual([])
+    expect(findings(SOFT('@@softDelete  @@unique([authorId, slug], where: deletedAt == null)', '@map("deleted_at")'), ID)).toEqual([])
+  })
+
+  test('a partial unique over any other rows does not', () => {
+    expect(findings(SOFT('@@softDelete  @@unique([authorId, slug], where: deletedAt != null)'), ID)).toHaveLength(1)
+    expect(findings(SOFT('@@unique([authorId, slug], where: deletedAt == null)'), ID)).toHaveLength(1)
+  })
+
   test('a composite that does not LEAD with it does not cover it', () => {
     // The half a naive check gets wrong, and the shape basecamp is full of:
     // @@unique([workspaceId, userId]) leaves userId unindexed, so "which

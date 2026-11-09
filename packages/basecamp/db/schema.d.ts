@@ -6243,6 +6243,7 @@ export interface DependencyUseRelations {
 export interface HubConfig {
   id: string
   installId: string
+  logoUrl?: string | null
   heartbeatTimeoutSeconds: number
   isTwoFactorRequiredForOwners: boolean
   isApiKeyAuthAllowed: boolean
@@ -6265,6 +6266,7 @@ export interface HubConfig {
 
 export interface HubConfigCreate {
   id?: string
+  logoUrl?: string | null
   heartbeatTimeoutSeconds?: number
   isTwoFactorRequiredForOwners?: boolean
   isApiKeyAuthAllowed?: boolean
@@ -6281,6 +6283,7 @@ export interface HubConfigCreate {
 
 export interface HubConfigUpdate {
   id?: string
+  logoUrl?: string | null
   heartbeatTimeoutSeconds?: number
   isTwoFactorRequiredForOwners?: boolean
   isApiKeyAuthAllowed?: boolean
@@ -6306,6 +6309,7 @@ export interface HubConfigSystem {
 export interface HubConfigWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   installId?: string | WhereOp<string> | null
+  logoUrl?: string | WhereOp<string> | null
   heartbeatTimeoutSeconds?: number | WhereOp<number> | null
   isTwoFactorRequiredForOwners?: boolean | WhereOp<boolean> | null
   isApiKeyAuthAllowed?: boolean | WhereOp<boolean> | null

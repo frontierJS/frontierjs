@@ -1353,6 +1353,7 @@ CREATE INDEX IF NOT EXISTS "idx_dashboard_tile_appId" ON "dashboard_tile" ("appI
 CREATE TABLE IF NOT EXISTS "hub_config" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'hub',
   "installId" TEXT NOT NULL UNIQUE DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "logoUrl" TEXT,
   "heartbeatTimeoutSeconds" INTEGER NOT NULL DEFAULT 120,
   "isTwoFactorRequiredForOwners" INTEGER NOT NULL DEFAULT 0,
   "isApiKeyAuthAllowed" INTEGER NOT NULL DEFAULT 1,

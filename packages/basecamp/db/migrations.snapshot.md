@@ -15,3 +15,5 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 | `migrations/main/20261107175146_copy_certificates.sql` | `cc76c4fd2fb40344` |
 | `migrations/main/20261107185908_copy_serves_main_address.sql` | `7d6640f03dd92e7e` |
 | `migrations/main/20261108045317_flow_workspace_index.sql` | `cc157b21eaffcfa7` |
+| `migrations/main/20261109192532_domain_route_soft_delete.sql` | `2242f502ec189e90` |
+| `migrations/main/20261109220302_hub_logo_url.sql` | `df86794e649615ad` |
