@@ -46,7 +46,7 @@ describe('a job that ends dead is said in the process log', () => {
       const q = caravan({ db: ':memory:', pollInterval: 10 })
       made.push(q)
       q.handle('flaky', async () => { throw new Error('boom') },
-        { maxAttempts: 3, retryDelay: 60_000 })
+        { maxAttempts: 3, retryDelay: [60_000] })
       await q.start()
       const id = await q.dispatch('flaky', {})
       await Bun.sleep(SETTLE)

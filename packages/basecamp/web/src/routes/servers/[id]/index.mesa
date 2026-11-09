@@ -699,7 +699,7 @@ title: Server
 
   <!-- Health is a rail, not a cell: in the grid its height would stretch every
        short card in its row. -->
-  <div class="switcher" style="--switch-at: 56rem; align-items: start">
+  <div class="switcher" style="--switch-at: 64rem; align-items: start">
     <div class="grid" style="--grid-min: 16rem; align-items: start">
       <article class="card stack" id="server-apps">
         <h2 class="h4">Apps on this machine</h2>

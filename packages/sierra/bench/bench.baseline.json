@@ -3,9 +3,9 @@
   "metrics": {
     "spa.files": 6,
     "spa.firstLoadCssBrotli": 0,
-    "spa.firstLoadJsBrotli": 16258,
+    "spa.firstLoadJsBrotli": 16282,
     "spa.firstLoadRequests": 2,
-    "spa.totalBrotli": 17035,
+    "spa.totalBrotli": 17056,
     "static.files": 7,
     "static.firstLoadCssBrotli": 0,
     "static.firstLoadJsBrotli": 0,
