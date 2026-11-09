@@ -2206,7 +2206,7 @@ model Domain {
   workspaceId   String
   appId         String @immutable
   app           App       @relation(fields: [appId], references: [id], onDelete: Cascade)
-  routes        DomainRoute[]
+  routes        DomainRoute[] @keep
 
   hostname      String    @trim @length(1, 253) @immutable
   isPrimary     Boolean   @default(false)
@@ -2257,10 +2257,12 @@ model DomainRoute {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
+  deletedAt   DateTime?
 
   @@gate(2.5)
+  @@softDelete
   @@trail(audit)
-  @@unique([domainId, pathPrefix])
+  @@unique([domainId, pathPrefix], where: deletedAt == null)
   @@index([appId])
 }
 

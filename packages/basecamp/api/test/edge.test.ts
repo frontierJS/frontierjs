@@ -796,6 +796,83 @@ describe('sync', () => {
     expect(await routedPaths(app.db, back.id)).toEqual([])
   })
 
+  // ─── what a push names as removed (FJS-D2045) ─────────────────────────
+
+  const placedPair = async (tag: string) => {
+    const sys = env.system as any
+    const mk  = (name: string) => sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name, slug: name } })
+    const front = await mk(`front-${tag}`)
+    const back  = await mk(`back-${tag}`)
+    await sys.appServer.create({ data: { appId: front.id, serverId: online1.id, status: 'running' } })
+    await sys.appServer.create({ data: { appId: back.id,  serverId: online1.id, status: 'running' } })
+    const domain = (appId: string, hostname: string, extra = {}) =>
+      sys.domain.create({ data: { workspaceId: site.id, appId, hostname, ...extra } })
+    const route = (domainId: string, appId: string, pathPrefix: string) =>
+      sys.domainRoute.create({ data: { workspaceId: site.id, domainId, appId, pathPrefix } })
+    return { sys, front, back, domain, route }
+  }
+  const removalsOf = async (appId: string) => {
+    const { routeRemovals, routedHosts, routedPaths, routedRedirects } = await import('../src/domain/release/runtime.ts')
+    const hosts     = await routedHosts(app.db, appId)
+    const paths     = await routedPaths(app.db, appId)
+    const redirects = await routedRedirects(app.db, appId)
+    return routeRemovals(app.db, appId, { hosts, paths, redirects })
+  }
+
+  test('routeRemovals names what the hub deleted and what it stopped sending, and nothing it still sends', async () => {
+    const { sys, front, back, domain, route } = await placedPair('removals')
+    expect(await removalsOf(front.id)).toEqual([])
+
+    const gone   = await domain(front.id, 'gone.removals.test')
+    const shared = await domain(front.id, 'shared.removals.test')
+    await sys.domain.remove({ where: { id: gone.id } })
+    await route(shared.id, back.id, '/api')
+    const old = await route(shared.id, back.id, '/old')
+    await sys.domainRoute.remove({ where: { id: old.id } })
+    expect(await removalsOf(front.id)).toEqual(['gone.removals.test'])
+    expect(await removalsOf(back.id)).toEqual(['shared.removals.test/old'])
+
+    // A live Domain turned into a redirect stops sending its prefixes to the
+    // App holding them, and its own hostname still rides as a redirect.
+    await sys.domain.update({ where: { id: shared.id }, data: { redirectTo: 'https://elsewhere.removals.test' } })
+    expect(await removalsOf(front.id)).toEqual(['gone.removals.test'])
+    expect(await removalsOf(back.id)).toEqual(['shared.removals.test/api', 'shared.removals.test/old'])
+  })
+
+  test('a removed prefix can be added again, and a name sent again leaves the list', async () => {
+    const { sys, front, back, domain, route } = await placedPair('readd')
+    const d     = await domain(front.id, 'readd.removals.test')
+    const first = await route(d.id, back.id, '/api')
+    await sys.domainRoute.remove({ where: { id: first.id } })
+    expect(await removalsOf(back.id)).toEqual(['readd.removals.test/api'])
+    await route(d.id, back.id, '/api')
+    expect(await removalsOf(back.id)).toEqual([])
+  })
+
+  test('routeApp sends removing over the executor', async () => {
+    const { routeApp } = await import('../src/jobs/domain-dns.job.ts')
+    const { sys, front, domain } = await placedPair('sends')
+    await domain(front.id, 'kept.sends.test')
+    const gone = await domain(front.id, 'gone.sends.test')
+    await sys.domain.remove({ where: { id: gone.id } })
+    const sent: any[] = []
+    const conduit = { resolve: async () => ({ pinned_cert: true }), send: async (call: any) => { sent.push(call); return { data: {} } } }
+    const via = new Proxy(app, { get: (t, k) => k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+    await routeApp(via, front.id, { appId: front.id, routed: [], failed: [] })
+    expect(sent[0]).toMatchObject({ path: '/route', body: { hosts: ['kept.sends.test'], removing: ['gone.sends.test'] } })
+  })
+
+  test('a removed path route is pushed to the App that held it', async () => {
+    const { routeDomainApp } = await import('../src/jobs/domain-dns.job.ts')
+    const { sys, front, back, domain, route } = await placedPair('holder')
+    const d = await domain(front.id, 'holder.removals.test')
+    const r = await route(d.id, back.id, '/api')
+    await sys.domainRoute.remove({ where: { id: r.id } })
+    const out = await routeDomainApp(app, d.id)
+    expect(out.failed).toEqual([])
+    expect(out.routed.map(x => x.appId)).toContain(back.id)
+  })
+
   test('a machine with no outpost to take its route is a failure naming it, so the job retries', async () => {
     const { routeDomainApp } = await import('../src/jobs/domain-dns.job.ts')
     delete process.env.BASECAMP_STUB_OUTPOST

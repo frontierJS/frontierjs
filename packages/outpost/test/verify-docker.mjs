@@ -200,8 +200,22 @@ if (!offLoopback) fail('needs a non-loopback IPv4 address to prove the app port 
 const got = {}
 const t   = (label, value) => { got[label] = value }
 
+// The drive moves its own names around, so it states every name it has sent
+// the way the hub's `routeRemovals` does, or Outpost refuses the drop (`FJS-D2045`).
+const ROUTE_DOORS = new Set(['/route', '/deploy', '/static/activate'])
+const sentNames   = new Map()
+const statingRemovals = (path, body) => {
+  if (!ROUTE_DOORS.has(path) || !body.app_id) return body
+  const known = sentNames.get(body.app_id) ?? new Set()
+  sentNames.set(body.app_id, known)
+  for (const h of body.hosts ?? []) known.add(h)
+  for (const r of body.redirects ?? []) known.add(r.host)
+  for (const p of body.paths ?? []) known.add(p.host + p.prefix)
+  return 'removing' in body ? body : { ...body, removing: [...known] }
+}
+
 const call = async (path, body = {}, { key = HUB.privateKey, signed = true } = {}) => {
-  const payload = JSON.stringify(body)
+  const payload = JSON.stringify(statingRemovals(path, body))
   const headers = { 'content-type': 'application/json', ...(signed ? await signRequest({
     privateKey: key, method: 'POST', path, body: payload,
     timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
@@ -481,6 +495,8 @@ try {
   t('cert.noOrderWasMadeForTheHost', !aboutWild().some(l => /obtain|acme|issuer/i.test(l)))
   sh('docker', 'restart', CADDY)
   t('cert.survivesACaddyRestart', await untilWild() && (await presented(WILD))?.raw?.equals(new X509Certificate(wild.cert).raw) === true)
+  const unnamed = await call('/route', { app_id: APP, hosts: [HOST], removing: [] })
+  t('route.refusesADropItDoesNotNameAndKeepsServing', unnamed.status >= 400 && JSON.stringify(unnamed.body).includes(WILD) && await untilWild())
   await call('/route', { app_id: APP, hosts: [HOST] })
   t('cert.dropTakesTheEntry', (await call('/certs/drop', { id: 'wild' })).body?.removed === true
     && (await admin('/id/fjs-cert-wild')).status === 404

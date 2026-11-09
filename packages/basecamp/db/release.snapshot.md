@@ -1070,13 +1070,14 @@ table `domain` · db `main` · gate `2.5` · @@softDelete
 
 ### `DomainRoute`
 
-table `domain_route` · db `main` · gate `2.5`
+table `domain_route` · db `main` · gate `2.5` · @@softDelete
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `app` | `App` | — | — | relation |
 | `appId` | `String` | no | — | **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deletedAt` | `DateTime` | yes | — | — |
 | `domain` | `Domain` | — | — | relation |
 | `domainId` | `String` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
@@ -1085,7 +1086,7 @@ table `domain_route` · db `main` · gate `2.5`
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
-@@unique(domainId, pathPrefix)
+@@unique(domainId, pathPrefix), where: "deletedAt" IS NULL
 @@index(appId)
 @@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(delete, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)

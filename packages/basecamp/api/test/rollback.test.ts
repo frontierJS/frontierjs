@@ -539,16 +539,17 @@ describe('how the machine swapped, on the row', () => {
 
   /** A rollback whose one step starts the container, against a machine that answers `/deploy` with `deployed`.
    *  `live` is what the App says now; `shipped` is the runtime the release's snapshot holds. */
-  async function startAgainst(deployed: Record<string, unknown>, live: Record<string, unknown> = {}, shipped: Record<string, unknown> = {}, hostname?: string, release: Record<string, unknown> = {}) {
+  async function startAgainst(deployed: Record<string, unknown>, live: Record<string, unknown> = {}, shipped: Record<string, unknown> = {}, hostname?: string, release: Record<string, unknown> | ((h: any) => Promise<Record<string, unknown>>) = {}) {
     const { app, first, current } = await anAppWithHistory()
     const sys = env.system as any
+    const extra = typeof release === 'function' ? await release({ app, first, current }) : release
     if (Object.keys(live).length) await sys.app.update({ where: { id: app.id }, data: live })
     if (hostname) await sys.domain.create({ data: { workspaceId: ws.id, appId: app.id, hostname } })
     const replacement = await sys.deployment.create({ data: {
       appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
       previousDeploymentId: current.id,
       configSnapshot: { ...(first.configSnapshot as any), runtime: { ...(first.configSnapshot as any).runtime, ...shipped } },
-      ...release } })
+      ...extra } })
     await sys.deploymentStep.create({ data: { deploymentId: replacement.id, position: 0, name: 'Start container' } })
 
     const sent: any[] = []
@@ -562,8 +563,28 @@ describe('how the machine swapped, on the row', () => {
       (deploymentRun as any).handler({ app: via, data: { deployment_id: replacement.id } }))
     const row = await sys.deployment.findUnique({ where: { id: replacement.id } })
     const body = sent.find(c => c.path === '/deploy')?.body
-    return Object.assign(row, { asked: body?.swap, env: body?.config?.env })
+    return Object.assign(row, { asked: body?.swap, env: body?.config?.env, rollback: body?.rollback })
   }
+
+  // FJS-4124: a rollback states no pivot because its migrations are recorded,
+  // which holds only for a release older than the one undone. A rollback of a
+  // rollback targets the newer image, over a volume the first one restored.
+  describe('which rollback states no pivot (FJS-D2044)', () => {
+    test('a rollback of a release that was not a rollback is put back whatever the verdict says', async () => {
+      expect((await startAgainst({})).rollback).toBe(true)
+    })
+
+    test('a rollback of a rollback goes forward, so its verdict is asked', async () => {
+      const row = await startAgainst({}, {}, {}, undefined, async ({ app, first, current }: any) => {
+        const back = await releaseAt('success', {
+          appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
+          previousDeploymentId: current.id, configSnapshot: first.configSnapshot,
+          finishedAt: new Date(Date.now() + 1000).toISOString() })
+        return { toImage: current.toImage, previousDeploymentId: back.id, configSnapshot: current.configSnapshot }
+      })
+      expect(row.rollback).toBe(false)
+    })
+  })
 
   describe('the build the container states (FJS-D1969)', () => {
     const sha = 'c'.repeat(40)

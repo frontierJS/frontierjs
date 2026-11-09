@@ -43,7 +43,7 @@
 import { defineJob }     from '@frontierjs/caravan'
 import { runsEitherWay } from '../domain/job/job-context.ts'
 import { executorOn, isExecutor } from '../providers/executor.ts'
-import { routedHosts, routedPaths, routedRedirects, noindexHosts, copyServingMain } from '../domain/release/runtime.ts'
+import { routedHosts, routedPaths, routedRedirects, routeRemovals, noindexHosts, copyServingMain } from '../domain/release/runtime.ts'
 import { isInline }      from '../domain/release/app-source.ts'
 import type { App }         from '@frontierjs/junction'
 
@@ -178,7 +178,9 @@ export async function routeDomainApp(app: App, domainId: string): Promise<RouteP
   const domain = await sys.domain.findFirst({ where: { id: domainId }, withDeleted: true, select: { appId: true } }) as { appId: string } | null
   if (!domain) return out
   out.appId = domain.appId
-  const routes = await sys.domainRoute.findMany({ where: { domainId }, select: { appId: true } }) as { appId: string }[]
+  // A removed prefix's former holder too: it still holds the route on Caddy, and
+  // only a push to it takes the route off.
+  const routes = await sys.domainRoute.findMany({ where: { domainId }, withDeleted: true, select: { appId: true } }) as { appId: string }[]
 
   for (const appId of new Set([domain.appId, ...routes.map(r => r.appId)])) await routeApp(app, appId, out)
   return out
@@ -198,6 +200,7 @@ export async function routeApp(app: App, appId: string, out: RoutePush): Promise
   const paths     = await routedPaths(app.db, appId)
   const redirects = await routedRedirects(app.db, appId)
   const noindex   = await noindexHosts(app.db, appId)
+  const removing  = await routeRemovals(app.db, appId, { hosts, redirects, paths })
   const placed = await sys.appServer.findMany({ where: { appId, status: 'running' }, include: { server: true } }) as any[]
   const servers = new Map<string, string>()
   for (const p of placed) if (p.server?.status === 'online') servers.set(p.serverId, p.server.name ?? p.serverId)
@@ -205,7 +208,7 @@ export async function routeApp(app: App, appId: string, out: RoutePush): Promise
   for (const [serverId, name] of servers) {
     const executor = await executorOn(app, serverId, name)
     if (!isExecutor(executor)) { out.failed.push({ server: name, error: executor.reason }); continue }
-    const reply = await executor.call('/route', { app_id: appId, hosts, paths, redirects, noindex, ...(isStatic ? { static: true } : {}) })
+    const reply = await executor.call('/route', { app_id: appId, hosts, paths, redirects, noindex, removing, ...(isStatic ? { static: true } : {}) })
     if (reply.error) { out.failed.push({ server: name, error: reply.error.message }); continue }
     out.routed.push({ serverId, appId, hosts, paths, redirects, rebind: (reply.data?.rebind as string | null | undefined) ?? null })
     app.logger.child('routes').info('routed', { appId, server: name, hosts: hosts.join(','),

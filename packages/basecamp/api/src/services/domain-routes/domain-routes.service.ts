@@ -91,7 +91,19 @@ export default createService({
     const patch = narrowPatch($.data as Record<string, unknown>)
     if ('pathPrefix' in patch) patch.pathPrefix = normalizePrefix(patch.pathPrefix)
     if (changesNothing(patch)) return route
-    const domain = await guard(route.domainId, (patch.appId as string | undefined) ?? route.appId)
+    const appId  = (patch.appId as string | undefined) ?? route.appId
+    const domain = await guard(route.domainId, appId)
+    const pathPrefix = (patch.pathPrefix as string | undefined) ?? route.pathPrefix
+    // The App and prefix given up must keep a tombstone, or the next push drops
+    // a name the hub can no longer state and Outpost refuses it (`FJS-D2045`).
+    if (appId !== route.appId || pathPrefix !== route.pathPrefix) {
+      const moved = await db().$transaction(async (tx: any) => {
+        await tx.domainRoute.remove({ where: { id: route.id } })
+        return tx.domainRoute.create({ data: { workspaceId: route.workspaceId, domainId: route.domainId, appId, pathPrefix } })
+      })
+      await toMachines(domain.id, moved.id, 'moved')
+      return moved
+    }
     const updated = await db().domainRoute.update({ where: { id: route.id }, data: patch })
     await toMachines(domain.id, route.id, `patched:${updated.updatedAt}`)
     return updated
@@ -99,7 +111,7 @@ export default createService({
 
   async remove() {
     const route = await getScoped('domainRoute', 'Domain route')
-    await db().domainRoute.delete({ where: { id: route.id } })
+    await db().domainRoute.remove({ where: { id: route.id } })
     await toMachines(route.domainId, route.id, 'removed')
     return route
   },

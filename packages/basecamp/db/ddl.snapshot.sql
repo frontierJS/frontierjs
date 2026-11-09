@@ -1381,11 +1381,13 @@ CREATE TABLE IF NOT EXISTS "domain_route" (
   "pathPrefix" TEXT NOT NULL,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  UNIQUE ("domainId", "pathPrefix"),
+  "deletedAt" TEXT,
   FOREIGN KEY ("domainId") REFERENCES "domain" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE
 ) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_domain_route_appId" ON "domain_route" ("appId");
+CREATE INDEX IF NOT EXISTS "idx_domain_route_appId" ON "domain_route" ("appId") WHERE "deletedAt" IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_domain_route_domainId_pathPrefix" ON "domain_route" ("domainId", "pathPrefix") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_domain_route_deletedAt" ON "domain_route" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "app_backup" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

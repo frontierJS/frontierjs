@@ -377,6 +377,17 @@ try {
     Array.isArray(narrowed) && narrowed.every(n => n.includes(wanted)), String(narrowed?.message ?? narrowed))
 
   // ─── Hub settings ──────────────────────────────────────────────────────
+  // hub.key-escrowed stays owed until the attestation further down. The stub
+  // reads what the click copied, which headless Chrome will not hand back.
+  console.log('\n  /hub/ — what is owed, copied for diagnosis')
+  await goto('/hub/')
+  await until(`!!document.querySelector('#hub-owed #hub-owed-copy')`, v => v, 'the owed panel never offered a copy')
+  await evaluate(`navigator.clipboard.writeText = t => { window.__copied = t; return Promise.resolve() }; document.getElementById('hub-owed-copy').click()`)
+  const copied = await until(`window.__copied ?? ''`, v => v, 'the click copied nothing')
+  check('what the hub says is owed copies as a prompt to diagnose it',
+    copied.includes('Diagnose them') && copied.includes('### hub.key-escrowed') && copied.includes('- Severity: high')
+      && copied.includes('- Reported: ') && copied.includes('- Suggested fix: ') && !copied.includes('undefined'), copied)
+
   console.log('\n  /hub/settings/ — the installation')
   await goto('/hub/settings/')
   await until(`!!document.getElementById('cfg-backup-cron')`, v => v, 'the settings form never rendered')
@@ -566,6 +577,28 @@ try {
     restores === 1 && !!(await evaluate(`!!document.querySelector('tr[data-backup="${foundArchive?.id}"] [aria-label^="Restore "]')`)),
     `${restores} Restore buttons`)
   check('an App with a backup destination offers Rescan bucket', !!(await text('#app-backups-rescan')))
+
+  // The schedule is edited here (FJS-4135): a bad expression is refused by
+  // the service and shown, a good one lands on the App row, and Stop clears it.
+  const setCron = (v) => evaluate(`(() => { const i = document.querySelector('#app-backups-cron-input'); i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  const appCron = async () => (await evaluate(`
+    fetch('/apps/${foundArchive?.appId}', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': localStorage.getItem('basecamp_workspace'),
+    }}).then(r => r.json())`))?.backupCron ?? null
+  await setCron('nightly')
+  await click('#app-backups-cron-save')
+  const cronRefused = await until(`document.getElementById('app-backups-error')?.textContent ?? ''`,
+    t => t.length > 0, 'a bad cron said nothing').catch(() => '')
+  check('a cron the clock cannot hold is refused and shown', /backupCron/.test(cronRefused), cronRefused.trim().slice(0, 160))
+  await setCron('15 3 * * *')
+  await click('#app-backups-cron-save')
+  await until(`document.getElementById('app-backups-cron')?.textContent ?? ''`, t => /15 3/.test(t), 'Schedule never showed the cron')
+  check('Schedule puts backupCron on the App row', (await appCron()) === '15 3 * * *', String(await appCron()))
+  await click('#app-backups-cron-clear')
+  await until(`!document.getElementById('app-backups-cron')`, v => v, 'Stop scheduling left the cron badge')
+  check('Stop scheduling clears backupCron on the App row', (await appCron()) === null, String(await appCron()))
 
   await click('#app-backups-take')
   const takeRefused = await until(`document.getElementById('app-backups-error')?.textContent ?? ''`,

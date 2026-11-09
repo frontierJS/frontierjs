@@ -151,6 +151,49 @@ export function checkCopyDial(dial) {
 const isPathRouteOf = (appId, id) =>
   typeof id === 'string' && id.startsWith(pathRouteId(appId)) && /^[0-9]+$/.test(id.slice(pathRouteId(appId).length))
 
+/** The `removing` a push states: hostnames and `host + prefix` keys, only ever
+ *  looked up in a set, so anything but a string in an array counts for nothing. */
+export function removingOf(list) {
+  return Array.isArray(list) ? list.filter(n => typeof n === 'string') : []
+}
+
+/**
+ * What a call sending `hosts`, `redirects` and `paths` would take off THIS app's
+ * live routes without the hub naming it (`FJS-D2045`): a hub restored from an
+ * older copy sends the list it remembers and cannot name a host added since.
+ * The whole hosts and redirects are one set, so a Domain turning into a
+ * redirect is no drop. A host whose first label is the app id is the App's
+ * derived ingress name, not a Domain, and leaves when its zone or publish
+ * switch changes, so it never counts.
+ */
+function droppedBy(appId, routes, { hosts = [], redirects = [], paths = [], removing = [] }) {
+  const named     = new Set(removing.map(n => n.toLowerCase()))
+  const sentHosts = new Set([...hosts, ...redirects.map(r => r.host)])
+  const sentPaths = new Set(paths.map(p => p.host + p.prefix))
+  const ownName   = String(appId).toLowerCase()
+  const dropped   = new Set()
+  for (const route of routes) {
+    const id = route['@id']
+    if (id === routeId(appId) || id === redirectsId(appId)) {
+      for (const m of route.match ?? []) for (const h of m.host ?? [])
+        if (!sentHosts.has(h) && h.split('.')[0] !== ownName && !named.has(h)) dropped.add(h)
+    } else if (isPathRouteOf(appId, id)) {
+      for (const m of route.match ?? []) for (const h of m.host ?? []) {
+        const key = h + m.path?.[0]
+        if (!sentPaths.has(key) && !named.has(key)) dropped.add(key)
+      }
+    }
+  }
+  return [...dropped]
+}
+
+/** Refuse a call that would drop a name the hub did not state. Before any write. */
+function refuseDrop(appId, routes, sent) {
+  const dropped = droppedBy(appId, routes, sent)
+  if (dropped.length)
+    throw new Error(`app ${appId} would lose ${dropped.join(', ')} from this machine, which a hub restored from an older copy never knew. To keep one, add it on this App, a host as a Domain and a host/prefix as a path route; to drop one, add it and delete it`)
+}
+
 /** An app id a route may be written for: a plain name, and not one that spells
  *  another app's `-redirects`, `-copy` or `-path-<n>` route id, which would be
  *  that app's route to Caddy. */
@@ -382,6 +425,39 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
     }), 'creating the ingress server')
   }
 
+  /** The ingress server's routes, or null when no Caddy answers. */
+  async function listRoutes() {
+    let listed
+    try {
+      listed = await caddy('GET', `/config/apps/http/servers/${SERVER}/routes`)
+    } catch (err) {
+      if (!err.unreachable) throw err
+      return null
+    }
+    return listed.status < 300 ? listed.data ?? [] : []
+  }
+
+  /** Delete the app's routes from a listing already read. Called inside
+   *  `serially`, which a nested `serially` would deadlock. */
+  async function removeRoutes(appId, routes) {
+    let removed = false
+    const paths = routes.map(r => r['@id']).filter(i => isPathRouteOf(appId, i))
+    for (const id of [routeId(appId), redirectsId(appId), ...paths]) {
+      let reply
+      try {
+        reply = await caddy('DELETE', `/id/${id}`)
+      } catch (err) {
+        if (!err.unreachable) throw err
+        return { removed: false }
+      }
+      if (reply.status === 404) continue
+      must(reply, `removing ${id}`)
+      removed = true
+    }
+    if (removed) await logAccess(routeId(appId), [])
+    return { removed }
+  }
+
   return {
     /**
      * What the ingress server routes, as read off Caddy — every route, whoever
@@ -459,8 +535,11 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
      *
      * `noindex` names hosts, served or redirected, that answer
      * `X-Robots-Tag: noindex`.
+     *
+     * A live name this call leaves out is refused unless `removing` states it
+     * (`FJS-D2045`), and a refusal leaves Caddy as it was.
      */
-    route({ appId, hosts = [], port, host = null, redirects = [], paths = [], noindex = [] }) {
+    route({ appId, hosts = [], port, host = null, redirects = [], paths = [], noindex = [], removing = [] }) {
       return serially(async () => {
         checkRouteAppId(appId)
         if (!hosts.length && !redirects.length && !paths.length) throw new Error('a route needs at least one hostname')
@@ -483,6 +562,7 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
           if (taken.length)
             throw new Error(`${taken.join(', ')} is already routed to ${otherId ?? 'a route outpost did not write'}`)
         }
+        refuseDrop(appId, live?.routes ?? [], { hosts, redirects, paths, removing })
 
         await ensureServer(http, live)
 
@@ -779,30 +859,30 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
     unroute({ appId }) {
       return serially(async () => {
         checkRouteAppId(appId)
-        let removed = false
-        let listed
-        try {
-          listed = await caddy('GET', `/config/apps/http/servers/${SERVER}/routes`)
-        } catch (err) {
-          if (!err.unreachable) throw err
-          return { removed: false }
-        }
-        const paths = (listed.status < 300 ? listed.data ?? [] : []).map(r => r['@id']).filter(i => isPathRouteOf(appId, i))
-        for (const id of [routeId(appId), redirectsId(appId), ...paths]) {
-          let reply
-          try {
-            reply = await caddy('DELETE', `/id/${id}`)
-          } catch (err) {
-            if (!err.unreachable) throw err
-            return { removed: false }
-          }
-          if (reply.status === 404) continue
-          must(reply, `removing ${id}`)
-          removed = true
-        }
-        if (removed) await logAccess(routeId(appId), [])
-        return { removed }
+        const routes = await listRoutes()
+        return routes ? removeRoutes(appId, routes) : { removed: false }
       })
+    },
+
+    /** `unroute` for a push with nothing left to route: the names it would take
+     *  are refused as `route` refuses them. A person's `/stop` is not a push and
+     *  calls `unroute`. */
+    withdraw({ appId, removing = [] }) {
+      return serially(async () => {
+        checkRouteAppId(appId)
+        const routes = await listRoutes()
+        if (!routes) return { removed: false }
+        refuseDrop(appId, routes, { removing })
+        return removeRoutes(appId, routes)
+      })
+    },
+
+    /** The refusal `route` would give, read ahead of a release so it lands
+     *  before the build. A machine with no Caddy answers none: the route write
+     *  that follows says so. */
+    async checkDrop({ appId, hosts = [], redirects = [], paths = [], removing = [] }) {
+      const routes = await listRoutes()
+      if (routes) refuseDrop(appId, routes, { hosts, redirects, paths, removing })
     },
   }
 }

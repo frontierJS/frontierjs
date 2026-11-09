@@ -2792,7 +2792,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect(logs.default.exclude).toEqual(['http.log.access.fli-other', 'http.log.access.fjs-app-1'])
 
     // A redeploy to other hostnames moves the logger with them, and writes the exclusion once.
-    await deploy(server, { hosts: ['store.example.com'] })
+    await deploy(server, { hosts: ['store.example.com'], removing: ['shop.example.com', 'www.example.com'] })
     expect(caddy.config.apps.http.servers.ingress.logs.logger_names).toEqual({ 'store.example.com': ['fjs-app-1'] })
     expect(caddy.config.logging.logs.default.exclude).toEqual(['http.log.access.fli-other', 'http.log.access.fjs-app-1'])
 
@@ -2806,7 +2806,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     const caddy = fakeCaddy()
     const { server } = serverWith(caddy)
     await deploy(server, { hosts: ['shop.example.com'] })
-    await deploy(server, { hosts: ['store.example.com'], config: { port: 7301, containerPort: 80 } })
+    await deploy(server, { hosts: ['store.example.com'], removing: ['shop.example.com'], config: { port: 7301, containerPort: 80 } })
     const routes = caddy.config.apps.http.servers.ingress.routes
     expect(routes).toHaveLength(1)
     expect(routes[0].match[0].host).toEqual(['store.example.com'])
@@ -2897,7 +2897,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     const { server } = serverWith(caddy)
     await deploy(server, { hosts: ['shop.example.com'], paths: [{ host: 'shop.example.com', prefix: '/api' }] })
     caddy.interleave(addFli)
-    await deploy(server, { hosts: ['shop.example.com'], paths: [{ host: 'shop.example.com', prefix: '/v2' }] })
+    await deploy(server, { hosts: ['shop.example.com'], paths: [{ host: 'shop.example.com', prefix: '/v2' }], removing: ['shop.example.com/api'] })
     const ids = caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])
     expect(ids).toContain('fli-other')
     expect(ids.indexOf('fjs-app-1-path-0')).toBeLessThan(ids.indexOf('fjs-app-1'))
@@ -2967,7 +2967,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     const { server, fake } = serverWith(caddy)
     await deploy(server, { hosts: ['shop.example.com'] })
     fake.calls.length = 0
-    await deploy(server, { hosts: [] })
+    await deploy(server, { hosts: [], removing: ['shop.example.com'] })
     expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
     expect(runArgv(fake)).toContain('-p 7300:80')
   })
@@ -2981,6 +2981,100 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
     // A second stop has nothing to remove, and says so rather than failing.
     expect(await (await send(server, 'POST', '/stop', { app_id: 'app-1' })).json()).toMatchObject({ unrouted: false })
+  })
+
+  // A hub restored from an older copy cannot name a host added since, so a push
+  // may take off only what it names (FJS-D2045).
+  describe('a push drops only what it names (FJS-D2045)', () => {
+    const base = { appId: 'app-1', port: 7300 }
+    const setup = () => { const caddy = fakeCaddy(); return { caddy, ingress: createIngress({ fetch: caddy.fetch }) } }
+    const said = (p) => p.then(() => null, e => e.message)
+    const live = (caddy) => caddy.config.apps.http.servers.ingress.routes
+
+    test('a list leaving out a live host is refused by name with the way out, and Caddy is unchanged', async () => {
+      const { caddy, ingress } = setup()
+      await ingress.route({ ...base, hosts: ['old.example.com', 'added.example.com'] })
+      const before = structuredClone(caddy.config)
+      const message = await said(ingress.route({ ...base, hosts: ['old.example.com'] }))
+      expect(message).toContain('app-1')
+      expect(message).toContain('added.example.com')
+      expect(message).not.toContain('old.example.com')
+      expect(message).toContain('a hub restored from an older copy')
+      expect(message).toContain('a host as a Domain and a host/prefix as a path route')
+      expect(caddy.config).toEqual(before)
+    })
+
+    test('the same list naming the host in removing drops it, and an unusable removing counts for nothing', async () => {
+      const { caddy, ingress } = setup()
+      await ingress.route({ ...base, hosts: ['old.example.com', 'added.example.com'] })
+      await ingress.route({ ...base, hosts: ['old.example.com'], removing: ['ADDED.example.com'] })
+      expect(live(caddy)[0].match[0].host).toEqual(['old.example.com'])
+
+      const { server } = serverWith(caddy)
+      const res = await send(server, 'POST', '/route', { app_id: 'app-1', hosts: [], static: true, removing: 'old.example.com' })
+      expect((await res.json()).error).toContain('old.example.com')
+      expect(live(caddy)).toHaveLength(1)
+    })
+
+    test('a host turning into a redirect is no drop', async () => {
+      const { caddy, ingress } = setup()
+      await ingress.route({ ...base, hosts: ['www.example.com', 'shop.example.com'] })
+      await ingress.route({ ...base, hosts: ['shop.example.com'], redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
+      expect(live(caddy).map(r => r['@id']).sort()).toEqual(['fjs-app-1', 'fjs-app-1-redirects'])
+    })
+
+    test('a dropped redirect and a dropped path route are refused, and allowed once named', async () => {
+      const { caddy, ingress } = setup()
+      const redirects = [{ host: 'go.example.com', to: 'https://shop.example.com' }]
+      const paths     = [{ host: 'shop.example.com', prefix: '/api' }]
+      await ingress.route({ ...base, hosts: ['own.example.com'], redirects, paths })
+      expect(await said(ingress.route({ ...base, hosts: ['own.example.com'], paths }))).toContain('go.example.com')
+      expect(await said(ingress.route({ ...base, hosts: ['own.example.com'], redirects }))).toContain('shop.example.com/api')
+      await ingress.route({ ...base, hosts: ['own.example.com'], removing: ['go.example.com', 'shop.example.com/api'] })
+      expect(live(caddy).map(r => r['@id'])).toEqual(['fjs-app-1'])
+    })
+
+    test('a host whose first label is the app id leaves without being named', async () => {
+      const { caddy, ingress } = setup()
+      await ingress.route({ ...base, hosts: ['app-1.ingress.example.com', 'shop.example.com'] })
+      await ingress.route({ ...base, hosts: ['shop.example.com'] })
+      expect(live(caddy)[0].match[0].host).toEqual(['shop.example.com'])
+    })
+
+    test('another app\'s routes and a fli- route never count', async () => {
+      const { caddy, ingress } = setup()
+      await ingress.route({ appId: 'app-2', port: 7301, hosts: ['two.example.com'], paths: [{ host: 'shared.example.com', prefix: '/api' }] })
+      await ingress.route({ ...base, hosts: ['one.example.com'] })
+      live(caddy).push({ '@id': 'fli-shop', match: [{ host: ['fli.example.com'] }], handle: [] })
+      await ingress.route({ ...base, hosts: ['one.example.com'] })
+      expect(live(caddy).map(r => r['@id'])).toEqual(expect.arrayContaining(['fjs-app-2', 'fjs-app-2-path-0', 'fli-shop']))
+    })
+
+    test('withdraw refuses and allows as route does, and /stop needs no list', async () => {
+      const { caddy, ingress } = setup()
+      await ingress.route({ ...base, hosts: ['shop.example.com'] })
+      expect(await said(ingress.withdraw({ appId: 'app-1' }))).toContain('shop.example.com')
+      expect(live(caddy)).toHaveLength(1)
+      expect(await ingress.withdraw({ appId: 'app-1', removing: ['shop.example.com'] })).toEqual({ removed: true })
+      expect(live(caddy)).toEqual([])
+
+      await ingress.route({ ...base, hosts: ['shop.example.com'] })
+      const { server } = serverWith(caddy)
+      expect(await (await send(server, 'POST', '/stop', { app_id: 'app-1' })).json()).toMatchObject({ unrouted: true })
+      expect(live(caddy)).toEqual([])
+    })
+
+    test('a release that would drop a name is refused before the build', async () => {
+      const caddy = fakeCaddy()
+      const { server, fake } = serverWith(caddy)
+      await deploy(server, { hosts: ['old.example.com', 'added.example.com'] })
+      fake.calls.length = 0
+      const res = await deploy(server, { hosts: ['old.example.com'], digest: null, source: { kind: 'git', repo: 'https://example.test/x.git' } })
+      expect(res.status).toBeGreaterThanOrEqual(400)
+      expect((await res.json()).error).toContain('added.example.com')
+      expect(fake.calls.some(c => c[0] === 'git' || (c[0] === 'docker' && c[1] === 'build'))).toBe(false)
+      expect(caddy.config.apps.http.servers.ingress.routes[0].match[0].host).toEqual(['old.example.com', 'added.example.com'])
+    })
   })
 
   describe('a start-first swap (FJS-D1837)', () => {
@@ -3406,7 +3500,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       const caddy = fakeCaddy()
       const { server } = serverWith(caddy, none())
       await routeWith(server, { redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
-      await routeWith(server, { redirects: [] })
+      await routeWith(server, { redirects: [], removing: ['www.example.com'] })
       expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
 
       await routeWith(server, { redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
@@ -3504,7 +3598,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       const caddy  = fakeCaddy()
       const server = withStatic(caddy)
       await api(server, { paths: [{ host: 'shop.example.com', prefix: '/api' }, { host: 'shop.example.com', prefix: '/ws' }] })
-      await api(server, { paths: [{ host: 'shop.example.com', prefix: '/ws' }] })
+      await api(server, { paths: [{ host: 'shop.example.com', prefix: '/ws' }], removing: ['shop.example.com/api'] })
       expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-api-path-0'])
       expect(caddy.config.apps.http.servers.ingress.routes[0].match[0].path[0]).toBe('/ws')
       await send(server, 'POST', '/stop', { app_id: 'api' })
@@ -3565,7 +3659,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       const caddy = fakeCaddy()
       const { server } = serverWith(caddy, bound('127.0.0.1'))
       await deploy(server, { hosts: ['shop.example.com'] })
-      const body = await (await route(server, [])).json()
+      const body = await (await send(server, 'POST', '/route', { app_id: 'app-1', hosts: [], removing: ['shop.example.com'] })).json()
       expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
       expect(body.rebind).toContain('bound to loopback with no route')
     })

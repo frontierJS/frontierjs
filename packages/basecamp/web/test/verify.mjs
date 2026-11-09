@@ -1621,10 +1621,12 @@ check('a notice can be dismissed',
   check('…with the machine\'s reason on the step that stopped',
     await evaluate(`document.getElementById('deploy-steps')?.textContent ?? ''`),
     t => t.includes(caddyDownSaid))
-  // Reading the live container's published port is not touching it.
+  // Reading the live container's published port is not touching it, and the
+  // pivot probe's throwaway volume (`fjs-before-<app id>-…`) is named for the
+  // app without being its container.
   check('…and the running container was never touched',
     outpostSaw.docker.slice(dockerFrom)
-      .filter(c => c.includes(appId.slice(0, 8)) && !/^docker (ps|inspect) /.test(c)).join(' | '), '')
+      .filter(c => c.includes(appId.slice(0, 8)) && !/^docker (ps|inspect) /.test(c) && !c.includes('fjs-before-')).join(' | '), '')
   check('…because nothing stopped it first',
     outpostSaw.deploy.slice(sentFrom).map(d => d.path).join(','),
     t => t.includes('/deploy') && !t.includes('/stop'))

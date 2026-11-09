@@ -3575,6 +3575,7 @@ export interface DomainRoute {
   pathPrefix: string
   createdAt: string
   updatedAt: string
+  deletedAt?: string | null
 }
 
 export interface DomainRouteCreate {
@@ -3601,6 +3602,7 @@ export interface DomainRouteWhere extends WhereBase {
   pathPrefix?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
+  deletedAt?: string | Date | WhereOp<string | Date> | null
   AND?: DomainRouteWhere[]
   OR?:  DomainRouteWhere[]
   NOT?: DomainRouteWhere

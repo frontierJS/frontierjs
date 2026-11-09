@@ -191,6 +191,32 @@ export async function routedPaths(db: any, appId: string): Promise<{ host: strin
     .sort((a, b) => (a.host + a.prefix).localeCompare(b.host + b.prefix))
 }
 
+/**
+ * Every name the hub has held for this App that this push does not send
+ * (`FJS-D2045`): Outpost refuses to take a name off a machine unless the push
+ * states it, so a hub restored from an older copy cannot drop a hostname it
+ * never knew. Deleted rows count because they are how the hub remembers what it
+ * removed; a push that still sends a name is taken off the list, which keeps a
+ * re-added name, and a live Domain turned into a redirect, off it.
+ */
+export async function routeRemovals(db: any, appId: string, sent: {
+  hosts: string[], redirects: { host: string }[], paths: { host: string, prefix: string }[],
+}): Promise<string[]> {
+  const sys     = db.asSystem()
+  const domains = await sys.domain.findMany({ where: { appId }, withDeleted: true, select: { hostname: true } }) as { hostname: string }[]
+  const routes  = await sys.domainRoute.findMany({ where: { appId }, withDeleted: true, select: { domainId: true, pathPrefix: true } }) as { domainId: string, pathPrefix: string }[]
+  const held    = routes.length ? await sys.domain.findMany({
+    where: { id: { in: [...new Set(routes.map(r => r.domainId))] } }, withDeleted: true, select: { id: true, hostname: true },
+  }) as { id: string, hostname: string }[] : []
+  const hostOf  = new Map(held.map(d => [d.id, d.hostname]))
+  const sending = new Set([...sent.hosts, ...sent.redirects.map(r => r.host), ...sent.paths.map(p => p.host + p.prefix)].map(n => n.toLowerCase()))
+  const known   = [
+    ...domains.map(d => d.hostname),
+    ...routes.filter(r => hostOf.has(r.domainId)).map(r => hostOf.get(r.domainId)! + r.pathPrefix),
+  ].map(n => n.toLowerCase())
+  return [...new Set(known)].filter(n => !sending.has(n)).sort()
+}
+
 /** The App's read-only copy with its machine while it serves the main
  *  address, or null. */
 export async function copyServingMain(sys: any, appId: string): Promise<{ serverId: string; server: { name: string | null; status: string; ipAddress: string | null } | null } | null> {

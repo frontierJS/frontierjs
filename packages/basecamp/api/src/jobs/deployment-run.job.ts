@@ -70,7 +70,7 @@ import { SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, INTERRUPTED, releaseStatus
 import { frontsOf, type Front } from '../domain/release/fronting.ts'
 import { publishStatic, overPublishLimit, type PublishFile } from '../domain/release/static-publish.ts'
 import { releaseEnv } from '../domain/release/variables.ts'
-import { runtimeFor, routedHosts, routedPaths, routedRedirects, noindexHosts, markRunning, type Runtime } from '../domain/release/runtime.ts'
+import { runtimeFor, routedHosts, routedPaths, routedRedirects, routeRemovals, noindexHosts, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor, releaseCopyOf, restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from './app-backup-run.job.ts'
 import { pushIngressCert } from './ingress-cert.job.ts'
 import type { App }         from '@frontierjs/junction'
@@ -372,6 +372,13 @@ function runner(app: App) {
     }
   }
 
+  async function isRollbackOfLive(rel: DeploymentRow): Promise<boolean> {
+    if (rel.trigger !== 'rollback') return false
+    const undone = rel.previousDeploymentId
+      ? await (app.db as any).asSystem().deployment.findFirst({ where: { id: rel.previousDeploymentId }, select: { trigger: true } }) : null
+    return undone?.trigger !== 'rollback'
+  }
+
   // The `/deploy` body a release starts with. One builder for the release's own
   // Start step and for the put-back of the release a failed restore stopped, so
   // the two cannot start a container two ways.
@@ -382,6 +389,7 @@ function runner(app: App) {
     const runtime = runtimeFor(config, service)
     const hosts   = await routedHosts(app.db, rel.appId)
     const paths   = await routedPaths(app.db, rel.appId)
+    const redirects = await routedRedirects(app.db, rel.appId)
     return {
       deployment_id: rel.id,
       // The container is found by the APP, and this line is what makes that
@@ -414,8 +422,9 @@ function runner(app: App) {
       source:        config.source ?? service.source ?? {},
       hosts,
       paths,
-      redirects:     await routedRedirects(app.db, rel.appId),
+      redirects,
       noindex:       await noindexHosts(app.db, rel.appId),
+      removing:      await routeRemovals(app.db, rel.appId, { hosts, redirects, paths }),
       // The live App, as the hosts are: a rollback puts back old bytes, never
       // an exposure somebody has since withdrawn. The machine's firewall
       // drops a forwarded port this does not declare (FJS-D930).
@@ -426,8 +435,10 @@ function runner(app: App) {
       // setting. Outpost still reads the pivot and may answer stop-first.
       swap:          wantsStartFirst(service, runtime, hosts, paths) ? 'start-first' : 'stop-first',
       // A rollback's migrations are already recorded, so a failed one is put back
-      // whatever the verdict says (`FJS-D2044`).
-      rollback:      rel.trigger === 'rollback',
+      // whatever the verdict says (`FJS-D2044`). Undoing a rollback goes forward
+      // to the newer image over the volume the first one may have restored, so
+      // that release migrates and is graded like any other (`FJS-4124`).
+      rollback:      await isRollbackOfLive(rel),
     }
   }
 
@@ -723,6 +734,9 @@ function runner(app: App) {
       if (!digest && executor.kind !== 'stub')
         throw new Error('The upload reported no digest, so there is nothing to make live')
 
+      const hosts     = await routedHosts(app.db, deploy.appId)
+      const paths     = await routedPaths(app.db, deploy.appId)
+      const redirects = await routedRedirects(app.db, deploy.appId)
       const reply = await executor.call('/static/activate', {
         app_id: deploy.appId,
         // The hostname label this app answers on where there is no domain
@@ -731,10 +745,11 @@ function runner(app: App) {
         digest,
         // The live Domain rows, as `/deploy` sends them: a hostname deleted
         // since the last release drops out here.
-        hosts:         await routedHosts(app.db, deploy.appId),
-        paths:         await routedPaths(app.db, deploy.appId),
-        redirects:     await routedRedirects(app.db, deploy.appId),
+        hosts,
+        paths,
+        redirects,
         noindex:       await noindexHosts(app.db, deploy.appId),
+        removing:      await routeRemovals(app.db, deploy.appId, { hosts, redirects, paths }),
       }, { timeoutMs: ACTIVATE_TIMEOUT_MS })
       if (reply.error) throw new Error(`Activate failed: ${reply.error.message}`)
 

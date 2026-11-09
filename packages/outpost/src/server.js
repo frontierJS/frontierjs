@@ -18,7 +18,7 @@
 import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector, checkRunConfig, checkSwap, swapFor } from './docker.js'
 import { createStatic, validName } from './static.js'
-import { createIngress, checkRouteAppId, hostsOf, pathsOf, redirectsOf } from './ingress.js'
+import { createIngress, checkRouteAppId, hostsOf, pathsOf, redirectsOf, removingOf } from './ingress.js'
 import { doorRefusal } from './doors.js'
 import { createReplicator } from './replicate.js'
 import { createAnalytics } from './analytics.js'
@@ -201,17 +201,19 @@ export function createOutpostServer(config, {
       const redirects = redirectsOf(body.redirects)
       const paths     = pathsOf(body.paths)
       const noindex   = hostsOf(body.noindex)
+      const removing  = removingOf(body.removing)
       const fronted   = hosts.length > 0 || paths.length > 0
       const port      = body.config?.port
       if (fronted && !port) throw new Error('hosts need a published port to route to — config.port is not set')
       checkRunConfig(body.config)
       const asked = body.swap ?? 'stop-first'
       checkSwap({ swap: asked, loopback: fronted, exposesPort: body.exposes_port === true, port, path: body.config?.healthCheck ?? null })
-      const routeTo = (to) => ingress.route({ appId, hosts, port: to, redirects, paths, noindex })
+      const routeTo = (to) => ingress.route({ appId, hosts, port: to, redirects, paths, noindex, removing })
       // Before the build: `fli deploy`'s install of this hostname keeps its own
       // database and key, and a release here would serve neither (`FJS-D1967`).
       const theirs = await ingress.heldBy('ssh', [...hosts, ...paths.map(p => p.host), ...redirects.map(r => r.host)])
       if (theirs.length) throw new Error(doorRefusal('basecamp', theirs))
+      await ingress.checkDrop({ appId, hosts, redirects, paths, removing })
 
       // The build and the route are this app's too, not only the swap: a
       // `/stop` or a second release landing between them acts on a route or a
@@ -246,7 +248,7 @@ export function createOutpostServer(config, {
             const dialed = fronted ? await routed().catch(() => []) : []
             dialing = fronted ? (await docker.published({ appId }).catch(() => null))?.port ?? (dialed.length === 1 ? dialed[0] : port) : port
             await routeTo(dialing)
-          } else await ingress.unroute({ appId })
+          } else await ingress.withdraw({ appId, removing })
         }
         const route = !fronted ? null
           : swap === 'start-first' ? routeTo
@@ -304,30 +306,31 @@ export function createOutpostServer(config, {
       const redirects = redirectsOf(body.redirects)
       const paths     = pathsOf(body.paths)
       const noindex   = hostsOf(body.noindex)
+      const removing  = removingOf(body.removing)
       const fronted   = hosts.length > 0 || paths.length > 0
       const routed    = fronted || redirects.length
       // An inline app has no container: its hostnames go to the static origin,
       // the way `/static/activate` routes them.
       if (body.static) {
         if (fronted && !config.staticPort) throw new Error('this machine serves no static origin (OUTPOST_STATIC_PORT=0), so nothing can route a hostname to these files')
-        if (routed) await ingress.route({ appId, hosts, port: config.staticPort, host: `${appId}.localhost`, redirects, paths, noindex })
-        else await ingress.unroute({ appId })
+        if (routed) await ingress.route({ appId, hosts, port: config.staticPort, host: `${appId}.localhost`, redirects, paths, noindex, removing })
+        else await ingress.withdraw({ appId, removing })
         return { hosts, paths, port: config.staticPort, rebind: null }
       }
       if (body.port != null) {
         // A machine with no docker holds no container to collide with.
         if (await docker.published({ appId }).catch(() => null)) throw new Error(`app ${appId} has a container on this machine and is routed to the port it published — send no port`)
         const port = Number(body.port)
-        if (routed) await ingress.route({ appId, hosts, port, redirects, paths, noindex })
-        else await ingress.unroute({ appId })
+        if (routed) await ingress.route({ appId, hosts, port, redirects, paths, noindex, removing })
+        else await ingress.withdraw({ appId, removing })
         return { hosts, paths, port, rebind: null }
       }
       const live  = await docker.published({ appId })
       if (fronted && !live) throw new Error(`no container for app ${appId} on this machine to route to — deploy it first`)
       if (fronted && !live.port) throw new Error(`app ${appId}'s container publishes no port to route to — set the app's port and redeploy`)
 
-      if (routed) await ingress.route({ appId, hosts, port: live?.port, redirects, paths, noindex })
-      else await ingress.unroute({ appId })
+      if (routed) await ingress.route({ appId, hosts, port: live?.port, redirects, paths, noindex, removing })
+      else await ingress.withdraw({ appId, removing })
 
       const rebind = !live?.port ? null
         : fronted && !live.loopback ? `port ${live.port} still answers off this machine, around Caddy, until the next release binds it to loopback`
@@ -388,8 +391,8 @@ export function createOutpostServer(config, {
       const noindex   = hostsOf(body.noindex)
       if ((hosts.length || paths.length) && !config.staticPort) throw new Error('this machine serves no static origin (OUTPOST_STATIC_PORT=0), so nothing can route a hostname to these files')
       if (hosts.length || paths.length || redirects.length)
-        await ingress.route({ appId: body.app_id, hosts, port: config.staticPort, host: `${body.app_id}.localhost`, redirects, paths, noindex })
-      else if (body.hosts || body.redirects || body.paths) await ingress.unroute({ appId: body.app_id })
+        await ingress.route({ appId: body.app_id, hosts, port: config.staticPort, host: `${body.app_id}.localhost`, redirects, paths, noindex, removing: removingOf(body.removing) })
+      else if (body.hosts || body.redirects || body.paths) await ingress.withdraw({ appId: body.app_id, removing: removingOf(body.removing) })
       return { ...await statics.activate({ appId: body.app_id, slug: body.slug, digest: body.digest }), hosts, paths }
     },
     'POST /static/health':   (body) => statics.healthCheck({ appId: body.app_id, digest: body.digest }),

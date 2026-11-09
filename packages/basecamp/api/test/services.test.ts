@@ -4633,6 +4633,40 @@ describe('a list honors every filter it admits', () => {
     expect(got).toEqual([api.id])
   })
 
+  // FJS-D2045: the row left behind is how the hub names the name to Outpost.
+  test('removing a domain route keeps its row, and moving one to another App leaves the old holder a tombstone', async () => {
+    const sys    = env.system as any
+    const domain = await sys.domain.create({ data: { workspaceId: ws.id, appId: placed.id, hostname: `move-${placed.name}.test` } })
+    const third  = await sys.app.create({ data: { workspaceId: ws.id, environmentId: placed.environmentId, name: `third-${placed.name}`, slug: `third-${placed.name}` } })
+    const held   = await sys.domainRoute.create({ data: { workspaceId: ws.id, domainId: domain.id, appId: elsewhere.id, pathPrefix: '/api' } })
+    const svc    = env.as(owner).service('domainRoutes')
+
+    const moved = await svc.patch(held.id, { appId: third.id }) as any
+    expect(moved).toMatchObject({ appId: third.id, domainId: domain.id, pathPrefix: '/api' })
+    expect(moved.id).not.toBe(held.id)
+    expect((await sys.domainRoute.findFirst({ where: { id: held.id }, withDeleted: true })).deletedAt).toBeTruthy()
+    expect((await sys.domainRoute.findMany({ where: { domainId: domain.id } })).map((r: any) => r.id)).toEqual([moved.id])
+
+    await svc.remove(moved.id)
+    expect(await sys.domainRoute.findMany({ where: { domainId: domain.id } })).toEqual([])
+    expect(await sys.domainRoute.findMany({ where: { domainId: domain.id }, withDeleted: true })).toHaveLength(2)
+  })
+
+  test('editing a prefix leaves the old one a tombstone, and an edit that repeats it keeps the row', async () => {
+    const sys    = env.system as any
+    const domain = await sys.domain.create({ data: { workspaceId: ws.id, appId: placed.id, hostname: `edit-${placed.name}.test` } })
+    const held   = await sys.domainRoute.create({ data: { workspaceId: ws.id, domainId: domain.id, appId: elsewhere.id, pathPrefix: '/api' } })
+    const svc    = env.as(owner).service('domainRoutes')
+
+    const same = await svc.patch(held.id, { appId: elsewhere.id, pathPrefix: '/api' }) as any
+    expect(same.id).toBe(held.id)
+
+    const edited = await svc.patch(held.id, { appId: elsewhere.id, pathPrefix: '/v2' }) as any
+    expect(edited).toMatchObject({ appId: elsewhere.id, pathPrefix: '/v2' })
+    expect(edited.id).not.toBe(held.id)
+    expect((await sys.domainRoute.findFirst({ where: { id: held.id }, withDeleted: true })).deletedAt).toBeTruthy()
+  })
+
   // FJS-3941: the screen drew a deleted Domain's route by its uuid.
   test('domain routes name their hostname, and a deleted Domain\'s routes say so', async () => {
     const sys    = env.system as any
