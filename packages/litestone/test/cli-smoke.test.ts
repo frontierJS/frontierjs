@@ -2189,3 +2189,22 @@ describe('migrate lock — an applied file is frozen', () => {
     expect(checked.stderr).toContain('is locked and gone')
   })
 })
+
+// ─── migrate accept (FJS-D2043) ───────────────────────────────────────────────
+
+describe('CLI smoke — migrate accept', () => {
+  test('a refused boot names the command, and the command lets it through', async () => {
+    const dir  = makeFixtureDir('accept')
+    const file = join(dir, 'migrations', '20260101000000_gone.sql')
+    writeFileSync(file, '-- Class: contract\nCREATE TABLE gone (id INTEGER PRIMARY KEY);\n')
+    await runCli(dir, ['migrate', 'apply'])
+    rmSync(file)
+
+    const refused = await runCli(dir, ['migrate', 'apply'])
+    expect(refused.exit).toBe(1)
+    expect(refused.stderr).toContain('litestone migrate accept 20260101000000_gone.sql')
+
+    expect((await runCli(dir, ['migrate', 'accept', '20260101000000_gone.sql'])).exit).toBe(0)
+    expect((await runCli(dir, ['migrate', 'accept', '20260101000000_other.sql'])).exit).toBe(1)
+  })
+})

@@ -145,6 +145,13 @@ export async function refuseHubRelease(sys: any, appId: string) {
     throw new Conflict('This App is Basecamp itself, which is released by fli deploy, not from here')
 }
 
+/** Refuse removing the hub App: `HubConfig.appId` finds Basecamp's own box and
+ *  archives through its row, and a removal retires it from the machine first. */
+export async function refuseHubRemoval(sys: any, appId: string) {
+  if (await isHubApp(sys, appId))
+    throw new Conflict('This App is Basecamp itself and cannot be removed from here')
+}
+
 /** Refuse an app-volume backup of the hub App: its volume holds none of its
  *  databases, and its archive is `backup:run`'s (`FJS-D1606`). */
 export async function refuseHubVolume(sys: any, appId: string) {
@@ -326,6 +333,17 @@ async function scheduledApps(sys: any, hubAppId: string | null): Promise<HostDec
   return out
 }
 
+/** Every other app with a data volume (`volumePath`) and no copy off the box (`app.offbox-copy`).
+ *  A schedule with no destination writes to the machine's own disk, so it is not a copy. */
+async function unprotectedApps(sys: any, hubAppId: string | null): Promise<string[]> {
+  const apps = await sys.app.findMany({
+    where: { deletedAt: null, volumePath: { not: null }, replicaDestinationId: null,
+             ...(hubAppId ? { id: { not: hubAppId } } : {}) },
+    select: { name: true, backupCron: true, backupDestinationId: true }, limit: 5_000,
+  })
+  return apps.filter((a: any) => !(a.backupCron && a.backupDestinationId)).map((a: any) => a.name)
+}
+
 async function ingressZones(sys: any): Promise<HostDeclared['ingressZones']> {
   const rows = await sys.workspace.findMany({ where: { ingressZone: { not: null } }, select: { name: true, ingressZone: true } })
   return rows.map((w: { name: string, ingressZone: string }) => ({ workspace: w.name, zone: w.ingressZone.trim().toLowerCase().replace(/\.$/, '') }))
@@ -339,6 +357,7 @@ async function hostDeclared(sys: any, push: HostDeclared['install']['push'], dbP
     bucketLock:     await bucketLockDeclared(sys, config?.appId ?? null),
     lastBackupAt:   await lastBackupAt(sys, config?.appId ?? null),
     scheduledApps:  await scheduledApps(sys, config?.appId ?? null),
+    unprotectedApps: await unprotectedApps(sys, config?.appId ?? null),
     ingressZones:   await ingressZones(sys),
     dbDisk:         databaseDisk(dbPath),
     keyFingerprint: encryptionKeyFingerprint(),

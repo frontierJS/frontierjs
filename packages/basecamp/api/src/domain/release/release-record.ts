@@ -54,13 +54,40 @@ export async function pushRow(app: App, id: string): Promise<Row | null> {
 
 export const INTERRUPTED = 'interrupted — Basecamp restarted mid-release'
 
+/** The release of those named that began replacing what serves, if one did. */
+async function swapBegun(app: App, ids: string[]): Promise<string | null> {
+  if (!ids.length) return null
+  const steps = await sys(app).deploymentStep.findMany({
+    where: { deploymentId: { in: ids }, name: { in: [...SWAP_STEPS] } } }) as Row[]
+  return steps.find(s => s.startedAt != null)?.deploymentId ?? null
+}
+
+// `/deploy` runs to its end with its caller gone, so the screen must not read
+// as though a release stopped here left the last one serving.
+async function unanswered(app: App, id: string, error: string): Promise<string> {
+  return await swapBegun(app, [id]) ? `${error}. The machine may have finished it, so this release may be what is serving` : error
+}
+
+/**
+ * A release since `live` that began replacing what serves and did not succeed.
+ * It may be what is serving, so starting `live` again may put older bytes over
+ * it (`FJS-4129`). A failure the machine answered reads the same here: the row
+ * cannot tell them apart, and a wrong guess restarts the app on the wrong bytes.
+ */
+export async function swapBegunSince(app: App, live: Row): Promise<string | null> {
+  const since = await sys(app).deployment.findMany({
+    where:  { appId: live.appId, status: { in: ['failed', 'cancelled'] }, finishedAt: { gt: live.finishedAt } },
+    select: { id: true } }) as { id: string }[]
+  return swapBegun(app, since.map(d => d.id))
+}
+
 /** The release moved to `building`, with its steps and its App — or why it is not runnable. */
 export async function startRelease(app: App, deploy: Row) {
   // A row already `building` is a run that died: caravan reclaims a job whose
   // worker stopped and replays it, and a second run of half a release on the
   // machine is not a retry (`FJS-3850`). It is failed rather than resumed.
   if (deploy.status === 'building') {
-    await finishRelease(app, deploy, { status: 'failed', error: INTERRUPTED, stepId: await runningStep(app, deploy.id) })
+    await finishRelease(app, deploy, { status: 'failed', error: await unanswered(app, deploy.id, INTERRUPTED), stepId: await runningStep(app, deploy.id) })
     return { runnable: false as const, status: 'failed', interrupted: true }
   }
   // Not runnable is not an error: a release already terminal has been
@@ -133,7 +160,7 @@ export async function sweepStuckReleases(app: App, now = Date.now()): Promise<st
     if (live.has(row.id)) continue
     await finishRelease(app, row, {
       status: 'failed', stepId: await runningStep(app, row.id),
-      error: 'No job was left running this release, so it was failed — start another',
+      error: await unanswered(app, row.id, 'No job was left running this release, so it was failed — start another'),
     })
     failed.push(row.id)
   }

@@ -778,7 +778,7 @@ export async function claimSession(root, opts = {}) {
   const { name, env = 'dev', dry = false, lockFile = LOCK_FILE } = opts
   const busy      = opts.busy ?? busyPorts
   const movable   = opts.movable ?? ((row) => readsPortVar(appRoot, row))
-  const worktreeExists = opts.worktreeExists ?? existsSync
+  const worktreeExists = opts.worktreeExists ?? isCheckout
   const projectId = projectIdFor(name, basename(appRoot))
   const tree      = opts.worktree !== undefined ? opts.worktree : worktreeOf(appRoot)
   const rowsAt    = (slot, branch = 0) => devPorts(appRoot, { ...opts, env, slot, branch })
@@ -965,8 +965,11 @@ export function branchFor(appRoot, { lockFile = LOCK_FILE } = {}) {
 
 // A throwaway checkout (/tmp, an agent's scratchpad) is removed without
 // `releaseSession`, and its entry would hold the number for good; five of them
-// locked every fix-loop lane out of `portFor`. The directory being gone is the
-// one fact that cannot be a worktree between runs, so its entry is dropped.
+// locked every fix-loop lane out of `portFor`. A linked worktree's top holds a
+// `.git` entry for as long as it is one, and a removed one's directory can
+// outlive it (a drive wrote into it), so no `.git` drops the entry.
+function isCheckout(top) { return existsSync(join(top, '.git')) }
+
 function freeBranch(sessions, appRoot, tree, worktreeExists) {
   const held = new Set()
   for (const [root, s] of Object.entries(sessions)) {

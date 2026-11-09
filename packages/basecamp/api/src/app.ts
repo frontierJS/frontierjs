@@ -47,7 +47,7 @@ import { registerPushReceivers } from './plugins/git-push.ts'
 import { dependencyTargets }  from './core/dependencies.ts'
 import { accountMail }         from './core/account-mail.ts'
 import { isPreviewOrigin }      from './domain/site/site-preview.ts'
-import { registerAllAccounts } from './providers/compute/accounts.ts'
+import { registerAllAccounts, retireUnreachableOutposts } from './providers/compute/accounts.ts'
 import { registerAllDestinations } from './providers/storage/index.ts'
 import { S3_SIGNER, s3Signer }    from './providers/storage/s3.ts'
 import { enrollTokenMatches, installScript, isCertificate, isSigningPublicKey } from './providers/compute/enrollment.ts'
@@ -1051,6 +1051,8 @@ export async function buildBasecampApp(
     boot:     async () => {
       const n = await registerAllAccounts(app, db)
       if (n) logger.info('conduit: cloud accounts registered', { count: n })
+      const retired = await retireUnreachableOutposts(app)
+      if (retired) logger.warn('conduit: outpost targets to machines not on this host dropped — not production and no ALLOW_CLOUD_SPEND', { count: retired })
     },
   })
 

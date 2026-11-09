@@ -224,9 +224,13 @@ export function createOutpostServer(config, {
           built = await docker.build({ appId, source: body.source, image })
 
         // `swap` is what the caller allows; the release's pivot decides whether
-        // the old one can serve beside it (`FJS-D1838`).
-        const pivot = asked === 'start-first' ? await docker.pivot({ appId, image, digest: built.digest ?? body.digest }) : null
-        const { swap, reason } = pivot ? swapFor(pivot) : { swap: 'stop-first', reason: null }
+        // the old one can serve beside it (`FJS-D1838`). A rollback is asked
+        // only for a start-first: the verdict also says whether a failed release
+        // may have moved the database (`FJS-D2044`), and a rollback's migrations
+        // are already recorded.
+        const startFirst = asked === 'start-first'
+        const pivot = startFirst || !body.rollback ? await docker.pivot({ appId, image, digest: built.digest ?? body.digest }) : null
+        const { swap, reason } = startFirst ? swapFor(pivot) : { swap: 'stop-first', reason: null }
 
         // A release that dropped its last hostname drops its route too. The
         // live port is Docker's after a start-first, and a route dialing the
@@ -264,6 +268,8 @@ export function createOutpostServer(config, {
             swap,
             route,
             routed,
+            pivot:       body.rollback ? null : pivot?.verdict ?? null,
+            rollback:    body.rollback === true,
             held:        true,
           })
         } catch (err) {
@@ -410,7 +416,8 @@ export function createOutpostServer(config, {
     'POST /volumes/prune': (body) => inspector.pruneVolumes(body.names ?? []),
     // An archive on the machine, or a backup fetched by a pre-signed GET, into the app's stopped volume.
     // `per_file` replaces only the databases the archive holds (`FJS-D1724`).
-    'POST /volume/restore': (body) => docker.restore({ appId: body.app_id, path: body.path, url: body.url, sha256: body.sha256, overwrite: body.overwrite, perFile: body.per_file }),
+    'POST /volume/restore': (body) => docker.restore({ appId: body.app_id, path: body.path, url: body.url, sha256: body.sha256, overwrite: body.overwrite, perFile: body.per_file, runId: body.run_id }),
+    'POST /volume/restore/began': (body) => docker.restoreBegan({ appId: body.app_id, runId: body.run_id }),
     // An app's databases out of its Litestream replica, at an instant or the
     // latest, into its stopped volume. The key rides in the body like
     // `/replicate`'s, so the machine holds nothing it was not already handed.
@@ -489,7 +496,7 @@ export function createOutpostServer(config, {
     'POST /backups':       () => docker.listBackups(),
     // Every app this machine replicates, each with its own key; the list
     // replaces the last one whole, so an app left out stops replicating.
-    'POST /replicate':     (body) => replicator.apply({ replicas: body.replicas, host: body.host }),
+    'POST /replicate':     (body) => replicator.apply({ replicas: body.replicas, host: body.host, clear: body.clear }),
     // Basecamp's *check now*: the readings come back in the answer and
     // Basecamp ingests them, rather than this posting a report beside it.
     'POST /posture':       () => inspector.posture(),

@@ -17,7 +17,7 @@
 import { stripVTControlCharacters } from 'node:util'
 import { basename, dirname, relative } from 'node:path'
 import { mkdir, readdir, readFile, realpath, rename, rm, stat, symlink } from 'node:fs/promises'
-import { existsSync, readFileSync, writeFileSync, renameSync, createWriteStream } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, renameSync, rmSync, createWriteStream } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { Readable }                from 'node:stream'
 import { pipeline }                from 'node:stream/promises'
@@ -428,6 +428,7 @@ export function createDocker({
   run = spawnRun, stream = spawnStream, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/builds', health = HEALTH,
   appsDir = layout().apps, namesDir = `${appsDir.replace(/\/+$/, '')}/../names`,
   restoreDir = '/var/lib/outpost/restore', backupDir = '/var/lib/outpost/backups',
+  restoreBeganDir = '/var/lib/outpost/restore-began',
   uidFile = '/var/lib/outpost/uids.json', deployKeyDir = '/var/lib/outpost/deploy-keys',
 } = {}) {
 
@@ -482,6 +483,18 @@ export function createDocker({
     if (/[,:]/.test(dir)) throw new Error(`'${dir}' has a ':' or ',' that a mount cannot carry`)
     if (make) await mkdir(dir, { recursive: true, mode: 0o700 })
     return dir
+  }
+
+  /** On disk because `reconcile` runs after a restart, and a `_replaced` with
+   *  nothing live beside it otherwise reads as a swap that did not finish. */
+  function stayedDownMark(appId) {
+    checkAppId(appId)
+    return `${appsDir}/${appId}/stayed-down`
+  }
+
+  async function markStayedDown(appId) {
+    await mkdir(`${appsDir}/${appId}`, { recursive: true, mode: 0o700 })
+    writeFileSync(stayedDownMark(appId), new Date().toISOString(), { mode: 0o600 })
   }
 
   /** `names/<slug>-<id8> -> ../apps/<app>`, the readable way to an app's data
@@ -1169,7 +1182,7 @@ export function createDocker({
 
   // The archive at `path` under the restore directory, extracted into the
   // app's stopped data directory. Both doors of `restore` end here.
-  async function extract({ appId, path, overwrite, perFile }) {
+  async function extract({ appId, path, overwrite, perFile, runId }) {
     const relative = typeof path === 'string' && path.startsWith(`${restoreDir}/`) ? path.slice(restoreDir.length + 1) : path
     const bad = validRelativePath(relative)
     if (bad) throw new Error(`${bad} — name a file under ${restoreDir}`)
@@ -1186,6 +1199,13 @@ export function createDocker({
 
     const dir = await refuseHeld(appId)
     await dataDir(appId, { make: true })
+
+    // Written before the container that empties the directory, and kept after it:
+    // a caller whose connection died here cannot be told, and asks by `restoreBegan`.
+    if (runId) {
+      await mkdir(restoreBeganDir, { recursive: true, mode: 0o700 })
+      writeFileSync(`${restoreBeganDir}/${appId}.json`, JSON.stringify({ run_id: runId, at: new Date().toISOString() }), { mode: 0o600 })
+    }
 
     // `--mount`, not `-v`: `-v` given a source the daemon cannot see mounts an
     // empty directory, and the restore extracts nothing and reports success.
@@ -1364,8 +1384,9 @@ export function createDocker({
      * calls `route(port)` when the live container moves, and `routed()` says
      * which container the route dials; see `swap.js`.
      */
-    async deploy({ appId, project, environment, appSlug, image, digest, config = {}, port, loopback = false, exposesPort = false, swap = 'stop-first', route = null, routed = null }) {
+    async deploy({ appId, project, environment, appSlug, image, digest, config = {}, port, loopback = false, exposesPort = false, swap = 'stop-first', route = null, routed = null, pivot = null, rollback = false }) {
       const name = containerName({ appId, project, environment, appSlug })
+      rmSync(stayedDownMark(appId), { force: true })
       checkRunConfig(config)
       checkSwap({ swap, loopback, exposesPort, port, path: config.healthCheck ?? null })
       const startFirst = swap === 'start-first'
@@ -1405,6 +1426,10 @@ export function createDocker({
       // Addressed by digest where one is known — the tag is a name and two
       // builds share it. This is the half `Deployment.builtImage` records.
       const ref = await reference(image, digest)
+      // A rollback's image was built here and has no registry to come back from;
+      // Cleanup removes it, and the daemon's own answer names only the string.
+      if (rollback && !await holds(ref))
+        throw new Error(`${ref} is not on this machine — Cleanup or a prune removed it, and a build made here has no registry to come back from. Release the app again to build it`)
       const uid = await runsUnprivileged(ref) ? appUid(appId) : null
       if (uid != null) argv.push('--user', `${uid}:${uid}`)
       // The data a container keeps, in the app's host directory, which
@@ -1432,8 +1457,14 @@ export function createDocker({
         const started = await swapper.startFirst({ name, argv, opts, before: chown, path, route, routed })
         return { ...started, digest: digest ?? await digestOf(image), swap }
       }
-      const { containerId } = await swapper.stopFirst({ name, argv, opts, before: chown, port, path, route, routed })
-      return { containerId, digest: digest ?? await digestOf(image), swap }
+      const copies = data ? { volume: data, image: ref } : null
+      try {
+        const { containerId } = await swapper.stopFirst({ name, argv, opts, before: chown, port, path, route, routed, pivot, copies })
+        return { containerId, digest: digest ?? await digestOf(image), swap }
+      } catch (err) {
+        if (err.stayedDown) await markStayedDown(appId)
+        throw err
+      }
     },
 
     /**
@@ -1564,9 +1595,10 @@ export function createDocker({
      * in the archive replaces its own file and that file's `-wal`/`-shm`, and
      * the rest of the directory stays.
      */
-    async restore({ appId, path, url, sha256, overwrite = false, perFile = false }) {
+    async restore({ appId, path, url, sha256, overwrite = false, perFile = false, runId }) {
       checkAppId(appId)
-      if (url === undefined) return extract({ appId, path, overwrite, perFile })
+      if (runId !== undefined && (typeof runId !== 'string' || !runId || runId.length > 100)) throw new Error('run_id is a string of 1 to 100 characters')
+      if (url === undefined) return extract({ appId, path, overwrite, perFile, runId })
       if (path !== undefined) throw new Error('send path or url, not both')
       let parsed
       try { parsed = new URL(url) } catch { throw new Error('url is not a URL') }
@@ -1589,11 +1621,21 @@ export function createDocker({
         const got = hash.digest('hex')
         if (got !== sha256) throw new Error(`the archive fetched is not the one taken (sha256 ${got}, expected ${sha256}) — nothing was restored`)
         await rename(`${root}/${name}.partial`, `${root}/${name}`)
-        return { ...await extract({ appId, path: name, overwrite, perFile }), sha256 }
+        return { ...await extract({ appId, path: name, overwrite, perFile, runId }), sha256 }
       } finally {
         await rm(`${root}/${name}.partial`, { force: true })
         await rm(`${root}/${name}`, { force: true })
       }
+    },
+
+    /** Whether the restore a caller named by `run_id` reached the step that empties
+     *  the data directory. Answers for that run only: a marker another run left says
+     *  nothing about this one. */
+    async restoreBegan({ appId, runId }) {
+      checkAppId(appId)
+      if (typeof runId !== 'string' || !runId) throw new Error('restore_began needs a run_id')
+      const marker = await readFile(`${restoreBeganDir}/${appId}.json`, 'utf8').then(JSON.parse, () => null)
+      return { began: marker?.run_id === runId }
     },
 
     /** Refuses before a replica restore downloads anything; `restoreFiles`
@@ -1945,6 +1987,9 @@ export function createDocker({
         await serially(appId, async () => {
           const { live, replaced } = await containersOf(appId)
           if (live || !replaced) return
+          // Left stopped by a failed release that may have moved the database;
+          // starting it here is the put-back that release refused (`FJS-D2044`).
+          if (existsSync(stayedDownMark(appId))) return
           const name = replaced.slice(0, -'_replaced'.length)
           await docker(['rename', replaced, name])
           await docker(['start', name])
@@ -2336,6 +2381,36 @@ function readCert(r) {
  * byte counts. They are wire contracts, not model fields.
  */
 
+/** `docker image ls` prints `2026-11-07 22:17:03 -0700 MST`, which `Date.parse`
+ *  does not take. An unreadable one sorts newest, so it is kept. */
+function imageCreatedMs(text) {
+  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{4})/.exec(text ?? '')
+  const ms = m ? Date.parse(`${m[1]}T${m[2]}${m[3]}`) : NaN
+  return Number.isNaN(ms) ? Number.MAX_SAFE_INTEGER : ms
+}
+
+/** The references an unused-image sweep may remove: past the newest `keep` of
+ *  each repository, and held by no container. An App's releases share one
+ *  repository (`fjs-<app>:<release>`). Two tags on one id are one image: a cached
+ *  rebuild tags the same bytes, and counting it twice shortens the rollback window. */
+function imagesPastKeep(listing, keep, inUse) {
+  const repositories = new Map()
+  for (const line of listing.split('\n')) {
+    const [repository, tag, id, created] = line.split('\t')
+    if (!id || repository === '<none>') continue
+    if (!repositories.has(repository)) repositories.set(repository, new Map())
+    const images = repositories.get(repository)
+    if (!images.has(id)) images.set(id, { id, created: imageCreatedMs(created), names: [] })
+    // Pulled by digest alone it has no tag to name it.
+    images.get(id).names.push(tag === '<none>' ? id : `${repository}:${tag}`)
+  }
+  return [...repositories.values()].flatMap(images => [...images.values()]
+    .sort((a, b) => b.created - a.created)
+    .slice(keep)
+    .filter(image => !inUse.has(image.id))
+    .flatMap(image => image.names))
+}
+
 /** `hostFiles` is the box a Basecamp runs on only (`config.js` § hostFiles). */
 export function createInspector({ run = spawnRun, hostFiles = null, appsDir = layout().apps, exclusive = (_appId, fn) => fn() } = {}) {
   const json = async (argv) => {
@@ -2370,6 +2445,37 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
     if (!m) return 0
     const scale = { '': 1, K: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15 }
     return Math.round(Number(m[1]) * (scale[m[2].toUpperCase()] ?? 1))
+  }
+
+  // Image ids any container holds, a stopped `_replaced` included. `null` when
+  // unread: `docker image rm` of one tag among several does not refuse, so an
+  // empty set here would strip the live image's name.
+  const imagesInUse = async () => {
+    const listed = await run(['docker', 'ps', '-aq', '--no-trunc'])
+    if (listed.exitCode !== 0) return null
+    const ids = listed.stdout.split('\n').map(id => id.trim()).filter(Boolean)
+    if (!ids.length) return new Set()
+    const inspected = await run(['docker', 'inspect', '--format', '{{.Image}}', ...ids])
+    if (inspected.exitCode !== 0) return null
+    return new Set(inspected.stdout.split('\n').map(id => id.trim()).filter(Boolean))
+  }
+
+  const imagesBytes = async () => {
+    const rows = await json(['docker', 'system', 'df', '--format', 'json'])
+    return bytes(rows.find(r => (r.Type ?? '').toLowerCase().startsWith('image'))?.Size)
+  }
+
+  // `image prune -a` has no per-repository count. `image rm` prints no size, so
+  // what it freed is the daemon's before and after.
+  const removeImagesPastKeep = async (keep) => {
+    const inUse  = await imagesInUse()
+    const listed = await run(['docker', 'image', 'ls', '--no-trunc', '--format', '{{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}'])
+    if (!inUse || listed.exitCode !== 0) return { images: 0, freed: 0 }
+    const names = imagesPastKeep(listed.stdout, keep, inUse)
+    if (!names.length) return { images: 0, freed: 0 }
+    const before = await imagesBytes()
+    const { stdout } = await run(['docker', 'image', 'rm', ...names])
+    return { images: (String(stdout ?? '').match(/^deleted:/gim) ?? []).length, freed: Math.max(0, before - await imagesBytes()) }
   }
 
   // A failed `docker ps` throws (`FJS-3844`): read as "no holders" it let
@@ -2532,7 +2638,11 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
     /** A reclaim sweep. Answers what it FREED and what it removed, and
      *  basecamp forgets exactly the volumes named here — never the ones it
      *  asked about, because a partial sweep leaves the rest on disk. */
-    async prune({ targets = [], keepImages = 0 } = {}) {
+    async prune({ targets = [], keepImages } = {}) {
+      // No default: a caller that forgot the count would pick how many rollback
+      // images every App loses.
+      if (targets.includes('unused_images') && (!Number.isInteger(keepImages) || keepImages < 0))
+        throw new Error(`keep_images must be a whole number, 0 or more, not ${JSON.stringify(keepImages)}`)
       const removed = { images: 0, containers: 0, build_cache_bytes: 0 }
       let freed = 0
       const volumes = []
@@ -2546,12 +2656,14 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
       }
 
       // Not `container prune`: it takes a swap's kept-back `_replaced`, the one
-      // container a failed release goes back to (`FJS-3854`). They carry the
-      // same labels as the live one, so the name is what tells them apart.
+      // container a failed release goes back to (`FJS-3854`), and an App
+      // stopped by hand, whose container is what a start brings back
+      // (`FJS-4112`). Either deploy door labels an App's container, so the label
+      // keeps them all and the name check is for a `_replaced` that lost it.
       if (targets.includes('stopped_containers')) {
-        const listed = await run(['docker', 'ps', '-a', '--filter', 'status=exited', '--filter', 'status=created', '--filter', 'status=dead', '--format', '{{.ID}}\t{{.Names}}'])
+        const listed = await run(['docker', 'ps', '-a', '--filter', 'status=exited', '--filter', 'status=created', '--filter', 'status=dead', '--format', `{{.ID}}\t{{.Names}}\t{{.Label "${APP_LABEL}"}}`])
         const ids = listed.exitCode !== 0 ? [] : listed.stdout.split('\n').map(line => line.trim().split('\t'))
-          .filter(([id, name]) => id && name && !name.endsWith('_replaced')).map(([id]) => id)
+          .filter(([id, name, app]) => id && name && !app && !name.endsWith('_replaced')).map(([id]) => id)
         if (ids.length) {
           // `docker rm` echoes each id it removed, and one that failed is not among them.
           const { stdout } = await run(['docker', 'rm', ...ids])
@@ -2559,10 +2671,13 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
         }
       }
       if (targets.includes('dangling_images') || targets.includes('unused_images')) {
-        const argv = ['docker', 'image', 'prune', '-f']
-        if (targets.includes('unused_images')) argv.push('-a')
-        const out = await sweep(argv)
+        const out = await sweep(['docker', 'image', 'prune', '-f'])
         removed.images = (out.match(/^deleted:/gim) ?? []).length
+      }
+      if (targets.includes('unused_images')) {
+        const past = await removeImagesPastKeep(keepImages)
+        removed.images += past.images
+        freed += past.freed
       }
       if (targets.includes('build_cache')) {
         const before = freed

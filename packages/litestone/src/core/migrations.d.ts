@@ -7,6 +7,7 @@ import type {
 
 export declare function create(db: unknown, parseResult: ParseResult, label?: string, dir?: string, opts?: { pluralize?: boolean }): CreateMigrationResult
 export declare function apply(db: unknown, dir?: string): Promise<ApplyResult>
+export declare function accept(db: unknown, file: string, dir?: string): { ok: boolean; message: string; file?: string; class?: string }
 export declare function status(db: unknown, dir?: string): MigrationRow[]
 export declare function verify(db: unknown, parseResult: ParseResult, dir?: string, opts?: { pluralize?: boolean; dbName?: string }): VerifyResult
 export { autoMigrate, listMigrationFiles, unmatchedMigrationFiles, describeSkipped } from '../index.js'

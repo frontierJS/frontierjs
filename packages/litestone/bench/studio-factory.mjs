@@ -13,8 +13,9 @@ import { appendFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { copyBasecampDb } from './basecamp-copy.mjs'
+import { freePort } from '../test/free-port.mjs'
 const R = join(dirname(fileURLToPath(import.meta.url)), '../../..')
-const PORT = 7503
+const PORT = await freePort()
 let fails = 0
 const ok = (n, c, x = '') => { console.log((c ? 'ok   ' : 'FAIL ') + n + (c ? '' : '  → ' + x)); if (!c) fails++ }
 

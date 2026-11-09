@@ -49,7 +49,7 @@ import { HUB_SIGNING_REF }       from '../../core/credentials.ts'
 import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../domain/host/server-metrics.ts'
 import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions, backupCost, keepsPolicy } from '../../providers/compute/index.ts'
 import type { AccountSend, ComputeConnector, MachineBackups } from '../../providers/compute/index.ts'
-import { sendVia }               from '../../providers/compute/accounts.ts'
+import { sendVia, mayReachOutpost } from '../../providers/compute/accounts.ts'
 import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
 import { mintEnrollToken, cloudInit, outpostUnpublished, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
 import { issueEnrollmentFor, refusePlaceholderKey, useHost, findHost } from '../../domain/host/host-machine.ts'
@@ -1704,12 +1704,19 @@ export default createService({
     // URL, so a machine reporting `http://` is refused here rather than
     // trusted. Refusing to register is the whole refusal: the executor finds
     // no target and fails the deploy by name (`FJS-1603`).
-    const pinnable = !!data.outpost_url && /^https:\/\//i.test(data.outpost_url) && !!server.outpostCert
+    //
+    // Nor a signed target to a machine that is not here, outside production
+    // and without `ALLOW_CLOUD_SPEND`: a dev hub holding a restored database
+    // and the install's key would otherwise sign deploys to a real box.
+    const reachable = !data.outpost_url || mayReachOutpost(data.outpost_url)
+    const pinnable  = !!data.outpost_url && /^https:\/\//i.test(data.outpost_url) && !!server.outpostCert && reachable
     if (data.outpost_url && !pinnable) {
       // A target already held is taken away too: one registered before the
       // machine lost its pin would go on carrying commands in the clear.
       if (known) await conduit.deregister(target)
-      $.app.logger.warn('conduit: outpost not registered — no https URL or no enrolled certificate', {
+      $.app.logger.warn(reachable
+        ? 'conduit: outpost not registered — no https URL or no enrolled certificate'
+        : 'conduit: outpost not registered — it is not on this machine, and this process has not said it may spend (ALLOW_CLOUD_SPEND=1 or NODE_ENV=production)', {
         serverId: id, url: data.outpost_url, hasCert: !!server.outpostCert })
     } else if (pinnable && (known?.address !== data.outpost_url || known?.pinned_cert !== server.outpostCert
                             || known?.auth?.type !== 'signed'

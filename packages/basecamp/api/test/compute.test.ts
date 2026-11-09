@@ -1102,7 +1102,10 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     expect(server.registerMethod).toBe('provisioned')
     // Nothing has been created yet — the job has not run.
     expect(server.providerServerId).toBeNull()
-  })
+    // The first service call in the file pays the cold start, and every test
+    // after this one reads the row it writes: at the default 5 s a loaded
+    // machine turns one timeout into nineteen failures (FJS-4123).
+  }, 30_000)
 
   test("the VENDOR's price is copied onto the row, not the caller's", async () => {
     // `/cloud-spend/` reports what a fleet costs. A client that posted
@@ -1955,7 +1958,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     const { signRequest } = await import('@frontierjs/toolbelt/signature')
     const body = JSON.stringify({
       outpost_version: '0.4.1', health: { cpu: 1, memory: 1 },
-      outpost_url: 'https://203.0.113.5:8180',
+      outpost_url: 'https://127.0.0.1:8180',
     })
     const path = `/servers/${m.id}`
     const headers = await signRequest({
@@ -1975,7 +1978,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     // A machine that then reports plain http loses its target rather than
     // keeping one that would carry commands in the clear.
     const plain = JSON.stringify({ outpost_version: '0.4.1', health: { cpu: 1, memory: 1 },
-      outpost_url: 'http://203.0.113.5:8180' })
+      outpost_url: 'http://127.0.0.1:8180' })
     const again = env.http.post(path).set('x-service-method', 'heartbeat')
     for (const [k, v] of Object.entries(await signRequest({
       ...m.key, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body: plain,
@@ -1983,6 +1986,55 @@ describe('a machine signs with its OWN key, and only its own', () => {
     }))) again.set(k, v as string)
     expect((await again.send(JSON.parse(plain))).status).toBe(200)
     expect(await app.conduit.resolve(`outpost:${m.id}`)).toBeNull()
+  })
+
+  // FJS-4117. The hub key derives from ENCRYPTION_KEY, so a dev hub holding a
+  // restored database is a fully authorized second hub: outside production an
+  // Outpost that is not on this machine gets no signed target, under the
+  // condition that opens a vendor write.
+  test('outside production a machine that is not here gets no signed target, unless spending is allowed', async () => {
+    const { env: hubEnv } = await import('../src/core/env.ts')
+    const { retireUnreachableOutposts } = await import('../src/providers/compute/accounts.ts')
+    const { signRequest } = await import('@frontierjs/toolbelt/signature')
+    const beat = async (m: { id: string, key: { privateKey: string } }, url: string) => {
+      const body = JSON.stringify({ outpost_version: '0.4.1', health: { cpu: 1, memory: 1 }, outpost_url: url })
+      const path = `/servers/${m.id}`
+      const req  = env.http.post(path).set('x-service-method', 'heartbeat')
+      for (const [k, v] of Object.entries(await signRequest({
+        ...m.key, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
+        timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+      }))) req.set(k, v as string)
+      expect((await req.send(JSON.parse(body))).status).toBe(200)
+    }
+    const real = 'https://203.0.113.5:8180'
+
+    const m = await enrolled('not-here')
+    await beat(m, real)
+    expect(await app.conduit.resolve(`outpost:${m.id}`)).toBeNull()
+
+    // A target a restored database already carries goes at boot, and a machine
+    // on this host stays.
+    const desc = (id: string, address: string) => ({
+      id: `outpost:${id}`, kind: 'outpost', protocol: 'http', address, pinned_cert: CERT,
+      auth: { type: 'signed', signer: 'ed25519', ref: 'hub:signing' },
+      registered_at: Date.now(), last_seen_at: Date.now(),
+    }) as any
+    await app.conduit.register(desc('restored-real', real))
+    await app.conduit.register(desc('restored-here', 'https://127.0.0.1:8180'))
+    expect(await retireUnreachableOutposts(app)).toBe(1)
+    expect(await app.conduit.resolve('outpost:restored-real')).toBeNull()
+    expect(await app.conduit.resolve('outpost:restored-here')).not.toBeNull()
+    await app.conduit.deregister('outpost:restored-here')
+
+    // The pair: with spending allowed the same heartbeat registers it.
+    const before = (hubEnv as any).ALLOW_CLOUD_SPEND
+    ;(hubEnv as any).ALLOW_CLOUD_SPEND = '1'
+    try {
+      await beat(m, real)
+      expect((await app.conduit.resolve(`outpost:${m.id}`))?.address).toBe(real)
+    } finally {
+      ;(hubEnv as any).ALLOW_CLOUD_SPEND = before
+    }
   })
 
   test('there is no outbound fleet-key branch left to take', async () => {

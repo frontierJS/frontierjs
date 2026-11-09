@@ -19,7 +19,7 @@
 
 import { mkdir, mkdtemp, readFile, writeFile, rename, rm, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { buildYaml, replicaUrl, lastWriteArgs, parseLastWrite, restoreArgs, restoreError } from '@frontierjs/litestone/replicate'
+import { buildYaml, yamlDirs, replicaUrl, lastWriteArgs, parseLastWrite, restoreArgs, restoreError } from '@frontierjs/litestone/replicate'
 import { spawnRun } from './docker.js'
 import { layout } from './layout.js'
 
@@ -106,6 +106,9 @@ export function createReplicator({
   }
   const instant = ms => ms == null ? null : new Date(ms).toISOString().replace(/\.000Z$/, 'Z')
 
+  // An app by its id, the host's database by its path.
+  const heldNames = (yaml) => yamlDirs(yaml ?? '').map(dir => dir.replace(`${appsDir}/`, '').replace(/\/data$/, ''))
+
   async function lastWrite(r, url) {
     const said = await run([litestream, ...lastWriteArgs(url)], { env: keyEnv(r), timeoutMs: 60_000 })
     return said.exitCode === 0 ? parseLastWrite(said.stdout) : null
@@ -115,8 +118,11 @@ export function createReplicator({
     /** Replace this machine's replica list with `replicas` and restart the
      *  unit. An app with no data here yet is answered in `skipped`, not
      *  refused: Litestream will not watch a directory that is not there, and
-     *  the other apps' entries are still owed. */
-    async apply({ replicas, host = null }) {
+     *  the other apps' entries are still owed. A list that would leave no
+     *  target where the file holds some is refused unless it states
+     *  `clear: true`: a hub that lost its rows sends the same `[]` as a person
+     *  removing the last replica, and every app here would stop in silence. */
+    async apply({ replicas, host = null, clear = false }) {
       check(replicas, host)
 
       const targets = []
@@ -137,12 +143,18 @@ export function createReplicator({
       const replicating = replicas.map(r => r.app_id).filter(id => !skipped.some(s => s.app_id === id))
       const said = hostSaid ? { replicating, skipped, host: hostSaid } : { replicating, skipped }
       const yaml = buildYaml(targets, { socket: socketPath })
+      const held = await readFile(configPath, 'utf8').catch(() => null)
+
+      if (!targets.length && clear !== true) {
+        const holding = heldNames(held)
+        if (holding.length)
+          throw new Error(`${configPath} still replicates ${holding.join(', ')}, and this list would stop all of it: send clear: true to empty it on purpose`)
+      }
 
       // Every release resends the list. A restart is a gap in every app's
       // replication, so a list already in force is left running; a unit that
       // is not active is restarted anyway, or a restart that failed once
       // would never be retried.
-      const held = await readFile(configPath, 'utf8').catch(() => null)
       if (held === yaml && (await run(['systemctl', 'is-active', '--quiet', unit])).exitCode === 0)
         return { ...said, unchanged: true }
 

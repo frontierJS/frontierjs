@@ -487,6 +487,22 @@ describe('claimSession — a linked worktree takes a branch block', () => {
     expect(lock['/t/6/app']).toMatchObject({ branch: 2 })
   })
 
+  // FJS-3805: a removed worktree's directory can linger (a drive wrote into it, a
+  // scratchpad kept a file), so `existsSync(top)` held its number for good. A
+  // linked worktree's top always holds a `.git` entry; a leftover directory has none.
+  test('five held, one a leftover directory with no .git: the default check frees its number', async () => {
+    const top = (n) => join(dir, `wt${n}`)
+    for (let n = 1; n <= 5; n++) {
+      mkdirSync(join(top(n), 'app'), { recursive: true })
+      if (n !== 2) writeFileSync(join(top(n), '.git'), 'gitdir: /m/.git/worktrees/x\n')
+      await claim(join(top(n), 'app'), { name: 'app', worktree: wt(top(n)) })
+    }
+    mkdirSync(join(top(6), 'app'), { recursive: true })
+    const b = await claim(join(top(6), 'app'), { name: 'app', worktree: wt(top(6)), worktreeExists: undefined })
+    expect(b.branch).toBe(2)
+    expect(readLock(lockFile)[join(top(2), 'app')]).toBeUndefined()
+  })
+
   test('decode reads the branch digit and leaves the rest as the parent reads it', () => {
     expect(decode(18120)).toEqual({ env: 'dev', category: 'be', projectId: 2, serviceId: 0, branch: 1 })
     expect(decode(8120).branch).toBe(0)

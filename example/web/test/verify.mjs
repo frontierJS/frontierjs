@@ -39,7 +39,9 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 // issues an invoice on the seeded rows every run. Past fifty of either the
 // pages stop listing the one it waits for, so the seed that stood them up puts
 // them back (`FJS-1708`), on a pass and on a throw alike.
-const putSeedBack = () => execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
+// stderr is piped, not ignored: a seed that fails under load is otherwise a bare
+// "Command failed" that names neither the lock nor the table (`FJS-4041`).
+const putSeedBack = () => execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] })
 
 // Both servers on the test tier, so this runs beside a dev server somebody
 // else is holding 8010/8110 with. Both are env-overridable.

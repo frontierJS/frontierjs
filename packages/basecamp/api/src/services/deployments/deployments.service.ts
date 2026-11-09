@@ -17,7 +17,7 @@ import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_
 import { db, getScoped, narrowPatch, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
-import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, inFlightRelease } from '../../domain/release/release-record.ts'
+import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, inFlightRelease, swapBegunSince } from '../../domain/release/release-record.ts'
 import { isInline, isGit, imageOf, inlineFilesFor, refuseBranch } from '../../domain/release/app-source.ts'
 import { snapshotVariables } from '../../domain/release/variables.ts'
 import { runtimeOf, type Runtime, CONTAINER_KINDS } from '../../domain/release/runtime.ts'
@@ -354,6 +354,8 @@ export default createService({
 
     const live = await db().deployment.findFirst({ where: { appId, status: 'success' }, orderBy: { finishedAt: 'desc' } })
     if (!live?.builtImage) return { skipped: 'no release of this app recorded the bytes it ran, so there is nothing to start again' }
+    const begun = await swapBegunSince($.app, live)
+    if (begun) return { skipped: `release ${begun} began replacing what serves and did not succeed, so it may be what is serving and the last success may be older bytes` }
 
     return queueRelease(target, {
       appId, trigger: 'rebind',

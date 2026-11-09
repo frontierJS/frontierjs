@@ -58,6 +58,23 @@ $.config.apiPort    = apiPort
 $.config.healthPath = healthPath
 $.config.commit     = $.git.branch() || 'unknown'
 
+// ─── Basecamp ships a commit that was pushed and passed CI ────────────────────
+// Yuma runs Basecamp, and every other app's release goes through it, so a bad
+// commit here takes the rest down with it (FJS-4118, FJS-D2040). Asked in the
+// deploy and not in a hook: another session can land a commit between a check
+// and the deploy. Read under --dry too.
+{
+  const { isBasecampApp, checkDeployGate } = await import(new URL('file://' + global.fliRoot + '/core/deploy-gate.js'))
+  if (isBasecampApp($.paths.root)) {
+    const gate = checkDeployGate($.paths.root, { unverified: $.flag.unverified })
+    for (const [level, line] of gate.lines) log[level](line)
+    if (!gate.ok) {
+      $.config.abort = true
+      return
+    }
+  }
+}
+
 // ─── Check the machines are reachable ─────────────────────────────────────────
 // Every machine, not just the API's: a split deploy that can reach one host and
 // not the other should fail here rather than half-way through, with the web

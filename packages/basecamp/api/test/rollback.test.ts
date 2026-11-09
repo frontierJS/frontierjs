@@ -455,6 +455,84 @@ describe('a rollback and the volume', () => {
       expect(sent.map(s => s.path)).not.toContain('/deploy')
     })
   })
+
+  // ─── a hub that died between Stop and Start (FJS-4116, FJS-D2039) ──────────
+  describe('a rollback the hub died in', () => {
+    const STEPS = ['Validate', 'Pull image', 'Stop container', 'Restore volume', 'Start container', 'Health check']
+
+    // The row a dead hub leaves: `building`, steps run up to `reached`. The replay
+    // of its job is what finds it and closes it.
+    async function replay(reached: number, began: boolean | 'unreadable') {
+      const { app, first, current } = await withVolume()
+      const sys  = env.system as any
+      const dest = await env.as(admin).service('backupDestinations').create({
+        name: `Rollback ${uniq()}`, endpoint: 'http://127.0.0.1:9', region: 'auto',
+        bucket: `rb-${uniq()}`, prefix: 'apps', secret: 'AKID:secret',
+      }) as any
+      await sys.appBackup.create({ data: {
+        appId: app.id, serverId: box.id, destinationId: dest.id, kind: 'release', deploymentId: current.id,
+        status: 'success', location: `apps/${app.id}-x.tar.gz`, sha256: 'd'.repeat(64), sizeBytes: 10 } })
+      const replacement = await sys.deployment.create({ data: {
+        appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
+        previousDeploymentId: current.id, configSnapshot: first.configSnapshot } })
+      await sys.deployment.update({ where: { id: replacement.id, status: 'pending' }, data: { status: 'building', startedAt: new Date().toISOString() } })
+      for (const [position, name] of STEPS.entries()) {
+        const row = await sys.deploymentStep.create({ data: { deploymentId: replacement.id, position, name } })
+        if (position <= reached) await sys.deploymentStep.update({ where: { id: row.id }, data: { status: 'running', startedAt: new Date().toISOString() } })
+        if (position < reached) await sys.deploymentStep.update({ where: { id: row.id }, data: { status: 'success' } })
+      }
+
+      const sent: { path: string; body: any }[] = []
+      const conduit = {
+        resolve: async () => ({ pinned_cert: true }),
+        send: async (call: any) => {
+          sent.push({ path: call.path, body: call.body })
+          if (call.path === '/volume/restore/began')
+            return began === 'unreadable' ? { error: { kind: 'server', message: 'Server error: 500', raw: '{}' } } : { data: { began } }
+          return { data: {} }
+        },
+      }
+      const via = new Proxy(env.app, { get: (t, k) =>
+        k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+      await env.app.runAs(admin.id, { tenant: ws.id }, () =>
+        (deploymentRun as any).handler({ app: via, data: { deployment_id: replacement.id } }))
+      const steps = await sys.deploymentStep.findMany({ where: { deploymentId: replacement.id }, orderBy: { position: 'asc' } })
+      return { sent, steps, current, status: (await sys.deployment.findUnique({ where: { id: replacement.id } })).status }
+    }
+
+    test('died as Stop ran, the restore never began: the release that was live is started again', async () => {
+      const { sent, steps, current, status } = await replay(2, false)
+      expect(status).toBe('failed')
+      expect(sent.map(s => s.path)).toEqual(['/deploy'])
+      expect(sent[0].body.deployment_id).toBe(current.id)
+      expect(steps[2].output).toContain('the previous release is running again')
+    })
+
+    test('died after the restore began: nothing starts and the step names the copy', async () => {
+      const { sent, steps } = await replay(3, true)
+      expect(sent.map(s => s.path)).toEqual(['/volume/restore/began'])
+      expect(sent[0].body.run_id).toBeTruthy()
+      expect(steps[3].output).toContain('the app stays stopped')
+      expect(steps[3].output).toMatch(/put back the copy by hand: apps\//)
+    })
+
+    test('died inside Restore but before Outpost wrote its marker: the live release starts', async () => {
+      const { sent, steps } = await replay(3, false)
+      expect(sent.map(s => s.path)).toEqual(['/volume/restore/began', '/deploy'])
+      expect(steps[3].output).toContain('the previous release is running again')
+    })
+
+    test('Outpost cannot say whether it began: the app stays stopped', async () => {
+      const { sent, steps } = await replay(3, 'unreadable')
+      expect(sent.map(s => s.path)).not.toContain('/deploy')
+      expect(steps[3].output).toContain('could not be read')
+    })
+
+    test('died before Stop ran: nothing is asked or started', async () => {
+      const { sent } = await replay(1, false)
+      expect(sent).toEqual([])
+    })
+  })
 })
 
 describe('how the machine swapped, on the row', () => {

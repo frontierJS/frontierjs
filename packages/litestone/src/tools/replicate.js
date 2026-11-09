@@ -251,6 +251,11 @@ export function buildYaml(targets, opts) {
   return lines.join('\n') + '\n'
 }
 
+/** The `dir:` of each target in a file `buildYaml` wrote. */
+export function yamlDirs(yaml) {
+  return [...yaml.matchAll(/^  - dir: (.+)$/gm)].map(m => m[1])
+}
+
 // ─── WAL mode check ───────────────────────────────────────────────────────────
 // Litestream enables WAL itself, but a database that is not in WAL yet grows a
 // -wal and a -shm companion the moment it starts, and an operator who has not

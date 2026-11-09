@@ -23,6 +23,7 @@ const { container, replaced, healthy, restored } = await swapContainer($, {
   configuration: $.config.revertConfiguration,
   healthPath,
   log,
+  undoing: true,
 })
 
 $.config.container = container

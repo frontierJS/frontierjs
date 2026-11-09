@@ -273,7 +273,7 @@ the SQLite files would come from the replica, not the archive.
 ### The hub, from before a migration
 
 A boot that finds migrations pending over applied ones copies the main
-database to `<db dir>/pre-migrate/<stamp>.db` first and keeps the newest three
+database to `<db dir>/pre-migrate/basecamp.db--<stamp>.db` first and keeps the newest three
 (`FJS-3907`); the log line is `copied the database before migrating`. The copy
 is `basecamp.db` alone — not `audit.db`, not the queue. To put it back, stop
 Basecamp, roll the image back to the release before the bad migration (the
@@ -282,7 +282,7 @@ newer image would apply it again on the next boot), then:
 ```sh
 cd <db dir>
 rm -f basecamp.db-wal basecamp.db-shm
-cp pre-migrate/<stamp>.db basecamp.db
+cp pre-migrate/basecamp.db--<stamp>.db basecamp.db
 ```
 
 Every row written between the copy and the stop is gone, as with any restore.

@@ -331,8 +331,9 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   The container's BIND moves only with a release, so a `/route` answering
   `rebind` is followed by one — `deployments.rebind`, internal, the app's own
   settings over the LIVE digest (never a rebuild, never a rollback's
-  settings), skipped while a release is already queued, and run as whoever
-  wrote the Domain (`FJS-D577`). A machine moving has no caller to own that
+  settings), skipped while a release is already queued or since one began a
+  swap and did not succeed, which may be what is serving (`FJS-4129`), and run
+  as whoever wrote the Domain (`FJS-D577`). A machine moving has no caller to own that
   restart, so there it stays a logged warning. A
   redirecting Domain is not a host: `routedRedirects()` sends it as `redirects`
   beside `hosts`, on `/deploy`, `/static/activate` and `/route`, and Caddy

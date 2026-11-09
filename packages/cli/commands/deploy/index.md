@@ -47,6 +47,10 @@ flags:
     type: boolean
     description: If the server needs deploy:setup, run it with no questions — every missing dependency installed, the Caddy routes written
     defaultValue: false
+  unverified:
+    type: boolean
+    description: Deploy Basecamp's HEAD though it is unpushed or CI did not pass on it — prints each check it skipped
+    defaultValue: false
   outpost:
     type: boolean
     description: "Enroll the API's box in the app's fleet, where the deploy block says outpost: true"
@@ -72,6 +76,11 @@ environment of the target's tier (`dev` is development, `stage` staging) —
 environment or no such App (`fli basecamp:app --stage` makes it, `FJS-D1965`).
 `--api`, `--web`, `--site`, `--plan` and `--resume` are for the ssh deploy and
 refused there.
+
+**Basecamp's own deploy refuses a HEAD that no remote branch holds or that
+`.cache/ci-last.txt` does not show a full green run for** (`FJS-D2040`,
+`core/deploy-gate.js`); `--unverified` goes past it and prints each check it
+skipped.
 
 **Both doors release one commit from the same inputs** (`FJS-D1967`), through
 `core/release-build.js`: HEAD as committed, an uncommitted edit listed and left

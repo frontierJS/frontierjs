@@ -13,9 +13,9 @@
 // Haven's API and browser Haven. A drive points `SCENES_DIR` at a copy of
 // `scenes/` with `pieces/` and `components/` beside it, so a save it makes
 // never touches the tree, and the page evaluates the copy — a save swaps it
-// there too. `@/` is the surface's `src/` as it is for Haven's own build;
-// under a copy it is the copy's parent, so a copied scene's `@/components/`
-// and `@/pieces/` are the copy's.
+// there too. `@/` is the surface's `src/` as it is for Haven's own build,
+// two levels above `components/scenes/`, so a copied scene's `@/components/`,
+// `@/lib/` and `@/pieces/` are the copy's.
 //
 // The ask panel (`IDEAS/haven.md` 14.1) is the cli's (`core/vite-ask.js`),
 // imported from the checkout beside this package — `fli haven:scenes` serves
@@ -33,7 +33,7 @@ import mesa from '@frontierjs/mesa/vite'
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const PORT   = Number(process.env.PORT ?? 5507)
 const SCENES = resolve(process.env.SCENES_DIR ?? join(HERE, '../web/src/components/scenes'))
-const SRC    = dirname(SCENES)
+const SRC    = dirname(dirname(SCENES))
 const PIECES = join(SRC, 'pieces')
 
 // A variable specifier, so Vite's config bundler leaves the cli unbundled and

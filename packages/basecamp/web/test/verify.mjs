@@ -60,7 +60,11 @@ const WEB_PORT = Number(process.env.UI_PORT ?? await portFor(import.meta.url, 'f
 // machine says the disk is gone, so proving the happy path needs something
 // that answers as an outpost — the same reason the channels checks send a real
 // webhook at a URL that does not resolve, one step further along.
-const OUTPOST_PORT = 3011
+// The command port and, one above it, the static origin: two back-to-back
+// service slots of the backend category. A literal 3011 sat outside the
+// formula, so a peer lane or an orphaned bun held it and `fli prove` refused to
+// start (FJS-3116).
+const OUTPOST_PORT = await portFor(import.meta.url, 'be', { env: 'dev', service: 8 })
 // The mail provider, standing in for a real one. Basecamp's own slot on the
 // port formula — env 8, category 1 (backend), project 2, service 1 — beside the
 // API on 8120, the same shape `example` uses for its sink on 8111.
@@ -480,7 +484,16 @@ async function evaluate(expression) {
 // A navigation, then time for the guard to resolve `ready` and commit a route.
 // The guard awaits a network round trip, so this is not instant.
 async function goto(path) {
+  // Under load the old document outlives the fixed sleep, and a read then
+  // sees the previous page's h1 (FJS-3964). The marker is gone once the new
+  // document commits; a hash-only navigation keeps it, so the wait is capped.
+  await evaluate(`window.__nav = true`).catch(() => {})
   await send('Page.navigate', { url: BASE + path })
+  for (let waited = 0; waited < 5_000; waited += 100) {
+    const old = await evaluate(`window.__nav === true`).catch(() => false)
+    if (!old) break
+    await sleep(100)
+  }
   await sleep(2500)
 }
 
@@ -2385,6 +2398,7 @@ check('a tile that needs a subject says so rather than being placed',
   await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('needs a server')),
   t => t.includes('needs a server'))
 
+await pickerReady('#tile-subject')
 await evaluate(`
   (() => {
     const sel = document.getElementById('tile-subject')
@@ -2432,6 +2446,7 @@ check('the chooser says what the card will not be able to draw',
   await evaluate(`document.body.textContent`), t => t.includes('latency history'))
 // This kind carries a config field, and Add is refused without it — so the
 // selection is part of placing it, not a nicety.
+await pickerReady('#tile-service')
 await evaluate(`
   (() => {
     const sel = document.getElementById('tile-service')
@@ -2866,6 +2881,7 @@ await fill({ 'bot-name': 'CI deploy' })
 // The workspace is CHOSEN, not left at the form's default — the picker is
 // ordered newest-first, so the default is Skunkworks, and a bot in the wrong
 // tenant fails later as "not a member of this workspace" rather than here.
+await pickerReady('#bot-ws')
 await evaluate(`(() => {
   const sel = document.getElementById('bot-ws')
   const opt = [...sel.options].find(o => o.textContent.trim() === 'Acme')

@@ -490,8 +490,19 @@ siteName: Basecamp
   /* The signed-in chrome mounts the moment sign-in adopts the user, while
      the sign-in page is still showing. Under .signin it enters from
      transparent; on any other first paint it is simply there. */
-  :global(.sidebar, .topbar .sidebar-toggle, .topbar :is(.spare, .topbar-nav), .topbar > .cluster:last-child > *) {
+  :global(.topbar .sidebar-toggle, .topbar :is(.spare, .topbar-nav), .topbar > .cluster:last-child > *) {
     transition: opacity var(--motion-slow) var(--motion-ease-out);
+  }
+  /* Unlayered, so this replaces the kit's .sidebar transition rather than
+     joining it: opacity alone leaves the rail snapping shut with no width
+     transition. The kit's four properties are repeated here. */
+  :global(.sidebar) {
+    transition:
+      inline-size       var(--motion-base),
+      padding           var(--motion-base),
+      margin-inline-end var(--motion-base),
+      box-shadow        var(--motion-base),
+      opacity           var(--motion-slow) var(--motion-ease-out);
   }
   @starting-style {
     :global(.shell:has(.signin) :is(.sidebar, .topbar .sidebar-toggle, .topbar :is(.spare, .topbar-nav), .topbar > .cluster:last-child > *)) {

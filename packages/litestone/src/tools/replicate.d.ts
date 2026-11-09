@@ -18,6 +18,8 @@ export declare function buildYaml(
   targets: Array<({ path: string } | { dir: string; pattern: string; metaDir?: string }) & ({ url: string } | { replica: ReplicaS3 })>,
   opts:    { syncInterval?: string; retentionPeriod?: string; l0Retention?: string | null; socket?: string },
 ): string
+/** The `dir:` of each target in a file `buildYaml` wrote. */
+export declare function yamlDirs(yaml: string): string[]
 export declare function findLitestream(): string | null
 export declare const LITESTREAM_MIN: { major: number; minor: number }
 export declare const LITESTREAM_PIN: { version: string; sha256: { x86_64: string; arm64: string } }

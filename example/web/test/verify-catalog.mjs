@@ -199,7 +199,7 @@ check('an out-of-stock family is pilled',
 
 console.log('\n  catalog — one product')
 
-await goto('/products/1/', 'table.grid tbody tr', 4)
+await goto('/products/1/', 'table.variants tbody tr', 4)
 
 await settleImages('img.hero, .swatch img')
 check('hero photograph decoded',
@@ -209,16 +209,16 @@ check('four colorway swatches',
 check('every swatch decoded',
       await evaluate(`[...document.querySelectorAll('.swatch img')].every(i => i.naturalWidth > 0)`), true)
 check('variant grid is 4 colors x 3 sizes',
-      await evaluate(`[document.querySelectorAll('table.grid tbody tr').length,
-                       document.querySelectorAll('table.grid thead th').length - 1]`), [4, 3])
+      await evaluate(`[document.querySelectorAll('table.variants tbody tr').length,
+                       document.querySelectorAll('table.variants thead th').length - 1]`), [4, 3])
 check('sizes are in enum order, not alphabetical',
-      await evaluate(`[...document.querySelectorAll('table.grid thead th')].slice(1).map(th => th.textContent.trim())`),
+      await evaluate(`[...document.querySelectorAll('table.variants thead th')].slice(1).map(th => th.textContent.trim())`),
       ['s', 'm', 'l'])
 check('the empty colorway says sold out',
-      await evaluate(`[...document.querySelectorAll('table.grid tbody tr')]
+      await evaluate(`[...document.querySelectorAll('table.variants tbody tr')]
         .find(r => r.textContent.includes('Olive'))?.textContent.includes('sold out')`), true)
 check('twelve SKUs on screen',
-      await evaluate(`[...document.querySelectorAll('table.grid tbody td')].filter(td => /FJS-TEE-/.test(td.textContent)).length`), 12)
+      await evaluate(`[...document.querySelectorAll('table.variants tbody td')].filter(td => /FJS-TEE-/.test(td.textContent)).length`), 12)
 
 // A swatch is a real control, not a decorated div — clicking it changes the hero.
 //

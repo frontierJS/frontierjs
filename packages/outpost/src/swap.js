@@ -263,6 +263,28 @@ export function swapFor({ verdict = null, reason = null } = {}) {
 const LAST_LOG_LINES = 30
 const LAST_LOG_CHARS = 4000
 
+// Where a throwaway container sees the app's volume to read or restore a copy.
+const COPY_MOUNT = '/fjs-volume'
+const COPY_NAME  = /^(.+)--(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2}\.\d{3}Z)\.db$/
+const RESTORE_SCRIPT = 'set -e; cp -p "$1" "$2.restoring"; rm -f "$2-wal" "$2-shm"; mv "$2.restoring" "$2"'
+
+/**
+ * The one exact pre-migrate copy per database, from a `pre-migrate/` listing
+ * (`FJS-D2042`): the oldest taken after the old container stopped. A later one
+ * can hold what an earlier failed release already migrated. `stoppedAt` is the
+ * daemon's own reading, on the clock the copy's name was stamped by.
+ */
+export function exactCopies(names, stoppedAt) {
+  const since  = Date.parse(stoppedAt.replace(/(\.\d{3})\d*Z$/, '$1Z'))
+  const oldest = new Map()
+  for (const file of [...names].sort()) {
+    const m = COPY_NAME.exec(file)
+    if (!m || oldest.has(m[1])) continue
+    if (Date.parse(`${m[2]}T${m[3]}:${m[4]}:${m[5]}`) > since) oldest.set(m[1], file)
+  }
+  return [...oldest].map(([db, file]) => ({ db, file }))
+}
+
 export function createSwap({ run, health, find }) {
   /** A docker command, or throw with what the machine actually said: swallowing
    *  it is how a deploy reports success having done nothing (`FJS-257`). */
@@ -381,6 +403,34 @@ export function createSwap({ run, health, find }) {
       : fail(`the previous container is back and is not healthy either — ${back.reason}${unrouted}`, true)
   }
 
+  /** Put the exact pre-migrate copy back over the volume. Never throws: a copy
+   *  that cannot be found or restored answers why, and the caller stays down. */
+  async function restoreCopy({ held, copies }) {
+    if (!copies) return { restored: false, said: 'this release keeps no volume to hold a copy' }
+    const inVolume = ['run', '--rm', '--network', 'none', '--user', '0:0', '--entrypoint', 'sh',
+                      '--mount', `type=bind,src=${copies.volume},dst=${COPY_MOUNT}`, copies.image, '-c']
+    try {
+      const stoppedAt = await docker(['inspect', '--format', '{{.State.FinishedAt}}', held.replaced])
+      const listed    = await docker([...inVolume, `ls -1 ${COPY_MOUNT}/pre-migrate 2>/dev/null || true`])
+      const picked    = exactCopies(listed.split('\n').map(l => l.trim()).filter(Boolean), stoppedAt)
+      if (!picked.length) return { restored: false, said: 'no copy was taken after it stopped' }
+      for (const { db, file } of picked)
+        await docker([...inVolume, RESTORE_SCRIPT, 'sh', `${COPY_MOUNT}/pre-migrate/${file}`, `${COPY_MOUNT}/${db}`])
+      return { restored: true, said: picked.map(p => p.file).join(', ') }
+    } catch (err) {
+      return { restored: false, said: `restoring the copy failed — ${err.message}` }
+    }
+  }
+
+  /** A release that may have moved the database failed health, and the old
+   *  container cannot be trusted on it (`FJS-D2044`). */
+  function stayDown({ held, pivot, why, said, log }) {
+    return Object.assign(new Error(
+      `the new container ${why}; this release is ${pivot === 'contract' ? 'a contract' : 'of unknown effect'}, ` +
+      `so ${held.replaced} stays stopped rather than serve a database it may not understand, and ${said}${log}`),
+    { restored: false, none: false, stayedDown: true })
+  }
+
   return {
     /**
      * `argv` is the whole `docker run` line after `docker`, naming `name`.
@@ -390,11 +440,14 @@ export function createSwap({ run, health, find }) {
      * App's route once the new one answers, and onto the old one when it is
      * put back; until then the route dials the old container, draining or
      * stopped. `routed()` says which container that is when a start-first left
-     * a `_next` serving; without it no `_next` is taken for one. Answers
-     * `{ containerId }`; throws the put-back's error, with `restored` and
-     * `none`, otherwise.
+     * a `_next` serving; without it no `_next` is taken for one. `pivot` is
+     * this release's verdict and `copies` `{ volume, image }`: a `contract` or
+     * `unknown` that started and failed health restores the exact copy or stays
+     * down, and a rollback, whose migrations are recorded, states no pivot. Answers
+     * `{ containerId }`; throws the put-back's error, with `restored`, `none`
+     * and `stayedDown`, otherwise.
      */
-    async stopFirst({ name, argv, opts, before = null, port = null, path = null, route = null, routed = null }) {
+    async stopFirst({ name, argv, opts, before = null, port = null, path = null, route = null, routed = null, pivot = null, copies = null }) {
       await adoptServing({ name, routed })
       const held = await setAside(name)
       let containerId
@@ -407,8 +460,18 @@ export function createSwap({ run, health, find }) {
         throw await putBack({ name, held, port, path, route, why: `did not start — ${err.message}` })
       }
       const fresh = await health({ name, port, path })
-      if (!fresh.healthy)
-        throw await putBack({ name, held, port, path, route, why: `started and is not healthy — ${fresh.reason}`, log: await lastLog(name) })
+      if (!fresh.healthy) {
+        const why = `started and is not healthy — ${fresh.reason}`
+        const log = await lastLog(name)
+        if (held && (pivot === 'contract' || pivot === 'unknown')) {
+          // Before the copy goes back: the failed container holds the database open.
+          await run(['docker', 'rm', '-f', name])
+          const copy = await restoreCopy({ held, copies })
+          if (!copy.restored) throw stayDown({ held, pivot, why, said: copy.said, log })
+          throw await putBack({ name, held, port, path, route, why: `${why}, and its database is back to ${copy.said}`, log })
+        }
+        throw await putBack({ name, held, port, path, route, why, log })
+      }
       if (route) {
         try {
           await route(port)

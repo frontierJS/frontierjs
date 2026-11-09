@@ -17,6 +17,8 @@
 //   POST /stop         { app_id }                          → container and route gone (sent by apps.remove, never by a release)
 //   POST /route        { app_id, hosts, paths?, port? }            → Caddy re-routed, no restart (sent by domain:dns;
 //                                                            `port` only by a preview's Open, domain/workbench/workbench-preview.ts)
+//   POST /volume/restore { app_id, url, sha256, overwrite, run_id } → the copy put back over a stopped volume (a rollback)
+//   POST /volume/restore/began { app_id, run_id }          → { began }; asked at the close of a rollback this process died in
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
 //   POST /backup       { app_id, upload_url? }             → the volume archived before the swap; sent by jobs/app-backup-run.job.ts, never from here
@@ -64,7 +66,7 @@ import { siteBranch } from '../domain/site/site-checkout.ts'
 import { healthBudgetS, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } from '@frontierjs/outpost/swap'
 import { releaseSite } from '../domain/site/site-publish.ts'
 import { cloudflareFor } from '../domain/site/site-preview.ts'
-import { SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, releaseStatus } from '../domain/release/release-record.ts'
+import { SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, INTERRUPTED, releaseStatus, pushRow } from '../domain/release/release-record.ts'
 import { frontsOf, type Front } from '../domain/release/fronting.ts'
 import { publishStatic, overPublishLimit, type PublishFile } from '../domain/release/static-publish.ts'
 import { releaseEnv } from '../domain/release/variables.ts'
@@ -219,6 +221,7 @@ function runner(app: App) {
 
     if (!opened.runnable) {
       log.warn('deployment not in runnable state', { id: deploymentId, status: opened.status, ...(opened.interrupted ? { interrupted: true } : {}) })
+      if (opened.interrupted) await closeInterruptedRollback(deploymentId)
       return
     }
 
@@ -422,11 +425,75 @@ function runner(app: App) {
       // has no route to follow the port or no health path to ask, and a release is not failed for a
       // setting. Outpost still reads the pivot and may answer stop-first.
       swap:          wantsStartFirst(service, runtime, hosts, paths) ? 'start-first' : 'stop-first',
+      // A rollback's migrations are already recorded, so a failed one is put back
+      // whatever the verdict says (`FJS-D2044`).
+      rollback:      rel.trigger === 'rollback',
     }
   }
 
   function imageOf(rel: DeploymentRow, source: unknown, service: ServiceRow): string {
     return rel.toImage ?? (isGit(source) ? `fjs-${rel.appId}:${rel.id}`.toLowerCase() : service.name)
+  }
+
+  // What was live is the release a rollback undoes, started from its own
+  // record: its image, its digest and the config it shipped with.
+  async function startPrevious(undone: string | null | undefined, service: ServiceRow, executor: Executor): Promise<string> {
+    try {
+      const live = undone
+        ? await (app.db as any).asSystem().deployment.findFirst({ where: { id: undone } }) : null
+      if (!live) return 'the app is stopped: the release that was live has no record to start it from'
+      const liveConfig = (live.configSnapshot ?? {}) as Record<string, unknown>
+      const liveSource = liveConfig.source ?? service.source ?? {}
+      const started = await executor.call('/deploy', await startBody(
+        live, liveConfig, service, imageOf(live, liveSource, service), asDigest(live.builtImage)),
+        { timeoutMs: DEPLOY_TIMEOUT_MS })
+      if (started.error) return `starting it again failed (${started.error.message}) — the app is stopped`
+      return 'the previous release is running again'
+    } catch (err) {
+      return `starting the previous release again failed (${(err as Error).message}) — the app is stopped`
+    }
+  }
+
+  // The close of a rollback the hub died in (`FJS-4116`, `FJS-D2039`). `Stop` removed
+  // the container and the route, and only this process knew to start the release
+  // again. A restore that never began leaves the volume as it was, so that release
+  // starts; one that began, or that Outpost cannot be asked about, leaves the
+  // volume in a state nothing may run on, and the app stays stopped.
+  async function closeInterruptedRollback(deploymentId: string): Promise<void> {
+    const sys = (app.db as any).asSystem()
+    const deploy = await sys.deployment.findFirst({ where: { id: deploymentId } })
+    if (!deploy || deploy.trigger !== 'rollback' || !deploy.previousDeploymentId) return
+    const steps = await sys.deploymentStep.findMany({ where: { deploymentId } }) as StepRow[]
+    const ran = (name: string) => steps.find(s => s.name === name)?.startedAt != null
+    const stopped = steps.find(s => s.name === 'Stop container')
+    if (!ran('Stop container') || !stopped || ran('Start container')) return
+
+    const service = await sys.app.findUnique({ where: { id: deploy.appId } }) as ServiceRow | null
+    const executor = service ? await resolveExecutor(app, deploy.appId) : null
+    if (!service || !executor || !isExecutor(executor)) {
+      log.error('interrupted rollback left the app stopped: no machine to ask', { id: deploymentId })
+      return
+    }
+
+    let began: boolean | null = ran('Restore volume')
+    if (began) {
+      const reply = await executor.call('/volume/restore/began', { app_id: deploy.appId, run_id: deploymentId })
+      began = reply.error ? null : reply.data?.began === true
+    }
+    const copy = await releaseCopyOf(app, deploy.appId, deploy.previousDeploymentId)
+    const named = copy ? `put back the copy by hand: ${copy.location} (taken ${copy.finishedAt ?? copy.createdAt})` : 'put back the copy taken before the release this undoes'
+    const said = began === false
+      ? `The restore never began, so ${await startPrevious(deploy.previousDeploymentId, service, executor)}`
+      : began
+        ? `The restore had begun, so the volume is in an unknown state and the app stays stopped — ${named}`
+        : `Whether the restore began could not be read, so the volume may be in an unknown state and the app stays stopped — ${named}`
+
+    const at = steps.find(s => s.status === 'failed') ?? stopped
+    await sys.deploymentStep.updateMany({ where: { id: at.id, deploymentId },
+      data: { output: `${INTERRUPTED}. ${said}` } })
+    await pushRow(app, deploymentId)
+    log.warn('interrupted rollback closed', { id: deploymentId, began, said })
+    if (!said.includes('running again')) await tellThem('DeployFailed', deploy, service, { reason: said })
   }
 
   // One step. Answers what to write on the row — the output a person reads,
@@ -547,7 +614,7 @@ function runner(app: App) {
       let reply
       try {
         const from = await restoreSourceOf(app, deploy.appId, copy.id)
-        reply = await executor.call('/volume/restore', { app_id: deploy.appId, ...from, overwrite: true },
+        reply = await executor.call('/volume/restore', { app_id: deploy.appId, ...from, overwrite: true, run_id: deploy.id },
           { timeoutMs: VOLUME_RESTORE_TIMEOUT_MS })
       } catch (err) {
         return restoreFailed((err as Error).message, false)
@@ -558,27 +625,8 @@ function runner(app: App) {
       async function restoreFailed(why: string, touched: boolean): Promise<never> {
         if (touched)
           throw new Error(`Restore volume failed partway: ${why}. The volume is in an unknown state and the app stays stopped — put back the copy by hand: ${copy ? `${copy.location} (taken ${copy.finishedAt ?? copy.createdAt})` : 'the one taken before the release this undoes'}`)
-        const back = await startLive()
+        const back = await startPrevious(undone, service, executor)
         throw new Error(`Restore volume failed: ${why}. The volume is unchanged and ${back}`)
-      }
-
-      // What was live is the release this rollback undoes, started from its own
-      // record: its image, its digest and the config it shipped with.
-      async function startLive(): Promise<string> {
-        try {
-          const live = undone
-            ? await (app.db as any).asSystem().deployment.findFirst({ where: { id: undone } }) : null
-          if (!live) return 'the app is stopped: the release that was live has no record to start it from'
-          const liveConfig = (live.configSnapshot ?? {}) as Record<string, unknown>
-          const liveSource = liveConfig.source ?? service.source ?? {}
-          const started = await executor.call('/deploy', await startBody(
-            live, liveConfig, service, imageOf(live, liveSource, service), asDigest(live.builtImage)),
-            { timeoutMs: DEPLOY_TIMEOUT_MS })
-          if (started.error) return `starting it again failed (${started.error.message}) — the app is stopped`
-          return 'the previous release is running again'
-        } catch (err) {
-          return `starting the previous release again failed (${(err as Error).message}) — the app is stopped`
-        }
       }
 
     } else if (name.includes('start') || name.includes('deploy')) {

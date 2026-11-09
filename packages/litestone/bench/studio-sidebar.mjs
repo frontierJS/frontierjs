@@ -12,10 +12,11 @@ import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../mesa/src/drive.js'
+import { freePort } from '../test/free-port.mjs'
 const R = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 const _SCHEMA = process.argv[2] ?? `${R}/packages/basecamp/db/schema.lite`
 const CWD    = process.argv[3] ?? `${R}/packages/basecamp/db`
-const PORT = 7503
+const PORT = await freePort()
 let fails = 0
 const ok = (n, c, x = '') => { console.log((c ? 'ok   ' : 'FAIL ') + n + (c ? '' : '  → ' + x)); if (!c) fails++ }
 

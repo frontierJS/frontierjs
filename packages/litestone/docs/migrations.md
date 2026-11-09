@@ -122,6 +122,7 @@ litestone migrate apply                  # apply all pending migrations in order
 litestone migrate apply --backup         # …copying every database first
 litestone migrate check                  # does the history build the schema? no database needed
 litestone migrate baseline               # record the files as applied WITHOUT running them
+litestone migrate accept <file>          # let this database start without a recorded file apply refused over
 litestone migrate status                 # show applied / pending / modified
 litestone migrate verify                 # confirm live db matches schema
 ```

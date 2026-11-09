@@ -14,18 +14,21 @@
  * Starts and stops THREE servers and a Chrome. Nothing to launch first. Needs
  * Chrome on PATH or $FJS_CHROME.
  *
+ * Each server takes a port the OS names; $STUDIO_PORT, $STUDIO_PORT_STALE and
+ * $STUDIO_PORT_CTRL pin them.
+ *
  * It owns two apps in a temp directory, because both halves need a database
  * this file put into a known state:
  *
- *   7508  a fleet — `strategy database`, one tenant, one unindexed foreign key.
+ *   fleet  a fleet — `strategy database`, one tenant, one unindexed foreign key.
  *         The refusal, and the SAME advisor answering properly once a tenant is
  *         open, which is the control: a panel that graded nothing would satisfy
  *         every assertion about the refusal on its own.
- *   7509  a plain app whose database was built from one schema and is being
+ *   stale  a plain app whose database was built from one schema and is being
  *         graded against a later one — the second way an answer here can
  *         describe a database nobody is on.
- *   7510  the same database graded against the schema that built it. The
- *         control for 7509, or `behind` could be a field that is always set.
+ *   ctrl   the same database graded against the schema that built it. The
+ *         control for stale, or `behind` could be a field that is always set.
  *
  * The trap this harness inherits: never return a bare `null` from a probe. CDP
  * serializes it with no `value` key, so it reads back as `undefined` and the
@@ -35,12 +38,14 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { tempDir } from '../src/tmp-dirs.js'
+import { freePorts } from './free-port.mjs'
 import { openChrome } from '../../mesa/src/drive.js'
 import { join, resolve as pathResolve } from 'node:path'
 
-const PORT_FLEET = process.env.STUDIO_PORT       ?? '7508'
-const PORT_STALE = process.env.STUDIO_PORT_STALE ?? '7509'
-const PORT_CTRL  = process.env.STUDIO_PORT_CTRL  ?? '7510'
+const named      = await freePorts(3)
+const PORT_FLEET = process.env.STUDIO_PORT       ?? String(named[0])
+const PORT_STALE = process.env.STUDIO_PORT_STALE ?? String(named[1])
+const PORT_CTRL  = process.env.STUDIO_PORT_CTRL  ?? String(named[2])
 const FLEET  = `http://localhost:${PORT_FLEET}`
 const STALE  = `http://localhost:${PORT_STALE}`
 const CTRL   = `http://localhost:${PORT_CTRL}`
@@ -106,7 +111,7 @@ function cli(args, cwd) {
 // The tenant has to exist before Studio starts: the panel's refusal is about
 // there being a tenant to open, and a fleet with none is a different empty.
 cli(['tenant', 'create', 'shop-one', '--schema', FLEET_SCHEMA], join(APP, 'fleet'))
-// Built from PLAIN_SCHEMA, then graded against PLAIN_NEXT on 7509.
+// Built from PLAIN_SCHEMA, then graded against PLAIN_NEXT on the stale server.
 cli(['db', 'push', '--schema', PLAIN_SCHEMA], join(APP, 'plain'))
 
 t('fixture.theTenantFileExists', existsSync(join(APP, 'fleet', 'shops', 'shop-one.db')), true)

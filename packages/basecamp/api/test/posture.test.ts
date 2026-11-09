@@ -501,6 +501,14 @@ describe('the hub grader', () => {
     expect(grade(scheduledApps(new Date(NOW - 5 * day).toISOString(), 14)).ok).toBe(true)
   })
 
+  test('app.offbox-copy fails an App with a data volume and no copy off the box, and passes with none to protect', () => {
+    const grade = (unprotectedApps: string[]) => hub(null, null, NOW, { unprotectedApps })['app.offbox-copy']
+    expect(grade([]).ok).toBe(true)
+    expect(grade(['kapp', 'shop'])).toMatchObject({ ok: false, fix: expect.any(String), message: expect.stringContaining('kapp, shop') })
+    // In process: a stale or absent report does not hide it.
+    expect(hub(null, null, NOW - 9 * 86_400_000, { unprotectedApps: ['kapp'] })['app.offbox-copy'].ok).toBe(false)
+  })
+
   test('hub.ingress-zone fails a zone holding FRONTIER_APP_URL\'s host, report or none, and accepts one of its own', () => {
     const grade = (ingressZones: HostDeclared['ingressZones'], at = NOW) => hub(null, null, at, { ingressZones })['hub.ingress-zone']
     expect(grade(undefined)).toMatchObject({ ok: true, message: 'No workspace has an ingress zone' })
@@ -611,6 +619,28 @@ describe('the host row on /hub/security/', () => {
     expect(c['hub.backup-recent'].ok).toBe(false)
     expect(c['hub.key-escrowed']).toMatchObject({ ok: false, message: expect.stringContaining('No copy of ENCRYPTION_KEY') })
     expect(c['hub.db-mode'].ok).toBe('unknown')
+  })
+
+  test('app.offbox-copy names an App with a data volume and no bucket copy, and clears when a replica or scheduled bucket backup exists (FJS-4115)', async () => {
+    const sys     = env.system as any
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'P4115', slug: `p-${Date.now()}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${Date.now()}` } })
+    const make    = (name: string, extra: object = {}) => sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name, slug: `${name}-${Date.now()}`,
+      source: { kind: 'image', image: 'nginx:alpine' }, ...extra } })
+    const dest    = await sys.backupDestination.create({ data: { workspaceId: ws.id, name: `d-${Date.now()}`, endpoint: 'http://127.0.0.1:9', region: 'auto', bucket: `b-${Date.now()}` } })
+    await make('stateless')
+    const bare    = await make('vol-bare', { volumePath: '/data' })
+    const local   = await make('vol-local', { volumePath: '/data', backupCron: '0 3 * * *' })
+    await make('vol-bucket',  { volumePath: '/data', backupCron: '0 3 * * *', backupDestinationId: dest.id })
+    const read = async () => (await env.as(admin).service('hub').call('hostPosture', undefined, {})).controls.find((x: any) => x.id === 'app.offbox-copy')
+    const c = await read()
+    expect(c.ok).toBe(false)
+    expect(c.message).toContain('vol-bare')
+    expect(c.message).toContain('vol-local')
+    expect(c.message).not.toMatch(/stateless|vol-bucket/)
+    await sys.app.update({ where: { id: bare.id }, data: { replicaDestinationId: dest.id } })
+    await sys.app.remove({ where: { id: local.id } })
+    expect((await read()).ok).toBe(true)
   })
 
   test('/hub always has the totals, and the memory table only from a host Server (FJS-D1824)', async () => {

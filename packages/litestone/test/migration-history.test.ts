@@ -30,8 +30,9 @@ import { generateDDL } from '../src/core/ddl.js'
 import { splitStatements } from '../src/core/migrate.js'
 import {
   buildShadow, historyGap, driftAgainstLive, baseline,
-  create, apply, appliedMigrations,
+  create, apply, appliedMigrations, accept,
 } from '../src/core/migrations.js'
+import { deriveReleaseSurface, classifyPivot } from '../src/release.js'
 
 const S1 = `
 model User {
@@ -416,4 +417,111 @@ describe('drift against what was APPLIED — a database behind its history', () 
     expect(driftAgainstLive(db, parse(S2), p.migrations, { appliedOnly: true }).ok).toBe(false)
     db.close(); p.cleanup()
   })
+})
+
+// ─── An older image on a database it cannot serve (FJS-4110, FJS-D2041) ──────
+
+describe('a recorded migration with no file', () => {
+  const journal = (db: Database, name: string) =>
+    db.query('SELECT * FROM _litestone_migrations WHERE name = ?').get(name) as any
+
+  function history(header: string) {
+    const dir = mkdtempSync(join(tmpdir(), 'ls-orphan-'))
+    writeFileSync(join(dir, '20260101000000_first.sql'), 'CREATE TABLE note (id INTEGER PRIMARY KEY, body TEXT);')
+    writeFileSync(join(dir, '20260102000000_second.sql'), `${header}ALTER TABLE note DROP COLUMN body;`)
+    return dir
+  }
+  const dropSecond = (dir: string) => rmSync(join(dir, '20260102000000_second.sql'))
+
+  it('refuses at boot when it is a contract, and names the way past', async () => {
+    const dir = history('-- Class:     contract\n')
+    const db  = new Database(':memory:')
+    expect((await apply(db, dir)).failed).toBeUndefined()
+    expect(journal(db, '20260102000000_second.sql').class).toBe('contract')
+
+    dropSecond(dir)
+    const out = await apply(db, dir)
+    expect(out.refused).toBe(true)
+    expect(out.failed).toBe('20260102000000_second.sql')
+    expect(out.message).toContain('litestone migrate accept 20260102000000_second.sql')
+  })
+
+  it('refuses one with no class, which reads as unknown', async () => {
+    const dir = history('')
+    const db  = new Database(':memory:')
+    await apply(db, dir)
+    expect(journal(db, '20260102000000_second.sql').class).toBeNull()
+    dropSecond(dir)
+    expect((await apply(db, dir)).refused).toBe(true)
+  })
+
+  it('lets an expand through: the older release still serves it', async () => {
+    const dir = history('-- Class:     expand\n')
+    const db  = new Database(':memory:')
+    await apply(db, dir)
+    dropSecond(dir)
+    const out = await apply(db, dir)
+    expect(out.refused).toBeUndefined()
+    expect(out.pending).toBe(0)
+  })
+
+  it('accept lets the boot through, keeps the class, and clears when the file comes back', async () => {
+    const dir = history('-- Class:     contract\n')
+    const db  = new Database(':memory:')
+    await apply(db, dir)
+    const file = join(dir, '20260102000000_second.sql')
+    const text = readFileSync(file, 'utf8')
+
+    expect(accept(db, '20260102000000_second.sql', dir).ok).toBe(false)   // the file is present
+    expect(accept(db, '20260109000000_absent.sql', dir).ok).toBe(false)   // no such row
+
+    dropSecond(dir)
+    expect(accept(db, '20260102000000_second.sql', dir).ok).toBe(true)
+    expect(journal(db, '20260102000000_second.sql').class).toBe('contract')
+    expect((await apply(db, dir)).refused).toBeUndefined()
+
+    writeFileSync(file, text)
+    await apply(db, dir)
+    expect(journal(db, '20260102000000_second.sql').accepted_at).toBeNull()
+    dropSecond(dir)
+    expect((await apply(db, dir)).refused).toBe(true)
+  })
+
+  it('gives a journal written before the class existed its columns, NULL reading as unknown', async () => {
+    const dir = history('')
+    const db  = new Database(':memory:')
+    db.run('CREATE TABLE _litestone_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, applied_at TEXT NOT NULL, checksum TEXT NOT NULL)')
+    db.run(`INSERT INTO _litestone_migrations (name, applied_at, checksum) VALUES ('20251231000000_gone.sql', 'then', 'x')`)
+    const out = await apply(db, dir)
+    expect(out.refused).toBe(true)
+    expect(out.failed).toBe('20251231000000_gone.sql')
+  })
+})
+
+// The class is stamped when the file is authored and graded in classifyPivot's
+// words, so the two answers are held together here.
+describe('the class a migration is stamped with', () => {
+  const before = 'model Note {\n  id Int @id\n  body String?\n  size Int @default(1)\n}\n'
+  const cases: [string, string, string][] = [
+    ['an optional column added',          'model Note {\n  id Int @id\n  body String?\n  size Int @default(1)\n  extra String?\n}\n', 'expand'],
+    ['a defaulted column added',          'model Note {\n  id Int @id\n  body String?\n  size Int @default(1)\n  extra Int @default(0)\n}\n', 'expand'],
+    ['a model added',                     before + 'model Tag {\n  id Int @id\n}\n', 'expand'],
+    ['a required column added',           'model Note {\n  id Int @id\n  body String?\n  size Int @default(1)\n  extra String\n}\n', 'contract'],
+    ['a column removed',                  'model Note {\n  id Int @id\n  size Int @default(1)\n}\n', 'contract'],
+    ['a model removed',                   'model Other {\n  id Int @id\n}\n', 'contract'],
+    ['a type changed',                    'model Note {\n  id Int @id\n  body Int?\n  size Int @default(1)\n}\n', 'contract'],
+    ['an optional column made required',  'model Note {\n  id Int @id\n  body String\n  size Int @default(1)\n}\n', 'contract'],
+  ]
+
+  for (const [name, after, grade] of cases) {
+    it(`${name} is ${grade}, as classifyPivot says`, () => {
+      const dir = mkdtempSync(join(tmpdir(), 'ls-class-'))
+      const db  = new Database(':memory:')
+      create(db, parse(before), 'first', dir)
+      const made = create(db, parse(after), 'second', dir) as any
+      expect(made.created).toBe(true)
+      expect(readFileSync(made.filePath, 'utf8')).toMatch(new RegExp(`^-- Class: +${grade}$`, 'm'))
+      expect(classifyPivot(deriveReleaseSurface(parse(before).schema), deriveReleaseSurface(parse(after).schema)).verdict).toBe(grade)
+    })
+  }
 })

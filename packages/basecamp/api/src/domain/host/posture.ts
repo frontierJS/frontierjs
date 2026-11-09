@@ -657,6 +657,14 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; fix: string
       ? { ok: false, message: `${stale.map(a => `${a.name} ${a.what}`).join(', ')}: no good run inside ${stale.length === 1 ? 'its' : 'their'} schedule` }
       : { ok: true, message: `${host.scheduledApps.length} scheduled run(s) are current` }
   } },
+  // `app.backup-recent` grades only the schedules that exist, so an App with a
+  // data volume and no schedule, no bucket and no replica graded clean (`FJS-4115`).
+  { id: 'app.offbox-copy', group: 'hub', severity: 'high', fix: 'Open the app\'s backups: pick a destination and a schedule, or point its replica at a bucket', grade: (_r, host) => {
+    const bare = host.unprotectedApps ?? []
+    return bare.length
+      ? { ok: false, message: `${bare.join(', ')}: a data volume with no copy off this machine` }
+      : { ok: true,  message: 'Every app with a data volume has a copy off this machine' }
+  } },
   // Every archive holds `Secret.data` and the fleet's secret Variables as
   // ciphertext under ENCRYPTION_KEY, which never travels with one — so a box
   // whose key has no copy elsewhere has backups that die with it. Nothing here
@@ -800,7 +808,7 @@ function envControl(files: PostureReadings['host_files']): Grade {
 export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
 
 /** Graded from Basecamp's own rows, so a missing or stale report does not hide them. */
-const IN_PROCESS = new Set(['hub.backup-recent', 'app.backup-recent', 'hub.key-escrowed', 'hub.bucket-locked', 'hub.disk-free', 'hub.app-url', 'hub.api-url', 'hub.mailer', 'hub.push', 'hub.app-row-drift', 'hub.ingress-zone'])
+const IN_PROCESS = new Set(['hub.backup-recent', 'app.backup-recent', 'app.offbox-copy', 'hub.key-escrowed', 'hub.bucket-locked', 'hub.disk-free', 'hub.app-url', 'hub.api-url', 'hub.mailer', 'hub.push', 'hub.app-row-drift', 'hub.ingress-zone'])
 
 /** What the box a Basecamp runs on should look like, beyond any fleet machine. */
 export interface HostDeclared {
@@ -808,6 +816,8 @@ export interface HostDeclared {
   lastBackupAt:   string | null
   /** Each app with a backup or drill schedule, and when its newest good run finished; null when none has. */
   scheduledApps:  Array<{ name: string; what: 'backup' | 'drill'; maxAgeDays: number; lastOkAt: string | null }>
+  /** Names of the apps that hold a data volume and send no copy off the machine: no scheduled backup to a bucket and no replica. */
+  unprotectedApps?: string[]
   /** sha256 hex of the key in use; null on the development placeholder. */
   keyFingerprint: string | null
   /** The standing attestation — when, and the sha256 of the key it was made for; null when none. */

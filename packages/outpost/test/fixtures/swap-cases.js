@@ -25,7 +25,7 @@ const BOOT_LOG = {
 }
 
 /** A fake daemon answering argv. `healthy(image)` decides a health check. */
-export function fakeDaemon(initial = {}, { dials = 7300, refuses = [] } = {}) {
+export function fakeDaemon(initial = {}, { dials = 7300, refuses = [], copies = [], stoppedAt = '2026-11-08T12:00:00.000000000Z' } = {}) {
   const box = new Map(Object.entries(initial).map(([name, c]) => [name, { ...c }]))
   const log = []
   const ok  = (stdout = '') => ({ exitCode: 0, stdout, stderr: '' })
@@ -44,6 +44,7 @@ export function fakeDaemon(initial = {}, { dials = 7300, refuses = [] } = {}) {
       const c = box.get(name)
       if (!c) return no(`Error: No such object: ${name}`)
       if (rest.includes('{{.State.Running}}')) return ok(String(c.running))
+      if (rest.includes('{{.State.FinishedAt}}')) return ok(stoppedAt)
       if (c.image === 'img:dead') return ok('{}')
       return ok(JSON.stringify({ '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(c.port ?? 7300) }] }))
     }
@@ -70,6 +71,13 @@ export function fakeDaemon(initial = {}, { dials = 7300, refuses = [] } = {}) {
       c.running = verb === 'start'
       if (verb === 'start' && c.picked) c.port += 1
       return ok(name)
+    }
+    if (verb === 'run' && rest.includes('--entrypoint') && rest[rest.indexOf('--entrypoint') + 1] === 'sh') {
+      const script = rest[rest.indexOf('-c') + 1]
+      if (script.startsWith('ls -1')) return ok(copies.join('\n'))
+      log.push(`restore ${rest[rest.length - 2].split('/').pop()} over ${rest[rest.length - 1].split('/').pop()}`)
+      if (refuses.includes('restore')) return no('cp: disk full')
+      return ok()
     }
     if (verb === 'run') {
       const name  = rest[rest.indexOf('--name') + 1]

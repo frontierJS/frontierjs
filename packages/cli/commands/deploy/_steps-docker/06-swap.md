@@ -14,7 +14,7 @@ const { configurationSet } = await import(new URL('file://' + global.fliRoot + '
 // name is not unique across servers or across rebuilds — which is the whole of
 // what 2.3f is about. `imageAddress` is the tag when nothing could be read, and
 // step 04 has already said so out loud.
-const { container, replaced, healthy, none, untouched, unbound, reason, swap, swapReason, pivot, port } = await swapContainer($, {
+const { container, replaced, healthy, none, untouched, stayedDown, unbound, reason, swap, swapReason, pivot, port } = await swapContainer($, {
   host,
   appId,
   container: apiContainer(appId, deployConf),
@@ -49,7 +49,10 @@ echo(swapReason ? chalk`  {dim swap}  ${swap} {dim — ${swapReason}}` : chalk` 
 
 if (!healthy) {
   $.config.abort = true
-  const after = none ? 'removed, nothing was serving before it' : untouched ? 'the previous release kept serving' : 'rolled back'
+  const after = none ? 'removed, nothing was serving before it'
+    : untouched ? 'the previous release kept serving'
+    : stayedDown ? `the app is down: ${replaced} stays stopped, because this release may have moved the database and no exact copy could be restored`
+    : 'rolled back'
   throw new Error(unbound.length
     ? `${imageTag} opened ${unbound.join(', ')} outside the volume — ${after}`
     : /did not start/.test(reason ?? '')

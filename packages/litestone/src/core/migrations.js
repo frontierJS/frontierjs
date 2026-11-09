@@ -30,6 +30,7 @@ import { generateDDLForDatabase, schemaForDatabase, detectM2MPairs, generateJoin
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MIGRATIONS_TABLE = `_litestone_migrations`
+const JOURNAL          = quoteIdent(MIGRATIONS_TABLE)
 const MIGRATION_FILE   = /^(\d{14})_([a-z0-9_]+)\.(sql|js)$/
 // Anything that was plausibly meant to be a migration. Only used to report what
 // MIGRATION_FILE rejected — never to widen what runs.
@@ -55,24 +56,97 @@ function ensureTrackingTable(db) {
       id          INTEGER PRIMARY KEY,
       name        TEXT    NOT NULL UNIQUE,
       applied_at  TEXT    NOT NULL,
-      checksum    TEXT    NOT NULL
+      checksum    TEXT    NOT NULL,
+      class       TEXT,
+      accepted_at TEXT
     )
   `)
+  // A journal an older Litestone wrote lacks these, and a read-only handle
+  // cannot add them: its rows read as `unknown`, which is the safe answer.
+  const has = new Set(db.query(`PRAGMA table_info(${JOURNAL})`).all().map(c => c.name))
+  for (const column of ['class', 'accepted_at']) {
+    if (has.has(column)) continue
+    try { db.run(`ALTER TABLE ${JOURNAL} ADD COLUMN ${quoteIdent(column)} TEXT`) }
+    catch (e) { if (!/duplicate column|readonly/i.test(e.message)) throw e }
+  }
 }
+
+const hasJournal = (db) =>
+  !!db.query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(MIGRATIONS_TABLE)
 
 export function appliedMigrations(db) {
   ensureTrackingTable(db)
   return db
-    .query(`SELECT name, applied_at, checksum FROM "${MIGRATIONS_TABLE}" ORDER BY name`)
+    .query(`SELECT * FROM "${MIGRATIONS_TABLE}" ORDER BY name`)
     .all()
 }
 
 function recordMigration(db, name, sql) {
   ensureTrackingTable(db)
   db.query(`
-    INSERT INTO "${MIGRATIONS_TABLE}" (name, applied_at, checksum)
-    VALUES (?, ?, ?)
-  `).run(name, new Date().toISOString(), sql ? checksum(sql) : 'js-migration')
+    INSERT INTO "${MIGRATIONS_TABLE}" (name, applied_at, checksum, class)
+    VALUES (?, ?, ?, ?)
+  `).run(name, new Date().toISOString(), sql ? checksum(sql) : 'js-migration', stampedClass(sql))
+}
+
+// ─── Migration class ──────────────────────────────────────────────────────────
+// Whether the release before a migration can still serve the database after it,
+// in `classifyPivot`'s words (`FJS-D2041`). An older image cannot classify a file
+// it does not hold, so the class is graded when the file is written, where the
+// diff is in hand, and the journal row carries it.
+
+const CLASS_LINE = /^--\s*Class:\s*(expand|contract|unknown)\s*$/
+
+// Only the comment block before the first statement counts: a statement's own
+// text can hold a line that reads like a stamp.
+function stampedClass(sql) {
+  for (const line of (sql ?? '').split('\n')) {
+    const text = line.trim()
+    if (text && !text.startsWith('--')) return null
+    const hit = CLASS_LINE.exec(text)
+    if (hit) return hit[1]
+  }
+  return null
+}
+
+const CLASS_RANK = { expand: 0, unknown: 1, contract: 2 }
+const worseClass = (a, b) => CLASS_RANK[b] > CLASS_RANK[a] ? b : a
+
+const columnChangeClass = ({ field, to }) => {
+  if (field === 'default') return to === null ? 'unknown' : 'expand'
+  return 'contract'
+}
+
+function tableDiffClass(t) {
+  const required = (c) => !c.pk && !c.generated && c.notnull && c.default === null
+  let grade = 'expand'
+  if (t.cols.dropped.length || t.blockedAdds.length || t.cols.added.some(required)) grade = 'contract'
+  for (const col of t.cols.modified)
+    for (const change of col.changes) grade = worseClass(grade, columnChangeClass(change))
+  if (t.indexes.added.some(i => i.unique) || t.uniques.added.length) grade = worseClass(grade, 'contract')
+  if (t.fkChanged || t.strictChanged || t.autoincrementChanged || t.checksChanged || t.scalesChanged) grade = worseClass(grade, 'unknown')
+  return grade
+}
+
+// What a trigger, an FTS index or a search index does to a table the diff is
+// adding is part of adding it. On a table that already exists nothing here can
+// say what an older release's writes will do, so only `unknown` is honest.
+function derivedObjectsClass(diff) {
+  const fresh = new Set((diff.newTables ?? []).map(t => t.name ?? t))
+  const onFresh = (o) => fresh.has(o.table)
+  const touched = (diff.changedViews?.length ?? 0) + (diff.droppedTriggers?.length ?? 0)
+    + (diff.droppedFts?.length ?? 0) + (diff.searchBackfills?.length ?? 0)
+  const unsettled = touched > 0 || diff.droppedSearch
+    || (diff.changedTriggers ?? []).some(o => !onFresh(o))
+    || (diff.changedFts ?? []).some(o => !onFresh(o))
+  return unsettled ? 'unknown' : 'expand'
+}
+
+function migrationClass(diff, operations) {
+  if (operations.length || diff.droppedTables?.length) return 'contract'
+  let grade = derivedObjectsClass(diff)
+  for (const t of diff.tableDiffs ?? []) grade = worseClass(grade, tableDiffClass(t))
+  return grade
 }
 
 // ─── Naming a new migration ───────────────────────────────────────────────────
@@ -467,6 +541,7 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   const header = [
     `-- Litestone migration${dbName === 'main' ? '' : ` (database: ${dbName})`}`,
     `-- Created:   ${new Date().toISOString()}`,
+    `-- Class:     ${migrationClass(diffResult, ops)}`,
     ...(ops.length ? [`-- Operations:`, ...ops.map(o => `--   ${describeOperation(o)}`)] : []),
     ...(diffSummary ? [`-- Changes:`, diffSummary.split('\n').map(l => `--   ${l}`).join('\n')] : []),
     ``,
@@ -539,7 +614,48 @@ export function modifiedRefusal(files) {
 
 // One sentence for every caller that could not build a shadow, so create, the
 // guard and the doctor say the same thing about the same directory.
-export function shadowRefusal(shadow) {
+export // An older image's boot, past a migration only a newer release has (`FJS-D2041`).
+// An `expand` is left through: the older release serves it, and a start-first
+// swap's old container restarts on exactly this database.
+function unservableOrphans(applied, files) {
+  const present = new Set(files)
+  return applied.filter(m => !present.has(m.name) && !m.accepted_at && m.class !== 'expand')
+}
+
+function orphanRefusal(orphans) {
+  const named = orphans.map(m => `${m.name} (${m.class ?? 'unknown'})`).join(', ')
+  return `this database has migrations applied that this build does not have, and they may have changed what it needs: ${named}. ` +
+    `Deploy a release that has them, or restore a copy of the database from before they ran. ` +
+    `To start anyway: ${orphans.map(m => `litestone migrate accept ${m.name}`).join(' && ')}`
+}
+
+// An acceptance is about a file being absent, so it ends when the file returns:
+// a later rollback past it has to be accepted again (`FJS-D2043`).
+function clearAcceptances(db, applied, files) {
+  const present = new Set(files)
+  for (const m of applied) {
+    if (!m.accepted_at || !present.has(m.name)) continue
+    db.query(`UPDATE ${JOURNAL} SET accepted_at = NULL WHERE name = ?`).run(m.name)
+    m.accepted_at = null
+  }
+}
+
+/**
+ * States that this database may start without a recorded migration's file
+ * (`FJS-D2043`). An act on the database rather than an option, so a restart and
+ * a hand-run `docker run` agree. The class is left as it was.
+ */
+export function accept(db, file, dir = './migrations') {
+  requireRawHandle(db, 'accept')
+  const row = appliedMigrations(db).find(m => m.name === file)
+  if (!row) return { ok: false, message: `no migration named ${file} is recorded as applied in this database` }
+  if (listMigrationFiles(resolve(dir)).includes(file))
+    return { ok: false, message: `${file} is in ${dir}, so there is nothing to accept` }
+  db.query(`UPDATE ${JOURNAL} SET accepted_at = ? WHERE name = ?`).run(new Date().toISOString(), file)
+  return { ok: true, file, class: row.class ?? 'unknown', message: `this database may start without ${file}` }
+}
+
+function shadowRefusal(shadow) {
   if (shadow.reason === 'js-migrations')
     return jsRefusal(shadow.files)
   if (shadow.reason === 'replay-failed')
@@ -718,6 +834,17 @@ export async function apply(db, dir = './migrations') {
   const files   = listMigrationFiles(absDir)
   const skipped = unmatchedMigrationFiles(absDir)
 
+  // Before the empty-directory answer: an image with no files at all is still an
+  // older image on a database this history moved. A journal is not made here:
+  // a tenant database reads an empty one as fresh, and builds from the schema.
+  const applied = files.length || hasJournal(db) ? appliedMigrations(db) : []
+  clearAcceptances(db, applied, files)
+  const lacking = unservableOrphans(applied, files)
+  if (lacking.length) {
+    const message = orphanRefusal(lacking)
+    return { applied: [], pending: 0, skipped, refused: true, failed: lacking[0].name, error: message, message, orphaned: lacking.map(m => m.name) }
+  }
+
   if (files.length === 0) {
     // Files present but none matched is a REFUSAL, not an empty directory. The
     // two used to return the same "no migration files found" and the same exit
@@ -742,7 +869,6 @@ export async function apply(db, dir = './migrations') {
   // The history matches files by name, so an applied file rewritten in place
   // reads as applied and the app boots against tables the database never
   // created. Refused whether or not anything is pending (`FJS-3578`).
-  const applied  = appliedMigrations(db)
   const recorded = new Map(applied.map(m => [m.name, m.checksum]))
   const modified = files.filter(f => recorded.has(f) && migrationChecksum(join(absDir, f)) !== recorded.get(f))
   if (modified.length) {

@@ -317,15 +317,15 @@ describe('what the machine is asked to do', () => {
     // daemon resolves: an image built on this machine has no REPO digest, so
     // docker read the name@sha256 form as a pull and every git deploy failed
     // with *pull access denied* having just built successfully (`FJS-919`).
-    expect(argv.find(c => c.startsWith('docker run'))).toContain(DIGEST)
-    expect(argv.find(c => c.startsWith('docker run'))).not.toContain(`acme-web@${DIGEST}`)
+    expect(argv.find(c => c.startsWith('docker run -d'))).toContain(DIGEST)
+    expect(argv.find(c => c.startsWith('docker run -d'))).not.toContain(`acme-web@${DIGEST}`)
     // The old container is set aside under `_replaced` and stopped before the
     // new one takes its name, and removed only once the new one is healthy.
     const at = (c) => argv.indexOf(c)
     expect(at('docker rename fjs--acme-prod-web-app-1 fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(-1)
     expect(at('docker stop fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(at('docker rename fjs--acme-prod-web-app-1 fjs--acme-prod-web-app-1_replaced'))
-    expect(argv.findIndex(c => c.startsWith('docker run'))).toBeGreaterThan(at('docker stop fjs--acme-prod-web-app-1_replaced'))
-    expect(argv.lastIndexOf('docker rm -f fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(argv.findIndex(c => c.startsWith('docker run')))
+    expect(argv.findIndex(c => c.startsWith('docker run -d'))).toBeGreaterThan(at('docker stop fjs--acme-prod-web-app-1_replaced'))
+    expect(argv.lastIndexOf('docker rm -f fjs--acme-prod-web-app-1_replaced')).toBeGreaterThan(argv.findIndex(c => c.startsWith('docker run -d')))
     expect(argv).not.toContain('docker rm -f fjs--acme-prod-web-app-1')
   })
 
@@ -341,7 +341,7 @@ describe('what the machine is asked to do', () => {
       const uidFile = join(mkdtempSync(join(tmpdir(), 'outpost-uids-')), 'uids.json')
       return { fake, uidFile, docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run, workDir: CONFIG.workDir, uidFile }) }
     }
-    const runs = (fake) => fake.calls.map(c => c.join(' ')).filter(c => c.startsWith('docker run'))
+    const runs = (fake) => fake.calls.map(c => c.join(' ')).filter(c => c.startsWith('docker run') && !c.includes('litestone release'))
 
     test('the data directory is handed to the uid after the old container stops', async () => {
       const m = machine()
@@ -540,7 +540,7 @@ describe('what the machine is asked to do', () => {
 
       expect(res.status).toBe(500)
       expect((await res.json()).error).toContain('moved since the release was decided')
-      expect(argv().some(c => c.startsWith('docker run'))).toBe(false)
+      expect(argv().some(c => c.startsWith('docker run -d'))).toBe(false)
     })
 
     test('a commit that is not a commit id is refused before anything runs', async () => {
@@ -774,7 +774,7 @@ describe('what the machine is asked to do', () => {
 
       expect(res.status).toBe(200)
       expect(argv().some(c => c.startsWith('git ') || c.startsWith('docker build'))).toBe(false)
-      expect(argv().find(c => c.startsWith('docker run'))).toContain(DIGEST)
+      expect(argv().find(c => c.startsWith('docker run -d'))).toContain(DIGEST)
     })
   })
 
@@ -806,7 +806,7 @@ describe('what the machine is asked to do', () => {
       expect(error).toContain('port is already allocated')
       expect(error).toContain('the previous container is serving again')
 
-      const run = argv().findIndex(c => c.startsWith('docker run'))
+      const run = argv().findIndex(c => c.startsWith('docker run -d'))
       expect(argv().slice(run + 1)).toEqual(expect.arrayContaining([
         'docker rm -f fjs--acme-prod-web-app-1',
         'docker rename fjs--acme-prod-web-app-1_replaced fjs--acme-prod-web-app-1',
@@ -830,7 +830,7 @@ describe('what the machine is asked to do', () => {
       expect(error).toContain('the previous container is serving again')
       expect(argv()).toContain('docker rename fjs--acme-prod-web-app-1_replaced fjs--acme-prod-web-app-1')
       // The handle is spent, not deleted: no `rm -f _replaced` after the run.
-      const run = argv().findIndex(c => c.startsWith('docker run'))
+      const run = argv().findIndex(c => c.startsWith('docker run -d'))
       expect(argv().slice(run)).not.toContain('docker rm -f fjs--acme-prod-web-app-1_replaced')
     })
 
@@ -901,7 +901,7 @@ describe('what the machine is asked to do', () => {
       })
       expect((await res.json()).error).toContain('the previous container is serving again')
       const argv = fake.calls.map(c => c.join(' '))
-      const run_ = argv.findIndex(c => c.startsWith('docker run'))
+      const run_ = argv.findIndex(c => c.startsWith('docker run -d'))
       expect(argv.slice(0, run_)).not.toContain('docker rm -f fjs--acme-prod-web-app-1_replaced')
       expect(argv).toContain('docker rename fjs--acme-prod-web-app-1_replaced fjs--acme-prod-web-app-1')
     })
@@ -928,7 +928,7 @@ describe('what the machine is asked to do', () => {
       expect(res.status).toBe(500)
       const { error } = await res.json()
       expect(error).toContain('restarted within')
-      const run = argv().findIndex(c => c.startsWith('docker run'))
+      const run = argv().findIndex(c => c.startsWith('docker run -d'))
       expect(argv().slice(run)).toContain('docker rename fjs--acme-prod-web-app-1_replaced fjs--acme-prod-web-app-1')
       expect(argv().slice(run)).not.toContain('docker rm -f fjs--acme-prod-web-app-1_replaced')
     })
@@ -992,6 +992,24 @@ describe('what the machine is asked to do', () => {
       expect(argv.some(c => c.includes('app-2'))).toBe(false)
       expect(said[0]).toContain('renamed back and started')
     })
+
+    // FJS-D2044: a restart must not undo a release's refusal to put the old one back.
+    test('a _replaced a failed non-additive release left stopped stays stopped across a restart, until the next release', async () => {
+      const apps = mkdtempSync(join(tmpdir(), 'outpost-stayed-'))
+      const fake = fakeRunner({
+        containers:      ['fjs--acme-prod-web-app-1'],
+        'docker run':    { stdout: 'c-1\n' },
+        running:         { stdout: 'false\n' },
+      })
+      const docker = createDocker({ appsDir: apps, run: fake.run, health: { attempts: 1, intervalMs: 0, settleMs: 0 } })
+      const err = await docker.deploy({ appId: 'app-1', project: 'acme', environment: 'prod', appSlug: 'web', image: 'acme-web', digest: DIGEST, config: { healthCheck: '/health' }, port: 7300, pivot: 'contract' }).catch(e => e)
+      expect(err.stayedDown).toBe(true)
+
+      const after = fakeRunner({ containers: ['fjs--acme-prod-web-app-1_replaced'], 'docker ps -a': { stdout: 'fjs--acme-prod-web-app-1_replaced\tapp-1\n' } })
+      const again = createDocker({ appsDir: apps, run: after.run, health: { attempts: 1, intervalMs: 0, settleMs: 0 } })
+      expect(await again.reconcile({ log: {} })).toEqual({ restored: [] })
+      expect(after.calls.some(c => c[1] === 'start' || c[1] === 'rename')).toBe(false)
+    })
   })
 
   describe('a served container is named for what runs in it, and found by its label', () => {
@@ -1016,7 +1034,7 @@ describe('what the machine is asked to do', () => {
     test('the run carries the identity label and the slug labels', async () => {
       const { sent, argv } = deployWith({ 'docker run': { stdout: 'c-1\n' } })
       expect((await sent).status).toBe(200)
-      const run = argv().find(c => c.startsWith('docker run'))
+      const run = argv().find(c => c.startsWith('docker run -d'))
       expect(run).toContain('--name fjs--acme-prod-web-app-1 ')
       for (const label of ['fjs.app=app-1', 'fjs.app.slug=web', 'fjs.project=acme', 'fjs.env=prod'])
         expect(run).toContain(`--label ${label}`)
@@ -1060,7 +1078,7 @@ describe('what the machine is asked to do', () => {
     expect(res.status).toBe(200)
 
     const argv = fake.calls.map(c => c.join(' '))
-    expect(argv.find(c => c.startsWith('docker run'))).toContain(`acme-web@${DIGEST}`)
+    expect(argv.find(c => c.startsWith('docker run -d'))).toContain(`acme-web@${DIGEST}`)
   })
 
   test('a volumePath is the app\'s host directory, made before the run, and a bad one removes nothing', async () => {
@@ -1077,7 +1095,7 @@ describe('what the machine is asked to do', () => {
       deployment_id: 'dep-3', app_id: 'pg', image: 'postgres:16', config: { volumePath: '/var/lib/postgresql/data' },
     })
     expect(ok.status).toBe(200)
-    expect(fake.calls.map(c => c.join(' ')).find(c => c.startsWith('docker run')))
+    expect(fake.calls.map(c => c.join(' ')).find(c => c.startsWith('docker run -d')))
       .toContain(`--mount type=bind,src=${APPS}/pg/data,dst=/var/lib/postgresql/data`)
     // Docker refuses a bind source that is not there and makes nothing.
     expect(statSync(join(APPS, 'pg', 'data')).isDirectory()).toBe(true)
@@ -1105,7 +1123,7 @@ describe('what the machine is asked to do', () => {
       deployment_id: 'dep-5', app_id: 'n8n', image: 'n8n:1', config: { cpuLimit: 0.5, memLimitMb: 512, command: ['serve', '--listen-http', ':2586'] },
     })
     expect(ok.status).toBe(200)
-    const run = fake.calls.find(c => c.join(' ').startsWith('docker run'))
+    const run = fake.calls.find(c => c.join(' ').startsWith('docker run -d'))
     const argv = run.join(' ')
     expect(argv).toContain('--cpus 0.5')
     expect(argv).toContain('--memory 512m')
@@ -1320,11 +1338,12 @@ describe('what the machine is asked to do', () => {
     const outside = mkdtempSync(join(tmpdir(), 'outpost-elsewhere-'))
     writeFileSync(join(outside, 'secret'), 'root:x:0:0')
     symlinkSync(join(outside, 'secret'), join(restoreDir, 'escape.tar'))
+    const restoreBeganDir = join(mkdtempSync(join(tmpdir(), 'outpost-began-')), 'began')
 
     const restoring = (answers = {}) => {
       const runner = fakeRunner(answers)
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ appsDir: APPS, health: FAST, run: runner.run, restoreDir }), inspector: createInspector({ run: runner.run }),
+        docker: createDocker({ appsDir: APPS, health: FAST, run: runner.run, restoreDir, restoreBeganDir }), inspector: createInspector({ run: runner.run }),
         log: { warn() {}, error() {} },
       })
       return { server, calls: runner.calls }
@@ -1398,6 +1417,23 @@ describe('what the machine is asked to do', () => {
       // A container holding the volume is refused before any container runs.
       const held = restoring({ 'docker ps -a': { stdout: 'fjs-ela\n' } })
       expect('volume_touched' in (await restore(held.server, { app_id: 'ela', path: 'ela.tar.gz' })).body).toBe(false)
+    })
+
+    // FJS-4116: a hub that died mid-restore never reads the reply, so it asks.
+    test('a restore stamped with a run_id leaves a record the run can ask for, and no other run can', async () => {
+      const ask = async (server, run_id) => (await (await send(server, 'POST', '/volume/restore/began', { app_id: 'ela', run_id })).json())
+      const { server } = restoring({ 'docker run --rm': { exitCode: 2, stderr: 'tar: unexpected EOF' } })
+      expect(await ask(server, 'run-1')).toEqual({ began: false })
+      await restore(server, { app_id: 'ela', path: 'ela.tar.gz', overwrite: true, run_id: 'run-1' })
+      expect(await ask(server, 'run-1')).toEqual({ began: true })
+      expect(await ask(server, 'run-2')).toEqual({ began: false })
+    })
+
+    test('a restore refused before it reached the volume leaves no record', async () => {
+      const { server } = restoring({ 'docker ps -a': { stdout: 'fjs-ela\n' } })
+      await restore(server, { app_id: 'ela', path: 'ela.tar.gz', overwrite: true, run_id: 'run-held' })
+      const asked = await send(server, 'POST', '/volume/restore/began', { app_id: 'ela', run_id: 'run-held' })
+      expect(await asked.json()).toEqual({ began: false })
     })
   })
 
@@ -2604,7 +2640,7 @@ describe('the ingress — Caddy, through its admin API', () => {
     deployment_id: 'dep-1', app_id: 'app-1', image: 'acme-web', digest: DIGEST,
     config: { port: 7300, containerPort: 80 }, ...extra,
   })
-  const runArgv = (fake) => fake.calls.find(c => c[1] === 'run')?.join(' ') ?? ''
+  const runArgv = (fake) => fake.calls.find(c => c[1] === 'run' && c.includes('-d'))?.join(' ') ?? ''
 
   test('a deploy with hostnames routes them, and binds its port to loopback', async () => {
     const caddy = fakeCaddy()
@@ -2821,7 +2857,12 @@ describe('the ingress — Caddy, through its admin API', () => {
 
   // The route a stop-first writes first dials the live container, which a
   // read of the daemon finds; nothing is started, stopped or renamed.
-  const changed = (fake) => fake.calls.filter(c => !['ps', 'inspect'].includes(c[1]))
+  // The classifier's throwaway container and volume change nothing that serves.
+  const changed = (fake) => {
+    const made = fake.calls.findIndex(c => c[1] === 'create')
+    return fake.calls.filter((c, i) => !['ps', 'inspect', 'image', 'create', 'volume'].includes(c[1])
+      && !c.join(' ').includes('litestone release') && !(made >= 0 && i === made + 1 && c[1] === 'rm'))
+  }
 
   test('a hostname another app holds is refused, and nothing is started', async () => {
     const caddy = fakeCaddy()
@@ -3169,11 +3210,46 @@ describe('the ingress — Caddy, through its admin API', () => {
       }
     })
 
-    test('a stop-first release asks no classifier, and its answer names no reason', async () => {
+    // FJS-D2044: the verdict decides whether a failed release may be put back.
+    test('a stop-first release is classified too, and its answer names no reason', async () => {
       const { server, argv } = overlapWith(fakeCaddy())
       const body = await (await deploy(server, { hosts: ['shop.example.com'] })).json()
+      expect(body).toMatchObject({ swap: 'stop-first', pivot: 'expand', swap_reason: null })
+      expect(argv().some(c => c.includes('litestone release'))).toBe(true)
+    })
+
+    // FJS-D2044: the branch that matters is what a failed swap does next.
+    for (const [name, extra, said] of [
+      ['a failed contract stays down',      {},                 /stays stopped/],
+      ['a failed rollback past one is put back', { rollback: true }, /serving again|back and is not healthy/],
+    ]) {
+      test(name, async () => {
+        const sick = async () => ({ ok: false, status: 500 })
+        const { server } = overlapWith(fakeCaddy(), { answers: { 'docker run --rm': verdict('contract') }, fetch: sick })
+        const res = await release(server, extra)
+        expect(res.status).toBe(500)
+        expect((await res.json()).error).toMatch(said)
+      })
+    }
+
+    test('a stop-first rollback asks no classifier: its migrations are already recorded', async () => {
+      const { server, argv } = overlapWith(fakeCaddy())
+      const body = await (await deploy(server, { hosts: ['shop.example.com'], rollback: true })).json()
       expect(body).toMatchObject({ swap: 'stop-first', pivot: null, swap_reason: null })
-      expect(argv().some(c => c.startsWith('docker run --rm') || c.startsWith('docker cp'))).toBe(false)
+      expect(argv().some(c => c.includes('litestone release'))).toBe(false)
+    })
+
+    // FJS-4128: a rollback puts back bytes this machine built, and Cleanup may
+    // have removed them. There is no registry to fetch them from.
+    test('a rollback whose image is gone says so, and leaves the live container alone', async () => {
+      const { server, argv } = overlapWith(fakeCaddy(), { answers: { 'docker image inspect': { exitCode: 1, stderr: 'Error response from daemon: No such image: fjs-d1@' + DIGEST + '\n' } } })
+      const res = await deploy(server, { hosts: ['shop.example.com'], rollback: true, image: 'fjs-d1', digest: DIGEST })
+      expect(res.status).toBe(500)
+      const { error } = await res.json()
+      expect(error).toContain('is not on this machine')
+      expect(error).toContain('Cleanup')
+      expect(error).toContain('Release the app again')
+      expect(argv().some(c => c.startsWith('docker stop') || c.startsWith('docker rename') || c.startsWith('docker run -d'))).toBe(false)
     })
 
     test('only an expand or an unchanged schema overlaps', () => {
@@ -4394,6 +4470,107 @@ describe('what this machine tells basecamp', () => {
     expect(result.removed.containers).toBe(2)
   })
 
+  // FJS-4112: an app stopped by hand keeps its container; only an unlabelled stopped one goes.
+  test('a stopped-container sweep keeps a container an App deploy labelled', async () => {
+    const seen = []
+    const run = async (argv) => {
+      seen.push(argv.join(' '))
+      if (argv[1] === 'ps') return { exitCode: 0, stdout: 'aaa111\tfjs--acme-prod-web-app-1\tapp-1\nbbb222\told-thing\t\n', stderr: '' }
+      if (argv[1] === 'rm') return { exitCode: 0, stdout: argv.slice(2).join('\n') + '\n', stderr: '' }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    }
+    const result = await createInspector({ run }).prune({ targets: ['stopped_containers'] })
+    expect(seen.find(c => c.startsWith('docker ps'))).toContain('fjs.app')
+    expect(seen).toContain('docker rm bbb222')
+    expect(result.removed.containers).toBe(1)
+  })
+
+  // FJS-4111: `image prune -a` took every unused image and `keepImages` was
+  // never read, so a rollback to a locally built release could lose its bytes.
+  describe('an unused-image sweep', () => {
+    const LISTING = [
+      'fjs-app\t5\tsha256:e5\t2026-11-05 10:00:00 -0700 MST',
+      'fjs-app\t4\tsha256:e4\t2026-11-04 10:00:00 -0700 MST',
+      'fjs-app\t3\tsha256:e3\t2026-11-03 10:00:00 -0700 MST',
+      'fjs-app\t2\tsha256:e2\t2026-11-02 10:00:00 -0700 MST',
+      'fjs-app\t1\tsha256:e1\t2026-11-01 10:00:00 -0700 MST',
+      'fjs-other\t1\tsha256:o1\t2026-11-01 10:00:00 -0700 MST',
+      '<none>\t<none>\tsha256:d1\t2026-10-01 10:00:00 -0700 MST',
+    ].join('\n')
+
+    const sweepWith = ({ listing = LISTING, used = 'sha256:e1\n', ps = { exitCode: 0, stdout: 'c1\n', stderr: '' } } = {}) => {
+      const seen = []
+      const run = async (argv) => {
+        seen.push(argv.join(' '))
+        if (argv[1] === 'ps') return ps
+        if (argv[1] === 'inspect') return { exitCode: 0, stdout: used, stderr: '' }
+        if (argv[1] === 'image' && argv[2] === 'ls') return { exitCode: 0, stdout: listing, stderr: '' }
+        if (argv[1] === 'image' && argv[2] === 'rm')
+          return { exitCode: 0, stdout: argv.slice(3).map(ref => `Untagged: ${ref}\nDeleted: sha256:${ref}\n`).join(''), stderr: '' }
+        if (argv[1] === 'system' && argv[2] === 'df')
+          return { exitCode: 0, stdout: JSON.stringify({ Type: 'Images', Size: seen.some(s => s.startsWith('docker image rm')) ? '1GB' : '3GB' }) + '\n', stderr: '' }
+        return { exitCode: 0, stdout: '', stderr: '' }
+      }
+      return { seen, sweep: (args) => createInspector({ run }).prune(args) }
+    }
+    const removedBy = (seen) => seen.filter(s => s.startsWith('docker image rm ')).flatMap(s => s.slice('docker image rm '.length).split(' '))
+
+    test('leaves the newest per repository and never a container\'s image', async () => {
+      const { seen, sweep } = sweepWith()
+      const result = await sweep({ targets: ['unused_images'], keepImages: 3 })
+      expect(seen.some(s => /image prune.* -a/.test(s))).toBe(false)
+      // e1 is past the window and a stopped container still holds it.
+      expect(removedBy(seen)).toEqual(['fjs-app:2'])
+      expect(result.removed.images).toBe(1)
+      expect(result.freed_bytes).toBe(2_000_000_000)
+    })
+
+    test('a count of zero takes every unused image', async () => {
+      const { seen, sweep } = sweepWith()
+      await sweep({ targets: ['unused_images'], keepImages: 0 })
+      expect(removedBy(seen).sort()).toEqual(['fjs-app:2', 'fjs-app:3', 'fjs-app:4', 'fjs-app:5', 'fjs-other:1'])
+    })
+
+    test('two tags on one image are one image, and both go together', async () => {
+      const listing = [
+        'fjs-app\t3\tsha256:same\t2026-11-03 10:00:00 -0700 MST',
+        'fjs-app\t2\tsha256:same\t2026-11-03 10:00:00 -0700 MST',
+        'fjs-app\t1\tsha256:old\t2026-11-01 10:00:00 -0700 MST',
+      ].join('\n')
+      const kept = sweepWith({ listing, used: '' })
+      await kept.sweep({ targets: ['unused_images'], keepImages: 2 })
+      expect(removedBy(kept.seen)).toEqual([])
+      const none = sweepWith({ listing, used: '' })
+      await none.sweep({ targets: ['unused_images'], keepImages: 1 })
+      expect(removedBy(none.seen)).toEqual(['fjs-app:1'])
+    })
+
+    test('a machine whose containers cannot be read loses no image', async () => {
+      const { seen, sweep } = sweepWith({ ps: { exitCode: 1, stdout: '', stderr: 'daemon busy' } })
+      await sweep({ targets: ['unused_images'], keepImages: 0 })
+      expect(removedBy(seen)).toEqual([])
+    })
+
+    test('a count missing or not a whole number refuses before anything is swept', async () => {
+      for (const keepImages of [undefined, null, '3; rm', -1, 1.5]) {
+        const { seen, sweep } = sweepWith()
+        await expect(sweep({ targets: ['unused_images', 'build_cache'], keepImages })).rejects.toThrow(/keep_images/)
+        expect(seen).toEqual([])
+      }
+    })
+
+    test('a sweep without unused images needs no count', async () => {
+      const { sweep } = sweepWith()
+      await expect(sweep({ targets: ['build_cache'] })).resolves.toMatchObject({ removed: { images: 0 } })
+    })
+
+    test('dangling layers alone never reach the keep pass', async () => {
+      const { seen, sweep } = sweepWith()
+      await sweep({ targets: ['dangling_images'], keepImages: 3 })
+      expect(seen).toEqual(['docker image prune -f'])
+    })
+  })
+
   test('a volume sweep names what the daemon deleted', async () => {
     // The block a real `docker volume prune -f` prints. Asked for `--format`
     // the same daemon exits 125 having removed nothing.
@@ -5053,8 +5230,35 @@ describe('/replicate — every app this machine replicates, each with its own ke
     expect(readFileSync(configPath, 'utf8')).toContain('K-crm')
     await replicate(server, { replicas: [entry('ela')] })
     expect(readFileSync(configPath, 'utf8')).not.toContain('K-crm')
-    await replicate(server, { replicas: [] })
+    await replicate(server, { replicas: [], clear: true })
     expect(readFileSync(configPath, 'utf8')).toContain('dbs: []')
+  })
+
+  // FJS-4109: a re-enrolled machine's hub knows none of its apps and sends [] unasked.
+  test('a list that would empty a config holding entries is refused unless it states clear', async () => {
+    const { server, calls, configPath } = replicating()
+    await replicate(server, { replicas: [entry('ela'), entry('crm')] })
+    const restarts = () => calls.filter(c => c[1] === 'restart').length
+    const before   = restarts()
+
+    for (const body of [{ replicas: [] }, { replicas: [], clear: 'yes' }, { replicas: [entry('gone')] }]) {
+      const refused = await replicate(server, body)
+      expect(refused.status).toBe(500)
+      expect(JSON.stringify(refused.body)).toContain('ela, crm')
+      expect(readFileSync(configPath, 'utf8')).toContain('K-crm')
+      expect(restarts()).toBe(before)
+    }
+
+    expect((await replicate(server, { replicas: [], clear: true })).status).toBe(200)
+    expect(readFileSync(configPath, 'utf8')).not.toContain('K-ela')
+    expect(restarts()).toBe(before + 1)
+  })
+
+  test('an empty list onto a config with no entries is a re-enrolled machine being filled', async () => {
+    const { server, configPath } = replicating()
+    expect((await replicate(server, { replicas: [] })).status).toBe(200)
+    expect(readFileSync(configPath, 'utf8')).toContain('dbs: []')
+    expect((await replicate(server, { replicas: [] })).status).toBe(200)
   })
 
   test('an app with no data here is skipped, and the others are still written', async () => {
@@ -5291,7 +5495,7 @@ describe('a web build', () => {
     const res = await send(server, 'POST', '/web/build', BODY)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ commit_sha: COMMIT, surface: 'web', skipped: 'c0ffee0 has no web/ surface' })
-    expect(argv().some(c => c.startsWith('docker run'))).toBe(false)
+    expect(argv().some(c => c.startsWith('docker run -d'))).toBe(false)
   })
 
   test('web/ is told the widget origin and never the API\'s', async () => {
@@ -5353,7 +5557,7 @@ describe('a web build', () => {
     const res = await send(server, 'POST', '/web/build', BODY)
     expect(res.status).toBe(500)
     expect((await res.json()).error).toContain('@frontierjs/junction is linked')
-    expect(argv().some(c => c.startsWith('docker run'))).toBe(false)
+    expect(argv().some(c => c.startsWith('docker run -d'))).toBe(false)
   })
 
   test('a commit that is not a commit id is refused before anything runs', async () => {

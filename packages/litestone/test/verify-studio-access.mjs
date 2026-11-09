@@ -7,9 +7,9 @@
  *
  *   node packages/litestone/test/verify-studio-access.mjs
  *
- * Starts and stops its own server on 7502 — test-tier tooling, inside the port
- * scheme so `fli ps` can see it. Nothing to launch first. Needs
- * Chrome on PATH or $FJS_CHROME, same as the css package's harness.
+ * Starts and stops its own server on a port the OS names ($STUDIO_PORT pins
+ * one). Nothing to launch first. Needs Chrome on PATH or $FJS_CHROME, same as
+ * the css package's harness.
  *
  * Two traps this harness has already hit:
  *   • NEVER return a bare `null` from a probe. CDP serializes it with no
@@ -22,10 +22,11 @@
 
 import { spawn } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { freePort } from './free-port.mjs'
 import { openChrome } from '../../mesa/src/drive.js'
 import { join, resolve as pathResolve } from 'node:path'
 
-const PORT   = process.env.STUDIO_PORT ?? '7502'
+const PORT   = process.env.STUDIO_PORT ?? String(await freePort())
 const UI     = `http://localhost:${PORT}`
 const REPO   = pathResolve(import.meta.dirname, '../../..')
 const SCHEMA = join(REPO, 'example/db/schema.lite')

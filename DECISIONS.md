@@ -1875,6 +1875,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d2038"></a>2026-11-08 · `FJS-D2038` — Q3 — Which methods an agent loses — `servers.destroy`, `apps.remove`, `volumes.remove`, `volumes.prune`, `servers.discardArchive`, `servers.retireApp`, `maintenanceRuns.run` and `recipes.run`.
+
+Asked in [`IDEAS/basecamp-safety.md`](IDEAS/basecamp-safety.md) § Open questions. **A** was picked over **B** (only the first four), **C** (keep them, and have an owner approve each call).
+
+The paper's recommendation, taken as written: sessions drive Basecamp over `/mcp`, and each of these has a screen for a person.
+
 ### <a id="fjs-d2037"></a>2026-11-08 · `FJS-D2037` — Q14 — How does the use stage get its owner, now that a seeded owner skips the app's sign-up — The use stage signs the owner up through `POST /api/auth/register` on both paths and the deploy stage only mints the owner; on a 202 it seeds instead (`auth:dev-admin` on the local copy, Q9's `apps.seedOwner` on a deployed App) and the login detail says so.
 
 Asked in [`IDEAS/charter-to-live.md`](IDEAS/charter-to-live.md) § Open questions. **A** was picked over **B** (sign up on both paths and fail the login on a 202), **C** (sign up on the local path only; a deployed App keeps Q9's seed).
@@ -8478,6 +8484,18 @@ this flag existed to escalate, so there is nothing left for it to do.
 ("write payload — unknown fields are silently stripped").
 
 ## Migrations (Litestone)
+
+### <a id="fjs-d2043"></a>2026-11-09 · `FJS-D2043` — How does an operator state the override when `apply()` refuses a recorded migration with no file — `litestone migrate accept <file>`, a one-shot act on the journal row beside `baseline()`. It sets a separate acceptance column and keeps the class, is refused if the row is absent or the file present, and clears when the file reappears. The refusal prints the command.
+
+Asked in [`IDEAS/basecamp-safety.md`](IDEAS/basecamp-safety.md) § Open questions. **B** was picked over **A** (an environment variable naming the exact recorded files, read in `apply()`. It reaches every door with no tool in the image, and it is a second origin that stays set until someone removes it), **C** (an `apply(db, dir, { acceptMissing })` option and a CLI flag. Basecamp's `app.ts:140` call and the `db:migrate` script are baked into the image being booted, so neither can pass it).
+
+As recommended: the act is on the database, so a restart and a hand-run docker run agree; Basecamp's image carries the litestone CLI as a dependency.
+
+### <a id="fjs-d2041"></a>2026-11-08 · `FJS-D2041` — Q1 — An older image starting on a database with a non-additive migration it lacks — Litestone refuses at boot only when a recorded migration with no file is classed non-additive or unknown (step 2.2).
+
+Asked in [`IDEAS/basecamp-safety.md`](IDEAS/basecamp-safety.md) § Open questions. **D** was picked over **A** (`fli deploy:rollback` and the App rollback stop, name the copy taken before the migration, and go ahead only with that copy restored or an explicit override), **B** (Litestone refuses at boot whenever a recorded migration has no file), **C** (document it).
+
+The paper's recommendation, taken as written: the database boot is the one owner every door passes, a hand-run `docker run` included, and it already refuses an edited migration (`FJS-3578`). A leaves that door open. B also blocks rollback after an additive migration and an old container's restart during a start-first swap, both safe today. Reopen A if authoring cannot stamp the class.
 
 ### <a id="fjs-d1605"></a>2026-10-28 · `FJS-D1605` — Basecamp's migrations are append-only from the first dogfood database — the pre-dogfood schema pass (`IDEAS/basecamp-dogfood.md` Phase 1) rewrites `initial_schema.sql` in place for the last time, and after Phase 3 a committed migration file never changes.
 
@@ -16874,6 +16892,30 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2044"></a>2026-11-09 · `FJS-D2044` — What tells the automatic put-back a failed release was non-additive, and how does it find the one exact copy — The release's verdict. Run `livePivot` on every stop-first release in both doors, and take `pivot` into `stopFirst`. On `contract` or `unknown`, after a container that started and failed health, stay down: remove the failed container, keep `_replaced` stopped, and throw with `stayedDown`. A verdict never reached (an image with no Litestone CLI or no schema) puts back as today. The copy names its database, and the swap restores only one newer than the moment the old container stopped.
+
+Asked in [`IDEAS/basecamp-safety.md`](IDEAS/basecamp-safety.md) § Open questions. **A** was picked over **B** (the journal. After the failure, read the volume's journal with a throwaway run of the new image, and stay down only if this release recorded a `contract` or `unknown` row. It alone tells *migrated* from *failed before migrating*, needs step 2.2's stamp, and costs a container run inside the outage. Restore as in A), **C** (`FJS-D2041` alone. Start the old container as today and let its own boot refuse, then stop it so `--restart unless-stopped` does not loop. No verdict, no restore, and an image built before the stamp boots unguarded. This reopens `FJS-D2042`).
+
+The paper's recommendation, taken as written: it reads the verdict both doors already name and needs no new reader during an outage, and `swapFor` already counts `unknown` as a contract. The cost is staying down on a non-additive release that failed before it migrated, and one classifier run per release (`PIVOT_TIMEOUT_MS` is its bound).
+
+### <a id="fjs-d2042"></a>2026-11-08 · `FJS-D2042` — Q2 — The automatic put-back after a failed non-additive release — Restore the copy only when it is exact, otherwise stay down and alert.
+
+Asked in [`IDEAS/basecamp-safety.md`](IDEAS/basecamp-safety.md) § Open questions. **A** was picked over **B** (start the old container on the migrated database, as today, and alert), **C** (always stay down and alert).
+
+The paper's recommendation, taken as written: one rule, derived from when the copy was taken. Basecamp's pre-migrate copy is taken with the old container already stopped, so it is exact; an App's `Back up volume` runs while the old container still serves, so it is not. `restoreFailed` already draws the same line.
+
+### <a id="fjs-d2040"></a>2026-11-08 · `FJS-D2040` — Q5 — How hard the deploy gate is — Refuse, with a named override that prints what it skipped.
+
+Asked in [`IDEAS/basecamp-safety.md`](IDEAS/basecamp-safety.md) § Open questions. **A** was picked over **B** (warn).
+
+The paper's recommendation, taken as written: concurrent sessions share this tree and a commit can land between a check and a deploy, so the check belongs in the deploy.
+
+### <a id="fjs-d2039"></a>2026-11-08 · `FJS-D2039` — Q4 — An interrupted volume-restoring rollback — At the interrupted run's close the hub starts the live release again if the restore never began, and otherwise leaves the app stopped and names the copy.
+
+Asked in [`IDEAS/basecamp-safety.md`](IDEAS/basecamp-safety.md) § Open questions. **B** was picked over **A** (Outpost keeps the stopped container until the restore finishes).
+
+The paper's recommendation, taken as written: it is the rule `restoreFailed` already applies, given Outpost's durable record of whether the restore began (step 3.1). Under A, `reconcile` would start the kept container on a volume a restore had half written.
 
 ### <a id="fjs-d2036"></a>2026-11-08 · `FJS-D2036` — Q5 — Who answers where `sierra widgets` wrote — Sierra takes `--out-dir`, and both doors pass a directory they own. It needs a Sierra release, and both readers below are deleted.
 

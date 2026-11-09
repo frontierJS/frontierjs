@@ -2,7 +2,7 @@
 // The table is `fixtures/swap-cases.js`, which the cli's suite drives too.
 
 import { describe, test, expect } from 'bun:test'
-import { createSwap, runFlags, logArgs, repointRoutes, healthBudgetS, healthyStatus, DEFAULT_STOP_GRACE_S, DEFAULT_HEALTH_TIMEOUT_S, HEALTH_CHECK_TIMEOUT_S, HEALTHY_STATUS } from '../src/swap.js'
+import { createSwap, exactCopies, runFlags, logArgs, repointRoutes, healthBudgetS, healthyStatus, DEFAULT_STOP_GRACE_S, DEFAULT_HEALTH_TIMEOUT_S, HEALTH_CHECK_TIMEOUT_S, HEALTHY_STATUS } from '../src/swap.js'
 import { CASES, NAME, fakeDaemon, runArgv, imagesOn } from './fixtures/swap-cases.js'
 
 describe('createSwap — the contract table', () => {
@@ -31,6 +31,81 @@ describe('createSwap — the contract table', () => {
       expect(imagesOn(d.box)).toEqual(c.after)
     })
   }
+
+  // FJS-4110, FJS-D2042, FJS-D2044: a release that may have moved the database.
+  describe('a failed non-additive release', () => {
+    const old    = { app: { image: 'img:old', running: true } }
+    const copies = { volume: '/data', image: 'img:sick' }
+    const after  = 'basecamp.db--2026-11-08T12-00-05.000Z.db'
+    const go = (d, pivot, c = copies) => createSwap({ run: async (a) => d.argv(a), find: async () => d.find(), health: async ({ name }) => d.healthOf(name) })
+      .stopFirst({ name: NAME, argv: runArgv(NAME, 'img:sick'), port: 7300, route: d.route, routed: d.routed, pivot, copies: c }).catch(e => e)
+
+    for (const pivot of ['contract', 'unknown']) {
+      test(`a ${pivot} with no copy stays down and keeps _replaced stopped`, async () => {
+        const d   = fakeDaemon(old)
+        const err = await go(d, pivot)
+        expect(err.stayedDown).toBe(true)
+        expect(err.restored).toBe(false)
+        expect(err.message).toMatch(/app_replaced stays stopped/)
+        expect(imagesOn(d.box)).toEqual({ app_replaced: 'img:old' })
+        expect(d.box.get('app_replaced').running).toBe(false)
+      })
+    }
+
+    test('a contract with a copy taken after the old container stopped restores it and puts back', async () => {
+      const d   = fakeDaemon(old, { copies: [after] })
+      const err = await go(d, 'contract')
+      expect(err.stayedDown).toBeUndefined()
+      expect(err.restored).toBe(true)
+      expect(d.log).toContain(`restore ${after} over basecamp.db`)
+      expect(d.log.indexOf(`restore ${after} over basecamp.db`)).toBeLessThan(d.log.indexOf('start app'))
+      expect(imagesOn(d.box)).toEqual({ app: 'img:old' })
+    })
+
+    test('a copy from before the old container stopped is not exact', async () => {
+      const d   = fakeDaemon(old, { copies: ['basecamp.db--2026-11-08T11-59-59.000Z.db'] })
+      const err = await go(d, 'contract')
+      expect(err.stayedDown).toBe(true)
+      expect(d.log.some(l => l.startsWith('restore'))).toBe(false)
+    })
+
+    test('a copy that cannot be restored stays down rather than start on a half-written volume', async () => {
+      const d   = fakeDaemon(old, { copies: [after], refuses: ['restore'] })
+      const err = await go(d, 'contract')
+      expect(err.stayedDown).toBe(true)
+      expect(err.message).toMatch(/restoring the copy failed/)
+    })
+
+    for (const pivot of ['expand', 'unchanged', null]) {
+      test(`${pivot ?? 'a verdict never reached'} puts back as it always did`, async () => {
+        const d   = fakeDaemon(old)
+        const err = await go(d, pivot)
+        expect(err.stayedDown).toBeUndefined()
+        expect(err.restored).toBe(true)
+        expect(imagesOn(d.box)).toEqual({ app: 'img:old' })
+      })
+    }
+
+    test('a contract that never started puts back: it migrated nothing', async () => {
+      const d   = fakeDaemon(old)
+      const err = await createSwap({ run: async (a) => d.argv(a), find: async () => d.find(), health: async ({ name }) => d.healthOf(name) })
+        .stopFirst({ name: NAME, argv: runArgv(NAME, 'img:broken'), port: 7300, route: d.route, routed: d.routed, pivot: 'contract', copies }).catch(e => e)
+      expect(err.restored).toBe(true)
+    })
+  })
+
+  test('exactCopies takes the oldest after the stop, per database, and refuses a name it cannot read', () => {
+    const stoppedAt = '2026-11-08T12:00:00.5Z'
+    expect(exactCopies([
+      'basecamp.db--2026-11-08T12-00-05.000Z.db', 'basecamp.db--2026-11-08T12-10-00.000Z.db',
+      'audit.db--2026-11-08T12-00-01.000Z.db',    'basecamp.db--2026-11-08T11-00-00.000Z.db',
+      '2026-11-08T12-30-00.000Z.db',
+    ], stoppedAt)).toEqual([
+      { db: 'audit.db', file: 'audit.db--2026-11-08T12-00-01.000Z.db' },
+      { db: 'basecamp.db', file: 'basecamp.db--2026-11-08T12-00-05.000Z.db' },
+    ])
+    expect(exactCopies(['basecamp.db--2026-11-08T12-00-05.000Z.db'], '')).toEqual([])
+  })
 
   test('a stop-first route that fails to move keeps _replaced and says the new one is live', async () => {
     const d = fakeDaemon({ app: { image: 'img:old', running: true } })

@@ -185,6 +185,36 @@ export function maySpend(): boolean {
   return env.NODE_ENV === 'production' || env.ALLOW_CLOUD_SPEND === '1'
 }
 
+/**
+ * May this process hold a signed target to an Outpost at `address`?
+ *
+ * The vendor transport is guarded by `sendVia`, but a machine's Outpost is
+ * reached by a Conduit target signed with this install's own key, and that key
+ * is derived from ENCRYPTION_KEY. A hub outside production holding a restored
+ * copy of the database and the key is a fully authorized second hub, and its
+ * `/deploy` and `/restore` land on a real machine. So an Outpost that is not on
+ * this machine is reachable under the same condition a vendor write is.
+ */
+export function mayReachOutpost(address: string | undefined): boolean {
+  return maySpend() || isStandIn(address)
+}
+
+/**
+ * Drop every Outpost target a hub outside production could not have registered.
+ * A restored database carries the targets the original hub registered, and
+ * nothing re-registers or checks them until their machine heartbeats here.
+ */
+export async function retireUnreachableOutposts(app: App): Promise<number> {
+  if (!('conduit' in app) || maySpend()) return 0
+  let n = 0
+  for (const target of await app.conduit.list()) {
+    if (target.kind !== 'outpost' || mayReachOutpost(target.address)) continue
+    await app.conduit.deregister(target.id)
+    n++
+  }
+  return n
+}
+
 /** The methods that can cost money. A GET is not one of them. */
 const SPENDING = new Set(['POST', 'DELETE', 'PUT', 'PATCH'])
 

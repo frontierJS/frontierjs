@@ -111,7 +111,8 @@ export async function rebindStale(app: App, mode: string, log: ReturnType<App['l
   }
   try {
     const out = await app.service('deployments').call('rebind', routes.appId) as { id?: string; skipped?: string }
-    log.info('bind stale, released to move it', { appId: routes.appId, deployment: out.id ?? null, skipped: out.skipped ?? null, rebind: stale.map(r => r.rebind) })
+    if (out.skipped) log.warn('routed, bind stale until the next release', { appId: routes.appId, skipped: out.skipped, rebind: stale.map(r => r.rebind) })
+    else log.info('bind stale, released to move it', { appId: routes.appId, deployment: out.id ?? null, rebind: stale.map(r => r.rebind) })
     return null
   } catch (err) {
     const code = Number((err as { code?: unknown }).code)

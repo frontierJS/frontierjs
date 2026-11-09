@@ -58,6 +58,20 @@ const EXCLUDE = LINKED.map(f => `:(exclude)${f}`)
 const SCRATCH_PATHSPEC = ':(exclude,glob)**/.sierra-fresh-*'
 const SCRATCH = /(^|\/)\.sierra-fresh-[^/]*$/
 
+// Runtime database state, gitignored, so `git clean -fd` leaves it and a reused
+// lane keeps the file a drive created weeks ago. A schema change since then
+// blocks autoMigrate (a NOT NULL column with no default), and the next drive's
+// seed throws before any assertion (`FJS-3945`). A drive seeds its own database.
+// Matched by name over `git ls-files`, never `git clean -X` with a pathspec:
+// that walks into every ignored directory and takes node_modules with it.
+export const STALE_DB = /(^|\/)db\/([^/]*\.db(-shm|-wal)?$|(shops|audit|public)\/)/
+
+export function dropStaleDatabases(dir) {
+  for (const f of git(dir, 'ls-files', '--others', '--ignored', '--exclude-standard', '-z').split('\0')) {
+    if (STALE_DB.test(f)) rmSync(join(dir, f), { force: true })
+  }
+}
+
 import { MAX_LANES, applyArgv }  from '../packages/cli/core/autopilot.js'
 export { MAX_LANES }
 
@@ -162,6 +176,7 @@ export function syncLane(lane, { linked = true } = {}) {
   git(dir, 'update-index', '--no-skip-worktree', ...LINKED)
   git(dir, 'reset', '-q', '--hard', git(ROOT, 'rev-parse', 'HEAD'))
   git(dir, 'clean', '-fdq')
+  dropStaleDatabases(dir)
 
   const patch = run('git', ['-C', ROOT, 'diff', 'HEAD', '--binary', '--no-color', '--no-ext-diff', '--', '.', ...EXCLUDE], ROOT, { raw: true })
   if (patch.length) {

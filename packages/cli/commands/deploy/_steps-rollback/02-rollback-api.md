@@ -64,8 +64,9 @@ docker start  ${container}`, { dry: flag.dry })
   const images = parseImageList(imageOutput)
 
   if (images.length < 2) {
-    log.warn('No previous image found to roll back to')
-    log.info('The current container has not been replaced — nothing to roll back')
+    log.warn(`${host} holds ${images.length} image${images.length === 1 ? '' : 's'} of ${appId}, and a rollback needs two`)
+    log.info('The previous image may have been removed by Cleanup or a prune; a build made here has no registry to come back from')
+    log.info('Deploy the release you want again to rebuild it. The current container has not been touched')
     return
   }
 
@@ -110,6 +111,7 @@ docker start  ${container}`, { dry: flag.dry })
     configuration: configurationSet(deployConf, $.config.target).values,
     healthPath: deployConf.api?.health ?? '/health',
     log,
+    undoing: true,
   })
   if (!healthy) {
     log.error(`Rollback to ${previous.tag} did not come up`)

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildYaml, LITESTREAM_MIN, LITESTREAM_PIN, litestreamInstall } from '../src/tools/replicate.js'
+import { buildYaml, yamlDirs, LITESTREAM_MIN, LITESTREAM_PIN, litestreamInstall } from '../src/tools/replicate.js'
 
 const targets = [{ name: 'main', path: '/data/app.db', url: 's3://b/main' }]
 
@@ -36,6 +36,11 @@ describe('buildYaml — a target with its own key', () => {
     expect(yml).toContain('      - type: s3\n        bucket: "b"\n        path: "apps/a1"\n')
     expect(yml).toContain('        force-path-style: true\n')
     expect(yml).not.toContain('url:')
+  })
+
+  it('reads back each target it wrote, and none from a file holding none', () => {
+    expect(yamlDirs(yml)).toEqual(['/v/_data'])
+    expect(yamlDirs(buildYaml([], { socket: '/run/litestream/litestream.sock' }))).toEqual([])
   })
 
   it('turns the control socket on at the top of the file when given a path', () => {

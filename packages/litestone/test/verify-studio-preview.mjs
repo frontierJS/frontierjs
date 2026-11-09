@@ -17,8 +17,9 @@
  *
  *   node packages/litestone/test/verify-studio-preview.mjs
  *
- * Starts and stops TWO servers, 7506 (default resolver) and 7507 (--gate), and
- * a Chrome. Nothing to launch first. Needs Chrome on PATH or $FJS_CHROME.
+ * Starts and stops TWO servers on ports the OS names, one on the default
+ * resolver and one with --gate ($STUDIO_PORT and $STUDIO_PORT_GATE pin them),
+ * and a Chrome. Nothing to launch first. Needs Chrome on PATH or $FJS_CHROME.
  *
  * It owns its schema and its database, in a temp directory, unlike the other
  * four Studio drives which read `example`. Two reasons and the second is the
@@ -36,11 +37,13 @@
 import { spawn } from 'node:child_process'
 import { rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tempDir } from '../src/tmp-dirs.js'
+import { freePorts } from './free-port.mjs'
 import { openChrome } from '../../mesa/src/drive.js'
 import { join, resolve as pathResolve } from 'node:path'
 
-const PORT_DEFAULT = process.env.STUDIO_PORT      ?? '7506'
-const PORT_GATED   = process.env.STUDIO_PORT_GATE ?? '7507'
+const named        = await freePorts(2)
+const PORT_DEFAULT = process.env.STUDIO_PORT      ?? String(named[0])
+const PORT_GATED   = process.env.STUDIO_PORT_GATE ?? String(named[1])
 const UI     = `http://localhost:${PORT_DEFAULT}`
 const GATED  = `http://localhost:${PORT_GATED}`
 const CLI    = pathResolve(import.meta.dirname, '../src/tools/cli.js')

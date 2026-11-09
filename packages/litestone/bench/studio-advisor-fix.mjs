@@ -12,7 +12,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../mesa/src/drive.js'
 import { copyBasecampDb } from './basecamp-copy.mjs'
-const R = join(dirname(fileURLToPath(import.meta.url)), '../../..'), PORT = 7503
+import { freePort } from '../test/free-port.mjs'
+const R = join(dirname(fileURLToPath(import.meta.url)), '../../..'), PORT = await freePort()
 let fails = 0
 const ok = (n,c,x='') => { console.log((c?'ok   ':'FAIL ')+n+(c?'':'  → '+x)); if(!c) fails++ }
 const work = copyBasecampDb('fix-')

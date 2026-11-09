@@ -632,7 +632,7 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // a revert it is a revert that could not land.
 const pauseCore = () => import(new URL('file://' + global.fliRoot + '/core/pause.js'))
 
-const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, serverPath = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, intervalS = HEALTH_INTERVAL_S, pivot = null }) => {
+const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, serverPath = null, build, deployConf, configuration = {}, corsOrigins = [], healthPath, log, intervalS = HEALTH_INTERVAL_S, pivot = null, undoing = false }) => {
   const asked    = swapSetting(deployConf ?? {})
   const budgetS  = healthBudgetS(deployConf?.healthTimeout)
   const machine  = machineFor($, host)
@@ -762,7 +762,7 @@ exit 1`)
   const routes    = asked === 'startFirst' || (priorPort && priorPort !== apiPort)
     ? await routeMover($, machine, { appId, serverPath, deployConf })
     : { move: null, reason: null }
-  const chosen    = await chooseSwap({ asked, routes, run, live: before.live, image, appId, pivot })
+  const chosen    = await chooseSwap({ asked, routes, run, live: before.live, image, appId, pivot, undoing })
   const verdict   = { swap: chosen.swap, swapReason: chosen.reason, pivot: chosen.pivot }
   if (chosen.reason) log.info(`Swapping stop-first: ${chosen.reason}`)
 
@@ -784,21 +784,22 @@ exit 1`)
       port = (await swap.startFirst({ name: container, argv: argvFor(`${container}_next`, '127.0.0.1::3000'), path: healthPath, route: routes.move, routed })).port
     } else {
       log.info(`Starting ${image} as ${container}, the running one set aside as ${replaced}...`)
-      await swap.stopFirst({ name: container, argv: argvFor(container, `127.0.0.1:${apiPort}:3000`), port: apiPort, path: healthPath, route: follow, routed })
+      await swap.stopFirst({ name: container, argv: argvFor(container, `127.0.0.1:${apiPort}:3000`), port: apiPort, path: healthPath, route: follow, routed,
+                             pivot: undoing ? null : chosen.pivot, copies: { volume: dbPath, image } })
     }
   } catch (err) {
     // A throw with neither came after the route moved, or before anything was touched.
     if (!('restored' in err) && !err.untouched) throw err
     log.error(err.message)
-    if (err.untouched) return { container, replaced, healthy: false, restored: !err.none, untouched: true, none: Boolean(err.none), unbound, reason: err.message, ...verdict, port: priorPort }
+    if (err.untouched) return { container, replaced, healthy: false, restored: !err.none, untouched: true, none: Boolean(err.none), stayedDown: false, unbound, reason: err.message, ...verdict, port: priorPort }
     const restored = err.restored && previousAnswers
     if (err.none) log.info(`${container} removed — this was its first deploy here, so there was no previous release to put back`)
     else if (restored) log.warn('Restored the previous container, and it answers')
     const back = restored ? await portNow() : null
-    return { container, replaced, healthy: false, restored, untouched: false, none: Boolean(err.none), unbound, reason: err.message, ...verdict, port: back }
+    return { container, replaced, healthy: false, restored, untouched: false, none: Boolean(err.none), stayedDown: Boolean(err.stayedDown), unbound, reason: err.message, ...verdict, port: back }
   }
   log.success('Health check passed')
-  return { container, replaced, healthy: true, restored: false, untouched: false, none: false, unbound, reason: null, ...verdict, port }
+  return { container, replaced, healthy: true, restored: false, untouched: false, none: false, stayedDown: false, unbound, reason: null, ...verdict, port }
 }
 
 // ─── routeMover ───────────────────────────────────────────────────────────────
@@ -860,11 +861,14 @@ const routeDialed = async (machine, appId) => {
 // `pivot` is the verdict a deploy's transition already holds (`04c-journal`),
 // `{ verdict, reason }`. Asked a second time here, the swap could run on an
 // answer the journal never recorded; revert and rollback open no such
-// transition, so they still ask.
-const chooseSwap = async ({ asked, routes, run, live, image, appId, pivot = null }) => {
-  if (asked !== 'startFirst') return { swap: 'stop-first', reason: null, pivot: pivot?.verdict ?? null }
-  if (!routes.move) return { swap: 'stop-first', reason: `a start-first swap moves the port, and ${routes.reason}`, pivot: pivot?.verdict ?? null }
-  const verdict = pivot ?? await livePivot({ run, live, image, tag: appId })
+// transition, so they still ask. A stop-first release asks too: the verdict
+// decides whether a failed release may be put back (`FJS-D2044`). An undoing
+// swap's migrations are already recorded, so it asks only to pick a start-first.
+const chooseSwap = async ({ asked, routes, run, live, image, appId, pivot = null, undoing = false }) => {
+  const startFirst = asked === 'startFirst' && routes.move
+  const verdict    = pivot ?? (startFirst || !undoing ? await livePivot({ run, live, image, tag: appId }) : { verdict: null })
+  if (asked !== 'startFirst') return { swap: 'stop-first', reason: null, pivot: verdict.verdict }
+  if (!routes.move) return { swap: 'stop-first', reason: `a start-first swap moves the port, and ${routes.reason}`, pivot: verdict.verdict }
   return { ...swapFor(verdict), pivot: verdict.verdict }
 }
 

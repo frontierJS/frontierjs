@@ -101,6 +101,11 @@ litestone migrate baseline [file]
 Record the migration files as applied without running them, for a database that already holds what they build: an app developed through `db push`, or your own database the moment `migrate create` writes a delta you had already pushed. With a `file` (the whole name or its timestamp), it records the pending files through that one and leaves the later ones pending for `migrate apply` — for a database pushed level with some files while another, written after, has run nowhere. It refuses, naming the difference, when the database does not hold what the recorded files build.
 
 ```bash
+litestone migrate accept <file>
+```
+State that this database may start without a recorded migration's file, as `migrate apply` printed it when it refused. `apply` refuses a database holding a recorded migration with no file when that migration's class is `contract` or `unknown`, which is an older image on a database a newer one moved. The acceptance is a column on the journal row, so a restart and a hand-run `docker run` agree. The class stays as it was, the file must be absent and the row present, and it clears when the file comes back.
+
+```bash
 litestone migrate status
 ```
 Show migration state per file: `applied`, `pending`, `modified` (applied file changed on disk — checksum mismatch), `orphaned` or `skipped`.

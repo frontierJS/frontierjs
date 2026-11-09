@@ -41,6 +41,22 @@ const OFF_LIMITS = new Set([
  */
 const NOT_FOR_AGENTS = new Set(['pages'])
 
+/**
+ * Methods an agent over `/mcp` loses while keeping the rest of the service
+ * (`FJS-D2038`): each destroys data or runs a stored script, and has a screen
+ * for a person. An admin key holds every scope, so a scope cannot withhold them.
+ */
+const DESTROY_CLASS: Record<string, ReadonlySet<string>> = {
+  servers: new Set(['destroy', 'discardArchive', 'retireApp']),
+  apps: new Set(['remove']),
+  volumes: new Set(['remove', 'prune']),
+  maintenanceRuns: new Set(['run']),
+  recipes: new Set(['run']),
+}
+
+const notForAgent = (service: string, method: string) =>
+  NOT_FOR_AGENTS.has(service) || !!DESTROY_CLASS[service]?.has(method)
+
 /** The scope a workspace service declares: read for `find`, `get` and a declared read, write for the rest. */
 export const keyScope = (service: string) => ({ read: `${service}:read`, write: `${service}:write` })
 
@@ -91,7 +107,7 @@ export function keyAllows(user: KeyPrincipal | null | undefined, service: string
  * another workspace — stay the guard's, at the call.
  */
 export function narrowForAgent(tool: { service: string; method: string }, principal: unknown): boolean {
-  if (NOT_FOR_AGENTS.has(tool.service)) return false
+  if (notForAgent(tool.service, tool.method)) return false
   return keyAllows(principal as KeyPrincipal | null, tool.service)
 }
 
@@ -102,8 +118,8 @@ export function narrowForAgent(tool: { service: string; method: string }, princi
 
 export function agentGuard(): Hook {
   return function agentGuard(ctx: ServiceContext): void {
-    if (ctx.transport === 'mcp' && NOT_FOR_AGENTS.has($.service))
-      throw new Forbidden(`${$.service} is not offered to an agent`)
+    if (ctx.transport === 'mcp' && notForAgent($.service, $.method))
+      throw new Forbidden(`${$.service}.${$.method} is not offered to an agent`)
   }
 }
 

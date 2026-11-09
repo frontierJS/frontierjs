@@ -56,7 +56,7 @@ export const RECLAIM_TARGETS: ReclaimTargetSpec[] = [
   {
     target:      'unused_images',
     label:       'Unused images',
-    description: 'Every image no container is using, dangling layers included.',
+    description: 'Images no container is using, past the newest few of each repository. Dangling layers included.',
     estimate:    'images',
     partial:     false,
     defaultOn:   true,

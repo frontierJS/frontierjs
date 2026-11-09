@@ -13,8 +13,8 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
-// 7502 = test env, tooling category, studio — see packages/cli/core/ports.js
-const PORT = 7502, ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
+import { freePort } from '../test/free-port.mjs'
+const PORT = await freePort(), ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
 const S = process.env.S ?? mkdtempSync(join(tmpdir(), 'studio-query-'))
 let fails = 0
 const ok = (name, cond, extra = '') => { console.log((cond ? 'ok   ' : 'FAIL ') + name + (cond ? '' : '  ' + extra)); if (!cond) fails++ }

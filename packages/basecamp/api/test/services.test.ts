@@ -50,7 +50,7 @@ import { mintArchiveUrl } from '../src/plugins/backup-archive.ts'
 import { mintUploadUrl } from '../src/plugins/app-archive-upload.ts'
 import { mintPullUrls, pullDir, sweepPulls } from '../src/plugins/app-archive-pull.ts'
 import { BODY_CEILING_BYTES } from '../src/plugins/signed-link.ts'
-import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
+import { replicasFor, syncReplicas, syncReplicasOn, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
 import { reconcileFound } from '../src/domain/backup/found-replicas.ts'
 import { rescanAppArchives, hashFoundArchives } from '../src/domain/backup/backup-archives.ts'
 import { HOST_SLUG, useHost, publicIp, hostServer, hubIds, placeHub } from '../src/domain/host/host-machine.ts'
@@ -5040,6 +5040,24 @@ describe('pages', () => {
     expect(narrowForAgent({ service: 'pages', method: 'start' }, { authMethod: 'session' })).toBe(false)
     expect(keyAllows(key, 'pages')).toBe(false)
   })
+
+  // FJS-D2038 (Q3 = A): each has a screen for a person, so an agent holding
+  // an admin key is not handed it either.
+  test('an agent loses the destroy-class methods and keeps the rest of the service', async () => {
+    const destroyClass = [
+      ['servers', 'destroy'], ['apps', 'remove'], ['volumes', 'remove'], ['volumes', 'prune'],
+      ['servers', 'discardArchive'], ['servers', 'retireApp'], ['maintenanceRuns', 'run'], ['recipes', 'run'],
+    ]
+    const admin = { authMethod: 'apiKey', scopes: [] }
+    for (const [service, method] of destroyClass) {
+      expect(narrowForAgent({ service, method }, { authMethod: 'session' })).toBe(false)
+      expect(narrowForAgent({ service, method }, admin)).toBe(false)
+      await expect(env.as(owner).service(service).call(method, 'x', undefined, { transport: 'mcp' }))
+        .rejects.toThrow(/not offered to an agent/)
+    }
+    expect(narrowForAgent({ service: 'apps', method: 'find' }, { authMethod: 'session' })).toBe(true)
+    expect(narrowForAgent({ service: 'servers', method: 'get' }, admin)).toBe(true)
+  })
 })
 
 // FJS-2355. A custom method states its payload in the seed, so the enum a
@@ -5934,6 +5952,53 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect(await syncReplicas(env.app, server.id)).toMatchObject({ stub: true })
     })
 
+    // FJS-4109: the Outpost refuses a list that empties a file holding entries
+    // unless it states clear, so only a change somebody made may state it.
+    test('a person\'s change states clear and a machine coming online does not', async () => {
+      const sys     = env.system as any
+      const bodies: any[]     = []
+      const dispatched: any[] = []
+      let during: (() => Promise<unknown>) | null = null
+      const conduit = (env.app as any).conduit, real = { resolve: conduit.resolve, send: conduit.send }
+      const jobs    = env.app.jobs as any, realDispatch = jobs.dispatch
+      conduit.resolve = (target: string, ...rest: unknown[]) => String(target).startsWith('outpost:') ? Promise.resolve({ pinned_cert: true }) : real.resolve.call(conduit, target, ...rest)
+      conduit.send    = async (call: any) => {
+        if (!String(call.target).startsWith('outpost:')) return real.send.call(conduit, call)
+        if (call.path === '/replicate') { bodies.push(call.body); const now = during; during = null; await now?.() }
+        return { data: {} }
+      }
+      jobs.dispatch = (_job: unknown, data: unknown) => { dispatched.push(data); return Promise.resolve('queued') }
+      const [row]   = await sys.appServer.findMany({ where: { appId: app.id, serverId: server.id } })
+      try {
+        await syncReplicas(env.app, machine.id)
+        expect(bodies.at(-1)).toEqual({ replicas: [] })
+        await syncReplicas(env.app, machine.id, { clear: true })
+        expect(bodies.at(-1)).toEqual({ replicas: [], clear: true })
+
+        const dest = await own()
+        await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
+        expect(dispatched.at(-1)).toEqual({ serverId: server.id, clear: true })
+
+        // A write `unique` dropped mid-send: the hub watched this list go empty.
+        during = () => sys.app.update({ where: { id: app.id }, data: { replicaDestinationId: null } })
+        await syncReplicas(env.app, server.id)
+        expect(bodies.at(-2).clear).toBeUndefined()
+        expect(bodies.at(-1)).toEqual({ replicas: [], clear: true })
+        await sys.app.update({ where: { id: app.id }, data: { replicaDestinationId: dest.id } })
+
+        await syncReplicasOn(env.app, [server.id])
+        expect(dispatched.at(-1)).toEqual({ serverId: server.id })
+
+        await env.as(owner).service('apps').call('unplace', app.id, { serverId: server.id })
+        expect(dispatched.at(-1)).toEqual({ serverId: server.id, clear: true })
+      } finally {
+        Object.assign(conduit, real)
+        jobs.dispatch = realDispatch
+        await sys.appServer.deleteMany({ where: { appId: app.id, serverId: server.id } })
+        await sys.appServer.create({ data: { appId: row.appId, serverId: row.serverId, replicaIndex: row.replicaIndex, status: row.status } })
+      }
+    })
+
     test('the App screen reads each placement\'s distance from its bucket off the machine\'s last heartbeat', async () => {
       const dest = await own()
       await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
@@ -6532,6 +6597,9 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect((await env.as(hubOp).service('projects').find()).data.map((r: any) => r.id)).not.toContain(hub.project)
       expect((await env.as(hubOp).service('environments').find()).data.map((r: any) => r.id)).not.toContain(hub.environment)
       await expect(env.as(hubOp).service('deployments').create({ appId: hub.app })).rejects.toThrow(/Basecamp itself/)
+      // Neither is it removable: its row is what `HubConfig.appId` finds Basecamp by (`FJS-4114`).
+      await expect(env.as(hubOp).service('apps').remove(hub.app)).rejects.toThrow(/Basecamp itself/)
+      expect(await sys.app.exists({ where: { id: hub.app, deletedAt: null } })).toBe(true)
       expect((await env.as(hubOp).service('servers').call('useHost', null, {})).server.id).toBe(used.server.id)
       expect((await env.as(owner).service('servers').call('host', null, {}))?.id).toBe(used.server.id)
       await sys.hubConfig.update({ where: { id: 'hub' }, data: { appId: null } })

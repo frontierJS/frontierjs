@@ -150,6 +150,27 @@ async function bearerFor(who) {
 const admin = await bearerFor('admin')
 const user  = await bearerFor('user')
 
+// Runs the holds-release job with a cutoff past every hold and waits for it.
+async function releaseAllHolds() {
+  const run = await api('/jobs/run/holds-release', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ before: '2099-01-01T00:00:00.000Z' }),
+  })
+  const { id } = await run.json()
+  for (let i = 0; i < 60; i++) {
+    const j = await (await api(`/jobs/${id}`)).json()
+    if (j.status === 'done' || j.status === 'failed') return j
+    await new Promise(r => setTimeout(r, 200))
+  }
+  return null
+}
+
+// Holds left by a drive that ran in the last twenty minutes (verify:cart, an
+// earlier verify:stock) sit on the shared dev database and make the first
+// assertion read 0 available. The shop is emptied of holds before the shelf is
+// read.
+await releaseAllHolds()
+
 // ─── Pick a shelf ──────────────────────────────────────────────────────────
 //
 // Chosen rather than hard-coded. Every number below is relative to what this
@@ -240,17 +261,7 @@ check('the shelf is available again immediately, with no sweep',
 // cutoff — a `releaseAll` flag would be a second code path proving nothing
 // about the first.
 
-const run = await api('/jobs/run/holds-release', {
-  method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ before: '2099-01-01T00:00:00.000Z' }),
-})
-const { id: jobId } = await run.json()
-let jobRow = null
-for (let i = 0; i < 60 && !jobRow; i++) {
-  const j = await (await api(`/jobs/${jobId}`)).json()
-  if (j.status === 'done' || j.status === 'failed') jobRow = j
-  else await new Promise(r => setTimeout(r, 200))
-}
+const jobRow = await releaseAllHolds()
 check('holds-release runs on demand', jobRow?.status, 'done')
 check('and an expired hold is gone', (await availabilityOf(V)).available, start0.onHand)
 

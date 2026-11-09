@@ -39,6 +39,7 @@ import { results, report } from './lib/report.mjs'
 const ROOT   = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const TENANT = 'flagship'
 const MEMBER = 'alex@shop.test'
+const START  = new Date().toISOString()
 const RUN    = String(Date.now()).slice(-6)
 const OP     = `verify-repl-${RUN}`
 const EMAIL  = (tag) => `repl-${tag}-${RUN}@verify.test`
@@ -61,10 +62,14 @@ function repl(code, { as, user = OP } = {}) {
 const customer = (tag) =>
   `{ name: 'repl ${tag}', firstName: 'Repl', lastName: '${tag}', email: '${EMAIL(tag)}' }`
 
+// The audit db is shared and outlives a reseeded tenant db, which hands out
+// customer ids from 1 again: matching on the id alone reads an earlier run's
+// create/delete rows beside this run's. Only rows written since START count.
 const trailFor = (email) =>
   `const c = await sys.customer.findFirst({ where: { email: '${email}' }, withDeleted: true }); ` +
   `const rows = await sys.auditTrail.findMany({ where: { model: 'Customer' } }); ` +
-  `return rows.filter(r => r.records?.includes(c.id)).map(r => [r.operation, r.actorId, r.actorType])`
+  `return rows.filter(r => r.records?.includes(c.id) && r.createdAt >= '${START}')` +
+  `.map(r => [r.operation, r.actorId, r.actorType])`
 
 let stoppedEarly = null
 

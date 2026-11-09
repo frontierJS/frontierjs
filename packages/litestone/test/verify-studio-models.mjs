@@ -21,9 +21,8 @@
  *
  *   node packages/litestone/test/verify-studio-models.mjs
  *
- * Starts and stops its own server on 7504 — test-tier tooling, inside the port
- * scheme so `fli ps` can see it. Nothing to launch first. Needs Chrome on PATH
- * or $FJS_CHROME.
+ * Starts and stops its own server on a port the OS names ($STUDIO_PORT pins
+ * one). Nothing to launch first. Needs Chrome on PATH or $FJS_CHROME.
  *
  * The server is spawned from `src/tools/cli.js` by path rather than through
  * `bunx litestone`, because bun resolves a workspace dependency to a COPY under
@@ -41,10 +40,11 @@
  */
 
 import { spawn } from 'node:child_process'
+import { freePort } from './free-port.mjs'
 import { openChrome } from '../../mesa/src/drive.js'
 import { join, resolve as pathResolve } from 'node:path'
 
-const PORT   = process.env.STUDIO_PORT ?? '7504'
+const PORT   = process.env.STUDIO_PORT ?? String(await freePort())
 const UI     = `http://localhost:${PORT}`
 const REPO   = pathResolve(import.meta.dirname, '../../..')
 const SCHEMA = join(REPO, 'example/db/schema.lite')

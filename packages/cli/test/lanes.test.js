@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { copyIfPresent, lanePatch, laneDirty, markSynced } from '../../../scripts/lanes.mjs'
+import { copyIfPresent, lanePatch, laneDirty, markSynced, dropStaleDatabases } from '../../../scripts/lanes.mjs'
 
 let base
 beforeEach(() => { base = mkdtempSync(join(tmpdir(), 'fjs-lanes-test-')) })
@@ -40,6 +40,26 @@ describe('copyIfPresent', () => {
 
 // FJS-3448: the snapshot is `git add -A` over the lane's working files, so a
 // sidecar a test was still holding landed in the patch.
+// FJS-3945: a reused lane keeps the gitignored database an earlier drive made,
+// and a schema change since then blocks the next seed.
+describe('dropStaleDatabases', () => {
+  test('removes ignored runtime databases and nothing else ignored or tracked', () => {
+    const dir = join(base, 'repo')
+    mkdirSync(join(dir, 'app', 'db', 'shops'), { recursive: true })
+    mkdirSync(join(dir, 'node_modules', 'x'), { recursive: true })
+    spawnSync('git', ['init', '-q', dir])
+    writeFileSync(join(dir, '.gitignore'), 'node_modules/\ndb/*.db*\napp/db/*.db*\napp/db/shops/\n.env\n')
+    writeFileSync(join(dir, 'app', 'db', 'schema.lite'), 'model A {}')
+    spawnSync('git', ['-C', dir, 'add', '-A'])
+    for (const f of ['app/db/shop.db', 'app/db/shop.db-wal', 'app/db/shops/a.db', 'node_modules/x/index.js', '.env']) writeFileSync(join(dir, f), 'x')
+
+    dropStaleDatabases(dir)
+
+    for (const f of ['app/db/shop.db', 'app/db/shop.db-wal', 'app/db/shops/a.db']) expect(existsSync(join(dir, f))).toBe(false)
+    for (const f of ['app/db/schema.lite', 'node_modules/x/index.js', '.env']) expect(existsSync(join(dir, f))).toBe(true)
+  })
+})
+
 describe('lanePatch', () => {
   const git = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).stdout.trim()
 

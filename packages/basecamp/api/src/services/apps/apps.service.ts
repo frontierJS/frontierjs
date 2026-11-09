@@ -45,7 +45,7 @@ import { db, getScoped, removeScoped, restoreScoped, deriveSlug, narrowPatch, ch
          slugify, }
   from '../../core/resource.ts'
 import { env }      from '../../core/env.ts'
-import { notHub }   from '../../domain/host/host-machine.ts'
+import { notHub, refuseHubRemoval } from '../../domain/host/host-machine.ts'
 import { mintPush } from '../../plugins/git-push.ts'
 // The ONE definition of a certificate's condition, imported rather than
 // recomputed: an include returns raw Domain rows, so without this the app
@@ -885,6 +885,7 @@ export default createService({
 
   async remove() {
     const target  = await getScoped('app', 'App')
+    await refuseHubRemoval(db().asSystem(), target.id as string)
     const machine = await retireFromMachine($.app, target)
     const removed = await removeScoped('app', 'App')
     await unpublishAppsIn([target.id as string])
@@ -1131,7 +1132,7 @@ export default createService({
 
     const sys = $.db.asSystem()
     for (const row of rows) await sys.appServer.delete({ where: { id: row.id } })
-    if (target.replicaDestinationId) await syncReplicasOn($.app, [serverId])
+    if (target.replicaDestinationId) await syncReplicasOn($.app, [serverId], { clear: true })
 
     return detail(target.id)
   },

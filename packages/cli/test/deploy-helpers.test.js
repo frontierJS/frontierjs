@@ -490,7 +490,7 @@ const onBox = ({ before = {}, ids = '', ls = '', inEnv = '', open = '', caddy = 
     log: { info() {}, success() {}, warn() {}, error() {} },
     ...opts,
   })
-  return { d, commands, dials, go, runCmd: () => commands.find(c => c.startsWith('docker run')) }
+  return { d, commands, dials, go, runCmd: () => commands.find(c => c.startsWith('docker run') && !c.includes('litestone release')) }
 }
 
 const old = { image: 'img:old', running: true }
@@ -590,7 +590,7 @@ describe('swapContainer — start-first', () => {
 
   test('a stop-first after a start-first that is put back moves the routes to the port it came back on', async () => {
     const t = onBox({ before: { app: overlapped }, caddy: routed(49153), verdict: 'contract' })
-    expect(await go(t, { image: 'img:sick' })).toMatchObject({ healthy: false, restored: true, port: 49154 })
+    expect(await go(t, { image: 'img:sick', undoing: true })).toMatchObject({ healthy: false, restored: true, port: 49154 })
     expect(t.d.log.slice(-4)).toEqual(['rm app', 'rename app_replaced app', 'start app', 'route 49154'])
     expect(t.dials).toEqual([49154])
   })
@@ -602,20 +602,31 @@ describe('swapContainer — start-first', () => {
     expect(result.swapReason).toMatch(/the classifier did not run/)
   })
 
-  test('an app Caddy does not front swaps stop-first without asking the classifier', async () => {
+  // FJS-D2044: every stop-first release is classified, for the put-back's sake.
+  test('an app Caddy does not front swaps stop-first, classified all the same', async () => {
     const t = onBox({ before: { app: old }, verdict: 'expand' })
     const result = await go(t)
     expect(result.swap).toBe('stop-first')
     expect(result.swapReason).toMatch(/Caddy holds no route for this app/)
-    expect(t.commands.some(c => c.includes('litestone release'))).toBe(false)
+    expect(result.pivot).toBe('expand')
   })
 
-  test('an app that did not ask runs no classifier and stays on apiPort', async () => {
+  test('an app that did not ask is classified and stays on apiPort', async () => {
     const t = onBox({ before: { app: old }, caddy: routed(7102), verdict: 'expand' })
     const result = await go(t, { deployConf: { web: { domain: 'app.test' } }, apiPort: 7300 })
-    expect(result).toMatchObject({ healthy: true, swap: 'stop-first', swapReason: null, pivot: null })
-    expect(t.commands.some(c => c.includes('litestone release'))).toBe(false)
+    expect(result).toMatchObject({ healthy: true, swap: 'stop-first', swapReason: null, pivot: 'expand' })
     expect(t.dials).toEqual([])
+  })
+
+  test('a failed contract with no exact copy stays down and says so; a revert of one is put back', async () => {
+    const down = await go(onBox({ before: { app: old }, verdict: 'contract' }), { image: 'img:sick' })
+    expect(down).toMatchObject({ healthy: false, restored: false, stayedDown: true, pivot: 'contract' })
+    expect(down.reason).toMatch(/app_replaced stays stopped/)
+
+    const undone = onBox({ before: { app: old }, verdict: 'contract' })
+    const back   = await go(undone, { image: 'img:sick', undoing: true })
+    expect(back).toMatchObject({ healthy: false, restored: true, stayedDown: false })
+    expect(undone.commands.some(c => c.includes('litestone release'))).toBe(false)
   })
 
   test('a misspelled deploy.swap is refused before anything is touched', async () => {

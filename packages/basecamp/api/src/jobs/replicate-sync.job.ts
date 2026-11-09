@@ -12,6 +12,11 @@
 // at all — a credential nothing can read throws, and the machine keeps the
 // file it had, still replicating everybody else.
 //
+// The Outpost refuses a list that would empty a file holding entries unless it
+// states `clear`, because a hub that lost its rows builds the same `[]` as a
+// person removing the last replica. A person's change states it; a machine
+// coming `online` and a release start without it.
+//
 // Each entry carries its own app's key (`FJS-D1505`): the destination is the
 // app's alone, and the key is whatever the operator minted for it at the
 // vendor — a prefix where the vendor scopes one, a bucket where it does not.
@@ -68,7 +73,7 @@ export interface ReplicaEntry {
 export type HostReplica = Omit<ReplicaEntry, 'app_id'>
 
 /** What `POST /replicate` is sent. No `host` is no host replica. */
-export type ReplicaList = { replicas: ReplicaEntry[]; host?: HostReplica }
+export type ReplicaList = { replicas: ReplicaEntry[]; host?: HostReplica; clear?: boolean }
 
 /** A list that will not hold still after this many sends is left to the next write. */
 const MAX_SENDS = 3
@@ -180,13 +185,14 @@ async function listFor(app: App, serverId: string): Promise<ReplicaList> {
 }
 
 /** Send `serverId` its list until it holds still. Answers what the machine said. */
-export async function syncReplicas(app: App, serverId: string): Promise<{ replicating: string[]; skipped: unknown[]; host?: string; stub?: true }> {
+export async function syncReplicas(app: App, serverId: string, options: { clear?: boolean } = {}): Promise<{ replicating: string[]; skipped: unknown[]; host?: string; stub?: true }> {
   const executor = await executorOn(app, serverId)
   if (!isExecutor(executor)) throw new Error(executor.reason)
 
-  let list = await listFor(app, serverId)
+  let clear = options.clear === true
+  let list  = await listFor(app, serverId)
   for (let sent = 1; ; sent++) {
-    const reply = await executor.call('/replicate', list)
+    const reply = await executor.call('/replicate', clear ? { ...list, clear } : list)
     if (reply.error) throw new Error(reply.error.message)
     const after = await listFor(app, serverId)
     if (JSON.stringify(after) === JSON.stringify(list) || sent === MAX_SENDS) {
@@ -198,6 +204,9 @@ export async function syncReplicas(app: App, serverId: string): Promise<{ replic
         ...(host ? { host } : {}),
       }
     }
+    // `unique` dropped whatever write changed the list, its `clear` with it. A
+    // list that had entries a send ago went empty on this hub's own rows.
+    clear ||= list.replicas.length > 0 || !!list.host
     list = after
   }
 }
@@ -217,38 +226,40 @@ export async function syncReplicasHeldBy(app: App, destinationId: string): Promi
   else if (holder)               await syncHostReplica(app)
 }
 
-/** Queue a send to Basecamp's box. */
+/** Queue a send to Basecamp's box, for a person's change to the hub's pointer. */
 export async function syncHostReplica(app: App): Promise<void> {
   const host = await hostServer((app.db as any).asSystem())
-  if (host) await syncReplicasOn(app, [host.id])
+  if (host) await syncReplicasOn(app, [host.id], { clear: true })
 }
 
 /**
  * Queue a send to each named machine. Never throws: every caller is a write
- * that already happened, and a queue hiccup must not undo it.
+ * that already happened, and a queue hiccup must not undo it. `clear` is a
+ * person's change, which may empty the machine's list.
  */
-export async function syncReplicasOn(app: App, serverIds: Iterable<string>): Promise<void> {
+export async function syncReplicasOn(app: App, serverIds: Iterable<string>, options: { clear?: boolean } = {}): Promise<void> {
+  const data = options.clear ? { clear: true } : {}
   for (const serverId of new Set(serverIds)) {
     try {
-      await app.jobs.dispatch(replicateSync, { serverId }, { unique: `replicate:${serverId}`, actor: null, tenant: null })
+      await app.jobs.dispatch(replicateSync, { serverId, ...data }, { unique: `replicate:${serverId}`, actor: null, tenant: null })
     } catch (err) {
       app.logger.child('replicate-sync').warn('replica list not queued', { serverId, error: (err as Error).message })
     }
   }
 }
 
-/** Queue a send to every machine holding any of these apps. */
+/** Queue a send to every machine holding any of these apps, for a person's change to them. */
 export async function syncReplicasOf(app: App, appIds: string[]): Promise<void> {
   if (!appIds.length) return
   const placed = await (app.db as any).asSystem().appServer.findMany({ where: { appId: { in: appIds } }, select: { serverId: true } }) as { serverId: string }[]
-  await syncReplicasOn(app, placed.map(p => p.serverId))
+  await syncReplicasOn(app, placed.map(p => p.serverId), { clear: true })
 }
 
 // ─── The job ──────────────────────────────────────────────────────────────
 // Retried: a machine not yet registered since the API restarted heartbeats
 // within the delays below, and until it does it replicates the old list.
 
-const replicateSync = defineJob<{ serverId: string }>({
+const replicateSync = defineJob<{ serverId: string; clear?: boolean }>({
   name:        'replicate:sync',
   queue:       'fleet',
   maxAttempts: 5,
@@ -257,7 +268,7 @@ const replicateSync = defineJob<{ serverId: string }>({
   timeout:     4 * 60_000,
   handler: async (ctx) => {
     const { app } = runsAsApp(ctx, 'replicate:sync')
-    const out = await syncReplicas(app, ctx.data.serverId)
+    const out = await syncReplicas(app, ctx.data.serverId, { clear: ctx.data.clear })
     const log = app.logger.child('replicate-sync')
     if (out.skipped.length) log.info('replicating, some volumes not made yet', { serverId: ctx.data.serverId, ...out })
     else                    log.info('replicating', { serverId: ctx.data.serverId, ...out })

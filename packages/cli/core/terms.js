@@ -1385,9 +1385,11 @@ export function collectTerms({ root }) {
           if (/(?:ed|ing)$/.test(head) && !byTerm.has(head.toLowerCase())) return false
           const singular = singularize(tail.toLowerCase())
           if (singular === tail.toLowerCase()) return true
-          // Twice, not once: one stray singular in a source comment let a verb's
-          // subject through as a plural.
-          return (pairs.get(`${head} ${tail[0]}${singular.slice(1)}`)?.count ?? 0) >= 2
+          // A noun is written both ways; a verb's subject is nearly always plural.
+          // A fixed floor was beaten by a stray singular each time the prose grew
+          // one, so the singular must also be a fifth of the plural's count.
+          const seen = pairs.get(`${head} ${tail[0]}${singular.slice(1)}`)?.count ?? 0
+          return seen >= 2 && seen * 5 >= r.count
         })
         .map((r) => ({ term: r.term, count: r.count, spread: r.owners.size }))
         .sort((a, b) => b.spread - a.spread || b.count - a.count)

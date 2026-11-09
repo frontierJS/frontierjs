@@ -25,7 +25,7 @@ import { buildPristine, introspect, diffSchemas,
 import { create, apply, status, verify,
          createForDatabase, listMigrationFiles, migrationStatements,
          describeSkipped, appliedMigrations,
-         baseline, historyGap, driftAgainstLive,
+         baseline, accept, historyGap, driftAgainstLive,
          unacceptedLoss, unresolvedBlocks, renameCandidates } from '../core/migrations.js'
 import { parseRenameFlag, readOperations, askRenames, resolveOperations,
          checkAgainstHistory, renameStatement, describeOperation } from '../core/operations.js'
@@ -919,6 +919,32 @@ async function cmdLock(cfg) {
 // COLUMN` is not idempotent, so replaying it there fails with `duplicate column
 // name`. Reset is the other way out and is what Prisma does; this is the one
 // that keeps the data (`FJS-D123`).
+
+async function cmdAccept(file, cfg) {
+  header('litestone migrate accept')
+  if (!file) fatal('migrate accept needs the recorded file, as the refusal printed it')
+
+  const parseResult = loadSchema(cfg.schema)
+  const dbs         = openSqliteDbs(parseResult, cfg)
+  let   accepted    = null
+  const refusals    = []
+
+  try {
+    for (const { rawDb, migrationsDir } of dbs) {
+      const result = accept(rawDb, file, migrationsDir)
+      if (result.ok) accepted = result
+      else refusals.push(result.message)
+    }
+  } finally {
+    for (const { rawDb } of dbs) rawDb.close()
+  }
+
+  if (!accepted) {
+    for (const message of refusals) console.error(`  ${red('✗')}  ${message}\n`)
+    process.exit(1)
+  }
+  console.log(`  ${green('✓')}  ${accepted.message} ${dim(`(class ${accepted.class})`)}\n`)
+}
 
 async function cmdBaseline(through, cfg) {
   header('litestone migrate baseline')
@@ -5609,7 +5635,7 @@ async function main() {
 
     if (!sub) {
       console.error(`\n  ${red('✗')}  migrate requires a subcommand\n`)
-      console.log(`  ${cyan('dev')} [label]  ·  ${cyan('create')} [label]  ·  ${cyan('apply')}  ·  ${cyan('check')}  ·  ${cyan('lock')}  ·  ${cyan('baseline')}  ·  ${cyan('status')}  ·  ${cyan('verify')}  ·  ${cyan('dry-run')} [label]\n`)
+      console.log(`  ${cyan('dev')} [label]  ·  ${cyan('create')} [label]  ·  ${cyan('apply')}  ·  ${cyan('check')}  ·  ${cyan('lock')}  ·  ${cyan('baseline')}  ·  ${cyan('accept')} <file>  ·  ${cyan('status')}  ·  ${cyan('verify')}  ·  ${cyan('dry-run')} [label]\n`)
       process.exit(1)
     }
 
@@ -5619,6 +5645,7 @@ async function main() {
       case 'dry-run':  await cmdDryRun(rest[0], cfg);  break
       case 'apply':    await cmdApply(cfg);            break
       case 'baseline': await cmdBaseline(rest[0] ?? null, cfg); break
+      case 'accept':   await cmdAccept(rest[0] ?? null, cfg);   break
       case 'check':    await cmdCheck(cfg);            break
       case 'lock':     await cmdLock(cfg);             break
       case 'status':   await cmdStatus(cfg);           break

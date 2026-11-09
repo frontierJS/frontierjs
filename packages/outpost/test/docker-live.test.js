@@ -76,6 +76,35 @@ describe.skipIf(!df)('the inspector against a real daemon', () => {
   }, 60_000)
 })
 
+describe.skipIf(!df)('an unused-image sweep on a real daemon (FJS-4111)', () => {
+  test('keeps the newest of a repository and the one a stopped container holds', async () => {
+    const repository = `fjs-live-keep-${process.pid}`
+    const container  = `${repository}-held`
+    // A layer, because a `FROM scratch` image with only a LABEL is dated 1970
+    // and four of them tie.
+    const build = async (n) => {
+      const proc = Bun.spawn(['docker', 'build', '-q', '--no-cache', '-t', `${repository}:${n}`, '-'], { stdin: new Response(`FROM scratch\nCOPY <<EOF /n\n${process.pid}-${n}\nEOF\n`), stdout: 'ignore', stderr: 'ignore' })
+      expect(await proc.exited).toBe(0)
+    }
+    // Scoped to this test's repository: the sweep itself reads every image on
+    // the daemon, which on a workstation is somebody's.
+    const run = (argv) => argv[1] === 'image' && argv[2] === 'prune'
+      ? Promise.resolve({ exitCode: 0, stdout: '', stderr: '' })
+      : spawnRun(argv[1] === 'image' && argv[2] === 'ls' ? [...argv, '--filter', `reference=${repository}`] : argv)
+    try {
+      // `CreatedAt` is to the second.
+      for (const n of [1, 2, 3, 4]) { await build(n); await Bun.sleep(1100) }
+      expect((await spawnRun(['docker', 'create', '--name', container, `${repository}:1`, 'x'])).exitCode).toBe(0)
+      await createInspector({ run }).prune({ targets: ['unused_images'], keepImages: 1 })
+      const left = await spawnRun(['docker', 'image', 'ls', '--filter', `reference=${repository}`, '--format', '{{.Tag}}'])
+      expect(left.stdout.trim().split('\n').sort()).toEqual(['1', '4'])
+    } finally {
+      await spawnRun(['docker', 'rm', '-f', container])
+      await spawnRun(['docker', 'image', 'rm', '-f', ...[1, 2, 3, 4].map(n => `${repository}:${n}`)])
+    }
+  }, 60_000)
+})
+
 // A stand-in for a copy-aware release: it answers the header from the variable,
 // writes beside the copy as a sessions file would, and reports whether it can
 // reach the internet and the host's gateway. A real junction image is the

@@ -133,6 +133,54 @@ describe('a release run a second time', () => {
     expect(out).toMatchObject({ runnable: false, status: 'cancelled' })
   })
 
+  // FJS-4129: `/deploy` runs to its end with the hub gone, so the release the
+  // replay fails may be the one serving, and the last `success` is older bytes.
+  describe('a rebind after an interrupted release', () => {
+    const older = `sha256:${'a'.repeat(64)}`
+    const svc   = () => env.as(admin).service('deployments')
+
+    // An App of its own, with one release live and a second that died holding
+    // the steps named: `begun` had started when the hub went, `dying` was running.
+    async function interrupted(begun: string[], dying: string) {
+      const sys  = env.system as any
+      const slug = `app-${uniq()}`
+      const own  = await sys.app.create({ data: {
+        workspaceId: ws.id, environmentId: target.environmentId, name: slug, slug, kind: 'container' } })
+
+      const live = await sys.deployment.create({ data: { workspaceId: ws.id, appId: own.id, toImage: `x:${uniq()}`, builtImage: older } })
+      await svc().call('startRun', live.id)
+      await svc().call('finishRun', live.id, { status: 'success' })
+
+      const newer = await sys.deployment.create({ data: { workspaceId: ws.id, appId: own.id, toImage: `x:${uniq()}`, builtImage: `sha256:${'b'.repeat(64)}` } })
+      await svc().call('startRun', newer.id)
+      const startedAt = new Date().toISOString()
+      for (const [position, name] of [...begun, dying].entries())
+        await sys.deploymentStep.create({ data: { deploymentId: newer.id, position, name, startedAt, status: name === dying ? 'running' : 'success' } })
+      expect(await svc().call('startRun', newer.id)).toMatchObject({ runnable: false, interrupted: true })
+      const stopped = await sys.deploymentStep.findFirst({ where: { deploymentId: newer.id, name: dying } })
+      return { own, newer, stopped }
+    }
+
+    test('skips one that stopped during the swap, and the step says it may be serving', async () => {
+      const { own, newer, stopped } = await interrupted([], 'Start container')
+      const out = await svc().call('rebind', own.id)
+      expect(out.skipped).toContain(newer.id)
+      expect(out.builtImage).toBeUndefined()
+      expect(stopped.output).toContain('may be what is serving')
+    })
+
+    test('skips one that stopped after the swap, at its health check', async () => {
+      const { own, newer } = await interrupted(['Start container'], 'Health check')
+      expect((await svc().call('rebind', own.id)).skipped).toContain(newer.id)
+    })
+
+    test('still starts the live bytes after one that stopped before the swap', async () => {
+      const { own, stopped } = await interrupted([], 'Pull image')
+      expect((await svc().call('rebind', own.id)).builtImage).toBe(older)
+      expect(stopped.output).not.toContain('may be what is serving')
+    })
+  })
+
   // FJS-3861: a release no job is left running reads as in flight forever.
   test('the sweep fails an old release with no live job, and leaves a fresh one', async () => {
     const { sweepStuckReleases, RELEASE_BOUND_MS } = await import('../src/domain/release/release-record.ts')
