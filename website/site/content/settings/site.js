@@ -16,7 +16,7 @@
 export default {
   // Without it the sitemap's <loc>s are relative, which no crawler accepts, and
   // robots.txt carries no Sitemap line.
-  siteUrl: 'https://frontierjs.com',
+  siteUrl: 'https://fjs.maverickmade.tech',
 
   // The switcher doubles as a live demo of @frontierjs/css, which is half the
   // reason this site exists — it is that package's second consumer. A subset of
