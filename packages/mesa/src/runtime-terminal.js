@@ -67,6 +67,7 @@
  */
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext, flushSync } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
+import { clock } from './clock.js'
 import { TERMINAL_TAGS, TERMINAL_EVENTS, WIDGET_ROLES, isInline, inputKind, pickerHidden, opaque, frosted, bordered, stackRows, MUTED_TEXT } from './terminal/tags.js'
 import { TONES, toneOf } from '@frontierjs/toolbelt/tty'
 import { htmlEntitiesToText } from './entities.js'
@@ -76,6 +77,29 @@ import { htmlEntitiesToText } from './entities.js'
 // for a server render and makes both no-ops. Set as this module loads, which
 // is before any component that imports it evaluates.
 setRenderEnvironment(false, true)
+
+// A TUI exits when its last handle goes, so a timer the app declared must not
+// be one that holds it — haven's `Study.mesa` unrefs its intervals by hand for
+// this. The DOM source's shape, with every handle unref'd; a source a test
+// installs with `clock.use()` after this still wins.
+const unref = (h) => { h?.unref?.(); return h }
+export const terminalSource = {
+  now: () => Date.now(),
+  after(ms, fn) {
+    const id = unref(setTimeout(fn, ms))
+    return () => clearTimeout(id)
+  },
+  every(ms, fn) {
+    const id = unref(setInterval(fn, ms))
+    return () => clearInterval(id)
+  },
+  frame(fn) {
+    if (typeof requestAnimationFrame !== 'function') return terminalSource.after(16, fn)
+    const id = requestAnimationFrame(fn)
+    return () => cancelAnimationFrame(id)
+  },
+}
+clock.use(terminalSource)
 
 const core = await import('@opentui/core').catch(missingPeer('@opentui/core', 'the terminal target'))
 const { BoxRenderable, TextRenderable, InputRenderable, TextareaRenderable, ScrollBoxRenderable, TextAttributes, RGBA, StyledText } = core
@@ -466,7 +490,7 @@ class DialogBox extends BoxRenderable {
     set_attribute(this, 'open', null)
     if (focused && within(focused, this)) focused.blur()
     if (back && !back.isDestroyed && back.focusable) back.focus()
-    setTimeout(() => { if (!this.isDestroyed) dispatch(this, 'close') })
+    clock.after(0, () => { if (!this.isDestroyed) dispatch(this, 'close') }, 'dialog close')
   }
   // Blank under a modal dialog: the page behind it is drawn first and would
   // show through every cell the dialog leaves empty.
@@ -1097,13 +1121,13 @@ function opened(node, open) {
   if (summary && !summary.isDestroyed) set_text(summary.__triangle, triangle(open))
   if (node.__toggleFrom !== undefined) return
   node.__toggleFrom = !open
-  setTimeout(() => {
+  clock.after(0, () => {
     const from = node.__toggleFrom
     node.__toggleFrom = undefined
     if (node.isDestroyed || from === node.open) return
     const state = (o) => o ? 'open' : 'closed'
     dispatch(node, 'toggle', { oldState: state(from), newState: state(node.open) })
-  })
+  }, 'details toggle')
 }
 
 export function spread(node, fn) {

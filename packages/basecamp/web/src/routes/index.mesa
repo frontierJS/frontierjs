@@ -64,7 +64,7 @@ title: Home
   // says the fleet MOVED — a push lands in one and the counts are asked for
   // again, a beat later so a burst of pushes is one read.
   let summary = null
-  let summaryTimer = null
+  let summaryAsked = 0
   async function loadSummary() {
     try {
       summary = await infra.service.invoke('summary', null)
@@ -74,11 +74,8 @@ title: Home
     }
   }
   loadSummary()
-  $: session.workspaceId, srv(), dep(), () => {
-    clearTimeout(summaryTimer)
-    summaryTimer = setTimeout(loadSummary, 500)
-  }
-  $.onDestroy(() => clearTimeout(summaryTimer))
+  $: session.workspaceId, srv(), dep(), () => { summaryAsked++ }
+  $.after(500, loadSummary, { key: summaryAsked, when: summaryAsked > 0 })
 
   const n = (m, k) => m?.[k] ?? 0
 

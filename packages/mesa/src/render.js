@@ -41,6 +41,7 @@
 import { setRenderEnvironment, createRoot, flushSync, settleAwaits, startRender } from './runtime.js'
 import { missingPeer, NO_LOADING } from './optional-peer.js'
 import { isAnchorComment } from './runtime-server.js'
+import { clock, quietSource } from './clock.js'
 
 const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'renderToHTML'))
 
@@ -52,7 +53,10 @@ let _win = null
 // has one — `requestIdleCallback` and `cancelIdleCallback` are on the list and
 // happy-dom 20 has neither, so naming a global here is a request rather than a
 // promise. parent/top are here because happy-dom references them internally
-// during DOM operations like appendChild.
+// during DOM operations like appendChild. The rAF here is happy-dom's, for code
+// that names it; Mesa's own timers read the clock, which a render holds on
+// `quietSource` so nothing fires into a page already serialized, and restores
+// before returning when the render had no `{#await}`.
 const GLOBALS = [
   'document', 'window', 'navigator', 'location', 'history',
   'parent', 'top', 'self',
@@ -323,6 +327,7 @@ async function _render(ComponentFactory, props, options) {
   // Inside the try: a throw under a `<mesa:boundary>` leaves the flush
   // rather than rendering `failed` into the page (`FJS-D377`).
   let dispose = null
+  const prev = clock.use(quietSource)
   try {
     createRoot((d) => {
       dispose = d
@@ -334,6 +339,8 @@ async function _render(ComponentFactory, props, options) {
   } catch (e) {
     dispose?.()
     throw renderFailure(e, options.label)
+  } finally {
+    clock.use(prev)
   }
   const html = options.keepAnchors ? container.innerHTML : _serializeWithoutAnchors(container)
   dispose()
@@ -354,12 +361,15 @@ async function _renderString(ComponentFactory, props, options) {
     )
   }
   let started = null
+  const prev = clock.use(quietSource)
   try {
     started = startRender(ComponentFactory, props)
     if (started.waiting) await started.waiting
   } catch (e) {
     started?.dispose()
     throw renderFailure(e, options.label)
+  } finally {
+    clock.use(prev)
   }
   const { out, dispose } = started
   const html = out.join('').trim()

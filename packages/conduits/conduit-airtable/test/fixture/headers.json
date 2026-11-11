@@ -1,0 +1,614 @@
+[
+  {
+    "capture": "list-projects-p1",
+    "request": "GET /v0/{base}/{table}?returnFieldsByFieldId=true&pageSize=2",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "604",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "604",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "list-projects-p2",
+    "request": "the same with &offset= from page 1 (last page, no offset)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "389",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "389",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "list-projects-filtered",
+    "request": "POST /v0/{base}/{table}/listRecords with filterByFormula, fields[], returnFieldsByFieldId in the body",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "157",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "157",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "list-projects-names",
+    "request": "GET /v0/{base}/{table}?pageSize=1 (no returnFieldsByFieldId: keys are names)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "343",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "343",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "list-tasks",
+    "request": "GET /v0/{base}/{table}?returnFieldsByFieldId=true (a singleCollaborator and a number)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "341",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "341",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "get-client-sparse",
+    "request": "GET /v0/{base}/{table}/{rec} on a record created with one field: empty fields are omitted",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "110",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "110",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "get-client-filled",
+    "request": "GET a record with five text-ish fields filled",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "306",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "306",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "get-project",
+    "request": "GET a record with links, a count, a currency, a select and a date",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "358",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "358",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "create-1",
+    "request": "POST single record {fields} (answers a bare record, keyed by name)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "104",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "104",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "create-10",
+    "request": "POST {records:[10]}",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "1065",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "1065",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "create-11",
+    "request": "POST {records:[11]} (accepted: 200, not 422)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "1181",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "1181",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "create-101-422",
+    "request": "POST {records:[101]}: refused, cap named in the message",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "126",
+      "server": "Tengine",
+      "etag": "W/\"7e-Q/a5WKbg2akWiiQV4bGAxiv5/c0\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "patch-fill",
+    "request": "PATCH a record, five fields (query returnFieldsByFieldId ignored: answer keyed by name)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "257",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "257",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "patch-null",
+    "request": "PATCH one field to null: cleared",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "229",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "229",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "get-after-null",
+    "request": "GET after the null patch",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "273",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "273",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "patch-empty-string",
+    "request": "PATCH a multilineText to \"\": cleared",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "200",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "200",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "get-after-empty-string",
+    "request": "GET after the \"\" patch",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "232",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "232",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "patch-body-by-id",
+    "request": "PATCH with returnFieldsByFieldId in the BODY: answer keyed by id",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "265",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "265",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "put-one-field",
+    "request": "PUT one field: every other field cleared",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "114",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "114",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "get-after-put",
+    "request": "GET after the PUT",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "114",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "114",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "upsert-creates",
+    "request": "PATCH {performUpsert:{fieldsToMergeOn:[Client Name]}, records} on no match",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "210",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "210",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "upsert-updates",
+    "request": "the same on one match",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "211",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "211",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "upsert-two-422",
+    "request": "the same on two matches",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "115",
+      "server": "Tengine",
+      "etag": "W/\"73-CgzLBM4YdER7z0tgLFYqCJnHLAo\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "record-missing-403",
+    "request": "GET a well-formed record id that does not exist (403, not 404)",
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "251",
+      "server": "Tengine",
+      "etag": "W/\"fb-E5+5oHBiiIUbRT5O+8F5CtGpkBQ\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "record-missing-patch-403",
+    "request": "PATCH a well-formed record id that does not exist",
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "251",
+      "server": "Tengine",
+      "etag": "W/\"fb-E5+5oHBiiIUbRT5O+8F5CtGpkBQ\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "table-missing-403",
+    "request": "GET /v0/{base}/tblXXXXXXXXXXXXXX",
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "251",
+      "server": "Tengine",
+      "etag": "W/\"fb-E5+5oHBiiIUbRT5O+8F5CtGpkBQ\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "base-missing-403",
+    "request": "GET /v0/appXXXXXXXXXXXXXX/{table}",
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "251",
+      "server": "Tengine",
+      "etag": "W/\"fb-E5+5oHBiiIUbRT5O+8F5CtGpkBQ\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "unknown-field-id-422",
+    "request": "POST a create with fldXXXXXXXXXXXXXX",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "93",
+      "server": "Tengine",
+      "etag": "W/\"5d-r21hpitlPrHTdrFuMPCEAcGGpHM\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "unknown-field-name-422",
+    "request": "POST a create with a field name that does not exist",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "89",
+      "server": "Tengine",
+      "etag": "W/\"59-wg8apHKCSfwTNnmR7wElZgjcQsI\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "bogus-token-401",
+    "request": "GET with a bogus bearer token",
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "80",
+      "server": "Tengine",
+      "etag": "W/\"50-8xYAvLBWleFLl/buYhG+M42uVZo\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "computed-field-422",
+    "request": "POST a create writing a count field",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "131",
+      "server": "Tengine",
+      "etag": "W/\"83-Z+2z94XvZDVnp14uAP1Kz16+jCA\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "unknown-view-422",
+    "request": "GET ?view=NoSuchView",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "78",
+      "server": "Tengine",
+      "etag": "W/\"4e-M+UCJqFZS2Wfy3IPd0b6uVMfu2Y\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "bad-formula-422",
+    "request": "GET ?filterByFormula=NOPE(",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "153",
+      "server": "Tengine",
+      "etag": "W/\"99-Kt/ZHXtVT7V+atXemKqs/pffUiU\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "bad-page-size-422",
+    "request": "GET ?pageSize=500",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "106",
+      "server": "Tengine",
+      "etag": "W/\"6a-kpyd5fJktN4fYSgO7NWRIQ4zAzI\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "bad-offset-422",
+    "request": "GET ?offset=itrBOGUS/recBOGUS",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "102",
+      "server": "Tengine",
+      "etag": "W/\"66-cVzs2crlSU/VwXZsT7Ix0RKvgJM\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "rate-limit-429",
+    "request": "one of 20 refused out of 60 parallel GETs on one base (40 got 200)",
+    "status": 429,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "99",
+      "server": "Tengine",
+      "etag": "W/\"63-mYDXWNyi4sH/UlEGFJ9RXTZNG6I\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "select-by-name",
+    "request": "POST a project: select by name, link by [recId], date, currency as a number",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "316",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "316",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "select-by-id",
+    "request": "POST a project: select by choice id (answers the name)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "184",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "184",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "select-unknown-422",
+    "request": "POST a select value that is not a choice, no typecast",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "134",
+      "server": "Tengine",
+      "etag": "W/\"86-kfTD8So8xRKS8Q14qdVY6qmaGlY\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "select-unknown-typecast",
+    "request": "the same with typecast:true (a choice is created)",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "186",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "186",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "date-us-format",
+    "request": "POST a date \"11/10/2026\" without typecast: accepted and parsed",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "163",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "163",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "date-us-format-typecast-422",
+    "request": "the same with typecast:true: refused",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "117",
+      "server": "Tengine",
+      "etag": "W/\"75-HYZ4Lk1CXdO2geZ6MrhSRLcOgHY\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "link-by-name-422",
+    "request": "POST a record link as a primary-field value",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "100",
+      "server": "Tengine",
+      "etag": "W/\"64-wPApyxU2kMQSxLDnxhQMR5Qjx/I\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "link-missing-422",
+    "request": "POST a record link to a record that does not exist",
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "94",
+      "server": "Tengine",
+      "etag": "W/\"5e-tbY83aBoCSO/GFcHkPoAxsDsAh0\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "task-collaborator",
+    "request": "POST a task with a singleCollaborator as {id}",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "327",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "327",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "webhook-create",
+    "request": "POST /v0/bases/{base}/webhooks, notificationUrl omitted",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "263",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "263",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "webhook-payloads",
+    "request": "GET /v0/bases/{base}/webhooks/{id}/payloads after one create and one update",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "1101",
+      "server": "Tengine",
+      "etag": "W/\"44d-nuSAwhwrb2JWpyO+4/Y4Zuj8UDs\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "webhook-payloads-past-end",
+    "request": "the same with ?cursor= the cursor the last pull answered",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "69",
+      "server": "Tengine",
+      "etag": "W/\"45-GUpNmJMEbQTy2XDODPKwDLo4XD8\"",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "webhook-refresh",
+    "request": "POST /v0/bases/{base}/webhooks/{id}/refresh",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "45",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "45",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "webhook-list",
+    "request": "GET /v0/bases/{base}/webhooks",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "361",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "361",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  },
+  {
+    "capture": "webhook-delete",
+    "request": "DELETE /v0/bases/{base}/webhooks/{id}",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": "2",
+      "server": "Tengine",
+      "airtable-uncompressed-content-length": "2",
+      "airtable-datacenter-regions": "us-east-1"
+    }
+  }
+]

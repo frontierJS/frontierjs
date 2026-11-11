@@ -132,6 +132,7 @@ $: selectedId, async () => {
 ```js
 const cities = await getCities(selectedState)
 // $async.cities.loading / .pending / .error generated automatically
+// $async.cities.refresh() runs it again; the latest run wins
 ```
 
 ### Slots — `<slot />`
@@ -364,9 +365,10 @@ const pages = await renderAll([
 ])
 ```
 
-On the server, `$.onMount` and path watches are inert while effects and block
-directives run and are then disposed; `{#await}` renders its `{:pending}`
-branch; `{#virtual each}` renders its first window, since there is no viewport to
+On the server, `$.onMount` and path watches are inert, `$.after`/`$.every` arm
+nothing (`FJS-D2059`) and a `$.sleep` resolves at once (`FJS-D2063`), while effects and block
+directives run and are then disposed; `{#await}` waits and renders its settled
+branch (`FJS-D1647`); `{#virtual each}` renders its first window, since there is no viewport to
 measure. Comment anchors are stripped unless
 you pass `{ keepAnchors: true }`; the string mode (`target: 'server'`) writes
 none and refuses the option by name. On either path a `<mesa:boundary>` catches

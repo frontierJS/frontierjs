@@ -31,7 +31,8 @@ const resetWarnings = captureWarnings('mesaWarnings')
  *
  *  Returns after a macrotask, not a microtask: mesa flushes its effects on a
  *  microtask, and `{@attach}` handlers that measure or animate run after that.
- *  A probe on the same tick reads a half-built tree. */
+ *  A probe on the same tick reads a half-built tree. The macrotask is the
+ *  native one, so a page holding its clock does not hang the mount. */
 window.mesaMount = async (specifier, props = {}) => {
   window.mesaUnmount()
   resetWarnings()
@@ -44,7 +45,7 @@ window.mesaMount = async (specifier, props = {}) => {
   stage.appendChild(label)
   current = mount(label, mod.default, { props, root: stage })
 
-  await new Promise((r) => setTimeout(r, 0))
+  await new Promise((r) => (globalThis.__fjsClock?.native ?? globalThis).setTimeout(r, 0))
   return true
 }
 
@@ -62,7 +63,7 @@ window.mesaMountBare = async (specifier, props = {}) => {
   stage.appendChild(anchor)
   mod.default(anchor, props)
 
-  await new Promise((r) => setTimeout(r, 0))
+  await new Promise((r) => (globalThis.__fjsClock?.native ?? globalThis).setTimeout(r, 0))
   return true
 }
 

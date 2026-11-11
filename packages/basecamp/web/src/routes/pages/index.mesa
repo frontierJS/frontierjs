@@ -34,9 +34,6 @@ title: Pages
   let busy    = {}
   let output  = {}
 
-  let timer = null
-  let destroyed = false
-
   async function load() {
     try {
       const answer = await pages.service.invoke('list', null)
@@ -52,13 +49,9 @@ title: Pages
     }
   }
 
-  function schedule() {
-    if (destroyed || !offered) return
-    timer = setTimeout(() => load().then(schedule), POLL_MS)
-  }
-
-  load().then(schedule)
-  $.onDestroy(() => { destroyed = true; clearTimeout(timer); removeEventListener('message', onPageLink) })
+  load()
+  $.every(POLL_MS, load, { when: offered })
+  $.onDestroy(() => removeEventListener('message', onPageLink))
 
   // A pid with no exit is a run this API started and is still holding.
   const running = (r) => !!(r.state?.pid && !r.state?.exit)

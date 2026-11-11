@@ -65,32 +65,43 @@ Sources: [frontierJS/frontierjs](https://github.com/frontierJS/frontierjs) ·
 
 ## Open questions
 
-- **Q1 — What is filed: FRONTIERJS, or FRONTIER with a logo?** **Recommend
-  FRONTIERJS as a word mark**: it is the name in every package and URL, and the
-  compound is the only form with a chance against the table above. A logo mark
-  can follow.
-- **Q2 — Which classes?** **A** — class 9 only (downloadable framework).
-  **B** — 9 and 42 (hosted platform). **Recommend A now.** Class 42 is where the
-  registered FRONTIER marks sit, so it is the most conflicted class. An
-  intent-to-use filing would be allowed, so delaying it is about fee and timing.
-  The hosted product's own name (*Frontier Cloud*) is a separate mark that
-  FRONTIERJS does not cover.
-- **Q3 — When are Basecamp and Oracle renamed?** **A** — now, while nothing has
-  shipped. **B** — before Frontier Cloud ships. **Recommend A, sequenced after
-  0.2**, so each new name is coined and cleared once. The reason is the
-  third-party mark: a paid product cannot ship as *Basecamp*. Nobody depends on
-  either name, since both packages are `"private": true`. Oracle is not part of
-  what Frontier Cloud sells, so it can trail Basecamp. Fall back to B if 0.2
-  drags on.
-- **Q4 — Who holds the mark?** The owner personally, or a company (Kobami, or a
-  new entity). The holder has to be the one that controls the name's use.
-- **Q5 — Are sub-brands registered?** **Recommend no.** Register the umbrella
-  only, and keep Sierra, Junction, Litestone and the rest as package names under
-  it, cleared but not filed. A sub-brand sold on its own gets its own filing,
-  the way Vercel files Turborepo. If Basecamp's successor names the paid
-  product, that name is one.
+- **Q1 — What is filed: FRONTIERJS, or FRONTIER with a logo?**
+  - **A** — FRONTIERJS as a word mark.
+  - **B** — FRONTIER with a logo (a design mark).
+  - **Recommend A** — FRONTIERJS is the name in every package and URL, and the
+    compound is the only form with a chance against the table above. A logo
+    mark can follow.
+- **Q2 — Which classes?**
+  - **A** — class 9 only (downloadable framework).
+  - **B** — 9 and 42 (hosted platform).
+  - **Recommend A now** — class 42 is where the registered FRONTIER marks sit,
+    so it is the most conflicted class. An intent-to-use filing would be
+    allowed, so delaying it is about fee and timing. The hosted product's own
+    name (*Frontier Cloud*) is a separate mark that FRONTIERJS does not cover.
+- **Q3 — When are Basecamp and Oracle renamed?**
+  - **A** — now, while nothing has shipped.
+  - **B** — before Frontier Cloud ships.
+  - **Recommend A, sequenced after 0.2** — so each new name is coined and
+    cleared once. The reason is the third-party mark: a paid product cannot
+    ship as *Basecamp*. Nobody depends on either name, since both packages are
+    `"private": true`. Oracle is not part of what Frontier Cloud sells, so it
+    can trail Basecamp. Fall back to B if 0.2 drags on.
+- **Q4 — Who holds the mark?** The holder has to be the one that controls the
+  name's use.
+  - **A** — the owner personally.
+  - **B** — Kobami.
+  - **C** — a new entity.
+- **Q5 — Are sub-brands registered?**
+  - **A** — no: register the umbrella only, and keep Sierra, Junction,
+    Litestone and the rest as package names under it, cleared but not filed.
+  - **B** — yes: file each public package name beside the umbrella.
+  - **Recommend A** — a sub-brand sold on its own gets its own filing, the way
+    Vercel files Turborepo. If Basecamp's successor names the paid product,
+    that name is one.
 
 ---
+
+## Plan
 
 ### Phase 0 — Clearance
 

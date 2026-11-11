@@ -313,8 +313,12 @@ export function apiPaths(snapshot) {
 
 // A provider sign-in is a NAVIGATION to an API redirect (`/auth/oauth/<p>` and
 // its callback), and those routes mount only when a provider is configured, so
-// no snapshot names them. Proxied whatever `Accept` says.
-const NAVIGATED = ['/auth/oauth/*']
+// no snapshot names them. Proxied whatever `Accept` says. A backup's download is
+// a navigation to a file: left out, the browser is handed the shell and Sierra
+// logs `No route found`, while curl, sending no text/html, still gets the file.
+// Basecamp's dev proxy and image Caddy read `NAVIGATED_API_PATHS`, and
+// edge.test.js holds this list equal to it.
+const NAVIGATED = ['/auth/oauth/*', '/backup-archive/*', '/app-archive-pull/*']
 
 // Unprefixed, `/projects` is a service and a page. A request asking for HTML is
 // rewritten to the shell before the proxy sees it; not terminal, so the SPA

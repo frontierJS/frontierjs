@@ -1,7 +1,7 @@
 <script>
   // AppBackups.mesa — an App's archives of its data volume: the rows, Back up
   // now, Restore, Download, Discard, Rescan bucket (`IDEAS/backups.md` 5.3) and
-  // Upload (`IDEAS/app-archives.md` 3.2).
+  // Upload (`IDEAS/app-archives.md` 3.2), and which bucket it replicates to.
   //
   // Every action names a MACHINE, because the volume is per machine: *Back up
   // now* archives that placement's copy, and *Restore* extracts onto it. One
@@ -13,6 +13,7 @@
   // answered.
   import { appBackups } from '../resources/AppBackup.mesa'
   import { apps }       from '../resources/App.mesa'
+  import { backupDestinations } from '../resources/BackupDestination.mesa'
   import { getClient }  from '@frontierjs/sierra/resource'
   import { ago }        from '../lib/datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
@@ -35,7 +36,8 @@
   let error   = null
   let busy    = null
   let chosen  = ''
-  let listingUntil = 0
+  let listing = false
+  let listingRuns = 0
   let files   = []
 
   $: placements = app?.placement ?? []
@@ -58,14 +60,8 @@
   const SETTLED = new Set(['success', 'failed', 'timeout'])
   $: inFlight = rows.some(b => !SETTLED.has(b.status))
 
-  let poll = null
-  function watch() {
-    clearTimeout(poll)
-    if (!inFlight && Date.now() > listingUntil) return
-    poll = setTimeout(async () => { await load(); watch() }, 1500)
-  }
-  $: inFlight, () => watch()
-  $.onDestroy(() => clearTimeout(poll))
+  $.every(1500, load, { when: inFlight || listing })
+  $.after(15_000, () => { listing = false }, { key: listingRuns, when: listing })
 
   // The schedule is the App's own `backupCron`. The service refuses an
   // expression the clock cannot hold before the write and the screen shows
@@ -85,6 +81,58 @@
       error = e.message
     } finally {
       busy = null
+    }
+  }
+
+  // `test` runs after the save because its Object Lock and key-scope checks
+  // apply only to a destination an app holds, so the test made when the
+  // destination was added skipped both. A refusal leaves the pointer set and
+  // says so; Stop replicating is the person's call.
+  let destinations  = null
+  let replicaDraft  = app?.replicaDestinationId ?? ''
+  let replicaTested = null
+  $: replicaNow = app?.replicaDestinationId ?? null
+
+  backupDestinations.service.find({}, { limit: 200 })
+    .then(r => destinations = r.data)
+    .catch(e => error = e.message)
+
+  $: replicaOptions = [
+    ...(destinations ?? []).map(d => ({ value: d.id, label: `${d.name} — ${d.bucket}` })),
+    ...(replicaNow && destinations && !destinations.some(d => d.id === replicaNow)
+      ? [{ value: replicaNow, label: 'A destination in another workspace' }]
+      : []),
+  ]
+  $: replicaLabel = replicaOptions.find(o => o.value === replicaNow)?.label ?? 'on'
+
+  async function saveReplica(next) {
+    error = null; busy = 'replica'; replicaTested = null
+    try {
+      const row = await apps.service.patch(app.id, { replicaDestinationId: next })
+      replicaNow   = row.replicaDestinationId ?? null
+      replicaDraft = replicaNow ?? ''
+      toasts.success(replicaNow ? 'Replica set. Each machine restarts Litestream with it.' : 'Replica stopped')
+      if (replicaNow) await testReplica(replicaNow)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // `test` is an administrator's and `apps.patch` a developer's, so a 403 here
+  // is a saved pointer nobody has checked yet rather than a bad bucket.
+  async function testReplica(id) {
+    try {
+      const tested = await backupDestinations.service.invoke('test', id)
+      // null is a bucket that could not say, which is how R2 answers.
+      replicaTested = tested.lockDays == null
+        ? { tone: 'warning', text: 'The bucket took a write and a delete under this app\'s path, but could not say whether it has an Object Lock. Check that it has none: a locked bucket keeps and bills every replica generation.' }
+        : { tone: 'success', text: 'The bucket took a write and a delete under this app\'s path, and reports no compliance-mode Object Lock.' }
+    } catch (e) {
+      replicaTested = e.status === 403
+        ? { tone: 'warning', text: 'Saved, but testing a bucket is an administrator\'s: one should run Test on it in Hub settings.' }
+        : { tone: 'danger', text: `Saved, but the bucket check failed: ${e.message}` }
     }
   }
 
@@ -171,8 +219,8 @@
     try {
       await appBackups.service.invoke('rescan', null, { appId: app.id })
       toasts.success('Listing the bucket. Archives no row names appear below.')
-      listingUntil = Date.now() + 15_000
-      watch()
+      listing = true
+      listingRuns++
     } catch (e) {
       error = e.message
     } finally {
@@ -297,6 +345,47 @@
           </Button>
         </div>
       </div>
+    {/if}
+  </Card>
+
+  <Card id="app-replica">
+    <div class="section-header">
+      <h2 class="h4">Continuous replica</h2>
+      <Badge tone="muted" id="app-replica-state">{replicaNow ? replicaLabel : 'off'}</Badge>
+    </div>
+    <p class="text-sm text-muted">
+      Litestream streams every <code>.db</code> file in this app's volume to the bucket within seconds, from each
+      machine it is placed on. Saving sends those machines the new list and restarts Litestream; each placement on
+      Overview then shows when it last synced.
+    </p>
+    {#if destinations && !destinations.length && !replicaNow}
+      <p class="text-sm text-muted" id="app-replica-none">
+        This workspace has no destinations yet. Add one in <a href="/hub/settings/">Hub settings</a>, on a bucket with no Object Lock.
+      </p>
+    {:else}
+      <Select id="app-replica-destination" name="replicaDestinationId" label="Destination"
+              value={replicaDraft} options={replicaOptions} placeholder="Choose a destination"
+              hint="A bucket with no Object Lock, and a key that reaches only this app's objects. A destination serves one replica, so one in use elsewhere is refused. Destinations are added in Hub settings."
+              oninput={(e) => replicaDraft = e.target.value}
+              onchange={(e) => replicaDraft = e.target.value} />
+      <div class="cluster">
+        <Button treatment="outlined" id="app-replica-save"
+                disabled={!replicaDraft || replicaDraft === replicaNow || !!busy}
+                onclick={() => saveReplica(replicaDraft)}>
+          {busy === 'replica' ? 'Saving…' : replicaNow ? 'Change destination' : 'Start replicating'}
+        </Button>
+        {#if replicaNow}
+          <Button treatment="ghost" id="app-replica-stop" disabled={!!busy}
+                  data-confirm="This app stops replicating on every machine it is placed on. What is in the bucket stays, and the key keeps working until you revoke it at the vendor."
+                  data-confirm-title="Stop replicating?" data-confirm-label="Stop" data-confirm-tone="danger"
+                  onclick={() => saveReplica(null)}>Stop replicating</Button>
+        {/if}
+      </div>
+    {/if}
+    {#if replicaTested}
+      <article class="alert {replicaTested.tone}" id="app-replica-test">
+        <div class="alert-content">{replicaTested.text}</div>
+      </article>
     {/if}
   </Card>
 

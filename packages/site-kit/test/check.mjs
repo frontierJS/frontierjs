@@ -78,6 +78,17 @@ try {
     check('--only narrows to one rule', (await runCheck({ root: SITE, stages: ['source'], only: ['dividers'] })).rules.join() === 'dividers')
   }
 
+  // ─── a route group adds nothing to a page's URL ───────────────────────────
+  {
+    write(join(SITE, 'content/routes/(company)/team.md'), ['---', 'render: static', 'title: Team', '---', '', 'Our team.', ''].join('\n'))
+    write(join(SITE, 'content/settings/_redirects'), '/team/ /about/ 301\n')
+    const r = await runCheck({ root: SITE, stages: ['source'], only: ['redirects'] })
+    const shadow = r.findings.filter((f) => f.key === 'redirect-shadows-page')
+    check('a redirect over a page in a route group shadows it', shadow[0]?.message.startsWith('/team/ redirects away'), JSON.stringify(r.findings))
+    rmSync(join(SITE, 'content/routes/(company)'), { recursive: true })
+    rmSync(join(SITE, 'content/settings/_redirects'))
+  }
+
   // ─── the built stage ───────────────────────────────────────────────────────
   // The source defects that stop a build (an unknown tag or layout, FJS-1495)
   // go; the built rules read what the build wrote.

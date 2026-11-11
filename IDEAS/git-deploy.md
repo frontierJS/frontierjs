@@ -544,6 +544,37 @@ Each is ruled through `decision-rules` and the answer is cited by its `Q`.
     Basecamp's rows and nothing the Outpost sees; a key without
     `domainRoutes:read` stops mattering. Cost: the laptop door's web half
     needs a Basecamp that answers the list.
+- ~~**Q7 — How does an App added to an existing Project get its deploy key and push hook written at GitHub?**~~ **Answered 2026-11-10 (`FJS-D2051`): A — `apps.connect`, a method on any existing App. It mints the key, turns push on and writes both at the forge through one helper that `fromRepo` calls too. Gate ADMINISTRATOR, `enablePush`'s level. It refuses by name a source that is not a GitHub repository or an App with no server.**
+  A second environment of one repository, for example a `development` App
+  tracking `dev` on a dev Outpost beside production's App on `main`. Only
+  `projects.fromRepo` calls `connectRepository`, and it always makes a new
+  Project.
+  - **A** — `apps.connect`, a method on any existing App. It mints the key,
+    turns push on and writes both at the forge through one helper that
+    `fromRepo` calls too. Gate ADMINISTRATOR, `enablePush`'s level. It refuses by
+    name a source that is not a GitHub repository or an App with no server.
+  - **B** — `projects.fromRepo` takes an existing `projectId` and an
+    environment, and adds the Environment and the App to it.
+  - **C** — build nothing; document the hand path (place, `mintDeployKey`,
+    `enablePush`, paste the key and the hook at GitHub).
+  - **Recommend A** — connecting is a fact about the App, not the Project, and
+    the dev App needs what production's App got. Today an App whose connect
+    failed at creation has no retry; A is that retry. B gives `fromRepo` two
+    modes its name stops describing, and C leaves the gap open.
+  *Built (with Q8):* `connectToForge` in `apps.service.ts` mints the key, turns
+  push on unless it is already on, and calls `connectRepository`;
+  `projects.fromRepo` and the new `apps.connect` both call it. The App page's
+  Deploy on push card has *Connect to GitHub*. Drives: `from-repo.test.ts`
+  49/49 (four `apps.connect` tests, among them a development App on the same
+  repository getting its own hook) and `verify:screens` 379/379 (*app detail —
+  connect at GitHub*).
+- ~~**Q8 — What does `apps.connect` do on an App whose push is already on?**~~ **Answered 2026-11-10 (`FJS-D2052`): A — write the key if it is missing, leave the hook, and answer a note that push is already on.**
+  The push secret is encrypted and the token is stored only as a hash, so
+  neither can be read back to write the hook again.
+  - **A** — write the key if it is missing, leave the hook, and answer a note
+    that push is already on.
+  - **B** — rotate the secret and token and write the hook again.
+  - **Recommend A** — B silently breaks every other caller of the old hook.
 
 ## Sources
 

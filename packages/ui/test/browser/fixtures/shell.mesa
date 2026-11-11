@@ -77,7 +77,7 @@
 
   async function out() {
     signouts++
-    await new Promise((r) => setTimeout(r, 60))
+    await $.sleep(60)
     user = null
     level = 0
   }

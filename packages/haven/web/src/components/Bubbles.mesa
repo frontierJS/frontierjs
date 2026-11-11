@@ -19,22 +19,17 @@
   export let lines = []
 
   // Bumped when the freshest line on screen turns old, so it is drawn again.
-  // `timer` is a `var`: as a `let` it is a signal the block below reads and
-  // writes, and the block reruns itself without end.
   let tick = 0
-  var timer = null
-  $.onDestroy(() => clearTimeout(timer))
 
   function shown(h, said, names, sx, sy, v, mine) {
-    const now = Date.now()
-    const out = bubbles(h, said, sx, sy, v, spawn, { mine, names, now })
-    const next = Math.min(...out.map((b) => b.until ?? Infinity))
-    clearTimeout(timer)
-    if (next < Infinity) timer = setTimeout(() => { tick++ }, next - now)
-    return out
+    return bubbles(h, said, sx, sy, v, spawn, { mine, names, now: Date.now() })
   }
 
   $: list = (tick, shown(here.get(), lines, nicks, x, y, view, hushed))
+  $: next = Math.min(...list.map((b) => b.until ?? Infinity))
+  // `tick` is in the key: a timer that fires a millisecond early leaves `next`
+  // unchanged, and keyed on `next` alone the bubble would never be redrawn.
+  $.after(next - Date.now(), () => { tick++ }, { key: `${next}:${tick}`, when: next < Infinity })
 </script>
 
 {#each list as b (`${b.key}:${b.ink}`)}

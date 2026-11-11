@@ -12,7 +12,7 @@ This folder is the live home (`FJS-D1559`, which superseded `FJS-D1185`). Every 
 - **A connector built on another imports it as a package**: gmail imports `@frontierjs/conduit-oidc` as `workspace:*`, and s3 peers on `@frontierjs/toolbelt/sigv4`.
 - **Held out of releases** until each is on npm; `DRIVES.md` has one row for the group and `docs/TESTING.md` one runner row.
 
-## The 26 connectors
+## The 29 connectors
 
 | Area | Connector | Covers |
 | --- | --- | --- |
@@ -42,5 +42,6 @@ This folder is the live home (`FJS-D1559`, which superseded `FJS-D1185`). Every 
 | | `conduit-turnstile` | Cloudflare Turnstile siteverify |
 | Google | `conduit-google` | Maps Platform (Places New, Routes, Geocoding) and Firebase Cloud Messaging (HTTP v1) |
 | Data | `conduit-plausible` | The read-only, rate-limited stats query |
+| | `conduit-airtable` | Airtable records by field id, the one formula builder, the schema's field types (sink-only) |
 
 Basecamp still keeps its own DigitalOcean and Hetzner copies in `packages/basecamp/api/src/providers/compute/`. Moving it onto `conduit-digitalocean` and `conduit-hetzner` is a separate step from the move.

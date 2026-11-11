@@ -75,19 +75,12 @@ title: First run
     if (restoring) tab = 'restore'
   })
 
-  let poll = null
-  function watch() {
-    clearTimeout(poll)
-    if (restoring !== 'staged') return
-    // The restart this waits for takes the API down: a failed probe keeps the state, or the watch ends before the boot.
-    poll = setTimeout(async () => {
-      const p = await setupProbe().catch(() => null)
-      if (typeof p?.needs_setup === 'boolean') readProbe(p)
-      watch()
-    }, 3000)
+  // The restart this waits for takes the API down: a failed probe keeps the state, or the watch ends before the boot.
+  async function probe() {
+    const p = await setupProbe().catch(() => null)
+    if (typeof p?.needs_setup === 'boolean') readProbe(p)
   }
-  $: restoring, () => watch()
-  $.onDestroy(() => clearTimeout(poll))
+  $.every(3000, probe, { when: restoring === 'staged' })
 
   const bucket = () => ({ endpoint, region, bucket: bucketName, prefix, key })
 

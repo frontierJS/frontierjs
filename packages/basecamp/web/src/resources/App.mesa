@@ -27,6 +27,8 @@
   export const importDockerfile = (id) => apps.service.invoke('importDockerfile', id, {})
   /** `{ deployPublicKey, note? }` */
   export const mintDeployKey = (id) => apps.service.invoke('mintDeployKey', id, {})
+  /** `{ deployPublicKey, push, connected: { account, key, hook } | null, note? }` (FJS-D2051) */
+  export const connect = (id) => apps.service.invoke('connect', id, {})
 </script>
 
 <script>

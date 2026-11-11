@@ -1127,7 +1127,7 @@ export const EXAMPLES = {
   // $.onCleanup registers a function that runs BEFORE the handler re-runs
   // and when the component is destroyed.
   // Must be called before the first await in an async handler.
-  // Use it to: cancel timers, abort fetches, clear intervals.
+  // Use it to: mark a stale run, abort fetches, close sockets.
 
   let query    = ''
   let status   = 'idle'
@@ -1141,26 +1141,26 @@ export const EXAMPLES = {
       return
     }
 
-    // This timer is cancelled when query changes before it fires
-    const id = setTimeout(async () => {
-      status = 'searching'
-      await new Promise(r => setTimeout(r, 500))
-      runCount++
-      results = [
-        query + ' result A',
-        query + ' result B',
-        query.toUpperCase() + ' result C',
-      ]
-      status = 'done'
-    }, 400)
-
-    // $.onCleanup runs before next execution — cancels in-flight timer
+    // $.onCleanup runs before next execution — marks this run stale
+    let stale = false
     $.onCleanup(() => {
-      clearTimeout(id)
+      stale = true
       status = 'cancelled'
     })
 
     status = 'waiting'
+    await $.sleep(400)
+    if (stale) return
+    status = 'searching'
+    await $.sleep(500)
+    if (stale) return
+    runCount++
+    results = [
+      query + ' result A',
+      query + ' result B',
+      query.toUpperCase() + ' result C',
+    ]
+    status = 'done'
   }
 </script>
 
@@ -1186,17 +1186,19 @@ export const EXAMPLES = {
 
   $: query, async () => {
     if (!query.trim()) { results = []; return }
+    let stale = false
+    $.onCleanup(() => { stale = true; searching = false })
     searching = true
-    const id = setTimeout(async () => {
-      await new Promise(r => setTimeout(r, 300))
-      results = [
-        'Result for: ' + query,
-        'Another: ' + query.toUpperCase(),
-        query + ' (cached)',
-      ]
-      searching = false
-    }, 400)
-    $.onCleanup(() => { clearTimeout(id); searching = false })
+    await $.sleep(400)
+    if (stale) return
+    await $.sleep(300)
+    if (stale) return
+    results = [
+      'Result for: ' + query,
+      'Another: ' + query.toUpperCase(),
+      query + ' (cached)',
+    ]
+    searching = false
   }
 </script>
 
@@ -1240,10 +1242,10 @@ export const EXAMPLES = {
   }
 
   $_nameSettled: name, async () => {
-    const t = setTimeout(() => {
-      console.log('[nameSettled] name settled:', name)
-    }, 200)
-    $.onCleanup(() => clearTimeout(t))
+    let stale = false
+    $.onCleanup(() => { stale = true })
+    await $.sleep(200)
+    if (!stale) console.log('[nameSettled] name settled:', name)
   }
 </script>
 
@@ -1327,7 +1329,7 @@ export const EXAMPLES = {
   let saved = 0
 
   async function save(fail) {
-    await new Promise(r => setTimeout(r, 600))
+    await $.sleep(600)
     if (fail) throw new Error('The server said no.')
     saved++
   }
@@ -1404,9 +1406,10 @@ export const EXAMPLES = {
 
   $_queryLog: query, async () => {
     if (!query) return
-    const t = setTimeout(() =>
-      console.log('[search] settled:', query), 300)
-    $.onCleanup(() => clearTimeout(t))
+    let stale = false
+    $.onCleanup(() => { stale = true })
+    await $.sleep(300)
+    if (!stale) console.log('[search] settled:', query)
   }
 
   // ── Auto-tracked side effect ───────────────────────────────────────────────
@@ -1784,9 +1787,11 @@ export const EXAMPLES = {
   const bg      = 'hsl(' + hue + ', 70%, 55%)'
   const textCol = 'hsl(' + hue + ', 70%, 15%)'
 
-  function toggle() {
+  async function toggle() {
     loading = true
-    setTimeout(() => { active = !active; loading = false }, 500)
+    await $.sleep(500)
+    active = !active
+    loading = false
   }
 </script>
 
@@ -2005,14 +2010,16 @@ export const EXAMPLES = {
   let showModal = false
   let showToast = false
   let toastMsg  = ''
-  let timer     = null
+  let toasts    = 0
 
   function toast(msg) {
     toastMsg  = msg
     showToast = true
-    clearTimeout(timer)
-    timer = setTimeout(() => { showToast = false }, 2500)
+    toasts++
   }
+
+  // Each new toast re-arms the 2.5s auto-hide
+  $.after(2500, () => { showToast = false }, { key: toasts, when: showToast })
 </script>
 
 <h2>&lt;mesa:portal&gt;</h2>
@@ -2968,7 +2975,7 @@ anything that changes at runtime.`,
   // $.mounted() returns a Promise — only one per component (compiler error if used twice)
   const mounting = $.mounted(async () => {
     // Simulate auth check + profile fetch after mount
-    await new Promise(r => setTimeout(r, 1200))
+    await $.sleep(1200)
 
     // Simulate 25% chance of auth failure
     if (Math.random() < 0.25) throw new Error('Not authenticated')
@@ -3083,7 +3090,8 @@ anything that changes at runtime.`,
     src: `<script>
   // $.onMount — runs after the component is inserted into the DOM.
   // $.onDestroy — runs when the component is removed.
-  // Neither runs on the server (SSR).
+  // Neither runs on the server (SSR). A declared timer needs neither:
+  // $.every starts with the component and stops when it is removed.
 
   let elapsed = 0
   let mounted = false
@@ -3093,17 +3101,15 @@ anything that changes at runtime.`,
     log = [...log, msg]
   }
 
+  $.every(1000, () => { elapsed++ })
+
   $.onMount(() => {
     mounted = true
     addLog('$.onMount fired — component is in the DOM')
-    const id = setInterval(() => {
-      elapsed++
-    }, 1000)
 
-    // Store cleanup in $.onDestroy — called when component unmounts
+    // $.onDestroy — called when component unmounts
     $.onDestroy(() => {
-      clearInterval(id)
-      addLog('$.onDestroy fired — interval cleared')
+      addLog('$.onDestroy fired — the interval stopped with it')
     })
   })
 </script>
@@ -3175,14 +3181,11 @@ anything that changes at runtime.`,
     group: 'SVG',
     src: `<script>
   // SVG works natively in Mesa — no special handling needed.
-  // $.onMount starts the tick, $.onDestroy clears it.
+  // $.every ticks the clock and stops when the component is removed.
 
   let now = new Date()
 
-  $.onMount(() => {
-    const id = setInterval(() => { now = new Date() }, 1000)
-    $.onDestroy(() => clearInterval(id))
-  })
+  $.every(1000, () => { now = new Date() })
 
   const sec = now.getSeconds()
   const min = now.getMinutes() + sec / 60
@@ -3370,12 +3373,8 @@ anything that changes at runtime.`,
   const progress = Math.min(elapsed / duration, 1)
   const done     = elapsed >= duration
 
-  $.onMount(() => {
-    const id = setInterval(() => {
-      if (elapsed < duration) elapsed = +(elapsed + 0.1).toFixed(1)
-    }, 100)
-    $.onDestroy(() => clearInterval(id))
-  })
+  // Ticks while not done: a longer duration or a reset resumes it
+  $.every(100, () => { elapsed = +(elapsed + 0.1).toFixed(1) }, { when: !done })
 
   function reset() { elapsed = 0 }
 </script>
@@ -4020,9 +4019,8 @@ anything that changes at runtime.`,
 
     try {
       // Simulate a slow server round-trip
-      await new Promise((res, rej) =>
-        setTimeout(() => Math.random() > 0.3 ? res() : rej(new Error('Server error')), 1200)
-      )
+      await $.sleep(1200)
+      if (Math.random() < 0.3) throw new Error('Server error')
       saved = true
     } catch (e) {
       // Rollback to pre-save price on failure
@@ -4247,10 +4245,11 @@ anything that changes at runtime.`,
   let name    = ''
   let loading = false
 
-  function submit() {
+  async function submit() {
     if (!name.trim()) return
     loading = true
-    setTimeout(() => { loading = false }, 1500)
+    await $.sleep(1500)
+    loading = false
   }
 </script>
 
@@ -4405,12 +4404,10 @@ export const user = { name: 'Alice', role: 'admin' }`,
   let attempt = 0
   let shouldFail = false
 
-  function load(n, fail) {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        fail ? reject(new Error('network unreachable')) : resolve('payload #' + n)
-      }, 300)
-    })
+  async function load(n, fail) {
+    await $.sleep(300)
+    if (fail) throw new Error('network unreachable')
+    return 'payload #' + n
   }
 
   const request = load(attempt, shouldFail)

@@ -44,9 +44,10 @@ The element form keeps working: a page that writes `<ela-basic-form data-form>` 
 
 - **Q1 — Whose loader is it?** **A**: Sierra's widget target emits `embed.js`, and an app opts in with `widgets.loader: { key, resolve }` in `sierra.config.js`. An app without the key builds exactly as it does today. **B**: each app writes its own. **Recommend A, ruled together with Q2**: `serve.js` already owns the entry-versus-hashed rule, so the loader sits beside it, and B would give every app a hand-written copy of the part that goes wrong. Demand is one of five: calendly, chatwoot, maidtech and posthog have widget surfaces with no loader, and only ELA pastes into strangers' CMSs. That is why it is opt-in. B is the reopen path if no second app opts in.
 - **Q2 — What does the resolve call return, and who owns it?** For ELA it is `formResponses.widget`. A framework loader needs a named contract (`{ view, … }`) that every app's resolve method returns, or a declared method path in `sierra.config.js`. Run `decision-rules` before coining a noun for it.
-- **The test the ruling needs:** a Sierra test that builds a fixture with a loader and asserts that `embed.js` is served revalidated and every chunk it imports has a hashed name. Nothing pins that today.
 - **Q3 — IIFE or ESM bundles behind the loader?** The build emits IIFE today (`widget/index.js`: no module loader can be assumed). The loader is a module loader, so the bundles behind it could be ESM chunks that share a runtime, which shrinks a page with two widgets. The tradeoff is a second build mode.
 - **Q4 — Where does the key live?** **A**: on the loader's `<script>` tag (Plausible). **B**: on a placeholder element the loader finds (`<div data-form>`), which also says where to mount. **A** is one line to paste. **B** places the widget without a `data-target`.
+
+The test a ruling on Q1 and Q2 needs: a Sierra test that builds a fixture with a loader and asserts that `embed.js` is served revalidated and every chunk it imports has a hashed name. Nothing pins that today.
 
 ## Timing
 

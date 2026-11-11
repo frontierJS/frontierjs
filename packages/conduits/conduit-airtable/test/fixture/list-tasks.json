@@ -1,0 +1,22 @@
+{
+  "records": [
+    {
+      "id": "recFfuheqZ4GSMJWH",
+      "createdTime": "2026-11-10T19:20:33.000Z",
+      "fields": {
+        "fld6CfB9JEj35VRM4": "Scratch T1",
+        "fld8hegye9Q7V16Fo": {
+          "id": "usr000000000000000",
+          "email": "person-1@example.com",
+          "name": "Person 1"
+        },
+        "fldNpDFvvXAaiL8UT": "2026-12-01",
+        "fldij32LnEIv8rlKC": 2.5,
+        "fldjkCvqYecOkhk9z": [
+          "rec4RrneJSWMfHXyu"
+        ],
+        "fldwnKb9hExOSkJdP": "Done"
+      }
+    }
+  ]
+}

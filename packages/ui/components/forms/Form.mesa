@@ -631,8 +631,7 @@
     // going out again behind the panel the person is reading, and after a
     // reload of somebody else's revision it is that revision written straight
     // back over them.
-    clearTimeout(_autoTimer)
-    _autoTimer = null
+    _autoArmed = false
     if (autosave) _setAutoState('idle')
 
     submitted = true
@@ -818,7 +817,8 @@
   /** The kit's quiet window, for `autosave` stated as a bare boolean. */
   const AUTOSAVE_MS = 800
 
-  let _autoTimer  = null
+  let _autoArmed  = false   // an edit is waiting in the quiet window
+  let _edits      = 0
   let _autoWarned = false
   let _armedFields = []
 
@@ -848,14 +848,14 @@
       return
     }
 
-    clearTimeout(_autoTimer)
     _setAutoState('pending')
     _armedFields = rendered
-    _autoTimer = setTimeout(_autosaveNow, _autoDelay())
+    _autoArmed = true
+    _edits++
   }
 
   async function _autosaveNow() {
-    _autoTimer = null
+    _autoArmed = false
 
     // Armed before the form was disabled or committed: the guard in
     // `_autoBump` is checked when the window opens, and a write that fires
@@ -887,6 +887,11 @@
     onautosaved?.(out.result, record)
   }
 
+  // Counted per edit, so each one restarts the quiet window; the guards stay in
+  // `_autoBump` and `_autosaveNow`, because a form disabled mid-window must
+  // still go back to 'idle' rather than sit at 'pending'.
+  $.after(_autoDelay(), _autosaveNow, { key: _edits, when: _autoArmed })
+
   /**
    * The same guards and the same write as `_autosaveNow`, for a form being
    * torn down. Nothing after the request is read: the props this component
@@ -911,16 +916,14 @@
    * a form with no button cannot afford.
    */
   export async function flushAutosave() {
-    if (!_autoTimer) return undefined
-    clearTimeout(_autoTimer)
+    if (!_autoArmed) return undefined
     return _autosaveNow()
   }
 
   /** Back to the pristine record, with every error and flag cleared. */
   export function reset(next) {
     if (next !== undefined) pristine = { ...next }
-    clearTimeout(_autoTimer)
-    _autoTimer = null
+    _autoArmed = false
     _setAutoState('idle')
     record    = { ...pristine }
     dirty     = false
@@ -1119,11 +1122,7 @@
     _gone = true
     // The edit is waiting in the quiet window and nothing will be here to send
     // it. Fire and forget: the screen that owned this form has moved on.
-    if (_autoTimer) {
-      clearTimeout(_autoTimer)
-      _autoTimer = null
-      _flushGone()
-    }
+    if (_autoArmed) _flushGone()
     // Guarded as the add is: a terminal's `window` is the engine's own and has
     // no listeners, so an unguarded remove threw on every form's teardown.
     if (autosave && typeof window !== 'undefined') window.removeEventListener('beforeunload', _unloadGuard)

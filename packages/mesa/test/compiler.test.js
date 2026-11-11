@@ -4849,14 +4849,14 @@ describe('top-level await in expressions', () => {
     expect(bareAwait).toBeUndefined()
   })
 
-  it('const await declaration still uses async IIFE (existing behavior)', async () => {
+  it('a const await with no reactive read is one asyncDerived with null deps (FJS-D2062)', async () => {
     const out = await cx(`
 <script>
   const data = await fetch('/api').then(r => r.json())
 </script>
 <div></div>`)
-    expect(out).toContain('async ()')
-    expect(out).toContain('await (')
+    expect(out).toContain("$$runtime.asyncDerived(() => $$async_data, async ($$signal) => (fetch('/api').then(r => r.json())), null, $$set_data)")
+    expect(out).not.toContain('(async () => {')
   })
 
   it('non-await assignment is NOT wrapped', async () => {

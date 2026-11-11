@@ -107,6 +107,21 @@ Analytics is Sierra's `analytics` key in the same file — `analytics: {
 provider: 'plausible', domain: 'example.com' }` — and the build puts the
 vendor's tag in every page's `<head>`.
 
+**A route** is a Markdown file under `content/routes/`, and its path is its
+URL: `about.md` and `about/index.md` are both `/about/`. A folder named in
+parentheses groups files without adding to the URL, so a site with many
+top-level pages can still sort them:
+
+```
+content/routes/
+  index.md                    /
+  (company)/about.md          /about/
+  (services)/roofing.md       /roofing/
+  (services)/_module.mesa     the layout for (services) pages only
+```
+
+Two files that reach one URL, from different groups or not, stop the build.
+
 **Settings** are `content/settings/site.md`'s front-matter, and every key is a
 name a page uses bare: `company_name: Acme` makes `{company_name}` in prose
 read *Acme*. A key that is not a JavaScript name stops the build by name. In

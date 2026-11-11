@@ -1,0 +1,24 @@
+{
+  "records": [
+    {
+      "id": "recM4GxiMTV2gH8tl",
+      "createdTime": "2026-11-10T19:20:21.000Z",
+      "fields": {
+        "fldB0NptMjdvvqt5D": 0,
+        "fldGLjkP7ISABFTIW": "Scratch P3",
+        "fldXpSjobWZEa5pNo": 0,
+        "fldhktP7HMBZBpjDB": "Nonesuch"
+      }
+    },
+    {
+      "id": "rectfgJq4PbeV85zt",
+      "createdTime": "2026-11-10T19:20:21.000Z",
+      "fields": {
+        "fldB0NptMjdvvqt5D": 0,
+        "fldGLjkP7ISABFTIW": "Scratch P4",
+        "fldXpSjobWZEa5pNo": 0,
+        "fldsAlR13YynmWoGx": "2026-11-10"
+      }
+    }
+  ]
+}

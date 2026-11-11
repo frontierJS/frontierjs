@@ -220,7 +220,7 @@ document and the build in one.
     (`FJS-D601`); vendors and to-dos emit no schema, so grading them in `checkAnswer`
     widens a module whose job is the Data realm. The paper's claim, *the plan is
     Oracle's answer*, still holds for the part that is built.
-- **Where does it run?** Inside Charter it is an instrument. As a product it is a
+- ~~**Where does it run?**~~ **Answered by `FJS-D601`: A — Oracle holds no model; the Charter app's `api/` holds the key, and a developer's path is a skill that calls the same Oracle module.** Inside Charter it is an instrument. As a product it is a
   page that calls a model, and `FJS-D601` keeps the model out of Oracle, so the
   caller is the product.
   - **A** — as `FJS-D601` rules: Oracle holds no model, and the prompt-to-app

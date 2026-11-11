@@ -106,12 +106,8 @@
 
   keyed?.([{ keys: 'r', label: 'read again', run: readRows }])
 
-  var timer = null
-  $.onMount(async () => {
-    await readRows()
-    timer = setInterval(poll, POLL_MS)
-  })
-  $.onDestroy(() => clearInterval(timer))
+  $.onMount(readRows)
+  $.every(POLL_MS, poll)
 </script>
 
 <header class="bar">

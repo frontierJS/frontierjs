@@ -470,6 +470,58 @@ describe('fromRepo `isConnecting` writes at GitHub (FJS-D1571)', () => {
     await expect(connect(admin, { repo: 'https://bitbucket.org/acme/app.git' }).call).rejects.toThrow(/not a GitHub repository/)
   })
 
+  describe('apps.connect on an App that already exists (FJS-D2051)', () => {
+    const connectExisting = (who: any, id: string) => env.as(who).service('apps').call('connect', id, {})
+    // A second environment of the repository production was made from: the
+    // dev App tracking `dev`, placed or not.
+    const devApp = async (extra: { repo?: string, placed?: boolean } = {}) => {
+      const prod = await connect(admin).call
+      const environment = await env.as(admin).service('environments').create({
+        projectId: prod.project.id, name: 'development', slug: 'development', tier: 'development',
+      }) as any
+      const app = await env.as(admin).service('apps').create({
+        environmentId: environment.id, name: `Dev ${uniq()}`, kind: 'container',
+        source: { kind: 'git', repo: extra.repo ?? repo, branch: 'dev', dockerfile: 'FROM oven/bun:1' },
+      }) as any
+      if (extra.placed !== false) await env.as(admin).service('apps').call('place', app.id, { serverId: box.id })
+      return { prod, app }
+    }
+
+    test('the second App of one repository gets a hook of its own beside production\'s', async () => {
+      const { prod, app } = await devApp()
+      const r = await connectExisting(admin, app.id)
+      expect(r.connected).toEqual({ account: 'gh-b-live', key: false, hook: true })
+      expect(r.push.url).toMatch(new RegExp(`/hooks/git/${app.id}$`))
+      const urls = sink.hooksOf('sink-owner/app').map((h: any) => h.config.url)
+      expect(urls).toContain(prod.push.url)
+      expect(urls).toContain(r.push.url)
+      const stored = await (env.system as any).app.findFirst({ where: { id: app.id } })
+      expect(stored.isDeployedOnPush).toBe(true)
+    })
+
+    test('push already on keeps its hook and says so (FJS-D2052)', async () => {
+      const { prod } = await devApp()
+      const secretOfProd = () => (sink.hooksOf('sink-owner/app') as any[]).find(h => h.config.url === prod.push.url)?.config.secret
+      const before = secretOfProd()
+      const r = await connectExisting(admin, prod.app.id)
+      expect(r.push).toBeNull()
+      expect(r.note).toMatch(/already on, so its webhook was left as it is/)
+      expect(secretOfProd()).toBe(before)
+    })
+
+    test('an App on no server, or not on GitHub, is refused by name', async () => {
+      const { app: loose } = await devApp({ placed: false })
+      await expect(connectExisting(admin, loose.id)).rejects.toThrow(new RegExp(`App '${loose.name}' is on no server`))
+      const { app: elsewhere } = await devApp({ repo: 'https://bitbucket.org/acme/app.git' })
+      await expect(connectExisting(admin, elsewhere.id)).rejects.toThrow(/is not built from a GitHub repository/)
+    })
+
+    test('a member below administrator is refused', async () => {
+      const { app } = await devApp()
+      await expect(connectExisting(developer, app.id)).rejects.toThrow(/Requires admin role in this workspace to connect/)
+    })
+  })
+
   test('one parse of a remote: owner and name, .git dropped', () => {
     for (const remote of ['git@github.com:sink-owner/app.git', 'https://github.com/sink-owner/app', 'ssh://git@github.com/sink-owner/app.git/'])
       expect(forgeRepo(remote)).toEqual({ forge: 'github', owner: 'sink-owner', name: 'app' })

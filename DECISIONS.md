@@ -13877,6 +13877,50 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2064"></a>2026-11-11 · `FJS-D2064` — [ ] **Q7 — What `$.every` does when an async `fn` is still pending at the next tick.** Found surveying 5.1: `declaredTimer` calls `fn()` on every tick of `clock.every`, so a slow server stacks overlapping polls; all 18 polls being migrated re-arm by hand only after their body settles — No overlap: a tick due while the promise `fn` returned is pending is skipped, the next tick after it settles runs; cadence stays `ms`. One rule, no option; a sync `fn` is unchanged. Flag cleared in `finally`, reset in `arm()` so a `key` change starts the new cadence (RxJS `exhaustMap`, TanStack `refetchInterval`).
+
+Asked in [`IDEAS/mesa-clock.md`](IDEAS/mesa-clock.md) § Open questions. **A** was picked over **B** (Ticks on schedule regardless; each site keeps an `inFlight` flag in `when` — the stacking bug the migration exists to remove, copied 18 times (VueUse `useIntervalFn`)), **C** (`ms` counts from settle, a re-arming `after` — `every(5000)` no longer means five seconds and `runFor` cannot count its firings (SWR `refreshInterval`)).
+
+The paper's recommendation, taken as written: the pending state is derived from the promise `fn` already returns and lives in the one owner of arming. Owed: a `declared-timers` case where `advance(3 * ms)` against a never-settling `fn` calls it once and a second advance after it resolves calls it again. If a site needs C, a later opt-in `{ after: true }`.
+
+### <a id="fjs-d2063"></a>2026-11-10 · `FJS-D2063` — Q6 — What a sleep inside an async function is — `$.sleep(ms)`: an awaitable on the runtime clock, allowed inside a function (the one imperative timer verb, beside the Promise-returning `$.measure`/`$.viewport`/`$.focus`); never resolves after the owner is destroyed, so a `finally` around it does not run then. Costs: a sleep after an `await` has no `_owner`, so the compiler binds it to the component's destroyed flag at the factory; `runtime-native.js` exports it too; the sniff lists and the warning text name it.
+
+Built 2026-11-10 with two corrections. The native export is not needed: every compiled module imports `$$runtime` from `@frontierjs/mesa/runtime` whatever the target, so `sleep` reaches every host from `runtime.js`. And "never resolves" holds for a destroyed owner only: under the server render's clock (`quietSource`, which arms nothing) a sleep resolves at once, because a server render waits on every `{#await}` (`FJS-D1647`) and a sleep that never settled hung the render queue. `$.sleep` is refused in `<script module>` by name, with `$.measure`/`$.viewport`/`$.focus`, which failed there at runtime as `$ is not defined`.
+
+Asked in [`IDEAS/mesa-clock.md`](IDEAS/mesa-clock.md) § Open questions. **A** was picked over **B** (No verb: the warning stands and an author imports `clock` from `@frontierjs/mesa/runtime` — a second door beside `$` (`FJS-D132`), taught by 14 examples), **C** (The warning exempts the sleep shape — against `FJS-D2060`'s "every time", and the sleep stays on real time).
+
+The paper's recommendation, taken as written: one owner of time (clock.js) and one door (`$`); the warning can then name a replacement for every raw timer. `sleep` over `wait` (`waitFor` is the drive's) and over `$.after(ms)` with no `fn` (one name, two shapes).
+
+### <a id="fjs-d2062"></a>2026-11-10 · `FJS-D2062` — Q5 — Does `$async.x.refresh()` exist on a one-shot `const x = await f()` that reads nothing reactive — One emit: the one-shot goes through `asyncDerived` with `[]` deps, first run untracked, so every awaited `const` has abort, latest-wins and `refresh`. Every one-shot's output changes (rebaseline the corpus; measure the byte gate); SSR's `{#await}` wait (`FJS-D1647`) must be re-proved.
+
+Asked in [`IDEAS/mesa-clock.md`](IDEAS/mesa-clock.md) § Open questions. **A** was picked over **B** (Keep the refusal that is built: `refresh` only where a dependency already triggers a rerun; a Reload button on a plain load uses the version-token idiom Q1 retired).
+
+The paper's recommendation, taken as written: one owner of "this const is loading" (§ V question 6); B's legality turns on a fact the author did not write (predictability), and a load with no dependencies is the commonest thing to put a Reload button on.
+
+### <a id="fjs-d2061"></a>2026-11-10 · `FJS-D2061` — Q4 — What the drive's clock controls — Mesa's clock, and the page's `Date`, `setTimeout`, `setInterval` and `requestAnimationFrame` faked as Playwright does, so library code holds still too.
+
+Asked in [`IDEAS/mesa-clock.md`](IDEAS/mesa-clock.md) § Open questions. **B** was picked over **A** (Mesa's runtime clock only).
+
+The paper's recommendation, taken as written: a third-party widget animating on real time would move between two operations, which is the flake the clock exists to remove.
+
+### <a id="fjs-d2060"></a>2026-11-10 · `FJS-D2060` — Q3 — What a raw `setTimeout`/`setInterval` in a `.mesa` script is once `$.after`/`$.every` exist — A warning naming the declared form, every time.
+
+Asked in [`IDEAS/mesa-clock.md`](IDEAS/mesa-clock.md) § Open questions. **A** was picked over **B** (A warning only when the handle reaches no `$.onDestroy`/`$.onCleanup`), **C** (Nothing; both stay valid).
+
+The paper's recommendation, taken as written: the drive's clock cannot advance a timer it does not own, so every raw one is a place a drive falls back to real time.
+
+### <a id="fjs-d2059"></a>2026-11-10 · `FJS-D2059` — Q2 — Declared timers, and when — The full shape before v1: `$.after` and `$.every`, one runtime clock every Mesa timer reads, a drive that advances it, the sites migrated.
+
+Asked in [`IDEAS/mesa-clock.md`](IDEAS/mesa-clock.md) § Open questions. **B** was picked over **A** (The drive installs fake timers per page now (Playwright's clock, https://playwright.dev/docs/clock, over `@sinonjs/fake-timers`); declared timers are the recorded destination, built when a second host or a lifecycle bug asks), **C** (The drive clock only; timers stay plain JavaScript).
+
+Against the recommendation (**A**): pre-alpha is the cheap time to settle the language surface: about 100 hand-written timers already exist and would be migrated either way, and declaring every timer on one clock is what lets a drive hold time still on every host, not only in Chrome.
+
+### <a id="fjs-d2058"></a>2026-11-10 · `FJS-D2058` — Q1 — How an async derived is re-run on demand — `$async.x.refresh()`, one verb on the state object beside `$async.f.for(key)` (`FJS-D591`), compiling to the same rerun.
+
+Asked in [`IDEAS/mesa-clock.md`](IDEAS/mesa-clock.md) § Open questions. **B** was picked over **A** (Document the version-token idiom in VISION §13 and add nothing. It works today; the token leaks into `f`'s arguments).
+
+Against the recommendation (**A**): 36 files hand-wrote a worse version of the token idiom because nothing names it, so a verb on the state object is what makes the rerun findable; it also keeps the token out of the loader's arguments.
+
 ### <a id="fjs-d1026"></a>2026-11-08 · `FJS-D1026` — How does a keyboard drag in `dndzone` cross into another zone, and how does a host word its announcements — Cross: the arrows PERPENDICULAR to the zone's axis hop to the nearest zone of the same type in that direction (by measured rect), landing at the index nearest the item's current position; no new key. Wording: one option `announcements: (event, info) => string | undefined` where `event` is `lifted | moved | dropped | cancelled` and `info` is `{ label, position, total, zone }`; `undefined` falls back to the English default. Cost: a wrapped or grid zone already reads by line, and perpendicular arrows there are ambiguous with line moves.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Cross: a modifier on the axis arrows (Shift+Arrow along the axis hops to the previous/next zone of the type in registry order). Unambiguous in wrapped zones and needs no geometry, but the key is undiscoverable and the order is the DOM's, not the screen's. Wording: an `announcements` object of one function per event, each returning a string — four options to state instead of one), **C** (Cross: a drop-target cycle on `[` / `]` (or PageUp/PageDown), announced on lift; geometry-free like B, no collision with arrows. Wording: a `messages` object of template strings (`'{label}, lifted, {position} of {total}'`). Cost: a template syntax is a second mini-language, and a language with plural or word-order rules needs a function anyway).
@@ -16896,6 +16940,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2052"></a>2026-11-10 · `FJS-D2052` — Q8 — What does `apps.connect` do on an App whose push is already on — Write the key if it is missing, leave the hook, and answer a note that push is already on.
+
+Asked in [`IDEAS/git-deploy.md`](IDEAS/git-deploy.md) § Open questions. **A** was picked over **B** (rotate the secret and token and write the hook again).
+
+The paper's recommendation, taken as written: B silently breaks every other caller of the old hook.
+
+### <a id="fjs-d2051"></a>2026-11-10 · `FJS-D2051` — Q7 — How does an App added to an existing Project get its deploy key and push hook written at GitHub — `apps.connect`, a method on any existing App. It mints the key, turns push on and writes both at the forge through one helper that `fromRepo` calls too. Gate ADMINISTRATOR, `enablePush`'s level. It refuses by name a source that is not a GitHub repository or an App with no server.
+
+Asked in [`IDEAS/git-deploy.md`](IDEAS/git-deploy.md) § Open questions. **A** was picked over **B** (`projects.fromRepo` takes an existing `projectId` and an environment, and adds the Environment and the App to it), **C** (build nothing; document the hand path (place, `mintDeployKey`, `enablePush`, paste the key and the hook at GitHub)).
+
+The paper's recommendation, taken as written: connecting is a fact about the App, not the Project, and the dev App needs what production's App got. Today an App whose connect failed at creation has no retry; A is that retry. B gives `fromRepo` two modes its name stops describing, and C leaves the gap open.
 
 ### <a id="fjs-d2045"></a>2026-11-09 · `FJS-D2045` — How does a route push tell a stale hub from a person removing a Domain, so a restored hub cannot drop a hostname it never knew — The hub names what it removes. `/route`, `/deploy` and `/static/activate` carry `removing: [...]`, built by one helper all three doors call (`routeRemovals`): every name the hub knows for this App, deleted rows included, minus what this push sends. That also covers a live Domain turned into a redirect, which stops being sent to the App holding a path on it. A host whose first label is the app id is exempt: it is the App's derived ingress name, not a Domain. A patch changing a path route's App or prefix is a soft delete and a create, so the old name keeps a tombstone. `DomainRoute` gains `@@softDelete`, with `@@unique([domainId, pathPrefix], where: deletedAt == null)` so a removed prefix can be added again; it is hard-deleted today (`domain-routes.service.ts:102`) and leaves nothing to name. `ingress.route`, and the `unroute` that `/route` calls with nothing left to route, refuse to drop a live host or path route the list does not name, comparing the union of hosts, redirects and path routes (host plus prefix) so a Domain turning into a redirect is no drop. `/deploy` checks beside `heldBy` (`server.js:213`), since it routes only during the swap and a refusal there would land mid-release. A restored hub holds no tombstone for a hostname added after its archive. This is `FJS-4109`'s rule for `/replicate`, as a list because a boolean cannot state a partial drop. It leaves two gaps: a hostname deleted before the archive and re-added after it is still dropped, and a Domain deleted after the archive comes back on the machine. A refusal needs step 1.2's finding, which must offer a person's way to send `removing`, or it surfaces only as a failed job.
 
@@ -21380,6 +21436,36 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2057"></a>2026-11-10 · `FJS-D2057` — Q1 — Scope and name — `@frontierjs/conduit-airtable` in `packages/conduits/`, like its 28 siblings.
+
+Asked in [`IDEAS/conduit-airtable.md`](IDEAS/conduit-airtable.md) § Open questions. **A** was picked over **B** (an app's own `providers/airtable.ts`, never a package).
+
+The paper's recommendation, taken as written: `FJS-D1181` already admitted a vertical on the same terms, deferring *batteries vs. smallness* to promotion, and the hard parts (the rate per base, a ping that carries no data, a webhook that expires, `PUT`'s clear) are the ring of rules § The test's test two is about.
+
+### <a id="fjs-d2056"></a>2026-11-10 · `FJS-D2056` — Q2 — Who calls it first — None yet: build Phases 0–3 against the sink and park the rest.
+
+Asked in [`IDEAS/conduit-airtable.md`](IDEAS/conduit-airtable.md) § Open questions. **B** was picked over **A** (a named app, Kobami or client, whose base it reads or writes. The owner names it).
+
+Against the recommendation (**A**): no caller exists yet, so Phases 0-3 are built against the sink and Phases 4-6 stay parked until an app is named.
+
+### <a id="fjs-d2055"></a>2026-11-10 · `FJS-D2055` — Q4 — How does Airtable reach the app — C, and only when Q2's caller needs inbound.
+
+Asked in [`IDEAS/conduit-airtable.md`](IDEAS/conduit-airtable.md) § Open questions. **C** was picked as the recommendation qualifies it (*C, and only when Q2's caller needs inbound*) over **A** (no inbound: the app polls `LAST_MODIFIED_TIME()` through a formula), **B** (webhooks: the ping wakes a pull, and the payload cursor is the source of truth).
+
+webhooks wake a cursor pull and a scheduled full read is the floor, since payloads age out after a week; built only when a caller needs inbound.
+
+### <a id="fjs-d2054"></a>2026-11-10 · `FJS-D2054` — Q3 — Whose credential does the app spend — A, with B as Phase 5.
+
+Asked in [`IDEAS/conduit-airtable.md`](IDEAS/conduit-airtable.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, with B as Phase 5*) over **B** (OAuth, a person's (`per_caller`), refreshed hourly through `conduit-oidc`), **C** (both, as a bundle (`airtableTargets() → { api, token }`, C1 — the bundle)).
+
+a PAT fits C1 exactly; OAuth is Phase 5, owed only when an app's user connects their own base.
+
+### <a id="fjs-d2053"></a>2026-11-10 · `FJS-D2053` — Q5 — How are fields keyed on the wire — Always by field id (`returnFieldsByFieldId: true`, ids in every write), with a name ↔ id map read from the schema.
+
+Asked in [`IDEAS/conduit-airtable.md`](IDEAS/conduit-airtable.md) § Open questions. **A** was picked over **B** (by name, as Airtable defaults).
+
+The paper's recommendation, taken as written: a renamed field under B silently stops matching, so a write lands nowhere and a read returns `undefined` with no error. That is the same failure as Invariant 2's three resolvers falling out of agreement. Under A, a rename changes nothing.
 
 ### <a id="fjs-d2016"></a>2026-11-07 · `FJS-D2016` — Built-in values — A small reserved set under one prefix (`BLUEPRINT_URL`, `BLUEPRINT_HOST`, `BLUEPRINT_SLUG`, and `<SERVICE>_HOST` for a sibling). A param declared under that prefix is refused.
 

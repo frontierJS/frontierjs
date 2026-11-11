@@ -23,10 +23,10 @@
     context: { model: 'Post', service: 'posts', idField: 'id' },
     fields:  FIELDS,
     formFields: () => [],
-    options: () => new Promise((r) => setTimeout(() => r({
+    options: () => $.sleep(50).then(() => ({
       options: [{ value: 'u-1', label: 'Alpha' }, { value: 'u-2', label: 'Bravo' }, { value: 'u-3', label: 'Charlie' }],
       total: 3, truncated: false,
-    }), 50)),
+    })),
     make: () => ({ ownerId: 'u-2' }),
     validate: () => [],
     fieldErrors: () => ({ fields: {}, message: '' }),

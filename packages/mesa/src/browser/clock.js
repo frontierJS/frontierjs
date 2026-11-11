@@ -21,12 +21,14 @@
  * shows no stale minute. A browser only throttles a background timer; it does
  * not stop one.
  *
- * Under a server render `.value` is `Date.now()` at the render and nothing is
- * started. On a terminal or a phone the call throws (`host.js`). Read outside
- * an effect, `.value` is the clock's instant when one is running and
- * `Date.now()` when none is.
+ * Every read and timer is the runtime clock's (`src/clock.js`), so a held
+ * clock holds this one and aligns it to virtual time. Under a server render
+ * `.value` is the time at the render and nothing is started. On a terminal or
+ * a phone the call throws (`host.js`). Read outside an effect, `.value` is the
+ * clock's instant when one is running and `clock.now()` when none is.
  */
 import { subscribe, createRoot, createEffect, untrack, watchPath } from '../runtime.js'
+import { clock as source } from '../clock.js'
 import { live } from './host.js'
 import { tab } from './tab.js'
 
@@ -38,22 +40,22 @@ function clockFor(every) {
   clock = { at: 0, running: false }
   clock.track = subscribe((update) => {
     let align, interval
-    const tick = () => { clock.at = Date.now(); update() }
+    const tick = () => { clock.at = source.now(); update() }
     const park = () => {
-      clearTimeout(align)
-      clearInterval(interval)
+      align?.()
+      interval?.()
       align = interval = undefined
     }
     const run = () => {
-      align = setTimeout(() => {
+      align = source.after(every - (source.now() % every), () => {
         align = undefined
         tick()
-        interval = setInterval(tick, every)
-      }, every - (Date.now() % every))
+        interval = source.every(every, tick, `now({ every: ${every} })`)
+      }, `now({ every: ${every} }) align`)
     }
     // No update() on the first run: start runs inside the first reader's
     // read, which takes `at` as soon as start returns.
-    clock.at = Date.now()
+    clock.at = source.now()
     clock.running = true
     let first = true
     const unwatch = createRoot((dispose) => {
@@ -92,10 +94,10 @@ export function now({ every = 1000 } = {}) {
   live('now()')
   return {
     get value() {
-      if (!live('now()')) return Date.now()
+      if (!live('now()')) return source.now()
       const clock = clockFor(every)
       clock.track()
-      return clock.running ? clock.at : Date.now()
+      return clock.running ? clock.at : source.now()
     },
   }
 }

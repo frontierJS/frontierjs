@@ -137,7 +137,7 @@ title: Site
 
   async function watchPublish() {
     for (let i = 0; i < 300; i++) {
-      await new Promise(r => setTimeout(r, 4000))
+      await $.sleep(4000)
       await refresh()
       if (!onItsWay(published)) {
         loadHistory()
@@ -164,7 +164,7 @@ title: Site
   // build takes minutes, so this gives up after twenty minutes.
   async function watch(name) {
     for (let i = 0; i < 300 && draft === name; i++) {
-      await new Promise(r => setTimeout(r, 4000))
+      await $.sleep(4000)
       if (draft !== name) return
       await refresh()
       if (!onItsWay(list.find(d => d.name === name)?.preview)) return

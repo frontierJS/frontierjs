@@ -123,11 +123,8 @@
     try { pub = await read('/api/publish') } catch (e) { failed = e.message }
   }
 
-  var ciTimer = null
   async function readCi() {
-    clearTimeout(ciTimer)
     try { ci = await read('/api/ci') } catch (e) { failed = e.message }
-    ciTimer = setTimeout(readCi, ci?.active ? CI_POLL_LIVE_MS : CI_POLL_IDLE_MS)
   }
 
   async function readRegistry() {
@@ -377,7 +374,7 @@
     try { deploy = await read('/api/release/steps') } catch (e) { failed = `could not read the release steps: ${e.message}` }
     readRelease()
   })
-  $.onDestroy(() => clearTimeout(ciTimer))
+  $.every(ci?.active ? CI_POLL_LIVE_MS : CI_POLL_IDLE_MS, readCi, { key: !!ci?.active })
 </script>
 
 <header class="bar">

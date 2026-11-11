@@ -87,17 +87,19 @@
   export let oncopy           = undefined // (text) => void — callback after copy
 
   let copied = false
-  var _timer = null
+  let copies = 0
 
   async function copy() {
     if (!(await copyText(text))) return
     copied = true
+    copies++
     oncopy?.(text)
-    clearTimeout(_timer)
-    _timer = setTimeout(() => { copied = false }, feedbackDuration)
   }
 
-  $.onDestroy(() => clearTimeout(_timer))
+  // Keyed on the count, not on `copied`: a second press inside the window sets
+  // the true `copied` already holds, and the check cleared on the first
+  // press's schedule.
+  $.after(feedbackDuration, () => { copied = false }, { key: copies, when: copied })
 </script>
 
 <button

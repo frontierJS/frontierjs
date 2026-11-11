@@ -298,10 +298,6 @@ title: Server
   // `ServerEvent` a channel would mean broadcasting an audit trail to every
   // member of the workspace, which is a wider change than a progress strip
   // should make.
-  //
-  // The interval is cleared on leaving the state and on destroy, both — the
-  // first is what stops it, the second is what stops it when somebody navigates
-  // away mid-provision, which is the case a status-only guard misses.
   // `pending` is the ambiguous one and it is not decidable from the status
   // alone. A machine this app is BUYING sits at `pending` until the job picks
   // it up; a machine somebody IMPORTED sits there forever, because no job will
@@ -312,11 +308,6 @@ title: Server
   const IF_BUYING   = new Set(['pending'])
   const POLL_MS   = 4000
 
-  let polling = null
-
-  function stopPolling() { if (polling) { clearInterval(polling); polling = null } }
-  $.onDestroy(stopPolling)
-
   // Named in the expression, not read inside a helper: Mesa decides what an
   // expression depends on from its own text, so `server.status` has to appear
   // here or this re-derives for the wrong reason (the note above `moves` says
@@ -325,11 +316,7 @@ title: Server
        IN_FLIGHT.has(server.status)
        || (IF_BUYING.has(server.status) && server.registerMethod === 'provisioned'))
 
-  $: (inFlight, () => {
-    stopPolling()
-    if (!inFlight) return
-    polling = setInterval(() => { loadEvents().catch(() => {}) }, POLL_MS)
-  })
+  $.every(POLL_MS, () => loadEvents().catch(() => {}), { when: inFlight })
 
   // The row moving IS the signal that a job wrote something, and it costs
   // nothing: re-read the trail on every status change, in flight or not. This
@@ -411,6 +398,12 @@ title: Server
   // is somebody's own box: Sync has no vendor to read and Destroy no vendor to
   // tell, so both would record an event and do nothing.
   $: cloudMade = !!server && !!server.providerKind && server.providerKind !== 'custom'
+
+  // DigitalOcean only: a Hetzner console address needs the project id, and no
+  // row holds one.
+  $: consoleUrl = server?.providerKind === 'digitalocean' && server.providerServerId
+    ? `https://cloud.digitalocean.com/droplets/${server.providerServerId}`
+    : null
 
   // ─── Machine backups ─────────────────────────────────────────────────
   // The vendor's image of the whole disk, as the last Sync read it. Its `hour`
@@ -689,7 +682,13 @@ title: Server
 
   <dl class="facts">
     <dt>Role</dt>          <dd>{server.role}</dd>
-    <dt>Provider</dt>      <dd>{server.providerKind}</dd>
+    <dt>Provider</dt>
+    <dd>
+      {server.providerKind}
+      {#if consoleUrl}
+        · <a id="server-console" href={consoleUrl} target="_blank" rel="noopener">View in DigitalOcean ↗</a>
+      {/if}
+    </dd>
     <dt>Region</dt>        <dd>{server.region}</dd>
     <dt>Address</dt>       <dd><code>{server.ipAddress ?? '—'}</code></dd>
     <dt>SSH</dt>           <dd><code>{server.sshUser}@{server.ipAddress ?? '—'}:{server.sshPort}</code></dd>

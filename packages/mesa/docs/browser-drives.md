@@ -69,3 +69,54 @@ bites:
   *running* before a click that loads another example, so an `eventually` on it
   returns at once and the assertion afterwards reads the example being
   replaced. Twice, in two specs.
+
+## Holding the clock
+
+**Opt-in per page: `browser.newPage({ url, ready, clock: true })`**, or
+`clock: { at: <epoch ms> }` for a fixed start; **`openChrome({ clock })` holds
+the FIRST page** the same way, and `browser.clock(verb)` moves it — the page a
+spec reaches with `clickAt`/`press`, so a held spec clicks through trusted
+input rather than an `el.click()` in the page. Every other page, and every
+existing drive, runs on real time; no in-repo drive turns it on until
+`IDEAS/mesa-clock.md` 5.1 has migrated the sites. The clock goes in as a new-document script
+ahead of `bootstrap` and of every page script, so nothing arms a timer on the
+native clock first — a timer armed there keeps its native handle and fires on
+real time whatever the drive does.
+
+**The verbs** (`FJS-D2061`, `IDEAS/mesa-clock.md` Phase 4):
+
+- `await page.clock(ms)` runs every timer due on the way at its own virtual
+  time, yielding a real task between them so a promise continuation settles
+  (Playwright's `runFor`, not `fastForward`: a 100 ms interval fires ten times
+  in `clock(1000)`). It answers the new now.
+- `await page.clock('settle', { limit })` runs one-shot timers and frames until
+  none is armed and answers `{ settled, armed }`. **An armed `$.every` or
+  `setInterval` never settles, and `settle` THROWS naming it** — turn the poll
+  off with its `when`, or pass `{ allowArmed: true }` to read `armed` instead.
+- `await page.clock('real')` lets virtual time follow real time (a native
+  20 ms tick); `page.clock('hold')` stops it. `page.clock()` reads now.
+- A page opened without `clock` throws on any verb, naming
+  `newPage({ clock: true })` or `openChrome({ clock: true })`.
+
+**What is faked**: the page's `Date` (no-arg constructor and `Date.now()`),
+`setTimeout`/`setInterval` and their clears (ids from `1e12`, so a native id is
+told apart and clearing one does nothing), `requestAnimationFrame`/
+`cancelAnimationFrame` (16 ms grid) and `performance.now()` (from the start).
+Mesa's own `clock` reads `globalThis.__fjsClock` directly, so a declared timer
+keeps its label — `settle` names `'$.every'`, a raw one `'setInterval(100ms)'`.
+**Not faked**: microtasks and promises, `Event.timeStamp`, `Temporal`, CSS
+animations and transitions, network. A held page still settles a `fetch`.
+
+**The drive's own in-page waits use the native timers** —
+`__fjsClock.native` (`setTimeout`, `setInterval`, `requestAnimationFrame`,
+`Date`, …). The `ready` poll and `clickAt`'s settle wait go through it, or a
+held clock would hang the drive; a spec proving time did NOT move waits on it
+too, and so do `t.eventually` (`test/browser/drive.mjs`) and `mesaMount`
+(`test/browser/runtime/page.js`). Node-side `waitFor` is the harness deadline
+and stays on real time.
+
+**A navigation keeps the clock**: every verb re-registers the script with the
+current now and running state, so the next document — a reload the page does
+itself included — opens on the same virtual time. `test/browser/drive/specs/
+clock.spec.mjs` films a flash auto-clear and a poll this way, on a second page
+and on a held first page through trusted clicks, with no wall-clock wait in it.

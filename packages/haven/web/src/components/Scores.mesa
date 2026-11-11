@@ -52,21 +52,16 @@
       .catch(() => {})
   }
 
-  const timers = new Set()
-  $.onDestroy(() => { for (const t of timers) clearTimeout(t) })
-
   function onBolt(name, blast) {
     if (name !== 'bolt' || !Array.isArray(blast?.flights)) return
     const laid = (blast.laid ?? []).filter((l) => l.kind === 'scored')
     if (!laid.length) return
     const longest = Math.max(0, ...blast.flights.map((f) => f.path.length))
-    const t = setTimeout(() => {
-      timers.delete(t)
+    $.sleep(longest * FLY_MS).then(() => {
       count(laid)
       const until = Date.now() + SHOW_MS
       shown = [...shown, ...laid.map((l) => ({ key: `${l.at}:${l.x},${l.y}`, x: l.x - 3, y: l.y, text: `+${l.points}`, until }))]
-    }, longest * FLY_MS)
-    timers.add(t)
+    })
   }
 
   if (room) {

@@ -625,6 +625,55 @@ try {
   await until(`!document.getElementById('app-backups-cron')`, v => v, 'Stop scheduling left the cron badge')
   check('Stop scheduling clears backupCron on the App row', (await appCron()) === null, String(await appCron()))
 
+  // The replica is chosen here too. The destination's endpoint is a closed
+  // local port so the bucket check that follows the save is refused without
+  // sending the seeded key to a real vendor.
+  const replicaApi = (path, method, body) => evaluate(`
+    fetch(${JSON.stringify(path)}, { method: ${JSON.stringify(method)}, headers: {
+      accept: 'application/json', 'content-type': 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': localStorage.getItem('basecamp_workspace'),
+    }, ${body ? `body: ${JSON.stringify(JSON.stringify(body))}` : ''} }).then(r => r.json())`)
+  const appBefore = await replicaApi(`/apps/${foundArchive?.appId}`, 'GET')
+  check('the seeded App shows the replica it already has', /Replica bucket/.test(await text('#app-replica-state') ?? ''), await text('#app-replica-state'))
+  const closedBucket = await replicaApi('/backup-destinations', 'POST', {
+    name: 'Drive replica', endpoint: 'http://127.0.0.1:1', region: 'auto', bucket: 'drive-replica', secret: 'drive-id:drive-key',
+  })
+  check('a destination to point the App at was created', !!closedBucket?.id, JSON.stringify(closedBucket)?.slice(0, 160))
+  await goto(`/apps/${foundArchive?.appId}/?tab=backups`)
+  await until(`!!Array.from(document.querySelectorAll('#app-replica-destination option')).find(o => o.value === ${JSON.stringify(closedBucket?.id)})`,
+    v => v, 'the new destination was never offered')
+  await evaluate(`(() => { const s = document.querySelector('#app-replica-destination'); s.value = ${JSON.stringify(closedBucket?.id)}; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  await click('#app-replica-save')
+  const replicaSaid = await until(`document.getElementById('app-replica-test')?.textContent ?? ''`,
+    t => t.length > 0, 'the save said nothing about the bucket').catch(() => '')
+  const replicaOf = async () => (await replicaApi(`/apps/${foundArchive?.appId}`, 'GET'))?.replicaDestinationId ?? null
+  check('Change destination puts replicaDestinationId on the App row', (await replicaOf()) === closedBucket?.id, String(await replicaOf()))
+  check('the bucket check runs after the save and its refusal is shown', /bucket check failed/.test(replicaSaid), replicaSaid.trim().slice(0, 160))
+  check('the state names the destination now in use', /Drive replica/.test(await text('#app-replica-state') ?? ''), await text('#app-replica-state'))
+  const sinkBucket = await replicaApi('/backup-destinations', 'POST', {
+    name: 'Drive sink', endpoint: S3_SINK, region: 'us-east-1', bucket: 'drive-sink', secret: 'AKIADEV:devsecret',
+  })
+  await goto(`/apps/${foundArchive?.appId}/?tab=backups`)
+  await until(`!!Array.from(document.querySelectorAll('#app-replica-destination option')).find(o => o.value === ${JSON.stringify(sinkBucket?.id)})`,
+    v => v, 'the stand-in bucket was never offered')
+  await evaluate(`(() => { const s = document.querySelector('#app-replica-destination'); s.value = ${JSON.stringify(sinkBucket?.id)}; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  await click('#app-replica-save')
+  const replicaPassed = await until(`document.getElementById('app-replica-test')?.textContent ?? ''`,
+    t => t.length > 0, 'a working bucket said nothing').catch(() => '')
+  check('a bucket that takes the probe says so, and never more than it read about a lock',
+    /took a write and a delete/.test(replicaPassed), replicaPassed.trim().slice(0, 160))
+  await click('#app-replica-stop')
+  const stopWarned = await text('[role=dialog][aria-modal=false]')
+  check('Stop replicating says the key is not revoked', /revoke it at the vendor/.test(stopWarned ?? ''), (stopWarned ?? '').slice(0, 160))
+  await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click()`)
+  await until(`document.getElementById('app-replica-state')?.textContent?.trim() === 'off'`, v => v, 'Stop replicating left the state on')
+  check('Stop replicating clears replicaDestinationId on the App row', (await replicaOf()) === null, String(await replicaOf()))
+  await replicaApi(`/apps/${foundArchive?.appId}`, 'PATCH', { replicaDestinationId: appBefore?.replicaDestinationId ?? null })
+  for (const made of [closedBucket, sinkBucket]) await replicaApi(`/backup-destinations/${made?.id}`, 'DELETE')
+  await goto(`/apps/${foundArchive?.appId}/?tab=backups`)
+  await until(`!!document.getElementById('app-backups-history')`, v => v, 'the Backups tab never came back')
+
   await click('#app-backups-take')
   const takeRefused = await until(`document.getElementById('app-backups-error')?.textContent ?? ''`,
     t => t.length > 0, 'Back up now said nothing').catch(() => '')
@@ -2732,6 +2781,42 @@ try {
     /Filled from Dockerfile in the repository/.test(importSays)
       && (await evaluate(`document.querySelector('#app-dockerfile-body textarea, textarea#app-dockerfile-body')?.value ?? ''`)).includes('EXPOSE 3000'),
     importSays)
+
+  // ─── A second environment connects from the App page (FJS-D2051) ───────
+  // A development App tracking `dev` on the repository production was made
+  // from: Connect writes its own hook beside production's. On production,
+  // whose push is on, Connect leaves the hook and says so (FJS-D2052).
+  console.log('\n  app detail — connect at GitHub')
+  const linkedRow = (await apiGet(`/apps/${linkedApp?.id}`)).body
+  const devEnv = (await apiPost('/environments', {
+    projectId: linkedRow?.environment?.projectId, name: 'development', slug: 'development', tier: 'development',
+  })).body
+  const devApp = (await apiPost('/apps', {
+    environmentId: devEnv?.id, name: `Linked dev ${linkedTag}`, kind: 'container',
+    source: { kind: 'git', repo: 'git@github.com:sink-owner/app.git', branch: 'dev', dockerfile: 'FROM oven/bun:1\n' },
+  })).body
+  const devPlaced = await apiCall('POST', `/apps/${devApp?.id}`, { serverId: onlineBox.id }, 'place')
+  check('a development App on the same repository is made and placed', devPlaced.status < 300, JSON.stringify(devPlaced.body).slice(0, 160))
+  await goto(`/apps/${devApp?.id}/?tab=config`)
+  await until(`document.getElementById('app-push-connect') !== null`, v => v, 'the Config tab offered no Connect to GitHub')
+  await click('#app-push-connect')
+  const devSays = await until(`document.getElementById('app-push-connect-says')?.textContent ?? ''`, t => t.length > 0,
+    'Connect to GitHub never answered')
+  check('Connect says the webhook was added, with the workspace token', /Webhook added at GitHub with gh-drive/.test(devSays), devSays)
+  check('…and no secret is left to copy', !(await present('#app-push-secret')))
+  const devHooks = await fetch(`${GH_SINK}/repos/sink-owner/app/hooks`, {
+    headers: { authorization: 'Bearer github_pat_devtoken', 'user-agent': 'verify-screens' },
+  }).then(r => r.json())
+  check('the repository holds a hook for each App, production\'s and development\'s',
+    devHooks.some(h => h.config?.url?.endsWith(`/hooks/git/${devApp?.id}`))
+      && devHooks.some(h => h.config?.url?.endsWith(`/hooks/git/${linkedApp?.id}`)), JSON.stringify(devHooks).slice(0, 200))
+  check('the development App\'s push is on', (await apiGet(`/apps/${devApp?.id}`)).body?.isDeployedOnPush === true)
+  await goto(`/apps/${linkedApp?.id}/?tab=config`)
+  await until(`document.getElementById('app-push-connect') !== null`, v => v, 'production\'s Config tab offered no Connect to GitHub')
+  await click('#app-push-connect')
+  const prodSays = await until(`document.getElementById('app-push-connect-says')?.textContent ?? ''`, t => t.length > 0,
+    'Connect on production never answered')
+  check('Connect on an App whose push is on leaves its hook and says so', /already on, so its webhook was left as it is/.test(prodSays), prodSays)
 
   // ─── The door each release came through ────────────────────────────────
   // Nothing else on a row tells a laptop build from a push, so the overview's

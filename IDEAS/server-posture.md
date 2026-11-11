@@ -782,6 +782,43 @@ fallback goes on the same command, not a new one.
     already refuses another workspace's Secret, so A adds no noun. B blesses
     whatever is on the box today, including a stranger's key, and changes the
     control from *keys Basecamp did not issue* to *keys changed since a click*.
+- **Q13 — Should a person control a machine's automatic updates from Basecamp?** (Phase 5)
+  `installScript()` writes the unattended-upgrades policy once (security origin,
+  no reboot, the stock `apt-daily-upgrade.timer` at 06:00 plus up to 60 minutes),
+  and nothing changes it afterwards; Basecamp only grades it. Raised 2026-11-09
+  when yuma failed `patch.security-pending` for one package published after
+  that morning's pass. The control counts what is pending, not how long it has
+  waited, so every advisory that lands between passes fails it for up to a day.
+  - **A** — No setting, as § Patching designs it. The Phase 5 patch run is the
+    one door; a hand-edited `apt.conf.d` is graded by `patch.auto-updates-on`.
+  - **B** — A per-machine update hour on `Server`, written as a timer drop-in.
+    Reboot stays a click. A changed hour reaches an enrolled box by
+    *Re-enroll this machine* (`FJS-D1820`), so it needs no new channel.
+  - **C** — B plus an automatic-reboot window (`Automatic-Reboot-Time`). An
+    unattended reboot cannot drain, so a box's only copy of an app goes down
+    unannounced.
+  - **D** — The full set: hour, reboot window, scope (security or everything),
+    and off.
+  - **Recommend A, and grade `patch.security-pending` on age** — Forge and
+    Coolify (§ Prior art) expose no update hour either; Phase 5 is for what
+    restarts and leaves the schedule alone. The age fixes the false alarm that
+    raised this question without a setting, but `updates` is
+    `{ pending, security }` with nothing to age from:
+    - **A1** — The Outpost reports `updates.since`, when the security count
+      last went from zero to non-zero, as `reboot.since` does; the control
+      passes for 36 hours (one timer cycle plus jitter, a constant beside
+      `REBOOT_GRACE_DAYS`) with *N pending, within grace*. An older Outpost
+      reads `unknown` until re-enrolled.
+    - **A2** — No Outpost change: fail only when `auto_updates.last_run` is
+      over 26 hours old. A package held back by a pass that did run then
+      passes until the next one, so a stuck upgrade hides for a day.
+    - **Recommend A1** — it keeps a held-back package failing. Its cost is a
+      fresh advisory unflagged for 36 hours, which is the window the box
+      patches itself in anyway.
+
+    B is the reopen path if owners want passes outside working hours. C undoes
+    *by hand for anything that restarts*. D's *off* and *everything* turn a
+    hardened control into a preference.
 
 ## See also
 

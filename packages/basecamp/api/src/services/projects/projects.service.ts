@@ -19,8 +19,7 @@ import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, slugify }
   from '../../core/resource.ts'
-import { retireAppsIn, unpublishAppsIn, placeableServer, placeApp, mintDeployKey, enablePushOn, connectableAccounts, connectRepository,
-         readForgeDockerfile }
+import { retireAppsIn, unpublishAppsIn, placeableServer, placeApp, connectableAccounts, connectToForge, readForgeDockerfile }
   from '../apps/apps.service.ts'
 import { toZone }               from '../domains/domains.service.ts'
 import { syncReplicasOf }       from '../../jobs/replicate-sync.job.ts'
@@ -181,21 +180,10 @@ export default createService({
     // machine holds would queue a release that fails at its first step. The
     // credentials are in this answer and nowhere else, beside the deploy key,
     // so one panel shows both once.
-    const notes: string[] = []
-    let push: Awaited<ReturnType<typeof enablePushOn>> | null = null
-    let connected: Awaited<ReturnType<typeof connectRepository>> | null = null
+    let done: Awaited<ReturnType<typeof connectToForge>> | null = null
     if (server) {
       await placeApp($.app, made.app, server)
-      const minted = await mintDeployKey($.app, made.app.id, server.id)
-      if (minted.note) notes.push(minted.note)
-      if (data.isDeployedOnPush !== false) push = await enablePushOn(made.app.id)
-      if (at && accounts.length && (minted.deployPublicKey || push)) {
-        connected = await connectRepository($.app, 'github', accounts, at, {
-          key:  minted.deployPublicKey ? { title: `Basecamp ${made.app.slug}`, key: minted.deployPublicKey } : null,
-          hook: push ? { url: push.url, secret: push.secret } : null,
-        })
-        if (connected.note) notes.push(connected.note)
-      }
+      done = await connectToForge($.app, made.app, { serverId: server.id, at, accounts, push: data.isDeployedOnPush !== false })
     }
 
     const app = await db().app.findFirst({ where: { id: made.app.id }, include: { domains: true, environment: true } })
@@ -203,8 +191,8 @@ export default createService({
       // The project's id, so the trail files this call under the project.
       id: made.project.id,
       project: made.project, environment: made.environment, app,
-      dockerfile: { seeded }, push, connected,
-      ...(notes.length ? { note: notes.join('; ') } : {}),
+      dockerfile: { seeded }, push: done?.push ?? null, connected: done?.connected ?? null,
+      ...(done?.notes.length ? { note: done.notes.join('; ') } : {}),
     }
   },
 

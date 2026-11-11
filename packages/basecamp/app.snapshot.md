@@ -387,8 +387,8 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`, `preview`, `seedOwner`
-- **custom methods** — `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`, `preview`, `seedOwner`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `connect`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`, `preview`, `seedOwner`
+- **custom methods** — `logs`, `analytics`, `liveCheck`, `retryLive`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `dismissFound`, `publish`, `enablePush`, `disablePush`, `connect`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`, `preview`, `seedOwner`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
 - **input** — `publish` takes `AppPublish`
@@ -411,6 +411,7 @@ name when it declares none.
   - `publish` — standing 4 or above — declared `gate: 4`
   - `enablePush` — standing 5 or above — declared `gate: 5`
   - `disablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `connect` — standing 5 or above — declared `gate: 5`
   - `mintDeployKey` — standing 4 or above — declared `gate: 4`
   - `importDockerfile` — standing 4 or above — declared `gate: 4`
   - `readRepoDockerfile` — standing 4 or above — declared `gate: 4`

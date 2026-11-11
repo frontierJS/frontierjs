@@ -671,8 +671,8 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; fix: string
   // can see that copy; a person attests it (`hubConfig.attestEscrow`), and the
   // attestation names the key by digest so a regenerated key voids it rather
   // than a stale "kept" standing. In process, like the backup control.
-  { id: 'hub.key-escrowed', group: 'hub', severity: 'high', fix: 'On the placeholder, set ENCRYPTION_KEY to the output of openssl rand -hex 32 before any secret is stored. Then copy it off this box and attest the copy on /hub/backups/', grade: (_r, host) => {
-    if (!host.keyFingerprint) return { ok: false, message: 'ENCRYPTION_KEY is the development placeholder — a copy of it protects nothing' }
+  { id: 'hub.key-escrowed', group: 'hub', severity: 'high', fix: 'Copy the ENCRYPTION_KEY in use off this box, then attest the copy on /hub/backups/ (fli basecamp:backup does both). Never replace the key to clear this: everything encrypted under it becomes unreadable', grade: (_r, host) => {
+    if (!host.keyFingerprint) return { ok: false, message: 'ENCRYPTION_KEY is the development placeholder — a copy of it protects nothing', fix: 'Set ENCRYPTION_KEY to the output of openssl rand -hex 32 before any secret is stored, then copy it off this box and attest the copy on /hub/backups/' }
     const live = shortFingerprint(host.keyFingerprint)
     if (!host.keyEscrow) return { ok: false, message: `No copy of ENCRYPTION_KEY ${live} is attested off this box — every archive is unreadable without it` }
     const kept = shortFingerprint(host.keyEscrow.fingerprint)
@@ -863,7 +863,7 @@ export function gradeHub(
     let g: Grade
     try { g = grade(readings ?? null, host, now) }
     catch { g = unknown('The reading was not in the shape the grader expects') }
-    return { id, group, severity, ...g, ...(g.ok === false ? { fix } : {}) }
+    return { id, group, severity, ...g, ...(g.ok === false ? { fix: g.fix ?? fix } : {}) }
   })
 }
 

@@ -16,6 +16,7 @@ import { siteKit } from '../config/vite.js'
 import { collection } from '../src/collection.js'
 import { LOCKED_KEYS, applyEdit, applyPhoto, arrangeCollection, changeRefusal, collectionOf, formOf, lockedKeysChanged, pathRefusal, photoName, photoOf } from '../src/editable.js'
 import { changedBlocks, plainSwap } from '../src/editor/live.js'
+import { routeFile } from '../src/editor/pick.js'
 
 const failed = []
 const check = (label, ok, detail = '') => {
@@ -390,6 +391,15 @@ try {
     }
     check('words that become a kicker wait', !plainSwap('Welcome in', 'WELCOME IN'))
     check('a kicker that stays one swaps', plainSwap('WELCOME', 'HELLO THERE'))
+  }
+
+  // ─── the route file a preview's address was built from ────────────────────
+  {
+    const files = ['content/settings/site.md', 'content/routes/(company)/about.md', 'content/routes/(services)/roofing/index.md', 'content/routes/index.md']
+    check('a page in a route group is its own route file', routeFile('/about/', files) === 'content/routes/(company)/about.md', routeFile('/about/', files))
+    check('a folder index in a route group is too', routeFile('/roofing/', files) === 'content/routes/(services)/roofing/index.md', routeFile('/roofing/', files))
+    check('the group is not part of the address', routeFile('/(company)/about/', files) === null)
+    check('the home page is the root index', routeFile('/', files) === 'content/routes/index.md')
   }
 
   // ─── a content/ with no content/routes (FJS-2546) ─────────────────────────

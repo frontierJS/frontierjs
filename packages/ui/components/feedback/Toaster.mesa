@@ -63,7 +63,7 @@
   // dialog that is shut a tick later — a loading toast nobody can see, and a
   // settle that moves the stack and replaces the node it was updating.
   let host = overlayHost()
-  $: toasts.items, () => setTimeout(() => { host = overlayHost() })
+  $: toasts.items, async () => { await $.sleep(0); host = overlayHost() }
 </script>
 
 <mesa:portal to={host}>

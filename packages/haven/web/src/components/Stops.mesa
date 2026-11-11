@@ -47,9 +47,6 @@
   let named = null   // { list, i } while a stop is named
   let going = null   // the stop walked to
   let listed = null  // { stops, rows, typed } while the list is open
-  var walking = null
-
-  $.onDestroy(() => clearInterval(walking))
 
   const away = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))
 
@@ -121,12 +118,13 @@
     const close = verbs.open({
       name: WALK,
       take: (k) => { close(); return k.key === 'Escape' },
-      closed: () => { clearInterval(walking); walking = null; going = null; tell('') },
+      closed: () => { going = null; tell('') },
     })
     going = stop
     tell(`→ ${stop.name}`)
-    walking = setInterval(stepToward, SPRINT_MS)
   }
+
+  $.every(SPRINT_MS, stepToward, { when: going })
 
   /** The list's rows: each stop numbered in Tab's order, its words, and the steps a walk there takes. */
   function rows(stops, me) {

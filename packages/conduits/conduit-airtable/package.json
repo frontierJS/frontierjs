@@ -1,0 +1,34 @@
+{
+  "name": "@frontierjs/conduit-airtable",
+  "version": "0.0.1",
+  "description": "Airtable over @frontierjs/conduit — the bearer target, records read and written by field id, the one formula builder, and the schema's field types.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node ../../../scripts/tmp-run.mjs 'bun run drive'",
+    "drive": "bun test/airtable.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0",
+    "@frontierjs/toolbelt": "^0.1.5"
+  },
+  "devDependencies": {
+    "@frontierjs/toolbelt": "^0.1.5",
+    "bun-types": "^1.3.14"
+  },
+  "keywords": [
+    "airtable",
+    "conduit",
+    "frontierjs"
+  ]
+}

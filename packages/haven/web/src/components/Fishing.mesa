@@ -22,9 +22,6 @@
   export let tell
 
   var verbs = $context.commands
-  var timer = null
-  var showing = null
-  $.onDestroy(() => { clearTimeout(timer); clearTimeout(showing) })
 
   const BOB_MS = 400
   const FLOAT  = ['o', '°']
@@ -36,25 +33,30 @@
 
   let float   = null
   let penguin = null
+  // The cast whose float is out; a re-cast is a new object, so it re-arms the bite.
+  let casting = null
   let beat    = 0
   $.onDestroy(stage.task('fishing', () => { if (float) beat = (beat + 1) % 2 }, { every: BOB_MS }))
 
   async function fish() {
     try {
       const cast = await getClient().service('fishing').invoke('cast', null, { roomId: room.id })
-      clearTimeout(timer)
       float = cast.at
-      timer = setTimeout(() => {
-        float = null
-        tell(cast.line)
-        if (cast.caught !== 'penguin') return
-        penguin = { x: cast.at.x - 1, y: cast.at.y - PENGUIN.length }
-        clearTimeout(showing)
-        showing = setTimeout(() => { penguin = null }, PENGUIN_MS)
-      }, cast.biteMs)
+      casting = cast
       return 'you cast your line...'
     } catch (e) { return e.message }
   }
+
+  function bite() {
+    const cast = casting
+    casting = null
+    float = null
+    tell(cast.line)
+    if (cast.caught === 'penguin') penguin = { x: cast.at.x - 1, y: cast.at.y - PENGUIN.length }
+  }
+
+  $.after(casting?.biteMs ?? 0, bite, { key: casting, when: casting })
+  $.after(PENGUIN_MS, () => { penguin = null }, { key: penguin, when: penguin })
 
   $.onDestroy(verbs.add({ word: 'fish', help: '/fish — cast a line, at the water\'s edge', run: fish }))
 

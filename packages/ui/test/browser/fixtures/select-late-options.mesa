@@ -35,10 +35,10 @@
     context: { model: 'Post', service: 'posts', idField: 'id' },
     fields:  FIELDS,
     formFields: () => [],
-    options: () => new Promise((r) => setTimeout(() => r({
+    options: () => $.sleep(50).then(() => ({
       options: [{ value: 'alpha', label: 'alpha' }, { value: 'bravo', label: 'bravo' }, { value: 'charlie', label: 'charlie' }],
       total: 3, truncated: false,
-    }), 50)),
+    })),
     make: () => ({ status: 'bravo' }),
     validate: () => [],
     fieldErrors: () => ({ fields: {}, message: '' }),
@@ -51,7 +51,7 @@
   let draft = row.state
   $: row.state, () => { draft = row.state }
   const move = async (to) => {
-    await new Promise((r) => setTimeout(r, 30))
+    await $.sleep(30)
     if (to !== 'done') { draft = row.state; return }
     row = { ...row, state: to }
   }

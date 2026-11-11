@@ -112,7 +112,6 @@
   let panelEl
   let flip = false          // open above the control: no room below
   let capH = null           // set only when neither side holds the panel
-  var _debounceTimer = undefined
 
   // The panel hangs off the control by CSS, so the window is asked once it
   // renders. Left unasked, a control near the window's foot opens past it.
@@ -430,36 +429,28 @@
     open = true
   }
 
-  function handleBlur(e) {
+  async function handleBlur(e) {
     // Delay close so option click fires first
-    setTimeout(() => {
-      if (!containerEl?.contains(document.activeElement)) {
-        closeDropdown()
-        expanded = false
-      }
-    }, 150)
+    await $.sleep(150)
+    if (!containerEl?.contains(document.activeElement)) {
+      closeDropdown()
+      expanded = false
+    }
   }
 
   // ── Async search ──────────────────────────────────────────────────────────────
 
-  $: inputValue, () => {
-    if (!_async) return
-    clearTimeout(_debounceTimer)
-    const q = inputValue?.trim() ?? ''
-    if (q.length < (_async.min ?? 1)) return
-    _debounceTimer = setTimeout(async () => {
-      const results = await _async.trigger(q)
-      const normalized = (results ?? []).map(normalize)
-      for (const o of normalized) optionsMap[o.value] = o
-    }, _async.delay ?? 200)
-  }
+  $.after(_async?.delay ?? 200, async () => {
+    const results = await _async.trigger(inputValue.trim())
+    const normalized = (results ?? []).map(normalize)
+    for (const o of normalized) optionsMap[o.value] = o
+  }, { key: inputValue, when: !!_async && (inputValue?.trim() ?? '').length >= (_async.min ?? 1) })
 
   // ── Click outside ────────────────────────────────────────────────────────────
 
   function onClickOutside(e) {
     if (containerEl && !containerEl.contains(e.target)) closeDropdown()
   }
-  $.onDestroy(() => clearTimeout(_debounceTimer))
 
   // ── Dropdown animation ────────────────────────────────────────────────────────
 

@@ -1,0 +1,24 @@
+{
+  "records": [
+    {
+      "id": "rec4RrneJSWMfHXyu",
+      "createdTime": "2026-11-10T19:20:19.000Z",
+      "fields": {
+        "Client": [
+          "recsCLwK3j6Bk5BYM"
+        ],
+        "Tasks Done": 1,
+        "Budget": 1234.5,
+        "Project Name": "Scratch P1",
+        "Total Tasks": 1,
+        "Description": "desc",
+        "Status": "Discovery",
+        "Tasks": [
+          "recFfuheqZ4GSMJWH"
+        ],
+        "Start Date": "2026-11-10"
+      }
+    }
+  ],
+  "offset": "itrm2o0L59HFcV0ws/rec4RrneJSWMfHXyu"
+}

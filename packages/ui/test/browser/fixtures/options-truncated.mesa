@@ -52,10 +52,10 @@
       if (search !== undefined) searches = [...searches, `${name}:${search}`]
       // Resolved on a later turn: the count arrives after mount, which is the
       // whole reason the control's latch is a watch rather than a statement.
-      return new Promise((res) => setTimeout(() => res(
+      return $.sleep(20).then(() => (
         search ? { options: FOUND, total: FOUND.length, truncated: false }
-               : { options: PAGE,  total, truncated: total > PAGE.length },
-      ), 20))
+               : { options: PAGE,  total, truncated: total > PAGE.length }
+      ))
     },
     make: () => ({ customerId: '', tag: '', labels: [] }),
     validate: () => [],

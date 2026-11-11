@@ -31,25 +31,22 @@
     }
   }
 
-  // Bumped when the cry on screen runs out, so it is read again. `timer` is a
-  // `var`: as a `let` it is a signal the block below reads and writes, and the
-  // block reruns itself without end.
+  // Bumped when the cry on screen runs out, so it is read again.
   let tick = 0
-  var timer = null
-  $.onDestroy(() => clearTimeout(timer))
 
   /** The newest line the crier said within CRY_MS, newest first in the store. */
   function cryOf(said, who) {
     const now = Date.now()
     const fresh = (said ?? []).filter((l) => now - Date.parse(l.createdAt) < CRY_MS)
     askNames(fresh.map((l) => l.memberId))
-    const line = fresh.find((l) => who[l.memberId] === CRIER) ?? null
-    clearTimeout(timer)
-    if (line) timer = setTimeout(() => { tick++ }, Date.parse(line.createdAt) + CRY_MS - now)
-    return line
+    return fresh.find((l) => who[l.memberId] === CRIER) ?? null
   }
 
   $: cry = (tick, cryOf(lines(), names))
+  $: deadline = cry ? Date.parse(cry.createdAt) + CRY_MS : Infinity
+  // `tick` is in the key: a timer that fires a millisecond early leaves the
+  // deadline unchanged, and keyed on it alone the cry would never be cleared.
+  $.after(deadline - Date.now(), () => { tick++ }, { key: `${deadline}:${tick}`, when: deadline < Infinity })
 
   /** Row 1, inside the frame's top wall, centered in the view. */
   function shown(line, v) {

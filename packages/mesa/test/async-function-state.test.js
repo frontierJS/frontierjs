@@ -264,3 +264,120 @@ describe('RULE 16 is refused, not left to the page (FJS-1720)', () => {
     expect(await errorsOf(`<script>const s = '$async.x.error'</script><p>The $async.x bag</p><p>{s}</p>`)).toEqual([])
   })
 })
+
+describe('$async.<const>.refresh() re-runs an awaited const (FJS-D2058)', () => {
+  const SRC = `<script>
+  export let api
+  let region = 'TX'
+  const rows = await api.load(region)
+</script>
+<button onclick={() => $async.rows.refresh()}>Reload</button>
+<p id="rows">{rows}</p>
+<p id="pending">{$async.rows.pending}</p>`
+
+  it('compiles to parseable output that calls the state object', async () => {
+    const ctx = await compile(SRC)
+    expect(ctx.analysis.errors).toEqual([])
+    parses(ctx.result)
+    expect(ctx.result).toContain('$async.rows.refresh()')
+  })
+
+  it('re-runs on a click, keeps the old value while pending, and keeps the latest reply', async () => {
+    const open = []
+    const api = { load: (r) => new Promise((resolve) => open.push(() => resolve(`${r}-${open.length}`))) }
+    const c = mount(await build(SRC), { api })
+    const text = (id) => c.querySelector(id).textContent
+    open[0]()
+    await settle()
+    expect(text('#rows')).toBe('TX-1')
+    expect(text('#pending')).toBe('false')
+
+    c.querySelector('button').click()
+    $rt.flushSync()
+    expect(open).toHaveLength(2)
+    expect(text('#rows')).toBe('TX-1')
+    expect(text('#pending')).toBe('true')
+
+    c.querySelector('button').click()
+    open[2]()
+    await settle()
+    expect(text('#rows')).toBe('TX-3')
+    open[1]()
+    await settle()
+    expect(text('#rows')).toBe('TX-3')
+    expect(text('#pending')).toBe('false')
+  })
+
+  const errorsOf = async (src) => (await compile(src)).analysis.errors
+
+  it('refuses .refresh() on a function and names .for(key)', async () => {
+    const [e, ...rest] = await errorsOf(`<script>async function save() {}</script>
+<button onclick={() => $async.save.refresh()}>x</button>`)
+    expect(rest).toEqual([])
+    expect(e).toContain('`$async.save.refresh()`')
+    expect(e).toContain('`.for(key)`')
+  })
+
+  // A one-shot reads nothing the compiler can see, so its loader is a global
+  // the test owns (`FJS-D2062`).
+  const ONE_SHOT = `<script>
+  const rows = await globalThis.__oneShot()
+</script>
+<button onclick={() => $async.rows.refresh()}>Reload</button>
+<p id="rows">{rows}</p>
+<p id="pending">{$async.rows.pending}</p>`
+
+  it('compiles .refresh() on an awaited const that reads nothing reactive', async () => {
+    const ctx = await compile(ONE_SHOT)
+    expect(ctx.analysis.errors).toEqual([])
+    parses(ctx.result)
+    expect(ctx.result).toContain('$$runtime.asyncDerived(')
+    expect(ctx.result).not.toContain("_update('start')")
+  })
+
+  it('refreshes a one-shot, keeping the old value while pending', async () => {
+    const open = []
+    globalThis.__oneShot = () => new Promise((resolve) => open.push(() => resolve(`r-${open.length}`)))
+    try {
+      const c = mount(await build(ONE_SHOT))
+      const text = (id) => c.querySelector(id).textContent
+      open[0]()
+      await settle()
+      expect(text('#rows')).toBe('r-1')
+
+      c.querySelector('button').click()
+      $rt.flushSync()
+      expect(open).toHaveLength(2)
+      expect(text('#rows')).toBe('r-1')
+      expect(text('#pending')).toBe('true')
+      open[1]()
+      await settle()
+      expect(text('#rows')).toBe('r-2')
+      expect(text('#pending')).toBe('false')
+    } finally {
+      delete globalThis.__oneShot
+    }
+  })
+
+  it('does not re-run a one-shot on a signal its loader reads synchronously', async () => {
+    const seen = $rt.track(0)
+    let calls = 0
+    globalThis.__oneShot = () => { calls++; $rt.get(seen); return Promise.resolve('once') }
+    try {
+      const c = mount(await build(ONE_SHOT))
+      await settle()
+      expect(c.querySelector('#rows').textContent).toBe('once')
+      $rt.set(seen, 1)
+      $rt.flushSync()
+      await settle()
+      expect(calls).toBe(1)
+    } finally {
+      delete globalThis.__oneShot
+    }
+  })
+
+  it('refuses .refresh() on a plain variable as a name with no async state', async () => {
+    const [e] = await errorsOf(`<script>let n = 1</script><button onclick={() => $async.n.refresh()}>{n}</button>`)
+    expect(e).toContain('`$async.n` names no async state')
+  })
+})

@@ -1,0 +1,13 @@
+<script>
+  // A flash that clears itself and a poll, both declared, so a drive holding
+  // the page clock decides when each fires (clock.spec.mjs).
+  let flash = null
+  let running = false
+  let ticks = 0
+  $.after(3000, () => flash = null, { key: flash, when: flash != null })
+  $.every(1500, () => ticks++, { when: running })
+</script>
+<button id="save" onclick={() => flash = 'Saved'}>Save</button>
+<button id="run" onclick={() => running = !running}>{running ? 'stop' : 'poll'}</button>
+{#if flash}<p id="flash">{flash}</p>{/if}
+<p id="ticks">{ticks}</p>

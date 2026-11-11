@@ -1,0 +1,6 @@
+{
+  "error": {
+    "type": "INVALID_RECORDS",
+    "message": "A maximum of 25 records can be created per request but you have provided 101."
+  }
+}

@@ -130,25 +130,12 @@ title: Hub backups
   // So while an archive is in flight the screen asks again. Measured rather
   // than assumed: `verify:screens` watched a row sit at `pending` on screen
   // while the job had already finished it in 80ms.
-  let poll = null
-  function watch() {
-    clearTimeout(poll)
-    if (!inFlight) return
-    poll = setTimeout(async () => { await load(); watch() }, 1500)
-  }
-  $: inFlight, () => watch()
-  $.onDestroy(() => clearTimeout(poll))
-
   async function takeOne() {
     error = null; asking = true
     try {
       await hubBackups.service.invoke('take', null, { destinationId: hub?.backupDestinationId ?? null })
       toasts.success('Backup queued. The row fills in as the job runs.')
       await load()
-      // `inFlight` is derived from the rows `load()` just fetched, so the watch
-      // starts from a row that really is pending rather than from an assumption
-      // that one will be.
-      watch()
     } catch (e) {
       // 'A backup is already running' arrives here. The button is not
       // pre-emptively disabled on `inFlight` below — whether one is in flight is
@@ -210,6 +197,7 @@ title: Hub backups
   const SETTLED = new Set(['success', 'failed', 'timeout'])
 
   $: inFlight = rows.find(b => !['success', 'failed', 'timeout'].includes(b.status)) ?? null
+  $.every(1500, load, { when: inFlight })
 
   function tone(status) {
     if (status === 'success') return 'success'

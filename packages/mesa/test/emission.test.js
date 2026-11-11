@@ -1180,6 +1180,18 @@ describe('the $ door', () => {
     expect(ok.analysis.errors).toEqual([])
   })
 
+  it('refuses by name the members that failed there as `$ is not defined`', async () => {
+    for (const [name, call] of [
+      ['sleep',    `export const wait = () => $.sleep(10)`],
+      ['measure',  `export const m = (el) => $.measure(el)`],
+      ['viewport', `export const v = (el) => $.viewport(el)`],
+      ['focus',    `export const f = (el) => $.focus(el)`],
+    ]) {
+      await expect(compile(`<script module>${call}</script><p>x</p>`, 'T.mesa'), name)
+        .rejects.toThrow(new RegExp(`'\\$\\.${name}' is not available in <script module>`))
+    }
+  })
+
   // Phase 4: the bare spelling is gone. It was working alongside the door
   // through phases 1-3, which is what let the 120-file rewrite land separately
   // from the compiler change.

@@ -45,12 +45,12 @@ export function fieldFor(loc, files, pathname) {
 
 /**
  * The route file a page's address was built from, or null. Sierra writes
- * `x.md` and `x/index.md` both to `/x/`.
+ * `x.md` and `x/index.md` both to `/x/`, and `(group)/x.md` there too.
  */
 export function routeFile(pathname, files) {
   const p = decodeURIComponent(pathname).replace(/(\/index)?\.html$/, '').replace(/^\/+|\/+$/g, '')
   const tries = p ? [`content/routes/${p}.md`, `content/routes/${p}/index.md`] : ['content/routes/index.md']
-  return tries.find((t) => files.includes(t)) ?? null
+  return files.find((f) => tries.includes(f.replace(/\/\([^/]+\)(?=\/)/g, ''))) ?? null
 }
 
 /**

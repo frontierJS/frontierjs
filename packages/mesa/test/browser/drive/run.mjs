@@ -26,6 +26,7 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { openChrome, createNetwork } from '../../../src/drive.js'
 import { runSpecs } from '../drive.mjs'
+import { createMesaServer } from '../runtime/server.mjs'
 
 const HERE  = fileURLToPath(new URL('.', import.meta.url))
 const DRIVE = new URL('../../../src/drive.js', import.meta.url).href
@@ -64,6 +65,14 @@ const SOCKETS = `<!doctype html><title>sockets</title><script>
   window.reach = () => fetch('/ping', { cache: 'no-store' }).then(() => 'reached', () => 'refused')
 </script>`
 
+// A third-party script on its own clock: it never heard of Mesa, so only a
+// faked setInterval holds it still (FJS-D2061).
+const RAW = `<!doctype html><title>raw timers</title><script>
+  window.ticks = 0
+  window.opened = Date.now()
+  window.lap = setInterval(() => window.ticks++, 100)
+</script>`
+
 // ─── the server ─────────────────────────────────────────────────────────────
 
 const work     = mkdtempSync(join(tmpdir(), 'mesa-drive-test-'))
@@ -71,7 +80,7 @@ const upgraded = new Set()
 const http = createServer((req, res) => {
   res.setHeader('content-type', 'text/html')
   res.setHeader('cache-control', 'no-store')
-  res.end(req.url === '/sockets' ? SOCKETS : PAGE)
+  res.end(req.url === '/sockets' ? SOCKETS : req.url === '/clock-raw' ? RAW : PAGE)
 })
 // Enough of a WebSocket server to open one and hold it: the handshake, and
 // the subprotocol echoed back, or Chrome fails the vite-hmr socket.
@@ -86,6 +95,11 @@ http.on('upgrade', (req, sock) => {
 })
 await new Promise((r) => http.listen(0, '127.0.0.1', r))
 const origin = `http://127.0.0.1:${http.address().port}/`
+
+// The runtime drive's server compiles a fixture on request, for the specs that
+// mount a component (clock.spec.mjs).
+const mesaServer = createMesaServer()
+const mesa = await mesaServer.listen()
 
 // ─── a launch in another process ────────────────────────────────────────────
 
@@ -134,10 +148,11 @@ const { infra, failures } = await runSpecs({
   specDir: join(HERE, 'specs'),
   filters,
   verbose,
-  extend: () => ({ origin, work, openChrome, createNetwork, launchChild, holders }),
+  extend: () => ({ origin, mesa, work, openChrome, createNetwork, launchChild, holders }),
 })
 
 for (const sock of upgraded) sock.destroy()
 await new Promise((r) => http.close(r))
+await mesaServer.close()
 rmSync(work, { recursive: true, force: true })
 process.exit(failures || infra ? 1 : 0)

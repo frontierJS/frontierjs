@@ -1,0 +1,6 @@
+{
+  "error": {
+    "type": "INVALID_VALUE_FOR_COLUMN",
+    "message": "Cannot parse date value \"11/10/2026\" for field Start Date"
+  }
+}

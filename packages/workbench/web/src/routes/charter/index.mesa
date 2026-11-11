@@ -57,6 +57,7 @@ title: Charter
   let whenDone  = 'destroy'
   let launching = false
   let liveTimer = null
+  let fileInput = null
 
   $.onDestroy(() => { destroyed = true; clearTimeout(timer); clearTimeout(liveTimer) })
 
@@ -200,46 +201,58 @@ title: Charter
     No entry in basecamps.json is marked runs: true{others.length ? ` — known: ${others.join(', ')}` : ''}.
   </EmptyState>
 {:else}
-  <section class="stack-sm" id="charter-basecamp" data-basecamp={entry.name}>
-    <h2 class="h5 cluster">
-      <Dot tone={entry.answers.ok ? 'success' : 'danger'} label={entry.answers.ok ? 'answers' : 'does not answer'} />
-      {entry.name}
-    </h2>
-    <div class="text-sm text-muted">{entry.url}</div>
-    <div class="text-sm text-muted">{entry.host ? `ssh ${entry.host}` : 'no ssh Host'}</div>
-    <div class="text-sm text-muted">{entry.answers.ok ? `answers in ${entry.answers.ms} ms` : `does not answer: ${entry.answers.why}`}</div>
-    <div class="text-sm" data-keys>
-      <span class={entry.hasKey ? '' : 'text-danger'}>{entry.hasKey ? 'admin key filed' : 'no admin key'}</span> ·
-      <span class={entry.hasScopedKey ? '' : 'text-danger'}>{entry.hasScopedKey ? 'run key filed' : 'no run key — Charter cannot run'}</span>
-    </div>
-  </section>
+  <div class="switcher">
+    <section class="card" id="charter-basecamp" data-basecamp={entry.name}>
+      <div class="surface-header">
+        <h2 class="h5 cluster">
+          <Dot tone={entry.answers.ok ? 'success' : 'danger'} label={entry.answers.ok ? 'answers' : 'does not answer'} />
+          {entry.name}
+        </h2>
+      </div>
+      <dl class="facts text-sm" data-keys>
+        <dt>Address</dt>
+        <dd>{entry.url}</dd>
+        <dt>ssh</dt>
+        <dd>{entry.host ?? 'no ssh Host'}</dd>
+        <dt>Status</dt>
+        <dd class={entry.answers.ok ? '' : 'text-danger'}>{entry.answers.ok ? `answers in ${entry.answers.ms} ms` : `does not answer: ${entry.answers.why}`}</dd>
+        <dt>Admin key</dt>
+        <dd class={entry.hasKey ? '' : 'text-danger'}>{entry.hasKey ? 'filed' : 'none'}</dd>
+        <dt>Run key</dt>
+        <dd class={entry.hasScopedKey ? '' : 'text-danger'}>{entry.hasScopedKey ? 'filed' : 'none — Charter cannot run'}</dd>
+      </dl>
+    </section>
 
-  <form class="stack" id="charter-reinstall" onsubmit={(e) => e.preventDefault()}>
-    <Select id="reinstall-mode" label="Reinstall" placeholder="" options={MODES} bind:value={mode} />
-    <Checkbox id="reinstall-plan" label="Plan only (--plan)" checked={plan} onchange={(v) => { plan = v }}
-      description="Read the box and print the run; nothing is backed up or changed." />
-    <div class="cluster">
-      <ConfirmationPopover title={plan ? `Plan a reinstall of ${(entry, entry.name)}?` : `Reinstall ${(entry, entry.name)}?`}
-        message={plan ? 'Nothing changes.' : mode === 'fresh'
-          ? 'Basecamp is backed up, retired and installed empty. Every App it held is forgotten and the run key stops working.'
-          : 'Basecamp is backed up, retired and installed again from that backup.'}
-        confirmLabel={plan ? 'Plan' : 'Reinstall'} tone={plan ? 'primary' : 'danger'} onconfirm={start}>
-        {#snippet trigger()}
-          <Button id="reinstall-start" tone={plan ? 'primary' : 'danger'}
-            disabled={(entry, starting, run, !!why() || starting || running())} loading={starting}
-            title={why()}>{plan ? 'Plan the reinstall' : 'Reinstall'}</Button>
-        {/snippet}
-      </ConfirmationPopover>
-      {#if why()}<span class="text-sm text-muted">{why()}</span>{/if}
-    </div>
-  </form>
+    <form class="card charter-pinned" id="charter-reinstall" onsubmit={(e) => e.preventDefault()}>
+      <div class="surface-header"><h2 class="h5">Reinstall</h2></div>
+      <Select id="reinstall-mode" label="Mode" placeholder="" options={MODES} bind:value={mode} />
+      <Checkbox id="reinstall-plan" label="Plan only (--plan)" checked={plan} onchange={(v) => { plan = v }}
+        description="Read the box and print the run; nothing is backed up or changed." />
+      <div class="surface-footer">
+        {#if why()}<span class="text-sm text-muted">{why()}</span>{/if}
+        <ConfirmationPopover title={plan ? `Plan a reinstall of ${(entry, entry.name)}?` : `Reinstall ${(entry, entry.name)}?`}
+          message={plan ? 'Nothing changes.' : mode === 'fresh'
+            ? 'Basecamp is backed up, retired and installed empty. Every App it held is forgotten and the run key stops working.'
+            : 'Basecamp is backed up, retired and installed again from that backup.'}
+          confirmLabel={plan ? 'Plan' : 'Reinstall'} tone={plan ? 'primary' : 'danger'} onconfirm={start}>
+          {#snippet trigger()}
+            <Button id="reinstall-start" tone={plan ? 'primary' : 'danger'}
+              disabled={(entry, starting, run, !!why() || starting || running())} loading={starting}
+              title={why()}>{plan ? 'Plan the reinstall' : 'Reinstall'}</Button>
+          {/snippet}
+        </ConfirmationPopover>
+      </div>
+    </form>
+  </div>
 {/if}
 
 {#if run}
-  <section class="stack-sm" id="reinstall-run">
-    <h2 class="h5">{run.name}</h2>
-    <div class="text-sm text-muted">{run.argv.join(' ')}</div>
-    <pre id="reinstall-log" class="text-sm">{run.lines.join('\n') || ((run.exit, run.error, running()) ? 'Started, no output yet…' : '')}</pre>
+  <section class="card" id="reinstall-run">
+    <div class="surface-header charter-head">
+      <h2 class="h5">{run.name}</h2>
+      <code class="text-sm charter-meta">{run.argv.join(' ')}</code>
+    </div>
+    <pre id="reinstall-log" class="code charter-log"><code>{run.lines.join('\n') || ((run.exit, run.error, running()) ? 'Started, no output yet…' : '')}</code></pre>
     {#if (run.exit, run.error, running())}
       <div class="text-sm text-muted">Running, pid {run.pid}. This page keeps reading the log.</div>
     {/if}
@@ -250,8 +263,17 @@ title: Charter
 {/if}
 
 {#if live}
-  <form class="stack" id="charter-run" onsubmit={(e) => e.preventDefault()}>
-    <h2 class="h5">Run</h2>
+  <form class="card" id="charter-run" onsubmit={(e) => e.preventDefault()}>
+    <div class="surface-header charter-head">
+      <h2 class="h5">Run</h2>
+      {#if live.checkout.ok}
+        <span class="cluster">
+          <Button size="sm" treatment="ghost" id="cases-all" onclick={() => { picked = live.cases.map(c => c.case) }}>All</Button>
+          <Button size="sm" treatment="ghost" id="cases-none" onclick={() => { picked = [] }}>None</Button>
+          <Button size="sm" treatment="outlined" id="charter-file-add" onclick={() => fileInput.click()}>Add a charter file</Button>
+        </span>
+      {/if}
+    </div>
     {#if !live.checkout.ok}
       <article class="alert danger">
         <div class="alert-content">No Charter checkout at {live.checkout.dir}: set CHARTER_DIR to one holding builder/live.ts.</div>
@@ -266,25 +288,21 @@ title: Charter
         {/if}
       </div>
 
-      <fieldset class="stack-sm" id="charter-cases">
-        <legend class="text-sm">Cases</legend>
-        <span class="cluster">
-          <Button size="sm" treatment="outlined" id="cases-all" onclick={() => { picked = live.cases.map(c => c.case) }}>All</Button>
-          <Button size="sm" treatment="outlined" id="cases-none" onclick={() => { picked = [] }}>None</Button>
-        </span>
-        {#each live.cases as c (c.case)}
-          <Checkbox id={`case-${c.case}`} label={c.source === 'picked' ? `${c.case} (picked)` : c.case}
-            checked={(picked, picked.includes(c.case))} onchange={(v) => toggle(c.case, v)} />
-        {/each}
-        <label class="text-sm stack-xs">
-          Add a charter file
-          <input type="file" id="charter-file" accept=".json,application/json" onchange={addFile} />
-        </label>
+      <fieldset class="charter-cases" id="charter-cases">
+        <legend class="visually-hidden">Cases</legend>
+        <div class="grid gap-sm" style="--grid-min: 11rem">
+          {#each live.cases as c (c.case)}
+            <Checkbox id={`case-${c.case}`} label={c.source === 'picked' ? `${c.case} (picked)` : c.case}
+              checked={(picked, picked.includes(c.case))} onchange={(v) => toggle(c.case, v)} />
+          {/each}
+        </div>
       </fieldset>
+      <input type="file" id="charter-file" hidden accept=".json,application/json" bind:this={fileInput} onchange={addFile} />
 
       <Select id="charter-when-done" label="When a case is done" placeholder="" options={WHEN_DONE} bind:value={whenDone} />
 
-      <div class="cluster">
+      <div class="surface-footer">
+        {#if (live, entry, picked, cantRun())}<span class="text-sm text-muted">{cantRun()}</span>{/if}
         <ConfirmationPopover title={`Run ${(picked, picked.length)} case${picked.length === 1 ? '' : 's'} on ${(entry, entry?.name)}?`}
           message={`One at a time, each is generated, given its feature, deployed to ${entry?.name} under the run key and used — about $1.50 and 10 minutes of model time a case. ${whenDone === 'keep' ? 'Each App is left standing.' : 'Each App is destroyed when done.'}`}
           confirmLabel="Run" tone="primary" onconfirm={launch}>
@@ -293,72 +311,117 @@ title: Charter
               disabled={(live, entry, picked, launching, launching || !!cantRun())} title={(live, entry, picked, cantRun())}>Run</Button>
           {/snippet}
         </ConfirmationPopover>
-        {#if (live, entry, picked, cantRun())}<span class="text-sm text-muted">{cantRun()}</span>{/if}
       </div>
     {/if}
   </form>
 
   {#if (live, rows().length)}
-    <section class="stack" id="charter-runs">
+    <section class="stack gap-lg" id="charter-runs">
       <h2 class="h5">{live.batch ? `${live.batch.kind === 'remove' ? 'Removing' : 'This run'} · ${live.batch.date}${live.batch.keep ? ' · kept' : ''}` : `Records · ${live.recent[0]?.date ?? ''}`}</h2>
       {#each (live, rows()) as row (row.key)}
-        <article class="stack-xs" data-case={row.name} data-state={row.state}>
-          <div class="cluster">
-            <Dot tone={STATE_TONES[row.state] ?? ''} pulse={row.state === 'running'} label={row.state} />
-            <strong>{row.name}</strong>
-            <span class="text-sm text-muted">{row.state}{row.record?.costUsd ? ` · ${usd(row.record.costUsd)}` : ''}</span>
+        <article class="card" data-case={row.name} data-state={row.state}>
+          <div class="surface-header charter-head">
+            <span class="cluster">
+              <Dot tone={STATE_TONES[row.state] ?? ''} pulse={row.state === 'running'} label={row.state} />
+              {row.name}
+              <span class="text-sm text-muted charter-meta">{row.state}{row.record?.costUsd ? ` · ${usd(row.record.costUsd)}` : ''}</span>
+            </span>
             {#if row.record?.deploy?.hostname}
-              <a class="text-sm" href={`https://${row.record.deploy.hostname}`} target="_blank" rel="noopener">{row.record.deploy.hostname}</a>
+              <a class="text-sm charter-meta charter-wrap" href={`https://${row.record.deploy.hostname}`} target="_blank" rel="noopener">{row.record.deploy.hostname}</a>
             {/if}
           </div>
           {#if row.refused}
             <div class="text-sm text-danger" data-refused>{row.refused}</div>
           {:else if row.record}
-            <ol class="stack-xs text-sm" data-stages>
+            <ol class="charter-stages text-sm" data-stages>
               {#each Object.entries(row.record.stages) as [stage, s] (stage)}
-                <li class="cluster" data-stage={stage} data-outcome={s.outcome}>
+                <li class="charter-stage" data-stage={stage} data-outcome={s.outcome}>
                   <Dot tone={TONES[s.outcome] ?? ''} label={s.outcome} />
-                  <span>{stage}</span>
-                  <span class={s.outcome === 'not reached' ? 'text-muted' : ''}>{s.detail || s.outcome}</span>
-                  <span class="text-muted">{secs(s.ms)} {usd(s.costUsd)}</span>
+                  <span class="text-muted">{stage}</span>
+                  <span class={`charter-detail charter-wrap ${s.outcome === 'not reached' ? 'text-muted' : ''}`}>{s.detail || s.outcome}</span>
+                  <span class="charter-num text-muted">{secs(s.ms)}</span>
+                  <span class="charter-num text-muted">{usd(s.costUsd)}</span>
                 </li>
               {/each}
             </ol>
           {:else if row.state === 'stopped' && row.lines.length}
-            <pre class="text-sm">{row.lines.join('\n')}</pre>
+            <pre class="code charter-log"><code>{row.lines.join('\n')}</code></pre>
           {/if}
-          {#if row.log}<div class="text-xs text-muted">{row.log}</div>{/if}
+          {#if row.log}<div class="text-xs text-muted charter-wrap">{row.log}</div>{/if}
         </article>
       {/each}
     </section>
   {/if}
 
   {#if live.kept.length}
-    <section class="stack-sm" id="charter-kept">
-      <h2 class="h5">Kept Apps</h2>
-      {#each live.kept as k (k.record)}
-        <div class="cluster" data-kept={k.appName}>
-          <strong>{k.appName}</strong>
-          {#if k.hostname}<a class="text-sm" href={`https://${k.hostname}`} target="_blank" rel="noopener">{k.hostname}</a>{/if}
-          <span class="text-sm text-muted">{k.case} · {k.date} · {k.basecamp}</span>
-          <ConfirmationPopover title={`Delete ${k.appName}?`}
-            message="Charter's clean stage removes its Domains, the App, its project and its data, then checks nothing else on the box changed."
-            confirmLabel="Delete" tone="danger" onconfirm={() => removeApp(k)}>
-            {#snippet trigger()}
-              <Button size="sm" tone="danger" treatment="outlined" disabled={(live, liveGoing())}>Delete</Button>
-            {/snippet}
-          </ConfirmationPopover>
-        </div>
-      {/each}
+    <section class="card" id="charter-kept">
+      <div class="surface-header"><h2 class="h5">Kept Apps</h2></div>
+      <ul class="rows divided">
+        {#each live.kept as k (k.record)}
+          <li class="list-row" data-kept={k.appName}>
+            <div class="stack gap-3xs charter-wrap">
+              <strong>{k.appName}</strong>
+              {#if k.hostname}<a class="text-sm" href={`https://${k.hostname}`} target="_blank" rel="noopener">{k.hostname}</a>{/if}
+              <span class="text-sm text-muted">{k.case} · {k.date} · {k.basecamp}</span>
+            </div>
+            <div class="row-actions">
+              <ConfirmationPopover title={`Delete ${k.appName}?`}
+                message="Charter's clean stage removes its Domains, the App, its project and its data, then checks nothing else on the box changed."
+                confirmLabel="Delete" tone="danger" onconfirm={() => removeApp(k)}>
+                {#snippet trigger()}
+                  <Button size="sm" tone="danger" treatment="outlined" disabled={(live, liveGoing())}>Delete</Button>
+                {/snippet}
+              </ConfirmationPopover>
+            </div>
+          </li>
+        {/each}
+      </ul>
     </section>
   {/if}
 
   {#if live.refused.length}
-    <section class="stack-xs" id="charter-refused">
-      <h2 class="h6">Records not read</h2>
-      {#each live.refused as r (r.file)}
-        <div class="text-sm text-danger">{r.refused}</div>
-      {/each}
-    </section>
+    <article class="alert danger" id="charter-refused">
+      <div class="alert-content">
+        <strong>Records not read</strong>
+        {#each live.refused as r (r.file)}
+          <p class="text-sm">{r.refused}</p>
+        {/each}
+      </div>
+    </article>
   {/if}
 {/if}
+
+<style>
+  .charter-cases { border: 0; margin-inline: 0; padding: 0; min-inline-size: 0; }
+  .charter-head  { flex-wrap: wrap; }
+  .charter-meta  { font-weight: normal; }
+  .charter-wrap  { min-inline-size: 0; overflow-wrap: anywhere; }
+  .charter-log   { max-block-size: 50vh; overflow: auto; }
+
+  /* One grid across a record's stages, so a long detail wraps in its own column
+     and the timings line up down the card instead of dropping to a new line. */
+  .charter-stages {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    gap: var(--space-xs) var(--space-lg);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .charter-stage {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: baseline;
+  }
+  .charter-num { text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 639px) {
+    .charter-stages { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+    .charter-detail { grid-column: 2 / -1; grid-row: 2; }
+  }
+
+  /* Holds a short form's footer to the card's bottom beside a taller neighbor. */
+  .charter-pinned { display: flex; flex-direction: column; }
+  .charter-pinned > .surface-footer { margin-block-start: auto; }
+</style>

@@ -23,15 +23,16 @@
  * over `dt`.
  */
 import { createDatetime } from '@frontierjs/toolbelt/datetime'
+import { clock } from '../clock.js'
 
-// An arrow, not `Date.now` itself: a test that swaps the clock is read.
+// An arrow, not `clock.now` itself: a source `clock.use()` installs later is read.
 // A pure IIFE: `@frontierjs/mesa/browser` is one entry, so every app that
 // imports any wrapper from it otherwise ships this and toolbelt's datetime
 // (+3.6 kB brotli on sierra's floor SPA), and a bundler keeps the Intl
 // argument of a pure call because reading it could throw.
 export const dt = /* @__PURE__ */ (() => createDatetime({
   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  now:      () => Date.now(),
+  now:      () => clock.now(),
 }))()
 
 /** 'Sep 14, 2026, 4:05 PM' — or `none`, for a row with no time. */

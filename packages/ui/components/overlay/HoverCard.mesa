@@ -49,8 +49,10 @@
   let maxH    = null     // set only when neither side of the trigger holds the card
   let panelEl
 
-  var openTimer  = 0
-  var closeTimer = 0
+  let pending = null                          // the trigger the open wait is for
+  let overs   = 0
+  let leaving = false                         // the close grace is running
+  let leaves  = 0
   var described  = null                       // the trigger carrying aria-describedby
 
   const t      = toTone(tone)
@@ -80,8 +82,8 @@
   }
 
   function show(el) {
-    clearTimeout(closeTimer)
-    clearTimeout(openTimer)
+    pending = null
+    leaving = false
     if (open && current === el) return
     // A card already open follows the pointer from word to word; a closed one
     // renders hidden first, because it cannot be measured until it exists.
@@ -103,8 +105,8 @@
   }
 
   function hide() {
-    clearTimeout(openTimer)
-    clearTimeout(closeTimer)
+    pending = null
+    leaving = false
     open = false
     current = null
     describe(null)
@@ -114,22 +116,22 @@
     if (e.pointerType === 'touch') return
     const el = triggerOf(e)
     if (!el) return
-    clearTimeout(closeTimer)
-    clearTimeout(openTimer)
+    leaving = false
+    pending = null
     // Open with no wait when the card is already up: the wait is for a pointer
     // passing over, not for one moving between words.
     if (open) show(el)
-    else openTimer = setTimeout(() => show(el), delay)
+    else { pending = el; overs++ }
   }
 
   // Left the trigger for somewhere that is neither it nor the card.
   function onOut(e) {
     const el = triggerOf(e)
     if (!el || el.contains(e.relatedTarget)) return
-    clearTimeout(openTimer)
+    pending = null
     if (e.relatedTarget?.closest?.(selector) || panelEl?.contains(e.relatedTarget)) return
-    clearTimeout(closeTimer)
-    closeTimer = setTimeout(hide, closeDelay)
+    leaving = true
+    leaves++
   }
 
   function onFocusIn(e) {
@@ -145,13 +147,17 @@
 
   function onCardLeave(e) {
     if (current?.contains(e.relatedTarget)) return
-    clearTimeout(closeTimer)
-    closeTimer = setTimeout(hide, closeDelay)
+    leaving = true
+    leaves++
   }
 
+  // Counted, so every pass restarts its wait: keyed on the trigger alone, a
+  // pointer crossing a trigger's children opened the card on the first
+  // crossing's schedule, and a second leave closed it on the first's.
+  $.after(delay, () => show(pending), { key: overs, when: pending })
+  $.after(closeDelay, hide, { key: leaves, when: leaving })
+
   $.onDestroy(() => {
-    clearTimeout(openTimer)
-    clearTimeout(closeTimer)
     described?.removeAttribute?.('aria-describedby')
   })
 </script>
@@ -184,7 +190,7 @@
       style:max-block-size={maxH == null ? null : `${maxH}px`}
       style:overflow-y={maxH == null ? null : 'auto'}
       style:visibility="{placed ? 'visible' : 'hidden'}"
-      onpointerenter={() => clearTimeout(closeTimer)}
+      onpointerenter={() => { leaving = false }}
       onpointerleave={onCardLeave}
       {@attach panelAnim}
     >

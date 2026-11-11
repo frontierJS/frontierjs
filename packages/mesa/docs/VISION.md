@@ -2034,7 +2034,7 @@ Still gates the whole template.
 > valid in all component script blocks.
 
 ```js
-// one-shot — runs once on init, no reactive deps
+// one-shot — runs once on init, no reactive deps, until refreshed
 const states = await getStates()
 
 // async derived — reruns when selectedState changes
@@ -2044,8 +2044,8 @@ const cities = await getCities(selectedState)
 
 ### 13.2 `$async` State Object
 
-When a `const` is initialized with `await` and references reactive variables, the compiler
-generates an async state object:
+When a top-level `const` is initialized with `await`, the compiler generates an async state
+object, whether or not it references reactive variables:
 
 ```js
 const cities = await getCities(selectedState)
@@ -2054,7 +2054,23 @@ const cities = await getCities(selectedState)
 //   $async.cities.pending   — true any time a fetch is in flight
 //   $async.cities.error     — Error | null
 //   $async.cities.status    — 'pending' | 'success' | 'error'
+//   $async.cities.refresh() — run getCities(selectedState) again now
 ```
+
+**`refresh()` is the run a change to `selectedState` would make** (`FJS-D2058`): it aborts
+the run in flight through the same `AbortSignal`, sets `pending` and leaves `cities`
+holding its old value until the new run lands. A reply from an earlier run that settles
+after a later one started is dropped, so the latest run wins however the replies arrive.
+A refresh while one is pending starts another run on the same terms. It returns nothing;
+read `$async.cities.pending` or `.error` for how it went.
+
+```html
+<Button onclick={() => $async.cities.refresh()} disabled={$async.cities.pending}>Reload</Button>
+```
+
+Every awaited top-level `const` has `refresh()` (`FJS-D2062`). One that reads nothing
+reactive runs once until refreshed, and a signal its loader happens to read does not re-run
+it.
 
 **A top-level `async function` whose `$async` is read gets the same object**, so a write
 that is not a form submit needs no hand-kept `busy`/`error` pair:
@@ -2107,7 +2123,8 @@ that is not a form submit needs no hand-kept `busy`/`error` pair:
 > **RULE 16** — `$async.x` exists for a top-level `const x = await …` and for a top-level
 > `async function x()`, and nothing else. A read of any other name — a `let`, a
 > synchronous function, an async arrow held in a `const`, an async generator — is a
-> compile error naming both forms (`FJS-1720`).
+> compile error naming both forms (`FJS-1720`). `.refresh()` exists on every awaited
+> `const` (`FJS-D2062`); on a function it is a compile error that names `.for(key)`.
 
 ### 13.3 Optimistic Updates
 
@@ -2242,7 +2259,7 @@ then a key; a call is a call.
 
 | bare and door | `$props` · `$attributes` · `$slots` · `$context` · `$async` |
 |---|---|
-| **door only** | `$.onMount` · `$.onDestroy` · `$.onCleanup` · `$.mounted` · `$.tick` · `$.emit` · `$.inspect` · `$.transition` · `$.entrance` · `$.fade` · `$.slide` · `$.fly` · `$.measure` · `$.viewport` · `$.focus` |
+| **door only** | `$.onMount` · `$.onDestroy` · `$.onCleanup` · `$.mounted` · `$.tick` · `$.emit` · `$.inspect` · `$.transition` · `$.entrance` · `$.fade` · `$.slide` · `$.fly` · `$.measure` · `$.viewport` · `$.focus` · `$.after` · `$.every` · `$.sleep` |
 
 **Four prefixes, and each line is a different kind of thing** (`FJS-D137`):
 
@@ -2334,6 +2351,9 @@ above. Two things wearing one character, and the character is all they share.
 | `$.measure(el)` | A Promise of the box `el` occupies, `{ left, top, right, bottom, width, height }`, or `null` for no node. Pixels on a page and a phone, cells on a terminal. |
 | `$.viewport()` | A Promise of the area a `position: fixed` box is placed against, `{ width, height }`, in `$.measure`'s units: the window on a page, the page's box on a phone, the renderer on a terminal. |
 | `$.focus(el)` | A Promise that resolves once focus has moved to `el`; no node does nothing. |
+| `$.after(ms, fn, { key, when }?)` | Runs `fn` once, `ms` after the timer arms. Top-level only; see below. |
+| `$.every(ms, fn, { key, when }?)` | Runs `fn` every `ms` while armed. Top-level only; see below. |
+| `$.sleep(ms)` | A Promise that resolves `ms` later on Mesa's clock. Anywhere in `<script>`; never resolves once the component is destroyed. See below. |
 
 The five animation helpers, the four lifecycle functions, `measure`,
 `viewport` and `focus` are the same for every instance, so they live on one object each
@@ -2345,7 +2365,7 @@ included, because a phone answers each by callback: a synchronous
 Each target's runtime gives its own answer in the one shape, and a native
 engine that refuses the call rejects the Promise with its code.
 The rest — `props`, `slots`, `attributes`, `emit`, `context`, `mounted`,
-`inspect`, `async` — differ per instance and are set on `$` itself, and only
+`inspect`, `async`, `sleep` — differ per instance and are set on `$` itself, and only
 when the component reaches for them.
 
 `$.onMount` and `$.onDestroy` are also exported from `@frontierjs/mesa/runtime`
@@ -2367,6 +2387,72 @@ $.inspect(count).with(console.trace)   // custom logger — replaces default
 > **RULE 42** — `$.inspect` is dev-only. With `config.debug: false` the compiler
 > emits no code for it — the call site is removed entirely. It must appear at
 > the top level of the script block (not inside a function or block).
+
+#### `$.after` and `$.every` — declared timers
+
+A timer is controlled by its declaration, not by a handle (`FJS-D2059`). It is
+armed while `when` holds (default `true`) and the component lives; `$.after`
+runs `fn` once, `ms` after arming, and `$.every` runs it every `ms`. A change of
+`key` cancels the pending or running timer and arms it fresh; `when` turning
+false cancels, and turning true again arms from scratch. A paused timer is not
+re-armed by a `key` change. Neither fires on arming — a poll that should load at
+once calls `load()` beside it. An `every` whose `fn` returns a pending promise
+skips the ticks due until it settles, and keeps its cadence (`FJS-D2064`). Both run on Mesa's clock, so a test holding
+`virtualClock()` decides when they fire, and both are cancelled when the
+component is destroyed.
+
+```js
+let query = ''
+let flash = null
+
+$.after(300, () => search(query), { key: query })                 // a debounce
+$.after(3000, () => flash = null, { key: flash, when: flash != null })  // a flash auto-clear
+$.every(5000, load, { when: visible })                              // a poll, paused while hidden
+```
+
+`ms`, and the `key` and `when` of an options LITERAL, are read reactively:
+`key` and `when` are re-read whenever what they read changes, and `ms` is read
+at each arm, so a change to `ms` alone re-arms nothing. An options object
+passed as a variable is read once, at the declaration. A `key` or `when` that
+is a function is called to get its value.
+
+A server render arms nothing: the render installs a clock that ignores every
+timer, so a `$.every` in a prerendered page is armed by the client alone. A
+`$.sleep` there resolves at once, so an `{#await}` behind one writes its
+settled branch rather than holding the render (`FJS-D2063`).
+
+**`$.sleep(ms)` is their imperative sibling** (`FJS-D2063`): a Promise that
+resolves `ms` later on the same clock, written in the flow of a handler or an
+async function — after an `await` too — where a declaration cannot go. It has
+no `key` and no `when`; what it gates is the next line. It belongs to the
+component: once the component is destroyed a pending sleep is cancelled and
+never settles, so the code after it does not run against a torn-down
+component — and neither does a `finally` around it, since a rejection would
+surface as an unhandled error from every handler caught mid-sleep. A run that
+a newer one supersedes is not cancelled; mark it stale in `$.onCleanup`.
+
+```js
+async function save() {
+  saving = true
+  await $.sleep(600)          // a simulated round-trip, held still by a test
+  saving = false
+}
+```
+
+> **RULE 65** — `$.after` and `$.every` are declarations, like `$:` and
+> `$.inspect`: a top-level statement of the instance `<script>`, returning
+> nothing. Called inside a function, from the template, or used as a value, the
+> compile fails and names the `when` and `key` gates — a timer armed from a
+> handler is one nothing re-arms or cancels. They are refused in
+> `<script module>`, which has no instance. `$.sleep` is the exception to
+> top-level-only: it is a call that returns a Promise, legal anywhere in the
+> instance `<script>`.
+
+> **RULE 66** — A `setTimeout` or `setInterval` call in either `<script>` of a
+> `.mesa` file is a compile WARNING, every time, naming `$.after`/`$.every` and
+> their gates, and `await $.sleep(ms)` for a sleep (`FJS-D2060`): a raw timer is off Mesa's clock, so a drive cannot
+> hold it still and nothing cancels it on destroy. `clearTimeout` and
+> `clearInterval` are quiet — the arming call already warned.
 
 ---
 
@@ -2866,6 +2952,8 @@ components hydrate to their initial render and serialize cleanly.
 | 62 | The initial run of an auto-tracked effect happens during setup, before the template exists; only updates are ordered after the DOM |
 | 63 | In a `.md` file `{…}` in PROSE is a bare path — an identifier or a member chain — and anything else is literal text, with `\{` the escape; attributes and `.mesa` are unchanged |
 | 64 | A call to an imported function, or to a local one reaching it, re-runs when this component's import watches fire — in a template binding, a prop and a derived `const` only; a watch never makes anything reactive that was not |
+| 65 | `$.after` and `$.every` are declarations — a top-level statement of the instance `<script>`, returning nothing; inside a function, in the template or as a value is a compile error. `$.sleep` is the exception: a Promise, legal anywhere in the instance `<script>` |
+| 66 | A `setTimeout`/`setInterval` call in either `<script>` is a compile warning, every time, naming `$.after`/`$.every` and `await $.sleep(ms)`; a `clear*` call is quiet |
 
 ---
 

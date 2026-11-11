@@ -46,16 +46,19 @@ function baseAssertions(rows, browser, allowed) {
      *  `ms` is for a round trip that is not a microtask. A file-watch → compile
      *  → socket → re-render is seconds, not milliseconds, and measurably so:
      *  the second write to one file arrived ~4.5s after it was made. Waiting
-     *  the default there reports working HMR as an update that never came. */
+     *  the default there reports working HMR as an update that never came.
+     *  It polls on the page's native timers, so a held clock cannot hang it. */
     eventually: async (expr, expected, label, ms = 2000) => {
       const want = String(expected)
       const actual = await browser.evaluate(`
-        const t0 = Date.now();
+        const n = globalThis.__fjsClock?.native ?? globalThis;
+        const now = n.Date?.now ?? Date.now;
+        const t0 = now();
         let v;
         for (;;) {
           v = (${expr});
-          if (String(v) === ${JSON.stringify(want)} || Date.now() - t0 > ${Number(ms)}) break;
-          await new Promise(r => setTimeout(r, 20));
+          if (String(v) === ${JSON.stringify(want)} || now() - t0 > ${Number(ms)}) break;
+          await new Promise(r => n.setTimeout(r, 20));
         }
         return { v };
       `)

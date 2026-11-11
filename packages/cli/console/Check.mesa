@@ -87,15 +87,12 @@
     reading = false
   }
 
-  var ciTimer = null
   async function readCi() {
-    clearTimeout(ciTimer)
     try {
       ci = await read('/api/ci')
     } catch (e) {
       failed = e.message
     }
-    ciTimer = setTimeout(readCi, ci?.active ? CI_POLL_LIVE_MS : CI_POLL_IDLE_MS)
   }
 
   async function startCi(opts) {
@@ -182,7 +179,7 @@
   ])
 
   $.onMount(() => { readTree(); readCi() })
-  $.onDestroy(() => clearTimeout(ciTimer))
+  $.every(ci?.active ? CI_POLL_LIVE_MS : CI_POLL_IDLE_MS, readCi, { key: !!ci?.active })
 </script>
 
 <header class="bar">

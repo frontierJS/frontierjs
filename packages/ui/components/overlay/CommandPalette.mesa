@@ -89,7 +89,7 @@
   let hits        = []      // the search's answer for the current words
   let searching   = false
   let searchError = null
-  var _timer      = null
+  let _words      = ''      // what the quiet window searches for
   var _asking     = null    // the AbortController of the search in flight
 
   // Focus never leaves the search box, so `aria-selected` moving down the list
@@ -103,7 +103,7 @@
   $.onMount(() => {
     $.focus(inputEl)
     return () => {
-      clearTimeout(_timer); _asking?.abort()
+      _asking?.abort()
       // Focus is still in the palette (or nowhere) when it goes; send it back
       // to what opened it, unless the chosen action already moved it.
       const now = document.activeElement
@@ -114,24 +114,27 @@
   // Every change of words drops the last answer: hits for words no longer in
   // the box are rows the search never made for these ones.
   function ask(words) {
-    clearTimeout(_timer)
     _asking?.abort()
     _asking = null
     hits = []
     searchError = null
+    _words = words
     searching = !!(search && words.trim() && words.trim().length >= searchMinLength)
-    if (!searching) return
-    _timer = setTimeout(() => {
-      const mine = _asking = new AbortController()
-      Promise.resolve()
-        .then(() => search(words, mine.signal))
-        .then(
-          (rows) => { if (!mine.signal.aborted) { hits = Array.isArray(rows) ? rows : []; idx = 0 } },
-          (err)  => { if (!mine.signal.aborted) searchError = err },
-        )
-        .finally(() => { if (!mine.signal.aborted) searching = false })
-    }, 200)
   }
+
+  function _run() {
+    const words = _words
+    const mine = _asking = new AbortController()
+    Promise.resolve()
+      .then(() => search(words, mine.signal))
+      .then(
+        (rows) => { if (!mine.signal.aborted) { hits = Array.isArray(rows) ? rows : []; idx = 0 } },
+        (err)  => { if (!mine.signal.aborted) searchError = err },
+      )
+      .finally(() => { if (!mine.signal.aborted) searching = false })
+  }
+
+  $.after(200, _run, { key: _words, when: searching })
 
   // ── Derived chain ────────────────────────────────────────────────────────
   // Each const auto-derives when its dependencies change (Rule 2).

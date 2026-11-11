@@ -17,7 +17,7 @@ title: App
   // and its jobs. The alternative was five round trips for one question.
   import { page, goto } from '@frontierjs/sierra/router'
   import { getClient } from '@frontierjs/sierra/resource'
-  import App, { apps, importDockerfile, dockerfileTemplate, mintDeployKey } from '../../../resources/App.mesa'
+  import App, { apps, importDockerfile, dockerfileTemplate, mintDeployKey, connect } from '../../../resources/App.mesa'
   import { domains } from '../../../resources/Domain.mesa'
   import { edge } from '../../../resources/Edge.mesa'
   import { servers } from '../../../resources/Server.mesa'
@@ -218,7 +218,7 @@ title: App
       } catch (e) {
         answer = { ok: false, text: e.message }
         if (e.code !== 502) break
-        await new Promise(r => setTimeout(r, 1500))
+        await $.sleep(1500)
       }
     }
     dnsOf = { ...dnsOf, [d.id]: answer }
@@ -379,7 +379,7 @@ title: App
   let follow      = null    // the socket, while following
   let followState = ''      // '' · connecting · open · ended
   let followHeld  = { stdout: [], stderr: [] }
-  let flushTimer  = null
+  let flushPending = false
 
   const keep = (text, more) => {
     const lines = (text ? text.split('\n') : []).concat(more)
@@ -388,13 +388,14 @@ title: App
 
   // Lines arrive one frame each; drawing per frame re-renders per line.
   function flush() {
-    flushTimer = null
+    flushPending = false
     const { stdout, stderr } = followHeld
     followHeld = { stdout: [], stderr: [] }
     if (!stdout.length && !stderr.length) return
     logs = { ...logs, stdout: stdout.length ? keep(logs.stdout, stdout) : logs.stdout,
                       stderr: stderr.length ? keep(logs.stderr, stderr) : logs.stderr }
   }
+  $.after(150, flush, { when: flushPending })
 
   function startFollow() {
     stopFollow()
@@ -414,7 +415,7 @@ title: App
       if (frame.event === 'error') error = frame.data?.error ?? 'The stream failed'
       if (frame.event !== 'message' || !frame.data) return
       ;(frame.data.stream === 'stderr' ? followHeld.stderr : followHeld.stdout).push(frame.data.text ?? '')
-      flushTimer ??= setTimeout(flush, 150)
+      flushPending = true
     }
     ws.onclose = (e) => {
       if (follow !== ws) return
@@ -432,7 +433,6 @@ title: App
     follow = null
     ws.onclose = null
     ws.close()
-    clearTimeout(flushTimer)
     flush()
     followState = 'ended'
   }
@@ -744,6 +744,33 @@ title: App
       busy = null
     }
   }
+
+  // `connect` writes the key and the hook at GitHub with a workspace token
+  // (FJS-D2051). A hook it wrote needs no copying, so only one it could not
+  // write shows its credentials, as `enablePush`'s do.
+  let connectSays = ''
+  async function connectRepo() {
+    error = null; connectSays = ''; busy = 'push'
+    try {
+      const r = await connect(app.id)
+      const done = r.connected
+      if (r.push && !done?.hook) pushKeys = r.push
+      connectSays = [
+        done?.key  ? `Deploy key added at GitHub with ${done.account}.` : '',
+        done?.hook ? `Webhook added at GitHub with ${done.account}.` : '',
+        r.note ?? '',
+      ].filter(Boolean).join(' ')
+      await appRow.refresh()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // A hint for showing the button; the server's parse of the remote decides.
+  $: onGitHub = /github\.com[/:]/i.test(app?.source?.repo ?? '')
+  $: placed   = (app?.placement ?? []).length > 0
 
   async function disablePush() {
     error = null; busy = 'push'
@@ -1411,7 +1438,14 @@ title: App
           {:else}
             <Button onclick={enablePush} disabled={busy} id="app-push-enable">Enable deploy on push</Button>
           {/if}
+          {#if onGitHub}
+            <Button treatment="outlined" onclick={connectRepo} disabled={busy || !placed} id="app-push-connect">Connect to GitHub</Button>
+            {#if !placed}
+              <span class="text-sm text-muted">Place this app on a server first — the deploy key is made on the machine.</span>
+            {/if}
+          {/if}
         </div>
+        {#if connectSays}<p class="text-sm text-muted" id="app-push-connect-says" role="status">{connectSays}</p>{/if}
       </Card>
     {/if}
 

@@ -18,6 +18,7 @@ import {
 import { guardId } from '../core/pause.js'
 import { checkDiscovery } from '../core/discovery-probe.js'
 import { STREAM_CLOSE_DELAY } from '../core/swap.js'
+import { NAVIGATED_API_PATHS } from '../../basecamp/web/config/api-paths.js'
 
 const src = (rel) => readFileSync(new URL(`../commands/deploy/${rel}`, import.meta.url).pathname, 'utf8')
 
@@ -238,7 +239,7 @@ describe('plaintext on :80', () => {
     const [r] = plainFor({ web: { domain: 'shop.example' } }, { prefix: null, roots: ['/projects'] })
     const [refuse] = refusals(r)
     expect(refuse.match[0].path).toEqual(['/projects', '/projects/*', '/ws', '/ws/*'])
-    expect(refuse.match[0].not).toEqual([{ header: { Accept: ['*text/html*'] }, not: [{ path: ['/auth/oauth/*'] }] }])
+    expect(refuse.match[0].not).toEqual([{ header: { Accept: ['*text/html*'] }, not: [{ path: NAVIGATED_API_PATHS.map(p => `${p}*`) }] }])
   })
 
   test('two origins: every path on the API host, and nothing on the web host', () => {

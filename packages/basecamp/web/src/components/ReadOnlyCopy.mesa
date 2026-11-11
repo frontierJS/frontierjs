@@ -72,15 +72,10 @@
   // A row with no status is a refresh queued; one the queue never runs would
   // poll forever, so watching stops ten minutes after the last act.
   $: unsettled = !!copy && (copy.status == null || copy.status === 'pending' || copy.status === 'running')
-  let poll = null
-  let watchUntil = Date.now() + 600_000
-  function watch() {
-    clearTimeout(poll)
-    if (!unsettled || Date.now() > watchUntil) return
-    poll = setTimeout(async () => { await load(); watch() }, 2000)
-  }
-  $: unsettled, () => watch()
-  $.onDestroy(() => clearTimeout(poll))
+  let watching   = true
+  let watchRuns  = 0
+  $.every(2000, load, { when: unsettled && watching })
+  $.after(600_000, () => { watching = false }, { key: watchRuns, when: watching })
 
   // The off answer and a move say whether the old machine stopped serving;
   // one that could not be reached may still be, and the person has to know.
@@ -96,8 +91,8 @@
   const turnOn = () => act(async () => {
     copy = await appCopies.service.create({ appId: app.id, serverId, cron })
     toasts.success(`Copy turned on. ${machineName(serverId)} is staging it now.`)
-    watchUntil = Date.now() + 600_000
-    watch()
+    watching = true
+    watchRuns++
   })
 
   const turnOff = () => act(async () => {
@@ -121,8 +116,8 @@
     const answer = await appCopies.service.patch(copy.id, data)
     copy = answer
     leftBehind(answer.machine, machineName(from))
-    watchUntil = Date.now() + 600_000
-    watch()
+    watching = true
+    watchRuns++
   })
 </script>
 

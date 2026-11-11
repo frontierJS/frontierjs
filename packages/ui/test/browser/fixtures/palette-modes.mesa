@@ -76,7 +76,7 @@
     server: (q, signal) => {
       searches++
       signal.addEventListener('abort', () => { aborts++ })
-      return new Promise(r => setTimeout(() => r(SERVER[q.trim()] ?? []), q.trim() === 'slow' ? 600 : 30))
+      return $.sleep(q.trim() === 'slow' ? 600 : 30).then(() => SERVER[q.trim()] ?? [])
     },
     failing: () => Promise.reject(new Error('search is down')),
   })[source]

@@ -1,0 +1,6 @@
+{
+  "error": {
+    "type": "ROW_DOES_NOT_EXIST",
+    "message": "Record ID recXXXXXXXXXXXXXX does not exist"
+  }
+}

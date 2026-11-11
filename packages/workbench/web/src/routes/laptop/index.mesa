@@ -178,6 +178,12 @@ title: Laptop
   const signInTone = (s) => s.signIn.kind === 'cli' ? (s.signIn.installed ? 'info' : '') : (s.present ? 'success' : '')
   const signInWord = (s) => s.signIn.kind === 'cli' ? (s.signIn.installed ? 'installed' : 'not installed') : (s.present ? 'ready' : 'not set up')
 
+  const moreLabel = (s) => {
+    const n = s.commands.length
+    const used = n === 0 ? 'no command yet' : n === 1 ? 'used by 1 command' : `used by ${n} commands`
+    return s.vendor || s.setup ? `Setup, ${used}` : used[0].toUpperCase() + used.slice(1)
+  }
+
   // `commands/github/_module.md#Setup` read as text: the file and its section.
   const setupText = (p) => p.replace('#', ' § ')
 
@@ -518,79 +524,91 @@ title: Laptop
       {:else if svcReport}
         <p class="text-sm text-muted">Presence is read from this laptop; a value is never sent to this page. Check runs the login's own command, only when pressed.</p>
 
-        <div class="cards" id="laptop-services">
-          {#each svcReport as s (s.id)}
-            <article class="card lp-service" id={`service-${s.id}`} data-service={s.id}>
-              <header class="pane-head">
-                <h2 class="h6">{s.name}</h2>
-                <Pill tone={signInTone(s)} dot>{signInWord(s)}</Pill>
-              </header>
+        <section class="lp-pane" aria-labelledby="laptop-pane-services">
+          <header class="pane-head">
+            <div class="pane-title">
+              <h2 class="h6" id="laptop-pane-services">Accounts</h2>
+              <span class="text-sm text-muted">{svcReport.filter(s => s.present).length} of {svcReport.length} set up</span>
+            </div>
+          </header>
 
-              <dl class="facts lp-facts lp-compact">
-                <dt>Signs in</dt>
-                <dd>
-                  {#if s.signIn.kind === 'env'}
-                    <span class="lp-chips">
+          <ul class="rows-list" id="laptop-services">
+            {#each svcReport as s (s.id)}
+              <li class="lp-row lp-service" id={`service-${s.id}`} data-service={s.id}>
+                <div class="row-main">
+                  <div class="row-name">{s.name}</div>
+                  <div class="lp-chips">
+                    {#if s.signIn.kind === 'env'}
                       {#each s.signIn.keys as k (k.key)}
                         <span class={`lp-chip ${k.present ? 'lp-on' : ''}`} data-key={k.key}>
                           <Dot tone={k.present ? 'success' : ''} hollow={!k.present} size="xs" label={k.present ? 'set' : 'not set'} />
                           <code>{k.key}</code>
                         </span>
                       {/each}
-                    </span>
-                  {:else if s.signIn.kind === 'file'}
-                    <span class={`lp-chip ${s.present ? 'lp-on' : ''}`}>
-                      <Dot tone={s.present ? 'success' : ''} hollow={!s.present} size="xs" label={s.present ? 'present' : 'absent'} />
-                      <code>{s.signIn.entry}</code>
-                    </span>
-                  {:else}
-                    <span class="stack gap-xs">
-                      <span>through <code>{s.signIn.bin}</code></span>
-                      <span class="text-sm text-muted">log in with <code>{s.signIn.login}</code></span>
-                      <span class="cluster">
-                        <Button size="sm" treatment="outlined" data-check={s.id} disabled={!s.signIn.installed}
-                                loading={!!checks[s.id]?.pending} onclick={() => check(s)}>Check</Button>
-                        {#if checks[s.id] && !checks[s.id].pending}
-                          <span class="text-sm" data-result={s.id}>
-                            {#if checks[s.id].error}<span class="text-danger">{checks[s.id].error}</span>
-                            {:else if checks[s.id].ok}<span class="text-success">signed in{checks[s.id].who ? ` as ${checks[s.id].who}` : ''}</span>
-                            {:else}not signed in{/if}
-                            <span class="text-muted"> · {checks[s.id].ms} ms</span>
-                          </span>
-                        {/if}
+                    {:else if s.signIn.kind === 'file'}
+                      <span class={`lp-chip ${s.present ? 'lp-on' : ''}`}>
+                        <Dot tone={s.present ? 'success' : ''} hollow={!s.present} size="xs" label={s.present ? 'present' : 'absent'} />
+                        <code>{s.signIn.entry}</code>
                       </span>
-                    </span>
+                    {:else}
+                      <span class={`lp-chip ${s.signIn.installed ? 'lp-on' : ''}`}>
+                        <Dot tone={s.signIn.installed ? 'success' : ''} hollow={!s.signIn.installed} size="xs" label={s.signIn.installed ? 'installed' : 'not installed'} />
+                        <code>{s.signIn.bin}</code>
+                      </span>
+                      <span class="lp-chip">log in with <code>{s.signIn.login}</code></span>
+                    {/if}
+                  </div>
+                  {#if checks[s.id] && !checks[s.id].pending}
+                    <div class="text-sm" data-result={s.id}>
+                      {#if checks[s.id].error}<span class="text-danger">{checks[s.id].error}</span>
+                      {:else if checks[s.id].ok}<span class="text-success">signed in{checks[s.id].who ? ` as ${checks[s.id].who}` : ''}</span>
+                      {:else}not signed in{/if}
+                      <span class="text-muted"> · {checks[s.id].ms} ms</span>
+                    </div>
                   {/if}
-                </dd>
+                </div>
 
-                {#if s.vendor}
-                  <dt>Token</dt>
-                  <dd>
-                    <a href={s.vendor.url} target="_blank" rel="noopener noreferrer">Make one</a>
-                    {#if s.vendor.note}<span class="text-sm text-muted"> — {s.vendor.note}</span>{/if}
-                  </dd>
-                {/if}
-                {#if s.setup}
-                  <dt>Setup</dt>
-                  <dd><code class="text-xs path">{setupText(s.setup)}</code></dd>
-                {/if}
-              </dl>
+                <div class="row-state"><Pill tone={signInTone(s)} dot>{signInWord(s)}</Pill></div>
 
-              <div class="used">
-                <div class="kicker">Used by</div>
-                {#if s.commands.length}
-                  <ul class="commands" data-commands={s.id}>
-                    {#each s.commands as c (c.name)}
-                      <li><code>fli {c.name}</code><span class="text-sm text-muted">{c.description ?? ''}</span></li>
-                    {/each}
-                  </ul>
-                {:else}
-                  <span class="text-sm text-muted">no command yet</span>
+                {#if s.signIn.kind === 'cli'}
+                  <div class="row-act">
+                    <Button size="sm" treatment="outlined" data-check={s.id} disabled={!s.signIn.installed}
+                            loading={!!checks[s.id]?.pending} onclick={() => check(s)}>Check</Button>
+                  </div>
                 {/if}
-              </div>
-            </article>
-          {/each}
-        </div>
+
+                <details class="lp-more" open={!s.present}>
+                  <summary class="text-sm text-muted">{moreLabel(s)}</summary>
+                  <div class="lp-more-body">
+                    {#if s.vendor || s.setup}
+                      <dl class="facts lp-facts lp-compact">
+                        {#if s.vendor}
+                          <dt>Token</dt>
+                          <dd>
+                            <a href={s.vendor.url} target="_blank" rel="noopener noreferrer">Make one</a>
+                            {#if s.vendor.note}<span class="text-sm text-muted"> — {s.vendor.note}</span>{/if}
+                          </dd>
+                        {/if}
+                        {#if s.setup}
+                          <dt>Setup</dt>
+                          <dd><code class="text-xs path">{setupText(s.setup)}</code></dd>
+                        {/if}
+                      </dl>
+                    {/if}
+
+                    {#if s.commands.length}
+                      <ul class="commands" data-commands={s.id}>
+                        {#each s.commands as c (c.name)}
+                          <li><code>fli {c.name}</code><span class="text-sm text-muted">{c.description ?? ''}</span></li>
+                        {/each}
+                      </ul>
+                    {/if}
+                  </div>
+                </details>
+              </li>
+            {/each}
+          </ul>
+        </section>
       {/if}
     </div>
   </TabPanel>
@@ -634,7 +652,6 @@ title: Laptop
   .tab-label { display: inline-flex; align-items: center; gap: var(--space-xs); }
   .tab-size  { color: var(--ink-mute); font-size: var(--text-xs); }
   .panes     { display: flex; flex-direction: column; gap: var(--space-xl); }
-  .cards  { --lp-card-min: 22rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--lp-card-min)), 1fr)); gap: var(--space-xl); }
 
   .lp-pane {
     border:        var(--border-width) solid var(--rule);
@@ -710,9 +727,15 @@ title: Laptop
 
   /* ─── Identity and services ───────────────────────────────────────── */
   .identity { display: flex; flex-direction: column; gap: var(--space-lg); }
-  .identity h2, .lp-service h2 { margin: 0; }
-  .lp-service  { display: flex; flex-direction: column; gap: var(--space-lg); }
-  .lp-service > .pane-head { margin: calc(var(--space-3xl) * -1) calc(var(--space-3xl) * -1) 0; }
+  .identity h2 { margin: 0; }
+
+  /* Fixed state and action columns: each row is its own grid, so an auto column
+     would leave the pills ragged between rows with a Check and rows without. */
+  .lp-row.lp-service { --lp-state-col: 7.5rem; grid-template-columns: minmax(0, 1fr) var(--lp-state-col) var(--lp-act-col); align-items: start; row-gap: var(--space-xs); }
+  .lp-service .row-state { grid-column: 2; }
+  .lp-service .row-act   { grid-column: 3; }
+  .lp-more      { grid-column: 1 / -1; }
+  .lp-more-body { display: flex; flex-direction: column; gap: var(--space-md); padding-block: var(--space-sm) var(--space-xs); }
 
   .lp-facts.lp-compact { font-size: var(--text-sm); gap: var(--space-sm) var(--space-xl); }
   .lp-facts dt   { color: var(--ink-mute); }
@@ -720,7 +743,6 @@ title: Laptop
 
   .commands      { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-xs) var(--space-md); align-items: baseline; }
   .commands li   { display: contents; }
-  .used          { display: flex; flex-direction: column; gap: var(--space-sm); padding-block-start: var(--space-md); border-block-start: var(--border-width) solid var(--rule); }
   .commands code { justify-self: start; font-size: var(--text-xs); }
 
   /* ─── Narrow ──────────────────────────────────────────────────────── */
@@ -730,6 +752,8 @@ title: Laptop
     #laptop-holds .lp-row { grid-template-columns: auto minmax(0, 1fr) auto; }
     #laptop-holds .lp-row .row-col:last-child { display: none; }
     .row-size    { min-inline-size: 0; }
+    .lp-row.lp-service { grid-template-columns: minmax(0, 1fr) auto; }
+    .lp-service .row-act { grid-column: 1 / -1; justify-content: flex-start; min-inline-size: 0; }
     /* A max-content column is as wide as the longest fli command, which
        widened the whole page past the screen. Name over description. */
     .commands      { grid-template-columns: minmax(0, 1fr); }

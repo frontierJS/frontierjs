@@ -146,7 +146,6 @@
   let _searched  = null      // the server's answer for the current query
   let _searchAll = false     // has this field ever come back cut?
   var _seq       = 0         // out-of-order responses lose to the newest
-  var _timer     = null
 
   const _base  = options?.length ? options : (_sync ?? _fetched)
   const _rows  = _searched ?? _base
@@ -165,33 +164,45 @@
   const canSearchServer = !!search || !!(name && form?.optionsFor)
   var _asking = null         // the AbortController of a `search` in flight
 
+  // The text the quiet window asks for, null when nothing waits in it. Counted
+  // per keystroke so each one restarts the window: keyed on the text, the same
+  // text typed again would ask on the first keystroke's schedule.
+  let _askFor = null
+  let _asks   = 0
+
   function askServer(text) {
     if (!canSearchServer) return
-    clearTimeout(_timer)
     _asking?.abort()
     _asking = null
     const q = text.trim()
     // An empty box is the caller's own list again, not a search for nothing.
-    if (search && !q) { ++_seq; _searched = null; return }
-    _timer = setTimeout(() => {
-      const mine = ++_seq
-      if (search) {
-        const ctl = _asking = new AbortController()
-        Promise.resolve()
-          .then(() => search(q, ctl.signal))
-          .then((rows) => { if (mine === _seq && !ctl.signal.aborted) _searched = Array.isArray(rows) ? rows : [] })
-          .catch(() => {})
-        return
-      }
-      form.optionsFor(name, { search: q || undefined }).then(r => {
-        if (mine !== _seq) return
-        _searched = r?.options ?? []
-        _total    = r?.total ?? null
-      }).catch(() => {})
-    }, 200)
+    if (search && !q) { ++_seq; _searched = null; _askFor = null; return }
+    _askFor = q
+    _asks++
   }
 
-  $.onMount(() => () => { clearTimeout(_timer); clearTimeout(_blurTimer); _asking?.abort() })
+  function _ask() {
+    const q = _askFor
+    _askFor = null
+    const mine = ++_seq
+    if (search) {
+      const ctl = _asking = new AbortController()
+      Promise.resolve()
+        .then(() => search(q, ctl.signal))
+        .then((rows) => { if (mine === _seq && !ctl.signal.aborted) _searched = Array.isArray(rows) ? rows : [] })
+        .catch(() => {})
+      return
+    }
+    form.optionsFor(name, { search: q || undefined }).then(r => {
+      if (mine !== _seq) return
+      _searched = r?.options ?? []
+      _total    = r?.total ?? null
+    }).catch(() => {})
+  }
+
+  $.after(200, _ask, { key: _asks, when: _askFor !== null })
+
+  $.onMount(() => () => { _asking?.abort() })
 
   const normOptions = _rows.map(normalize)
 
@@ -350,17 +361,15 @@
     return from
   }
 
-  var _blurTimer = null
-  function handleBlur() {
-    clearTimeout(_blurTimer)
-    _blurTimer = setTimeout(() => {
-      if (!containerEl?.contains(document.activeElement)) {
-        open  = false
-        _typed = false
-        // Revert query to current value label if input was changed but not confirmed
-        query = labelFor(value)
-      }
-    }, 150)
+  // Waits so a click on an option lands before the list closes under it.
+  async function handleBlur() {
+    await $.sleep(150)
+    if (!containerEl?.contains(document.activeElement)) {
+      open  = false
+      _typed = false
+      // Revert query to current value label if input was changed but not confirmed
+      query = labelFor(value)
+    }
   }
 
   const dropdownAnim = $.entrance({

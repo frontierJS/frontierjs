@@ -52,6 +52,7 @@ import { createConnection }                                   from 'node:net'
 import { createHash }                                         from 'node:crypto'
 import { Database }                                           from 'bun:sqlite'
 import { portFor }                                            from '@frontierjs/cli/core/ports.js'
+import { writeBasecamp }                                      from '@frontierjs/cli/core/basecamps.js'
 import { startS3Sink }                                        from '../src/providers/storage/s3-sink.ts'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -93,6 +94,9 @@ const ENV = {
 // one answers; outpost's ingress branches on both.
 
 let caddyConfig = null
+// A call Outpost makes that this file has not learned fails the job far from
+// here, and reads as a release that never started (FJS-3325, FJS-4140).
+const unanswered = new Set()
 const caddyRoutes = () => caddyConfig?.apps?.http?.servers?.ingress?.routes ?? []
 function startCaddy() {
   const answer = (status, body) => new Response(body === undefined ? '' : JSON.stringify(body), { status })
@@ -108,14 +112,11 @@ function startCaddy() {
       return answer(200)
     }
     // Outpost reads the order back after every write and PATCHes the array to
-    // settle it, then sets the access log; a stand-in without these fails every
-    // /route at its last step, after the route landed, so no rebind is asked.
-    if (req.method === 'POST' && path === '/config/logging' && caddyConfig) {
-      caddyConfig.logging = data
-      return answer(200)
-    }
-    if (req.method === 'POST' && path === '/config/apps/http/servers/ingress/logs' && caddyConfig) {
-      caddyConfig.apps.http.servers.ingress.logs = data
+    // settle it, then sets the access log by POSTing the whole config; a
+    // stand-in without these fails every /route at its last step, after the
+    // route landed, so no rebind is asked.
+    if (req.method === 'POST' && path === '/config/' && caddyConfig) {
+      caddyConfig = data
       return answer(200)
     }
     if (path === '/config/apps/http/servers/ingress/routes' && req.method === 'GET')
@@ -132,6 +133,7 @@ function startCaddy() {
     if (id && at < 0) return answer(404, { error: `unknown object ID '${id}'` })
     if (req.method === 'PATCH')  { caddyRoutes()[at] = data; return answer(200) }
     if (req.method === 'DELETE') { caddyRoutes().splice(at, 1); return answer(200) }
+    unanswered.add(`${req.method} ${path}`)
     return answer(400, { error: `unexpected ${req.method} ${path}` })
   } })
 }
@@ -427,6 +429,9 @@ try {
   check('…still answering',
     (await fetch(`http://localhost:${APP_PORT}/`).then(r => r.text(), () => '')).includes(`Name: ${name}`))
   caddy = startCaddy()
+  // A rebind is skipped while a failed release is newer than the last success
+  // (`FJS-4129`), and the refusal above is one.
+  check('…and with Caddy back the next release lands', (await released(box.id, auth))?.status === 'success')
 
   await call(`/domains/${domain?.id}`, { ...auth, method: 'DELETE' })
   // Gone only counts after it was there.
@@ -441,6 +446,7 @@ try {
   check('…and the release that follows puts the port back on every interface',
     unbound?.find(d => d.id !== rebound?.id)?.status === 'success'
       && !sh('docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', container).stdout.includes('127.0.0.1'))
+  check(`the Caddy stand-in answered every admin call${unanswered.size ? `, but not ${[...unanswered].join(', ')}` : ''}`, !unanswered.size)
 
   // ── Adopting an app's data: an archive on the machine, into its directory ──
   // Placed and never released, the order an adoption takes: the files land
@@ -543,14 +549,24 @@ try {
   owned.push(fliApp?.id)
   await call(`/apps/${fliApp?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
   const appDir = join(OWN, 'fli-app')
-  // `db/schema.lite` is what fli reads as an app root; without one it walks up to basecamp's own.
+  // `db/schema.lite` is what fli reads as an app root; without one it walks up to
+  // basecamp's own. No model, or the preflight refuses a history that cannot build it.
   mkdirSync(join(appDir, 'deploy'), { recursive: true })
   mkdirSync(join(appDir, 'db'), { recursive: true })
-  writeFileSync(join(appDir, 'db', 'schema.lite'), 'model Note {\n  id Integer @id\n}\n')
+  writeFileSync(join(appDir, 'db', 'schema.lite'), '// marks the app root\n')
   writeFileSync(join(appDir, 'package.json'), JSON.stringify({ name: 'fli-app', private: true }))
   writeFileSync(join(appDir, 'deploy', 'Dockerfile'), `FROM ${IMAGE}\nLABEL fjs.verify=${process.pid}\n`)
-  const fli = spawnSync(process.execPath, [join(ROOT, '..', 'cli', 'bin', 'fli.js'), 'basecamp:deploy', '--app', String(fliApp?.id), '--url', API, '--server', 'localhost'], {
-    cwd: appDir, encoding: 'utf8', env: { ...ENV, BASECAMP_API_KEY: minted?.token ?? '' }, timeout: 300_000,
+  // A release is a commit, and under this repository's ignored `.outpost` the app has none.
+  sh('git', '-C', appDir, 'init', '-q')
+  sh('git', '-C', appDir, 'add', '.')
+  sh('git', '-C', appDir, '-c', 'user.name=verify', '-c', 'user.email=verify@example.test', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'release')
+  // An entry in basecamps.json is the only way to name a Basecamp, and the
+  // developer's own file would send this run's App id to their real fleet. HOME
+  // stays theirs, for the docker client and `~/.ssh/config`.
+  const fliHome = join(SCRATCH, 'fli-home')
+  writeBasecamp('dev', { url: API, apiKey: minted?.token ?? '' }, { home: fliHome })
+  const fli = spawnSync(process.execPath, [join(ROOT, '..', 'cli', 'bin', 'fli.js'), 'basecamp:deploy', '--app', String(fliApp?.id), '--basecamp', 'dev', '--server', 'localhost'], {
+    cwd: appDir, encoding: 'utf8', env: { ...ENV, XDG_CONFIG_HOME: join(fliHome, '.config') }, timeout: 300_000,
   })
   const tag  = `fjs-${fliApp?.id}:`
   const made = sh('docker', 'image', 'ls', '--format', '{{.Repository}}:{{.Tag}} {{.ID}}').stdout.split('\n').find(l => l.startsWith(tag))

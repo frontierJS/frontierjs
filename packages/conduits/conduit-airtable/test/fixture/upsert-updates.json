@@ -1,0 +1,16 @@
+{
+  "records": [
+    {
+      "id": "recuu3VQ1fvHW8MrM",
+      "createdTime": "2026-11-10T19:19:47.000Z",
+      "fields": {
+        "fldD43y3R1OTAMPAj": "Upsert A",
+        "fldWMIGS13rkm3Flb": "second"
+      }
+    }
+  ],
+  "updatedRecords": [
+    "recuu3VQ1fvHW8MrM"
+  ],
+  "createdRecords": []
+}

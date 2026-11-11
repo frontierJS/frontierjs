@@ -146,23 +146,25 @@
   const themOf = (h) => [room.pairLoId, room.pairHiId].find((id) => id !== meOf(h))
 
   // Plain `var`s, not reactive: the idle timer writes `typing`, and a watch
-  // that read it would run `typed(draft)` again and lean the flame back.
+  // that read it would run again and lean the flame back.
   var others = []
   var typing = false
   var met    = false
-  var idle   = null
-  var smoke  = null
+  var smoke  = false
+  // Written, never read, by `light()`: a read would wake the watch that calls it.
+  let smoking = false
   // Only after they have been here: a member who sits first is alone for a
   // moment, and their side is not empty, only not yet filled.
   let gone   = false
 
   function light() {
-    if (others.length) { met = true; clearTimeout(smoke); smoke = null }
+    if (others.length) { met = true; smoke = false; smoking = false }
     gone = met && !others.length
     if (!others.length && met) {
       if (!smoke) {
         Object.assign(PALETTE, blownOut(true))
-        smoke = setTimeout(() => { Object.assign(PALETTE, blownOut(false)); stage.touch() }, SMOKE_MS)
+        smoke = true
+        smoking = true
         stage.touch()
       }
       return
@@ -179,16 +181,15 @@
     light()
   }
 
-  function typed(text) {
-    clearTimeout(idle)
-    const on = !!text.trim()
-    if (on) idle = setTimeout(() => setTyping(false), IDLE_MS)
-    setTyping(on)
+  function clearSmoke() {
+    Object.assign(PALETTE, blownOut(false))
+    stage.touch()
   }
 
   $: { others = here.get().others; light() }
-  $: typed(draft)
-  $.onDestroy(() => { clearTimeout(idle); clearTimeout(smoke) })
+  $: setTyping(!!draft.trim())
+  $.after(IDLE_MS, () => setTyping(false), { key: draft, when: draft.trim() })
+  $.after(SMOKE_MS, clearSmoke, { when: smoking })
 
   const leave = () => goto(page.query.from || '/', page.query.from
     ? { from: '/booth/', x: page.query.x, y: page.query.y, stand: 1 }

@@ -43,16 +43,12 @@
 
   var verbs = $context.commands
   var room  = $context.room
-  // Handles, not state a template reads: `var`, so none is derived.
-  var shapeTimer = null
-  var walking    = null
+  // The member walked toward while the walk verb is open, else null.
+  let walking = null
+  // A fresh object per shapeshift into a character, so a second one restarts the minute.
+  let shaped  = null
   const WALK = 'walk'
   const IDLE = []
-
-  $.onDestroy(() => {
-    clearTimeout(shapeTimer)
-    clearInterval(walking)
-  })
 
   async function fire(volley, way) {
     try {
@@ -83,17 +79,20 @@
     const close = verbs.open({
       name: WALK,
       take: (e) => { close(); return e.key === 'Escape' },
-      closed: () => { clearInterval(walking); walking = null },
+      closed: () => { walking = null },
     })
-    walking = setInterval(() => stepToward(found.figure.id), WALK_MS)
+    walking = found.figure.id
   }
+
+  $.every(WALK_MS, () => stepToward(walking), { when: walking != null })
 
   function shapeshift(ch) {
     if (!shapeTo(ch)) { tell(`no room for ${ch} here: it stands on two cells`); return }
-    clearTimeout(shapeTimer)
-    shapeTimer = ch ? setTimeout(() => shapeTo(null), SHAPE_MS) : null
+    shaped = ch ? {} : null
     tell(ch ? `you are ${ch} for a minute` : 'you are yourself again')
   }
+
+  $.after(SHAPE_MS, () => { shaped = null; shapeTo(null) }, { key: shaped, when: shaped })
 
   // ─── the operator ──────────────────────────────────────────────────────────
 

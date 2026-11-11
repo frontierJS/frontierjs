@@ -5,11 +5,42 @@ export interface ChromeOptions {
   bootstrap?:  string
   profile?:    string
   args?:       string[]
+  headed?:     boolean
+  /** Hold the first page's time, as `PageOptions.clock` does a second page's. */
+  clock?:      boolean | { at?: number }
+}
+
+export interface PageOptions {
+  url?:   string
+  /** An expression polled after load until it is truthy. */
+  ready?: string
+  /** Hold the page's time: `true` starts it at the drive's now, `{ at }` at an epoch ms. */
+  clock?: boolean | { at?: number }
+}
+
+export interface Settled {
+  settled: boolean
+  /** What is still armed, by label: `'$.every'`, `'setInterval(100ms)'`. */
+  armed:   string[]
+}
+
+export interface PageClock {
+  /** Now, in epoch ms, without moving it. */
+  (): Promise<number>
+  /** Run every timer due in the next `ms` at its own time; answers the new now. */
+  (ms: number): Promise<number>
+  /** Run one-shot timers and frames until none is armed. Throws naming what is
+   *  still armed (an every never settles) unless `allowArmed`. */
+  (verb: 'settle', options?: { limit?: number, allowArmed?: boolean }): Promise<Settled>
+  /** `'real'`: virtual time follows real time from here; `'hold'`: it stops. Answers now. */
+  (verb: 'real' | 'hold'): Promise<number>
 }
 
 export interface SecondPage {
   evaluate<T = any>(expression: string): Promise<T>
   navigate(url: string, ready?: string): Promise<void>
+  /** Throws on a page not opened with `newPage({ clock: true })`. */
+  clock: PageClock
   close(): Promise<void>
 }
 
@@ -22,6 +53,9 @@ export interface Chrome {
   evaluate<T = any>(expression: string): Promise<T>
   navigate(url: string, ready?: string): Promise<void>
   newPage(url?: string, ready?: string): Promise<SecondPage>
+  newPage(options: PageOptions): Promise<SecondPage>
+  /** Throws unless opened with `openChrome({ clock: true })`. */
+  clock: PageClock
   key(k: string, opts?: { code?: string, keyCode?: number, modifiers?: number, text?: string }): Promise<void>
   press(k: string, modifiers?: number): Promise<void>
   type(text: string): Promise<void>

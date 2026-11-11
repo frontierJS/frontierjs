@@ -584,6 +584,10 @@ describe('the hub grader', () => {
     // The message names keys by a prefix of the digest, never the digest whole.
     expect(grade({ keyEscrow: { at, fingerprint: KEY } }).message).not.toContain(KEY)
     expect(grade({ keyFingerprint: null, keyEscrow: { at, fingerprint: KEY } })).toMatchObject({ ok: false, message: expect.stringContaining('placeholder') })
+    // Only the placeholder is told to generate a key: on a real one that advice destroys every secret.
+    expect(grade({ keyFingerprint: null }).fix).toContain('openssl rand')
+    expect(grade({}).fix).not.toContain('openssl rand')
+    expect(grade({ keyEscrow: { at, fingerprint: 'b'.repeat(64) } }).fix).not.toContain('openssl rand')
   })
 
   test('the bucket is locked when its test read a compliance lock, or a person attested one the bucket could not say (FJS-3913)', () => {

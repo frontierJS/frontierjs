@@ -1,0 +1,525 @@
+{
+    "tables": [
+        {
+            "id": "tblXOKo8QVlaAbSRo",
+            "name": "Clients",
+            "primaryFieldId": "fldD43y3R1OTAMPAj",
+            "fields": [
+                {
+                    "type": "singleLineText",
+                    "id": "fldD43y3R1OTAMPAj",
+                    "name": "Client Name"
+                },
+                {
+                    "type": "singleLineText",
+                    "id": "fldWMIGS13rkm3Flb",
+                    "name": "Contact Name"
+                },
+                {
+                    "type": "email",
+                    "id": "fldfDM8fQNWq3tzNl",
+                    "name": "Contact Email"
+                },
+                {
+                    "type": "phoneNumber",
+                    "id": "fldBhAu0fSsuKp6PB",
+                    "name": "Phone"
+                },
+                {
+                    "type": "url",
+                    "id": "fldSN6UtV667E9AZS",
+                    "name": "Website"
+                },
+                {
+                    "type": "multilineText",
+                    "id": "fldQtJDdYXTGSn9IU",
+                    "name": "Notes"
+                },
+                {
+                    "type": "multipleRecordLinks",
+                    "options": {
+                        "linkedTableId": "tbl7lWGJOf1ERTEOv",
+                        "isReversed": false,
+                        "prefersSingleRecordLink": false,
+                        "inverseLinkFieldId": "fld82AOTZNbZNtR8T"
+                    },
+                    "id": "fldV0KNo9UJyDjLjK",
+                    "name": "Projects"
+                }
+            ],
+            "views": [
+                {
+                    "id": "viw7e9szUopLH75Rz",
+                    "name": "Grid view",
+                    "type": "grid"
+                }
+            ]
+        },
+        {
+            "id": "tbl7lWGJOf1ERTEOv",
+            "name": "Projects",
+            "primaryFieldId": "fldGLjkP7ISABFTIW",
+            "fields": [
+                {
+                    "type": "singleLineText",
+                    "id": "fldGLjkP7ISABFTIW",
+                    "name": "Project Name"
+                },
+                {
+                    "type": "multipleRecordLinks",
+                    "options": {
+                        "linkedTableId": "tblXOKo8QVlaAbSRo",
+                        "isReversed": false,
+                        "prefersSingleRecordLink": false,
+                        "inverseLinkFieldId": "fldV0KNo9UJyDjLjK"
+                    },
+                    "id": "fld82AOTZNbZNtR8T",
+                    "name": "Client"
+                },
+                {
+                    "type": "singleSelect",
+                    "options": {
+                        "choices": [
+                            {
+                                "id": "selrut8lfjBD6xRgd",
+                                "name": "Not Started",
+                                "color": "grayLight2"
+                            },
+                            {
+                                "id": "seleHNfRd3k6fej4a",
+                                "name": "Discovery",
+                                "color": "purpleLight2"
+                            },
+                            {
+                                "id": "selOPlFjp7PaNwJJO",
+                                "name": "Design",
+                                "color": "pinkLight2"
+                            },
+                            {
+                                "id": "sel3SXkidISRe2AnC",
+                                "name": "Development",
+                                "color": "blueLight2"
+                            },
+                            {
+                                "id": "selX4KpOPP0j7qIbY",
+                                "name": "Review",
+                                "color": "yellowLight2"
+                            },
+                            {
+                                "id": "seltrrYcK5UwA6GbN",
+                                "name": "Launched",
+                                "color": "greenLight2"
+                            },
+                            {
+                                "id": "sels5S3cYAkz2UZ7T",
+                                "name": "On Hold",
+                                "color": "orangeLight2"
+                            }
+                        ]
+                    },
+                    "id": "fldhktP7HMBZBpjDB",
+                    "name": "Status"
+                },
+                {
+                    "type": "singleSelect",
+                    "options": {
+                        "choices": [
+                            {
+                                "id": "seltXVWRA9NxkRlYY",
+                                "name": "Low",
+                                "color": "grayLight2"
+                            },
+                            {
+                                "id": "seluC4VtmSzhZNLVl",
+                                "name": "Medium",
+                                "color": "yellowLight2"
+                            },
+                            {
+                                "id": "selLq1v5uBRPGEKhH",
+                                "name": "High",
+                                "color": "orangeLight2"
+                            },
+                            {
+                                "id": "sel68jaokpemrpGLA",
+                                "name": "Urgent",
+                                "color": "redLight2"
+                            }
+                        ]
+                    },
+                    "id": "fldNpbjuocunt9OYP",
+                    "name": "Priority"
+                },
+                {
+                    "type": "singleSelect",
+                    "options": {
+                        "choices": [
+                            {
+                                "id": "selqB9X1xAQfxKcAv",
+                                "name": "New Website",
+                                "color": "grayLight2"
+                            },
+                            {
+                                "id": "selDJNluClDHKMUck",
+                                "name": "Redesign",
+                                "color": "grayLight2"
+                            },
+                            {
+                                "id": "selvCSxPy6CHt7KzS",
+                                "name": "E-commerce",
+                                "color": "grayLight2"
+                            },
+                            {
+                                "id": "seltTyWnC96eOXPqb",
+                                "name": "Maintenance",
+                                "color": "grayLight2"
+                            },
+                            {
+                                "id": "seluEqtQBEFxUKROO",
+                                "name": "Web App",
+                                "color": "grayLight2"
+                            }
+                        ]
+                    },
+                    "id": "fld2I33MOMtmJN1nv",
+                    "name": "Project Type"
+                },
+                {
+                    "type": "date",
+                    "options": {
+                        "dateFormat": {
+                            "name": "iso",
+                            "format": "YYYY-MM-DD"
+                        }
+                    },
+                    "id": "fldsAlR13YynmWoGx",
+                    "name": "Start Date"
+                },
+                {
+                    "type": "date",
+                    "options": {
+                        "dateFormat": {
+                            "name": "iso",
+                            "format": "YYYY-MM-DD"
+                        }
+                    },
+                    "id": "fldus18mC36vf63TE",
+                    "name": "Deadline"
+                },
+                {
+                    "type": "currency",
+                    "options": {
+                        "precision": 0,
+                        "symbol": "$"
+                    },
+                    "id": "fldDj8JqduKljGaeY",
+                    "name": "Budget"
+                },
+                {
+                    "type": "multilineText",
+                    "id": "fldbfMBiDyZtkRbTy",
+                    "name": "Description"
+                },
+                {
+                    "type": "multipleRecordLinks",
+                    "options": {
+                        "linkedTableId": "tbl4G2A7EcMx89xMV",
+                        "isReversed": false,
+                        "prefersSingleRecordLink": false,
+                        "inverseLinkFieldId": "fldyyJOz514S42Qqj"
+                    },
+                    "id": "fldyjkzPDX4HlGNWf",
+                    "name": "Milestones"
+                },
+                {
+                    "type": "multipleRecordLinks",
+                    "options": {
+                        "linkedTableId": "tblb9QlowzztTU60L",
+                        "isReversed": false,
+                        "prefersSingleRecordLink": false,
+                        "inverseLinkFieldId": "fldjkCvqYecOkhk9z"
+                    },
+                    "id": "fldqYELlDiwc6t5nm",
+                    "name": "Tasks"
+                },
+                {
+                    "type": "count",
+                    "options": {
+                        "isValid": true,
+                        "recordLinkFieldId": "fldqYELlDiwc6t5nm"
+                    },
+                    "id": "fldXpSjobWZEa5pNo",
+                    "name": "Total Tasks"
+                },
+                {
+                    "type": "count",
+                    "options": {
+                        "isValid": true,
+                        "recordLinkFieldId": "fldqYELlDiwc6t5nm",
+                        "filters": {
+                            "operator": "and",
+                            "operands": [
+                                {
+                                    "operator": "=",
+                                    "operands": [
+                                        "fldwnKb9hExOSkJdP",
+                                        "sel497iSUQXHx42hs"
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    "id": "fldB0NptMjdvvqt5D",
+                    "name": "Tasks Done"
+                }
+            ],
+            "views": [
+                {
+                    "id": "viwxb2VUYqiUw4PnP",
+                    "name": "Grid view",
+                    "type": "grid"
+                }
+            ]
+        },
+        {
+            "id": "tbl4G2A7EcMx89xMV",
+            "name": "Milestones",
+            "primaryFieldId": "fldTI5qBY6PHTPZlE",
+            "fields": [
+                {
+                    "type": "singleLineText",
+                    "id": "fldTI5qBY6PHTPZlE",
+                    "name": "Milestone"
+                },
+                {
+                    "type": "multipleRecordLinks",
+                    "options": {
+                        "linkedTableId": "tbl7lWGJOf1ERTEOv",
+                        "isReversed": false,
+                        "prefersSingleRecordLink": false,
+                        "inverseLinkFieldId": "fldyjkzPDX4HlGNWf"
+                    },
+                    "id": "fldyyJOz514S42Qqj",
+                    "name": "Project"
+                },
+                {
+                    "type": "singleSelect",
+                    "options": {
+                        "choices": [
+                            {
+                                "id": "selI3WYIr7YqgRYEd",
+                                "name": "Upcoming",
+                                "color": "grayLight2"
+                            },
+                            {
+                                "id": "sel2I4Hap1DZmDuWW",
+                                "name": "In Progress",
+                                "color": "blueLight2"
+                            },
+                            {
+                                "id": "selmfDo6cCQyTggvF",
+                                "name": "Completed",
+                                "color": "greenLight2"
+                            },
+                            {
+                                "id": "selk8dNrpf92PcI7N",
+                                "name": "At Risk",
+                                "color": "redLight2"
+                            }
+                        ]
+                    },
+                    "id": "fldexglw4S0EBGKv7",
+                    "name": "Status"
+                },
+                {
+                    "type": "date",
+                    "options": {
+                        "dateFormat": {
+                            "name": "iso",
+                            "format": "YYYY-MM-DD"
+                        }
+                    },
+                    "id": "fld46a0Bx5EatyA31",
+                    "name": "Start Date"
+                },
+                {
+                    "type": "date",
+                    "options": {
+                        "dateFormat": {
+                            "name": "iso",
+                            "format": "YYYY-MM-DD"
+                        }
+                    },
+                    "id": "fldrVPKr9WnbGNx3h",
+                    "name": "Due Date"
+                },
+                {
+                    "type": "multilineText",
+                    "id": "fld8Fr5xXdM68iU64",
+                    "name": "Notes"
+                },
+                {
+                    "type": "multipleRecordLinks",
+                    "options": {
+                        "linkedTableId": "tblb9QlowzztTU60L",
+                        "isReversed": false,
+                        "prefersSingleRecordLink": false,
+                        "inverseLinkFieldId": "fldP1xbVqqWVYe9n8"
+                    },
+                    "id": "fldWfQA4eJ0ENY6N7",
+                    "name": "Tasks"
+                }
+            ],
+            "views": [
+                {
+                    "id": "viwNyyi72X5BC2Ccw",
+                    "name": "Grid view",
+                    "type": "grid"
+                }
+            ]
+        },
+        {
+            "id": "tblb9QlowzztTU60L",
+            "name": "Tasks",
+            "primaryFieldId": "fld6CfB9JEj35VRM4",
+            "fields": [
+                {
+                    "type": "singleLineText",
+                    "id": "fld6CfB9JEj35VRM4",
+                    "name": "Task"
+                },
+                {
+                    "type": "multipleRecordLinks",
+                    "options": {
+                        "linkedTableId": "tbl7lWGJOf1ERTEOv",
+                        "isReversed": false,
+                        "prefersSingleRecordLink": false,
+                        "inverseLinkFieldId": "fldqYELlDiwc6t5nm"
+                    },
+                    "id": "fldjkCvqYecOkhk9z",
+                    "name": "Project"
+                },
+                {
+                    "type": "multipleRecordLinks",
+                    "options": {
+                        "linkedTableId": "tbl4G2A7EcMx89xMV",
+                        "isReversed": false,
+                        "prefersSingleRecordLink": false,
+                        "inverseLinkFieldId": "fldWfQA4eJ0ENY6N7"
+                    },
+                    "id": "fldP1xbVqqWVYe9n8",
+                    "name": "Milestone"
+                },
+                {
+                    "type": "singleSelect",
+                    "options": {
+                        "choices": [
+                            {
+                                "id": "sel67SriJttHqWyUj",
+                                "name": "To Do",
+                                "color": "grayLight2"
+                            },
+                            {
+                                "id": "selCf8tMOOzD0TX59",
+                                "name": "In Progress",
+                                "color": "blueLight2"
+                            },
+                            {
+                                "id": "selfNMmkqMMRd2mtV",
+                                "name": "Blocked",
+                                "color": "redLight2"
+                            },
+                            {
+                                "id": "selb1vgq01z4D3v8z",
+                                "name": "In Review",
+                                "color": "yellowLight2"
+                            },
+                            {
+                                "id": "sel497iSUQXHx42hs",
+                                "name": "Done",
+                                "color": "greenLight2"
+                            }
+                        ]
+                    },
+                    "id": "fldwnKb9hExOSkJdP",
+                    "name": "Status"
+                },
+                {
+                    "type": "singleSelect",
+                    "options": {
+                        "choices": [
+                            {
+                                "id": "selAijaSAKWSAhJQx",
+                                "name": "Low",
+                                "color": "grayLight2"
+                            },
+                            {
+                                "id": "sel7XvkbDQUa5ujTE",
+                                "name": "Medium",
+                                "color": "yellowLight2"
+                            },
+                            {
+                                "id": "selKRPmrCWw3IfgYs",
+                                "name": "High",
+                                "color": "orangeLight2"
+                            },
+                            {
+                                "id": "sellhwiD7Gjt0zaIJ",
+                                "name": "Urgent",
+                                "color": "redLight2"
+                            }
+                        ]
+                    },
+                    "id": "fldAzXqrZwmZJqART",
+                    "name": "Priority"
+                },
+                {
+                    "type": "singleCollaborator",
+                    "id": "fld8hegye9Q7V16Fo",
+                    "name": "Assignee"
+                },
+                {
+                    "type": "date",
+                    "options": {
+                        "dateFormat": {
+                            "name": "iso",
+                            "format": "YYYY-MM-DD"
+                        }
+                    },
+                    "id": "fldBI5EvDMkAQSeRa",
+                    "name": "Start Date"
+                },
+                {
+                    "type": "date",
+                    "options": {
+                        "dateFormat": {
+                            "name": "iso",
+                            "format": "YYYY-MM-DD"
+                        }
+                    },
+                    "id": "fldNpDFvvXAaiL8UT",
+                    "name": "Due Date"
+                },
+                {
+                    "type": "number",
+                    "options": {
+                        "precision": 1
+                    },
+                    "id": "fldij32LnEIv8rlKC",
+                    "name": "Estimated Hours"
+                },
+                {
+                    "type": "multilineText",
+                    "id": "fldwelB6ACs5NQF2M",
+                    "name": "Details"
+                }
+            ],
+            "views": [
+                {
+                    "id": "viwGzKJfdN7sOh25T",
+                    "name": "Grid view",
+                    "type": "grid"
+                }
+            ]
+        }
+    ]
+}

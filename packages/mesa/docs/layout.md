@@ -49,6 +49,7 @@ src/
                          (flow → the engine's `linear`, since it lays `block`
                          out as a row). A color or display it cannot lower
                          comes back by line
+  clock.js             — `clock` and `virtualClock()`: the one clock every Mesa timer reads; a host installs its source with `clock.use()`, a drive's held page with `globalThis.__fjsClock`; imports nothing, since the drive injects its text (FJS-D2059, FJS-D2061)
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
                          Also `startRender` and `renderString`, the string
                          mode's one render: render.js awaits on it, and a
@@ -185,7 +186,8 @@ test/browser/
                          server and page, its own fixtures
   drive/               — src/drive.js itself: each spec launches its own browsers
                          (a kept profile, a wedged close, a browser gone mid-call,
-                         a signal to the launcher)
+                         a signal to the launcher, a held page clock — its
+                         fixture compiled by runtime/'s server)
 
 bench/
   run.mjs              — bun run bench: bytes, DOM mutations, time, heap

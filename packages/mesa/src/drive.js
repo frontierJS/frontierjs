@@ -3,6 +3,8 @@
  *
  * Launch a browser, attach to a page, send it INPUT the browser trusts, take
  * its network away (`createNetwork`), and collect everything the page threw.
+ * A page opened with `newPage({ clock: true })` holds its time still until the
+ * drive moves it (`page.clock(ms)`, `FJS-D2061`).
  * It knows nothing about what is being tested: the caller brings a URL. The spec runner this repo's own drives use
  * sits on top of it in `test/browser/drive.mjs` and is not published.
  *
@@ -28,7 +30,7 @@
  * expression with `return` on its own line — ASI turns it into `return;`.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, readdirSync, existsSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, readdirSync, existsSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -185,6 +187,140 @@ function reapOrphanedProfiles() {
   }
 }
 
+// ─── the page clock ───────────────────────────────────────────────────
+//
+// What `newPage({ clock: true })` runs before any page script (`FJS-D2061`):
+// `src/clock.js`'s `virtualClock`, evaluated from its TEXT, with the page's
+// `Date`, `setTimeout`/`setInterval`, `requestAnimationFrame` and
+// `performance.now` faked over it, so library code holds still with Mesa's.
+// Mesa's own `clock` reads `globalThis.__fjsClock` directly and keeps its
+// timers' labels for `settle`. Microtasks are not faked: a held page still
+// settles a promise.
+
+let clockSource = null
+
+function clockScript({ at, running, realAt }) {
+  clockSource ??= readFileSync(new URL('./clock.js', import.meta.url), 'utf8').replace(/^export /gm, '')
+  return `(() => {
+  if (globalThis.__fjsClock) return;
+  const { virtualClock } = (() => {
+${clockSource}
+    return { virtualClock };
+  })();
+  const NativeDate = globalThis.Date;
+  const native = {
+    setTimeout: setTimeout.bind(globalThis), clearTimeout: clearTimeout.bind(globalThis),
+    setInterval: setInterval.bind(globalThis), clearInterval: clearInterval.bind(globalThis),
+    requestAnimationFrame: globalThis.requestAnimationFrame?.bind(globalThis),
+    cancelAnimationFrame: globalThis.cancelAnimationFrame?.bind(globalThis),
+    Date: NativeDate, performanceNow: performance.now.bind(performance),
+  };
+  const running = ${running ? 'true' : 'false'};
+  const start = running ? ${Number(at)} + (NativeDate.now() - ${Number(realAt)}) : ${Number(at)};
+  const vc = virtualClock(start);
+  vc.native = native;
+  vc.running = false;
+
+  // Ids start at 1e12 so one the native clock handed out is told apart, and
+  // clearing it here does nothing rather than cancelling a fake timer.
+  const handles = new Map();
+  let nextId = 1e12;
+  const keep = (arm) => { const id = nextId++; handles.set(id, arm(id)); return id; };
+  const drop = (id) => { const cancel = handles.get(id); if (cancel) { handles.delete(id); cancel(); } };
+  const callable = (fn, args) => typeof fn === 'function' ? () => fn.apply(globalThis, args) : () => (0, eval)(String(fn));
+  globalThis.setTimeout = function setTimeout(fn, ms, ...args) {
+    const run = callable(fn, args);
+    return keep((id) => vc.after(ms, () => { handles.delete(id); run(); }, 'setTimeout(' + (Number(ms) || 0) + 'ms)'));
+  };
+  globalThis.setInterval = function setInterval(fn, ms, ...args) {
+    return keep(() => vc.every(ms, callable(fn, args), 'setInterval(' + Math.max(1, Number(ms) || 0) + 'ms)'));
+  };
+  globalThis.clearTimeout = function clearTimeout(id) { drop(id); };
+  globalThis.clearInterval = function clearInterval(id) { drop(id); };
+  globalThis.requestAnimationFrame = function requestAnimationFrame(fn) {
+    return keep((id) => vc.frame(() => { handles.delete(id); fn(vc.now() - start); }));
+  };
+  globalThis.cancelAnimationFrame = function cancelAnimationFrame(id) { drop(id); };
+  function Date(...args) {
+    if (!new.target) return new NativeDate(vc.now()).toString();
+    return Reflect.construct(NativeDate, args.length ? args : [vc.now()], new.target);
+  }
+  Date.prototype = NativeDate.prototype;
+  Object.setPrototypeOf(Date, NativeDate);
+  Date.now = function now() { return vc.now(); };
+  globalThis.Date = Date;
+  performance.now = function now() { return vc.now() - start; };
+
+  // Real time flowing into virtual time: a timer's throw is reported as the
+  // page's own uncaught error, which is what it would have been unfaked.
+  let ticker = null, last = 0, busy = false;
+  const tick = async () => {
+    if (busy) return;
+    busy = true;
+    try { const t = NativeDate.now(); const d = t - last; last = t; await vc.advance(d); }
+    catch (e) { native.setTimeout(() => { throw e; }, 0); }
+    finally { busy = false; }
+  };
+  vc.real = () => { if (!ticker) { last = NativeDate.now(); ticker = native.setInterval(tick, 20); vc.running = true; } return vc.now(); };
+  vc.hold = () => { if (ticker) { native.clearInterval(ticker); ticker = null; vc.running = false; } return vc.now(); };
+  if (running) vc.real();
+  globalThis.__fjsClock = vc;
+})()`
+}
+
+/** Hold one page's clock and answer its `clock(verb)`; the main page and every
+ *  `newPage` share it. Registers the page's new-document scripts — the clock
+ *  ahead of `bootstrap`, so neither a bootstrap nor the page arms a timer on
+ *  the native clock, where it would keep its native handle and fire on real
+ *  time whatever the drive does. They are re-registered after every clock
+ *  verb, so the next document, a reload the page does itself included, opens
+ *  on the same virtual time and state.
+ *
+ *  `clock()` answers now; `clock(ms)` runs every timer due on the way at its
+ *  own time (Playwright's `runFor`); `clock('settle')` runs one-shot timers and
+ *  frames until none is armed and throws naming what still is, unless
+ *  `{ allowArmed: true }`; `clock('real')` lets virtual time follow real time
+ *  and `clock('hold')` stops it again. */
+async function holdPageClock({ clock, bootstrap, cmd, evaluate, opener }) {
+  const held = clock ? { at: Number(clock?.at ?? Date.now()), running: false } : null
+  let scripts = []
+  const register = async () => {
+    for (const identifier of scripts) await cmd('Page.removeScriptToEvaluateOnNewDocument', { identifier })
+    scripts = []
+    if (held) scripts.push((await cmd('Page.addScriptToEvaluateOnNewDocument',
+      { source: clockScript({ ...held, realAt: Date.now() }) })).identifier)
+    if (bootstrap) scripts.push((await cmd('Page.addScriptToEvaluateOnNewDocument', { source: bootstrap })).identifier)
+  }
+  await register()
+  if (held) await evaluate(`${clockScript({ ...held, realAt: Date.now() })}; return true`)
+
+  return async function pageClock(verb, options = {}) {
+    if (!held) throw new Error(`page.clock(): this page holds no clock — open it with ${opener}`)
+    const on = `if (!globalThis.__fjsClock) throw new Error('page.clock(): no clock in this document');`
+    try {
+      if (verb === undefined) return await evaluate(`${on} return __fjsClock.now()`)
+      if (typeof verb === 'number')
+        return await evaluate(`${on} await __fjsClock.advance(${Number(verb)}); return __fjsClock.now()`)
+      if (verb === 'real' || verb === 'hold') {
+        held.running = verb === 'real'
+        return await evaluate(`${on} return __fjsClock.${verb}()`)
+      }
+      if (verb === 'settle') {
+        const { limit, allowArmed = false } = options
+        const r = await evaluate(`${on} return await __fjsClock.settle(${JSON.stringify(limit == null ? {} : { limit })})`)
+        if (!r.settled && !allowArmed)
+          throw new Error(`page.clock('settle'): still armed after settling: ${r.armed.join(', ')} — ` +
+            'an every never settles; turn it off with its when, or pass { allowArmed: true }')
+        return r
+      }
+      throw new Error(`page.clock(): no verb ${JSON.stringify(verb)} — a number of ms, 'settle', 'real' or 'hold'`)
+    } finally {
+      held.at = await evaluate('return globalThis.__fjsClock?.now() ?? null').catch(() => null) ?? held.at
+      await register()
+    }
+  }
+}
+
 // ─── the browser ──────────────────────────────────────────────────────
 
 /** Launch Chrome, attach to one page, and answer everything a drive needs to
@@ -214,6 +350,10 @@ function reapOrphanedProfiles() {
  *    headed     — a real window on $DISPLAY (Xvfb serves). Only a headed
  *                 browser hands a notification to the desktop's daemon, so
  *                 only it can be clicked (example `verify:push`)
+ *    clock      — `true` or `{ at: <epoch ms> }`: the first page holds its
+ *                 time, as `newPage({ clock })` does, and `clock(verb)` moves
+ *                 it — so a held spec clicks through `clickAt`/`press`, the
+ *                 trusted-input path. Off by default
  *
  *  The handle's `send(method, params, sessionId)` is the browser-level call,
  *  for a drive that attaches targets of its own — an extension's popup or its
@@ -223,8 +363,8 @@ function reapOrphanedProfiles() {
  *  the process: the caller may be a long-lived one (fli, a lesson) for which
  *  no Chrome is a skip.
  *
- *  @param {{ windowSize?: string, bootstrap?: string, profile?: string, args?: string[], headed?: boolean }} [options] */
-export async function openChrome({ windowSize = '1280,900', bootstrap, profile: kept, args = [], headed = false } = {}) {
+ *  @param {{ windowSize?: string, bootstrap?: string, profile?: string, args?: string[], headed?: boolean, clock?: boolean | { at?: number } }} [options] */
+export async function openChrome({ windowSize = '1280,900', bootstrap, profile: kept, args = [], headed = false, clock } = {}) {
   const owned = args.find((a) => /^--(remote-debugging-port|user-data-dir)\b/.test(a))
   if (owned) throw new Error(`openChrome: ${owned.split('=')[0]} is the driver's own flag — the attach and the profile sweep depend on it`)
   const exe = findChrome()
@@ -442,8 +582,8 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   // navigates to later. A drive over a page it owns installs its probes from
   // that page's own script; a drive over a page it does NOT own — the REPL,
   // a devtools panel — has nowhere to put them, and reaching for a probe that
-  // is not there reads as the page being broken.
-  if (bootstrap) await cmd('Page.addScriptToEvaluateOnNewDocument', { source: bootstrap })
+  // is not there reads as the page being broken. A held clock goes in first.
+  const mainClock = await holdPageClock({ clock, bootstrap, cmd, evaluate, opener: 'openChrome({ clock: true })' })
 
   async function evaluate(expression) {
     // The inspector holds an awaited promise weakly, so one whose only holder is
@@ -470,7 +610,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     await evaluate(`
       if (document.readyState !== 'complete')
         await new Promise(r => window.addEventListener('load', r, { once: true }));
-      ${ready ? `await new Promise(r => { const t = setInterval(() => { if (${ready}) { clearInterval(t); r() } }, 10) });` : ''}
+      ${ready ? `await new Promise(r => { const n = globalThis.__fjsClock?.native ?? globalThis; const t = n.setInterval(() => { if (${ready}) { n.clearInterval(t); r() } }, 10) });` : ''}
       return true;
     `)
   }
@@ -551,17 +691,20 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     return await evaluate(`
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) throw new Error('clickAt: no element for ' + ${JSON.stringify(selector)});
-      const frame = () => new Promise((res) => { requestAnimationFrame(res); setTimeout(res, 50) });
+      // A held page clock fakes these globals; CSS animations run on real time,
+      // so the wait has to watch real frames or it never returns.
+      const n = globalThis.__fjsClock?.native ?? globalThis;
+      const frame = () => new Promise((res) => { n.requestAnimationFrame(res); n.setTimeout(res, 50) });
       const key = () => { const b = el.getBoundingClientRect(); return [b.left, b.top, b.width, b.height].join() };
       // An animation's first frames hold the start value, so two equal boxes
       // are not yet a stopped element while a finite one is still running.
       const moving = () => document.getAnimations().some((a) =>
         a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity);
-      const until = Date.now() + 500;
+      const until = n.Date.now() + 500;
       for (let was = key(); ; ) {
         await frame();
         const now = key();
-        if ((now === was && !moving()) || Date.now() > until) break;
+        if ((now === was && !moving()) || n.Date.now() > until) break;
         was = now;
       }
       // A press is dispatched at viewport coordinates, so an element below the
@@ -579,7 +722,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
       let p = at();
       if (p.x < 0 || p.x > innerWidth || p.y < 0 || p.y > innerHeight) {
         el.scrollIntoView({ block: 'center', inline: 'center' });
-        await new Promise((res) => setTimeout(res, 50));
+        await new Promise((res) => n.setTimeout(res, 50));
         r = el.getBoundingClientRect();
         p = at();
       }
@@ -632,15 +775,19 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
    *  evaluate, navigate, close — because a spec driving two pages at once
    *  wants the second one to be a fixture, not a second drive. Its errors are
    *  collected into the SAME array, so a throw in the other tab still fails
-   *  the spec that opened it. */
-  async function newPage(url = 'about:blank', ready) {
+   *  the spec that opened it.
+   *
+   *  `newPage({ url, ready, clock })` with `clock: true` (or `{ at: <epoch ms> }`)
+   *  holds the page's time: see `pageClock` below. */
+  async function newPage(urlOrOptions = 'about:blank', readyArg) {
+    const opts = urlOrOptions && typeof urlOrOptions === 'object' ? urlOrOptions : { url: urlOrOptions, ready: readyArg }
+    const { url = 'about:blank', ready } = opts
     const t2 = await send('Target.createTarget', { url: 'about:blank' })
     const s2 = await send('Target.attachToTarget', { targetId: t2.targetId, flatten: true })
     const cmd2 = (method, params) => send(method, params, s2.sessionId)
     await cmd2('Page.enable')
     await cmd2('Runtime.enable')
     await cmd2('Network.enable')
-    if (bootstrap) await cmd2('Page.addScriptToEvaluateOnNewDocument', { source: bootstrap })
 
     const evaluate2 = async (expression) => {
       const r = await cmd2('Runtime.evaluate', {
@@ -657,16 +804,18 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
       await evaluate2(`
         if (document.readyState !== 'complete')
           await new Promise(r => window.addEventListener('load', r, { once: true }));
-        ${waitFor ? `await new Promise(r => { const t = setInterval(() => { if (${waitFor}) { clearInterval(t); r() } }, 10) });` : ''}
+        ${waitFor ? `await new Promise(r => { const n = globalThis.__fjsClock?.native ?? globalThis; const t = n.setInterval(() => { if (${waitFor}) { n.clearInterval(t); r() } }, 10) });` : ''}
         return true;
       `)
     }
 
+    const pageClock = await holdPageClock({ clock: opts.clock, bootstrap, cmd: cmd2, evaluate: evaluate2, opener: 'newPage({ clock: true })' })
     if (url !== 'about:blank') await navigate2(url, ready)
 
     return {
       evaluate: evaluate2,
       navigate: navigate2,
+      clock: pageClock,
       close: () => send('Target.closeTarget', { targetId: t2.targetId }).catch(() => {}),
     }
   }
@@ -698,7 +847,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     launched.delete(entry)
   }
 
-  return { cmd, send, evaluate, navigate, newPage, key, press, type, clickAt, hoverAt, fill, waitFor, shot, on, errors, failed, close }
+  return { cmd, send, evaluate, navigate, newPage, clock: mainClock, key, press, type, clickAt, hoverAt, fill, waitFor, shot, on, errors, failed, close }
 }
 
 // ─── the network ──────────────────────────────────────────────────────

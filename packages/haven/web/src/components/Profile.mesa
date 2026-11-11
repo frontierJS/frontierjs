@@ -32,7 +32,6 @@
 
   var verbs  = $context.commands
   var client = getClient()
-  var timer  = null
   let held = {}
 
   async function load() {
@@ -44,9 +43,9 @@
   }
 
   load()
-  timer = setInterval(load, REFRESH_MS)
+  $.every(REFRESH_MS, load)
   client?.on('event', onOwn)
-  $.onDestroy(() => { clearInterval(timer); client?.off('event', onOwn) })
+  $.onDestroy(() => client?.off('event', onOwn))
 
   // The pieces have claimed their cells by the time the scene is mounted, as
   // `Scene.mesa` keeps the same snap then; drawing it again on every step

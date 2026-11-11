@@ -73,15 +73,17 @@
   $.onDestroy(scene.subscribe(() => { view = scene.view }))
 
   let gone = false
-  var unsay = null
-  $.onDestroy(() => { gone = true; stop?.abort(); peekStop?.abort(); clearTimeout(unsay) })
+  // A fresh object per line told, so the same line told twice keeps its 2.5 s;
+  // a counter's `++` would read it and subscribe the watch that called `tell`.
+  let telling = null
+  $.onDestroy(() => { gone = true; stop?.abort(); peekStop?.abort() })
 
   function tell(text) {
     if (gone) return
     told = text
-    clearTimeout(unsay)
-    unsay = setTimeout(() => { told = '' }, 2500)
+    telling = {}
   }
+  $.after(2500, () => { told = '' }, { key: telling, when: told })
   const copiedLink = (ok) => tell(ok ? 'link copied' : 'this terminal takes no copy')
   homeBoard()
     .then((b) => { if (!gone) board = b })

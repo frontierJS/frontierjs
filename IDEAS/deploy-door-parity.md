@@ -1,13 +1,16 @@
 ---
 id: deploy-door-parity
-status: proposed
+status: shipped
 dated: 2026-11-05
 ---
 
 # Deploy door parity — one commit, one release, one install
 
-**Status: PROPOSED.** Dated 2026-11-05. Nothing here is built. Do not cite this
-file as describing behavior — see `VERIFYING.md`.
+**Status: SHIPPED.** Dated 2026-11-05; every box closed 2026-11-06. The tree is
+the record now (`packages/cli/core/release-build.js`,
+`packages/cli/core/deploy-move.js`, `packages/outpost/src/doors.js`); this file
+says why. § What exists is the 2026-11-05 reading the plan started from, not
+today's behavior.
 
 The want: `fli deploy` through the `deploy` block in `frontier.config.js` (the
 SSH door) and `fli deploy` with `BASECAMP_APP_ID` set (the Basecamp door)
@@ -127,6 +130,8 @@ secrets including `ENCRYPTION_KEY`, and the domain.
     an app wants enforced goes in `deploy.secrets`.
 
 ---
+
+## Plan
 
 ### Phase 0 — Groundwork
 

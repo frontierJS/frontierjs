@@ -61,7 +61,7 @@
       formFields: (opts) => formFieldList(FIELDS, opts),
       options: (name) => {
         optionsCalls = [...optionsCalls, name]
-        return new Promise((res) => setTimeout(() => res({ options: CUSTOMERS, total: CUSTOMERS.length, truncated: false }), 30))
+        return $.sleep(30).then(() => ({ options: CUSTOMERS, total: CUSTOMERS.length, truncated: false }))
       },
       make: () => ({ title: '', notes: '', query: 'select 1', status: 'draft', qty: 1, customerId: '', dueOn: '', archived: false }),
       validate: () => [],

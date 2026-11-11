@@ -3049,9 +3049,10 @@ function templateExpressions(source) {
  */
 function asyncStateReads(scriptAST, source) {
   const reads = new Map()
-  const note = (name, errorInTemplate) => {
-    const r = reads.get(name) || { errorInTemplate: false }
+  const note = (name, errorInTemplate, field) => {
+    const r = reads.get(name) || { errorInTemplate: false, fields: new Set() }
     if (errorInTemplate) r.errorInTemplate = true
+    if (field) r.fields.add(field)
     reads.set(name, r)
   }
   const isBag = (n) =>
@@ -3063,6 +3064,11 @@ function asyncStateReads(scriptAST, source) {
     if (node.type === 'MemberExpression' && !node.computed && isBag(node.object) &&
         node.property?.type === 'Identifier') {
       note(node.property.name, false)
+    }
+    if (node.type === 'MemberExpression' && !node.computed && node.property?.type === 'Identifier' &&
+        node.object?.type === 'MemberExpression' && !node.object.computed && isBag(node.object.object) &&
+        node.object.property?.type === 'Identifier') {
+      note(node.object.property.name, false, node.property.name)
     }
     for (const key of Object.keys(node)) {
       const child = node[key]
@@ -3076,7 +3082,8 @@ function asyncStateReads(scriptAST, source) {
   for (const m of code.matchAll(rx)) {
     // `$async.f.for(row.id).error` handles the rejection as `.error` does, and
     // the key between the parens may hold parens of its own.
-    let field = m[2]
+    const member = m[2]
+    let field = member
     if (field === 'for' && code[m.index + m[0].length] === '(') {
       let i = m.index + m[0].length, depth = 0
       for (; i < code.length; i++) {
@@ -3085,7 +3092,7 @@ function asyncStateReads(scriptAST, source) {
       }
       field = /^\??\.([A-Za-z_$][\w$]*)/.exec(code.slice(i + 1))?.[1]
     }
-    note(m[1], field === 'error')
+    note(m[1], field === 'error', member)
   }
   return reads
 }
@@ -3298,6 +3305,12 @@ function refuseCompiledDoorMisuse(ast) {
 function refuseCompiledDoorInTemplate(source) {
   const template = templateExpressions(source)
 
+  const timer = template.match(DECLARED_TIMER_RX)
+  if (timer) {
+    return `'$.${timer[1]}' is declared at the top level of <script>, like an effect, and cannot be ` +
+      `called from the template. ${TIMER_GATES}.`
+  }
+
   if (/(?<![\w$])\$\.?mounted\b/.test(template)) {
     return `'$.mounted' is not readable from the template — it is the gate, not a value. ` +
       `Write 'const ready = $.mounted(fn)' in the script and reference 'ready'.`
@@ -3313,6 +3326,103 @@ function refuseCompiledDoorInTemplate(source) {
   }
 
   return null
+}
+
+const DECLARED_TIMER_RX = /(?<![\w$])\$\.(after|every)\b/
+const TIMER_GATES = `A timer is controlled by its declaration, not by a handle: gate it with ` +
+  `'when' and re-arm it with 'key' — $.after(300, search, { key: query }), ` +
+  `$.every(5000, load, { when: visible })`
+
+/** The `$.after`/`$.every` call a top-level statement is, or null. */
+function declaredTimerCall(node) {
+  const call = node?.type === 'ExpressionStatement' ? node.expression : null
+  const callee = call?.type === 'CallExpression' ? call.callee : null
+  if (callee?.type !== 'MemberExpression' || callee.computed) return null
+  if (callee.object?.type !== 'Identifier' || callee.object.name !== '$') return null
+  const verb = callee.property?.name
+  return verb === 'after' || verb === 'every' ? { call, verb } : null
+}
+
+/**
+ * `$.after`/`$.every` are declarations, like an effect (`FJS-D2059`). Called
+ * from a handler, each call would arm one more timer that nothing re-arms or
+ * gates, which is the hand-written `setTimeout` again with a new name.
+ */
+function refuseNestedTimers(ast) {
+  const declared = new Set()
+  for (const n of ast.body) {
+    const hit = declaredTimerCall(n)
+    if (!hit) continue
+    const { call, verb } = hit
+    if (call.arguments.length < 2 || call.arguments.length > 3) {
+      throw new Error(`'$.${verb}' takes (ms, fn) or (ms, fn, { key, when }); this call passes ${call.arguments.length}.`)
+    }
+    declared.add(call.callee)
+  }
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(walk); return }
+    if (
+      node.type === 'MemberExpression' && !node.computed && !declared.has(node) &&
+      node.object?.type === 'Identifier' && node.object.name === '$' &&
+      (node.property?.name === 'after' || node.property?.name === 'every')
+    ) {
+      throw new Error(
+        `'$.${node.property.name}' is declared at the top level of <script>, like an effect, ` +
+        `and returns nothing — it cannot be called inside a function or used as a value. ${TIMER_GATES}.`
+      )
+    }
+    for (const key of Object.keys(node)) {
+      const child = node[key]
+      if (child && typeof child === 'object') walk(child)
+    }
+  }
+  ast.body.forEach(walk)
+}
+
+/**
+ * A raw timer in a `.mesa` script is one the runtime clock does not own, so a
+ * drive cannot hold it still and a test falls back to real time (`FJS-D2060`).
+ * Only the arming call warns; the clear follows it.
+ */
+function warnRawTimers(ctx, scriptAST) {
+  const RAW = new Set(['setTimeout', 'setInterval'])
+  const HOSTS = new Set(['window', 'globalThis', 'self'])
+  const found = []
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(walk); return }
+    if (node.type === 'CallExpression') {
+      const c = node.callee
+      const name =
+        c?.type === 'Identifier' ? c.name
+        : c?.type === 'MemberExpression' && !c.computed && c.object?.type === 'Identifier' && HOSTS.has(c.object.name)
+          ? c.property?.name
+          : null
+      if (RAW.has(name)) found.push(name)
+    }
+    for (const key of Object.keys(node)) {
+      const child = node[key]
+      if (child && typeof child === 'object') walk(child)
+    }
+  }
+  walk(scriptAST)
+  const moduleSrc = ctx.scriptModuleNodes?.[0]?.content
+  if (moduleSrc && /\bset(Timeout|Interval)\b/.test(moduleSrc)) {
+    try { walk(acorn.parse(moduleSrc, { ecmaVersion: 'latest', sourceType: 'module' })) } catch { /* the module's own parse reports it */ }
+  }
+  for (const name of new Set(found)) {
+    const n = found.filter((f) => f === name).length
+    const declared = name === 'setTimeout' ? '$.after' : '$.every'
+    ctx.analysis.warnings.push(
+      `${name}() is called ${n === 1 ? 'once' : n + ' times'} in this component's <script>. A raw timer ` +
+      `is not on Mesa's clock, so a test or a drive cannot hold it still, and nothing cancels it ` +
+      `when the component unmounts. Declare it with ${declared}(ms, fn, { key, when }) at the top level of ` +
+      `<script>: 'when' gates it and a change of 'key' re-arms it` +
+      (name === 'setTimeout' ? `; a sleep is 'await $.sleep(ms)', which works anywhere in <script>` : '') +
+      ` (FJS-D2060).`
+    )
+  }
 }
 
 /**
@@ -4702,6 +4812,7 @@ export function analyzeScript(raw, ast) {
 
   // `$` is one binding the author never owns (FJS-D132).
   refuseDollarMisuse(ast)
+  refuseNestedTimers(ast)
 
   refuseReservedNames(ast)
 
@@ -5150,6 +5261,7 @@ export function buildHead() {
       // Measuring and focusing are the target's own, so they come from its runtime.
       const own = TARGETS[ctx.config.target] ? '$$host' : '$$runtime'
       w.writeLine(`  measure: ${own}.measure, viewport: ${own}.viewport, focus: ${own}.focus,`)
+      if (ctx.inuse.$timers) w.writeLine('  after: $$runtime.after, every: $$runtime.every,')
       w.writeLine('};')
     })
   )
@@ -5175,6 +5287,7 @@ export function buildHead() {
       w.writeLine('const $$onCleanup = $$runtime.onCleanup;')
       if (ctx.inuse.$mounted) w.writeLine('const $mounted   = $$runtime.onMounted;')
       if (ctx.inuse.$inspect && ctx.config.debug !== false) w.writeLine('const $inspect   = $$runtime.inspect;')
+      if (ctx.inuse.$sleep) w.writeLine('const $$sleep    = $$runtime.sleeper();')
     })
   )
 
@@ -5217,6 +5330,7 @@ export function buildHead() {
       if (ctx.inuse.$emit)       w.writeLine('$.emit = $$emit;')
       if (ctx.inuse.$context)    w.writeLine('$.context = $context;')
       if (ctx.inuse.$mounted)    w.writeLine('$.mounted = $mounted;')
+      if (ctx.inuse.$sleep)      w.writeLine('$.sleep = $$sleep;')
       if (ctx.inuse.$inspect && ctx.config.debug !== false) w.writeLine('$.inspect = $inspect;')
     })
   )
@@ -9769,9 +9883,10 @@ function emitDeclarations(ctx, sorted, watchedCalls) {
       ))
       if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${v.name}, '${v.name}', 'derived-context');`))
       ctx.accessors[v.name] = `$$runtime.get(${v.name})`
-    } else if (v.kind === 'const' && v.isAsync && v.isDerived) {
-      // Async derived const — reruns when deps change, cancels in-flight requests.
-      // The result is stored as a signal so template bindings re-run when it resolves.
+    } else if (v.kind === 'const' && v.isAsync) {
+      // Every awaited const is one `asyncDerived`, with or without deps, so a
+      // load nothing re-runs still has abort, latest-wins and `refresh`; a
+      // second emit for it had none of them (`FJS-D2062`).
       const sigR = `$$sig_${v.name}`,
         sigW = `$$set_${v.name}`
       mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(undefined);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
@@ -9781,6 +9896,9 @@ function emitDeclarations(ctx, sorted, watchedCalls) {
       mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState(${upstream.length ? `[${upstream.join(', ')}]` : ''});`))
       mod.code.push(xNode.raw(`$$async.${v.name} = ${stateVar};`))
       // Dep array: signal function references (strip trailing () to get the fn).
+      // A derived const with no nameable dep (a local call) passes `[]` and is
+      // tracked at runtime; `null` is a load with nothing to watch, which an
+      // effect would re-run on any signal its loader happens to read.
       const depFns = v.deps
         .map((dep) => {
           const acc = ctx.accessors[dep]
@@ -9799,31 +9917,10 @@ function emitDeclarations(ctx, sorted, watchedCalls) {
       const rewrittenArg = rewriteExpr(argRaw, ctx.accessors)
       mod.code.push(
         xNode.raw(
-          `$$runtime.asyncDerived(() => ${stateVar}, async ($$signal) => (${rewrittenArg}), [${depFns}], ${sigW});`
+          `$$runtime.asyncDerived(() => ${stateVar}, async ($$signal) => (${rewrittenArg}), ${v.isDerived ? `[${depFns}]` : 'null'}, ${sigW});`
         )
       )
-      if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'async-derived');`))
-    } else if (v.kind === 'const' && v.isAsync) {
-      // One-shot async const — runs once at init, no reactive deps.
-      // Result is also a signal so the template updates when the fetch completes.
-      const sigR = `$$sig_${v.name}`,
-        sigW = `$$set_${v.name}`
-      mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(undefined);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
-      ctx.accessors[v.name] = `$$runtime.get(${sigR})`
-      const stateVar = `$$async_${v.name}`
-      mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState();`))
-      mod.code.push(xNode.raw(`$$async.${v.name} = ${stateVar};`))
-      const argRaw =
-        v.initNode?.type === 'AwaitExpression'
-          ? raw.slice(v.initNode.argument.start, v.initNode.argument.end)
-          : init
-      const rewrittenArg = rewriteExpr(argRaw, ctx.accessors)
-      mod.code.push(
-        xNode.raw(
-          `(async () => { try { ${stateVar}._update('start'); ${sigW}(await (${rewrittenArg})); ${stateVar}._update('done'); } catch($$e) { ${stateVar}._update('error', $$e); } })();`
-        )
-      )
-      if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'async');`))
+      if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', '${v.isDerived ? 'async-derived' : 'async'}');`))
     } else if (v.kind === 'const' && v.isDerived) {
       // Derived const — createMemo so it recomputes lazily when any dep changes.
       // rewriteAssignments FIRST, for the same reason the $: emitter below does
@@ -10060,6 +10157,31 @@ function emitStatements(ctx, { sorted, classEdges, emittedClassStarts, declBucke
       const inspectCall = `$inspect({ label: ${JSON.stringify(label)}, getters: [${getters}] })`
       const full = withFn ? `${inspectCall}.with(${withFn})` : inspectCall
       mod.code.push(xNode.raw(`${full};`))
+      continue
+    }
+
+    // `$.after`/`$.every` (`FJS-D2059`): `ms` and an options literal's `key` and
+    // `when` become getters, so the runtime's one effect re-reads them; `fn` is
+    // left a value, since the timer calls it rather than tracking it.
+    const _timer = declaredTimerCall(node)
+    if (_timer) {
+      const part = (n) => rewriteExpr(rewriteAssignments(raw.slice(n.start, n.end), n, ctx), ctx.accessors)
+      const [msN, fnN, optsN] = _timer.call.arguments
+      let opts = ''
+      if (optsN?.type === 'ObjectExpression') {
+        const props = optsN.properties.map((p) => {
+          if (p.type === 'SpreadElement') return `...${part(p.argument)}`
+          const keySrc = p.computed ? `[${part(p.key)}]` : raw.slice(p.key.start, p.key.end)
+          if (p.method || p.kind !== 'init') return raw.slice(p.start, p.end)
+          const name = p.computed ? null : (p.key.name ?? p.key.value)
+          const value = part(p.value)
+          return name === 'key' || name === 'when' ? `${keySrc}: () => (${value})` : `${keySrc}: ${value}`
+        })
+        opts = `, { ${props.join(', ')} }`
+      } else if (optsN) {
+        opts = `, ${part(optsN)}`
+      }
+      mod.code.push(xNode.raw(`$.${_timer.verb}(() => (${part(msN)}), ${part(fnN)}${opts});`))
       continue
     }
 
@@ -11028,7 +11150,8 @@ function collectBlocks(ctx) {
     const DOOR = [
       'props', 'attributes', 'slots', 'option', 'emit', 'context', 'async',
       'onMount', 'onDestroy', 'onCleanup', 'mounted', 'inspect', 'tick',
-      'transition', 'entrance', 'fade', 'slide', 'fly',
+      'transition', 'entrance', 'fade', 'slide', 'fly', 'after', 'every',
+      'sleep', 'measure', 'viewport', 'focus',
     ]
     const reached = DOOR.find((n) => moduleSrc.includes('$.' + n))
     if (reached) {
@@ -11293,6 +11416,18 @@ function requireRuntimeFeatures(ctx, rawScript, scriptAST) {
   if ([...DOOR_MEMBERS, 'transition', 'entrance', 'fade', 'slide', 'fly', 'measure', 'viewport', 'focus'].some(reaches)) {
     ctx.require('$mesa')
   }
+  if (DECLARED_TIMER_RX.test(rawScript)) {
+    ctx.require('$mesa')
+    ctx.require('$timers')
+  }
+  // A sleep is awaited after an `await` or in a handler, where no owner is
+  // current to cancel it, so the instance binds its own at setup (`FJS-D2063`).
+  if (reaches('sleep')) {
+    ctx.require('$mesa')
+    ctx.require('$sleep')
+  }
+
+  warnRawTimers(ctx, scriptAST)
 
   // Detect $context usage — contextProvide/contextRead injected as locals.
   if (reaches('context')) {
@@ -11359,10 +11494,21 @@ function checkAsyncStateReads(ctx, scriptAST) {
         if (d?.type === 'FunctionDeclaration' && d.id) fns.set(d.id.name, d)
       }
       const vars = ctx.analysis.vars || {}
-      for (const [name, { errorInTemplate }] of reads) {
-        if (vars[name]?.isAsync) continue
+      for (const [name, { errorInTemplate, fields }] of reads) {
         const fn = fns.get(name)
-        if (fn?.async && !fn.generator) {
+        // A function's state has no run of its own to repeat, so `.refresh()`
+        // on it was a TypeError on the click.
+        const isFn = fn?.async && !fn.generator
+        if (fields.has('refresh') && isFn) {
+          ctx.analysis.errors.push(
+            `\`$async.${name}.refresh()\` re-runs an awaited top-level \`const ${name} = await …\`, ` +
+            `and '${name}' is a function (RULE 16). A function's state has \`.for(key)\`, not ` +
+            `\`.refresh()\`; call \`${name}()\` again.`
+          )
+          continue
+        }
+        if (vars[name]?.isAsync) continue
+        if (isFn) {
           asyncFns.set(name, { handled: errorInTemplate })
           continue
         }

@@ -1,0 +1,6 @@
+{
+  "error": {
+    "type": "INVALID_OFFSET_VALUE",
+    "message": "The value of offset itrBOGUS/recBOGUS is invalid"
+  }
+}

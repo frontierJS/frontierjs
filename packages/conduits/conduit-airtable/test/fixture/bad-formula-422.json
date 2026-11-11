@@ -1,0 +1,6 @@
+{
+  "error": {
+    "type": "INVALID_FILTER_BY_FORMULA",
+    "message": "The formula for filtering records is invalid: Invalid formula. Please check your formula text."
+  }
+}

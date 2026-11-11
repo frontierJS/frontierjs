@@ -4050,6 +4050,64 @@ describe('asyncDerived', () => {
     expect(val()).toBe('cities-of-CA')
   })
 
+  // FJS-D2058: refresh is the dependency change's own run, so it keeps the
+  // value on screen while pending and drops a reply a later run overtook.
+  it('refresh re-runs, keeps the old value while pending, and drops a stale reply', async () => {
+    const [dep] = createSignal('TX')
+    const [val, setVal] = createSignal(null)
+    const state = makeAsyncState()
+    const open = []
+    const aborted = []
+    asyncDerived(
+      () => state,
+      (signal) => {
+        const run = open.length + 1
+        signal.addEventListener('abort', () => aborted.push(run))
+        return new Promise((resolve) => open.push(() => resolve(`${dep()}-${run}`)))
+      },
+      [dep],
+      setVal
+    )
+    await tick()
+    open[0]()
+    await tick()
+    expect(val()).toBe('TX-1')
+    expect(state.pending).toBe(false)
+
+    expect(state.refresh()).toBeUndefined()
+    expect(open).toHaveLength(2)
+    expect(state.pending).toBe(true)
+    expect(state.status).toBe('pending')
+    expect(val()).toBe('TX-1')
+
+    state.refresh()
+    expect(aborted).toEqual([1, 2])
+    open[2]()
+    await tick()
+    expect(val()).toBe('TX-3')
+    expect(state.pending).toBe(false)
+
+    open[1]()
+    await tick()
+    expect(val()).toBe('TX-3')
+    expect(state.status).toBe('success')
+  })
+
+  it('refresh called inside an effect does not subscribe it to the loader', async () => {
+    const [dep] = createSignal('TX')
+    const [inner, setInner] = createSignal(0)
+    const [, setVal] = createSignal(null)
+    const state = makeAsyncState()
+    asyncDerived(() => state, async () => `${dep()}${inner()}`, [dep], setVal)
+    let effectRuns = 0
+    createEffect(() => { effectRuns++; state.refresh() })
+    await tick()
+    const before = effectRuns
+    setInner(1)
+    await tick()
+    expect(effectRuns).toBe(before)
+  })
+
   // FJS-3390: b = await g(a) re-runs only when a LANDS, so for a's whole
   // flight b's own state said settled while its value was stale.
   it('reports pending while an upstream await is in flight', async () => {

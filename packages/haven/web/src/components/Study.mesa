@@ -177,18 +177,15 @@
   // Each session's bench, assigned again only when one moved: the pane redraws on every assignment.
   const benchesNow = () => new Map(readWorkers().map((w) => [w.session, w.bench]))
   let benches = benchesNow()
-  const tick = setInterval(() => {
+  function tickBody() {
     if (tabs.some((t) => t.session?.state.status === 'working')) now = Date.now()
     const next = benchesNow()
     if (JSON.stringify([...next]) !== JSON.stringify([...benches])) benches = next
-  }, 1000)
-  tick.unref?.()
+  }
+  $.every(1000, tickBody)
   // The spinner's frames, only while the shown tab works.
-  const spin = setInterval(() => { if (tabs[at]?.session?.state.status === 'working') now = Date.now() }, 250)
-  spin.unref?.()
+  $.every(250, () => { now = Date.now() }, { when: tabs[at]?.session?.state.status === 'working' })
   $.onDestroy(() => {
-    clearInterval(tick)
-    clearInterval(spin)
     stopBells?.()
     for (const t of tabs) { t.off?.(); unmirror(t); t.session?.end() }
   })

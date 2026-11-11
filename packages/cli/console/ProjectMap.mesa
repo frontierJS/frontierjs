@@ -127,12 +127,8 @@
     ...(apps.length > 1 ? [{ keys: 'a', label: 'next app', run: nextApp }] : []),
   ])
 
-  var timer = null
-  $.onMount(async () => {
-    await readAll()
-    timer = setInterval(poll, POLL_MS)
-  })
-  $.onDestroy(() => clearInterval(timer))
+  $.onMount(readAll)
+  $.every(POLL_MS, poll)
 </script>
 
 <header class="bar">

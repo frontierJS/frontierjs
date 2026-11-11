@@ -347,7 +347,9 @@ Litestream on each machine holds a standing key, and every machine the app is
 placed on holds it (`FJS-D1505`). So a replica destination is **one app's**:
 `App.replicaDestinationId` is unique, and a second app pointing at the same row
 is refused. Make a destination per app, with a key that reaches no further than
-that app's objects, and set it with `apps.patch { replicaDestinationId }`.
+that app's objects, and choose it under *Continuous replica* on the App's
+Backups tab (`apps.patch { replicaDestinationId }`), which runs `test` once the
+pointer is saved.
 
 `<installId>` is `HubConfig.installId`, in every hub archive's manifest and name. The replica lands at `<destination prefix>/<app id>/`. Litestream needs list on
 the bucket and get, put and delete on its objects

@@ -22,7 +22,7 @@
     context: { model: 'App', service: 'apps', idField: 'id' },
     fields:  FIELDS,
     formFields: (opts) => formFieldList(FIELDS, opts),
-    options: () => new Promise((r) => setTimeout(() => r({ options: ROWS, total: ROWS.length, truncated: false }), 50)),
+    options: () => $.sleep(50).then(() => ({ options: ROWS, total: ROWS.length, truncated: false })),
     make: () => ({ name: '', environmentId: '' }),
     coerce: (data) => coerceToSchema(FIELDS, data),
     fieldErrors: () => ({ fields: {}, message: '' }),

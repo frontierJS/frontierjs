@@ -103,7 +103,7 @@ export const RULES = {
   lifecycle:   `A lifecycle has two or more states, each move names states it declares, every state is reachable from the first, and move names are camelCase, unique, and none of ${MOVE_RESERVED.join(', ')}.`,
   access:      'Every entity names who reaches a row: an actor link to User, `via` a required link to a parent, a `members` entity, or `public`/`shared` with a reason.',
   members:     'A `members` entity has a required link back to the container and a link to User.',
-  roles:       'A container\'s `roles` is `{ update: [...] }` beside `members`, naming values of the membership\'s `role` enum: the members holding one rename the container and decide who is in it. A container without it leaves its membership to the application.',
+  roles:       'A container\'s `roles` is `{ update: [...] }` beside `members`, naming values of the membership\'s `role` enum: the members holding one rename the container, decide who is in it and change the rows under it, and the person whose sign-up creates it holds the first. A container without it leaves its membership to the application, and that person holds the role column\'s default.',
   pattern:     'A cited pattern is one the catalog lists.',
   rename:      'A field says `was` only when it is the same column under a new name: the camelCase name the app has now, which no column of the entity holds under the new schema and no other field claims. It names a field you added, never a catalog field.',
   currency:    '`currency` is one ISO 4217 code, or a list of them when each row with money names its own; the first is the default.',
@@ -403,7 +403,7 @@ export function checkAnswer(answer) {
       find('access', m.name, `Every signed-in user reads every ${m.name}, and ${who.size === 1 && who.has('an administrator') ? 'only ' : ''}${clauses.join(', and ')}: ${a.shared}`)
     }
     if (a.system) find('access', m.name, `Only the application writes ${an(m.name)}.`)
-    if (m.members && !m.members.admins) find('access', m.name, `No member administers ${an(m.name)}: only the application adds, removes or re-roles ${m.members.model} rows. Say \`roles: { update: [...] }\` to name the roles that do.`)
+    if (m.members && !m.members.admins) find('access', m.name, `No member administers ${an(m.name)}: only the application adds, removes or re-roles ${m.members.model} rows${a.system ? ', and the person whose sign-up creates it holds the role column\'s default' : ''}. Say \`roles: { update: [...] }\` to name the roles that do.`)
   }
 
   const ok = refusals.length === 0

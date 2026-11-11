@@ -2,8 +2,11 @@
  * @frontierjs/mesa-runtime  v0.1.0
  */
 import { WINDOW_BINDS } from './window-binds.js'
+import { clock } from './clock.js'
 import { ISLAND_OPEN, ISLAND_CLOSE, islandPayload, dynamicTag, stampAt, warnRefusedName,
   SPREAD_REFUSED, warnRefusedMarkup, warnRefusedHandler, settle } from './runtime-server.js'
+
+export { clock, virtualClock } from './clock.js'
 
 const _resolved = Promise.resolve()
 /** True in any browser environment. False in Node/Deno/workers without DOM.
@@ -2253,11 +2256,111 @@ export function addHeadStyle(css) {
  * it is called each time to get the current delay.
  */
 export function debounce(fn, ms) {
-  let timer
+  let cancel
+  // A keystroke a moment before unmount would otherwise run its handler
+  // against a torn-down component.
+  if (_owner) _owner._cleanups.push(() => cancel?.())
   return function(...args) {
-    clearTimeout(timer)
+    cancel?.()
     const delay = typeof ms === 'function' ? ms() : ms
-    timer = setTimeout(() => fn.apply(this, args), delay)
+    cancel = clock.after(delay, () => { cancel = undefined; fn.apply(this, args) }, 'debounce')
+  }
+}
+
+/**
+ * `$.after(ms, fn, { key, when })` and `$.every(ms, fn, { key, when })`
+ * (`FJS-D2059`). A timer controlled by its declaration, not by a handle: armed
+ * while `when` holds and its owner lives, re-armed fresh when `key` changes,
+ * cancelled with the owner. A bare effect that re-arms on every re-run is the
+ * leak this replaces, so arming is decided by comparing `key` and `when`
+ * themselves, never by the effect having run again — and a paused timer never
+ * re-arms on a `key` change (VueUse's `useIntervalFn`).
+ *
+ * `ms`, `key` and `when` are values or getters; the compiler passes getters
+ * for an options literal. `ms` is read untracked at each arm, so a change to
+ * it alone re-arms nothing.
+ *
+ * An `every` whose `fn` returned a pending promise skips the ticks due while it
+ * is pending, or a slow poll stacks a second request on the first
+ * (`FJS-D2064`); a `key` change re-arms without waiting on the old one.
+ */
+function declaredTimer(kind, ms, fn, opts) {
+  const label = '$.' + kind
+  if (typeof fn !== 'function') {
+    throw new TypeError(`${label}(ms, fn) takes the function to run as its second argument`)
+  }
+  const { key, when } = opts ?? {}
+  const read = (v) => (typeof v === 'function' ? v() : v)
+  let cancel = null
+  let armed = false
+  let lastKey
+  let busy = null
+  const stop = () => { cancel?.(); cancel = null }
+  const tick = () => {
+    if (busy) return
+    const r = fn()
+    if (!r || typeof r.then !== 'function') return
+    // A rejection still surfaces as the page's unhandled rejection, as an
+    // unwrapped `fn` would have; only the skip is released.
+    const mine = busy = {}
+    Promise.resolve(r).finally(() => { if (busy === mine) busy = null })
+  }
+  const arm = () => {
+    stop()
+    busy = null
+    const delay = untrack(() => read(ms))
+    cancel = kind === 'after'
+      ? clock.after(delay, () => { cancel = null; fn() }, label)
+      : clock.every(delay, tick, label)
+  }
+  createEffect(() => {
+    const on = when === undefined ? true : !!read(when)
+    const k = read(key)
+    if (!on) {
+      if (armed) { armed = false; stop() }
+      return
+    }
+    if (armed && Object.is(k, lastKey)) return
+    armed = true
+    lastKey = k
+    arm()
+  })
+  onCleanup(stop)
+}
+
+/** `$.after` — run `fn` once, `ms` after the timer arms. Returns nothing. */
+export function after(ms, fn, opts) { declaredTimer('after', ms, fn, opts) }
+
+/** `$.every` — run `fn` every `ms` while the timer is armed. Returns nothing. */
+export function every(ms, fn, opts) { declaredTimer('every', ms, fn, opts) }
+
+/**
+ * `$.sleep(ms)` for one component instance (`FJS-D2063`): a Promise that
+ * resolves `ms` later on the runtime clock. A sleep is awaited after an `await`
+ * or in a handler, where there is no owner to hand a cleanup to, so the
+ * instance's sleeps are bound here, at setup. Once the instance is destroyed a
+ * pending sleep is cancelled and NEVER settles — a rejection would surface as
+ * an unhandled error from every handler mid-sleep — so a `finally` around it
+ * does not run and the continuation cannot write into a torn-down component.
+ */
+export function sleeper() {
+  const pending = new Set()
+  let gone = false
+  onCleanup(() => {
+    gone = true
+    for (const cancel of pending) cancel()
+    pending.clear()
+  })
+  return function sleep(ms) {
+    return new Promise((resolve) => {
+      if (gone) return
+      // A server render's clock answers a sleep inside this call, before
+      // `cancel` is assigned.
+      let fired = false
+      let cancel = null
+      cancel = clock.after(ms, () => { fired = true; pending.delete(cancel); resolve() }, '$.sleep')
+      if (!fired) pending.add(cancel)
+    })
   }
 }
 
@@ -2268,7 +2371,7 @@ export function debounce(fn, ms) {
 export function throttle(fn, ms) {
   let last = 0
   return function(...args) {
-    const now = Date.now()
+    const now = clock.now()
     const delay = typeof ms === 'function' ? ms() : ms
     if (now - last >= delay) {
       last = now
@@ -2473,7 +2576,7 @@ function _cssTransition(el, inStyles, outStyles, { duration = 200, easing = 'eas
         const done = () => { cleanup(); resolve() }
         el.addEventListener('transitionend', done, { once: true })
         // Fallback in case transitionend doesn't fire (display:none, etc.)
-        setTimeout(resolve, duration + 50)
+        clock.after(duration + 50, resolve, 'transition')
       })
     }
   }
@@ -2534,7 +2637,7 @@ export function slide({ duration = 250, easing = 'ease' } = {}) {
           resolve()
         }
         el.addEventListener('transitionend', done, { once: true })
-        setTimeout(resolve, duration + 50)
+        clock.after(duration + 50, resolve, 'transition')
       })
     }
   })
@@ -2560,7 +2663,7 @@ export function fly({ x = 0, y = -12, duration = 220, easing = 'ease-out' } = {}
         el.style.transform = fromTransform
         const done = () => { el.style.transition = ''; resolve() }
         el.addEventListener('transitionend', done, { once: true })
-        setTimeout(resolve, duration + 50)
+        clock.after(duration + 50, resolve, 'transition')
       })
     }
   })
@@ -3137,14 +3240,15 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
   }
 
   // Wire scroll listener
-  let rafId = 0
+  let cancelScrollFrame = null
+  let cancelConnectFrame = null
   let detachScroll = null
   function onScroll() {
-    if (rafId) return
-    rafId = requestAnimationFrame(() => {
-      rafId = 0
+    if (cancelScrollFrame) return
+    cancelScrollFrame = clock.frame(() => {
+      cancelScrollFrame = null
       render(getArray())
-    })
+    }, 'virtual list scroll')
   }
 
   function attachScroll() {
@@ -3167,19 +3271,24 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
       if (parent.isConnected) {
         attachScroll()
       } else {
-        requestAnimationFrame(() => {
+        cancelConnectFrame?.()
+        cancelConnectFrame = clock.frame(() => {
+          cancelConnectFrame = null
           if (!detachScroll && parent.isConnected) {
             attachScroll()
             render(getArray())  // re-render with real viewHeight now available
           }
-        })
+        }, 'virtual list connect')
       }
     }
   })
 
   // Cleanup on component destroy via onCleanup / owner
+  // A frame left armed renders rows into a list that was already torn down.
   const cleanup = () => {
     disposeEffect()
+    cancelScrollFrame?.()
+    cancelConnectFrame?.()
     detachScroll?.()
     topSpacer.remove()
     botSpacer.remove()
@@ -5434,10 +5543,13 @@ export function makeCallState(handled = false) {
   }
 }
 
+// `refresh` is the same run a dependency change makes, so it aborts the run in
+// flight and the later run's reply is the one kept (`FJS-D2058`). It runs
+// untracked: called from inside an effect, the loader's synchronous reads
+// would otherwise subscribe that effect to them.
 export function asyncDerived(getAsyncState, fn, deps, setValue) {
   let controller = null
-  createEffect(() => {
-    deps.forEach((d) => d())
+  const run = () => {
     controller?.abort()
     controller = new AbortController()
     const state = getAsyncState()
@@ -5454,8 +5566,21 @@ export function asyncDerived(getAsyncState, fn, deps, setValue) {
         state._update('error', err)
       }
     )
-    onCleanup(() => controller?.abort())
-  })
+  }
+  if (deps) {
+    createEffect(() => {
+      deps.forEach((d) => d())
+      run()
+      onCleanup(() => controller?.abort())
+    })
+  } else {
+    // `null` deps is a load with nothing to watch (`FJS-D2062`): inside an
+    // effect, a loader that reads a signal synchronously would re-run on every
+    // write to it, where it used to run once.
+    untrack(run)
+    if (_owner) onCleanup(() => controller?.abort())
+  }
+  getAsyncState().refresh = () => { untrack(run) }
 }
 
 // ─── MISC ─────────────────────────────────────────────────────────────────────

@@ -78,9 +78,9 @@
   // The relay's answer is one frame a line. A stream that ends is an app that
   // went away, so it is followed again rather than left closed.
   var ctl = null
-  var retry = null
+  var reconnecting = false
   async function follow() {
-    clearTimeout(retry)
+    reconnecting = false
     ctl?.abort()
     const mine = ctl = new AbortController()
     try {
@@ -105,7 +105,7 @@
     }
     if (mine !== ctl) return
     up = false
-    retry = setTimeout(follow, RETRY_MS)
+    reconnecting = true
   }
 
   const read = async (path, init) => {
@@ -175,14 +175,10 @@
     { keys: 'c', label: 'clear the feed', run: clear },
   ])
 
-  var timer = null
-  $.onMount(() => {
-    follow()
-    timer = setInterval(poll, POLL_MS)
-  })
+  $.onMount(follow)
+  $.every(POLL_MS, poll)
+  $.after(RETRY_MS, follow, { when: reconnecting })
   $.onDestroy(() => {
-    clearInterval(timer)
-    clearTimeout(retry)
     ctl?.abort()
     ctl = null
   })

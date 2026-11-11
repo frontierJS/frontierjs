@@ -210,12 +210,6 @@
     help: '/reload — this scene again, from the code on disk, where you stand',
     run:  () => { reload(page.pathname, { x, y, stand: 1 }); return '' },
   }))
-  $.onDestroy(() => {
-    clearInterval(flickTimer)
-    clearTimeout(idle)
-    clearTimeout(held)
-    for (const t of timers) clearTimeout(t)
-  })
 
   // The room's lines, read once for every piece of the scene that shows them:
   // the bubbles, the history pane and `/hush` by prop, and the square's crier,
@@ -300,23 +294,18 @@
 
   // Other screens hang `(…)` over this figure while its line has words and is
   // not a command (`crowd.js`), lapsing after IDLE_MS without a key so a line
-  // left half typed is not typing for good. Plain `var`s: the timer writes
-  // `typing`, and a watch that read it would run `typed(draft)` again.
+  // left half typed is not typing for good. A plain `var`: the timer writes
+  // `typing`, and a watch that read it would run again on the lapse.
   const IDLE_MS = 4000
   var typing = false
-  var idle   = null
   function setTyping(on) {
     if (on === typing) return
     typing = on
     sync()
   }
-  function typed(text) {
-    clearTimeout(idle)
-    const on = !!text.trim() && !text.trim().startsWith('/')
-    if (on) idle = setTimeout(() => setTyping(false), IDLE_MS)
-    setTyping(on)
-  }
-  $: { if (here) typed(draft) }
+  const talking = (text) => !!text.trim() && !text.trim().startsWith('/')
+  $: { if (here) setTyping(talking(draft)) }
+  $.after(IDLE_MS, () => setTyping(false), { key: draft, when: here && talking(draft) })
 
   // ─── the figure ────────────────────────────────────────────────────────────
   // The room takes 10 moves a second (`presenceUpdatesPerSecond`, `api/src/rooms.ts`)
@@ -324,21 +313,28 @@
   // other screen drawing this figure short of where it stopped. A send inside the
   // window is held to its end and carries the figure as it is then.
   const SYNC_MS = 100
-  var synced = 0
-  var held   = null
+  var synced  = 0
+  // `holding` is the guard `sync()` reads and `held` arms the send: a watch
+  // that calls `sync()` and read `held` would run again at every send.
+  var holding = false
+  let held    = false
   function sync() {
-    if (held) return
+    if (holding) return
     const wait = synced + SYNC_MS - Date.now()
-    if (wait <= 0) { synced = Date.now(); here.updateMeta(meta()); return }
-    held = setTimeout(() => { held = null; synced = Date.now(); here.updateMeta(meta()) }, wait)
+    if (wait <= 0) { send(); return }
+    holding = true
+    held = true
   }
-  /** The held step sent now, for a caller that is about to leave the room: the destroy below drops it, and a figure who sat down is never seen sitting. */
-  function settle() {
-    if (!held) return
-    clearTimeout(held)
-    held = null
+  function send() {
+    holding = false
+    held = false
     synced = Date.now()
     here.updateMeta(meta())
+  }
+  $.after(synced + SYNC_MS - Date.now(), send, { when: held })
+  /** The held step sent now, for a caller that is about to leave the room: the destroy below drops it, and a figure who sat down is never seen sitting. */
+  function settle() {
+    if (holding) send()
   }
 
   function meta() {
@@ -386,24 +382,17 @@
   let beam  = []
   let stun  = {}
   let flick = false
-  var timers = new Set()
-  var flickTimer = null
   var shots = 0
 
-  function later(fn, ms) {
-    const t = setTimeout(() => { timers.delete(t); fn() }, ms)
-    timers.add(t)
-  }
+  const later = (fn, ms) => $.sleep(ms).then(fn)
 
-  function flicker() {
-    if (flickTimer) return
-    flickTimer = setInterval(() => {
-      const t = Date.now()
-      stun = Object.fromEntries(Object.entries(stun).filter(([, until]) => until > t))
-      flick = !flick
-      if (!Object.keys(stun).length) { clearInterval(flickTimer); flickTimer = null; flick = false }
-    }, FLICK_MS)
+  function flickBody() {
+    const t = Date.now()
+    stun = Object.fromEntries(Object.entries(stun).filter(([, until]) => until > t))
+    flick = !flick
+    if (!Object.keys(stun).length) flick = false
   }
+  $.every(FLICK_MS, flickBody, { when: Object.keys(stun).length > 0 })
 
   /** What a bolt does once it has crossed its cells. */
   function land(blast) {
@@ -418,7 +407,6 @@
         sync()
       }
     }
-    if (blast.struck?.length) flicker()
     const laid = blast.laid ?? []
     stage.shatter(laid.filter((l) => l.kind === 'struck' && l.id))
     stage.scorch(laid.filter((l) => l.kind === 'scorch'))

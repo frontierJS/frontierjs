@@ -701,6 +701,9 @@ try {
   check('the page that has been open all along says `online`', online === 'online')
   check('and the progress strip is gone, because nothing is in flight now',
     await evaluate(`!document.getElementById('server-inflight')`))
+  const consoleLink = await evaluate(`document.getElementById('server-console')?.getAttribute('href') ?? ''`)
+  check('the Provider row links to this droplet at DigitalOcean',
+    /^https:\/\/cloud\.digitalocean\.com\/droplets\/\d+$/.test(consoleLink), consoleLink)
   // The heartbeat recorded a reading; the card that draws it is the dashboard's,
   // and the push that carried `health` is what fills it on a page already open.
   const health = await until(`document.getElementById('server-health')?.textContent ?? ''`,

@@ -18,6 +18,7 @@
 //   mintDeployKey · importDockerfile — the machine's deploy key, and its clone's Dockerfile (FJS-D1555)
 //   enablePushOn — deploy on push turned on, the one mint `enablePush` and `projects.fromRepo` share (FJS-D1558)
 //   connectableAccounts · connectRepository — the key and the hook written at the forge (FJS-D1571)
+//   connect        — an existing App's key and push minted and written at GitHub, through `connectToForge` (FJS-D2051)
 //   readForgeDockerfile — the repository's Dockerfile now, public or through an account
 //   readRepoDockerfile · dockerfileTemplate — the two seeds the create form offers
 //   preview        — a Workbench branch's preview opened, frozen, thawed or retired, called by a peer (collection-level)
@@ -253,6 +254,39 @@ export async function connectRepository(
     }
   }
   return { account: null, key: false, hook: false, note: accounts.length > 1 ? `${unseen} (asked ${accounts.length} accounts)` : unseen }
+}
+
+/**
+ * An App on a machine given its deploy key and its push, both written at the
+ * forge when an account was found: `projects.fromRepo` for the App it just
+ * placed and `apps.connect` for one that already exists (FJS-D2051), so a
+ * second environment of one repository is connected the way its first was.
+ * Push already on keeps its hook (FJS-D2052): the secret and token do not read
+ * back, and minting new ones breaks every other sender of the old hook.
+ */
+export async function connectToForge(
+  app: App, target: { id: string, slug: string, isDeployedOnPush?: boolean | null },
+  how: { serverId?: string, at: SourceRepo | null, accounts: SourceAccount[], push: boolean },
+): Promise<{
+  deployPublicKey: string | null, push: Awaited<ReturnType<typeof enablePushOn>> | null,
+  connected: Awaited<ReturnType<typeof connectRepository>> | null, notes: string[],
+}> {
+  const notes: string[] = []
+  const minted = await mintDeployKey(app, target.id, how.serverId)
+  if (minted.note) notes.push(minted.note)
+  const push = how.push && !target.isDeployedOnPush ? await enablePushOn(target.id) : null
+  if (how.push && target.isDeployedOnPush)
+    notes.push('Deploy on push was already on, so its webhook was left as it is — Rotate keys makes a new secret to add by hand')
+
+  let connected: Awaited<ReturnType<typeof connectRepository>> | null = null
+  if (how.at && how.accounts.length && (minted.deployPublicKey || push)) {
+    connected = await connectRepository(app, 'github', how.accounts, how.at, {
+      key:  minted.deployPublicKey ? { title: `Basecamp ${target.slug}`, key: minted.deployPublicKey } : null,
+      hook: push ? { url: push.url, secret: push.secret } : null,
+    })
+    if (connected.note) notes.push(connected.note)
+  }
+  return { deployPublicKey: minted.deployPublicKey, push, connected, notes }
 }
 
 /**
@@ -786,6 +820,8 @@ export default createService({
     // `enablePush` hands a standing to the push receiver, so it is a release's.
     { method: 'enablePush',  gate: LEVELS.ADMINISTRATOR },
     { method: 'disablePush', gate: LEVELS.ADMINISTRATOR },
+    // Turns push on and writes at the forge with a workspace token: enablePush's level.
+    { method: 'connect',     gate: LEVELS.ADMINISTRATOR },
     // Writes an @system column as the app, at the level that may place it.
     { method: 'mintDeployKey',    gate: LEVELS.USER },
     { method: 'importDockerfile', gate: LEVELS.USER, read: true },
@@ -1259,6 +1295,30 @@ export default createService({
       system: ['isDeployedOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
     })
     return detail(target.id)
+  },
+
+  // ── connect — the key and the hook written at GitHub (FJS-D2051) ─
+  //
+  // `fromRepo`'s connect for an App that already exists: a second environment
+  // of one repository, or an App whose connect failed at creation. Every
+  // refusal is asked before anything is minted. Like `enablePush`, the
+  // credentials are in this answer and the announcement states the row.
+  async connect() {
+    const target = await getScoped('app', 'App')
+    const source = storedSource(target)
+    const at = source?.kind === 'git' ? forgeRepo(source.repo) : null
+    if (at?.forge !== 'github')
+      throw new BadRequest(`App '${target.name}' is not built from a GitHub repository — connect writes to GitHub`)
+    if (!await db().appServer.exists({ where: { appId: target.id } }))
+      throw new BadRequest(`App '${target.name}' is on no server — the deploy key is the machine's, so place it first`)
+    const accounts = await connectableAccounts($.app, 'github')
+
+    const done = await connectToForge($.app, target, { at, accounts, push: true })
+    $.dispatch = await db().app.findFirst({ where: { id: target.id, workspaceId: ws() } })
+    return {
+      deployPublicKey: done.deployPublicKey, push: done.push, connected: done.connected,
+      ...(done.notes.length ? { note: done.notes.join('; ') } : {}),
+    }
   },
 
   // ── mintDeployKey · importDockerfile — FJS-D1555 ─────────────────

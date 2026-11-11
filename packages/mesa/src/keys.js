@@ -50,6 +50,7 @@
  */
 import { step, flush, browserOwned, chordOf } from '@frontierjs/toolbelt/keys'
 import { isBrowserClient } from './runtime.js'
+import { clock } from './clock.js'
 
 /** `keys(() => ({ active, on }))` — an attachment. */
 export function keys(options) {
@@ -61,21 +62,21 @@ export function keys(options) {
     if (browser) refuseOwned(options().active)
     const mac = isMac()
     let state = null
-    let timer = null
+    let cancel = null
     let text = false
 
     const contextOf = (o) => ({ active: o.active, mac, text })
 
     function settle(next, now) {
       state = next
-      clearTimeout(timer)
-      timer = state?.due === undefined ? null : setTimeout(due, Math.max(0, state.due - now))
+      cancel?.()
+      cancel = state?.due === undefined ? null : clock.after(Math.max(0, state.due - now), due, 'keys chord')
     }
 
     function due() {
-      timer = null
+      cancel = null
       const o = options()
-      const now = Date.now()
+      const now = clock.now()
       const { state: next, outcome } = flush(state, contextOf(o), now)
       settle(next, now)
       if (outcome?.action !== undefined) fire(o, outcome)
@@ -88,7 +89,7 @@ export function keys(options) {
       text = e.typing !== false && target !== el && editable(target)
       const o = options()
       if (browser) refuseOwned(o.active)
-      const now = Date.now()
+      const now = clock.now()
       const was = state
       const { state: next, outcome } = step(state, chordOf(e), contextOf(o), now)
       settle(next, now)
@@ -103,7 +104,7 @@ export function keys(options) {
       : (el.addEventListener('keydown', keydown), () => el.removeEventListener('keydown', keydown))
     return () => {
       off()
-      clearTimeout(timer)
+      cancel?.()
     }
   }
 }

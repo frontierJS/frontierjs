@@ -404,7 +404,7 @@
   // Which row copied what, so the ✓ lands on the button that was pressed and
   // not on every one of them.
   let copied  = ''
-  var _copyTimer = null
+  let copies  = 0
 
   async function copyRow(row, what) {
     const text = what === 'path'
@@ -412,11 +412,12 @@
       : format(row.value)
     if (!(await copyText(text))) return
     copied = `${row.key}:${what}`
-    clearTimeout(_copyTimer)
-    _copyTimer = setTimeout(() => { copied = '' }, 1200)
+    copies++
   }
 
-  $.onDestroy(() => clearTimeout(_copyTimer))
+  // Keyed on the count: the same button pressed twice writes the same string,
+  // and keyed on that the check cleared on the first press's schedule.
+  $.after(1200, () => { copied = '' }, { key: copies, when: copied !== '' })
 
   const focusMe = (el) => { $.focus(el).then(() => el.select?.()) }
   const noop    = () => {}

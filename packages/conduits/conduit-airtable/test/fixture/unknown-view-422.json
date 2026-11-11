@@ -1,0 +1,6 @@
+{
+  "error": {
+    "type": "VIEW_NAME_NOT_FOUND",
+    "message": "View NoSuchView not found"
+  }
+}

@@ -49,9 +49,9 @@ export function walk(dir, test, out = []) {
   return out
 }
 
-/** content/routes/blog/index.md → /blog/, about-us.md → /about-us/ */
+/** content/routes/blog/index.md → /blog/, about-us.md → /about-us/, (company)/about.md → /about/ */
 export function routeOf(rel) {
-  const p = rel.replace(/^content\/routes/, '').replace(/\.md$/, '').replace(/(^|\/)index$/, '$1')
+  const p = rel.replace(/^content\/routes/, '').replace(/\.md$/, '').replace(/\/\([^/]+\)(?=\/)/g, '').replace(/(^|\/)index$/, '$1')
   return norm(p || '/')
 }
 

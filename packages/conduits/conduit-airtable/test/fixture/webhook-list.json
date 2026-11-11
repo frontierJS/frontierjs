@@ -1,0 +1,24 @@
+{
+  "webhooks": [
+    {
+      "id": "achxkX1NjzvT0DMJm",
+      "specification": {
+        "options": {
+          "filters": {
+            "dataTypes": [
+              "tableData"
+            ],
+            "recordChangeScope": "tblXOKo8QVlaAbSRo"
+          }
+        }
+      },
+      "notificationUrl": null,
+      "cursorForNextPayload": 3,
+      "lastNotificationResult": null,
+      "areNotificationsEnabled": true,
+      "lastSuccessfulNotificationTime": null,
+      "isHookEnabled": true,
+      "expirationTime": "2026-11-17T19:22:24.206Z"
+    }
+  ]
+}

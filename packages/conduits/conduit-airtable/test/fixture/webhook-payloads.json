@@ -1,0 +1,67 @@
+{
+  "payloads": [
+    {
+      "timestamp": "2026-11-10T19:22:11.960Z",
+      "baseTransactionNumber": 37,
+      "actionMetadata": {
+        "source": "publicApi",
+        "sourceMetadata": {
+          "user": {
+            "id": "usr000000000000000",
+            "email": "person-1@example.com",
+            "permissionLevel": "create",
+            "name": "Person 1",
+            "profilePicUrl": "https://static.airtable.com/images/userIcons/user_icon_5.png"
+          }
+        }
+      },
+      "payloadFormat": "v0",
+      "changedTablesById": {
+        "tblXOKo8QVlaAbSRo": {
+          "createdRecordsById": {
+            "rechsBVvb4OHHr1OC": {
+              "createdTime": "2026-11-10T19:22:12.000Z",
+              "cellValuesByFieldId": {
+                "fldD43y3R1OTAMPAj": "Scratch WH"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "timestamp": "2026-11-10T19:22:12.573Z",
+      "baseTransactionNumber": 38,
+      "actionMetadata": {
+        "source": "publicApi",
+        "sourceMetadata": {
+          "user": {
+            "id": "usr000000000000000",
+            "email": "person-1@example.com",
+            "permissionLevel": "create",
+            "name": "Person 1",
+            "profilePicUrl": "https://static.airtable.com/images/userIcons/user_icon_5.png"
+          }
+        }
+      },
+      "payloadFormat": "v0",
+      "changedTablesById": {
+        "tblXOKo8QVlaAbSRo": {
+          "changedRecordsById": {
+            "rechsBVvb4OHHr1OC": {
+              "current": {
+                "cellValuesByFieldId": {
+                  "fldD43y3R1OTAMPAj": "Scratch WH 2",
+                  "fldWMIGS13rkm3Flb": "x"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cursor": 3,
+  "mightHaveMore": false,
+  "payloadFormat": "v0"
+}

@@ -29,9 +29,10 @@
   export let moveTo
 
   var verbs = $context.commands
-  var timer = null
   var stood = ''
-  $.onDestroy(() => clearTimeout(timer))
+  // `{ name }` of the wave or dance acted, until EMOTE_MS ends it or a sit does;
+  // a fresh object per act, so the same one acted twice restarts the timer.
+  let acted = null
 
   const BEAT_MS = 300
   // A frame per beat: the cells beside the figure and what is drawn on them.
@@ -57,14 +58,15 @@
 
   /** A wave or a dance for EMOTE_MS, then back to sitting if the figure is on a seat. */
   function act(name) {
-    clearTimeout(timer)
     emoteTo(name)
-    timer = setTimeout(() => { if (emote === name) emoteTo(onSeat({ x, y }) ? 'sit' : null) }, EMOTE_MS)
+    acted = { name }
     return `you ${name}`
   }
 
+  $.after(EMOTE_MS, () => { if (emote === acted.name) emoteTo(onSeat({ x, y }) ? 'sit' : null); acted = null }, { key: acted, when: acted })
+
   function sit() {
-    clearTimeout(timer)
+    acted = null
     const me = { x, y }
     if (onSeat(me)) { emoteTo('sit'); return 'you sit' }
     const taken = new Set(here.get().others.map((m) => key(cellOf(m, spawn))))
@@ -81,7 +83,7 @@
     const cell = `${cx},${cy}`
     if (cell === stood) return
     stood = cell
-    if (onSeat({ x: cx, y: cy }) && emote !== 'sit') { clearTimeout(timer); emoteTo('sit') }
+    if (onSeat({ x: cx, y: cy }) && emote !== 'sit') { acted = null; emoteTo('sit') }
   }
   $: arrived(x, y)
 

@@ -65,7 +65,7 @@
       "url": "https://zenstack.dev",
       "tier": 1,
       "closeness": 60,
-      "inspiration": 75,
+      "inspiration": 85,
       "realm": "Data",
       "relation": "Prisma schema plus access policies declared in the schema. Literally gates. Record-level auth reference.",
       "gap": "Policy language grew a full expression grammar — schema overreach.",
