@@ -343,10 +343,12 @@ describe("runs", () => {
     await settled(runId, ["completed", "failed"])
 
     const ids  = (res: any) => ((res.body as any).data ?? res.body).map((r: any) => r.id)
+    // Filtered by id: an administrator's list holds every flow in this suite,
+    // more than one page, in no fixed order.
     const read = async (token: string) => ({
-      flows:     ids(await http().get("/flows").auth(token)).includes(id),
+      flows:     ids(await http().get(`/flows?id=${id}`).auth(token)).includes(id),
       flow:      (await http().get(`/flows/${id}`).auth(token)).status,
-      runs:      ids(await http().get("/runs").auth(token)).includes(runId),
+      runs:      ids(await http().get(`/runs?id=${runId}`).auth(token)).includes(runId),
       run:       (await http().get(`/runs/${runId}`).auth(token)).status,
       steps:     (await call(token, `/runs/${runId}`, "steps")).status,
       versions:  (await call(token, `/flows/${id}`, "versions")).status,
