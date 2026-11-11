@@ -715,6 +715,36 @@ model Vault {
     expect(existsSync(join(dir, 'test.db'))).toBe(true)
   })
 
+  test('key-check says which columns hold values and whether the key opens them', async () => {
+    const { encryptField } = await import('../src/core/encryption.js')
+    const dir = makeFixtureDir('key-check', {
+      schema: `
+        model User {
+          id    Int @id
+          email String @unique
+          ssn   String @encrypted
+        }
+      `,
+    })
+    const key   = 'a'.repeat(64)
+    const check = async (env = {}) => JSON.parse((await runCli(dir, ['key-check', '--json'], { env })).stdout)
+
+    // Asking must not create the database it is asking about.
+    expect(await check()).toEqual({ fields: ['User.ssn'], values: [], opens: null })
+    expect(existsSync(join(dir, 'test.db'))).toBe(false)
+
+    await runCli(dir, ['db', 'push'], { env: { ENCRYPTION_KEY: key } })
+    expect((await check()).values).toEqual([])
+
+    const raw = new Database(join(dir, 'test.db'))
+    raw.run('INSERT INTO user (id, email, ssn) VALUES (1, ?, ?)', ['a@b.c', encryptField('x', Buffer.from(key, 'hex'))])
+    raw.close()
+
+    expect(await check()).toEqual({ fields: ['User.ssn'], values: ['User.ssn'], opens: null })
+    expect((await check({ ENCRYPTION_KEY: key })).opens).toBe(true)
+    expect((await check({ ENCRYPTION_KEY: 'b'.repeat(64) })).opens).toBe(false)
+  })
+
   test('--env-file loads keys from a custom file', async () => {
     // Regression guard for the auto .env loader. Bun reads ./.env on its own,
     // but --env-file must support arbitrary paths (e.g. .env.production).

@@ -1,6 +1,7 @@
 // core/env-preflight.js
-// "Does the API have its key?" — asked before a dev server starts, and before
-// `deploy:setup` seeds a fresh box (`fillKey`).
+// "Does the API have its key?" — asked before a dev server starts, before
+// `deploy:setup` seeds a fresh box (`fillKey`), and before `db:push` or `studio`
+// open a schema that encrypts (`offerKey`).
 //
 // The failure this exists for: a clone carries `.env.example` and never `.env`,
 // which is gitignored, so the first `fli dev` starts an API that refuses at
@@ -65,13 +66,104 @@ export function fillKey(root, file) {
   if (example == null || !declares(example, KEY)) return 'undeclared'
   const had = read(file)
   if (had != null && envValue(had, KEY)) return 'set'
-  const text = had ?? example
-  const line = `${KEY}=${randomBytes(32).toString('hex')}`
+  writeKey(file, had ?? example, randomBytes(32).toString('hex'))
+  return 'made'
+}
+
+function writeKey(file, text, value) {
+  const line = `${KEY}=${value}`
   const at   = new RegExp(`^[ \\t]*${KEY}[ \\t]*=.*$`, 'm')
-  const next = at.test(text) ? text.replace(at, line) : `${text}${text.endsWith('\n') || !text ? '' : '\n'}${line}\n`
+  const next = at.test(text) ? text.replace(at, () => line) : `${text}${text.endsWith('\n') || !text ? '' : '\n'}${line}\n`
   writeFileSync(file, next, { mode: 0o600 })
   chmodSync(file, 0o600)
-  return 'made'
+}
+
+// ─── The key a schema needs ───────────────────────────────────────────────────
+// `db:push` and `studio` refuse on a schema that encrypts and no key. The schema
+// says so, not `.env.example`: an app can encrypt without its example naming the
+// key. A generated key is offered only over a database with nothing encrypted
+// in it, because it cannot read a value sealed under another key, and the app
+// would start and then fail on every read of that column.
+
+/** Whether litestone has a key already — the names its `getEncKey` reads. */
+export const keyInEnv = (env = process.env) => !!(env[KEY] || env[`${KEY}_FILE`] || env.LITESTONE_KEY)
+
+/**
+ * `litestone key-check` for a schema: `{ fields, values, opens }`, or null where
+ * it could not say. A key to test travels in `env`, never an argument, since
+ * ps and shell history show one.
+ */
+export function checkKey($, schema, env) {
+  const res = $.exec({
+    command:      `cd ${JSON.stringify($.paths.root)} && ${$.bin('litestone')} key-check --json --schema ${JSON.stringify(schema)}`,
+    stdio:        ['ignore', 'pipe', 'ignore'],
+    allowFailure: true,
+    ...(env && { env }),
+  })
+  if (!Buffer.isBuffer(res)) return null
+  try { return JSON.parse(res.toString().trim().split('\n').pop()) }
+  catch { return null }
+}
+
+/**
+ * Offer the key `schema` needs when none is set.
+ *
+ * @returns {Promise<Record<string,string>|null>} what to add to the child's env,
+ *   `{}` where nothing is needed or litestone's own refusal is the right answer,
+ *   null to stop. The env is passed because fli loaded the blank from `.env` at
+ *   startup, and a child's own copy of the name wins over the file bun reads.
+ */
+export async function offerKey($, schema) {
+  if (keyInEnv()) return {}
+  const check = checkKey($, schema)
+  if (!check?.fields.length) return {}
+  return check.values.length ? askHeldKey($, schema, check) : offerNewKey($, check)
+}
+
+async function offerNewKey($, check) {
+  const { echo, log, chalk, tty, paths } = $
+  if (!tty.interactive) return {}
+  log.warn(`${KEY} is not set, and the schema encrypts ${check.fields.join(', ')}`)
+  const answer = (await tty.line(`Generate ${KEY} into .env? [Y/n]`)).trim().toLowerCase()
+  if (answer && answer !== 'y' && answer !== 'yes') {
+    echo.lines([chalk.dim('fli make:enc')], { indent: 2 })
+    return null
+  }
+  const value = randomBytes(32).toString('hex')
+  saveKey(paths.root, value)
+  echo`  {green ✓} ${KEY} written to .env`
+  return { [KEY]: value }
+}
+
+/** Ask for the key already-encrypted values are under, and write it only if it opens them. */
+export async function askHeldKey($, schema, check) {
+  const { echo, log, tty, paths } = $
+  const where = check.values.join(', ')
+  log.warn(`${KEY} is not set, and the database holds encrypted values in ${where}. A new key cannot read them.`)
+  if (!tty.interactive) {
+    log.error(`Add the key that encrypted them to .env as ${KEY}=...`)
+    return null
+  }
+  const typed = (await tty.secret('Paste the key that encrypted them (Enter to stop):')).trim()
+  if (!typed) return null
+  if (!/^[0-9a-f]{64}$/i.test(typed)) {
+    log.error(`${KEY} is 64 hex characters, got ${typed.length}. Nothing written.`)
+    return null
+  }
+  const proof = checkKey($, schema, { ...process.env, [KEY]: typed })
+  if (!proof || proof.opens === false) {
+    log.error(`That key does not open ${where}. Nothing written.`)
+    return null
+  }
+  saveKey(paths.root, typed)
+  echo`  {green ✓} ${KEY} written to .env {dim ${proof.opens ? `opens ${where}` : 'one-way digests only, so it could not be tested'}}`
+  return { [KEY]: typed }
+}
+
+// A missing `.env` starts from the example, so the rest of its blanks are there to fill.
+function saveKey(root, value) {
+  const file = resolve(root, '.env')
+  writeKey(file, read(file) ?? read(resolve(root, '.env.example')) ?? '', value)
 }
 
 function declares(text, name) {

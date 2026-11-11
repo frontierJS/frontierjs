@@ -49,6 +49,7 @@ core/
   env-preflight.js  `fli dev`'s key preflight — whether `.env` gives the API the
                 `ENCRYPTION_KEY` its `.env.example` names. Only that key: fli
                 can make random bytes and no other blank is fli's to fill.
+                `offerKey` is the same offer for `db:push` and `studio`, off the schema.
                 `fillKey` is the same rule for `deploy:setup`'s first seed,
                 written into the LOCAL `.env.production` (`FJS-D1381`).
                 `fileColumns` / `filesProviderNote` are `01c-files-check`'s

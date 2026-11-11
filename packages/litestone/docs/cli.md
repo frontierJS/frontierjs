@@ -53,6 +53,7 @@ litestone mutate --suite "bun test api/test"           # ...and run the app's ow
 litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>]
 litestone restore [config.js] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]]
 litestone rekey [--orphan=Model.field,…]                 # every encrypted column from ENCRYPTION_KEY to NEW_ENCRYPTION_KEY
+litestone key-check --json                               # which columns need ENCRYPTION_KEY, which hold values, whether it opens them
 litestone rsync <dest>                                   # every SQLite db to a destination via sqlite3_rsync
 litestone backup [dest] [--vacuum] [--zip] [--db=<name>]
 litestone optimize [table]

@@ -31,7 +31,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { childEnv } from '@frontierjs/junction'
 import { slug as slugOf } from '@frontierjs/toolbelt/inflect'
 import { env } from '../../core/env.ts'
@@ -60,7 +60,13 @@ export class StaleDraft extends CheckoutError {}
 const DRAFT_PREFIX = 'draft/'
 
 export function sitesDir(): string {
-  return env.SITES_DIR || join(homedir(), '.config', 'basecamp', 'sites')
+  if (env.SITES_DIR) return env.SITES_DIR
+  // A deployed Basecamp runs unprivileged with HOME=/, so only the
+  // database's volume is writable.
+  const db = process.env.DATABASE_URL
+  return db && db !== ':memory:'
+    ? join(dirname(db), 'sites')
+    : join(homedir(), '.config', 'basecamp', 'sites')
 }
 
 function git(dir: string, argv: string[], opts: { input?: string | Uint8Array, env?: Record<string, string> } = {}): Promise<string> {

@@ -63,6 +63,10 @@ against the `OUTPOST_VERSION` HEAD installs. The fleet is read over ssh with
 `fli deploy:repl`, so no API key is needed for it; a Basecamp that does not
 answer there is named and the run goes on.
 
+**A commit `fli deploy` would refuse stops the run here** (`FJS-D2040`): one no
+remote holds or CI has not passed. The install deploys after the retire, so it
+is asked before the box is touched, and `--plan` names each refusal.
+
 **The hostname** is `--domain`, else the url of the `basecamps.json` entry the
 run is for, else what the box's env file names. An entry and a box that disagree
 stop the run before anything is asked: that file can be another Basecamp's name.
@@ -274,6 +278,13 @@ const keyToCarry = async ({ server, mode, kept, newKey, how, echo, chalk }) => {
   return key
 }
 
+/** Why `fli deploy` would refuse this commit. It runs after the retire, so a
+ *  refusal met there leaves the box with no Basecamp (`FJS-D2040`). */
+const deployRefusals = async () => {
+  const { gateVerdict, readGateFacts } = await import(new URL('file://' + global.fliRoot + '/core/deploy-gate.js'))
+  return gateVerdict(readGateFacts(provisionScript().root)).refusals
+}
+
 /** 3.4: the retire, as a child licensed by the typed confirmation, then --purge. */
 const retire = async ({ server, purge, host, tty, log, echo, chalk }) => {
   if (await runFli(['deploy:retire', '--production', '--server', server, '--approved'], tty) !== 0) return false
@@ -383,7 +394,10 @@ if (flag.purge && !await purgeAgreed({ box: old.box, yes: !asking || flag.plan, 
 
 echo(chalk`\n  {bold The run} {dim — ${mode}, on} ${files.host}`)
 echo.lines([...runRows({ mode, head: old.head, how, newKey: flag['new-key'], purge: flag.purge, install, chalk }), ''], { indent: 4 })
+const refusals = await deployRefusals()
+echo.lines(refusals.map(r => chalk`{red ✗} {bold fli deploy would refuse:} ${r}`), { indent: 4 })
 if (flag.plan) return
+if (refusals.length) { log.error('The install would be refused after the retire. Nothing was changed'); process.exitCode = 1; return }
 if (!await confirmed({ server, yes: flag.yes, tty, log, chalk })) { process.exitCode = 1; return }
 
 const kept = await backUpFirst({ server, mode, how, newKey: flag['new-key'], basecamp: entryName, tty, log, echo, chalk })

@@ -16941,6 +16941,16 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2065"></a>2026-11-10 · `FJS-D2065` — What `fli db:push` and `fli studio` offer when a schema encrypts and no `ENCRYPTION_KEY` is set — a generated key only over a database with nothing encrypted in it; over encrypted values, the key that sealed them, written only if it opens one.
+
+Asked through the question tool, as recommended. Generating anyway after a warning was refused: a new key cannot read existing values and the app fails only at the first read. Refusing with instructions alone was the third option, and it is what a run with no terminal still gets.
+
+The trigger is the schema, read by `litestone key-check`, rather than `.env.example`, since an app can encrypt without its example naming the key (Workbench does). `fli dev`'s offer keeps its `.env.example` gate and takes the same guard. A key under test travels in the environment, never an argument (`FJS-D1556`).
+
+The ninth question: no flow writes a key that cannot read what the database holds, and `packages/cli/test/env-preflight.test.js` fails when one does.
+
+*Lives in:* `packages/cli/core/env-preflight.js` (`offerKey`, `askHeldKey`) · `packages/litestone/src/tools/cli.js` (`cmdKeyCheck`) · `packages/cli/commands/db/push.md` · `packages/cli/commands/db/studio.md` · `packages/cli/commands/utils/dev.md`.
+
 ### <a id="fjs-d2052"></a>2026-11-10 · `FJS-D2052` — Q8 — What does `apps.connect` do on an App whose push is already on — Write the key if it is missing, leave the hook, and answer a note that push is already on.
 
 Asked in [`IDEAS/git-deploy.md`](IDEAS/git-deploy.md) § Open questions. **A** was picked over **B** (rotate the secret and token and write the hook again).

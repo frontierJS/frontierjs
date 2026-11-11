@@ -11,18 +11,30 @@
  *     already landed, or a shell export.
  *   · `fillKey` (deploy:setup's first seed) writes a key only where the example
  *     names one and the file has none, mode 600, and never replaces a value.
+ *   · `offerKey` never writes a key that cannot read what the database already
+ *     holds: a generated key only over nothing encrypted, a pasted one only if
+ *     it opens a value. Run against the real litestone CLI.
  */
 
 import { test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { execSync } from 'node:child_process'
+import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { encryptionKeyState, envValue, fillKey, fileColumns, filesProviderNote } from '../core/env-preflight.js'
+import { createClient } from '@frontierjs/litestone'
+import { encryptionKeyState, envValue, fillKey, fileColumns, filesProviderNote, offerKey } from '../core/env-preflight.js'
 
 let dir
-beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'fli-env-')) })
-afterAll(()  => { rmSync(dir, { recursive: true, force: true }) })
+const ambient = {}
+beforeAll(() => {
+  dir = mkdtempSync(join(tmpdir(), 'fli-env-'))
+  for (const k of ['ENCRYPTION_KEY', 'ENCRYPTION_KEY_FILE', 'LITESTONE_KEY']) { ambient[k] = process.env[k]; delete process.env[k] }
+})
+afterAll(() => {
+  rmSync(dir, { recursive: true, force: true })
+  for (const [k, v] of Object.entries(ambient)) if (v !== undefined) process.env[k] = v
+})
 
 function app(name, { example, dotenv } = {}) {
   const root = join(dir, name)
@@ -134,4 +146,90 @@ test('filesProviderNote is silent once FILES_PROVIDER is set, or when no column 
   expect(filesProviderNote({ columns, env: '# FILES_PROVIDER=local\n', dir: '/d' })).not.toBeNull()
   expect(filesProviderNote({ columns, env: '', set: ['FILES_PROVIDER'], dir: '/d' })).toBeNull()
   expect(filesProviderNote({ columns: [], env: '', dir: '/d' })).toBeNull()
+})
+
+// ─── offerKey ─────────────────────────────────────────────────────────────────
+
+const LITESTONE = resolve(import.meta.dir, '../../litestone/src/tools/cli.js')
+const SEALED_KEY = 'a'.repeat(64)
+const ENCRYPTS = 'database main {\n  path "./app.db"\n}\n\nmodel User {\n  id  Int @id\n  ssn String @encrypted\n}\n'
+
+function project(name, schemaText = ENCRYPTS) {
+  const root = join(dir, name)
+  mkdirSync(join(root, 'db'), { recursive: true })
+  writeFileSync(join(root, 'db/schema.lite'), schemaText)
+  return { root, schema: join(root, 'db/schema.lite') }
+}
+
+async function sealOneValue(schema) {
+  const db = await createClient({ path: schema, resolveFrom: 'schema', encryptionKey: SEALED_KEY })
+  await db.asSystem().user.create({ data: { id: 1, ssn: 'x' } })
+  db.$close()
+}
+
+function terminal(root, { interactive = true, line = '', secret = '' } = {}) {
+  const said = []
+  const push = (m) => said.push(m)
+  return {
+    said,
+    paths: { root },
+    bin:   () => `bun ${LITESTONE}`,
+    exec:  ({ command, env }) => {
+      try { return execSync(command, { env: env ?? process.env, stdio: ['ignore', 'pipe', 'ignore'] }) }
+      catch (err) { return err }
+    },
+    tty:   { interactive, line: async () => line, secret: async () => secret },
+    log:   { warn: push, error: push },
+    echo:  Object.assign((s, ...v) => push(String.raw(s, ...v)), { lines: () => {} }),
+    chalk: { dim: (s) => s },
+  }
+}
+
+const dotenv = (root) => join(root, '.env')
+
+test('offerKey generates a key over a database with nothing encrypted, and creates no database', async () => {
+  const { root, schema } = project('offer-new')
+  const env = await offerKey(terminal(root), schema)
+  expect(env.ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/)
+  expect(envValue(readFileSync(dotenv(root), 'utf8'), 'ENCRYPTION_KEY')).toBe(env.ENCRYPTION_KEY)
+  expect(statSync(dotenv(root)).mode & 0o777).toBe(0o600)
+  expect(existsSync(join(root, 'db/app.db'))).toBe(false)
+})
+
+test('offerKey stops when the generated key is declined', async () => {
+  const { root, schema } = project('offer-declined')
+  expect(await offerKey(terminal(root, { line: 'n' }), schema)).toBeNull()
+  expect(existsSync(dotenv(root))).toBe(false)
+})
+
+test('offerKey never generates over encrypted values, and writes a pasted key only if it opens one', async () => {
+  const { root, schema } = project('offer-held')
+  await sealOneValue(schema)
+
+  expect(await offerKey(terminal(root, { line: 'y', secret: '' }), schema)).toBeNull()
+  expect(await offerKey(terminal(root, { secret: 'not-a-key' }), schema)).toBeNull()
+  expect(await offerKey(terminal(root, { secret: 'b'.repeat(64) }), schema)).toBeNull()
+  expect(existsSync(dotenv(root))).toBe(false)
+
+  expect(await offerKey(terminal(root, { secret: SEALED_KEY }), schema)).toEqual({ ENCRYPTION_KEY: SEALED_KEY })
+  expect(envValue(readFileSync(dotenv(root), 'utf8'), 'ENCRYPTION_KEY')).toBe(SEALED_KEY)
+})
+
+test('offerKey with no terminal refuses over encrypted values and leaves a fresh schema to litestone', async () => {
+  const held = project('offer-held-ci')
+  await sealOneValue(held.schema)
+  const $ = terminal(held.root, { interactive: false })
+  expect(await offerKey($, held.schema)).toBeNull()
+  expect($.said.join('\n')).toContain('Add the key that encrypted them')
+  expect(existsSync(dotenv(held.root))).toBe(false)
+
+  const fresh = project('offer-fresh-ci')
+  expect(await offerKey(terminal(fresh.root, { interactive: false }), fresh.schema)).toEqual({})
+  expect(existsSync(dotenv(fresh.root))).toBe(false)
+})
+
+test('offerKey asks nothing of a schema that encrypts nothing', async () => {
+  const { root, schema } = project('offer-plain', 'database main {\n  path "./app.db"\n}\n\nmodel User {\n  id Int @id\n}\n')
+  expect(await offerKey(terminal(root, { line: 'y' }), schema)).toEqual({})
+  expect(existsSync(dotenv(root))).toBe(false)
 })
