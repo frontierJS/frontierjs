@@ -22,6 +22,11 @@
 # Bypass: git push --no-verify
 # ============================================================
 
+# git exports these to a hook run from a linked worktree, where they would turn
+# every `git -C "$tree"` below onto that worktree: its HEAD detached, its index
+# reset, and the next commit left off the branch being pushed.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
 root=$(git rev-parse --show-toplevel) || exit 0
 
 for bin in node bun; do
