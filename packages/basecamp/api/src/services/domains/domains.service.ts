@@ -185,7 +185,9 @@ export default createService({
       throw new Conflict('That is the primary hostname — make another one primary first')
 
     const removed = await removeScoped('domain', 'Domain')
-    await toZone(domain.id, `${domain.version}:removed`)
+    // Removing and restoring move no version, so only the stamp tells a second
+    // delete from the first: a repeated job id queues nothing and the CNAME stays.
+    await toZone(domain.id, `${domain.version}:removed:${removed.deletedAt}`)
     await toMonitor(domain.appId)
     return removed
   },
@@ -194,7 +196,7 @@ export default createService({
   // it was deleted.
   async restore() {
     const restored = await restoreScoped('domain', 'Domain')
-    await toZone(restored.id, `${restored.version}:restored`)
+    await toZone(restored.id, `${restored.version}:restored:${restored.updatedAt}`)
     await toMonitor(restored.appId)
     return decorate(restored)
   },

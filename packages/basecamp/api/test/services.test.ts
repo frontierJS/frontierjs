@@ -5265,6 +5265,35 @@ describe('domains.uploadCert declares its input', () => {
   })
 })
 
+// A job id already spent queues nothing, so a repeated id leaves the CNAME in
+// the zone with a Domain that reads as deleted.
+describe('a Domain deleted a second time reaches the zone', () => {
+  test('each remove and restore dispatches under an id of its own', async () => {
+    const sys     = env.system as any
+    const tag     = Math.random().toString(36).slice(2, 8)
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Dns', slug: `dns-${tag}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${tag}` } })
+    const app     = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'web', slug: `web-${tag}` } })
+    const domains = env.as(owner).service('domains')
+    const made: any = await domains.create({ appId: app.id, hostname: `again-${tag}.example.test` })
+
+    const jobs = env.app.jobs as any, realDispatch = jobs.dispatch
+    const ids: string[] = []
+    jobs.dispatch = (_job: unknown, _data: unknown, opts: { id?: string }) => { if (opts?.id?.startsWith(`dns:${made.id}`)) ids.push(opts.id); return Promise.resolve('queued') }
+    const tick = () => new Promise(r => setTimeout(r, 5))
+    try {
+      await domains.remove(made.id); await tick()
+      await domains.call('restore', made.id); await tick()
+      await domains.remove(made.id); await tick()
+      await domains.call('restore', made.id)
+    } finally {
+      jobs.dispatch = realDispatch
+    }
+    expect(ids).toHaveLength(4)
+    expect(new Set(ids).size).toBe(4)
+  })
+})
+
 // ─── FJS-2353: a CRUD verb is refused by the model's gate, not by a restated hook ─
 //
 // The hooks named the level the model's @@gate already declares. The refusal is
