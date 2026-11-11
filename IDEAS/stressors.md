@@ -74,6 +74,8 @@ than started.
 | 28 | **Darkroom** — a browser photo editor: adjustments, curves, selective color, layers, crop, draw, export, batch, a social-card composer, ported from a React mockup | a bitmap as the record, with undo as thirty PNG snapshots of every layer; a slider at drag rate driving full-resolution pixel work on the main thread; a pointer drag owned twenty-eight times and never on touch; a color that IS the data under Invariant 13; one outbound call from an app with no `api/` | `@frontierjs/ui` `Slider.mesa` · `FileUpload.mesa` · `CommandPalette.mesa` · `static-safety.md` · `third-party-credentials.md` · #20 · #16 |
 | 42 | **page-performer** — a WebPageTest-shaped page-load tester: a URL in, headless Chromium, a waterfall, Core Web Vitals and a HAR out; a live Kobami tool, ported | one service call holding a browser for up to a minute, cancelled only by the caller hanging up; a stranger's URL whose subresources and redirects are the browser's requests, past any grader; a multi-MB document as one row; a second headless-Chromium owner beside print-kit, which the deploy image does not see ([`FJS-3113`](../ISSUES_ARCHIVE.md#fjs-3113)) | `print-kit` · `@frontierjs/junction/public-url` (`FJS-681`) · #8 |
 | 43 | **Intake** (codename, provisional) — a browser extension that clips a highlighted selection or a picked element with its tab's context, hands it to an AI clarify step, and files the result in 37signals Basecamp as a to-do, card, message or document | the extension surface carrying a product, at first with no `api/` behind it; a clip that must outlive the worker that captured it; a webhook secret in an extension store anyone on the machine can read; a kind decided by a model and never by the capturer; a flow that starts in n8n and is ported to orion | `jetty` · `orion` · `conduit-anthropic` · `conduit-37signals` · `third-party-credentials.md` · #37 · #28 |
+| 45 | **Chronicle** — a series writing assistant: chapters reviewed by a model against the author's own story rubric, with live manuscript stats, an outline, and proposed fixes the author accepts | a model's verdict pinned to the revision it read, its quotes checked against that text; a rubric row that is the prompt, the answer's schema and the score; one model call answered by `claude -p` locally and `conduit-anthropic` deployed; a paid answer that must outlive the tab and never be bought twice; a proposed edit merged into text still being typed | `conduit-anthropic` · `oracle` (`checkAnswer`) · `claim-checking.md` · `stored-templates.md` · `conflict-as-data.md` · #22 · #42 · #43 |
+| 46 | **Five to Nine** — a one-room escape game: a clockmaker's back room that the mantel clock rewinds from 9 PM to 5, the room at each hour a function of his evening and the player's edits, drawn in Three.js inside Mesa | a WebGL scene owned by a component tree — a renderer claimed through `{@attach}` that must dispose contexts, geometries and textures on unmount, or the page loses its context; a scene graph re-derived from one pure `stateAt(hour, edits)` on every hour switch; a prerendered page whose content is all canvas; an app with a `site/`, a `cli/` and nothing else, no `db/`; a browser drive whose script is computed by a solver, never written | [`FJS-D997`](../DECISIONS.md#fjs-d997) (Haven's scene tree) · `static-safety.md` · #28 · #16 |
 
 **#29–#40 are Phase 2** — a gap scan, none started, in § Phase 2 below the
 entries.
@@ -1500,6 +1502,116 @@ phase closes with a fresh-context verifier.
 no row duplicated; twenty listeners with five hanging up, memory flat and no
 orphan `ffmpeg`; a real Subsonic client browsing and playing; music uninterrupted
 through ten route changes.
+
+### 45. Chronicle — a model's verdict about a draft that keeps changing
+
+*Added 2026-11-11 from a working React artifact (one 1,500-line file) and the
+Story Planning Template it grades against. Numbered past #44 so `#N` stays
+unique; the plan is `fjs-prototypes/chronicle/PLAN.md`.*
+
+**The product.** A writing assistant for a children's chapter-book series,
+*Adventures of Micah*, set on Rowan Farm in the world of Arga. The author writes
+chapters against a series template — a book recipe, a chapter planner,
+checklists, writing rules and a final test — and a model reviews each chapter
+against it. The review quotes the line that earns each item, suggests
+illustrations and a revision plan, proposes typo fixes, brainstorms options for
+a missing item and drafts a book outline. Manuscript stats (words, read-aloud
+time, Flesch–Kincaid grade, dialogue share) are computed locally on every
+keystroke. The original keeps everything in browser storage with the template in
+code; here **the template is data the author edits per series** (owner,
+2026-11-11), and Micah's is the first seed.
+
+**Why it is not #22 or #43.** Charter's model writes the schema; Intake's
+decides a kind once and files it. Here the model writes a JUDGMENT about a record
+the person keeps editing, and the judgment is worth keeping only while it can say
+which text it read. What breaks first:
+
+- **A verdict pinned to a version of another row.** A review read one revision
+  of a chapter and the author edits on. Every quote it holds is a claim about
+  that revision — checkable as a substring before it is stored, re-found or lost
+  after an edit. Nothing here declares *this row is about that row as it was*;
+  the original guesses staleness from the chapter's first 40 characters.
+- **A rubric that is the prompt, the answer's shape and the score.** The
+  author's checklists become the JSON schema the model answers by, the prompt
+  that asks for it, and the weights that grade it. Change the rubric after nine
+  reviews and each old review has to say which rubric graded it.
+- **One model call, two doors.** Locally the answer comes from `claude -p
+  --json-schema` on the owner's own login; deployed, from `conduit-anthropic`
+  with a key (owner, 2026-11-11). The tree already starts `claude -p` in three
+  places — `packages/cli/core/ask-claude.js`, Basecamp's `site-ask.ts`, the
+  workbench — and none is an owner an app can import. Invariant 4 asks for one.
+- **A paid answer that outlives the tab.** A review is 20–40 s, billed once, and
+  Anthropic has no idempotency key. Closing the tab must not lose a paid review;
+  pressing twice must not pay twice. #42 is the reverse: there, hanging up is the
+  cancel.
+- **A model's proposed edit to text the person is still typing.** The typo pass
+  returns the whole chapter corrected; applying it after thirty more seconds of
+  typing is a three-way merge on prose, accepted hunk by hunk. *Apply the outline
+  to empty chapters* is the same question in small — a write that lands only
+  where a field is blank, which Invariant 9 has no spelling for.
+
+**Gradable**: twelve planted chapters each missing known rubric items, every
+planted gap reported, every stored quote a substring of the revision it names
+and an invented one refused before storage; a chapter edited after its review
+showing which quotes still hold; the tab closed mid-review and the result there
+on reopen, billed once; a rubric item added, new reviews grading it and old ones
+naming the rubric they read; a typo pass applied over a paragraph typed since,
+the paragraph intact; the same review stored identically from `claude -p` and
+from the Anthropic sink.
+
+### 46. Five to Nine — the room is a function of the hour
+
+*Added 2026-11-11 at the owner's request, as the game most fun to build.
+Numbered past #45 so `#N` stays unique; the plan is
+`fjs-prototypes/five-to-nine/PLAN.md`.*
+
+**The product.** A one-room escape game. The player wakes at 9 PM locked in a
+clockmaker's back room; the mantel clock winds the room back through his
+evening, hour by hour to 5 PM, and whatever the player carries stays with them.
+Four rules make the whole engine: the evening is fixed until changed, a carried
+thing is outside time, an edit to the room ripples forward, and the clockmaker
+skips any action whose needs were taken. Six puzzles each teach one rule, and
+the exit is forward — at 10 PM he comes home, and the room was an apprentice
+test. A solver proves the chain winnable, free of softlocks and unskippable
+before a line of art exists, and the same solver supplies the hints.
+
+**Why it is not #28 or #20.** Darkroom put a canvas in the middle of a Mesa
+app, but the bitmap was the record and Mesa drew the chrome around it. Here the
+picture is a PROJECTION of state and Mesa is asked to own it the way it owns the
+DOM: a component per prop and per light, mounted and unmounted as `stateAt`
+changes. Haven ruled that a scene is a component tree ([`FJS-D997`](../DECISIONS.md#fjs-d997)) on a text
+stage, where an orphan costs nothing; this is the same ruling against WebGL,
+where an orphaned geometry costs memory and an orphaned renderer costs the page.
+What breaks first:
+
+- **Teardown as the correctness test.** `{@attach}` gives a component a node;
+  nothing in the tree yet says what a component owes the GPU when it leaves.
+  Geometries, materials, textures and the context itself must be disposed on
+  unmount, and the failure is silent until the browser's context limit — a lost
+  context after enough hour switches is the symptom.
+- **A scene graph derived, not built.** Every hour switch re-derives the room
+  from one pure function. The cheap shape is tear it all down and rebuild; the
+  right shape changes only what differs, which is the question Mesa's reactivity
+  already answers for the DOM and has never been asked for a scene.
+- **A page that is all canvas.** `site/` prerenders; this page's content is a
+  WebGL context with nothing to prerender but a shell. What the static build
+  emits, and whether a `three` import leaves the bundle reproducible
+  (Invariant 12), has not been tried.
+- **An app with no `db/`.** A `site/` and a `cli/` and no database at all: the
+  solver and the text player are commands, the engine is `shared/` code both
+  surfaces import, and the record is browser storage. Nothing in the scaffold
+  has produced this shape on purpose.
+- **A drive whose script is computed.** The browser drive replays the solver's
+  shortest path by clicks. Every drive in the tree is written by hand; this
+  one is generated from the same data the game runs on, so a puzzle edit
+  rewrites the proof.
+
+**Gradable**: engine tests pass the four rules on a toy room; the solver
+reports winnable, zero softlocks and no skips for P1–P6; the owner escapes the
+text version without hints; a browser drive replays the shortest path by clicks
+and reaches the ending; a hundred hour switches leave one WebGL context and a
+flat heap; a screenshot sheet of four walls at five hours; an outside
+playtester escapes.
 
 ## Phase 2 — the gap scan
 

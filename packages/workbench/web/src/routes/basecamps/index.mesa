@@ -31,17 +31,8 @@ title: Basecamps
   let loading   = true
   let error     = null
   let pressed   = {}     // name → the verb whose request is in flight
-  let destroyed = false
-  let timer     = null
-
-  $.onDestroy(() => { destroyed = true; clearTimeout(timer) })
 
   const working = () => rows.filter(r => r.outcome?.state === 'working')
-
-  function schedule() {
-    clearTimeout(timer)
-    if (!destroyed && working().length) timer = setTimeout(poll, POLL)
-  }
 
   async function load() {
     try {
@@ -52,7 +43,6 @@ title: Basecamps
     } finally {
       loading = false
     }
-    schedule()
   }
 
   const withOutcome = (name, outcome) => rows.map(r => r.name === name ? { ...r, outcome } : r)
@@ -66,15 +56,15 @@ title: Basecamps
         rows = withOutcome(r.name, outcome)
       } catch {}
     }
-    if (destroyed) return
-    settled ? load() : schedule()
+    if (settled) load()
   }
+
+  $.every(POLL, poll, { when: working().length > 0 })
 
   async function run(r, verb) {
     pressed = { ...pressed, [r.name]: verb }
     try {
       rows = withOutcome(r.name, await basecamps.service.invoke(verb, r.name, {}))
-      schedule()
     } catch (err) {
       toasts.error(err.message)
     } finally {

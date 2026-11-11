@@ -19,10 +19,8 @@
   let diff    = null
   let error   = null
   let busy    = false
-  let timer   = null
 
   async function look() {
-    clearTimeout(timer)
     try {
       const got = await call('asked')
       ask = got.ask; diff = got.diff
@@ -30,7 +28,6 @@
       ask = null; diff = null
       if (err.code !== 404) error = err.message
     }
-    if (RUNNING.includes(ask?.state)) timer = setTimeout(look, 2000)
   }
 
   async function act(method, data) {
@@ -49,7 +46,7 @@
   const shown = (l) => l.startsWith('@@') ? '…' : l
 
   look()
-  $.onDestroy(() => clearTimeout(timer))
+  $.every(2000, look, { when: RUNNING.includes(ask?.state) })
 </script>
 
 <article class="card fjs-editor-ask" data-fjs-editor-ui aria-label="Ask for a change">

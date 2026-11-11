@@ -16,21 +16,20 @@
   let asked     = null
   let building  = false
   let error     = null
-  let timer     = null
-  let destroyed = false
 
   function settle(s) {
     const done = !s.running && s.last && asked && s.last.finishedAt >= asked
     if (done && s.last.error) { building = false; error = s.last.error; return }
     if (done) { building = false; onbuilt(); return }
     building = s.running || !!asked
-    if (building && !destroyed) timer = setTimeout(poll, POLL_MS)
   }
 
   async function poll() {
     try { settle(await claude.service.invoke('index', null, {})) }
     catch (err) { building = false; error = err.message }
   }
+
+  $.every(POLL_MS, poll, { when: building })
 
   async function build() {
     error = null
@@ -46,7 +45,6 @@
   $.onMount(async () => {
     try { const s = await claude.service.invoke('index', null, {}); if (s.running) { asked = s.asked; settle(s) } } catch {}
   })
-  $.onDestroy(() => { destroyed = true; clearTimeout(timer) })
 </script>
 
 <div class="stack" id="claude-index-build">

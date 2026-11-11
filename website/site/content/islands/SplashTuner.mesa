@@ -240,7 +240,8 @@
         try { await navigator.clipboard.writeText(out.value) }
         catch { out.select(); document.execCommand('copy') }
         t.textContent = 'Copied'
-        setTimeout(() => { t.textContent = 'Copy' }, 1200)
+        await $.sleep(1200)
+        t.textContent = 'Copy'
       } else if (t.closest('[data-reset]')) {
         state = clone(defaults)
         apply()

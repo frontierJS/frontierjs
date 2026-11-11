@@ -41,20 +41,11 @@ title: New Basecamp
 
   let starting  = false
   let run       = null   // the API's held create run, with the end of its log
-  let destroyed = false
-  let timer     = null
-
-  $.onDestroy(() => { destroyed = true; clearTimeout(timer) })
 
   const firstLabel = () => domain.trim().split('.')[0]
   const boxName    = () => name.trim() || firstLabel()
   const running    = () => !!run && !run.exit && !run.error
   const ready      = () => !!domain.trim() && !!boxName() && !starting && !running()
-
-  function schedule() {
-    clearTimeout(timer)
-    if (!destroyed && running()) timer = setTimeout(poll, POLL)
-  }
 
   async function poll() {
     try {
@@ -62,8 +53,9 @@ title: New Basecamp
     } catch (err) {
       toasts.error(err.message)
     }
-    schedule()
   }
+
+  $.every(POLL, poll, { when: running() })
 
   async function start() {
     starting = true
@@ -72,7 +64,6 @@ title: New Basecamp
         domain, name: boxName(), cloud, size, region, admin, reservedIp, backups, outpost, dry, approved: true,
       })
       run = await basecamps.service.invoke('creation', null)
-      schedule()
     } catch (err) {
       toasts.error(err.message)
     } finally {

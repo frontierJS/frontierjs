@@ -275,5 +275,8 @@ For Q1 and Q2, read 2026-11-08 from vendor docs; "secondary" marks a claim not i
 - Static Apps go down for seconds on an Outpost restart, because the Outpost process serves them
   (`FJS-D345`).
 - Moving an enrolled machine's Outpost version is `FJS-3533` and `FJS-D1650`.
+- `hub.ingress-zone` reads red on yuma and chartered: an App served under Basecamp's own domain
+  could set a cookie Basecamp receives (`FJS-4160`). It matters once an untrusted App is served
+  there.
 - `outpost-uninstall --purge` stays: nothing in the hub API can run it, and it asks for a typed
   confirmation at a terminal.

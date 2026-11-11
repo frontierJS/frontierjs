@@ -1,13 +1,13 @@
 ---
 id: mesa-clock
-status: proposed
+status: shipped
 dated: 2026-11-10
 ---
 
 # Idea — refresh an async derived, and timers on one runtime clock
 
-**Status: PROPOSED.** Nothing here is ruled unless a row cites a ruling. Probed
-against the tree 2026-11-10. Do not cite this file as behavior — see `VERIFYING.md`.
+**Status: SHIPPED 2026-11-11** — every box closed; the rulings are `FJS-D2058`–`FJS-D2064`.
+Probed against the tree 2026-11-10. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-10): having compared Mesa with expo/exact's Contract
 language, find which of Contract's seven declared effects we have no clear way
@@ -383,6 +383,9 @@ with no wall-clock wait in it.
 Goal: the hand-written timers become declared ones.
 Done when: the raw `setTimeout`/`setInterval` count in framework `.mesa` files
 is 0 and the 14 raw `requestAnimationFrame` layout settles stay (not warned).
+**Met 2026-11-11**: `rg '\b(setTimeout|setInterval)\s*\(' --glob '*.mesa'` from
+the root prints nothing; 16 raw rAF stay (the 14 surveyed plus `website/`'s
+`SplashTuner`, which the survey skipped).
 
 Surveyed 2026-11-10 (read-only, fixtures aside): **84 calls in 56 files** —
 ui 20, basecamp/web 12, cli/console 6, haven 20, workbench/web 21, site-kit 1,
@@ -426,7 +429,7 @@ per-site table is the brief each migration agent gets. Settled on the way:
   renders its settled branch on both paths; `sleep`, `measure`, `viewport` and
   `focus` join the `<script module>` refusal. Corpus moved only `clock.mesa`
   and the two workbench routes; bench gate held.
-- [ ] 5.1 `packages/ui`, `basecamp`, `workbench`, `cli` console, `haven`,
+- [x] 5.1 `packages/ui`, `basecamp`, `workbench`, `cli` console, `haven`,
   `site-kit`, `example` — one package per agent, in the tree, sequentially.
   **ui done 2026-11-10**: 12 declared timers, 8 rAF stay, 9 fixtures moved;
   `bun run test` 2561 passing with the kit drive, 200 files compile with 0
@@ -443,6 +446,34 @@ per-site table is the brief each migration agent gets. Settled on the way:
   **cli/console done 2026-11-10**: 6 sites, `test:browser:console` all green;
   the CI poll is one `$.every` keyed on `!!ci?.active` so the cadence follows
   CI going live.
+  **haven done 2026-11-11**: 12 components, 20 sites; `bun run test` 698 pass,
+  `verify:explore` 60/60. Found on the way: `$.after(deadline - Date.now(), …)`
+  arms a negative delay once the deadline is past, and Node's
+  `TimeoutNegativeWarning` printed onto the TUI screen, so `clock.after`/`every`
+  clamp (0 and 1) before any source sees the delay (`clock.test.js`). The drive
+  itself was staking Ana's HOME at `~/.fli/config.json` while fli reads
+  `frontier.nick` from the XDG `configDir()`; `api/test/sign-in.ts` and
+  `tests/verify-fresh.mjs` now write the XDG path (the Docker drive is not rerun).
+  **workbench/web done 2026-11-11**: 11 files, 22 sites (charter/drill was not
+  in the survey); `bun run test` 192, `verify:atlas` 99/99 after its landing
+  check moved to `/home/`. Four `when`s call a function (`running()`,
+  `working().length`, `liveGoing()`, `going()`); a virtual-clock probe confirmed
+  the state a `when` reads through a function is tracked.
+  **site-kit and example done 2026-11-11**: `Ask` polls with `$.every(2000, look,
+  { when: RUNNING.includes(ask?.state) })`; `LivePrices`/`BuyBox` key their
+  `$.every` on `wait` since the cadence comes from each answer, so a handler's
+  `load()` no longer resets the next poll; `CatalogList` debounces with
+  `key: q`; the cart ticks only while a hold exists. site-kit test 310 ✓,
+  example `verify` 72, `verify:site` 47, `verify:shop` 13, `verify:cart` 34,
+  `verify:money` 107.
+  **website done 2026-11-11** (missed by the survey: 4 islands, 7 calls):
+  `SeamsBoard` autoplay and `LandscapeCloud`'s resize debounce declare at top
+  level and call into the mount closure (`tick?.()`, `repack?.()`), the copy
+  flashes and `QuickstartBuilder`'s typing sequencer `await $.sleep(ms)` behind
+  the existing `id !== run` guard. `bun run test` passes; a throwaway Chrome
+  pass saw autoplay step, pause hold, the replay type the full command, and the
+  repack land between 250 and 650 ms. Owed: a headed pass of the quickstart
+  copy flash's success branch (headless Chrome has no clipboard).
 - [x] 5.2 `../fjs-prototypes`, each its own repo (serpgrid `requests/[id]`'s
   1.5 s elapsed tick first). **Done 2026-11-10** for every linked repo: 18 of
   19 at 0 raw calls, every changed file compiling with 0 warnings under this

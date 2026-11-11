@@ -59,7 +59,6 @@ title: Decide
   addEventListener('keydown', key)
   $.onDestroy(() => {
     destroyed = true
-    clearTimeout(explainTimer)
     removeEventListener('keydown', key)
     flush()
   })
@@ -70,7 +69,6 @@ title: Decide
 
   let ruled   = []     // { id, question, pick, ruling, closed, state: 'writing' | 'done' } — this visit
   let pending = null   // { q, pick, why, section } — inside the undo window
-  let pendingTimer = null
 
   const only = () => (page.query?.ids ?? '').split(',').map(s => s.trim()).filter(Boolean)
 
@@ -147,10 +145,12 @@ title: Decide
 
   // The card leaves before the next one draws; a timer rather than
   // transitionend, which a backgrounded tab or a headless browser may never fire.
-  function fly(direction, then) {
+  async function fly(direction, then) {
     flying = true
     dx = (direction === 'right' ? 1 : -1) * Math.max(innerWidth, 480)
-    setTimeout(() => { then(); arrived() }, FLY_MS)
+    await $.sleep(FLY_MS)
+    then()
+    arrived()
   }
 
   const stamp = (side) => {
@@ -194,13 +194,11 @@ title: Decide
     error = null
     fly('right', () => {
       pending = { q, pick, why: reason, section }
-      pendingTimer = setTimeout(flush, UNDO_MS)
     })
   }
 
   function undo() {
     if (!pending) return
-    clearTimeout(pendingTimer)
     const { q } = pending
     pending = null
     skipped = skipped.filter(id => id !== q.id)
@@ -208,13 +206,14 @@ title: Decide
     arrived()
   }
 
+  $.after(UNDO_MS, flush, { when: pending })
+
   // decide writes DECISIONS.md and the paper under fli's register guard, so
   // rulings go one after another, never two at once.
   let chain = Promise.resolve()
 
   function flush() {
     if (!pending) return
-    clearTimeout(pendingTimer)
     const p = pending
     pending = null
     ruled = [...ruled, { id: p.q.id, question: p.q.question, pick: p.pick, ruling: null, closed: null, state: 'writing' }]
@@ -255,15 +254,15 @@ title: Decide
 
   let explained  = {}      // id → explanation, or null when there is none
   let explaining = false
-  let explainTimer = null
 
   async function tick() {
     const q = current()
     if (q && (explained[q.id] === undefined || explained[q.id]?.state === 'working')) {
       try { explained = { ...explained, [q.id]: await atlas.service.invoke('explanation', q.id) } } catch {}
     }
-    if (!destroyed && offered) explainTimer = setTimeout(tick, EXPLAIN_POLL)
   }
+
+  $.every(EXPLAIN_POLL, tick, { when: offered })
 
   async function explainIt(q, ask = '') {
     if (explaining) return

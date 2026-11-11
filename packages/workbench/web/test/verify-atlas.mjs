@@ -191,7 +191,7 @@ try {
   await until(`!!document.getElementById('key')`, v => v, 'the sign-in form never rendered')
   await fill({ key: KEY })
   await evaluate(`document.querySelector('button[type=submit]').click()`)
-  await until(`location.pathname`, p => p === '/workbench/', 'sign-in never landed on the workbench')
+  await until(`location.pathname`, p => p === '/home/', 'sign-in never landed on home')
   ok('signed in with the pass-phrase')
 
   console.log('\n  /atlas/ — the counts are fli\'s')

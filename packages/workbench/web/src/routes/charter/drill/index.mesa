@@ -31,10 +31,6 @@ title: Restore drill
   let fleet     = null   // restoreDrills.fleet
   let error     = null
   let starting  = null
-  let destroyed = false
-  let timer     = null
-
-  $.onDestroy(() => { destroyed = true; clearTimeout(timer) })
 
   const going = () => !!view?.drills[0] && ACTIVE.includes(view.drills[0].state)
 
@@ -45,9 +41,9 @@ title: Restore drill
     } catch (err) {
       error = err.message
     }
-    clearTimeout(timer)
-    if (!destroyed && going()) timer = setTimeout(load, POLL)
   }
+
+  $.every(POLL, load, { when: going() })
 
   async function loadFleet() {
     try {

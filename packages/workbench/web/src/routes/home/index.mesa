@@ -50,8 +50,6 @@ title: Home
   let readAt    = cache.readAt
   let loaded    = readAt > 0
   let now       = Date.now()
-  let destroyed = false
-  let fast = null, slow = null
 
   const inbox = notifications.tethered({ state: 'local', directives: INBOX })
 
@@ -105,25 +103,20 @@ title: Home
   const refresh = () => loadSlow({ withQuota: true })
 
   async function tick() {
-    if (destroyed) return
     if (!document.hidden) await loadStatus()
     now = Date.now()
-    fast = setTimeout(tick, STATUS_MS)
   }
 
   async function slowTick() {
-    if (destroyed) return
     if (!document.hidden) await loadSlow()
-    slow = setTimeout(slowTick, SLOW_MS)
   }
 
-  // A visit inside the minute draws the cache and waits out the rest of it;
-  // an older one draws the cache and re-reads behind the indicator.
-  const age = Date.now() - readAt
-  if (loaded && age < SLOW_MS) slow = setTimeout(slowTick, SLOW_MS - age)
-  else loadSlow().then(() => { slow = setTimeout(slowTick, SLOW_MS) })
+  $.every(STATUS_MS, tick)
+  $.every(SLOW_MS, slowTick)
+
+  // A visit inside the minute draws the cache; an older one re-reads behind the indicator.
+  if (Date.now() - readAt >= SLOW_MS) loadSlow()
   tick()
-  $.onDestroy(() => { destroyed = true; clearTimeout(fast); clearTimeout(slow) })
 
   $: since = now && readAt ? ago(new Date(readAt).toISOString()) : ''
 

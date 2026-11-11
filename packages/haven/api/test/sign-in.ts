@@ -52,7 +52,9 @@ export async function stakedHome (prefix: string, nick: string): Promise<string>
   writeFileSync(join(dir, 'key.json'), JSON.stringify(m.keys))
   writeFileSync(join(dir, 'chain.json'), JSON.stringify(m.links))
   writeFileSync(join(dir, 'member.json'), JSON.stringify(m.row))
-  writeFileSync(join(home, '.fli/config.json'), JSON.stringify({ frontier: { nick, postKey: POST_KEY } }))
+  // fli reads frontier.nick from configDir(), the XDG path, not from ~/.fli
+  mkdirSync(join(home, '.config/fli'), { recursive: true })
+  writeFileSync(join(home, '.config/fli/config.json'), JSON.stringify({ frontier: { nick, postKey: POST_KEY } }))
   return home
 }
 

@@ -44,7 +44,6 @@
   const colors = [...new Set(variants.map(v => v.color).filter(Boolean))]
   const sizesIn = (c) => variants.filter(v => v.color === c).map(v => v.size)
 
-  let timer = null
   let wait  = null   // from the last answer; a failed re-ask keeps it and tries again
 
   // The storefront's one client is built in $.onMount and not at module scope:
@@ -55,7 +54,6 @@
     bootShop()
     return load()
   })
-  $.onDestroy(() => clearTimeout(timer))
 
   async function load() {
     try {
@@ -80,9 +78,9 @@
       // A re-ask that fails leaves the last answer standing.
       if (state === 'loading') state = 'offline'
     }
-    clearTimeout(timer)
-    if (wait !== null) timer = setTimeout(load, wait)
   }
+
+  $.every(wait, load, { when: wait !== null, key: wait })
 
   // Pick the first color that has anything in it, then the first size in that
   // color that can actually be bought. A box that opens on a sold-out

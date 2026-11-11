@@ -153,11 +153,11 @@ try {
   // The machine is a member already, as `fli frontier:stake` leaves one; its
   // post never answers, and a fresh row is not refreshed.
   const staked = await member(NICK)
-  const stake = 'mkdir -p /root/.fli/frontier'
+  const stake = 'mkdir -p /root/.fli/frontier /root/.config/fli'
     + ' && printf "%s" "$STAKE_KEY" > /root/.fli/frontier/key.json'
     + ' && printf "%s" "$STAKE_CHAIN" > /root/.fli/frontier/chain.json'
     + ' && printf "%s" "$STAKE_ROW" > /root/.fli/frontier/member.json'
-    + ' && printf "%s" "$STAKE_CONFIG" > /root/.fli/config.json'
+    + ' && printf "%s" "$STAKE_CONFIG" > /root/.config/fli/config.json'
 
   // Spawned, never spawnSync: the API answering it runs in this process.
   const walk = Bun.spawn(['docker', 'run', '--rm', '--network', 'host',
