@@ -52,6 +52,13 @@ h1, h2, h3, h4, h5, h6,
  * theme could restate the whole scale and still not say whether its headings
  * are heavy. Unset, h1/h2 stay 700 and the rest 600.
  *
+ * --heading-text-transform is the CASE handle, same shape again (FJS-4192):
+ * unset, h1–h5 are `none` and h6 keeps the small caps it always had, because
+ * the fallback arm is each level's own value — so `uppercase` sets the whole
+ * scale in caps and `none` takes h6 out of them. The label triple has had
+ * --label-text-transform since it existed; headings had weight and tracking
+ * and no case.
+ *
  * --h1-size … --h6-size are the SIZE handle per level, same fallback shape.
  * The rungs above are shared with the .text-* utilities, so a theme sizing
  * its headings (22/19/15px over a 15px body) by retuning --text-4xl also
@@ -62,16 +69,16 @@ h1, h2, h3, h4, h5, h6,
  * could only carry one fallback. A theme with h1/h2, h3/h4 and body in three
  * greys sets the tokens and leaves --ink to the body.
  */
-h1, .h1 { color: var(--h1-ink, var(--ink)); font-size: var(--h1-size, var(--text-4xl)); font-weight: var(--heading-font-weight, 700); letter-spacing: var(--heading-letter-spacing, -0.02em);  line-height: var(--leading-display); }
-h2, .h2 { color: var(--h2-ink, var(--ink)); font-size: var(--h2-size, var(--text-3xl)); font-weight: var(--heading-font-weight, 700); letter-spacing: var(--heading-letter-spacing, -0.015em); line-height: var(--leading-heading); }
-h3, .h3 { color: var(--h3-ink, var(--ink)); font-size: var(--h3-size, var(--text-2xl)); font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); }
-h4, .h4 { color: var(--h4-ink, var(--ink)); font-size: var(--h4-size, var(--text-xl));  font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); }
-h5, .h5 { color: var(--h5-ink, var(--ink)); font-size: var(--h5-size, var(--text-lg));  font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); }
+h1, .h1 { color: var(--h1-ink, var(--ink)); font-size: var(--h1-size, var(--text-4xl)); font-weight: var(--heading-font-weight, 700); letter-spacing: var(--heading-letter-spacing, -0.02em); text-transform: var(--heading-text-transform, none);  line-height: var(--leading-display); }
+h2, .h2 { color: var(--h2-ink, var(--ink)); font-size: var(--h2-size, var(--text-3xl)); font-weight: var(--heading-font-weight, 700); letter-spacing: var(--heading-letter-spacing, -0.015em); text-transform: var(--heading-text-transform, none); line-height: var(--leading-heading); }
+h3, .h3 { color: var(--h3-ink, var(--ink)); font-size: var(--h3-size, var(--text-2xl)); font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); text-transform: var(--heading-text-transform, none); }
+h4, .h4 { color: var(--h4-ink, var(--ink)); font-size: var(--h4-size, var(--text-xl));  font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); text-transform: var(--heading-text-transform, none); }
+h5, .h5 { color: var(--h5-ink, var(--ink)); font-size: var(--h5-size, var(--text-lg));  font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); text-transform: var(--heading-text-transform, none); }
 h6, .h6 {
   color:          var(--h6-ink, var(--ink));
   font-size:      var(--h6-size, var(--text-md));
   font-weight:    var(--heading-font-weight, 600);
-  text-transform: uppercase;
+  text-transform: var(--heading-text-transform, uppercase);
   letter-spacing: var(--heading-letter-spacing, 0.05em);
 }
 

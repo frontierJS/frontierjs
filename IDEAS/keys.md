@@ -105,8 +105,8 @@ reducer over a string and a cursor.
 | --- | --- | --- | --- |
 | L0 | app keys: `h j k l`, `gg`/`G`, a `g`-prefix, `]u`, `:` | the engine alone | sierra's shell, Haven, `rowlist`, browser-kit's 24 sites |
 | L1 | a modal box: `i`/Esc, `h l w b 0 $`, `x`, `dd`, `u`, `p` | a few hundred lines over a string | Haven's line |
-| L2 | operators, text objects, visual, register | khat's 1780 lines | none |
-| L3 | counts, `.`, marks, macros | khat skipped | none |
+| L2 | operators, text objects, visual, register | khat's 1780 lines | Lathe (stressor #47), ruled 2026-11-11 |
+| L3 | counts, `.`, marks, macros | khat skipped | Lathe (stressor #47), ruled 2026-11-11 |
 
 L0 is this paper's Phases 1–3 and L1 is Phase 4. L2 opens when a consumer
 edits more than a line, and nothing in a chat app has asked.

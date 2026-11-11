@@ -21,7 +21,13 @@
  */
 
 var TONES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger'];
-var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'notebook', 'press', 'field', 'dracula', 'twilight', 'expedition', 'catppuccin', 'survey', 'shadcn', 'material'];
+/*
+ * The themes graded: every class themes.js names, or — under `run.js --theme
+ * <file>` — the one theme handed in (FJS-4194). The runner derives the list
+ * and hands it over; this file kept a hard-coded copy of 17 names until then,
+ * which a compiled theme could only join by an edit to the package.
+ */
+var THEMES = window.__FJS_GRADE_THEMES__;
 
 /* The chip lineage — everything that renders a tone as a solid fill. */
 var FILLED = [

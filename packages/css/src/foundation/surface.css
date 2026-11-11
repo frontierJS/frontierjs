@@ -67,6 +67,15 @@
   border-radius: var(--card-radius);
   font-family:   var(--font-primary);
   /*
+   * The body tokens, re-read for the same reason --ink and --font-primary
+   * are: each inherits as a computed value, so a Block inside a nested
+   * `.theme-*` would otherwise keep the size, leading and tracking `.app`
+   * resolved against the outer theme (FJS-4190, FJS-4191).
+   */
+  font-size:      var(--text-md);
+  line-height:    var(--leading-body);
+  letter-spacing: var(--body-letter-spacing);
+  /*
    * Resting elevation, `none` by default (tokens.css). A theme with a
    * shadow shape of its own — press's printing offset — reaches the Block
    * tier through this; before it, --shadow-* reached every overlay and no

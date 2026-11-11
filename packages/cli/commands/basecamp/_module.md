@@ -234,7 +234,7 @@ const installStages = (outpost) => INSTALL_STAGES.filter(s => outpost || s.name 
 // emailed link and every provisioned machine's enrollment then names the box
 // itself. `env:push` adds what the file lacks and leaves, and names, a value
 // the operator already set, so a re-run never overwrites a copy that is theirs.
-const ringZero = async (dest, domain, { tty, stage }) => {
+const ringZero = async (dest, domain, { unverified = false, tty, stage }) => {
   const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { resolve } = await import('node:path')
@@ -244,7 +244,7 @@ const ringZero = async (dest, domain, { tty, stage }) => {
   const steps = [
     ['deploy:setup', '--auto-install', '--no-next-steps', '--server', dest, '--domain', domain],
     ['env:push', '--file', urls, '--server', dest],
-    ['deploy', '--no-outpost', '--server', dest, '--domain', domain],
+    ['deploy', '--no-outpost', '--server', dest, '--domain', domain, ...(unverified ? ['--unverified'] : [])],
   ]
   try {
     for (const argv of steps) {
@@ -485,8 +485,9 @@ const askIngress = async ({ zone, zones, asking, tty, echo, chalk }) => {
 }
 
 /** The answers as `[label, value]` rows, for the summary before the run. */
-const installRows = ({ domain, admin, password, outpost, unneeded, ingress }, chalk, restore = false) => [
+const installRows = ({ domain, admin, password, outpost, unneeded, ingress, unverified }, chalk, restore = false) => [
   ['hostname', domain],
+  unverified && ['deploy', chalk`{yellow unverified} {dim — HEAD ships though it is unpushed or CI did not pass on it}`],
   ingress !== undefined && ['ingress', ingress ? `${ingress.zoneName} ${chalk.dim('— the token kept as a provider key, app records there')}` : chalk.dim('no')],
   admin && ['admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`],
   ['outpost', !outpost ? chalk.dim('no') : `yes ${chalk.dim(restore ? '— enrolled into the restored workspace' : '— fli deploy:outpost once the admin is made')}`],
@@ -497,14 +498,14 @@ const installRows = ({ domain, admin, password, outpost, unneeded, ingress }, ch
  *  exit code, 0 or the first failure's, and whether Basecamp runs on the box. A
  *  record or proxy that failed fails the run and lets it finish. */
 const runInstall = async (dest, answers, { restore = false, tty, log, echo, chalk }) => {
-  const { domain, configured, admin, password, outpost, unneeded } = answers
+  const { domain, configured, admin, password, outpost, unneeded, unverified } = answers
   const asking = !!process.stdin.isTTY
   const yes = async (q) => await tty.keys(questionLine(chalk, q), { y: 'yes', n: 'no' }) === 'y'
   let code = 0
 
   echo(chalk`  {dim Installing Basecamp on} ${dest} {dim as} ${domain}`)
   const stages = stageBar({ tty, echo, chalk }, installStages(outpost).filter(s => !restore || !['admin', 'deploy:outpost'].includes(s.name)))
-  const failed = await ringZero(dest, domain, { tty, stage: stages.at })
+  const failed = await ringZero(dest, domain, { unverified, tty, stage: stages.at })
   if (failed) {
     log.error(`fli ${failed.argv.join(' ')} exited ${failed.status}. Fix what it said and run this again`)
     stages.stop()

@@ -4637,6 +4637,43 @@ function refuseDerivedBeforeDeclaration(st) {
   }
 }
 
+/** Pass of analyzeScript: refuses a declared timer whose `ms`, `key` or `when` reads a variable declared below it. */
+function refuseTimerBeforeDeclaration(ast, st) {
+  const { vars, errors } = st
+
+  // `$.after`/`$.every` arm where they are written, and the effect reads `when`
+  // and `key` at once. Every script variable — a `let`, a `$:` derived, a const —
+  // is emitted as a `const` signal or memo at its own position, so one below the
+  // call is in its TDZ and the component dies at mount, with nothing said at
+  // compile time (`FJS-4145`). A function declaration hoists and is not in
+  // `vars`; `fn` is called later and may read anything.
+  for (const n of ast.body) {
+    const hit = declaredTimerCall(n)
+    if (!hit) continue
+    const { call, verb } = hit
+    const [msN, , optsN] = call.arguments
+    const eager = [msN]
+    if (optsN?.type === 'ObjectExpression') {
+      for (const p of optsN.properties) {
+        if (p.type === 'SpreadElement') { eager.push(p.argument); continue }
+        const name = p.computed ? null : (p.key.name ?? p.key.value)
+        if (name === 'key' || name === 'when') eager.push(p.value)
+      }
+    } else if (optsN) {
+      eager.push(optsN)
+    }
+    for (const c of Object.values(vars)) {
+      if (c.isProp || c.nodeStart == null || c.nodeStart <= n.start) continue
+      if (!eager.some((e) => readsName(e, c.name, (_fn, callN) => !!callN))) continue
+      errors.push(
+        `'$.${verb}' reads '${c.name}', which is declared below it. A timer arms where it is ` +
+        `written and reads 'ms', 'key' and 'when' at once, so '${c.name}' has no value yet. ` +
+        `Move the '$.${verb}' line below '${c.name}'.`
+      )
+    }
+  }
+}
+
 /** Pass of analyzeScript: the reactive deps of each watch handler and group entry. */
 function annotateWatchDeps(st, reactiveSet) {
   const { watchHandlers, watchGroups } = st
@@ -4806,6 +4843,7 @@ export function analyzeScript(raw, ast) {
   warnHandleReads(raw, ast, st, yieldsCall)
   refuseSelfReads(st)
   refuseDerivedBeforeDeclaration(st)
+  refuseTimerBeforeDeclaration(ast, st)
   annotateWatchDeps(st, reactiveSet)
   refuseContextInFunctions(ast, st)
   refuseCycles(st)

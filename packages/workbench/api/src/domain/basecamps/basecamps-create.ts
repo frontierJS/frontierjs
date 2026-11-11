@@ -19,7 +19,7 @@
 // `~/.config/fli/.env`, and no secret is ever in the argv shown to the page.
 
 import { spawn }                                   from 'node:child_process'
-import { closeSync, mkdirSync, openSync }          from 'node:fs'
+import { closeSync, mkdirSync, openSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve }                  from 'node:path'
 import { fileURLToPath }                           from 'node:url'
 import { workbenchDir }                            from '../../core/env.ts'
@@ -50,6 +50,7 @@ export type Creation = {
   startedAt: string
   pid:       number | null
   exit:      { code: number | null, signal: string | null } | null
+  endedAt?:  string
   log:       string
   /** The spawn itself failed, so there is no exit code to wait for. */
   error?:    string
@@ -137,13 +138,43 @@ export function spawnFli(verb: string, name: string, full: string[], opts: Creat
   } finally { closeSync(fd) }
   child.unref()
   rec.pid = child.pid ?? null
-  child.on('error', e => { rec.exit = { code: null, signal: null }; rec.error = e.message })
-  child.on('exit', (code, signal) => { rec.exit = { code, signal } })
+  child.on('error', e => { rec.exit = { code: null, signal: null }; rec.endedAt = new Date().toISOString(); rec.error = e.message })
+  child.on('exit', (code, signal) => { rec.exit = { code, signal }; rec.endedAt = new Date().toISOString() })
   return rec
 }
 
-/** The held run with the end of its log, or null before any. */
-export function creationOf(): (Creation & { lines: string[] }) | null {
+export type Step = { n: number, of: number, name: string, what: string }
+
+// The stage header `basecamp:create` echoes as each stage opens (`stageBar` in
+// cli commands/basecamp/_module.md): `  3/8 deploy:setup  docker and caddy …`.
+// A stage name may hold one space (`api key`); two spaces end it.
+const STEP = /^ {2}(\d+)\/(\d+) (\S+(?: \S+)?) {2}(.+)$/
+
+/**
+ * The stages a create run has reached, in order. Read from the whole log, not
+ * its tail: deploy:setup's apt output alone outruns the tail, and the page
+ * would lose the stages before it. A line from a child that happens to match
+ * is dropped unless it is the next number of the same count.
+ */
+export function stepsOf(text: string): Step[] {
+  const steps: Step[] = []
+  for (const line of text.split(/\r?\n/)) {
+    const m = STEP.exec(line)
+    if (!m) continue
+    const n = Number(m[1]), of = Number(m[2])
+    const last = steps[steps.length - 1]
+    if (last ? (of !== last.of || n !== last.n + 1) : n !== 1) continue
+    steps.push({ n, of, name: m[3], what: m[4].trim() })
+  }
+  return steps
+}
+
+function readSteps(log: string): Step[] {
+  try { return stepsOf(readFileSync(log, 'utf8')) } catch { return [] }
+}
+
+/** The held run with its stages and the end of its log, or null before any. */
+export function creationOf(): (Creation & { lines: string[], steps: Step[] }) | null {
   if (!held) return null
-  return { ...held, lines: tail(held.log) }
+  return { ...held, lines: tail(held.log), steps: readSteps(held.log) }
 }

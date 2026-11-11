@@ -325,7 +325,6 @@ title: Atlas
   <span class="cluster">
     <Button href="/atlas/decide/" id="atlas-decide-link">Decide{data ? ` · ${decidable()}` : ''}</Button>
     <Button treatment="ghost" href="/workbench/">Workbench</Button>
-    <Button treatment="ghost" href="/pages/">Pages</Button>
   </span>
 </div>
 

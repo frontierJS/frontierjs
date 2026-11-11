@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 import { writeBasecamp } from '@frontierjs/cli/core/basecamps.js'
 
-import { createArgv, creationOf, startCreate, type CreateInput } from '../src/domain/basecamps/basecamps-create.ts'
+import { createArgv, creationOf, startCreate, stepsOf, type CreateInput } from '../src/domain/basecamps/basecamps-create.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'wb-create-'))
 const home = join(root, 'home')
@@ -50,6 +50,27 @@ describe('createArgv', () => {
     expect(createArgv({ domain: 'a.example.com', name: '--yes' })).toEqual({ refused: expect.stringContaining('usable box name') })
     expect(createArgv({ domain: 'a.example.com', name: 'a', size: '-x' })).toEqual({ refused: expect.stringContaining('not a size') })
     expect(createArgv({ domain: 'a.example.com', name: 'a', cloud: 'aws' })).toEqual({ refused: expect.stringContaining('--cloud takes') })
+  })
+})
+
+describe('stepsOf', () => {
+  test('reads each stage header in order, a two-word name included, and drops a child line that only looks like one', () => {
+    const log = [
+      '  hostname  t.example.com',
+      '',
+      '  1/4 buy  the box at Hetzner — about a minute',
+      'Reading package lists...',
+      '  7/9 noise  from a child, not a stage of this run',
+      '  2/4 ssh  wait for the fresh box to answer ssh',
+      '  3/4 deploy:setup  docker and caddy on the box — a few minutes on a fresh one',
+      '  4/4 api key  the first admin\'s API key, over ssh',
+    ].join('\n')
+    expect(stepsOf(log)).toEqual([
+      { n: 1, of: 4, name: 'buy',          what: 'the box at Hetzner — about a minute' },
+      { n: 2, of: 4, name: 'ssh',          what: 'wait for the fresh box to answer ssh' },
+      { n: 3, of: 4, name: 'deploy:setup', what: 'docker and caddy on the box — a few minutes on a fresh one' },
+      { n: 4, of: 4, name: 'api key',      what: 'the first admin\'s API key, over ssh' },
+    ])
   })
 })
 

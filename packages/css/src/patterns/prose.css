@@ -24,7 +24,7 @@
  * ── The thin rule ─────────────────────────────────────────────────────
  *
  * Prose sets ONLY what the package has no term for: measure, the muted ink
- * of body copy, and list indentation. It does not set a face, a size, a
+ * and the size, leading and tracking of body copy, and list indentation. It does not set a face, a size, a
  * weight or a color that a term already owns — so `.prose h2` is not here,
  * because Heading owns h1–h6 and two owners for one property is the bug
  * Invariant 4 names. A heading inside a Prose is the package's heading rung,
@@ -52,6 +52,16 @@
 
 .prose {
   color:           var(--ink-soft);
+  /*
+   * The body tokens, read here rather than inherited from `.app`: a size, a
+   * leading and a tracking inherit as computed values, so a Prose inside a
+   * nested `.theme-*` — or on a page with no `.app` — would otherwise keep
+   * whatever its ancestor resolved. These are the body copy's own tokens,
+   * not a term's, so this is no second owner (FJS-4190, FJS-4191).
+   */
+  font-size:       var(--text-md);
+  line-height:     var(--leading-body);
+  letter-spacing:  var(--body-letter-spacing);
   /*
    * Measure. On the Prose itself rather than on each block, so a list and a
    * paragraph wrap at the same column — they did not when every child set

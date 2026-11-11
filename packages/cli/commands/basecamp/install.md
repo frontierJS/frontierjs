@@ -22,6 +22,10 @@ flags:
     type: boolean
     description: Enroll the box in Basecamp's own fleet, so apps can run beside it (asked at a terminal)
     defaultValue: true
+  unverified:
+    type: boolean
+    description: Deploy Basecamp's HEAD though it is unpushed or CI did not pass on it — fli deploy prints each check it skipped
+    defaultValue: false
 ---
 
 The install half of `fli basecamp:create`, for a box that already exists — one an
@@ -58,6 +62,11 @@ default and yes with no terminal: `turnOffUnneeded` runs the install script's ow
 lines over ssh once Basecamp is up. A box that joins the fleet has them turned
 off by the Outpost install regardless of the answer.
 
+`fli deploy` refuses a HEAD that is not on a remote branch, or that the last
+CI run did not grade. `--unverified` hands that refusal's own way past it to the
+deploy, for a test box that should run what is on the laptop; the deploy then
+prints each check it skipped.
+
 A rerun on the same box is a redeploy: `deploy:setup` installs only what is
 missing, the record is moved to the box's address if it changed, and
 `POST /setup` refuses a second admin.
@@ -74,7 +83,8 @@ if (!dest) { log.error('Pass the box: fli basecamp:install <ssh alias or user@ho
 
 if (process.stdin.isTTY) echo(chalk`\n  {bold fli basecamp:install}  {dim Basecamp on ${dest}}\n`)
 
-const install = await askInstall({ flag, dest, tty, log, echo, chalk })
+const asked = await askInstall({ flag, dest, tty, log, echo, chalk })
+const install = { ...asked, unverified: flag.unverified }
 if (install.refusal) {
   log.error(`${install.refusal}. Nothing was installed`)
   if (install.rejected) await tokenHint({ echo, chalk })

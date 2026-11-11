@@ -76,6 +76,8 @@ than started.
 | 43 | **Intake** (codename, provisional) — a browser extension that clips a highlighted selection or a picked element with its tab's context, hands it to an AI clarify step, and files the result in 37signals Basecamp as a to-do, card, message or document | the extension surface carrying a product, at first with no `api/` behind it; a clip that must outlive the worker that captured it; a webhook secret in an extension store anyone on the machine can read; a kind decided by a model and never by the capturer; a flow that starts in n8n and is ported to orion | `jetty` · `orion` · `conduit-anthropic` · `conduit-37signals` · `third-party-credentials.md` · #37 · #28 |
 | 45 | **Chronicle** — a series writing assistant: chapters reviewed by a model against the author's own story rubric, with live manuscript stats, an outline, and proposed fixes the author accepts | a model's verdict pinned to the revision it read, its quotes checked against that text; a rubric row that is the prompt, the answer's schema and the score; one model call answered by `claude -p` locally and `conduit-anthropic` deployed; a paid answer that must outlive the tab and never be bought twice; a proposed edit merged into text still being typed | `conduit-anthropic` · `oracle` (`checkAnswer`) · `claim-checking.md` · `stored-templates.md` · `conflict-as-data.md` · #22 · #42 · #43 |
 | 46 | **Five to Nine** — a one-room escape game: a clockmaker's back room that the mantel clock rewinds from 9 PM to 5, the room at each hour a function of his evening and the player's edits, drawn in Three.js inside Mesa | a WebGL scene owned by a component tree — a renderer claimed through `{@attach}` that must dispose contexts, geometries and textures on unmount, or the page loses its context; a scene graph re-derived from one pure `stateAt(hour, edits)` on every hour switch; a prerendered page whose content is all canvas; an app with a `site/`, a `cli/` and nothing else, no `db/`; a browser drive whose script is computed by a solver, never written | [`FJS-D997`](../DECISIONS.md#fjs-d997) (Haven's scene tree) · `static-safety.md` · #28 · #16 |
+| 47 | **Lathe** — a desktop code editor built for simplicity and speed: projects, a tree, tabs, highlighting, find, project search, vim mode and snippets, with a Claude panel beside it; its editor core is written in Mesa and CodeMirror 6 is the yardstick | one keystroke in a 1M-line file allowed one line node and one frame; composition events passing through delegation and a keymap untouched; a file on disk as the record, written by other programs while a buffer is dirty; a 50 MB document with no door but the JSON envelope; a local sidecar that can write any file the person can, reachable from every page in their browser; a frame budget measured in a webview that speaks no CDP; vim's operators and text objects over a buffer that isn't a string; an agent writing the file open in a dirty buffer | [`FJS-D1815`](../DECISIONS.md#fjs-d1815) (the sidecar) · [`FJS-D263`](../DECISIONS.md#fjs-d263) · mesa `{#virtual each}` · `keys.md` · #20 · #28 |
+| 48 | **Swatchbook** — a design spec-sheet builder for web designers: brand-feel axes in (playful ↔ serious, accessible ↔ luxury, airy ↔ dense), a reasoned spec of type, spacing, rhythm, restraint and color out (color seeded from the brand's own colors when it has them), previewed on real content and handed to a site builder | a theme as a ROW, compiled at slider rate onto one subtree, against a package whose themes are files; every spec line no token can carry — *a theme ships no selector* asked from outside the package; a derivation whose every output line cites the rule rows that produced it, from sources that disagree; a font catalog no tenant owns, loaded live under CSP; one record rendered as an `@frontierjs/css` theme and three portable formats, and read back in | `@frontierjs/css` (themes, `--density`, `--measure`) · `stored-templates.md` · `conflict-as-data.md` · `bearer-access.md` · #16 · #28 · #45 |
 
 **#29–#40 are Phase 2** — a gap scan, none started, in § Phase 2 below the
 entries.
@@ -1612,6 +1614,129 @@ text version without hints; a browser drive replays the shortest path by clicks
 and reaches the ending; a hundred hour switches leave one WebGL context and a
 flat heap; a screenshot sheet of four walls at five hours; an outside
 playtester escapes.
+
+
+### 47. Lathe — a keystroke is one line and one frame
+
+*Added 2026-11-11 at the owner's request: a code editor focused on simplicity
+and performance, with vim, snippets, projects and a Claude panel, the editing
+first. The plan is `fjs-prototypes/lathe/PLAN.md`; owner rulings the
+same day: the `desktop/` surface with a sidecar API, the core written in Mesa,
+CodeMirror 6 only as the baseline.*
+
+**The product.** A native desktop editor. You open a folder and get a file
+tree, tabs, a buffer per file, syntax highlighting for eight languages
+(`.lite` and `.mesa` among them), find and replace, go to file and project
+search. There are no extensions, no language server and no settings screen.
+The core is a piece-table buffer, virtual lines at a fixed height and a
+per-line tokenizer, small enough to read in an afternoon.
+
+**Why it is not #20 or #45.** Dragonfly asked whether `{#virtual each}` works
+over every row of a document. Chronicle merges a model's edit into text being
+typed. Neither gave a frame budget. Here the budget IS the product. Each gate
+is a percentile of keydown-to-paint, measured beside CodeMirror 6 on the same
+fixture, so a seam that costs a millisecond shows up as a number. What breaks
+first:
+
+- **Reactivity at keystroke rate.** One keystroke in a 1M-line file must touch
+  one line node. Anything that reconciles a list or re-derives per row fails
+  G2, and nothing in the tree has been held to that.
+- **Input Mesa does not own.** IME composition and paste arrive through a
+  textarea or a `contenteditable`, and pass delegated events (Invariant 11)
+  and the `keys()` keymap on the way.
+- **The file is the record.** A document on disk that `git checkout` rewrites
+  while the buffer is dirty. A watcher's change has to reach the page as a
+  broadcast that is not a row write, and a save has to lose a race loudly.
+- **A payload too big for the envelope.** 50 MB through a JSON result
+  envelope, or a door that does not exist yet.
+- **A local API with the person's whole disk behind it.** The sidecar
+  (`FJS-D1815`) listens on `127.0.0.1`, which every page in the person's
+  browser can reach. The standard dev admin does not fit a single-user local
+  tool, and `FJS-3958` says a desktop install cannot verify a first account
+  anyway.
+- **A frame budget in a webview with no CDP.** The gates run in Chromium and,
+  through a probe, in WebKitGTK, where the app ships.
+- **Vim over a buffer that isn't a string.** `keys.md` levels L2 and L3 are
+  built in toolbelt's keys engine with Lathe driving them, and the engine
+  reduces over a string today.
+- **An agent as an outside writer.** The Claude panel (`claude -p`, resumed
+  per project) edits files through its own tools, often the one with unsaved
+  changes, and it is the third app wanting that transport after Workbench and
+  Chronicle.
+
+**Gradable**: eight gates (keydown-to-paint p99 ≤ 16 ms at 100k and 1M lines,
+1M lines first painted in 300 ms, a 5 MB single line typed at ≤ 33 ms, a
+fling with p95 ≤ 16 ms, cold start ≤ 600 ms, the first search hit over the
+frontierjs tree in 150 ms, heap ≤ 2.5× the file) are locked before the core is
+written, with CodeMirror 6's numbers recorded beside each. A drive sees an
+outside `git checkout` arrive as a conflict, and the owner works an hour in
+the frontierjs tree in Lathe.
+
+### 48. Swatchbook — a theme that has to say why
+
+*Added 2026-11-11 at the owner's request: a web designer's tool for deciding
+the core of a site (which face, how much air, fun or luxury) before any layout
+exists, a spec sheet carried to a site builder afterward. The plan is
+`fjs-prototypes/swatchbook/PLAN.md`.*
+
+**The product.** A designer sets a handful of brand-feel axes: playful ↔
+serious, accessible ↔ luxury, airy ↔ dense, warm ↔ technical. They get back a
+spec sheet: a heading and body pairing, a type scale and its ratio, leading,
+measure, tracking, case, the spacing ladder and density, corner and weight, and
+how much negative space the layout keeps. Every line says which rule put it
+there. The spec is previewed on a realistic page with the client's own copy,
+never an image, and exported to the site builder. Prior art (2026-11-11) splits
+three ways and none joins them. Prompt-to-tokens generators (Relume's Style
+Guide Builder, Yuktis, AI Brand Kits, Glyph) answer without saying why.
+Calculators (Utopia, Realtime Colors, type-scale.com) each own one dimension.
+The designers' own methods (Style Tiles, brand personality slider worksheets)
+are paper. Google's `DESIGN.md` is the nearest portable output format.
+
+**Why it is not #28 or #45.** Darkroom's color is the data, and its slider
+drives pixels. Chronicle's rubric is data a model is graded against. Here the
+rule table is data a DERIVATION runs, and its output is a theme for this
+framework's own styling language, so the app grades `@frontierjs/css` from
+outside the package. What breaks first:
+
+- **A theme as a row.** Every theme in `src/themes/` is a file with a class.
+  Here a theme is a record, compiled at drag rate onto one preview subtree and
+  exported as the file later. Whether that compile, its custom-property
+  inheritance and Invariant 13 hold when nothing is a file has not been tried.
+- **The line no token carries.** The package's README says a theme that needs a
+  rule of its own proves a token is missing. A spec sheet sets fluid type
+  (`clamp()` steps), body tracking, heading case, section rhythm and a
+  negative-space target, and today only `--measure`, `--density`, the
+  `--space-*-base` ladder, `--text-*`, `--leading-*` and the heading pair exist.
+  Each line that needs a selector is an `FJS-###` against the package, which
+  `themes/press.css` only probes from inside.
+- **A derivation that cites its rules, which disagree.** Sources disagree on
+  luxury tracking (open, or tight caps). So rules are rows with a source and a
+  precedence, every output line names the rows that produced it, and a conflict
+  is shown, never silently resolved. Nothing here yet records a derived value
+  together with its provenance.
+- **Reference data no tenant owns, loaded live.** A font catalog of families,
+  classification and metrics ships with the app (remnant's question, #14). Each
+  pairing loads a webfont into the preview under the page's CSP (`static-safety.md`).
+  Measure in characters per line is computed from the loaded face's metrics, so
+  it needs a real browser.
+- **One record, several outputs, one input.** The `@frontierjs/css` theme is
+  the primary output, and the only one that grades the framework. `DESIGN.md`,
+  DTCG `tokens.json` and a ksite `theme.scss` (#16's colors-not-tones client
+  theme, from the other side) are renderers of the same spec
+  (`stored-templates.md`). None of them is ever read back as the source, except
+  that an imported `DESIGN.md` round-trips.
+- **A client who signs nothing.** The designer shares a read-only spec link
+  with a client who has no account (`bearer-access.md`), and the client can
+  approve it.
+
+**Gradable**: ten planted briefs (axis positions plus expected bands, for
+example luxury ≥ 4 gives body leading ≥ 1.5 and two faces at most) each land
+inside their bands. Every spec line cites at least one rule row. A planted
+conflict is shown with both sources. The exported theme applied to `example/`
+has zero AA failures and no selector. A parity drive screenshots the in-app
+preview and the exported theme on a static page and diffs the two. Each token
+gap found is filed. The owner
+specs one real Kobami client site in Swatchbook and ships it through ksite.
 
 ## Phase 2 — the gap scan
 

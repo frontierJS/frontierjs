@@ -479,6 +479,16 @@
   --leading-body:    1.55;  /* the body default */
   --leading-relaxed: 1.6;
 
+  /*
+   * Body tracking, the running-text sibling of --heading-letter-spacing and
+   * --label-letter-spacing. `normal` is what body copy always had, so nothing
+   * shipped moves; a spec that loosens its body text had only a selector to
+   * say so, which a theme may not ship (FJS-4191). A literal, so declaring it
+   * here is safe. `.app`, `.prose` and the Block tier read it with --text-md
+   * and --leading-body — the three places the package sets body copy.
+   */
+  --body-letter-spacing: normal;
+
 }
 
 /*
@@ -761,6 +771,7 @@
   --font-display:         initial;
   --heading-font-weight:  initial;
   --heading-letter-spacing: initial;
+  --heading-text-transform: initial;
   --h1-size:              initial;
   --h2-size:              initial;
   --h3-size:              initial;

@@ -70,6 +70,17 @@
   background:       var(--app-depth, var(--surface-depth)), var(--app-bg, var(--surface-sunken));
   color:            var(--ink);
   font-family:      var(--font-primary);
+  /*
+   * Body copy. --text-md is the body rung and --leading-body the body
+   * leading, and until FJS-4190 nothing on running text read either — a `p`
+   * was the UA's 16px and `normal`. These inherit as COMPUTED values, so a
+   * nested `.theme-*` retuning them reaches text below it only where a rule
+   * re-reads them: `.prose` and the Block tier (surface.css) do, exactly as
+   * they re-read --ink.
+   */
+  font-size:        var(--text-md);
+  line-height:      var(--leading-body);
+  letter-spacing:   var(--body-letter-spacing);
   -webkit-font-smoothing: antialiased;
 }
 

@@ -448,6 +448,21 @@ Moved verbatim from `CLAUDE.md`; the short list that stays there points here.
   canvas, because Chrome serializes the derived fill as `color(xyz-d65 …)`
   and reading those floats as 8-bit channels is wrong for every color.
 
+- **Size, leading, tracking and color inherit as COMPUTED values, so a token
+  `.app` reads stops at a nested `.theme-*`.** `.app` reads `--text-md`,
+  `--leading-body` and `--body-letter-spacing` (FJS-4190, FJS-4191), and a
+  `.theme-x` div below it retuning them moves nothing until a rule under it
+  re-reads them. `.prose` and the Block tier (`surface.css`) do, the same way
+  they re-read `--ink`; a bare `p` directly under a nested theme root keeps
+  the outer values, exactly as it keeps the outer ink. `theming.spec.js`
+  measures a `p` inside a Prose and a Card under a nested override.
+- **`run.js --theme <file>` grades a theme the package does not ship**
+  (FJS-4194). The file holds one `.theme-<name>` rule; it is inlined after
+  `index.css` and only `contrast.spec.js` runs, against that class alone —
+  every other spec is a claim about the package, and a foreign class in the
+  CSSOM is what `vocabulary.spec.js` fails on. The shipped list is
+  `themes.js`, handed to the page as `__FJS_GRADE_THEMES__`; the spec keeps
+  no copy. Exit 0 / 1 / 2 is clean / failing pairing / unusable file.
 - **A theme ships no selector, so every look is a token — and three of the
   four gaps were tokens that stopped at one element.** `--border-width` is
   the structural hairline (card, field, table, topbar, code block, tab
