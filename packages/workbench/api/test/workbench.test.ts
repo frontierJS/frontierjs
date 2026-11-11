@@ -499,7 +499,9 @@ describe('a chat about a register row', () => {
 
     // A tied chat starts in intake and moves only by hand; an untied one has no place (FJS-D2009).
     const [tied, other] = wb.getPin(id)!.chats.map(c => c.id)
+    await until(async () => !wb.getPin(id)!.pid)
     await wb.send(id, 'second')
+    await until(async () => !wb.getPin(id)!.pid)
     const third = (await wb.fresh(id))!.chat
     expect((await wb.status(wb.getPin(id)!)).chats.map(c => c.place)).toEqual(['intake', 'intake', null])
     expect(wb.setPlace(id, { chat: tied, place: 'review' })).toHaveProperty('chats')

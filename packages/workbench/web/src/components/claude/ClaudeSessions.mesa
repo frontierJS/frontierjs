@@ -3,10 +3,10 @@
   // the Claude Code tab (api services/claude: sessions, transcript). The list is
   // the usage index, so a session whose transcript Claude Code has deleted is
   // still listed, marked *gone*, and its drawer says why there is no text.
-  import { at, ago } from '../lib/datetime.js'
-  import { count, usd, tokensOf, tilde } from '../lib/claude-format.js'
-  import { claude }  from '../resources/Claude.mesa'
-  import { workbench } from '../resources/Workbench.mesa'
+  import { at, ago } from '../../lib/datetime.js'
+  import { count, usd, tokensOf, tilde } from '../../lib/claude-format.js'
+  import { claude }  from '../../resources/Claude.mesa'
+  import { workbench } from '../../resources/Workbench.mesa'
   import ClaudeIndexBuild from './ClaudeIndexBuild.mesa'
 
   import Badge    from '@frontierjs/ui/components/display/Badge.mesa'

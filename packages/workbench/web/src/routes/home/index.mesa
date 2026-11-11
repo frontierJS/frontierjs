@@ -1,0 +1,521 @@
+---
+title: Home
+---
+<script module>
+  // What the page last read, held for the life of the tab: coming back from
+  // another screen draws it at once, and the indicator says when it is re-read.
+  const cache = {
+    pins: [], status: {}, sessions: null, running: null, autopilot: null, quota: null,
+    errors: {}, readAt: 0, quotaAt: 0,
+  }
+</script>
+
+<script>
+  // What is live on this laptop, on one screen: the chats that need you, the
+  // ones working, each pinned checkout, the latest Claude Code sessions, the dev
+  // servers, Autopilot and the unread notifications. Every panel reads a service
+  // another screen already owns and links there; nothing here writes.
+  //
+  // Each panel loads on its own, so a slow or failing read blanks one panel
+  // and not the page. Only the chats' status is polled fast, as the chats
+  // screen does; the rest is read again on an interval and on Refresh. The
+  // quota endpoint is rate limited and shared with every running `claude`, so
+  // only Refresh or a five-minute-old read asks it again.
+  import { workbench } from '../../resources/Workbench.mesa'
+  import { claude }    from '../../resources/Claude.mesa'
+  import { atlas }     from '../../resources/Atlas.mesa'
+  import { laptop }    from '../../resources/Laptop.mesa'
+  import { notifications, isUnread, titleOf, bodyOf, actionOf, INBOX } from '../../resources/Notification.mesa'
+  import { ago } from '../../lib/datetime.js'
+
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Dot        from '@frontierjs/ui/components/display/Dot.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import StatCard   from '@frontierjs/ui/components/display/StatCard.mesa'
+  import ClaudeIndexBuild from '../../components/claude/ClaudeIndexBuild.mesa'
+
+  const STATUS_MS = 3000
+  const SLOW_MS   = 60_000
+  const QUOTA_MS  = 5 * 60_000
+  const SESSIONS  = 8
+
+  let pins      = cache.pins
+  let status    = cache.status       // pin id → PinStatus
+  let sessions  = cache.sessions
+  let running   = cache.running
+  let autopilot = cache.autopilot
+  let quota     = cache.quota
+  let errors    = cache.errors       // panel → message
+  let readAt    = cache.readAt
+  let loaded    = readAt > 0
+  let now       = Date.now()
+  let destroyed = false
+  let fast = null, slow = null
+
+  const inbox = notifications.tethered({ state: 'local', directives: INBOX })
+
+  // ─── reads ──────────────────────────────────────────────────────────────
+  // Every read writes the cache as well as the page, so a read that lands
+  // after the page is left still serves the next visit.
+
+  async function read(panel, fn) {
+    try { await fn(); cache.errors = errors = { ...errors, [panel]: null } }
+    catch (err) { cache.errors = errors = { ...errors, [panel]: err.message } }
+  }
+
+  const loadPins = () => read('pins', async () => {
+    cache.pins   = pins   = (await workbench.service.invoke('pins', null)).pins
+    cache.status = status = Object.fromEntries(pins.map(p => [p.id, p.status]))
+  })
+
+  const loadStatus = () => read('pins', async () => {
+    const answer = await workbench.service.invoke('status', null)
+    cache.status = status = { ...status, ...Object.fromEntries(answer.status.map(s => [s.id, s])) }
+  })
+
+  const loadSessions = () => read('sessions', async () => {
+    cache.sessions = sessions = await claude.service.invoke('sessions', null, { limit: SESSIONS })
+  })
+
+  const loadRunning = () => read('running', async () => {
+    cache.running = running = await laptop.service.invoke('running', null)
+  })
+
+  const loadAutopilot = () => read('autopilot', async () => {
+    cache.autopilot = autopilot = await atlas.service.invoke('autopilot', null)
+  })
+
+  const loadQuota = () => read('quota', async () => {
+    cache.quota = quota = await claude.service.invoke('quota', null)
+    cache.quotaAt = Date.now()
+  })
+
+  let refreshing = false
+  async function loadSlow({ withQuota = false } = {}) {
+    refreshing = true
+    const reads = [loadPins(), loadSessions(), loadRunning(), loadAutopilot()]
+    if (withQuota || Date.now() - cache.quotaAt > QUOTA_MS) reads.push(loadQuota())
+    await Promise.all(reads)
+    cache.readAt = readAt = Date.now()
+    loaded = true
+    refreshing = false
+  }
+
+  const refresh = () => loadSlow({ withQuota: true })
+
+  async function tick() {
+    if (destroyed) return
+    if (!document.hidden) await loadStatus()
+    now = Date.now()
+    fast = setTimeout(tick, STATUS_MS)
+  }
+
+  async function slowTick() {
+    if (destroyed) return
+    if (!document.hidden) await loadSlow()
+    slow = setTimeout(slowTick, SLOW_MS)
+  }
+
+  // A visit inside the minute draws the cache and waits out the rest of it;
+  // an older one draws the cache and re-reads behind the indicator.
+  const age = Date.now() - readAt
+  if (loaded && age < SLOW_MS) slow = setTimeout(slowTick, SLOW_MS - age)
+  else loadSlow().then(() => { slow = setTimeout(slowTick, SLOW_MS) })
+  tick()
+  $.onDestroy(() => { destroyed = true; clearTimeout(fast); clearTimeout(slow) })
+
+  $: since = now && readAt ? ago(new Date(readAt).toISOString()) : ''
+
+  // ─── chats ──────────────────────────────────────────────────────────────
+
+  const TONE = { idle: 'muted', working: 'info', done: 'success', error: 'danger' }
+  const chatTone   = (c) => c.asks ? 'warning' : TONE[c.state]
+  const chatHollow = (c) => (c.state === 'done' || c.state === 'error') && !c.unread
+  const chatTitle  = (c) => c.title ?? 'New chat'
+
+  // The chats screen reads this hash, stages the card and opens the chat.
+  const chatHref = (pinId, chatId) => `/workbench/#workbench-${encodeURIComponent(pinId)}${chatId ? `/${encodeURIComponent(chatId)}` : ''}`
+
+  const live = () => pins.filter(p => !p.missing).map(p => ({ pin: p, s: status[p.id] })).filter(x => x.s)
+
+  const chatsOf = (s) => s.chats ?? []
+
+  function needsYou() {
+    const out = []
+    for (const { pin, s } of live()) {
+      const chats = new Map(chatsOf(s).map(c => [c.id, c]))
+      for (const n of s.notices ?? []) {
+        if (n.kind === 'asks')
+          out.push({ key: `${pin.id}:asks:${n.chat}`, kind: 'asks', pin, chat: chats.get(n.chat), text: n.text, href: chatHref(pin.id, n.chat) })
+        else if (n.kind === 'question')
+          out.push({ key: `${pin.id}:q:${n.plan}:${n.id}`, kind: 'question', pin, text: `${n.id} — ${n.question}`, plan: n.plan, href: chatHref(pin.id) })
+        else if (n.kind === 'unread' && !chats.get(n.chat)?.asks)
+          out.push({ key: `${pin.id}:unread:${n.chat}`, kind: 'unread', pin, chat: chats.get(n.chat), href: chatHref(pin.id, n.chat) })
+      }
+    }
+    const rank = { asks: 0, question: 1, unread: 2 }
+    return out.sort((a, b) => rank[a.kind] - rank[b.kind])
+  }
+
+  function working() {
+    const out = []
+    for (const { pin, s } of live()) {
+      for (const c of chatsOf(s)) if (c.state === 'working')
+        out.push({ key: `${pin.id}:${c.id}`, pin, chat: c, href: chatHref(pin.id, c.id),
+          tool: c.id === s.chat ? s.tool : c.tool, cost: c.id === s.chat ? s.cost : null })
+      if (s.review?.state === 'working')
+        out.push({ key: `${pin.id}:review`, pin, review: true, href: chatHref(pin.id), cost: s.review.cost })
+      if (s.checks?.state === 'running')
+        out.push({ key: `${pin.id}:checks`, pin, checks: true, href: chatHref(pin.id) })
+    }
+    return out
+  }
+
+  const LABEL = { asks: 'asks', question: 'plan question', unread: 'finished' }
+  const KIND_TONE = { asks: 'warning', question: 'warning', unread: 'success' }
+
+  // Busy first, then whatever needs you, then the most recently pinned.
+  function ordered() {
+    const weight = (p) => {
+      const s = status[p.id]
+      if (!s) return 3
+      if (s.state === 'working') return 0
+      if ((s.notices ?? []).length) return 1
+      return 2
+    }
+    return [...pins].sort((a, b) => weight(a) - weight(b) || String(b.pinnedAt).localeCompare(String(a.pinnedAt)))
+  }
+
+  // A pin with nothing going on today gets a chip, not a card: a dozen idle
+  // cards bury the three that moved.
+  function stirring(p) {
+    const s = status[p.id]
+    if (!s || p.missing) return false
+    return s.state !== 'idle' || !!s.notices?.length || s.spent?.today > 0 || !!s.runs?.some(r => r.running)
+  }
+  const active = () => ordered().filter(stirring)
+  const quiet  = () => ordered().filter(p => !stirring(p))
+
+  const CHECKS_TONE = { pass: 'success', fail: 'danger', error: 'danger', running: 'info' }
+
+  // ─── the rest ───────────────────────────────────────────────────────────
+
+  const money = (n) => n == null ? '—' : `$${n.toFixed(2)}`
+  const spentToday = () => live().reduce((sum, { s }) => sum + (s.spent?.today ?? 0), 0)
+
+  function recentSessions() {
+    if (!sessions) return []
+    return sessions.projects
+      .flatMap(p => p.sessions.map(s => ({ ...s, cwd: p.cwd })))
+      .sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)))
+      .slice(0, SESSIONS)
+  }
+  const tail = (path) => path ? path.split('/').filter(Boolean).slice(-2).join('/') : '—'
+  const pinAt = (cwd) => cwd && pins.find(p => p.path === cwd)
+  const sessionTitle = (s) => s.title || s.firstPrompt || s.sessionId.slice(0, 8)
+
+  const servers = () => (running?.sessions ?? []).filter(s => s.running)
+
+  const unread = () => inbox.rows.filter(isUnread).slice(0, 5)
+
+  function meters() {
+    if (!quota?.ok) return []
+    const q = quota.value
+    return [
+      { id: 'session', label: '5-hour', m: q.session },
+      { id: 'weekly',  label: 'Weekly', m: q.weekly },
+    ].filter(x => x.m).map(x => ({ ...x, pct: Math.round(x.m.utilization) }))
+  }
+  const meterTone = (pct) => pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : 'success'
+
+  // A paper with a next step is one still in flight.
+  const plans = () => (autopilot?.plans.papers ?? []).filter(p => p.next).slice(0, 5)
+  // Most papers' titles open `Idea — `, which says nothing in a list of them.
+  const planTitle = (p) => String(p.title ?? p.id).replace(/^Idea\s+—\s+/, '')
+</script>
+
+<div class="section-header">
+  <h1>Home</h1>
+  <span class="cluster">
+    <span class="cluster text-sm text-muted home-fresh" id="home-fresh" aria-live="polite">
+      {#if refreshing}<Dot tone="info" pulse label="updating" /> updating…{:else if since}updated {since}{/if}
+    </span>
+    <Button id="home-refresh" treatment="outlined" size="sm" loading={refreshing} disabled={refreshing} onclick={refresh}>Refresh</Button>
+  </span>
+</div>
+
+<div class="tiles" id="home-tiles">
+  <StatCard label="Needs you" value={loaded ? needsYou().length : '…'} tone={needsYou().length ? 'warning' : ''} href="#home-needs" />
+  <StatCard label="Working" value={loaded ? working().length : '…'} tone={working().length ? 'info' : ''} href="#home-working" />
+  <StatCard label="Spent today" value={loaded ? money(spentToday()) : '…'} sub="across pinned checkouts" />
+  <StatCard label="To rule" value={autopilot ? autopilot.council.decidable : '…'} sub={autopilot ? `${autopilot.council.open} more without options` : ''} href="/atlas/decide/" />
+  {#each meters() as x (x.id)}
+    <StatCard label={`Claude ${x.label}`} value={`${x.pct}%`} tone={meterTone(x.pct)} sub={x.m.resetsAt ? `resets ${ago(x.m.resetsAt)}` : ''} />
+  {/each}
+</div>
+
+<div class="home-grid" style="--grid-min: 22rem">
+
+  <section class="home-panel home-wide" id="home-needs">
+    <h2>Needs you</h2>
+    {#if errors.pins}
+      <article class="alert danger"><div class="alert-content">{errors.pins}</div></article>
+    {:else if !loaded}
+      <p class="text-sm text-muted">Reading…</p>
+    {:else if !needsYou().length}
+      <p class="text-sm text-muted">Nothing is waiting on you.</p>
+    {:else}
+      <ul class="home-list">
+        {#each needsYou() as n (n.key)}
+          <li data-kind={n.kind}>
+            <a href={n.href} class="home-row">
+              <Badge tone={KIND_TONE[n.kind]}>{LABEL[n.kind]}</Badge>
+              <span class="home-row-main">
+                <strong>{n.pin.name}</strong>{#if n.chat} · {chatTitle(n.chat)}{/if}
+                {#if n.text}<span class="text-sm text-muted home-clip">{n.text}</span>{/if}
+              </span>
+            </a>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+
+  <section class="home-panel" id="home-working">
+    <h2>Working now</h2>
+    {#if !loaded}
+      <p class="text-sm text-muted">Reading…</p>
+    {:else if !working().length}
+      <p class="text-sm text-muted">Nothing is running.</p>
+    {:else}
+      <ul class="home-list">
+        {#each working() as w (w.key)}
+          <li>
+            <a href={w.href} class="home-row">
+              <Dot tone="info" pulse label="working" />
+              <span class="home-row-main">
+                <strong>{w.pin.name}</strong> ·
+                {#if w.review}review{:else if w.checks}checks{:else}{chatTitle(w.chat)}{/if}
+                <span class="text-sm text-muted">{w.tool ? `› ${w.tool}` : w.checks ? 'fli done' : 'thinking…'}</span>
+              </span>
+              {#if w.cost != null}<span class="text-sm home-num">{money(w.cost)}</span>{/if}
+            </a>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+
+  <section class="home-panel" id="home-notifications">
+    <h2><a href="/notifications/">Unread</a></h2>
+    {#if inbox.loading && !inbox.rows.length}
+      <p class="text-sm text-muted">Reading…</p>
+    {:else if !unread().length}
+      <p class="text-sm text-muted">All caught up.</p>
+    {:else}
+      <ul class="home-list">
+        {#each unread() as n (n.id)}
+          <li>
+            <a href={actionOf(n)?.url ?? '/notifications/'} class="home-row">
+              <span class="home-row-main">
+                <strong>{titleOf(n)}</strong>
+                {#if bodyOf(n)}<span class="text-sm text-muted home-clip">{bodyOf(n)}</span>{/if}
+              </span>
+              <span class="text-sm text-muted">{ago(n.createdAt)}</span>
+            </a>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+
+  <section class="home-panel home-wide" id="home-pins">
+    <h2><a href="/workbench/">Pinned checkouts</a></h2>
+    {#if loaded && !pins.length}
+      <EmptyState title="Nothing pinned">Pin a checkout on the Chats screen to talk to Claude about it.</EmptyState>
+    {:else}
+      <div class="home-pins" style="--grid-min: 16rem">
+        {#each active() as p (p.id)}
+          {@const s = status[p.id]}
+          <a class="home-pin card" href={chatHref(p.id)} data-pin={p.id}>
+            <div class="cluster home-pin-head">
+              <Dot tone={s ? TONE[s.state] : 'muted'} pulse={s?.state === 'working'} label={s?.state ?? 'unknown'} />
+              <strong>{p.name}</strong>
+              {#if s?.notices?.length}<Badge tone="warning">needs you</Badge>{/if}
+            </div>
+            {#if p.missing}
+              <span class="text-sm text-muted">folder is gone</span>
+            {:else}
+              <span class="text-sm text-muted home-clip">
+                {p.git?.branch ?? 'detached'}{#if p.git?.changes} · {p.git.changes} changed{/if}{#if p.git?.ahead} · {p.git.ahead} ahead{/if}
+              </span>
+              {#if s}
+                <span class="cluster home-pin-chats">
+                  {#each chatsOf(s) as c (c.id)}
+                    <Dot tone={chatTone(c)} hollow={chatHollow(c)} pulse={c.state === 'working'} label={chatTitle(c)} />
+                  {/each}
+                  <span class="text-sm text-muted">{chatsOf(s).length} chat{chatsOf(s).length === 1 ? '' : 's'}</span>
+                </span>
+                <span class="cluster text-sm">
+                  {#if s.checks}<Badge tone={CHECKS_TONE[s.checks.state]}>checks {s.checks.state}</Badge>{/if}
+                  {#if s.runs?.some(r => r.running)}<Badge tone="info">{s.runs.filter(r => r.running).length} running</Badge>{/if}
+                  {#if s.spent?.today}<span class="home-num text-muted">{money(s.spent.today)} today</span>{/if}
+                </span>
+              {/if}
+            {/if}
+          </a>
+        {/each}
+      </div>
+      {#if quiet().length}
+        <div class="cluster home-quiet" id="home-quiet">
+          <span class="text-sm text-muted">Quiet</span>
+          {#each quiet() as p (p.id)}
+            <a class="home-chip text-sm" href={chatHref(p.id)} data-pin={p.id}
+               title={p.missing ? 'folder is gone' : `${p.git?.branch ?? 'detached'}${p.git?.changes ? ` · ${p.git.changes} changed` : ''}`}>
+              {p.name}{#if p.git?.changes} <span class="text-muted home-num">{p.git.changes}</span>{/if}
+            </a>
+          {/each}
+        </div>
+      {/if}
+    {/if}
+  </section>
+
+  <section class="home-panel" id="home-sessions">
+    <h2>Recent sessions</h2>
+    {#if errors.sessions}
+      <article class="alert danger"><div class="alert-content">{errors.sessions}</div></article>
+    {:else if !sessions}
+      <p class="text-sm text-muted">Reading…</p>
+    {:else if !recentSessions().length}
+      <ClaudeIndexBuild onbuilt={loadSessions} />
+    {:else}
+      <ul class="home-list">
+        {#each recentSessions() as s (s.sessionId)}
+          {@const pin = pinAt(s.cwd)}
+          <li>
+            <svelte:element this={pin ? 'a' : 'div'} href={pin ? chatHref(pin.id) : undefined} class="home-row">
+              <span class="home-row-main">
+                <span class="home-clip">{sessionTitle(s)}</span>
+                <span class="text-sm text-muted">{tail(s.cwd)}{#if s.subagents} · {s.subagents} agents{/if}</span>
+              </span>
+              <span class="home-row-end text-sm">
+                <span class="home-num">{money(s.cost)}</span>
+                <span class="text-muted">{ago(s.lastAt)}</span>
+              </span>
+            </svelte:element>
+          </li>
+        {/each}
+      </ul>
+      <p class="text-sm text-muted">Indexed {ago(sessions.indexedAt)}.</p>
+    {/if}
+  </section>
+
+  <section class="home-panel" id="home-running">
+    <h2><a href="/laptop/">Dev servers</a></h2>
+    {#if errors.running}
+      <article class="alert danger"><div class="alert-content">{errors.running}</div></article>
+    {:else if !running}
+      <p class="text-sm text-muted">Reading…</p>
+    {:else if !servers().length}
+      <p class="text-sm text-muted">No dev server is up.</p>
+    {:else}
+      <ul class="home-list">
+        {#each servers() as r (r.root + (r.worktree ?? '') + r.name)}
+          <li class="home-row">
+            <Dot tone={r.alive ? 'success' : 'warning'} label={r.alive ? 'alive' : 'ports answer, process gone'} />
+            <span class="home-row-main">
+              <strong>{r.name}</strong>{#if r.env} <span class="text-sm text-muted">{r.env}</span>{/if}
+              <span class="cluster text-sm">
+                {#each r.ports.filter(x => x.answering) as x (x.category + x.port)}
+                  <a href={`http://localhost:${x.port}/`} target="_blank" rel="noopener">{x.category} :{x.port}</a>
+                {/each}
+              </span>
+            </span>
+            <span class="text-sm text-muted">{ago(r.startedAt, '')}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+
+  <section class="home-panel home-wide" id="home-autopilot">
+    <h2><a href="/atlas/autopilot/">Autopilot</a></h2>
+    {#if errors.autopilot}
+      <article class="alert danger"><div class="alert-content">{errors.autopilot}</div></article>
+    {:else if !autopilot}
+      <p class="text-sm text-muted">Reading…</p>
+    {:else}
+      {@const sw = autopilot.switch}
+      <div class="cluster text-sm" id="home-autopilot-facts">
+        <Badge tone={sw.on ? 'success' : 'muted'}>{sw.on ? 'on' : 'off'}</Badge>
+        <span class="home-num">{money(sw.spent.dollars)} today{#if sw.day?.dollars != null} of {money(sw.day.dollars)}{/if} · {sw.spent.attempts} attempt{sw.spent.attempts === 1 ? '' : 's'}</span>
+        {#if sw.refused}<Badge tone="warning">{sw.refused}</Badge>{/if}
+        <span>{autopilot.registry.ready.count} ready</span>
+        <span>{autopilot.registry.closedToday} closed today</span>
+        {#if autopilot.ci}<Badge tone={autopilot.ci.green ? 'success' : 'danger'}>CI {autopilot.ci.verdict}</Badge>{/if}
+      </div>
+      {#if plans().length}
+        <h3 class="text-sm text-muted">Plans in flight</h3>
+        <ul class="home-list">
+          {#each plans() as p (p.id)}
+            <li class="home-row">
+              <span class="home-row-main">
+                <strong class="home-clip">{planTitle(p)}</strong>
+                <span class="text-sm text-muted home-clip">next {p.next.id} — {p.next.title}</span>
+              </span>
+              <span class="text-sm home-num text-muted">{p.done}/{p.steps}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {/if}
+  </section>
+
+</div>
+
+<style>
+  .home-grid {
+    display: grid;
+    gap: var(--space-lg);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--grid-min)), 1fr));
+    margin-block-start: var(--space-lg);
+  }
+  .home-wide { grid-column: 1 / -1; }
+  .home-panel { display: grid; gap: var(--space-sm); align-content: start; min-inline-size: 0; }
+  .home-panel h2 { font-size: var(--text-lg); margin: 0; }
+  .home-panel h2 a { color: inherit; text-decoration: none; }
+  .home-panel h2 a:hover { text-decoration: underline; }
+  .home-panel h3 { margin: 0; }
+
+  .home-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2xs); }
+  .home-row {
+    display: flex; align-items: center; gap: var(--space-sm);
+    padding: var(--space-2xs) var(--space-sm);
+    border-radius: var(--btn-radius);
+    color: inherit; text-decoration: none;
+  }
+  a.home-row:hover { background: var(--surface-raised); }
+  .home-row-main { display: grid; flex: 1; min-inline-size: 0; }
+  .home-row-end { display: grid; justify-items: end; }
+  .home-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-num { font-variant-numeric: tabular-nums; }
+
+  .home-pins {
+    display: grid; gap: var(--space-sm);
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--grid-min)), 1fr));
+  }
+  .home-pin { display: grid; gap: var(--space-2xs); color: inherit; text-decoration: none; min-inline-size: 0; }
+  .home-pin:hover { outline: var(--border-width) solid var(--rule-strong); }
+  .home-fresh { align-items: center; gap: var(--space-2xs); }
+  .home-quiet { align-items: center; gap: var(--space-2xs); }
+  .home-chip {
+    padding: var(--space-3xs) var(--space-sm);
+    border: var(--border-width) solid var(--rule);
+    border-radius: var(--pill-radius);
+    color: inherit; text-decoration: none;
+  }
+  .home-chip:hover { border-color: var(--rule-strong); }
+  .home-pin-head { align-items: center; }
+  .home-pin-chats { align-items: center; gap: var(--space-3xs); }
+</style>

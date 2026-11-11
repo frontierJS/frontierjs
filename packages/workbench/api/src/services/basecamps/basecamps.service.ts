@@ -13,18 +13,21 @@
 //   POST /basecamps          deleteLocal  { name, file } remove one backup pulled to this laptop -> { freed }
 //   (invoke)                 provision run `fli basecamp:create --yes` as a child, its output to a log (BUYS A BOX unless `dry`)
 //   (invoke)                 creation the held create run with the end of its log, or null
+//   (invoke)                 reinstall { name, mode, plan } run `fli basecamp:reinstall` on the entry's box under its admin key (RETIRES BASECAMP unless `plan`)
+//   (invoke)                 reinstallation the held reinstall run with the end of its log, or null
 //
 // Not named `create`: that is the standard CRUD method every service carries,
-// and a model-less service answering it would shadow it. `provision` needs
-// `approved: true` in the body: the page sends it on the person's yes, as `fli gui` does for a `confirm: human` command.
+// and a model-less service answering it would shadow it. `provision` and
+// `reinstall` need `approved: true` in the body: the page sends it on the person's yes, as `fli gui` does for a `confirm: human` command.
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS }                                 from '@frontierjs/litestone'
 import { listBasecamps, entryOf, startBackup, startRestart, outcomeOf, deleteLocal } from '../../domain/basecamps/basecamps.ts'
 import { startCreate, creationOf, type CreateInput }                    from '../../domain/basecamps/basecamps-create.ts'
+import { startReinstall, reinstallationOf, type ReinstallInput }        from '../../domain/basecamps/basecamps-reinstall.ts'
 
-const READS  = ['list', 'outcome', 'creation']
-const WRITES = ['backup', 'restart', 'provision', 'deleteLocal']
+const READS  = ['list', 'outcome', 'creation', 'reinstallation']
+const WRITES = ['backup', 'restart', 'provision', 'reinstall', 'deleteLocal']
 
 async function named() {
   const name = String($.id ?? '')
@@ -54,6 +57,16 @@ export default createService({
 
   async provision() {
     const out = await startCreate(($.data ?? {}) as CreateInput)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async reinstallation() {
+    return reinstallationOf()
+  },
+
+  async reinstall() {
+    const out = await startReinstall(($.data ?? {}) as ReinstallInput)
     if ('refused' in out) throw new BadRequest(out.refused)
     return out
   },

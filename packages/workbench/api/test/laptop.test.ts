@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path'
 
 import { disk, clear, removeLane } from '../src/domain/laptop/laptop.ts'
 import { keys, fixMode } from '../src/domain/laptop/keys.ts'
+import { ping, setPing } from '../src/domain/laptop/ping.ts'
 import { globalEnv, setGlobalEnv, unsetGlobalEnv, commands } from '../src/domain/laptop/settings.ts'
 import { running } from '../src/domain/laptop/running.ts'
 import { servicesList, probeService } from '../src/domain/laptop/services.ts'
@@ -268,5 +269,21 @@ describe('services', () => {
   test('an unknown id, and a service with no login to check, are refused', () => {
     expect(() => probeService('nope')).toThrow(/No service/)
     expect(() => probeService('github')).toThrow(/no login to check/)
+  })
+})
+
+describe('phone ping', () => {
+  test('a topic round-trips through ~/.claude/ntfy-topic, and empty turns it off', () => {
+    expect(ping({ home })).toMatchObject({ topic: null, url: null })
+    expect(setPing(' fjs-test-ping ', { home })).toMatchObject({ topic: 'fjs-test-ping', url: 'https://ntfy.sh/fjs-test-ping' })
+    expect(readFileSync(join(home, '.claude', 'ntfy-topic'), 'utf8')).toBe('fjs-test-ping\n')
+    expect(setPing('', { home })).toMatchObject({ topic: null })
+    expect(existsSync(join(home, '.claude', 'ntfy-topic'))).toBe(false)
+  })
+
+  test('a topic outside ntfy\'s alphabet is refused, so it cannot reshape the hook\'s URL', () => {
+    expect(setPing('a/b', { home })).toHaveProperty('refused')
+    expect(setPing('x?y=1', { home })).toHaveProperty('refused')
+    expect(ping({ home }).topic).toBeNull()
   })
 })

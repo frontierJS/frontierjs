@@ -78,7 +78,7 @@ title: Workbench
   import Tabs       from '@frontierjs/ui/components/layout/Tabs.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import Terminal   from '../../components/Terminal.mesa'
-  import ClaudeCode from '../../components/ClaudeCode.mesa'
+  import ClaudeCode from '../../components/claude/ClaudeCode.mesa'
 
   const POLL_MS   = 2000
   const SHOW_TOOLS = 4
@@ -246,9 +246,14 @@ title: Workbench
 
   // `#workbench-<id>` names a card — the Atlas screen links to the chat it
   // sent to — and it may be in the wings, so the link puts it on stage.
+  // `#workbench-<id>/<chat>` also opens that chat (the home screen's rows).
   function reveal() {
-    const id = location.hash.startsWith('#workbench-') && decodeURIComponent(location.hash.slice('#workbench-'.length))
-    if (id && pins.some(p => p.id === id)) stageOn(id)
+    if (!location.hash.startsWith('#workbench-')) return
+    const [id, chat] = location.hash.slice('#workbench-'.length).split('/').map(decodeURIComponent)
+    const p = pins.find(x => x.id === id)
+    if (!p) return
+    stageOn(id)
+    if (chat && status[id]?.chats?.some(c => c.id === chat)) openChat(p, chat)
   }
 
   loadPins().then(() => { reveal(); schedule() })
@@ -2364,6 +2369,7 @@ title: Workbench
      its pane and the message box never leaves the screen. */
   .workbench {
     --workbench-min-block: 34rem;
+    --workbench-touch: 2rem;
     --workbench-pane-max: 48rem;
     --workbench-slot-min: 6rem;
     --workbench-tab-size: 12rem;
@@ -2518,8 +2524,9 @@ title: Workbench
     position: relative;
     display: grid;
     place-items: center;
-    inline-size: 4rem;
-    block-size: 4rem;
+    --workbench-shot-size: 4rem;
+    inline-size: var(--workbench-shot-size);
+    block-size: var(--workbench-shot-size);
     overflow: hidden;
     border: var(--border-width) solid var(--tint-rule);
     border-radius: var(--card-radius);
@@ -2528,8 +2535,8 @@ title: Workbench
   .workbench-shot img { inline-size: 100%; block-size: 100%; object-fit: cover; }
   .workbench-shot-drop {
     position: absolute;
-    inset-block-start: 2px;
-    inset-inline-end: 2px;
+    inset-block-start: var(--space-3xs);
+    inset-inline-end: var(--space-3xs);
     padding: 0 var(--space-xs);
     border: 0;
     border-radius: var(--pill-radius);
@@ -2711,6 +2718,26 @@ title: Workbench
     .workbench-panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
     .workbench-panes > * { grid-area: auto !important; }
     .workbench-pane { block-size: min(85dvh, var(--workbench-pane-max)); }
+  }
+  /* A phone: the strip beside the name was left about 130px wide, so Import and
+     Next sat past the edge of a scroller nobody knew to swipe. It takes a row
+     of its own and wraps, and every control in the head is a thumb's height. */
+  @media (max-width: 40rem) {
+    .workbench-head:has(.workbench-chats) > .workbench-chats {
+      order: 1;
+      flex: 1 0 100%;
+      flex-wrap: wrap;
+      overflow-x: visible;
+    }
+    .workbench-head :global(.btn),
+    .workbench-head-chat,
+    .workbench-chat-open,
+    .workbench-chat-group-label,
+    .workbench-fold { min-block-size: var(--workbench-touch); }
+    .workbench-chat-close,
+    .workbench-chat-pkg-open { min-block-size: var(--workbench-touch); min-inline-size: var(--workbench-touch); }
+    .workbench-head :global(.btn.square) { min-inline-size: var(--workbench-touch); }
+    .workbench-head > h2 { margin-inline-end: auto; }
   }
 
   .workbench-msg { display: flex; flex-direction: column; gap: var(--space-2xs); }

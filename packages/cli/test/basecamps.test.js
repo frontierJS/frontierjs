@@ -6,7 +6,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 import {
-  readBasecamps, writeBasecamp, removeBasecamp, resolveBasecamp, designatedBasecamp, basecampsPath, lookupBasecamp, lookupBasecampFor, pingBasecamp,
+  reinstallDomain, readBasecamps, writeBasecamp, removeBasecamp, resolveBasecamp, designatedBasecamp, basecampsPath, lookupBasecamp, lookupBasecampFor, pingBasecamp,
 } from '../core/basecamps.js'
 import { globalEnvPath } from '../core/global-env.js'
 import { resolveBasecampApp } from '../core/basecamp.js'
@@ -75,10 +75,10 @@ describe('resolveBasecamp', () => {
 
 describe('designatedBasecamp', () => {
   test('returns the runs entry; naming a second moves the designation', () => {
-    writeBasecamp('yuma', { ...yuma, runs: true }, { home })
+    writeBasecamp('yuma', { ...yuma, scopedKey: 'r1', runs: true }, { home })
     writeBasecamp('dev', { url: 'http://127.0.0.1:8120', apiKey: 'd' }, { home })
     expect(designatedBasecamp({ home }).name).toBe('yuma')
-    writeBasecamp('dev', { url: 'http://127.0.0.1:8120', apiKey: 'd', runs: true }, { home })
+    writeBasecamp('dev', { url: 'http://127.0.0.1:8120', apiKey: 'd', scopedKey: 'r2', runs: true }, { home })
     expect(designatedBasecamp({ home }).name).toBe('dev')
     expect(readBasecamps({ home }).yuma.runs).toBeUndefined()
   })
@@ -88,6 +88,16 @@ describe('designatedBasecamp', () => {
     expect(() => designatedBasecamp({ home })).toThrow(/No Basecamp is designated for runs — known: yuma/)
     writeFileSync(basecampsPath(home), JSON.stringify({ a: { url: 'u', runs: true }, b: { url: 'v', runs: true } }))
     expect(() => designatedBasecamp({ home })).toThrow(/More than one.*a, b/)
+  })
+
+  // FJS-D2031: the admin key would let a run write servers and the hub.
+  test('answers the run key and never the admin key; no run key is refused by name', () => {
+    writeBasecamp('yuma', { ...yuma, runs: true }, { home })
+    expect(() => designatedBasecamp({ home })).toThrow(/"yuma" runs Charter's Apps and holds no run key/)
+    writeBasecamp('yuma', { ...yuma, scopedKey: 'r1', runs: true }, { home })
+    const got = designatedBasecamp({ home })
+    expect(got.key).toBe('r1')
+    expect(JSON.stringify(got)).not.toContain('k1')
   })
 })
 
@@ -100,6 +110,14 @@ describe('lookupBasecamp', () => {
     writeBasecamp('dev', { url: 'http://127.0.0.1:8120' }, { home })
     expect(lookupBasecamp('dev', { home }).error).toMatch(/has no API key/)
     expect(lookupBasecamp(undefined, { home }).error).toMatch(/--basecamp <name>/)
+  })
+
+  test('a runs entry answers its run key to every reader, and without one is refused, not given the admin key', () => {
+    writeBasecamp('yuma', { ...yuma, runs: true }, { home })
+    expect(lookupBasecamp('yuma', { home }).error).toMatch(/holds no run key/)
+    writeBasecamp('yuma', { ...yuma, scopedKey: 'r1', runs: true }, { home })
+    expect(lookupBasecamp('yuma', { home }).entry.key).toBe('r1')
+    expect(lookupBasecamp('yuma', { home, scoped: true }).entry.key).toBe('r1')
   })
 })
 
@@ -229,5 +247,29 @@ describe('resolveBasecampApp', () => {
 
   test('TIERS maps each deploy target to a tier', () => {
     expect(TIERS).toEqual({ dev: 'development', stage: 'staging', production: 'production' })
+  })
+})
+
+// FJS-4078: the box's env file named another Basecamp, and the reinstall took
+// that name and moved its DNS record.
+describe('reinstallDomain', () => {
+  const entry = { url: 'https://chartered.maverickmade.tech' }
+
+  test("the entry's url is the default, with no box env to compare", () => {
+    expect(reinstallDomain({ domain: '', entry, box: null })).toEqual({ domain: 'chartered.maverickmade.tech' })
+    expect(reinstallDomain({ domain: '', entry, box: 'Chartered.Maverickmade.Tech' })).toEqual({ domain: 'chartered.maverickmade.tech' })
+  })
+
+  test('a box env that disagrees with the entry is refused, naming both', () => {
+    const { refusal } = reinstallDomain({ domain: '', entry, box: 'yuma.kobami.cloud' })
+    expect(refusal).toContain('chartered.maverickmade.tech')
+    expect(refusal).toContain('yuma.kobami.cloud')
+    expect(refusal).toContain('--domain')
+  })
+
+  test('--domain settles it, and no entry falls to the box', () => {
+    expect(reinstallDomain({ domain: 'new.example.com', entry, box: 'yuma.kobami.cloud' })).toEqual({ domain: 'new.example.com' })
+    expect(reinstallDomain({ domain: '', entry: undefined, box: 'yuma.kobami.cloud' })).toEqual({ domain: 'yuma.kobami.cloud' })
+    expect(reinstallDomain({ domain: '', entry: undefined, box: null })).toEqual({ domain: '' })
   })
 })

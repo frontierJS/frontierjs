@@ -200,7 +200,7 @@ export function runSurfaces({
           if (!signal) say((code ? chalk.red : chalk.dim)(`exited with code ${code}`))
           // A surface that is gone will never report, and what it said on the
           // way out is the thing to read.
-          if (!g.stopping) summarize(g)
+          if (!g.stopping && !g.ready.has(row.surface)) summarize(g)
           resolve(code ?? 0)
         })
       })

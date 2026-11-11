@@ -370,9 +370,11 @@ title: Atlas
         <article class="alert danger" id="atlas-rings-error"><div class="alert-content">{ringsError}</div></article>
       {/if}
       {#if rings}
-        <div class="atlas-project" id="atlas-project">
-          <AtlasRings rings={ringList()} active={RING_OF_TAB[tab]} onselect={(t) => tab = t} />
-          <div class="tiles" id="atlas-cards">
+        <div class="atlas-project switcher" id="atlas-project">
+          <div style="--side: 30rem">
+            <AtlasRings rings={ringList()} active={RING_OF_TAB[tab]} onselect={(t) => tab = t} />
+          </div>
+          <div class="tiles atlas-cards" id="atlas-cards">
             {#each ringCards() as c (c.id)}
               <StatCard label={c.label} value={c.count.toLocaleString()} sub={c.sub} tone={c.tone}
                         onclick={() => tab = c.tab} data-ring={c.id} aria-pressed={tab === c.tab} />
@@ -381,8 +383,8 @@ title: Atlas
         </div>
       {/if}
 
-      <div class="atlas-layout">
-        <div class="stack gap-lg">
+      <div class="atlas-layout switcher" style="--switch-at: 64rem">
+        <div class="stack gap-lg atlas-main">
           <Card>
             <form class="stack gap-sm" id="atlas-compose" onsubmit={send}>
               <div class="stack gap-3xs">
@@ -620,19 +622,21 @@ title: Atlas
           </Card>
         </div>
 
-        <Card>
-          <div class="stack gap-sm" id="atlas-packages">
-            <h2 class="h5">By package</h2>
-            {#each byPackage() as b (b.name)}
-              <button type="button" class="atlas-pkg" aria-pressed={pkg === b.name}
-                      onclick={() => { pkg = pkg === b.name ? '' : b.name; tab = 'issues' }}>
-                <span class="text-sm">{b.name}</span>
-                <span class="atlas-track"><span class="atlas-fill" style:inline-size={`${(b.count / widest()) * 100}%`}></span></span>
-                <span class="text-xs text-muted">{b.count}</span>
-              </button>
-            {/each}
-          </div>
-        </Card>
+        <div style="--side: var(--aside-width)">
+          <Card>
+            <div class="stack gap-sm" id="atlas-packages">
+              <h2 class="h5">By package</h2>
+              {#each byPackage() as b (b.name)}
+                <button type="button" class="atlas-pkg" aria-pressed={pkg === b.name}
+                        onclick={() => { pkg = pkg === b.name ? '' : b.name; tab = 'issues' }}>
+                  <span class="text-sm">{b.name}</span>
+                  <span class="atlas-track"><span class="atlas-fill" style:inline-size={`${(b.count / widest()) * 100}%`}></span></span>
+                  <span class="text-xs text-muted">{b.count}</span>
+                </button>
+              {/each}
+            </div>
+          </Card>
+        </div>
       </div>
     </div>
   {/if}
@@ -758,16 +762,15 @@ title: Atlas
 <style>
   .atlas-headline { font-size: var(--text-3xl, 2.25rem); line-height: 1.15; margin: 0; }
   .atlas-wrong { font-size: var(--text-xl, 1.25rem); line-height: 1.25; margin: 0; }
-  .atlas-project { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-lg); align-items: center; }
-  @media (max-width: 48rem) { .atlas-project { grid-template-columns: minmax(0, 1fr); } }
+  /* A Switcher: the rings (map and legend, about 28rem on one line) beside the
+     tiles, stacked below 48rem of the page's own width. */
+  .atlas-project { gap: var(--space-lg); align-items: center; }
+  .atlas-cards { min-width: 0; }
   .atlas-proof > summary { cursor: pointer; }
-  .atlas-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(var(--grid-min, 16rem), var(--aside-width));
-    gap: var(--space-lg);
-    align-items: start;
-  }
-  @media (max-width: 64rem) { .atlas-layout { grid-template-columns: minmax(0, 1fr); } }
+  /* A Switcher: the registers beside the --aside-width rail of packages, stacked
+     below 64rem of the page's own width. */
+  .atlas-layout { gap: var(--space-lg); align-items: start; }
+  .atlas-main { min-width: 0; }
 
   .atlas-text { resize: vertical; inline-size: 100%; font-family: var(--font-mono); }
   .atlas-search { flex: 1; min-inline-size: var(--tile-min, 12rem); }
@@ -796,6 +799,7 @@ title: Atlas
   .atlas-pkg {
     --atlas-pkg-name: 8rem;
     --atlas-pkg-count: 2.5rem;
+    --atlas-pkg-touch: 2rem;
     display: grid;
     grid-template-columns: var(--atlas-pkg-name) 1fr var(--atlas-pkg-count);
     align-items: center;
@@ -808,6 +812,8 @@ title: Atlas
     text-align: start;
     cursor: pointer;
   }
+  /* A bar row was 24px tall: a thumb lands on the row above or below it. */
+  @media (max-width: 40rem) { .atlas-pkg { min-block-size: var(--atlas-pkg-touch); } }
   .atlas-pkg > .text-sm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .atlas-pkg > .text-xs { text-align: end; }
   .atlas-track { block-size: var(--track-size); border-radius: var(--pill-radius); background: var(--tint-surface); overflow: hidden; }

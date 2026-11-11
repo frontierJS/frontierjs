@@ -2,7 +2,7 @@
   // The form that adds a marketplace on the Claude Code tab (api services/claude:
   // marketplace). One field: Claude Code takes owner/repo, a git URL or a local
   // path, and clones it, which can take a minute.
-  import { claude } from '../resources/Claude.mesa'
+  import { claude } from '../../resources/Claude.mesa'
 
   import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'

@@ -50,6 +50,9 @@ const PROMPT_CHARS = 200
 // A slash command's own echo (`/clear`) and a harness reminder are the first
 // user lines of a session and nothing a person typed.
 const WRAPPED = /^<(command-name|command-message|local-command|system-reminder)/
+// The editor wraps what the person typed in a closed tag block, so the first
+// 200 characters of the raw line are the tag and never the typing after it.
+const TAGGED = /<(ide_[a-z_]+|system-reminder)>[\s\S]*?<\/\1>\s*/g
 // A slash command's echo starts a turn; a reminder and a command's output do not.
 const NOT_A_TURN = /^<(local-command|system-reminder)/
 const SKILL_LOAD = /^Base directory for this skill: (\S+)/
@@ -57,8 +60,9 @@ const SKILL_LOAD = /^Base directory for this skill: (\S+)/
 const textOf = (content) => {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return null
-  const block = content.find(b => b?.type === 'text' && typeof b.text === 'string')
-  return block ? block.text : null
+  // The editor's tag and the typing arrive as two text blocks; the first alone is the tag.
+  const blocks = content.filter(b => b?.type === 'text' && typeof b.text === 'string')
+  return blocks.length ? blocks.map(b => b.text).join('\n') : null
 }
 
 export const readMessages = (text, { final = false, skills = [] } = {}) => {
@@ -91,7 +95,7 @@ export const readMessages = (text, { final = false, skills = [] } = {}) => {
     if (!haveCwd && j.cwd) { haveCwd = true; file.cwd = j.cwd; file.headless = j.entrypoint === 'sdk-cli' }
     if (j.type === 'ai-title' && typeof j.aiTitle === 'string') file.title = j.aiTitle
     if (!havePrompt && j.type === 'user' && !j.isMeta) {
-      const t = textOf(j.message?.content)?.trim()
+      const t = textOf(j.message?.content)?.replace(TAGGED, '').trim()
       if (t && !WRAPPED.test(t)) { havePrompt = true; file.firstPrompt = t.slice(0, PROMPT_CHARS) }
     }
     if (j.type === 'user') {

@@ -22,6 +22,8 @@ The file-by-file map. `CLAUDE.md` keeps the owners and the traps. Paths under
 | `api/src/domain/servers/servers.ts` | The Servers screen (`FJS-D2006`–`FJS-D2008`): each `ProviderAccount`'s machines listed live through `@frontierjs/conduit-hetzner` / `conduit-digitalocean` (only `list` and `verify`, never create or destroy), one failing account erroring alone; `add` verifies the token before storing it. `services/servers/servers.service.ts` is its model-less service |
 | `api/src/domain/local/local-ssh.ts` | `~/.ssh/config` Host aliases, resolved offline by `ssh -G`: the hosts shown beside the cloud machines. A copy of Basecamp's, not an import |
 | `web/src/routes/servers/` | `/servers/`: machines grouped by account, the ssh hosts, fetched-at and Refresh, Add account and Remove; `web/src/resources/Server.mesa` is its resource |
+| `api/src/domain/basecamps/` | The Basecamps in `basecamps.json`: `basecamps.ts` (list, Back up now, Restart), `basecamps-create.ts` (`basecamp:create` as a logged child; `spawnFli` is the shared spawn) and `basecamps-reinstall.ts` (`basecamp:reinstall` on an entry's box under its admin `apiKey`, never its run `scopedKey`, `FJS-D2031`) |
+| `web/src/routes/charter/` | `/charter/`: the `runs: true` entry with which keys are filed, *New box* to `/basecamps/new/`, and *Reinstall* (restore or fresh, Plan only by default) with its log tailed (`IDEAS/charter-to-live.md` Phase 2) |
 | `web/src/routes/terminal/` | `/terminal/`: one shell in the home folder, outside any pin; `components/Terminal.mesa` with no `pin`, over `WS /ws/terminal` (`api/src/plugins/workbench-terminal.ts`), its tmux session the bare `workbench` |
 
 | `web/src/routes/terminal/` | `/terminal/`: one shell in the home folder, outside any pin; `components/Terminal.mesa` with no `pin`, over `WS /ws/terminal` (`api/src/plugins/workbench-terminal.ts`), its tmux session the bare `workbench` |
@@ -30,6 +32,7 @@ The file-by-file map. `CLAUDE.md` keeps the owners and the traps. Paths under
 | `web/src/App.mesa` | the sign-in guard |
 | `web/src/routes/_module.mesa` | the shell: topbar, nav, sign out |
 | `web/src/routes/{index,login,workbench}/` | root redirect, the sign-in page, the empty state |
+| `web/src/routes/home/` | `/home/`, where `/`, sign-in and the brand link land (it has no nav entry): needs-you, working chats, pins (idle ones as chips), recent sessions, dev servers, Autopilot, unread. Reads other screens' services and writes nothing; what it read is held in a module-level cache for the tab's life, so a return draws at once and re-reads only past a minute. A row links `/workbench/#workbench-<pin>/<chat>`, which stages the pin and opens the chat |
 | `web/src/lib/{nav,session}.js` | the nav table; who is signed in |
 | `desktop/` | the Tauri shell around `web/` (`wraps: 'web'`, `api` 5501): `config/desktop.config.js`, `deploy/build.mjs`, `shell/` (crate `workbench-desktop`, window `Workbench`, icon from `brand/assets/icons/`), `test/verify.mjs` + `probe.js` (sign in at the door, scan a fake `~/code`) |
 | `config/api-origin.js` | turns `FRONTIER_PORT_BE` into the build's `FRONTIER_PUBLIC_API_URL`, read by `desktop.config.js` |

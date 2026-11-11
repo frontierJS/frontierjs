@@ -5,8 +5,8 @@
   // home misses a broken project file. It runs from home and from each pinned
   // checkout, and a finding seen from several -- a user settings one -- is listed
   // once with every folder that saw it. The facts are home's.
-  import { tilde }  from '../lib/claude-format.js'
-  import { claude } from '../resources/Claude.mesa'
+  import { tilde }  from '../../lib/claude-format.js'
+  import { claude } from '../../resources/Claude.mesa'
 
   import Badge   from '@frontierjs/ui/components/display/Badge.mesa'
   import Button  from '@frontierjs/ui/components/forms/Button.mesa'

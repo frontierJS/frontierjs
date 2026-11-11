@@ -18,7 +18,8 @@ title: Terminal
   .terminal-screen {
     display: flex;
     flex-direction: column;
-    block-size: calc(100dvh - 10rem);
+    block-size: calc(100dvh - var(--terminal-chrome));
+    --terminal-chrome: 10rem;
     --terminal-min-block: 20rem;
   }
 </style>

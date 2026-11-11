@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-8 services · 19 routes · 7 plugins · prefix (none)
+9 services · 19 routes · 7 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -82,15 +82,17 @@ name when it declares none.
 
 ### `basecamps` · model `basecamps`
 
-- **methods** — `list`, `outcome`, `creation`, `backup`, `restart`, `provision`, `deleteLocal`
-- **custom methods** — `list`, `outcome`, `creation`, `backup`, `restart`, `provision`, `deleteLocal`
+- **methods** — `list`, `outcome`, `creation`, `reinstallation`, `backup`, `restart`, `provision`, `reinstall`, `deleteLocal`
+- **custom methods** — `list`, `outcome`, `creation`, `reinstallation`, `backup`, `restart`, `provision`, `reinstall`, `deleteLocal`
 - **who may call** —
   - `list` — standing 5 or above — declared `gate: 5`
   - `outcome` — standing 5 or above — declared `gate: 5`
   - `creation` — standing 5 or above — declared `gate: 5`
+  - `reinstallation` — standing 5 or above — declared `gate: 5`
   - `backup` — standing 5 or above — declared `gate: 5`
   - `restart` — standing 5 or above — declared `gate: 5`
   - `provision` — standing 5 or above — declared `gate: 5`
+  - `reinstall` — standing 5 or above — declared `gate: 5`
   - `deleteLocal` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
@@ -162,13 +164,14 @@ name when it declares none.
 
 ### `laptop` · model `laptop`
 
-- **methods** — `disk`, `keys`, `globalEnv`, `commands`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `probeService`
-- **custom methods** — `disk`, `keys`, `globalEnv`, `commands`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `probeService`
+- **methods** — `disk`, `keys`, `globalEnv`, `commands`, `ping`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `setPing`, `probeService`
+- **custom methods** — `disk`, `keys`, `globalEnv`, `commands`, `ping`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `setPing`, `probeService`
 - **who may call** —
   - `disk` — standing 5 or above — declared `gate: 5`
   - `keys` — standing 5 or above — declared `gate: 5`
   - `globalEnv` — standing 5 or above — declared `gate: 5`
   - `commands` — standing 5 or above — declared `gate: 5`
+  - `ping` — standing 5 or above — declared `gate: 5`
   - `running` — standing 5 or above — declared `gate: 5`
   - `services` — standing 5 or above — declared `gate: 5`
   - `clear` — standing 5 or above — declared `gate: 5`
@@ -176,7 +179,28 @@ name when it declares none.
   - `fixMode` — standing 5 or above — declared `gate: 5`
   - `setGlobalEnv` — standing 5 or above — declared `gate: 5`
   - `unsetGlobalEnv` — standing 5 or above — declared `gate: 5`
+  - `setPing` — standing 5 or above — declared `gate: 5`
   - `probeService` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `liveRuns` · model `liveRuns`
+
+- **methods** — `state`, `add`, `run`, `deleteKept`
+- **custom methods** — `state`, `add`, `run`, `deleteKept`
+- **who may call** —
+  - `state` — standing 5 or above — declared `gate: 5`
+  - `add` — standing 5 or above — declared `gate: 5`
+  - `run` — standing 5 or above — declared `gate: 5`
+  - `deleteKept` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -227,8 +251,8 @@ name when it declares none.
 
 ### `workbench` · model `workbench`
 
-- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `importable`, `nextFor`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `importSession`, `setPackage`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
-- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `importable`, `nextFor`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `importSession`, `setPackage`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
+- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `importable`, `nextFor`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `importSession`, `setPackage`, `setPlace`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
+- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `importable`, `nextFor`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `importSession`, `setPackage`, `setPlace`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
 - **who may call** —
   - `pins` — standing 5 or above — declared `gate: 5`
   - `status` — standing 5 or above — declared `gate: 5`
@@ -249,6 +273,7 @@ name when it declares none.
   - `close` — standing 5 or above — declared `gate: 5`
   - `importSession` — standing 5 or above — declared `gate: 5`
   - `setPackage` — standing 5 or above — declared `gate: 5`
+  - `setPlace` — standing 5 or above — declared `gate: 5`
   - `seen` — standing 5 or above — declared `gate: 5`
   - `check` — standing 5 or above — declared `gate: 5`
   - `review` — standing 5 or above — declared `gate: 5`

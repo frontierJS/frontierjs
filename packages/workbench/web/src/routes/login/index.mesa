@@ -18,7 +18,7 @@ title: Sign in
   // screen is how a phishing link borrows a real domain.
   function landing() {
     const next = page.query?.next
-    return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : '/workbench/'
+    return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : '/home/'
   }
 
   async function submit() {

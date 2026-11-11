@@ -1,0 +1,427 @@
+---
+title: Charter
+---
+<script>
+  // The Basecamp Charter's runs go to -- the `runs: true` entry in
+  // basecamps.json -- and the one control here that touches its box:
+  // Reinstall, `fli basecamp:reinstall` under the entry's admin key, never
+  // the run key beside it (FJS-D2031). A new box is the New Basecamp page's.
+  //
+  // The reinstall runs in the API as a child whose log this page tails
+  // (api services/basecamps, `reinstall` and `reinstallation`); it outlives
+  // the page, so a run already going is picked up on load. It is confirmed by
+  // a person each run, and `approved: true` goes only with that yes.
+  //
+  // Runs are Charter's builder/live.ts in its checkout, one case at a time
+  // (api services/liveRuns, FJS-D2025). Each stage is read from the record the
+  // run rewrites; the API refuses a record it does not know by name and calls
+  // one whose process is gone `stopped`, never running.
+  import { basecamps } from '../../resources/Basecamp.mesa'
+  import { liveRuns }  from '../../resources/LiveRun.mesa'
+
+  import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import Checkbox            from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import Select              from '@frontierjs/ui/components/forms/Select.mesa'
+  import Dot                 from '@frontierjs/ui/components/display/Dot.mesa'
+  import EmptyState          from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore'
+
+  const POLL = 2000
+
+  const MODES = [
+    { value: 'restore', label: 'Restore — put the backup just taken back' },
+    { value: 'fresh',   label: 'Fresh — an empty Basecamp; the run key is dropped' },
+  ]
+
+  let entry     = null
+  let others    = []
+  let loading   = true
+  let error     = null
+  let mode      = 'restore'
+  let plan      = true
+  let starting  = false
+  let run       = null   // the API's held reinstall run, with the end of its log
+  let destroyed = false
+  let timer     = null
+
+  const WHEN_DONE = [
+    { value: 'destroy', label: 'Destroy when done — the App, its Domains, project and data' },
+    { value: 'keep',    label: 'Leave it standing — listed below with a Delete' },
+  ]
+  const TONES = { passed: 'success', failed: 'danger', skipped: 'warning', 'not reached': '' }
+  const STATE_TONES = { running: 'info', starting: 'info', queued: '', passed: 'success', failed: 'danger', stopped: 'warning' }
+
+  let live      = null   // liveRuns.state: checkout, cases, the held run, records, kept Apps
+  let picked    = []
+  let whenDone  = 'destroy'
+  let launching = false
+  let liveTimer = null
+  let fileInput = null
+
+  $.onDestroy(() => { destroyed = true; clearTimeout(timer); clearTimeout(liveTimer) })
+
+  const ACTIVE = ['queued', 'starting', 'running']
+  const liveGoing = () => !!live && ((live.batch?.items ?? []).some(i => ACTIVE.includes(i.state)) || live.recent.some(r => r.state === 'running'))
+
+  // The held run's cases, or with none held the newest day's records.
+  const rows = () => !live ? [] : live.batch
+    ? live.batch.items.map(i => ({ key: i.case, name: i.case, state: i.state, record: i.record, refused: i.refused, lines: i.lines, log: i.log }))
+    : live.recent.map(r => ({ key: r.file, name: r.record?.case ?? r.file, state: r.state ?? 'stopped', record: r.record, refused: r.refused, lines: [], log: null }))
+
+  async function loadLive() {
+    try {
+      live = await liveRuns.service.invoke('state', null)
+    } catch (err) {
+      toasts.error(err.message)
+    }
+    clearTimeout(liveTimer)
+    if (!destroyed && liveGoing()) liveTimer = setTimeout(loadLive, POLL)
+  }
+
+  function toggle(name, on) {
+    picked = on ? [...picked.filter(p => p !== name), name] : picked.filter(p => p !== name)
+  }
+
+  async function addFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const c = await liveRuns.service.invoke('add', null, { name: file.name, text: await file.text() })
+      toggle(c.case, true)
+      toasts.success(`${c.case} added as a case`)
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      e.target.value = ''
+    }
+    loadLive()
+  }
+
+  async function launch() {
+    launching = true
+    try {
+      await liveRuns.service.invoke('run', null, { cases: picked, keep: whenDone === 'keep', approved: true })
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      launching = false
+    }
+    loadLive()
+  }
+
+  async function removeApp(k) {
+    try {
+      await liveRuns.service.invoke('deleteKept', null, { record: k.record, approved: true })
+    } catch (err) {
+      toasts.error(err.message)
+    }
+    loadLive()
+  }
+
+  const secs  = (ms) => ms ? `${Math.round(ms / 1000)} s` : ''
+  const usd   = (n) => n ? `$${n.toFixed(2)}` : ''
+  const cantRun = () => !live?.checkout.ok ? 'no Charter checkout' : !entry ? 'no Basecamp runs Charter'
+    : !entry.hasScopedKey ? 'no run key filed' : !picked.length ? 'pick a case' : liveGoing() ? 'a run is going' : ''
+
+  const running = () => !!run && !run.exit && !run.error
+
+  async function load() {
+    try {
+      const rows = await basecamps.service.invoke('list')
+      entry  = rows.find(r => r.runs) ?? null
+      others = rows.filter(r => !r.runs).map(r => r.name)
+      error  = null
+    } catch (err) {
+      error = err.message
+    } finally {
+      loading = false
+    }
+  }
+
+  function schedule() {
+    clearTimeout(timer)
+    if (!destroyed && running()) timer = setTimeout(poll, POLL)
+  }
+
+  async function poll() {
+    try {
+      run = await basecamps.service.invoke('reinstallation', null)
+    } catch (err) {
+      toasts.error(err.message)
+    }
+    schedule()
+  }
+
+  async function start() {
+    starting = true
+    try {
+      await basecamps.service.invoke('reinstall', null, { name: entry.name, mode, plan, approved: true })
+      run = await basecamps.service.invoke('reinstallation', null)
+      schedule()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      starting = false
+    }
+  }
+
+  const verdict = () => {
+    if (!run || running()) return null
+    if (run.error) return { tone: 'text-danger', text: `Could not start: ${run.error}` }
+    if (run.exit.code === 0) return { tone: 'text-success', text: run.argv.includes('--plan') ? 'The plan ran. Nothing changed.' : 'Reinstalled.' }
+    return { tone: 'text-danger', text: `Exited with ${run.exit.code ?? run.exit.signal}. Read the log above.` }
+  }
+
+  const why = () => !entry.host ? 'needs an ssh Host' : !entry.hasKey ? 'needs an admin API key: fli basecamp:key' : ''
+
+  load()
+  poll()
+  loadLive()
+</script>
+
+<div class="section-header">
+  <h1>Charter</h1>
+  <span class="cluster">
+    <Button treatment="outlined" id="charter-refresh" onclick={load}>Refresh</Button>
+    <Button id="charter-new-box" treatment="outlined" href="/basecamps/new/">New box</Button>
+  </span>
+</div>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading && !entry}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !entry}
+  <EmptyState title="No Basecamp runs Charter">
+    No entry in basecamps.json is marked runs: true{others.length ? ` — known: ${others.join(', ')}` : ''}.
+  </EmptyState>
+{:else}
+  <div class="switcher">
+    <section class="card" id="charter-basecamp" data-basecamp={entry.name}>
+      <div class="surface-header">
+        <h2 class="h5 cluster">
+          <Dot tone={entry.answers.ok ? 'success' : 'danger'} label={entry.answers.ok ? 'answers' : 'does not answer'} />
+          {entry.name}
+        </h2>
+      </div>
+      <dl class="facts text-sm" data-keys>
+        <dt>Address</dt>
+        <dd>{entry.url}</dd>
+        <dt>ssh</dt>
+        <dd>{entry.host ?? 'no ssh Host'}</dd>
+        <dt>Status</dt>
+        <dd class={entry.answers.ok ? '' : 'text-danger'}>{entry.answers.ok ? `answers in ${entry.answers.ms} ms` : `does not answer: ${entry.answers.why}`}</dd>
+        <dt>Admin key</dt>
+        <dd class={entry.hasKey ? '' : 'text-danger'}>{entry.hasKey ? 'filed' : 'none'}</dd>
+        <dt>Run key</dt>
+        <dd class={entry.hasScopedKey ? '' : 'text-danger'}>{entry.hasScopedKey ? 'filed' : 'none — Charter cannot run'}</dd>
+      </dl>
+    </section>
+
+    <form class="card charter-pinned" id="charter-reinstall" onsubmit={(e) => e.preventDefault()}>
+      <div class="surface-header"><h2 class="h5">Reinstall</h2></div>
+      <Select id="reinstall-mode" label="Mode" placeholder="" options={MODES} bind:value={mode} />
+      <Checkbox id="reinstall-plan" label="Plan only (--plan)" checked={plan} onchange={(v) => { plan = v }}
+        description="Read the box and print the run; nothing is backed up or changed." />
+      <div class="surface-footer">
+        {#if why()}<span class="text-sm text-muted">{why()}</span>{/if}
+        <ConfirmationPopover title={plan ? `Plan a reinstall of ${(entry, entry.name)}?` : `Reinstall ${(entry, entry.name)}?`}
+          message={plan ? 'Nothing changes.' : mode === 'fresh'
+            ? 'Basecamp is backed up, retired and installed empty. Every App it held is forgotten and the run key stops working.'
+            : 'Basecamp is backed up, retired and installed again from that backup.'}
+          confirmLabel={plan ? 'Plan' : 'Reinstall'} tone={plan ? 'primary' : 'danger'} onconfirm={start}>
+          {#snippet trigger()}
+            <Button id="reinstall-start" tone={plan ? 'primary' : 'danger'}
+              disabled={(entry, starting, run, !!why() || starting || running())} loading={starting}
+              title={why()}>{plan ? 'Plan the reinstall' : 'Reinstall'}</Button>
+          {/snippet}
+        </ConfirmationPopover>
+      </div>
+    </form>
+  </div>
+{/if}
+
+{#if run}
+  <section class="card" id="reinstall-run">
+    <div class="surface-header charter-head">
+      <h2 class="h5">{run.name}</h2>
+      <code class="text-sm charter-meta">{run.argv.join(' ')}</code>
+    </div>
+    <pre id="reinstall-log" class="code charter-log"><code>{run.lines.join('\n') || ((run.exit, run.error, running()) ? 'Started, no output yet…' : '')}</code></pre>
+    {#if (run.exit, run.error, running())}
+      <div class="text-sm text-muted">Running, pid {run.pid}. This page keeps reading the log.</div>
+    {/if}
+    {#if (run.exit, run.error, verdict())}
+      <div class={`text-sm ${verdict().tone}`} data-verdict>{verdict().text}</div>
+    {/if}
+  </section>
+{/if}
+
+{#if live}
+  <form class="card" id="charter-run" onsubmit={(e) => e.preventDefault()}>
+    <div class="surface-header charter-head">
+      <h2 class="h5">Run</h2>
+      {#if live.checkout.ok}
+        <span class="cluster">
+          <Button size="sm" treatment="ghost" id="cases-all" onclick={() => { picked = live.cases.map(c => c.case) }}>All</Button>
+          <Button size="sm" treatment="ghost" id="cases-none" onclick={() => { picked = [] }}>None</Button>
+          <Button size="sm" treatment="outlined" id="charter-file-add" onclick={() => fileInput.click()}>Add a charter file</Button>
+        </span>
+      {/if}
+    </div>
+    {#if !live.checkout.ok}
+      <article class="alert danger">
+        <div class="alert-content">No Charter checkout at {live.checkout.dir}: set CHARTER_DIR to one holding builder/live.ts.</div>
+      </article>
+    {:else}
+      <div class="text-sm text-muted">
+        In {live.checkout.dir} ·
+        {#if live.checkout.wizard}
+          <a href={live.checkout.wizard} target="_blank" rel="noopener">Charter's wizard</a> writes a new charter.json
+        {:else}
+          start Charter's web for its wizard
+        {/if}
+      </div>
+
+      <fieldset class="charter-cases" id="charter-cases">
+        <legend class="visually-hidden">Cases</legend>
+        <div class="grid gap-sm" style="--grid-min: 11rem">
+          {#each live.cases as c (c.case)}
+            <Checkbox id={`case-${c.case}`} label={c.source === 'picked' ? `${c.case} (picked)` : c.case}
+              checked={(picked, picked.includes(c.case))} onchange={(v) => toggle(c.case, v)} />
+          {/each}
+        </div>
+      </fieldset>
+      <input type="file" id="charter-file" hidden accept=".json,application/json" bind:this={fileInput} onchange={addFile} />
+
+      <Select id="charter-when-done" label="When a case is done" placeholder="" options={WHEN_DONE} bind:value={whenDone} />
+
+      <div class="surface-footer">
+        {#if (live, entry, picked, cantRun())}<span class="text-sm text-muted">{cantRun()}</span>{/if}
+        <ConfirmationPopover title={`Run ${(picked, picked.length)} case${picked.length === 1 ? '' : 's'} on ${(entry, entry?.name)}?`}
+          message={`One at a time, each is generated, given its feature, deployed to ${entry?.name} under the run key and used — about $1.50 and 10 minutes of model time a case. ${whenDone === 'keep' ? 'Each App is left standing.' : 'Each App is destroyed when done.'}`}
+          confirmLabel="Run" tone="primary" onconfirm={launch}>
+          {#snippet trigger()}
+            <Button id="charter-run-start" tone="primary" loading={launching}
+              disabled={(live, entry, picked, launching, launching || !!cantRun())} title={(live, entry, picked, cantRun())}>Run</Button>
+          {/snippet}
+        </ConfirmationPopover>
+      </div>
+    {/if}
+  </form>
+
+  {#if (live, rows().length)}
+    <section class="stack gap-lg" id="charter-runs">
+      <h2 class="h5">{live.batch ? `${live.batch.kind === 'remove' ? 'Removing' : 'This run'} · ${live.batch.date}${live.batch.keep ? ' · kept' : ''}` : `Records · ${live.recent[0]?.date ?? ''}`}</h2>
+      {#each (live, rows()) as row (row.key)}
+        <article class="card" data-case={row.name} data-state={row.state}>
+          <div class="surface-header charter-head">
+            <span class="cluster">
+              <Dot tone={STATE_TONES[row.state] ?? ''} pulse={row.state === 'running'} label={row.state} />
+              {row.name}
+              <span class="text-sm text-muted charter-meta">{row.state}{row.record?.costUsd ? ` · ${usd(row.record.costUsd)}` : ''}</span>
+            </span>
+            {#if row.record?.deploy?.hostname}
+              <a class="text-sm charter-meta charter-wrap" href={`https://${row.record.deploy.hostname}`} target="_blank" rel="noopener">{row.record.deploy.hostname}</a>
+            {/if}
+          </div>
+          {#if row.refused}
+            <div class="text-sm text-danger" data-refused>{row.refused}</div>
+          {:else if row.record}
+            <ol class="charter-stages text-sm" data-stages>
+              {#each Object.entries(row.record.stages) as [stage, s] (stage)}
+                <li class="charter-stage" data-stage={stage} data-outcome={s.outcome}>
+                  <Dot tone={TONES[s.outcome] ?? ''} label={s.outcome} />
+                  <span class="text-muted">{stage}</span>
+                  <span class={`charter-detail charter-wrap ${s.outcome === 'not reached' ? 'text-muted' : ''}`}>{s.detail || s.outcome}</span>
+                  <span class="charter-num text-muted">{secs(s.ms)}</span>
+                  <span class="charter-num text-muted">{usd(s.costUsd)}</span>
+                </li>
+              {/each}
+            </ol>
+          {:else if row.state === 'stopped' && row.lines.length}
+            <pre class="code charter-log"><code>{row.lines.join('\n')}</code></pre>
+          {/if}
+          {#if row.log}<div class="text-xs text-muted charter-wrap">{row.log}</div>{/if}
+        </article>
+      {/each}
+    </section>
+  {/if}
+
+  {#if live.kept.length}
+    <section class="card" id="charter-kept">
+      <div class="surface-header"><h2 class="h5">Kept Apps</h2></div>
+      <ul class="rows divided">
+        {#each live.kept as k (k.record)}
+          <li class="list-row" data-kept={k.appName}>
+            <div class="stack gap-3xs charter-wrap">
+              <strong>{k.appName}</strong>
+              {#if k.hostname}<a class="text-sm" href={`https://${k.hostname}`} target="_blank" rel="noopener">{k.hostname}</a>{/if}
+              <span class="text-sm text-muted">{k.case} · {k.date} · {k.basecamp}</span>
+            </div>
+            <div class="row-actions">
+              <ConfirmationPopover title={`Delete ${k.appName}?`}
+                message="Charter's clean stage removes its Domains, the App, its project and its data, then checks nothing else on the box changed."
+                confirmLabel="Delete" tone="danger" onconfirm={() => removeApp(k)}>
+                {#snippet trigger()}
+                  <Button size="sm" tone="danger" treatment="outlined" disabled={(live, liveGoing())}>Delete</Button>
+                {/snippet}
+              </ConfirmationPopover>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
+  {#if live.refused.length}
+    <article class="alert danger" id="charter-refused">
+      <div class="alert-content">
+        <strong>Records not read</strong>
+        {#each live.refused as r (r.file)}
+          <p class="text-sm">{r.refused}</p>
+        {/each}
+      </div>
+    </article>
+  {/if}
+{/if}
+
+<style>
+  .charter-cases { border: 0; margin-inline: 0; padding: 0; min-inline-size: 0; }
+  .charter-head  { flex-wrap: wrap; }
+  .charter-meta  { font-weight: normal; }
+  .charter-wrap  { min-inline-size: 0; overflow-wrap: anywhere; }
+  .charter-log   { max-block-size: 50vh; overflow: auto; }
+
+  /* One grid across a record's stages, so a long detail wraps in its own column
+     and the timings line up down the card instead of dropping to a new line. */
+  .charter-stages {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    gap: var(--space-xs) var(--space-lg);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .charter-stage {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: baseline;
+  }
+  .charter-num { text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 639px) {
+    .charter-stages { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+    .charter-detail { grid-column: 2 / -1; grid-row: 2; }
+  }
+
+  /* Holds a short form's footer to the card's bottom beside a taller neighbor. */
+  .charter-pinned { display: flex; flex-direction: column; }
+  .charter-pinned > .surface-footer { margin-block-start: auto; }
+</style>

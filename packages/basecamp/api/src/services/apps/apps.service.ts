@@ -726,7 +726,7 @@ function seedOwnerInput(raw: unknown): { email: string, password: string } {
   if (!EMAIL.test(email)) throw new BadRequest('email is an address, with no quote, backslash or leading dash')
   const password = data.password
   // A control character is a password no login form can type back.
-  if (typeof password !== 'string' || password.length < 12 || password.length > 256 || /[\x00-\x1f\x7f]/.test(password))
+  if (typeof password !== 'string' || password.length < 12 || password.length > 256 || [...password].some(c => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f))
     throw new BadRequest('password is 12 to 256 printable characters')
   return { email, password }
 }

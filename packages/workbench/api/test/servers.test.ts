@@ -101,8 +101,8 @@ describe('the servers service over stubbed providers', () => {
     expect(out.accounts.map((a: any) => [a.label, a.machines.length, a.error === null])).toEqual([
       ['hz main', 1, true], ['hz old', 0, false], ['do', 1, true],
     ])
-    expect(out.accounts[0].machines[0]).toEqual({ id: '42', name: 'web-1', ip: '203.0.113.7', status: 'running', size: 'cx22', location: 'fsn1' })
-    expect(out.accounts[2].machines[0]).toEqual({ id: '9', name: 'db-1', ip: '198.51.100.4', status: 'off', size: 's-1vcpu-1gb', location: 'nyc3' })
+    expect(out.accounts[0].machines[0]).toEqual({ id: '42', name: 'web-1', ip: '203.0.113.7', status: 'running', size: 'cx22', location: 'fsn1', consoleUrl: null })
+    expect(out.accounts[2].machines[0]).toEqual({ id: '9', name: 'db-1', ip: '198.51.100.4', status: 'off', size: 's-1vcpu-1gb', location: 'nyc3', consoleUrl: 'https://cloud.digitalocean.com/droplets/9' })
     expect(out.accounts[1].error).toContain('authenticate')
     // Read-only toward providers: nothing but GETs left.
     expect(sent.every(r => r.method === 'GET')).toBe(true)

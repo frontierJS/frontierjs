@@ -26,9 +26,9 @@
   // and a broadcast here is graded per recipient against a model's row, so there
   // is nothing to announce on. A write of its own already reread, and the reread
   // carries the new digest, so it does not redraw twice.
-  import { ago }    from '../lib/datetime.js'
-  import { slug }   from '../lib/claude-edit.js'
-  import { claude } from '../resources/Claude.mesa'
+  import { ago }    from '../../lib/datetime.js'
+  import { slug }   from '../../lib/claude-edit.js'
+  import { claude } from '../../resources/Claude.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'

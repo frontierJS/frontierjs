@@ -16,6 +16,8 @@
 //   POST /laptop         setGlobalEnv    { key, value } set one key through core/global-env.js -> { key }
 //   POST /laptop         unsetGlobalEnv  { key } remove one key -> { key }
 //   GET  /laptop         commands    the user's own fli commands -> [{ name, description, alias, filePath }]
+//   GET  /laptop         ping        the ntfy topic Claude Code's Stop hook pings, from ~/.claude/ntfy-topic -> { path, topic, url }
+//   POST /laptop         setPing     { topic } write it; empty removes the file and turns the ping off -> { path, topic, url }
 //   GET  /laptop         services    every account fli signs in to: how, present or not (names only), setup pointer, vendor page, and the commands that use it
 //   POST /laptop         probeService    { id } run that CLI service's login check -> { ok, who, ms }; the one verb that shells out, and only on a press
 //   GET  /laptop         running     fli dev sessions with their ports and which answer, and the tree holds -> { sessions, holds }
@@ -25,12 +27,13 @@ import { LEVELS }                       from '@frontierjs/litestone'
 import { disk, clear, removeLane }      from '../../domain/laptop/laptop.ts'
 import { keys, fixMode }                from '../../domain/laptop/keys.ts'
 import { globalEnv, setGlobalEnv, unsetGlobalEnv, commands } from '../../domain/laptop/settings.ts'
+import { ping, setPing }                from '../../domain/laptop/ping.ts'
 import { running }                      from '../../domain/laptop/running.ts'
 import { servicesList, probeService }  from '../../domain/laptop/services.ts'
 
-const READS  = ['disk', 'keys', 'globalEnv', 'commands', 'running', 'services']
+const READS  = ['disk', 'keys', 'globalEnv', 'commands', 'ping', 'running', 'services']
 // probeService shells out to a CLI, so it is a write: a keyed retry must run it again.
-const WRITES = ['clear', 'removeLane', 'fixMode', 'setGlobalEnv', 'unsetGlobalEnv', 'probeService']
+const WRITES = ['clear', 'removeLane', 'fixMode', 'setGlobalEnv', 'unsetGlobalEnv', 'setPing', 'probeService']
 
 export default createService({
   name: 'laptop',
@@ -86,6 +89,18 @@ export default createService({
 
   async commands() {
     return commands()
+  },
+
+  async ping() {
+    return ping()
+  },
+
+  async setPing() {
+    const { topic } = ($.data ?? {}) as { topic?: unknown }
+    if (typeof topic !== 'string') throw new BadRequest('setPing takes { topic } as a string')
+    const out = setPing(topic)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
   },
 
   async running() {

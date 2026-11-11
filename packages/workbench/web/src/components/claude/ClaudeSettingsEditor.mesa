@@ -10,9 +10,9 @@
   //
   // A layer that exists but did not parse is shown, not editable: the service
   // refuses to write over a file it could not read.
-  import { lines }  from '../lib/claude-edit.js'
-  import { tilde }  from '../lib/claude-format.js'
-  import { claude } from '../resources/Claude.mesa'
+  import { lines }  from '../../lib/claude-edit.js'
+  import { tilde }  from '../../lib/claude-format.js'
+  import { claude } from '../../resources/Claude.mesa'
 
   import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'

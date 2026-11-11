@@ -6,7 +6,7 @@
   // managed policy's, so the drawer offers this for a user or project item and a
   // non-managed memory file. A memory file the scan lists as absent is created by
   // Save. Trash applies to items, not memory files; it asks inside the page.
-  import { claude } from '../resources/Claude.mesa'
+  import { claude } from '../../resources/Claude.mesa'
 
   import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'

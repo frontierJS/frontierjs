@@ -3,9 +3,9 @@
   // the share of cost-weighted use per project, model, tool, skill and subagent
   // over 24 hours or 7 days. A message's cost is split evenly across the tools
   // it called; a skill takes the whole cost of the turns it loaded in.
-  import { ago }    from '../lib/datetime.js'
-  import { count, usd, share, tilde } from '../lib/claude-format.js'
-  import { claude } from '../resources/Claude.mesa'
+  import { ago }    from '../../lib/datetime.js'
+  import { count, usd, share, tilde } from '../../lib/claude-format.js'
+  import { claude } from '../../resources/Claude.mesa'
   import ClaudeIndexBuild from './ClaudeIndexBuild.mesa'
 
   import Callout from '@frontierjs/ui/components/display/Callout.mesa'

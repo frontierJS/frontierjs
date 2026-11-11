@@ -4,7 +4,7 @@
   // it on its own, so the screen asks, then polls until the pass it asked for
   // has finished. `asked` is the server's clock, so a skewed browser cannot
   // mistake an older pass for this one.
-  import { claude } from '../resources/Claude.mesa'
+  import { claude } from '../../resources/Claude.mesa'
 
   import Button  from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout from '@frontierjs/ui/components/display/Callout.mesa'

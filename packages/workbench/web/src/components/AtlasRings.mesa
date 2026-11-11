@@ -58,10 +58,12 @@
   .atlas-ring-count[data-on='true'] { fill: var(--surface); font-weight: 600; }
   .atlas-rings-legend { list-style: none; margin: 0; padding: 0; }
   .atlas-rings-key {
+    --atlas-rings-touch: 2rem;
     display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-2xs); align-items: center;
     inline-size: 100%; min-inline-size: var(--tile-min, 12rem); padding: var(--space-3xs) var(--space-xs);
     border: 0; border-radius: var(--card-radius); background: none; font: inherit; color: inherit; cursor: pointer; text-align: start;
   }
+  @media (max-width: 40rem) { .atlas-rings-key { min-block-size: var(--atlas-rings-touch); } }
   .atlas-rings-key[aria-pressed='true'] { background: var(--tint-surface); font-weight: 600; }
   .atlas-rings-dot { inline-size: var(--space-xs); block-size: var(--space-xs); border-radius: 50%; background: var(--tone-ink); }
 </style>
