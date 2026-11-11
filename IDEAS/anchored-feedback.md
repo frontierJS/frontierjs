@@ -49,7 +49,7 @@ is a later row if a review asks for it.
 
 | Piece | Shape | Owner |
 | --- | --- | --- |
-| Anchor | route · `data-fjs-loc` · offset as a fraction of the element's box · a quoted run of its text · viewport · build id (`x-fjs-build`) | the pick, from `pick()` — never a second picker |
+| Anchor | route · `data-fjs-loc` · offset as a fraction of the element's box · a quoted run of its text · viewport · build id (`x-frontier-build`) | the pick, from `pick()` — never a second picker |
 | Store | `Review`, `Pin`, `Comment` as `.lite` models, each `@@gate`d on review membership | a schema fragment + plugin pair, the shape `auth` already is |
 | Identity | an invite link that establishes a session for one review; a teammate signs in normally | `auth` — a route establishes a session (`FJS-D20`), the rest is services |
 | Client | a panel injected into a PREVIEW build only, the way mesa-vite injects the inspect client into dev | site-kit's build |

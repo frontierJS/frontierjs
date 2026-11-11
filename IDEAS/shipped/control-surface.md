@@ -443,7 +443,7 @@ up is not a fact about the app this page maps.
   - **B** — ask who holds the port (`pidsOnPort` in `core/ports.js`) and match the
     holder to the tile: inside the GUI child's process group, else a working
     directory under the row's `dir`.
-  - **C** — every surface answers an identity probe (`x-fjs-build` or a manifest
+  - **C** — every surface answers an identity probe (`x-frontier-build` or a manifest
     naming its app), and the tile compares names.
   - **Recommend B** — it answers for a static origin as well as an API, using the
     one owner of *what holds this port* that `fli kill` and `ports:status` already

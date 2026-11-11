@@ -35,7 +35,7 @@ let server, base, port
 beforeAll(async () => {
   server = createServer((req, res) => {
     if (req.url === '/health') {
-      res.writeHead(200, { 'content-type': 'application/json', 'x-fjs-build': 'abc1234' })
+      res.writeHead(200, { 'content-type': 'application/json', 'x-frontier-build': 'abc1234' })
       res.end(JSON.stringify({ status: 'ok' }))
       return
     }
@@ -169,13 +169,13 @@ describe('httpText', () => {
 
 describe('header', () => {
   test('matches', async () => {
-    const r = await header({ url: `${base}/health`, name: 'x-fjs-build', expect: 'abc1234' })
+    const r = await header({ url: `${base}/health`, name: 'x-frontier-build', expect: 'abc1234' })
     expect(r.ok).toBe(true)
   })
 
   test('an absent header is said differently from a wrong one', async () => {
     const absent = await header({ url: `${base}/health`, name: 'x-nope', expect: 'v' })
-    const wrong  = await header({ url: `${base}/health`, name: 'x-fjs-build', expect: 'v' })
+    const wrong  = await header({ url: `${base}/health`, name: 'x-frontier-build', expect: 'v' })
     expect(absent.got).toContain('absent')
     expect(wrong.got).toContain('abc1234')
   })

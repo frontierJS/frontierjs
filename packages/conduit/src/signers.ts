@@ -34,7 +34,7 @@ export const ed25519: Signer = async ({ secret, method, path, query, body, param
     method, path, query,
     serviceMethod: headers['x-service-method'],
     body:          body ?? '',
-    prefix:        params.header_prefix ?? 'X-Fjs',
+    prefix:        params.header_prefix ?? 'X-Frontier',
     timestamp:     Math.floor(Date.now() / 1000),
     nonce:         crypto.randomUUID(),
   }),

@@ -872,7 +872,9 @@ export default createService({
         ...(projectId ? { environment: { is: { projectId } } } : {}),
         ...await notHub(db().asSystem(), 'app'),
       },
-      include: { ...WITH_DETAIL, ...Object.fromEntries(asked.map(r => [r, true])) },
+      // `environment` last: a picker's `$populate=environment` would otherwise
+      // drop the project the Apps list draws.
+      include: { ...WITH_DETAIL, ...Object.fromEntries(asked.map(r => [r, true])), environment: { include: { project: true } } },
       orderBy: sort ? normalizeOrderBy(sort as SortParam) : { createdAt: 'desc' },
       limit, offset,
     })

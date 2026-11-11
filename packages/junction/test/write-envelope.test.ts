@@ -115,7 +115,7 @@ describe('what the envelope refuses', () => {
   test('a body flagged as an envelope that is not one is refused BY NAME', async () => {
     const res = await fetch(`http://127.0.0.1:${PORT}/probe/ROW-1`, {
       method:  'PATCH',
-      headers: { 'Content-Type': 'application/json', 'X-Fjs-Write': 'enveloped' },
+      headers: { 'Content-Type': 'application/json', 'X-Frontier-Write': 'enveloped' },
       body:    JSON.stringify({ body: 'two' }),   // no `data` key — not an envelope
     })
     expect(res.status).toBe(400)

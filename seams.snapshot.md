@@ -22,7 +22,7 @@ MINTED and the question asked of that file is whether it contains the string at 
 weaker claim, and it is the one a file can answer.
 
 **9 of those checks are marked weak** and the mark is the point: asking whether
-junction contains the string `log` proves nothing, where `x-fjs-build` is nearly a proof. A row
+junction contains the string `log` proves nothing, where `x-frontier-build` is nearly a proof. A row
 that claimed the strong check while holding the weak one would be worse than no row.
 
 ## Most restated
@@ -145,7 +145,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
 | `client.setCallHeader(name, value)` | `packages/junction/src/client/index.ts` | yes | — |
-| `x-fjs-build` | `packages/junction/src/core/build-id.ts` | mentioned | — |
+| `x-frontier-build` | `packages/junction/src/core/build-id.ts` | mentioned | — |
 | `wsSend()` / `flushSendQueue()` | `packages/junction/src/transport/send-queue.ts` | yes | 2 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | yes | 8 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |

@@ -1463,6 +1463,44 @@ cover cards (secondhand, 2025), so the flow is one-way. The web store is not a
 drive — the extension loads unpacked, and the drive is a CDP session against a
 profile that has it.
 
+### 44. Music — a track that outlives its path, its bytes and its tags
+
+*Added 2026-11-10. The codename is provisional. Numbered past #43 so `#N` stays
+unique; the plan is `fjs-prototypes/music/PLAN.md`.*
+
+**The product.** A self-hosted music server that owns its library: Navidrome's
+job without Navidrome, so there is no connector and no mirror. It scans folders,
+derives a catalog from tags, transcodes, streams, and keeps each person's stars,
+plays and playlists, with its own web player and a Subsonic door for existing
+clients.
+
+**Why it is not #17.** Immich's identity is its bytes. A retag rewrites a
+track's bytes and a move changes its path, and a person's star has to survive
+both, so identity here is a matching policy rather than a column. Immich's
+derived files are permanent, and a transcode is a cached response with a size
+budget. What else breaks first:
+
+- **A response with no length yet.** Seeking inside a transcode still being
+  written. `serveRange` covers a finished file.
+- **A process that lives as long as a request.** An `ffmpeg` must die when its
+  listener hangs up, which is neither a job nor a route's ordinary life.
+- **A row nobody authors that somebody stars.** An album exists because tracks
+  say so, and its id can change under a person's star.
+- **A foreign protocol's credential.** `md5(password + salt)` needs a secret the
+  server can recover, carried in a URL, against a framework that hashes.
+- **Playback across navigation.** Audio, a queue and media keys that outlive
+  every route.
+
+**It is also the long-horizon run.** The plan is built for one agent to carry
+alone, one session per phase with nothing handed over but the repo: its gates
+are frozen before the run and speak Subsonic so they are black-box, and each
+phase closes with a fresh-context verifier.
+
+**Gradable**: 50,000 tracks, half renamed and a tenth retagged, no star lost and
+no row duplicated; twenty listeners with five hanging up, memory flat and no
+orphan `ffmpeg`; a real Subsonic client browsing and playing; music uninterrupted
+through ten route changes.
+
 ## Phase 2 — the gap scan
 
 *Added 2026-10-09. Twelve products whose first break has no mention in Phase 1,

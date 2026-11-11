@@ -26,10 +26,10 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4507 source file(s) read
-256 entry point(s), 32 imported by nothing outside their package, 14 emitted
-1763 value export(s), 643 reached by nothing outside, 183 emitted
-465 type export(s), 340 reached by nothing outside
+27 package(s) · 4508 source file(s) read
+257 entry point(s), 32 imported by nothing outside their package, 14 emitted
+1766 value export(s), 643 reached by nothing outside, 183 emitted
+466 type export(s), 340 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
@@ -43,7 +43,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `ui` | 9 | 0 | 56 | 36 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `outpost` | 11 | 1 | 57 | 18 | 1 | 0 | 0 |
-| `conduit` | 4 | 1 | 26 | 12 | 0 | 60 | 33 |
+| `conduit` | 5 | 1 | 29 | 12 | 0 | 61 | 33 |
 | `site-kit` | 9 | 4 | 36 | 9 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 22 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
@@ -100,7 +100,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/conduit`
 
-`packages/conduit` · 4 entry point(s) · 26 value, 60 type export(s)
+`packages/conduit` · 5 entry point(s) · 29 value, 61 type export(s)
 
 **Entries imported by nothing outside (1):** `./stores/memory`
 

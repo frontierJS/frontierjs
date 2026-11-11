@@ -189,7 +189,7 @@ owed to `mesa-ir.md`, not here.
     discovery* (§ IV): the doctrine's word is *target* and the tree now holds
     three markup ones built without a ruling; A fixes the doctrine's reading,
     not the tree.
-- ~~**Where the built views live, and what the plugin option and the Sierra command are called**~~ **Answered 2026-10-13 (`FJS-D955`): A — `api/dist/mcp/<Model>.html`, written by `sierra mcp` run from `web/` with `--out <absolute dir>` and refused without it; `fli mcp:build` supplies `$.paths.api/dist/mcp`, because fli is the one thing that knows the app's layout and a relative default crossing a surface is the derived path Invariant 3 forbids. The plugin is told once, as `static` is told its `root`: `mcp({ ui: { root } })` — `ui` is the extension's own key (`capabilities.extensions['io.modelcontextprotocol/ui']`, `_meta.ui`) and leaves room for `csp` and `permissions` beside `root`. Absent, the plugin registers text-only tools. Declared and missing at boot, it REFUSES to start, naming the directory and `fli mcp:build`: that amends 1.5's *never a boot failure* to per-file (a model with no view is no pointer; a surface with no directory is a deploy defect). The image carries API and views from one commit, so 1.5's `x-fjs-build` key is unneeded — agreement by construction, not by check.**
+- ~~**Where the built views live, and what the plugin option and the Sierra command are called**~~ **Answered 2026-10-13 (`FJS-D955`): A — `api/dist/mcp/<Model>.html`, written by `sierra mcp` run from `web/` with `--out <absolute dir>` and refused without it; `fli mcp:build` supplies `$.paths.api/dist/mcp`, because fli is the one thing that knows the app's layout and a relative default crossing a surface is the derived path Invariant 3 forbids. The plugin is told once, as `static` is told its `root`: `mcp({ ui: { root } })` — `ui` is the extension's own key (`capabilities.extensions['io.modelcontextprotocol/ui']`, `_meta.ui`) and leaves room for `csp` and `permissions` beside `root`. Absent, the plugin registers text-only tools. Declared and missing at boot, it REFUSES to start, naming the directory and `fli mcp:build`: that amends 1.5's *never a boot failure* to per-file (a model with no view is no pointer; a surface with no directory is a deploy defect). The image carries API and views from one commit, so 1.5's `x-frontier-build` key is unneeded — agreement by construction, not by check.**
   Steps 0.2 and 2.4. Probed 2026-10-13. The API image
   `fli make:deploy` writes COPYs `api/` and `db/` and its `.dockerignore` drops
   `web/`, so nothing under `web/dist/` exists where `mcp()` boots in
@@ -215,13 +215,13 @@ owed to `mesa-ir.md`, not here.
     start, naming the directory and `fli mcp:build`: that amends 1.5's *never
     a boot failure* to per-file (a model with no view is no pointer; a surface
     with no directory is a deploy defect). The image carries API and views
-    from one commit, so 1.5's `x-fjs-build` key is unneeded — agreement by
+    from one commit, so 1.5's `x-frontier-build` key is unneeded — agreement by
     construction, not by check.
   - **B** — `web/dist/mcp/`, emitted INSIDE the SPA build as a postbuild step
     (the islands' shape: a second Vite build, `emptyOutDir: false`), switched
     on by `sierra.config.js` `mcp: true`. The Dockerfile template gains
     `COPY web/dist/mcp` and `.dockerignore` an exception for it; the plugin
-    reads `../web/dist/mcp` and keeps the `x-fjs-build` key, because web and
+    reads `../web/dist/mcp` and keeps the `x-frontier-build` key, because web and
     API release separately (deploy steps 03 and 08) and can be two commits.
     Every SPA build of an opted-in app grows by N library builds.
   - **C** — no files in the image: the SPA release serves
@@ -517,7 +517,7 @@ a standing withheld from the model's tools is refused the view.
   `verify:mcp` is the no-`ui` path, as at 1.2 and 1.3.
 - [x] 1.5 Bundle source: the plugin reads `<ui.root>/<Model>.html` at boot
   (`FJS-D955`). Done 2026-10-13 inside 1.2, every clause below as written; the
-  boot warning for a `<Model>.html` no one-row tool answers is the one addition. No `x-fjs-build` key: the image carries the API and its views
+  boot warning for a `<Model>.html` no one-row tool answers is the one addition. No `x-frontier-build` key: the image carries the API and its views
   from one commit. A missing FILE means no pointer for that model and nothing
   said; a declared `ui.root` that is not a directory refuses the boot, naming
   it and `fli mcp:build`, because the mistake it hides is the whole surface
@@ -928,7 +928,7 @@ Done when: a `createResource(name, { app: mcpApp() })` loads and saves through
   and no push. **Four things go quiet, not one.** `resource.stale` stays 0,
   which on a page means *as current as a push can make it* and here means
   *nothing arrived*; `reconnected` never fires, so no refetch; `status.connected`
-  stays false; and `status.stale`, the `x-fjs-build` channel, is never set
+  stays false; and `status.stale`, the `x-frontier-build` channel, is never set
   since a tool result carries no header. What a view does learn is somebody
   else's write AT SAVE — and only on a `@version` model, as the 409
   `resource.conflict()` reads (3.2); on any other model the patch diff (3.3)

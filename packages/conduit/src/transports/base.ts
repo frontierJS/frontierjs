@@ -249,7 +249,7 @@ export abstract class BaseTransport {
             // The verifier reads it into the canonical string, as for `ed25519`.
             serviceMethod: ctx.headers?.['x-service-method'],
             body:          body ?? '',
-            prefix:        auth.header_prefix ?? 'X-Fjs',
+            prefix:        auth.header_prefix ?? 'X-Frontier',
             timestamp:     Math.floor(Date.now() / 1000),
             nonce:         crypto.randomUUID(),
           }),

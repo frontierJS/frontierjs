@@ -405,7 +405,7 @@ table `app_copy` · db `main` · gate `5`
 
 ### `AppDrill`
 
-table `app_drill` · db `main` · gate `5.8.8.8`
+table `app_drill` · db `main` · gate `2.8.8.8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |

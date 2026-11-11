@@ -14,7 +14,7 @@ import { wrapResult } from '@frontierjs/junction/envelope'
 
 import { peerKeys, type PeerKeys } from '../src/peer.ts'
 import { createBasecamp } from '../src/domain/peer/basecamp.ts'
-import { PeerRefusal } from '../src/domain/peer/peer-call.ts'
+import { createPeer, PeerRefusal } from '../src/domain/peer/peer-call.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'wb-peer-'))
 const KEY_ID  = 'key_peer_1'
@@ -42,11 +42,12 @@ beforeAll(async () => {
         seenNonce: (n: string) => { if (nonces.has(n)) return true; nonces.add(n); return false },
       })
       if (!verdict.ok) return Response.json({ name: 'NotAuthenticated', message: `signature refused: ${verdict.reason}` }, { status: 401 })
-      seen.push({ headers, nonce: headers['x-fjs-nonce'] })
+      seen.push({ headers, nonce: headers['x-frontier-nonce'] })
       if (refuseNext) {
         const r = refuseNext; refuseNext = null
         return Response.json({ name: 'BadRequest', message: r.message, code: r.status }, { status: r.status })
       }
+      if (req.method === 'GET') return Response.json(wrapResult([{ query: url.search }], 'apps', 'find'))
       const sent = JSON.parse(body)
       return Response.json(wrapResult({ action: sent.action, route: { ok: false, why: 'no machine named' } }, 'apps', 'preview'))
     },
@@ -80,9 +81,9 @@ describe('the dialer', () => {
     const answer = await dialer().preview(open)
     expect(answer).toEqual({ action: 'open', route: { ok: false, why: 'no machine named' } })
     expect(seen).toHaveLength(1)
-    expect(seen[0].headers['x-fjs-key']).toBe(KEY_ID)
+    expect(seen[0].headers['x-frontier-key']).toBe(KEY_ID)
     expect(seen[0].headers['x-service-method']).toBe('preview')
-    expect(seen[0].headers['x-fjs-signature']).toMatch(/^v1-ed25519=/)
+    expect(seen[0].headers['x-frontier-signature']).toMatch(/^v1-ed25519=/)
   })
 
   test('a nonce is fresh per call', async () => {
@@ -91,6 +92,12 @@ describe('the dialer', () => {
     await dialer().preview(open)
     expect(seen).toHaveLength(2)
     expect(seen[0].nonce).not.toBe(seen[1].nonce)
+  })
+
+  test('a read is a GET whose signature covers its query', async () => {
+    const peer = createPeer({ url: `http://127.0.0.1:${server.port}`, keyId: KEY_ID, privateKey: async () => keys.privateKey })
+    const list = await peer.read<{ data: unknown[] }>('/apps?appId=a1')
+    expect(list.data).toEqual([{ query: '?appId=a1' }])
   })
 
   test('a refusal becomes a thrown error carrying its sentence', async () => {

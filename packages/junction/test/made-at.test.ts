@@ -67,7 +67,7 @@ describe('a replayed write is dated when it was made', () => {
     try {
       const made = Date.now() - 8 * HOUR
       const { status, body } = await call('POST', '/clock-entries', { note: 'in' },
-        { 'x-fjs-made-at': iso(made), 'x-fjs-sent-at': iso(Date.now()) })
+        { 'x-frontier-made-at': iso(made), 'x-frontier-sent-at': iso(Date.now()) })
       expect(status).toBe(201)
       near(body.startedAt, made)
       near(body.updatedAt, made)
@@ -80,7 +80,7 @@ describe('a replayed write is dated when it was made', () => {
       const skew = 3 * HOUR                     // the device runs three hours fast
       const made = Date.now() - 8 * HOUR
       const { body } = await call('POST', '/clock-entries', { note: 'in' },
-        { 'x-fjs-made-at': iso(made + skew), 'x-fjs-sent-at': iso(Date.now() + skew) })
+        { 'x-frontier-made-at': iso(made + skew), 'x-frontier-sent-at': iso(Date.now() + skew) })
       near(body.startedAt, made)
     } finally { await close() }
   })
@@ -91,7 +91,7 @@ describe('a replayed write is dated when it was made', () => {
       const { body: row } = await call('POST', '/clock-entries', { note: 'in' })
       const made = Date.now() - 2 * HOUR
       const { body } = await call('PATCH', `/clock-entries/${row.id}`, { note: 'out' },
-        { 'x-fjs-made-at': iso(made), 'x-fjs-sent-at': iso(Date.now()) })
+        { 'x-frontier-made-at': iso(made), 'x-frontier-sent-at': iso(Date.now()) })
       near(body.updatedAt, made)
       near(body.startedAt, Date.now())          // the create's stamp is untouched
     } finally { await close() }
@@ -112,7 +112,7 @@ describe('`$.madeAt`', () => {
     try {
       const made = Date.now() - 8 * HOUR
       const { body } = await call('POST', '/probes/1', {},
-        { 'x-service-method': 'when', 'x-fjs-made-at': iso(made + HOUR), 'x-fjs-sent-at': iso(Date.now() + HOUR) })
+        { 'x-service-method': 'when', 'x-frontier-made-at': iso(made + HOUR), 'x-frontier-sent-at': iso(Date.now() + HOUR) })
       near(body.madeAt, made)
     } finally { await close() }
   })
@@ -131,9 +131,9 @@ describe('what the boundary refuses', () => {
     const { call, close } = await boot()
     try {
       const { status, body } = await call('POST', '/clock-entries', { note: 'in' },
-        { 'x-fjs-made-at': iso(Date.now() - HOUR) })
+        { 'x-frontier-made-at': iso(Date.now() - HOUR) })
       expect(status).toBe(400)
-      expect(JSON.stringify(body)).toContain('X-Fjs-Sent-At')
+      expect(JSON.stringify(body)).toContain('X-Frontier-Sent-At')
     } finally { await close() }
   })
 
@@ -141,9 +141,9 @@ describe('what the boundary refuses', () => {
     const { call, close } = await boot()
     try {
       const { status, body } = await call('POST', '/clock-entries', { note: 'in' },
-        { 'x-fjs-made-at': iso(Date.now() + HOUR), 'x-fjs-sent-at': iso(Date.now()) })
+        { 'x-frontier-made-at': iso(Date.now() + HOUR), 'x-frontier-sent-at': iso(Date.now()) })
       expect(status).toBe(400)
-      expect(JSON.stringify(body)).toContain('X-Fjs-Made-At')
+      expect(JSON.stringify(body)).toContain('X-Frontier-Made-At')
     } finally { await close() }
   })
 
@@ -151,7 +151,7 @@ describe('what the boundary refuses', () => {
     const { call, close } = await boot()
     try {
       const { status } = await call('POST', '/clock-entries', { note: 'in' },
-        { 'x-fjs-made-at': 'yesterday', 'x-fjs-sent-at': iso(Date.now()) })
+        { 'x-frontier-made-at': 'yesterday', 'x-frontier-sent-at': iso(Date.now()) })
       expect(status).toBe(400)
     } finally { await close() }
   })
@@ -184,7 +184,7 @@ describe('over the socket', () => {
       const made = Date.now() - 8 * HOUR
       ws.send(JSON.stringify({
         type: 'service_call', id: 'c1', service: 'clock-entries', method: 'create', data: { note: 'in' },
-        meta: { headers: { 'x-fjs-made-at': iso(made + HOUR), 'x-fjs-sent-at': iso(Date.now() + HOUR) } },
+        meta: { headers: { 'x-frontier-made-at': iso(made + HOUR), 'x-frontier-sent-at': iso(Date.now() + HOUR) } },
       }))
       const frame = await reply
       ws.close()
@@ -210,8 +210,8 @@ describe('the client states `madeAt` on either transport, with its own clock at 
     const made = Date.now() - HOUR
     await c.service('clock-entries').create({ note: 'in' }, undefined, { madeAt: made, idempotencyKey: 'k1' })
     const h = Object.fromEntries(Object.entries(seen[0]).map(([k, v]) => [k.toLowerCase(), v]))
-    expect(h['x-fjs-made-at']).toBe(iso(made))
-    near(h['x-fjs-sent-at'], Date.now())
+    expect(h['x-frontier-made-at']).toBe(iso(made))
+    near(h['x-frontier-sent-at'], Date.now())
     expect(h['idempotency-key']).toBe('k1')
   })
 
@@ -226,8 +226,8 @@ describe('the client states `madeAt` on either transport, with its own clock at 
     } }
     const made = Date.now() - HOUR
     await c.service('clock-entries').patch(3, { note: 'out' }, undefined, { madeAt: new Date(made) })
-    expect(sent[0].meta.headers['x-fjs-made-at']).toBe(iso(made))
-    near(sent[0].meta.headers['x-fjs-sent-at'], Date.now())
+    expect(sent[0].meta.headers['x-frontier-made-at']).toBe(iso(made))
+    near(sent[0].meta.headers['x-frontier-sent-at'], Date.now())
   })
 
   test('a call that states none sends neither', async () => {
@@ -238,6 +238,6 @@ describe('the client states `madeAt` on either transport, with its own clock at 
     }) as never
     const c: any = createJunctionClient({ url: 'http://localhost:3000', timeout: 2_000 })
     await c.service('clock-entries').create({ note: 'in' })
-    expect(Object.keys(seen[0]).map(k => k.toLowerCase())).not.toContain('x-fjs-sent-at')
+    expect(Object.keys(seen[0]).map(k => k.toLowerCase())).not.toContain('x-frontier-sent-at')
   })
 })

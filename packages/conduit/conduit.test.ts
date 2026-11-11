@@ -1603,9 +1603,9 @@ describe('WebSocket transport — auth on the upgrade', () => {
       await t.send({ target: target.id, method: 'POST', path: '/deploy' })
 
       const up = s.upgrades[0]
-      expect(up['x-fjs-signature']).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
-      expect(up['x-fjs-timestamp']).toMatch(/^\d+$/)
-      expect(up['x-fjs-nonce']).toBeDefined()
+      expect(up['x-frontier-signature']).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
+      expect(up['x-frontier-timestamp']).toMatch(/^\d+$/)
+      expect(up['x-frontier-nonce']).toBeDefined()
     } finally { t.destroy(); s.stop() }
   })
 
@@ -2306,36 +2306,36 @@ describe('hmac signing', () => {
   // Every bodyless command used to go out completely unsigned.
   it('signs a bodyless POST', async () => {
     const h = await headersFor({ method: 'POST', path: '/reboot' }, '')
-    expect(h.get('x-fjs-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
+    expect(h.get('x-frontier-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
   })
 
   it('signs a DELETE', async () => {
     const h = await headersFor({ method: 'DELETE', path: '/servers/42' }, '')
-    expect(h.get('x-fjs-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
+    expect(h.get('x-frontier-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
   })
 
   it('signs a GET', async () => {
     const h = await headersFor({ method: 'GET', path: '/status' }, '')
-    expect(h.get('x-fjs-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
+    expect(h.get('x-frontier-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
   })
 
   it('emits a timestamp and nonce for replay rejection', async () => {
     const h = await headersFor({ method: 'POST', path: '/deploy', body: { a: 1 } }, '')
-    const ts = Number(h.get('x-fjs-timestamp'))
+    const ts = Number(h.get('x-frontier-timestamp'))
     expect(ts).toBeGreaterThan(Date.now() / 1000 - 60)
-    expect(h.get('x-fjs-nonce')).toMatch(/^[0-9a-f-]{36}$/)
+    expect(h.get('x-frontier-nonce')).toMatch(/^[0-9a-f-]{36}$/)
   })
 
   it('binds the signature to the path — same body, different path, different sig', async () => {
     const a = await headersFor({ method: 'POST', path: '/deploy', body: { x: 1 } }, '')
     const b = await headersFor({ method: 'POST', path: '/destroy', body: { x: 1 } }, '')
-    expect(a.get('x-fjs-signature')).not.toBe(b.get('x-fjs-signature'))
+    expect(a.get('x-frontier-signature')).not.toBe(b.get('x-frontier-signature'))
   })
 
   it('binds the signature to the method', async () => {
     const a = await headersFor({ method: 'POST',   path: '/x' }, '')
     const b = await headersFor({ method: 'DELETE', path: '/x' }, '')
-    expect(a.get('x-fjs-signature')).not.toBe(b.get('x-fjs-signature'))
+    expect(a.get('x-frontier-signature')).not.toBe(b.get('x-frontier-signature'))
   })
 
   it('honors a custom header prefix', async () => {
@@ -2343,13 +2343,13 @@ describe('hmac signing', () => {
     try {
       const target = outpostTarget({
         address: s.url,
-        auth: { type: 'hmac', ref: 'AGENT_SECRET', header_prefix: 'X-Frontier' },
+        auth: { type: 'hmac', ref: 'AGENT_SECRET', header_prefix: 'X-Custom' },
       })
       const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
       await t.send({ target: target.id, method: 'POST', path: '/deploy' })
 
-      expect(s.seen[0].headers.get('x-frontier-signature')).toMatch(/^v1-sha256=/)
-      expect(s.seen[0].headers.get('x-fjs-signature')).toBeNull()
+      expect(s.seen[0].headers.get('x-custom-signature')).toMatch(/^v1-sha256=/)
+      expect(s.seen[0].headers.get('x-frontier-signature')).toBeNull()
     } finally { s.stop() }
   })
 })
@@ -2382,7 +2382,7 @@ describe('unix transport', () => {
       expect(req.method).toBe('DELETE')                          // was forced to POST
       expect(new URL(req.url).pathname).toBe('/servers/42')      // was `/${path ?? method}`
       expect(req.headers.get('x-custom')).toBe('1')              // was dropped
-      expect(req.headers.get('x-fjs-signature')).toMatch(/^v1-sha256=/) // was absent entirely
+      expect(req.headers.get('x-frontier-signature')).toMatch(/^v1-sha256=/) // was absent entirely
     } finally { server.stop(true) }
   })
 
@@ -3439,9 +3439,9 @@ describe('HTTP transport — header precedence is case-insensitive (FJS-656)', (
       const target = outpostTarget({ address: s.url })
       const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
 
-      await t.send({ target: target.id, method: 'GET', headers: { 'x-fjs-signature': 'deadbeef' } })
+      await t.send({ target: target.id, method: 'GET', headers: { 'x-frontier-signature': 'deadbeef' } })
 
-      const sig = s.seen[0].headers.get('x-fjs-signature')
+      const sig = s.seen[0].headers.get('x-frontier-signature')
       expect(sig).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
       expect(sig).not.toContain('deadbeef')
     } finally { s.stop() }
@@ -3953,15 +3953,15 @@ describe('hmac signing — the query is bound (FJS-678)', () => {
   it('two different queries on one path do not share a signature', async () => {
     const a = await signedGet({ to: 'alice' })
     const b = await signedGet({ to: 'mallory' })
-    expect(a.headers.get('x-fjs-signature')).not.toBe(b.headers.get('x-fjs-signature'))
+    expect(a.headers.get('x-frontier-signature')).not.toBe(b.headers.get('x-frontier-signature'))
   })
 
   it('the signature carries its version, so another version is refused by name', async () => {
     const { headers, url } = await signedGet({ to: 'alice' })
-    expect(headers.get('x-fjs-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
+    expect(headers.get('x-frontier-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
 
     const other = new Headers(headers)
-    other.set('x-fjs-signature', headers.get('x-fjs-signature')!.replace(/^v1-/, 'v2-'))
+    other.set('x-frontier-signature', headers.get('x-frontier-signature')!.replace(/^v1-/, 'v2-'))
     const result = await verify(other, url, url.search)
     expect(result.ok).toBe(false)
     expect((result as { reason: string }).reason).toMatch(/only version this side understands/)

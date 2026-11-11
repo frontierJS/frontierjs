@@ -15,15 +15,19 @@ stands is the latest read.
 The boxes below lag the tree. Basecamp's receiving half of Q4 is built:
 
 - **Basecamp hears a peer.** `peerCredential` reads the key id from
-  `x-fjs-key`, refuses a key whose account is not `kind: 'peer'` or is
+  `x-frontier-key`, refuses a key whose account is not `kind: 'peer'` or is
   suspended, and passes the call on as that account, `userType: 'peer'`
   (`packages/basecamp/api/src/core/hooks.ts:666`). The account is bound to
   one workspace (`hooks.ts:99`) and graded by the gate under its key's scopes.
 - **The key row holds only the public half** (`ApiKey.publicKey`,
   `FJS-D1604`), entered from "Add a peer" on
   `packages/basecamp/web/src/routes/api-keys/index.mesa`.
-- **Workbench is the one dialer**: conduit's `ed25519` signer in
-  `packages/workbench/api/src/domain/peer/peer-call.ts`.
+- **The dialer is conduit's** (`@frontierjs/conduit/peer`, `FJS-D2068`);
+  Workbench wraps it in `packages/workbench/api/src/domain/peer/peer-call.ts`.
+- **A peer is enrolled at a role** from a bot's list (`FJS-D2069`), `admin`
+  when the enrollment names none; `AppDrill` reads at a viewer's level
+  (`FJS-D2070`), so a viewer peer holding `appDrills:read` reads when a copy was
+  last proven.
 
 **One Basecamp passing something to another** rides on this door and is not
 built. Basecamp B can enroll Basecamp A as a peer today by pasting A's public
@@ -36,6 +40,12 @@ paste. What crosses decides the route:
   link: A mints a signed download of the archive (`IDEAS/app-archives.md`) and
   B's Outpost restores from it (`POST /volume/restore` takes `url` + `sha256`).
 - **A secret** — unruled; it needs its own hearing.
+- **A kept answer** — the asker may need to prove what it was told when it
+  decided. A signed answer kept as dated evidence states *the owner said X at
+  time T* and never answers *is X true now* (Q6).
+
+**A copy of your own data is outside this.** A backup, a Litestream replica and
+`read-only-copy.md` hold one owner's bytes for that owner.
 
 ---
 
@@ -51,6 +61,11 @@ first and across owners later.
 
 The first pair is Basecamp and `fjs-prototypes/chat` (`FJS-D1189`); the
 project-management app, `fjs-prototypes/linear`, follows.
+
+**Across owners, the point is one origin.** An owner keeps the only authoritative
+copy of a fact and another owner asks for it rather than holding its own. Why that
+is worth building, and who tried it first, is `one-origin-across-owners.md`.
+Phases 5–10 are that build (`FJS-D2066`).
 
 **A peer** is an FJS app whose calls another FJS app grades as that app — a
 principal of its own, not a borrowed person. *Peering* is the relationship
@@ -83,6 +98,9 @@ over plain HTTPS between public hosts.
 | a verified credential becoming a principal | `bearerClaim()` / `toDataPrincipal()` (`bridge-index`) | the one owner of that translation (Invariant 4) |
 | Basecamp as a fleet's trust root | Outpost enrollment, the pinned certificate of `FJS-D557` | Basecamp already mints an identity at enrollment and pins it |
 | an outside caller graded per standing | `mcp()`, `FJS-D258` | the gate as the permission model for a non-person |
+| a recorded read | `@@trail(audit, reads: true)`, `packages/litestone/docs/trail.md` | reads can be audited, with `FJS-3708`, `FJS-3783` and `FJS-3784` open against it |
+| whether a change is reversible | `packages/litestone/src/release.js` | an unknown change already counts as a contract |
+| a person's identity | `@frontierjs/toolbelt/frontier`, `frontier-network.md` | a member's chain; says nothing about the subject of a record |
 
 ---
 
@@ -115,7 +133,18 @@ over plain HTTPS between public hosts.
 **In tension: batteries vs. smallness.** The overlay is a battery, so it must be
 severable — an Outpost option, never a dependency of junction or auth. **Paved
 road vs. the workaround**: Phase 0 IS the workaround, run on purpose so its
-friction measures the road.
+friction measures the road. **Preservation vs. evolution**: the evolution policy
+holds inside one owner's tree and ends at the first peer across owners, where a
+service is a published contract (Phase 8, Q8).
+
+**Across owners, three answers widen.** Q1: a record lives once, with its owner,
+and a kept answer is evidence and never a source for a current read. Q8: an owner
+that is offline answers nothing rather than something stale (Q7), since a stale
+fact read as current is the failure this exists to end. Q9: a peer holds no
+authoritative copy of another's rows; for revocation Phase 6's drive is the
+artefact, and for copying the answer stays partly `none`, because an owner cannot
+see inside an asker's box. Past the asker's own schema, that is held by contract
+and by law.
 
 **Tier: Assessment.** This file proposes; a ruling for each question lands in
 `DECISIONS.md`.
@@ -216,12 +245,125 @@ Goal: an app owned by somebody else is peered by consent, not by enrollment.
 Done when: two apps on two Basecamps peer through a handshake that an admin on
 each side approves.
 
-- [ ] 4.1 Waits for a real pair of apps with different owners. The shape is a
+- [ ] 4.1 Waits for a real pair of apps with different owners, which Q5 names. The shape is a
   consent handshake whose grant becomes a principal: OAuth client credentials,
   Tailscale's sharing between tailnets, Slack Connect.
   - 2026-11-05: the receiving door exists (§ Where it stands). A Basecamp →
     Basecamp pair is a candidate first pair once a reason to pass something
     names what crosses.
+
+### Phase 5 — One fact crosses
+
+Goal: two apps with different owners read one fact without copying it, so the gap
+is measured rather than guessed.
+Done when: a read crosses between two apps on two Basecamps, and the friction it
+hit is listed under 5.2.
+
+- [x] 5.1 The rehearsal, Basecamp → Basecamp, by hand with a pasted key: when an
+  app's backup was last verified. The owner's side: one read service with a
+  declared `scope:`, on `signedRequest({ keyFor })` with a public key, its model
+  under `@@trail(audit, reads: true)`. The asker's side:
+  `@frontierjs/conduit/peer`'s `createPeer` (`FJS-D2068`).
+  - 2026-11-11, a scratch probe (not kept): one real Basecamp over real HTTP, a
+    key enrolled with `appDrills:read`, and a script holding the private half in
+    place of the second Basecamp. A hand-signed `GET /app-drills?appId=` answered
+    200. Refused: a replay, a query other than the one signed, another service
+    (403) and a revoked key (401). Another workspace's app answered an empty list.
+  - 2026-11-11, second probe (not kept): two Basecamps in one process, B
+    listening on a real port, A enrolled on B at `viewer` with `appDrills:read`
+    (`FJS-D2069`, `FJS-D2070`) and dialing through `createPeer(...).read`. The
+    drill row came back, B's trail holds a `read` on `AppDrill` with the peer
+    as actor, another workspace's app answered an empty page, `apps.get`
+    answered 403 (scope) and `appDrills.run` 403 (scope). What A held in the
+    test — its private key, B's origin and its key id on B — Basecamp has no row
+    for, which is item 7 below and Q14.
+- [ ] 5.2 Friction, as seen so far:
+  1. **The dialer could not read.** `createPeer.call` always POSTs, so a `find`
+     landed as `create` and answered 405. Closed: `createPeer` now has `read`, and
+     the probe's read through it answered 200.
+  2. **Basecamp had no dialer.** Closed by `FJS-D2068`: it lives in
+     `@frontierjs/conduit/peer`, which Basecamp can import. Nothing in Basecamp
+     dials yet.
+  3. **A scope is a whole service.** `appDrills:read` lists every app's drills in
+     the workspace, where the question was about one app.
+  4. **The answer is the whole row.** Asked when a backup was verified, the peer
+     also receives `report`, `error`, `databases` and `requestedBy`.
+  5. ~~A gap in the probe rather than friction: `AppDrill` is `@@trail(audit)`
+     without the `reads: true` 5.1 calls for.~~ Closed: the model trails reads,
+     and the second probe found the peer's read on the trail.
+  6. ~~**The read needs an admin.** `AppDrill` is `@@gate(5.8.8.8)`, and the same
+     signed read answered 403 with the peer's role set to `developer` or
+     `viewer`.~~ Closed by `FJS-D2069` (enrollment takes a role) and `FJS-D2070`
+     (`AppDrill` reads at 2). Item 4 stands: a viewer peer still receives the
+     whole row.
+  7. **The asker has nowhere to keep what it dials with.** `createPeer` wants
+     the asker's private key, the owner's origin and the key id the owner
+     issued. Workbench keeps these in its own config; Basecamp has no row or
+     Secret for them, so a Basecamp cannot yet dial another from a screen. Q14.
+  8. Not friction, but a fact for the asker: `read` of a collection answers the
+     page envelope (`{ data, total, limit, offset }`), not the rows.
+- [ ] 5.3 The real pair: Kobami asks ELA whether a lead became a customer. Needs
+  ELA's owner's agreement. ELA mirrors Service Autopilot, so say whose fact this
+  is before building it.
+- [ ] 5.4 Friction on the real pair.
+
+### Phase 6 — Refusals hold
+
+Goal: whatever the owner withdraws stops working, and says so.
+Done when: a drive shows a revoked key, a suspended peer and a replayed call each
+refused, and an offline owner producing an error and no answer.
+
+- [ ] 6.1 Hearing on Q7.
+- [ ] 6.2 The drive.
+- [ ] 6.3 A refused read leaves a trail entry (`FJS-3708`). A refused cross-owner
+  read is the one an auditor most wants.
+
+### Phase 7 — A kept answer is evidence
+
+Goal: an asker can prove what it was told, and cannot mistake that for what is
+true now.
+Done when: an answer kept by the asker verifies after the owner has rotated its
+key, and carries its time.
+
+- [ ] 7.1 Hearing on Q6.
+- [ ] 7.2 A signed answer. `signRequest` covers a request; whether it serves a
+  response has not been read.
+- [ ] 7.3 What a check can catch in the asker's own schema, and a statement of
+  what it cannot.
+
+### Phase 8 — A published contract
+
+Goal: an owner can change a service other owners depend on without breaking them.
+Done when: a release adding an optional field passes, and a release removing one
+from a peered service is refused by name.
+
+- [ ] 8.1 Hearing on Q8.
+- [ ] 8.2 A service says it is peered. Needs the spine's Service description (6).
+- [ ] 8.3 `release.js` grades a change to a peered service as a contract change.
+- [ ] 8.4 A machine-readable contract, which is the spine's Model description (1)
+  and waits on `kernel-and-projections.md`.
+
+### Phase 9 — The person can see
+
+Goal: a person sees who read facts about them, across owners, and why.
+Done when: one view lists reads from two owners with actor, time and purpose.
+
+- [ ] 9.1 Hearing on Q9.
+- [ ] 9.2 A peer call states its purpose, and the trail keeps it.
+- [ ] 9.3 Reads are filterable per record (`FJS-3784`) and per tenant (`FJS-3783`).
+- [ ] 9.4 The view.
+
+### Phase 10 — A real exchange
+
+Goal: an exchange that law or money already forces runs on this.
+Done when: somebody other than this project's owner runs one side in production.
+
+- [ ] 10.1 Hearing on Q10.
+- [ ] 10.2 The cross-owner threat model in `THREATS.md`, including mass revocation
+  of a trust root.
+- [ ] 10.3 The spine entries this used, written as specifications.
+- [ ] 10.4 A second implementation passes their vectors, without which no public
+  body should depend on this (`specifications.md` § Tensions to carry).
 
 ---
 
@@ -291,6 +433,106 @@ each side approves.
     secret per pair; the crypto ships (`signature.js:94`) and the cost is one
     type in junction's door. Nebula's CA and SPIFFE both distribute public
     identities for the same reason.
+- ~~**Q5 — The first pair across owners, and the fact.**~~ **Answered 2026-11-11 (`FJS-D2067`): D — C first as a rehearsal, then A: Basecamp → Basecamp on when an app's backup was last verified, keyed on the app's id; then Kobami asks ELA whether a lead became a customer, keyed on an id issued when the site form submits, answering only won, lost or open.**
+  - **A** — two apps with different legal owners and a fact about a business or
+    a license, where a shared identifier already exists.
+  - **B** — a fact about a person, which needs Q9 first.
+  - **C** — two apps this project owns, which proves nothing about consent.
+  - **D** — C first as a rehearsal, then A: Basecamp → Basecamp on when an app's
+    backup was last verified, keyed on the app's id; then Kobami asks ELA whether
+    a lead became a customer, keyed on an id issued when the site form submits,
+    answering only won, lost or open.
+  - **Recommend D** — the rehearsal shakes out the wiring on the only app with a
+    receiving door, so the real pair is not debugged in front of an outside
+    owner, and the real pair needs one outside person's agreement. Both skip
+    matching, the hardest problem in `one-origin-across-owners.md` § Prior art.
+- **Q6 — What an asker may keep.**
+  - **A** — the signed answer, as dated evidence (X-Road).
+  - **B** — nothing beyond a log line that a read happened.
+  - **C** — a cached value with an expiry, used for current reads.
+  - **Recommend A** — B leaves an institution unable to justify a decision, and C
+    is a second origin with a timer on it.
+- **Q7 — An owner is offline.**
+  - **A** — the read fails, and the asker may show a kept answer labeled with
+    its date.
+  - **B** — the read falls back to a kept answer automatically.
+  - **Recommend A** — B turns an outage into silently stale truth, while A leaves
+    the judgment with a person who can see the date.
+- **Q8 — The contract rule for a peered service.**
+  - **A** — additive only, and a breaking change takes a new name (AT Protocol).
+  - **B** — numbered releases that askers migrate between (FHIR).
+  - **Recommend A** — FHIR shows what migration between releases costs an
+    ecosystem, and A needs no coordination between owners.
+- **Q9 — How two owners agree on who a person is.**
+  - **A** — an identifier a registrar peer issues (Estonia's personal code, which
+    needs a state).
+  - **B** — demographic matching (Carequality), which is probabilistic.
+  - **C** — the person presents a signed consent at each door (Account
+    Aggregator's shape), so the person does the joining.
+  - **Recommend C** — it needs no registrar and no guessing, and it makes consent
+    the unit. Low confidence: it fails for a person who cannot present anything,
+    and it widens the chain from members to the public, which `FJS-D1444` took on
+    for members only.
+- **Q10 — Where the force comes from.** Waits for Phases 5–6. A domain with an
+  exchange already mandated or already paid for, small enough that one sector can
+  adopt it, and with a body willing to run a side. Liability, procurement and
+  certification are decided here, and they are probably harder than every phase
+  above.
+- ~~**Q11 — Where the dialer lives.**~~ **Answered 2026-11-11 (`FJS-D2068`): A — `createPeer` moves into `@frontierjs/conduit` and takes a method. Both apps already depend on conduit, which holds the `ed25519` signer. Workbench keeps its own mapping of a refusal to a status.** Blocks 5.1. Basecamp and Workbench import
+  nothing from each other, and only Workbench has `createPeer`.
+  - **A** — `createPeer` moves into `@frontierjs/conduit` and takes a method.
+    Both apps already depend on conduit, which holds the `ed25519` signer.
+    Workbench keeps its own mapping of a refusal to a status.
+  - **B** — Basecamp gets its own copy for the rehearsal.
+  - **C** — no dialer yet: the rehearsal's asker stays a hand-signed script.
+  - **Recommend A** — Kobami and ELA need the same dialer, and a copy is a second
+    reader of the result envelope (Invariant 4).
+- ~~**Q12 — What a peer from another owner is.**~~ **Answered 2026-11-11 (`FJS-D2069`): B — enrollment takes a role from the list a bot takes, and an owner answers a peer through a narrow read declared at that level, returning only the fact. Workbench's preview peer stays `admin`.** Every peer is enrolled `admin`,
+  because a preview creates an `Environment`.
+  - **A** — every peer stays `admin`, and the key's scopes alone narrow it.
+  - **B** — enrollment takes a role from the list a bot takes, and an owner
+    answers a peer through a narrow read declared at that level, returning only
+    the fact. Workbench's preview peer stays `admin`.
+  - **Recommend B** — it also ends the whole-row answer (5.2 item 4), and it needs
+    no new noun. A leaves another owner's key at the top grade below owner.
+- **Q14 — Where a Basecamp keeps what it dials with.** Blocks Phase 10 and any
+  Basecamp-to-Basecamp read from a screen (5.2 item 7). Three facts: this
+  Basecamp's own Ed25519 private key, and for each owner it asks, the origin
+  and the key id that owner issued.
+  - **A** — a `Peer` model in Basecamp: `name`, `url`, `keyId`, per workspace;
+    the private key one `Secret` row the workspace holds (`kind: peer`), the
+    public half shown on the API keys screen for the other owner to paste.
+  - **B** — a conduit target per peer, held in `ConduitTarget` as every other
+    provider is, with the private key in the conduit's credential store; the
+    screen is the conduits screen.
+  - **C** — the Workbench shape: config, outside the database.
+  - **Recommend A, narrowed** — `Peer` (`name`, `url`, `keyId`, `secretId`)
+    is a per-workspace model beside `ApiKey`. The private key is one `Secret`
+    with a new `SecretKind` value `peer` and a `privateKey` data field; the
+    public half is derived from it and shown on the API keys screen, never
+    stored. The Secret is resolved as every other credential is,
+    `createSecretResolver(db)` handed to `createPeer({ privateKey })`.
+    B was checked (`decision-rules`, 2026-11-11) and fails: the conduit registry
+    is hub-wide, gated `SYSADMIN`, has no `workspaceId`, and already resolves
+    its credentials from `Secret`, so B saves nothing and puts tenant data in a
+    shared registry. C is the reopen path, at the cost of dialing from a
+    screen. Two things the draft must settle: `createPeer` pins one target
+    id, so two peers in one process hold only because each call builds its
+    own conduit (pin it with a test); and whether the outbound row is named
+    `Peer` while the inbound side is an `ApiKey` with `userType: 'peer'`
+    (`FJS-D1188`). Not yet drafted as code.
+- ~~**Q13 — How a peer below admin reads a fact.**~~ **Answered 2026-11-11 (`FJS-D2070`): A — lower the model's read gate. Access stays in the schema, and every `viewer` in the workspace can then read `report` and `error`.** Blocks 5.1. `FJS-D2069` enrolls
+  a peer from another owner at a low role, and `AppDrill` is `@@gate(5.8.8.8)`:
+  the signed read answered 403 as `developer` and as `viewer`.
+  - **A** — lower the model's read gate. Access stays in the schema, and every
+    `viewer` in the workspace can then read `report` and `error`.
+  - **B** — a narrow method checks the peer and reads as system. Answers only the
+    fact, and puts the access rule in a service, against Invariant 6.
+  - **C** — a schema-declared model or column holding only the last verified time,
+    readable at `viewer`, written when a drill finishes. Keeps the rule in the
+    schema and answers only the fact, at the cost of a stored copy.
+  - **Recommend C** — low confidence: not yet drafted as code, and neither
+    `decision-rules` nor prior art has been run on it. Draft it first.
 
 ---
 
@@ -308,3 +550,5 @@ each side approves.
   [gravitl/netmaker](https://github.com/gravitl/netmaker)
 - **BeyondCorp** — Google's case that the network grants reachability and never
   trust.
+- **X-Road, Account Aggregator, AT Protocol Lexicons, Carequality, FHIR** — what
+  Phases 5–10 lean on, sourced in `one-origin-across-owners.md` § Prior art.

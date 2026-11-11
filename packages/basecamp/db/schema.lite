@@ -2467,8 +2467,11 @@ model AppDrill {
   durationMs   Int?
   createdAt    DateTime    @default(now())
 
-  @@gate(5.8.8.8)
-  @@trail(audit)
+  // Read at a viewer's level (`FJS-D2070`): when a copy was last proven is the
+  // fact a peer from another owner is enrolled to ask, and the row is the one
+  // place that fact exists. Reads are trailed, so the asking is on record.
+  @@gate(2.8.8.8)
+  @@trail(audit, reads: true)
   @@index([appId])
   @@index([serverId])
   @@index([deploymentId])

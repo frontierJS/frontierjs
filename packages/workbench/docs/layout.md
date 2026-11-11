@@ -15,7 +15,7 @@ The file-by-file map. `CLAUDE.md` keeps the owners and the traps. Paths under
 | `api/src/core/workbench.ts` | `createWorkbench` -- the pins' directory and the Claude binary |
 | `api/src/auth.ts` · `login.ts` · `principal.ts` | the door: mint a Session, read a token back to its member, `/door/*` routes, the per-call principal |
 | `api/src/peer.ts` | this machine's peer key pair, minted into `~/.config/workbench/peer.json`, and `GET /door/peer` that shows its public half |
-| `api/src/domain/peer/` | `peer-call.ts` signs one call to a peer and unwraps its envelope; `basecamp.ts` is `app.basecamp`, the dialer for Basecamp's `apps.preview` |
+| `api/src/domain/peer/` | `peer-call.ts` gives conduit's peer dialer Workbench's status for a refusal; `basecamp.ts` is `app.basecamp`, the dialer for Basecamp's `apps.preview` |
 | `api/src/{domain,services,jobs,plugins}/` | the wing: atlas, claude, workbench and local domains; their services, jobs and the terminal plugin |
 | `api/src/domain/laptop/` | fli's files on this machine, read through `@frontierjs/cli/core/{home,services}.js`: `laptop.ts` (Disk, Clear, Remove lane), `keys.ts` (secret files and their modes, the Frontier identity), `settings.ts` (global env masked, user commands), `running.ts` (dev servers and tree holds), `services.ts` (every service fli signs in to, its probe on request, the commands that use it). The `laptop` service is model-less and gated at ADMINISTRATOR, like `basecamps` |
 | `web/src/routes/laptop/` | `/laptop/`: tabs Disk, Keys, Running, Services; `web/src/resources/Laptop.mesa` is its resource |

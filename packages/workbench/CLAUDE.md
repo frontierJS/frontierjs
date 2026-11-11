@@ -36,8 +36,8 @@ slot. `api/index.ts` states 5501; `web/config/vite.config.js` states 5508 with
 - `api/src/peer.ts` is this machine's Ed25519 key pair (`~/.config/workbench/peer.json`,
   shown at `GET /door/peer` and in the wings' Peer block); `api/src/domain/peer/` dials
   Basecamp's `apps.preview` as a signed peer -- the entry `BASECAMP` names in
-  `basecamps.json` (default `dev`), whose `peerKeyId` is the id Basecamp's "Add a peer" form answers. `peer-call.ts` is one conduit target signed with
-  conduit's `ed25519`.
+  `basecamps.json` (default `dev`), whose `peerKeyId` is the id Basecamp's "Add a peer" form answers. `peer-call.ts` is `@frontierjs/conduit/peer`'s dialer
+  with its refusals given Workbench's status.
 - `web/src/lib/session.js` is who is signed in (Sierra's `account.me` is not
   mounted); `lib/nav.js` is the nav table.
 - `api/src/domain/laptop/` reads fli's own files on this machine through

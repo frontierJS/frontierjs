@@ -57,6 +57,9 @@ title: API keys
   let enrolling = false
   let peerName  = ''
   let peerKey   = ''
+  // The service's list (`FJS-D2069`); admin is what a Workbench opening previews needs.
+  const peerRoles = ['viewer', 'billing', 'developer', 'admin'].map(r => ({ value: r, label: r }))
+  let peerRole  = 'admin'
   // ⌘K's New … entries land here with ?new, on this route or from another;
   // an App's laptop-release card adds ?name= and ?scopes= for the key its
   // command needs.
@@ -130,10 +133,11 @@ title: API keys
     e.preventDefault()
     error = null
     try {
-      await apiKeys.service.invoke('enrollPeer', null, { name: peerName, publicKey: peerKey }, {})
+      await apiKeys.service.invoke('enrollPeer', null, { name: peerName, publicKey: peerKey, role: peerRole }, {})
       enrolling = false
       peerName  = ''
       peerKey   = ''
+      peerRole  = 'admin'
       await load()
     } catch (err) {
       error = err.message
@@ -288,6 +292,10 @@ title: API keys
       <Textarea name="peerKey" id="peer-key" label="Public key" rows={2} value={peerKey}
                 hint="The 43-character Ed25519 key the peer shows. Its key here reaches a preview and nothing else."
                 oninput={(e) => peerKey = e.target.value} />
+      <label class="field-label" for="peer-role">Role</label>
+      <Select id="peer-role" value={peerRole} options={peerRoles}
+              onchange={(e) => peerRole = e.target.value} />
+      <p class="field-hint">What the peer reads is graded at this role, under its key's scopes. Another owner's app is a viewer; a Workbench that opens previews is an admin.</p>
       <Button type="submit" tone="primary" id="enroll-peer">Add peer</Button>
     </form>
   </Card>

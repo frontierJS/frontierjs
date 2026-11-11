@@ -5720,15 +5720,15 @@ describe('seam-owner', () => {
 
   test('a key is graded by MENTION — it has no declaration to point at', () => {
     const root = tree('seam-key', {
-      ...SEAMS('- `x-fjs-build` — which build this is — `junction/src/core/build-id.ts`'),
-      'packages/junction/src/core/build-id.ts': 'export const H = "x-fjs-build"\n',
+      ...SEAMS('- `x-frontier-build` — which build this is — `junction/src/core/build-id.ts`'),
+      'packages/junction/src/core/build-id.ts': 'export const H = "x-frontier-build"\n',
     })
     expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
   })
 
   test('a key its stated owner never mentions fails', () => {
     const root = tree('seam-key-gone', {
-      ...SEAMS('- `x-fjs-build` — which build this is — `junction/src/core/build-id.ts`'),
+      ...SEAMS('- `x-frontier-build` — which build this is — `junction/src/core/build-id.ts`'),
       'packages/junction/package.json': '{"name":"@frontierjs/junction"}',
       'packages/junction/src/core/build-id.ts': 'export const H = "x-other-header"\n',
     })
@@ -5763,7 +5763,7 @@ describe('seam-owner', () => {
   test('a weak check is marked weak, not passed off as a strong one', () => {
     expect(weakLiteral('log')).toBe(true)
     expect(weakLiteral('$')).toBe(true)
-    expect(weakLiteral('x-fjs-build')).toBe(false)
+    expect(weakLiteral('x-frontier-build')).toBe(false)
     expect(weakLiteral('transients')).toBe(false)
   })
 

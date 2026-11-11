@@ -35,7 +35,7 @@ test('signature: a key pair signs, the public half verifies, and nothing else do
   const theirs = await generateSigningKeys()
   const req    = { method: 'POST', path: '/haven/login', body: BODY }
   const headers = await sign({ privateKey: mine.privateKey, ...req })
-  assert.match(headers['X-Fjs-Signature'], /^v1-ed25519=/)
+  assert.match(headers['X-Frontier-Signature'], /^v1-ed25519=/)
 
   const ok = await verify({ publicKey: mine.publicKey, ...req, headers })
   assert.ok(ok.ok, JSON.stringify(ok))
@@ -44,7 +44,7 @@ test('signature: a key pair signs, the public half verifies, and nothing else do
   assert.deepEqual(await verify({ publicKey: mine.publicKey, ...req, body: '{}', headers }), { ok: false, reason: 'signature does not match' })
   // Remote input that does not parse is a refusal, not a crash.
   assert.deepEqual(await verify({ publicKey: 'not-a-key', ...req, headers }), { ok: false, reason: 'signature does not match' })
-  assert.deepEqual(await verify({ publicKey: mine.publicKey, ...req, headers: { ...headers, 'X-Fjs-Signature': 'v1-ed25519=@@' } }), { ok: false, reason: 'signature does not match' })
+  assert.deepEqual(await verify({ publicKey: mine.publicKey, ...req, headers: { ...headers, 'X-Frontier-Signature': 'v1-ed25519=@@' } }), { ok: false, reason: 'signature does not match' })
 })
 
 test('signature: the scheme is named — an HMAC where a key pair is expected, and the reverse, say which', async function () {
@@ -208,7 +208,7 @@ test('signature: a signature from another version is refused BY NAME', async fun
   // wrong half to spend an outage looking at. Nothing emits another version
   // yet; this is what the marker buys on the day something does.
   const headers = await sign({ secret: SECRET, method: 'POST', path: '/exec' })
-  const other = { ...headers, 'X-Fjs-Signature': headers['X-Fjs-Signature'].replace(/^v1-/, 'v2-') }
+  const other = { ...headers, 'X-Frontier-Signature': headers['X-Frontier-Signature'].replace(/^v1-/, 'v2-') }
 
   const result = await verify({ secret: SECRET, method: 'POST', path: '/exec', headers: other })
   assert.equal(result.ok, false)
@@ -217,7 +217,7 @@ test('signature: a signature from another version is refused BY NAME', async fun
 
 test('signature: the emitted signature carries its version', async function () {
   const headers = await sign({ secret: SECRET, method: 'POST', path: '/exec' })
-  assert.match(headers['X-Fjs-Signature'], /^v1-sha256=[0-9a-f]{64}$/)
+  assert.match(headers['X-Frontier-Signature'], /^v1-sha256=[0-9a-f]{64}$/)
 })
 
 test('signature: a part cannot swallow the separator', function () {
@@ -362,7 +362,7 @@ test('signature: a millisecond timestamp in the HEADER answers, it does not thro
   // receiver must not be crashed by what a caller put in one.
   const sec = Math.floor(Date.now() / 1000)
   const headers = lower(await signRequest({ secret: 's', method: 'POST', path: '/p', timestamp: sec, nonce: 'n' }))
-  headers['x-fjs-timestamp'] = String(Date.now())
+  headers['x-frontier-timestamp'] = String(Date.now())
 
   const out = await verifyRequest({ secret: 's', method: 'POST', path: '/p', body: '', headers, now: sec })
   assert.equal(out.ok, false)

@@ -371,7 +371,7 @@ describe('posture reaches basecamp', () => {
 
     expect(sent[0].url).toBe('http://basecamp.test/serverPostures')
     expect(sent[0].init.headers['x-service-method']).toBe('report')
-    expect(sent[0].init.headers['X-Fjs-Signature']).toMatch(/^v1-ed25519=[A-Za-z0-9_-]{86}$/)
+    expect(sent[0].init.headers['X-Frontier-Signature']).toMatch(/^v1-ed25519=[A-Za-z0-9_-]{86}$/)
     expect(sent[0].body.server_id).toBe('srv-1')
     expect(sent[0].body.readings.os.codename).toBe('jammy')
     expect(typeof sent[0].body.at).toBe('string')

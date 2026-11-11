@@ -251,7 +251,7 @@ check(await until(async () => !(await tabText()).includes('PageDown newer') && a
   'PageDown closes it, Bea where she stood', await tabText())
 
 check(await until(async () => (await tabText()).includes('Reload to walk in with it')),
-  'a server on another build than the page says so on the page (x-fjs-build)', await tabText())
+  'a server on another build than the page says so on the page (x-frontier-build)', await tabText())
 
 // ─── the session is the tab's, not its address ─────────────────────────
 

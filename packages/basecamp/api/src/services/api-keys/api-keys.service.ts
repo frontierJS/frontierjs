@@ -200,8 +200,12 @@ async function mintKey(input: Record<string, unknown>): Promise<Record<string, u
 
 /** Not a deliverable domain, as a bot's is not: nothing is ever sent to a peer. */
 const PEER_EMAIL_DOMAIN = 'peers.invalid'
-/** Above a bot's default: a preview creates an Environment, which is admin's
- *  to create. The key's scopes, not the role, are what narrow the peer. */
+/** The roles a peer may be enrolled at: a bot's list (`FJS-D2069`). Never
+ *  owner, for the reason a bot is never one. */
+const PEER_ROLES = ['viewer', 'billing', 'developer', 'admin']
+/** When the enrollment names no role: a preview creates an Environment, which
+ *  is admin's to create. A peer from another owner is enrolled lower, and
+ *  reads what that role reads under the key's scopes. */
 const PEER_ROLE = 'admin'
 /** What a peer's key reaches when the enrollment names nothing: a preview, alone. */
 export const PEER_SCOPES = ['apps:preview']
@@ -229,12 +233,20 @@ function peerScopes(raw: unknown): string[] {
 /** `ed25519 AbCd…wXyZ` — the row's hint, recognizable beside the peer's own copy. */
 const peerHint = (key: string) => `ed25519 ${key.slice(0, 4)}…${key.slice(-4)}`
 
+function peerRole(raw: unknown): string {
+  if (raw === undefined || raw === null || raw === '') return PEER_ROLE
+  if (typeof raw !== 'string' || !PEER_ROLES.includes(raw))
+    throw new BadRequest(`role must be one of ${PEER_ROLES.join(', ')} — a peer cannot own a workspace`)
+  return raw
+}
+
 async function enrollPeer(input: Record<string, unknown>): Promise<{ id: string, userId: string, name: string }> {
   const name = typeof input.name === 'string' ? input.name.trim() : ''
   if (!name || name.length > 200) throw new BadRequest('name is required — what this screen calls the peer, up to 200 characters')
   const publicKey = asPeerKey(input.publicKey)
   if (!publicKey) throw new BadRequest('publicKey is not an Ed25519 public key — paste the 43-character key the peer shows')
   const scopes = peerScopes(input.scopes)
+  const role   = peerRole(input.role)
 
   if (await db().apiKey.exists({ where: { workspaceId: ws(), name } }))
     throw new Conflict(`An API key named '${name}' already exists in this workspace`)
@@ -256,7 +268,7 @@ async function enrollPeer(input: Record<string, unknown>): Promise<{ id: string,
       isEmailVerified: false, isSystemAdmin: false,
     }})
     await tx.workspaceMember.create({ data: {
-      workspaceId: ws(), userId: user.id, role: PEER_ROLE, capabilities: grantsFor(PEER_ROLE),
+      workspaceId: ws(), userId: user.id, role, capabilities: grantsFor(role),
       invitedBy: actor(), invitedAt: now, acceptedAt: now,
     }})
     return user
@@ -434,7 +446,7 @@ export default createService({
 
   // ── enrollPeer ────────────────────────────────────────────────────
   // Collection-level. `{ name, publicKey, scopes? }` → `{ id, userId, name }`;
-  // the `id` is what the peer names in `X-Fjs-Key` on every signed call.
+  // the `id` is what the peer names in `X-Frontier-Key` on every signed call.
   async enrollPeer() {
     return enrollPeer(($.data ?? {}) as Record<string, unknown>)
   },

@@ -157,7 +157,7 @@ MCP client of the app's own `/mcp`: `tools/list` becomes the command tree,
   longer offered is refused at start-up.
 - **Exit codes** from the error's `code`, with `retryable` choosing between two of
   them, so a script can tell *try again* from *stop*.
-- **A cache of the tool list — built 2026-09-25**, keyed by the app's `x-fjs-build` (`FJS-D160`), and none for an app that states no build. The
+- **A cache of the tool list — built 2026-09-25**, keyed by the app's `x-frontier-build` (`FJS-D160`), and none for an app that states no build. The
   server already states its build and a client already compares — a CLI whose cache
   outlived a deploy offers yesterday's commands and nothing says so.
 
@@ -214,7 +214,7 @@ multipart), signed self-upgrade, and a styled TUI. Terminal rendering through Me
    standing, or does not exist*. A destructive method on a TTY asks, and `--yes`
    skips.
 9. **Silence.** *The CLI offers what `tools/list` offers at this standing* — fails
-   when the cache outlives a build, which the `x-fjs-build` key turns into a
+   when the cache outlives a build, which the `x-frontier-build` key turns into a
    refetch. *A route overrides a tool that exists* — the start-up refusal. *`--await`
    waits for the job the call started* — fails when a method enqueues a job it does
    not declare, and `--await` returns at once in green; `none` until a check reads

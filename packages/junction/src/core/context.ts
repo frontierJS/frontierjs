@@ -666,14 +666,14 @@ export interface RequestSource {
 }
 
 /** The two instants a replayed write states, as HTTP headers. The socket merges the same names off a frame. */
-export const MADE_AT_HEADER = 'x-fjs-made-at'
-export const SENT_AT_HEADER = 'x-fjs-sent-at'
+export const MADE_AT_HEADER = 'x-frontier-made-at'
+export const SENT_AT_HEADER = 'x-frontier-sent-at'
 
 /** The headers the browser client sends whether or not an app declared them in
  *  `http.callHeaders`. Two readers: the CORS preflight allows them, and the
  *  socket merges them off a frame. A name added to one reader only is
  *  preflight-refused cross-origin or silently dropped on the socket. */
-export const PROTOCOL_CALL_HEADERS      = ['X-Workspace-Id', 'Idempotency-Key', 'X-Fjs-Made-At', 'X-Fjs-Sent-At']
+export const PROTOCOL_CALL_HEADERS      = ['X-Workspace-Id', 'Idempotency-Key', 'X-Frontier-Made-At', 'X-Frontier-Sent-At']
 /** HTTP-only: a frame names its method in the frame, so the socket merge must
  *  never accept this one as a header. */
 export const PROTOCOL_HTTP_ONLY_HEADERS = ['X-Service-Method']
@@ -692,17 +692,17 @@ export function resolveMadeAt(madeAt: string | undefined, sentAt: string | undef
   if (madeAt == null && sentAt == null) return undefined
   if (madeAt == null || sentAt == null)
     throw new BadRequest(
-      'A replayed write states when it was made (X-Fjs-Made-At) AND when it was sent (X-Fjs-Sent-At), both off ' +
+      'A replayed write states when it was made (X-Frontier-Made-At) AND when it was sent (X-Frontier-Sent-At), both off ' +
       'the device clock: the second is what corrects the first for how wrong that clock is. Got only ' +
-      (madeAt == null ? 'X-Fjs-Sent-At.' : 'X-Fjs-Made-At.'))
+      (madeAt == null ? 'X-Frontier-Sent-At.' : 'X-Frontier-Made-At.'))
   const made = Date.parse(madeAt)
   const sent = Date.parse(sentAt)
   if (Number.isNaN(made) || Number.isNaN(sent))
     throw new BadRequest(
-      `X-Fjs-Made-At and X-Fjs-Sent-At are ISO-8601 instants. Got '${madeAt}' and '${sentAt}'.`)
+      `X-Frontier-Made-At and X-Frontier-Sent-At are ISO-8601 instants. Got '${madeAt}' and '${sentAt}'.`)
   if (made > sent)
     throw new BadRequest(
-      `X-Fjs-Made-At (${madeAt}) is later than X-Fjs-Sent-At (${sentAt}) — a write cannot be sent before it was made.`)
+      `X-Frontier-Made-At (${madeAt}) is later than X-Frontier-Sent-At (${sentAt}) — a write cannot be sent before it was made.`)
   return new Date(Math.min(made + (now - sent), now))
 }
 

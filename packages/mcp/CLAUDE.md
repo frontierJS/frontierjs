@@ -20,7 +20,7 @@ src/client/                  `@frontierjs/mcp/client` — the terminal client's 
   argv.ts                      a tool's input schema read as a command line
   run.ts                       one command line against an app's /mcp — globals, output, exit codes
   profiles.ts                  the signed-in credential: one 0600 file per app under XDG_CONFIG_HOME
-  cache.ts                     the command tree per build (x-fjs-build) under XDG_CACHE_HOME — none without a build
+  cache.ts                     the command tree per build (x-frontier-build) under XDG_CACHE_HOME — none without a build
   routes.ts                    cli/src/routes/<service>/<method> — declared `uses`, checkRoutes
   build.ts                     `@frontierjs/mcp/client/build` — cli/ compiled to one binary, routes inside (`fli cli:build`)
   main.ts                      an app's whole entry: main({ name, tenantHeader, url, routes })
