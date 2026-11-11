@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/RestoreDrill.mesa — the Resource layer for the restore drill
+  // (api services/restoreDrills).
+  //
+  // No model: a drill is a process and its record is a file in Workbench's
+  // own directory.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const restoreDrills = createResource('restoreDrills', { model: null })
+</script>

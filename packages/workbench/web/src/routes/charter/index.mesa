@@ -184,6 +184,7 @@ title: Charter
   <h1>Charter</h1>
   <span class="cluster">
     <Button treatment="outlined" id="charter-refresh" onclick={load}>Refresh</Button>
+    <Button id="charter-drill" treatment="outlined" href="/charter/drill/">Restore drill</Button>
     <Button id="charter-new-box" treatment="outlined" href="/basecamps/new/">New box</Button>
   </span>
 </div>

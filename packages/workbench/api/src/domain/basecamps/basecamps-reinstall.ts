@@ -17,6 +17,7 @@
 import { entryOf }                                     from './basecamps.ts'
 import { spawnFli, type CreateOptions, type Creation } from './basecamps-create.ts'
 import { tail }                                        from '../workbench/workbench-run.ts'
+import { drillProcesses }                              from '../charter/live-runs.ts'
 
 export const REINSTALL_MODES = ['restore', 'fresh'] as const
 
@@ -42,7 +43,7 @@ export function reinstallArgv(name: string, host: string, input: ReinstallInput)
 }
 
 /** Start the command, or say why not. One reinstall at a time. */
-export async function startReinstall(input: ReinstallInput, opts: CreateOptions = {}): Promise<Creation | { refused: string }> {
+export async function startReinstall(input: ReinstallInput, opts: CreateOptions & { drills?: () => number[] } = {}): Promise<Creation | { refused: string }> {
   if (held && !held.exit) return { refused: `Already reinstalling '${held.name}' — one at a time` }
   const name = typeof input.name === 'string' ? input.name.trim() : ''
   const e    = name ? await entryOf(name, { home: opts.home }) : null
@@ -52,6 +53,8 @@ export async function startReinstall(input: ReinstallInput, opts: CreateOptions 
   const argv = reinstallArgv(name, e.host, input)
   if ('refused' in argv) return argv
   if (input.approved !== true) return { refused: 'basecamp:reinstall is confirmed by a person each run: it was not approved' }
+  const drills = opts.drills ? opts.drills() : drillProcesses()
+  if (drills.length) return { refused: `A restore drill is going (pid ${drills.join(', ')}), and it runs its own reinstall` }
 
   held = spawnFli('basecamp-reinstall', name, [...argv, '--approved'], opts)
   return { ...held }
