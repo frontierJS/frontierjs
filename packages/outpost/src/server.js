@@ -553,7 +553,7 @@ export function createOutpostServer(config, {
     // Only a request that verified gets this sentence, so an unsigned caller
     // learns nothing about when this process started. The caller signs afresh
     // on every send, so retrying is the whole remedy.
-    if (Number(req.headers.get('X-Fjs-Timestamp')) < BOOT_S) {
+    if (Number(req.headers.get('X-Frontier-Timestamp')) < BOOT_S) {
       log.warn?.(`outpost: refused ${req.method} ${path} — signed before this process started`)
       return json({ error: 'this request was signed before the Outpost restarted — it predates the restart, so send it again' }, 409)
     }

@@ -162,7 +162,7 @@ export function keyLiteral(name) {
 /**
  * Is asking *does the owner contain this string* worth anything for this key?
  *
- * For `x-fjs-build` it is nearly a proof. For `$` it is nothing, and for `log`
+ * For `x-frontier-build` it is nearly a proof. For `$` it is nothing, and for `log`
  * or `auth` it is close to nothing — every file in junction contains both. The
  * weakness is RECORDED rather than hidden, on `invariants.snapshot.md`'s
  * argument: a row claiming a whole check while holding a corner of it is the
@@ -414,7 +414,7 @@ export function renderSeams(rows) {
     out.push('')
     const weak = rows.filter(r => r.kind === 'key' && r.owner && weakLiteral(keyLiteral(r.names[0])))
     out.push(`**${weak.length} of those checks are marked weak** and the mark is the point: asking whether`)
-    out.push('junction contains the string `log` proves nothing, where `x-fjs-build` is nearly a proof. A row')
+    out.push('junction contains the string `log` proves nothing, where `x-frontier-build` is nearly a proof. A row')
     out.push('that claimed the strong check while holding the weak one would be worse than no row.')
   } else if (!gapFn.length) {
     out.push(`**Every callable seam names an owner.** The ${gapKey.length} without one are not callables — a \`$\` on`)

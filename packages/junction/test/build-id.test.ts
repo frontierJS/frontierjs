@@ -67,7 +67,7 @@ describe('resolveBuildId', () => {
 
 describe('the wire names', () => {
   it('are one owner for both transports', () => {
-    expect(BUILD_HEADER).toBe('x-fjs-build')
+    expect(BUILD_HEADER).toBe('x-frontier-build')
     expect(BUILD_FIELD).toBe('build')
   })
 })

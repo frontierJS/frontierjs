@@ -111,6 +111,20 @@ describe('clock.use()', () => {
     expect(clock.use(dom)).toBe(v)
     expect(Math.abs(clock.now() - Date.now())).toBeLessThan(50)
   })
+
+  it('clamps a past deadline before any source sees it: after to 0, every to 1', () => {
+    const seen = []
+    clock.use({
+      now: () => 0,
+      after: (ms, fn) => { seen.push(['after', ms]); return () => {} },
+      every: (ms, fn) => { seen.push(['every', ms]); return () => {} },
+      frame: () => () => {},
+    })
+    clock.after(-250, () => {})
+    clock.every(-250, () => {})
+    clock.after(NaN, () => {})
+    expect(seen).toEqual([['after', 0], ['every', 1], ['after', 0]])
+  })
 })
 
 // ─── Mounted sites (the plan's done-when) ────────────────────────────────

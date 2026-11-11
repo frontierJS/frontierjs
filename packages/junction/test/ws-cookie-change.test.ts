@@ -8,7 +8,7 @@
 //
 // The pins: the response that changes a cookie closes every socket whose
 // upgrade carried that name at the old value, and nobody else's; it says so
-// under `x-fjs-credential`; and the browser client cycles its socket on it.
+// under `x-frontier-credential`; and the browser client cycles its socket on it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createApp, createService, channels, defaultConfig } from '../index.ts'
@@ -76,7 +76,7 @@ describe('a cookie changed after the upgrade', () => {
 
     const res = await fetch(`${BASE}/leave`, { method: 'POST', headers: { cookie: 'portal=old' } })
     expect(res.status).toBe(200)
-    expect(res.headers.get('x-fjs-credential')).toBe('changed')
+    expect(res.headers.get('x-frontier-credential')).toBe('changed')
 
     await Promise.race([holder.closed, settle().then(settle).then(settle)])
     expect(holder.code).not.toBeNull()
@@ -90,7 +90,7 @@ describe('a cookie changed after the upgrade', () => {
     await until(() => holder.frames.some(f => f.type === 'connected'))
 
     const res = await fetch(`${BASE}/redeem`, { method: 'POST' })
-    expect(res.headers.get('x-fjs-credential')).toBe('changed')
+    expect(res.headers.get('x-frontier-credential')).toBe('changed')
     await settle()
     expect(holder.code).toBeNull()
     holder.ws.close()
@@ -101,9 +101,9 @@ describe('a cookie changed after the upgrade', () => {
     await until(() => holder.frames.some(f => f.type === 'connected'))
 
     const same = await fetch(`${BASE}/same`, { method: 'POST', headers: { cookie: 'portal=old' } })
-    expect(same.headers.get('x-fjs-credential')).toBeNull()
+    expect(same.headers.get('x-frontier-credential')).toBeNull()
     const quiet = await fetch(`${BASE}/quiet`, { method: 'POST', headers: { cookie: 'portal=old' } })
-    expect(quiet.headers.get('x-fjs-credential')).toBeNull()
+    expect(quiet.headers.get('x-frontier-credential')).toBeNull()
     await settle()
     expect(holder.code).toBeNull()
     holder.ws.close()

@@ -161,7 +161,7 @@ literature already owns, used in exactly that sense:
 | --- | --- | --- |
 | **read-your-writes** | after a call resolves, the same caller's next read sees it | none in the tree |
 | **at-most-once / at-least-once** | the crash guarantee of an effect | none; caravan's retry docs use them loosely — align |
-| **revision** | the value of the `@version` column a screen read | `@version` (attribute), `x-version` (schema keyword), `version(id)` on a resource, `x-fjs-build` (the build a client runs) — **at least four senses of "version"**; the paper uses *revision* for the row value and leaves `@version` as the attribute's name |
+| **revision** | the value of the `@version` column a screen read | `@version` (attribute), `x-version` (schema keyword), `version(id)` on a resource, `x-frontier-build` (the build a client runs) — **at least four senses of "version"**; the paper uses *revision* for the row value and leaves `@version` as the attribute's name |
 | **position** (C only) | a per-database commit counter | `$after`/`endCursor` (a page cursor, not a commit), outbox `attempts`; would need its own ruling |
 
 **`sync` — the open atlas collision, swept.** Live senses found:

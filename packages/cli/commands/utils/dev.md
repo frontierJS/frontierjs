@@ -85,7 +85,8 @@ the web surface comes up beside it. With no `.env`, the example is copied first;
 the key is written by `fli keygen`, the generator `auth:install` uses. Only this
 key: it is random bytes, where every other blank names a credential somebody has
 to go and get (`core/env-preflight.js`). It is offered and never refused,
-because the API's own refusal already says what is wrong.
+because the API's own refusal already says what is wrong. Over a database that
+already holds encrypted values it asks for the key that sealed them instead.
 
 A port that is already answering is not correct in any reading, and the two dev
 runners fail differently and badly: `bun --watch` prints EADDRINUSE and **keeps
@@ -146,7 +147,7 @@ workspace has no lockfile of its own — the one lockfile is at the workspace ro
 package in a bun monorepo, and then ran the wrong runner.
 
 <script>
-import { readFileSync, copyFileSync } from 'fs'
+import { existsSync, readFileSync, copyFileSync } from 'fs'
 import { resolve } from 'path'
 
 const core = name => import(resolve(global.fliRoot, `core/${name}.js`))
@@ -274,7 +275,10 @@ async function offerInstall($, root, missing) {
 // The new key, or '' when the person declined: it travels to the servers on `env:`.
 async function offerKey($, root, keyState) {
   const { echo, log, chalk, tty } = $
-  const { envValue, KEY } = await core('env-preflight')
+  const { envValue, KEY, checkKey, askHeldKey } = await core('env-preflight')
+  const schema = resolve($.paths.db, 'schema.lite')
+  const check  = existsSync(schema) ? checkKey($, schema) : null
+  if (check?.values.length) return (await askHeldKey($, schema, check))?.[KEY] ?? ''
   const keygen = `fli keygen aes --format hex --name ${KEY} --env`
   log.warn(keyState === 'no-env'
     ? `no .env — the API refuses to start without ${KEY}`

@@ -119,7 +119,7 @@ export const bridge = {
     //
     // Absent flag means the body is the data, exactly as before, so nothing
     // already on the wire changes meaning.
-    const enveloped = (raw.headers?.['x-fjs-write'] ?? '').trim().toLowerCase() === 'enveloped'
+    const enveloped = (raw.headers?.['x-frontier-write'] ?? '').trim().toLowerCase() === 'enveloped'
     let envelopeBase: Record<string, unknown> | null = null
     let envelopeBody = raw.body
     if (enveloped) {
@@ -129,7 +129,7 @@ export const bridge = {
       // validation for the wrong reason, and name a field nobody wrote.
       if (!b || typeof b !== 'object' || Array.isArray(b) || !('data' in b))
         throw new BadRequest(
-          'This request is flagged as an enveloped write (X-Fjs-Write: enveloped) and its body is not ' +
+          'This request is flagged as an enveloped write (X-Frontier-Write: enveloped) and its body is not ' +
           'one: an enveloped body is { data, base }, where base is the row as the writer read it.')
       envelopeBody = b.data as TransportContext['body']
       const rawBase = b.base

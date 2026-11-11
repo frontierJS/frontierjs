@@ -66,6 +66,9 @@ every tool in the field leads with.
 | 19 | **Morning brief** — one push a day over `workbench-package.md` Phase 3's morning-report transport: last CI (`.cache/ci-last.txt`), decisions waiting, overnight Autopilot, Disk folders that grew, stale servers (#16) | repomon, Happy's digest | Every piece exists; only the composition is new. | S |
 | 20 | **Cost by plan, and a long-chat warning** — #2's totals summed per `IDEAS/` plan the chat was started from (#7), and a notice past N turns, since cost is turns × context | termany, Helicon | Extends #2, not a new origin. Waits for #7 to tie a chat to a plan. | S |
 | 21 | **Disk history** — keep each scan's totals and draw a trend per folder on the Disk tab; a push when Cache or State grows past a set amount in a week | ncdu's export, Grafana | Adds history to the existing tab. A table of samples is a new origin, so the row must say who samples (the Disk scan, on each visit) and the retention (90 days). | S–M |
+| 22 | **What Workbench does on your machine** — one checkable doc listing everything it installs, runs, reads and talks to | threadbear's `docs/on-your-mac.md` | A tool that spawns `claude` and holds provider tokens owes its user this list; nothing like it exists. | S |
+| 23 | **Withhold by origin** — decide what never leaves the laptop by where the output came from (a file read, an env), not by scanning the text for secrets | threadbear's `runner/src/withhold.ts` | Matters once a chat or notice leaves the machine (#9, the morning brief). Pattern-scanning misses what it does not recognize. | M |
+| 24 | **A key per chat** — each run gets a key derived from the main token, scoped to its own chat, instead of the main token | threadbear's per-thread HMAC keys | Limits what one runaway chat can reach. Wanted before #11 or any remote approval. | M |
 
 **Recommended order: 1 → 2 → 3 → 4**, because each reuses code that already exists.
 Together they turn *a run ended* into *a run ended, here is the diff, the checks are
@@ -137,3 +140,4 @@ plan against `example/` has not.
 - [Vibe Kanban shutdown (Bloop, 2026-04-10; continues as Apache-2.0)](https://vibekanban.com/blog/shutdown)
 - [Omnara vs Happy vs SeaWork](https://seawork.ai/en/blogs/omnara-vs-happy-vs-seawork/)
 - [Agent of Empires (Mozilla.ai) — Stage vs Signal, the dismissed set](https://github.com/mozilla-ai/agent-of-empires)
+- [threadbear (Mike Cann) — reviewed 2026-11-10; #22–#24 come from it, and its exact-byte trust for repo hooks (`script-trust.ts`, ~4,500 lines with `shell-allowlist.ts`) is worth the idea only](https://github.com/mikecann/threadbear)

@@ -35,6 +35,18 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d2080"></a>2026-11-11 · `FJS-D2080` — Q7 — The fli verb's name (1.2) — A, weakly.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, weakly*) over **B** (`fli basecamp:destination <name>`, after Basecamp's `BackupDestination`).
+
+the owner picked the whole of A: the verb is fli basecamp:backups, accepting that it is one letter from basecamp:backup.
+
+### <a id="fjs-d2072"></a>2026-11-11 · `FJS-D2072` — Which prefix do the framework's own HTTP headers carry — Every framework header is `X-Frontier-*`: the kit's default prefix, `x-frontier-build`, Sent-At/Made-At and the peer key, moved in one change with no alias (pre-alpha), ~59 files. A pinned Outpost sends the old name and is refused until re-released, so Outpost releases before Basecamp deploys. The remaining `FJS_*` env vars owe the same move (`FJS-4153`).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (keep `X-Fjs-*`, rename nothing; headers are wire, not operator-typed, so `FJS-D1102` does not reach them. `x-frontier-read-only` moves to `X-Fjs-Read-Only` for one family (7 files)), **C** (rename only the new `X-Fjs-Key` to `X-Frontier-Key`: 7 files, and a third pattern beside the mix), **D** (rule a split: `X-Fjs-*`/`FJS_*` for framework-internal wire and tooling, `X-Frontier-*`/`FRONTIER_*` for what an operator sets or reads. Both `x-fjs-build` and `x-frontier-read-only` are internal wire, so D moves one of them anyway, and it gives `FJS_*` the permanent home `FJS-D1102` said should not exist).
+
+The paper's recommendation, taken as written: `FJS-D1102` already chose the namespace, and an author who knows `FRONTIER_API_URL` can guess `X-Frontier-Key` where nobody can guess which headers are `Fjs`; nothing in the ecosystem expects `X-Fjs-`, so § IV's familiarity has nothing to defend, and the one compatibility owed is to the owner's own Outpost.
+
 ### <a id="fjs-d2017"></a>2026-11-07 · `FJS-D2017` — Where an imported blueprint lands — B now, and A when a workspace asks for private blueprints.
 
 Asked in [`IDEAS/blueprint-catalog.md`](IDEAS/blueprint-catalog.md) § Open questions. **C** was picked over **A** (a second, tenant-scoped model for a workspace's own blueprints), **B** (imports go into the shared catalog only, written by the hub tier (gate 7)).
@@ -1874,6 +1886,18 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d2070"></a>2026-11-11 · `FJS-D2070` — Q13 — How a peer below admin reads a fact — Lower the model's read gate. Access stays in the schema, and every `viewer` in the workspace can then read `report` and `error`.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **A** was picked over **B** (a narrow method checks the peer and reads as system. Answers only the fact, and puts the access rule in a service, against Invariant 6), **C** (a schema-declared model or column holding only the last verified time, readable at `viewer`, written when a drill finishes. Keeps the rule in the schema and answers only the fact, at the cost of a stored copy).
+
+Against the recommendation (**C**): The owner chose the simpler cut over the recommended copy: a drill's report and error are a workspace fact a viewer may read, and a stored copy of finishedAt is a second origin for one date. The gate stays in the schema.
+
+### <a id="fjs-d2069"></a>2026-11-11 · `FJS-D2069` — Q12 — What a peer from another owner is — Enrollment takes a role from the list a bot takes, and an owner answers a peer through a narrow read declared at that level, returning only the fact. Workbench's preview peer stays `admin`.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **B** was picked over **A** (every peer stays `admin`, and the key's scopes alone narrow it).
+
+The paper's recommendation, taken as written: it also ends the whole-row answer (5.2 item 4), and it needs no new noun. A leaves another owner's key at the top grade below owner.
 
 ### <a id="fjs-d2038"></a>2026-11-08 · `FJS-D2038` — Q3 — Which methods an agent loses — `servers.destroy`, `apps.remove`, `volumes.remove`, `volumes.prune`, `servers.discardArchive`, `servers.retireApp`, `maintenanceRuns.run` and `recipes.run`.
 
@@ -8971,6 +8995,64 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d2082"></a>2026-11-11 · `FJS-D2082` — Q9 — How the verb reaches a workspace its key is not bound to (1.2, 1.3) — Call Basecamp's own services through `deploy:repl` as an owner of each workspace, the way `basecamp:key` mints; `dev` runs it locally.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Mint an admin key per workspace and file each under the entry, then use HTTP), **C** (The hub's workspace only; Apps elsewhere are named and skipped).
+
+The paper's recommendation, taken as written: ssh is the standing (`FJS-D1827`) and nothing new is filed. B adds a per-workspace shape to `basecamps.json`, and C undoes Q3.
+
+### <a id="fjs-d2081"></a>2026-11-11 · `FJS-D2081` — Q8 — The archive bucket's lock and the hub's replica (1.2) — Two buckets now: `basecamp-<name>` locked for archives, `basecamp-<name>-replica` unlocked, the hub's replica key scoped to `hub/`, so the replica lands at `hub/hub-<installId>/`.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **B** was picked over **A** (Archives only: `basecamp-<name>` with a 7-day compliance default retention; the replica is a later step in a bucket of its own), **C** (One bucket with Object Lock on and no default retention, archives and replica together; `hub.bucket-locked` stays red).
+
+Against the recommendation (**A**): the owner wants the hub's replica off the box in the same run as its archives; the replica bucket is unlocked and its key is scoped to `hub/` (Basecamp adds the `hub-<installId>` segment under it), so a locked archive bucket and a replica never share a bucket.
+
+### <a id="fjs-d2079"></a>2026-11-11 · `FJS-D2079` — Q6 — A vendor that cannot mint a narrow credential (per 0.3) — The owner makes a narrow one in the vendor's console, and Workbench files and tests it.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Workbench hands the Basecamp the laptop's own token).
+
+The paper's recommendation, taken as written: B puts an account-wide credential on a box, which is the exposure this plan's pattern exists to avoid.
+
+### <a id="fjs-d2078"></a>2026-11-11 · `FJS-D2078` — Q5 — Where the laptop keeps each Basecamp's `ENCRYPTION_KEY` — `~/.config/fli/keys/<name>.key`, mode `0600`.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Vaultwarden. `core/vaultwarden.js` is read-only today, so this needs writing (encrypting a cipher on the client)), **C** (Only compare digests. The owner keeps the copy wherever they like).
+
+The paper's recommendation, taken as written: losing the box and the laptop together is the rare case, and A can move to B later without changing the screen. C leaves 0.6's check with nothing on this laptop to compare against.
+
+### <a id="fjs-d2077"></a>2026-11-11 · `FJS-D2077` — Q4 — Where the laptop's B2 key lives — `~/.config/fli/.env`, as `B2_KEY_ID` and `B2_APPLICATION_KEY`, beside `DIGITALOCEAN_TOKEN` and `CLOUDFLARE_TOKEN`.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Vaultwarden, read through `core/vaultwarden.js`).
+
+The paper's recommendation, taken as written: that is where the other vendor tokens live, and `vaultwarden.js` adds a login on every use.
+
+### <a id="fjs-d2076"></a>2026-11-11 · `FJS-D2076` — Q3 — Which workspaces get a destination — One destination per workspace that has an App, each with its own key limited to its own prefix in the Basecamp's bucket.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Only the hub's workspace. Apps in other workspaces are left alone).
+
+The paper's recommendation, taken as written: ELA's App is in its own workspace, so B leaves out the App that started this. A separate key per workspace keeps one tenant's archives out of another's reach.
+
+### <a id="fjs-d2075"></a>2026-11-11 · `FJS-D2075` — Q2 — One B2 bucket per Basecamp, or one shared bucket — A bucket per Basecamp (`basecamp-<name>`), with Object Lock on.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (One bucket for the laptop's account, a prefix per Basecamp).
+
+The paper's recommendation, taken as written: Object Lock and lifecycle rules are set per bucket, and `test` reads the lock per bucket. Dropping a Basecamp's archives is dropping its bucket. B2 allows 100 buckets per account.
+
+### <a id="fjs-d2073"></a>2026-11-11 · `FJS-D2073` — The default CSP names `img-src 'self' data:` — amends `FJS-D1192`.
+
+Asked in chat over `FJS-4214`: `@frontierjs/css` paints the `select.field` arrow and `--app-depth` as `data:` SVG, so junction's default (`default-src 'self'`, no `img-src`) refused the framework's own stylesheet out of the box. **B** (widen junction's `img-src`) was picked over **A** (the css package drops `data:` URIs — a gradient arrow, and the noise texture lost or shipped as a file). A fixes only the kit: Vite inlines a small imported image as `data:` too, and the deploy CSP in `packages/cli/core/edge.js` already names `img-src 'self' data:`, so A would leave the two policies disagreeing. A `data:` image cannot run script; `default-src` stays `'self'` for everything else.
+
+### <a id="fjs-d2068"></a>2026-11-11 · `FJS-D2068` — Q11 — Where the dialer lives — `createPeer` moves into `@frontierjs/conduit` and takes a method. Both apps already depend on conduit, which holds the `ed25519` signer. Workbench keeps its own mapping of a refusal to a status.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **A** was picked over **B** (Basecamp gets its own copy for the rehearsal), **C** (no dialer yet: the rehearsal's asker stays a hand-signed script).
+
+The paper's recommendation, taken as written: Kobami and ELA need the same dialer, and a copy is a second reader of the result envelope (Invariant 4).
+
+### <a id="fjs-d2067"></a>2026-11-11 · `FJS-D2067` — Q5 — The first pair across owners, and the fact — C first as a rehearsal, then A: Basecamp → Basecamp on when an app's backup was last verified, keyed on the app's id; then Kobami asks ELA whether a lead became a customer, keyed on an id issued when the site form submits, answering only won, lost or open.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **D** was picked over **A** (two apps with different legal owners and a fact about a business or a license, where a shared identifier already exists), **B** (a fact about a person, which needs Q9 first), **C** (two apps this project owns, which proves nothing about consent).
+
+The paper's recommendation, taken as written: the rehearsal shakes out the wiring on the only app with a receiving door, so the real pair is not debugged in front of an outside owner, and the real pair needs one outside person's agreement. Both skip matching, the hardest problem in `one-origin-across-owners.md` § Prior art.
 
 ### <a id="fjs-d2012"></a>2026-11-07 · `FJS-D2012` — An app backup is discarded where it is, and an archive no row names is found and deleted from its Server — `appBackups.discard` deletes the bucket object, then the machine's file (`/backup/remove`, by file name), then the row, and refuses the app's newest good archive as `hubBackups.discard` does (`FJS-3902`). `servers.archives` lists every archive on a machine's disk (`/backups`) with the row naming it; `servers.discardArchive` deletes only one no row names and records `archiveDiscarded`.
 
@@ -16940,6 +17022,28 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2074"></a>2026-11-11 · `FJS-D2074` — Q1 — How the screen writes the index (reopens `workbench-basecamps.md` Q5, `FJS-D1961`) — The page calls `core/basecamps.js` writers in-process, as backup and restart already do. Keys are minted over ssh by 0.4's shared path. There is no field to paste a key into.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (A, plus a field to paste a key copied from Basecamp's API keys screen), **C** (The page runs the fli commands as a job (`basecamp:key`), as create does, so it never imports a writer).
+
+The paper's recommendation, taken as written: `core/basecamps.js` stays the one writer (`FJS-D1828`) and ssh stays the root (`FJS-D1827`). A pasted key would be overwritten by the next mint without saying so. The precedent is next door: `startBackup` and `startRestart` call `core` in-process for work that takes seconds, and only create and install spawn fli, because they take minutes. C would put a mint that takes seconds through a job built for one that takes minutes. Ruled, it supersedes `FJS-D1961` in `DECISIONS.md`.
+
+### <a id="fjs-d2066"></a>2026-11-11 · `FJS-D2066` — Q1 — Does this stand as its own plan — This file keeps the argument, and § Phases moves into `app-peering.md` as steps after Phase 4. One owner for the build.
+
+Asked in [`IDEAS/one-origin-across-owners.md`](IDEAS/one-origin-across-owners.md) § Open questions. **A** was picked over **B** (this file keeps its own plan and depends on `app-peering.md`. Two plans must then agree on who builds Phase 4).
+
+The paper's recommendation, taken as written: peering already owns the mechanism, and a separate plan is a second owner for it. Low confidence, since Phases 2–5 are about records more than about calls.
+
+### <a id="fjs-d2065"></a>2026-11-10 · `FJS-D2065` — What `fli db:push` and `fli studio` offer when a schema encrypts and no `ENCRYPTION_KEY` is set — a generated key only over a database with nothing encrypted in it; over encrypted values, the key that sealed them, written only if it opens one.
+
+Asked through the question tool, as recommended. Generating anyway after a warning was refused: a new key cannot read existing values and the app fails only at the first read. Refusing with instructions alone was the third option, and it is what a run with no terminal still gets.
+
+The trigger is the schema, read by `litestone key-check`, rather than `.env.example`, since an app can encrypt without its example naming the key (Workbench does). `fli dev`'s offer keeps its `.env.example` gate and takes the same guard. A key under test travels in the environment, never an argument (`FJS-D1556`).
+
+The ninth question: no flow writes a key that cannot read what the database holds, and `packages/cli/test/env-preflight.test.js` fails when one does.
+
+*Lives in:* `packages/cli/core/env-preflight.js` (`offerKey`, `askHeldKey`) · `packages/litestone/src/tools/cli.js` (`cmdKeyCheck`) · `packages/cli/commands/db/push.md` · `packages/cli/commands/db/studio.md` · `packages/cli/commands/utils/dev.md`.
 
 ### <a id="fjs-d2052"></a>2026-11-10 · `FJS-D2052` — Q8 — What does `apps.connect` do on an App whose push is already on — Write the key if it is missing, leave the hook, and answer a note that push is already on.
 

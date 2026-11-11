@@ -7,6 +7,7 @@
   "author": "FrontierJS",
   "exports": {
     ".": "./src/index.ts",
+    "./peer": "./src/peer.ts",
     "./testing": "./src/testing.ts",
     "./stores/sqlite": "./src/stores/sqlite.ts",
     "./stores/memory": "./src/stores/memory.ts"

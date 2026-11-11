@@ -3,7 +3,7 @@
  *
  * `tools/list` is the whole command tree and the largest answer the app gives
  * (a quarter of a megabyte for basecamp's owner). It changes when the app is
- * deployed, and the app already says which build it is: `x-fjs-build`
+ * deployed, and the app already says which build it is: `x-frontier-build`
  * (`FJS-D160`) on every response, `initialize` included, so the build is known
  * before the list would be asked for.
  *

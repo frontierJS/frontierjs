@@ -31,7 +31,6 @@
 
   let state = 'loading'   // loading | agreed | corrected | offline
   let moved = []
-  let timer = null
   let wait  = null        // from the last answer; a failed re-ask keeps it and tries again
 
   // Called from $.onMount and not at module scope: an island's body also runs
@@ -90,11 +89,10 @@
       // never got one is offline.
       if (state === 'loading') state = 'offline'
     }
-    if (wait !== null) timer = setTimeout(ask, wait)
   }
 
   $.onMount(ask)
-  $.onDestroy(() => clearTimeout(timer))
+  $.every(wait, ask, { when: wait !== null, key: wait })
 </script>
 
 <p class="text-sm" id="live-prices">

@@ -46,5 +46,5 @@ export function withoutBearer(header: string | undefined): string | undefined {
 // and the client cycles its socket on this header (`FJS-D548`).
 
 /** The response header that says a cookie changed, and its one value. */
-export const CREDENTIAL_HEADER  = 'x-fjs-credential'
+export const CREDENTIAL_HEADER  = 'x-frontier-credential'
 export const CREDENTIAL_CHANGED = 'changed'

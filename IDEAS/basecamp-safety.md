@@ -168,9 +168,11 @@ Done when: a Basecamp deploy obeys the Q5 gate, and a restore from real B2 onto 
 passes.
 
 - [x] 4.1 Gate `fli deploy` of Basecamp on HEAD being pushed and `.cache/ci-last.txt` green for HEAD, per Q5
-- [ ] 4.2 Check the pre-migrate copy with `PRAGMA integrity_check`, and keep the first copy of a
+- [x] 4.2 Check the pre-migrate copy with `PRAGMA integrity_check`, and keep the first copy of a
       failing run when `PRE_MIGRATE_KEEP` rotates
   - Inferred: a crash loop can rotate out the only clean copy (`domain/backup/pre-migrate.ts`).
+  - Built, `FJS-4131`: each copy passes `integrity_check` or the boot stops, and prune keeps the
+    oldest copy carrying the failing run's mark.
 - [ ] 4.3 Restore from real B2 onto a throwaway box
   - The same proof as `IDEAS/basecamp-reinstall.md` 2.2 and `IDEAS/backups.md` 5.5: one run closes
     all three.
@@ -275,5 +277,8 @@ For Q1 and Q2, read 2026-11-08 from vendor docs; "secondary" marks a claim not i
 - Static Apps go down for seconds on an Outpost restart, because the Outpost process serves them
   (`FJS-D345`).
 - Moving an enrolled machine's Outpost version is `FJS-3533` and `FJS-D1650`.
+- `hub.ingress-zone` reads red on yuma and chartered: an App served under Basecamp's own domain
+  could set a cookie Basecamp receives (`FJS-4160`). It matters once an untrusted App is served
+  there.
 - `outpost-uninstall --purge` stays: nothing in the hub API can run it, and it asks for a typed
   confirmation at a terminal.

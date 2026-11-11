@@ -664,7 +664,7 @@ export function outpostCredential(app: OutpostDeps): CredentialVerifier {
 }
 
 /** The header a peer names its key in; the signature itself carries no key id. */
-export const PEER_KEY_HEADER = 'x-fjs-key'
+export const PEER_KEY_HEADER = 'x-frontier-key'
 
 /**
  * The key row a peer signs with, and the account behind it. `null` is a
@@ -691,7 +691,7 @@ async function peerKeyFor(app: OutpostDeps, keyId: string): Promise<{ key: any, 
  *
  * Asked BEFORE `outpostCredential`, because the outpost door claims every
  * signed request and refuses one that names no machine. A request with no
- * `X-Fjs-Key` is not this door's and goes on to it; one that names a key is
+ * `X-Frontier-Key` is not this door's and goes on to it; one that names a key is
  * this door's whatever it signed, and ONE sentence answers every refusal, for
  * the reason `outpostCredential` gives: which key ids are real is not the
  * caller's to learn.

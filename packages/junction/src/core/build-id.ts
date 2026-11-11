@@ -35,7 +35,7 @@
  * One name for both wires. It is the SERVER's build in both directions: nothing
  * here reads a build off a request, because the comparison is the client's.
  */
-export const BUILD_HEADER = 'x-fjs-build'
+export const BUILD_HEADER = 'x-frontier-build'
 
 /**
  * The field the socket's `connected` frame carries when this app knows its build.

@@ -1,0 +1,20 @@
+/*
+ * A theme the package does not ship, handed to `run.js --theme` by
+ * test/grade-theme.test.js. Dark, so the grade goes through the inverted
+ * window, and it clears AA. Its twin, theme-graded-fail.css, is this file
+ * without the window pair.
+ */
+.theme-graded-pass {
+  color-scheme: dark;
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
+
+  --surface:        #1a1a1a;
+  --surface-raised: #252525;
+  --surface-sunken: #0f0f0f;
+  --ink:            #f5f5f5;
+  --ink-soft:       #c5c5c5;
+  --ink-mute:       #8c8c8c;
+  --rule:           #2d2d2d;
+  --rule-strong:    #404040;
+}

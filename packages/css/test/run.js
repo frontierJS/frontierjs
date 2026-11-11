@@ -9,6 +9,21 @@
  *   bun run test              all specs
  *   bun run test focus tone   only specs whose filename matches
  *   bun run test --keep       leave the generated page on disk for eyeballing
+ *   bun test/run.js contrast --theme /abs/path/theme.css
+ *                             grade ONE theme the package does not ship
+ *
+ * ── Grading a theme handed to it (FJS-4194) ───────────────────────────
+ *
+ * `--theme <file>` takes a stylesheet holding one `.theme-<name> { … }` rule
+ * of custom properties — what an app compiles a design spec to — inlines it
+ * after index.css, and runs contrast.spec.js against that one class instead
+ * of the shipped list. The theme's own `color-scheme` decides which window
+ * it is graded through, exactly as for a shipped one. Exit 0 is AA
+ * throughout, 1 is a failing pairing (each printed under its test), 2 is a
+ * file the runner could not use. Only the contrast suite runs: every other
+ * spec is a claim about the package, and a foreign class in the CSSOM is
+ * exactly what vocabulary.spec.js fails on. `test/grade-theme.js` is the
+ * same thing as a function.
  *
  * ── Why Chrome and not jsdom ──────────────────────────────────────────
  *
@@ -42,7 +57,60 @@ const srcDir = join(pkg, 'src');
 
 const argv = process.argv.slice(2);
 const keep = argv.includes('--keep');
-const filters = argv.filter((a) => !a.startsWith('--'));
+
+/* `--theme <file>` or `--theme=<file>`; the value is not a spec filter. */
+let themeArg = null;
+const rest = [];
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
+  if (a === '--theme') themeArg = argv[++i] ?? '';
+  else if (a.startsWith('--theme=')) themeArg = a.slice('--theme='.length);
+  else rest.push(a);
+}
+let filters = rest.filter((a) => !a.startsWith('--'));
+
+/* ── A theme handed in ─────────────────────────────────────────────── */
+
+const external = themeArg === null ? null : readExternalTheme(themeArg);
+
+function readExternalTheme(file) {
+  const fail = (why) => {
+    console.error(`--theme ${file || '(no path)'}: ${why}`);
+    process.exit(2);
+  };
+  if (!file) fail('give the path of a stylesheet holding one .theme-<name> rule.');
+  let css;
+  try {
+    css = readFileSync(file, 'utf8');
+  } catch (err) {
+    fail(`cannot read it (${err.code || err.message}).`);
+  }
+  const names = [...new Set([...css.matchAll(/\.theme-([A-Za-z0-9_-]+)/g)].map((m) => m[1]))];
+  if (names.length !== 1) {
+    fail(names.length
+      ? `names ${names.length} theme classes (${names.map((n) => `.theme-${n}`).join(', ')}); hand in one.`
+      : 'names no .theme-<name> class.');
+  }
+  return { file, css, name: names[0] };
+}
+
+if (external) {
+  /* Only the contrast suite grades a theme; see the header. */
+  if (filters.length && !filters.some((x) => 'contrast.spec.js'.includes(x))) {
+    console.error(`--theme grades the contrast suite only, and ${filters.join(', ')} does not name it.`);
+    process.exit(2);
+  }
+  filters = ['contrast'];
+}
+
+/*
+ * The themes contrast.spec.js grades: every class themes.js names, or the
+ * one handed in. themes.js is the one list — meta.spec.js already holds it
+ * to src/themes/ in both directions — so the spec keeps no copy of its own.
+ */
+const gradeThemes = external
+  ? [external.name]
+  : Object.keys(THEMES).map((cls) => cls.replace(/^theme-/, ''));
 
 /* ── Locate a browser ──────────────────────────────────────────────── */
 
@@ -78,6 +146,8 @@ if (filters.length) {
  * suite. Escaping it is not optional.
  */
 const escapeForInlineScript = (s) => s.replace(/<\/script/gi, '<\\/script');
+/* The same hazard for a handed-in theme inlined into a <style>. */
+const escapeForInlineStyle = (s) => s.replace(/<\/style/gi, '<\\/style');
 
 const harness = readFileSync(join(here, 'harness.js'), 'utf8');
 
@@ -310,6 +380,7 @@ const page = `<!doctype html>
 <meta charset="utf-8">
 <title>@frontierjs/css test run</title>
 <link rel="stylesheet" href="./index.css">
+${external ? `<style id="fjs-external-theme">\n${escapeForInlineStyle(external.css)}\n</style>` : ''}
 <style>
 /*
  * Transitions off, globally.
@@ -338,13 +409,15 @@ const page = `<!doctype html>
   theme-default set nothing tokens.css did not already set.
 
   The themes are still graded, explicitly: themed(name, html) in the harness
-  mounts into a themed wrapper, and contrast.spec.js sweeps all ten.
+  mounts into a themed wrapper, and contrast.spec.js sweeps every theme
+  themes.js names, or the one theme run.js --theme hands in.
 -->
 <body>
 <script>window.__FJS_SHIPPED_CSS__ = ${JSON.stringify(shippedCss)};</script>
 <script>window.__FJS_VOCAB_JSON__ = ${JSON.stringify(vocabularyJsonState)};</script>
 <script>window.__FJS_ARIA_ROLES__ = ${JSON.stringify(ariaRoles)};</script>
 <script>window.__FJS_THEMES__ = ${JSON.stringify(THEMES)};</script>
+<script>window.__FJS_GRADE_THEMES__ = ${JSON.stringify(gradeThemes)};</script>
 <script>window.__FJS_GLOW__ = ${JSON.stringify(glowSamples)};</script>
 <script>window.__FJS_DEMO_HTML__ = ${escapeForInlineScript(JSON.stringify(demoHtml))};</script>
 <!--
@@ -385,7 +458,11 @@ ${specBlocks}
  * and every @import inside it resolves against that directory — so it is
  * written into src/, not the package root.
  */
-const pagePath = join(srcDir, '.fjs-test-run.html');
+/*
+ * A graded theme gets a page of its own, so grading one while the suite runs
+ * — or two at once — does not overwrite the other's page mid-run.
+ */
+const pagePath = join(srcDir, external ? `.fjs-test-run-${process.pid}.html` : '.fjs-test-run.html');
 writeFileSync(pagePath, page);
 
 /* ── Run ───────────────────────────────────────────────────────────── */
@@ -449,6 +526,7 @@ const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
 console.log('');
+if (external) console.log(dim(`grading .theme-${external.name} from ${external.file}`));
 for (const [file, rows] of byFile) {
   const bad = rows.filter((r) => !r.ok).length;
   console.log(

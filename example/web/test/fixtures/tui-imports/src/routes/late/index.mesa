@@ -3,7 +3,7 @@
   // its load lands (FJS-3165).
   let ready = false
   let pressed = 0
-  setTimeout(() => ready = true, 500)
+  $.after(500, () => ready = true)
 </script>
 
 <p>Pressed: {pressed}</p>

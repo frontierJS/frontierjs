@@ -162,14 +162,19 @@ function viewOf(item: Item, date: string, o: Options): ItemView {
 
 // ─── Running ────────────────────────────────────────────────────────────────
 
-/** The pids of every builder/live.ts process on this machine. */
-export function liveProcesses(): number[] {
+function processesMatching(pattern: RegExp): number[] {
   const out = spawnSync('ps', ['-eo', 'pid=,args='], { encoding: 'utf8' })
   return (out.stdout ?? '').split('\n')
-    .filter(l => / builder\/live\.ts\b/.test(l))
+    .filter(l => pattern.test(l))
     .map(l => Number(l.trim().split(/\s+/)[0]))
     .filter(n => n !== process.pid)
 }
+
+/** The pids of every builder/live.ts process on this machine. */
+export const liveProcesses = () => processesMatching(/ builder\/live\.ts\b/)
+
+/** The pids of every restore drill, which retires the box a run would deploy to. */
+export const drillProcesses = () => processesMatching(/restore-drill-run\.ts\b/)
 
 const going = () => !!held && held.items.some(i => !i.exit && !i.error)
 
@@ -177,6 +182,8 @@ async function refusedToStart(o: Options): Promise<string | null> {
   if (going()) return `A ${held!.kind === 'run' ? 'run' : 'removal'} is going — one at a time`
   const others = (o.running ?? liveProcesses)()
   if (others.length) return `builder/live.ts is already running (pid ${others.join(', ')}), and two runs share apps/charter/oracle/`
+  const drills = o.running ? [] : drillProcesses()
+  if (drills.length) return `A restore drill is going (pid ${drills.join(', ')}), and it retires the Basecamp this would deploy to`
   if (!(await checkoutOf(o)).ok) return `No Charter checkout at ${charterDir(o)}: set CHARTER_DIR`
   try {
     const { designatedBasecamp } = await import('@frontierjs/cli/core/basecamps.js') as { designatedBasecamp: (x: { home?: string }) => { name: string } }

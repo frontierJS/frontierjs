@@ -7,9 +7,8 @@ title: Apps
   // only through project → environment was three clicks to a screen people
   // open daily.
   //
-  // Same shape as the deployments list: `columns()` ranks the read schema and
-  // names what it left out, and the service's include of `environment` is
-  // what the relation cell reads.
+  // A slug is unique only inside its environment, so a row names its project
+  // and environment or two apps called `app` cannot be told apart.
   import { session } from '../../lib/session.js'
   import { apps } from '../../resources/App.mesa'
   import Button    from '@frontierjs/ui/components/forms/Button.mesa'
@@ -21,6 +20,7 @@ title: Apps
 
   const { columns: cols } = apps.columns()
   const columns = [
+    { name: '_where', label: 'Project' },
     ...cols,
     { name: '_open', label: 'Actions', hideLabel: true },
   ]
@@ -72,6 +72,10 @@ title: Apps
   <Table id="app-rows" {columns} rows={list.rows} orderBy={list.directives.orderBy} onsort={list.sort} striped>
     {#snippet row(app)}
       <tr>
+        <td data-col="_where">
+          <a href={`/projects/${app.environment?.projectId}/?env=${app.environment?.slug}`}>{app.environment?.project?.name}</a>
+          <span class="text-muted">/ {app.environment?.name}</span>
+        </td>
         {#each cols as c}
           <td data-col={c.name}><Cell value={app[c.name]} column={c} record={app} /></td>
         {/each}

@@ -51,7 +51,7 @@ export interface SignedRequestOptions {
   keyFor: (req: InboundRequest) => CallerKey | null | Promise<CallerKey | null>
   /** Seconds a signature stays fresh. Default 300. */
   window?:    number
-  /** Header prefix — `X-Fjs` reads `X-Fjs-Signature`. */
+  /** Header prefix — `X-Frontier` reads `X-Frontier-Signature`. */
   prefix?:    string
   /**
    * The replay half: true when this nonce was already used inside the window.
@@ -71,7 +71,7 @@ export type CallerKey =
 
 /** A request signed with `@frontierjs/toolbelt/signature`'s `signRequest`. */
 export function signedRequest(opts: SignedRequestOptions): CredentialVerifier {
-  const prefix = opts.prefix ?? 'X-Fjs'
+  const prefix = opts.prefix ?? 'X-Frontier'
   const header = `${prefix}-Signature`.toLowerCase()
   const now    = opts.now ?? (() => Math.floor(Date.now() / 1000))
   const window = opts.window ?? 300

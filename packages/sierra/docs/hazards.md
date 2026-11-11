@@ -399,7 +399,7 @@ The full hazard catalog, moved verbatim from `CLAUDE.md`; the dozen that bite mo
   `tauri://localhost` answers 200 text/html for any unknown path, `FJS-3925`);
   a path outside the prefix stays on the page, and an app with no `apiPrefix`
   gets no rebasing at all.
-- **`status.stale` is where the `x-fjs-build` channel ends.** `{ client, server }`
+- **`status.stale` is where the `x-frontier-build` channel ends.** `{ client, server }`
   once the server states a build this bundle is not, then never again — a banner
   that reappears on every request is one nobody reads. Recorded rather than acted
   on: whether that is a banner, a prompt or a silent reload is the app's answer

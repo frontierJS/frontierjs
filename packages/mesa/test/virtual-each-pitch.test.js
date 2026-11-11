@@ -4,9 +4,14 @@
  * FJS-3740 -- {#virtual each} took ONE row's height as the pitch of every row.
  * A first row taller than the rest (a header-like row) made the spacers, and so
  * the scroll extent, a multiple of the wrong number.
+ *
+ * FJS-4210 -- a horizontal-only scroll requested a frame and re-rendered the
+ * window. A frame asked for from a scroll event keeps the browser's frame clock
+ * running, so a keystroke that scrolled a long line sideways painted a frame late.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { $$virtualEach, createSignal, flushSync } from '../src/runtime.js'
+import { clock } from '../src/clock.js'
 
 const realRect = Element.prototype.getBoundingClientRect
 
@@ -49,5 +54,31 @@ describe('{#virtual each} pitch', () => {
     const total = parseFloat(top.style.height) + parseFloat(bot.style.height)
     // spacers stand for the (500 - drawn) rows not drawn, each at the pitch
     expect(total / (500 - drawn)).toBeCloseTo(51, 0)
+  })
+})
+
+describe('{#virtual each} scroll', () => {
+  it('a horizontal-only scroll requests no frame; a vertical one requests one', () => {
+    const frames = []
+    const prev = clock.use({
+      now: () => 0,
+      after: () => () => {},
+      every: () => () => {},
+      frame: (fn, label) => { frames.push(label); return () => {} },
+    })
+    try {
+      const scroller = mountList(500, () => 20)
+      let top = 0
+      Object.defineProperty(scroller, 'scrollTop', { get: () => top, set: (v) => { top = v } })
+      frames.length = 0
+      scroller.scrollLeft = 40
+      scroller.dispatchEvent(new Event('scroll'))
+      expect(frames).toEqual([])
+      top = 2000
+      scroller.dispatchEvent(new Event('scroll'))
+      expect(frames).toEqual(['virtual list scroll'])
+    } finally {
+      clock.use(prev)
+    }
   })
 })

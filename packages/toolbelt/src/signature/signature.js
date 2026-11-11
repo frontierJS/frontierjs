@@ -236,8 +236,8 @@ async function hmacHex(secret, message) {
 
 /**
  * Sign a request. Answers the three headers a receiver needs, under the given
- * prefix (`X-Fjs` by default — the framework's own scheme, and the same
- * abbreviation junction's `x-fjs-build` header already uses).
+ * prefix (`X-Frontier` by default — the framework's one namespace, the one its
+ * env vars carry as `FRONTIER_*`, `FJS-D1102`).
  *
  * `timestamp` and `nonce` are REQUIRED, not defaulted. Defaulting them would
  * mean reading a clock and generating a uuid in a package whose whole license to
@@ -251,7 +251,7 @@ async function hmacHex(secret, message) {
  * }} opts
  * @returns {Promise<Record<string,string>>}
  */
-export async function signRequest({ secret, privateKey, method, path, query, serviceMethod, body = '', prefix = 'X-Fjs', timestamp, nonce }) {
+export async function signRequest({ secret, privateKey, method, path, query, serviceMethod, body = '', prefix = 'X-Frontier', timestamp, nonce }) {
   if (secret && privateKey) throw new TypeError('signRequest: secret OR privateKey — a request is signed one way, and the verifier is told which')
   if (!secret && !privateKey) throw new TypeError('signRequest: secret is required, or privateKey for a key pair')
   if (!timestamp) throw new TypeError('signRequest: timestamp is required — seconds, from the caller\'s clock')
@@ -307,7 +307,7 @@ export async function signRequest({ secret, privateKey, method, path, query, ser
  * @returns {Promise<{ok: true} | {ok: false, reason: string}>}
  */
 export async function verifyRequest({
-  secret, secrets, publicKey, method, path, query, body = '', headers, prefix = 'X-Fjs', toleranceSeconds = 300,
+  secret, secrets, publicKey, method, path, query, body = '', headers, prefix = 'X-Frontier', toleranceSeconds = 300,
   now, seenNonce = null,
 }) {
   if (secret && secrets) throw new TypeError('verifyRequest: secret OR secrets — one key, or the list of keys a rotation is between')

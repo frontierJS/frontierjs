@@ -19,7 +19,7 @@ import { notificationChannelName }        from './core/channels.ts'
 import { peerKeys, peerRoute, PEER_PATH }     from './peer.ts'
 import { createBasecamp }                     from './domain/peer/basecamp.ts'
 import { conduitSend, type SendFor }          from './domain/servers/servers.ts'
-import { resolveBasecamp, DEV_BASECAMP } from '@frontierjs/cli/core/basecamps.js'
+import { resolveBasecamp, DEV_BASECAMP, DEV_BASECAMP_ORIGIN } from '@frontierjs/cli/core/basecamps.js'
 import './workbench.types.ts'
 
 const SCHEMA = new URL('../../db/schema.lite', import.meta.url).pathname
@@ -38,12 +38,12 @@ export interface WorkbenchAppOptions {
   serversSend?: SendFor
 }
 
-// A machine that never ran `fli basecamp:create` still has the dev Basecamp on
-// 8120 (docs/PORTS.md); any other name missing from the index is a typo that
+// A machine that never ran `fli basecamp:create` still has the dev Basecamp;
+// any other name missing from the index is a typo that
 // would otherwise send previews somewhere unintended, so it stops the boot.
 function previewBasecamp (name: string): { name: string, url: string, peerKeyId?: string | null } {
   try { return resolveBasecamp(name) } catch (err) {
-    if (name === DEV_BASECAMP) return { name, url: 'http://127.0.0.1:8120', peerKeyId: null }
+    if (name === DEV_BASECAMP) return { name, url: DEV_BASECAMP_ORIGIN, peerKeyId: null }
     throw err
   }
 }

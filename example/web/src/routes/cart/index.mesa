@@ -62,10 +62,9 @@ title: Basket
   //
   // A ticking `now` rather than one read at render: this screen is often left
   // open, and a countdown that only moves when something else re-renders is
-  // worse than no countdown at all. One timer, cleared on destroy.
+  // worse than no countdown at all. It ticks only while a hold exists.
   let now = Date.now()
-  var tick = setInterval(() => { now = Date.now() }, 1_000)
-  $.onDestroy(() => clearInterval(tick))
+  $.every(1000, () => { now = Date.now() }, { when: !!cart.heldUntil })
 
   $: holdLeftMs = cart.heldUntil ? Date.parse(cart.heldUntil) - now : 0
   $: holdLeft   = holdLeftMs > 0

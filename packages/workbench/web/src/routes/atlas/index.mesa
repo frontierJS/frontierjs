@@ -68,9 +68,6 @@ title: Atlas
 
   // ─── the read ───────────────────────────────────────────────────────
 
-  let timer = null
-  let destroyed = false
-
   async function load() {
     try {
       data  = await atlas.service.invoke('overview', null)
@@ -88,14 +85,11 @@ title: Atlas
     }
   }
 
-  function schedule() {
-    if (destroyed || !offered) return
-    timer = setTimeout(() => load().then(schedule), POLL_MS)
-  }
+  $.every(POLL_MS, load, { when: offered })
 
-  load().then(() => { schedule(); openFromHash() })
+  load().then(openFromHash)
   addEventListener('hashchange', openFromHash)
-  $.onDestroy(() => { destroyed = true; clearTimeout(timer); clearTimeout(runTimer); removeEventListener('hashchange', openFromHash) })
+  $.onDestroy(() => removeEventListener('hashchange', openFromHash))
 
   // ─── the numbers ────────────────────────────────────────────────────
 
@@ -289,17 +283,16 @@ title: Atlas
     }
   }
 
-  let runTimer = null
   async function watch() {
-    clearTimeout(runTimer)
-    if (destroyed || !sent) return
+    if (!sent) return
     try {
       const answer = await workbench.service.invoke('status', null)
       run = answer.status.find(s => s.id === sent.pin.id) ?? run
     } catch {}
-    if (run?.state === 'working') runTimer = setTimeout(watch, RUN_POLL)
-    else load()
+    if (run?.state !== 'working') load()
   }
+
+  $.every(RUN_POLL, watch, { when: sent && run?.state === 'working' })
 
   function keydown(e) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(e)
@@ -332,7 +325,6 @@ title: Atlas
   <span class="cluster">
     <Button href="/atlas/decide/" id="atlas-decide-link">Decide{data ? ` · ${decidable()}` : ''}</Button>
     <Button treatment="ghost" href="/workbench/">Workbench</Button>
-    <Button treatment="ghost" href="/pages/">Pages</Button>
   </span>
 </div>
 

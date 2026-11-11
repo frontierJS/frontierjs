@@ -22,6 +22,9 @@ import { globalEnvPath } from './global-env.js'
 import { hostOfUrl } from './local-env.js'
 
 export const DEV_BASECAMP = 'dev'
+// Its API in packages/basecamp's own dev server (docs/PORTS.md), the origin a
+// `dev` entry is filed with when nothing has filed one yet.
+export const DEV_BASECAMP_ORIGIN = 'http://127.0.0.1:8120'
 
 export const basecampsPath = (home) => join(dirname(globalEnvPath(home)), 'basecamps.json')
 

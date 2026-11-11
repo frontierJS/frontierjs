@@ -32,7 +32,9 @@ import { parseRenameFlag, readOperations, askRenames, resolveOperations,
 import { backupSqliteTo, writeBackupStamp }            from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy, placedTrails }                from '../core/tenancy.js'
-import { modelToAccessor }           from '../core/ddl.js'
+import { modelToAccessor, modelToTableName, fieldToColumnName } from '../core/ddl.js'
+import { quoteIdent }                from '../core/query.js'
+import { parseEnvelope, decryptField, normalizeKey } from '../core/encryption.js'
 import { nearestAll }                from '@frontierjs/toolbelt/typo'
 import { findPrincipal }                               from './principal.js'
 import { c, bold, dim, green, yellow, red, cyan, args, positional, flag, getFlag, getFlags,
@@ -212,6 +214,7 @@ const HELP = `
     ${dim('  --without-key')}                           verify with no ENCRYPTION_KEY, encrypted columns unchecked
     ${cyan('litestone rekey')}                      re-encrypt every column from ENCRYPTION_KEY to NEW_ENCRYPTION_KEY (stop the app)
     ${dim('  --orphan=Model.field,…')}                  leave these on the old key — @hashed or @secret(rotate: false)
+    ${cyan('litestone key-check')} --json           which columns need ENCRYPTION_KEY, which hold values, whether it opens them
     ${cyan('litestone rsync')} <dest>              sync all SQLite DBs to a destination via sqlite3_rsync
     ${cyan('litestone transform')} [config.js]      run a transform pipeline (DSL)
     ${cyan('litestone tenant list')}                list all tenants
@@ -5063,6 +5066,73 @@ async function cmdRekey(cfg) {
   console.log()
 }
 
+// ─── key-check ───────────────────────────────────────────────────────────────
+// What a tool must know before it offers a key: which columns need one, which
+// already hold values under one, and whether ENCRYPTION_KEY opens them. A key
+// generated over a database that holds values reads none of them, and nothing
+// says so until the first read. `opens` is null with no key to test, or where
+// every value is a one-way digest.
+//
+// A column the schema declares and the database does not have yet is the ordinary
+// case before a push, so it is skipped rather than an error.
+
+async function cmdKeyCheck(cfg) {
+  const { createClient } = await import('../core/client.js')
+  if (!flag('json')) fatal(`litestone key-check answers a program: pass ${cyan('--json')}.`)
+
+  const parseResult = loadSchema(cfg.schema)
+  const has    = (f, kinds) => f.attributes.some(a => kinds.includes(a.kind))
+  const name   = (m, f) => `${m.name}.${f.name}`
+  const models = parseResult.schema.models
+  const fields = models.flatMap(m => m.fields.filter(f => has(f, ['encrypted', 'secret'])).map(f => name(m, f)))
+  const nothingHeld = () => console.log(JSON.stringify({ fields, values: [], opens: null }))
+  if (!fields.length) return nothingHeld()
+
+  // The client opens main, and a tenant's file holds its own ciphertext.
+  if (parseResult.schema.tenancy?.strategy === 'database')
+    fatal(`This schema is ${cyan('strategy database')}, and key-check reaches main's databases and no tenant's.`)
+
+  // A client creates a missing file and builds its tables, so asking would
+  // leave a database behind even when the answer is then declined.
+  const anchor = schemaAnchor(cfg.schema)
+  const files  = declaresDatabases(parseResult)
+    ? parseResult.schema.databases.filter(d => !d.driver || d.driver === 'sqlite').map(d => resolveDbPath(d.path, null, anchor))
+    : [resolveDbPath(null, cfg.db, anchor)]
+  if (!files.some(f => f && existsSync(f))) return nothingHeld()
+
+  const key = getEncKey()
+  // No key is the case being asked about and a client refuses to open without
+  // one; this one reads raw columns and decrypts nothing through it.
+  const db  = await createClient({
+    parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg),
+    encryptionKey: key ?? '0'.repeat(64),
+  })
+
+  const values = []
+  let opens = null
+  try {
+    for (const m of models) {
+      const raw   = db.$rawDbs[m.attributes.find(a => a.kind === 'db')?.name ?? 'main']
+      if (!raw) continue
+      const table = modelToTableName(m)
+      const have  = new Set(raw.query(`PRAGMA table_info(${quoteIdent(table)})`).all().map(c => c.name))
+      for (const f of m.fields.filter(f => has(f, ['encrypted', 'secret', 'hashed']))) {
+        const column = fieldToColumnName(f)
+        if (!have.has(column)) continue
+        const sample = raw.query(`SELECT ${quoteIdent(column)} AS v FROM ${quoteIdent(table)} WHERE ${quoteIdent(column)} IS NOT NULL LIMIT 100`)
+          .all().map(r => r.v).find(v => parseEnvelope(v))
+        if (sample == null) continue
+        values.push(name(m, f))
+        if (!key || parseEnvelope(sample).mode === 'hash') continue
+        try { decryptField(sample, normalizeKey(key)); opens = opens ?? true }
+        catch { opens = false }
+      }
+    }
+  } finally { db.$close() }
+
+  console.log(JSON.stringify({ fields, values, opens }))
+}
+
 // ─── db push ─────────────────────────────────────────────────────────────────
 // Dev equivalent of prisma db push — diffs schema against live DB and applies
 // changes directly without writing migration files. Safe to run on every boot.
@@ -5396,6 +5466,11 @@ async function main() {
       process.exit(1)
     })
     return   // intentionally no await — replicate() runs until Ctrl+C
+  }
+
+  if (cmd === 'key-check') {
+    await cmdKeyCheck(await loadConfig())
+    return
   }
 
   if (cmd === 'rekey') {

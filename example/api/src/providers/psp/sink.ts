@@ -265,7 +265,7 @@ export function startPspSink(): { stop(): void; port: number } {
             query:   url.search,
             body:    raw,
             headers: req.headers,
-            prefix:  'X-Fjs',
+            prefix:  'X-Frontier',
             now:     Math.floor(Date.now() / 1000),
           })
           // The reason is logged and never returned: a caller learns that it

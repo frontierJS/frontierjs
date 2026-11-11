@@ -4950,7 +4950,7 @@ describe('helmet — security headers applied by default', () => {
     app.services.register(buildService({ name: 'items', find: async () => [] }))
     const res = await request(app).get('/items')
     expect(res.headers['content-security-policy'])
-      .toBe("default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+      .toBe("default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
   })
 
   it('frame-ancestors follows the frame option, from config', async () => {

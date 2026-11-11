@@ -719,7 +719,7 @@ try {
 
   const enveloped = (data, base) => ({
     method:  'PATCH',
-    headers: { ...auth, 'content-type': 'application/json', 'x-fjs-write': 'enveloped' },
+    headers: { ...auth, 'content-type': 'application/json', 'x-frontier-write': 'enveloped' },
     body:    JSON.stringify({ data, base }),
   })
 

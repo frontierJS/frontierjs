@@ -291,12 +291,12 @@ The signature covers a canonical string, not just the body:
 
 `<query>` is the query string's pairs sorted and percent-encoded, empty when there is none — so a parameter cannot be changed under a valid signature.
 
-emitted as three headers (prefix configurable via `header_prefix`, default `X-Fjs`):
+emitted as three headers (prefix configurable via `header_prefix`, default `X-Frontier`):
 
 ```
-X-Fjs-Signature: v1-sha256=<hex>
-X-Fjs-Timestamp: <unix seconds>
-X-Fjs-Nonce:     <uuid>
+X-Frontier-Signature: v1-sha256=<hex>
+X-Frontier-Timestamp: <unix seconds>
+X-Frontier-Nonce:     <uuid>
 ```
 
 This binds each signature to one method, one path and one query, so a captured signature cannot be replayed against a different endpoint on the same target, and the timestamp and nonce let the receiver reject stale or repeated requests. Requests with no body sign the hash of the empty string, so `POST /reboot` and `DELETE /servers/42` are signed like anything else.

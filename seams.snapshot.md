@@ -22,7 +22,7 @@ MINTED and the question asked of that file is whether it contains the string at 
 weaker claim, and it is the one a file can answer.
 
 **9 of those checks are marked weak** and the mark is the point: asking whether
-junction contains the string `log` proves nothing, where `x-fjs-build` is nearly a proof. A row
+junction contains the string `log` proves nothing, where `x-frontier-build` is nearly a proof. A row
 that claimed the strong check while holding the weak one would be worse than no row.
 
 ## Most restated
@@ -31,7 +31,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | --- | --- | --- |
 | `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | 34 |
 | `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 19 |
-| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 13 |
+| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 14 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 11 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 11 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 10 |
@@ -145,12 +145,12 @@ that claimed the strong check while holding the weak one would be worse than no 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
 | `client.setCallHeader(name, value)` | `packages/junction/src/client/index.ts` | yes | — |
-| `x-fjs-build` | `packages/junction/src/core/build-id.ts` | mentioned | — |
+| `x-frontier-build` | `packages/junction/src/core/build-id.ts` | mentioned | — |
 | `wsSend()` / `flushSendQueue()` | `packages/junction/src/transport/send-queue.ts` | yes | 2 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | yes | 8 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
-| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 13 |
+| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 14 |
 | `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 19 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |

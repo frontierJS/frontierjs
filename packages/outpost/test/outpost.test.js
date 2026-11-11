@@ -4263,7 +4263,7 @@ describe('reading a container log', () => {
     const payload = JSON.stringify({ app_id: 'app-1' })
     const headers = new Headers({ 'content-type': 'application/json' })
     for (const [k, v] of Object.entries(await sign({ privateKey: HUB.privateKey, method: 'POST', path: '/logs', body: payload })))
-      headers.set(k, k.toLowerCase() === 'x-fjs-signature' ? v.replace(/^v1-/, 'v2-') : v)
+      headers.set(k, k.toLowerCase() === 'x-frontier-signature' ? v.replace(/^v1-/, 'v2-') : v)
 
     const res = await serverWith(fake).handle(new Request('http://outpost.test/logs', {
       method: 'POST', headers, body: payload,
@@ -4295,7 +4295,7 @@ describe('what this machine tells basecamp', () => {
     // Until this lands, basecamp has no address for the machine and refuses
     // every release for it.
     expect(call.body.outpost_url).toBe('https://outpost.test:7180')
-    expect(call.init.headers['X-Fjs-Signature']).toMatch(/^v1-ed25519=[A-Za-z0-9_-]{86}$/)
+    expect(call.init.headers['X-Frontier-Signature']).toMatch(/^v1-ed25519=[A-Za-z0-9_-]{86}$/)
   })
 
   describe('the runtime reading (box-health 1.1–1.4)', () => {

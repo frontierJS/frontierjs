@@ -153,10 +153,6 @@
   // ─── live ────────────────────────────────────────────────────────────────────
 
   const POLL_MS = 3000
-  // A poll in flight when the tab goes would reschedule itself after clearTimeout.
-  let timer = null
-  let destroyed = false
-  function schedule() { if (!destroyed) timer = setTimeout(poll, POLL_MS) }
   // Only while someone can see it: the Workbench keeps this tab mounted behind its others.
   const watched = () => document.visibilityState === 'visible' && !!root?.isConnected && root.checkVisibility?.() !== false
   async function poll() {
@@ -166,10 +162,9 @@
         if (rev !== cfg.rev && !loading) await load()
       }
     } catch {}
-    schedule()
   }
-  $.onMount(() => { load(); schedule() })
-  $.onDestroy(() => { destroyed = true; clearTimeout(timer) })
+  $.every(POLL_MS, poll)
+  $.onMount(() => { load() })
 
   // ─── hook programs ───────────────────────────────────────────────────────────
 

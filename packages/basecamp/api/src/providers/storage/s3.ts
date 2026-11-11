@@ -130,10 +130,23 @@ const meta = (headers: Record<string, string> | undefined): ObjectMeta => ({
   lastModified: headers?.['last-modified'] ?? null,
 })
 
+// A bucket with Object Lock refuses a PUT that carries no Content-MD5
+// (`FJS-4218`), so every PUT sends one. A pre-signed URL leaves the header
+// unsigned, so whoever holds the URL adds it.
+export const contentMd5 = (bytes: Uint8Array): string => new Bun.CryptoHasher('md5').update(bytes).digest('base64')
+
+/** `contentMd5` of a file, read as a stream: an archive can be gigabytes. */
+export async function fileMd5(path: string): Promise<string> {
+  const hasher = new Bun.CryptoHasher('md5')
+  for await (const chunk of Bun.file(path).stream()) hasher.update(chunk)
+  return hasher.digest('base64')
+}
+
 export async function putObject(send: Send, bucket: string, key: string, body: Uint8Array | string, opts: { contentType?: string; ifNoneMatch?: '*' } = {}): Promise<{ meta?: ObjectMeta; error?: S3Failure }> {
   const bytes = typeof body === 'string' ? new TextEncoder().encode(body) : body
   const r = await send<null>({ method: 'PUT', path: objectPath(bucket, key), body: bytes, headers: {
     'content-type': opts.contentType ?? 'application/octet-stream',
+    'content-md5':  contentMd5(bytes),
     ...(opts.ifNoneMatch ? { 'if-none-match': opts.ifNoneMatch } : {}),
   } })
   if (r.error) return { error: translate(r.error) }

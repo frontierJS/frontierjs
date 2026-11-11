@@ -780,7 +780,7 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     // Two packages have to agree for that to hold and neither can be asked
     // alone: the cli decides the value, junction states it, and only a deployed
     // container answers with it.
-    const stated = headerOf(`http://127.0.0.1:${PORT}/api/health`, 'x-fjs-build')
+    const stated = headerOf(`http://127.0.0.1:${PORT}/api/health`, 'x-frontier-build')
     if (!stated)
       return fail('the deployed app states no build — a browser cannot tell it is behind', dockerLogs(container))
     if (stated !== shortCommit(app))

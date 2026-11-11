@@ -191,7 +191,7 @@ describe('signing out reaches the server', () => {
 // ─── FJS-812 — the staleness verdict reaches `status` ────────────────────────
 
 describe('a browser left open across a deploy', () => {
-  // The app states build `server-2`. The whole x-fjs-build channel exists so a
+  // The app states build `server-2`. The whole x-frontier-build channel exists so a
   // bundle that is not that build can be told; it ended at Sierra, which passed
   // `build:` so `stale` could fire and then subscribed to nothing.
 

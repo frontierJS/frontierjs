@@ -479,6 +479,16 @@
   --leading-body:    1.55;  /* the body default */
   --leading-relaxed: 1.6;
 
+  /*
+   * Body tracking, the running-text sibling of --heading-letter-spacing and
+   * --label-letter-spacing. `normal` is what body copy always had, so nothing
+   * shipped moves; a spec that loosens its body text had only a selector to
+   * say so, which a theme may not ship (FJS-4191). A literal, so declaring it
+   * here is safe. `.app`, `.prose` and the Block tier read it with --text-md
+   * and --leading-body — the three places the package sets body copy.
+   */
+  --body-letter-spacing: normal;
+
 }
 
 /*
@@ -761,6 +771,7 @@
   --font-display:         initial;
   --heading-font-weight:  initial;
   --heading-letter-spacing: initial;
+  --heading-text-transform: initial;
   --h1-size:              initial;
   --h2-size:              initial;
   --h3-size:              initial;
@@ -853,6 +864,37 @@
     --glass-alpha: 100% !important;
     --glass-blur:  0px !important;
   }
+}
+
+/*
+ * ── A subtree being re-themed live ─────────────────────────
+ *
+ * Every transition in the package reads a --motion-* duration, and every one
+ * is there for an interaction: a hover, a focus, a state entered. A token
+ * changed under the element is not one, but the transition cannot tell —
+ * `transition: background` fires whether :hover or `--surface` moved the
+ * value. So an app that writes tokens at input rate (a theme editor's slider,
+ * a live preview) starts a transition on every Band, Card, Btn and Field per
+ * move: 92 of them on 23 elements in a 103-element page for a 47-token batch,
+ * each retargeted by the next move and re-sampled every frame, and the page
+ * trails the slider by --motion-fast. Measured (FJS-4208): 47 tokens per
+ * move, p95 20-34 ms to a forced layout with them, about 5 ms without.
+ *
+ * `data-motion="still"` on the subtree's root zeroes the durations for as
+ * long as the attribute is there, so a token change lands in one frame and
+ * nothing is left running. Set it for the drag and remove it after: hover
+ * and focus feedback are back the moment it goes. !important because a
+ * `.theme-*` on the same element sets --motion-* in a later layer, and on
+ * `*` within because a nested theme re-declares them for its own subtree.
+ * It is the app's setting, like the duration tokens; prefers-reduced-motion
+ * below is the reader's and is not affected.
+ */
+:where([data-motion="still"]),
+:where([data-motion="still"]) * {
+  --motion-fast:  0s !important;
+  --motion-base:  0s !important;
+  --motion-enter: 0s !important;
+  --motion-slow:  0s !important;
 }
 
 /* ── Respect prefers-reduced-motion ─────────────────────────── */

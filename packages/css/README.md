@@ -143,9 +143,10 @@ rule of its own, the token that would have carried it is missing.
 | `--app-bg` · `--topbar-bg` · `--sidebar-bg` · `--dialog-bg` | the frame's own grounds, so the shell can differ from the content. `--app-bg` feeds the `background` shorthand, so it takes a gradient |
 | `--navlink-current-bg` · `--navlink-current-ink` | the current `.navlink`'s fill and label (defaults a 12% tint of the primary, and the primary), so a theme can draw it as a solid fill with its own ink. Set both: a fill alone leaves the label on the primary |
 | `--toast-bg` · `--toast-radius` | a toast's own ground and corner (defaults `--surface`, `--card-radius`), so a dark pill can sit in a theme of rounded light cards; scope a ramp onto `<Toaster class="theme-dark">` |
-| `--glass-alpha` · `--glass-blur` | the `.glass` treatment. **`--glass-alpha` is a contrast floor, not a look** — at the default 85% `--ink` and `--ink-soft` clear AA over any ground, and below it the guarantee is gone. The suite grades every shipped theme; it cannot grade an app's override |
+| `--glass-alpha` · `--glass-blur` | the `.glass` treatment. **`--glass-alpha` is a contrast floor, not a look** — at the default 85% `--ink` and `--ink-soft` clear AA over any ground, and below it the guarantee is gone. The suite grades every shipped theme, and an app's own with `bun test/run.js contrast --theme <file>` |
 | `--label-font-weight` · `--label-text-transform` · `--label-letter-spacing` | the small caps that name a region — table head, tile label, nav group. One role, one triple |
-| `--heading-font-weight` · `--heading-letter-spacing` | all six heading levels at once. Unset, each keeps its own optical value |
+| `--heading-font-weight` · `--heading-letter-spacing` · `--heading-text-transform` | all six heading levels at once. Unset, each keeps its own optical value — h6 stays in caps, h1–h5 do not |
+| `--body-letter-spacing` | body tracking, `normal` by default. Read with `--text-md` and `--leading-body` by `.app`, `.prose` and the Block tier — the places body copy is set |
 | `--h1-size` … `--h6-size` | one heading level's size, without moving the `.text-*` utilities that share its `--text-*` rung. Unset, the level reads its rung |
 | `--h1-ink` … `--h6-ink` | one heading level's color. Unset, the level reads `--ink`, so a theme can give h1/h2, h3/h4 and body text three different inks |
 | `--motion-fast` · `--motion-base` · `--motion-enter` · `--motion-slow` | how quickly the product moves. `--motion-spin` and `--motion-shimmer` are the two loops |

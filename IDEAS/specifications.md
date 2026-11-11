@@ -271,7 +271,7 @@ since a socket has no per-call headers. The build a client compares against.
 **Parity is the conformance test**: the same call on both transports gives the
 same answer.
 **Held today:** `packages/junction/src/transport/bridge.ts` · `setCallHeader` ·
-`x-fjs-build` (`FJS-D160`) · `verifyTransportParity`.
+`x-frontier-build` (`FJS-D160`) · `verifyTransportParity`.
 **Neighbor:** JSON-RPC 2.0 for the frame, and RFC 9110 for the HTTP half.
 
 #### 17. Call context and principal

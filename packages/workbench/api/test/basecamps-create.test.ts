@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 import { writeBasecamp } from '@frontierjs/cli/core/basecamps.js'
 
-import { createArgv, creationOf, startCreate, type CreateInput } from '../src/domain/basecamps/basecamps-create.ts'
+import { createArgv, creationOf, resumeArgv, startCreate, startResume, stepsOf, type CreateInput } from '../src/domain/basecamps/basecamps-create.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'wb-create-'))
 const home = join(root, 'home')
@@ -53,6 +53,53 @@ describe('createArgv', () => {
   })
 })
 
+describe('stepsOf', () => {
+  test('reads each stage header in order, a two-word name included, and drops a child line that only looks like one', () => {
+    const log = [
+      '  hostname  t.example.com',
+      '',
+      '  1/4 buy  the box at Hetzner — about a minute',
+      'Reading package lists...',
+      '  7/9 noise  from a child, not a stage of this run',
+      '  2/4 ssh  wait for the fresh box to answer ssh',
+      '  3/4 deploy:setup  docker and caddy on the box — a few minutes on a fresh one',
+      '  4/4 api key  the first admin\'s API key, over ssh',
+    ].join('\n')
+    expect(stepsOf(log)).toEqual([
+      { n: 1, of: 4, name: 'buy',          what: 'the box at Hetzner — about a minute' },
+      { n: 2, of: 4, name: 'ssh',          what: 'wait for the fresh box to answer ssh' },
+      { n: 3, of: 4, name: 'deploy:setup', what: 'docker and caddy on the box — a few minutes on a fresh one' },
+      { n: 4, of: 4, name: 'api key',      what: 'the first admin\'s API key, over ssh' },
+    ])
+  })
+})
+
+describe('resumeArgv', () => {
+  const create = ['fli', ...createArgv({ ...input, dry: false }) as string[], '--approved']
+  const failed = { argv: create, exit: { code: 1, signal: null } }
+
+  test('a create that failed after its buy resumes as the install its log names, with its domain and admin', () => {
+    const log = '✗ fli deploy --no-outpost --server t-dry exited 1. Fix what it said and run fli basecamp:install t-dry --domain t.example.com'
+    expect(resumeArgv(failed, log)).toEqual(['basecamp:install', 't-dry', '--domain', 't.example.com', '--admin', 'a@example.com'])
+    expect(resumeArgv({ ...failed, argv: [...create, '--no-outpost'] }, '✗ root@203.0.113.7 did not answer ssh in four minutes. When it does: fli basecamp:install root@203.0.113.7'))
+      .toEqual(['basecamp:install', 'root@203.0.113.7', '--domain', 't.example.com', '--admin', 'a@example.com', '--no-outpost'])
+  })
+
+  test('nothing to resume: a success, a plan, a run whose log names no box, and the second-create refusal', () => {
+    const named = 'and run fli basecamp:install t-dry'
+    expect(resumeArgv({ ...failed, exit: { code: 0, signal: null } }, named)).toBeNull()
+    expect(resumeArgv({ ...failed, argv: [...create, '--dry'] }, named)).toBeNull()
+    expect(resumeArgv({ ...failed, exit: null }, named)).toBeNull()
+    expect(resumeArgv(failed, '✗ the last CI run graded ae4fd3bdc, not 3d85766f8\n✗ Nothing was bought')).toBeNull()
+    expect(resumeArgv(failed, '✗ a bare box is still at this account: 123 (203.0.113.7) — fli server:stop <id> then fli server:destroy <id> removes it, or fli basecamp:install installs on it')).toBeNull()
+  })
+
+  test('a failed install resumes by running itself again', () => {
+    const install = ['fli', 'basecamp:install', 't-dry', '--domain', 't.example.com']
+    expect(resumeArgv({ argv: install, exit: { code: 1, signal: null } }, '')).toEqual(install.slice(1))
+  })
+})
+
 describe('startCreate', () => {
   test('refuses a run nobody approved, before it spawns', async () => {
     expect(await startCreate({ ...input, approved: false }, opts)).toEqual({ refused: expect.stringContaining('not approved') })
@@ -80,6 +127,8 @@ describe('startCreate', () => {
     const said = done.lines.join('\n')
     expect(said).toContain('DRY RUN')
     expect(said).toContain('id_ed25519.pub')
+    expect(done.resume).toBeNull()
+    expect(startResume({ approved: true }, opts)).toEqual({ refused: expect.stringContaining('nothing to resume') })
   })
 
   test('after the run ends, another may start', async () => {

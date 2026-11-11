@@ -102,7 +102,7 @@ Detail: `references/api-internals.md`
 **API → UI**
 Detail: `references/api-ui.md`
 - `client.setCallHeader(name, value)` + `config.http.callHeaders` — a per-call header over either transport, allow-listed — `junction/src/client/index.ts`
-- `x-fjs-build` + the `connected` frame's `build` → `client.stale` — which build the browser is on — `junction/src/core/build-id.ts`
+- `x-frontier-build` + the `connected` frame's `build` → `client.stale` — which build the browser is on — `junction/src/core/build-id.ts`
 - `wsSend()` / `flushSendQueue()` — put this frame on that socket — `junction/src/transport/send-queue.ts`
 - **A broadcast is GRADED per recipient, in cohorts** — `gradeRecipients` asks `$readAs` once per principal, and on a channel whose resolver answers no claim, again under each claim it answers for that principal on their other channels — `junction/src/transport/channels.ts`
 - `announce()` hook + `app.channel(name)` — real-time; `callService` is the one announcement point — `junction/src/transport/channels.ts`

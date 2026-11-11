@@ -65,7 +65,7 @@ export type TargetAuth =
   | { type: 'api_key'; ref: string; query: string; header?: never; refusal?: CredentialRefusal[]; per_caller?: true }
   // Signs a canonical string over method, path, timestamp, nonce and a
   // hash of the body. `header_prefix` names the three headers this emits
-  // (default 'X-Fjs' → X-Fjs-Signature, X-Fjs-Timestamp, X-Fjs-Nonce).
+  // (default 'X-Frontier' → X-Frontier-Signature, X-Frontier-Timestamp, X-Frontier-Nonce).
   | { type: 'hmac';    ref: string; header_prefix?: string; refusal?: CredentialRefusal[]; per_caller?: true }
   // A vendor's own scheme (a secret in the body, a minted JWT, SigV4),
   // supplied as a function by the connector: `signer` names one of

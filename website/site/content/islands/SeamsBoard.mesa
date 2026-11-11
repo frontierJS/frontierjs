@@ -12,6 +12,12 @@
   And PLAYBACK, which is a timer.
 -->
 <script>
+  // The stepping lives in the mount's closure, so the declared timer calls it
+  // through `tick`; `playing` is the whole of its arming.
+  let playing = false
+  let tick = null
+  $.every(2600, () => tick?.(), { when: playing })
+
   $.onMount(() => {
     const grid   = document.querySelector('[data-grid]')
     const wires  = document.querySelector('[data-wires]')
@@ -29,7 +35,6 @@
     const play  = document.querySelector('[data-play]')
 
     let i = 0
-    let timer = null
 
     const paintWires = () => {
       for (const p of wires.querySelectorAll('path[data-seg]'))
@@ -97,15 +102,16 @@
     }
 
     const go = (n) => { i = Math.max(0, Math.min(total - 1, n)); render() }
-    const stop = () => { clearInterval(timer); timer = null; if (play) play.textContent = '▶ Play' }
+    const stop = () => { playing = false; if (play) play.textContent = '▶ Play' }
+    tick = () => (i === total - 1 ? stop() : go(i + 1))
 
     const onPrev = () => { stop(); go(i - 1) }
     const onNext = () => { stop(); go(i + 1) }
     const onPlay = () => {
-      if (timer) return stop()
+      if (playing) return stop()
       if (play) play.textContent = '❚❚ Pause'
       if (i === total - 1) go(0)
-      timer = setInterval(() => (i === total - 1 ? stop() : go(i + 1)), 2600)
+      playing = true
     }
     const onGrid = (e) => {
       const b = e.target.closest('.stepbtn')
@@ -128,7 +134,6 @@
     go(Number.isFinite(start) ? start - 1 : 0)
 
     return () => {
-      stop()
       prev?.removeEventListener('click', onPrev)
       next?.removeEventListener('click', onNext)
       play?.removeEventListener('click', onPlay)

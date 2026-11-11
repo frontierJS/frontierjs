@@ -65,6 +65,10 @@ from css's, as Switch does by sitting under its task.
 
 **`@` is a character the house uses four ways, and only one is a VALUE.** The day token `@today`, `@today-6`, `@today+7` is a filter value a relative preset writes into the URL (`FJS-D1601`): days only, `readDayToken`/`dayToken` in `@frontierjs/toolbelt/query` are the spelling's one owner, and `resolveDayTokens` turns it into days or instants on the client before the request, against date and instant columns only — so a text filter on the literal `@today` is text. The server never sees a token; one that leaks to a date column is refused by name in litestone (`FJS-3583`). The other three are names, never values: a `.lite` attribute (`@date`, `@encrypted`, `@@allow`), the npm scope (`@frontierjs/…`), and Mesa's template blocks (`{@html}`, `{@render}`, `{@const}`, `{@attach}`).
 
+## The prefix `Frontier`
+
+**A name the framework owns on a wire or in an environment carries the one namespace `Frontier`, spelled out.** An env var is `FRONTIER_*` (`FJS-D1102`); an HTTP header the framework itself sends or reads is `X-Frontier-*` (`FJS-D2072`) — the signature kit's `X-Frontier-Signature`, `-Timestamp`, `-Nonce`, `-Credential`, `-Key` and `-Write`, junction's `x-frontier-build`, `-Sent-At`, `-Made-At` and `-Read-Only`. `fjs` stays the abbreviation for things a person types or reads as a tag: an `FJS-###` id, the `fli` command, a `fjs_…` API key token, a `fjs-` element class. The tooling vars still spelled `FJS_*` are the one exception, owed a sweep (`FJS-4153`).
+
 ## Terms
 
 Seeded from `fli ws:terms` at spread ≥ 4 — a term used in four or more

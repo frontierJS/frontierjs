@@ -26,6 +26,12 @@
   const FLOOR_PX = 9
   const PAD = 9
 
+  // The resize listener bumps `resizes` and the timer re-arms on each bump, so
+  // a drag packs once, 160 ms after it stops.
+  let resizes = 0
+  let repack = null
+  $.after(160, () => repack?.(), { key: resizes, when: resizes > 0 })
+
   $.onMount(() => {
     const cloud  = document.querySelector('[data-cloud]')
     const rows   = document.querySelector('[data-rows]')
@@ -228,8 +234,8 @@
     rows.addEventListener('mouseover', onRows)
 
     // Re-pack on resize — the spiral is measured against the live box.
-    let t = null
-    const onResize = () => { clearTimeout(t); t = setTimeout(render, 160) }
+    repack = render
+    const onResize = () => { resizes++ }
     addEventListener('resize', onResize)
 
     // The ramp colors differ per theme, so a switch has to re-read them.
@@ -243,7 +249,6 @@
     render()
 
     return () => {
-      clearTimeout(t)
       seg?.removeEventListener('click', onFactor)
       filters?.removeEventListener('click', onStance)
       rows.removeEventListener('mouseover', onRows)

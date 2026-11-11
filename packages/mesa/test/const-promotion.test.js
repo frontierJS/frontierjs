@@ -479,6 +479,42 @@ const k = 5`)
   })
 })
 
+// ─── a declared timer over a const declared below it ─────────────────────────
+
+// `$.every(1500, load, { when: inFlight })` above `$: inFlight = …` arms where it
+// is written and reads `when` at once, so the derived was in its TDZ and the
+// screen never rendered (FJS-4145). `fn` runs later and may read anything.
+describe('FJS-4145: a declared timer reading a later const', () => {
+  const errorsOf = async (script) =>
+    (await compile(`<script>\n${script}\n</script><p>{n}</p>`, { debug: false, css: false })).analysis.errors.join('\n')
+
+  it('names the timer and the const, with the fix', async () => {
+    const e = await errorsOf(`export let n = 2
+function load() {}
+$.every(1500, load, { when: inFlight })
+$: inFlight = n > 1`)
+    expect(e).toMatch(/'\$\.every' reads 'inFlight', which is declared below it/)
+    expect(e).toMatch(/below 'inFlight'/)
+  })
+
+  it.each([
+    ['key', `export let n = 2\nfunction load() {}\n$.after(300, load, { key: q })\nconst q = n + 1`],
+    ['ms', `export let n = 2\nfunction load() {}\n$.after(delay, load)\nconst delay = n * 100`],
+    ['a spread of options', `export let n = 2\nfunction load() {}\n$.after(300, load, { ...opts })\nconst opts = { when: n > 1 }`],
+    ['a let, whose signal is a const below it', `export let n = 2\nfunction load() {}\n$.every(1500, load, { when: on })\nlet on = true`],
+  ])('covers %s, which is read at arm time', async (_, script) => {
+    expect(await errorsOf(script)).toMatch(/declared below it/)
+  })
+
+  it.each([
+    ['the const above it', `export let n = 2\nfunction load() {}\n$: inFlight = n > 1\n$.every(1500, load, { when: inFlight })`],
+    ['fn reading a const below', `export let n = 2\n$.every(1500, () => k + n)\nconst k = 5`],
+    ['a function declaration below it', `export let n = 2\n$.every(1500, load)\nfunction load() {}`],
+  ])('leaves %s alone', async (_, script) => {
+    expect(await errorsOf(script)).toBe('')
+  })
+})
+
 // ─── a call to a function declaration ────────────────────────────────────────
 
 // `const tree = walk(folders.rows)` over `function walk` was a plain const —

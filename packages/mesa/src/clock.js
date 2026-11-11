@@ -45,10 +45,17 @@ const source = () => _source !== domSource ? _source
   : typeof globalThis.__fjsClock === 'object' && globalThis.__fjsClock ? globalThis.__fjsClock
   : domSource
 
+// A deadline already past (`$.after(deadline - Date.now(), ...)`) arms a negative
+// delay; Node prints TimeoutNegativeWarning onto a terminal screen for one, so
+// the clock clamps before any source sees it. Every source then agrees with the
+// browser: a past deadline fires on the next turn.
+const delay    = (ms) => Math.max(0, Number(ms) || 0)
+const interval = (ms) => Math.max(1, Number(ms) || 0)
+
 export const clock = {
   now: () => source().now(),
-  after: (ms, fn, label) => source().after(ms, fn, label),
-  every: (ms, fn, label) => source().every(ms, fn, label),
+  after: (ms, fn, label) => source().after(delay(ms), fn, label),
+  every: (ms, fn, label) => source().every(interval(ms), fn, label),
   frame: (fn, label) => source().frame(fn, label),
   /** Install `source` (nullish: the DOM's); answers the one it replaced. */
   use(source) {

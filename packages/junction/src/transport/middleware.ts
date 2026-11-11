@@ -240,9 +240,13 @@ export interface HelmetOptions {
 // FJS-D1192. On in development too, so a page that breaks under it breaks
 // where it is written. `base-uri`, `form-action` and `frame-ancestors` never
 // fall back to `default-src`, so leaving them out leaves them open.
+// `img-src` names `data:` because @frontierjs/css paints the select arrow and
+// `--app-depth` as data: SVG, and vite inlines a small imported image the same
+// way (FJS-4214); the deploy CSP in the cli's `edge.js` says the same.
 function defaultCsp(frame: HelmetOptions['frame'] = 'deny'): string {
   return [
     "default-src 'self'",
+    "img-src 'self' data:",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

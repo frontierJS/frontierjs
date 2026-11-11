@@ -428,7 +428,7 @@ export function initJunction(config) {
     _status.reconnecting = info
   })
 
-  // This bundle is not the build the server is on. The whole `x-fjs-build`
+  // This bundle is not the build the server is on. The whole `x-frontier-build`
   // channel — the CLI's stamp, the response header, the socket's `connected`
   // frame — exists so a browser left open across a deploy can be told, and it
   // ended here: `build:` was passed so `stale` COULD fire and nothing listened

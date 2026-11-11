@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-9 services · 19 routes · 7 plugins · prefix (none)
+10 services · 19 routes · 7 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -82,18 +82,22 @@ name when it declares none.
 
 ### `basecamps` · model `basecamps`
 
-- **methods** — `list`, `outcome`, `creation`, `reinstallation`, `backup`, `restart`, `provision`, `reinstall`, `deleteLocal`
-- **custom methods** — `list`, `outcome`, `creation`, `reinstallation`, `backup`, `restart`, `provision`, `reinstall`, `deleteLocal`
+- **methods** — `list`, `outcome`, `creation`, `reinstallation`, `backupsPlan`, `backup`, `restart`, `provision`, `resume`, `reinstall`, `deleteLocal`, `setUpB2`, `undoB2`
+- **custom methods** — `list`, `outcome`, `creation`, `reinstallation`, `backupsPlan`, `backup`, `restart`, `provision`, `resume`, `reinstall`, `deleteLocal`, `setUpB2`, `undoB2`
 - **who may call** —
   - `list` — standing 5 or above — declared `gate: 5`
   - `outcome` — standing 5 or above — declared `gate: 5`
   - `creation` — standing 5 or above — declared `gate: 5`
   - `reinstallation` — standing 5 or above — declared `gate: 5`
+  - `backupsPlan` — standing 5 or above — declared `gate: 5`
   - `backup` — standing 5 or above — declared `gate: 5`
   - `restart` — standing 5 or above — declared `gate: 5`
   - `provision` — standing 5 or above — declared `gate: 5`
+  - `resume` — standing 5 or above — declared `gate: 5`
   - `reinstall` — standing 5 or above — declared `gate: 5`
   - `deleteLocal` — standing 5 or above — declared `gate: 5`
+  - `setUpB2` — standing 5 or above — declared `gate: 5`
+  - `undoB2` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -228,6 +232,25 @@ name when it declares none.
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `restoreDrills` · model `restoreDrills`
+
+- **methods** — `state`, `fleet`, `run`
+- **custom methods** — `state`, `fleet`, `run`
+- **who may call** —
+  - `state` — standing 5 or above — declared `gate: 5`
+  - `fleet` — standing 5 or above — declared `gate: 5`
+  - `run` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `servers` · model `servers`

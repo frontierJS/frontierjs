@@ -70,6 +70,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `src/index.ts` | yes |
+| exports | `./peer` | `src/peer.ts` | yes |
 | exports | `./testing` | `src/testing.ts` | yes |
 | exports | `./stores/sqlite` | `src/stores/sqlite.ts` | yes |
 | exports | `./stores/memory` | `src/stores/memory.ts` | yes |

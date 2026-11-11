@@ -755,3 +755,56 @@ test('theming: --navlink-current-bg and --navlink-current-ink draw the current n
   assert.sameColor(style(fillOnly, 'background-color'), 'rgb(9, 8, 7)', 'a fill without an ink was dropped');
   cleanup();
 });
+
+/* ── FJS-4190 / FJS-4191 — body size, leading and tracking ───────── */
+
+test('theming: a nested theme\'s --text-md, --leading-body and --body-letter-spacing reach body copy', function () {
+  /*
+   * Size, leading and tracking inherit as COMPUTED values, so `.app` reading
+   * the tokens is not enough: a nested theme retuning them changes nothing
+   * below it unless a rule there re-reads them. `.prose` and the Block tier
+   * do, the same way they re-read --ink. The bare `p` under `.app` is the
+   * control — it keeps what `.app` resolved against the OUTER tokens.
+   */
+  var app = el(
+    '<div class="app" style="min-block-size: 0">' +
+      '<p class="outer">a</p>' +
+      '<div class="nested" style="--text-md: 20px; --leading-body: 2; --body-letter-spacing: 3px">' +
+        '<div class="prose"><p>b</p></div>' +
+        '<div class="card"><p>c</p></div>' +
+      '</div>' +
+    '</div>'
+  );
+  var outer = app.querySelector('.outer');
+  var root = getComputedStyle(document.documentElement);
+  var md = parseFloat(root.getPropertyValue('--text-md')) * parseFloat(root.fontSize);
+  assert.equal(px(style(outer, 'font-size')), px(md), '.app does not read --text-md');
+  assert.equal(px(style(outer, 'line-height')), px(md * parseFloat(root.getPropertyValue('--leading-body'))), '.app does not read --leading-body');
+  assert.equal(style(outer, 'letter-spacing'), 'normal', '--body-letter-spacing moved shipped body tracking');
+
+  [['.prose p', 'a Prose'], ['.card p', 'a Card']].forEach(function (pair) {
+    var p = app.querySelector(pair[0]);
+    assert.equal(style(p, 'font-size'), '20px', 'a nested --text-md did not reach a p in ' + pair[1]);
+    assert.equal(style(p, 'line-height'), '40px', 'a nested --leading-body did not reach a p in ' + pair[1]);
+    assert.equal(style(p, 'letter-spacing'), '3px', 'a nested --body-letter-spacing did not reach a p in ' + pair[1]);
+  });
+  cleanup();
+});
+
+/* ── FJS-4192 — heading case ─────────────────────────────────────── */
+
+test('theming: --heading-text-transform sets heading case; unset, only h6 is in caps', function () {
+  var html = '<div><h2>Two</h2><h6>Six</h6></div>';
+  var plain = themedBy('', html);
+  assert.equal(style(plain.querySelector('h2'), 'text-transform'), 'none', 'unset, h2 is no longer in its own case');
+  assert.equal(style(plain.querySelector('h6'), 'text-transform'), 'uppercase', 'unset, h6 lost its small caps');
+  cleanup();
+
+  var caps = themedBy('--heading-text-transform: uppercase', html);
+  assert.equal(style(caps.querySelector('h2'), 'text-transform'), 'uppercase', '--heading-text-transform did not reach h2');
+  cleanup();
+
+  var none = themedBy('--heading-text-transform: none', html);
+  assert.equal(style(none.querySelector('h6'), 'text-transform'), 'none', '--heading-text-transform cannot take h6 out of caps');
+  cleanup();
+});

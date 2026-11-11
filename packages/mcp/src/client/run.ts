@@ -71,7 +71,7 @@ export interface RunOptions extends ParseOptions {
 }
 
 export interface Connection {
-  /** The build the app stated on its last response (`x-fjs-build`), or null. */
+  /** The build the app stated on its last response (`x-frontier-build`), or null. */
   build?(): string | null
   listTools(): Promise<ToolListing[]>
   callTool(name: string, args: Record<string, unknown>, opts?: CallOptions): Promise<CallAnswer>
@@ -335,7 +335,7 @@ async function connectMcp(url: URL, headers: Record<string, string>): Promise<Co
   let build: string | null = null
   const fetchNoting = async (input: string | URL | Request, init?: RequestInit) => {
     const res = await fetch(input, init)
-    build = res.headers.get('x-fjs-build') ?? build
+    build = res.headers.get('x-frontier-build') ?? build
     return res
   }
   const client = new Client({ name: 'frontierjs-cli', version: '0.0.0' })

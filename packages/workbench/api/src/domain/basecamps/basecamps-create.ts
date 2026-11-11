@@ -19,7 +19,7 @@
 // `~/.config/fli/.env`, and no secret is ever in the argv shown to the page.
 
 import { spawn }                                   from 'node:child_process'
-import { closeSync, mkdirSync, openSync }          from 'node:fs'
+import { closeSync, mkdirSync, openSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve }                  from 'node:path'
 import { fileURLToPath }                           from 'node:url'
 import { workbenchDir }                            from '../../core/env.ts'
@@ -50,6 +50,7 @@ export type Creation = {
   startedAt: string
   pid:       number | null
   exit:      { code: number | null, signal: string | null } | null
+  endedAt?:  string
   log:       string
   /** The spawn itself failed, so there is no exit code to wait for. */
   error?:    string
@@ -120,6 +121,51 @@ export async function startCreate(input: CreateInput, opts: CreateOptions = {}):
   return { ...held }
 }
 
+// ─── Resume ──────────────────────────────────────────────────────────────────
+// A create that bought its box and then failed names the line that finishes it
+// (`fli basecamp:install <box>`), and a second create refuses while that bare
+// box is at the account (`FJS-4206`). The page's resume runs that install on
+// the box the log names, with the run's own domain, admin and outpost answer;
+// a failed install resumes by running itself again.
+
+// The two failures after the buy (create.md: ssh never answered, a ring-zero
+// step exited). The refusal of a second create says "fli basecamp:install
+// installs on it", which names no box.
+const INSTALL_LINE = /(?:When it does:|and run) fli basecamp:install (\S+)/g
+const BOX          = /^[A-Za-z0-9][A-Za-z0-9._@-]*$/
+
+const flagOf = (argv: string[], flag: string) => { const i = argv.indexOf(flag); return i < 0 ? '' : argv[i + 1] ?? '' }
+
+/** The argv that finishes a failed, bought run, or null when nothing is left to resume. */
+export function resumeArgv(rec: Pick<Creation, 'argv' | 'exit' | 'error'>, log: string): string[] | null {
+  if (!rec.exit || rec.exit.code === 0 || rec.error || rec.argv.includes('--dry')) return null
+  const [, verb, box] = rec.argv
+  if (verb === 'basecamp:install') return rec.argv.slice(1)
+  const named = [...log.matchAll(INSTALL_LINE)].pop()?.[1]
+  if (verb !== 'basecamp:create' || !named || !BOX.test(named)) return null
+  const admin = flagOf(rec.argv, '--admin')
+  return [
+    'basecamp:install', named, '--domain', flagOf(rec.argv, '--domain'),
+    ...(admin ? ['--admin', admin] : []),
+    ...(rec.argv.includes('--no-outpost') ? ['--no-outpost'] : []),
+  ]
+}
+
+function readLog(log: string): string {
+  try { return readFileSync(log, 'utf8') } catch { return '' }
+}
+
+/** Run the held failed create's install on its box, or say why not. */
+export function startResume(input: { approved?: boolean }, opts: CreateOptions = {}): Creation | { refused: string } {
+  if (!held) return { refused: 'No create run to resume' }
+  if (!held.exit) return { refused: `'${held.name}' is still running` }
+  const argv = resumeArgv(held, readLog(held.log))
+  if (!argv) return { refused: `'${held.name}' has nothing to resume: its log names no box to install on` }
+  if (input.approved !== true) return { refused: 'Installing on a box is confirmed by a person each run: it was not approved' }
+  held = spawnFli('basecamp-install', held.name, argv, opts)
+  return { ...held }
+}
+
 /** Start `fli <argv>` detached, its output to a log under Workbench's directory; answers the record it updates on exit. */
 export function spawnFli(verb: string, name: string, full: string[], opts: CreateOptions = {}): Creation {
   const dir  = logDir(opts.dir)
@@ -137,13 +183,42 @@ export function spawnFli(verb: string, name: string, full: string[], opts: Creat
   } finally { closeSync(fd) }
   child.unref()
   rec.pid = child.pid ?? null
-  child.on('error', e => { rec.exit = { code: null, signal: null }; rec.error = e.message })
-  child.on('exit', (code, signal) => { rec.exit = { code, signal } })
+  child.on('error', e => { rec.exit = { code: null, signal: null }; rec.endedAt = new Date().toISOString(); rec.error = e.message })
+  child.on('exit', (code, signal) => { rec.exit = { code, signal }; rec.endedAt = new Date().toISOString() })
   return rec
 }
 
-/** The held run with the end of its log, or null before any. */
-export function creationOf(): (Creation & { lines: string[] }) | null {
+export type Step = { n: number, of: number, name: string, what: string }
+
+// The stage header `basecamp:create` echoes as each stage opens (`stageBar` in
+// cli commands/basecamp/_module.md): `  3/8 deploy:setup  docker and caddy …`.
+// A stage name may hold one space (`api key`); two spaces end it.
+const STEP = /^ {2}(\d+)\/(\d+) (\S+(?: \S+)?) {2}(.+)$/
+
+/**
+ * The stages a create run has reached, in order. Read from the whole log, not
+ * its tail: deploy:setup's apt output alone outruns the tail, and the page
+ * would lose the stages before it. A line from a child that happens to match
+ * is dropped unless it is the next number of the same count.
+ */
+export function stepsOf(text: string): Step[] {
+  const steps: Step[] = []
+  for (const line of text.split(/\r?\n/)) {
+    const m = STEP.exec(line)
+    if (!m) continue
+    const n = Number(m[1]), of = Number(m[2])
+    const last = steps[steps.length - 1]
+    if (last ? (of !== last.of || n !== last.n + 1) : n !== 1) continue
+    steps.push({ n, of, name: m[3], what: m[4].trim() })
+  }
+  return steps
+}
+
+/** The held run with its stages, the end of its log and the install a resume
+ *  would run, or null before any. */
+export function creationOf(): (Creation & { lines: string[], steps: Step[], resume: string[] | null }) | null {
   if (!held) return null
-  return { ...held, lines: tail(held.log) }
+  const text = readLog(held.log)
+  const resume = resumeArgv(held, text)
+  return { ...held, lines: tail(held.log), steps: stepsOf(text), resume: resume && ['fli', ...resume] }
 }

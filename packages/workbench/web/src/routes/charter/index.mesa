@@ -42,8 +42,6 @@ title: Charter
   let plan      = true
   let starting  = false
   let run       = null   // the API's held reinstall run, with the end of its log
-  let destroyed = false
-  let timer     = null
 
   const WHEN_DONE = [
     { value: 'destroy', label: 'Destroy when done — the App, its Domains, project and data' },
@@ -56,10 +54,7 @@ title: Charter
   let picked    = []
   let whenDone  = 'destroy'
   let launching = false
-  let liveTimer = null
   let fileInput = null
-
-  $.onDestroy(() => { destroyed = true; clearTimeout(timer); clearTimeout(liveTimer) })
 
   const ACTIVE = ['queued', 'starting', 'running']
   const liveGoing = () => !!live && ((live.batch?.items ?? []).some(i => ACTIVE.includes(i.state)) || live.recent.some(r => r.state === 'running'))
@@ -75,9 +70,9 @@ title: Charter
     } catch (err) {
       toasts.error(err.message)
     }
-    clearTimeout(liveTimer)
-    if (!destroyed && liveGoing()) liveTimer = setTimeout(loadLive, POLL)
   }
+
+  $.every(POLL, loadLive, { when: liveGoing() })
 
   function toggle(name, on) {
     picked = on ? [...picked.filter(p => p !== name), name] : picked.filter(p => p !== name)
@@ -139,26 +134,21 @@ title: Charter
     }
   }
 
-  function schedule() {
-    clearTimeout(timer)
-    if (!destroyed && running()) timer = setTimeout(poll, POLL)
-  }
-
   async function poll() {
     try {
       run = await basecamps.service.invoke('reinstallation', null)
     } catch (err) {
       toasts.error(err.message)
     }
-    schedule()
   }
+
+  $.every(POLL, poll, { when: running() })
 
   async function start() {
     starting = true
     try {
       await basecamps.service.invoke('reinstall', null, { name: entry.name, mode, plan, approved: true })
       run = await basecamps.service.invoke('reinstallation', null)
-      schedule()
     } catch (err) {
       toasts.error(err.message)
     } finally {
@@ -184,6 +174,7 @@ title: Charter
   <h1>Charter</h1>
   <span class="cluster">
     <Button treatment="outlined" id="charter-refresh" onclick={load}>Refresh</Button>
+    <Button id="charter-drill" treatment="outlined" href="/charter/drill/">Restore drill</Button>
     <Button id="charter-new-box" treatment="outlined" href="/basecamps/new/">New box</Button>
   </span>
 </div>

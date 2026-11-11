@@ -326,7 +326,7 @@ const _madeAtHeaders = (opts?: CallOptions): Record<string, string> => {
   const made = new Date(opts.madeAt)
   if (Number.isNaN(made.getTime()))
     throw new TypeError(`madeAt must be an instant — a Date, epoch ms or an ISO string. Got ${String(opts.madeAt)}.`)
-  return { 'x-fjs-made-at': made.toISOString(), 'x-fjs-sent-at': new Date().toISOString() }
+  return { 'x-frontier-made-at': made.toISOString(), 'x-frontier-sent-at': new Date().toISOString() }
 }
 
 /** A custom method's call: the method rides beside the per-call header, never instead of it. */
@@ -349,7 +349,7 @@ const _envelope = (
   const call = _callHeader(opts)
   return opts?.base
     ? { body:  { data, base: opts.base },
-        extra: { ...call, header: { ...call.header, 'X-Fjs-Write': 'enveloped' } } }
+        extra: { ...call, header: { ...call.header, 'X-Frontier-Write': 'enveloped' } } }
     : { body: data, extra: call }
 }
 
@@ -375,7 +375,7 @@ export interface CallOptions {
    *
    * It cannot travel as a header, because a row with a text column goes past
    * what a header may hold: over HTTP the body becomes `{ data, base }` under
-   * `X-Fjs-Write: enveloped`, over the socket it rides the `meta` slot a frame
+   * `X-Frontier-Write: enveloped`, over the socket it rides the `meta` slot a frame
    * already carries its extras in (`FJS-D338`).
    */
   base?: Record<string, unknown> | null

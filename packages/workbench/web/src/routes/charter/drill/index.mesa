@@ -1,0 +1,212 @@
+---
+title: Restore drill
+---
+<script>
+  // Backs the designated Basecamp up, reinstalls it from that backup, and
+  // grades what came back (api services/restoreDrills). The drill is its own
+  // process and outlives this page, so one already going is picked up on load.
+  // `approved: true` goes only with a person's yes.
+  import { restoreDrills } from '../../../resources/RestoreDrill.mesa'
+
+  import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import Dot                 from '@frontierjs/ui/components/display/Dot.mesa'
+  import EmptyState          from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore'
+
+  const POLL   = 2000
+  const LABELS = {
+    preflight: 'Ready to run',
+    before:    'Read before',
+    reinstall: 'Back up and reinstall',
+    hub:       'Hub matches',
+    apps:      'Apps keep serving',
+    data:      'App data round trip',
+  }
+  const TONES       = { passed: 'success', failed: 'danger', skipped: 'warning', 'not reached': '' }
+  const STATE_TONES = { starting: 'info', running: 'info', passed: 'success', failed: 'danger', stopped: 'warning' }
+  const ACTIVE      = ['starting', 'running']
+
+  let view      = null   // restoreDrills.state
+  let fleet     = null   // restoreDrills.fleet
+  let error     = null
+  let starting  = null
+
+  const going = () => !!view?.drills[0] && ACTIVE.includes(view.drills[0].state)
+
+  async function load() {
+    try {
+      view  = await restoreDrills.service.invoke('state', null)
+      error = null
+    } catch (err) {
+      error = err.message
+    }
+  }
+
+  $.every(POLL, load, { when: going() })
+
+  async function loadFleet() {
+    try {
+      fleet = await restoreDrills.service.invoke('fleet', null)
+    } catch (err) {
+      fleet = { apps: [], why: err.message }
+    }
+  }
+
+  async function start(mode) {
+    starting = mode
+    try {
+      await restoreDrills.service.invoke('run', null, { mode, approved: true })
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      starting = null
+    }
+    load()
+  }
+
+  const secs     = (ms) => ms ? `${Math.round(ms / 1000)} s` : ''
+  const names    = () => (fleet?.apps ?? []).map(a => a.hostnames[0] ?? a.name).join(', ') || 'the Apps it manages'
+  const blocked  = () => !view?.basecamp ? 'no Basecamp runs Charter' : !view.basecamp.host ? 'needs an ssh Host'
+    : !view.basecamp.hasKey ? 'needs an admin API key' : going() ? 'a drill is going' : ''
+  const realWhy  = () => blocked() || (view?.gate.length ? 'this commit cannot deploy' : '')
+  const realText = () => `${view?.basecamp?.name} is backed up, retired and restored from that backup. ${names()} should keep serving, but have no hub during the run, and a failed run leaves them unmanaged until it is repaired.${view?.sample ? ` ${view.sample.appName} is stopped and overwritten from its own backup.` : ' No App is left standing, so the App data check is skipped.'}`
+
+  load()
+  loadFleet()
+</script>
+
+<div class="section-header">
+  <h1>Restore drill</h1>
+  <span class="cluster">
+    <Button treatment="outlined" id="drill-refresh" onclick={load}>Refresh</Button>
+    <Button treatment="outlined" id="drill-back" href="/charter/">Charter</Button>
+  </span>
+</div>
+
+{#if error}
+  <article class="alert danger"><div class="alert-content">{error}</div></article>
+{/if}
+
+{#if !view}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !view.basecamp}
+  <EmptyState title="No Basecamp to drill">{view.why ?? 'No entry in basecamps.json is marked runs: true.'}</EmptyState>
+{:else}
+  <form class="card" id="drill-start" data-basecamp={view.basecamp.name} onsubmit={(e) => e.preventDefault()}>
+    <div class="surface-header"><h2 class="h5">{view.basecamp.name}</h2></div>
+    <dl class="facts text-sm">
+      <dt>Address</dt>
+      <dd class="drill-wrap">{view.basecamp.url}</dd>
+      <dt>At risk</dt>
+      <dd class="drill-wrap" id="drill-fleet">{fleet ? (fleet.why ?? (fleet.apps.map(a => a.hostnames[0] ?? a.name).join(', ') || 'no Apps')) : 'Reading…'}</dd>
+      <dt>App data check</dt>
+      <dd class="drill-wrap" id="drill-sample">{view.sample ? view.sample.appName : 'Skipped: no App left standing. Run a Charter case with Leave it standing.'}</dd>
+    </dl>
+    {#if view.gate.length}
+      <article class="alert warning" id="drill-gate">
+        <div class="alert-content">
+          <strong>A real run is refused on this commit</strong>
+          {#each view.gate as g (g)}<p class="text-sm">{g}</p>{/each}
+        </div>
+      </article>
+    {/if}
+    <div class="surface-footer">
+      {#if (view, blocked())}<span class="text-sm text-muted">{blocked()}</span>{/if}
+      <ConfirmationPopover title={`Rehearse on ${view.basecamp.name}?`} message="Reads the box and plans the reinstall. Nothing changes."
+        confirmLabel="Rehearse" tone="primary" onconfirm={() => start('rehearse')}>
+        {#snippet trigger()}
+          <Button id="drill-rehearse" tone="primary" loading={starting === 'rehearse'}
+            disabled={(view, starting, !!starting || !!blocked())}>Rehearse</Button>
+        {/snippet}
+      </ConfirmationPopover>
+      <ConfirmationPopover title={`Run the real drill on ${view.basecamp.name}?`} message={(view, fleet, realText())}
+        confirmLabel="Run it" tone="danger" onconfirm={() => start('real')}>
+        {#snippet trigger()}
+          <Button id="drill-real" tone="danger" treatment="outlined" loading={starting === 'real'}
+            disabled={(view, starting, !!starting || !!realWhy())} title={(view, realWhy())}>Run for real</Button>
+        {/snippet}
+      </ConfirmationPopover>
+    </div>
+  </form>
+
+  {#each view.drills.slice(0, 1) as d (d.id)}
+    <section class="card" id="drill-latest" data-state={d.state} data-mode={d.mode}>
+      <div class="surface-header drill-head">
+        <span class="cluster">
+          <Dot tone={STATE_TONES[d.state] ?? ''} pulse={ACTIVE.includes(d.state)} label={d.state} />
+          <h2 class="h5">{d.mode === 'real' ? 'Real drill' : 'Rehearsal'}</h2>
+          <span class="text-sm text-muted">{d.state} · {d.startedAt}</span>
+        </span>
+      </div>
+      <ol class="drill-stages text-sm" data-stages>
+        {#each Object.entries(d.stages) as [name, s] (name)}
+          <li class="drill-stage" data-stage={name} data-outcome={d.current === name ? 'running' : s.outcome}>
+            <Dot tone={d.current === name ? 'info' : (TONES[s.outcome] ?? '')} pulse={d.current === name} label={d.current === name ? 'running' : s.outcome} />
+            <span class="text-muted">{LABELS[name]}</span>
+            <span class={`drill-detail drill-wrap ${s.outcome === 'not reached' ? 'text-muted' : ''}`}>{d.current === name ? 'Running…' : (s.detail || s.outcome)}</span>
+            <span class="drill-num text-muted">{secs(s.ms)}</span>
+          </li>
+        {/each}
+      </ol>
+      {#if view.lines.length}
+        <pre id="drill-log" class="code drill-log"><code>{view.lines.join('\n')}</code></pre>
+      {/if}
+      <div class="text-xs text-muted drill-wrap">{d.reinstallLog ?? d.log}</div>
+    </section>
+  {/each}
+
+  {#if view.drills.length > 1}
+    <section class="card" id="drill-history">
+      <div class="surface-header"><h2 class="h5">Earlier drills</h2></div>
+      <ul class="rows divided">
+        {#each view.drills.slice(1) as d (d.id)}
+          <li class="list-row" data-drill={d.id}>
+            <span class="cluster">
+              <Dot tone={STATE_TONES[d.state] ?? ''} label={d.state} />
+              {d.mode === 'real' ? 'Real drill' : 'Rehearsal'}
+            </span>
+            <span class="text-sm text-muted">{d.state} · {d.startedAt}</span>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
+  {#if view.refused.length}
+    <article class="alert danger" id="drill-refused">
+      <div class="alert-content">
+        <strong>Records not read</strong>
+        {#each view.refused as r (r)}<p class="text-sm">{r}</p>{/each}
+      </div>
+    </article>
+  {/if}
+{/if}
+
+<style>
+  .drill-head { flex-wrap: wrap; }
+  .drill-wrap { min-inline-size: 0; overflow-wrap: anywhere; }
+  .drill-log  { max-block-size: 50vh; overflow: auto; }
+
+  /* One grid across the stages, so a long detail wraps in its own column. */
+  .drill-stages {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    gap: var(--space-xs) var(--space-lg);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .drill-stage {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: baseline;
+  }
+  .drill-num { text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 639px) {
+    .drill-stages { grid-template-columns: auto minmax(0, 1fr) auto; }
+    .drill-detail { grid-column: 2 / -1; grid-row: 2; }
+  }
+</style>

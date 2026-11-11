@@ -213,7 +213,7 @@ try {
     const headers = await signRequest({
       secret: SHOP_KEY, method: 'POST', path: '/v1/intents',
       body: JSON.stringify({ amount: 1, currency: 'USD', reference: 'a' }),
-      prefix: 'X-Fjs', timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+      prefix: 'X-Frontier', timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
     return fetch(`${PSP}/v1/intents`, {
       method: 'POST', headers: { 'content-type': 'application/json', ...headers },

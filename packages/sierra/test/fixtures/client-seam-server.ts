@@ -9,7 +9,7 @@
  * test happened to call — including, in test/session.test.js, a `hasCredential`
  * accessor with the `cookieAuth` term sierra never actually supplied.
  *
- * It states a `build`, so every response carries `x-fjs-build` and the client's
+ * It states a `build`, so every response carries `x-frontier-build` and the client's
  * staleness comparison has something to compare against.
  *
  *   bun test/fixtures/client-seam-server.ts [port]

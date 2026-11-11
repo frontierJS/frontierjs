@@ -1,12 +1,13 @@
 ---
 title: basecamp:key
-description: Mint an API key on the running Basecamp over ssh and file it in the index of Basecamps (basecamps.json) — no browser, no password
+description: Mint an API key on the running Basecamp over ssh, or in this checkout for the dev Basecamp, and file it in the index of Basecamps (basecamps.json) — no browser, no password
 effects: issues an API key in Basecamp, filed under the owner it is minted for; writes the key to the Basecamp's entry in ~/.config/fli/basecamps.json
 examples:
   - fli basecamp:key
   - fli basecamp:key --as jordan@kobami.com
   - fli basecamp:key --scopes servers:write,apps:write --expires 90d
   - fli basecamp:key --server root@203.0.113.7 --basecamp ops --domain ops.example.com
+  - fli basecamp:key --basecamp dev --as dev@knight.works
 flags:
   server:
     type: string
@@ -14,7 +15,7 @@ flags:
     defaultValue: ''
   basecamp:
     type: string
-    description: The name the key is filed under, the ssh Host the box answers to (default --server, else deploy.server in packages/basecamp/frontier.config.js)
+    description: The name the key is filed under, the ssh Host the box answers to (default --server, else deploy.server in packages/basecamp/frontier.config.js); dev is this checkout's dev Basecamp, minted without ssh
     defaultValue: ''
   domain:
     type: string
@@ -38,13 +39,20 @@ flags:
     defaultValue: 'never'
 ---
 
-The key every `basecamp:*` command that calls the API reads, made without signing in. Basecamp refuses to let a key mint a
-key, so the browser's way is a password, a second factor and the API keys
-screen; this is `fli deploy:repl` instead — ssh to the box, `docker exec` into
-the serving API container, and `api-keys.create` called **as** the owner, so
-the service's own mint runs: scopes checked, the credential issued by auth, the
-row and its trail entry written. Reaching the box over ssh is the proof of
-standing a password would have been.
+The key every `basecamp:*` command that calls the API reads, made without
+signing in. Basecamp refuses to let a key mint a key, so the browser's way is a
+password, a second factor and the API keys screen; this is `fli deploy:repl`
+instead — ssh to the box, `docker exec` into the serving API container, and
+`api-keys.create` called **as** the owner, so the service's own mint runs:
+scopes checked, the credential issued by auth, the row and its trail entry
+written. Reaching the box over ssh is the proof of standing a password would
+have been. The mint is `core/basecamp-key.js`, which Workbench's Basecamps
+screen calls too.
+
+`--basecamp dev` is this checkout's dev Basecamp, which has no box: the mint
+runs through `fli app:repl` in `packages/basecamp`, over its dev database, and
+the key is filed with the origin the `dev` entry already holds (else
+`http://127.0.0.1:8120`). Neither `--server` nor `--domain` means anything there.
 
 The token comes back on the child's stdout, is filed in `basecamps.json` under
 the Basecamp's name and is never printed. The entry is the ssh Host name, the
@@ -78,25 +86,35 @@ const filedDomain = (name) => {
   try { return url ? new URL(url).host : '' } catch { return '' }
 }
 
+// The API origin the key is filed with: the dev Basecamp keeps its own, a box's
+// is `https://` and its hostname. '' when no hostname is passed, filed or configured.
+const originFor = async (name, { local, domain }) => {
+  if (local) return readBasecamps()[name]?.url || DEV_BASECAMP_ORIGIN
+  const host = domain || filedDomain(name) || await webDomain()
+  return host ? `https://${host}` : ''
+}
+
 const refuse = (log, message) => { log.error(message); process.exitCode = 1 }
 </script>
 
 ```js
-const server = flag.server || await deployServer()
+const local  = flag.basecamp === DEV_BASECAMP
+if (local && (flag.server || flag.domain)) return refuse(log, `${DEV_BASECAMP} is this checkout's dev Basecamp, minted without ssh at the origin its entry files — drop --server and --domain`)
+const server = local ? '' : flag.server || await deployServer()
 const name   = flag.basecamp || server
 if (!name) return refuse(log, 'Pass --basecamp <name> or --server: the key is filed under the box\'s ssh Host name')
-const domain = flag.domain || filedDomain(name) || await webDomain()
-if (!domain) return refuse(log, 'Pass --domain: the key is filed with Basecamp\'s hostname, and none is filed or configured')
+const url    = await originFor(name, { local, domain: flag.domain })
+if (!url) return refuse(log, 'Pass --domain: the key is filed with Basecamp\'s hostname, and none is filed or configured')
 
-const box    = flag.server ? ['--server', flag.server] : []
+const where  = local ? { local } : flag.server ? { server: flag.server } : {}
 const scopes = flag.scopes.split(',').map(s => s.trim()).filter(Boolean)
 if (!scopes.length) return refuse(log, '--scopes names none — admin is every scope')
 
-echo`\n  {bold fli basecamp:key}  {dim reading Basecamp's owners over ssh}`
-const holder = await pickHolder(await holders(box), { as: flag.as, tty, chalk })
+echo`\n  {bold fli basecamp:key}  {dim reading Basecamp's owners ${local ? 'in this checkout' : 'over ssh'}}`
+const holder = await pickHolder(await holders(where), { as: flag.as, tty, chalk })
 if (holder.error) return refuse(log, holder.error)
 
-const key = { name: flag.name || await keyName(), scopes, expiresIn: flag.expires }
+const key = { name: flag.name || keyName(), scopes, expiresIn: flag.expires }
 echo`
   {dim name   } ${key.name}
   {dim holder } ${holder.email} {dim · ${holder.role} of ${holder.workspace}}
@@ -104,9 +122,10 @@ echo`
 `
 if (flag.dry) { log.dry('Nothing minted'); return }
 
-const made = await mint(key, holder, box)
+const made = await mint(key, holder, where)
 if (made.error) return refuse(log, made.error)
 
-const file = fileBasecamp(name, { url: `https://${domain}`, host: name.includes('@') ? undefined : name, apiKey: made.token })
+const host = local || name.includes('@') ? undefined : name
+const file = fileBasecamp(name, { url, host, apiKey: made.token })
 echo`  {green ✓} {bold api key} {dim ${made.tokenHint} for ${name}} → ${file}\n`
 ```

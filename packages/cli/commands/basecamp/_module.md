@@ -17,7 +17,7 @@ const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text
 const webDomain = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
 
-const { resolveBasecamp, readBasecamps, writeBasecamp, reachBasecamp, reachBasecampFor, reinstallDomain } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
+const { resolveBasecamp, readBasecamps, writeBasecamp, reachBasecamp, reachBasecampFor, reinstallDomain, DEV_BASECAMP, DEV_BASECAMP_ORIGIN } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
 
 // The Basecamp a command talks to: `--basecamp <name>`, or the only entry
 // (`reachBasecamp` owns the refusal, which lists the names when several are known).
@@ -234,7 +234,18 @@ const installStages = (outpost) => INSTALL_STAGES.filter(s => outpost || s.name 
 // emailed link and every provisioned machine's enrollment then names the box
 // itself. `env:push` adds what the file lacks and leaves, and names, a value
 // the operator already set, so a re-run never overwrites a copy that is theirs.
-const ringZero = async (dest, domain, { tty, stage }) => {
+// `fli deploy` refuses an unpushed or ungraded HEAD at its preflight, which a
+// create reaches only after the box is bought and readied (`FJS-4206`). Asked
+// before the buy, or before `deploy:setup` on a box already there, the refusal
+// costs nothing. Answers whether the install may go on.
+const deployGateOpen = async ({ unverified, log }) => {
+  const { checkDeployGate } = await import(new URL('file://' + global.fliRoot + '/core/deploy-gate.js'))
+  const gate = checkDeployGate(provisionScript().root, { unverified })
+  for (const [level, text] of gate.lines) log[level](text)
+  return gate.ok
+}
+
+const ringZero = async (dest, domain, { unverified = false, tty, stage }) => {
   const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { resolve } = await import('node:path')
@@ -244,7 +255,7 @@ const ringZero = async (dest, domain, { tty, stage }) => {
   const steps = [
     ['deploy:setup', '--auto-install', '--no-next-steps', '--server', dest, '--domain', domain],
     ['env:push', '--file', urls, '--server', dest],
-    ['deploy', '--no-outpost', '--server', dest, '--domain', domain],
+    ['deploy', '--no-outpost', '--server', dest, '--domain', domain, ...(unverified ? ['--unverified'] : [])],
   ]
   try {
     for (const argv of steps) {
@@ -345,43 +356,9 @@ const adminThenFleet = async ({ outpost, domain, later, tty, stage, ...admin }) 
 }
 
 // ─── An API key, minted over ssh ──────────────────────────────────────────────
-// `deploy:repl -e` in the Basecamp checkout: the answer is the child's stdout
-// alone, the boot's chatter its stderr — held, and shown only when it fails.
-// `extra` is the argv tail; `--server` there names a box frontier.config.js
-// does not, which is every box `create` made.
-const replLine = async (code, extra = []) => {
-  const { spawnSync } = await import('node:child_process')
-  const { resolve }   = await import('node:path')
-  const { root } = provisionScript()
-  const r = spawnSync(process.execPath, [resolve(global.fliRoot, 'bin/fli.js'), 'deploy:repl', '-e', code, ...extra],
-    { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', env: process.env })
-  if (r.status !== 0) {
-    const said = (r.stderr || '').trim().split('\n').filter(l => !l.startsWith('{"level"')).slice(-4).join('\n')
-    throw new Error(`deploy:repl exited ${r.status ?? 'on a signal'}${said ? `:\n${said}` : ''}`)
-  }
-  try { return JSON.parse(r.stdout) }
-  catch { throw new Error(`deploy:repl answered something that is not JSON: ${r.stdout.trim().slice(0, 200)}`) }
-}
-
-// Who may hold the key: a person, not a bot, who is an owner or admin of a
-// workspace that still exists: a deleted one leaves its member rows behind, and
-// they would read as a second seat. A `sys` read, so it needs no --force.
-const holders = async (extra = []) =>
-  (await replLine(`sys.workspaceMember.findMany({ where: { role: { in: ['owner', 'admin'] } }, select: { role: true, workspaceId: true, workspace: { select: { name: true } }, user: { select: { email: true, kind: true } } } })`, extra))
-    .filter(m => m.user?.kind === 'user' && m.workspace)
-    .map(m => ({ email: m.user.email, role: m.role, workspaceId: m.workspaceId, workspace: m.workspace?.name }))
-
-// The service's own create, called as the holder in their workspace, so the
-// mint is the one the API keys screen runs. Answers the token, or `{ error }`.
-const mint = async (key, holder, extra = []) => {
-  const made = await replLine(`call('api-keys.create', ${JSON.stringify(key)})`, ['--as', holder.email, '--tenant', holder.workspaceId, ...extra])
-  return typeof made?.token === 'string'
-    ? made
-    : { error: 'Basecamp made the key but answered no token — revoke it on the API keys screen' }
-}
-
-const keyName = async () =>
-  `fli ${(await import('node:os')).hostname()} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`
+// `core/basecamp-key.js`, shared with Workbench's Basecamps screen. `where` is
+// `{ server }`: a box frontier.config.js does not name is every box `create` made.
+const { replLine, holders, mint, keyName } = await import(new URL('file://' + global.fliRoot + '/core/basecamp-key.js'))
 
 // `create`'s key for the admin `/setup` just made, filed in `basecamps.json` as
 // `basecamp:key` files one. `entry` is `{ name, host, domain, cloud, boxId }`:
@@ -394,11 +371,11 @@ const adminKey = async ({ dest, admin, entry, yes, log, echo, chalk }) => {
   const domain = entry.domain || await webDomain()
   const later  = `fli basecamp:key --server ${dest} --as ${admin}`
   if (!domain) { log.error(`A key is filed with Basecamp's hostname, and none is known. Mint one later: ${later} --domain <hostname>`); return false }
-  const extra  = ['--server', dest]
+  const where  = { server: dest }
   const made   = await (async () => {
-    const holder = (await holders(extra)).find(p => p.email === admin)
+    const holder = (await holders(where)).find(p => p.email === admin)
     if (!holder) return { error: `${admin} is no owner or admin on the new Basecamp` }
-    return await mint({ name: await keyName(), scopes: ['admin'], expiresIn: 'never' }, holder, extra)
+    return await mint({ name: keyName(), scopes: ['admin'], expiresIn: 'never' }, holder, where)
   })().catch(e => ({ error: e.message }))
   if (made.error) { log.error(`${made.error}. Mint one later: ${later}`); return false }
 
@@ -485,8 +462,9 @@ const askIngress = async ({ zone, zones, asking, tty, echo, chalk }) => {
 }
 
 /** The answers as `[label, value]` rows, for the summary before the run. */
-const installRows = ({ domain, admin, password, outpost, unneeded, ingress }, chalk, restore = false) => [
+const installRows = ({ domain, admin, password, outpost, unneeded, ingress, unverified }, chalk, restore = false) => [
   ['hostname', domain],
+  unverified && ['deploy', chalk`{yellow unverified} {dim — HEAD ships though it is unpushed or CI did not pass on it}`],
   ingress !== undefined && ['ingress', ingress ? `${ingress.zoneName} ${chalk.dim('— the token kept as a provider key, app records there')}` : chalk.dim('no')],
   admin && ['admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`],
   ['outpost', !outpost ? chalk.dim('no') : `yes ${chalk.dim(restore ? '— enrolled into the restored workspace' : '— fli deploy:outpost once the admin is made')}`],
@@ -497,14 +475,14 @@ const installRows = ({ domain, admin, password, outpost, unneeded, ingress }, ch
  *  exit code, 0 or the first failure's, and whether Basecamp runs on the box. A
  *  record or proxy that failed fails the run and lets it finish. */
 const runInstall = async (dest, answers, { restore = false, tty, log, echo, chalk }) => {
-  const { domain, configured, admin, password, outpost, unneeded } = answers
+  const { domain, configured, admin, password, outpost, unneeded, unverified } = answers
   const asking = !!process.stdin.isTTY
   const yes = async (q) => await tty.keys(questionLine(chalk, q), { y: 'yes', n: 'no' }) === 'y'
   let code = 0
 
   echo(chalk`  {dim Installing Basecamp on} ${dest} {dim as} ${domain}`)
   const stages = stageBar({ tty, echo, chalk }, installStages(outpost).filter(s => !restore || !['admin', 'deploy:outpost'].includes(s.name)))
-  const failed = await ringZero(dest, domain, { tty, stage: stages.at })
+  const failed = await ringZero(dest, domain, { unverified, tty, stage: stages.at })
   if (failed) {
     log.error(`fli ${failed.argv.join(' ')} exited ${failed.status}. Fix what it said and run this again`)
     stages.stop()
@@ -773,6 +751,9 @@ once the install is done.
 machine, checked against its manifest. An App's archive is `fli db:download`'s
 (`FJS-D1848`). `fli basecamp:restore` puts one back onto a Basecamp nobody has
 set up, checked against this checkout before the box is touched.
+`fli basecamp:backups` sends a Basecamp's backups off the box: B2 buckets
+made with this laptop's key, a narrow key and a tested destination per
+workspace, and the hub and the Apps named pointed at them (`FJS-D2080`).
 
 `fli basecamp:reinstall` is the three with `fli deploy:retire` between them,
 on Basecamp's own box: it reads what runs there, asks every question first,

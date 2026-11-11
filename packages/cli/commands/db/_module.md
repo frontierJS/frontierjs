@@ -130,6 +130,14 @@ const litestone = ($) => {
   return `cd ${JSON.stringify($.paths.root)} && ${$.bin('litestone')}`
 }
 
+// ─── keyFor ──────────────────────────────────────────────────────────────────
+// The key a schema that encrypts needs, offered where none is set: what to add
+// to litestone's env, or null to stop (`core/env-preflight.js`).
+const keyFor = async ($, schema) => {
+  const { offerKey } = await import(new URL('file://' + global.fliRoot + '/core/env-preflight.js'))
+  return offerKey($, schema)
+}
+
 // ─── migrationFiles ──────────────────────────────────────────────────────────
 // Every .sql under db/, as paths. `migrate create` exits 0 and prints a green
 // check when the schema needs no migration, so the only answer to *was a file
@@ -162,11 +170,12 @@ const migrationFiles = ($) => {
 //
 // `ok` false is a non-zero exit; the caller decides what to print. Null is a
 // `--dry` run, which executed nothing.
-const litestoneQuiet = ($, argv) => {
+const litestoneQuiet = ($, argv, env) => {
   const res = $.exec({
     command: `${litestone($)} ${argv} 2>&1`,
     stdio: ['ignore', 'pipe', 'pipe'],
     allowFailure: true,
+    ...(env && { env }),
   })
   if (res == null) return null
   const ok    = Buffer.isBuffer(res)

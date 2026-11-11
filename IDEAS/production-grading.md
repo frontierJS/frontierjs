@@ -77,7 +77,7 @@ second reading of the same model taken from somewhere else, and a comparison.
 The running side has pieces and no entrance:
 `app.registerHealthCheck` and `app.registerMetricsSource` exist, `GET /metrics`
 merges what was registered, `junction/db/metrics.lite` keeps readings over time,
-and `x-fjs-build` already tells a browser which build it is talking to. What no
+and `x-frontier-build` already tells a browser which build it is talking to. What no
 app has is an endpoint that answers *what do you believe you are enforcing*.
 
 ## Sequence, and what it waits on

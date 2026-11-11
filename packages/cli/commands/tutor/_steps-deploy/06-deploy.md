@@ -16,7 +16,7 @@ same pipeline whether the machine is `localhost` or a host across the world.
 Three things are asserted, and the third is the one worth knowing about.
 
 The container is running and answers `/api/health` — the obvious two. And
-`x-fjs-build`: the header the app states, which must be the commit this deploy
+`x-frontier-build`: the header the app states, which must be the commit this deploy
 built. **Two packages decide that value and neither can be asked alone** — the
 CLI stamps the build into the bundle, junction states it on every response, and
 only a deployed container answers with it. It is what lets a browser know it is
@@ -73,12 +73,12 @@ const commit = shortCommit(app)
 
 if (!await must($, probe.header({
   url:    `http://127.0.0.1:${$.config.port}/api/health`,
-  name:   'x-fjs-build',
+  name:   'x-frontier-build',
   expect: commit,
   label:  'the app states the build a browser compares against',
 }), {
   likely:    'the stamp and the statement disagree — the cli writes VITE_FJS_BUILD and the container is passed FJS_BUILD',
-  reproduce: `curl -sI http://127.0.0.1:${$.config.port}/api/health | grep -i x-fjs-build`,
+  reproduce: `curl -sI http://127.0.0.1:${$.config.port}/api/health | grep -i x-frontier-build`,
 })) return
 
 remember($, '06-deploy', { firstImage: imageBehind(container), firstCommit: commit })

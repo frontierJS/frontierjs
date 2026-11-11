@@ -5,7 +5,7 @@
   // (`api/src/rooms.ts`), and reads it as `$context.room`.
   //
   // A page left open across a deploy is told by the server's build
-  // (`x-fjs-build`, read into `status.stale`); a terminal has no bundle the
+  // (`x-frontier-build`, read into `status.stale`); a terminal has no bundle the
   // server built, so the line never shows there.
   import { status } from '@frontierjs/sierra/resource'
   import { rooms }  from '@/resources/Room.mesa'

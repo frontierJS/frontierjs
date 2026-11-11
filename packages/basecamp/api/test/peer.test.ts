@@ -52,7 +52,7 @@ async function signed(opts: { path: string, method?: string, body?: unknown, ser
     serviceMethod: opts.serviceMethod, body: opts.body === undefined ? '' : JSON.stringify(opts.body),
     timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
   })
-  if (opts.keyId !== null) headers['X-Fjs-Key'] = opts.keyId ?? peer.id
+  if (opts.keyId !== null) headers['X-Frontier-Key'] = opts.keyId ?? peer.id
   return headers
 }
 
@@ -90,6 +90,15 @@ describe('enrollPeer', () => {
 
     const key = await sys.apiKey.findUnique({ where: { id: peer.id } })
     expect(key).toMatchObject({ userId: peer.userId, publicKey: keys.publicKey, credentialId: null, scopes: ['apps:preview'] })
+  })
+
+  test('takes a role from a bot\'s list, and never owner (FJS-D2069)', async () => {
+    const pair = await generateSigningKeys()
+    const low  = await apiKeys(owner).call('enrollPeer', null, { name: 'other owner', publicKey: pair.publicKey, role: 'viewer', scopes: ['appDrills:read'] })
+    const member = await (env.system as any).workspaceMember.findFirst({ where: { workspaceId: ws.id, userId: low.userId } })
+    expect(member.role).toBe('viewer')
+    const more = await generateSigningKeys()
+    await expect(apiKeys(owner).call('enrollPeer', null, { name: 'boss', publicKey: more.publicKey, role: 'owner' })).rejects.toThrow(/cannot own/)
   })
 
   test('refuses a key that is not an Ed25519 public key, and a whole key', async () => {

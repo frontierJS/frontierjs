@@ -52,7 +52,6 @@
   let source = 'baked'   // baked | shop | offline
 
   let client  = null
-  let timer   = null
   /** Which request is the current one. A slower answer to an older query must
    *  not overwrite a newer one — the shape that makes a search box show results
    *  for what somebody typed two letters ago. */
@@ -97,12 +96,11 @@
   }
 
   function onSearch() {
-    clearTimeout(timer)
-    const term = q.trim()
-    if (!term) { inflight++; hits = null; source = 'baked'; return }
-    // One request per pause, not per keystroke.
-    timer = setTimeout(() => ask(term), 150)
+    if (!q.trim()) { inflight++; hits = null; source = 'baked' }
   }
+
+  // One request per pause, not per keystroke.
+  $.after(150, () => ask(q.trim()), { key: q, when: q.trim() })
 
   const needle = q.trim().toLowerCase()
 

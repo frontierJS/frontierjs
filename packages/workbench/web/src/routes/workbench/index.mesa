@@ -190,11 +190,6 @@ title: Workbench
 
   // ─── the poll ────────────────────────────────────────────────────────
 
-  // A poll in flight when the page goes outlives clearTimeout and would
-  // reschedule itself forever -- one zombie loop per navigation or HMR swap.
-  let timer = null
-  let destroyed = false
-  function schedule() { if (!destroyed) timer = setTimeout(poll, POLL_MS) }
   async function poll() {
     try {
       const answer = await workbench.service.invoke('status', null)
@@ -227,8 +222,9 @@ title: Workbench
       // A finished run changed the tree; the branch and dirty count follow.
       if (ended) loadPins()
     } catch {}
-    schedule()
   }
+
+  $.every(POLL_MS, poll)
 
   function announce(s) {
     const p = pins.find(x => x.id === s.id)
@@ -256,7 +252,7 @@ title: Workbench
     if (chat && status[id]?.chats?.some(c => c.id === chat)) openChat(p, chat)
   }
 
-  loadPins().then(() => { reveal(); schedule() })
+  loadPins().then(reveal)
 
   // The key Basecamp's "Add a peer" form takes, and whether its id is set here.
   let peer = null
@@ -271,7 +267,7 @@ title: Workbench
   window.addEventListener('keydown', onKey)
   window.addEventListener('resize', place)
   $.onDestroy(() => {
-    destroyed = true; clearTimeout(timer); document.title = baseTitle
+    document.title = baseTitle
     document.documentElement.removeAttribute('data-workbench-focus')
     releaseCommands()
     window.removeEventListener('keydown', onKey)

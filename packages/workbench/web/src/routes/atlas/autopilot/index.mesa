@@ -51,9 +51,7 @@ title: Autopilot
 
   // ─── the read ───────────────────────────────────────────────────────
 
-  let timer = null
   let raf   = 0
-  let destroyed = false
 
   async function load() {
     let next
@@ -73,13 +71,10 @@ title: Autopilot
     else t = Math.min(Math.max(t, Date.parse(next.window.start)), Date.parse(next.window.end))
   }
 
-  function schedule() {
-    if (destroyed || !offered) return
-    timer = setTimeout(() => load().then(schedule), POLL_MS)
-  }
+  $.every(POLL_MS, load, { when: offered })
 
-  load().then(schedule)
-  $.onDestroy(() => { destroyed = true; clearTimeout(timer); cancelAnimationFrame(raf) })
+  load()
+  $.onDestroy(() => cancelAnimationFrame(raf))
 
   // ─── the day at the scrubber ────────────────────────────────────────
 

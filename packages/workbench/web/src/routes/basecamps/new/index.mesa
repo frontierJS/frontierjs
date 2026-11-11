@@ -16,6 +16,8 @@ title: New Basecamp
   import Checkbox            from '@frontierjs/ui/components/forms/Checkbox.mesa'
   import Input               from '@frontierjs/ui/components/forms/Input.mesa'
   import Select              from '@frontierjs/ui/components/forms/Select.mesa'
+  import Steps               from '@frontierjs/ui/components/display/Steps.mesa'
+  import Spinner             from '@frontierjs/ui/components/feedback/Spinner.mesa'
   import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
   import { toasts }          from '@frontierjs/ui/stores/toastStore'
 
@@ -40,30 +42,40 @@ title: New Basecamp
   let dry        = false
 
   let starting  = false
-  let run       = null   // the API's held create run, with the end of its log
-  let destroyed = false
-  let timer     = null
-
-  $.onDestroy(() => { destroyed = true; clearTimeout(timer) })
+  let run       = null   // the API's held create run: its stages and the end of its log
+  let again     = false  // the form opened again under a finished run, for the next one
+  let now       = Date.now()
 
   const firstLabel = () => domain.trim().split('.')[0]
   const boxName    = () => name.trim() || firstLabel()
   const running    = () => !!run && !run.exit && !run.error
   const ready      = () => !!domain.trim() && !!boxName() && !starting && !running()
+  const formShown  = () => !run || (again && !running())
+  const isDry      = () => !!run && run.argv.includes('--dry')
+  const failed     = () => !!run && (!!run.error || (!!run.exit && run.exit.code !== 0))
+  const argOf      = (flag) => { const i = run.argv.indexOf(flag); return i < 0 ? '' : run.argv[i + 1] }
+  // A create that bought its box and failed after names the install that
+  // finishes it; the API reads it off the log (`resume`, FJS-4206).
+  const resumeBox  = () => (!!run && !running() && run.resume?.[2]) || ''
+  const installed  = () => !!run && run.argv[1] === 'basecamp:install' && run.exit?.code === 0
+  const keyLine    = () => `fli basecamp:key --server ${run.argv[2]} --basecamp ${run.name} --domain ${argOf('--domain')}`
 
-  function schedule() {
-    clearTimeout(timer)
-    if (!destroyed && running()) timer = setTimeout(poll, POLL)
+  const clock = (ms) => {
+    const s = Math.max(0, Math.floor(ms / 1000))
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
   }
+  const elapsed = () => clock((run.exit ? Date.parse(run.endedAt ?? '') || now : now) - Date.parse(run.startedAt))
 
   async function poll() {
     try {
       run = await basecamps.service.invoke('creation', null)
+      now = Date.now()
     } catch (err) {
       toasts.error(err.message)
     }
-    schedule()
   }
+
+  $.every(POLL, poll, { when: running() })
 
   async function start() {
     starting = true
@@ -71,8 +83,9 @@ title: New Basecamp
       await basecamps.service.invoke('provision', null, {
         domain, name: boxName(), cloud, size, region, admin, reservedIp, backups, outpost, dry, approved: true,
       })
+      again = false
       run = await basecamps.service.invoke('creation', null)
-      schedule()
+      now = Date.now()
     } catch (err) {
       toasts.error(err.message)
     } finally {
@@ -80,11 +93,46 @@ title: New Basecamp
     }
   }
 
+  async function resume() {
+    starting = true
+    try {
+      await basecamps.service.invoke('resume', null, { approved: true })
+      again = false
+      run = await basecamps.service.invoke('creation', null)
+      now = Date.now()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      starting = false
+    }
+  }
+
+  // The stages the run has reached, read off its log by the API, then one row
+  // for those still ahead: the cli names a stage only as it opens, so the ones
+  // after it are a count. Before the first, the cli is checking the token and
+  // the hostname's zone, and that is a step of its own here.
+  const steps = () => {
+    const seen = run.steps ?? []
+    const of   = seen[0]?.of ?? 0
+    const rows = [{ id: 'check', label: 'check', description: 'the cloud token and the hostname\'s DNS zone' }]
+      .concat(seen.map(s => ({ id: `s${s.n}`, label: s.name, description: s.what })))
+    if (of > seen.length) rows.push({ id: 'rest', label: `${of - seen.length} more`, description: 'named as each one starts' })
+    if (run.exit?.code === 0) rows.push({ id: 'done', label: 'done', description: `Basecamp is on ${run.name}` })
+    return rows
+  }
+  const current = () => {
+    if (run.exit?.code === 0) return 'done'
+    const seen = run.steps ?? []
+    return seen.length ? `s${seen[seen.length - 1].n}` : 'check'
+  }
+
   const verdict = () => {
     if (!run || running()) return null
     if (run.error) return { tone: 'text-danger', text: `Could not start: ${run.error}` }
-    if (run.exit.code === 0) return { tone: 'text-success', text: run.argv.includes('--dry') ? 'The plan ran. Nothing was bought.' : 'Done.' }
-    return { tone: 'text-danger', text: `Exited with ${run.exit.code ?? run.exit.signal}. Read the log above.` }
+    if (installed()) return { tone: 'text-success', text: `Installed in ${elapsed()}. Its API key, so Basecamps lists it, is a terminal's: ${keyLine()}` }
+    if (run.exit.code === 0) return { tone: 'text-success', text: isDry() ? 'The plan ran. Nothing was bought.' : `Done in ${elapsed()}.` }
+    if (resumeBox()) return { tone: 'text-danger', text: `Exited with ${run.exit.code ?? run.exit.signal} after the box was bought. Fix what the log says, then install on ${resumeBox()}; a new create is refused while it stands bare.` }
+    return { tone: 'text-danger', text: `Exited with ${run.exit.code ?? run.exit.signal}. The log below says why.` }
   }
 
   poll()
@@ -97,52 +145,92 @@ title: New Basecamp
   </span>
 </div>
 
-<form class="stack" id="basecamps-new" onsubmit={(e) => e.preventDefault()}>
-  <Input id="new-domain" label="Domain" placeholder="ops.example.com" bind:value={domain}
-    hint="Basecamp's hostname; its DNS record is written at Cloudflare." />
-  <Input id="new-name" label="Name" placeholder={(domain, firstLabel()) || 'ops'} bind:value={name}
-    hint="The box's name and its ssh Host. Blank takes the domain's first label." />
-  <Select id="new-cloud" label="Cloud" placeholder="" options={CLOUDS} bind:value={cloud} />
-  <Input id="new-size" label="Size" bind:value={size} hint="Memory (1gb, 4gb, 8gb …) or the cloud's own size slug." />
-  <Input id="new-region" label="Region" placeholder="the cloud's US region" bind:value={region} />
-  <Input id="new-admin" label="Admin email" type="email" placeholder="blank installs nothing" bind:value={admin}
-    hint="With an email, Basecamp is installed on the box and this address is its first admin." />
-  <Checkbox id="new-reserved-ip" label="Reserved IP" checked={reservedIp} onchange={(v) => { reservedIp = v }}
-    description="An address held apart from the box, so a replacement keeps it. Billed by the cloud." />
-  <Checkbox id="new-backups" label="Cloud backups" checked={backups} onchange={(v) => { backups = v }}
-    description="The cloud's daily backups of the whole box, billed as a share of its price." />
-  <Checkbox id="new-outpost" label="Join Outpost" checked={outpost} onchange={(v) => { outpost = v }}
-    description="Enroll the box in Basecamp's own fleet, so apps can run beside it." />
-  <Checkbox id="new-dry" label="Plan only (--dry)" checked={dry} onchange={(v) => { dry = v }}
-    description="Print what a run would do and buy nothing." />
+{#if (run, again, formShown())}
+  <form class="stack" id="basecamps-new" onsubmit={(e) => e.preventDefault()}>
+    <div class="grid" style="--grid-min: 14rem; gap: var(--space-md)">
+      <Input id="new-domain" label="Domain" placeholder="ops.example.com" bind:value={domain} />
+      <Input id="new-name" label="Name" placeholder={(domain, firstLabel()) || 'ops'} bind:value={name} />
+    </div>
+    <div class="grid" style="--grid-min: 9rem; gap: var(--space-md)">
+      <Select id="new-cloud" label="Cloud" placeholder="" options={CLOUDS} bind:value={cloud} />
+      <Input id="new-size" label="Size" placeholder="4gb" bind:value={size} />
+      <Input id="new-region" label="Region" placeholder="US default" bind:value={region} />
+    </div>
+    <Input id="new-admin" label="Admin email" type="email" placeholder="blank buys the box and installs nothing" bind:value={admin} />
+    <div class="cluster" style="gap: var(--space-xl)">
+      <Checkbox id="new-reserved-ip" label="Reserved IP" checked={reservedIp} onchange={(v) => { reservedIp = v }}
+        title="An address held apart from the box, so a replacement keeps it. Billed by the cloud." />
+      <Checkbox id="new-backups" label="Cloud backups" checked={backups} onchange={(v) => { backups = v }}
+        title="The cloud's daily backups of the whole box, billed as a share of its price." />
+      <Checkbox id="new-outpost" label="Join Outpost" checked={outpost} onchange={(v) => { outpost = v }}
+        title="Enroll the box in Basecamp's own fleet, so apps can run beside it." />
+      <Checkbox id="new-dry" label="Plan only" checked={dry} onchange={(v) => { dry = v }}
+        title="Print what a run would do and buy nothing (--dry)." />
+    </div>
 
-  <p id="new-billing" class="text-sm">
-    The box is billed by the cloud from the moment it is bought. Undoing it is
-    <code>fli server:destroy {(domain, name, boxName()) || 'NAME'}</code> from a terminal.
-  </p>
-
-  <div class="cluster">
-    <ConfirmationPopover title={dry ? `Plan ${(domain, name, boxName())}?` : `Buy and install ${(domain, name, boxName())}?`}
-      message={dry ? 'Nothing is bought.' : 'The cloud bills this box from now. Undo it with fli server:destroy from a terminal.'}
-      confirmLabel={dry ? 'Plan' : 'Buy the box'} tone={dry ? 'primary' : 'danger'} onconfirm={start}>
-      {#snippet trigger()}
-        <Button id="new-start" disabled={(domain, name, starting, run, !ready())} loading={starting}>{dry ? 'Plan a Basecamp' : 'Create the Basecamp'}</Button>
-      {/snippet}
-    </ConfirmationPopover>
-  </div>
-</form>
+    <div class="cluster" style="justify-content: space-between">
+      <p id="new-billing" class="text-sm text-muted">
+        Billed from the moment it is bought. Undo: <code>fli server:destroy {(domain, name, boxName()) || 'NAME'}</code>
+      </p>
+      <ConfirmationPopover title={dry ? `Plan ${(domain, name, boxName())}?` : `Buy and install ${(domain, name, boxName())}?`}
+        message={dry ? 'Nothing is bought.' : 'The cloud bills this box from now. Undo it with fli server:destroy from a terminal.'}
+        confirmLabel={dry ? 'Plan' : 'Buy the box'} tone={dry ? 'primary' : 'danger'} onconfirm={start}>
+        {#snippet trigger()}
+          <Button id="new-start" disabled={(domain, name, starting, run, !ready())} loading={starting}>{dry ? 'Plan a Basecamp' : 'Create the Basecamp'}</Button>
+        {/snippet}
+      </ConfirmationPopover>
+    </div>
+  </form>
+{/if}
 
 {#if run}
-  <section class="stack-sm" id="new-run">
-    <h2 class="h5">{run.name}</h2>
-    <div class="text-sm text-muted">{run.argv.join(' ')}</div>
-    <pre id="new-log" class="text-sm">{run.lines.join('\n') || ((run.exit, run.error, running()) ? 'Started, no output yet…' : '')}</pre>
-    {#if (run.exit, run.error, running())}
-      <div class="text-sm text-muted">Running, pid {run.pid}. This page keeps reading the log.</div>
+  <section class="stack" id="new-run">
+    <div class="cluster" style="justify-content: space-between">
+      <div>
+        <h2 class="h5">{run.name}</h2>
+        <div class="text-sm text-muted">{(run, argOf('--domain'))}{(run, isDry()) ? ' · plan only' : ''} · {(run, now, elapsed())}</div>
+      </div>
+      <span class="cluster">
+        {#if (run, again, resumeBox() && !again)}
+          <ConfirmationPopover title={`Install Basecamp on ${(run, resumeBox())}?`}
+            message={(run, run.resume.join(' '))} confirmLabel="Install" tone="primary" onconfirm={resume}>
+            {#snippet trigger()}
+              <Button id="new-resume" loading={starting} disabled={starting}>Install on {(run, resumeBox())}</Button>
+            {/snippet}
+          </ConfirmationPopover>
+        {/if}
+        {#if (run, again, !running() && !again)}
+          <Button id="new-again" treatment="outlined" onclick={() => { again = true }}>Create another</Button>
+        {/if}
+      </span>
+    </div>
+
+    {#if (run, isDry())}
+      <div class="text-sm text-muted">A plan buys nothing and has no stages; it prints what a run would do.</div>
+    {:else}
+      <Steps id="new-steps" orientation="vertical" label="Create stages" steps={(run, steps())} currentStep={(run, current())}>
+        {#snippet marker(step, status)}
+          {#if status === 'active' && (run, running())}
+            <Spinner size="xs" label={step.label} />
+          {:else if status === 'active' && (run, failed())}
+            <span aria-label="failed">✕</span>
+          {:else if status === 'complete' || step.id === 'done'}
+            <span aria-hidden="true">✓</span>
+          {:else}
+            <span aria-hidden="true">·</span>
+          {/if}
+        {/snippet}
+      </Steps>
     {/if}
-    {#if (run.exit, run.error, verdict())}
+
+    {#if (run, verdict())}
       <div class={`text-sm ${verdict().tone}`} data-verdict>{verdict().text}</div>
-      <a href="/basecamps/">Back to Basecamps</a>
     {/if}
+
+    <details id="new-details" open={(run, failed() || isDry())}>
+      <summary class="text-sm text-muted">Full log</summary>
+      <div class="text-sm text-muted">{run.argv.join(' ')}{(run, running()) ? ` · pid ${run.pid}` : ''}</div>
+      <pre id="new-log" class="text-sm">{run.lines.join('\n') || ((run.exit, run.error, running()) ? 'Started, no output yet…' : '')}</pre>
+    </details>
   </section>
 {/if}

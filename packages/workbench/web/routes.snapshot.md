@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-16 routes · 1 layout · target spa · trailing slash always
+17 routes · 1 layout · target spa · trailing slash always
 ```
 
 ## Routes
@@ -29,6 +29,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/basecamps/` | `src/routes/basecamps/index.mesa` | `src/routes/_module.mesa` | — |
 | `/basecamps/new/` | `src/routes/basecamps/new/index.mesa` | `src/routes/_module.mesa` | — |
 | `/charter/` | `src/routes/charter/index.mesa` | `src/routes/_module.mesa` | — |
+| `/charter/drill/` | `src/routes/charter/drill/index.mesa` | `src/routes/_module.mesa` | — |
 | `/git-activity/local/` | `src/routes/git-activity/local.mesa` | `src/routes/_module.mesa` | — |
 | `/home/` | `src/routes/home/index.mesa` | `src/routes/_module.mesa` | — |
 | `/laptop/` | `src/routes/laptop/index.mesa` | `src/routes/_module.mesa` | — |
@@ -53,6 +54,7 @@ this section exists to show.
 - `/basecamps/` — siteName: `Workbench` · title: `Basecamps`
 - `/basecamps/new/` — siteName: `Workbench` · title: `New Basecamp`
 - `/charter/` — siteName: `Workbench` · title: `Charter`
+- `/charter/drill/` — siteName: `Workbench` · title: `Restore drill`
 - `/git-activity/local/` — siteName: `Workbench` · title: `Local repositories`
 - `/home/` — siteName: `Workbench` · title: `Home`
 - `/laptop/` — siteName: `Workbench` · title: `Laptop`
@@ -68,4 +70,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 16 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/charter/`, `/git-activity/local/`, `/home/`, `/laptop/`, `/login/`, `/notifications/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`
+- `src/routes/_module.mesa` — 17 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/charter/`, `/charter/drill/`, `/git-activity/local/`, `/home/`, `/laptop/`, `/login/`, `/notifications/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`

@@ -448,6 +448,21 @@ Moved verbatim from `CLAUDE.md`; the short list that stays there points here.
   canvas, because Chrome serializes the derived fill as `color(xyz-d65 …)`
   and reading those floats as 8-bit channels is wrong for every color.
 
+- **Size, leading, tracking and color inherit as COMPUTED values, so a token
+  `.app` reads stops at a nested `.theme-*`.** `.app` reads `--text-md`,
+  `--leading-body` and `--body-letter-spacing` (FJS-4190, FJS-4191), and a
+  `.theme-x` div below it retuning them moves nothing until a rule under it
+  re-reads them. `.prose` and the Block tier (`surface.css`) do, the same way
+  they re-read `--ink`; a bare `p` directly under a nested theme root keeps
+  the outer values, exactly as it keeps the outer ink. `theming.spec.js`
+  measures a `p` inside a Prose and a Card under a nested override.
+- **`run.js --theme <file>` grades a theme the package does not ship**
+  (FJS-4194). The file holds one `.theme-<name>` rule; it is inlined after
+  `index.css` and only `contrast.spec.js` runs, against that class alone —
+  every other spec is a claim about the package, and a foreign class in the
+  CSSOM is what `vocabulary.spec.js` fails on. The shipped list is
+  `themes.js`, handed to the page as `__FJS_GRADE_THEMES__`; the spec keeps
+  no copy. Exit 0 / 1 / 2 is clean / failing pairing / unusable file.
 - **A theme ships no selector, so every look is a token — and three of the
   four gaps were tokens that stopped at one element.** `--border-width` is
   the structural hairline (card, field, table, topbar, code block, tab
@@ -549,6 +564,14 @@ Moved verbatim from `CLAUDE.md`; the short list that stays there points here.
   padding moves with density a literal stays put and every card inside a
   `.dense` region misaligns. Anything negative that mirrors a padding is
   `calc(var(--space-*) * -1)`.
+- **A token change fires the same transition a hover does.** An app that
+  writes tokens on a subtree at input rate (a theme editor's slider) starts a
+  transition on every Band, Card, Btn and Field per move: 92 on a 103-element
+  page for 47 tokens, 20 to 34 ms p95 against about 5 without (FJS-4208). Put
+  `data-motion="still"` on the subtree's root for the drag and take it off
+  after; it zeroes the four `--motion-*` rungs there, a nested theme included
+  (`tokens.css`). The package's own runner turns every transition off, so no
+  spec here sees this cost.
 - **Overlay motion is owned by `components/overlays.css`, not by the four
   components.** Each of them states only `--overlay-from`, its direction.
   `allow-discrete` fails by doing nothing at all, which is indistinguishable

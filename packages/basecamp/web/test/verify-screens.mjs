@@ -1419,6 +1419,14 @@ try {
   //
   // It goes last: the failure case stops the API, and nothing after it could
   // read anything.
+  console.log('\n  /apps/ — which project a row belongs to')
+  const listedApp = (await apiGet('/apps')).body?.data?.[0]
+  const listedWhere = `${listedApp?.environment?.project?.name} / ${listedApp?.environment?.name}`
+  await goto('/apps/')
+  const drawnWhere = await until(`document.querySelector('#app-rows td[data-col="_where"]')?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`,
+    t => t.length > 0, 'the Apps list drew no project cell')
+  check('an Apps row names its project and environment', drawnWhere === listedWhere, `${drawnWhere} · ${listedWhere}`)
+
   console.log('\n  a detail screen with no record')
 
   // GONE. A real id that is not in the database, over the real transport — so

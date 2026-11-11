@@ -348,7 +348,7 @@ would replace to CLOSE — a navigation in the same tab does not release control
 so a phone with the app open for a week never sees a release, which for an app
 whose promise is *works offline* is the wrong failure. The hazard it was
 guarding against is not new: a page asking for a chunk the deploy removed fails
-with or without a worker, and `x-fjs-build` is already the mechanism for it.
+with or without a worker, and `x-frontier-build` is already the mechanism for it.
 
 **Proved by:** `verify:shell`, 23 assertions, a new drive — separate from
 `verify:offline` because a service worker exists only in a build and registering
@@ -823,7 +823,7 @@ by a test in litestone rather than in the package that reads it.
 
 `FJS-D338`. A base is a ROW, so it cannot ride a header the way an idempotency
 key does, and a write's body already IS its `data` — so a call carrying one
-flags the body: `X-Fjs-Write: enveloped`, and a body of `{ data, base }`.
+flags the body: `X-Frontier-Write: enveloped`, and a body of `{ data, base }`.
 Absent flag, the body is the data exactly as before, so nothing already on the
 wire changed meaning. **Flagged rather than sniffed**, because a row may hold a
 `data` key of its own and the shape cannot answer the question.

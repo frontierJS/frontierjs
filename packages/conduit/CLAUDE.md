@@ -47,7 +47,7 @@ this list does not name. The owners that matter on most turns:
 - `src/receive.ts` is the receiving end — `Delivery`, `Dialect`, `Receiver`, `BrokerReceiver`, and the ONE order a delivery or a frame runs.
 - `src/router.ts` resolves a target and merges the transport half of `resilience`; `src/resilience.ts` is the breaker half and per-target load shedding.
 - `src/transports/http.ts` owns the retry ladder (`declineReplay`, `refusedCredential`), redirects and streams; `websocket`, `unix`, `broker`, `stub`, `not_implemented` sit beside it; `transports/encode.ts` is the ONE place a body becomes bytes.
-- `src/credentials.ts` is the resolvers (`withCache`, `byRef`, `getFor`); `src/signers.ts` the built-in signers, HTTP Basic and `ed25519` (FrontierJS's own scheme under a key pair).
+- `src/credentials.ts` is the resolvers (`withCache`, `byRef`, `getFor`); `src/signers.ts` the built-in signers, HTTP Basic and `ed25519` (FrontierJS's own scheme under a key pair); `src/peer.ts` (`@frontierjs/conduit/peer`) dials another FrontierJS app under that signer.
 - `src/mirror.ts` is the mirror claim — a connector's models, verbs and parse; `src/observe.ts` the one place an observer is called; `src/trace.ts` trace-context propagation.
 - `src/types.ts` holds `TargetDescriptor`, `DESCRIPTOR_FIELDS`, `RESILIENCE_FIELDS`, `EXTRA_KEYS`, `CONDUIT_ERROR_KINDS`; `src/stores/` is sqlite · memory; `src/testing.ts` the test factory.
 

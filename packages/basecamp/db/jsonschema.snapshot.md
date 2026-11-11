@@ -1167,7 +1167,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `AppDrill`
 
-- gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- gate `read:2 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
 - relation `app` — belongsTo `App` via `appId` · on delete Cascade
 - relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
 - relation `deployment` — belongsTo `Deployment` via `deploymentId` · on delete SetNull · optional

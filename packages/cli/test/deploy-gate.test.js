@@ -99,6 +99,14 @@ describe('the ssh door', () => {
     expect(step).toContain('checkDeployGate(')
     expect(step.indexOf('checkDeployGate(')).toBeLessThan(step.indexOf('acquireLock('))
   })
+  // The install deploys after the retire, so a refusal met there leaves the box with no Basecamp.
+  test('basecamp:reinstall asks the gate before its backup and retire', () => {
+    const body = readFileSync(new URL('../commands/basecamp/reinstall.md', import.meta.url), 'utf8')
+    const asked = body.indexOf('await deployRefusals()')
+    expect(asked).toBeGreaterThan(-1)
+    expect(asked).toBeLessThan(body.indexOf('await backUpFirst('))
+    expect(asked).toBeLessThan(body.indexOf('await retire('))
+  })
   test('deploy declares --unverified', () => {
     expect(readFileSync(new URL('../commands/deploy/index.md', import.meta.url), 'utf8')).toMatch(/^  unverified:/m)
   })

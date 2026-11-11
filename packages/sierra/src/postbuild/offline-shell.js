@@ -50,7 +50,7 @@
  * asks for a chunk the deploy has removed fails with or without a worker, and
  * the fetch handler falls through to the network on a miss exactly as a page
  * with no worker does. Sierra already has the mechanism for that case —
- * `x-fjs-build`, which tells a client its bundle is not the build the server is
+ * `x-frontier-build`, which tells a client its bundle is not the build the server is
  * on. So: `skipWaiting` in install, `clients.claim` in activate.
  *
  * ── Opt-in, one word ───────────────────────────────────────────────────────

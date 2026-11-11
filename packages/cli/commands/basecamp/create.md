@@ -55,6 +55,10 @@ flags:
     type: boolean
     description: When installing, enroll the box in Basecamp's own fleet, so apps can run beside it (asked at a terminal)
     defaultValue: true
+  unverified:
+    type: boolean
+    description: When installing, deploy Basecamp's HEAD though it is unpushed or CI did not pass on it — the run prints each check it skipped
+    defaultValue: false
   yes:
     char: y
     type: boolean
@@ -120,6 +124,12 @@ Basecamps (`~/.config/fli/basecamps.json`) under the box's Host name, so
 terminal the key is printed once, and one more question copies it to the
 clipboard; a run whose output is not a terminal files it and never prints it. A
 key already filed under the name is replaced, not revoked.
+
+An install deploys Basecamp's HEAD, and `fli deploy` refuses one that is on no
+remote branch or that the last CI run did not pass. That check runs before the
+purchase, so a refusal buys nothing; `--unverified` takes the deploy past it,
+for a test box that should run what is on the laptop, and the deploy prints
+each check it skipped.
 
 The box and the hostname reach the install as `--server` and `--domain`, and
 every deploy line the run prints carries both, so nothing is written into
@@ -269,6 +279,12 @@ if (!boxName(name)) {
   return
 }
 
+if (install && !await deployGateOpen({ unverified: flag.unverified, log })) {
+  log.error('Nothing was bought')
+  process.exitCode = 1
+  return
+}
+
 // The last stop before money is spent, so it shows what the answers add up to.
 // A dry run ends here: buying runs a provisioner of its own, outside $.exec,
 // so --dry has to be answered before it rather than inside it.
@@ -281,6 +297,7 @@ if (asking || flag.dry) {
   row('backups', backups ? `daily ${chalk.dim(`— ${vendor}'s, a share of the box's price`)}` : chalk.dim('off'))
   row('ssh', addHost ? `Host ${name} in ~/.ssh/config` : chalk.dim('print the Host block'))
   row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, the addresses, then deploy')}` : chalk.dim('no — fli basecamp:install later'))
+  if (install && flag.unverified) row('deploy', `${chalk.yellow('unverified')} ${chalk.dim('— HEAD ships though it is unpushed or CI did not pass on it')}`)
   if (admin) row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
   if (install) row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
   if (install) row('api key', apiKey ? `admin ${chalk.dim('— shown once, filed in basecamps.json')}` : chalk.dim('no — fli basecamp:key later'))
@@ -325,7 +342,7 @@ if (!await waitForSsh(dest, { identity })) {
   process.exitCode = 1
   return
 }
-const failed = await ringZero(dest, domain, { tty, stage: stages.at })
+const failed = await ringZero(dest, domain, { unverified: flag.unverified, tty, stage: stages.at })
 if (failed) {
   log.error(`fli ${failed.argv.join(' ')} exited ${failed.status}. Fix what it said and run ${installLine}`)
   process.exitCode = failed.status || 1

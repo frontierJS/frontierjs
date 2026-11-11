@@ -119,6 +119,9 @@ empty database in a temp directory, never the project's. `--schema
 host:/path` reads one off a box over ssh, with its relative imports, into that
 temp directory: the deployed schema, never the deployed rows.
 
+A project schema that encrypts, with no `ENCRYPTION_KEY` set, is offered one
+as `db:push` is.
+
 ```js
 const remote  = remoteSchema(flag.schema)
 const fetched = remote ? fetchRemoteSchema($, remote[1], remote[2]) : null
@@ -130,6 +133,8 @@ if (!requireSchema($, local)) return
 const { schema } = resolveDb($, local)
 const port       = await studioPortFor($, flag)
 const scratch    = flag.schema ? scratchFor(schema, fetched?.dir) : null
+const keyEnv     = scratch ? {} : await keyFor($, schema)
+if (!keyEnv) { process.exitCode = 1; return }
 
 echo`  {bold Litestone Studio} {cyan http://localhost:${port}}`
 if (fetched) echo`
@@ -137,5 +142,5 @@ if (fetched) echo`
 if (scratch) echo`
   {dim schema} ${schema}
   {dim db}     ${scratch.db} {dim (throwaway)}`
-await $.stream({ command: studioCommand($, { schema, port, scratch, open: flag.open }), ...(scratch && { env: scratch.env }) })
+await $.stream({ command: studioCommand($, { schema, port, scratch, open: flag.open }), env: scratch?.env ?? { ...process.env, ...keyEnv } })
 ```

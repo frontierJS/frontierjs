@@ -102,7 +102,6 @@ title: Local repositories
   <h1>Local repositories</h1>
   <span class="cluster">
     <Button treatment="ghost" href="/workbench/">Workbench</Button>
-    <Button treatment="ghost" href="/git-activity/">Git activity</Button>
   </span>
 </div>
 
