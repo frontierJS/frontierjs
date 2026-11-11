@@ -29,6 +29,7 @@ import { mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from 'node:fs'
 import { tmpdir }     from 'node:os'
 import { dirname, join } from 'node:path'
 import { keyUnder }   from '../../providers/storage/index.ts'
+import { fileMd5 }    from '../../providers/storage/s3.ts'
 import { destinationFor, mintPut } from '../../jobs/app-backup-run.job.ts'
 import { receiveUpload } from './hub-restore.ts'
 import type { App }   from '@frontierjs/junction'
@@ -79,7 +80,7 @@ export async function importAppArchive(app: App, opts: {
     const sha256 = await digest(tarball)
     const at     = new Date().toISOString()
     const key    = keyUnder(dest, `${target.id}-${at.replace(/[:.]/g, '-')}${wrapped ? '.db' : ''}.tar.gz`)
-    const res    = await fetch(await mintPut(app, dest, key), { method: 'PUT', body: Bun.file(tarball), headers: { 'content-type': 'application/gzip' } })
+    const res    = await fetch(await mintPut(app, dest, key), { method: 'PUT', body: Bun.file(tarball), headers: { 'content-type': 'application/gzip', 'content-md5': await fileMd5(tarball) } })
     if (!res.ok) return { refused: `'${dest.name}' refused the upload (${res.status}): ${(await res.text()).slice(0, 300)}`, status: 502 }
 
     const row = await sys.appBackup.create({ data: {

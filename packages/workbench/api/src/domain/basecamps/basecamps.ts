@@ -14,8 +14,14 @@
 // and Delete removes one. The client names an entry and a bare directory name;
 // the path is resolved here from the listing, so a crafted name can only miss.
 //
+// Set up B2 backups and its undo run `core/basecamp-backups.js`, the module
+// `fli basecamp:backups` runs, with the laptop's B2 key read from
+// `~/.config/fli/.env` here (the API's own env does not hold it). Each `say` line
+// is kept on the outcome for the page to show.
+//
 // No credential leaves this module: an entry is answered without `apiKey`,
-// `scopedKey` or `peerKeyId`, only whether it holds one.
+// `scopedKey` or `peerKeyId`, only whether it holds one; the B2 key is read
+// for the session and never answered; a plan is summarized without holder emails.
 
 import { rmSync, statSync } from 'node:fs'
 import { join }             from 'node:path'
@@ -38,7 +44,29 @@ type Cli = {
   basecampApi:   () => Promise<{ container: string, port: number }>
   localBackups:  (dir: string) => Array<{ name: string, kind: string, takenAt: string | null, bytes: number }>
   dataDir:       (o: { home?: string }) => string
+  listGlobal:    (o: { home?: string }) => Array<{ key: string, value: string }>
+  replWhere:     (e: Entry & { name: string }) => unknown
+  laptopSession: (o: { env: Record<string, string | undefined> }) => Promise<unknown>
+  planBackups:   (e: Entry & { name: string }, o: { apps?: string[], session?: unknown }) => Promise<BackupsPlan>
+  setUpBackups:  (e: Entry & { name: string }, o: { apps?: string[], session?: unknown, say: (l: string) => void }) => Promise<unknown>
+  undoBackups:   (e: Entry & { name: string }, o: { session?: unknown, say: (l: string) => void }) => Promise<{ removed: number, kept: number }>
+  LOCK_DAYS:     number
 }
+
+/** The part of `planBackups`' answer the summary reads. */
+export type BackupsPlan = {
+  name: string
+  buckets: Record<'archive' | 'replica', { name: string, held: { lockDays?: number } | null }>
+  workspaces: Array<{
+    id: string, name: string, holder: unknown
+    archive:  Dest
+    replica?: Dest
+  }>
+  hub:  { backupDestinationId?: string | null, replicaDestinationId?: string | null, backupCron?: string | null }
+  apps: Array<{ slug: string, backupDestinationId?: string | null, backupCron?: string | null }>
+  unset: Array<{ id: string, slug: string }>
+}
+type Dest = { bucket: string, prefix: string, name: string, keyName: string, row: { lastTestAt?: string | null } | null }
 
 // The cli is a devDependency and the image installs none, so it is reached
 // only on a machine where the screen is offered at all.
@@ -47,10 +75,12 @@ const loadCli = () => cli ??= Promise.all([
   import('@frontierjs/cli/core/basecamps.js'),
   import('@frontierjs/cli/core/basecamp.js'),
   import('@frontierjs/cli/core/paths.js'),
+  import('@frontierjs/cli/core/global-env.js'),
+  import('@frontierjs/cli/core/basecamp-backups.js'),
 ]).then(mods => Object.assign({}, ...mods) as unknown as Cli)
 
 export type Outcome = {
-  verb:       'backup' | 'restart'
+  verb:       'backup' | 'restart' | 'b2' | 'b2-undo'
   state:      'working' | 'done' | 'error'
   startedAt:  string
   finishedAt: string | null
@@ -62,6 +92,8 @@ export type Outcome = {
   probe?:     unknown
   seconds?:   number
   error?:     string
+  /** b2, b2-undo: one line per thing done, as `fli basecamp:backups` prints them. */
+  lines?:     string[]
 }
 
 /** One backup pulled to this laptop: a directory under the entry's folder. */
@@ -200,5 +232,111 @@ export async function startRestart(name: string, opts: Options = {}): Promise<Ou
   return hold(name, 'restart', async (held) => {
     await c.restartApi({ host, container })
     held.probe = await c.probeUntil({ host, port, until: () => true })
+  })
+}
+
+// ─── Set up B2 backups ────────────────────────────────────────────────────
+
+export type PlanSummary = {
+  name:    string
+  buckets: Array<{ name: string, kind: 'archive' | 'replica', held: boolean, lockDays: number | null, makeLockDays: number | null }>
+  destinations: Array<{ name: string, workspace: string, bucket: string, prefix: string, keyName: string, action: 'make' | 'test' | 'keep', filed: boolean }>
+  hub:     Array<{ label: string, action: 'set' | 'keep' }>
+  apps:    Array<{ slug: string, action: 'set' | 'keep' }>
+  unset:   Array<{ slug: string }>
+  /** Workspaces with no owner or admin to act as; a set-up would stop there. */
+  blocked: string[]
+}
+
+/**
+ * The plan as the page may see it: bucket and destination names, key NAMES,
+ * what would be made or kept. No holder email, no id of a workspace member, no
+ * key material (the plan has none: nothing is minted until a run).
+ */
+export function summarizePlan(plan: BackupsPlan, lockDays: number): PlanSummary {
+  const act = (d: Dest) => d.row?.lastTestAt ? 'keep' : d.row ? 'test' : 'make'
+  const dest = (d: Dest, w: { name: string }) => ({ name: d.name, workspace: w.name, bucket: d.bucket, prefix: d.prefix, keyName: d.keyName, action: act(d) as 'make' | 'test' | 'keep', filed: !!d.row })
+  const pointer = (v: unknown) => v ? 'keep' as const : 'set' as const
+  return {
+    name: plan.name,
+    buckets: (['archive', 'replica'] as const).map(kind => ({
+      name:         plan.buckets[kind].name,
+      kind,
+      held:         !!plan.buckets[kind].held,
+      lockDays:     plan.buckets[kind].held?.lockDays ?? null,
+      makeLockDays: kind === 'archive' ? lockDays : null,
+    })),
+    destinations: plan.workspaces.flatMap(w => [dest(w.archive, w), ...(w.replica ? [dest(w.replica, w)] : [])]),
+    hub: [
+      { label: 'hub backupDestinationId', action: pointer(plan.hub.backupDestinationId) },
+      { label: 'hub replicaDestinationId', action: pointer(plan.hub.replicaDestinationId) },
+      { label: 'hub backupCron', action: pointer(plan.hub.backupCron) },
+    ],
+    apps:    plan.apps.map(a => ({ slug: a.slug, action: pointer(a.backupDestinationId) })),
+    unset:   plan.unset.map(a => ({ slug: a.slug })),
+    blocked: plan.workspaces.filter(w => !w.holder).map(w => w.name),
+  }
+}
+
+// The API's env does not hold the laptop's B2 key; fli's global env file does.
+async function b2Env(c: Cli, opts: Options): Promise<Record<string, string>> {
+  const env: Record<string, string> = {}
+  for (const { key, value } of c.listGlobal({ home: opts.home })) if (key === 'B2_KEY_ID' || key === 'B2_APPLICATION_KEY') env[key] = value
+  return env
+}
+
+async function b2Entry(name: string, opts: Options): Promise<{ entry: Entry & { name: string } } | { refused: string }> {
+  const e = await entryOf(name, opts)
+  if (!e) return { refused: `No Basecamp named '${name}' in basecamps.json` }
+  const entry = { name, ...e }
+  const c = await loadCli()
+  try { c.replWhere(entry) } catch (err) { return { refused: (err as Error).message } }
+  return { entry }
+}
+
+const slugsOf = (apps: unknown): string[] | null =>
+  apps === undefined ? [] : Array.isArray(apps) && apps.every(a => typeof a === 'string') ? apps as string[] : null
+
+/** What a set-up would do, read off the Basecamp over ssh and the B2 account; changes nothing. */
+export async function backupsPlan(name: string, opts: Options = {}): Promise<PlanSummary | { refused: string }> {
+  const got = await b2Entry(name, opts)
+  if ('refused' in got) return got
+  const c = await loadCli()
+  try {
+    const session = await c.laptopSession({ env: await b2Env(c, opts) })
+    return summarizePlan(await c.planBackups(got.entry, { session }), c.LOCK_DAYS)
+  } catch (err) {
+    return { refused: (err as Error).message }
+  }
+}
+
+export type B2Input = { apps?: unknown, approved?: boolean }
+
+/** Make the buckets, keys and destinations and point the hub and the chosen Apps at them. */
+export async function startB2Setup(name: string, input: B2Input = {}, opts: Options = {}): Promise<Outcome | { refused: string }> {
+  if (input.approved !== true) return { refused: 'Set up B2 backups makes B2 buckets and keys and is confirmed by a person each run: it was not approved' }
+  const apps = slugsOf(input.apps)
+  if (!apps) return { refused: 'apps is a list of App slugs' }
+  const got = await b2Entry(name, opts)
+  if ('refused' in got) return got
+  const c = await loadCli()
+  return hold(name, 'b2', async (held) => {
+    held.lines = []
+    const session = await c.laptopSession({ env: await b2Env(c, opts) })
+    await c.setUpBackups(got.entry, { apps, session, say: (l) => { held.lines!.push(l) } })
+  })
+}
+
+/** Take the destinations a set-up filed off the hub and Apps, remove them and delete their keys; the buckets stay. */
+export async function startB2Undo(name: string, input: B2Input = {}, opts: Options = {}): Promise<Outcome | { refused: string }> {
+  if (input.approved !== true) return { refused: 'Undo B2 backups removes backup destinations and deletes their keys and is confirmed by a person each run: it was not approved' }
+  const got = await b2Entry(name, opts)
+  if ('refused' in got) return got
+  const c = await loadCli()
+  return hold(name, 'b2-undo', async (held) => {
+    held.lines = []
+    const session = await c.laptopSession({ env: await b2Env(c, opts) })
+    const out = await c.undoBackups(got.entry, { session, say: (l) => { held.lines!.push(l) } })
+    held.note = `${out.removed} removed, ${out.kept} kept`
   })
 }

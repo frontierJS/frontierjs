@@ -3174,17 +3174,20 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
     }
   }
 
+  let drawnTop = null
   function render(arr) {
     if (!arr || arr.length === 0) {
       topSpacer.style.height = '0px'
       botSpacer.style.height = '0px'
       renderedBlocks.forEach(b => b.dispose())
       renderedBlocks.clear()
+      drawnTop = null
       return
     }
 
     const total = arr.length
     const { scrollTop, viewHeight } = getScrollerMetrics()
+    drawnTop = scrollTop
 
     // In test environments (happy-dom), viewHeight may be 0 — render initial window
     const effectiveViewHeight = viewHeight > 0 ? viewHeight : rowHeight * 10
@@ -3245,6 +3248,10 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
   let detachScroll = null
   function onScroll() {
     if (cancelScrollFrame) return
+    // A horizontal scroll moves no row, and a frame requested from a scroll
+    // event keeps the browser's frame clock running, so the next keystroke
+    // paints a frame late (FJS-4210).
+    if (drawnTop !== null && getScrollerMetrics().scrollTop === drawnTop) return
     cancelScrollFrame = clock.frame(() => {
       cancelScrollFrame = null
       render(getArray())

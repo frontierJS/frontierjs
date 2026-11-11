@@ -627,6 +627,17 @@ core/
                 and the one enrollment paste a box runs to join its fleet
                 (`installOutpost`), shared by `deploy`'s `08b-outpost` step and
                 `outpost:install` so a box is never enrolled two ways
+  basecamp-key.js  an API key minted inside a running Basecamp as its owner —
+                `deploy:repl` over ssh for a box, `app:repl` in this checkout
+                for `dev`. `basecamp:key`, `create`'s first key and Workbench's
+                Basecamps screen share it, so the three cannot mint differently
+  basecamp-backups.js  a Basecamp's B2 buckets, keys and destinations — the
+                plan read, the set-up and the undo `basecamp:backups` and
+                Workbench's Basecamps screen both run; every Basecamp write is
+                a service call through `basecamp-key.js`'s repl line
+  b2.js         Backblaze B2's native API with the laptop's key: buckets with
+                Object Lock, and keys limited to one bucket and prefix. S3 has
+                no key minting, so this is not `storage:s3`
   machine.js    running a command on the machine being deployed to, and moving an
                 IMAGE between two of them (`shipTo` — `docker save | docker load`,
                 which preserves the id, so the digest a Release names is the

@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d2080"></a>2026-11-11 · `FJS-D2080` — Q7 — The fli verb's name (1.2) — A, weakly.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, weakly*) over **B** (`fli basecamp:destination <name>`, after Basecamp's `BackupDestination`).
+
+the owner picked the whole of A: the verb is fli basecamp:backups, accepting that it is one letter from basecamp:backup.
+
 ### <a id="fjs-d2072"></a>2026-11-11 · `FJS-D2072` — Which prefix do the framework's own HTTP headers carry — Every framework header is `X-Frontier-*`: the kit's default prefix, `x-frontier-build`, Sent-At/Made-At and the peer key, moved in one change with no alias (pre-alpha), ~59 files. A pinned Outpost sends the old name and is refused until re-released, so Outpost releases before Basecamp deploys. The remaining `FJS_*` env vars owe the same move (`FJS-4153`).
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (keep `X-Fjs-*`, rename nothing; headers are wire, not operator-typed, so `FJS-D1102` does not reach them. `x-frontier-read-only` moves to `X-Fjs-Read-Only` for one family (7 files)), **C** (rename only the new `X-Fjs-Key` to `X-Frontier-Key`: 7 files, and a third pattern beside the mix), **D** (rule a split: `X-Fjs-*`/`FJS_*` for framework-internal wire and tooling, `X-Frontier-*`/`FRONTIER_*` for what an operator sets or reads. Both `x-fjs-build` and `x-frontier-read-only` are internal wire, so D moves one of them anyway, and it gives `FJS_*` the permanent home `FJS-D1102` said should not exist).
@@ -8990,6 +8996,52 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2082"></a>2026-11-11 · `FJS-D2082` — Q9 — How the verb reaches a workspace its key is not bound to (1.2, 1.3) — Call Basecamp's own services through `deploy:repl` as an owner of each workspace, the way `basecamp:key` mints; `dev` runs it locally.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Mint an admin key per workspace and file each under the entry, then use HTTP), **C** (The hub's workspace only; Apps elsewhere are named and skipped).
+
+The paper's recommendation, taken as written: ssh is the standing (`FJS-D1827`) and nothing new is filed. B adds a per-workspace shape to `basecamps.json`, and C undoes Q3.
+
+### <a id="fjs-d2081"></a>2026-11-11 · `FJS-D2081` — Q8 — The archive bucket's lock and the hub's replica (1.2) — Two buckets now: `basecamp-<name>` locked for archives, `basecamp-<name>-replica` unlocked, the hub's replica key scoped to `hub/`, so the replica lands at `hub/hub-<installId>/`.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **B** was picked over **A** (Archives only: `basecamp-<name>` with a 7-day compliance default retention; the replica is a later step in a bucket of its own), **C** (One bucket with Object Lock on and no default retention, archives and replica together; `hub.bucket-locked` stays red).
+
+Against the recommendation (**A**): the owner wants the hub's replica off the box in the same run as its archives; the replica bucket is unlocked and its key is scoped to `hub/` (Basecamp adds the `hub-<installId>` segment under it), so a locked archive bucket and a replica never share a bucket.
+
+### <a id="fjs-d2079"></a>2026-11-11 · `FJS-D2079` — Q6 — A vendor that cannot mint a narrow credential (per 0.3) — The owner makes a narrow one in the vendor's console, and Workbench files and tests it.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Workbench hands the Basecamp the laptop's own token).
+
+The paper's recommendation, taken as written: B puts an account-wide credential on a box, which is the exposure this plan's pattern exists to avoid.
+
+### <a id="fjs-d2078"></a>2026-11-11 · `FJS-D2078` — Q5 — Where the laptop keeps each Basecamp's `ENCRYPTION_KEY` — `~/.config/fli/keys/<name>.key`, mode `0600`.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Vaultwarden. `core/vaultwarden.js` is read-only today, so this needs writing (encrypting a cipher on the client)), **C** (Only compare digests. The owner keeps the copy wherever they like).
+
+The paper's recommendation, taken as written: losing the box and the laptop together is the rare case, and A can move to B later without changing the screen. C leaves 0.6's check with nothing on this laptop to compare against.
+
+### <a id="fjs-d2077"></a>2026-11-11 · `FJS-D2077` — Q4 — Where the laptop's B2 key lives — `~/.config/fli/.env`, as `B2_KEY_ID` and `B2_APPLICATION_KEY`, beside `DIGITALOCEAN_TOKEN` and `CLOUDFLARE_TOKEN`.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Vaultwarden, read through `core/vaultwarden.js`).
+
+The paper's recommendation, taken as written: that is where the other vendor tokens live, and `vaultwarden.js` adds a login on every use.
+
+### <a id="fjs-d2076"></a>2026-11-11 · `FJS-D2076` — Q3 — Which workspaces get a destination — One destination per workspace that has an App, each with its own key limited to its own prefix in the Basecamp's bucket.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Only the hub's workspace. Apps in other workspaces are left alone).
+
+The paper's recommendation, taken as written: ELA's App is in its own workspace, so B leaves out the App that started this. A separate key per workspace keeps one tenant's archives out of another's reach.
+
+### <a id="fjs-d2075"></a>2026-11-11 · `FJS-D2075` — Q2 — One B2 bucket per Basecamp, or one shared bucket — A bucket per Basecamp (`basecamp-<name>`), with Object Lock on.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (One bucket for the laptop's account, a prefix per Basecamp).
+
+The paper's recommendation, taken as written: Object Lock and lifecycle rules are set per bucket, and `test` reads the lock per bucket. Dropping a Basecamp's archives is dropping its bucket. B2 allows 100 buckets per account.
+
+### <a id="fjs-d2073"></a>2026-11-11 · `FJS-D2073` — The default CSP names `img-src 'self' data:` — amends `FJS-D1192`.
+
+Asked in chat over `FJS-4214`: `@frontierjs/css` paints the `select.field` arrow and `--app-depth` as `data:` SVG, so junction's default (`default-src 'self'`, no `img-src`) refused the framework's own stylesheet out of the box. **B** (widen junction's `img-src`) was picked over **A** (the css package drops `data:` URIs — a gradient arrow, and the noise texture lost or shipped as a file). A fixes only the kit: Vite inlines a small imported image as `data:` too, and the deploy CSP in `packages/cli/core/edge.js` already names `img-src 'self' data:`, so A would leave the two policies disagreeing. A `data:` image cannot run script; `default-src` stays `'self'` for everything else.
+
 ### <a id="fjs-d2068"></a>2026-11-11 · `FJS-D2068` — Q11 — Where the dialer lives — `createPeer` moves into `@frontierjs/conduit` and takes a method. Both apps already depend on conduit, which holds the `ed25519` signer. Workbench keeps its own mapping of a refusal to a status.
 
 Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **A** was picked over **B** (Basecamp gets its own copy for the rehearsal), **C** (no dialer yet: the rehearsal's asker stays a hand-signed script).
@@ -16970,6 +17022,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2074"></a>2026-11-11 · `FJS-D2074` — Q1 — How the screen writes the index (reopens `workbench-basecamps.md` Q5, `FJS-D1961`) — The page calls `core/basecamps.js` writers in-process, as backup and restart already do. Keys are minted over ssh by 0.4's shared path. There is no field to paste a key into.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (A, plus a field to paste a key copied from Basecamp's API keys screen), **C** (The page runs the fli commands as a job (`basecamp:key`), as create does, so it never imports a writer).
+
+The paper's recommendation, taken as written: `core/basecamps.js` stays the one writer (`FJS-D1828`) and ssh stays the root (`FJS-D1827`). A pasted key would be overwritten by the next mint without saying so. The precedent is next door: `startBackup` and `startRestart` call `core` in-process for work that takes seconds, and only create and install spawn fli, because they take minutes. C would put a mint that takes seconds through a job built for one that takes minutes. Ruled, it supersedes `FJS-D1961` in `DECISIONS.md`.
 
 ### <a id="fjs-d2066"></a>2026-11-11 · `FJS-D2066` — Q1 — Does this stand as its own plan — This file keeps the argument, and § Phases moves into `app-peering.md` as steps after Phase 4. One owner for the build.
 

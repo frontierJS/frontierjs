@@ -54,6 +54,11 @@ title: New Basecamp
   const isDry      = () => !!run && run.argv.includes('--dry')
   const failed     = () => !!run && (!!run.error || (!!run.exit && run.exit.code !== 0))
   const argOf      = (flag) => { const i = run.argv.indexOf(flag); return i < 0 ? '' : run.argv[i + 1] }
+  // A create that bought its box and failed after names the install that
+  // finishes it; the API reads it off the log (`resume`, FJS-4206).
+  const resumeBox  = () => (!!run && !running() && run.resume?.[2]) || ''
+  const installed  = () => !!run && run.argv[1] === 'basecamp:install' && run.exit?.code === 0
+  const keyLine    = () => `fli basecamp:key --server ${run.argv[2]} --basecamp ${run.name} --domain ${argOf('--domain')}`
 
   const clock = (ms) => {
     const s = Math.max(0, Math.floor(ms / 1000))
@@ -88,6 +93,20 @@ title: New Basecamp
     }
   }
 
+  async function resume() {
+    starting = true
+    try {
+      await basecamps.service.invoke('resume', null, { approved: true })
+      again = false
+      run = await basecamps.service.invoke('creation', null)
+      now = Date.now()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      starting = false
+    }
+  }
+
   // The stages the run has reached, read off its log by the API, then one row
   // for those still ahead: the cli names a stage only as it opens, so the ones
   // after it are a count. Before the first, the cli is checking the token and
@@ -110,7 +129,9 @@ title: New Basecamp
   const verdict = () => {
     if (!run || running()) return null
     if (run.error) return { tone: 'text-danger', text: `Could not start: ${run.error}` }
+    if (installed()) return { tone: 'text-success', text: `Installed in ${elapsed()}. Its API key, so Basecamps lists it, is a terminal's: ${keyLine()}` }
     if (run.exit.code === 0) return { tone: 'text-success', text: isDry() ? 'The plan ran. Nothing was bought.' : `Done in ${elapsed()}.` }
+    if (resumeBox()) return { tone: 'text-danger', text: `Exited with ${run.exit.code ?? run.exit.signal} after the box was bought. Fix what the log says, then install on ${resumeBox()}; a new create is refused while it stands bare.` }
     return { tone: 'text-danger', text: `Exited with ${run.exit.code ?? run.exit.signal}. The log below says why.` }
   }
 
@@ -169,9 +190,19 @@ title: New Basecamp
         <h2 class="h5">{run.name}</h2>
         <div class="text-sm text-muted">{(run, argOf('--domain'))}{(run, isDry()) ? ' · plan only' : ''} · {(run, now, elapsed())}</div>
       </div>
-      {#if (run, again, !running() && !again)}
-        <Button id="new-again" treatment="outlined" onclick={() => { again = true }}>Create another</Button>
-      {/if}
+      <span class="cluster">
+        {#if (run, again, resumeBox() && !again)}
+          <ConfirmationPopover title={`Install Basecamp on ${(run, resumeBox())}?`}
+            message={(run, run.resume.join(' '))} confirmLabel="Install" tone="primary" onconfirm={resume}>
+            {#snippet trigger()}
+              <Button id="new-resume" loading={starting} disabled={starting}>Install on {(run, resumeBox())}</Button>
+            {/snippet}
+          </ConfirmationPopover>
+        {/if}
+        {#if (run, again, !running() && !again)}
+          <Button id="new-again" treatment="outlined" onclick={() => { again = true }}>Create another</Button>
+        {/if}
+      </span>
     </div>
 
     {#if (run, isDry())}

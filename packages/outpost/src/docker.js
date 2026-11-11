@@ -510,12 +510,22 @@ export function createDocker({
     } catch { /* the directory is there either way */ }
   }
 
+  /** The base64 MD5 a PUT to a locked bucket must carry, read as a stream. */
+  async function md5Of(path) {
+    const md5 = createHash('md5')
+    for await (const chunk of Bun.file(path).stream()) md5.update(chunk)
+    return md5.digest('base64')
+  }
+
   /** PUT one file to a pre-signed URL, streamed. Answered, never thrown: the
-   *  file exists whether or not the far side took it. */
+   *  file exists whether or not the far side took it. A bucket with Object
+   *  Lock refuses a PUT with no Content-MD5 (`FJS-4218`); the URL leaves that
+   *  header unsigned, so it is added here. */
   async function putFile(uploadUrl, path) {
     try {
+      const md5 = await md5Of(path).catch(() => null)
       const res = await fetchFn(uploadUrl, {
-        method: 'PUT', body: Bun.file(path), headers: { 'content-type': 'application/gzip' },
+        method: 'PUT', body: Bun.file(path), headers: { 'content-type': 'application/gzip', ...(md5 ? { 'content-md5': md5 } : {}) },
         signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
       })
       if (res.ok) return { uploaded: true }

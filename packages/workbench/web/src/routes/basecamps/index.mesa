@@ -11,6 +11,10 @@ title: Basecamps
   // and reads the list again once it settles; leaving the page does not stop
   // a backup or a restart.
   //
+  // Set up B2 backups and Undo B2 backups each ask first, in a dialog that
+  // lists what the API's plan says it would make or keep (names only; the B2
+  // key stays in the API). The run sends `approved: true` on the Run press.
+  //
   // Under each entry sit the backups already pulled to this laptop, with Delete
   // on each. The page sends the entry's name and the copy's folder name and
   // never a path; the API resolves what to remove.
@@ -22,7 +26,9 @@ title: Basecamps
   import Dot                 from '@frontierjs/ui/components/display/Dot.mesa'
   import EmptyState          from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Table               from '@frontierjs/ui/components/display/Table.mesa'
+  import Checkbox            from '@frontierjs/ui/components/forms/Checkbox.mesa'
   import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import Modal               from '@frontierjs/ui/components/overlay/Modal.mesa'
   import { toasts }          from '@frontierjs/ui/stores/toastStore'
 
   const POLL = 2000
@@ -61,10 +67,10 @@ title: Basecamps
 
   $.every(POLL, poll, { when: working().length > 0 })
 
-  async function run(r, verb) {
+  async function run(r, verb, data = {}) {
     pressed = { ...pressed, [r.name]: verb }
     try {
-      rows = withOutcome(r.name, await basecamps.service.invoke(verb, r.name, {}))
+      rows = withOutcome(r.name, await basecamps.service.invoke(verb, r.name, data))
     } catch (err) {
       toasts.error(err.message)
     } finally {
@@ -90,7 +96,39 @@ title: Basecamps
     }
   }
 
-  const VERB = { backup: 'Backing up', restart: 'Restarting' }
+  // The B2 dialog: which entry, which verb, and the plan the API read for it.
+  let dialog = null    // { r, kind: 'setup' | 'undo', plan, error, picked: { [slug]: true } }
+  let dialogOpen = false
+
+  async function ask(r, kind) {
+    const mine = { r, kind, plan: null, error: null, picked: {} }
+    dialog = mine
+    dialogOpen = true
+    try {
+      const plan = await basecamps.service.invoke('backupsPlan', r.name)
+      if (dialog === mine) dialog = { ...mine, plan }
+    } catch (err) {
+      if (dialog === mine) dialog = { ...mine, error: err.message }
+    }
+  }
+
+  const pick = (slug, on) => { dialog = { ...dialog, picked: { ...dialog.picked, [slug]: on } } }
+
+  function confirmB2() {
+    const { r, kind, picked } = dialog
+    dialogOpen = false
+    if (kind === 'undo') return run(r, 'undoB2', { approved: true })
+    return run(r, 'setUpB2', { approved: true, apps: Object.keys(picked).filter(k => picked[k]) })
+  }
+
+  const filed = (plan) => plan.destinations.filter(d => d.filed)
+  const canRun = (d) => !!d.plan && !d.plan.blocked.length && (d.kind === 'setup' || filed(d.plan).length > 0)
+
+  const VERB  = { backup: 'Backing up', restart: 'Restarting', b2: 'Setting up B2 backups', 'b2-undo': 'Undoing B2 backups' }
+  const LABEL = { backup: 'Back up', restart: 'Restart', b2: 'Set up B2 backups', 'b2-undo': 'Undo B2 backups' }
+
+  // A path starts with a slash; an object key under the destination's prefix does not.
+  const whereIs = (b) => !b.location || String(b.location).startsWith('/') ? 'on the box only' : 'in B2'
 
   function probeSaid(probe) {
     if (!probe || typeof probe !== 'object') return 'the probe answered'
@@ -103,7 +141,9 @@ title: Basecamps
 
   function outcomeLine(o) {
     if (o.state === 'working') return `${VERB[o.verb]} — started ${ago(o.startedAt)}`
-    if (o.state === 'error')   return `${o.verb === 'backup' ? 'Back up' : 'Restart'} failed after ${o.seconds ?? 0} s: ${o.error}`
+    if (o.state === 'error')   return `${LABEL[o.verb]} failed after ${o.seconds ?? 0} s: ${o.error}`
+    if (o.verb === 'b2')       return `Set up B2 backups in ${o.seconds} s`
+    if (o.verb === 'b2-undo')  return `Undid B2 backups in ${o.seconds} s — ${o.note}`
     if (o.verb === 'backup')   return `Backed up in ${o.seconds} s — Basecamp recorded ${o.row?.id} (${o.row?.status}) at ${at(o.row?.finishedAt ?? o.row?.createdAt)}${o.note ? `. ${o.note}` : ''}`
     return `Restarted in ${o.seconds} s — ${probeSaid(o.probe)}`
   }
@@ -149,11 +189,16 @@ title: Basecamps
             <strong>{r.name}</strong>
             {#if r.runs}<span class="text-sm text-muted">runs</span>{/if}
           </span>
-          <div class="text-sm text-muted">{r.url}</div>
+          <div class="text-sm text-muted"><a href={r.url} target="_blank" rel="noopener noreferrer">{r.url}</a></div>
           <div class="text-sm text-muted">{r.host ? `ssh ${r.host}` : 'no ssh Host'}</div>
           <div class="text-sm text-muted">{r.answers.ok ? `answers in ${r.answers.ms} ms` : `does not answer: ${r.answers.why}`}</div>
           {#if r.outcome}
             <div class={`text-sm ${toneOf(r.outcome)}`} data-outcome={r.outcome.state}>{outcomeLine(r.outcome)}</div>
+            {#if r.outcome.lines?.length}
+              <ul class="text-sm text-muted" data-lines={r.name}>
+                {#each r.outcome.lines as line, i (i)}<li>{line}</li>{/each}
+              </ul>
+            {/if}
           {/if}
           <div class="text-sm" data-local={r.name}>
             {#if r.local.length}
@@ -183,6 +228,9 @@ title: Basecamps
           {#if r.newestBackup}
             <span title={at(r.newestBackup.createdAt)}>{ago(r.newestBackup.createdAt)}</span>
             <div class="text-muted">{r.newestBackup.status}</div>
+            {#if r.newestBackup.status === 'success'}
+              <div class="text-muted" data-where={r.name}>{whereIs(r.newestBackup)}</div>
+            {/if}
           {:else if r.backupError}
             <span class="text-danger">{r.backupError}</span>
           {:else if !r.hasKey}
@@ -198,6 +246,18 @@ title: Basecamps
               loading={pressed[r.name] === 'backup'}
               title={r.hasKey ? 'Take Basecamp\'s own backup now' : 'needs an API key: fli basecamp:key'}
               onclick={() => run(r, 'backup')}>Back up now</Button>
+            {#if r.host || r.name === 'dev'}
+              <Button size="sm" treatment="outlined"
+                disabled={r.outcome?.state === 'working' || !!pressed[r.name]}
+                loading={pressed[r.name] === 'setUpB2'}
+                title="Make this Basecamp's B2 buckets and keys and point its backups at them"
+                onclick={() => ask(r, 'setup')}>Set up B2 backups</Button>
+              <Button size="sm" treatment="ghost"
+                disabled={r.outcome?.state === 'working' || !!pressed[r.name]}
+                loading={pressed[r.name] === 'undoB2'}
+                title="Take the B2 destinations off and delete their keys; the buckets stay"
+                onclick={() => ask(r, 'undo')}>Undo B2 backups</Button>
+            {/if}
             {#if r.host}
               <ConfirmationPopover inline title={`Restart ${r.name}?`} confirmLabel="Restart" onconfirm={() => run(r, 'restart')}>
                 {#snippet trigger()}
@@ -217,3 +277,68 @@ title: Basecamps
     {/snippet}
   </Table>
 {/if}
+
+<Modal bind:open={dialogOpen} title={dialog ? `${dialog.kind === 'undo' ? 'Undo B2 backups' : 'Set up B2 backups'} on ${dialog.r.name}` : ''} size="lg">
+  {#if dialog}
+    {#if dialog.error}
+      <article class="alert danger"><div class="alert-content">{dialog.error}</div></article>
+    {:else if !dialog.plan}
+      <p class="text-sm text-muted">Reading {dialog.r.name} and the B2 account…</p>
+    {:else if dialog.kind === 'setup'}
+      <div class="stack-sm text-sm" data-b2-plan="setup">
+        <p>Buckets</p>
+        <ul>
+          {#each dialog.plan.buckets as b (b.name)}
+            <li>
+              {b.held ? 'keep' : 'make'} {b.name}
+              {#if b.kind === 'archive'}
+                — locked {b.held ? (b.lockDays ?? 0) : b.makeLockDays} days, cannot be shortened
+              {:else}
+                — not locked
+              {/if}
+            </li>
+          {/each}
+        </ul>
+        <p>Keys and destinations</p>
+        <ul>
+          {#each dialog.plan.destinations as d (`${d.name}/${d.workspace}`)}
+            <li>
+              {d.action} {d.name} in {d.workspace}
+              {#if d.action === 'make'}— key {d.keyName}, limited to {d.bucket}/{d.prefix}/{/if}
+            </li>
+          {/each}
+        </ul>
+        <p>Hub</p>
+        <ul>
+          {#each dialog.plan.hub as h (h.label)}<li>{h.action} {h.label}</li>{/each}
+        </ul>
+        <p>Apps without a destination</p>
+        {#if dialog.plan.unset.length}
+          {#each dialog.plan.unset as a (a.slug)}
+            <Checkbox id={`b2-app-${a.slug}`} label={a.slug} checked={!!dialog.picked[a.slug]} onchange={(v) => pick(a.slug, v)} />
+          {/each}
+        {:else}
+          <p class="text-muted">none</p>
+        {/if}
+        {#if dialog.plan.blocked.length}
+          <p class="text-danger">No owner or admin to act as in {dialog.plan.blocked.join(', ')}.</p>
+        {/if}
+      </div>
+    {:else}
+      <div class="stack-sm text-sm" data-b2-plan="undo">
+        <p>Takes these destinations off the hub and the Apps, removes them and deletes their keys at B2. One that archives are recorded in stays, with its key. The buckets and what is in them stay.</p>
+        {#if filed(dialog.plan).length}
+          <ul>
+            {#each filed(dialog.plan) as d (`${d.name}/${d.workspace}`)}<li>{d.name} in {d.workspace}, key {d.keyName}</li>{/each}
+          </ul>
+        {:else}
+          <p class="text-muted">Nothing to undo: no destination this setup files is on {dialog.r.name}.</p>
+        {/if}
+      </div>
+    {/if}
+  {/if}
+  {#snippet footer()}
+    <Button id="b2-run" tone={dialog?.kind === 'undo' ? 'danger' : 'primary'} disabled={!dialog || !canRun(dialog)} onclick={confirmB2}>{dialog?.kind === 'undo' ? 'Undo' : 'Run'}</Button>
+    <Button id="b2-cancel" treatment="ghost" onclick={() => { dialogOpen = false }}>Cancel</Button>
+  {/snippet}
+</Modal>

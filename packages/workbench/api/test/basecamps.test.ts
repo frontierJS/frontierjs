@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 import { writeBasecamp } from '@frontierjs/cli/core/basecamps.js'
 
-import { listBasecamps, startBackup, startRestart, outcomeOf, deleteLocal } from '../src/domain/basecamps/basecamps.ts'
+import { listBasecamps, startBackup, startRestart, outcomeOf, deleteLocal, startB2Setup, startB2Undo, summarizePlan, type BackupsPlan } from '../src/domain/basecamps/basecamps.ts'
 
 const home = mkdtempSync(join(tmpdir(), 'wb-basecamps-'))
 const KEY  = 'bc_admin_secret_key'
@@ -160,5 +160,46 @@ describe('local copies', () => {
   test('removes one copy and says what it freed', async () => {
     expect(await deleteLocal('stub', '2026-11-06T10-00-00-000Z', { home })).toEqual({ freed: 1234 })
     expect(existsSync(at)).toBe(false)
+  })
+})
+
+describe('B2 backups', () => {
+  test('setting up or undoing is refused without approved: true, before anything is read', async () => {
+    expect(await startB2Setup('stub', {}, { home })).toEqual({ refused: expect.stringContaining('not approved') })
+    expect(await startB2Setup('stub', { approved: 'yes' as never }, { home })).toEqual({ refused: expect.stringContaining('not approved') })
+    expect(await startB2Undo('stub', {}, { home })).toEqual({ refused: expect.stringContaining('not approved') })
+    expect(outcomeOf('stub')?.verb).not.toMatch(/^b2/)
+  })
+
+  test('an approved run on an entry with no ssh Host is refused, and an unknown name is refused', async () => {
+    expect(await startB2Setup('stub', { approved: true }, { home })).toEqual({ refused: expect.stringContaining('no ssh host') })
+    expect(await startB2Undo('nope', { approved: true }, { home })).toEqual({ refused: "No Basecamp named 'nope' in basecamps.json" })
+    expect(await startB2Setup('stub', { approved: true, apps: 'ela' }, { home })).toEqual({ refused: 'apps is a list of App slugs' })
+  })
+
+  test('the plan summary names buckets, keys and destinations and carries no email or id of a member', () => {
+    const plan = {
+      name: 'box',
+      buckets: { archive: { name: 'basecamp-box', held: null }, replica: { name: 'basecamp-box-replica', held: { lockDays: 0 } } },
+      workspaces: [{
+        id: 'ws_1', name: 'Hub', holder: { email: 'owner@example.com', workspaceId: 'ws_1', workspace: 'Hub' },
+        archive: { bucket: 'basecamp-box', prefix: 'ws_1', name: 'B2 basecamp-box', keyName: 'basecamp-box-ws-1', row: null },
+        replica: { bucket: 'basecamp-box-replica', prefix: 'hub', name: 'B2 basecamp-box-replica', keyName: 'basecamp-box-replica-hub', row: { lastTestAt: '2026-11-01' } },
+      }, {
+        id: 'ws_2', name: 'Other', holder: null,
+        archive: { bucket: 'basecamp-box', prefix: 'ws_2', name: 'B2 basecamp-box', keyName: 'basecamp-box-ws-2', row: { lastTestAt: null } },
+      }],
+      hub: { backupDestinationId: null, replicaDestinationId: 'bd_9', backupCron: null },
+      apps: [{ slug: 'ela', backupDestinationId: null, backupCron: null }],
+      unset: [{ id: 'app_1', slug: 'ela' }],
+    } as unknown as BackupsPlan
+    const out = summarizePlan(plan, 7)
+    expect(out.buckets[0]).toMatchObject({ name: 'basecamp-box', held: false, makeLockDays: 7 })
+    expect(out.buckets[1]).toMatchObject({ held: true, makeLockDays: null })
+    expect(out.destinations.map(d => d.action)).toEqual(['make', 'keep', 'test'])
+    expect(out.hub.map(h => h.action)).toEqual(['set', 'keep', 'set'])
+    expect(out.blocked).toEqual(['Other'])
+    expect(out.unset).toEqual([{ slug: 'ela' }])
+    expect(JSON.stringify(out)).not.toMatch(/owner@example\.com|app_1|holder/)
   })
 })

@@ -564,6 +564,14 @@ Moved verbatim from `CLAUDE.md`; the short list that stays there points here.
   padding moves with density a literal stays put and every card inside a
   `.dense` region misaligns. Anything negative that mirrors a padding is
   `calc(var(--space-*) * -1)`.
+- **A token change fires the same transition a hover does.** An app that
+  writes tokens on a subtree at input rate (a theme editor's slider) starts a
+  transition on every Band, Card, Btn and Field per move: 92 on a 103-element
+  page for 47 tokens, 20 to 34 ms p95 against about 5 without (FJS-4208). Put
+  `data-motion="still"` on the subtree's root for the drag and take it off
+  after; it zeroes the four `--motion-*` rungs there, a nested theme included
+  (`tokens.css`). The package's own runner turns every transition off, so no
+  spec here sees this cost.
 - **Overlay motion is owned by `components/overlays.css`, not by the four
   components.** Each of them states only `--overlay-from`, its direction.
   `allow-discrete` fails by doing nothing at all, which is indistinguishable

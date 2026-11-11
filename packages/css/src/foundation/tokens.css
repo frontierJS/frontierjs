@@ -866,6 +866,37 @@
   }
 }
 
+/*
+ * ── A subtree being re-themed live ─────────────────────────
+ *
+ * Every transition in the package reads a --motion-* duration, and every one
+ * is there for an interaction: a hover, a focus, a state entered. A token
+ * changed under the element is not one, but the transition cannot tell —
+ * `transition: background` fires whether :hover or `--surface` moved the
+ * value. So an app that writes tokens at input rate (a theme editor's slider,
+ * a live preview) starts a transition on every Band, Card, Btn and Field per
+ * move: 92 of them on 23 elements in a 103-element page for a 47-token batch,
+ * each retargeted by the next move and re-sampled every frame, and the page
+ * trails the slider by --motion-fast. Measured (FJS-4208): 47 tokens per
+ * move, p95 20-34 ms to a forced layout with them, about 5 ms without.
+ *
+ * `data-motion="still"` on the subtree's root zeroes the durations for as
+ * long as the attribute is there, so a token change lands in one frame and
+ * nothing is left running. Set it for the drag and remove it after: hover
+ * and focus feedback are back the moment it goes. !important because a
+ * `.theme-*` on the same element sets --motion-* in a later layer, and on
+ * `*` within because a nested theme re-declares them for its own subtree.
+ * It is the app's setting, like the duration tokens; prefers-reduced-motion
+ * below is the reader's and is not affected.
+ */
+:where([data-motion="still"]),
+:where([data-motion="still"]) * {
+  --motion-fast:  0s !important;
+  --motion-base:  0s !important;
+  --motion-enter: 0s !important;
+  --motion-slow:  0s !important;
+}
+
 /* ── Respect prefers-reduced-motion ─────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,

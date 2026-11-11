@@ -63,7 +63,8 @@ lines over ssh once Basecamp is up. A box that joins the fleet has them turned
 off by the Outpost install regardless of the answer.
 
 `fli deploy` refuses a HEAD that is not on a remote branch, or that the last
-CI run did not grade. `--unverified` hands that refusal's own way past it to the
+CI run did not grade, and the install asks the same before `deploy:setup`
+touches the box. `--unverified` hands that refusal's own way past it to the
 deploy, for a test box that should run what is on the laptop; the deploy then
 prints each check it skipped.
 
@@ -88,6 +89,11 @@ const install = { ...asked, unverified: flag.unverified }
 if (install.refusal) {
   log.error(`${install.refusal}. Nothing was installed`)
   if (install.rejected) await tokenHint({ echo, chalk })
+  process.exitCode = 1
+  return
+}
+if (!await deployGateOpen({ unverified: flag.unverified, log })) {
+  log.error('Nothing was installed')
   process.exitCode = 1
   return
 }

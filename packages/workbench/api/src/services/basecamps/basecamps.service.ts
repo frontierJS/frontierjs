@@ -12,22 +12,26 @@
 //   GET  /basecamps/:name    outcome  the held outcome of the last verb on it, or null
 //   POST /basecamps          deleteLocal  { name, file } remove one backup pulled to this laptop -> { freed }
 //   (invoke)                 provision run `fli basecamp:create --yes` as a child, its output to a log (BUYS A BOX unless `dry`)
-//   (invoke)                 creation the held create run with the end of its log, or null
+//   (invoke)                 creation the held create run with the end of its log and its resume argv, or null
+//   (invoke)                 resume   run `fli basecamp:install` on the box a failed create bought, in the held slot (FJS-4206)
 //   (invoke)                 reinstall { name, mode, plan } run `fli basecamp:reinstall` on the entry's box under its admin key (RETIRES BASECAMP unless `plan`)
+//   (invoke)                 backupsPlan  /basecamps/:name what Set up B2 backups would make or keep, read over ssh and from B2; names only, no key, no email
+//   (invoke)                 setUpB2  /basecamps/:name { apps, approved } make B2 buckets and keys, file and test destinations, point the hub and the chosen Apps (MAKES B2 BUCKETS)
+//   (invoke)                 undoB2   /basecamps/:name { approved } take those destinations off and delete their keys; buckets stay
 //   (invoke)                 reinstallation the held reinstall run with the end of its log, or null
 //
 // Not named `create`: that is the standard CRUD method every service carries,
-// and a model-less service answering it would shadow it. `provision` and
-// `reinstall` need `approved: true` in the body: the page sends it on the person's yes, as `fli gui` does for a `confirm: human` command.
+// and a model-less service answering it would shadow it. `provision`,
+// `reinstall`, `setUpB2` and `undoB2` need `approved: true` in the body: the page sends it on the person's yes, as `fli gui` does for a `confirm: human` command.
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS }                                 from '@frontierjs/litestone'
-import { listBasecamps, entryOf, startBackup, startRestart, outcomeOf, deleteLocal } from '../../domain/basecamps/basecamps.ts'
-import { startCreate, creationOf, type CreateInput }                    from '../../domain/basecamps/basecamps-create.ts'
+import { listBasecamps, entryOf, startBackup, startRestart, outcomeOf, deleteLocal, backupsPlan, startB2Setup, startB2Undo, type B2Input } from '../../domain/basecamps/basecamps.ts'
+import { startCreate, startResume, creationOf, type CreateInput }       from '../../domain/basecamps/basecamps-create.ts'
 import { startReinstall, reinstallationOf, type ReinstallInput }        from '../../domain/basecamps/basecamps-reinstall.ts'
 
-const READS  = ['list', 'outcome', 'creation', 'reinstallation']
-const WRITES = ['backup', 'restart', 'provision', 'reinstall', 'deleteLocal']
+const READS  = ['list', 'outcome', 'creation', 'reinstallation', 'backupsPlan']
+const WRITES = ['backup', 'restart', 'provision', 'resume', 'reinstall', 'deleteLocal', 'setUpB2', 'undoB2']
 
 async function named() {
   const name = String($.id ?? '')
@@ -61,6 +65,12 @@ export default createService({
     return out
   },
 
+  async resume() {
+    const out = startResume(($.data ?? {}) as { approved?: boolean })
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
   async reinstallation() {
     return reinstallationOf()
   },
@@ -75,6 +85,24 @@ export default createService({
     const { name, file } = ($.data ?? {}) as { name?: unknown, file?: unknown }
     if (typeof name !== 'string' || typeof file !== 'string') throw new BadRequest('deleteLocal takes { name, file } as strings')
     const out = await deleteLocal(name, file)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async backupsPlan() {
+    const out = await backupsPlan(await named())
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async setUpB2() {
+    const out = await startB2Setup(await named(), ($.data ?? {}) as B2Input)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async undoB2() {
+    const out = await startB2Undo(await named(), ($.data ?? {}) as B2Input)
     if ('refused' in out) throw new BadRequest(out.refused)
     return out
   },

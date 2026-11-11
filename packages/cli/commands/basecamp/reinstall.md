@@ -155,7 +155,7 @@ const readOld = async ({ server, files, container }) => {
     dirty:   git('status', '--porcelain', '--', '.').split('\n').filter(Boolean).length,
     outpost: OUTPOST_VERSION,
     box:     await readBox({ files, container }).catch(err => ({ error: lastLine(err) })),
-    fleet:   await replLine(FLEET, ['--server', server]).then(fleetOf).catch(err => ({ error: lastLine(err) })),
+    fleet:   await replLine(FLEET, { server }).then(fleetOf).catch(err => ({ error: lastLine(err) })),
   }
 }
 
@@ -351,11 +351,10 @@ const oldAppRows = (apps, chalk) => {
 
 /** `infra.launch` as the new Basecamp answers it, read as `as`, or its first owner. */
 const launchRows = async ({ server, as, chalk }) => {
-  const box = ['--server', server]
-  const all = await holders(box)
+  const all = await holders({ server })
   const holder = all.find(h => h.email === as) ?? all.find(h => h.email === process.env.ME) ?? all[0]
   if (!holder) throw new Error('the new Basecamp has no owner or admin to read it as')
-  const state = await replLine(`call('infra.launch')`, ['--as', holder.email, '--tenant', holder.workspaceId, ...box])
+  const state = await replLine(`call('infra.launch')`, { server, as: holder.email, tenant: holder.workspaceId })
   return {
     head:  chalk`{bold Setup checklist}  {dim ${state.done} of ${state.total} — what the first login shows}`,
     rows:  state.steps.map(s => s.done ? chalk`{green ✓} ${s.title} {dim — ${s.detail}}` : chalk`{yellow ·} ${s.title} {dim — ${s.detail}}`),

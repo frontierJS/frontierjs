@@ -198,6 +198,9 @@ html {
   --leading-body:    1.55;  
   --leading-relaxed: 1.6;
 
+  
+  --body-letter-spacing: normal;
+
 }
 
 
@@ -302,6 +305,7 @@ html {
   --font-display:         initial;
   --heading-font-weight:  initial;
   --heading-letter-spacing: initial;
+  --heading-text-transform: initial;
   --h1-size:              initial;
   --h2-size:              initial;
   --h3-size:              initial;
@@ -1315,6 +1319,10 @@ html {
   border-radius: var(--card-radius);
   font-family:   var(--font-primary);
   
+  font-size:      var(--text-md);
+  line-height:    var(--leading-body);
+  letter-spacing: var(--body-letter-spacing);
+  
   box-shadow:    var(--surface-shadow);
   transition:    background var(--motion-fast), border-color var(--motion-fast);
 
@@ -1525,6 +1533,10 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
   background:       var(--app-depth, var(--surface-depth)), var(--app-bg, var(--surface-sunken));
   color:            var(--ink);
   font-family:      var(--font-primary);
+  
+  font-size:        var(--text-md);
+  line-height:      var(--leading-body);
+  letter-spacing:   var(--body-letter-spacing);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -1725,16 +1737,16 @@ h1, h2, h3, h4, h5, h6,
 
 
 
-h1, .h1 { color: var(--h1-ink, var(--ink)); font-size: var(--h1-size, var(--text-4xl)); font-weight: var(--heading-font-weight, 700); letter-spacing: var(--heading-letter-spacing, -0.02em);  line-height: var(--leading-display); }
-h2, .h2 { color: var(--h2-ink, var(--ink)); font-size: var(--h2-size, var(--text-3xl)); font-weight: var(--heading-font-weight, 700); letter-spacing: var(--heading-letter-spacing, -0.015em); line-height: var(--leading-heading); }
-h3, .h3 { color: var(--h3-ink, var(--ink)); font-size: var(--h3-size, var(--text-2xl)); font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); }
-h4, .h4 { color: var(--h4-ink, var(--ink)); font-size: var(--h4-size, var(--text-xl));  font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); }
-h5, .h5 { color: var(--h5-ink, var(--ink)); font-size: var(--h5-size, var(--text-lg));  font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); }
+h1, .h1 { color: var(--h1-ink, var(--ink)); font-size: var(--h1-size, var(--text-4xl)); font-weight: var(--heading-font-weight, 700); letter-spacing: var(--heading-letter-spacing, -0.02em); text-transform: var(--heading-text-transform, none);  line-height: var(--leading-display); }
+h2, .h2 { color: var(--h2-ink, var(--ink)); font-size: var(--h2-size, var(--text-3xl)); font-weight: var(--heading-font-weight, 700); letter-spacing: var(--heading-letter-spacing, -0.015em); text-transform: var(--heading-text-transform, none); line-height: var(--leading-heading); }
+h3, .h3 { color: var(--h3-ink, var(--ink)); font-size: var(--h3-size, var(--text-2xl)); font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); text-transform: var(--heading-text-transform, none); }
+h4, .h4 { color: var(--h4-ink, var(--ink)); font-size: var(--h4-size, var(--text-xl));  font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); text-transform: var(--heading-text-transform, none); }
+h5, .h5 { color: var(--h5-ink, var(--ink)); font-size: var(--h5-size, var(--text-lg));  font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); text-transform: var(--heading-text-transform, none); }
 h6, .h6 {
   color:          var(--h6-ink, var(--ink));
   font-size:      var(--h6-size, var(--text-md));
   font-weight:    var(--heading-font-weight, 600);
-  text-transform: uppercase;
+  text-transform: var(--heading-text-transform, uppercase);
   letter-spacing: var(--heading-letter-spacing, 0.05em);
 }
 
@@ -4447,6 +4459,10 @@ details[open]:has(> summary.navlist-label)::details-content {
 @layer patterns {
 .prose {
   color:           var(--ink-soft);
+  
+  font-size:       var(--text-md);
+  line-height:     var(--leading-body);
+  letter-spacing:  var(--body-letter-spacing);
   
   max-inline-size: var(--measure, 64ch);
 }

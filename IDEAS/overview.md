@@ -771,6 +771,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `frontier-files.md` — files through the post: a member uploads up to 24 MiB and anyone holding the link downloads; bytes in R2 under a budget the post enforces, encrypted with the key in the fragment
 - `app-peering.md` — app peering: FJS apps that recognize each other's calls; identity is ours, reachability is a commodity; Basecamp and chat first
 - `one-origin-across-owners.md` — institutions that stop copying each other's records: Axiom 1 across an ownership boundary, on Peer; X-Road's shape with the member's side derived from the schema; the argument only, the build is `app-peering.md` Phases 4–10
+- `reference.md` — Reference: a value naming one thing in RFC 3986 URI syntax, resolved by its scheme's one owner; what a holder keeps instead of a copy, live or pinned
 - `no-port-app.md` — the app with no port: vendor-hosted and never-deployed as release artifact kinds
 - `on-page-editing.md` — the ask panel's next four moves, ranked by what on-page editors love; § Prompt economy is what a pick sends the model
 - `oracle-reasoning.md` — how it should reason

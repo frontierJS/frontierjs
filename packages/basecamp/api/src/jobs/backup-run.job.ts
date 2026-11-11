@@ -60,7 +60,7 @@ import { runsAsApp }        from '../domain/job/job-context.ts'
 import { jobsDatabasePath } from '../core/db.ts'
 import { keyUnder }         from '../providers/storage/index.ts'
 import { backupDir, claimPrefix, dropWarmCopies, hubArchiveName, hubInstallId, pruneBackups } from '../domain/backup/backup-archives.ts'
-import { errorCode }        from '../providers/storage/s3.ts'
+import { errorCode, fileMd5 } from '../providers/storage/s3.ts'
 import { mintPut }          from './app-backup-run.job.ts'
 import { sha256Of, writeManifest } from '../domain/backup/archive-manifest.ts'
 import { hostServer, requireHubAppId } from '../domain/host/host-machine.ts'
@@ -208,7 +208,7 @@ async function upload(app: App, destinationId: string, dir: string, installId: s
     const sha256 = await sha256Of(tar)
     // A BunFile body is read as it goes out with its length known; the signed
     // URL carries the credential, so nothing else is held.
-    const res = await fetch(await mintPut(app, dest, key), { method: 'PUT', body: Bun.file(tar) })
+    const res = await fetch(await mintPut(app, dest, key), { method: 'PUT', body: Bun.file(tar), headers: { 'content-md5': await fileMd5(tar) } })
     if (!res.ok) {
       const code = errorCode(await res.text())
       return { warning: `Upload to '${dest.name}' failed (${res.status}${code ? `, ${code}` : ''}). ${kept}` }
