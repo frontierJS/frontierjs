@@ -48,15 +48,17 @@ async function npmHolds(pins, received, hosts) {
 const { planned, members } = $.config
 if (!planned?.length) return
 
-const { peerDrift, movedDependencies, siblingPins, unheldPins, publishOrder, publishRefusals, formatRefusals } =
+const { peerDrift, movedDependencies, siblingPins, unheldPins, pinsLeftBehind, publishOrder, publishRefusals, formatRefusals } =
   await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
 const { hosts } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 
-const stateOf = (name, dir) => $.git.pkgState(name, dir)
+const stateOf = (name, dir, paths) => $.git.pkgState(name, dir, paths)
 const drift  = peerDrift((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })), planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
 const moved  = movedDependencies(planned.map(p => ({ name: p.pkg.name, pkg: p.pkg })),
                                  (members ?? []).map(m => ({ name: m.pkg.name, dir: m.dir, pkg: m.pkg })), stateOf)
 const sorted = publishOrder(planned.map(p => ({ ...p, name: p.pkg.name })))
+const behind = pinsLeftBehind((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })),
+                              planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
 
 // A tarball npm installs resolves its exact sibling pins from npm alone; the
 // release host is exempt because a URL-source app overrides every framework
@@ -76,7 +78,7 @@ if (existsSync(siteData)) {
 }
 
 const refusals = publishRefusals({
-  drift, moved, unheld, cycles: sorted.cycles, heldBack,
+  drift, moved, unheld, cycles: sorted.cycles, heldBack, leftBehind: behind,
   force: { peers: flag['allow-peer-drift'] },
 })
 

@@ -648,7 +648,7 @@ const PKGS = [
   ],
 },
 {
-  id:'editor', install:'bun run package  # build the .vsix — not on the marketplace yet', slug:'vscode', name:'Editor support', realm:'Tooling', who:'frontierjs-vscode',
+  id:'editor', install:'bun run package  # build the .vsix — not on the marketplace yet', slug:'vscode', name:'Editor support', realm:'Tooling', who:'vscode-frontierjs',
   pitch:'The seed is as pleasant to write as the code it produces.',
   rows:[
     { k:'Diagnostics', v:'Errors as you type, from the parser the runtime uses',

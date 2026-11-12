@@ -8,6 +8,7 @@ examples:
   - fli eset API_KEY sk-abc123 --file .env.production
   - fli eset DEBUG true --dry
   - fli eset GITHUB_TOKEN ghp_xxx --global
+  - fli eset CLOUDFLARE_TOKEN cf_xxx --profile acme
 args:
   -
     name: key
@@ -33,18 +34,40 @@ flags:
     type: boolean
     description: Write to the global FLI env (~/.config/fli/.env) instead of project .env
     defaultValue: false
+  profile:
+    char: p
+    type: string
+    description: Write to a profile (~/.config/fli/profiles/<name>.env), created at mode 600 if new
 ---
 
 <script>
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { resolve, dirname } from 'path'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { resolve } from 'path'
 </script>
 
 ```js
-const { globalEnvPath, setEnvLine } = await import(resolve(global.fliRoot, 'core/global-env.js'))
-const envPath = flag.global ? globalEnvPath() : resolve($.paths.root, flag.file)
+const { keyFile, storeKey, setEnvLine } = await import(resolve(global.fliRoot, 'core/global-env.js'))
+const { profileLine } = await import(resolve(global.fliRoot, 'core/utils.js'))
 
-if (flag.global) mkdirSync(dirname(envPath), { recursive: true })
+const profile = profileLine()
+if (profile) echo(profile)
+
+if (flag.profile && flag.global) {
+  log.error('--profile and --global name two different files — pick one')
+  process.exitCode = 1
+  return
+}
+
+const machineWide = Boolean(flag.global || flag.profile)
+const envPath = machineWide ? keyFile({ profile: flag.profile }) : resolve($.paths.root, flag.file)
+const shown   = machineWide ? envPath.replace(process.env.HOME ?? '', '~') : flag.file
+
+if (machineWide) {
+  if (flag.dry) return log.dry(`Would set ${arg.key} in ${shown}`)
+  storeKey(arg.key, arg.value, { profile: flag.profile })
+  echo`{green ✓} set ${arg.key} {dim in ${shown}}`
+  return
+}
 
 if (!existsSync(envPath)) {
   if (!flag.create) {
@@ -56,8 +79,7 @@ if (!existsSync(envPath)) {
     return
   }
   writeFileSync(envPath, `${arg.key}=${arg.value}\n`, 'utf8')
-  log.done(`Created ${envPath}`)
-  log.done(`Set ${arg.key}`)
+  echo`{green ✓} set ${arg.key} {dim in ${envPath}, created}`
   return
 }
 
@@ -65,10 +87,10 @@ const current = readFileSync(envPath, 'utf8')
 const updated = setEnvLine(current, arg.key, arg.value)
 
 if (flag.dry) {
-  log.dry(`Would set ${arg.key}=${arg.value} in ${flag.global ? '~/.config/fli/.env' : flag.file}`)
+  log.dry(`Would set ${arg.key} in ${shown}`)
   return
 }
 
 writeFileSync(envPath, updated, 'utf8')
-log.done(`Set ${arg.key} in ${flag.file}`)
+echo`{green ✓} set ${arg.key} {dim in ${shown}}`
 ```

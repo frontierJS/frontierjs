@@ -53,6 +53,7 @@ const report = diagnose({
   fliRoot: global.fliRoot,
   modules,
   probe:   flag.probe,
+  profile: global.fliProfile,
 })
 
 if (flag.json) {
@@ -85,6 +86,11 @@ echo(chalk`\n  {bold namespace env vars}`)
 if (!report.namespaces.length) echo(chalk.dim('    \u00b7  no _module.md files found with requires:'))
 for (const n of report.namespaces) {
   echo(`    ${ICON[n.level]}  ${chalk.cyan(n.ns.padEnd(14))} ${n.key}${n.ok ? '' : hint(n.fix)}`)
+}
+
+echo(chalk`\n  {bold profiles}`)
+for (const p of report.profiles) {
+  echo(`    ${ICON[p.level]}  ${chalk.cyan(p.label.padEnd(14))} ${p.detail ?? (p.ok ? chalk.dim('ok') : '')}${p.ok ? '' : hint(p.hint)}`)
 }
 
 echo(chalk`\n  {bold basecamps}`)

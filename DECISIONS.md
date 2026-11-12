@@ -13959,6 +13959,18 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2086"></a>2026-11-12 · `FJS-D2086` — Q13 — The vim layer parses `[count] operator [count] motion|object` itself over the chords `/keys` delivers; `/keys` is unchanged and `FJS-D1384` stands for app keymaps.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (`/keys` gains a count prefix for every keymap (`FJS-D1384`'s reopen path), so `rowlist` and Haven get `5j` too; the operator grammar is still the vim layer's).
+
+The paper's recommendation, taken as written: no L0 consumer has asked for a count, and vim's `normal.c` and codemirror-vim's command parser both keep the grammar beside the motions, not in the key dispatcher. Confidence 3.
+
+### <a id="fjs-d2085"></a>2026-11-12 · `FJS-D2085` — Q12 — A document interface: L2 reads through `{ length, lineCount, slice, lineStart, positionAt }` and returns `edits: [{ from, to, insert }]` plus a host request (`undo`, `redo`, an ex command, a search) in place of a new string; the host applies the edits and owns undo. A string is one implementation, so `/textbox` and `<Textbox>` move onto it with snapshot undo in the string host.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (a window: hand the string reducer the lines around the cursor and map offsets back; `G`, `%`, search, marks and macros past the window break), **C** (L2 stays the app's: Lathe writes operators and text objects over its own buffer (Lathe Q10's B) and toolbelt stops at L1).
+
+The paper's recommendation, taken as written: codemirror-vim ([repo](https://github.com/replit/codemirror-vim)) and monaco-vim run one vim over an adapter of this shape, and VSCodeVim over VS Code's `TextDocument`; the editor keeps undo in each. Confidence 3.
+
 ### <a id="fjs-d2083"></a>2026-11-11 · `FJS-D2083` — A desktop shell that declares `globalThis.__frontierShell = { browserChords: true }` is exempt from `keys()` and `hotkey()`'s refusal of browser-owned chords, for the browser's rows only; the OS's rows are refused everywhere. The scaffold declares it on Linux only.
 
 Lathe Q13 in `fjs-prototypes/lathe/PLAN.md`, ruled by the owner as **A**. A webview has no tabs to close, so `<Mod-w>` and `<C-Tab>` reach the page in Tauri on Linux, while the OS still takes Cmd+Tab, Cmd+Space, Cmd+H and the Windows key first. A terminal host was already exempt by `isBrowserClient()`; this is the same fact for a shell.
@@ -17033,6 +17045,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2084"></a>2026-11-12 · `FJS-D2084` — What does `ws:pub` do when a package's workspace dependency is in the release and the package is not — A preflight note (`pins-left-behind`) naming each package left out whose published copy pins a sibling this release ships, with the run that releases it after (`fli ws:pub patch --filter <name> --all`). No package is published that was not asked for.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (cascade: bump and publish every dependent of a released package. Nothing goes stale, and a toolbelt bump republishes most of the workspace), **C** (cascade into the packages that run on a machine (outpost, cli) and note the rest. Needs a mark for which packages those are), **D** (nothing; `--all` by hand where it matters).
+
+The paper's recommendation, taken as written: the scaffold-pins warning in `01-version-all` is the precedent, a dependent often has no reason to move, and B spends a version on every dependent of every release.
 
 ### <a id="fjs-d2074"></a>2026-11-11 · `FJS-D2074` — Q1 — How the screen writes the index (reopens `workbench-basecamps.md` Q5, `FJS-D1961`) — The page calls `core/basecamps.js` writers in-process, as backup and restart already do. Keys are minted over ssh by 0.4's shared path. There is no field to paste a key into.
 

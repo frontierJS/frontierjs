@@ -106,6 +106,65 @@ describe('the fli setup', () => {
 
 })
 
+describe('profiles', () => {
+
+  const profileFile = (m, name, text, mode = 0o600) => {
+    mkdirSync(join(m.home, '.config', 'fli', 'profiles'), { recursive: true })
+    const file = join(m.home, '.config', 'fli', 'profiles', `${name}.env`)
+    writeFileSync(file, text, { mode })
+    chmodSync(file, mode)
+  }
+
+  test('the one in use is named with who named it, and none is not a fault', () => {
+    const m = machine()
+    try {
+      const used = (profile) => diagnose({ ...m, has: ALL, env: {}, fliRoot: m.root, profile }).profiles[0]
+      expect(used({ name: 'acme', source: 'project' })).toMatchObject({ ok: true, detail: "acme  (named by the project's .env)" })
+      expect(used(null)).toMatchObject({ ok: true, level: 'ok' })
+    } finally { m.cleanup() }
+  })
+
+  test('a profile file others can read is a warning naming the chmod', () => {
+    const m = machine()
+    try {
+      profileFile(m, 'acme', 'K=v\n', 0o644)
+      const row = diagnose({ ...m, has: ALL, env: {}, fliRoot: m.root }).profiles.find(r => r.label === 'acme')
+      expect(row.level).toBe('warn')
+      expect(row.hint).toContain('chmod 600')
+    } finally { m.cleanup() }
+  })
+
+  test('a key set in a profile and the global env is named once, as the fallback a forgotten FLI_PROFILE spends', () => {
+    const m = machine()
+    try {
+      writeFileSync(join(m.home, '.config', 'fli', '.env'), 'CLOUDFLARE_TOKEN=global\nEMPTY=\n')
+      profileFile(m, 'acme', 'CLOUDFLARE_TOKEN=a\nCLOUDFLARE_TOKEN=b\nEMPTY=x\nOWN=y\n')
+      const row = diagnose({ ...m, has: ALL, env: {}, fliRoot: m.root }).profiles.find(r => r.label === 'acme')
+      expect(row.level).toBe('warn')
+      expect(row.hint).toMatch(/^CLOUDFLARE_TOKEN also in the global env/)
+    } finally { m.cleanup() }
+  })
+
+  test('a FLI_PROFILE line in the global env or a profile is said to select nothing', () => {
+    const m = machine()
+    try {
+      writeFileSync(join(m.home, '.config', 'fli', '.env'), 'FLI_PROFILE=acme\n')
+      profileFile(m, 'acme', 'FLI_PROFILE=beta\n')
+      const rows = diagnose({ ...m, has: ALL, env: {}, fliRoot: m.root }).profiles.filter(r => /selects nothing/.test(r.hint ?? ''))
+      expect(rows.map(r => r.label)).toEqual(['global env', 'acme'])
+    } finally { m.cleanup() }
+  })
+
+  test('a profile that did not load is an error row, so doctor can say why', () => {
+    const m = machine()
+    try {
+      const row = diagnose({ ...m, has: ALL, env: {}, fliRoot: m.root, profile: { name: 'ghost', source: 'project', refusal: "FLI_PROFILE names 'ghost'" } }).profiles[0]
+      expect(row).toMatchObject({ level: 'error', hint: "FLI_PROFILE names 'ghost'" })
+    } finally { m.cleanup() }
+  })
+
+})
+
 describe('namespace env vars', () => {
 
   const modules = [{ ns: 'github', requires: ['GITHUB_TOKEN'] },
@@ -150,17 +209,17 @@ describe('private files', () => {
   test('a secret entry anyone else can read fails the check and names the chmod', () => {
     const m = machine()
     try {
-      const file = join(m.home, '.config', 'fli', 'env')
-      writeFileSync(file, 'PASSWORD=x')
+      const file = join(m.home, '.config', 'fli', 'config.json')
+      writeFileSync(file, '{}')
       chmodSync(file, 0o664)
       const r = doctor(m)
-      const row = r.secrets.find(s => s.label === 'config/env')
+      const row = r.secrets.find(s => s.label === 'config/config.json')
       expect(row.ok).toBe(false)
       expect(row.hint).toContain(`chmod 600 ${file}`)
       expect(r.ok).toBe(false)
 
       chmodSync(file, 0o600)
-      expect(doctor(m).secrets.find(s => s.label === 'config/env').ok).toBe(true)
+      expect(doctor(m).secrets.find(s => s.label === 'config/config.json').ok).toBe(true)
     } finally { m.cleanup() }
   })
 
@@ -238,7 +297,7 @@ describe('the summary', () => {
         modules: [{ ns: 'a', requires: ['T'] }] })
       expect(r.ok).toBe(true)
       expect(r.failed).toBe(0)
-      expect(r.checks).toBe(r.system.length + r.config.length + r.namespaces.length + r.basecamps.length + r.secrets.length)
+      expect(r.checks).toBe(r.system.length + r.config.length + r.namespaces.length + r.profiles.length + r.basecamps.length + r.secrets.length)
     } finally { m.cleanup() }
   })
 

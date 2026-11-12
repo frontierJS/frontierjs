@@ -95,13 +95,14 @@ const tokenHint = async ({ echo, chalk }) => {
   const { resolve }                = await import('node:path')
   const { loadModuleFile }         = await import(resolve(global.fliRoot, 'core/registry.js'))
   const { requiresOf }             = await import(resolve(global.fliRoot, 'core/requires.js'))
-  const { esetHint, globalEnvPath } = await import(resolve(global.fliRoot, 'core/global-env.js'))
+  const { esetHint, keyFile }      = await import(resolve(global.fliRoot, 'core/global-env.js'))
   const need = requiresOf(loadModuleFile(resolve(global.fliRoot, 'commands/basecamp/dns.md')).meta).find(r => r.key === 'CLOUDFLARE_TOKEN')
   const home = process.env.HOME ?? ''
-  echo(chalk.blue(`  ℹ Check CLOUDFLARE_TOKEN in this project's .env or the global one (${globalEnvPath().replace(home, '~')})`))
+  const profile = process.env.FLI_PROFILE || undefined
+  echo(chalk.blue(`  ℹ Check CLOUDFLARE_TOKEN in this project's .env or ${profile ? `profile ${profile}` : 'the global one'} (${keyFile({ profile }).replace(home, '~')})`))
   echo(chalk.blue(`    OR make a new one: ${need?.url ?? 'https://dash.cloudflare.com/profile/api-tokens'}`))
   if (need?.note) echo(chalk.blue(`    ${need.note}`))
-  echo(chalk.blue(`    Then set it: ${esetHint('CLOUDFLARE_TOKEN')}`))
+  echo(chalk.blue(`    Then set it: ${esetHint('CLOUDFLARE_TOKEN', profile)}`))
 }
 
 // Basecamp's own record, written once Basecamp answers on the box — the

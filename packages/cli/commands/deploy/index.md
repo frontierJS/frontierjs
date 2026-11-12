@@ -103,6 +103,9 @@ the first one claims `siteUrl`'s domain, and is `fli site:deploy` by hand
 (`FJS-D1688`). `--site` runs that step alone.
 
 ```js
+const profile = profileLine()
+if (profile) echo(profile)
+
 // ─── An App Basecamp runs ─────────────────────────────────────────────────────
 // Ahead of the deploy block, which such an app may still carry as the
 // scaffold's placeholder.
@@ -248,6 +251,7 @@ const { spawnSync } = await import('child_process')
 const { resolveBasecampApp, basecamp } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { reachBasecampFor } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
 const { TIERS }           = await import(new URL('file://' + global.fliRoot + '/core/deploy-target.js'))
+const { profileLine, PROFILE_NAMED } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 
 /** The target's App, then the static App in front of it: the SSH door's one
  *  deploy ships web/ and the API, and a release of the API alone left the
@@ -273,10 +277,10 @@ async function releaseThroughBasecamp({ $, flag, log, echo, goal }) {
 
 /** `basecamp:deploy` as a child of THIS checkout's fli, never a bare `fli`,
  *  which would be the global install. The entry is named so the child does not
- *  ask every Basecamp again. */
+ *  ask every Basecamp again, and the profile so it does not print it again. */
 function releaseApp($, flag, id, basecamp) {
   const args = ['basecamp:deploy', '--app', id, '--basecamp', basecamp, ...(flag.dry ? ['--dry'] : [])]
-  return spawnSync(process.execPath, [join(global.fliRoot, 'bin/fli.js'), ...args], { cwd: $.paths.root, stdio: 'inherit', env: process.env }).status === 0
+  return spawnSync(process.execPath, [join(global.fliRoot, 'bin/fli.js'), ...args], { cwd: $.paths.root, stdio: 'inherit', env: { ...process.env, [PROFILE_NAMED]: '1' } }).status === 0
 }
 
 /** The static Apps in front of `app`, as Basecamp's detail of it lists them

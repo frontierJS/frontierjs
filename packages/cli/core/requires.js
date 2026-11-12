@@ -28,7 +28,7 @@
 
 import { createPrompts }                                   from './prompt.js'
 import { openUrl }                                         from './open-url.js'
-import { ensurePlaceholder, storeGlobal, esetHint, globalEnvPath } from './global-env.js'
+import { ensurePlaceholder, storeKey, esetHint, keyFile }        from './global-env.js'
 
 const page = (v) => {
   const m = typeof v === 'string' && v.trim().match(/^(https?:\/\/\S+)\s*(.*)$/)
@@ -62,11 +62,14 @@ export async function acquireMissing(ns, missing, {
   interactive = false, write = true, say = console.error,
   env = process.env, home, open = openUrl, prompts = null, secret = null,
 } = {}) {
-  const file = globalEnvPath(home).replace(home ?? process.env.HOME ?? '', '~')
+  // A key a client's profile lacks is that client's key: a paste saved to the
+  // global file would be spent by every other project as well.
+  const profile = env.FLI_PROFILE || undefined
+  const file = keyFile({ profile, home }).replace(home ?? process.env.HOME ?? '', '~')
   await say(`${ns} requires: ${missing.map(r => r.key).join(', ')}`)
   for (const r of missing) {
-    if (write && ensurePlaceholder(r.key, r.url, { home })) await say(`  Placeholder added to ${file}`)
-    await say(`  Set with:  ${esetHint(r.key)}`)
+    if (write && ensurePlaceholder(r.key, r.url, { home, profile })) await say(`  Placeholder added to ${file}`)
+    await say(`  Set with:  ${esetHint(r.key, profile)}`)
     if (r.url) await say(`  Make one:  ${r.url}`)
     if (r.note) await say(`             ${r.note}`)
   }
@@ -82,7 +85,7 @@ export async function acquireMissing(ns, missing, {
       const value = r.secret ? await secret(q) : await p.ask(`${q} `)
       if (!value) { left.push(r); continue }
       env[r.key] = value
-      if (write) { storeGlobal(r.key, value, { home }); await say(`  Saved ${r.key} to ${file}`, 'done') }
+      if (write) { storeKey(r.key, value, { home, profile }); await say(`  Saved ${r.key} to ${file}`, 'done') }
     }
   } finally { p.close() }
   return left

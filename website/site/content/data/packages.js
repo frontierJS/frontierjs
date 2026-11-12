@@ -48,6 +48,22 @@ let cached = null
 /** Where a package's page publishes. */
 export const hrefFor = (pkg) => `/packages/${pkg.slug}/`
 
+/**
+ * The workspace folder each package lives in, keyed by its manifest name. An
+ * icon is named for the folder (`brand/assets/icons/<folder>.png`), not the
+ * slug: `cli` publishes at `/packages/fli/`.
+ */
+export async function folderByName() {
+  const folders = new Map()
+  for (const folder of await readdir(PACKAGES)) {
+    try {
+      const { name } = JSON.parse(await readFile(join(PACKAGES, folder, 'package.json'), 'utf8'))
+      if (name) folders.set(name, folder)
+    } catch {}
+  }
+  return folders
+}
+
 /** `window.FJS` — `{ PKGS, esc, hl, theme, SWATCHES, SWATCH_HEX }`. */
 export async function loadFJS() {
   if (cached) return cached

@@ -8,9 +8,9 @@
 
 import { describe, test, expect } from 'bun:test'
 
-import { satisfiesRange, peerDrift, movedDependencies, publishOrder, writePins,
+import { satisfiesRange, peerDrift, movedDependencies, packedPaths, publishOrder, writePins,
          publishRefusals, formatRefusals, matchesSelector, unpublished, untaggedBumps,
-         siblingPins, unheldPins } from '../core/publish-preflight.js'
+         siblingPins, unheldPins, pinsLeftBehind } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
   // The trap this whole check exists for. Below 1.0 a caret pins the MINOR, so
@@ -124,6 +124,15 @@ describe('a workspace dependency that moved past its tag', () => {
     expect(movedDependencies([dev], members, state({ commits: [{}] }))).toEqual([])
   })
 
+  test('only commits under the packed paths count (FJS-4251)', () => {
+    const asked = []
+    const packed = [members[0], { ...members[1] }]
+    packed[0] = { ...members[0], pkg: { version: '1.1.10', files: ['src/', '!src/x.test.js'], bin: { litestone: './src/cli.js' } } }
+    movedDependencies([outpost], packed, (name, dir, paths) => { asked.push(paths); return state()() })
+    expect(asked).toEqual([['src/', 'package.json', 'src/cli.js']])
+    expect(packedPaths({})).toEqual(['.'])
+  })
+
   test('a registry range is not a workspace dependency', () => {
     const pinned = { name: '@frontierjs/outpost', pkg: { dependencies: { '@frontierjs/litestone': '^1.1.10' } } }
     expect(movedDependencies([pinned], members, state({ commits: [{}] }))).toEqual([])
@@ -175,6 +184,31 @@ describe('an exact sibling pin npm will not hold', () => {
   test('a hand-typed exact version, or workspace: with one, is a pin', () => {
     expect(siblingPins([ui({ '@frontierjs/toolbelt': '0.1.8' })])[0].version).toBe('0.1.8')
     expect(siblingPins([ui({ '@frontierjs/toolbelt': 'workspace:0.1.7' })])[0].version).toBe('0.1.7')
+  })
+})
+
+describe('a dependent this release leaves behind', () => {
+  // FJS-D2084: Outpost 0.1.16 kept litestone 1.1.19 after 1.1.20 shipped.
+  const planned = [{ name: '@frontierjs/litestone', newVersion: '1.1.20' }]
+  const member  = (name, deps, extra = {}) => ({ name, pkg: { dependencies: deps, ...extra } })
+
+  test('a member out of the release pinning a released sibling is named, with the run that moves it', () => {
+    const behind = pinsLeftBehind([member('@frontierjs/outpost', { '@frontierjs/litestone': 'workspace:*' })], planned)
+    expect(behind).toEqual([{ by: '@frontierjs/outpost', dep: '@frontierjs/litestone', to: '1.1.20' }])
+    const [r] = publishRefusals({ leftBehind: behind })
+    expect(r).toMatchObject({ check: 'pins-left-behind', note: true })
+    expect(r.fix).toContain('fli ws:pub patch --filter outpost --all')
+    expect(r.detail[0]).toBe('@frontierjs/outpost pins @frontierjs/litestone exactly — this release ships 1.1.20')
+    expect(formatRefusals([r])[1]).toBe('Publishable, with notes')
+  })
+
+  test('a range, a member in the release, a private one or a devDependency is not left behind', () => {
+    expect(pinsLeftBehind([member('@frontierjs/outpost', { '@frontierjs/litestone': 'workspace:^' })], planned)).toEqual([])
+    expect(pinsLeftBehind([member('@frontierjs/outpost', { '@frontierjs/litestone': 'workspace:*' })],
+      [...planned, { name: '@frontierjs/outpost', newVersion: '0.1.17' }])).toEqual([])
+    expect(pinsLeftBehind([member('basecamp', { '@frontierjs/litestone': 'workspace:*' }, { private: true })], planned)).toEqual([])
+    expect(pinsLeftBehind([{ name: '@frontierjs/x', pkg: { devDependencies: { '@frontierjs/litestone': 'workspace:*' } } }], planned)).toEqual([])
+    expect(publishRefusals({ leftBehind: [] })).toEqual([])
   })
 })
 

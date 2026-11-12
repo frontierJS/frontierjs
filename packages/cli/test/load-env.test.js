@@ -11,7 +11,7 @@ import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { loadEnv, loadFliEnv } from '../core/utils.js'
+import { loadEnv, loadFliEnv, profileLine, PROFILE_NAMED } from '../core/utils.js'
 import { dotenvLine } from '../core/vaultwarden.js'
 
 const KEYS = ['FJS2631_SHELL', 'FJS2631_BOTH', 'FJS2631_GLOBAL']
@@ -47,6 +47,76 @@ describe('loadFliEnv', () => {
   test('the global .env fills what the project leaves unset', () => {
     loadFliEnv(root, home)
     expect(process.env.FJS2631_GLOBAL).toBe('global')
+  })
+})
+
+// ─── a profile loads between the project and the global file (FJS-D1943) ────
+// A wrong-client deploy is the failure: the profile is picked by the shell or
+// the project, never remembered, and one that cannot load stops the global
+// file's account keys being read in its place.
+
+describe('loadFliEnv with FLI_PROFILE', () => {
+  const PKEYS = ['FLI_PROFILE', 'D1943_PROJECT', 'D1943_PROFILE', 'D1943_GLOBAL', 'D1943_TOKEN']
+  const writeProfile = (name, text) => {
+    mkdirSync(join(home, '.config', 'fli', 'profiles'), { recursive: true })
+    writeFileSync(join(home, '.config', 'fli', 'profiles', `${name}.env`), text)
+  }
+  beforeEach(() => {
+    for (const k of PKEYS) delete process.env[k]
+    writeFileSync(join(home, '.config', 'fli', '.env'), 'D1943_PROJECT=global\nD1943_PROFILE=global\nD1943_GLOBAL=global\nD1943_TOKEN=global\n')
+    writeProfile('acme', 'D1943_PROJECT=profile\nD1943_PROFILE=profile\nD1943_TOKEN=acme\n')
+  })
+  afterEach(() => { for (const k of PKEYS) delete process.env[k] })
+
+  test('shell beats project beats profile beats global', () => {
+    writeFileSync(join(root, '.env'), 'FLI_PROFILE=acme\nD1943_PROJECT=project\n')
+    process.env.D1943_TOKEN = 'shell'
+    const profile = loadFliEnv(root, home)
+    expect(profile).toMatchObject({ name: 'acme', source: 'project', refusal: null })
+    expect(process.env.D1943_TOKEN).toBe('shell')
+    expect(process.env.D1943_PROJECT).toBe('project')
+    expect(process.env.D1943_PROFILE).toBe('profile')
+    expect(process.env.D1943_GLOBAL).toBe('global')
+  })
+
+  test('the shell names the profile over the project, and an empty one names none', () => {
+    writeProfile('other', 'D1943_TOKEN=other\n')
+    writeFileSync(join(root, '.env'), 'FLI_PROFILE=acme\n')
+    process.env.FLI_PROFILE = 'other'
+    expect(loadFliEnv(root, home)).toMatchObject({ name: 'other', source: 'shell' })
+    expect(process.env.D1943_TOKEN).toBe('other')
+
+    // Bun pre-loads the cwd's .env, so the project's own name arrives looking like the shell's.
+    process.env.FLI_PROFILE = 'acme'
+    expect(loadFliEnv(root, home).source).toBe('project')
+
+    delete process.env.D1943_TOKEN
+    process.env.FLI_PROFILE = ''
+    expect(loadFliEnv(root, home).name).toBe(null)
+    expect(process.env.D1943_TOKEN).toBe('global')
+  })
+
+  test('a profile with no file is refused by name and the global keys stay unread', () => {
+    writeFileSync(join(root, '.env'), 'FLI_PROFILE=nobody\n')
+    const profile = loadFliEnv(root, home)
+    expect(profile.refusal).toContain("FLI_PROFILE names 'nobody'")
+    expect(profile.refusal).toContain('fli profile:create nobody')
+    expect(process.env.D1943_TOKEN).toBeUndefined()
+  })
+
+  test('a name that is not a path segment is refused before it reaches the filesystem', () => {
+    process.env.FLI_PROFILE = '../acme'
+    const profile = loadFliEnv(root, home)
+    expect(profile.refusal).toContain("'../acme' is not a profile name")
+    expect(profile.path).toBe(null)
+    expect(process.env.D1943_TOKEN).toBeUndefined()
+  })
+
+  test('FLI_PROFILE in the global file or a profile selects nothing', () => {
+    writeFileSync(join(home, '.config', 'fli', '.env'), 'FLI_PROFILE=acme\nD1943_TOKEN=global\n')
+    expect(loadFliEnv(root, home).name).toBe(null)
+    expect(process.env.FLI_PROFILE).toBeUndefined()
+    expect(process.env.D1943_TOKEN).toBe('global')
   })
 })
 
@@ -174,5 +244,22 @@ describe('an unquoted value ends at the first # as Bun ends it (FJS-3447)', () =
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('an outward command names its profile in its first line (fli-profiles 2.1)', () => {
+  const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, '')
+
+  test('a profile is named with who named it', () => {
+    expect(plain(profileLine({ name: 'acme', source: 'project' }, {}))).toBe('profile acme — named by the project .env')
+    expect(plain(profileLine({ name: 'acme', source: 'shell' }, {}))).toBe('profile acme — named by the shell')
+  })
+
+  test('no profile says the global file is what it spends', () => {
+    expect(plain(profileLine({ name: null }, {}))).toBe('profile none — account keys from ~/.config/fli/.env')
+  })
+
+  test('a child its parent already named the profile to prints nothing', () => {
+    expect(profileLine({ name: 'acme', source: 'project' }, { [PROFILE_NAMED]: '1' })).toBeNull()
   })
 })

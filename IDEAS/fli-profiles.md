@@ -1,13 +1,16 @@
 ---
 id: fli-profiles
-status: proposed
+status: partial
 dated: 2026-11-05
 ---
 
 # fli profiles — one machine, several clients' credentials
 
-**Status: PROPOSED.** Dated 2026-11-05. Nothing here is built. Do not cite this
-file as describing behavior — see `VERIFYING.md`.
+**Status: PARTIAL.** Dated 2026-11-05. Phase 1 and step 2.1 are built
+(2026-11-12): the layer, `eset --profile`, the `fli doctor` rows and the
+profile as each outward command's first line; the behavior is described in
+`packages/cli/docs/configuration.md` § Credentials, not here. 2.2 is the
+owner's; Phases 3–4 are not built — see `VERIFYING.md`.
 
 The want: one person runs `fli` for several clients from one machine, and each
 client has its own GitHub org, DigitalOcean and Cloudflare accounts, Basecamp
@@ -34,19 +37,33 @@ and a vendor credential is now a `Secret` owned by its workspace
 - **`global-env.js`** owns the global path (`globalEnvPath`) and its writer
   (`storeGlobal`, behind `fli eset --global`). Its header separates it from
   `~/.fli/`, which holds machine state and never a secret.
-- **The global file mixes two kinds of key.** Facts about the machine and the
-  person (`ME`, `KSITE_DIR`, `SUPPORT_DRAFT_*`) sit beside account
-  credentials (`GITHUB_TOKEN`, `GITHUB_DEFAULT_ORG`, `DIGITALOCEAN_TOKEN`,
-  `CLOUDFLARE_TOKEN`, `BASECAMP_*`, `VW_*`, `REMOTE_MT_*`, `SUPPORT_ELA_*`).
-  The split is a first read, not a checked one; 0.1 checks it.
+- **The global file mixes two kinds of key** — checked 2026-11-12 by `rg`
+  over this tree, `~/code` and `~/.claude/skills`:
+
+  | Key | Kind | Read by |
+  | --- | --- | --- |
+  | `ME` | machine | `basecamp:install`/`reinstall`/`key` (first admin), `core/basecamp-backups.js` |
+  | `KSITE_DIR` | machine | only the retired `FRONTIER/cli` (`site:update`) and ksite docs |
+  | `SUPPORT_DRAFT_MODEL`/`_EFFORT`/`_BUDGET` | machine | ELA's `cli/src/routes/support/` (`support:draft`, `support:try`) |
+  | `GITHUB_TOKEN`, `GITHUB_DEFAULT_ORG` | account | `core/services.js`, `github:*`, `ws:publish` preflight |
+  | `DIGITALOCEAN_TOKEN` | account | `core/cloud.js`, `server:` `requires:` |
+  | `CLOUDFLARE_TOKEN` | account | `core/cloud.js`, `basecamp:dns`, `core/services.js` |
+  | `VW_URL`, `VW_EMAIL`, `VW_PASSWORD` | account | `core/vaultwarden.js` (`env:pull`/`env:send`) |
+  | `B2_KEY_ID`, `B2_APPLICATION_KEY` | account | `core/b2.js`, `core/basecamp-backups.js`, and Workbench's `basecamps.ts` **straight off the global file** |
+  | `BASECAMP_URL`, `BASECAMP_API_KEY` | account | tests only; `basecamps.json` replaced them (`workbench-basecamps.md`) |
+  | `SUPPORT_ELA_URL`, `SUPPORT_ELA_KEY` | account | ELA's `support` module as `SUPPORT_${app}_*`, the `support` skill |
+  | `REMOTE_MT_URL`, `REMOTE_MT_TOKEN` | — | **nothing**: no reader anywhere under `~/code` or the skills |
+
+  Two readers take the global file by path rather than through the loader —
+  Workbench's B2 lookup and `services.js`'s "held" set (`listGlobal`) — so
+  neither sees a profile. Workbench is the laptop's app with no project, so
+  that is Phase 4's question, not a Phase 1 bug.
 - **`~/.config/fli/basecamps.json`** is already a named map of Basecamps
   (admin keys, mode-checked by `fli doctor`), and `resolveBasecamp` refuses an
   ambiguous name rather than remembering a choice. No `fli` state today is a
   sticky "current" selector.
-- **`~/.config/fli/env`** (no dot) holds `OS`, `OPEN_COMMAND`, `CAT_COMMAND`,
-  `VIRTUALIZER_*`, `FF_WEBEXT_*`, `VPN_DEV`, `SITES_DIR`, `KSITE_DIR`. Nothing
-  in this tree reads it; four docs said `fli` loaded it, corrected to `.env`
-  on 2026-11-05.
+- **`~/.config/fli/env`** (no dot) is gone (2026-11-12, 0.2): only the
+  retired oclif `FRONTIER/cli` read it, and its keys were folded into `.env`.
 
 ## Prior art
 
@@ -128,10 +145,10 @@ screen like this would gather:
 Goal: each global key is known to be a machine fact or an account credential.
 Done when: § What exists carries the checked split, each key with its readers.
 
-- [ ] 0.1 For every key in `~/.config/fli/.env`, name what reads it (`rg` in
+- [x] 0.1 For every key in `~/.config/fli/.env`, name what reads it (`rg` in
   this tree, the Kobami skills, the sibling repos) and mark it machine or
   account.
-- [ ] 0.2 Find whether anything outside this tree reads `~/.config/fli/env`
+- [x] 0.2 Find whether anything outside this tree reads `~/.config/fli/env`
   (no dot); fold its live keys into `.env` or retire it — the owner's file,
   so the owner's call.
 
@@ -141,11 +158,11 @@ Goal: a project's `FLI_PROFILE` loads its profile in order.
 Done when: `test/load-env.test.js` pins shell → project → profile → global,
 the unknown-name refusal and the bad-name refusal.
 
-- [ ] 1.1 `profilePath(name, home)` beside `globalEnvPath` in
+- [x] 1.1 `profilePath(name, home)` beside `globalEnvPath` in
   `global-env.js`, with the name check; one line in `loadFliEnv`.
-- [ ] 1.2 `fli eset <KEY> <value> --profile <name>` through the same writer as
+- [x] 1.2 `fli eset <KEY> <value> --profile <name>` through the same writer as
   `--global`; a missing-key hint names `--profile` when a profile is in use.
-- [ ] 1.3 `fli doctor` rows: the profile in use and its source (shell or
+- [x] 1.3 `fli doctor` rows: the profile in use and its source (shell or
   project `.env`), mode 600 on each profile file as on `basecamps.json`, and a
   warning for a key set both in a profile and in the global file.
 
@@ -155,8 +172,13 @@ Goal: no outward command spends a credential without naming its profile.
 Done when: a deploy from a client repo and one from this tree each print their
 own profile and spend their own token.
 
-- [ ] 2.1 The first line of `deploy`, `basecamp:deploy`, `ws:publish`,
+- [x] 2.1 The first line of `deploy`, `basecamp:deploy`, `ws:publish`,
   `ws:post` and `eset` names the profile, or says none.
+- [x] 2.1a The `profile:` namespace (owner's ask, 2026-11-12): `create`
+  makes the file at 600, `list` (`fli profiles`) shows key names, mode and the
+  projects under `~/code` naming each, `open` edits one in `$EDITOR`, and
+  `use` refuses by naming `FLI_PROFILE`. Phase 4's Workbench screen is the
+  managed half; this is the read a terminal needs before then.
 - [ ] 2.2 Move the owner's account keys into profiles and add `FLI_PROFILE`
   to each project `.env` — the owner's machine, so the owner runs it.
 

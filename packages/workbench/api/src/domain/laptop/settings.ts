@@ -7,8 +7,7 @@
 // A value is masked HERE, before it leaves the domain: the page and the log
 // only ever see dots and, for a long value, its last two characters.
 
-import { chmodSync }                                   from 'node:fs'
-import { globalEnvPath, listGlobal, storeGlobal, unsetGlobal } from '@frontierjs/cli/core/global-env.js'
+import { globalEnvPath, listGlobal, storeKey, unsetGlobal } from '@frontierjs/cli/core/global-env.js'
 import { userCommands }                                from '@frontierjs/cli/core/registry.js'
 import { keyOwners }                                   from './services.ts'
 import type { Where }                                  from './laptop.ts'
@@ -34,9 +33,7 @@ export function setGlobalEnv(key: string, value: string, { home }: Where = {}): 
   if (!value)                return { refused: 'a value is required; use Unset to remove a key' }
   // A newline would write a second line, and with it a second key the caller never named.
   if (/[\r\n]/.test(value))  return { refused: 'a value is one line' }
-  const file = storeGlobal(key, value, pinned(home))
-  // storeGlobal writes with the process umask; this file holds secrets, so it is mended on every write.
-  try { chmodSync(file, 0o600) } catch {}
+  storeKey(key, value, pinned(home))
   return { key }
 }
 

@@ -122,10 +122,27 @@ export function peerDrift(members = [], planned = []) {
  * @param planned  [{ name, pkg }]
  * @param members  [{ name, dir, pkg }]  every workspace member
  * Uncommitted files are not movement: the pack reads the release commit, so
- * an edit in the main tree reaches no tarball on either side.
+ * an edit in the main tree reaches no tarball on either side. Nor is a commit
+ * that touches only what the packer leaves out: a release commit regenerates
+ * `docs/*.snapshot.md`, and counting it refused the next release of every
+ * dependent (`FJS-4251`).
  *
- * @param stateOf  (name, dir) => { lastTag, commits }   — `context.git.pkgState`
+ * @param stateOf  (name, dir, paths) => { lastTag, commits }   — `context.git.pkgState`
  */
+/**
+ * The pathspecs, relative to the package directory, whose bytes reach its
+ * tarball: `files` (a negation only removes, so it is dropped and the answer
+ * stays a superset) plus what npm packs whatever `files` says. No `files`
+ * packs the whole directory.
+ */
+export function packedPaths(pkg = {}) {
+  if (!Array.isArray(pkg.files)) return ['.']
+  const bin = typeof pkg.bin === 'string' ? [pkg.bin] : Object.values(pkg.bin ?? {})
+  const always = ['package.json', ...(pkg.main ? [pkg.main] : []), ...bin]
+  const paths  = [...pkg.files.filter(f => typeof f === 'string' && !f.startsWith('!')), ...always]
+  return [...new Set(paths.map(f => f.replace(/^\.\//, '')))]
+}
+
 export function movedDependencies(planned = [], members = [], stateOf = () => ({})) {
   const releasing = new Set(planned.map(p => p.name))
   const byName    = new Map(members.map(m => [m.name, m]))
@@ -137,7 +154,7 @@ export function movedDependencies(planned = [], members = [], stateOf = () => ({
     for (const [dep, spec] of Object.entries(deps)) {
       const m = byName.get(dep)
       if (!m || releasing.has(dep) || !String(spec).startsWith('workspace:')) continue
-      if (!states.has(dep)) states.set(dep, stateOf(dep, m.dir) ?? {})
+      if (!states.has(dep)) states.set(dep, stateOf(dep, m.dir, packedPaths(m.pkg)) ?? {})
       const s = states.get(dep)
       const commits = s.commits?.length ?? 0
       if (s.lastTag && !commits) continue
@@ -170,6 +187,30 @@ export function siblingPins(shipping = []) {
       if (!sibling) continue
       const version = pinnedVersion(spec, sibling.version)
       if (version) out.push({ by: `${s.name}@${s.version}`, dep, version })
+    }
+  }
+  return out
+}
+
+/**
+ * Members this release leaves out whose published copy pins a sibling it ships.
+ *
+ * `workspace:*` is written as the sibling's exact version when a package is
+ * packed, so a package not in the release keeps the version it was packed with
+ * until it is released again. Outpost 0.1.16 kept litestone 1.1.19 after
+ * 1.1.20 shipped a fix every fleet machine needed, and nothing said so
+ * (`FJS-D2084`). A range (`workspace:^`) resolves to the new one on its own.
+ */
+export function pinsLeftBehind(members = [], planned = []) {
+  const moving = new Map(planned.map(p => [p.name, p]))
+  const out    = []
+  for (const m of members) {
+    if (moving.has(m.name) || m.pkg?.private) continue
+    const deps = { ...m.pkg?.optionalDependencies, ...m.pkg?.dependencies }
+    for (const [dep, spec] of Object.entries(deps)) {
+      const p = moving.get(dep)
+      if (!p || !/^workspace:\*?$/.test(String(spec).trim())) continue
+      out.push({ by: m.name, dep, to: p.newVersion })
     }
   }
   return out
@@ -239,7 +280,7 @@ export function publishOrder(planned = []) {
  * an operator should usually do, and the override is what is available when
  * they know better. Printing only the override teaches everyone to reach for it.
  */
-export function publishRefusals({ drift = [], moved = [], unheld = [], cycles = [], heldBack = [], force = {} } = {}) {
+export function publishRefusals({ drift = [], moved = [], unheld = [], cycles = [], heldBack = [], leftBehind = [], force = {} } = {}) {
   const out = []
 
   if (unheld.length) {
@@ -295,6 +336,21 @@ export function publishRefusals({ drift = [], moved = [], unheld = [], cycles = 
       fix:     'state the range as an exact, caret or tilde version, or check it by hand',
       override: '--allow-peer-drift',
       detail:  unsure.map(d => `${d.by} wants ${d.dep} ${d.range} — this release makes it ${d.version}`),
+    })
+  }
+
+  if (leftBehind.length) {
+    // A note: the release is right as it stands, and a dependent often has no
+    // reason to move. Where it does, the run after this one is the fix.
+    const by = [...new Set(leftBehind.map(l => l.by))]
+    out.push({
+      check:    'pins-left-behind',
+      note:     true,
+      message:  `${by.length} package(s) not in this release pin a sibling it ships, and their published copies keep the old version: ${by.join(', ')}`,
+      because:  'bun packs workspace:* as the exact version, so a dependent picks up the new one only when it is released itself',
+      fix:      `where one needs it, after this run: ${by.map(b => `fli ws:pub patch --filter ${b.replace(/^@[^/]+\//, '')} --all`).join(' · ')}`,
+      override: null,
+      detail:   leftBehind.map(l => `${l.by} pins ${l.dep} exactly — this release ships ${l.to}`),
     })
   }
 

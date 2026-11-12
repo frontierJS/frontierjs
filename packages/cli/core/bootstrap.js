@@ -22,7 +22,8 @@ import { nearestAll } from '@frontierjs/toolbelt/typo'
 // ─── .fli.json + .env — load both from project root ──────────────────────────
 loadConfig()
 
-loadFliEnv(global.projectRoot)
+// The profile the run spends, read by `doctor` and by an outward command's first line.
+global.fliProfile = loadFliEnv(global.projectRoot)
 
 
 
@@ -295,6 +296,18 @@ function page(text) {
 function proseLines(filePath) {
   if (!filePath) return 0
   try { return extractProse(readFileSync(filePath, 'utf8')).split('\n').length } catch { return 0 }
+}
+
+// ─── refuseUnloadedProfile() ─────────────────────────────────────────────────
+// Raised at the run and not at the load, so `fli list` and help still answer in
+// a project naming a profile that is missing. Let through: the `profile:`
+// commands, one of which makes that file, `eset --profile <name>`, which makes
+// it too, and `doctor`, which reads and names the refusal. None spends a key.
+function refuseUnloadedProfile(profile, title, flag) {
+  if (!profile?.refusal) return
+  if (title.startsWith('profile:') || title === 'fli:doctor') return
+  if (title === 'env:set' && flag.profile === profile.name) return
+  throw new Error(profile.refusal)
 }
 
 // ─── run() ────────────────────────────────────────────────────────────────────
@@ -680,6 +693,7 @@ export async function run(process) {
     const notice = tellNotice()
     if (notice) process.stderr.write(chalk.yellow(`✉ ${notice}`) + '\n')
   }
+  refuseUnloadedProfile(global.fliProfile, title, cmdFlag)
   const { Command } = await import('./runtime.js')
   const command = await Command({ file: entry.filePath, arg: rawArgs, flag: cmdFlag })
   return command()

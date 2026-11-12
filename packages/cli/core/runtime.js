@@ -1222,9 +1222,10 @@ function buildGitUtils(defaultDir) {
     // package dir IS the repo root.
     //
     // No tag yet means never released, so every commit touching the path counts.
-    pkgState: (name, dir) => {
+    // `paths` narrows the commits to those pathspecs, relative to `dir`.
+    pkgState: (name, dir, paths = ['.']) => {
       const lastTag = list(['tag', '--list', `${name}@*`, '--sort=-v:refname'], dir)[0] || ''
-      const commits = list(['log', ...(lastTag ? [`${lastTag}..HEAD`] : []), '--format=%h|%s|%an', '--no-merges', '--', '.'], dir)
+      const commits = list(['log', ...(lastTag ? [`${lastTag}..HEAD`] : []), '--format=%h|%s|%an', '--no-merges', '--', ...paths], dir)
         .map(line => {
           const [hash, subject, author] = line.split('|')
           return { hash, subject, author }

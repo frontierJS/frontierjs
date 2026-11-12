@@ -5,10 +5,14 @@
 // namespace's `requires:` key is looked for. Six places spelled the path by
 // hand before this file; a seventh would have been the one to move it.
 //
+// `~/.config/fli/profiles/<name>.env` is a PROFILE: one client's account keys,
+// picked by `FLI_PROFILE` in a project `.env` or the shell (`FJS-D1942`,
+// `FJS-D1943`) and loaded between the project and this file.
+//
 // `~/.fli/` is a different directory on purpose: locks, caches, holds and a
 // walk's defaults live there — machine STATE, never a secret.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { configDir } from './paths.js'
 import { dirname, join, resolve } from 'path'
 
@@ -16,8 +20,28 @@ export const GLOBAL_ENV_HEADER = '# FLI global environment\n# Add env vars here 
 
 export const globalEnvPath = (home) => join(configDir({ home }), '.env')
 
+export const profilesDir = (home) => join(configDir({ home }), 'profiles')
+
+// The name becomes a path segment, so `../x` or `A` never reaches the filesystem.
+const PROFILE_NAME = /^[a-z0-9-]+$/
+
+/** Why `name` cannot be a profile name, or null when it can. */
+export const badProfileName = (name) => PROFILE_NAME.test(name)
+  ? null
+  : `'${name}' is not a profile name — lowercase letters, digits and dashes only`
+
+/** `~/.config/fli/profiles/<name>.env`; a throw naming the rule for a name that is not one. */
+export function profilePath(name, home) {
+  const bad = badProfileName(name)
+  if (bad) throw new Error(bad)
+  return join(profilesDir(home), `${name}.env`)
+}
+
+/** The file a key is stored in: the profile's when one is named, else the global env. */
+export const keyFile = ({ profile, home } = {}) => profile ? profilePath(profile, home) : globalEnvPath(home)
+
 /** How a person sets `key` by hand — the sentence every refusal and doctor row prints. */
-export const esetHint = (key) => `fli eset ${key} <value> --global`
+export const esetHint = (key, profile) => `fli eset ${key} <value> ${profile ? `--profile ${profile}` : '--global'}`
 
 /** The text with `key` set to `value`: its line replaced where one exists, appended where none does. */
 export function setEnvLine(content, key, value) {
@@ -47,15 +71,22 @@ export const hasEnvLine = (content, key) =>
 
 const readOr = (file, fallback) => existsSync(file) ? readFileSync(file, 'utf8') : fallback
 
+const profileHeader = (name) => `# fli profile ${name} — loaded when FLI_PROFILE=${name}\n`
+
+// Every file written here holds account keys, and the umask alone leaves one readable by the group.
 const writeEnv = (file, text) => {
-  mkdirSync(dirname(file), { recursive: true })
-  writeFileSync(file, text, 'utf8')
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
+  writeFileSync(file, text, { encoding: 'utf8', mode: 0o600 })
+  chmodSync(file, 0o600)
 }
 
-/** Set `key` in the global env, creating the file under its header when there is none. */
-export function storeGlobal(key, value, { home } = {}) {
-  const file = globalEnvPath(home)
-  writeEnv(file, setEnvLine(readOr(file, GLOBAL_ENV_HEADER), key, value))
+/**
+ * Set `key` in the global env, or in `profile`'s file when one is named,
+ * creating the file under its header when there is none. Answers the path.
+ */
+export function storeKey(key, value, { home, profile } = {}) {
+  const file = keyFile({ profile, home })
+  writeEnv(file, setEnvLine(readOr(file, profile ? profileHeader(profile) : GLOBAL_ENV_HEADER), key, value))
   return file
 }
 
@@ -85,13 +116,8 @@ export function unsetGlobal(key, { home } = {}) {
   return true
 }
 
-/**
- * Every key the global env sets, with its value as `setEnvLine` wrote it
- * (a quoted value unquoted). The values leave this module only for a caller
- * that masks them; a page or a log is never that caller's reader.
- */
-export function listGlobal({ home } = {}) {
-  const file = globalEnvPath(home)
+// Every key `file` sets, a quoted value unquoted; no file is no keys.
+function listFile(file) {
   if (!existsSync(file)) return []
   const out = []
   for (const line of readFileSync(file, 'utf8').split('\n')) {
@@ -104,26 +130,55 @@ export function listGlobal({ home } = {}) {
 }
 
 /**
+ * Every key the global env sets, with its value as `setEnvLine` wrote it
+ * (a quoted value unquoted). The values leave this module only for a caller
+ * that masks them; a page or a log is never that caller's reader.
+ */
+export const listGlobal = ({ home } = {}) => listFile(globalEnvPath(home))
+
+/** Make profile `name`'s file under its header, at mode 600. Answers `{ file, made }`; an existing file is left as it is. */
+export function createProfile(name, { home } = {}) {
+  const file = profilePath(name, home)
+  if (existsSync(file)) return { file, made: false }
+  writeEnv(file, profileHeader(name))
+  return { file, made: true }
+}
+
+/** Every key profile `name` sets, as `listGlobal` answers them. */
+export const listProfile = (name, { home } = {}) => listFile(profilePath(name, home))
+
+/** The profiles this machine holds, by name, sorted; a file whose name is not a profile name is skipped. */
+export function profileNames({ home } = {}) {
+  const dir = profilesDir(home)
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter(f => f.endsWith('.env'))
+    .map(f => f.slice(0, -'.env'.length))
+    .filter(n => !badProfileName(n))
+    .sort()
+}
+
+/**
  * The lines a missing key leaves behind, so the file itself says what is
  * wanted and how to supply it. `KEY=` with nothing after it loads as empty,
  * which every `requires:` check reads as missing — and `fli eset` replaces
  * that line rather than adding a second.
  */
-export function placeholderFor(key, url) {
+export function placeholderFor(key, url, profile) {
   return [
-    `# ${key} — set with: ${esetHint(key)}`,
+    `# ${key} — set with: ${esetHint(key, profile)}`,
     ...(url ? [`#   make one at ${url}`] : []),
     `${key}=`,
     '',
   ].join('\n')
 }
 
-/** Append `key`'s placeholder unless the file already names the key. Answers whether it wrote. */
-export function ensurePlaceholder(key, url, { home } = {}) {
-  const file = globalEnvPath(home)
-  const text = readOr(file, GLOBAL_ENV_HEADER)
+/** Append `key`'s placeholder to the global env or `profile`'s file unless it already names the key. Answers whether it wrote. */
+export function ensurePlaceholder(key, url, { home, profile } = {}) {
+  const file = keyFile({ profile, home })
+  const text = readOr(file, profile ? profileHeader(profile) : GLOBAL_ENV_HEADER)
   if (hasEnvLine(text, key)) return false
-  writeEnv(file, text + (text.endsWith('\n') ? '\n' : '\n\n') + placeholderFor(key, url))
+  writeEnv(file, text + (text.endsWith('\n') ? '\n' : '\n\n') + placeholderFor(key, url, profile))
   return true
 }
 

@@ -179,7 +179,7 @@ writes through `apps:write`, `variables:write`, `domains:write` and
 the scope the key lacks.
 
 <script>
-const { loadFrontierConfig }         = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+const { loadFrontierConfig, profileLine } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { GENERATED_DIR, exposedPort } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { stageRelease, webBuildEnv, widgetsBuildEnv, originOf, suggestedWidgetsHostname } = await import(new URL('file://' + global.fliRoot + '/core/release-build.js'))
 const { createMachine }              = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
@@ -505,6 +505,9 @@ async function filesUnder(out) {
 </script>
 
 ```js
+const profile = profileLine()
+if (profile) echo(profile)
+
 const { existsSync, mkdtempSync, readFileSync, rmSync } = await import('fs')
 const { tmpdir }           = await import('os')
 const { join, relative, resolve } = await import('path')

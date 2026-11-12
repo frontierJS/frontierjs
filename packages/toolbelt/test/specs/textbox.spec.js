@@ -8,7 +8,7 @@
  * or an action the reducer lacks shows here and not in a component.
  */
 
-import { textbox, edit, NORMAL, INSERT } from '../../src/textbox/textbox.js'
+import { textbox, edit, editDoc, stringDoc, NORMAL, INSERT } from '../../src/textbox/textbox.js'
 import { keymap, step, parseKeys } from '../../src/keys/keys.js'
 
 const nm = (text, cursor) => textbox(text, { mode: 'normal', cursor })
@@ -246,4 +246,109 @@ test('textbox: sync — a selection the control holds is kept in INSERT and type
   assert.equal(edit(s, 'type', 'there').text, 'hello there')
   assert.throws(() => edit(s, 'sync', { text: 'x' }), /'sync' takes/)
   assert.throws(() => edit(s, 'sync', { text: 'x', cursor: 0, anchor: '1' }), /'sync' takes/)
+})
+
+// ─── The reducer over a document (FJS-D2085) ─────────────────────────────
+
+// A second host: the text as an array of lines, read only through the five
+// members, with undo of its own built from the edits `editDoc` answers. A
+// row passing over this and the string host alike is a row no host's
+// representation decides.
+function linesHost(text) {
+  let lines = text.split('\n')
+  let widest = 0
+  const doc = {
+    get length() { return lines.reduce((n, l) => n + l.length, 0) + lines.length - 1 },
+    get lineCount() { return lines.length },
+    lineStart(n) {
+      let at = 0
+      for (let i = 0; i < n; i++) at += lines[i].length + 1
+      return at
+    },
+    positionAt(offset) {
+      let line = 0
+      while (line < lines.length - 1 && offset > doc.lineStart(line) + lines[line].length) line++
+      return { line, column: offset - doc.lineStart(line) }
+    },
+    slice(from, to) {
+      widest = Math.max(widest, to - from)
+      return lines.join('\n').slice(from, to)
+    },
+  }
+  const past = []
+  const future = []
+  let state = { cursor: 0, mode: 'normal' }
+  const whole = () => lines.join('\n')
+  const apply = (edits) => {
+    for (const e of edits) {
+      const t = whole()
+      lines = (t.slice(0, e.from) + e.insert + t.slice(e.to)).split('\n')
+    }
+  }
+  return {
+    get text() { return whole() },
+    get state() { return state },
+    get widest() { return widest },
+    place(at) { state = editDoc({ ...state, cursor: at }, 'left', undefined, doc).state; state = { ...state, cursor: at, anchor: at } },
+    edit(action, arg) {
+      const out = editDoc(state, action, arg, doc)
+      if (out.step && whole() !== past.at(-1)?.text) past.push({ text: whole(), cursor: state.cursor }), (future.length = 0)
+      apply(out.edits)
+      state = out.state
+      const [from, to] = out.request === 'undo' ? [past, future] : out.request === 'redo' ? [future, past] : []
+      while (from?.length) {
+        const kept = from.pop()
+        if (kept.text === whole()) continue
+        to.push({ text: whole(), cursor: state.cursor })
+        lines = kept.text.split('\n')
+        state = { ...state, cursor: kept.cursor, anchor: kept.cursor }
+        break
+      }
+    },
+  }
+}
+
+test('textbox: editDoc — one script over the string host and a lines host gives the same text and cursor at every key', function () {
+  const start = 'one two, three\n  four 🇳🇴 five\nsix'
+  let s = textbox(start, { mode: 'normal', cursor: 0 })
+  const h = linesHost(start)
+  const script = [
+    'wordForward', 'wordForward', 'deleteWord', 'wordEnd', 'deleteChar', 'undo', 'redo',
+    'deleteLine', 'putAfter', 'firstNonBlank', 'wordForward', 'right', 'right', 'deleteChar', 'deleteBack',
+    'lineEnd', 'append', ['type', 'XY'], 'newline', ['type', 'é'], 'backspace', 'normal',
+    'yankLine', 'putBefore', 'undo', 'undo', 'redo', 'deleteToEnd', 'lineStart', 'insertLineStart',
+    ['type', '> '], 'normal', 'putAfter', 'appendLineEnd', 'normal', 'wordBack', 'deleteWord', 'undo',
+  ]
+  for (const [i, row] of script.entries()) {
+    const [action, arg] = Array.isArray(row) ? row : [row]
+    s = edit(s, action, arg)
+    h.edit(action, arg)
+    assert.equal(h.text, s.text, `text after #${i} ${action}`)
+    assert.equal(h.state.cursor, s.cursor, `cursor after #${i} ${action}`)
+    assert.equal(h.state.mode, s.mode, `mode after #${i} ${action}`)
+  }
+})
+
+test('textbox: editDoc — answers edits and a request, and leaves the document alone', function () {
+  const doc = stringDoc('hello world')
+  const del = editDoc({ cursor: 0, mode: 'normal' }, 'deleteWord', undefined, doc)
+  assert.deepEqual(del.edits, [{ from: 0, to: 6, insert: '' }])
+  assert.equal(del.step, true)
+  assert.deepEqual(del.state.register, { text: 'hello ', linewise: false })
+  assert.equal(doc.slice(0, doc.length), 'hello world')
+  const undo = editDoc({ cursor: 3, mode: 'normal' }, 'undo', undefined, doc)
+  assert.deepEqual([undo.edits.length, undo.request, undo.step], [0, 'undo', false])
+  assert.equal(editDoc({ cursor: 3, mode: 'normal' }, 'insert', undefined, doc).step, true)
+  assert.equal(editDoc({ cursor: 3, mode: 'insert' }, 'type', 'x', doc).step, false)
+  assert.throws(() => editDoc({ cursor: 0 }, 'sync', { text: '', cursor: 0 }, doc), /no such action/)
+  assert.throws(() => editDoc({ cursor: 0 }, 'left', undefined, 'text'), /the document has length/)
+})
+
+test('textbox: editDoc — on a long line a motion reads a window around the cursor, never the line', function () {
+  const line = 'word '.repeat(200_000)
+  const h = linesHost(`${line}\n${line}`)
+  h.place(500_000)
+  for (const action of ['right', 'left', 'wordForward', 'wordBack', 'wordEnd', 'deleteChar', 'append', 'normal']) h.edit(action)
+  assert.ok(h.widest < 1024, `widest slice ${h.widest}`)
+  assert.equal(h.text.length, 2 * line.length)
 })

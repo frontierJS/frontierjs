@@ -171,6 +171,10 @@ every one of these with its default and never reads stdin; npm's own 2FA is
 bun's prompt, not this command's, and still asks.
 
 ```js
+const { profileLine } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+const profile = profileLine()
+if (profile) echo(profile)
+
 const { wsRoot, packages: all } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 

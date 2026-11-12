@@ -38,6 +38,10 @@ letters to the owner are sealed (`FJS-D1400`, `FJS-D1416`).
 
 ```js
 const { spawn } = await import('node:child_process')
+const { profileLine } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+const profile = profileLine()
+if (profile) echo(profile)
+
 const { FRONTIER_DIR, KEY_FILE, CONFIG_FILE, POST_ORIGIN, readConfig, tellFetch } = await import(new URL('file://' + global.fliRoot + '/core/tell.js'))
 const { writeMemberConfig, machineKeys, ownRoot, publishOwn, pickNick } = await import(new URL('file://' + global.fliRoot + '/core/frontier-member.js'))
 
@@ -56,7 +60,7 @@ if (flag.dry) {
 }
 
 const { keys, made } = await machineKeys()
-if (made) log.info(`This machine's key is ${KEY_FILE} — it is who you are at the post, so keep it.`)
+if (made) echo`{dim this machine's key is} ${KEY_FILE} {dim — it is who you are at the post, so keep it}`
 
 fs.writeFileSync(wranglerConfig, JSON.stringify({
   name: WORKER,
@@ -71,7 +75,7 @@ fs.writeFileSync(wranglerConfig, JSON.stringify({
 }, null, 2) + '\n')
 
 // stdin and stderr stay the person's, for a login or an account pick.
-log.info(`Deploying ${WORKER} to ${host} with wrangler…`)
+echo`{dim deploying} ${WORKER} {dim to} ${host} {dim with wrangler…}`
 const code = await new Promise((done) => {
   const child = spawn('bunx', ['wrangler@4', 'deploy', '--config', wranglerConfig], { cwd: FRONTIER_DIR, stdio: 'inherit' })
   child.on('error', (e) => { log.error(`bunx did not start (${e.message})`); done(1) })
@@ -114,6 +118,6 @@ writeMemberConfig({ nick: me.nick })
 if (me.root !== await ownRoot(keys)) writeMemberConfig({ root: null })
 const published = await publishOwn(POST_ORIGIN, keys).catch(e => e.message)
 if (published) log.warn(`The post did not take ${published} — the next \`fli tell\` verb tries again.`)
-log.done(`The post is up at ${POST_ORIGIN}, and ${me.nick} is ${members.length === 1 ? 'its one member' : `one of ${members.length} members`}.`)
+echo`{green ✓} the post is up at ${POST_ORIGIN} {dim —} ${me.nick} {dim is ${members.length === 1 ? 'its one member' : `one of ${members.length} members`}}`
 echo(`  saved as frontier.nick in ${CONFIG_FILE}`)
 ```

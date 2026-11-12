@@ -868,7 +868,7 @@ async function handleDoctor(req, res) {
     const modules = requiringModules({ commands: uniqueCommands(getRegistry()), getModule })
     json(res, 200, {
       at: new Date().toISOString(),
-      ...diagnose({ root: global.projectRoot, fliRoot: global.fliRoot, modules }),
+      ...diagnose({ root: global.projectRoot, fliRoot: global.fliRoot, modules, profile: global.fliProfile }),
     })
   } catch (err) {
     json(res, 500, { error: err.message })

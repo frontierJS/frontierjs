@@ -1,10 +1,10 @@
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
 import { requiresOf, missingRequires, acquireMissing } from '../core/requires.js'
-import { setEnvLine, hasEnvLine, placeholderFor, ensurePlaceholder, storeGlobal, globalEnvPath } from '../core/global-env.js'
+import { setEnvLine, hasEnvLine, placeholderFor, ensurePlaceholder, storeKey, globalEnvPath } from '../core/global-env.js'
 
 const home = () => {
   const dir = mkdtempSync(join(tmpdir(), 'fli-requires-'))
@@ -55,11 +55,22 @@ describe('the global env file', () => {
     } finally { h.cleanup() }
   })
 
-  test('storeGlobal creates the file under its header', () => {
+  test('storeKey creates the file under its header', () => {
     const h = home()
     try {
-      storeGlobal('K', 'v', { home: h.dir })
+      storeKey('K', 'v', { home: h.dir })
       expect(readFileSync(h.file, 'utf8')).toMatch(/^# FLI global environment[\s\S]*\nK=v\n$/)
+    } finally { h.cleanup() }
+  })
+
+  test('storeKey writes a named profile at mode 600, the global file untouched', () => {
+    const h = home()
+    try {
+      const file = storeKey('K', 'v', { home: h.dir, profile: 'acme' })
+      expect(file).toBe(join(h.dir, '.config', 'fli', 'profiles', 'acme.env'))
+      expect(readFileSync(file, 'utf8')).toMatch(/^# fli profile acme[\s\S]*\nK=v\n$/)
+      expect(statSync(file).mode & 0o777).toBe(0o600)
+      expect(existsSync(h.file)).toBe(false)
     } finally { h.cleanup() }
   })
 })
@@ -76,6 +87,16 @@ describe('acquireMissing', () => {
       expect(said.some(l => l.includes('fli eset T <value> --global'))).toBe(true)
       expect(said.some(l => l.includes('https://x.test/new'))).toBe(true)
       expect(readFileSync(h.file, 'utf8')).toContain('T=')
+    } finally { h.cleanup() }
+  })
+
+  test('with a profile in use the placeholder and the hint name the profile', async () => {
+    const h = home(); const said = []
+    try {
+      await acquireMissing('prov', missing, { interactive: false, home: h.dir, say: t => said.push(t), env: { FLI_PROFILE: 'acme' } })
+      expect(said).toContain('  Set with:  fli eset T <value> --profile acme')
+      expect(readFileSync(join(h.dir, '.config', 'fli', 'profiles', 'acme.env'), 'utf8')).toContain('T=')
+      expect(existsSync(h.file)).toBe(false)
     } finally { h.cleanup() }
   })
 

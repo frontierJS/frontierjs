@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, existsSync, mkdirSync, rmSync, accessSync, constants } from 'fs'
-import { globalEnvPath } from './global-env.js'
+import { badProfileName, globalEnvPath, profilePath } from './global-env.js'
 import { join, resolve, basename } from 'path'
 import { pathToFileURL } from 'url'
 import { tmpdir } from 'os'
@@ -554,12 +554,70 @@ export function fliVersion(root = global.fliRoot) {
   return v
 }
 
-// Shell beats project beats global, by load order: nothing overrides, so the
-// first file to name a variable wins. A project .env that overrode would beat
-// `DATABASE_URL=./other.db fli db:migrate` and migrate the .env's database.
+/** The profile a `.env` file's text names, or null; a malformed name is answered as written, for the loader to refuse. */
+export function profileNamedIn(text) {
+  const m = /^\s*(?:export\s+)?FLI_PROFILE\s*=\s*["']?([^"'\s#]*)/m.exec(text)
+  return m?.[1] || null
+}
+
+// Bun loads the cwd's `.env` before fli starts, so a project's FLI_PROFILE is
+// already in process.env and looks like the shell's; the file's own line says.
+function profileSource(projectRoot, name) {
+  let text = ''
+  try { text = readFileSync(join(projectRoot, '.env'), 'utf8') } catch {}
+  return profileNamedIn(text) === name ? 'project' : 'shell'
+}
+
+// Shell beats project beats profile beats global, by load order: nothing
+// overrides, so the first file to name a variable wins. A project .env that
+// overrode would beat `DATABASE_URL=./other.db fli db:migrate` and migrate the
+// .env's database.
+//
+// The profile is `FLI_PROFILE` as the shell or the project left it, never as a
+// profile or the global file sets it: a default held there would be the sticky
+// selector `FJS-D1943` refused, the same directory answering with whichever
+// client was set last. Answers `{ name, source, path, refusal }`; a named
+// profile that is not a name or has no file is a `refusal` the caller raises
+// before a command runs, and the global file is then left unread so nothing can
+// fall through to its account keys.
 export function loadFliEnv(projectRoot, home) {
+  const fromShell = process.env.FLI_PROFILE
   loadEnv(join(projectRoot, '.env'))
+  const name = process.env.FLI_PROFILE || null
+  const profile = { name, source: name ? profileSource(projectRoot, name) : null, path: null, refusal: null }
+
+  if (name) {
+    profile.refusal = badProfileName(name)
+    if (!profile.refusal) {
+      profile.path = profilePath(name, home)
+      if (!existsSync(profile.path)) profile.refusal = `FLI_PROFILE names '${name}', which has no file at ${profile.path} — make it with: fli profile:create ${name}`
+    }
+    if (profile.refusal) return profile
+    loadEnv(profile.path)
+  }
   loadEnv(globalEnvPath(home))
+
+  if (name) process.env.FLI_PROFILE = name
+  else if (fromShell === undefined) delete process.env.FLI_PROFILE
+  return profile
+}
+
+// A command that hands off sets this in its child's env, so the child does not
+// print the line its parent already printed.
+export const PROFILE_NAMED = 'FLI_PROFILE_NAMED'
+
+/**
+ * The first line of a command that spends an account key: which profile's
+ * keys it spends and who named it, or that it spends the global file's. A
+ * deploy from client A's repo with client B's token is caught only if the
+ * person sees it before the run, so the line comes before anything else.
+ * Null in a child its parent has already named the profile to.
+ */
+export function profileLine(profile = global.fliProfile, env = process.env) {
+  if (env[PROFILE_NAMED]) return null
+  if (!profile?.name) return chalk`{dim profile} none {dim — account keys from ~/.config/fli/.env}`
+  const from = profile.source === 'project' ? 'the project .env' : 'the shell'
+  return chalk`{dim profile} {bold ${profile.name}} {dim — named by ${from}}`
 }
 
 // The local name `name` is imported under from `from` or one of its subpaths —

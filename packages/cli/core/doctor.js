@@ -23,10 +23,10 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basecampsPath, readBasecamps } from './basecamps.js'
 import { requiresOf }                 from './requires.js'
-import { esetHint, globalEnvPath }    from './global-env.js'
+import { esetHint, globalEnvPath, listGlobal, listProfile, profileNames, profilePath } from './global-env.js'
 import { homeReport, holdsOf, exposed } from './home.js'
 import { servicesReport } from './services.js'
 import { execSync }     from 'node:child_process'
@@ -118,6 +118,38 @@ function secretRows(report) {
     })
 }
 
+/**
+ * The profile in use and where it was named, then each profile file: its mode,
+ * and any key the global file sets as well. Under `FJS-D1944` the global file
+ * stays the fallback, so a key in both is one a project without `FLI_PROFILE`
+ * spends from the global file without a word — the overlap is said, not refused.
+ * A FLI_PROFILE line in either kind of file is said too: it reads as a default
+ * and is ignored (`FJS-D1943`).
+ */
+function profileRows(profile, home) {
+  const used = profile?.name
+    ? { label: 'in use', ok: !profile.refusal, detail: `${profile.name}  (named by the ${profile.source === 'shell' ? 'shell' : "project's .env"})`, hint: profile.refusal }
+    : { label: 'in use', ok: true, detail: 'none  (FLI_PROFILE unset: the global env alone)' }
+  const rows = [used]
+
+  const globalKeys = listGlobal({ home })
+  if (globalKeys.some(e => e.key === 'FLI_PROFILE'))
+    rows.push({ label: 'global env', ok: false, hint: `FLI_PROFILE here selects nothing: a profile is named by the project's .env or the shell  \u2192  remove it from ${globalEnvPath(home)}`, path: globalEnvPath(home) })
+
+  const global = new Set(globalKeys.filter(e => e.value).map(e => e.key))
+  for (const name of profileNames({ home })) {
+    const file = profilePath(name, home)
+    if (listProfile(name, { home }).some(e => e.key === 'FLI_PROFILE'))
+      rows.push({ label: name, ok: false, hint: `FLI_PROFILE here selects nothing: a profile is named by the project's .env or the shell  \u2192  remove it from ${file}`, path: file })
+    const mode = statSync(file).mode & 0o777
+    if (exposed(mode)) rows.push({ label: name, ok: false, hint: `mode ${mode.toString(8)}, it holds keys  \u2192  chmod 600 ${file}`, path: file })
+    const both = [...new Set(listProfile(name, { home }).filter(e => e.value && global.has(e.key)).map(e => e.key))]
+    if (both.length) rows.push({ label: name, ok: false, hint: `${both.join(', ')} also in the global env, which a project with no profile spends  \u2192  remove it from ${globalEnvPath(home)} unless that is meant`, path: file })
+    if (!exposed(mode) && !both.length) rows.push({ label: name, ok: true, path: file })
+  }
+  return rows.map(r => ({ ...r, level: r.ok ? 'ok' : r.label === 'in use' ? 'error' : 'warn' }))
+}
+
 function basecampRows(home) {
   const file = basecampsPath(home)
   if (!existsSync(file)) return []
@@ -147,8 +179,9 @@ function basecampRows(home) {
  * @param {object}   o.env        environment
  * @param {string}   o.home       home directory; absent, every root follows its XDG variable
  * @param {boolean}  o.probe      run each external login's probe (`gh auth status`, `npm whoami`); off by default, they shell out
+ * @param {object}   o.profile    `loadFliEnv`'s answer — the profile in use and who named it
  */
-export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home, probe = false } = {}) {
+export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home, probe = false, profile = null } = {}) {
   const globalEnv = globalEnvPath(home)
 
   const system = BINARIES.map(b => {
@@ -184,11 +217,12 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
   for (const mod of modules) {
     for (const key of mod.requires ?? []) {
       const ok = Boolean(env[key])
-      namespaces.push({ ns: mod.ns, key, ok, level: ok ? 'ok' : 'error', fix: esetHint(key) })
+      namespaces.push({ ns: mod.ns, key, ok, level: ok ? 'ok' : 'error', fix: esetHint(key, env.FLI_PROFILE) })
     }
   }
 
   const basecamps = basecampRows(home)
+  const profiles  = profileRows(profile, home)
 
   // Printed, never counted: a root that does not exist yet is not a fault.
   const found = homeReport({ home })
@@ -206,11 +240,11 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
     return { ...s, ok, level: ok ? 'ok' : 'warn' }
   })
 
-  const all    = [...system, ...config, ...namespaces, ...basecamps, ...secrets]
+  const all    = [...system, ...config, ...namespaces, ...profiles, ...basecamps, ...secrets]
   const failed = all.filter(c => !c.ok)
 
   return {
-    system, config, namespaces, basecamps, secrets, services, roots,
+    system, config, namespaces, profiles, basecamps, secrets, services, roots,
     checks:  all.length,
     failed:  failed.length,
     // *Nothing here is broken enough to stop you* is a different sentence from

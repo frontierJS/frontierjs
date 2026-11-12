@@ -38,6 +38,28 @@ command. `fli doctor` lists each as present or absent and `fli doctor --probe`
 asks the logins who they are signed in as. A test fails when this table and the
 catalog disagree.
 
+**Profiles — one client's keys per file.** A machine working for several
+clients keeps each one's account keys in `~/.config/fli/profiles/<name>.env`
+(`FJS-D1942`), made with `fli profile:create <name>` and filled with
+`fli eset KEY value --profile <name>`, both at mode 600.
+A project picks its profile with `FLI_PROFILE=<name>` in its own `.env`; the
+shell's `FLI_PROFILE` overrides it, and `FLI_PROFILE=` names none for one
+command (`FJS-D1943`). Variables load shell → project `.env` → profile →
+global env, the first to name a key winning, and the global env stays the
+fallback (`FJS-D1944`). There is no sticky "current profile": a
+`FLI_PROFILE` in the global env or a profile selects nothing. A named profile
+that is not `[a-z0-9-]+`, or has no file, refuses every command but the
+`profile:` commands and the `eset --profile <name>` that creates it. `fli doctor` names the profile in use
+and who named it, each profile file's mode, and any key set in both a profile
+and the global env. `fli profiles` (`profile:list`) lists every profile with
+its key names (never values), its mode, and the projects under `~/code`
+(`--in <dir>`) whose `.env` names it; `fli profile:open [name]` opens one in
+`$VISUAL`/`$EDITOR`. There is no current profile: `fli profile:use` refuses
+and names `FLI_PROFILE`. A command that spends an account key — `deploy`,
+`basecamp:deploy`, `ws:pub`, `ws:post`, `eset` — prints the profile, or
+`profile none`, as its first line (`profileLine` in `core/utils.js`), so a
+wrong client's keys are seen before they are spent.
+
 | Service | Signs in with | Keys | Make one | Setup |
 | --- | --- | --- | --- | --- |
 | GitHub (REST) | env | `GITHUB_TOKEN`; optional `GITHUB_DEFAULT_ORG`, `GITHUB_DEFAULT_TEMPLATE` | https://github.com/settings/tokens | `commands/github/_module.md#Setup` |

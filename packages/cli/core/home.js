@@ -34,8 +34,8 @@ const row = (root, name, what, writer, { secret = false, reclaim = null, pattern
 export const entries = [
   // ─── config ──────────────────────────────────────────────────────────────
   row('config', '.env',           'Global environment variables, loaded under every project\'s own .env.',   'core/global-env.js', { secret: true }),
-  row('config', 'env',            'Hand-kept environment file; fli does not read or write it.',              null,                 { secret: true }),
   row('config', 'commands',       'Your own fli commands, found beside the package\'s.',                     'core/registry.js'),
+  row('config', 'profiles',       'One env file per client profile, loaded when a project or the shell sets FLI_PROFILE.', 'core/global-env.js', { secret: true }),
   row('config', 'basecamps.json', 'The index of Basecamps this machine made, with each one\'s admin key.',   'core/basecamps.js',  { secret: true }),
   row('config', 'basecamp',       'One directory per Basecamp holding a copy of its keys.',                  'core/basecamp.js',   { secret: true }),
   row('config', 'config.json',    'The Frontier member settings: nick, box and the post key.',               'core/tell.js',       { secret: true }),
