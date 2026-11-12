@@ -65,6 +65,7 @@ import type { TargetDescriptor } from '@frontierjs/conduit'
 import type { BackupPolicy, ProviderKind, ServerEventKind } from '#db/schema.d.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { resolveServer } from '../../domain/notification/owed.ts'
+import { syncReplicasOn } from '../../jobs/replicate-sync.job.ts'
 
 // A Server names its cloud account (`providerSecretId`) and its key (`sshKeyId`) by
 // Secret id, and sync, destroy and the posture read spend that id asSystem —
@@ -1671,6 +1672,14 @@ export default createService({
     // as visible as any other part of a check-in.
     await recordHealth($.app, server.id, data.health, now)
     await recordDeployKeys(sys, id, data.deploy_keys)
+
+    // Litestream reads the config the Outpost rendered, and an Outpost
+    // upgraded in place stays online, so nothing else resends the list: the
+    // box would keep the old Outpost's YAML until a person changed a replica
+    // (FJS-4253). The Outpost leaves Litestream running when the file renders
+    // the same.
+    if (server.outpostVersion && data.outpost_version && server.outpostVersion !== data.outpost_version && newStatus === 'online')
+      await syncReplicasOn($.app, [id])
 
     if (newStatus !== server.status) {
       await sys.serverEvent.create({

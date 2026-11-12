@@ -964,6 +964,30 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     expect(warned.filter(w => w.includes('enrollTokenHash'))).toEqual([])
   })
 
+  test('an Outpost reporting a new version is sent its replica list again (FJS-4253)', async () => {
+    const jobs = env.app.jobs as any, realDispatch = jobs.dispatch
+    const dispatched: any[] = []
+    jobs.dispatch = (job: { name?: string }, data: unknown) => { if (job?.name === 'replicate:sync') dispatched.push(data); return Promise.resolve('queued') }
+    const beat = async (outpost_version: string) => {
+      const body = { outpost_version }
+      const req  = env.http.post(`/servers/${machine.id}`).set('x-service-method', 'heartbeat')
+      for (const [k, v] of Object.entries(await signed(`/servers/${machine.id}`, body))) req.set(k, v)
+      expect((await req.send(body)).status).toBe(200)
+    }
+    try {
+      await beat('0.4.1')
+      // Coming online queues its own send, off the response's path.
+      await new Promise(r => setTimeout(r, 50))
+      const before = dispatched.length
+      await beat('0.4.1')
+      expect(dispatched.length).toBe(before)
+      await beat('0.4.2')
+      expect(dispatched.slice(before)).toEqual([{ serverId: machine.id }])
+    } finally {
+      jobs.dispatch = realDispatch
+    }
+  })
+
   test('a heartbeat carrying Litestream\'s reading stores it on the row, stamped when read', async () => {
     const replication = { apps: [{ app_id: 'a-x', status: 'replicating', last_sync_at: new Date().toISOString(), databases: 1 }] }
     const body = { outpost_version: '0.4.1', replication }
