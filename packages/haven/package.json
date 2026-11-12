@@ -61,6 +61,7 @@
     "start": "bun api/index.ts",
     "share": "bun scripts/share.mjs",
     "band:wav": "bun scripts/band-wav.mjs",
+    "band:mix": "vite -c editor/vite.config.js --open /mixer.html",
     "tui": "cd web && bun ../node_modules/@frontierjs/sierra/src/tools/tui.js",
     "test": "node ../../scripts/tmp-run.mjs 'bun test'",
     "frames": "bun web/test/frames.mjs",

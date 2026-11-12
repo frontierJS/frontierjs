@@ -79,7 +79,7 @@ export const pond = piece('pond', String.raw`
 
 // ─── the board's furniture ───────────────────────────────────────────────────
 
-/** The pinned projects, two to a row. */
+/** The pinned projects, one to a row. */
 export const corkboard = { ...piece('corkboard', [
   `.${'-'.repeat(15)}[ pinned ]${'-'.repeat(17)}.`,
   ...Array(8).fill(`|${' '.repeat(42)}|`),
@@ -90,16 +90,16 @@ export const corkboard = { ...piece('corkboard', [
   `w${'w'.repeat(42)}w`,
 ].join('\n')), inner: { dx: 2, dy: 1, w: 40, h: 8 } }
 
-/** The screen over the desk: the inbox, read from the chair. */
+/** The screen over the desk: the unread inbox, scrolled from the chair. */
 export const screen = { ...piece('screen', [
   `.${'-'.repeat(16)}[ inbox ]${'-'.repeat(17)}.`,
-  ...Array(7).fill(`|${' '.repeat(42)}|`),
+  ...Array(8).fill(`|${' '.repeat(42)}|`),
   `'${'-'.repeat(42)}'`,
 ].join('\n'), [
   `l${'l'.repeat(16)}SsssssssS${'l'.repeat(17)}l`,
-  ...Array(7).fill(`l${' '.repeat(42)}l`),
+  ...Array(8).fill(`l${' '.repeat(42)}l`),
   `l${'l'.repeat(42)}l`,
-].join('\n')), inner: { dx: 2, dy: 1, w: 40, h: 7 } }
+].join('\n')), inner: { dx: 2, dy: 1, w: 40, h: 8 } }
 
 /** The desk under the screen, its chair a solo seat — sat on, and paired with nobody. */
 export const desk = piece('desk', String.raw`

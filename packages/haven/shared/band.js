@@ -307,21 +307,22 @@ export function syncopation(steps16) {
  * The kick and hat a song plays: the feel's own, or for what the feel `draws` a Euclidean pattern, the kick
  * 3 to 5 onsets redrawn up to 8 times until its syncopation is in `MEDIUM`, the hat 5 to 9 onsets.
  */
-function patternOf(rand, feel) {
+function patternOf(rand, feel, c = {}) {
   const pattern = { kick: feel.kick, hat: feel.hat, drawn: false }
   const euclidean = (min, spread) => steps(euclid(min + Math.floor(rand() * spread), 16, Math.floor(rand() * 4)))
-  if (feel.draws.includes('kick')) {
+  const draws = feel.name === 'disco' && c.disco === 'own' ? [] : feel.name === 'funk' && c.funkHat === 'drawn' ? ['kick', 'hat'] : feel.draws
+  if (draws.includes('kick')) {
     for (let i = 0; i < 8; i++) {
       const kick = euclidean(3, 3)
       const sync = syncopation(kick)
-      if (sync >= MEDIUM[0] && sync <= MEDIUM[1]) {
+      if (sync >= MEDIUM[0] && sync <= MEDIUM[1] && (c.kickBeat !== 'downbeat' || kick.includes(0) || kick.includes(8))) {
         pattern.kick  = kick
         pattern.drawn = true
         break
       }
     }
   }
-  if (feel.draws.includes('hat')) pattern.hat = euclidean(5, 5)
+  if (draws.includes('hat')) pattern.hat = euclidean(5, 5)
   return pattern
 }
 
@@ -340,7 +341,7 @@ export function pink(k, part, t) {
 /** The fill bar `b` ends on, drawn from the drums' bar generator `rand`: a favorite of the song's three times in four (always, under `fillFrom: 'favorites'`), else any; null where the bar has none. */
 function fillFor(song, b, rand) {
   const x = sectionAt(song, b)
-  if (!x?.last || x.kind === 'outro' || x.kind === 'solo' || rowAt(song, b, 'build') || song.fillFrom === 'none') return null
+  if (!x?.last || x.kind === 'outro' || (x.kind === 'solo' && song.soloFill !== 'fill') || rowAt(song, b, 'build') || song.fillFrom === 'none') return null
   return song.fillFrom === 'favorites' || rand() < FAVORED ? pick(rand, song.fills) : pick(rand, FILLS)
 }
 
@@ -420,7 +421,7 @@ export function songOf(k, conductor = {}) {
   }
   conduct(s, c, k, strings)
   // the kick and hat drawn for the feel the song ends up with, so a feel the conductor names brings its own
-  const pattern = c.drums === 'feel' ? { kick: s.feel.kick, hat: s.feel.hat, drawn: false } : patternOf(rng(Math.imul(k, 0x7a3c9d15) ^ 0x6e0c), s.feel)
+  const pattern = c.drums === 'feel' ? { kick: s.feel.kick, hat: s.feel.hat, drawn: false } : patternOf(rng(Math.imul(k, 0x7a3c9d15) ^ 0x6e0c), s.feel, c)
   if (c.kick) pattern.kick = c.kick
   if (c.hat) pattern.hat = c.hat
   // the last draw from `rand`, so it is drawn for the key, mode and singer the song ends up with
@@ -440,6 +441,7 @@ export function songOf(k, conductor = {}) {
   return {
     ...s, k, name, chorus, motif, hook, pattern, fills, lean, stepMs, barN, key, bassVoice, voice, vowel, bars, color, sus, coda,
     verse: c.verse ?? 'bar', hookBars: c.hookBars ?? 4, fillFrom: c.fills ?? 'any', levels: c.levels ?? null, room: c.room ?? 1,
+    tuning: c.tuning ?? 'just', susGuitar: c.susGuitar ?? 'follows', soloFill: c.soloFill ?? 'none',
     ...shape, formCode,
     ensemble: strings ? 'strings' : 'band',
     cycle: length >= 8 ? length * 2 : length * 4,
@@ -458,7 +460,9 @@ export function songOf(k, conductor = {}) {
  * 'none'), `bass`, `bassVoice`, `guitar`, `keys`, `chorusGuitar`, `chorusKeys`, `singer`, `voice`, `vowel`, `verse`
  * ('bar' draws a variation each bar, 'verse' one for the whole verse, 'motif' sings the motif), `hookBars` (2 or 4),
  * `ensemble`, `soloist`, `lift` (semitones), `dropouts` (false for none), `levels` (`{ part: gain }`) and `room`
- * (the reverb send, 1 as drawn).
+ * (the reverb send, 1 as drawn). Six keys hold a plan fork open (IDEAS/band.md), each the built rule when left out:
+ * `tuning: 'equal'` (2.8), `susGuitar: 'resolved'` (4.2), `soloFill: 'fill'` (3.3), `kickBeat: 'downbeat'` and
+ * `disco: 'own'` (6.2), `funkHat: 'drawn'` (6.3).
  */
 export const MENUS = {
   keys: KEYS, progressions: PROGRESSIONS.map((p) => p.name), feels: FEELS.map((f) => f.name), colors: ['none', 'sevenths', 'add9', 'sus2', 'sus4'],
@@ -473,6 +477,7 @@ const ROMAN = { I: 0, II: 2, III: 4, IV: 5, V: 7, VI: 9, VII: 11 }
  * dominant seventh. The mode is the tonic chord's, else the first chord's. Null where a token is not a numeral.
  */
 export function chordsOf(text) {
+  /** @type {any[]} */
   const chords = []
   for (const t of String(text).trim().split(/[\s,–-]+/).filter(Boolean)) {
     const hit = /^([b#]?)(VII|VI|IV|V|III|II|I)(7?)$/i.exec(t)
@@ -1169,6 +1174,9 @@ function voicingsOf(song) {
   return table
 }
 
+// A chord under `tuning: 'equal'` tunes no interval, so every voice plays `hz(note)`.
+const UNTUNED = new Set()
+
 /**
  * The chord of bar `b`: its pitch classes root first, the intervals it tunes (`reach`), and its voicings. Under a
  * sus color `sus` is the same chord with the third held up by a 2nd or 4th, for the bar's first half; the
@@ -1190,11 +1198,11 @@ function chordOf(song, b) {
   const rel    = v.tones[i]
   return {
     pcs:    pcs(rel),
-    reach:  v.reach[i],
+    reach:  song.tuning === 'equal' ? UNTUNED : v.reach[i],
     bass:   40 + ((root - 4 + 12) % 12),
     keys:   keys(v.keys.notes[i]),
     guitar: guitar(v.guitar.notes[i]),
-    sus:    song.sus && { pcs: pcs([0, song.sus === 4 ? 5 : 2, ...rel.slice(2)]), keys: keys(v.keys.sus[i]), guitar: guitar(v.guitar.sus[i]) },
+    sus:    song.sus && { pcs: pcs([0, song.sus === 4 ? 5 : 2, ...rel.slice(2)]), keys: keys(v.keys.sus[i]), guitar: guitar(song.susGuitar === 'resolved' ? v.guitar.notes[i] : v.guitar.sus[i]) },
   }
 }
 
@@ -1746,8 +1754,8 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
     if (on.drums) {
       play.drums = () => {
         // the fill takes the bar from its first hit and the build's roll the last three beats: a backbeat under either would double the first hit;
-        // the full band's downbeat after a solo is the next section's, so the thinned drums run no fill
-        const shape = thin ? null : fillFor(song, b, rands[PART.drums])
+        // the full band's downbeat after a solo is the next section's, so the thinned drums run no fill (`soloFill: 'fill'` runs one)
+        const shape = thin && song.soloFill !== 'fill' ? null : fillFor(song, b, rands[PART.drums])
         const cut   = build ? 4 : shape ? shape.hits[0][0] : 16
         if (x.first && !thin) crash(0)
         if (thin) {

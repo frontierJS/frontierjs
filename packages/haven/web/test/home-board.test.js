@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { homeBoard, homeCommand, readBoard } from '../src/lib/hash/errand.js'
-import { ago, shortName, pinCards, screenLines, calendarLines, pingLines, ringing, post } from '../src/lib/home/home-board.js'
+import { INK, ago, shortName, pinCards, screenLines, calendarLines, pingLines, ringing, post } from '../src/lib/home/home-board.js'
 import { corkboard, screen, calendar } from '../src/pieces/home.js'
 import { spotsOf } from '../src/pieces/index.js'
 import { stageOf } from './stage.mjs'
@@ -49,6 +49,7 @@ test('a board is read to the fields drawn, a row with no text dropped, a missing
   const b = await homeBoard({ cmd: `printf '%s' '${JSON.stringify({ ...BOARD, pings: [{ who: 'x' }], extra: 1 }).replace(/'/g, "'\\''")}'`, now: 1 })
   expect(b.home).toBe('jordan')
   expect(b.pins[0]).toEqual({ name: 'greensweepnm.com', when: hour(4), fresh: 2 })
+  expect(readBoard(JSON.stringify({ home: 'jordan', pins: [{ name: 'x', open: '10', late: 4 }] })).pins[0]).toMatchObject({ open: 10, late: 4 })
   expect(b.inbox[1].unread).toBe(false)
   expect(b.pings).toEqual([])
   expect(readBoard('{"home":"vlad"}')).toEqual({ home: 'vlad', pins: [], inbox: [], pings: [], due: [] })
@@ -86,40 +87,54 @@ test('ago and a short name', () => {
   expect(shortName('cleaningforcecompany.com', 12)).toBe('cleaningfor…')
 })
 
-test('the cork board: two cards a row, each inside the board, fresh said under its pin', () => {
+test('the cork board: a header, then one line a project, the last to move on top, its to-dos late/open', () => {
   const { w, h } = corkboard.inner
-  const cards = pinCards(BOARD.pins, corkboard.inner, NOW)
+  const pins = [{ ...BOARD.pins[1], open: 3, late: 0 }, { ...BOARD.pins[0], open: 10, late: 4 }]
+  const cards = pinCards(pins, corkboard.inner, NOW)
   for (const c of cards) {
     expect(c.dx + c.text.length).toBeLessThanOrEqual(w)
     expect(c.dy).toBeLessThan(h)
   }
-  expect(cards[0]).toMatchObject({ dx: 0, dy: 0 })
-  expect(cards[0].text).toStartWith('◆ greensweep')
-  expect(cards[1]).toMatchObject({ dx: 2, dy: 1, text: '2 today' })
-  expect(cards[2].dx).toBeGreaterThan(0)
-  expect(cards[3].text).toBe('quiet')
+  const line = (dy) => {
+    const row = Array(w).fill(' ')
+    for (const c of cards.filter((c) => c.dy === dy)) [...c.text].forEach((ch, i) => { row[c.dx + i] = ch })
+    return row.join('').trimEnd()
+  }
+  expect(line(0)).toBe('  project           todos active for you')
+  expect(line(1)).toBe('◆ greensweepnm       4/10     4h       2')
+  expect(line(2)).toBe('◆ KBMS                0/3   240d')
+  expect(cards.find((c) => c.dy === 1 && c.text === '4').color).toBe(INK.late)
+  expect(cards.find((c) => c.dy === 2 && c.text === '0').color).not.toBe(INK.late)
+  expect(cards.find((c) => c.dy === 1 && c.text.startsWith('◆')).color).not.toBe(cards.find((c) => c.dy === 2 && c.text.startsWith('◆')).color)
 })
 
-test('a board of more pins than cards says how many are left over', () => {
-  const pins = Array.from({ length: 11 }, (_, i) => ({ name: `p${i}`, when: hour(1), fresh: 0 }))
+test('a pin with no to-do counts leaves the column blank; more pins than lines says how many are left over', () => {
+  const pins = Array.from({ length: 11 }, (_, i) => ({ name: `p${i}`, when: hour(i + 1), fresh: 0 }))
   const cards = pinCards(pins, corkboard.inner, NOW)
-  expect(cards.filter((c) => c.text.startsWith('◆'))).toHaveLength(7)
-  expect(cards.at(-1).text).toBe('+ 4 more')
+  const names = cards.filter((c) => c.text.startsWith('◆'))
+  expect(names).toHaveLength(corkboard.inner.h - 2)
+  expect(names[0]).toMatchObject({ dy: 1, text: '◆ p0' })
+  expect(cards.some((c) => c.text.includes('/'))).toBe(false)
+  expect(cards.at(-1)).toMatchObject({ dy: corkboard.inner.h - 1, text: '+ 5 more' })
+  expect(pinCards([], corkboard.inner, NOW)[0].text).toBe('nothing pinned')
 })
 
-test('the screen: standing, the count and the newest; sitting, the inbox scrolling from its offset', () => {
+test('the screen: only the unread; standing, as many as fit; sitting, all of them scrolling from the offset', () => {
+  const { w, h } = screen.inner
   const stand = screenLines(BOARD.inbox, screen.inner, NOW)
-  expect(stand[0].text).toBe('● 1 unread · 2 in the tray')
-  expect(stand.at(-1)).toMatchObject({ dy: screen.inner.h - 1, text: 'sit at the desk to read on' })
-  expect(stand[2].text).toStartWith('·')
-  for (const l of stand) expect(l.dy).toBeLessThan(screen.inner.h)
-  const many = Array.from({ length: 10 }, (_, i) => ({ ...BOARD.inbox[1], text: `line ${i}` }))
-  const sat = screenLines(many, screen.inner, NOW, { sitting: true, offset: 8 })
-  expect(sat).toHaveLength(screen.inner.h)
+  expect(stand).toHaveLength(1)
+  expect(stand[0].text).toStartWith('● 1h cleaningf… Basecamp:')
+  const many = Array.from({ length: 10 }, (_, i) => ({ ...BOARD.inbox[0], text: `line ${i}` }))
+  const mixed = [...many, BOARD.inbox[1]]
+  const full = screenLines(mixed, screen.inner, NOW)
+  expect(full).toHaveLength(h)
+  expect(full.at(-1)).toMatchObject({ dy: h - 1, text: `+ ${10 - h + 1} more · sit at the desk to scroll` })
+  const sat = screenLines(mixed, screen.inner, NOW, { sitting: true, offset: 8 })
+  expect(sat).toHaveLength(h)
   expect(sat[0].text).toEndWith('line 8')
   expect(sat[2].text).toEndWith('line 0')
-  for (const l of sat) expect(l.text.length).toBeLessThanOrEqual(screen.inner.w)
-  expect(screenLines([], screen.inner, NOW)[0].text).toBe('inbox zero')
+  for (const l of [...full, ...sat]) expect(l.text.length).toBeLessThanOrEqual(w)
+  expect(screenLines([BOARD.inbox[1]], screen.inner, NOW)[0].text).toBe('nothing unread')
 })
 
 test('the calendar: today, the count, the late, and the next not yet late', () => {

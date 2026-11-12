@@ -348,10 +348,11 @@ src/keys/            a key sequence read against a keymap — vim's chord
                      crossing from an event. Mesa's `keys()` and `hotkey()`
                      are the hosts, ui's `rowlist`, and sierra's terminal shell, which steps
                      a keypress before the runtime makes a keydown of it. `browserOwned` lists the rows a
-                     tab never receives — `BROWSER_OWNS`, read from Chromium's
+                     tab never receives — `BROWSER_ROWS` and `OS_ROWS`, read from Chromium's
                      and Firefox's reserved keys and the OS defaults — on BOTH
                      platforms, so a refusal is the same on every machine; a
-                     key a page may cancel (`<Mod-s>`) is not on it.
+                     key a page may cancel (`<Mod-s>`) is not on it. `{ browserChords: true }`
+                     is a desktop shell's webview: only the OS's rows remain.
                      `withOverrides(table, changes, { actions })` is khat's:
                      `nop` unbinds, a row that cannot apply is a warning and
                      never a throw, and the table it answers always builds

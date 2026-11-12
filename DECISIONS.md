@@ -13959,6 +13959,17 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2083"></a>2026-11-11 · `FJS-D2083` — A desktop shell that declares `globalThis.__frontierShell = { browserChords: true }` is exempt from `keys()` and `hotkey()`'s refusal of browser-owned chords, for the browser's rows only; the OS's rows are refused everywhere. The scaffold declares it on Linux only.
+
+Lathe Q13 in `fjs-prototypes/lathe/PLAN.md`, ruled by the owner as **A**. A webview has no tabs to close, so `<Mod-w>` and `<C-Tab>` reach the page in Tauri on Linux, while the OS still takes Cmd+Tab, Cmd+Space, Cmd+H and the Windows key first. A terminal host was already exempt by `isBrowserClient()`; this is the same fact for a shell.
+
+- **Two kinds of row.** toolbelt's `BROWSER_OWNS` is `BROWSER_ROWS` (tabs, windows, private windows, quitting the browser) and `OS_ROWS` (macOS app switching, Spotlight, Force Quit, lock and logout, Hide, Minimize, Mission Control, the Dock; Alt+Tab, Alt+F4, Ctrl+Esc, the secure attention sequence and GNOME's window and workspace keys; the Windows key). `browserOwned(km)` is unchanged; `browserOwned(km, { browserChords: true })` lists the OS rows only.
+- **One reader.** `shellDeliversBrowserChords()` in `mesa/src/runtime.js` reads the fact, and `keys.js` and `browser/hotkey.js` both pass it, so they cannot disagree. Only `true` declares it.
+- **Linux only.** macOS declares nothing because Tauri's default menu takes Cmd+W, and Windows nothing because WebView2 is unproven. Each adds its own `cfg` arm when a drive there shows the chords arrive (`FJS-4248`). The declaration is made whether or not the sidecar runs, in both desktop templates.
+- **Judgment on two rows.** Cmd+H and Cmd+M are the macOS app menu's rather than the kernel's, so a shell with its own menu could free them; they stay OS rows until one exists.
+
+Owner: `packages/toolbelt/test/specs/keys.spec.js` (both forms), `packages/mesa/test/browser/kit/specs/hotkey.spec.mjs` (fact set, unset and not `true`), `packages/cli/test/desktop-surface.test.js`.
+
 ### <a id="fjs-d2064"></a>2026-11-11 · `FJS-D2064` — [ ] **Q7 — What `$.every` does when an async `fn` is still pending at the next tick.** Found surveying 5.1: `declaredTimer` calls `fn()` on every tick of `clock.every`, so a slow server stacks overlapping polls; all 18 polls being migrated re-arm by hand only after their body settles — No overlap: a tick due while the promise `fn` returned is pending is skipped, the next tick after it settles runs; cadence stays `ms`. One rule, no option; a sync `fn` is unchanged. Flag cleared in `finally`, reset in `arm()` so a `key` change starts the new cadence (RxJS `exhaustMap`, TanStack `refetchInterval`).
 
 Asked in [`IDEAS/mesa-clock.md`](IDEAS/mesa-clock.md) § Open questions. **A** was picked over **B** (Ticks on schedule regardless; each site keeps an `inFlight` flag in `when` — the stacking bug the migration exists to remove, copied 18 times (VueUse `useIntervalFn`)), **C** (`ms` counts from settle, a re-arming `after` — `every(5000)` no longer means five seconds and `runFor` cannot count its firings (SWR `refreshInterval`)).

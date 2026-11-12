@@ -41,7 +41,10 @@
  * In a browser a keymap binding a chord the browser or the OS takes first
  * (`<Mod-w>`, `<C-Tab>`, toolbelt's `browserOwned`) throws: at the attach for
  * the keymaps active then, and at the first key for one that arrives later.
- * A terminal delivers those chords, so it reads none of them.
+ * A terminal delivers those chords, so it reads none of them. A desktop shell
+ * that declares `globalThis.__frontierShell = { browserChords: true }`
+ * delivers the browser's chords (its webview has no tabs to close), so only
+ * the OS's (`<D-Tab>`, `<D-Space>`, the Windows key) are refused there.
  *
  * A getter may also answer `mode`, the mode the element keeps (a vim box's
  * 'normal' or 'insert'). A terminal shell shows it and follows it while the
@@ -49,7 +52,7 @@
  * `undefined` leaves the mode to the shell.
  */
 import { step, flush, browserOwned, chordOf } from '@frontierjs/toolbelt/keys'
-import { isBrowserClient } from './runtime.js'
+import { isBrowserClient, shellDeliversBrowserChords } from './runtime.js'
 import { clock } from './clock.js'
 
 /** `keys(() => ({ active, on }))` — an attachment. */
@@ -116,7 +119,7 @@ function refuseOwned(active) {
   if (!Array.isArray(active)) return
   for (const km of active) {
     if (_checked.has(km) || !km?.mac?.exact) continue
-    const [owned] = browserOwned(km)
+    const [owned] = browserOwned(km, { browserChords: shellDeliversBrowserChords() })
     if (owned) throw new TypeError(`keys(): ${owned.reason}`)
     _checked.add(km)
   }

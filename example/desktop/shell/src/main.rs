@@ -106,6 +106,16 @@ fn main() {
                     open_in_browser(&url);
                     NewWindowResponse::Deny
                 });
+            // Mesa's keys() and hotkey() read this to stop refusing <Mod-w> and
+            // <C-Tab>: a webview has no tabs to close, and on Linux (WebKitGTK)
+            // they reach the page. macOS declares nothing because Tauri's default
+            // menu takes Cmd+W first, and Windows nothing because WebView2 is
+            // unproven; each adds its own cfg arm once a drive there shows the
+            // chords arrive (FJS-4248).
+            #[cfg(target_os = "linux")]
+            {
+                window = window.initialization_script("globalThis.__frontierShell = { browserChords: true };");
+            }
             if let Some(script) = &probe {
                 window = window.initialization_script(script);
             }

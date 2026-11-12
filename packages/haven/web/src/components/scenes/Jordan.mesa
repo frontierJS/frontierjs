@@ -44,7 +44,7 @@
   <Door  x={48} y={25} to="/lane/" />
   <Piece of={corkboard} x={3}  y={1} />
   <Piece of={screen}    x={50} y={1} />
-  <Piece of={desk}      x={57} y={10} />
+  <Piece of={desk}      x={57} y={11} />
   <Piece of={calendar}  x={3}  y={13} />
   <Piece of={bell}      x={41} y={21} />
   <Piece of={doormat}   x={44} y={24} />

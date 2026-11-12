@@ -130,7 +130,8 @@ src/
                          keymap in its root's one keys() attachment, newest
                          first, so of two `<Esc>` the newest answers until
                          disposed; a chord a browser takes first (toolbelt's
-                         `browserOwned`) throws there and at keys()'s attach.
+                         `browserOwned`) throws there and at keys()'s attach, unless a desktop
+                         shell declared `__frontierShell.browserChords` (the OS's rows still do).
                          datetime.js is dt/at/ago, toolbelt's createDatetime
                          over the zone the module loads in; no host rule, so
                          a terminal reads its own zone and a server render

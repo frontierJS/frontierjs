@@ -417,6 +417,15 @@ fn main() {
     let app = builder
         .setup(move |app| {
             let mut init = String::new();
+            // The webview is the page's host whether or not the sidecar runs, so
+            // this is declared ahead of the API branch. Mesa's keys() and hotkey()
+            // read it to stop refusing <Mod-w> and <C-Tab>: a webview has no tabs
+            // to close, and on Linux (WebKitGTK) they reach the page. macOS
+            // declares nothing because Tauri's default menu takes Cmd+W first, and
+            // Windows nothing because WebView2 is unproven; each adds its own
+            // cfg arm once a drive there shows the chords arrive (FJS-4248).
+            #[cfg(target_os = "linux")]
+            init.push_str("globalThis.__frontierShell = { browserChords: true };\n");
             if own_api {
                 match start_api(app.handle()) {
                     Ok((child, port)) => {

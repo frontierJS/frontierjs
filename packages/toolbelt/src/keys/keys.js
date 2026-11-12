@@ -331,7 +331,17 @@ export function withOverrides(table, changes, { actions } = {}) {
 // here; a row only one browser takes is, since it is dead for that browser's
 // users. An app window or a fullscreen Keyboard Lock gets most of these back,
 // and nothing here asks which it is.
-const BROWSER_OWNS = {
+//
+// Each row has a KIND, because a desktop shell's webview delivers the
+// browser's chords (a webview has no tabs to close) but never the OS's:
+// `browser` rows are the browser's own commands (tabs, windows, private
+// windows, quitting the browser); `os` rows are what the OS or its window
+// manager takes (app switching, Spotlight, Force Quit, lock, logout, the
+// app-menu Hide and Minimize, Mission Control, the Dock, workspaces, Windows
+// shell keys, GNOME window management). Cmd+H and Cmd+M are the macOS app
+// menu's rather than the kernel's, so a shell with its own menu could free
+// them; they stay `os` because the scaffold declares no such menu.
+const BROWSER_ROWS = {
   mac: {
     '<D-w>': 'closes the tab in every browser', '<D-S-w>': 'closes the window in Chrome and Firefox',
     '<D-t>': 'opens a tab in every browser', '<D-S-t>': 'reopens a closed tab in Chrome',
@@ -341,13 +351,6 @@ const BROWSER_OWNS = {
     '<C-PageUp>': 'switches tabs in Chrome', '<C-PageDown>': 'switches tabs in Chrome',
     '<A-D-Left>': 'switches tabs in Chrome and Firefox', '<A-D-Right>': 'switches tabs in Chrome and Firefox',
     '<A-D-Up>': 'switches tabs in Firefox', '<A-D-Down>': 'switches tabs in Firefox',
-    '<D-Tab>': 'switches apps in macOS', '<D-S-Tab>': 'switches apps in macOS',
-    '<D-Space>': 'opens Spotlight in macOS', '<A-D-Esc>': 'opens Force Quit in macOS',
-    '<C-D-q>': 'locks the screen in macOS', '<D-S-q>': 'logs out of macOS',
-    '<A-D-d>': 'hides the Dock in macOS',
-    '<D-h>': 'hides the app in macOS', '<A-D-h>': 'hides the other apps in macOS',
-    '<D-m>': 'minimizes the window in macOS',
-    '<C-Up>': 'opens Mission Control in macOS', '<C-Down>': 'shows the app\'s windows in macOS',
   },
   other: {
     '<C-w>': 'closes the tab in Chrome and Firefox', '<C-F4>': 'closes the tab in Chrome and Firefox',
@@ -359,6 +362,20 @@ const BROWSER_OWNS = {
     '<C-Tab>': 'switches tabs in Chrome and Firefox', '<C-S-Tab>': 'switches tabs in Chrome and Firefox',
     '<C-PageUp>': 'switches tabs in Chrome and Firefox', '<C-PageDown>': 'switches tabs in Chrome and Firefox',
     '<C-S-PageUp>': 'moves the tab in Firefox', '<C-S-PageDown>': 'moves the tab in Firefox',
+  },
+}
+
+const OS_ROWS = {
+  mac: {
+    '<D-Tab>': 'switches apps in macOS', '<D-S-Tab>': 'switches apps in macOS',
+    '<D-Space>': 'opens Spotlight in macOS', '<A-D-Esc>': 'opens Force Quit in macOS',
+    '<C-D-q>': 'locks the screen in macOS', '<D-S-q>': 'logs out of macOS',
+    '<A-D-d>': 'hides the Dock in macOS',
+    '<D-h>': 'hides the app in macOS', '<A-D-h>': 'hides the other apps in macOS',
+    '<D-m>': 'minimizes the window in macOS',
+    '<C-Up>': 'opens Mission Control in macOS', '<C-Down>': 'shows the app\'s windows in macOS',
+  },
+  other: {
     '<A-F4>': 'closes the window in Windows and GNOME',
     '<A-Tab>': 'switches windows in Windows and GNOME', '<A-S-Tab>': 'switches windows in Windows and GNOME',
     '<A-Esc>': 'cycles windows in Windows and GNOME', '<A-Space>': 'opens the window menu in Windows and GNOME',
@@ -384,8 +401,12 @@ const BROWSER_OWNS = {
  * answers the same on every machine: `<Mod-w>` is two rows, `<C-t>` one, and
  * a key with Cmd off a Mac is the Windows key, which Windows takes whole.
  * A sequence is listed when any of its chords is.
+ *
+ * `{ browserChords: true }` is a host that delivers the browser's own chords
+ * (a desktop shell's webview, which has no tabs to close): only the rows the
+ * OS takes are listed, so `<Mod-w>` passes and `<D-Tab>` is still refused.
  */
-export function browserOwned(km) {
+export function browserOwned(km, { browserChords = false } = {}) {
   if (!km?.mac?.exact || !km?.other?.exact) refuse('browserOwned', km, 'a keymap(table) result is required')
   const rows = []
   for (const mac of [true, false]) {
@@ -393,7 +414,9 @@ export function browserOwned(km) {
     for (const b of (mac ? km.mac : km.other).exact.values()) {
       for (const c of parseKeys(b.keys).map((c) => resolveMod(c, mac))) {
         const chord = formatChord(c)
-        const why = owns.get(chord) ?? (!mac && c.meta ? 'holds the Windows key, which Windows takes whole' : null)
+        const row = owns.get(chord)
+        const why = row && !(browserChords && row.kind === 'browser') ? row.why
+          : !mac && c.meta ? 'holds the Windows key, which Windows takes whole' : null
         if (!why) continue
         const where = mac ? 'on a Mac' : 'off a Mac'
         const what = chord === b.keys ? `${where} ${why}` : `presses ${chord} ${where}, which ${why}`
@@ -407,9 +430,10 @@ export function browserOwned(km) {
 
 // Each row read through `parseChord`, so one written in any spelling but the
 // one an event is formatted in fails at import rather than matching nothing.
+const owned = (rows, kind) => Object.entries(rows).map(([k, why]) => [formatChord(parseChord(k)), { kind, why }])
 const OWNED = {
-  mac: new Map(Object.entries(BROWSER_OWNS.mac).map(([k, why]) => [formatChord(parseChord(k)), why])),
-  other: new Map(Object.entries(BROWSER_OWNS.other).map(([k, why]) => [formatChord(parseChord(k)), why])),
+  mac: new Map([...owned(BROWSER_ROWS.mac, 'browser'), ...owned(OS_ROWS.mac, 'os')]),
+  other: new Map([...owned(BROWSER_ROWS.other, 'browser'), ...owned(OS_ROWS.other, 'os')]),
 }
 
 // vim's `timeoutlen`: how long an exact binding that is also a prefix waits

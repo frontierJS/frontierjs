@@ -53,7 +53,8 @@ import { BODY_CEILING_BYTES } from '../src/plugins/signed-link.ts'
 import { replicasFor, syncReplicas, syncReplicasOn, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
 import { reconcileFound } from '../src/domain/backup/found-replicas.ts'
 import { rescanAppArchives, hashFoundArchives } from '../src/domain/backup/backup-archives.ts'
-import { HOST_SLUG, useHost, publicIp, hostServer, hubIds, placeHub } from '../src/domain/host/host-machine.ts'
+import { HOST_SLUG, useHost, behindPin, publicIp, hostServer, hubIds, placeHub } from '../src/domain/host/host-machine.ts'
+import { OUTPOST_VERSION } from '../src/providers/compute/enrollment.ts'
 import { startS3Sink }            from '../src/providers/storage/s3-sink.ts'
 
 // The certificate a machine's command port answers with, which enrollment pins
@@ -6701,6 +6702,18 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       const back = await useHost(sys, { workspaceId: ws.id, actor: 'test', ipAddress: '174.138.116.80' })
       expect(back.enrolled).toBe(true)
       expect(back.server.ipAddress).toBe('174.138.116.80')
+
+      // An Outpost behind the pin is issued again, so the deploy's install upgrades
+      // it; one at or past the pin is left alone (FJS-4249).
+      await sys.server.update({ where: { id: made.server.id }, data: { outpostVersion: '0.0.1' } })
+      const behind = await useHost(sys, { workspaceId: ws.id, actor: 'test' })
+      if (behind.enrolled) throw new Error('an Outpost behind the pin must be issued again')
+      expect(typeof behind.command).toBe('string')
+      await sys.server.update({ where: { id: made.server.id }, data: { outpostVersion: OUTPOST_VERSION } })
+      expect((await useHost(sys, { workspaceId: ws.id, actor: 'test' })).enrolled).toBe(true)
+      expect(behindPin('0.1.9', '0.1.16')).toBe(true)
+      expect(behindPin('0.2.0', '0.1.16')).toBe(false)
+      expect(behindPin(null, '0.1.16')).toBe(false)
 
       // A retired box, or one Basecamp was restored beside, is issued again.
       const again = await useHost(sys, { workspaceId: ws.id, actor: 'test', outpostGone: true })

@@ -221,6 +221,17 @@ test('keys: browserOwned — a sequence is listed by the chord in it, and Cmd of
   assert.throws(() => browserOwned({ gg: 'top' }), /browserOwned\(.*\): a keymap\(table\) result is required/)
 })
 
+test('keys: browserOwned — browserChords reports only the rows the OS takes', function () {
+  const chords = (table, opts) => browserOwned(keymap(table), opts).map((r) => `${r.keys} ${r.chord}`)
+  assert.deepEqual(chords({ '<Mod-w>': 'close' }), ['<Mod-w> <D-w>', '<Mod-w> <C-w>'], 'the default form is unchanged')
+  assert.deepEqual(chords({ '<Mod-w>': 'close' }, { browserChords: true }), [], 'a shell delivers the browser\'s close')
+  assert.deepEqual(chords({ '<C-Tab>': 'next', '<Mod-t>': 'tab', '<C-S-q>': 'quit', '<Mod-n>': 'new' }, { browserChords: true }), [])
+  const os = ['<D-Tab> <D-Tab>', '<D-Space> <D-Space>', '<D-Tab> <D-Tab>', '<D-Space> <D-Space>']
+  assert.deepEqual(chords({ '<D-Tab>': 'x', '<D-Space>': 'y' }, { browserChords: true }), os, 'app switching and Spotlight, and the Windows key off a Mac')
+  assert.deepEqual(chords({ '<D-Tab>': 'x', '<D-Space>': 'y' }), os)
+  assert.deepEqual(chords({ '<A-Tab>': 'x', '<A-F4>': 'y', '<Mod-h>': 'z' }, { browserChords: true }), ['<Mod-h> <D-h>', '<A-Tab> <A-Tab>', '<A-F4> <A-F4>'], 'window switching, the window manager\'s close, and macOS Hide')
+})
+
 test('keys: pending_sequences — a prefix is pending, the sequence fires, and a miss starts over', function () {
   const c = ctx([keymap({ gg: 'top', dd: 'delete', ']u': 'unread', j: 'down' })])
   assert.deepEqual(run(c, 'gg').outcomes, [{ pending: 'g' }, { action: 'top' }])

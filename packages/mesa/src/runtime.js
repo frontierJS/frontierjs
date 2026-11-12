@@ -47,6 +47,14 @@ export function isBrowserClient() {
   return _isBrowser && _isClient
 }
 
+/** A desktop shell declared `globalThis.__frontierShell = { browserChords: true }`:
+ *  its webview delivers the browser's own chords (`<Mod-w>`, `<C-Tab>`, with no
+ *  tabs to close) and only the OS's are taken first. The one place the fact is
+ *  read, so `keys()` and `hotkey()` cannot disagree about what to refuse. */
+export function shellDeliversBrowserChords() {
+  return globalThis.__frontierShell?.browserChords === true
+}
+
 /** A reactive graph is running, whatever the host. With `isBrowserClient()`
  *  false it is a terminal or a phone, where a browser wrapper refuses by name
  *  rather than answering a default that looks like a value. */

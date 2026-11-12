@@ -101,10 +101,10 @@ export function transport() {
     loopOver(range) { loop = range },
     volume(v) { master.gain.value = v },
     get playing() { return playing },
-    /** Where the song is: its bar, and the time in seconds. */
+    /** Where the song is: its bar, the step in it, and the time in seconds. */
     where() {
       const s = position()
-      return { bar: song ? Math.floor(s / song.barN) : 0, seconds: s / RATE }
+      return { bar: song ? Math.floor(s / song.barN) : 0, step: song ? Math.floor((s % song.barN) / (song.barN / 16)) : -1, seconds: s / RATE }
     },
     /** Each part's peak over the last 50 ms heard. */
     meters() {

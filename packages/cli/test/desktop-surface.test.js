@@ -436,6 +436,8 @@ describe('--sidecar: the shell starts its own API', () => {
     expect(main).toContain('fn api_data_dir(')
     expect(main).toMatch(/if cfg!\(debug_assertions\) \{ "api-debug" \} else \{ "api" \}/)
     expect(main).not.toMatch(/let data = app\.path\(\)\.app_data_dir\(\)/)
+    // Lathe Q13: the webview delivers the browser's chords on Linux only.
+    expect(main).toMatch(/#\[cfg\(target_os = "linux"\)\]\n\s+init\.push_str\("globalThis\.__frontierShell = \{ browserChords: true \};/)
     // Debug-only, as in the shell this was lifted from.
     expect(main).toMatch(/#\[cfg\(debug_assertions\)\]\n#\[tauri::command\]\nfn probe_close/)
     expect(main).toMatch(/fn break_restarts\(\) -> bool \{\n    cfg!\(debug_assertions\) &&/)
@@ -455,6 +457,19 @@ describe('--sidecar: the shell starts its own API', () => {
       const r = spawnSync('bun', ['build', '--no-bundle', join(root, 'desktop', f)], { encoding: 'utf8' })
       expect(r.status, `${f}: ${r.stderr}`).toBe(0)
     }
+  })
+
+  // FJS-4246: an API that states no prefix mounts /health, not /api/health.
+  test('the shell polls where the API serves health, not at a guessed /api', () => {
+    const noPrefix = appRoot('side-noprefix', { 'api/index.ts': '', 'api/src/app.ts': '', 'api/config/junction.config.js': "export default { app: { name: 'x' } }\n" })
+    scaffoldDesktopSurface({ root: noPrefix, appName: 'shop', wraps: 'web', sidecar: true })
+    const main = readFileSync(join(noPrefix, 'desktop', 'shell', 'src', 'main.rs'), 'utf8')
+    expect(main).toContain('GET /health HTTP/1.0')
+    expect(main).not.toContain('/api/health')
+    expect(main).not.toContain('__API_PREFIX__')
+    const inApp = appRoot('side-appts', { 'api/index.ts': '', 'api/src/app.ts': "createApp({ config: { apiPrefix: '/v2' } })\n" })
+    scaffoldDesktopSurface({ root: inApp, appName: 'shop', wraps: 'web', sidecar: true })
+    expect(readFileSync(join(inApp, 'desktop', 'shell', 'src', 'main.rs'), 'utf8')).toContain('GET /v2/health HTTP/1.0')
   })
 
   test('the npm packages are derived from imports, declared or not', () => {

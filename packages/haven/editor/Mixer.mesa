@@ -1,0 +1,731 @@
+<script>
+  // Mixer.mesa — the band mixer: one song of `shared/band.js` played on this
+  // page, with every choice it was drawn from turned into a knob. A knob left
+  // on "drawn" is the song's own draw; a knob set is a conductor choice
+  // (`songOf(k, conductor)`), and the conductor stays across songs, so a
+  // choice is heard over any song number. The conductor is the page's hash,
+  // so a reload or a pasted link comes back to the same mix, and it is the
+  // JSON `bun run band:wav <k> --conductor` renders.
+  //
+  // A change makes a new band (`transport.js`), which renders its bars again,
+  // so a slider applies on release, never on every pixel of a drag. Mute and
+  // solo are this page's listening aids and are not in the conductor.
+  import { songOf, chordsOf, sectionAt, plays, MENUS, PARTS } from '#shared/band.js'
+  import { unproxy } from '@frontierjs/mesa/runtime'
+  import { transport } from './transport.js'
+
+  const STEPS = Array.from({ length: 16 }, (_, i) => i)
+  const ROWS  = [
+    { key: 'kick',  label: 'Kick',     of: (s) => s.pattern.kick },
+    { key: 'snare', label: 'Snare',    of: (s) => s.feel.snare ?? [] },
+    { key: 'hat',   label: 'Hat',      of: (s) => s.pattern.hat },
+    { key: 'open',  label: 'Open hat', of: (s) => s.feel.open },
+  ]
+  const named = (list) => list.map((x) => [x, x])
+  const KNOBS = [
+    { group: 'harmony', key: 'tonic',       label: 'Key',             options: MENUS.keys.map((n, i) => [String(i), n]), parse: Number, now: (s) => MENUS.keys[s.tonic] },
+    { group: 'harmony', key: 'progression', label: 'Progression',     options: named(MENUS.progressions), now: (s) => s.progression.name },
+    { group: 'harmony', key: 'color',       label: 'Chord color',     options: named(MENUS.colors), now: (s) => (s.color === 'sus' ? `sus${s.sus}` : s.color) },
+    { group: 'harmony', key: 'lift',        label: 'Last chorus',     options: [['0', 'no lift'], ['1', 'up 1'], ['2', 'up 2']], parse: Number, now: (s) => (s.lift?.semis ? `up ${s.lift.semis}` : 'no lift') },
+    { group: 'groove',  key: 'feel',        label: 'Feel',            options: named(MENUS.feels), now: (s) => s.feel.name },
+    { group: 'groove',  key: 'drums',       label: 'Kick and hat',    options: [['feel', "the feel's own"]], now: (s) => (s.pattern.drawn ? 'Euclidean draw' : "the feel's own") },
+    { group: 'groove',  key: 'fills',       label: 'Fills',           options: [['favorites', 'two favorites'], ['none', 'none']], now: () => 'any of eight' },
+    { group: 'players', key: 'bass',        label: 'Bass',            options: named(MENUS.basses), now: (s) => s.bass },
+    { group: 'players', key: 'bassVoice',   label: 'Bass voice',      options: named(MENUS.bassVoices), now: (s) => s.bassVoice },
+    { group: 'players', key: 'guitar',      label: 'Guitar',          options: named(MENUS.guitars), now: (s) => s.guitar },
+    { group: 'players', key: 'chorusGuitar', label: 'Guitar, chorus', options: named(MENUS.guitars), now: (s) => s.chorus.guitar },
+    { group: 'players', key: 'keys',        label: 'Keys',            options: named(MENUS.keysets), now: (s) => s.keys },
+    { group: 'players', key: 'chorusKeys',  label: 'Keys, chorus',    options: named(MENUS.keysets), now: (s) => s.chorus.keys },
+    { group: 'players', key: 'singer',      label: 'Singer',          options: named(MENUS.singers), now: (s) => s.singer.name },
+    { group: 'players', key: 'voice',       label: 'Voice',           options: named(MENUS.voices), now: (s) => s.voice },
+    { group: 'players', key: 'vowel',       label: 'Vowel',           options: named(MENUS.vowels), now: (s) => s.vowel },
+    { group: 'song',    key: 'verse',       label: 'Verse line',      options: [['bar', 'new each bar'], ['verse', 'one per verse'], ['motif', 'the motif']], now: () => 'new each bar' },
+    { group: 'song',    key: 'hookBars',    label: 'Chorus hook',     options: [['2', '2 bars'], ['4', '4 bars']], parse: Number, now: (s) => `${s.hookBars} bars` },
+    { group: 'song',    key: 'soloist',     label: 'Soloist',         options: named(MENUS.soloists), now: (s) => s.soloist ?? 'no solo' },
+    { group: 'song',    key: 'dropouts',    label: 'Drop-outs',       options: [['off', 'none']], parse: () => false, now: (s) => `${s.dropouts?.length ?? 0} drawn` },
+    { group: 'song',    key: 'ensemble',    label: 'Ensemble',        options: [['band', 'band'], ['strings', 'strings piece']], now: (s) => s.ensemble },
+  ]
+  const GROUPS = [
+    { id: 'harmony', title: 'Harmony' },
+    { id: 'groove',  title: 'Groove' },
+    { id: 'players', title: 'Players' },
+    { id: 'song',    title: 'Song' },
+  ]
+  // The plan's open forks (IDEAS/band.md § the step named), each a switch over every song. The
+  // first side is the rule as built and leaves the key out of the conductor; the second is the
+  // fork's other side. `rec` is the side the plan recommends, null where it leaves it to the ear;
+  // `here` says whether this song has what the fork changes, so a switch that moves nothing says so.
+  const FORKS = [
+    { key: 'tuning',    step: '2.8', label: 'Tuning',           sides: ['just', 'equal-tempered'],           value: 'equal',    rec: 0,
+      why: "A chord's third and fifth as pure ratios of its root, or every note equal-tempered.", here: () => true },
+    { key: 'susGuitar', step: '4.2', label: 'Guitar under sus', sides: ['follows the sus', 'resolved triad'], value: 'resolved', rec: 0,
+      why: 'Under a sus color the guitar swaps its third like the keys, or plays the plain triad through the bar.', here: (s) => s.color === 'sus' && s.ensemble !== 'strings' },
+    { key: 'soloFill',  step: '3.3', label: 'Out of a solo',    sides: ['no fill', 'a fill'],                 value: 'fill',     rec: 0,
+      why: "Where the drums play under a solo, its last bar runs no fill and the next crash is the downbeat, or it runs one.", here: (s) => {
+        const x = s.form?.find((y) => y.kind === 'solo')
+        return !!x && s.fillFrom !== 'none' && !!plays(s, x.from + x.bars - 1)?.drums
+      } },
+    { key: 'kickBeat',  step: '6.2', label: 'A drawn kick',     sides: ['anywhere', 'on 1 or 3'],             value: 'downbeat', rec: 1,
+      why: 'A Euclidean kick may miss both strong beats, or must land on step 1 or 9.', here: (s, c) => s.feel.draws.includes('kick') && c.drums !== 'feel' && s.ensemble !== 'strings' },
+    { key: 'disco',     step: '6.2', label: 'Disco',            sides: ['takes the draw', 'four on the floor'], value: 'own',    rec: 1,
+      why: 'Disco draws a Euclidean kick and hat like the others, or keeps its own, as half-time and bossa do.', here: (s, c) => s.feel.name === 'disco' && c.drums !== 'feel' && s.ensemble !== 'strings' },
+    { key: 'funkHat',   step: '6.3', label: 'Funk hat',         sides: ['sixteenths', 'drawn'],               value: 'drawn',    rec: null,
+      why: 'Funk draws its kick only and keeps the sixteenth hat, or draws a 5-9 onset hat too.', here: (s, c) => s.feel.name === 'funk' && c.drums !== 'feel' && s.ensemble !== 'strings' },
+  ]
+
+  // How a knob is drawn: a menu of five or fewer is a row of buttons, the key
+  // is a keyboard, and only the long menus (eight feels, eight progressions)
+  // stay a dropdown.
+  const kindOf = (knob) => (knob.key === 'tonic' ? 'piano' : knob.options.length <= 5 ? 'buttons' : 'menu')
+
+  // A button row's buttons: the knob's options, and when the draw's own value
+  // is not one of them ("any of eight" fills, "3 drawn" drop-outs) a first
+  // button that is the draw. `home` is the button the draw plays.
+  function facesOf(knob, d) {
+    const now  = String(knob.now(d))
+    const hit  = knob.options.find(([, text]) => text === now)
+    const list = hit ? knob.options : [['', now], ...knob.options]
+    return { list, home: hit ? hit[0] : '' }
+  }
+
+  // The keyboard's twelve keys on a 14-column grid: a white key is two
+  // columns wide, a black key sits on the seam between two whites.
+  const COLUMN = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13]
+  const BLACK  = [1, 3, 6, 8, 10]
+
+  const SECTION = { intro: 'intro', verse: 'verse', prechorus: 'pre', chorus: 'chorus', bridge: 'bridge', breakdown: 'break', solo: 'solo', last: 'last', outro: 'outro' }
+
+  const read = () => {
+    try { return JSON.parse(decodeURIComponent(location.hash.slice(1)) || '{}') } catch { return {} }
+  }
+  var saved = read()
+
+  let k         = Number.isInteger(saved.k) ? saved.k : 9969230
+  let conductor = saved.c && typeof saved.c === 'object' ? saved.c : {}
+  let songText  = String(k)
+  let chordText = conductor.chords ?? ''
+  let muted     = []
+  let soloed    = []
+  let playing   = false
+  let bar       = 0
+  let step      = -1
+  let seconds   = 0
+  let meters    = PARTS.map(() => 0)
+  let volume    = 0.8
+  let looping   = null
+  let dragging  = {}
+  let status    = ''
+  let side      = 'mine'   // the A/B switch: 'mine' plays the conductor, 'drawn' the song as drawn
+
+  var player = null
+
+  const drawn   = songOf(k)
+  const played  = side === 'mine' ? conductor : {}
+  const song    = songOf(k, played)
+  const here    = song.form ? sectionAt(song, Math.min(bar, song.bars - 2)) : null
+  const live    = plays(song, Math.min(bar, song.bars - 2))
+  const json    = JSON.stringify(conductor)
+  const command = `bun run band:wav ${k} --conductor '${json}'`
+  const chosen  = Object.keys(conductor).length
+  const length  = clock(((song.bars + 1) * song.barN) / 44100)
+  const spec    = specOf(song, conductor)
+
+  // The song's draw as the knob groups read it; `set` names the conductor keys
+  // that make a row the user's, so it shows in the choice color like the knob.
+  function specOf(s, c) {
+    const strings = s.ensemble === 'strings'
+    const prog    = s.progression.rewrites ? `${s.progression.name} (${s.progression.rewrites.join(', ')})` : s.progression.name
+    const row     = (label, value, set = [], chorus = null) => ({ label, value, chorus, set: set.some((x) => c[x] !== undefined) })
+    const drop    = (r) => `${r.kind}${r.part ? ' ' + r.part : ''}${r.parts ? ' ' + r.parts.join('+') : ''}${r.filler ? ` (${r.filler} fills)` : ''} at bar ${r.from + 1}`
+    return [
+      { title: 'Harmony', rows: [
+        row('Key', s.key, ['tonic']),
+        row('Progression', prog, ['progression', 'chords']),
+        row('Chord color', s.color === 'sus' ? `sus${s.sus}` : s.color, ['color']),
+        ...(strings ? [] : [row('Last chorus', s.lift?.semis ? `up ${s.lift.semis}` : 'no lift', ['lift'])]),
+      ] },
+      { title: 'Groove', rows: [
+        row('Tempo', `${s.bpm} bpm`, ['bpm']),
+        row('Feel', strings ? 'strings' : s.feel.name, ['feel', 'swing']),
+        ...(strings ? [] : [row('Kick and hat', s.pattern.drawn ? 'Euclidean draw' : "the feel's own", ['drums', 'kick', 'hat'])]),
+      ] },
+      { title: 'Players', rows: strings
+        ? [row('Bass', `${s.bassVoice}, held`, ['bassVoice']), row('Keys', 'pad'), row('Singer', s.singer.name)]
+        : [
+          row('Bass', `${s.bassVoice} · ${s.bass}`, ['bass', 'bassVoice']),
+          row('Guitar', s.guitar, ['guitar', 'chorusGuitar'], s.chorus.guitar),
+          row('Keys', s.keys, ['keys', 'chorusKeys'], s.chorus.keys),
+          row('Singer', `${s.singer.name} · ${s.voice} on ${s.vowel}`, ['singer', 'voice', 'vowel']),
+        ] },
+      { title: 'Song', rows: [
+        row('Length', `${length} · ${s.bars} bars`),
+        ...(strings ? [row('Ensemble', 'strings piece', ['ensemble'])] : [
+          row('Soloist', s.soloist ?? 'no solo', ['soloist']),
+          row('Drop-outs', s.dropouts?.length ? s.dropouts.map(drop).join(' · ') : 'none', ['dropouts']),
+        ]),
+      ] },
+    ]
+  }
+
+  function clock(sec) {
+    const s = Math.max(0, Math.floor(sec))
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  }
+
+  function heard(m, so) {
+    const on = (so.length ? so : PARTS).filter((p) => !m.includes(p))
+    return on.length === PARTS.length ? null : on
+  }
+
+  function load() {
+    history.replaceState(null, '', `#${encodeURIComponent(JSON.stringify({ k, c: conductor }))}`)
+    player?.load(k, side === 'mine' ? unproxy(conductor) : {}, heard(muted, soloed))
+  }
+
+  /** The A/B switch: the same bar under the song's own draw, or under the conductor. */
+  function flip() {
+    if (!chosen && side === 'mine') return
+    side = side === 'mine' ? 'drawn' : 'mine'
+    load()
+  }
+
+  /** One conductor choice; null or '' hands the knob back to the draw. */
+  function set(key, value) {
+    const next = unproxy(conductor)
+    if (value === null || value === '' || value === undefined) delete next[key]
+    else next[key] = value
+    conductor = next
+    dragging = {}
+    side = 'mine'
+    load()
+  }
+
+  const pickedOf = (c, key) => (c[key] === undefined ? '' : c[key] === false ? 'off' : String(c[key]))
+  const choose  = (knob, v) => set(knob.key, v === '' ? null : knob.parse ? knob.parse(v) : v)
+
+  /** A button press: a new value pins it; pressing the pinned one again, or the draw's own button, gives the knob back. */
+  const press = (knob, v, c) => choose(knob, pickedOf(c, knob.key) === v ? '' : v)
+
+  function go(n) {
+    if (!Number.isInteger(n) || n < 0) return
+    k = n
+    songText = String(n)
+    looping = null
+    player?.loopOver(null)
+    load()
+    player?.seek(0)
+  }
+
+  function toggle() {
+    if (!player) return
+    if (player.playing) player.pause()
+    else player.play()
+    playing = player.playing
+  }
+
+  function seek(b) {
+    player?.seek(b)
+    if (looping) loopAt(b)
+    bar = b
+  }
+
+  function loopAt(b) {
+    const x = song.form ? sectionAt(song, b) : null
+    looping = x ? { from: x.from, to: x.from + x.bars, kind: x.kind } : null
+    player?.loopOver(looping)
+  }
+
+  function loop() {
+    if (looping) {
+      looping = null
+      player?.loopOver(null)
+    } else loopAt(bar)
+  }
+
+  function hit(row, i) {
+    const now = row.of(song)
+    set(row.key, now.includes(i) ? now.filter((x) => x !== i) : [...now, i].sort((a, b) => a - b))
+  }
+
+  function chords(text) {
+    chordText = text
+    if (!text.trim()) return set('chords', null)
+    if (!chordsOf(text)) {
+      status = `"${text}" is not numerals — write them like i bVI bIII bVII or I vi IV V7`
+      return
+    }
+    status = ''
+    set('chords', text.trim())
+  }
+
+  function level(part, v) {
+    const levels = { ...unproxy(conductor).levels, [part]: v }
+    if (v === 1) delete levels[part]
+    set('levels', Object.keys(levels).length ? levels : null)
+  }
+
+  function mute(part) {
+    muted = muted.includes(part) ? muted.filter((p) => p !== part) : [...muted, part]
+    load()
+  }
+
+  function solo(part) {
+    soloed = soloed.includes(part) ? soloed.filter((p) => p !== part) : [...soloed, part]
+    load()
+  }
+
+  function reset() {
+    conductor = {}
+    chordText = ''
+    side = 'mine'
+    load()
+  }
+
+  async function copy(text) {
+    try {
+      await navigator.clipboard.writeText(text)
+      status = 'Copied.'
+    } catch {
+      status = 'The browser refused the clipboard; select the text instead.'
+    }
+  }
+
+  const typing = (e) => ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName)
+
+  function tick() {
+    if (!player) return
+    const w = player.where()
+    bar     = w.bar
+    seconds = w.seconds
+    playing = player.playing
+    step    = playing ? w.step : -1
+    const m = player.meters()
+    meters  = meters.map((old, i) => Math.max(m ? m[i] : 0, old * 0.8))
+  }
+  $.every(50, tick)
+
+  function setup() {
+    player = transport()
+    player.volume(volume)
+    player.load(k, unproxy(conductor), null)
+    const keys = (e) => {
+      if (typing(e)) return
+      if (e.code === 'Space') { e.preventDefault(); toggle() }
+      else if (e.key === 'a' || e.key === 'A') { e.preventDefault(); flip() }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); seek(Math.max(0, bar - 1)) }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); seek(bar + 1) }
+    }
+    addEventListener('keydown', keys)
+    return () => {
+      removeEventListener('keydown', keys)
+      player.close()
+    }
+  }
+</script>
+
+<div class="soft">
+<main class="mixer" {@attach setup}>
+  <header class="head-bar panel">
+    <strong class="brand">Band <em>mixer</em></strong>
+
+    <span class="songnav well">
+      <button class="nub" title="Previous song" aria-label="Previous song" onclick={() => go(k - 1)}>‹</button>
+      <input class="song-no" type="text" inputmode="numeric" aria-label="Song number" value={songText} onchange={(e) => go(Number(e.target.value))} />
+      <button class="nub" title="Next song" aria-label="Next song" onclick={() => go(k + 1)}>›</button>
+      <button class="nub dice" title="A random song" aria-label="A random song" onclick={() => go(Math.floor(Math.random() * 100000))}>⚄</button>
+    </span>
+
+    <span class="transport">
+      <button class="round" title="From the top" aria-label="From the top" onclick={() => seek(0)}>⏮</button>
+      <button class="round big" class:on={playing} aria-label={playing ? 'Pause' : 'Play'} title="Play / pause (space)" onclick={toggle}>{playing ? '❚❚' : '▶'}</button>
+      <button class="round" class:on={!!looping} aria-pressed={!!looping} title={looping ? `Looping ${SECTION[looping.kind]}; click to stop` : 'Loop this section'} aria-label="Loop this section" onclick={loop}>⟲</button>
+    </span>
+
+    <span class="ab well" role="group" aria-label="Compare: the song as drawn, or your choices" title={chosen ? 'Compare at the same bar (A key)' : 'Make a choice to compare it with the draw'}>
+      <button class="ab-btn" class:active={side === 'drawn'} aria-pressed={side === 'drawn'} disabled={!chosen} onclick={() => side === 'mine' && flip()}><b>A</b> drawn</button>
+      <button class="ab-btn mine" class:active={side === 'mine'} aria-pressed={side === 'mine'} disabled={!chosen} onclick={() => side === 'drawn' && flip()}><b>B</b> yours</button>
+    </span>
+
+    <span class="lcd well">
+      <span class="lcd-time">{clock(seconds)}<small> / {length}</small></span>
+      <span class="lcd-bar">bar {bar + 1}/{song.bars}{#if looping} · loop {SECTION[looping.kind]}{/if}{#if side === 'drawn'} · <b class="lcd-a">A: the draw</b>{/if}</span>
+    </span>
+
+    <label class="vol">
+      <span aria-hidden="true">🔊</span>
+      <input class="soft-range" type="range" min="0" max="1" step="0.01" aria-label="Volume" value={volume} style="--fill: {volume * 100}%" oninput={(e) => { volume = Number(e.target.value); player?.volume(volume) }} />
+    </label>
+  </header>
+
+  <section class="panel spec" title={song.about}>
+    <div class="spec-head">
+      <span class="tag">#{k}</span>
+      <h1 class="spec-name">{song.name}</h1>
+      <span class="chips">
+        <span class="chip">{song.key}</span>
+        <span class="chip">{song.bpm} bpm</span>
+        <span class="chip">{song.ensemble === 'strings' ? 'strings' : song.feel.name}</span>
+      </span>
+    </div>
+    <div class="spec-grid">
+      {#each spec as g (g.title)}
+        <dl class="spec-group">
+          <dt class="spec-title">{g.title}</dt>
+          {#each g.rows as r (r.label)}
+            <div class="spec-row" class:set={r.set}>
+              <dt>{r.label}</dt>
+              <dd>{r.value}{#if r.chorus}<span class="to"> → </span>{r.chorus}<small class="when"> chorus</small>{/if}</dd>
+            </div>
+          {/each}
+        </dl>
+      {/each}
+    </div>
+  </section>
+
+  {#if song.form}
+    <div class="form well" role="group" aria-label="The song's form; click a section to jump to it">
+      {#each song.form as x (x.from)}
+        <button class="bit {x.kind}" class:now={here && here.from === x.from} class:looped={looping && looping.from === x.from} style="--bars: {x.bars}" title="{x.kind}, bars {x.from + 1}–{x.from + x.bars}" onclick={() => seek(x.from)}>{SECTION[x.kind]}</button>
+      {/each}
+      <span class="playhead" style="--at: {Math.min(100, (bar / song.bars) * 100)}%"></span>
+    </div>
+  {/if}
+
+  <p class="legend"><span class="dot"></span> what the song drew <span class="sep">·</span> <span class="pin">yellow</span> is your choice — press it again to hand it back</p>
+
+  <div class="desk" class:hearing-a={side === 'drawn'}>
+    <section class="panel strips">
+      <h2>Mix</h2>
+      <div class="strips-row">
+        {#each PARTS as p, i (p)}
+          <div class="strip" class:out={live && !live[p]}>
+            <div class="channel">
+              <div class="level-meter"><span style="--level: {Math.min(100, (meters[i] * 100) / 0.6)}%"></span></div>
+              <input class="fader" type="range" min="0" max="1.5" step="0.05" aria-label="{p} level" value={conductor.levels?.[p] ?? 1} onchange={(e) => level(p, Number(e.target.value))} />
+            </div>
+            <small class="num">{(conductor.levels?.[p] ?? 1).toFixed(2)}</small>
+            <span class="ms">
+              <button class="ms-btn mute" class:on={muted.includes(p)} aria-pressed={muted.includes(p)} title="Mute" onclick={() => mute(p)}>M</button>
+              <button class="ms-btn solo" class:on={soloed.includes(p)} aria-pressed={soloed.includes(p)} title="Solo" onclick={() => solo(p)}>S</button>
+            </span>
+            <strong class="name">{p}</strong>
+          </div>
+        {/each}
+      </div>
+      <label class="slider" class:set={conductor.room !== undefined}><span>Room</span> <input class="soft-range" type="range" min="0" max="2.5" step="0.05" value={conductor.room ?? 1} style="--fill: {(Number(dragging.room ?? conductor.room ?? 1) / 2.5) * 100}%" oninput={(e) => { dragging = { ...dragging, room: e.target.value } }} onchange={(e) => set('room', Number(e.target.value) === 1 ? null : Number(e.target.value))} /> <span class="num">{Number(dragging.room ?? conductor.room ?? 1).toFixed(2)}</span></label>
+      <p class="hint">A dimmed strip sits this bar out by the arrangement. M and S are for listening only and are not saved.</p>
+    </section>
+
+    <section class="panel drums">
+      <h2>Drums <small>— tap a pad</small></h2>
+      <div class="pads">
+        {#each ROWS as row (row.key)}
+          <span class="pad-name" class:set={conductor[row.key] !== undefined}>{row.label}</span>
+          {#each STEPS as i (i)}
+            <button class="pad" class:on={row.of(song).includes(i)} class:beat={i % 4 === 0} class:now={step === i} aria-label="{row.label} step {i + 1}" aria-pressed={row.of(song).includes(i)} onclick={() => hit(row, i)}></button>
+          {/each}
+          {#if conductor[row.key] !== undefined}<button class="undo" title="Back to the draw" aria-label="{row.label} back to the draw" onclick={() => set(row.key, null)}>↺</button>{:else}<span></span>{/if}
+        {/each}
+      </div>
+      <label class="slider" class:set={conductor.bpm !== undefined}><span>Tempo</span> <input class="soft-range" type="range" min="48" max="172" step="1" value={song.bpm} style="--fill: {((Number(dragging.bpm ?? song.bpm) - 48) / 124) * 100}%" oninput={(e) => { dragging = { ...dragging, bpm: e.target.value } }} onchange={(e) => set('bpm', Number(e.target.value))} /> <span class="num">{dragging.bpm ?? song.bpm} bpm</span>
+        {#if conductor.bpm !== undefined}<button class="undo" title="Drawn: {drawn.bpm}" aria-label="Tempo back to the draw" onclick={() => set('bpm', null)}>↺</button>{/if}
+      </label>
+      <label class="slider" class:set={conductor.swing !== undefined}><span>Swing</span> <input class="soft-range" type="range" min="0" max="0.75" step="0.01" value={song.feel.swing ?? 0} style="--fill: {(Number(dragging.swing ?? song.feel.swing ?? 0) / 0.75) * 100}%" oninput={(e) => { dragging = { ...dragging, swing: e.target.value } }} onchange={(e) => set('swing', Number(e.target.value))} /> <span class="num">{Number(dragging.swing ?? song.feel.swing ?? 0).toFixed(2)}</span>
+        {#if conductor.swing !== undefined}<button class="undo" title="Drawn: {(drawn.feel.swing ?? 0).toFixed(2)}" aria-label="Swing back to the draw" onclick={() => set('swing', null)}>↺</button>{/if}
+      </label>
+    </section>
+
+    {#each GROUPS as g (g.id)}
+      <section class="panel knobs {g.id}">
+        <h2>{g.title}</h2>
+        {#each KNOBS.filter((x) => x.group === g.id) as knob (knob.key)}
+          {@const isSet = conductor[knob.key] !== undefined}
+          {@const kind = kindOf(knob)}
+          <div class="knob" class:set={isSet} role="group" aria-label={knob.label}>
+            <div class="knob-head">
+              <span class="knob-label">{knob.label}</span>
+              {#if isSet}<button class="undo" title="Back to the draw: {knob.now(drawn)}" aria-label="{knob.label} back to the draw" onclick={() => set(knob.key, null)}>↺</button>{/if}
+            </div>
+
+            {#if kind === 'piano'}
+              <div class="piano">
+                {#each MENUS.keys as name, n (name)}
+                  <button class="key" class:black={BLACK.includes(n)} class:picked={pickedOf(conductor, 'tonic') === String(n)} class:playing={song.tonic === n} class:home={drawn.tonic === n} style="grid-column: {COLUMN[n]} / span 2" title={name} aria-label="Key of {name}" aria-pressed={pickedOf(conductor, 'tonic') === String(n)} onclick={() => press(knob, String(n), conductor)}><span>{name}</span></button>
+                {/each}
+              </div>
+            {:else if kind === 'buttons'}
+              {@const faces = facesOf(knob, drawn)}
+              {@const picked = pickedOf(conductor, knob.key)}
+              <div class="seg well">
+                {#each faces.list as [v, text] (v)}
+                  <button class="seg-btn" class:active={(picked === '' ? faces.home : picked) === v} class:mine={picked !== '' && picked === v} class:home={faces.home === v} aria-pressed={(picked === '' ? faces.home : picked) === v} onclick={() => press(knob, v, conductor)}>{text}</button>
+                {/each}
+              </div>
+            {:else}
+              <span class="drop well">
+                <select value={pickedOf(conductor, knob.key)} aria-label={knob.label} onchange={(e) => choose(knob, e.target.value)}>
+                  <option value="">⚄ drawn: {knob.now(drawn)}</option>
+                  {#each knob.options as [v, text] (v)}<option value={v}>{text}</option>{/each}
+                </select>
+              </span>
+            {/if}
+          </div>
+        {/each}
+        {#if g.id === 'harmony'}
+          <div class="knob" class:set={conductor.chords !== undefined}>
+            <div class="knob-head"><label class="knob-label" for="chords">Your chords</label></div>
+            <input id="chords" class="well chord-input" type="text" placeholder="i bVI bIII bVII" value={chordText} onchange={(e) => chords(e.target.value)} />
+          </div>
+          <p class="hint">Playing: <b>{song.progression.name}</b>. Your chords win over the progression; upper case is major, lower minor, a 7 a dominant.</p>
+        {/if}
+      </section>
+    {/each}
+
+    <section class="panel span-all forks">
+      <h2>Open questions <small>— the plan's forks, over every song</small></h2>
+      <div class="fork-grid">
+        {#each FORKS as f (f.key)}
+          {@const on = conductor[f.key] !== undefined ? 1 : 0}
+          {@const moot = !f.here(song, played)}
+          <div class="knob fork" class:set={on === 1} class:moot={moot} role="group" aria-label={f.label}>
+            <div class="knob-head">
+              <span class="knob-label">{f.label} <small class="step">{f.step}</small></span>
+              {#if moot}<small class="moot-note">not in this song</small>{/if}
+            </div>
+            <div class="seg well">
+              {#each f.sides as text, i (i)}
+                <button class="seg-btn" class:active={on === i} class:mine={on === 1 && i === 1} class:home={i === 0} class:rec={f.rec === i} aria-pressed={on === i} title={f.rec === i ? 'The plan recommends this side' : ''} onclick={() => set(f.key, i === 1 ? f.value : null)}>{text}</button>
+              {/each}
+            </div>
+            <p class="hint">{f.why}{#if f.rec === null} The plan leaves this to the ear.{/if}</p>
+          </div>
+        {/each}
+      </div>
+      <p class="hint">The dot is the rule as built; <span class="rec-mark">✓</span> is the side the plan recommends. Tell Claude which side you keep and it becomes the band's rule.</p>
+    </section>
+
+    <section class="panel span-all conductor">
+      <h2>Your conductor <span class="count">{chosen}</span> <small>{chosen === 1 ? 'choice' : 'choices'}</small></h2>
+      <pre class="json well">{json}</pre>
+      <span class="actions">
+        <button class="soft-btn" onclick={() => copy(json)}>Copy the choices</button>
+        <button class="soft-btn" onclick={() => copy(command)}>Copy the band:wav command</button>
+        <button class="soft-btn warn" disabled={!chosen} onclick={reset}>↺ Back to the draw</button>
+      </span>
+      <p class="hint">The page's address keeps the song and every choice, so a bookmark or a link comes back to this mix. Paste the choices to Claude to make them the band's.</p>
+      {#if status}<p class="status">{status}</p>{/if}
+    </section>
+  </div>
+</main>
+</div>
+
+<style>
+  /* Soft UI: every surface is the page's own color, lifted by a light shadow
+     on the top left and a dark one on the bottom right, or pressed in by the
+     same pair inside. The colors are the Survey theme's
+     (packages/css/src/themes/survey.css): its warning yellow is a choice of
+     yours, its primary mauve is what is sounding. */
+  .soft {
+    --bg: #181825;
+    --face: #1e1e2e;
+    --sunken: #11111b;
+    --ink: #cdd6f4;
+    --dim: #a6adc8;
+    --green: #a6e3a1;
+    --green-dim: #6f9a6c;
+    --yellow: #f9e2af;
+    --red: #f38ba8;
+    --sky: #89dceb;
+    --hi: rgba(255, 255, 255, 0.055);
+    --lo: rgba(0, 0, 0, 0.5);
+    --mine: var(--yellow);
+    --mine-glow: rgba(249, 226, 175, 0.4);
+    --live: #cba6f7;
+    --live-glow: rgba(203, 166, 247, 0.45);
+    --raise: 7px 7px 16px var(--lo), -6px -6px 14px var(--hi);
+    --raise-sm: 3px 3px 7px var(--lo), -3px -3px 6px var(--hi);
+    --inset: inset 4px 4px 9px var(--lo), inset -3px -3px 8px var(--hi);
+    --inset-sm: inset 2px 2px 5px var(--lo), inset -2px -2px 4px var(--hi);
+    min-block-size: 100vh;
+    background: radial-gradient(120% 80% at 20% 0%, var(--face), var(--bg) 60%);
+    color: var(--ink);
+  }
+  :where(.soft) button { font: inherit; color: inherit; cursor: pointer; }
+  .soft button:focus-visible, .soft input:focus-visible, .soft select:focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
+
+  .mixer { padding: var(--space-md); max-width: 86rem; margin-inline: auto; display: flex; flex-direction: column; gap: 1rem; }
+
+  .panel { text-align: start; background: var(--face); border-radius: 22px; box-shadow: var(--raise); padding: 1rem 1.2rem; }
+  .well { background: var(--bg); box-shadow: var(--inset); border-radius: 14px; }
+  .panel h2 { font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); margin: 0 0 0.8rem; font-weight: 700; }
+  .panel h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .hint { margin: 0.6rem 0 0; font-size: 0.75rem; color: var(--dim); line-height: 1.45; }
+  .num { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 0.78rem; }
+
+  /* The header */
+  .head-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem 1.4rem; border-radius: 26px; }
+  .brand { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.01em; }
+  .brand em { font-style: normal; color: var(--mine); }
+  .songnav { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.3rem; border-radius: 999px; }
+  .nub { inline-size: 2.1rem; block-size: 2.1rem; border: 0; border-radius: 50%; background: var(--face); box-shadow: var(--raise-sm); font-size: 1.1rem; line-height: 1; transition: box-shadow 120ms, transform 120ms; }
+  .nub:active { box-shadow: var(--inset-sm); transform: scale(0.96); }
+  .dice { font-size: 1.25rem; }
+  .dice:hover { transform: rotate(-18deg); }
+  .song-no { inline-size: 6.5rem; text-align: center; font-variant-numeric: tabular-nums; font-weight: 700; border: 0; background: transparent; color: var(--ink); font-size: 1rem; }
+
+  .transport { display: inline-flex; align-items: center; gap: 0.8rem; }
+  .round { inline-size: 2.6rem; block-size: 2.6rem; border: 0; border-radius: 50%; background: var(--face); box-shadow: var(--raise-sm); font-size: 0.95rem; transition: box-shadow 140ms, color 140ms; }
+  .round.big { inline-size: 3.8rem; block-size: 3.8rem; font-size: 1.3rem; box-shadow: var(--raise); color: var(--live); }
+  .round:active { box-shadow: var(--inset-sm); }
+  .round.on { box-shadow: var(--inset); color: var(--mine); text-shadow: 0 0 10px var(--mine-glow); }
+  .round.big.on { color: var(--live); text-shadow: 0 0 12px var(--live-glow); }
+
+  .lcd { display: inline-flex; flex-direction: column; padding: 0.45rem 1rem; font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; background: var(--sunken); min-inline-size: 9.5rem; }
+  .lcd-time { font-size: 1.15rem; color: var(--green); text-shadow: 0 0 8px rgba(166, 227, 161, 0.4); font-variant-numeric: tabular-nums; }
+  .lcd-time small { color: var(--green-dim); text-shadow: none; font-size: 0.8rem; }
+  .lcd-bar { font-size: 0.7rem; color: var(--green-dim); }
+  .vol { display: inline-flex; align-items: center; gap: 0.6rem; margin-inline-start: auto; inline-size: 12rem; }
+
+  .tag { color: var(--mine); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* The song's spec sheet */
+  .spec-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.4rem 0.8rem; margin-bottom: 0.9rem; }
+  .spec-name { margin: 0; font-size: 1.35rem; font-weight: 800; letter-spacing: -0.01em; }
+  .chips { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; }
+  .chip { padding: 0.2rem 0.65rem; border-radius: 999px; background: var(--bg); box-shadow: var(--inset-sm); font-size: 0.76rem; color: var(--ink); }
+  .spec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.6rem 1.6rem; }
+  .spec-group { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+  .spec-title { font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); font-weight: 700; margin-bottom: 0.15rem; }
+  .spec-row { display: grid; grid-template-columns: 6.2rem 1fr; gap: 0.6rem; font-size: 0.82rem; line-height: 1.4; }
+  .spec-row dt { color: var(--dim); }
+  .spec-row dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+  .spec-row.set dt, .spec-row.set dd { color: var(--mine); }
+  .spec-row .to { color: var(--live); }
+  .spec-row .when { color: var(--dim); }
+  .legend { margin: -0.2rem 0.4rem 0; font-size: 0.72rem; color: var(--dim); display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+  .legend .pin { color: var(--mine); font-weight: 700; }
+  .legend .sep { opacity: 0.5; }
+  .dot { display: inline-block; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--live); box-shadow: 0 0 6px var(--live-glow); }
+
+  /* The form */
+  .form { position: relative; display: flex; gap: 5px; block-size: 2.8rem; padding: 5px; border-radius: 16px; }
+  .bit { flex: var(--bars) 1 0; min-inline-size: 0; overflow: hidden; border: 0; border-radius: 10px; font-size: 0.72rem; background: var(--face); box-shadow: var(--raise-sm); --tint: transparent; background-image: linear-gradient(var(--tint), var(--tint)); transition: box-shadow 140ms; }
+  .bit.chorus, .bit.last { --tint: rgba(249, 226, 175, 0.32); }
+  .bit.prechorus { --tint: rgba(249, 226, 175, 0.16); }
+  .bit.solo, .bit.breakdown { --tint: rgba(137, 220, 235, 0.2); }
+  .bit.bridge { --tint: rgba(203, 166, 247, 0.25); }
+  .bit.now { box-shadow: var(--inset-sm); font-weight: 700; }
+  .bit.looped { outline: 2px dashed var(--mine); outline-offset: -3px; }
+  .playhead { position: absolute; inset-block: 2px; inline-size: 3px; border-radius: 2px; background: var(--live); box-shadow: 0 0 10px var(--live); pointer-events: none; left: var(--at); transition: left 50ms linear; }
+
+  .desk { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: 1.4rem; align-items: start; }
+  .span-all { grid-column: 1 / -1; }
+  .strips, .drums { grid-column: span 2; }
+  @media (max-width: 44rem) { .strips, .drums { grid-column: auto; } }
+
+  /* Sliders: an inset groove, filled up to a raised round thumb */
+  .soft-range { appearance: none; -webkit-appearance: none; flex: 1; min-inline-size: 0; block-size: 0.55rem; border-radius: 999px; background: linear-gradient(90deg, var(--live) 0 var(--fill, 0%), var(--bg) var(--fill, 0%)); box-shadow: var(--inset-sm); }
+  .soft-range::-webkit-slider-thumb { -webkit-appearance: none; inline-size: 1.25rem; block-size: 1.25rem; border-radius: 50%; background: var(--face); box-shadow: var(--raise-sm), inset 0 0 0 4px var(--face), inset 0 0 0 7px var(--live); cursor: grab; }
+  .soft-range::-moz-range-thumb { inline-size: 1.25rem; block-size: 1.25rem; border: 0; border-radius: 50%; background: var(--face); box-shadow: var(--raise-sm); cursor: grab; }
+  .slider { display: flex; gap: 0.8rem; align-items: center; margin-top: 0.9rem; }
+  .slider > span:first-child { inline-size: 3.6rem; font-size: 0.85rem; }
+  .slider.set > span:first-child { color: var(--mine); }
+  .slider.set .soft-range { background: linear-gradient(90deg, var(--mine) 0 var(--fill, 0%), var(--bg) var(--fill, 0%)); }
+
+  .undo { border: 0; background: var(--face); box-shadow: var(--raise-sm); border-radius: 50%; inline-size: 1.6rem; block-size: 1.6rem; font-size: 0.85rem; color: var(--mine); padding: 0; flex: none; }
+  .undo:active { box-shadow: var(--inset-sm); }
+
+  /* The mix: channel strips */
+  .strips-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .strip { display: flex; flex-direction: column; align-items: center; gap: 0.45rem; inline-size: 4.6rem; padding: 0.7rem 0.3rem; border-radius: 16px; background: var(--face); box-shadow: var(--raise-sm); transition: opacity 160ms; }
+  .strip.out { opacity: 0.38; }
+  .channel { display: flex; gap: 0.45rem; align-items: stretch; }
+  .level-meter { position: relative; inline-size: 0.55rem; block-size: 7.5rem; border-radius: 999px; background: var(--sunken); box-shadow: var(--inset-sm); overflow: hidden; }
+  .level-meter span { position: absolute; inset-inline: 1px; bottom: 1px; block-size: var(--level); border-radius: 999px; background: linear-gradient(to top, var(--green), var(--yellow) 72%, var(--red)); box-shadow: 0 0 8px rgba(166, 227, 161, 0.45); }
+  /* A vertical range reads its logical sizes in its own writing mode, so the
+     fader is sized in physical width and height throughout. */
+  .fader { appearance: none; -webkit-appearance: none; writing-mode: vertical-lr; direction: rtl; width: 1.6rem; height: 7.5rem; margin: 0; background: transparent; }
+  .fader::-webkit-slider-runnable-track { width: 0.45rem; height: 100%; margin-inline: auto; border-radius: 999px; background: var(--bg); box-shadow: var(--inset-sm); }
+  .fader::-webkit-slider-thumb { -webkit-appearance: none; width: 1.6rem; height: 1.05rem; margin-left: -0.575rem; border-radius: 6px; background: linear-gradient(var(--face) 42%, var(--ink) 42% 58%, var(--face) 58%); box-shadow: var(--raise-sm); cursor: grab; }
+  .fader::-moz-range-thumb { width: 1.6rem; height: 1.05rem; border: 0; border-radius: 6px; background: var(--face); box-shadow: var(--raise-sm); }
+  .ms { display: flex; gap: 0.35rem; }
+  .ms-btn { inline-size: 1.65rem; block-size: 1.65rem; border: 0; border-radius: 8px; background: var(--face); box-shadow: var(--raise-sm); font-size: 0.7rem; font-weight: 800; color: var(--dim); padding: 0; transition: box-shadow 120ms, color 120ms; }
+  .ms-btn.on { box-shadow: var(--inset-sm); }
+  .ms-btn.mute.on { color: var(--red); text-shadow: 0 0 8px rgba(243, 139, 168, 0.6); }
+  .ms-btn.solo.on { color: var(--sky); text-shadow: 0 0 8px rgba(137, 220, 235, 0.6); }
+  .name { font-size: 0.78rem; text-transform: capitalize; }
+
+  /* Drums: pads that press in and glow when on */
+  .pads { display: grid; grid-template-columns: 4.6rem repeat(16, minmax(0, 1fr)) 1.8rem; gap: 6px; align-items: center; }
+  .pad-name { font-size: 0.78rem; color: var(--dim); }
+  .pad-name.set { color: var(--mine); }
+  .pad { appearance: none; block-size: 1.75rem; min-inline-size: 0; padding: 0; border: 0; border-radius: 7px; background: var(--face); box-shadow: var(--raise-sm); transition: box-shadow 90ms, background 90ms; }
+  .pad.beat { background: #252536; }
+  .pad.on { background: var(--mine); box-shadow: var(--inset-sm), 0 0 12px var(--mine-glow); }
+  .pad.now { outline: 2px solid var(--live); outline-offset: 1px; }
+  .pad.now.on { background: #fff3d6; box-shadow: 0 0 18px var(--mine); }
+
+  /* Knobs */
+  .knobs { display: flex; flex-direction: column; gap: 0.85rem; }
+  .knobs h2 { margin-bottom: 0; }
+  .knob { display: flex; flex-direction: column; align-items: stretch; gap: 0.4rem; text-align: start; }
+  .knob-head { display: flex; align-items: center; justify-content: space-between; min-block-size: 1.6rem; }
+  .knob-label { font-size: 0.82rem; }
+  .knob.set .knob-label { color: var(--mine); }
+
+  .seg { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 13px; }
+  .seg-btn { flex: 1 0 auto; position: relative; border: 0; border-radius: 9px; padding: 0.42rem 0.55rem; background: transparent; color: var(--dim); font-size: 0.76rem; line-height: 1.15; white-space: nowrap; text-shadow: 0 0 0 transparent; transition: background 130ms, box-shadow 130ms, color 130ms; }
+  .seg-btn:hover { color: var(--ink); }
+  .seg-btn.active { background: var(--face); box-shadow: var(--raise-sm); color: var(--ink); }
+  .seg-btn.mine { color: var(--mine); box-shadow: var(--raise-sm), inset 0 0 0 1px rgba(249, 226, 175, 0.35); }
+  .seg-btn.home::after { content: ''; position: absolute; top: 4px; right: 5px; inline-size: 5px; block-size: 5px; border-radius: 50%; background: var(--live); box-shadow: 0 0 5px var(--live-glow); }
+
+  .drop { display: block; padding: 3px; border-radius: 12px; }
+  .drop select { inline-size: 100%; border: 0; background: transparent; color: var(--ink); padding: 0.4rem 0.5rem; font: inherit; font-size: 0.82rem; }
+  .drop select option { background: var(--face); color: var(--ink); }
+  .knob.set .drop select { color: var(--mine); }
+  .chord-input { inline-size: 100%; border: 0; color: var(--ink); padding: 0.55rem 0.8rem; font: inherit; font-size: 0.82rem; border-radius: 12px; }
+  .knob.set .chord-input { color: var(--mine); }
+
+  /* The key: a little keyboard */
+  .piano { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); grid-template-rows: 2.2rem 1.3rem; padding: 6px; gap: 0 3px; border-radius: 13px; background: var(--bg); box-shadow: var(--inset); }
+  .key { grid-row: 1 / 3; border: 0; border-radius: 0 0 8px 8px; background: linear-gradient(#cdd6f4, #bac2de); box-shadow: 2px 3px 5px var(--lo); color: #45475a; font-size: 0.62rem; font-weight: 700; display: flex; align-items: flex-end; justify-content: center; padding: 0 0 0.25rem; position: relative; transition: transform 90ms, background 120ms; }
+  .key.black { grid-row: 1 / 2; z-index: 1; margin-inline: 22%; background: linear-gradient(#313244, #11111b); color: #a6adc8; font-size: 0.52rem; box-shadow: 2px 3px 5px rgba(0, 0, 0, 0.6); border-radius: 0 0 5px 5px; }
+  .key:active { transform: translateY(1px); }
+  .key.playing { background: linear-gradient(#e4d2fb, var(--live)); color: #11111b; }
+  .key.black.playing { background: linear-gradient(var(--live), #9a73d1); color: #11111b; }
+  .key.picked { background: linear-gradient(#fdf1d6, var(--mine)); color: #11111b; box-shadow: 0 0 12px var(--mine-glow); }
+  .key.black.picked { background: linear-gradient(var(--mine), #d9bd7f); color: #11111b; }
+  .key.home::after { content: ''; position: absolute; top: 5px; left: 50%; translate: -50% 0; inline-size: 5px; block-size: 5px; border-radius: 50%; background: var(--live); box-shadow: 0 0 5px var(--live-glow); }
+  .key.home.playing::after { background: #fff; }
+
+  /* The conductor */
+  .ab { display: inline-flex; gap: 4px; padding: 4px; border-radius: 13px; }
+  .ab-btn { border: 0; border-radius: 9px; padding: 0.45rem 0.7rem; background: transparent; color: var(--dim); font: inherit; font-size: 0.8rem; cursor: pointer; }
+  .ab-btn b { font-weight: 800; margin-inline-end: 0.2rem; }
+  .ab-btn.active { background: var(--face); box-shadow: var(--raise-sm); color: var(--ink); }
+  .ab-btn.mine.active { color: var(--mine); }
+  .ab-btn:disabled { opacity: 0.45; cursor: default; }
+  .lcd-a { font-weight: 700; }
+  .desk.hearing-a .knobs, .desk.hearing-a .forks, .desk.hearing-a .drums { opacity: 0.55; transition: opacity 0.15s; }
+  .fork-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 1rem 1.4rem; }
+  .fork .hint { margin: 0; }
+  .fork .step { display: inline; color: var(--dim); font-size: 0.7rem; margin-inline-start: 0.3rem; }
+  .fork.moot .seg, .fork.moot .hint { opacity: 0.5; }
+  .moot-note { color: var(--dim); font-size: 0.7rem; }
+  .seg-btn.rec::before { content: '✓'; position: absolute; top: 1px; left: 5px; font-size: 0.6rem; color: var(--dim); }
+  .rec-mark { font-size: 0.75rem; }
+
+  .conductor h2 { display: flex; align-items: center; gap: 0.5rem; }
+  .count { display: inline-grid; place-items: center; min-inline-size: 1.6rem; block-size: 1.6rem; border-radius: 50%; background: var(--bg); box-shadow: var(--inset-sm); color: var(--mine); letter-spacing: 0; }
+  .json { margin: 0 0 0.9rem; padding: 0.75rem 1rem; white-space: pre-wrap; word-break: break-all; font-size: 0.8rem; color: var(--green); background: var(--sunken); }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.9rem; }
+  .soft-btn { border: 0; border-radius: 12px; padding: 0.6rem 1.1rem; background: var(--face); box-shadow: var(--raise-sm); font-size: 0.85rem; font-weight: 600; transition: box-shadow 120ms, color 120ms; }
+  .soft-btn:hover { color: var(--live); }
+  .soft-btn:active { box-shadow: var(--inset-sm); }
+  .soft-btn.warn { color: var(--red); }
+  .soft-btn:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+  .status { color: var(--mine); margin: 0.6rem 0 0; }
+
+  @media (prefers-reduced-motion: reduce) { .soft * { transition: none !important; } }
+</style>

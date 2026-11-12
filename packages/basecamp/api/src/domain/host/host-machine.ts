@@ -16,7 +16,7 @@
 
 import { randomUUID }         from 'node:crypto'
 import { BadRequest, Conflict, NotFound } from '@frontierjs/junction'
-import { mintEnrollToken, installCommand, outpostUnpublished, ENROLL_WINDOW_MS, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
+import { mintEnrollToken, installCommand, outpostUnpublished, ENROLL_WINDOW_MS, OUTPOST_PORT, OUTPOST_VERSION } from '../../providers/compute/enrollment.ts'
 import { env } from '../../core/env.ts'
 import { cronMatches, parseCron } from '@frontierjs/toolbelt/cron'
 import { encryptionKeyFingerprint } from '../../core/db.ts'
@@ -232,7 +232,23 @@ export async function findHost(client: any) {
  * `outpostGone` is `fli deploy` finding no Outpost unit on the box. A retired
  * box, or one Basecamp was restored beside, keeps a row that heartbeated, and
  * without it that row answers `enrolled` while nothing on the box runs.
+ *
+ * A row whose Outpost reported a version behind `OUTPOST_VERSION` is issued
+ * again too, and the install is the upgrade. Answered `enrolled`, a deploy that
+ * changed what the hub accepts left the old Outpost refused on every heartbeat
+ * (`FJS-4249`).
  */
+/** Whether an Outpost's reported version is older than the one Basecamp
+ *  installs. An unreported version is not behind: a reinstall nobody can
+ *  justify rotates the box's signing key for nothing. */
+export function behindPin(version: string | null | undefined, pin = OUTPOST_VERSION): boolean {
+  const parts = (v: string) => v.split('-')[0].split('.').map(n => Number.parseInt(n, 10))
+  if (!version || !/^\d+\.\d+\.\d+/.test(version)) return false
+  const [a, b] = [parts(version), parts(pin)]
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i]
+  return false
+}
+
 export async function useHost(client: any, { workspaceId, actor, ipAddress, name, outpostGone = false }: { workspaceId?: string; actor: string; ipAddress?: string; name?: string; outpostGone?: boolean }) {
   const sys = client.asSystem()
   if (await hostServer(sys)) {
@@ -240,7 +256,7 @@ export async function useHost(client: any, { workspaceId, actor, ipAddress, name
     if (!server) throw new Conflict('This Basecamp\'s box is a machine in another workspace; enroll it from there')
     if (ipAddress && !server.ipAddress)
       server = await client.server.update({ where: { id: server.id }, data: { ipAddress } })
-    if (server.lastHeartbeatAt && !outpostGone) return { server, enrolled: true as const }
+    if (server.lastHeartbeatAt && !outpostGone && !behindPin(server.outpostVersion)) return { server, enrolled: true as const }
     return { server, enrolled: false as const, ...(await issueEnrollmentFor(client, server.id, actor)) }
   }
 

@@ -23,12 +23,14 @@
  * A chord the spelling refuses throws here, at the call, and so does one a
  * browser or the OS takes before the page (`<Mod-w>`, `<C-Tab>`), on either
  * platform, so a binding that is dead for some users fails on every machine.
+ * A desktop shell that declares `__frontierShell = { browserChords: true }`
+ * delivers the browser's chords, so only the OS's are refused (`keys.js`).
  * Under a server render
  * nothing is bound and the dispose is a no-op; on a terminal or a phone the
  * call throws (`host.js`) — a terminal binds through `@frontierjs/mesa/keys`.
  */
 import { keymap, browserOwned } from '@frontierjs/toolbelt/keys'
-import { delegationRootOf } from '../runtime.js'
+import { delegationRootOf, shellDeliversBrowserChords } from '../runtime.js'
 import { keys } from '../keys.js'
 import { live } from './host.js'
 
@@ -41,7 +43,7 @@ export function hotkey(chord, fn, { scope, when } = {}) {
     throw new TypeError(`hotkey(${JSON.stringify(chord)}): when is a getter, read at each key`)
   }
   const map = keymap({ [chord]: (_, e) => fn(e) })
-  const [owned] = browserOwned(map)
+  const [owned] = browserOwned(map, { browserChords: shellDeliversBrowserChords() })
   if (owned) throw new TypeError(`hotkey(${JSON.stringify(chord)}): ${owned.reason}`)
   if (!live('hotkey()')) return () => {}
 

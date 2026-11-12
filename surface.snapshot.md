@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4515 source file(s) read
+27 package(s) · 4517 source file(s) read
 257 entry point(s), 32 imported by nothing outside their package, 14 emitted
-1766 value export(s), 643 reached by nothing outside, 183 emitted
+1767 value export(s), 643 reached by nothing outside, 182 emitted
 466 type export(s), 340 reached by nothing outside
 ```
 
@@ -36,7 +36,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 28 | 5 | 272 | 128 | 41 | 1 | 1 |
 | `junction` | 27 | 3 | 274 | 116 | 13 | 272 | 210 |
-| `mesa` | 19 | 4 | 326 | 111 | 80 | 0 | 0 |
+| `mesa` | 19 | 4 | 327 | 111 | 79 | 0 | 0 |
 | `sierra` | 26 | 6 | 204 | 84 | 20 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
 | `toolbelt` | 69 | 0 | 318 | 37 | 12 | 0 | 0 |
@@ -204,7 +204,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · 19 entry point(s) · 326 value, 0 type export(s)
+`packages/mesa` · 19 entry point(s) · 327 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./render` `./css-inliner` `./vite/client` `./vite/hmr`
 
@@ -212,9 +212,9 @@ Every entry is imported and every name reached.
 
 **Entries not source (2, not graded):** `./drive` `./browser`
 
-**Unreached values (111):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `boundaryWatchSet` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `fieldRead` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isAnchorComment` `isClient` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locateReported` `locateThrown` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `readSourceMarks` `refer` `removeElements` `renderAll` `renderFailure` `replaceKeyword` `resetAttributeWarnings` `resetDerivedWriteWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `settleAwaits` `slotProp` `snippetParam` `spliceEdits` `SPREAD_REFUSED` `stripSourceMarks` `styleSource` `svgElements` `templateSource` `terminalSource` `trackOwners` `unproxy` `unspliceOffset` `unwrapExp` `use_context` `warnRefusedHandler` `warnRefusedMarkup` `warnRefusedName` `withAwaitParam` `withoutWatchedCalls` `writtenOnce` `xBuild` `xNode`
+**Unreached values (111):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `boundaryWatchSet` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `fieldRead` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isAnchorComment` `isClient` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locateReported` `locateThrown` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `readSourceMarks` `refer` `removeElements` `renderAll` `renderFailure` `replaceKeyword` `resetAttributeWarnings` `resetDerivedWriteWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `settleAwaits` `shellDeliversBrowserChords` `slotProp` `snippetParam` `spliceEdits` `SPREAD_REFUSED` `stripSourceMarks` `styleSource` `svgElements` `templateSource` `terminalSource` `trackOwners` `unspliceOffset` `unwrapExp` `use_context` `warnRefusedHandler` `warnRefusedMarkup` `warnRefusedName` `withAwaitParam` `withoutWatchedCalls` `writtenOnce` `xBuild` `xNode`
 
-**Emitted (80):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `boundaryBlock` `captureRemount` `captureScope` `componentApi` `contentFallback` `contextProvide` `contextRead` `createKeyedEquals` `createWritableSignal` `dynamicElement` `dynamicTag` `eachBlock` `eachDefaultKey` `eachItems` `get_context` `hotkey` `htmlToFragment` `htmlToFragmentClean` `ifBlock` `initRenderer` `ISLAND_CLOSE` `ISLAND_OPEN` `islandPayload` `keyBlock` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `push_component` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `sleeper` `spreadAttributes` `stampAt` `stampFrom` `svgToFragment` `toggle_class` `trackDerived` `trimEmptyNodes` `unclaimedContent` `virtualClock` `warnDestructuredAccessors`
+**Emitted (79):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `boundaryBlock` `captureRemount` `captureScope` `componentApi` `contentFallback` `contextProvide` `contextRead` `createKeyedEquals` `createWritableSignal` `dynamicElement` `dynamicTag` `eachBlock` `eachDefaultKey` `eachItems` `get_context` `htmlToFragment` `htmlToFragmentClean` `ifBlock` `initRenderer` `ISLAND_CLOSE` `ISLAND_OPEN` `islandPayload` `keyBlock` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `push_component` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `sleeper` `spreadAttributes` `stampAt` `stampFrom` `svgToFragment` `toggle_class` `trackDerived` `trimEmptyNodes` `unclaimedContent` `virtualClock` `warnDestructuredAccessors`
 
 ## `@frontierjs/notifications`
 

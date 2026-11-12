@@ -107,6 +107,8 @@ const HOME_MS = 60_000
 let held = null
 
 const text = (v) => (v == null ? '' : String(v))
+// A source that counts no to-dos leaves a pin without them, and the board leaves the column blank.
+const todos = (r) => (r.open == null ? {} : { open: Number(r.open) || 0, late: Number(r.late) || 0 })
 const listOf = (v, row) => (Array.isArray(v) ? v.filter((r) => r && typeof r === 'object').map(row) : [])
 
 /** A board as printed, its rows cut to the fields the board draws; output with no `home` slug throws. */
@@ -116,7 +118,7 @@ export function readBoard(out) {
   const line = (r) => ({ project: text(r.project), who: text(r.who), text: text(r.text), when: text(r.when), unread: !!r.unread })
   return {
     home:  b.home,
-    pins:  listOf(b.pins, (r) => ({ name: text(r.name), when: text(r.when), fresh: Number(r.fresh) || 0 })).filter((r) => r.name),
+    pins:  listOf(b.pins, (r) => ({ name: text(r.name), when: text(r.when), fresh: Number(r.fresh) || 0, ...todos(r) })).filter((r) => r.name),
     inbox: listOf(b.inbox, line).filter((r) => r.text),
     pings: listOf(b.pings, line).filter((r) => r.text),
     due:   listOf(b.due, (r) => ({ project: text(r.project), text: text(r.text), when: text(r.when) })).filter((r) => r.text),

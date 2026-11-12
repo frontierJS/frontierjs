@@ -6,7 +6,8 @@
 //   docker exec <api container> bun api/src/domain/host/enroll-host.ts '{"ip":"10.17.0.5","dialed":"203.0.113.7","name":"ops"}'
 //
 // `outpost` is false when the box has no Outpost unit, which re-issues an
-// enrollment for a row that heartbeated before (`useHost`'s `outpostGone`).
+// enrollment for a row that heartbeated before (`useHost`'s `outpostGone`); so
+// does an Outpost behind the pin, whose install is its upgrade (`FJS-4249`).
 //
 // `ip` is the address sshd says it was reached at, and becomes the row's
 // `ipAddress` when it has none and is public (`FJS-3515`). Behind a cloud's NAT
@@ -19,7 +20,7 @@
 // grants nothing the caller did not hold.
 //
 // The last line of stdout is one JSON object, which is fli's whole contract:
-//   { enrolled: true }                   the box has checked in; nothing minted
+//   { enrolled: true }                   the box has checked in at the pinned Outpost; nothing minted
 //   { command, serverId, workspaceId }   run `command` on the host
 //   { skip: '<why>' }                    nothing to enroll into yet, or no one place to
 //   { error: '<what>' }                  and the exit is non-zero

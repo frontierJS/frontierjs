@@ -14,9 +14,6 @@ export const INK = {
   title:  '#e5e7eb',
 }
 
-// A pin keeps its color by its place on the board, as the bar's rows do.
-const PIN_INKS = ['#f472b6', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#fb923c', '#22d3ee', '#f87171']
-
 const DAY = 24 * 60 * 60 * 1000
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 
@@ -41,30 +38,48 @@ const cut = (s, w) => (s.length > w ? `${s.slice(0, w - 1)}…` : s)
 const first = (name) => name.split(/\s+/)[0] ?? ''
 
 /**
- * The cork board: two cards to a row, each a pin line — the name and how long
- * since the project moved — and under it what moved there today. A board of
- * more pins than cards says how many are left over in the last card.
+ * The cork board: a header naming the columns, then one line a project, the
+ * one that moved last on top — its name, its to-dos as late/open with the late
+ * in red, how long since anyone moved it, and how many of your notifications
+ * it sent today. The line is as bright as the project is recent; a board of
+ * more pins than lines says how many are left over on the last.
  * @returns {{ dx: number, dy: number, text: string, color: string }[]}
  */
 export function pinCards(pins, { w, h }, now) {
-  const col = Math.floor((w - 2) / 2)
-  const slots = Math.floor((h + 1) / 2) * 2
-  const shown = pins.length > slots ? pins.slice(0, slots - 1) : pins
-  const out = []
+  if (!pins.length) return [{ dx: 0, dy: 0, text: 'nothing pinned', color: INK.stale }]
+  const TODOS = 7
+  const AGE = 6
+  const YOU = 7
+  const nameW = w - 2 - 1 - TODOS - 1 - AGE - 1 - YOU
+  const atTodos = 2 + nameW + 1
+  const atAge = atTodos + TODOS + 1
+  const atYou = atAge + AGE + 1
+  const out = [
+    { dx: 2, dy: 0, text: 'project', color: INK.stale },
+    { dx: atTodos, dy: 0, text: 'todos'.padStart(TODOS), color: INK.stale },
+    { dx: atAge, dy: 0, text: 'active'.padStart(AGE), color: INK.stale },
+    { dx: atYou, dy: 0, text: 'for you'.padStart(YOU), color: INK.stale },
+  ]
+  const when = (p) => Date.parse(p.when) || 0
+  const sorted = [...pins].sort((a, b) => when(b) - when(a))
+  const room = h - 1
+  const shown = sorted.length > room ? sorted.slice(0, room - 1) : sorted
   shown.forEach((p, i) => {
-    const dx = (i % 2) * (col + 2)
-    const dy = Math.floor(i / 2) * 2
-    const age = ago(p.when, now)
-    const name = shortName(p.name, col - 8)
-    const color = p.fresh ? INK.fresh : now - Date.parse(p.when) < 7 * DAY ? INK.quiet : INK.stale
-    out.push({ dx, dy, text: `◆ ${name.padEnd(col - 8)} ${age.padStart(4)}`, color: PIN_INKS[i % PIN_INKS.length] })
-    if (dy + 1 < h && age) out.push({ dx: dx + 2, dy: dy + 1, text: (p.fresh ? `${p.fresh} today` : 'quiet').slice(0, col - 2), color })
+    const dy = i + 1
+    const since = now - when(p)
+    const color = since < DAY ? INK.title : since < 7 * DAY ? INK.quiet : INK.stale
+    out.push({ dx: 0, dy, text: `◆ ${shortName(p.name, nameW)}`, color })
+    if (p.open != null) {
+      const total = `/${p.open}`
+      const late = String(p.late)
+      const dx = atTodos + TODOS - total.length - late.length
+      out.push({ dx, dy, text: late, color: p.late ? INK.late : color })
+      out.push({ dx: dx + late.length, dy, text: total, color })
+    }
+    out.push({ dx: atAge, dy, text: ago(p.when, now).padStart(AGE), color })
+    if (p.fresh) out.push({ dx: atYou, dy, text: String(p.fresh).padStart(YOU), color: INK.fresh })
   })
-  if (pins.length > slots) {
-    const i = slots - 1
-    out.push({ dx: (i % 2) * (col + 2), dy: Math.floor(i / 2) * 2, text: `+ ${pins.length - shown.length} more`, color: INK.stale })
-  }
-  if (!pins.length) out.push({ dx: 0, dy: 0, text: 'nothing pinned', color: INK.stale })
+  if (sorted.length > room) out.push({ dx: 0, dy: h - 1, text: `+ ${sorted.length - shown.length} more`, color: INK.stale })
   return out
 }
 
@@ -77,24 +92,27 @@ function row(n, w, now) {
   return cut(`${mark(n.unread)}${ago(n.when, now).padStart(3)} ${shortName(n.project, 10).padEnd(10)} ${who ? `${who}: ` : ''}${n.text}`, w)
 }
 
+/** The notifications not yet read, the only ones the screen shows. */
+export const unreadOf = (inbox) => inbox.filter((n) => n.unread)
+
 /**
- * The screen over the desk, each line at its row `dy`, since an empty line
- * takes no row. Standing, it is the count, the newest under it and a hint on
- * the last row; sat at the desk, the whole inbox from row `offset`, wrapping.
+ * The screen over the desk: the unread notifications, newest first, each line
+ * at its row `dy`. Standing, as many as fit, the last row saying how many
+ * more there are; sat at the desk, all of them from row `offset`, wrapping.
  * @returns {{ dy: number, text: string, color: string }[]}
  */
 export function screenLines(inbox, { w, h }, now, { sitting = false, offset = 0 } = {}) {
-  if (!inbox.length) return [{ dy: 0, text: 'inbox zero', color: INK.quiet }]
-  const unread = inbox.filter((n) => n.unread).length
+  const unread = unreadOf(inbox)
+  if (!unread.length) return [{ dy: 0, text: 'nothing unread', color: INK.stale }]
+  const at = (n, dy) => ({ dy, text: row(n, w, now), color: INK.unread })
+  if (unread.length <= h) return unread.map(at)
   if (!sitting) {
     return [
-      { dy: 0, text: cut(unread ? `● ${unread} unread · ${inbox.length} in the tray` : `all read · ${inbox.length} in the tray`, w), color: unread ? INK.unread : INK.quiet },
-      ...inbox.slice(0, Math.max(0, h - 3)).map((n, i) => ({ dy: i + 1, text: row(n, w, now), color: n.unread ? INK.unread : INK.read })),
-      { dy: h - 1, text: 'sit at the desk to read on', color: INK.stale },
+      ...unread.slice(0, h - 1).map(at),
+      { dy: h - 1, text: cut(`+ ${unread.length - h + 1} more · sit at the desk to scroll`, w), color: INK.stale },
     ]
   }
-  const idx = inbox.length > h ? Array.from({ length: h }, (_, i) => (offset + i) % inbox.length) : inbox.map((_, i) => i)
-  return idx.map((n, i) => ({ dy: i, text: row(inbox[n], w, now), color: inbox[n].unread ? INK.unread : INK.read }))
+  return Array.from({ length: h }, (_, dy) => at(unread[(offset + dy) % unread.length], dy))
 }
 
 /** A due date (`2026-10-17`) at local midnight, so a day is due all of that day. */

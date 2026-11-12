@@ -105,6 +105,21 @@ export async function run(t) {
   const cancelable = await t.evaluate(`const off = kitHotkey('<Mod-s>', () => {}); off(); return 'bound';`)
   t.is(cancelable, 'bound', 'a key the browser lets a page cancel binds')
 
+  // A desktop shell's webview delivers the browser's chords and never the OS's.
+  const probe = `const out = []
+    for (const k of ['<Mod-w>', '<C-Tab>', '<D-Tab>', '<D-Space>']) {
+      try { kitHotkey(k, () => {})(); out.push(k + ' bound') } catch (e) { out.push(k + ' refused') }
+    }
+    try { kitKeys({ '<Mod-w>': 'close' })(document.querySelector('#inside'))(); out.push('keys <Mod-w> attached') } catch (e) { out.push('keys <Mod-w> refused') }
+    try { kitKeys({ '<D-Tab>': 'switch' })(document.querySelector('#inside'))(); out.push('keys <D-Tab> attached') } catch (e) { out.push('keys <D-Tab> refused') }
+    return out.join(', ')`
+  t.is(await t.evaluate(probe), '<Mod-w> refused, <C-Tab> refused, <D-Tab> refused, <D-Space> refused, keys <Mod-w> refused, keys <D-Tab> refused', 'with no shell fact both browser and OS chords are refused')
+  await t.evaluate(`globalThis.__frontierShell = { browserChords: true }; return true;`)
+  t.is(await t.evaluate(probe), '<Mod-w> bound, <C-Tab> bound, <D-Tab> refused, <D-Space> refused, keys <Mod-w> attached, keys <D-Tab> refused', 'a shell that declares browserChords gets the browser rows back and still loses the OS rows')
+  await t.evaluate(`globalThis.__frontierShell = { browserChords: 'yes' }; return true;`)
+  t.is(await t.evaluate(`try { kitHotkey('<Mod-w>', () => {})(); return 'bound' } catch (e) { return 'refused' }`), 'refused', 'only true declares it')
+  await t.evaluate(`delete globalThis.__frontierShell; return true;`)
+
   await t.evaluate(`for (const off of Object.values(kitOff)) off(); return true;`)
   t.is(await t.evaluate(`return window.kitListeners;`), 0, 'the last dispose on document removes its listener')
   await t.press('k', CTRL)

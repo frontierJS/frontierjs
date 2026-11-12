@@ -7,9 +7,8 @@
   // member visiting another's home sees the furniture bare, and their own
   // account never lands on the host's walls.
   //
-  // In the home: the pinned projects on the cork board, the inbox on the screen
-  // (its count and the newest standing, the whole of it scrolling sat at the
-  // desk), what is due on the calendar, a letter on the mat per thing unread,
+  // In the home: the pinned projects on the cork board, the unread inbox on the
+  // screen (as many as fit standing, all of it scrolling sat at the desk), what is due on the calendar, a letter on the mat per thing unread,
   // and the bell ringing for a fresh ping — its pings read out standing beside
   // it. In the lane: a flag beside the home's mailbox while anything is unread.
   //
@@ -18,7 +17,7 @@
   import { at, tint } from '#cell'
   import { homeBoard } from '#errand'
   import { spotsOf } from '@/pieces/index.js'
-  import { pinCards, screenLines, calendarLines, pingLines, ringing, post } from '@/lib/home/home-board.js'
+  import { pinCards, screenLines, unreadOf, calendarLines, pingLines, ringing, post } from '@/lib/home/home-board.js'
 
   const scene = $context.scene
   const PULL_MS = 60_000
@@ -86,7 +85,7 @@
   }, { every: RING_MS }))
 
   $.onDestroy(scene.task('home-scroll', () => {
-    if (sitting && board && board.inbox.length > screen.piece.inner.h) offset = (offset + 1) % board.inbox.length
+    if (sitting && board && unreadOf(board.inbox).length > screen.piece.inner.h) offset = (offset + 1) % unreadOf(board.inbox).length
   }, { every: SCROLL_MS }))
 
   const inner = (m) => ({ x: m.x + m.piece.inner.dx, y: m.y + m.piece.inner.dy, ...m.piece.inner })

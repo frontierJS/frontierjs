@@ -14,11 +14,12 @@
  * always has: example/desktop/ is held byte for byte as that output.
  */
 
-import { existsSync, readFileSync } from 'fs'
+import { readFileSync } from 'fs'
 import * as fs from 'fs'
 import * as path from 'path'
 import { dirname, join, resolve } from 'path'
 import { fileURLToPath } from 'url'
+import { resolveHealthPath } from './health-target.js'
 
 const TEMPLATES = join(dirname(fileURLToPath(import.meta.url)), 'desktop-sidecar')
 
@@ -112,15 +113,17 @@ export function bundledSource(specs) {
   return lines.join('\n')
 }
 
-/** The app's API prefix as junction.config.js states it, `/api` when it does not. */
+/**
+ * The app's API prefix, read where health-target.js reads it (app.ts wins over
+ * junction.config.js) and `''` when neither states one, as Junction's default
+ * is. A guess of `/api` made the shell poll /api/health on an API-only app,
+ * which serves /health, and quit behind an error dialog after 30 s (FJS-4246).
+ */
 export function apiPrefixOf(root) {
-  const file = resolve(root, 'api', 'config', 'junction.config.js')
-  if (!existsSync(file)) return '/api'
-  const m = readFileSync(file, 'utf8').match(/apiPrefix\s*:\s*['"]([^'"]*)['"]/)
-  return m ? m[1] : '/api'
+  return resolveHealthPath(root).prefix
 }
 
-function fill(template, { slug, productName, apiPrefix = '/api' }) {
+function fill(template, { slug, productName, apiPrefix = '' }) {
   return readFileSync(join(TEMPLATES, template), 'utf8')
     .replaceAll('__SLUG__', slug)
     .replaceAll('__PRODUCT__', productName)
