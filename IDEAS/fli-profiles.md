@@ -193,12 +193,33 @@ through it.
 
 ### Phase 4 — Workbench
 
-Goal: profiles are managed from Workbench, beside the laptop's other secrets.
-Done when: shaped once the owner's secrets ideas are written; § Direction —
-managed from Workbench holds what is known.
+Goal: Workbench lists and edits profiles, and every Workbench verb that
+spends an account key spends the profile its Basecamp was bought under.
+Done when: a dry `basecamp:create` from the New Basecamp page under a profile
+prints that profile on its first line, and a reinstall of the Basecamp it
+filed runs under the same profile without being asked.
 
-- [ ] 4.1 Shape the screen with the owner's secrets ideas, then write its
-  steps here or in a sibling paper.
+Workbench's spenders today: create, resume-install, reinstall and the restore
+drill spawn fli (`spawnFli`, `basecamps-create.ts`), so `FLI_PROFILE` in the
+child's env picks the profile; the backup B2 lookup (`basecamps.ts`) and the
+services "held" probe (`laptop/services.ts`) read the global file by path.
+
+- [ ] 4.1 `basecamp:create` writes `profile` into the `basecamps.json` entry
+  it files when a profile is in use (Q5), and `fli doctor` refuses an entry
+  naming a profile with no file.
+- [ ] 4.2 `spawnFli` takes a profile and sets `FLI_PROFILE` in the child's
+  env; reinstall, resume-install and the restore drill pass the entry's.
+- [ ] 4.3 The backup B2 lookup reads the entry's profile before the global
+  file, through the cli's own loader rather than a second path read.
+- [ ] 4.4 The New Basecamp page's Profile select, starting on nothing chosen
+  (Q6): each profile, and *None — global file*; the run refuses until one is
+  picked, and the shown command line carries `FLI_PROFILE=<name>`.
+- [ ] 4.5 A Profiles section on the Laptop screen beside the global env pane
+  (Q7): each profile's key names masked, its mode and the projects naming it,
+  create, set and unset a key — the `profile:` commands' helpers in
+  `global-env.js`, never a second writer.
+- [ ] 4.6 Drive it: a dry create under a scratch profile, then the reinstall
+  refusal path, in Chrome.
 
 ## Open questions
 
@@ -230,6 +251,28 @@ managed from Workbench holds what is known.
   - **Recommend B** — under A a forgotten `FLI_PROFILE` falls through to
     whichever account the global file holds, which is the wrong-client
     deploy again, silent. B costs a refusal the first time.
+
+- ~~**Q5 — Whether a Basecamp remembers the profile it was bought under.**~~ **Answered 2026-11-12 (`FJS-D2087`): A — Record it on the entry: `basecamp:create` writes `profile` into the `basecamps.json` entry, and every later verb reads it there.**
+  - **A** — Record it on the entry: `basecamp:create` writes `profile` into
+    the `basecamps.json` entry, and every later verb reads it there.
+  - **B** — Pick it every run: reinstall, backup and the restore drill each
+    show the select.
+  - **Recommend A** — the entry names its profile the way a project's `.env`
+    does, so the selector stays derived; under B a wrong pick on a reinstall
+    spends another client's account with nothing to catch it.
+- ~~**Q6 — What the New Basecamp page's Profile select starts on.**~~ **Answered 2026-11-12 (`FJS-D2088`): A — Nothing chosen: the run refuses until a profile or *None — global file* is picked.**
+  - **A** — Nothing chosen: the run refuses until a profile or *None — global
+    file* is picked.
+  - **B** — *None — global file*: today's behavior, a profile optional.
+  - **Recommend A** — the command buys a box, so the account it charges is
+    chosen on purpose; under B a forgotten pick charges the global account.
+- ~~**Q7 — Where Workbench lists and edits profiles.**~~ **Answered 2026-11-12 (`FJS-D2089`): A — The Laptop screen, beside the global env pane, with its masked list and set/unset; it moves to a Secrets screen once the owner's secrets ideas are written.**
+  - **A** — The Laptop screen, beside the global env pane, with its masked
+    list and set/unset; it moves to a Secrets screen once the owner's secrets
+    ideas are written.
+  - **B** — A Secrets screen now, profiles its first section.
+  - **Recommend A** — the pane it sits beside already does the same job for
+    the global file; B shapes a screen ahead of the ideas that would fill it.
 
 ## Out of scope
 

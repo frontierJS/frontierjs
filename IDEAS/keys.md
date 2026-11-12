@@ -248,7 +248,8 @@ Done when: a ui kit drive and a terminal spec each run `i`, Esc, `w`, `0`, `$`, 
 Goal: operators, text objects, visual.
 Done when: a consumer that edits more than a line asks, and names the rows it needs.
 
-- [ ] 5.1 Opened by that consumer; priced then against khat's `input.rs`
+- [x] 5.1 Opened by Lathe (stressor #47), 2026-11-12: `FJS-D2085` and `FJS-D2086` ruled, then `/textbox` split into `editDoc` over a document and the string host `edit()` over `stringDoc`, with no caller moved. Next is L2 itself (operators, text objects, visual), priced against khat's `input.rs` as Lathe 5.2
+- [x] 5.2 Built 2026-11-12, uncommitted: `/textbox` exports `VIM` (normal, insert, operator, visual, visualLine), the operators `d c y > < gu gU g~`, vim's motions with `f t F T ; ,`, `%`, `{ }`, `j`/`k` with a wanted column, the word, bracket, quote and paragraph objects, visual by character and line, and vim's registers in `state.registers` (`"+` answers `request: 'copy'`, as Lathe's Q16 in `fjs-prototypes/lathe/PLAN.md` rules: only `"+` reaches the clipboard). `read.js` reads through a chunked window. `visualRange(state, doc)` is the selection a host paints. Renamed `yankLine` to `yankLines` and `delete` to `deleteForward`. Not built: `is`/`it`, autoindent on `cc`, and a visual object that extends its selection rather than replacing it. Counts and `.` are 5.3; `H M L` and scrolling are the host's
 
 ## Open questions
 

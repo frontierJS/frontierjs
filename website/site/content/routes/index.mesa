@@ -462,24 +462,26 @@ render: static
   .stack h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.02em; margin: 0 0 1.25rem; }
   .stack .icons {
     list-style: none; padding: 0; margin: 0;
-    display: grid; grid-auto-rows: 1fr; gap: .75rem;
+    display: grid; gap: .75rem;
   }
-  .stack .rest { margin-top: 2rem; }
-  .stack .primary { grid-template-columns: repeat(2, 1fr); }
-  .stack .rest    { grid-template-columns: repeat(3, 1fr); grid-auto-rows: auto; }
+  .stack .icons + .icons { margin-top: 2rem; }
+  .stack .tier1 { grid-template-columns: repeat(2, 1fr); }
+  .stack .tier2 { grid-template-columns: repeat(4, 1fr); gap: .5rem; }
+  .stack .tier3 { grid-template-columns: repeat(4, 1fr); gap: .5rem; }
+  /* Tier 2 keeps the width a tile has in a six-column row, four to a row. */
   @media (min-width: 40rem) {
-    .stack .primary { grid-template-columns: repeat(4, 1fr); }
-    .stack .rest    { grid-template-columns: repeat(6, 1fr); }
+    .stack .tier1 { grid-template-columns: repeat(4, 1fr); }
+    .stack .tier2 { grid-template-columns: repeat(4, calc((100% - 3.75rem) / 6)); }
+    .stack .tier3 { grid-template-columns: repeat(6, 1fr); }
   }
-  /* The big tiles keep the width they have in a six-column row, four to a row. */
   @media (min-width: 60rem) {
-    .stack .icons   { gap: 1rem; }
-    .stack .primary { grid-template-columns: repeat(4, calc((100% - 5rem) / 6)); }
-    .stack .rest    { grid-template-columns: repeat(8, 1fr); }
+    .stack .icons { gap: 1rem; }
+    .stack .tier2 { grid-template-columns: repeat(4, calc((100% - 5rem) / 6)); }
+    .stack .tier3 { grid-template-columns: repeat(8, 1fr); }
   }
   .stack .icons a {
     display: grid; justify-items: center; align-content: center; gap: .65rem;
-    height: 100%; box-sizing: border-box; padding: 1.25rem .5rem 1rem;
+    aspect-ratio: 1; min-height: 0; overflow: hidden; box-sizing: border-box; padding: 1.25rem .5rem 1rem;
     text-decoration: none; color: var(--ink-soft);
     --glass-blur: 22px;
     --surface-bg: rgb(255 255 255 / .04);
@@ -498,10 +500,16 @@ render: static
     font-size: 1.8rem; font-weight: 600; text-transform: uppercase;
   }
   .stack .name { font-size: .92rem; font-weight: 500; text-align: center; overflow-wrap: anywhere; }
-  .stack .rest a { aspect-ratio: 1; height: auto; gap: .4rem; padding: .6rem .3rem; border-radius: .75rem; }
-  .stack .rest img, .stack .rest .blank { width: clamp(2.25rem, 4vw, 3rem); }
-  .stack .rest .blank { font-size: 1.1rem; border-radius: .6rem; }
-  .stack .rest .name { font-size: .78rem; overflow-wrap: normal; }
+  .stack .tier1 a { gap: .9rem; border-radius: 1.25rem; }
+  .stack .tier1 img, .stack .tier1 .blank { width: clamp(4.5rem, 9vw, 8rem); }
+  .stack .tier2 img, .stack .tier2 .blank { width: clamp(2.4rem, 6vw, 5.5rem); }
+  .stack .tier2 .name { font-size: clamp(.8rem, 1.8vw, .92rem); }
+  .stack .tier1 .name { font-size: clamp(.95rem, 1.6vw, 1.15rem); font-weight: 600; }
+  .stack .tier2 a { padding: .6rem .3rem; }
+  .stack .tier3 a { gap: .35rem; padding: .45rem .25rem; border-radius: .75rem; }
+  .stack .tier3 img, .stack .tier3 .blank { width: clamp(1.9rem, 4vw, 3rem); }
+  .stack .tier3 .blank { font-size: 1.1rem; border-radius: .6rem; }
+  .stack .tier3 .name { font-size: clamp(.66rem, 1.8vw, .78rem); overflow-wrap: normal; }
   .stack .more { margin: 1.5rem 0 0; font-size: .92rem; }
 
   .derived { padding: 1rem 0 4rem; font-family: var(--font-primary); }

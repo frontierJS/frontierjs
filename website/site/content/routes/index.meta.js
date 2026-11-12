@@ -12,14 +12,15 @@ import { fileURLToPath } from 'node:url'
 import { load as landscape } from './why/landscape.meta.js'
 import { loadFJS, hrefFor, folderByName } from '../data/packages.js'
 
-// The big tiles, by slug and in this order. Every other package follows in
-// the small grid, so a new one is never hidden.
-const PRIMARY = ['litestone', 'junction', 'sierra', 'fli', 'basecamp', 'conduit', 'css', 'workbench']
-const REST = [
-  'mesa', 'auth', 'caravan', 'ui', 'testing', 'notifications', 'mcp', 'orion',
-  'outpost', 'create-frontier', 'toolbelt', 'config', 'email-kit', 'print-kit', 'jetty', 'vscode',
+// Three tile sizes, by slug and in this order. A package named in none of
+// them lands at the end of the third, so a new one is never hidden.
+const TIERS = [
+  ['litestone', 'junction', 'sierra', 'fli', 'basecamp', 'conduit', 'css', 'workbench'],
+  ['mesa', 'auth', 'caravan', 'ui'],
+  ['testing', 'notifications', 'mcp', 'orion', 'outpost', 'create-frontier',
+   'toolbelt', 'config', 'email-kit', 'print-kit', 'jetty', 'vscode'],
 ]
-const rank = (p) => (REST.indexOf(p.slug) + 1) || REST.length + 1
+const NAMED = TIERS.flat()
 
 const ICONS = resolve(dirname(fileURLToPath(import.meta.url)), '../public/icons')
 
@@ -37,9 +38,12 @@ export async function load(ctx) {
   }
   return {
     ...(await landscape(ctx)),
-    packages: [
-      { key: 'primary', items: PRIMARY.map((slug) => PKGS.find((p) => p.slug === slug)).filter(Boolean).map(tile) },
-      { key: 'rest',    items: PKGS.filter((p) => !PRIMARY.includes(p.slug)).sort((a, b) => rank(a) - rank(b)).map(tile) },
-    ],
+    packages: TIERS.map((slugs, i) => ({
+      key:   `tier${i + 1}`,
+      items: [
+        ...slugs.map((slug) => PKGS.find((p) => p.slug === slug)).filter(Boolean),
+        ...(i === TIERS.length - 1 ? PKGS.filter((p) => !NAMED.includes(p.slug)) : []),
+      ].map(tile),
+    })),
   }
 }

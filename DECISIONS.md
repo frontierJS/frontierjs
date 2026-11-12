@@ -17046,6 +17046,24 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2089"></a>2026-11-12 · `FJS-D2089` — Q7 — Where Workbench lists and edits profiles — The Laptop screen, beside the global env pane, with its masked list and set/unset; it moves to a Secrets screen once the owner's secrets ideas are written.
+
+Asked in [`IDEAS/fli-profiles.md`](IDEAS/fli-profiles.md) § Open questions. **A** was picked over **B** (A Secrets screen now, profiles its first section).
+
+The paper's recommendation, taken as written: the pane it sits beside already does the same job for the global file; B shapes a screen ahead of the ideas that would fill it.
+
+### <a id="fjs-d2088"></a>2026-11-12 · `FJS-D2088` — Q6 — What the New Basecamp page's Profile select starts on — Nothing chosen: the run refuses until a profile or *None — global file* is picked.
+
+Asked in [`IDEAS/fli-profiles.md`](IDEAS/fli-profiles.md) § Open questions. **A** was picked over **B** (*None — global file*: today's behavior, a profile optional).
+
+The paper's recommendation, taken as written: the command buys a box, so the account it charges is chosen on purpose; under B a forgotten pick charges the global account.
+
+### <a id="fjs-d2087"></a>2026-11-12 · `FJS-D2087` — Q5 — Whether a Basecamp remembers the profile it was bought under — Record it on the entry: `basecamp:create` writes `profile` into the `basecamps.json` entry, and every later verb reads it there.
+
+Asked in [`IDEAS/fli-profiles.md`](IDEAS/fli-profiles.md) § Open questions. **A** was picked over **B** (Pick it every run: reinstall, backup and the restore drill each show the select).
+
+The paper's recommendation, taken as written: the entry names its profile the way a project's `.env` does, so the selector stays derived; under B a wrong pick on a reinstall spends another client's account with nothing to catch it.
+
 ### <a id="fjs-d2084"></a>2026-11-12 · `FJS-D2084` — What does `ws:pub` do when a package's workspace dependency is in the release and the package is not — A preflight note (`pins-left-behind`) naming each package left out whose published copy pins a sibling this release ships, with the run that releases it after (`fli ws:pub patch --filter <name> --all`). No package is published that was not asked for.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (cascade: bump and publish every dependent of a released package. Nothing goes stale, and a toolbelt bump republishes most of the workspace), **C** (cascade into the packages that run on a machine (outpost, cli) and note the rest. Needs a mark for which packages those are), **D** (nothing; `--all` by hand where it matters).

@@ -357,16 +357,35 @@ src/keys/            a key sequence read against a keymap — vim's chord
                      `nop` unbinds, a row that cannot apply is a warning and
                      never a throw, and the table it answers always builds
 src/textbox/         a text control edited by vim's keys — `textbox()` state,
-                     `edit(state, action)`, and `NORMAL`/`INSERT`, the
-                     tables a host hands to `/keys`'s `keymap()` and steps
-                     with `text: false` in both modes, since under `true` Esc
-                     is the control's (`FJS-D1386`). khat's `input.rs` cut to
-                     L1 (`IDEAS/keys.md` 4.1): flat rows, no operator grammar,
-                     no `j`/`k`. Offsets are UTF-16, a `<textarea>`'s unit;
-                     `h l x` step a grapheme. `edit(s, 'sync', { text,
-                     cursor, anchor })` takes back what the control typed or
-                     where a click left it; a sync that only moves the cursor
-                     keeps `redo`. Caller: ui's `<Textbox>`
+                     `edit(state, action, arg)`, and the tables a host hands
+                     to `/keys`'s `keymap()` and steps with `text: false`,
+                     since under `true` Esc is the control's (`FJS-D1386`).
+                     `NORMAL`/`INSERT` are L1 (keys.md 4.1): flat rows, no
+                     operator grammar. `VIM` is L2 (keys.md 5.2), one table
+                     per mode — normal, insert, operator, visual, visualLine
+                     — holding vim's operators, motions, finds, text objects,
+                     visual modes and registers (`FJS-D2086`: the counts and
+                     `.` are not in it); an await row's key is the action's
+                     arg, so `f`, `t`, `r` and `"` take the next key. Offsets
+                     are UTF-16, a `<textarea>`'s unit; `h l x` step a
+                     grapheme. `edit(s, 'sync', { text, cursor, anchor })`
+                     takes back what the control typed or where a click left
+                     it; a sync that only moves the cursor keeps `redo`.
+                     Under it, `editDoc(state, action, arg, doc)` is the
+                     reducer over a document (`FJS-D2085`): it reads
+                     `{ length, lineCount, slice, lineStart, positionAt }`,
+                     answers `{ state, edits, request, step }`, and leaves
+                     applying the edits and undo to the host; `textbox()`/
+                     `edit()` are its string host over `stringDoc(text)`.
+                     `state.registers` is vim's set (`"`, `0`–`9`, `-`, `a`–`z`,
+                     `+`); a write to `+` answers `request: 'copy'`, and a host
+                     puts the clipboard there before a `"+` put.
+                     `visualRange(state, doc)` is the selection to paint.
+                     `read.js` is where things are — graphemes, words, finds,
+                     brackets, paragraphs and the objects — reading through a
+                     chunked window so a long line or file is never sliced
+                     whole. Callers: ui's `<Textbox>`; Lathe's editor over its
+                     piece table (vim, keys.md Phase 5)
 src/textedit/        `locateText` — an element's words swapped where its
                      `.mesa` or `.md` source wrote them, or `{ why }` when that
                      takes a guess (interpolated, split by markup, written
