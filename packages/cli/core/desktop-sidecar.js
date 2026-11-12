@@ -17,7 +17,7 @@
 import { readFileSync } from 'fs'
 import * as fs from 'fs'
 import * as path from 'path'
-import { dirname, join, resolve } from 'path'
+import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { resolveHealthPath } from './health-target.js'
 
