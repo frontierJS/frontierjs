@@ -60,6 +60,7 @@
     "scenes": "vite -c editor/vite.config.js",
     "start": "bun api/index.ts",
     "share": "bun scripts/share.mjs",
+    "band:wav": "bun scripts/band-wav.mjs",
     "tui": "cd web && bun ../node_modules/@frontierjs/sierra/src/tools/tui.js",
     "test": "node ../../scripts/tmp-run.mjs 'bun test'",
     "frames": "bun web/test/frames.mjs",

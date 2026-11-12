@@ -50,7 +50,7 @@
   }
 
   function start() {
-    stop = stream((from, n) => band.samples(from, n), { rate: RATE, gain: () => listening.volume / 100 })
+    stop = stream((from, n) => band.samples(from, n), { rate: RATE, channels: 2, gain: () => listening.volume / 100 })
     return stop ? `the ${radio ? 'radio' : 'band'} plays ${songOf(songAt(Date.now(), band.cueOf(Date.now()))).name}` : 'nothing here can play sound'
   }
   function playing() {
@@ -78,7 +78,7 @@
     const rows = []
     for (let k = first; k < first + 8 && k <= MAX_SONG; k++) {
       const s = songOf(k)
-      rows.push(`#${k} ${s.name} ${s.key} ${s.bpm}${s.ensemble === 'strings' ? ' strings' : ''}`)
+      rows.push(`#${k} ${s.name} ${s.key} ${s.bpm}${s.ensemble === 'strings' ? ' strings' : ` · ${s.formCode}`}`)
     }
     return rows.join(' · ')
   }

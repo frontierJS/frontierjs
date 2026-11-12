@@ -764,6 +764,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `lockdown.md` — Lockdown: the developer-facing surface frozen — deletion pass, ten rulings, the renames they force, a fresh scaffold read as the interface
 - `git-deploy.md` — a repository wired to an App: push, button or laptop release; Forge's site flow with the joints closed, then a GitHub connection
 - `haven.md` — Haven: a place in the terminal anyone with `fli` installed can walk into; one hosted FJS app, `web/` lowered to the terminal, sprites probed
+- `band.md` — the Haven band: the loft's band in tune, in stereo, in a room; real instruments and a vowel singer, then voice-led harmony, motif hooks and a form per song
 - `mesa-kit-primitives.md` — the primitives the Mesa kit keeps re-writing
 - `mirror-apps.md` — a mirror app: an FJS app whose truth lives in a Provider, on purpose; Mattermost as the test case
 - `conduit-37signals.md` — Basecamp over conduit for Kobami, built in halves: send first, then the event feed; Mattermost's Phase 2 as the shape
