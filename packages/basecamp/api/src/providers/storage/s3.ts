@@ -138,7 +138,8 @@ export const contentMd5 = (bytes: Uint8Array): string => new Bun.CryptoHasher('m
 /** `contentMd5` of a file, read as a stream: an archive can be gigabytes. */
 export async function fileMd5(path: string): Promise<string> {
   const hasher = new Bun.CryptoHasher('md5')
-  for await (const chunk of Bun.file(path).stream()) hasher.update(chunk)
+  const reader = Bun.file(path).stream().getReader()
+  for (let r = await reader.read(); !r.done; r = await reader.read()) hasher.update(r.value)
   return hasher.digest('base64')
 }
 
