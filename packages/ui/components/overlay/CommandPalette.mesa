@@ -195,8 +195,11 @@
   // Reset cursor to top when query changes
   $: query, () => { idx = 0; ask(query); onquery?.(query) }
 
-  // Scroll active row into view whenever idx moves
+  // Scroll active row into view whenever idx moves. The first row goes to the
+  // list's own top: `nearest` would leave its group label scrolled out, and a
+  // list whose rows sum to a fractional height stops a pixel short.
   $: idx, () => {
+    if (idx === 0) { if (listEl) listEl.scrollTop = 0; return }
     listEl?.querySelector('[data-active="true"]')
            ?.scrollIntoView({ block: 'nearest' })
   }

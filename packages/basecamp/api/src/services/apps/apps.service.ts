@@ -564,8 +564,7 @@ async function detail(id: string) {
 }
 
 // The newest finished drill on each machine (`FJS-D1525`). `AppDrill` reads at
-// ADMINISTRATOR, and a developer's detail screen leaves the badge out rather
-// than failing the whole read.
+// viewer (`FJS-D2070`); a caller below that gets no badge rather than a failed read.
 async function lastDrills(appId: string): Promise<Map<string, unknown>> {
   const latest = new Map<string, unknown>()
   try {

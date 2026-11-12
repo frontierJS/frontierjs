@@ -6132,10 +6132,11 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect(row.durationMs).toBeGreaterThanOrEqual(0)
       const listed = await env.as(owner).service('appDrills').find({ appId: app.id }) as any
       expect(listed.data.map((r: any) => r.id)).toContain(row.id)
-      // The App screen shows it beside the placement; a developer's read leaves it out.
+      // The App screen shows it beside the placement, to anyone who reads the
+      // workspace: AppDrill reads at viewer (FJS-D2070).
       const here = (who: any) => env.as(who).service('apps').get(app.id).then((a: any) => a.placement.find((p: any) => p.serverId === server.id))
       expect((await here(owner)).drill).toMatchObject({ id: row.id, status: 'failed' })
-      expect((await here(developer)).drill).toBeNull()
+      expect((await here(developer)).drill).toMatchObject({ id: row.id, status: 'failed' })
       await expect(env.as(owner).service('appDrills').create({ appId: app.id, serverId: server.id, status: 'success' })).rejects.toThrow()
       await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
     })

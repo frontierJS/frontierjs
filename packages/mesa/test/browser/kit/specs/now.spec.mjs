@@ -68,7 +68,8 @@ export async function run(t) {
   })
   await t.eventually(`document.querySelector('#slow').textContent !== '${slowBefore}'`, true,
     'brought back, a 60 s clock ticks at once rather than at the next minute', 1000)
-  await t.eventually(`window.kitIntervals.size`, 1,
+  // Brought back near :00, the 60 s reader starts its own interval inside this window.
+  await t.eventually(`[...window.kitIntervals.values()].filter((ms) => ms === 1000).length`, 1,
     'and the 1000 ms interval runs again', 2500)
 
   await t.evaluate(`window.mesaUnmount(); return true;`)
