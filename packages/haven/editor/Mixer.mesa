@@ -413,6 +413,7 @@
         {/each}
       </div>
       <label class="slider" class:set={conductor.room !== undefined}><span>Room</span> <input class="soft-range" type="range" min="0" max="2.5" step="0.05" value={conductor.room ?? 1} style="--fill: {(Number(dragging.room ?? conductor.room ?? 1) / 2.5) * 100}%" oninput={(e) => { dragging = { ...dragging, room: e.target.value } }} onchange={(e) => set('room', Number(e.target.value) === 1 ? null : Number(e.target.value))} /> <span class="num">{Number(dragging.room ?? conductor.room ?? 1).toFixed(2)}</span></label>
+      <label class="slider" class:set={conductor.brightness !== undefined} title="Every player at once: dark is muted and clean, bright is open and gritty"><span>Brightness</span> <input class="soft-range" type="range" min="-1" max="1" step="0.05" value={conductor.brightness ?? 0} style="--fill: {((Number(dragging.brightness ?? conductor.brightness ?? 0) + 1) / 2) * 100}%" oninput={(e) => { dragging = { ...dragging, brightness: e.target.value } }} onchange={(e) => set('brightness', Number(e.target.value) === 0 ? null : Number(e.target.value))} /> <span class="num">{Number(dragging.brightness ?? conductor.brightness ?? 0).toFixed(2)}</span></label>
       <p class="hint">A dimmed strip sits this bar out by the arrangement. M and S are for listening only and are not saved.</p>
     </section>
 

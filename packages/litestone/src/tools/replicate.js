@@ -197,6 +197,9 @@ export async function getReplicaFile(base, name) {
 // leading `*` reads back as the bytes it was.
 const q = v => JSON.stringify(String(v))
 
+export const L0_CHECK_INTERVAL = '30m'
+export const LEVEL_INTERVALS   = ['1h', '6h', '24h']
+
 export function buildYaml(targets, opts) {
   // l0-retention is the STORE's setting in v0.5: read at the top of the file
   // and ignored, without a word, on a replica — where it was written, which
@@ -207,6 +210,16 @@ export function buildYaml(targets, opts) {
   const l0    = opts.l0Retention ?? '24h'
   const lines = [
     ...(l0 ? [`l0-retention: ${l0}`] : []),
+    // Every expiry check and every compaction lists the bucket, a Class C call
+    // on B2. On Litestream's defaults (a check every 15s, L1/L2/L3 at 30s/5m/1h)
+    // one database lists about 9,000 times a day, and B2's free account allows
+    // 2,500 for every bucket together: three replicated databases ran the cap
+    // out and every replica and backup on the account was refused (FJS-4250).
+    // These list about 77 times a day per database. The check stays shorter
+    // than L1, as Litestream asks, and L0 still keeps l0-retention's window.
+    `l0-retention-check-interval: ${L0_CHECK_INTERVAL}`,
+    'levels:',
+    ...LEVEL_INTERVALS.map(i => `  - interval: ${i}`),
     ...(opts.retentionPeriod ? ['snapshot:', `  retention: ${opts.retentionPeriod}`] : []),
     // The control socket's `/list` is the one reading of how far each
     // database's REPLICA is: `last_sync_at` stops when the bucket stops

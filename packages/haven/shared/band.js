@@ -440,7 +440,7 @@ export function songOf(k, conductor = {}) {
   const lifted   = shape?.lift.semis ? `, last chorus up ${shape.lift.semis}` : ''
   return {
     ...s, k, name, chorus, motif, hook, pattern, fills, lean, stepMs, barN, key, bassVoice, voice, vowel, bars, color, sus, coda,
-    verse: c.verse ?? 'bar', hookBars: c.hookBars ?? 4, fillFrom: c.fills ?? 'any', levels: c.levels ?? null, room: c.room ?? 1,
+    verse: c.verse ?? 'bar', hookBars: c.hookBars ?? 4, fillFrom: c.fills ?? 'any', levels: c.levels ?? null, room: c.room ?? 1, brightness: c.brightness ?? 0,
     tuning: c.tuning ?? 'just', susGuitar: c.susGuitar ?? 'follows', soloFill: c.soloFill ?? 'none',
     ...shape, formCode,
     ensemble: strings ? 'strings' : 'band',
@@ -460,7 +460,7 @@ export function songOf(k, conductor = {}) {
  * 'none'), `bass`, `bassVoice`, `guitar`, `keys`, `chorusGuitar`, `chorusKeys`, `singer`, `voice`, `vowel`, `verse`
  * ('bar' draws a variation each bar, 'verse' one for the whole verse, 'motif' sings the motif), `hookBars` (2 or 4),
  * `ensemble`, `soloist`, `lift` (semitones), `dropouts` (false for none), `levels` (`{ part: gain }`) and `room`
- * (the reverb send, 1 as drawn). Six keys hold a plan fork open (IDEAS/band.md), each the built rule when left out:
+ * (the reverb send, 1 as drawn), `brightness` (-1 dark to 1 bright, every player at once, 0 as built; `BRIGHT`). Six keys hold a plan fork open (IDEAS/band.md), each the built rule when left out:
  * `tuning: 'equal'` (2.8), `susGuitar: 'resolved'` (4.2), `soloFill: 'fill'` (3.3), `kickBeat: 'downbeat'` and
  * `disco: 'own'` (6.2), `funkHat: 'drawn'` (6.3).
  */
@@ -903,14 +903,27 @@ const drive = (d) => {
   const norm = Math.tanh(d)
   return (x) => Math.tanh(d * x) / norm
 }
-const SAT = { round: drive(1.4), growl: drive(2.2), kick: drive(1.4), tom: drive(1.3), bell: drive(1.2) }
+const SAT = { kick: drive(1.4), tom: drive(1.3), bell: drive(1.2) }
 
 // The bass's voice: the filter's resonance and where its envelope starts, ends
 // and how fast it falls, the drive after it, and a fifth above at `fifth` of the
 // saw's level (only the growl has one). `gain` sets both voices to one peak.
 const BASS_TONE = {
-  round: { gain: 0.32, Q: 0.8, peak: 900,  floor: 160, decay: 12, fifth: 0,    sat: SAT.round },
-  growl: { gain: 0.32, Q: 1.6, peak: 2400, floor: 180, decay: 7,  fifth: 0.25, sat: SAT.growl },
+  round: { gain: 0.32, Q: 0.8, peak: 900,  floor: 160, decay: 12, fifth: 0,    drive: 1.4 },
+  growl: { gain: 0.32, Q: 1.6, peak: 2400, floor: 180, decay: 7,  fifth: 0.25, drive: 2.2 },
+}
+
+// The brightness dial (`song.brightness`, -1 dark to 1 bright): each number is the
+// octaves its quantity moves at the bright end, a negative one falling as the dial
+// rises. At 0 every factor is exactly 1, so an undialed song renders as it did.
+// `string` is how far the guitar's damping weight leaves 0.5 at the bright end
+// (0.5 is its darkest), and `ring` how the guitar's ring shortens at the dark end.
+const BRIGHT = {
+  bassPeak: 1.25, bassDecay: -0.6, bassDrive: 0.6,
+  pluck: 1.5, string: 0.3, ring: 1,
+  tine: 1.5, tineIndex: 0.5, pad: 1,
+  close: -0.8, breath: -1,
+  snare: 0.6, hat: 0.4, click: 1,
 }
 
 // The drums' fixed numbers: the kick's start above its resting pitch (2.5 octaves,
@@ -1236,6 +1249,8 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
   // A hit off the grid by the part's lean and a drifting 1/f offset, at a few percent off its gain: a player, not a sequencer.
   const loose = (part, i) => Math.max(0, step(i) + pink(song.k, part, b * 16 + Math.floor(i)) + song.lean[part] / 10000)
   const vel   = (part) => 0.85 + 0.3 * rands[part]()
+  const dial  = song.brightness
+  const by    = (octaves) => 2 ** (dial * octaves)
 
   // The span each part wrote: a sample outside it is still zero, so the mix and
   // the peaks never read it.
@@ -1319,7 +1334,7 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
     add(PART.drums, t0, 0.4, 0.9 * g * vel(PART.drums), (t) => {
       ph += (2 * Math.PI * kickHz * (1 + KICK_SWEEP * Math.exp(-t * 30))) / RATE
       // the beater: a 1.8 kHz burst whose envelope is flat for a millisecond, then gone by 5
-      const click = t < 0.006 ? KICK_CLICK * Math.tanh(4 * Math.exp(-t * 900)) ** 2 * Math.sin(2 * Math.PI * 1800 * t) : 0
+      const click = t < 0.006 ? KICK_CLICK * by(BRIGHT.click) * Math.tanh(4 * Math.exp(-t * 900)) ** 2 * Math.sin(2 * Math.PI * 1800 * t) : 0
       return SAT.kick(Math.sin(ph) * Math.exp(-t * 7) + click)
     })
   }
@@ -1327,7 +1342,7 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
   const snare = (t0, g = 1) => {
     const v  = vel(PART.drums)
     const bp = svf(1.2)
-    const fc = SNARE_BANDS[Math.min(SNARE_BANDS.length - 1, Math.floor(((v - 0.85) / 0.3) * SNARE_BANDS.length))]
+    const fc = SNARE_BANDS[Math.min(SNARE_BANDS.length - 1, Math.floor(((v - 0.85) / 0.3) * SNARE_BANDS.length))] * by(BRIGHT.snare)
     const rand = rands[PART.drums]
     add(PART.drums, t0, 0.25, 0.35 * g * v, (t) => {
       bp(rand() * 2 - 1, fc)
@@ -1341,7 +1356,7 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
   const hat = (t0, open, accent = true) => {
     const v  = vel(PART.drums)
     const bp = svf(2)
-    const fc = HAT_BANDS[Math.min(HAT_BANDS.length - 1, Math.floor(((v - 0.85) / 0.3) * HAT_BANDS.length))]
+    const fc = HAT_BANDS[Math.min(HAT_BANDS.length - 1, Math.floor(((v - 0.85) / 0.3) * HAT_BANDS.length))] * by(BRIGHT.hat)
     const ph = new Float64Array(6)
     let prev = 0
     add(PART.drums, t0, open ? 0.3 : 0.05, (open ? 0.1 : accent ? 0.12 : 0.08) * v * HAT_TRIM, (t) => {
@@ -1375,7 +1390,9 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
     const lp   = svf(tone.Q)
     const v    = vel(PART.bass)
     // a harder note opens the filter further, by up to a fifth either way
-    const peak = tone.peak * (1 + (0.2 * (v - 1)) / 0.15)
+    const peak  = tone.peak * by(BRIGHT.bassPeak) * (1 + (0.2 * (v - 1)) / 0.15)
+    const decay = tone.decay * by(BRIGHT.bassDecay)
+    const sat   = drive(tone.drive * by(BRIGHT.bassDrive))
     let ph = 0
     let up = 0
     let fc = 0
@@ -1383,9 +1400,9 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
       ph = (ph + inc) % 1
       up = (up + inc * 1.5) % 1
       // the cutoff moves a step every 32 samples, a tan() each time it does
-      if ((i & 31) === 0) fc = tone.floor + (peak - tone.floor) * Math.exp(-t * tone.decay)
+      if ((i & 31) === 0) fc = tone.floor + (peak - tone.floor) * Math.exp(-t * decay)
       const low = lp(ph * 2 - 1 + tone.fifth * (up * 2 - 1), fc)
-      return tone.sat(low * Math.min(1, t * 200) * Math.exp(-t * 3))
+      return sat(low * Math.min(1, t * 200) * Math.exp(-t * 3))
     })
   }
   // A struck tine: a 1:1 pair for the body, its index falling as the note dies, and a
@@ -1393,13 +1410,14 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
   const piano = (t0, note, len) => {
     const w   = (2 * Math.PI * tuned(note, chord)) / RATE
     const v   = vel(PART.keys)
-    const idx = 1.5 + (v - 0.85) / 0.3
+    const idx = (1.5 + (v - 0.85) / 0.3) * by(BRIGHT.tineIndex)
+    const mix = EP_TINE.mix * by(BRIGHT.tine)
     let ph = 0
     add(PART.keys, t0, len, 0.06 * v, (t) => {
       ph += w
       const body = Math.sin(ph + idx * Math.exp(-t * 6) * Math.sin(ph))
       const tine = Math.sin(ph + EP_TINE.index * Math.sin(14 * ph)) * Math.exp(-t * EP_TINE.decay)
-      return (body + EP_TINE.mix * tine) * Math.min(1, t * 400) * Math.exp(-t * 4) * Math.min(1, (len - t) * 30)
+      return (body + mix * tine) * Math.min(1, t * 400) * Math.exp(-t * 4) * Math.min(1, (len - t) * 30)
     })
   }
   // A struck bell, in the keys' bus: it stands nearest the middle of the stage, and
@@ -1435,7 +1453,7 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
       p0 = (p0 + step[0]) % 1
       p1 = (p1 + step[1]) % 1
       p2 = (p2 + step[2]) % 1
-      if ((i & 31) === 0) fc = 400 + 1400 * (1 - (1 - Math.min(1, t)) ** 2)
+      if ((i & 31) === 0) fc = (400 + 1400 * (1 - (1 - Math.min(1, t)) ** 2)) * by(BRIGHT.pad)
       return lp((p0 + p1 + p2) * (2 / 3) - 1, fc) * Math.min(1, t * 4) * Math.min(1, (len - t) * 8)
     })
   }
@@ -1460,20 +1478,23 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
     const v    = vel(PART.guitar)
     const hard = (v - 0.85) / 0.3
     const f    = tuned(note, chord)
-    const T60  = 2.5 - 1.3 * Math.min(1, Math.max(0, (note - 50) / 30))
-    // the damping zero already takes cos(w/2) of the fundamental on every pass
-    const rho  = 0.001 ** (1 / (f * T60)) / Math.cos((Math.PI * f) / RATE)
+    const T60  = (2.5 - 1.3 * Math.min(1, Math.max(0, (note - 50) / 30))) * 2 ** (Math.min(0, dial) * BRIGHT.ring)
+    // the damping zero already takes its gain at the fundamental, cos(w/2) at the weight 0.5, on every pass
+    const s    = STRING_S - BRIGHT.string * Math.max(0, dial)
+    const w0   = (2 * Math.PI * f) / RATE
+    const zero = s === STRING_S ? Math.cos((Math.PI * f) / RATE) : Math.hypot(1 - s + s * Math.cos(w0), s * Math.sin(w0))
+    const rho  = 0.001 ** (1 / (f * T60)) / zero
     // the dispersion allpass delays low frequencies more than high ones, which
     // stretches the partials upward; its delay at the fundamental comes off the string's length
     const a    = note < STIFF_BELOW ? -STIFFNESS * Math.min(1, (STIFF_BELOW - note) / 6) : 0
     const Ddis = a ? allpassDelay(a, (2 * Math.PI * f) / RATE) : 0
-    const L    = RATE / f + STRING_S - Ddis
+    const L    = RATE / f + s - Ddis
     const N    = Math.floor(L - 0.5)
     const C    = (1 - (L - N)) / (1 + (L - N))
     // The pluck: noise through a one-pole whose cutoff follows how hard it was struck,
     // then the comb of the pick's position, at the same loudness whatever it was cut to
     const P    = Math.round(pickAt(rand) * N)
-    const kLp  = 1 - Math.exp((-2 * Math.PI * 1800 * 4 ** hard) / RATE)
+    const kLp  = 1 - Math.exp((-2 * Math.PI * 1800 * 4 ** hard * by(BRIGHT.pluck)) / RATE)
     const buf  = new Float32Array(N)
     let lp = 0
     for (let n = 0; n < N; n++) buf[n] = lp += kLp * (rand() * 2 - 1 - lp)
@@ -1492,7 +1513,7 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
     add(PART.guitar, t0, dur, 0.16 * v, (t, i) => {
       const j = i % N
       const out = buf[j]
-      let x = rho * ((1 - STRING_S) * buf[j] + STRING_S * buf[(j + 1) % N])
+      let x = rho * ((1 - s) * buf[j] + s * buf[(j + 1) % N])
       if (a) {
         const y = a * x + xd - a * yd
         xd = x
@@ -1520,7 +1541,9 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
     const glide = syl === 'la' ? Math.round(L_GLIDE.time * RATE) : 0
     const burst = syl === 'da' ? svf(2) : null
     const onset = syl === 'da' ? D_BURST.time : 0
-    const { open, close } = GLOTTIS
+    const open   = GLOTTIS.open
+    const close  = GLOTTIS.close * by(BRIGHT.close)
+    const breath = BREATH * by(BRIGHT.breath)
     let ph    = 0
     let flow  = 0
     let sway  = 1
@@ -1539,7 +1562,7 @@ function startBar(song, b, only = /** @type {string | string[] | null} */ (null)
       ph += f0 * sway
       if (ph >= 1) ph -= 1
       const g = ph < open ? 0.5 * (1 - Math.cos((Math.PI * ph) / open)) : ph < open + close ? Math.cos((Math.PI * (ph - open)) / (2 * close)) : 0
-      const src = (g - flow) / (f0 * sway) + BREATH * (rand() * 2 - 1)
+      const src = (g - flow) / (f0 * sway) + breath * (rand() * 2 - 1)
       flow = g
       let y = 0
       for (let j = 0; j < 5; j++) {

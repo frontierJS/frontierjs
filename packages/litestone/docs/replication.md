@@ -259,6 +259,13 @@ Litestone sets the SQLite pragmas Litestream needs on every connection it opens
 (`src/core/pragmas.js`): WAL mode, `synchronous = NORMAL`, and a `busy_timeout`
 (default 5000 ms — [concurrency.md](concurrency.md)).
 
+Uploads go out at the replica's `sync-interval`, but every L0 expiry check and
+every compaction LISTS the bucket, which B2 bills and caps per account as a
+Class C call. The config litestone writes checks every 30 minutes and compacts
+L1/L2/L3 at 1h/6h/24h (`L0_CHECK_INTERVAL`, `LEVEL_INTERVALS`), about 77
+listings a day per database; Litestream's own defaults list about 9,000, and
+three databases ran a free B2 account's 2,500 out (`FJS-4250`).
+
 ## Point-in-time restore
 
 `l0Retention` is how far back `litestone restore --at <instant>` can reach.

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildYaml, yamlDirs, LITESTREAM_MIN, LITESTREAM_PIN, litestreamInstall } from '../src/tools/replicate.js'
+import { buildYaml, yamlDirs, L0_CHECK_INTERVAL, LEVEL_INTERVALS, LITESTREAM_MIN, LITESTREAM_PIN, litestreamInstall } from '../src/tools/replicate.js'
 
 const targets = [{ name: 'main', path: '/data/app.db', url: 's3://b/main' }]
 
@@ -17,6 +17,19 @@ describe('buildYaml', () => {
     expect(yml).toContain('snapshot:\n  retention: 720h\n')
     const replica = yml.slice(yml.indexOf('replicas:'))
     expect(replica).not.toContain('retention')
+  })
+
+  it('lists the bucket on a cadence a free B2 account can afford (FJS-4250)', () => {
+    const yml = buildYaml(targets, {})
+    expect(yml).toContain('l0-retention-check-interval: 30m\nlevels:\n  - interval: 1h\n  - interval: 6h\n  - interval: 24h\n')
+    const replica = yml.slice(yml.indexOf('replicas:'))
+    expect(replica).not.toContain('interval: 1h')
+    // Litestream asks for the expiry check to run more often than L1 compacts.
+    const minutes = (d: string) => Number.parseInt(d, 10) * (d.endsWith('h') ? 60 : 1)
+    expect(minutes(L0_CHECK_INTERVAL)).toBeLessThan(minutes(LEVEL_INTERVALS[0]))
+    // Each check or compaction is a listing: a day of them, per database.
+    const perDay = [L0_CHECK_INTERVAL, ...LEVEL_INTERVALS].reduce((n, d) => n + 1440 / minutes(d), 0)
+    expect(perDay).toBeLessThan(100)
   })
 
   it('keeps sync-interval on the replica and l0-retention at the top', () => {
