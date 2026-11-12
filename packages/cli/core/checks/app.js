@@ -950,15 +950,16 @@ function collectedTests(root) {
   return files.sort()
 }
 
-// Every script under a directory whose name `dirs` matches, a nested app left
-// to that app's own run.
+// Every script under a directory whose name `dirs` matches, with fixtures and a
+// nested app left out, as collectedTests does: a fixture can be another
+// project's source tree, and its drives are not this app's.
 function driveFiles(root, dirs) {
   const apps  = new Set(findApps(root).filter(a => a !== root))
   const files = []
   const visit = (dir, depth, inTests) => {
     if (depth < 0) return
     for (const name of safeRead(dir)) {
-      if (SKIP.has(name) || name.startsWith('.')) continue
+      if (SKIP.has(name) || name.startsWith('.') || name === 'fixtures') continue
       const child = join(dir, name)
       let st
       try { st = statSync(child) } catch { continue }

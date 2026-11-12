@@ -440,6 +440,19 @@ lifted. § *Two moments* is why it belongs
 there rather than beside it: Oracle is the birth moment and this is the life moment of
 one recognizer. **No further name is coined** until there is a thing to name.
 
+**That surface is now in sight, so this is the move above** (owner, 2026-11-11 —
+`packages/cli` takes a first dependency on `packages/oracle` when it happens): the client-facing ask
+features — the app ask panel (`packages/cli/core/vite-ask.js`) and site-kit's
+owner editor (`drafts.ask`, `IDEAS/owner-editing.md`). The owner wants Oracle there
+to tell a client which asks it can just make (a UI tweak, a content edit) and
+which to *send to the devs for review* (structural, schema-shaped) — the
+`needs us` verdict, cut by the deepest realm the ask reaches. Three constraints:
+the model's flag is advice, so the client-triggered run itself refuses writes past
+its lane, as `applyEdit` already refuses code (`FJS-D1250`); Oracle keeps no model
+(`FJS-D601`), so the check moves and the model call stays in the ask surface; and
+a run must use a frontier model (run 2, the Opus/Sonnet run). § *Open questions*
+holds the two calls this raises.
+
 ## What it is not
 
 **No hours, ever.** A cost class is derived and defensible. A number of hours is a
@@ -535,6 +548,11 @@ the customer-facing word can be loose while the verdict stays precise.
   - **B** — They move to `@frontierjs/toolbelt`, which litestone and the cli may both import.
   - **C** — They move to the cli, and litestone's assistant is handed the headings.
   - **Recommend A** — then B once `packages/cli/core/intent.js` reads the purpose file. Today there is one caller, so there is nothing to move yet. When the second arrives, toolbelt is where a fact two packages must agree on lives (`FJS-D26`), and `intent.js` deliberately takes no dependency on litestone. C makes a tooling package the owner of something litestone needs.
+- **How many lanes does a client's ask take?** (raised 2026-11-11, § *Home*.) A lane is derived from what a verdict already carries — its verdict and its realm — never a new verdict value. In site-kit the line is clean: content the owner publishes vs anything that is code. In an app a content edit is a row write and needs no ask, but even a UI tweak is code.
+  - **A** — Two lanes: `you can do this` (the client makes it), or `needs us`.
+  - **B** — Three lanes: `you can do this`; `needs us` in the UI realm goes to a PR a developer approves; `needs us` in API or Data is scoped by a developer.
+  - **Recommend B** (confidence 2) — the PR the ask panel's Submit opens is a ready review gate for UI, and Decap CMS's editorial workflow (a branch and PR per entry) is the same shape; A either lets a client ship code unreviewed or sends every button nudge to the devs. Unstated: who the client is on that panel. What fails if the lane stops: a test that a UI-lane run refuses a write outside the UI realm — none yet.
+- **Where does a `needs us` land?** Waits on the lanes ruling. Default: a row in the app's request register, which `FJS-D728` already rules is a model in the app's own schema (confidence 2); a Basecamp to-do or a draft PR would be a second place to look.
 
 **The falsification run was set a bar before it ran**: seven in ten answered by
 lookup alone keeps the shape, four in ten changes it. **Run 1 landed at 5.2 — 31 of

@@ -309,8 +309,10 @@ export function setSnooze(url, until, text = '', { file = SNOOZE_FILE, now = new
 /**
  * `url` opened in this desktop's browser, detached; false when no opener ran.
  * Over SSH the opener is the far machine's, so the page opens there.
+ * `$BROWSER` picks one over the desktop's default, its first `:` entry as `gh` and Python read it.
  */
-export function openLink(url, { bin = process.platform === 'darwin' ? 'open' : 'xdg-open' } = {}) {
+const OPENER = process.env.BROWSER?.split(':')[0] || (process.platform === 'darwin' ? 'open' : 'xdg-open')
+export function openLink(url, { bin = OPENER } = {}) {
   if (!/^https?:\/\//.test(url)) return Promise.resolve(false)
   return new Promise((resolve) => {
     const child = spawn(bin, [url], { detached: true, stdio: 'ignore' })

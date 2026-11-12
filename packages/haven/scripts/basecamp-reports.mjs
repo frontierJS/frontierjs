@@ -10,8 +10,9 @@
 // Haven knows no source, so nothing in `web/` imports this; a member opts in by
 // writing the command into `~/.fli/haven/reports`.
 //
+// stale    open to-dos nobody has touched in 90 days, oldest first -- the archive pile
 // overdue  the team's past-due to-dos: how late, who holds them, which can still be saved
-// week     what falls due in the next seven days, by day, and what nobody is on
+// week    what falls due in the next seven days, by day, and what nobody is on
 // mine     this account's own last fourteen days of activity
 // leaders  who checked off the most to-dos in fourteen days, against the fourteen before
 // team     each teammate's open to-dos: how many, how many late, what falls due this week
@@ -252,15 +253,25 @@ const REPORTS = {
       // A card and its projects share a key: Tab filters the list to one plan,
       // and the desk counts a card's snoozed projects by it.
       const keyOf = (p) => p.replace(' ', '-')
+      // Late across every plan, on hold included: Tab to it for one list of what is overdue.
+      const lateTile = (rows) => {
+        const late = rows.filter((r) => r.late)
+        return {
+          label: 'All late', value: sum(rows, 'late'), key: 'late',
+          note: late.length ? `oldest ${Math.max(...late.map((r) => r.oldest))}d` : 'none', noteTone: late.length ? 'danger' : 'muted',
+          foot: `${late.length} project${late.length === 1 ? '' : 's'}`,
+          tone: 'danger',
+        }
+      }
       return {
         title: `${sum(all, 'open')} open to-dos by plan`,
         blocks: [
-          { kind: 'stats', items: [...groups].filter(([p, rows]) => p !== 'on hold' || rows.length).map(([p, rows]) => ({
+          { kind: 'stats', items: [...[...groups].filter(([p, rows]) => p !== 'on hold' || rows.length).map(([p, rows]) => ({
             label: title(p), value: sum(rows, 'open'), key: keyOf(p),
             note: `${sum(rows, 'late')} late`, noteTone: sum(rows, 'late') ? 'danger' : 'muted',
             foot: `${rows.length} project${rows.length === 1 ? '' : 's'}`,
             tone: p === 'unset' || p === 'on hold' ? 'muted' : undefined,
-          })) },
+          })), lateTile(all)] },
           ...[...groups].filter(([, rows]) => rows.length).flatMap(([p, rows]) => [
             { kind: 'heading', text: `${title(p)} — ${sum(rows, 'open')} open in ${rows.length} project${rows.length === 1 ? '' : 's'}` },
             // The desk keeps twelve items a list, so a long plan is several lists in a row.
@@ -269,9 +280,45 @@ const REPORTS = {
               note: r.late ? `${r.late} late · ${r.oldest}d` : r.undated === r.open ? 'none dated' : '',
               noteTone: r.late ? 'danger' : undefined,
               url: projectUrl(r.id),
-              keys: [keyOf(p)],
+              keys: r.late ? [keyOf(p), 'late'] : [keyOf(p)],
             })) })),
           ]),
+        ],
+      }
+    },
+  },
+
+  // Last touched, not created: a comment or an edit is someone still caring,
+  // so a to-do kept on purpose leaves this list the moment anyone answers it.
+  stale: {
+    help: 'open to-dos nobody has touched in 90 days, oldest first -- the archive pile',
+    async run() {
+      const buckets = await basecamp('todos', 'list', '--all-projects', '--all')
+      const idle = (t) => -Math.round((Date.parse(t.updated_at) - Date.now()) / DAY)
+      const span = (d) => d >= 365 ? `${(d / 365).toFixed(d >= 730 ? 0 : 1)}y` : d >= 60 ? `${Math.round(d / 30)}mo` : `${d}d`
+      const BANDS = [['2y+', 730], ['1–2y', 365], ['6–12mo', 180], ['3–6mo', 90]]
+      const bandOf = (d) => BANDS.find(([, min]) => d >= min)
+      const rows = buckets.flatMap(({ bucket, todos }) => todos.filter((t) => !t.completed && idle(t) >= 90).map((t) => ({ ...t, bucket, idle: idle(t) })))
+        .sort((a, b) => a.updated_at.localeCompare(b.updated_at))
+      if (!rows.length) return { title: 'Nothing stale', blocks: [{ kind: 'callout', tone: 'ok', text: 'Every open to-do was touched in the last 90 days.' }] }
+      const keyOf = (label) => label.replace('–', '-')
+      return {
+        title: `${rows.length} open to-dos untouched 90+ days`,
+        blocks: [
+          { kind: 'stats', items: BANDS.map(([label, min], i) => {
+            const n = rows.filter((r) => r.idle >= min && (i === 0 || r.idle < BANDS[i - 1][1])).length
+            return { label, value: n, key: keyOf(label), tone: min >= 365 ? 'danger' : 'warn' }
+          }) },
+          { kind: 'callout', tone: 'muted', text: 'o opens one to archive it in Basecamp; a comment on a keeper drops it off this list.' },
+          { kind: 'heading', text: 'Which projects' },
+          { kind: 'bars', items: tally(rows, (r) => [r.bucket.name.trim()], 8) },
+          ...chunks(rows, 12).map((part) => ({ kind: 'list', items: part.map((r) => ({
+            text: [oneLine(r.content), r.bucket.name.trim(), r.parent?.title].filter(Boolean).join(' · '),
+            note: [`idle ${span(r.idle)}`, r.comments_count ? `${r.comments_count} comments` : null, r.assignees?.length ? who(r.assignees) : null].filter(Boolean).join(' · '),
+            tone: r.idle >= 365 ? 'muted' : undefined,
+            url: r.app_url,
+            keys: [keyOf(bandOf(r.idle)[0])],
+          })) })),
         ],
       }
     },

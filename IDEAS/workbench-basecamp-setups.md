@@ -107,7 +107,7 @@ Done when: each probe below has its answer written under its step.
     the narrow key can delete a version under retention, which no file had
     here; and whether the same narrow key works over the S3 surface
     Basecamp's backups use. Both belong in 1.x on `yuma-test`.
-- [ ] 0.3 Probe whether `CLOUDFLARE_TOKEN` and `DIGITALOCEAN_TOKEN` can mint a
+- [x] 0.3 Probe whether `CLOUDFLARE_TOKEN` and `DIGITALOCEAN_TOKEN` can mint a
   narrower token through their APIs (Cloudflare: *API Tokens Edit*;
   DigitalOcean: scoped tokens). Q6 turns on the answer.
   **Answered 2026-11-11 for the tokens on this laptop: neither can mint.**
@@ -165,12 +165,12 @@ App half is proved on `chartered` (owner, 2026-11-11).
   `b2_update_bucket` for the compliance default, `createKey`, `keysNamed`,
   `deleteKey`). Proved live on `yuma-test`'s first run: both buckets made, the
   archive one locked 7 days, a key minted on its workspace prefix.
-- [ ] 1.2 A fli verb first, as every Workbench verb is (Q7 names it): make the bucket and the keys, file
+- [x] 1.2 A fli verb first, as every Workbench verb is (Q7 names it): make the bucket and the keys, file
   each as a `BackupDestination` in its workspace, run `test`, then point the
   hub at it through `hubConfig.save` (`backupDestinationId`,
   `replicaDestinationId`, and `backupCron` when it is empty). Re-running it on
   a set-up Basecamp changes nothing.
-  **Built 2026-11-11, live proof owed:** `fli basecamp:backups` over
+  **Built and proved on `yuma-test` 2026-11-11 (1.6):** `fli basecamp:backups` over
   `core/basecamp-backups.js`, `confirm: human`. Per Q8 the replica is a second,
   unlocked bucket; its destination's prefix is `hub`, key `hub/`: `test`
   probes a hub replica at the prefix root, and Basecamp adds the
@@ -201,12 +201,25 @@ App half is proved on `chartered` (owner, 2026-11-11).
   **Built 2026-11-11 as `--undo` and the screen's Undo B2 backups**, not yet run. Basecamp refuses to remove a
   destination archives are recorded in, so that one stays with its key and is
   named: deleting the key would leave its archives out of reach.
-- [ ] 1.6 Release `FJS-4218` to `yuma-test` (`fli deploy --server yuma-test` in
+- [x] 1.6 Release `FJS-4218` to `yuma-test` (`fli deploy --server yuma-test` in
   `packages/basecamp`), re-run `fli basecamp:backups yuma-test`, take a hub
   backup, and run 0.2's probe with the workspace key against the replica bucket
   and another prefix. Also answers 0.2's two leftovers: the narrow key over S3,
   and a delete under retention. Owner's go: the tree carries other sessions'
   uncommitted changes.
+  **Done 2026-11-11** (`0865282f2` plus the `fileMd5` typecheck fix, deployed
+  `--unverified` on the owner's word with CI red on other work, and `--domain
+  yuma.awe.dev`, which `frontier.config.js` leaves empty). The archive
+  destination's `test` passed; the replica destination was minted, filed and
+  tested; the hub's three pointers were set; a second run plans every line
+  `keep`. A hub backup landed in `basecamp-yuma-test` at
+  `<workspace id>/basecamp-<installId>-<instant>.tar.gz` (528,791 bytes). The
+  probe, run in the box's repl with the destination's own key so it never left
+  the box: its prefix lists (200), and another prefix, the bucket root, the
+  replica bucket and `frontier-basecamp` are each 401 `unauthorized`. **The
+  replica bucket is still empty:** that Outpost has been refused on every
+  signed call since its install (`FJS-4231`), so `litestream.yml` holds no
+  database. 0.2's delete-under-retention leftover is not run.
 - [ ] 1.7 `chartered`: an Outpost release carrying `FJS-4218` first (ELA's
   archive is PUT from its machine), then `fli basecamp:backups chartered --apps
   <ela's slug>`; closes `basecamp-safety.md` 0.9. Ask before each.
