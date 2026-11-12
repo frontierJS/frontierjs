@@ -1,4 +1,4 @@
-// scripts/band-wav.mjs — `bun run band:wav <k> [--from bar] [--bars n] [--solo part] [--out dir]`:
+// scripts/band-wav.mjs — `bun run band:wav <k> [--from bar] [--bars n] [--solo part[,part]] [--out dir]`:
 // song `k` rendered through `createBand()` into a 16-bit WAV under `.wav/`
 // (gitignored), so a change to `shared/band.js` is heard against the last one
 // outside Haven, and what each bar cost to render is printed beside it.
@@ -30,15 +30,15 @@ function args(argv) {
     const a = argv[i]
     if (a === '--from') opt.from = Number(argv[++i])
     else if (a === '--bars') opt.bars = Number(argv[++i])
-    else if (a === '--solo') opt.solo = argv[++i]
+    else if (a === '--solo') opt.solo = argv[++i].split(',')
     else if (a === '--out') opt.out = argv[++i]
     else if (opt.k === null && !a.startsWith('--')) opt.k = Number(a)
     else die(`band:wav: unknown argument ${a}`)
   }
-  if (!Number.isInteger(opt.k) || opt.k < 0) die('usage: bun run band:wav <k> [--from bar] [--bars n] [--solo part] [--out dir]')
+  if (!Number.isInteger(opt.k) || opt.k < 0) die('usage: bun run band:wav <k> [--from bar] [--bars n] [--solo part[,part]] [--out dir]')
   if (!Number.isInteger(opt.from) || opt.from < 0) die('band:wav: --from is a whole bar number')
   if (opt.bars !== null && (!Number.isInteger(opt.bars) || opt.bars < 1)) die('band:wav: --bars is a whole number of bars, at least 1')
-  if (opt.solo !== null && !PARTS.includes(opt.solo)) die(`band:wav: --solo is one of ${PARTS.join(', ')}`)
+  if (opt.solo !== null && !opt.solo.every((p) => PARTS.includes(p))) die(`band:wav: --solo is one or more of ${PARTS.join(', ')}`)
   return opt
 }
 
@@ -89,7 +89,7 @@ const channels = pulls[0].map((_, c) => {
   return out
 })
 
-const name = `song-${opt.k}` + (opt.from ? `-from${opt.from}` : '') + (opt.bars ? `-bars${opt.bars}` : '') + (opt.solo ? `-solo-${opt.solo}` : '')
+const name = `song-${opt.k}` + (opt.from ? `-from${opt.from}` : '') + (opt.bars ? `-bars${opt.bars}` : '') + (opt.solo ? `-solo-${opt.solo.join('-')}` : '')
 const path = join(opt.out, `${name}.wav`)
 mkdirSync(opt.out, { recursive: true })
 writeFileSync(path, wav(channels))

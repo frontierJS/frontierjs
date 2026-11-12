@@ -3,7 +3,7 @@
 // hear one beat with nothing sent, the way `sky.js` gives them one sky.
 //
 // The clock is cut into songs of `SONG_MS`, and song `k` is drawn from `k`:
-// each choice — key, progression (grammar or menu), chord colour, tempo, drum feel, and a style for the
+// each choice — key, progression (grammar or menu), chord color, tempo, drum feel, and a style for the
 // bass, guitar, keys and singer — is picked from a short list of options
 // that each work, and `VETO` rerolls the pairings that do not. One song in
 // `STRINGS_ODDS` is not the band at all: a slow piece for a bowed voice over
@@ -19,10 +19,10 @@
 // song swells and drops. `plays` says which parts sound in a bar, and
 // `song.dropouts` are the rows drawn into it. The chorus swaps the guitar's
 // and the keys' style for a second pair drawn from `k`, and the singer sings
-// the `hook`, two bars drawn once for the song and sung at every chorus: a
-// tune is what comes back. Each hit is loosened by a few ms and a few percent,
-// odd steps swing by the feel's `swing`, and a snare ghosts on an offbeat, all
-// from the bar's own numbers, so every screen loosens alike.
+// the `hook`, four bars built from a one-bar `motif` and sung at every chorus; the verses
+// vary the motif and the soloist quotes it once: a tune is what comes back. A hit sits off the
+// grid by its part's lean and a 1/f drift of a few ms (`pink`), and a few percent off its gain; odd steps swing by the
+// feel's `swing`, a snare ghosts on an offbeat, and a section's last bar ends in a fill drawn from `FILLS`, all from the bar's own numbers, so every screen loosens alike.
 //
 // `createBand().samples(from, n)` is what `#sound` pulls, `from` counted from
 // the epoch at `RATE`, as `[left, right]`. A bar is rendered whole with `TAIL` bars of ring after
@@ -79,14 +79,44 @@ const euclid = (k, n, rot = 0) => Array.from({ length: n }, (_, i) => (((i + rot
 const steps  = (bools) => bools.flatMap((on, i) => (on ? [i] : []))
 const EIGHTS = [0, 2, 4, 6, 8, 10, 12, 14]
 
-// `swing` is how far an odd step is pushed late, in steps.
+// `swing` is how far an odd step is pushed late, in steps; `draws` names the patterns a song may replace with a
+// Euclidean one (`patternOf`), `accent` the hat's strong steps' spacing. The first five are the menu a song's
+// feel is picked from; the rest are taken one song in `NEW_FEEL_ODDS` (`feelOf`), so no old song's draw moved.
 const FEELS = [
-  { name: 'tresillo', kick: steps(euclid(3, 8).concat(euclid(3, 8))), snare: [4, 12], hat: steps(euclid(7, 16, 2)), open: [14], swing: 0.12 },
-  { name: 'rock',     kick: [0, 8, 10],     snare: [4, 12], hat: EIGHTS, open: [],             swing: 0 },
-  { name: 'disco',    kick: [0, 4, 8, 12],  snare: [4, 12], hat: [],     open: [2, 6, 10, 14], swing: 0 },
-  { name: 'half-time', kick: [0, 10],       snare: [8],     hat: EIGHTS, open: [14],           swing: 0.15 },
-  { name: 'bossa',    kick: [0, 3, 8, 11],  rim: [0, 3, 6, 10, 12],      hat: EIGHTS, open: [], swing: 0.08 },
+  { name: 'tresillo',  kick: steps(euclid(3, 8).concat(euclid(3, 8))), snare: [4, 12], hat: steps(euclid(7, 16, 2)), open: [14], swing: 0.12, draws: ['kick', 'hat'] },
+  { name: 'rock',      kick: [0, 8, 10],     snare: [4, 12], hat: EIGHTS, open: [],             swing: 0,    draws: ['kick', 'hat'] },
+  { name: 'disco',     kick: [0, 4, 8, 12],  snare: [4, 12], hat: [],     open: [2, 6, 10, 14], swing: 0,    draws: ['kick', 'hat'] },
+  { name: 'half-time', kick: [0, 10],        snare: [8],     hat: EIGHTS, open: [14],           swing: 0.15, draws: [] },
+  { name: 'bossa',     kick: [0, 3, 8, 11],  rim: [0, 3, 6, 10, 12],      hat: EIGHTS, open: [], swing: 0.08, draws: [] },
+  { name: 'shuffle',   kick: [0, 8],         snare: [4, 12], hat: EIGHTS, open: [14],           swing: 0.67, draws: ['kick', 'hat'] },
+  { name: 'one-drop',  kick: [8],            snare: [8],     hat: [0, 2, 4, 8, 10, 12], open: [6, 14], swing: 0.1, draws: [] },
+  { name: 'funk',      kick: [0, 3, 6, 10],  snare: [4, 12], hat: Array.from({ length: 16 }, (_, i) => i), open: [], swing: 0, accent: 2, draws: ['kick'] },
 ]
+const MENU_FEELS = FEELS.slice(0, 5)
+const NEW_FEELS  = FEELS.slice(5)
+const NEW_FEEL_ODDS = 1 / 4
+
+// A fill is the hits `[step, voice, gain]` the last bar of a section ends on; the crash on the next downbeat is the section's.
+const FILLS = [
+  { name: 'climb',            hits: [[12, 'snare', 0.4], [13, 'snare', 0.55], [14, 'snare', 0.7], [15, 'snare', 0.85]] },
+  { name: 'roll',             hits: [[12, 'snare', 0.25], [13, 'snare', 0.45], [14, 'snare', 0.7], [15, 'snare', 1]] },
+  { name: 'snares and toms',  hits: [[12, 'snare', 0.4], [13, 'snare', 0.55], [14, 'high', 0.7], [15, 'low', 0.85]] },
+  { name: 'tom roll',         hits: [[12, 'snare', 0.5], [13, 'high', 0.5], [14, 'mid', 0.65], [15, 'low', 0.8]] },
+  { name: 'half bar',         hits: [[8, 'snare', 0.4], [10, 'high', 0.5], [12, 'snare', 0.6], [14, 'mid', 0.75]] },
+  { name: 'sparse',           hits: [[12, 'snare', 0.6], [15, 'low', 0.8]] },
+  { name: 'flam and rest',    hits: [[12, 'snare', 0.5], [13, 'snare', 0.7], [15, 'low', 0.85]] },
+  { name: 'kick and toms',    hits: [[12, 'kick', 0.9], [13, 'high', 0.55], [14, 'kick', 0.8], [15, 'low', 0.85]] },
+]
+const FAVORED = 3 / 4
+
+// The kick's syncopation (Longuet-Higgins and Lee) is scored against these step weights; a drawn pattern is kept
+// in the medium band, where the groove is strongest (Witek 2014).
+const WEIGHT = Array.from({ length: 16 }, (_, i) => (i === 0 ? 4 : i === 8 ? 3 : i % 4 === 0 ? 2 : i % 2 === 0 ? 1 : 0))
+const MEDIUM = [2, 5]
+
+// A hit's offset is `PINK` seconds of 1/f noise (`pink`) and the part's `lean`, the whole under about 4 ms.
+const OCTAVES = 5
+const PINK    = 0.002
 const BASSES  = ['on the kick', 'eighths', 'walking']
 const BASS_VOICES = ['round', 'growl']
 const VOICES  = ['soprano', 'alto', 'tenor']
@@ -94,7 +124,7 @@ const VOWELS  = ['a', 'e', 'i', 'o', 'u']
 const GUITARS = ['arpeggio', 'running', 'strummed']
 const KEYSETS = ['stabs', 'backbeat', 'pad']
 // What a chord adds to its triad: nothing, a seventh, a ninth, or a 2nd or 4th held for half a bar over the third.
-const COLOURS = ['none', 'sevenths', 'add9', 'sus']
+const COLORS = ['none', 'sevenths', 'add9', 'sus']
 // The slow piece (`ensemble: 'strings'`): the tempos and progressions a band's
 // song is never drawn at, and a singer who holds a note a bar or two.
 const STRINGS_ODDS = 0.15
@@ -120,6 +150,9 @@ const FORM_CODE = { intro: 'I', verse: 'V', prechorus: 'P', chorus: 'C', bridge:
 
 // Pairings that draw a song nobody would keep.
 const VETO = [
+  (s) => s.feel.name === 'shuffle' && (s.bpm > 108 || s.bass === 'walking'),   // a scramble
+  (s) => s.feel.name === 'one-drop' && (s.bpm < 84 || s.bpm > 100 || s.guitar === 'running'),
+  (s) => s.feel.name === 'funk' && (s.bpm < 100 || (s.keys === 'pad' && s.bass === 'eighths')),   // a mush
   (s) => s.feel.name === 'half-time' && s.bpm < 100,   // a crawl
   (s) => s.feel.name === 'disco' && s.bpm < 100,
   (s) => s.bass === 'walking' && s.bpm > 116,           // a scramble
@@ -247,6 +280,70 @@ function progressionOf(rand, start) {
   return keep ? start : phraseOf(rand, start.mode)
 }
 
+// ─── a groove, drawn ──────────────────────────────────────────────────────
+
+/** The feel of song `s`: its menu feel, or one of `NEW_FEELS` one song in `NEW_FEEL_ODDS`, redrawn up to 8 times past `VETO`, else the menu's. */
+function feelOf(rand, s) {
+  if (rand() >= NEW_FEEL_ODDS) return s.feel
+  for (let i = 0; i < 8; i++) {
+    const feel = pick(rand, NEW_FEELS)
+    if (!VETO.some((v) => v({ ...s, feel }))) return feel
+  }
+  return s.feel
+}
+
+/** Longuet-Higgins and Lee: each onset on a weaker step than the next stronger one, which is a rest, adds the difference in weight. */
+export function syncopation(steps16) {
+  let sum = 0
+  for (const i of steps16) {
+    let j = (i + 1) % 16
+    while (j !== i && WEIGHT[j] <= WEIGHT[i]) j = (j + 1) % 16
+    if (j !== i && !steps16.includes(j)) sum += WEIGHT[j] - WEIGHT[i]
+  }
+  return sum
+}
+
+/**
+ * The kick and hat a song plays: the feel's own, or for what the feel `draws` a Euclidean pattern, the kick
+ * 3 to 5 onsets redrawn up to 8 times until its syncopation is in `MEDIUM`, the hat 5 to 9 onsets.
+ */
+function patternOf(rand, feel) {
+  const pattern = { kick: feel.kick, hat: feel.hat, drawn: false }
+  const euclidean = (min, spread) => steps(euclid(min + Math.floor(rand() * spread), 16, Math.floor(rand() * 4)))
+  if (feel.draws.includes('kick')) {
+    for (let i = 0; i < 8; i++) {
+      const kick = euclidean(3, 3)
+      const sync = syncopation(kick)
+      if (sync >= MEDIUM[0] && sync <= MEDIUM[1]) {
+        pattern.kick  = kick
+        pattern.drawn = true
+        break
+      }
+    }
+  }
+  if (feel.draws.includes('hat')) pattern.hat = euclidean(5, 5)
+  return pattern
+}
+
+/** `part`'s offset in seconds at song-local step `t`: octaves of uniform hashes, octave `j` held for 2^j steps (Voss and McCartney), whole-number maths until the scale. */
+export function pink(k, part, t) {
+  let sum = 0
+  for (let j = 0; j < OCTAVES; j++) {
+    let h = Math.imul(k, 0x9e3779b1) ^ Math.imul(part + 1, 0x85ebca6b) ^ Math.imul(j + 1, 0xc2b2ae35) ^ Math.imul(Math.floor(t / 2 ** j) + 1, 0x27d4eb2f)
+    h = Math.imul(h ^ (h >>> 16), 0x7feb352d)
+    h = Math.imul(h ^ (h >>> 15), 0x846ca68b)
+    sum += ((h ^ (h >>> 16)) >>> 0) / 4294967296 - 0.5
+  }
+  return (PINK * sum) / Math.sqrt(OCTAVES)
+}
+
+/** The fill bar `b` ends on, drawn from the drums' bar generator `rand`: a favorite of the song's three times in four (always, under `fillFrom: 'favorites'`), else any; null where the bar has none. */
+function fillFor(song, b, rand) {
+  const x = sectionAt(song, b)
+  if (!x?.last || x.kind === 'outro' || x.kind === 'solo' || rowAt(song, b, 'build') || song.fillFrom === 'none') return null
+  return song.fillFrom === 'favorites' || rand() < FAVORED ? pick(rand, song.fills) : pick(rand, FILLS)
+}
+
 /** The count with nothing requested: song `k` fills window `k` of the clock. */
 export const CLOCK = { first: 0, at: 0 }
 
@@ -267,8 +364,12 @@ export function cueAt(ms, k, cue = CLOCK) {
   return { first: k, at: Math.ceil(start + Math.ceil((ms - start) / barMs) * barMs) }
 }
 
-/** Song `k`: every choice, its name, and the numbers a bar is rendered from. */
-export function songOf(k) {
+/**
+ * Song `k`: every choice, its name, and the numbers a bar is rendered from. A `conductor` (`CONDUCTOR`) names
+ * choices that replace the draws; every generator still draws in full, so a choice named moves no other one.
+ */
+export function songOf(k, conductor = {}) {
+  const c    = conductor
   const rand = rng(Math.imul(k, 0x9e3779b1) ^ 0x5eed)
   let s
   do {
@@ -276,26 +377,38 @@ export function songOf(k) {
       progression: pick(rand, PROGRESSIONS),
       tonic:       Math.floor(rand() * 12),
       bpm:         pick(rand, TEMPOS),
-      feel:        pick(rand, FEELS),
+      feel:        pick(rand, MENU_FEELS),
       bass:        pick(rand, BASSES),
       guitar:      pick(rand, GUITARS),
       keys:        pick(rand, KEYSETS),
       singer:      pick(rand, SINGERS),
     }
   } while (VETO.some((v) => v(s)))
+  s.feel = feelOf(rng(Math.imul(k, 0x4cf5ad43) ^ 0xfee1), s)
+  const fills   = shuffle(rng(Math.imul(k, 0x5bd1e995) ^ 0xf11a), FILLS).slice(0, 2)
+  // a part's constant lean, in tenths of a ms, up to 2 ms either way
+  const leaner  = rng(Math.imul(k, 0x1b873593) ^ 0x1ea2)
+  const lean    = PARTS.map(() => Math.floor(leaner() * 41) - 20)
   const name    = `${pick(rand, ADJECTIVES)} ${pick(rand, NOUNS)}`
   // The chorus lifts by changing two parts' styles; the same style twice would lift nothing.
-  const chorus  = { guitar: pick(rand, GUITARS.filter((g) => g !== s.guitar)), keys: pick(rand, KEYSETS.filter((x) => x !== s.keys)) }
-  const hook    = hookOf(rand, s)
+  const drawnChorus = { guitar: pick(rand, GUITARS.filter((g) => g !== s.guitar)), keys: pick(rand, KEYSETS.filter((x) => x !== s.keys)) }
+  const chorus  = { guitar: c.chorusGuitar ?? drawnChorus.guitar, keys: c.chorusKeys ?? drawnChorus.keys }
   const slow    = rng(Math.imul(k, 0x27d4eb2f) ^ 0x57121)
-  const bassVoice = pick(rng(Math.imul(k, 0x165667b1) ^ 0xb455), BASS_VOICES)
+  const bassVoice = c.bassVoice ?? pick(rng(Math.imul(k, 0x165667b1) ^ 0xb455), BASS_VOICES)
   const sung    = rng(Math.imul(k, 0x2c1b3c6d) ^ 0x51d6)
-  const voice   = pick(sung, VOICES)
-  const vowel   = pick(sung, VOWELS)
-  const tint    = rng(Math.imul(k, 0x3c6ef372) ^ 0xc010)
-  const colour  = pick(tint, COLOURS)
-  const sus     = colour === 'sus' ? pick(tint, [2, 4]) : null
-  const strings = slow() < STRINGS_ODDS
+  const drawnVoice = pick(sung, VOICES)
+  const drawnVowel = pick(sung, VOWELS)
+  const voice   = c.voice ?? drawnVoice
+  const vowel   = c.vowel ?? drawnVowel
+  const tint   = rng(Math.imul(k, 0x3c6ef372) ^ 0xc010)
+  let   color   = pick(tint, COLORS)
+  let   sus     = color === 'sus' ? pick(tint, [2, 4]) : null
+  if (c.color) {
+    color = c.color.startsWith('sus') ? 'sus' : c.color
+    sus   = color === 'sus' ? Number(c.color.slice(3)) || 4 : null
+  }
+  const drawnStrings = slow() < STRINGS_ODDS
+  const strings = c.ensemble ? c.ensemble === 'strings' : drawnStrings
   if (strings) {
     s.progression = pick(slow, LAMENTS)
     s.tonic       = Math.floor(slow() * 12)
@@ -305,20 +418,28 @@ export function songOf(k) {
   } else {
     s.progression = progressionOf(rng(Math.imul(k, 0x7f4a7c15) ^ 0x6a3e), s.progression)
   }
+  conduct(s, c, k, strings)
+  // the kick and hat drawn for the feel the song ends up with, so a feel the conductor names brings its own
+  const pattern = c.drums === 'feel' ? { kick: s.feel.kick, hat: s.feel.hat, drawn: false } : patternOf(rng(Math.imul(k, 0x7a3c9d15) ^ 0x6e0c), s.feel)
+  if (c.kick) pattern.kick = c.kick
+  if (c.hat) pattern.hat = c.hat
+  // the last draw from `rand`, so it is drawn for the key, mode and singer the song ends up with
+  const { motif, hook } = hookOf(rand, s)
   const stepMs  = 60000 / s.bpm / 4
   const barN    = Math.round((stepMs * 16 / 1000) * RATE)
   const length  = s.progression.chords.length
   const key     = `${KEYS[s.tonic]} ${s.progression.mode === M ? 'major' : 'minor'}`
   const coda    = { mode: s.progression.mode, all7: s.progression.all7, chords: [[0, s.progression.mode]] }
-  const tinted  = colour === 'sus' ? `sus${sus}` : colour
+  const tinted  = color === 'sus' ? `sus${sus}` : color
   const called  = s.progression.rewrites ? `${s.progression.name} (${s.progression.rewrites.join(', ')})` : s.progression.name
   // Whole bars, the last the ending, with room after it for its ring.
   const bars    = Math.floor(SONG_N / barN) - TAIL
-  const shape   = strings ? null : shapeOf(rng(Math.imul(k, 0x6a09e667) ^ 0xf0a3), bars - 1)
+  const shape   = strings ? null : conductShape(shapeOf(rng(Math.imul(k, 0x6a09e667) ^ 0xf0a3), bars - 1), c)
   const formCode = shape?.form.map((x) => FORM_CODE[x.kind]).join(' ')
   const lifted   = shape?.lift.semis ? `, last chorus up ${shape.lift.semis}` : ''
   return {
-    ...s, k, name, chorus, hook, stepMs, barN, key, bassVoice, voice, vowel, bars, colour, sus, coda,
+    ...s, k, name, chorus, motif, hook, pattern, fills, lean, stepMs, barN, key, bassVoice, voice, vowel, bars, color, sus, coda,
+    verse: c.verse ?? 'bar', hookBars: c.hookBars ?? 4, fillFrom: c.fills ?? 'any', levels: c.levels ?? null, room: c.room ?? 1,
     ...shape, formCode,
     ensemble: strings ? 'strings' : 'band',
     cycle: length >= 8 ? length * 2 : length * 4,
@@ -326,6 +447,73 @@ export function songOf(k) {
       ? `${name} — ${key}, ${called} (${tinted}), ${s.bpm} bpm strings; held ${bassVoice} bass, keys pad, singer ${s.singer.name}`
       : `${name} — ${key}, ${called} (${tinted}), ${s.bpm} bpm ${s.feel.name}; ${bassVoice} bass ${s.bass}, guitar ${s.guitar}, keys ${s.keys}, singer ${s.singer.name} (${voice} on ${vowel}); chorus guitar ${chorus.guitar}, keys ${chorus.keys}; form ${formCode}, ${shape?.soloist} solos${lifted}`,
   }
+}
+
+// ─── the conductor ────────────────────────────────────────────────────────
+
+/**
+ * What a conductor names from. A conductor is `{ key: choice }`, a key left out is drawn: `tonic` 0-11,
+ * `progression` (a name) or `chords` (`chordsOf`), `bpm`, `color`, `feel`, `swing` (in steps), `drums` ('feel' plays
+ * the feel's own kick and hat, else the drawn), `kick`/`snare`/`hat`/`open` (steps 0-15), `fills` ('favorites' or
+ * 'none'), `bass`, `bassVoice`, `guitar`, `keys`, `chorusGuitar`, `chorusKeys`, `singer`, `voice`, `vowel`, `verse`
+ * ('bar' draws a variation each bar, 'verse' one for the whole verse, 'motif' sings the motif), `hookBars` (2 or 4),
+ * `ensemble`, `soloist`, `lift` (semitones), `dropouts` (false for none), `levels` (`{ part: gain }`) and `room`
+ * (the reverb send, 1 as drawn).
+ */
+export const MENUS = {
+  keys: KEYS, progressions: PROGRESSIONS.map((p) => p.name), feels: FEELS.map((f) => f.name), colors: ['none', 'sevenths', 'add9', 'sus2', 'sus4'],
+  basses: BASSES, bassVoices: BASS_VOICES, guitars: GUITARS, keysets: KEYSETS, singers: SINGERS.map((x) => x.name),
+  voices: VOICES, vowels: VOWELS, soloists: SOLOISTS, verses: ['bar', 'verse', 'motif'],
+}
+
+const ROMAN = { I: 0, II: 2, III: 4, IV: 5, V: 7, VI: 9, VII: 11 }
+
+/**
+ * A progression written as numerals (`I vi IV V`, `i bVI bIII bVII`): upper case major, lower minor, a `7` a
+ * dominant seventh. The mode is the tonic chord's, else the first chord's. Null where a token is not a numeral.
+ */
+export function chordsOf(text) {
+  const chords = []
+  for (const t of String(text).trim().split(/[\s,–-]+/).filter(Boolean)) {
+    const hit = /^([b#]?)(VII|VI|IV|V|III|II|I)(7?)$/i.exec(t)
+    if (!hit || ![hit[2].toUpperCase(), hit[2].toLowerCase()].includes(hit[2])) return null
+    const q   = hit[2] === hit[2].toUpperCase() ? M : m
+    const deg = (ROMAN[hit[2].toUpperCase()] + (hit[1] === 'b' ? 11 : hit[1] === '#' ? 1 : 0)) % 12
+    chords.push(hit[3] ? [deg, q, true] : [deg, q])
+  }
+  if (!chords.length) return null
+  const name = chords.map(numeral).join('–')
+  const mode = (chords.find(([deg]) => deg === 0) ?? chords[0])[1]
+  return drawn(`chords ${name}`, () => ({ name, mode, chords }))
+}
+
+/** The conductor's choices written over the song's draws `s`, once every generator has drawn. */
+function conduct(s, c, k, strings) {
+  if (c.chords) s.progression = chordsOf(c.chords) ?? s.progression
+  else if (c.progression === 'blues') s.progression = bluesOf(rng(Math.imul(k, 0x7f4a7c15) ^ 0x6a3e))
+  else if (c.progression) s.progression = PROGRESSIONS.find((p) => p.name === c.progression) ?? s.progression
+  if (c.tonic != null) s.tonic = c.tonic
+  if (c.bpm) s.bpm = c.bpm
+  if (c.feel) s.feel = FEELS.find((f) => f.name === c.feel) ?? s.feel
+  if (c.swing != null || c.snare || c.open) s.feel = { ...s.feel, swing: c.swing ?? s.feel.swing, snare: c.snare ?? s.feel.snare, open: c.open ?? s.feel.open }
+  for (const part of ['bass', 'guitar', 'keys']) if (c[part]) s[part] = c[part]
+  // a strings piece's bars read the bow's three phrases, which no band singer has
+  if (c.singer && !strings) s.singer = SINGERS.find((x) => x.name === c.singer) ?? s.singer
+}
+
+/** The conductor's soloist, lift and drop-outs over a drawn shape; a breakdown keeps its partner, which is never the soloist. */
+function conductShape(shape, c) {
+  if (c.soloist && c.soloist !== shape.soloist) {
+    const other   = shape.breakdown.parts.find((p) => p !== shape.soloist)
+    const partner = other === c.soloist ? shape.soloist : other
+    shape.breakdown = partner
+      ? { name: `${c.soloist} and ${partner}`, parts: [c.soloist, partner], hats: partner === 'drums' && !!shape.breakdown.hats }
+      : { name: `${c.soloist} alone`, parts: [c.soloist] }
+    shape.soloist = c.soloist
+  }
+  if (c.lift != null) shape.lift = { ...shape.lift, semis: c.lift }
+  if (c.dropouts === false) shape.dropouts = []
+  return shape
 }
 
 // ─── a form, drawn ────────────────────────────────────────────────────────
@@ -457,17 +645,92 @@ function melodyOf(song, lo = 62, hi = 81) {
   return melody
 }
 
+const clamp = (i, top) => Math.max(0, Math.min(top, i))
+/** A tune's notes `[at, len, index]` moved `by` indexes of the melody. */
+const moved = (notes, by, top) => notes.map(([at, len, mel]) => [at, len, clamp(mel + by, top)])
+/** The contour mirrored around the first note, then moved whole octaves (5 indexes) back into the register: a clamp would flatten it. */
+const inverted = (notes, top) => {
+  const flip = notes.map(([, , mel]) => 2 * notes[0][2] - mel)
+  const low  = Math.min(...flip)
+  const high = Math.max(...flip)
+  const by   = low < 0 ? 5 * Math.ceil(-low / 5) : high > top ? -5 * Math.ceil((high - top) / 5) : 0
+  return notes.map(([at, len], j) => [at, len, clamp(flip[j] + by, top)])
+}
+const closest = (list, i) => list.reduce((best, j) => (Math.abs(j - i) < Math.abs(best - i) ? j : best))
+
+/** `count` indexes in `lo..hi` walked by Narmour's rules: a step of 1 or 2 is followed by one the same way (two in three), a leap of 3 or more by a step back (three in four). */
+function narmour(rand, count, lo, hi) {
+  const walk = [lo + Math.floor(rand() * (hi - lo + 1))]
+  while (walk.length < count) {
+    const at   = walk[walk.length - 1]
+    const last = walk.length > 1 ? at - walk[walk.length - 2] : 0
+    const leap = Math.abs(last) >= 3
+    const real = rand() < (leap ? 3 / 4 : 2 / 3)
+    const way  = last ? Math.sign(last) * (leap === real ? -1 : 1) : rand() < 0.5 ? 1 : -1
+    let size = pick(rand, !last || (!leap && !real) ? [1, 2, 3, 4] : [1, 2])
+    while (size > 1 && (at + way * size < lo || at + way * size > hi)) size--
+    const to = at + way * size
+    walk.push(to < lo || to > hi ? at - way * size : to)
+  }
+  return walk
+}
+
 /**
- * Two bars of the singer's phrases walked once: `[at, len, index]` into
- * `melodyOf`, the index so the downbeat can still be pulled to the bar's chord.
+ * The hook: a one-bar motif drawn from one of the singer's phrase shapes of three or more notes, walked by
+ * `narmour` and ending on a tonic chord tone, built into four bars as A, A' (one index higher), B (the motif
+ * inverted, or a new shape of two or three notes in the upper half) and A'' (A ending on the tonic).
+ * Notes are `[at, len, index]`, the index into `melodyOf` so the downbeat can still be pulled to the bar's chord.
  */
 function hookOf(rand, song) {
   const melody = melodyOf(song)
-  let mel = Math.floor(rand() * melody.length)
-  return [0, 1].map((i) => song.singer.phrases[i % song.singer.phrases.length].map(([at, len]) => {
-    mel = Math.max(0, Math.min(melody.length - 1, mel + Math.round(rand() * 4 - 2)))
-    return [at, len, mel]
-  }))
+  const top    = melody.length - 1
+  const pcs    = [0, song.progression.mode === M ? 4 : 3, 7].map((d) => (song.tonic + d) % 12)
+  const places = (ok) => melody.flatMap((n, i) => (ok(n % 12) ? [i] : []))
+  const shape  = pick(rand, song.singer.phrases.filter((p) => p.length >= 3))
+  const walk   = narmour(rand, shape.length, 0, top)
+  walk[walk.length - 1] = closest(places((pc) => pcs.includes(pc)), walk[walk.length - 1])
+  const motif  = shape.map(([at, len], j) => [at, len, walk[j]])
+  const n      = 2 + Math.floor(rand() * 2)
+  const fresh  = pick(rand, SINGERS.flatMap((s) => s.phrases).filter((p) => p.length === n))
+  const upper  = narmour(rand, n, Math.ceil(top / 2), top)
+  const contrast = rand() < 0.5 ? inverted(motif, top) : fresh.map(([at, len], j) => [at, len, upper[j]])
+  const home   = closest(places((pc) => pc === song.tonic), motif[motif.length - 1][2])
+  const landed = motif.map((note, j) => (j === motif.length - 1 ? [note[0], note[1], home] : note))
+  return { motif, hook: [motif, moved(motif, 1, top), contrast, landed] }
+}
+
+/**
+ * One verse bar's line from the motif, drawn from `rand`: the motif as it is one time in four, else inverted,
+ * moved 1 or 2 indexes either way, or stretched to twice its length, an even `index` in the section singing
+ * its first half and an odd one the second.
+ */
+export function variationOf(motif, rand, index, top) {
+  const name = rand() < 0.25 ? 'same' : pick(rand, ['inverted', 'moved', 'stretched'])
+  if (name === 'same') return { name, notes: motif }
+  if (name === 'inverted') return { name, notes: inverted(motif, top) }
+  if (name === 'moved') {
+    const by = pick(rand, [-2, -1, 1, 2])
+    return { name: `moved ${by > 0 ? '+' : ''}${by}`, notes: moved(motif, by, top) }
+  }
+  const from  = index % 2 ? 16 : 0
+  const notes = motif.flatMap(([at, len, mel]) => {
+    const on  = Math.max(at * 2, from)
+    const off = Math.min((at + len) * 2, from + 16)
+    return off > on ? [[on - from, off - on, mel]] : []
+  })
+  return { name: index % 2 ? 'stretched, second half' : 'stretched, first half', notes }
+}
+
+/** The rests of 4 steps or more in a bar of `notes`, as `[from, to]`. */
+function restsOf(notes) {
+  const out = []
+  let end = 0
+  for (const [at, len] of notes) {
+    if (at - end >= 4) out.push([end, at])
+    end = Math.max(end, at + len)
+  }
+  if (16 - end >= 4) out.push([end, 16])
+  return out
 }
 
 /**
@@ -809,13 +1072,13 @@ function sweep(buf, from, to, barN) {
 
 // ─── voice leading ────────────────────────────────────────────────────────
 
-/** The intervals above its root a chord sounds on the keys: the triad, then the colour tone. The V, a flagged secondary dominant and an `all7` chord take a dominant seventh, whatever the colour; an `all7` minor chord a minor seventh. */
+/** The intervals above its root a chord sounds on the keys: the triad, then the color tone. The V, a flagged secondary dominant and an `all7` chord take a dominant seventh, whatever the color; an `all7` minor chord a minor seventh. */
 function tonesOf(song, deg, q, flagged) {
   const all7  = song.progression.all7
   const dom   = q === M && (deg === 7 || all7 || flagged)
   const tones = [0, q === M ? 4 : 3, 7]
-  if (dom || all7 || song.colour === 'sevenths') tones.push(q === M && !dom ? 11 : 10)
-  else if (song.colour === 'add9') tones.push(2)
+  if (dom || all7 || song.color === 'sevenths') tones.push(q === M && !dom ? 11 : 10)
+  else if (song.color === 'add9') tones.push(2)
   return tones
 }
 
@@ -876,13 +1139,13 @@ function leading(sets, lo, hi) {
 const VOICED = new WeakMap()
 
 /**
- * The cycle's voicings for the keys (the chord and its colour tone, MIDI 55-72) and the guitar (the triad, 62-79), as
- * notes above a tonic of 0, and under a sus colour each chord's third swapped for the 2nd or 4th by the nearest note.
- * A table is the progression's and its colour's alone, so any list of chords gets one.
+ * The cycle's voicings for the keys (the chord and its color tone, MIDI 55-72) and the guitar (the triad, 62-79), as
+ * notes above a tonic of 0, and under a sus color each chord's third swapped for the 2nd or 4th by the nearest note.
+ * A table is the progression's and its color's alone, so any list of chords gets one.
  */
 function voicingsOf(song) {
-  const { progression: prog, colour, sus } = song
-  const tag = `${colour}${sus}`
+  const { progression: prog, color, sus } = song
+  const tag = `${color}${sus}`
   const kept = VOICED.get(prog) ?? new Map()
   VOICED.set(prog, kept)
   if (kept.has(tag)) return kept.get(tag)
@@ -908,7 +1171,7 @@ function voicingsOf(song) {
 
 /**
  * The chord of bar `b`: its pitch classes root first, the intervals it tunes (`reach`), and its voicings. Under a
- * sus colour `sus` is the same chord with the third held up by a 2nd or 4th, for the bar's first half; the
+ * sus color `sus` is the same chord with the third held up by a 2nd or 4th, for the bar's first half; the
  * chord itself is what the second half resolves to.
  */
 function chordOf(song, b) {
@@ -935,17 +1198,22 @@ function chordOf(song, b) {
   }
 }
 
+const barRand = (song, b, p) => rng(Math.imul(song.k, 0x85ebca6b) ^ Math.imul(b + 1, 0xc2b2ae35) ^ Math.imul(p + 1, 0x27d4eb2f))
+
+/** The fill that ends bar `b`, or null: what `startBar` draws, for a probe to name. */
+export const fillAt = (song, b) => fillFor(song, b, barRand(song, b, PART.drums))
+
 // Each part draws from a generator of its own, seeded from (song, bar, part): a
 // change to one part's draws leaves the other four parts' numbers alone, so an
 // A/B comparison of one part hears only that part. One shared generator
 // re-rolled the drums' looseness whenever the guitar drew a note more.
-// `only` is a part's name (`createBand({ solo })`): the mix leaves the others
+// `only` is a part's name or a list of them (`createBand({ solo })`): the mix leaves the others
 // out and the peaks still cover all five. `startBar` answers a handle: `part(p)`
 // renders one part into its buffer and `finish()` renders the rest and mixes.
-function startBar(song, b, only = null) {
+function startBar(song, b, only = /** @type {string | string[] | null} */ (null)) {
   const len   = song.barN * (1 + TAIL)
   const parts = PARTS.map(() => new Float32Array(len))
-  const rands = PARTS.map((_, p) => rng(Math.imul(song.k, 0x85ebca6b) ^ Math.imul(b + 1, 0xc2b2ae35) ^ Math.imul(p + 1, 0x27d4eb2f)))
+  const rands = PARTS.map((_, p) => barRand(song, b, p))
   const swing = song.ensemble === 'strings' ? 0 : song.feel.swing
   const step  = (i) => ((i % 2 ? i + swing : i) * song.stepMs) / 1000
   const S     = song.stepMs / 1000
@@ -957,8 +1225,8 @@ function startBar(song, b, only = null) {
   const chord  = chordOf(ending ? { ...key, progression: song.coda } : key, ending ? 0 : b)
   const section = sectionOf(song, b)
   const vowel  = ending || section === 'chorus' || section === 'last' ? 'a' : song.vowel
-  // A hit a few ms off the grid, at a few percent off its gain: a player, not a sequencer.
-  const loose = (part, i) => Math.max(0, step(i) + (rands[part]() - 0.5) * 0.006)
+  // A hit off the grid by the part's lean and a drifting 1/f offset, at a few percent off its gain: a player, not a sequencer.
+  const loose = (part, i) => Math.max(0, step(i) + pink(song.k, part, b * 16 + Math.floor(i)) + song.lean[part] / 10000)
   const vel   = (part) => 0.85 + 0.3 * rands[part]()
 
   // The span each part wrote: a sample outside it is still zero, so the mix and
@@ -987,10 +1255,11 @@ function startBar(song, b, only = null) {
     let   sHi   = 0
     const peaks = parts.map((p, pi) => {
       const e = new Float32Array(Math.ceil(len / BLOCK))
-      const heard = only === null || PARTS[pi] === only
+      const heard = only === null || [only].flat().includes(PARTS[pi])
       const gl    = Math.cos(((PAN[PARTS[pi]] + 1) * Math.PI) / 4)
       const gr    = Math.sin(((PAN[PARTS[pi]] + 1) * Math.PI) / 4)
-      const gs    = SEND[PARTS[pi]]
+      const gs    = SEND[PARTS[pi]] * song.room
+      const level = vol * (song.levels?.[PARTS[pi]] ?? 1)
       if (hi[pi] <= lo[pi]) return e
       if (heard && hi[pi] > end) end = hi[pi]
       if (heard && gs > 0) {
@@ -1001,7 +1270,7 @@ function startBar(song, b, only = null) {
         const to = Math.min(hi[pi], (j + 1) * BLOCK)
         let top = 0
         for (let i = Math.max(lo[pi], j * BLOCK); i < to; i++) {
-          const v = p[i] * vol
+          const v = p[i] * level
           if (heard) {
             L[i] += v * gl
             R[i] += v * gr
@@ -1165,7 +1434,7 @@ function startBar(song, b, only = null) {
   const keys = (t0, notes, len = 0.25, pad = false) => {
     for (const note of notes) (pad ? warm : piano)(t0, note, len)
   }
-  // Under a sus colour the bar's first half is the chord with its third held up, the second the chord itself.
+  // Under a sus color the bar's first half is the chord with its third held up, the second the chord itself.
   const heard = (i) => (i < 8 && chord.sus ? chord.sus : chord)
   // The pad holds what the two halves share for the bar and swaps only the third's voice at the half.
   const bed = () => {
@@ -1342,25 +1611,32 @@ function startBar(song, b, only = null) {
   }
 
   // The soloists' voices, each from its own part's generator in its own register.
-  const guitarSolo = () => {
+  // The hook's first bar in the soloist's voice, `shift` semitones from the singer's register.
+  const quote = (put, shift = 0) => {
+    for (const [at, len, mel] of song.hook[0]) put(at, (at === 0 ? snap(chord, hookNote(mel)) : hookNote(mel)) + shift, len * S)
+  }
+  const guitarSolo = (quoted) => {
+    if (quoted) return quote((at, note) => guitar(loose(PART.guitar, at), note))
     const next = walker(PART.guitar)
     steps(euclid(6, 16, b % 4)).forEach((i, j) => guitar(loose(PART.guitar, i), next(chord, j === 0)))
   }
   // The right hand in eighths, a rest one in four; the left holds the root and fifth on one and three or stabs the chord on the downbeat.
-  const keysSolo = () => {
+  const keysSolo = (quoted) => {
     const rand = rands[PART.keys]
     const next = walker(PART.keys, melodyOf(key, 67, 86))
     if (song.keys === 'pad') bed()
     if (rand() < 0.5) for (const i of [0, 8]) keys(step(i), [chord.bass, chord.bass + 7], S * 7)
     else keys(0, heard(0).keys, S * 4)
-    for (const i of EIGHTS) {
+    if (quoted) quote((at, note, len) => keys(loose(PART.keys, at), [note], len))
+    else for (const i of EIGHTS) {
       const n = next(chord, i === 0)
       if (rand() >= 0.25) keys(loose(PART.keys, i), [n], S * 2)
     }
   }
   // Eighths with a rest one in three and an octave leap one in five, the root on one and three,
   // and one time in four a triplet or two sixteenths picking up into the half bar or the next bar.
-  const bassSolo = () => {
+  const bassSolo = (quoted) => {
+    if (quoted) return quote((at, note, len) => bass(loose(PART.bass, at), note, len), -24)
     const rand    = rands[PART.bass]
     const next    = walker(PART.bass, melodyOf(key, 40, 55))
     const gone    = new Set()
@@ -1382,7 +1658,8 @@ function startBar(song, b, only = null) {
     for (const i of pickups) bass(loose(PART.bass, i), next(chord, false), S * 1.2)
   }
   // Phrases of two to six syllables of 2, 2, 4 or 6 steps, 2 to 4 steps of rest between them; one running past the bar is cut at its line.
-  const scat = () => {
+  const scat = (quoted) => {
+    if (quoted) return quote((at, note, len) => sing(step(at), note, len))
     const rand = rands[PART.singer]
     const next = walker(PART.singer)
     for (let at = 0; at < 16; at += 2 + Math.floor(rand() * 3)) {
@@ -1447,10 +1724,20 @@ function startBar(song, b, only = null) {
     // a solo and a breakdown hand the soloist its own voice; only a solo thins the band under it
     const lead    = (part) => (solo || x.kind === 'breakdown') && song.soloist === part
     const thin    = solo
+    // the solo's middle bar, so a bar needs no draw to know it
+    const quoting = solo && x.index === Math.floor(x.bars / 2)
+    const answers = x.kind === 'verse' || x.kind === 'prechorus'
     const bridge  = x.kind === 'bridge'
     const chorus  = x.kind === 'chorus' || x.kind === 'last'
     const hats    = x.kind === 'breakdown' && song.breakdown.hats
     const stop    = rowAt(song, b, 'stop')
+    // The line a verse or pre-chorus sings, drawn at its first use so the guitar can answer its rests whichever part renders first.
+    let line = null
+    // `verse: 'verse'` draws from the section's start alone, so every bar of one verse sings one variation.
+    const lineOf = () => (line ??= x.kind === 'prechorus'
+      ? { name: 'rising', notes: moved(song.motif, x.index, melodyOf(song).length - 1) }
+      : song.verse === 'motif' ? { name: 'same', notes: song.motif }
+      : variationOf(song.motif, song.verse === 'verse' ? rng(Math.imul(song.k, 0x632be5ab) ^ Math.imul(x.from + 1, 0x9e3779b1)) : rands[PART.singer], x.index, melodyOf(song).length - 1))
     const { feel } = song
     vol = x.kind === 'intro' ? Math.min(VOL.intro, 0.6 + 0.1 * x.index)
       : x.kind === 'outro' ? VOL.last + ((VOL.outro - VOL.last) * (x.index + 1)) / x.bars
@@ -1458,9 +1745,10 @@ function startBar(song, b, only = null) {
 
     if (on.drums) {
       play.drums = () => {
-        // the fill takes the last beat and the build's roll the last three: a backbeat under either would double the first hit;
+        // the fill takes the bar from its first hit and the build's roll the last three beats: a backbeat under either would double the first hit;
         // the full band's downbeat after a solo is the next section's, so the thinned drums run no fill
-        const cut = build ? 4 : fill && !thin ? 12 : 16
+        const shape = thin ? null : fillFor(song, b, rands[PART.drums])
+        const cut   = build ? 4 : shape ? shape.hits[0][0] : 16
         if (x.first && !thin) crash(0)
         if (thin) {
           if (song.soloist === 'singer') for (const i of [4, 12]) if (i < cut) rim(loose(PART.drums, i))
@@ -1476,21 +1764,19 @@ function startBar(song, b, only = null) {
         } else if (hats) {
           for (const i of EIGHTS) if (i < cut) hat(loose(PART.drums, i), false, i % 4 === 0)
         } else {
-          for (const i of feel.kick) if (i < cut) kick(loose(PART.drums, i))
+          for (const i of song.pattern.kick) if (i < cut) kick(loose(PART.drums, i))
           for (const i of feel.snare ?? []) if (i < cut) snare(loose(PART.drums, i))
           for (const i of feel.rim ?? []) if (i < cut) rim(loose(PART.drums, i))
-          for (const i of feel.hat) if (i < cut) hat(loose(PART.drums, i), false, i % 4 === 0)
+          for (const i of song.pattern.hat) if (i < cut) hat(loose(PART.drums, i), false, i % (feel.accent ?? 4) === 0)
           for (const i of feel.open) if (i < cut) hat(loose(PART.drums, i), true)
           // a ghost on an offbeat half the time, never under the fill
           if (!build && feel.snare && rands[PART.drums]() < 0.5) snare(loose(PART.drums, fill || rands[PART.drums]() < 0.5 ? 7 : 15), 0.25)
         }
         if (build) {
           for (let i = 4; i < 16; i++) snare(loose(PART.drums, i), 0.15 + (0.85 * (i - 4)) / 11)
-        } else if (fill && !thin) {
-          // four sixteenths climbing; their tails overlap, so the last lands under the backbeat's gain
-          // every other section's fill ends on the toms
-          const toms = x.n % 2 === 1
-          ;[12, 13, 14, 15].forEach((i, j) => (toms && j >= 2 ? tom(loose(PART.drums, i), j === 2 ? TOM.high : TOM.low, 0.4 + j * 0.15) : snare(loose(PART.drums, i), 0.4 + j * 0.15)))
+        } else if (shape) {
+          const strike = { snare, kick, high: (t, g) => tom(t, TOM.high, g), mid: (t, g) => tom(t, TOM.mid, g), low: (t, g) => tom(t, TOM.low, g) }
+          for (const [i, voice, g] of shape.hits) strike[voice](loose(PART.drums, i), g)
         }
       }
     }
@@ -1499,12 +1785,12 @@ function startBar(song, b, only = null) {
       play.bass = () => {
         const g = thin ? 0.8 : 1
         if (lead('bass')) {
-          bassSolo()
+          bassSolo(quoting)
         } else if (bridge) {
           bass(loose(PART.bass, 0), chord.bass, S * 7.5, g)
           bass(loose(PART.bass, 8), chord.bass, S * 7.5, g)
         } else if (song.bass === 'on the kick') {
-          for (const i of feel.kick) bass(loose(PART.bass, i), chord.bass, S * 2.5, g)
+          for (const i of song.pattern.kick) bass(loose(PART.bass, i), chord.bass, S * 2.5, g)
           bass(loose(PART.bass, 14), chord.bass + 12, S * 1.5, g)
         } else if (song.bass === 'eighths') {
           for (const i of EIGHTS) bass(loose(PART.bass, i), chord.bass + (i === 6 || i === 14 ? 12 : 0), S * 1.6, g)
@@ -1519,7 +1805,7 @@ function startBar(song, b, only = null) {
     if (on.keys) {
       play.keys = () => {
         const keyset = bridge || thin ? 'pad' : chorus ? song.chorus.keys : song.keys
-        if (lead('keys')) keysSolo()
+        if (lead('keys')) keysSolo(quoting)
         else if (keyset === 'stabs') for (const i of [2, 6, 10, 14]) keys(step(i), heard(i).keys)
         else if (keyset === 'backbeat') for (const i of [4, 12]) keys(step(i), heard(i).keys)
         else bed()
@@ -1529,33 +1815,52 @@ function startBar(song, b, only = null) {
     if (on.guitar) {
       play.guitar = () => {
         if (lead('guitar')) {
-          guitarSolo()
+          guitarSolo(quoting)
         } else if (!bridge) {
           const style = chorus ? song.chorus.guitar : song.guitar
+          const rests = answers && on.singer && !fill ? restsOf(lineOf().notes) : []
+          const held  = (i) => rests.some(([from, to]) => i >= from && i < to)
           if (style === 'strummed') {
             for (const i of [0, 6, 10]) {
+              if (held(i)) continue
               const t = loose(PART.guitar, i)
               heard(i).guitar.forEach((n, j) => guitar(t + j * 0.012, n))
             }
           } else {
             const at = style === 'arpeggio' ? steps(euclid(5, 16, 3)) : steps(euclid(7, 16, 1))
-            at.forEach((i, j) => guitar(loose(PART.guitar, i), heard(i).guitar[j % 3]))
+            at.forEach((i, j) => {
+              if (!held(i)) guitar(loose(PART.guitar, i), heard(i).guitar[j % 3])
+            })
+          }
+          // the motif's first notes in its own rhythm, squeezed into the rest, on the chord's tones following its contour
+          for (const [from, to] of rests) {
+            const head  = song.motif.slice(0, 3)
+            const tones = [...heard(from).guitar].sort((p, q) => p - q)
+            const fit   = Math.min(1, (to - from) / (head[head.length - 1][0] + head[head.length - 1][1] - head[0][0]))
+            let rung = 1
+            head.forEach(([at, , mel], j) => {
+              if (j) rung = Math.max(0, Math.min(2, rung + Math.sign(mel - head[j - 1][2])))
+              guitar(loose(PART.guitar, from + (at - head[0][0]) * fit), tones[rung])
+            })
           }
         }
       }
     }
 
-    // the singer rests under the fill; the hook in the chorus, a walk elsewhere, the bridge's in long phrases, a scat in a solo
+    // the singer rests under the fill; the hook in the chorus, the motif varied elsewhere, the bridge's long phrases, a scat in a solo
     if (on.singer && (!fill || lead('singer'))) {
       play.singer = () => {
         if (lead('singer')) {
-          scat()
+          scat(quoting)
         } else if (chorus) {
-          for (const [at, len, mel] of song.hook[x.index % 2]) sing(step(at), at === 0 ? snap(chord, hookNote(mel)) : hookNote(mel), len * S)
+          for (const [at, len, mel] of song.hook[x.index % song.hookBars]) sing(step(at), at === 0 ? snap(chord, hookNote(mel)) : hookNote(mel), len * S)
         } else {
-          const next    = walker(PART.singer)
-          const phrases = bridge ? LONG.phrases : song.singer.phrases
-          for (const [at, len] of phrases[b % 2]) sing(step(at), next(chord, at === 0), len * S)
+          if (bridge) {
+            const next = walker(PART.singer)
+            for (const [at, len] of LONG.phrases[b % 2]) sing(step(at), next(chord, at === 0), len * S)
+          } else {
+            for (const [at, len, mel] of lineOf().notes) sing(step(at), at === 0 ? snap(chord, hookNote(mel)) : hookNote(mel), len * S)
+          }
         }
       }
     }
@@ -1593,9 +1898,6 @@ function startBar(song, b, only = null) {
   return bar
 }
 
-/** Bar `b` of `song` whole, as `{ mix: [L, R], peaks, until }`. */
-const renderBar = (song, b, only = null) => startBar(song, b, only).finish()
-
 // ─── the stream ───────────────────────────────────────────────────────────
 
 /**
@@ -1603,16 +1905,16 @@ const renderBar = (song, b, only = null) => startBar(song, b, only).finish()
  * in -1..1, as `[left, right]`. `seat(cue)` is a request heard: samples before its `at` still
  * follow the cue it replaces, since a pull may already have passed the bar.
  * `levels(from, cols, width)` is how loud each of `PARTS` was, for the
- * loft's scope.
+ * loft's scope. `conductor` is every song's (`songOf`); a band renders bars ahead, so a new one is a new band.
  */
-export function createBand({ solo = null } = {}) {
+export function createBand({ solo = null, conductor = {} } = {}) {
   const songs = new Map()
   const bars  = new Map()
   const peaked = new Map()   // the bars' `peaks`, kept longer: they are small, and the scope reads back
   const songFor = (k) => {
     let s = songs.get(k)
     if (!s) {
-      s = songOf(k)
+      s = songOf(k, conductor)
       songs.set(k, s)
       if (songs.size > 3) songs.delete(songs.keys().next().value)
     }

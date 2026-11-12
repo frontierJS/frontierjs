@@ -52,7 +52,7 @@ The band is a pure function of the wall clock: every screen computes the same
 samples, and nothing is sent between them. Every step below keeps that, and
 these are the rules that follow from it:
 
-- **A linear effect runs inside `renderBar`, from zero state, per bar.** Reverb,
+- **A linear effect runs inside `startBar`, from zero state, per bar.** Reverb,
   filters and chorus are linear. Applying one to a bar's
   `barN * (1 + TAIL)` buffer and overlap-adding the bars gives the same result
   as applying it to the whole song, so a screen that joins mid-song hears what
@@ -71,7 +71,7 @@ these are the rules that follow from it:
 - **A new song-level draw uses a generator of its own**, the way `slow` draws
   the strings piece. Then `songOf(k)`'s existing choices (progression, key,
   tempo, styles, hook) keep their numbers while Phases 1–2 are compared before
-  and after. This covers `songOf` only. `renderBar`'s per-bar draws
+  and after. This covers `songOf` only. `startBar`'s per-bar draws
   (looseness, how hard each note is played, ghost notes) change once, at 0.2,
   and 0.3's "before" recordings are taken after that. Phases 3–6 change songs
   on purpose, and a song number is then a draw from the new generator.
@@ -202,7 +202,7 @@ Owner's A/B: `.wav/phase-1/` vs `.wav/phase-2/` (songs 0 1 7 42 99 4; `.wav/2.7/
   filter, and stiffness on low strings. — done 2026-11-11: the pluck is noise
   through a one-pole whose cutoff is 1.8 kHz to 7.2 kHz by `vel`, then the comb
   `e[n] - e[n - P]` with `P = round(mu N)`, `mu` a draw from `[.10 .15 .20 .25 .30 .35]`,
-  rescaled to one rms so colour changes and loudness does not. The loop is the
+  rescaled to one rms so color changes and loudness does not. The loop is the
   damping zero `(1 - S) x[n] + S x[n - 1]` at S 0.5 (linear phase: half a sample at
   every frequency, so the 1.4 tuning allpass stays) and `rho = 0.001 ** (1 / (f T60)) / cos(w / 2)`
   (the division gives back what the zero takes from the fundamental), `T60` 2.5 s at
@@ -334,7 +334,7 @@ Owner's A/B: `.wav/phase-1/` vs `.wav/phase-2/` (songs 0 1 7 42 99 4; `.wav/2.7/
   largest of the two. A bar's samples depend on `(k, b)` alone, never on when
   it was rendered, which keeps every screen alike. Proof: `band:wav` output
   byte-identical to the renders before it, and the single-pull worst re-measured.
-  — done 2026-11-11: `startBar` answers `{ part(p), finish() }` (`renderBar` is its one-shot);
+  — done 2026-11-11: `startBar` answers `{ part(p), finish() }` (the one-shot `renderBar` wrapper that replaced the old function had no caller and is gone);
   `samples()` takes one step per call on the bar after the last it touched (a part, then the mix),
   never past the song's last bar and never under a different cue. Parts are order-free: every
   draw is from `rands[part]`, the walkers and the drums' ghost note included. Byte-identical: yes
@@ -461,7 +461,7 @@ Owner's A/B: `.wav/phase-3/` vs `.wav/phase-4/` (songs 0 1 7 42 99 4); the `.wav
   ([Tymoczko, *The Geometry of Musical Chords*](https://dmitri.mycpanel.princeton.edu/sciencearticle.html)).
   `chordOf` reads the table. The keys and the guitar get separate voicings in
   their own registers.
-  — done 2026-11-11: not in `songOf` but `voicingsOf(song)`, memoized in a `WeakMap` on the progression object (then by colour), so the ending bar's
+  — done 2026-11-11: not in `songOf` but `voicingsOf(song)`, memoized in a `WeakMap` on the progression object (then by color), so the ending bar's
   one-chord `song.coda` and 4.3's drawn lists get tables the same way; it works over any list of `[degree, quality]`. The measure is Tymoczko's: the sum
   of absolute semitone motions under the best pairing of voices (`motion`; where a chord has four notes and the next three, a note serves two voices).
   Candidates are every closed voicing (each pitch class once, span at most 11) in the part's register, keys 55-72 and guitar 62-79. The chain starts at the first
@@ -471,20 +471,20 @@ Owner's A/B: `.wav/phase-3/` vs `.wav/phase-4/` (songs 0 1 7 42 99 4); the `.wav
   octave (**fork:** **A** leave it · **B** a table per tonic, notes exactly in 55-72 and 62-79, 12 times the tables and a build at the lift bar. Recommend A).
   The bass stays the root and `pcs` stays root first. Probe over songs 0 1 7 42 99, the 20 chord changes of their cycles with the seam counted, the old
   nearest-60 and nearest-70 voicing against the table, same measure. On triads alone keys 4.70 to 3.20 and guitar 3.60 to 3.20, and as the songs play (the V
-  a dominant 7, each song's own colour) keys 4.50 to 3.70 and guitar 3.60 to 3.20. Common tones held on the same note: 22 of 22 in the keys. The seam's residual,
+  a dominant 7, each song's own color) keys 4.50 to 3.70 and guitar 3.60 to 3.20. Common tones held on the same note: 22 of 22 in the keys. The seam's residual,
   last chord to first, in songs 0 1 7 42 99: keys 4 4 3 4 9, guitar 3 3 3 4 3. The chain is greedy: over a whole cycle the optimum would be 3.60 against 4.00 for keys
   under `sevenths` (all other cases equal), which would come from trying every first voicing and keeping the cheapest cycle (not done; the brief's chain stands).
-- [x] 4.2 Chord colour, drawn per song: maj7, min7 and dominant 7 (always the V,
+- [x] 4.2 Chord color, drawn per song: maj7, min7 and dominant 7 (always the V,
   and every chord in the blues), add9, and sus2 or sus4 resolving. The melody's
-  downbeat snap (`snap`) reads the colour tones too.
-  — done 2026-11-11: `song.colour` from a generator of its own (`0x3c6ef372`, `^ 0xc010`), one in four each of `none`, `sevenths` (maj7 on major chords,
+  downbeat snap (`snap`) reads the color tones too.
+  — done 2026-11-11: `song.color` from a generator of its own (`0x3c6ef372`, `^ 0xc010`), one in four each of `none`, `sevenths` (maj7 on major chords,
   min7 on minor), `add9` and `sus` (then `song.sus` 2 or 4 by a second draw), named in `about` as `(sevenths)`, `(sus4)`; over songs 0..31 none 9, sevenths 10,
   sus 7, add9 6, strings pieces too. A chord is dominant when it is major and its root is 7 above the tonic, or the progression has `all7` (the blues); it takes
-  the minor seventh whatever the colour, and under `add9` it takes that seventh and no ninth (**fork:** a dominant 9th there is a fifth voice · recommend as is).
-  `chordOf` answers `pcs` (root, third, fifth, colour tone), `reach` (the intervals it tunes), and `sus`, a second chord for the bar's first half
+  the minor seventh whatever the color, and under `add9` it takes that seventh and no ninth (**fork:** a dominant 9th there is a fifth voice · recommend as is).
+  `chordOf` answers `pcs` (root, third, fifth, color tone), `reach` (the intervals it tunes), and `sus`, a second chord for the bar's first half
   (pitch classes, keys, guitar), the resolution being the chord itself; the third's voice moves to the 2nd or 4th by the nearest note, and the
   pad holds what the halves share for the whole bar and swaps only that voice at the half (`heard(i)` picks per step for stabs, backbeat and the strum).
-  The keys voicing is the triad plus the colour tone as a fourth voice; the guitar's table is the triad only, and under sus it takes the same third-for-2nd/4th
+  The keys voicing is the triad plus the color tone as a fourth voice; the guitar's table is the triad only, and under sus it takes the same third-for-2nd/4th
   swap so it does not play the third against the keys' 4th (**fork:** **A** as built · **B** the guitar plays the resolved triad throughout, which clashes by a
   semitone in a major chord; recommend A). `snap` reads `pcs`, so a downbeat may land on the seventh or ninth where the pentatonic has it; the singer's
   melody is not snapped to the sus tone. `tuned` is a table `JUST` of ratio over the root: 3rd 6/5 or 5/4, 5th 3/2, minor 7th 9/5 (not the dominant's 7/4,
@@ -513,7 +513,7 @@ Owner's A/B: `.wav/phase-3/` vs `.wav/phase-4/` (songs 0 1 7 42 99 4); the `.wav
   V/V (II7 before the V), V/vi (III7 before a vi), a borrowed bVII or iv in the subdominant's last slot, a chromatic mediant (bVI or III major) in the V's slot
   before the last tonic; minor takes only V/V. A phrase is named by its numerals (`I–II7–V–I`, `i–i–iv–bVII–II7–V–bIII–i`; `b` and `#` plain letters; the V
   carries no 7, the 4.2 rule making it a dominant anyway). Per-chord flag: `[degree, quality, true]`, the third element read by `tonesOf` (a flagged major chord is
-  a dominant seventh whatever the colour), so `chordOf` and `voicingsOf` needed no field of their own. Drawn phrases are interned by name, one object a phrase, so
+  a dominant seventh whatever the color), so `chordOf` and `voicingsOf` needed no field of their own. Drawn phrases are interned by name, one object a phrase, so
   the `WeakMap` voicing table is found again when the song is drawn again (table build 0.3 to 1.1 ms). The blues keeps `name: 'blues'` and `all7`, and takes 1 to 3 of
   four rewrites drawn on today's twelve bars: quick change (bar 2 IV), `ii–V` or `V–V` over bars 9-10, `vi` or `VI7` for bar 8, no turnaround (bars 11-12 `I I`);
   `about` reads `blues (quick change, ii–V)`. **Discrepancy:** the brief's base `I I I I IV IV I I V IV I I` is not today's blues, which already ends `I V` in bars
@@ -541,16 +541,50 @@ Goal: a chorus you can hum after hearing it once.
 Done when: the owner hums the chorus of a song drawn by the new generator after
 one listen.
 
-- [ ] 5.1 The hook as a motif. Draw a one-bar idea and build the hook as A, A'
+Owner's A/B: `.wav/phase-4/` vs `.wav/phase-5/` (songs 0 1 7 42 99 4; song 4 is byte-identical); the `.wav/5.1/`, `5.2/` and `5.3/` pairs (`before/` vs `after/`, songs 42 and 99; `5.2/` also has the two solo quotes); per-pull worst, 4410-sample pulls from a cold process, after pull 0, at load 5.3-5.8 (a peer's load, not a quiet machine): song 0 42.8 ms (first pull 135.2, mean 3.98), song 42 58.7 ms (first 125.1, mean 3.31); phase 4's at load 2.3 were 33.1 and 58.6.
+
+- [x] 5.1 The hook as a motif. Draw a one-bar idea and build the hook as A, A'
   (the same shape a step higher), B (contrast), then A' landing on the tonic.
   The walk follows Narmour's rules: a small step implies another in the same
   direction, a leap is followed by a step back, and a phrase ends on a chord
   tone ([implication–realization](https://en.wikipedia.org/wiki/Implication-Realization)).
-- [ ] 5.2 The verse grows from the motif rather than a free walk: the motif
+  — done 2026-11-11: `hookOf` still draws from `songOf`'s first generator, and nothing reads that generator after it (the progression, color, voice, form and strings draws all have
+  their own), so the draw count moved and no other field did: songs 0..199 differ in `hook` and the new `motif` only. The motif takes the shape of one of the singer's phrases
+  of three notes or more (`busy` either, `long` its second, `call` its first), so 3 or 4 notes, and `narmour(rand, count, lo, hi)` walks melody indexes: the first note and interval free
+  (size 1 to 4), then a step (1 or 2) is followed by another the same way at 2 in 3 and by a reversal of 1 to 4 otherwise, a leap (3+) by a step back at 3 in 4 and by a
+  step on the same way otherwise; at the register's edge the size shrinks to fit before the direction turns. The last note is then snapped to the tonic triad's nearest melody
+  index (the key's I or i, not the first chord of a drawn phrase, which may be a vi). The hook is `[A, A', B, A'']`: A the motif, A' every index one higher, B the motif inverted
+  (mirrored around its first note, then moved by whole octaves, 5 indexes, back into the register, since a clamp flattened it to repeated notes) or, by a coin, a new shape of 2 or
+  3 notes (a phrase of the SINGERS of that length) walked by `narmour` in the upper half, A'' the motif with its last note on the tonic's index nearest the motif's last. `song.hook` is
+  four bars, `song.motif` the first; the chorus sings `hook[x.index % 4]` and the ending bar and the stop filler keep `hook[0]`. Probe over songs 0..31 (27 band songs): motifs 3 to 4 notes, every motif
+  ends on a tonic-triad tone, every A'' on the tonic, every index in range, 0 bad. Narmour tallies over triples whose first interval's continuation had room in the register (the
+  last note excluded, the snap moves it): songs 0..31 step then same way 3/6, leap then step back 3/5; over songs 0..599 (496 band songs) 83/128 (65%, drawn at 2 in 3) and 67/84 (80%, drawn at 3 in 4,
+  a little over because a leap followed on the same way at the register's edge turns into the step back). Counting the triples at a wall too, step 83/190 (44%): a register of
+  8 or 9 indexes has walls the implication cannot cross. WAVs: `packages/haven/.wav/5.1/before/` and `after/`, `song-<k>-chorus-solo-singer.wav` for 42 and 99, bars 12-19 (the first chorus). Phase 5's acceptance (the owner's hum test) stays open.
+- [x] 5.2 The verse grows from the motif rather than a free walk: the motif
   inverted, stretched to twice its length, or moved up or down. The soloist
   quotes the hook once.
-- [ ] 5.3 Call and response: the guitar answers in the singer's rests, using the
+  — done 2026-11-11: `variationOf(motif, rand, index, top)` (exported, so a probe can name a bar's variation) draws from `rands[PART.singer]` once per bar: the motif as it is at 1 in 4, else
+  inverted, moved by -2, -1, +1 or +2 indexes, or stretched, a third each of the other 3 in 4. A stretched bar's even `index` in the section sings the first half of the doubled
+  motif and an odd one the second; a note running across the bar line is cut at it and struck again from step 0 in the next bar (no state crosses a bar). The downbeat is `snap`ped to the
+  chord as in the chorus. The pre-chorus sings the motif moved up by `x.index` (no draw, 0 to 3 indexes). Every section that is not the chorus, the bridge (still `LONG`) or a singer's solo sings a variation,
+  so the intro, breakdown and outro do too where the singer plays (**fork:** the brief names the verse and pre-chorus only; **A** as built · **B** the walker kept for those three; recommend A, one rule for
+  every non-chorus bar). The variation is drawn at first use through a memo in the bar, so the guitar's answer (5.3) reads the same line whichever part renders first, and the singer's `sing`
+  draws (its syllable) still come after it. **The quote:** the solo section's bar `index === Math.floor(bars / 2)` (the middle one, no draw) plays `song.hook[0]` in the soloist's voice, replacing that bar's
+  walk: `keysSolo` keeps its left hand and plays the notes on the keys at the hook's pitch, `bassSolo` the notes two octaves down as `bass`, `scat` sings them with the song's vowel (the downbeat snapped), the
+  guitar plays them as `guitar` notes; a breakdown never quotes. Probe over songs 0..15 (each verse bar's variation): e.g. song 0's first verse is moved -2, same, moved +1, moved +1, same, same, same, inverted; the quote bar is 54 in song 0 (bass, solo 52+4), 50 in 3 (keys, 48+4), 50 in 1, 42 in 2.
+  Mix against the old code, bars that differ in songs 42 99 3 0: verse and pre-chorus and chorus bars all, intro none, breakdown 0 of 4 in 42 and 4 of 4 in 3 (the singer plays there), solo bars 2 of 4 (the quote and its tail), 1 of 8, 2 of 4, 1 of 4.
+  WAVs: `.wav/5.2/before/` and `after/`, `song-<k>-verse-solo-singer.wav` for 42 and 99, bars 4-11; `.wav/5.2/song-3-solo-quote.wav` (keys, bars 47-52) and `song-0-solo-quote.wav` (bass, bars 53-58).
+- [x] 5.3 Call and response: the guitar answers in the singer's rests, using the
   motif's rhythm.
+  — done 2026-11-11: in a verse or pre-chorus bar where the singer sings and the bar is not a fill, `restsOf(lineOf().notes)` lists the rests of 4 steps or more (from the end of the last note to the
+  next one, and to step 16) and the guitar answers each: the motif's first 3 notes, their start-to-end span squeezed into the rest when it is longer, on the chord's guitar tones (`heard(from).guitar`, so a sus half is
+  right), following the motif's contour a rung at a time (up a tone where the motif rises, down where it falls, from the middle one). **Interleaved, not dropped:** the arpeggio, running or strum pattern plays under the
+  sung notes and loses only its hits inside an answered rest. Not the chorus, the bridge, a solo or a part `plays` masks out. Over songs 0..31 576 verse bars, 259 have a rest of 4+ and so one answer each. Guitar-only against the old code
+  over songs 42 and 99: chorus, intro, breakdown, solo, last and outro bars unchanged (99's 2 of 16 chorus bars are in the tail of the verse before), verse and pre-chorus bars changed (15 of 16 in 42, since a bar with no rest
+  differs only by the tail). `band:wav --solo` takes a comma list (`--solo guitar,singer`; `createBand({ solo })` a name or an array, one `.flat().includes`). WAVs: `.wav/5.3/before/` (`song-<k>-verse-solo-guitar.wav` and
+  `-singer.wav`, 42 and 99, bars 4-11) and `.wav/5.3/after/` (`song-<k>-verse-solo-guitar-singer.wav`). End of Phase 5: `.wav/phase-5/` songs 0 1 7 42 99 4, `cmp` of song 4 against `.wav/phase-4/` identical (the strings piece has no hook and the
+  singer's bow draws are untouched). `CEIL` over 0 1 7 42 99: singer 0.424 (was 0.44; 0.42 now in `scope.js`), guitar 0.494, drums 2.027, bass 0.566 and keys 0.243 unmoved. Phase 5's acceptance (the owner's hum test) stays open.
 
 ### Phase 6 — Groove
 
@@ -558,9 +592,20 @@ Goal: the band plays like players, not like a sequencer.
 Done when: the owner listens to three whole songs drawn by the new generator
 and accepts them.
 
-- [ ] 6.1 Fills drawn from a set, using the 2.4 toms, in place of the same four
+Owner's A/B: `.wav/phase-5/` vs `.wav/phase-6/` (songs 0 1 7 42 99 4; song 4 is byte-identical), and `.wav/baseline/` vs `.wav/phase-6/` for the whole plan; the `.wav/6.1/`, `6.2/` pairs (`before/` vs `after/`) and `.wav/6.3/` (a solo-drums bar run of each new feel, and funk song 5 whole); per-pull worst, 4410-sample pulls from a cold process, after pull 0, at load 3.1-3.2 (a peer's load, not a quiet machine): song 0 37.0 ms (first pull 114.5, mean 3.89), song 42 56.4 ms (first 99.6, mean 3.18), funk song 5 45.2 ms (first 110.3, mean 4.25); phase 5's at load 5.3-5.8 were 42.8 and 58.7. Verified by the main thread at load 1.4-1.8: 0 samples differ between 4410-sample pulls and one-bar pulls on songs 0, 42, 5 (funk), 2 (shuffle), 23 (one-drop) and 8; worst pull after pull 0 is 30.1-33.2 ms, pull 0 75-101 ms. `CEIL` re-measured by one method (song k starts at `k * SONG_MS`, and `peaked` keeps 16 bars, so `levels` is read per bar as it renders; the agents' probes that read a whole song at the end saw only its last 16 bars): guitar 0.46, singer 0.42, drums 2.21, bass 0.64 (Phase 6 moved it from 0.57), keys 0.24.
+
+- [x] 6.1 Fills drawn from a set, using the 2.4 toms, in place of the same four
   climbing sixteenths every time.
-- [ ] 6.2 Timing feel.
+  — done 2026-11-11: `FILLS` is eight one-bar shapes of `[step, voice, gain]` hits (voices `snare`, `high`, `mid`, `low`, `kick`): `climb` (12-15 snares rising, the old plain fill), `roll` (the same steps from 0.25 to 1),
+  `snares and toms` (the old tom fill: snare 12 13, high 14, low 15), `tom roll` (snare 12, high 13, mid 14, low 15), `half bar` (8 to 14 in eighths: snare, high, snare, mid), `sparse` (snare 12, low 15),
+  `flam and rest` (snare 12 13, low 15) and `kick and toms` (kick 12, high 13, kick 14, low 15); the crash on the next downbeat is still the section's. `songOf` draws two distinct favorites from a generator of its own
+  (`0x5bd1e995`, `^ 0xf11a`) into `song.fills`; `fillFor(song, b, rand)` draws from `rands[PART.drums]` at the top of the bar's drums (a favorite three times in four, else any, two draws), and the pattern under it
+  is cut where the fill's first hit lands (`cut`: 12, or 8 for the half bar). The build's roll is its own and draws nothing; a solo's thinned drums run no fill. `fillAt(song, b)` (exported) re-draws it for a probe.
+  Probe over songs 0..31 (27 band songs): 241 fill bars (a section's last bar, not an outro, solo or build row), every one has a fill, 0 without; tally half bar 36, flam and rest 36, sparse 36, kick and toms 33,
+  climb 27, snares and toms 26, roll 25, tom roll 22; the mid tom sounds in `tom roll` and `half bar`, 58 bars of 241. `climb` and `roll` differ only in the gain curve (**fork:** **A** as built · **B** drop `roll`
+  for a ninth shape; recommend A until the ear says they are one). The ghost snare draw follows the fill's, so the draws after it moved. WAVs: `.wav/6.1/before/` and `after/`, `song-42-from3-bars10-solo-drums.wav`
+  (fills at bars 3 and 11) and `song-99-from18-bars11-solo-drums.wav` (bars 19 and 27); `after` is rendered from the tree with 6.2 and 6.3 taken out, so the pair differs in fills only.
+- [x] 6.2 Timing feel.
   - Microtiming becomes pink (1/f) noise, which listeners prefer to white jitter
     ([Hennig et al. 2011](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0026457)).
     It is computed with the Voss algorithm, where each octave is a hash of
@@ -570,8 +615,32 @@ and accepts them.
   - Euclidean kick and hat patterns are drawn per song for medium syncopation,
     the peak of the groove curve
     ([Witek et al. 2014](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0094446)).
-- [ ] 6.3 Three new feels within the 16-step bar: shuffle, one-drop and
+  — done 2026-11-11: **pink:** `pink(k, part, t)` (exported) sums `OCTAVES = 5` uniform hashes in [-0.5, 0.5), octave `j` of `(k, part, j, floor(t / 2^j))` through a `Math.imul` mix (whole-number maths to the final divide,
+  no state), over `sqrt(5)` and times `PINK = 0.002` s; `t` is the song-local step `b * 16 + floor(i)`, so a bar needs nothing but `(k, b)` and a kick and hat on one step move together. `loose` is that plus the part's
+  `song.lean` (a generator of its own, `0x1b873593`, `^ 0x1ea2`: one whole number a part, -20 to 20 tenths of a ms, so at most 2 ms) and no longer draws from `rands[part]`, which shifts every later draw in that part's bar: guitar,
+  keys, bass and drums notes change, as allowed for Phase 6. Probe, drums over songs 0..31 times 100 bars of 16 steps (51200 hits): pink rms 0.579 ms, max 2.020 ms; with the drums' lean the largest offset 3.920 ms (white was rms 1.73,
+  max 3.0); the scale is 0.0025 s first, which gave 4.43 ms with lean, over the line. **Syncopation:** `syncopation(steps)` (exported) is Longuet-Higgins and Lee on the weights 4 on step 0, 3 on 8, 2 on 4 and 12, 1 on the other even
+  steps, 0 on odd: each onset adds `weight(next stronger step) - weight(onset)` if that step is a rest (the next stronger step is searched round the bar, step 0 having none). `MEDIUM` is 2 to 5 on the kick. `patternOf` (a generator
+  of its own, `0x7a3c9d15`, `^ 0x6e0c`) draws `euclid(k, 16, rot)` with k 3-5, rot 0-3 up to 8 times until the score is in `MEDIUM`, else keeps the feel's, and a hat `euclid(k, 16, rot)` with k 5-9 (not scored); `song.pattern =
+  { kick, hat, drawn }` is read by the drums (and the bass's `on the kick` line) in place of `feel.kick` and `feel.hat`, the snare and rim staying the feel's. Each feel says what it `draws`: tresillo, rock, disco and shuffle kick and
+  hat, funk the kick only (its hats are its sixteenths), half-time, bossa and one-drop nothing (fixed signatures; their own scores are 1, 4 and 1). Probe over songs 0..31 (27 band songs): 19 drawn, none fell through the 8 tries, 8 kept the
+  feel's; the drawn kicks are 4 patterns: `[4,9,14]` 7 (score 5), `[1,5,9,13]` 7 (4), `[0,6,11]` 6 (4), `[3,8,13]` 3 (4); e.g. 0 tresillo `[4,9,14]` drawn, 1 disco `[0,6,11]`, 3 bossa the feel's `[0,3,8,11]`, 9 half-time `[0,10]`.
+  **Forks:** (1) `[1,5,9,13]` has no onset on 1 or 3, and the band passes 4 distinct patterns in all · **A** as built · **B** also require an onset on step 0 or 8, leaving 3 patterns; recommend B. (2) disco takes the draw as the brief says,
+  so its four-on-the-floor kick is replaced (all 5 disco songs in 0..31) · **A** as built · **B** exempt disco with half-time and bossa; recommend B. WAVs: `.wav/6.2/before/` and `after/`, `song-0-from4-bars8-solo-drums.wav` and
+  `song-42-...`, bars 4-11 (`before` is the tree with 6.1 only).
+- [x] 6.3 Three new feels within the 16-step bar: shuffle, one-drop and
   sixteenth-note funk, each with its own pairings to rule out (`VETO` rows).
+  — done 2026-11-11: `FEELS` has eight rows, the menu `pick` over the first five (`MENU_FEELS`) so no old song's feel draw moved. **Shuffle:** kick 0 8, snare 4 12, hats on the eighths, open 14, `swing` 0.67. **One-drop:** no kick on 0; kick and snare
+  together on 8, hats 0 2 4 8 10 12, open 6 and 14, `swing` 0.1 (it draws no pattern). **Funk:** hats on all 16 steps, accented on every even step (`accent: 2`, the others 4), kick 0 3 6 10 until the pattern draw (5), snare 4 12 and the
+  existing offbeat ghost, `swing` 0. `VETO` rows: shuffle not over 108 bpm and not with the walking bass; one-drop only at 84-100 bpm (the menu's 84, 92, 100) and not with the running guitar; funk not under 100 bpm and not with `pad` keys and the `eighths`
+  bass both. **Odds:** after the `VETO` loop `feelOf` (a generator of its own, `0x4cf5ad43`, `^ 0xfee1`) takes a new feel one song in 4, picking one of the three and redrawing up to 8 times past `VETO` (the song's other choices stay), else keeps the menu's;
+  a song's old feel is kept in the other 3 in 4 and in whatever the rows refuse. Probe over songs 0..31 (`HEAD`'s feel against the tree's): 10 changed, 22 kept; every changed one is a new feel, `about` names the feel in all band songs, 0 bad. Songs 0..31
+  now: disco 6, funk 7, tresillo 5, bossa 5, rock 3, half-time 3, shuffle 2, one-drop 1 (songs 2 shuffle, 5 funk and 23 one-drop are the first to take each). **Forks:** (1) funk draws the kick only; the brief said the draw
+  applies to funk, whose hat a drawn 5-9 pattern would have replaced with something thinner than sixteenths · **A** as built · **B** draw both. (2) the shuffle's hats are on the eighths, which `swing` (odd steps) does not move, so the shuffle is audible
+  only in the guitar, keys and bass odd steps and in a drawn hat; recommend listening to `.wav/6.3/song-2-shuffle-solo-drums.wav`, and if flat, hats on 0 1 4 5 8 9 12 13 (the owner's ear). WAVs: `.wav/6.3/song-2-shuffle-solo-drums.wav`,
+  `song-5-funk-solo-drums.wav`, `song-23-one-drop-solo-drums.wav` (bars 4-11) and the whole `song-5-funk.wav`; the six songs `.wav/phase-6/song-<k>.wav` for 0 1 7 42 99 4 (song 4 identical to phase 5). `CEIL` over 0 1 7 42 99 by a probe that pulls
+  each whole song in 4410-sample chunks and reads `levels` at 50 ms: drums 1.82 to 2.00 (the kick, snare and hat of one step now share an offset, so they add), guitar 0.45 to 0.41; singer 0.39, bass 0.45 and keys 0.22 unmoved. The probe reads lower than the
+  recorded `CEIL` on the same tree (phase 4: guitar 0.45 for 0.49, bass 0.45 for 0.57), so `scope.js` moved by the measured change: drums 2.03 to 2.21, guitar 0.49 to 0.45 (**owed:** re-measure with the original script). Phase 6's acceptance (the owner's listen) stays open.
 
 ## Ideas past the plan
 
