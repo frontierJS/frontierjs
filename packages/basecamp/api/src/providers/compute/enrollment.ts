@@ -41,7 +41,7 @@ import { litestreamInstall } from '@frontierjs/litestone/replicate'
  *  (`FJS-D1941`, `FJS-D1989`); Docker and Caddy come from signed apt
  *  repositories. */
 export const BUN_VERSION     = '1.4.4'
-export const OUTPOST_VERSION = '0.1.15'
+export const OUTPOST_VERSION = '0.1.16'
 
 const NPM_REGISTRY = 'https://registry.npmjs.org'
 const PACKAGE_HOST = 'https://packages.frontierjs.com'
