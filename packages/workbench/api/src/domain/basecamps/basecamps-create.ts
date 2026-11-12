@@ -139,7 +139,7 @@ const flagOf = (argv: string[], flag: string) => { const i = argv.indexOf(flag);
 /** The argv that finishes a failed, bought run, or null when nothing is left to resume. */
 export function resumeArgv(rec: Pick<Creation, 'argv' | 'exit' | 'error'>, log: string): string[] | null {
   if (!rec.exit || rec.exit.code === 0 || rec.error || rec.argv.includes('--dry')) return null
-  const [, verb, box] = rec.argv
+  const [, verb] = rec.argv
   if (verb === 'basecamp:install') return rec.argv.slice(1)
   const named = [...log.matchAll(INSTALL_LINE)].pop()?.[1]
   if (verb !== 'basecamp:create' || !named || !BOX.test(named)) return null

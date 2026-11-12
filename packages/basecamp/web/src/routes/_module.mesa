@@ -498,9 +498,10 @@ siteName: Basecamp
 
   /* An image of any size at an address somebody typed. */
   .topbar-logo {
-    block-size:      1.5rem;
+    --topbar-logo-max: 10rem;
+    block-size:      var(--space-4xl);
     inline-size:     auto;
-    max-inline-size: 10rem;
+    max-inline-size: var(--topbar-logo-max);
     object-fit:      contain;
   }
 
