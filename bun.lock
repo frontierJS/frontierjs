@@ -582,7 +582,7 @@
     },
     "packages/litestone": {
       "name": "@frontierjs/litestone",
-      "version": "1.1.18",
+      "version": "1.1.19",
       "bin": {
         "litestone": "./src/tools/cli.js",
       },
@@ -718,7 +718,7 @@
     },
     "packages/outpost": {
       "name": "@frontierjs/outpost",
-      "version": "0.1.15",
+      "version": "0.1.16",
       "bin": {
         "outpost": "./src/index.js",
       },
@@ -834,7 +834,7 @@
     },
     "packages/toolbelt": {
       "name": "@frontierjs/toolbelt",
-      "version": "0.1.11",
+      "version": "0.1.12",
     },
     "packages/ui": {
       "name": "@frontierjs/ui",
