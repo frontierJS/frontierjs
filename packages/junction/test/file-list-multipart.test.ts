@@ -112,7 +112,7 @@ describe('a File[] column is written over HTTP', () => {
     try {
       const client = createJunctionClient({ url: 'http://localhost' }) as unknown as { _request: Function }
       const created = await client._request('POST', '/notes', { files: [file('a.txt', 'A'), file('b.txt', 'B')] })
-      const refs = () => JSON.parse(sqlite.query('SELECT files FROM note WHERE id = ?').get(created.id).files)
+      const refs = () => JSON.parse((sqlite.query('SELECT files FROM note WHERE id = ?').get(created.id) as { files: string }).files)
       const bytes = async () => {
         const urls = (await db.asSystem().note.findUnique({ where: { id: created.id } })).files as string[]
         return Promise.all(urls.map(async u => (await app.http.fetch(new Request(u))).text()))

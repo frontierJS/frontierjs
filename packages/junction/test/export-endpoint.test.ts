@@ -381,7 +381,9 @@ describe('the route is bounded, and says so in a way a client can act on', () =>
       expect(after.status).toBe(200)
       await after.text()
     } finally { held.destroy(); await app.stop() }
-  })
+  // ~14 MB written twice, by design; bun's 5 s default timed it out under the
+  // full CI's load (a release run, 2026-11-12) while it passes alone in ~1 s.
+  }, 20_000)
 })
 
 // ─── the collection ───────────────────────────────────────────────────────

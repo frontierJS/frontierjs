@@ -57,7 +57,7 @@
  */
 
 import {
-  reader, overlay, charAt, firstNonBlank, next, prev, snap, mapGraphemes,
+  reader, overlay, firstNonBlank, next, prev, snap, mapGraphemes,
   wordForward, wordBack, wordEnd, wordEndBack, runEnd, isSpaceAt,
   vertical, find, matchPair, paragraph,
   wordObject, bracketObject, quoteObject, paragraphObject,
