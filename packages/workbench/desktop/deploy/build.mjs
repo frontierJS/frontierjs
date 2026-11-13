@@ -49,8 +49,17 @@ if (config.api && !bundleNames(dist, config.api)) refuse(
   `the build finished and no file under ${dist} contains ${config.api}. The screens' ` +
   'sierra.config.js sets no junction.url, so Sierra inlined no FRONTIER_PUBLIC_API_URL.')
 
+// The tray's Start API runs this checkout's API with this bun, on the port the
+// bundle calls; the shell reads no environment of its own in a release build,
+// so all three are compiled in.
 run('cargo', ['build', ...(release ? ['--release'] : []), '--manifest-path', join(SHELL, 'Cargo.toml')], {
   cwd: DESKTOP,
+  env: {
+    ...process.env,
+    WORKBENCH_SHELL_API:      config.api ?? '',
+    WORKBENCH_SHELL_APP_ROOT: APP,
+    WORKBENCH_SHELL_BUN:      process.execPath,
+  },
 })
 
 console.log(`\n  desktop shell: ${join(SHELL, 'target', release ? 'release' : 'debug', crateName())}`)

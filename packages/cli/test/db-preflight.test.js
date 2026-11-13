@@ -27,7 +27,7 @@ import { tmpdir } from 'node:os'
 // rather than wrong.
 import { Database } from 'bun:sqlite'
 
-import { declaredDatabases, databaseFilesToReset, databaseState, detectRunner } from '../core/db-preflight.js'
+import { declaredDatabases, databaseFilesToReset, databaseState, detectRunner, unmigratedDatabases } from '../core/db-preflight.js'
 
 let dir
 beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'fli-preflight-')) })
@@ -84,6 +84,36 @@ describe('declaredDatabases — where the app actually keeps its data', () => {
   test('an app with neither is not something to have an opinion about', () => {
     const root = app('bare')
     expect(declaredDatabases(root, join(root, 'db'))).toEqual([])
+  })
+})
+
+describe('unmigratedDatabases — what fli dev offers to migrate before the API reads a table', () => {
+
+  const two = 'database main { path "./db/app.db" }\ndatabase audit { path "./db/audit.db" }\n'
+
+  test('names each tableless database whose own migrations directory has files', () => {
+    const root = app('unmigrated', { schema: two })
+    mkdirSync(join(root, 'db', 'migrations', 'main'), { recursive: true })
+    writeFileSync(join(root, 'db', 'migrations', 'main', '20261112000000_init.sql'), 'CREATE TABLE a (id TEXT);')
+    new Database(join(root, 'db', 'app.db')).close()
+    expect(unmigratedDatabases(root)).toEqual([{ name: 'main', where: 'db/app.db', files: 1 }])
+  })
+
+  test('a database with tables, or nothing to apply, is not offered', () => {
+    const root = app('migrated', { schema: two })
+    mkdirSync(join(root, 'db', 'migrations', 'main'), { recursive: true })
+    writeFileSync(join(root, 'db', 'migrations', 'main', '20261112000000_init.sql'), 'CREATE TABLE a (id TEXT);')
+    const db = new Database(join(root, 'db', 'app.db'))
+    db.exec('CREATE TABLE a (id TEXT)')
+    db.close()
+    expect(unmigratedDatabases(root)).toEqual([])
+  })
+
+  test('a single database may keep its migrations flat', () => {
+    const root = app('flat', { schema: 'database main { path "./db/app.db" }\n' })
+    mkdirSync(join(root, 'db', 'migrations'), { recursive: true })
+    writeFileSync(join(root, 'db', 'migrations', '20261112000000_init.sql'), 'CREATE TABLE a (id TEXT);')
+    expect(unmigratedDatabases(root)).toEqual([{ name: 'main', where: 'db/app.db', files: 1 }])
   })
 })
 

@@ -22,15 +22,11 @@
 //
 // A webview with no new-window handler drops every target=_blank link without
 // a sound, so each one goes to the system browser instead.
-//
-// The tray icon shows and hides the window. Linux's AppIndicator delivers no
-// click events -- a click only ever opens the menu -- so the toggle lives in
-// the menu as well as on a left click.
 
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
+mod tray;
+
 use tauri::webview::NewWindowResponse;
+use tauri::{RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(debug_assertions)]
 #[tauri::command]
@@ -88,57 +84,6 @@ fn open_in_browser(url: &tauri::Url) {
     }
 }
 
-// A minimized window still reports visible, so it is brought back rather than
-// hidden; otherwise the first click would seem to do nothing.
-fn toggle_window<R: Runtime>(app: &AppHandle<R>, label: &MenuItem<R>) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    let shown = window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false);
-    if shown {
-        let _ = window.hide();
-        let _ = label.set_text("Show Workbench");
-    } else {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-        let _ = label.set_text("Hide Workbench");
-    }
-}
-
-fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let toggle = MenuItem::with_id(app, "toggle", "Hide Workbench", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Workbench", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&toggle, &quit])?;
-
-    let mut tray = TrayIconBuilder::with_id("workbench")
-        .tooltip("Workbench")
-        .menu(&menu)
-        .show_menu_on_left_click(false);
-    if let Some(icon) = app.default_window_icon() {
-        tray = tray.icon(icon.clone());
-    }
-
-    let on_menu = toggle.clone();
-    tray.on_menu_event(move |app, event| match event.id.as_ref() {
-        "toggle" => toggle_window(app, &on_menu),
-        "quit" => app.exit(0),
-        _ => {}
-    })
-    .on_tray_icon_event(move |tray, event| {
-        if let TrayIconEvent::Click {
-            button: MouseButton::Left,
-            button_state: MouseButtonState::Up,
-            ..
-        } = event
-        {
-            toggle_window(tray.app_handle(), &toggle);
-        }
-    })
-    .build(app)?;
-    Ok(())
-}
-
 fn main() {
     let probe = probe_script();
     let page = match dev_url() {
@@ -167,9 +112,14 @@ fn main() {
                 window = window.initialization_script(script);
             }
             window.build()?;
-            build_tray(app.handle())?;
+            tray::build(app.handle())?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("the desktop shell failed to start");
+        .build(tauri::generate_context!())
+        .expect("the desktop shell failed to start")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                tray::stop_api(app);
+            }
+        });
 }

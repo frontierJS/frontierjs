@@ -64,6 +64,13 @@ siteName: Workbench
     ]
   }
 
+  // The desktop shell's tray menu names a screen by dispatching this event, so
+  // the page keeps its state; a reload from the shell would drop it. Only a
+  // path is taken, never a URL.
+  function trayGoto(e) {
+    if (typeof e.detail === 'string' && e.detail.startsWith('/') && !e.detail.startsWith('//')) goto(e.detail)
+  }
+
   // A shell in the Terminal pane reads Ctrl+K as kill-line.
   function paletteKey(e) {
     if (!(e.metaKey || e.ctrlKey) || e.key !== 'k' || !session.user) return
@@ -146,7 +153,7 @@ siteName: Workbench
   </Drawer>
 {/if}
 
-<mesa:window onkeydown={paletteKey} />
+<mesa:window onkeydown={paletteKey} ontraygoto={trayGoto} />
 
 {#if commandPalette.open}
   <CommandPalette

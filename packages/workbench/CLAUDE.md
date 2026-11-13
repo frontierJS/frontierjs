@@ -67,6 +67,11 @@ fli desktop:install    # add it to the app launcher; a click opens it through de
                        # (--release: the release shell, after fli desktop:run --release)
 ```
 
+The tray (`desktop/shell/src/tray.rs`) shows and hides the window, opens a
+screen through the `traygoto` event `routes/_module.mesa` listens for, starts
+the API and turns Start at login on. Start API runs the checkout, bun and
+origin `build.mjs` compiled in, so a shell from a bare `cargo build` offers none.
+
 The drive holds no port: the global block has no slot for one, so it builds the
 bundle against whatever port the OS hands its scratch API. The binary it leaves
 behind points there; `bun run build:desktop` puts 5501 back.

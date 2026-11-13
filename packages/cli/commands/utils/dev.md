@@ -306,6 +306,29 @@ async function warnIfEmpty($, verbose) {
   }
 }
 
+// Nothing migrates at start (FJS-D123), so an app that reads a table while it
+// boots crashes on `no such table` — the server is not worth starting first.
+async function offerMigrate($, root) {
+  const { echo, log, chalk, tty } = $
+  const { unmigratedDatabases, readScripts, detectRunner } = await core('db-preflight')
+  const { plural } = await core('text')
+  const waiting = unmigratedDatabases(root, $.paths.db)
+  if (!waiting.length || !readScripts(root)['db:migrate']) return false
+  const migrate = `${detectRunner(root)} run db:migrate`
+  for (const { name, where, files } of waiting) {
+    log.warn(`database "${name}" has no tables — ${where}`)
+    echo.lines([chalk.dim(`${plural(files, 'migration')} in db/migrations not yet applied`)], { indent: 2 })
+  }
+  if (!tty.interactive) {
+    log.error(`Migrate first: ${migrate}`)
+    process.exit(1)
+  }
+  const answer = (await tty.line(`Run ${migrate} now? [Y/n]`)).trim().toLowerCase()
+  if (answer && answer !== 'y' && answer !== 'yes') return true
+  $.exec({ command: `cd ${root} && ${migrate}` })
+  return false
+}
+
 async function openTunnelFor({ echo, log, chalk, tty }, remote, verbose) {
   const { openTunnel, sshArgs } = await core('api-tunnel')
   echo(chalk`{dim ·} tunnel {bold ${remote.label}} {dim —} localhost:${remote.localPort} → ${remote.host}:${remote.port}`)
@@ -389,7 +412,9 @@ if (flag.check) {
   const keyState = remote ? 'remote' : encryptionKeyState(root)
   if ((keyState === 'no-env' || keyState === 'blank') && !flag.dry) generatedKey = await offerKey($, root, keyState)
 
-  if (!remote) await warnIfEmpty($, verbose)
+  // A declined migrate has already said what is wrong with the database.
+  const declined = !remote && !flag.dry && await offerMigrate($, root)
+  if (!remote && !declined) await warnIfEmpty($, verbose)
 }
 
 const runner = detectRunner(root)

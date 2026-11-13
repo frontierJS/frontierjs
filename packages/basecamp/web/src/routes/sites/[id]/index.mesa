@@ -216,35 +216,55 @@ title: Site
 {#if site}
   <div class="grid" style="grid-template-columns: minmax(14rem, 1fr) 3fr; gap: var(--space-md)">
     <div class="stack">
-      <Card title="Drafts">
-        <form class="cluster" id="draft-open" onsubmit={open}>
-          <Input id="draft-name" label="New draft" placeholder="spring hours" value={newName}
-                 oninput={(e) => newName = e.target.value} />
-          <Button type="submit" disabled={!newName.trim() || busy === 'open'}>Open</Button>
-        </form>
-        {#if list && !list.length}
-          <p class="text-sm text-muted">No drafts open. A draft is a copy of the site you change and preview before anyone sees it.</p>
-        {:else if list}
-          <ul class="stack" id="draft-list">
+      <Card id="site-drafts">
+        <h2 class="h5">1 · Drafts</h2>
+        <p class="text-sm text-muted">A draft is your own copy of the site. Nobody sees its changes until it is published.</p>
+        {#if list?.length}
+          <ul class="items" id="draft-list">
             {#each list as d}
-              <li>
-                <Button treatment={d.name === draft ? 'solid' : 'ghost'} size="sm" onclick={() => pick(d.name)}>{d.name}</Button>
-                <div class="text-sm text-muted">{d.author} · {ago(d.at)}</div>
+              <li class="stack" style="gap: var(--space-3xs)">
+                <div><Button treatment={d.name === draft ? 'solid' : 'ghost'} size="sm" onclick={() => pick(d.name)}>{d.name}</Button></div>
+                <div class="text-sm text-muted">opened by {d.author} · {ago(d.at)}</div>
               </li>
             {/each}
           </ul>
+        {:else if list}
+          <p class="text-sm text-muted">No drafts yet.</p>
         {/if}
+        <form class="cluster" id="draft-open" onsubmit={open}>
+          <Input id="draft-name" label="Start a new draft" placeholder="spring hours" value={newName}
+                 oninput={(e) => newName = e.target.value} />
+          <Button type="submit" disabled={!newName.trim() || busy === 'open'}>Open</Button>
+        </form>
       </Card>
 
+      {#if files}
+        <Card id="site-pages">
+          <h2 class="h5">2 · Pages in {draft}</h2>
+          {#if !files.length}
+            <p class="text-sm text-muted">This draft has no pages you can edit here — the site keeps none under content/.</p>
+          {:else}
+            <p class="text-sm text-muted">Pick one to change its words.</p>
+            <ul class="items" id="draft-files">
+              {#each files as f}
+                <li><Button treatment={f === path ? 'solid' : 'ghost'} size="sm" onclick={() => edit(f)}><code>{f}</code></Button></li>
+              {/each}
+            </ul>
+          {/if}
+        </Card>
+      {/if}
+
       {#if current}
-        <Card title="Preview">
+        <Card id="site-preview">
+          <h2 class="h5">3 · Preview</h2>
+          <p class="text-sm text-muted">A private copy of the site with {current.name}'s changes. It rebuilds after each save.</p>
           <div class="stack" id="draft-preview">
             {#if !current.preview}
-              <p class="text-sm text-muted">No preview has been built for this draft yet.</p>
+              <p class="text-sm text-muted">Not built yet.</p>
             {:else}
               <div class="cluster">
                 <Pill tone={PREVIEW[current.preview.state][0]} id="preview-state">{PREVIEW[current.preview.state][1]}</Pill>
-                <span class="text-sm text-muted">{current.preview.commit.slice(0, 7)} · {ago(current.preview.at)}</span>
+                <span class="text-sm text-muted">{ago(current.preview.at)} · {current.preview.commit.slice(0, 7)}</span>
               </div>
               {#if current.preview.url}
                 <a href={current.preview.url} target="_blank" rel="noopener" id="preview-link">
@@ -255,76 +275,62 @@ title: Site
                 <p class="text-sm" id="preview-error">{current.preview.error}</p>
               {/if}
             {/if}
-            <Button size="sm" treatment="ghost" id="preview-rebuild"
-                    disabled={onItsWay(current.preview) || busy === 'preview'} onclick={rebuild}>Build again</Button>
+            <div><Button size="sm" treatment="ghost" id="preview-rebuild"
+                    disabled={onItsWay(current.preview) || busy === 'preview'} onclick={rebuild}>Build again</Button></div>
           </div>
         </Card>
-      {/if}
 
-      {#if current}
-        <Card title="Publish">
+        <Card id="site-publish">
+          <h2 class="h5">4 · Publish</h2>
           <div class="stack" id="draft-publish">
             {#if site.role === 'publish'}
-              <p class="text-sm text-muted">Ships {current.name} to the live site, as you see it on the preview.</p>
-              <Button tone="primary" size="sm" id="publish-draft"
-                      disabled={onItsWay(published) || busy === 'publish'} onclick={publish}>Publish {current.name}</Button>
+              <p class="text-sm text-muted">Puts {current.name} on the live site, as the preview shows it.</p>
+              <div><Button tone="primary" size="sm" id="publish-draft"
+                      disabled={onItsWay(published) || busy === 'publish'} onclick={publish}>Publish {current.name}</Button></div>
             {:else}
-              <p class="text-sm text-muted">Someone with the publish grant ships this draft when it is ready.</p>
+              <p class="text-sm text-muted">You can't publish this site. Someone who can will put {current.name} live when it is ready.</p>
             {/if}
           </div>
         </Card>
       {/if}
 
-      {#if published}
-        <Card title="Last publish">
-          <div class="stack" id="last-publish">
-            <div class="cluster">
-              <Pill tone={RELEASE[published.status]?.[0] ?? 'muted'} id="publish-state">{RELEASE[published.status]?.[1] ?? published.status}</Pill>
-              <span class="text-sm text-muted">{published.draft} · {published.author} · {ago(published.at)}</span>
+      {#if published || history?.length}
+        <Card id="site-live">
+          <h2 class="h5">On the live site</h2>
+          {#if published}
+            <div class="stack" id="last-publish">
+              <div class="cluster">
+                <Pill tone={RELEASE[published.status]?.[0] ?? 'muted'} id="publish-state">{RELEASE[published.status]?.[1] ?? published.status}</Pill>
+                <span class="text-sm text-muted">last publish: {published.draft} · {published.author} · {ago(published.at)}</span>
+              </div>
+              {#if stopped}
+                <p class="text-sm" id="publish-error"><strong>{stopped.name}:</strong> {stopped.output}</p>
+              {:else if published.status === 'success'}
+                <p class="text-sm" id="publish-live">{published.steps.find(s => s.name === 'Build and deploy')?.output}</p>
+              {/if}
             </div>
-            {#if stopped}
-              <p class="text-sm" id="publish-error"><strong>{stopped.name}:</strong> {stopped.output}</p>
-            {:else if published.status === 'success'}
-              <p class="text-sm" id="publish-live">{published.steps.find(s => s.name === 'Build and deploy')?.output}</p>
-            {/if}
-          </div>
-        </Card>
-      {/if}
-
-      {#if history?.length}
-        <Card title="History">
-          <ul class="stack" id="site-history">
-            {#each history as r}
-              <li class="stack" style="gap: var(--space-xs)">
-                <div class="text-sm">
-                  <strong>{r.draft ? `Published ${r.draft}` : 'Deployed by a developer'}</strong>
-                  <span class="text-muted"> · {r.by ?? 'someone'} · {ago(r.at)}</span>
-                </div>
-                {#if r.files}
-                  <div class="text-sm text-muted">
-                    {#each r.files as f}<code>{f}</code> {/each}
-                    {#if r.authors.length}<span>— written by {r.authors.join(', ')}</span>{/if}
+          {/if}
+          {#if history?.length}
+            <p class="text-sm text-muted">Every release, newest first. Revert opens a draft that undoes one.</p>
+            <ul class="items" id="site-history">
+              {#each history as r}
+                <li class="stack" style="gap: var(--space-xs)">
+                  <div class="text-sm">
+                    <strong>{r.draft ? `Published ${r.draft}` : 'Deployed by a developer'}</strong>
+                    <span class="text-muted"> · {r.by ?? 'someone'} · {ago(r.at)}</span>
                   </div>
-                {:else}
-                  <div class="text-sm text-muted">The first release recorded here.</div>
-                {/if}
-                {#if r.revertable}
-                  <div><Button size="sm" treatment="ghost" disabled={busy === 'revert'} onclick={() => revert(r)}>Revert</Button></div>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-        </Card>
-      {/if}
-
-      {#if files}
-        <Card title="Pages">
-          {#if !files.length}
-            <p class="text-sm text-muted">This draft has no markdown under content/.</p>
-          {:else}
-            <ul class="stack" id="draft-files">
-              {#each files as f}
-                <li><Button treatment={f === path ? 'solid' : 'ghost'} size="sm" onclick={() => edit(f)}><code>{f}</code></Button></li>
+                  {#if r.files}
+                    <div class="text-sm text-muted">
+                      {#each r.files as f}<code>{f}</code> {/each}
+                      {#if r.authors.length}<span>— written by {r.authors.join(', ')}</span>{/if}
+                    </div>
+                  {:else}
+                    <div class="text-sm text-muted">The first release recorded here.</div>
+                  {/if}
+                  {#if r.revertable}
+                    <div><Button size="sm" treatment="ghost" disabled={busy === 'revert'} onclick={() => revert(r)}>Revert</Button></div>
+                  {/if}
+                </li>
               {/each}
             </ul>
           {/if}
@@ -334,9 +340,9 @@ title: Site
 
     <div class="stack">
       {#if !draft}
-        <EmptyState title="Pick a draft">Open one, or pick one on the left, to change the site's words.</EmptyState>
+        <EmptyState title="Start with a draft">Pick a draft on the left, or start a new one, to change the site's words.</EmptyState>
       {:else if !form}
-        <EmptyState title="Pick a page">The pages on {draft} are on the left.</EmptyState>
+        <EmptyState title="Pick a page">Choose a page under “Pages in {draft}” on the left.</EmptyState>
       {:else}
         <Card title={path}>
           <div class="stack" id="draft-form">

@@ -28,7 +28,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 ```
 27 package(s) · 4518 source file(s) read
 257 entry point(s), 32 imported by nothing outside their package, 14 emitted
-1773 value export(s), 647 reached by nothing outside, 183 emitted
+1775 value export(s), 649 reached by nothing outside, 183 emitted
 466 type export(s), 340 reached by nothing outside
 ```
 
@@ -39,7 +39,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `mesa` | 19 | 4 | 327 | 111 | 79 | 0 | 0 |
 | `sierra` | 26 | 6 | 204 | 84 | 20 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
-| `toolbelt` | 69 | 0 | 322 | 40 | 12 | 0 | 0 |
+| `toolbelt` | 69 | 0 | 324 | 42 | 12 | 0 | 0 |
 | `ui` | 9 | 0 | 56 | 36 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `outpost` | 11 | 1 | 57 | 18 | 1 | 0 | 0 |
@@ -298,11 +298,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/toolbelt`
 
-`packages/toolbelt` · 69 entry point(s) · 322 value, 0 type export(s)
+`packages/toolbelt` · 69 entry point(s) · 324 value, 0 type export(s)
 
 **Entries not source (24, not graded):** `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./geo` `./env` `./hooks` `./ids` `./mailbox` `./mime` `./qr` `./query` `./rank` `./redact` `./share` `./sigv4` `./sse` `./trace` `./typo` `./units`
 
-**Unreached values (40):** `assertValues` `baseUnit` `canonicalRequest` `compileQuery` `CONTENT_TYPES` `DIGITS` `divRound` `editDoc` `encodePairs` `encodeShare` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `invalidDirectives` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `listedDirectives` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `qrMatrix` `qrTerminal` `resolveWall` `RUNNABLE_LANGS` `sealFile` `SECRET_KEY_NAMES` `SHARE_INFLATED_MAX` `SHARE_MAX` `signMessage` `stringDoc` `TRANSFORM_NAMES` `transportFlags` `visualRange`
+**Unreached values (42):** `assertValues` `baseUnit` `canonicalRequest` `compileQuery` `CONTENT_TYPES` `DIGITS` `divRound` `editDoc` `encodePairs` `encodeShare` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `invalidDirectives` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `listedDirectives` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `qrMatrix` `qrTerminal` `RECORDING` `resolveWall` `RUNNABLE_LANGS` `sealFile` `SECRET_KEY_NAMES` `SHARE_INFLATED_MAX` `SHARE_MAX` `shiftMarks` `signMessage` `stringDoc` `TRANSFORM_NAMES` `transportFlags` `visualRange`
 
 **Emitted (12):** `CRON_FIELDS` `dayHeader` `FILE_PLAIN_MAX` `formatChord` `fromWall` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
 

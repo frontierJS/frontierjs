@@ -29,7 +29,7 @@
 // signals — absent, or zero bytes — need no binding at all and are the ones that
 // actually fire: they are what a `db:reset` leaves behind.
 
-import { existsSync, statSync, readFileSync } from 'node:fs'
+import { existsSync, statSync, readFileSync, readdirSync } from 'node:fs'
 import { resolve, dirname, isAbsolute } from 'node:path'
 import { createRequire } from 'node:module'
 
@@ -278,8 +278,7 @@ export function warnIfDatabaseEmpty(context, { dbDir } = {}) {
 
     if (state === 'missing' || state === 'empty-file') {
       context.log.warn(`database "${name}" does not exist yet — ${where}`)
-      context.log.info('  it will be created and migrated when the API starts')
-      if (hint) context.log.info(`  then seed it: ${hint}`)
+      context.log.info('  nothing migrates at start; the first read of a table will throw')
       reported++
     } else if (state === 'no-tables') {
       context.log.warn(`database "${name}" has no tables — ${where}`)
@@ -298,7 +297,36 @@ export function warnIfDatabaseEmpty(context, { dbDir } = {}) {
   return reported
 }
 
-function readScripts(appRoot) {
+/**
+ * Every declared database with no tables while migration files wait for it.
+ *
+ * No migration runs when the API starts (`FJS-D123`), so an app that reads a
+ * table during boot dies on `no such table` a line after the warning above.
+ * A multi-database schema keeps each database's files in `migrations/<name>/`;
+ * a single one may keep them flat in `migrations/`.
+ *
+ * @returns {Array<{ name: string, where: string, files: number }>}
+ */
+export function unmigratedDatabases(appRoot, dbDir = resolve(appRoot, 'db')) {
+  let databases
+  try { databases = declaredDatabases(appRoot, dbDir) } catch { return [] }
+
+  const out = []
+  for (const { name, path } of databases) {
+    if (!['missing', 'empty-file', 'no-tables'].includes(databaseState(path))) continue
+    const files = countSql(resolve(dbDir, 'migrations', name)) ||
+      (databases.length === 1 ? countSql(resolve(dbDir, 'migrations')) : 0)
+    if (!files) continue
+    out.push({ name, where: path.startsWith(appRoot) ? path.slice(appRoot.length + 1) : path, files })
+  }
+  return out
+}
+
+function countSql(dir) {
+  try { return readdirSync(dir).filter(f => f.endsWith('.sql')).length } catch { return 0 }
+}
+
+export function readScripts(appRoot) {
   try {
     return JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8')).scripts ?? {}
   } catch { return {} }
