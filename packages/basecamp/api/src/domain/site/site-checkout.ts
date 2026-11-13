@@ -23,10 +23,14 @@
 // `core.fsmonitor` and `core.hooksPath` off besides.
 //
 // The repository URL is an admin's, and reaches git after `--`, so one shaped
-// like an option is a URL that fails rather than a flag. The credential is
-// whatever this host's git already holds; a deploy key per repository is owed
-// (`FJS-D1228`). `GIT_TERMINAL_PROMPT=0` makes a missing one a refusal rather
-// than a request that waits forever for a password.
+// like an option is a URL that fails rather than a flag. A host holds no git
+// credential of its own, so the caller hands each site the one the workspace's
+// GitHub account gives (`GitSite.credential`, minted by `gitCredential` in
+// `providers/source/github.ts`, `FJS-D2108`). It reaches git through the
+// environment of the one call and is attached only to an https github.com
+// remote: the URL is an admin's, so a token sent wherever it points would leave
+// with whoever typed it. `GIT_TERMINAL_PROMPT=0` makes a missing credential a
+// refusal rather than a request that waits forever for a password.
 
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -36,9 +40,14 @@ import { childEnv } from '@frontierjs/junction'
 import { slug as slugOf } from '@frontierjs/toolbelt/inflect'
 import { env } from '../../core/env.ts'
 
+/** Environment entries that let one git call authenticate to GitHub. */
+export type GitCredential = Record<string, string>
+
 export interface GitSite {
-  id:      string
-  source:  { repo: string, branch?: string, path?: string }
+  id:          string
+  source:      { repo: string, branch?: string, path?: string }
+  /** What `gitCredential` answered for this site's repository; null or absent is the host's own, which is none. */
+  credential?: GitCredential | null
 }
 
 export interface Draft {
@@ -69,11 +78,38 @@ export function sitesDir(): string {
     : join(homedir(), '.config', 'basecamp', 'sites')
 }
 
+function onGithub(site: GitSite): boolean {
+  let url: URL
+  try { url = new URL(site.source.repo.trim()) } catch { return false }
+  return url.protocol === 'https:' && url.hostname === 'github.com' && !url.username && !url.password && !url.port
+}
+
+/** The credential for a call that reaches the remote: the site's, and only where the remote is https://github.com. */
+export function remoteEnv(site: GitSite): GitCredential {
+  return site.credential && onGithub(site) ? site.credential : {}
+}
+
+/** What a refused fetch or push means on GitHub: the account, not git's own words about a prompt it may not show. */
+function said(site: GitSite, message: string): string {
+  if (!onGithub(site)) return message
+  if (!/Authentication failed|Invalid username or password|Permission to .+ denied|could not read (Username|Password)|returned error: 40[134]/i.test(message))
+    return message
+  return site.credential
+    ? `GitHub refused the account's token — it was revoked or has expired, or it needs Contents: write on ${site.source.repo}`
+    : `no GitHub account in this workspace opens ${site.source.repo} — an administrator adds one under Secrets with Contents: write on it`
+}
+
 function git(dir: string, argv: string[], opts: { input?: string | Uint8Array, env?: Record<string, string> } = {}): Promise<string> {
   return gitRun(dir, argv, opts).then(({ code, stdout, stderr }) => {
-    if (code !== 0) throw new CheckoutError(String(stderr || `git ${argv[0]} exited ${code}`).trim())
+    if (code !== 0) throw new CheckoutError(scrub(String(stderr || `git ${argv[0]} exited ${code}`).trim(), opts.env))
     return stdout
   })
+}
+
+/** A token never reaches a message: a remote that echoed one back would put it in a response and a log. */
+function scrub(message: string, env: Record<string, string> = {}): string {
+  const token = env.FJS_GIT_TOKEN
+  return token ? message.split(token).join('[redacted]') : message
 }
 
 /** git, answering its exit code rather than refusing on one — `merge-file` counts conflicts in it. */
@@ -88,7 +124,7 @@ function gitRun(dir: string, argv: string[], { input, env: extra = {} }: { input
       env: { ...childEnv(env), GIT_TERMINAL_PROMPT: '0', ...extra },
     }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : -1) : 0
-      if (code === -1) reject(new CheckoutError(String(stderr || err!.message).trim()))
+      if (code === -1) reject(new CheckoutError(scrub(String(stderr || err!.message).trim(), extra)))
       else resolve({ code, stdout, stderr })
     })
     if (input !== undefined) child.stdin!.end(input)
@@ -122,14 +158,14 @@ async function synced(site: GitSite, root: string): Promise<string> {
   const dir = join(root, `${site.id}.git`)
   if (!existsSync(dir)) {
     mkdirSync(root, { recursive: true })
-    await git(root, ['clone', '--bare', '--quiet', '--', site.source.repo, dir]).catch((err) => {
+    await git(root, ['clone', '--bare', '--quiet', '--', site.source.repo, dir], { env: remoteEnv(site) }).catch((err) => {
       rmSync(dir, { recursive: true, force: true })
-      throw new CheckoutError(`could not clone ${site.source.repo}: ${err.message}`)
+      throw new CheckoutError(`could not clone ${site.source.repo}: ${said(site, err.message)}`)
     })
     await git(dir, ['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'])
   }
-  await git(dir, ['fetch', '--quiet', '--prune', 'origin']).catch((err) => {
-    throw new CheckoutError(`could not fetch ${site.source.repo}: ${err.message}`)
+  await git(dir, ['fetch', '--quiet', '--prune', 'origin'], { env: remoteEnv(site) }).catch((err) => {
+    throw new CheckoutError(`could not fetch ${site.source.repo}: ${said(site, err.message)}`)
   })
   return dir
 }
@@ -170,8 +206,8 @@ export function openDraft(site: GitSite, name: unknown, root = sitesDir()): Prom
     const base = await baseBranch(site, dir)
     const head = await headOf(dir, base)
     if (!head) throw new CheckoutError(`${site.source.repo} has no branch ${base}`)
-    await git(dir, ['push', '--quiet', 'origin', `${head}:refs/heads/${named.branch}`]).catch((err) => {
-      throw new CheckoutError(`could not push ${named.branch}: ${err.message}`)
+    await git(dir, ['push', '--quiet', 'origin', `${head}:refs/heads/${named.branch}`], { env: remoteEnv(site) }).catch((err) => {
+      throw new CheckoutError(`could not push ${named.branch}: ${said(site, err.message)}`)
     })
     await git(dir, ['update-ref', `refs/remotes/origin/${named.branch}`, head])
     const [at, author, subject] = (await git(dir, ['log', '-1', '--format=%cI%x00%an%x00%s', head])).trim().split('\0')
@@ -267,7 +303,7 @@ export function saveDraftFiles(site: GitSite, draft: string, change: { files: Fi
       await git(dir, ['read-tree', head], { env: index })
       await git(dir, ['update-index', '--index-info'], { env: index, input: rows.join('\n') + '\n' })
       const tree = (await git(dir, ['write-tree'], { env: index })).trim()
-      return { commit: await pushOnDraft(dir, draft, branch, { tree, head, message: change.message }, author), blobs }
+      return { commit: await pushOnDraft(site, dir, draft, branch, { tree, head, message: change.message }, author), blobs }
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -280,14 +316,14 @@ const authorEnv = (author: Author) => ({
 })
 
 /** `tree` committed on `head` and pushed as the draft's next commit; losing the race to another save is refused by name. */
-async function pushOnDraft(dir: string, draft: string, branch: string, change: { tree: string, head: string, message: string },
+async function pushOnDraft(site: GitSite, dir: string, draft: string, branch: string, change: { tree: string, head: string, message: string },
   author: Author): Promise<string> {
   const commit = (await git(dir, ['commit-tree', change.tree, '-p', change.head, '-F', '-'],
     { input: change.message + '\n', env: authorEnv(author) })).trim()
-  await git(dir, ['push', '--quiet', 'origin', `${commit}:refs/heads/${branch}`]).catch((err) => {
+  await git(dir, ['push', '--quiet', 'origin', `${commit}:refs/heads/${branch}`], { env: remoteEnv(site) }).catch((err) => {
     if (/non-fast-forward|fetch first|rejected/.test(err.message))
       throw new StaleDraft(`someone else saved to ${draft} first — open the file again`)
-    throw new CheckoutError(`could not push ${branch}: ${err.message}`)
+    throw new CheckoutError(`could not push ${branch}: ${said(site, err.message)}`)
   })
   await git(dir, ['update-ref', `refs/remotes/origin/${branch}`, commit])
   return commit
@@ -403,7 +439,7 @@ export function commitTree(site: GitSite, draft: string, change: { tree: string,
     const dir = await synced(site, root)
     const { branch, head } = await draftHead(site, dir, draft)
     if (head !== change.head) throw new StaleDraft(`${draft} has changed since the ask read it — ask again`)
-    return { commit: await pushOnDraft(dir, draft, branch, change, author) }
+    return { commit: await pushOnDraft(site, dir, draft, branch, change, author) }
   })
 }
 
@@ -492,10 +528,10 @@ export function mergeDraft(site: GitSite, draft: string, author: Author, message
         GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email,
       }
       const commit = (await git(dir, ['commit-tree', tree, '-p', baseHead, '-p', head, '-F', '-'], { input: message + '\n', env: who })).trim()
-      await git(dir, ['push', '--quiet', 'origin', `${commit}:refs/heads/${branch}`]).catch((err) => {
+      await git(dir, ['push', '--quiet', 'origin', `${commit}:refs/heads/${branch}`], { env: remoteEnv(site) }).catch((err) => {
         if (/non-fast-forward|fetch first|rejected/.test(err.message))
           throw new StaleDraft(`someone saved to ${draft} while it was being published — publish again`)
-        throw new CheckoutError(`could not push ${branch}: ${err.message}`)
+        throw new CheckoutError(`could not push ${branch}: ${said(site, err.message)}`)
       })
       await git(dir, ['update-ref', `refs/remotes/origin/${branch}`, commit])
       return { commit, base, baseHead, draft: { branch, head }, paths: paths.map(p => p.slice(prefix)) }
@@ -536,12 +572,12 @@ async function resolveBoth(dir: string, tmp: string, index: Record<string, strin
 export function advanceBase(site: GitSite, merged: Merged, root = sitesDir()): Promise<{ draftKept: boolean }> {
   return serial(site.id, async () => {
     const dir = await synced(site, root)
-    await git(dir, ['push', '--quiet', 'origin', `${merged.commit}:refs/heads/${merged.base}`]).catch((err) => {
-      throw new CheckoutError(`the site is live at ${merged.commit.slice(0, 7)}, and ${merged.base} moved before it could follow — a developer merges ${merged.draft.branch}: ${err.message}`)
+    await git(dir, ['push', '--quiet', 'origin', `${merged.commit}:refs/heads/${merged.base}`], { env: remoteEnv(site) }).catch((err) => {
+      throw new CheckoutError(`the site is live at ${merged.commit.slice(0, 7)}, and ${merged.base} moved before it could follow — a developer merges ${merged.draft.branch}: ${said(site, err.message)}`)
     })
     await git(dir, ['update-ref', `refs/remotes/origin/${merged.base}`, merged.commit])
     const gone = await gitRun(dir, ['push', '--quiet', `--force-with-lease=refs/heads/${merged.draft.branch}:${merged.commit}`,
-      'origin', `:refs/heads/${merged.draft.branch}`])
+      'origin', `:refs/heads/${merged.draft.branch}`], { env: remoteEnv(site) })
     if (gone.code === 0) await gitRun(dir, ['update-ref', '-d', `refs/remotes/origin/${merged.draft.branch}`])
     return { draftKept: gone.code !== 0 }
   })
@@ -594,8 +630,8 @@ export function revertDraft(site: GitSite, commit: string, name: string, author:
     const tree = await undoneTree(site, dir, commit, { onto: baseHead, name: base }, refusal)
     const made = (await git(dir, ['commit-tree', tree, '-p', baseHead, '-F', '-'],
       { input: `${message}\n\nThis reverts ${commit}.\n`, env: authorEnv(author) })).trim()
-    await git(dir, ['push', '--quiet', 'origin', `${made}:refs/heads/${named.branch}`]).catch((err) => {
-      throw new CheckoutError(`could not push ${named.branch}: ${err.message}`)
+    await git(dir, ['push', '--quiet', 'origin', `${made}:refs/heads/${named.branch}`], { env: remoteEnv(site) }).catch((err) => {
+      throw new CheckoutError(`could not push ${named.branch}: ${said(site, err.message)}`)
     })
     await git(dir, ['update-ref', `refs/remotes/origin/${named.branch}`, made])
     const at = (await git(dir, ['log', '-1', '--format=%cI', made])).trim()
@@ -613,7 +649,7 @@ export function revertOnDraft(site: GitSite, draft: string, commit: string, auth
     const dir = await synced(site, root)
     const { branch, head } = await draftHead(site, dir, draft)
     const tree = await undoneTree(site, dir, commit, { onto: head, name: draft }, refusal)
-    return { commit: await pushOnDraft(dir, draft, branch, { tree, head, message: `${message}\n\nThis reverts ${commit}.` }, author) }
+    return { commit: await pushOnDraft(site, dir, draft, branch, { tree, head, message: `${message}\n\nThis reverts ${commit}.` }, author) }
   })
 }
 

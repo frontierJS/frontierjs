@@ -493,6 +493,24 @@ Basecamp itself lists drafts and history and holds the grants.
     allowance in the product, not at the model vendor, and a ledger is not
     derivable, so it belongs in the database rather than a cache file; the row
     is also what 4.3 needs. A is the smaller reopen path if a row is too much.
+- ~~**Q28 — What credential Basecamp's checkout pushes a draft with (1.6).**~~ **Answered 2026-11-13 (`FJS-D2108`): A — the workspace's connected GitHub account token (`FJS-D1571`), minted for a git call by the GitHub connector and handed to git per call through `GIT_ASKPASS`, only when the remote is github.com; never in argv, `.git/config` or a row. The grant widens to Contents: write. GitHub only.**
+  `FJS-D1555` put the per-App deploy key on the Outpost, where it never
+  leaves, and `FJS-D1571` says a push runs on that key. But
+  `site-checkout.ts` fetches and pushes from Basecamp's host, so the Outpost's
+  key cannot reach it, and a host with no git credential refuses every save.
+  - **A** — the workspace's connected GitHub account token (`FJS-D1571`),
+    minted for a git call by the GitHub connector and handed to git per call
+    through `GIT_ASKPASS`, only when the remote is github.com; never in argv,
+    `.git/config` or a row. The grant widens to Contents: write. GitHub only.
+  - **B** — draft fetch, merge and push move to the Outpost, on its per-App
+    key widened to write; Basecamp keeps no checkout.
+  - **C** — a per-App `sshKey` Secret held by Basecamp (`FJS-D1247`'s A), the
+    shape `FJS-D1555` refused under `FJS-D241`.
+  - **Recommend A** (confidence 2) — the token is already Basecamp's one forge
+    credential and already reads private repositories from this host
+    (`FJS-D1573`), so no new holder appears; B moves the fetch as well as the
+    push, a relay per interactive save. B is the reopen path when a second
+    forge arrives.
 
 ## The plan
 
@@ -745,11 +763,19 @@ preview link shows it, Publish ships it, and the commit carries their name.
     `revert-hours` holding the old page.
   - Left: a revert reaches the live site through Publish, so a real one needs
     0.3's token too.
-- [ ] 1.6 A deploy key per repository (`FJS-D1228`, deferred by
+- [x] 1.6 A deploy key per repository (`FJS-D1228`, deferred by
   `FJS-D1247`), so a private repository clones and pushes without the
   host's own credential. Ruled `FJS-D1555`: per App, made by the Outpost,
   the public half on the App's screen. The clone side is built there; the
-  PUSH side (`site-checkout.ts` on Basecamp's host) is still owed.
+  PUSH side (`site-checkout.ts` on Basecamp's host) is `FJS-D2108`'s.
+  - Built: `gitCredential` in `providers/source/github.ts` mints the git
+    environment from the workspace's GitHub account that sees the repository
+    (null for any remote but https://github.com); `GitSite.credential` carries
+    it into every fetch, clone and push in `site-checkout.ts`, attached only
+    to https://github.com. A refused token is named in the message. Tests:
+    `source.test.ts` (*git over https*), `drafts.test.ts` (*the git credential*).
+  - Left: the live proof, a real draft save on the test Basecamp against a
+    private repository, with a token holding Contents: write.
 
 ### Phase 2 — On the page
 

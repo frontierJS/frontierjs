@@ -28,6 +28,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { draftBranch, listDrafts, sitesDir, type GitSite } from './site-checkout.ts'
+import { gitCredential } from '../../providers/source/index.ts'
 import { createSecretResolver } from '../../core/credentials.ts'
 import { resolveExecutor, isExecutor, BUILD_TIMEOUT_MS } from '../../providers/executor.ts'
 import { edgeConnectorFor } from '../../providers/edge/index.ts'
@@ -165,7 +166,7 @@ export async function buildDraftPreview(app: App, appId: string, draft: string, 
   if ('refused' in named) return null
   const row = await (app.db as any).asSystem().app.findFirst({ where: { id: appId } })
   if (!row || row.kind !== 'static' || !isGit(row.source)) return null
-  const site: GitSite = { id: row.id, source: row.source }
+  const site: GitSite = { id: row.id, source: row.source, credential: await gitCredential(app, { workspaceId: row.workspaceId, repo: row.source.repo }) }
 
   let tried: string | null = null
   let status: PreviewStatus | null = null

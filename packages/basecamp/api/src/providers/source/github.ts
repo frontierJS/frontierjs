@@ -3,7 +3,8 @@
 //
 // The token is a fine-grained personal access token (`FJS-D1571`), and each
 // call needs one grant on the repository: a deploy key is Administration
-// write, a webhook is Webhooks write, a file is Contents read. GitHub answers a
+// write, a webhook is Webhooks write, a file is Contents read, and a site's
+// draft pushed over git is Contents write (`gitCredential`). GitHub answers a
 // repository the token was not given as 404, the same as one that does not
 // exist, so a 404 here names both — and a missing FILE is a 404 too, which is
 // why `readFile` asks for the repository before its paths.
@@ -16,11 +17,13 @@
 // to remove it there.
 
 import { env }                    from '../../core/env.ts'
+import { createSecretResolver }   from '../../core/credentials.ts'
 import { targetFor }              from '../compute/index.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
 import type { AccountSend }       from '../compute/index.ts'
 import { RepoUnseen }             from './index.ts'
 import type { SourceConnector, SourceRepo, DeployKey, PushHook } from './index.ts'
+import type { App }               from '@frontierjs/junction'
 
 /** Where GitHub is. Overridden by `GITHUB_URL` for the dev sink. */
 const GH_API = 'https://api.github.com'
@@ -173,4 +176,67 @@ export const github: SourceConnector = {
       : await send({ method: 'POST',  path, body: { name: 'web', ...hookBody(url, secret) } })
     return toHook((unwrap(res, repo, 'Webhooks') ?? {}) as Row)
   },
+}
+
+// ─── git over https ──────────────────────────────────────────────────────
+
+const HTTPS_REPO = /^\/([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*?)(?:\.git)?\/?$/
+
+/** Git asks the helper for `get`; the token comes from the environment of the
+ *  one call, so it is in no argv, no config file and no row. Matched to the URL
+ *  `https://github.com` in the key, so a redirect to another host is offered no
+ *  credential. */
+const HELPER = '!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=$FJS_GIT_TOKEN"; }; f'
+const HELPER_KEY = 'credential.https://github.com.helper'
+
+/**
+ * Environment entries that let one git call push to and fetch from a repository
+ * as the workspace's GitHub account (`FJS-D2108`), or null where there is none:
+ * the remote is not `https://github.com/<owner>/<name>`, or no account sees it.
+ * Null leaves git to the host's own credentials, which are none, so a public
+ * repository still fetches and a private one is refused by name.
+ *
+ * Accounts are read as the system, scoped to the workspace: an editor holding a
+ * grant on a site is not an administrator and cannot read a `Secret`, and the
+ * grant is what authorizes the push. The token goes to git and nowhere else.
+ * Only the repository's visibility is probed; whether the token may WRITE is
+ * answered by the push, whose refusal names the grant.
+ */
+export async function gitCredential(
+  app: App, { workspaceId, repo }: { workspaceId: string, repo: string },
+): Promise<Record<string, string> | null> {
+  let url: URL
+  try { url = new URL(repo.trim()) } catch { return null }
+  if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password || url.port) return null
+  const named = HTTPS_REPO.exec(url.pathname)
+  if (!named) return null
+  const at: SourceRepo = { owner: named[1], name: named[2] }
+
+  // accounts.ts imports ./index.ts, which builds its connector table from this
+  // file: a static import here evaluates that table before `github` exists.
+  const { sendVia, tokenRef } = await import('../compute/accounts.ts')
+  const db       = (app as unknown as { db: any }).db
+  const accounts = await db.asSystem().secret.findMany({
+    where:   { workspaceId, kind: 'providerKey', providerKind: 'github' },
+    select:  { id: true },
+    orderBy: { name: 'asc' },
+  }) as { id: string }[]
+
+  for (const a of accounts) {
+    try {
+      await github.readFile(sendVia(app, targetFor('github', a.id)), at, { paths: [] })
+    } catch {
+      // Unseen, revoked or unreachable: the next account may hold the grant.
+      continue
+    }
+    const token = await createSecretResolver(db).get(tokenRef(a.id))
+    if (typeof token !== 'string' || !token) continue
+    return {
+      GIT_CONFIG_COUNT:   '2',
+      GIT_CONFIG_KEY_0:   HELPER_KEY, GIT_CONFIG_VALUE_0: '',
+      GIT_CONFIG_KEY_1:   HELPER_KEY, GIT_CONFIG_VALUE_1: HELPER,
+      FJS_GIT_TOKEN:      token,
+    }
+  }
+  return null
 }

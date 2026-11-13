@@ -20,7 +20,7 @@
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { execFileSync }           from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 import { createTestEnv, session } from '@frontierjs/testing'
@@ -31,7 +31,7 @@ import { grantsFor }              from '../src/core/capabilities.ts'
 import { env as appEnv }          from '../src/core/env.ts'
 import { cloudflareFor, markPreview, previewStatuses } from '../src/domain/site/site-preview.ts'
 import { NO_KEY, askStatuses }   from '../src/domain/site/site-ask.ts'
-import { MergeConflict, advanceBase, mergeDraft, revertDraft, saveDraftFile, openDraft, readDraftFile } from '../src/domain/site/site-checkout.ts'
+import { MergeConflict, advanceBase, mergeDraft, remoteEnv, revertDraft, saveDraftFile, openDraft, readDraftFile } from '../src/domain/site/site-checkout.ts'
 import { registerAccount }        from '../src/providers/compute/accounts.ts'
 import { startCfSink, SINK_ACCOUNT } from '../src/providers/edge/cloudflare-sink.ts'
 
@@ -751,6 +751,70 @@ describe('the merge a publish ships', () => {
     expect((again as Error).message).toMatch(/^content\/routes\/a\.md changed again since/)
     expect(git(r, 'branch', '--list', 'draft/late')).toBe('')
     rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+// FJS-D2108: a site's git calls carry the workspace's GitHub token in their
+// environment, and only toward https://github.com. A recording `git` on PATH
+// stands in for the network: it logs what it was started with and refuses.
+describe('the git credential', () => {
+  const TOKEN = 'ghp_recordedtoken0123456789'
+  const CREDENTIAL = {
+    GIT_CONFIG_COUNT: '2',
+    GIT_CONFIG_KEY_0: 'credential.https://github.com.helper', GIT_CONFIG_VALUE_0: '',
+    GIT_CONFIG_KEY_1: 'credential.https://github.com.helper', GIT_CONFIG_VALUE_1: '!f() { :; }; f',
+    FJS_GIT_TOKEN: TOKEN,
+  }
+  let bin: string, log: string, oldPath: string | undefined, said: string
+
+  beforeAll(() => {
+    bin = mkdtempSync(join(tmpdir(), 'basecamp-gitshim-'))
+    log = join(bin, 'calls.log')
+    writeFileSync(join(bin, 'git'), [
+      '#!/bin/sh',
+      `{ echo "ARGV $*"; env | grep -E '^(FJS_GIT_TOKEN|GIT_CONFIG_COUNT)=' | sed 's/^/ENV /'; } >> "${log}"`,
+      `echo "fatal: Authentication failed for 'https://github.com/o/r.git/'" >&2`,
+      'exit 128',
+    ].join('\n'))
+    chmodSync(join(bin, 'git'), 0o755)
+    oldPath = process.env.PATH
+    process.env.PATH = `${bin}:${oldPath}`
+  })
+  afterAll(() => { process.env.PATH = oldPath; rmSync(bin, { recursive: true, force: true }) })
+
+  const run = async (repo: string, credential: Record<string, string> | null) => {
+    writeFileSync(log, '')
+    const err = await openDraft({ id: `shim-${uniq()}`, source: { repo }, credential }, 'x', join(tmp, 'shim-sites')).catch((e: Error) => e)
+    return { err: err as Error, calls: readFileSync(log, 'utf8') }
+  }
+
+  test('a remote that is not https://github.com is handed no token', async () => {
+    for (const repo of ['https://git.example.com/o/r.git', 'git@github.com:o/r.git', 'https://github.com.evil.example/o/r.git', 'https://u@github.com/o/r.git']) {
+      const { calls } = await run(repo, CREDENTIAL)
+      expect(calls).toContain('ARGV')
+      expect(calls).not.toContain('FJS_GIT_TOKEN')
+      expect(calls).not.toContain('GIT_CONFIG_COUNT')
+    }
+  })
+
+  test('a github.com https remote gets the env entries, and the token is in no argv and no message', async () => {
+    const repo = 'https://github.com/o/r.git'
+    expect(remoteEnv({ id: 'a', source: { repo }, credential: CREDENTIAL })).toEqual(CREDENTIAL)
+    expect(remoteEnv({ id: 'a', source: { repo }, credential: null })).toEqual({})
+
+    const { err, calls } = await run(repo, CREDENTIAL)
+    expect(calls).toContain(`ENV FJS_GIT_TOKEN=${TOKEN}`)
+    expect(calls).toContain('ENV GIT_CONFIG_COUNT=2')
+    for (const line of calls.split('\n').filter(l => l.startsWith('ARGV'))) expect(line).not.toContain(TOKEN)
+    expect(err.message).not.toContain(TOKEN)
+    said = err.message
+  })
+
+  test('a token GitHub refuses is named as the cause, and with no account the message says that instead', async () => {
+    expect(said).toContain("GitHub refused the account's token")
+    expect(said).toContain('Contents: write on https://github.com/o/r.git')
+    const { err } = await run('https://github.com/o/r.git', null)
+    expect(err.message).toContain('no GitHub account in this workspace opens https://github.com/o/r.git')
   })
 })
 

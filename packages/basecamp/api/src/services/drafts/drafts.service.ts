@@ -98,6 +98,7 @@ import { dispatchPublish } from '../../jobs/site-publish.job.ts'
 import { PUBLISH_STEPS, type PublishSnapshot } from '../../domain/site/site-publish.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { maskToken } from '../api-keys/api-keys.service.ts'
+import { gitCredential } from '../../providers/source/index.ts'
 
 const sys = (): any => $.db.asSystem()
 const me  = (): string | undefined => ($.me as { id?: string } | null | undefined)?.id
@@ -142,7 +143,8 @@ async function grantedSite(): Promise<GitSite & { role: string }> {
   const grant = await db().appEditor.findFirst({ where: { appId, userId: me() } })
   const app   = grant && await sys().app.findFirst({ where: { id: appId } })
   if (!app || app.kind !== 'static' || !isGit(app.source)) throw new NotFound(`No site '${appId}' you may edit`)
-  return { id: app.id, source: app.source, role: grant.role }
+  const credential = await gitCredential($.app, { workspaceId: app.workspaceId, repo: app.source.repo })
+  return { id: app.id, source: app.source, credential, role: grant.role }
 }
 
 /** A refusal from git or from the draft, as the status a screen can act on. */

@@ -8,10 +8,11 @@
 // repository is told at connect, the one file read from it, and what the
 // forge's answer means.
 //
-// The token is used at setup and to read a file a person asks for, never on
-// a release: a push arrives on the webhook's HMAC (`plugins/git-push.ts`) and the
-// machine clones with the deploy key, so a revoked token is found at the next
-// connect or read, never at a push. A write goes through `sendVia` and so
+// The token is used at setup, to read a file a person asks for, and to fetch
+// and push a static site's drafts (`gitCredential`, `FJS-D2108`). A machine's
+// release never uses it: a push arrives on the webhook's HMAC
+// (`plugins/git-push.ts`) and the machine clones with the deploy key, so a
+// revoked token is found at the next connect, read or draft save. A write goes through `sendVia` and so
 // meets its guard: a process pointed at the real forge by mistake rewrites a
 // real repository's hooks.
 
@@ -19,6 +20,10 @@ import type { TargetDescriptor }  from '@frontierjs/conduit'
 import type { ProviderKind }      from '#db/schema.d.ts'
 import type { AccountSend }       from '../compute/index.ts'
 import { github }                 from './github.ts'
+
+// Importers go through this file: github.ts imports it back, so loading github.ts
+// first evaluates the table below before `github` exists.
+export { gitCredential }          from './github.ts'
 
 /** A repository at a forge, as its API addresses it. */
 export interface SourceRepo {

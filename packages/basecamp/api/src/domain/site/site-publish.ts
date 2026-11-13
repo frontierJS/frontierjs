@@ -29,6 +29,7 @@
 import type { App } from '@frontierjs/junction'
 import { cloudflareFor } from './site-preview.ts'
 import { advanceBase, mergeDraft, unreleased, type Author, type GitSite } from './site-checkout.ts'
+import { gitCredential } from '../../providers/source/index.ts'
 import { finishRelease, recordStep, startRelease } from '../release/release-record.ts'
 import { notifyPeople, workspaceMembers } from '../notification/notify.ts'
 import { isGit } from '../release/app-source.ts'
@@ -85,7 +86,7 @@ export async function runPublish(app: App, deploymentId: string): Promise<{ stat
   if (!opened.runnable) return { status: opened.status }
 
   const snap  = deploy.configSnapshot as PublishSnapshot
-  const site: GitSite = { id: deploy.appId, source: snap.source }
+  const site: GitSite = { id: deploy.appId, source: snap.source, credential: await gitCredential(app, { workspaceId: deploy.workspaceId, repo: snap.source.repo }) }
   const steps = new Map((opened.steps as { id: string, name: string }[]).map(s => [s.name, s.id]))
   const row   = opened.app as { name?: string, kind?: string, source?: unknown, environmentId?: string } | null
   let current: string | undefined

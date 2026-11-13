@@ -21693,6 +21693,14 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d2108"></a>2026-11-13 · `FJS-D2108` — Q28 — What credential Basecamp's checkout pushes a draft with (1.6) — The workspace's connected GitHub account token (`FJS-D1571`), minted for a git call by the GitHub connector and handed to git per call through `GIT_ASKPASS`, only when the remote is github.com; never in argv, `.git/config` or a row. The grant widens to Contents: write. GitHub only.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (draft fetch, merge and push move to the Outpost, on its per-App key widened to write; Basecamp keeps no checkout), **C** (a per-App `sshKey` Secret held by Basecamp (`FJS-D1247`'s A), the shape `FJS-D1555` refused under `FJS-D241`).
+
+The paper's recommendation, taken as written: (confidence 2) — the token is already Basecamp's one forge credential and already reads private repositories from this host (`FJS-D1573`), so no new holder appears; B moves the fetch as well as the push, a relay per interactive save. B is the reopen path when a second forge arrives.
+
+The mechanism is an env-scoped credential helper (`GIT_CONFIG_COUNT`, keyed `credential.https://github.com.helper`) and not `GIT_ASKPASS`: it needs no script on a read-only image, and git applies it to that URL alone. The account is read as the system, scoped to the App's workspace, because a site editor holds a grant and not the level `Secret` needs; the grant authorizes the push and the token is never shown. *Lives in:* `packages/basecamp/api/src/providers/source/github.ts` (`gitCredential`, the one mint), `packages/basecamp/api/src/domain/site/site-checkout.ts` (`GitSite.credential`, `remoteEnv`, `said`), and the five places a `GitSite` is built (`packages/basecamp/api/src/services/drafts/drafts.service.ts`, `packages/basecamp/api/src/domain/site/site-preview.ts`, `site-ask.ts`, `site-publish.ts`, `packages/basecamp/api/src/jobs/deployment-run.job.ts`). *Enforced by:* `packages/basecamp/api/test/source.test.ts` (*git over https*: env entries only for https://github.com, null for ssh, a lookalike host, a URL with a user and an unseen repository, another workspace's account never used), `packages/basecamp/api/test/drafts.test.ts` (*the git credential*: a recording git on PATH gets no token for another host, a github.com remote gets the entries, no argv or message carries the token, a refused token is named).
+
 ### <a id="fjs-d2057"></a>2026-11-10 · `FJS-D2057` — Q1 — Scope and name — `@frontierjs/conduit-airtable` in `packages/conduits/`, like its 28 siblings.
 
 Asked in [`IDEAS/conduit-airtable.md`](IDEAS/conduit-airtable.md) § Open questions. **A** was picked over **B** (an app's own `providers/airtable.ts`, never a package).

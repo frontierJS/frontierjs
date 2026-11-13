@@ -32,6 +32,7 @@ import { childEnv } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import { LOCKED_KEYS, changeRefusal } from '@frontierjs/site-kit/editable'
 import { exportDraftContent, filesUnder, sitesDir, treeFromExport, type Asked, type GitSite } from './site-checkout.ts'
+import { gitCredential } from '../../providers/source/index.ts'
 import { isGit } from '../release/app-source.ts'
 import { env } from '../../core/env.ts'
 
@@ -156,7 +157,7 @@ export async function askDraft(app: App, appId: string, draft: string,
 
   const row = await (app.db as any).asSystem().app.findFirst({ where: { id: appId } })
   if (!row || row.kind !== 'static' || !isGit(row.source)) return fail('this site is no longer a static site in git')
-  const site: GitSite = { id: row.id, source: row.source }
+  const site: GitSite = { id: row.id, source: row.source, credential: await gitCredential(app, { workspaceId: row.workspaceId, repo: row.source.repo }) }
 
   const dir = mkdtempSync(join(tmpdir(), 'basecamp-ask-'))
   try {

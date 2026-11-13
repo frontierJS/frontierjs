@@ -18,6 +18,7 @@ import { basecampGateLevel }       from '../src/core/gate.ts'
 import { buildBasecampApp }        from '../src/app.ts'
 import { startGhSink, NO_HOOKS_TOKEN } from '../src/providers/source/github-sink.ts'
 import { sourceConnectorFor }      from '../src/providers/source/index.ts'
+import { gitCredential }          from '../src/providers/source/index.ts'
 import { connectorFor }            from '../src/providers/compute/index.ts'
 import { edgeConnectorFor }        from '../src/providers/edge/index.ts'
 import { registerAccount, sendVia, accountConnectorFor } from '../src/providers/compute/accounts.ts'
@@ -201,6 +202,34 @@ describe('a GitHub account', () => {
     const answer = await env.as(owner).service('servers').call('providers', null, {}) as any
     expect(answer.providers.map((p: any) => p.kind)).not.toContain('github')
     expect(answer.accounts.map((a: any) => a.providerKind)).not.toContain('github')
+  })
+})
+
+// FJS-D2108: a site's git calls authenticate as the workspace's GitHub account.
+describe('git over https', () => {
+  const ask = (repo: string) => gitCredential(app, { workspaceId: ws.id, repo })
+
+  test('a repository the account sees answers env entries carrying the token, scoped to github.com', async () => {
+    await registerAtSink(account)
+    const got = await ask('https://github.com/sink-owner/app.git')
+    expect(got).toMatchObject({ FJS_GIT_TOKEN: GH_TOKEN, GIT_CONFIG_KEY_1: 'credential.https://github.com.helper' })
+    // The helper reads the token from its environment, so it is never written into a config value.
+    expect(Object.entries(got!).filter(([k]) => k !== 'FJS_GIT_TOKEN').map(([, v]) => v).join('\n')).not.toContain(GH_TOKEN)
+  })
+
+  test('a remote that is not https://github.com, or that names no repository an account sees, answers null', async () => {
+    await registerAtSink(account)
+    expect(await ask('git@github.com:sink-owner/app.git')).toBeNull()
+    expect(await ask('ssh://git@github.com/sink-owner/app.git')).toBeNull()
+    expect(await ask('https://github.com.evil.example/sink-owner/app.git')).toBeNull()
+    expect(await ask('https://x-access-token@github.com/sink-owner/app.git')).toBeNull()
+    expect(await ask('https://gitlab.com/sink-owner/app.git')).toBeNull()
+    expect(await ask('https://github.com/sink-owner/private.git')).toBeNull()
+  })
+
+  test('another workspace\'s account is not used', async () => {
+    await registerAtSink(account)
+    expect(await gitCredential(app, { workspaceId: 'someone-elses', repo: 'https://github.com/sink-owner/app.git' })).toBeNull()
   })
 })
 

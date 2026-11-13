@@ -63,6 +63,7 @@ import { syncReplicasOn }       from './replicate-sync.job.ts'
 import releaseImageExport   from './release-image-export.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../domain/release/app-source.ts'
 import { siteBranch } from '../domain/site/site-checkout.ts'
+import { gitCredential } from '../providers/source/index.ts'
 import { healthBudgetS, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } from '@frontierjs/outpost/swap'
 import { releaseSite } from '../domain/site/site-publish.ts'
 import { cloudflareFor } from '../domain/site/site-preview.ts'
@@ -794,7 +795,7 @@ function runner(app: App) {
   ): Promise<{ output?: string; digest: string | null; commit?: string }> {
     const { deploy, digest, source } = ctx
     const name = step.name.toLowerCase()
-    const site = { id: deploy.appId, source }
+    const site = { id: deploy.appId, source, credential: await gitCredential(app, { workspaceId: deploy.workspaceId, repo: source.repo }) }
 
     if (name.includes('validate')) {
       const at = await siteBranch(site)
