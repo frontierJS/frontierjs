@@ -6,6 +6,9 @@
 // uses a tmux server of its own and kills it, so the operator's sessions are
 // never touched.
 
+import { rmSync }  from 'node:fs'
+import { tmpdir }  from 'node:os'
+import { join }    from 'node:path'
 import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { createApp, defaultConfig } from '../index.ts'
 import { endShell, terminalSocket } from '../src/terminal/index.ts'
@@ -90,6 +93,8 @@ describe('a real shell', () => {
     await app?.stop()
     const tmux = Bun.which('tmux')
     if (tmux) Bun.spawnSync([tmux, '-L', SOCKET, 'kill-server'], { stdout: 'ignore', stderr: 'ignore' })
+    // A killed server leaves its socket file, one per run, in the operator's tmux dir.
+    rmSync(join(process.env.TMUX_TMPDIR || tmpdir(), `tmux-${process.getuid?.()}`, SOCKET), { force: true })
   })
 
   test('answers a typed command and refuses an Origin at the upgrade', async () => {

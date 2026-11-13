@@ -152,6 +152,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./litestone` | `src/core/litestone.ts` | yes |
 | exports | `./cache` | `src/cache/index.ts` | yes |
 | exports | `./scheduler` | `src/scheduler/index.ts` | yes |
+| exports | `./terminal` | `src/terminal/index.ts` | yes |
 | exports | `./mail` | `src/mail/index.ts` | yes |
 | exports | `./ai` | `src/ai/index.ts` | yes |
 | exports | `./testing` | `src/testing/index.ts` | yes |
@@ -452,7 +453,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./rowlist` | `rowlist.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 102 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 103 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

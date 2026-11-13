@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 189**.
+Graded: **13 of 190**.
 
 ## data — 3 of 63
 
@@ -245,7 +245,7 @@ Graded: **13 of 189**.
 | A test may not name a port, and the reason is the runner. | `test-port-literal` |
 | The shutdown budgets live inside the container's stop grace, and a stated one that reaches it refuses the boot | **none** |
 
-## ui — 4 of 55
+## ui — 4 of 56
 
 ### Routes, prerender and static
 
@@ -331,4 +331,5 @@ Graded: **13 of 189**.
 | A class name is not checked by anything | **none** |
 | A code sample highlighted with `prefix: true` loses its first character. | **none** |
 | An inline `style=` carries a custom property and the `<style>` block reads it. | **none** |
+| An optional peer of `@frontierjs/ui` resolves from ui's own folder under a `link:`, where it is not installed. | **none** |
 

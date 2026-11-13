@@ -140,7 +140,7 @@
   })
 </script>
 
-<section class="terminal" aria-label="Terminal" data-state={state}>
+<section class="terminal" aria-label="Terminal" data-state={state} {...$attributes}>
   <div class="terminal-screen" bind:this={host}></div>
   {#if state === 'connecting' || state === 'closed'}
     <p class="terminal-note" role="status">

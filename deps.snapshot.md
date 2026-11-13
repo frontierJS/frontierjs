@@ -10,7 +10,7 @@ left out. The latest version and any advisory are NOT here: they change with
 no commit, so they live in Basecamp, which `fli ws:deps --push` feeds.
 
 ```
-54 package(s) · 23 runtime · 31 dev only · 144 declaration(s) · 60 member(s) · 0 finding(s)
+54 package(s) · 23 runtime · 31 dev only · 146 declaration(s) · 60 member(s) · 0 finding(s)
 ```
 
 ## Findings
@@ -31,9 +31,9 @@ others.
 | `@modelcontextprotocol/server` | `2.3.1` | @frontierjs/mcp `^2.3.1` |
 | `@opentui/core` | `0.5.17` | @frontierjs/haven `0.5.17`<br>@frontierjs/mesa (dev) `0.5.17`<br>@frontierjs/mesa (optional peer) `0.5.17` |
 | `@sqlite.org/sqlite-wasm` | `3.53.4-build1` | @frontierjs/example `^3.53.4-build1`<br>@frontierjs/litestone (dev) `^3.53.4-build1` |
-| `@xterm/addon-fit` | `0.11.0` | @frontierjs/basecamp `0.11.0`<br>@frontierjs/workbench `0.11.0` |
+| `@xterm/addon-fit` | `0.11.0` | @frontierjs/basecamp `0.11.0`<br>@frontierjs/ui (optional peer) `0.11.0`<br>@frontierjs/workbench `0.11.0` |
 | `@xterm/headless` | `6.0.0` | @frontierjs/haven `6.0.0` |
-| `@xterm/xterm` | `6.0.0` | @frontierjs/basecamp `6.0.0`<br>@frontierjs/workbench `6.0.0` |
+| `@xterm/xterm` | `6.0.0` | @frontierjs/basecamp `6.0.0`<br>@frontierjs/ui (optional peer) `6.0.0`<br>@frontierjs/workbench `6.0.0` |
 | `acorn` | `8.18.0` | @frontierjs/mesa `^8.0.0`<br>@frontierjs/site-kit (dev) `^8.0.0`<br>@frontierjs/ui (dev) `^8.0.0` |
 | `css-tree` | `2.3.1` | @frontierjs/email-kit (dev) `^2.0.0`<br>@frontierjs/email-kit (peer) `^2.0.0`<br>@frontierjs/mesa (dev) `^2.0.0`<br>@frontierjs/mesa (optional peer) `^2.0.0` |
 | `happy-dom` | `20.11.6` | @frontierjs/email-kit (dev) `^20.11.6`<br>@frontierjs/email-kit (peer) `^20.11.6`<br>@frontierjs/jetty (dev) `^20.11.6`<br>@frontierjs/mesa (dev) `^20.11.6`<br>@frontierjs/mesa (optional peer) `^20.11.6`<br>@frontierjs/sierra (dev) `^20.11.6`<br>@frontierjs/site-kit `^20.11.6` |
