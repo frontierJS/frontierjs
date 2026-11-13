@@ -3492,10 +3492,15 @@ function coldRead<R>(entry: object, asked: number, load: () => Promise<R>): Prom
   return p
 }
 
+const _isFile = (v: unknown): v is Blob => v instanceof File || v instanceof Blob
+
+// A File[] column's value is a list, so a file is looked for one level down too:
+// looked for at the top only, `{ files: [a, b] }` went as JSON and each File
+// became `{}` (FJS-4247).
 function _hasFiles(body: unknown): boolean {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return false
   return Object.values(body as Record<string, unknown>).some(
-    (v) => v instanceof File || v instanceof Blob
+    (v) => _isFile(v) || (Array.isArray(v) && v.some(_isFile))
   )
 }
 
@@ -3516,6 +3521,15 @@ function _toFormData(body: Record<string, unknown>): FormData {
       fd.append(key, val)
     } else if (typeof val === 'string') {
       fd.append(key, val)
+    } else if (Array.isArray(val) && val.some(_isFile)) {
+      // Each file of a list is its own part named `key[i]`, which the bridge
+      // puts back at index i; the rest of the list (a ref a patch carries
+      // forward) travels in `$json` with a null where each file goes, so a
+      // one-file list stays a list and a mixed one keeps its order (FJS-4247).
+      val.forEach((item, i) => {
+        if (_isFile(item)) fd.append(`${key}[${i}]`, item, item instanceof File ? item.name : undefined)
+      })
+      if (!val.every(_isFile)) typed[key] = val.map((item) => (_isFile(item) ? null : item))
     } else if (val !== undefined) {
       typed[key] = val
     }

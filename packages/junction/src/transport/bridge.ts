@@ -56,6 +56,9 @@ const CRUD_METHOD_BLOCK = new Set<string>(CRUD_METHODS.filter(m => !HEADER_BUILT
 // keyed on it, and a new object each call is a new app each call.
 const NO_APP = {} as import('../core/app.ts').App
 
+// A multipart file part's name that places it in a list: `files[0]` (FJS-4247).
+const FILE_LIST_PART = /^(.+)\[(\d+)\]$/
+
 export const bridge = {
 
   // ── Transport → ServiceContext ────────────────────────────────────────
@@ -153,8 +156,21 @@ export const bridge = {
 
       if (raw.files?.length) {
         for (const f of raw.files) {
-          body[f.name] = new File([f.data], f.filename, { type: f.type })
+          const file = new File([f.data], f.filename, { type: f.type })
+          // A part named `key[i]` is item i of a File[] value, which the
+          // junction client sends one part per file with the rest of the list
+          // in `$json` (FJS-4247). Set by name, repeated parts overwrote one
+          // another and the service got the last file alone.
+          const item = FILE_LIST_PART.exec(f.name)
+          if (!item) { body[f.name] = file; continue }
+          const [, key, index] = item
+          const list = Array.isArray(body[key]) ? body[key] as unknown[] : (body[key] = [])
+          list[Number(index)] = file
         }
+        // A hole a part never filled is a null, which the write refuses by
+        // index, never a sparse slot that JSON or a spread would lose.
+        for (const value of Object.values(body))
+          if (Array.isArray(value)) for (let i = 0; i < value.length; i++) if (!(i in value)) value[i] = null
       }
 
       // A sent `{}` stays `{}`: the input validators read null as "no body" and
