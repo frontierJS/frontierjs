@@ -32,7 +32,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { childEnv } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
-import { LOCKED_KEYS, changeRefusal } from '@frontierjs/site-kit/editable'
+import { LOCKED_KEYS, changeRefusal, pathRefusal } from '@frontierjs/site-kit/editable'
 import { StaleDraft, commitAuthor, commitTree, exportDraftContent, filesUnder, sitesDir, treeFromExport, type Asked, type GitSite } from './site-checkout.ts'
 import { gitCredential } from '../../providers/source/index.ts'
 import { anthropicKey } from '../../providers/model/anthropic.ts'
@@ -58,6 +58,46 @@ export interface AskStatus {
   error:   string | null
   /** The commit the ask made on the draft, which Undo reverts. */
   kept?:   string | null
+  /** The page it was asked on, whose files go into the prompt. */
+  page?:   AskPage | null
+}
+
+/** A preview page's address and the content files it shows, its own route first. */
+export interface AskPage { path: string, files: string[] }
+
+export const PAGE_MAX_FILES = 40
+/** How much of a page's files goes into a prompt whole; past it a file goes by name and the run reads it. */
+export const PAGE_MAX_CHARS = 40_000
+
+/** An ask's page as the editor sent it, or why it is refused; absent is no page. */
+export function askPage(raw: unknown): AskPage | null | { refused: string } {
+  if (raw == null) return null
+  const { path, files } = raw as { path?: unknown, files?: unknown }
+  // The address goes into the prompt as written, so a line break there is a line of the prompt.
+  if (typeof path !== 'string' || !path.startsWith('/') || path.length > 2048 || /[\u0000-\u001f\u007f]/.test(path)) return { refused: 'page.path is a page\'s address, starting with /' }
+  if (!Array.isArray(files) || files.length > PAGE_MAX_FILES) return { refused: `page.files lists at most ${PAGE_MAX_FILES} files` }
+  for (const f of files) {
+    const why = typeof f === 'string' ? pathRefusal(f) ?? (f.endsWith('.md') ? null : `${f} is not markdown`) : 'page.files lists paths'
+    if (why) return { refused: why }
+  }
+  return { path, files: [...new Set(files as string[])] }
+}
+
+/**
+ * The page's files as the run will find them, in order: whole until the budget
+ * is spent, then by name (`text: null`). One the draft does not hold is dropped.
+ */
+export function pageFiles(page: AskPage | null | undefined, before: Map<string, string>): { path: string, text: string | null }[] {
+  let left = PAGE_MAX_CHARS
+  const out: { path: string, text: string | null }[] = []
+  for (const path of page?.files ?? []) {
+    const text = before.get(path)
+    if (text == null) continue
+    const fits = text.length <= left
+    if (fits) left -= text.length
+    out.push({ path, text: fits ? text : null })
+  }
+  return out
 }
 
 /** A kept ask's commit message: the owner's words, the first line as its subject. */
@@ -76,7 +116,7 @@ export const NO_KEY = 'asking a model is off for this workspace — connect an A
 
 interface AskEvent { type: string, text?: string, ok?: boolean, stop?: string | null, cost?: number | null, denied?: number }
 interface AskClaude {
-  contentPrompt: (o: { request: string, locked?: readonly string[] }) => string
+  contentPrompt: (o: { request: string, locked?: readonly string[], page?: { path: string, files: { path: string, text: string | null }[] } | null }) => string
   editEffort:    (kind: string | null, asked?: string | null) => string
   runAsk: (o: {
     root: string, prompt: string, edit: string, effort: string, bin: string,
@@ -117,7 +157,7 @@ function write(appId: string, draft: string, next: AskStatus, root: string): Ask
 }
 
 /** A new ask on the draft, replacing whatever the last one left. */
-export function queueAsk(appId: string, draft: string, ask: { request: string, by: string | null, commit: string }, root = sitesDir()): AskStatus {
+export function queueAsk(appId: string, draft: string, ask: { request: string, by: string | null, commit: string, page?: AskPage | null }, root = sitesDir()): AskStatus {
   return write(appId, draft, {
     state: 'queued', ...ask, at: new Date().toISOString(),
     tree: null, files: [], reply: null, cost: null, error: null,
@@ -189,7 +229,7 @@ export async function askDraft(app: App, appId: string, draft: string,
     let result: AskEvent | null = null
     const run = runAsk({
       root: dir, edit: join(dir, 'content'), bin,
-      prompt: contentPrompt({ request: asked.request, locked: LOCKED_KEYS }),
+      prompt: contentPrompt({ request: asked.request, locked: LOCKED_KEYS, page: asked.page ? { path: asked.page.path, files: pageFiles(asked.page, before) } : null }),
       effort: editEffort('text'),
       // Memory or a transcript in the camp's shared HOME is one workspace's text reaching another's ask.
       env: { ...childEnv(env), ANTHROPIC_API_KEY: key, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', CLAUDE_CONFIG_DIR: config },

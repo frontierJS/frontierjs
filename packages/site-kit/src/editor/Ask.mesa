@@ -15,9 +15,11 @@
   // bar's Ask button reopens it.
   import { clientFor } from './handoff.js'
   import { hunkChanges, liveWords } from './live.js'
+  import { LOC, OURS, pageOf } from './pick.js'
 
   export let site
   export let key
+  export let files
   export let onclose
 
   const drafts = clientFor(site, key).service('drafts')
@@ -81,7 +83,10 @@
   }
 
   function send() {
-    if (!busy && request.trim()) act('ask', { request: request.trim() })
+    if (busy || !request.trim()) return
+    // The page's files go into the prompt, so a run starts at what the owner is looking at.
+    const locs = [...document.querySelectorAll(`[${LOC}]`)].filter((el) => !el.closest(OURS)).map((el) => el.getAttribute(LOC))
+    act('ask', { request: request.trim(), page: pageOf(locs, files ?? [], location.pathname) })
   }
 
   function keydown(e) {

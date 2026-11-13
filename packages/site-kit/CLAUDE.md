@@ -192,7 +192,8 @@ what they mean in any app.
   while words are unsaved. A photo key is a picker and its words, not a text
   box: `photo.js` shrinks the file to 2560 px before `drafts.photo`, which
   re-encodes it anyway (`FJS-D1408`). `Ask.mesa` is a change across the draft
-  in the owner's words (`FJS-D1242`): `drafts.ask` commits what passes the
+  in the owner's words (`FJS-D1242`), sent with the page it was typed on, whose
+  files basecamp puts in the prompt whole (`FJS-D2126`): `drafts.ask` commits what passes the
   grade at once (`FJS-D2120`), and the panel swaps its lines onto the page
   through `live.js`'s `hunkChanges`, then polls `drafts.asked` until the
   preview has built past the head the ask read (`FJS-D2121`). Undo is one

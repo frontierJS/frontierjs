@@ -44,6 +44,19 @@ export function fieldFor(loc, files, pathname) {
 }
 
 /**
+ * The page an ask was typed on, as `drafts.ask` takes it: the address, and the
+ * editable files its stamps name, its route file first, then page order.
+ * @param {string[]} locs — every stamp on the page, in document order
+ * @param {string[]} files — the draft's editable files (`drafts.files`)
+ * @param {string} pathname — this page's address
+ */
+export function pageOf(locs, files, pathname) {
+  const own = routeFile(pathname, files)
+  const shown = locs.map((loc) => parseLoc(loc)?.path).filter((p) => p && files.includes(p))
+  return { path: pathname, files: [...new Set([own, ...shown].filter(Boolean))] }
+}
+
+/**
  * The route file a page's address was built from, or null. Sierra writes
  * `x.md` and `x/index.md` both to `/x/`, and `(group)/x.md` there too.
  */

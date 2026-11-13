@@ -131,7 +131,7 @@
 
 <div class="fjs-editor-dock">
   {#if asking}
-    <Ask {site} key={who.key} onclose={() => asking = false} />
+    <Ask {site} key={who.key} {files} onclose={() => asking = false} />
   {/if}
   <article class="card fjs-editor" data-fjs-editor-ui data-fjs-editor-bar>
     {#if who}

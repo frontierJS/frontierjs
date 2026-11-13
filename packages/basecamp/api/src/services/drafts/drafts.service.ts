@@ -92,7 +92,7 @@ import { isSitePreviewOrigin, previewStatuses } from '../../domain/site/site-pre
 import { queuePreview as queueBuild } from '../../jobs/site-preview.job.ts'
 import { dispatchAsk } from '../../jobs/site-ask.job.ts'
 import { anthropicKey } from '../../providers/model/anthropic.ts'
-import { ASK_MAX_REQUEST, NO_KEY, askBusy, askMessage, askStatuses, dropAsk, markAsk, queueAsk, type AskStatus } from '../../domain/site/site-ask.ts'
+import { ASK_MAX_REQUEST, NO_KEY, askBusy, askPage, askMessage, askStatuses, dropAsk, markAsk, queueAsk, type AskStatus } from '../../domain/site/site-ask.ts'
 import { dispatchPublish } from '../../jobs/site-publish.job.ts'
 import { PUBLISH_STEPS, type PublishSnapshot } from '../../domain/site/site-publish.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -375,11 +375,13 @@ export default createService({
     const request = String((($.data ?? {}) as { request?: unknown }).request ?? '').trim()
     if (!request) throw new BadRequest('Say what to change')
     if (request.length > ASK_MAX_REQUEST) throw new BadRequest(`An ask is at most ${ASK_MAX_REQUEST} characters`)
+    const page = askPage((($.data ?? {}) as { page?: unknown }).page)
+    if (page && 'refused' in page) throw new BadRequest(page.refused)
     if (!await anthropicKey($.app, site.workspaceId)) throw new BadRequest(NO_KEY)
     const found = (await checkout(() => listDrafts(site))).find(d => d.name === draft)
     if (!found) throw new NotFound(`no draft named ${draft} — it may have been published or deleted`)
     if (askBusy(askStatuses(site.id)[found.name])) throw new Conflict('an ask is already running on this draft — wait for it to finish')
-    const ask = queueAsk(site.id, found.name, { request, by: me() ?? null, commit: found.head })
+    const ask = queueAsk(site.id, found.name, { request, by: me() ?? null, commit: found.head, page })
     await dispatchAsk($.app, site.id, found.name)
     return { draft: found.name, ask }
   },

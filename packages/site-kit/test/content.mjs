@@ -16,7 +16,7 @@ import { siteKit } from '../config/vite.js'
 import { collection } from '../src/collection.js'
 import { LOCKED_KEYS, applyEdit, applyPhoto, arrangeCollection, changeRefusal, collectionOf, formOf, lockedKeysChanged, pathRefusal, photoName, photoOf } from '../src/editable.js'
 import { changedBlocks, hunkChanges, plainSwap } from '../src/editor/live.js'
-import { routeFile } from '../src/editor/pick.js'
+import { pageOf, routeFile } from '../src/editor/pick.js'
 
 const failed = []
 const check = (label, ok, detail = '') => {
@@ -410,6 +410,16 @@ try {
     check('a folder index in a route group is too', routeFile('/roofing/', files) === 'content/routes/(services)/roofing/index.md', routeFile('/roofing/', files))
     check('the group is not part of the address', routeFile('/(company)/about/', files) === null)
     check('the home page is the root index', routeFile('/', files) === 'content/routes/index.md')
+  }
+
+  // ─── the page an ask is typed on ──────────────────────────────────────────
+  {
+    const files = ['content/routes/index.md', 'content/blocks/Hero.md', 'content/blocks/Work.md']
+    const locs  = ['content/blocks/Hero.md:3:1', 'src/blocks/Band.mesa:4:2', 'content/blocks/Hero.md:9:1', 'content/blocks/Work.md:2:1', 'content/routes/index.md:5:1', 'nonsense']
+    const page  = pageOf(locs, files, '/')
+    check('an ask\'s page is its route file first, then each editable file it shows once, in page order',
+      JSON.stringify(page) === JSON.stringify({ path: '/', files: ['content/routes/index.md', 'content/blocks/Hero.md', 'content/blocks/Work.md'] }), JSON.stringify(page))
+    check('a page with no editable stamp and no route file names no files', pageOf(['src/x.mesa:1:1'], files, '/nowhere/').files.length === 0)
   }
 
   // ─── a content/ with no content/routes (FJS-2546) ─────────────────────────

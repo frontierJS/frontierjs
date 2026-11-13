@@ -14017,6 +14017,10 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2126"></a>2026-11-13 · `FJS-D2126` — An ask carries the page it was typed on, and the prompt carries that page's files whole.
+The Ask panel sends `page: { path, files }`: the address, then the editable files its stamps name, the route file first (`pageOf` in `site-kit/src/editor/pick.js`). `drafts.ask` refuses a path `pathRefusal` refuses or one that is not markdown. The run puts each file's text, read off the draft it exported, never the editor's copy, into `contentPrompt` until `PAGE_MAX_CHARS`, and tells the model that "it" and "this" mean that page. Measured on kobami.com with "change it to 55+": 10.7s and five turns (search, read, search again, edit, reply) became 4.5–5s and two turns (edit, reply), at half the cost. Sending the file names without their text saved about 1.5s, because the model still searched first. Edit accepted a file it had only seen in the prompt.
+*Lives in:* `packages/site-kit/src/editor/Ask.mesa` · `packages/basecamp/api/src/domain/site/site-ask.ts` (`askPage`, `pageFiles`) · `packages/cli/core/ask-claude.js` (`contentPrompt`).
+
 ### <a id="fjs-d2121"></a>2026-11-13 · `FJS-D2121` — Q32 — How a preview shows a kept ask before it rebuilds (4.3, `FJS-4270`) — The ask's changed lines are swapped onto the page as `FJS-D1399` swaps a typed edit, and the panel polls `drafts.asked`, which carries the draft's preview status, until the preview has built past the head the ask read; then it says so, with Reload when anything could not be swapped.
 
 Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (no swap: show the rebuild's progress, then reload the page), **C** (the swap only, with no word of when the rebuild lands).

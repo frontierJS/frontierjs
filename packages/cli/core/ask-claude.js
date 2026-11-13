@@ -268,12 +268,31 @@ export const CONTENT_RULES = [
   'Reply in two or three short lines a person who does not code can read: what you changed, and on which pages.',
 ].join('\n\n')
 
-/** An owner's ask: the rules, the front-matter keys to leave alone, the request. */
-export function contentPrompt({ request, locked = [] } = {}) {
+// An ask is typed on a page and says "it" or "this" about what is on it.
+// Without the page a run searches every file first, a model turn of its own
+// (FJS-D2126).
+// A file past the caller's budget comes as `text: null` and is named, so the
+// run knows the page shows it and reads it rather than searching for it.
+function pageLine(page) {
+  if (!page?.files?.length) return null
+  const whole = page.files.filter((f) => f.text != null)
+  const named = page.files.filter((f) => f.text == null).map((f) => f.path)
+  return [
+    `I asked while looking at the page at ${page.path}. When my words say "it" or "this", or do not say where, they mean something on this page. These are the files it shows, its own first, as they are now. Find the change in them before searching, and look through the other files only when I asked for something everywhere or the change is not here.`,
+    named.length ? `The page also shows ${named.join(', ')}, too long to include here: read them when the change is not in the files below.` : null,
+    ...whole.map((f) => `<file path="${f.path}">\n${f.text}\n</file>`),
+  ].filter(Boolean).join('\n\n')
+}
+
+/**
+ * An owner's ask: the rules, the front-matter keys to leave alone, the page it
+ * was asked on (`{ path, files }`, the files the caller has checked), the request.
+ */
+export function contentPrompt({ request, locked = [], page = null } = {}) {
   const keep = locked.length
     ? `Leave these front-matter keys exactly as they are wherever a file has them at the top level: ${locked.join(', ')}. They decide how the site looks, and a change to one is refused whole.`
     : null
-  return [CONTENT_RULES, keep, `The change: ${String(request ?? '').trim().slice(0, 4000)}`].filter(Boolean).join('\n\n')
+  return [CONTENT_RULES, keep, pageLine(page), `The change: ${String(request ?? '').trim().slice(0, 4000)}`].filter(Boolean).join('\n\n')
 }
 
 export const EDIT_SCOPES = {
