@@ -299,7 +299,8 @@ hit is listed under 5.2.
   7. **The asker has nowhere to keep what it dials with.** `createPeer` wants
      the asker's private key, the owner's origin and the key id the owner
      issued. Workbench keeps these in its own config; Basecamp has no row or
-     Secret for them, so a Basecamp cannot yet dial another from a screen. Q14.
+     Secret for them, so a Basecamp cannot yet dial another from a screen.
+     Ruled `FJS-D2111` (a `Peer` row, the key derived per workspace); not built.
   8. Not friction, but a fact for the asker: `read` of a collection answers the
      page envelope (`{ data, total, limit, offset }`), not the rows.
 - [ ] 5.3 The real pair: Kobami asks ELA whether a lead became a customer. Needs
@@ -495,7 +496,7 @@ Done when: somebody other than this project's owner runs one side in production.
     the fact. Workbench's preview peer stays `admin`.
   - **Recommend B** — it also ends the whole-row answer (5.2 item 4), and it needs
     no new noun. A leaves another owner's key at the top grade below owner.
-- **Q14 — Where a Basecamp keeps what it dials with.** Blocks Phase 10 and any
+- ~~**Q14 — Where a Basecamp keeps what it dials with.**~~ **Answered 2026-11-13 (`FJS-D2111`): D — a `Peer` model (`name`, `url`, `keyId`) per workspace, and the private key derived from `ENCRYPTION_KEY` per workspace as `hubSigningKeys` is (`FJS-D1604`), never stored.** Blocks Phase 10 and any
   Basecamp-to-Basecamp read from a screen (5.2 item 7). Three facts: this
   Basecamp's own Ed25519 private key, and for each owner it asks, the origin
   and the key id that owner issued.
@@ -506,7 +507,9 @@ Done when: somebody other than this project's owner runs one side in production.
     provider is, with the private key in the conduit's credential store; the
     screen is the conduits screen.
   - **C** — the Workbench shape: config, outside the database.
-  - **Recommend A, narrowed** — `Peer` (`name`, `url`, `keyId`, `secretId`)
+  - **D** — a `Peer` model (`name`, `url`, `keyId`) per workspace, and the private key derived from `ENCRYPTION_KEY` per workspace as `hubSigningKeys` is (`FJS-D1604`), never stored.
+  - **Recommend D** — A's model without A's Secret: no new `SecretKind`, no row an admin can delete that breaks every peer at once, and a restore under the same key keeps every enrollment. What it gives up is rotating one workspace's key alone, which a version counter on `Workspace` adds when a rotation is first needed. A scratch probe (2026-11-12) proved it against real conduit and toolbelt: stable per workspace, distinct across two, two peers dialed from one process, a crossed key refused 401. The outbound row is named `Peer` (`FJS-D1188`); the inbound side stays an `ApiKey` held for a peer.
+  - **Earlier recommendation, A narrowed** — `Peer` (`name`, `url`, `keyId`, `secretId`)
     is a per-workspace model beside `ApiKey`. The private key is one `Secret`
     with a new `SecretKind` value `peer` and a `privateKey` data field; the
     public half is derived from it and shown on the API keys screen, never

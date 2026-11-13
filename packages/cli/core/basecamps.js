@@ -19,6 +19,7 @@
 // whatever `global-env.js` owns, never a second spelling of it.
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { globalEnvPath } from './global-env.js'
 import { hostOfUrl } from './local-env.js'
@@ -38,6 +39,18 @@ export function readBasecamps({ home } = {}) {
   try { parsed = JSON.parse(readFileSync(file, 'utf8')) } catch (e) { throw new Error(`${file} is not valid JSON: ${e.message}`) }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${file} must hold an object keyed by Basecamp name`)
   return parsed
+}
+
+/** The `Host` names `~/.ssh/config` defines; an entry whose `host` is not among them cannot be reached by an ssh verb. */
+export function sshHosts(home = homedir()) {
+  let text = ''
+  try { text = readFileSync(join(home, '.ssh', 'config'), 'utf8') } catch { return new Set() }
+  const names = new Set()
+  for (const line of text.split('\n')) {
+    const [key, ...rest] = line.trim().split(/\s+/)
+    if (/^host$/i.test(key)) for (const n of rest) names.add(n)
+  }
+  return names
 }
 
 // A partial write that left a world-readable file would leak admin keys, so the

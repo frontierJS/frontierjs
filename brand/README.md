@@ -25,6 +25,8 @@ A large design source goes beside them named `*.image-ref.*`, which the root
 `assets/icons/<name>.png` are the package and project-section icons. They are
 cropped from `fjs-icons.image-ref.png` and `fjs-new-icons.image-ref.png`, and
 each file is named for a package folder or a section (`issues`, `decisions` …).
+A `<name>.svg` beside one is a newer drawing traced to a single-color path; the
+website's package grid prefers it, and everything else still reads the PNG.
 The rings page draws a crate for a package with no file there.
 An icon redrawn as vector keeps `<name>.svg` beside its PNG as the source, and
 the 96px PNG is exported from it (`conduit` is the first).

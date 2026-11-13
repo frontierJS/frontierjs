@@ -3440,11 +3440,11 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
       $dom, $domFirst, $domLast,
       _item: item,
       _index: index,
-      rebind: (newItem, newIdx) => {
+      rebind: (newItem, newIdx, force) => {
         // Always update signals first — effects re-run from the signal, not the
         // closure variable. The compiler no longer emits raw-assignment rebinds
         // for plain item/index; only destructure patterns return a custom rebind.
-        setItem(newItem)
+        setItem(newItem, force)
         setIndex(newIdx)
         result?.rebind?.(newItem, newIdx)
       },
@@ -3461,11 +3461,18 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
   // written: `{#each xs as x, i}` rendered stale indices after any move, and
   // two rows could end up displaying the same i. The index is a signal in its
   // own right, so it has to be part of the comparison.
+  //
+  // `list = list` hands back the same array to say its rows were mutated in
+  // place (RULE 43), and every row holds the same item, so the test alone left
+  // `{#if t.dirty}` reading the old field forever. A list that arrives as the
+  // reference it was last time rewrites every row's item past the equality guard.
+  let lastList
+  let sameList = false
   const _sync = (block, item, index) => {
-    if (item === block._item && index === block._index) return
+    if (!sameList && item === block._item && index === block._index) return
     block._item = item
     block._index = index
-    block.rebind?.(item, index)
+    block.rebind?.(item, index, sameList)
   }
 
   // ── _insertBlock ──────────────────────────────────────────────────────────
@@ -3511,7 +3518,10 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
   }
 
   createEffect(() => {
-    const array  = eachItems(getArray())
+    const list   = getArray()
+    sameList     = list === lastList
+    lastList     = list
+    const array  = eachItems(list)
     const newLen = array.length
 
     // ── Fast path: clear ────────────────────────────────────────────────────

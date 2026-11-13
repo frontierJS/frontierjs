@@ -23,6 +23,11 @@ title: Basecamps
   //
   // Key copy reads each box's ENCRYPTION_KEY over ssh in the API and answers
   // fingerprints only; it is read on load and on Refresh, not on each poll.
+  //
+  // basecamps.json is keyed by key, not by box, so a second admin key for a
+  // Basecamp another entry already reaches is a second entry at the same url.
+  // One row per url: the entry whose ssh Host exists acts for it, and the
+  // others are named under it; their pulled copies are the same box's.
   import { basecamps } from '../../resources/Basecamp.mesa'
   import { ago, at }   from '../../lib/datetime.js'
   import { bytes }     from '../../lib/bytes.js'
@@ -47,7 +52,16 @@ title: Basecamps
 
   let keys = {}        // name → KeyCopy, { error }, or 'reading'
 
-  const keyed = (r) => !!r.host && r.hasKey && r.answers.ok
+  const keyed = (r) => r.hostKnown && r.hasKey && r.answers.ok
+
+  function grouped(list) {
+    const byUrl = new Map()
+    for (const r of list) byUrl.set(r.url, [...(byUrl.get(r.url) ?? []), r])
+    return [...byUrl.values()].map(same => {
+      const lead = same.find(r => r.hostKnown) ?? same.find(r => r.host) ?? same[0]
+      return { ...lead, also: same.filter(r => r !== lead), local: same.flatMap(r => r.local.map(c => ({ ...c, entry: r.name }))) }
+    })
+  }
 
   async function readKey(r) {
     keys = { ...keys, [r.name]: 'reading' }
@@ -60,7 +74,7 @@ title: Basecamps
 
   async function refresh() {
     await load()
-    for (const r of rows.filter(keyed)) readKey(r)
+    for (const r of grouped(rows).filter(keyed)) readKey(r)
   }
 
   async function saveKey(r) {
@@ -147,17 +161,17 @@ title: Basecamps
     }
   }
 
-  const copyKey = (r, c) => `${r.name}/${c.file}`
+  const copyKey = (c) => `${c.entry}/${c.file}`
   const copiesBytes = (r) => r.local.reduce((n, c) => n + c.bytes, 0)
 
-  async function deleteCopy(r, c) {
-    const key = copyKey(r, c)
+  async function deleteCopy(c) {
+    const key = copyKey(c)
     pressed = { ...pressed, [key]: 'delete' }
     try {
-      const out = await basecamps.service.invoke('deleteLocal', null, { name: r.name, file: c.file })
+      const out = await basecamps.service.invoke('deleteLocal', null, { name: c.entry, file: c.file })
       toasts.success(`Deleted ${c.file}: freed ${bytes(out.freed)}`)
       // The list pings every Basecamp; the copy is gone, so the row is patched instead of read again.
-      rows = rows.map(x => x.name === r.name ? { ...x, local: x.local.filter(y => y.file !== c.file) } : x)
+      rows = rows.map(x => x.name === c.entry ? { ...x, local: x.local.filter(y => y.file !== c.file) } : x)
     } catch (err) {
       toasts.error(err.message)
     } finally {
@@ -221,7 +235,9 @@ title: Basecamps
   // Every row carries the same buttons in the same places; one that does not apply is disabled with its reason as the title.
   const busy     = (r) => r.outcome?.state === 'working' || !!pressed[r.name]
   const archived = (r) => r.hasKey && r.newestBackup?.status === 'success'
-  const setUp    = (r) => !!r.host || r.name === 'dev'
+  const setUp    = (r) => r.hostKnown || r.name === 'dev'
+  const sshLine  = (r) => !r.host ? 'no ssh Host' : r.hostKnown ? `ssh ${r.host}` : `ssh ${r.host} — no such Host in ~/.ssh/config`
+  const noSsh    = (r) => r.host ? `needs Host ${r.host} in ~/.ssh/config` : 'needs an ssh Host'
 
   const toneOf = (o) => o.state === 'error' ? 'text-danger' : o.state === 'done' ? 'text-success' : ''
 
@@ -255,7 +271,7 @@ title: Basecamps
     basecamps.json lists none. fli basecamp:create makes one and adds it.
   </EmptyState>
 {:else}
-  <Table id="basecamps-rows" columns={COLUMNS} rows={rows}>
+  <Table id="basecamps-rows" columns={COLUMNS} rows={grouped(rows)}>
     {#snippet row(r)}
       <tr data-basecamp={r.name}>
         <td>
@@ -265,7 +281,10 @@ title: Basecamps
             {#if r.runs}<span class="text-sm text-muted">runs</span>{/if}
           </span>
           <div class="text-sm text-muted"><a href={r.url} target="_blank" rel="noopener noreferrer">{r.url}</a></div>
-          <div class="text-sm text-muted">{r.host ? `ssh ${r.host}` : 'no ssh Host'}</div>
+          <div class={`text-sm ${r.host && !r.hostKnown ? 'text-warning' : 'text-muted'}`}>{sshLine(r)}</div>
+          {#if r.also.length}
+            <div class="text-sm text-muted" data-also={r.name}>also filed as {r.also.map(a => a.runs ? `${a.name} (runs)` : a.name).join(', ')} — another key for this Basecamp</div>
+          {/if}
           <div class="text-sm text-muted">{r.answers.ok ? `answers in ${r.answers.ms} ms` : `does not answer: ${r.answers.why}`}</div>
           {#if r.outcome}
             <div class={`text-sm ${toneOf(r.outcome)}`} data-outcome={r.outcome.state}>{outcomeLine(r.outcome)}</div>
@@ -280,14 +299,15 @@ title: Basecamps
               <details>
                 <summary>Local copies — {r.local.length}, {bytes(copiesBytes(r))}</summary>
                 <ul class="stack-sm">
-                  {#each r.local as c (c.file)}
+                  {#each r.local as c (copyKey(c))}
                     <li class="cluster" data-copy={c.file}>
+                      {#if r.also.length}<span class="text-muted">{c.entry}</span>{/if}
                       <span title={c.file}>{at(c.takenAt ?? c.mtime)}</span>
                       <span class="text-muted">{c.kind === 'raw' ? 'raw copy' : c.kind === 'unreadable' ? 'incomplete' : 'archive'}</span>
                       <span>{bytes(c.bytes)}</span>
-                      <ConfirmationPopover inline title={`Delete ${bytes(c.bytes)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => deleteCopy(r, c)}>
+                      <ConfirmationPopover inline title={`Delete ${bytes(c.bytes)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => deleteCopy(c)}>
                         {#snippet trigger()}
-                          <Button size="sm" treatment="outlined" tone="danger" loading={pressed[copyKey(r, c)] === 'delete'}>Delete</Button>
+                          <Button size="sm" treatment="outlined" tone="danger" loading={pressed[copyKey(c)] === 'delete'}>Delete</Button>
                         {/snippet}
                       </ConfirmationPopover>
                     </li>
@@ -347,14 +367,14 @@ title: Basecamps
             <Button size="sm" treatment="outlined"
               disabled={!setUp(r) || busy(r)}
               loading={pressed[r.name] === 'setUpB2'}
-              title={setUp(r) ? 'Make this Basecamp\'s B2 buckets and keys and point its backups at them' : 'needs an ssh Host'}
+              title={setUp(r) ? 'Make this Basecamp\'s B2 buckets and keys and point its backups at them' : noSsh(r)}
               onclick={() => ask(r, 'setup')}>Set up B2</Button>
             <Button size="sm" treatment="outlined"
               disabled={!setUp(r) || busy(r)}
               loading={pressed[r.name] === 'undoB2'}
-              title={setUp(r) ? 'Take the B2 destinations off and delete their keys; the buckets stay' : 'needs an ssh Host'}
+              title={setUp(r) ? 'Take the B2 destinations off and delete their keys; the buckets stay' : noSsh(r)}
               onclick={() => ask(r, 'undo')}>Undo B2</Button>
-            {#if r.host}
+            {#if r.hostKnown}
               <ConfirmationPopover inline title={`Restart ${r.name}?`} confirmLabel="Restart" onconfirm={() => run(r, 'restart')}>
                 {#snippet trigger()}
                   <Button size="sm" treatment="outlined" tone="danger"
@@ -364,7 +384,7 @@ title: Basecamps
                 {/snippet}
               </ConfirmationPopover>
             {:else}
-              <Button size="sm" treatment="outlined" tone="danger" disabled title="needs an ssh Host">Restart</Button>
+              <Button size="sm" treatment="outlined" tone="danger" disabled title={noSsh(r)}>Restart</Button>
             {/if}
           </div>
           {#if !r.hasKey}<div class="text-sm text-muted">no API key — fli basecamp:key files one</div>{/if}

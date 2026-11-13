@@ -24,7 +24,7 @@
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { basecampsPath, readBasecamps } from './basecamps.js'
+import { basecampsPath, readBasecamps, sshHosts } from './basecamps.js'
 import { requiresOf }                 from './requires.js'
 import { badProfileName, esetHint, globalEnvPath, listGlobal, listProfile, profileNames, profilePath } from './global-env.js'
 import { homeReport, holdsOf, exposed } from './home.js'
@@ -96,17 +96,6 @@ export function onPath(cmd) {
 // and an entry whose ssh Host is not in `~/.ssh/config` makes every ssh-backed
 // verb (`backup`, `restore`, `reinstall`) fail at the connection instead of at a
 // sentence naming the entry. Both are warnings: the machine runs fli either way.
-
-const sshHosts = (home) => {
-  let text = ''
-  try { text = readFileSync(join(home, '.ssh', 'config'), 'utf8') } catch { return new Set() }
-  const names = new Set()
-  for (const line of text.split('\n')) {
-    const [key, ...rest] = line.trim().split(/\s+/)
-    if (/^host$/i.test(key)) for (const n of rest) names.add(n)
-  }
-  return names
-}
 
 /** A mode row per secret entry that exists. `chmod 600` is the fix for a file and for a directory alike: nobody but the owner reads a key. */
 function secretRows(report) {

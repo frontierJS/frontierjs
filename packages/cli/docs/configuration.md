@@ -56,9 +56,20 @@ its key names (never values), its mode, and the projects under `~/code`
 (`--in <dir>`) whose `.env` names it; `fli profile:open [name]` opens one in
 `$VISUAL`/`$EDITOR`. There is no current profile — the project's `.env` is
 the only thing that picks. A command that spends an account key — `deploy`,
-`basecamp:deploy`, `ws:pub`, `ws:post`, `eset` — prints the profile, or
+`basecamp:deploy`, `basecamp:create`, `basecamp:install`,
+`basecamp:reinstall`, `ws:pub`, `ws:post`, `eset` — prints the profile, or
 `profile none`, as its first line (`profileLine` in `core/utils.js`), so a
 wrong client's keys are seen before they are spent.
+
+**A Basecamp spends the profile it was bought under.** `basecamp:create` files
+the profile in use as the entry's `profile` in `basecamps.json` (none when it
+ran under the global env), and `fli doctor` warns on an entry naming a profile
+with no file (`FJS-D2087`). `basecamp:reinstall` and `basecamp:backups` refuse
+when the profile in use is not the entry's, naming both and the
+`FLI_PROFILE=<name>` rerun (`profileMismatch` in `core/basecamps.js`,
+`FJS-D2093`). Workbench passes the entry's profile to every fli it starts for
+that Basecamp, and its New Basecamp page will not run until a profile, or
+*None — global file*, is picked (`FJS-D2088`).
 
 | Service | Signs in with | Keys | Make one | Setup |
 | --- | --- | --- | --- | --- |

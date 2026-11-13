@@ -744,6 +744,17 @@ describe('sync', () => {
     expect(out.routed.map(r => r.hosts)).toEqual([['paste.example.test']])
   })
 
+  test('a static App built from git is routed on no machine: Cloudflare serves it (FJS-4152)', async () => {
+    const { routeDomainApp } = await import('../src/jobs/domain-dns.job.ts')
+    const sys  = env.system as any
+    const gitApp = await sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name: 'gitsite', slug: 'gitsite',
+      kind: 'static', source: { kind: 'git', repo: 'https://example.test/site.git' } } })
+    await sys.appServer.create({ data: { appId: gitApp.id, serverId: online1.id, status: 'running' } })
+    const d = await sys.domain.create({ data: { workspaceId: site.id, appId: gitApp.id, hostname: 'gitsite.example.test' } })
+    const out = await routeDomainApp(app, d.id)
+    expect(out).toMatchObject({ appId: gitApp.id, routed: [], failed: [] })
+  })
+
   test('a preview\'s thaw sends the redirects and paths beside the hosts, or Outpost removes them (FJS-2562)', async () => {
     const { thawPreview } = await import('../src/domain/workbench/workbench-preview.ts')
     const sys    = env.system as any

@@ -122,6 +122,22 @@ describe('list', () => {
     for (const secret of [KEY, 'bc_scoped_secret', 'key_peer_secret']) expect(said).not.toContain(secret)
     for (const field of ['apiKey', 'scopedKey', 'peerKeyId']) expect(said).not.toContain(field)
   })
+
+  test('hostKnown says whether ~/.ssh/config defines the entry\'s Host', async () => {
+    const before = Object.fromEntries((await listBasecamps({ home })).map(e => [e.name, e]))
+    expect(before.down.hostKnown).toBe(false)
+    expect(before.stub.hostKnown).toBe(false)
+
+    mkdirSync(join(home, '.ssh'), { recursive: true })
+    writeFileSync(join(home, '.ssh', 'config'), 'Host other down-box\n  HostName 127.0.0.1\n')
+    try {
+      const after = Object.fromEntries((await listBasecamps({ home })).map(e => [e.name, e]))
+      expect(after.down.hostKnown).toBe(true)
+      expect(after.stub.hostKnown).toBe(false)
+    } finally {
+      rmSync(join(home, '.ssh'), { recursive: true, force: true })
+    }
+  })
 })
 
 describe('backup', () => {

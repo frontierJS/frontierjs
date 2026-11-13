@@ -44,7 +44,7 @@ import { defineJob }     from '@frontierjs/caravan'
 import { runsEitherWay } from '../domain/job/job-context.ts'
 import { executorOn, isExecutor } from '../providers/executor.ts'
 import { routedHosts, routedPaths, routedRedirects, routeRemovals, noindexHosts, copyServingMain } from '../domain/release/runtime.ts'
-import { isInline }      from '../domain/release/app-source.ts'
+import { isInline, isGit } from '../domain/release/app-source.ts'
 import type { App }         from '@frontierjs/junction'
 
 const domainDns = defineJob<{ domainId: string }>({
@@ -170,7 +170,9 @@ export interface RoutePush {
  *
  * An inline App is routed to the static origin (`static: true`), as its
  * release's Activate does, so a Domain changed between releases does not wait
- * for the next one.
+ * for the next one. A static App built from git is routed nowhere: Cloudflare
+ * serves its hostnames, and the machine it is placed on only builds it, so a
+ * `/route` there is refused for want of a container (`FJS-4152`).
  */
 export async function routeDomainApp(app: App, domainId: string): Promise<RoutePush> {
   const out: RoutePush = { appId: null, routed: [], failed: [] }
@@ -192,8 +194,9 @@ export async function routeDomainApp(app: App, domainId: string): Promise<RouteP
  *  one of them, since the record sends every hostname there. */
 export async function routeApp(app: App, appId: string, out: RoutePush): Promise<void> {
   const sys = (app.db as any).asSystem()
-  const row = await sys.app.findFirst({ where: { id: appId }, select: { source: true } }) as { source: unknown } | null
+  const row = await sys.app.findFirst({ where: { id: appId }, select: { kind: true, source: true } }) as { kind: string; source: unknown } | null
   if (!row) return
+  if (row.kind === 'static' && isGit(row.source)) return
 
   const isStatic  = isInline(row.source)
   const hosts     = await routedHosts(app.db, appId)

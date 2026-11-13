@@ -42,6 +42,7 @@ export type HubBackup = { id: string, status: string, createdAt?: string, starte
 
 type Cli = {
   readBasecamps: (o: { home?: string }) => Record<string, Entry>
+  sshHosts:      (home?: string) => Set<string>
   pingBasecamp:  (e: Entry, o: { timeout?: number, fetcher?: typeof fetch }) => Promise<Ping>
   basecamp:      (origin: string, key: string, path: string, o?: { method?: string, headers?: Record<string, string>, body?: unknown }) => Promise<unknown>
   takeHubBackup: (o: { origin: string, key: string, log: Log }) => Promise<HubBackup>
@@ -116,6 +117,8 @@ export type LocalCopy = { file: string, kind: string, takenAt: string | null, by
 
 export type Listed = {
   name: string, url: string, host: string | null, cloud: string | null, boxId: string | number | null, runs: boolean
+  /** Whether `~/.ssh/config` defines `host`; a key filed for a box another entry already reaches names a Host nothing defines. */
+  hostKnown:    boolean
   /** The fli profile the box was bought under; null is the global file. */
   profile:      string | null
   hasKey: boolean, hasScopedKey: boolean
@@ -186,7 +189,8 @@ export async function deleteLocal(name: string, file: string, opts: Options = {}
 /** Every entry, keys left out, each pinged and its newest backup read in parallel. */
 export async function listBasecamps(opts: Options = {}): Promise<Listed[]> {
   const c   = await loadCli()
-  const all = await entries(opts)
+  const all   = await entries(opts)
+  const hosts = c.sshHosts(opts.home)
   return Promise.all(Object.entries(all).map(async ([name, e]) => {
     const answers = await c.pingBasecamp(e, { ...(opts.fetcher ? { fetcher: opts.fetcher } : {}) })
     const newest  = answers.ok && e.apiKey ? await newestBackup(c, e) : { row: null, error: null }
@@ -197,6 +201,7 @@ export async function listBasecamps(opts: Options = {}): Promise<Listed[]> {
       cloud:        e.cloud ?? null,
       boxId:        e.boxId ?? null,
       runs:         e.runs === true,
+      hostKnown:    !!e.host && hosts.has(e.host),
       profile:      e.profile ?? null,
       hasKey:       !!e.apiKey,
       hasScopedKey: !!e.scopedKey,

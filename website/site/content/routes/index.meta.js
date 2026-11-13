@@ -29,11 +29,12 @@ export async function load(ctx) {
   const folders = await folderByName()
   const tile = (p) => {
     const folder = folders.get(p.who) ?? p.id
+    // A traced SVG wins over the PNG; a package with neither shows its initial.
+    const file = [`${folder}.svg`, `${folder}.png`].find((f) => existsSync(`${ICONS}/${f}`))
     return {
       name: p.slug,
       href: hrefFor(p),
-      // A package with no icon yet shows its initial instead of a broken image.
-      icon: existsSync(`${ICONS}/${folder}.png`) ? `/icons/${folder}.png` : null,
+      icon: file ? `/icons/${file}` : null,
     }
   }
   return {
