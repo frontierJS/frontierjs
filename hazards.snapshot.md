@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 187**.
+Graded: **13 of 189**.
 
 ## data — 3 of 63
 
@@ -127,7 +127,7 @@ Graded: **13 of 187**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 70
+## api — 6 of 71
 
 ### `ctx` and the call
 
@@ -175,6 +175,7 @@ Graded: **13 of 187**.
 | A wire `$limit` above the service's `paginate.max` is a 400, not a clamp. | **none** |
 | `hasRoute()` is a matching question, not an existence one | **none** |
 | A header the caller varies per call must be DECLARED, or it works until the socket connects. | `call-header-declared` |
+| A `ReadableStream` body goes out chunked with no Content-Length; answer a held-open file as `Bun.file(fd)` and ask for the length over a socket | **none** |
 | A raw route's own `new Response(readable)` is held to its end for a gzip caller; build a stream with `ctx.stream()` or name `content-encoding` | **none** |
 | The client's address is declared, never discovered. | **none** |
 | An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins` | **none** |
@@ -244,7 +245,7 @@ Graded: **13 of 187**.
 | A test may not name a port, and the reason is the runner. | `test-port-literal` |
 | The shutdown budgets live inside the container's stop grace, and a stated one that reaches it refuses the boot | **none** |
 
-## ui — 4 of 54
+## ui — 4 of 55
 
 ### Routes, prerender and static
 
@@ -283,6 +284,7 @@ Graded: **13 of 187**.
 | `tethered()` is the one door a screen lists rows through; a route that calls `service.find` itself owns keeping it current. | **none** |
 | A resource's `<script module>` holds what the UI says about its model, so an enum's tone map lives there once. | **none** |
 | `tethered().more()` catches its error into `.error`, so a loop on `hasMore` alone spins on a failing call. | **none** |
+| A `tethered()` list over a model whose `@@gate` refuses the caller's `session.level` is never asked for: it sits empty with no `error`, and loads when the level changes. | **none** |
 | A raw route is reached with `client.fetch(path)`, which carries the client's credentials. | **none** |
 
 ### Mesa

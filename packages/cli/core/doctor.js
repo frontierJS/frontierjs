@@ -23,7 +23,7 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { basecampsPath, readBasecamps, sshHosts } from './basecamps.js'
 import { requiresOf }                 from './requires.js'
 import { badProfileName, esetHint, globalEnvPath, listGlobal, listProfile, profileNames, profilePath } from './global-env.js'

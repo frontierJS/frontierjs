@@ -1326,7 +1326,7 @@ html {
   color:         var(--_surface-color);
   border:        var(--border-width) solid var(--_surface-border);
   border-radius: var(--card-radius);
-  font-family:   var(--font-primary);
+  font-family:   var(--font-primary), sans-serif;
   
   font-size:      var(--text-md);
   line-height:    var(--leading-body);
@@ -1541,7 +1541,7 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
   min-block-size:   100dvh;
   background:       var(--app-depth, var(--surface-depth)), var(--app-bg, var(--surface-sunken));
   color:            var(--ink);
-  font-family:      var(--font-primary);
+  font-family:      var(--font-primary), sans-serif;
   
   font-size:        var(--text-md);
   line-height:      var(--leading-body);
@@ -1736,7 +1736,7 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 h1, h2, h3, h4, h5, h6,
 .h1, .h2, .h3, .h4, .h5, .h6 {
   
-  font-family: var(--font-display, var(--font-primary));
+  font-family: var(--font-display, var(--font-primary)), sans-serif;
   margin:      0;
   line-height: var(--leading-heading);
   
@@ -2029,7 +2029,7 @@ code[language] > span::before {
   background:     var(--_base);
   color:          var(--_on-fill, white);
   border:         var(--border-width) solid transparent;
-  font-family:    var(--font-primary);
+  font-family:    var(--font-primary), sans-serif;
   font-weight:    var(--btn-font-weight);
   text-transform: var(--btn-text-transform);
   letter-spacing: var(--btn-letter-spacing);
@@ -2173,7 +2173,7 @@ code[language] > span::before {
   background:     var(--_fill, var(--tone-fill));
   color:          var(--_on-fill, white);
   border:         var(--border-width) solid transparent;
-  font-family:    var(--font-primary);
+  font-family:    var(--font-primary), sans-serif;
   font-weight:    var(--pill-font-weight);
   text-transform: var(--pill-text-transform);
   letter-spacing: var(--pill-letter-spacing);
@@ -2229,7 +2229,7 @@ code[language] > span::before {
   --tone-fill:    var(--bg-mix, var(--color-muted));
   background:     var(--_fill, var(--tone-fill));
   color:          var(--_on-fill, white);
-  font-family:    var(--font-primary);
+  font-family:    var(--font-primary), sans-serif;
   font-weight:    var(--badge-font-weight);
   text-transform: var(--badge-text-transform);
   letter-spacing: var(--badge-letter-spacing);
@@ -2306,7 +2306,7 @@ code[language] > span::before {
   background: var(--_fill, var(--tone-fill));
   color:      var(--_on-fill, white);
 
-  font-family: var(--font-primary);
+  font-family: var(--font-primary), sans-serif;
   
   font-size:   calc(var(--avatar-size) * 0.4);
   font-weight: 600;
@@ -2769,7 +2769,7 @@ dialog.drawer[open]::backdrop {
   border-radius: var(--btn-radius);
   background:    var(--_fill, var(--tone-fill));
   color:         var(--_on-fill, white);
-  font-family:   var(--font-primary);
+  font-family:   var(--font-primary), sans-serif;
   font-size:     var(--text-xs);
   line-height:   1.35;
   white-space:   nowrap;
@@ -2951,7 +2951,7 @@ dialog.drawer[open]::backdrop {
   
   border:        var(--field-border-width, var(--border-width)) solid var(--field-border);
   border-radius: var(--field-radius);
-  font-family:   var(--font-primary);
+  font-family:   var(--font-primary), sans-serif;
 
   transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
@@ -2978,7 +2978,7 @@ textarea.field {
   
   min-height:   calc(attr(rows type(<number>), 4) * 1lh);
   max-height:   16lh;
-  font-family:  var(--font-primary);
+  font-family:  var(--font-primary), sans-serif;
 }
 
 select.field {
@@ -2999,7 +2999,7 @@ input[type="file"]::file-selector-button {
   border-radius:     var(--btn-radius);
   background:        var(--surface);
   color:             var(--ink);
-  font-family:       var(--font-primary);
+  font-family:       var(--font-primary), sans-serif;
   font-size:         var(--text-md);
   font-weight:       var(--btn-font-weight);
   line-height:       1.25rem;
@@ -3183,7 +3183,7 @@ input[type="file"]:disabled::file-selector-button {
   background:  var(--surface-sunken);
   border:      var(--border-width) solid var(--rule-strong);
   color:       var(--ink-soft);
-  font-family: var(--font-primary);
+  font-family: var(--font-primary), sans-serif;
   font-size:   var(--text-md);
   white-space: nowrap;
 }
@@ -3202,7 +3202,7 @@ input[type="file"]:disabled::file-selector-button {
   border-spacing:  0;
   
   overflow:        clip;
-  font-family:     var(--font-primary);
+  font-family:     var(--font-primary), sans-serif;
   font-size:       var(--text-md);
   color:           var(--ink);
 }
@@ -3677,7 +3677,7 @@ hr, .divider {
   gap:                   var(--space-md) var(--space-3xl);
   align-items:           baseline;
 
-  font-family: var(--font-primary);
+  font-family: var(--font-primary), sans-serif;
   font-size:   var(--text-md);
   line-height: 1.5;
 }
@@ -3769,7 +3769,7 @@ hr, .divider {
   padding:    0;
 
   counter-reset: fjs-step;
-  font-family:   var(--font-primary);
+  font-family:   var(--font-primary), sans-serif;
 }
 
 .step {
@@ -4788,7 +4788,7 @@ details[open]:has(> summary.navlist-label)::details-content {
   border-radius:  var(--btn-radius);
   
   box-shadow:     none;
-  font-family:    var(--font-primary);
+  font-family:    var(--font-primary), sans-serif;
   font-size:      var(--text-md);
   font-weight:    600;
   text-decoration: none;
@@ -5520,7 +5520,7 @@ try {
       </tr></tbody></table></div>
 </section>
 <section id="features">
-  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">505 across 56 packages · read, never invented</span></div>
+  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">507 across 56 packages · read, never invented</span></div>
   <p class="note">One row per file under a package's <code>docs/</code> and per <code>##</code> heading in its README — the two places a capability is already written down. A package that documents itself in one README contributes headings; one that writes a file per feature contributes files; a package with neither contributes a finding.</p><div class="panel scroll"><table><thead><tr><th>Package</th><th>Capability</th><th>The first thing it says</th><th>Where</th></tr></thead><tbody><tr data-row>
       <td class="m">@frontierjs/auth</td>
       <td class="m">auth — hazards</td>
@@ -7820,6 +7820,16 @@ try {
       <td class="m"></td>
       <td class="m">What it gives you</td>
       <td class="m sub">Everything @frontierjs/litestone/testing exports, re-exported — including</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Mounting your app</td>
+      <td class="m sub">api: is handed the env&#39;s client and returns your app built over it.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Calling a service</td>
+      <td class="m sub">env.as(user).service(name) has the shapes of app.service(name), with the</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
