@@ -378,14 +378,15 @@ describe('a draft\'s preview', () => {
 // An ask (4.1, FJS-D1242): `claude` is a stand-in that records what it was
 // handed and edits the copy it was run in, as the real one would through Edit
 // and Write. The argv's scope is the cli's, measured in its own suite; what is
-// claimed here is the copy, the key, the cap on the argv, and that a run's
-// edits come back as a tree with nothing committed.
+// claimed here is the copy, the key, the cap on the argv, and that a run that
+// passes its grade is one commit on the draft, by the asker, with Undo as the
+// review.
 describe('asking a model for a change', () => {
   let fake: string, seen: string
   const settled = async (draft: string) => {
     for (let i = 0; i < 400; i++) {
       const s = askStatuses(site.id)[draft]
-      if (s && (s.state === 'failed' || s.state === 'ready')) return s
+      if (s && (s.state === 'failed' || s.state === 'kept' || s.state === 'answered')) return s
       await Bun.sleep(25)
     }
     throw new Error(`the ask on ${draft} never settled: ${JSON.stringify(askStatuses(site.id)[draft])}`)
@@ -405,7 +406,11 @@ describe('asking a model for a change', () => {
       `cat > ${seen}/prompt`,
       `pwd > ${seen}/cwd`,
       `ok() { echo '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.04,"num_turns":3}'; }`,
-      `if grep -q 'every page' ${seen}/prompt; then`,
+      `if grep -q 'while I save' ${seen}/prompt; then git -C ${join(tmp, 'moved')} push --quiet origin draft/moving; fi`,
+      `if grep -q 'what hours' ${seen}/prompt; then`,
+      `  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Which hours do you mean?"}]}}'`,
+      '  ok',
+      `elif grep -q 'every page' ${seen}/prompt; then`,
       `  sed -i 's/nine/eight/' content/routes/index.md`,
       `  mkdir -p content/faq && printf 'Open at eight.\\n' > content/faq/hours.md`,
       `  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"The hours now say eight."}]}}'`,
@@ -450,7 +455,7 @@ describe('asking a model for a change', () => {
     expect(askStatuses(site.id)[draft]).toBeUndefined()
   })
 
-  test('a run edits a copy of the draft\'s content, and comes back as a tree with nothing committed', async () => {
+  test('a run edits a copy of the draft\'s content, and a pass is one commit on the draft by the asker', async () => {
     await anthropicSecret(site.workspaceId, 'sk-ant-test')
     ;(appEnv as Record<string, unknown>).CLAUDE_BIN = fake
     expect((await refusal(drafts(admin).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'x' }))).code).toBe(404)
@@ -461,12 +466,15 @@ describe('asking a model for a change', () => {
     expect(queued.ask).toMatchObject({ state: 'queued', commit: head })
     const status = await settled('asked')
 
-    expect(status).toMatchObject({ state: 'ready', commit: head, reply: 'The hours now say eight.', cost: 0.04, error: null })
+    const kept = git(remote, 'rev-parse', 'draft/asked')
+    expect(status).toMatchObject({ state: 'kept', commit: head, kept, reply: 'The hours now say eight.', cost: 0.04, error: null })
+    expect(git(remote, 'rev-parse', `${kept}^`)).toBe(head)
+    expect(git(remote, 'log', '-1', '--format=%an|%s', kept)).toBe('Owner|Asked: Change the hours on every page')
+    expect(git(remote, 'rev-parse', `${kept}^{tree}`)).toBe(status.tree!)
     const was = git(remote, 'rev-parse', `${head}:site/content/routes/index.md`)
     expect(status.files.map(f => [f.path, f.was])).toEqual([['content/faq/hours.md', null], ['content/routes/index.md', was]])
     expect(git(clone(), 'show', `${status.tree}:site/content/routes/index.md`)).toBe(PAGE.replace('nine', 'eight').trimEnd())
     expect(git(clone(), 'show', `${status.tree}:site/content/settings/site.js`)).toBe('export default {}')
-    expect(git(remote, 'rev-parse', 'draft/asked')).toBe(head)
 
     const argv = readFileSync(join(seen, 'argv'), 'utf8').split('\n')
     const cwd  = readFileSync(join(seen, 'cwd'), 'utf8').trim()
@@ -487,7 +495,7 @@ describe('asking a model for a change', () => {
     expect(cwd.startsWith(tmpdir())).toBe(true)
 
     const listed = await drafts(editor).call('list', undefined, { appId: site.id })
-    expect(listed.drafts.find((d: any) => d.name === 'asked').ask.state).toBe('ready')
+    expect(listed.drafts.find((d: any) => d.name === 'asked').ask.state).toBe('kept')
   })
 
   // The grade (4.2): the prompt asks the model to leave these alone, and
@@ -519,7 +527,8 @@ describe('asking a model for a change', () => {
 
     await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'trim', request: 'Please drop the review from Zed' })
     const status = await settled('trim')
-    expect(status).toMatchObject({ state: 'ready', files: [{ path: 'content/collections/reviews/9-zed.md', was, blob: null }] })
+    expect(status).toMatchObject({ state: 'kept', files: [{ path: 'content/collections/reviews/9-zed.md', was, blob: null }] })
+    expect(git(remote, 'ls-tree', '-r', '--name-only', 'draft/trim')).not.toContain('9-zed.md')
     expect(git(clone(), 'ls-tree', '-r', '--name-only', status.tree!)).not.toContain('9-zed.md')
     expect(git(clone(), 'show', `${status.tree}:site/content/routes/index.md`)).toBe(PAGE.trimEnd())
 
@@ -534,57 +543,78 @@ describe('asking a model for a change', () => {
     expect(status).toMatchObject({ state: 'failed', tree: null, files: [], cost: 2.01, error: 'the ask reached its spending limit before it finished'})
   })
 
-  // 4.3: the owner sees the lines, then keeps them as one commit or drops them.
-  test('a waiting ask shows its lines; Keep is one commit on the draft, and Undo reverts it', async () => {
-    const head = git(remote, 'rev-parse', 'draft/asked')
-    await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'Change the hours on every page' })
-    await settled('asked')
+  // The owner reads what changed after the fact, and Undo is the review.
+  test('a kept ask shows its lines and the queued preview, and Undo reverts it', async () => {
+    const draft = (await drafts(editor).call('open', undefined, { appId: site.id, name: 'Undoable' })).name
+    const head = git(remote, 'rev-parse', `draft/${draft}`)
+    await drafts(editor).call('ask', undefined, { appId: site.id, draft, request: 'Change the hours on every page' })
+    const status = await settled(draft)
+    const kept = status.kept!
+    expect(git(remote, 'rev-parse', `draft/${draft}`)).toBe(kept)
+    expect(git(remote, 'rev-parse', `${kept}^`)).toBe(head)
+    expect(git(remote, 'log', '-1', '--format=%an|%s', kept)).toBe('Owner|Asked: Change the hours on every page')
+    expect(git(remote, 'show', `${kept}:site/content/faq/hours.md`)).toBe('Open at eight.')
+    expect(git(remote, 'log', '--format=%s', `${head}..${kept}`).split('\n')).toHaveLength(1)
 
-    const shown = await drafts(editor).call('asked', undefined, { appId: site.id, draft: 'asked' })
-    expect(shown.ask.state).toBe('ready')
+    // The job queues the preview after the commit; its status names that commit.
+    let shown = await drafts(editor).call('asked', undefined, { appId: site.id, draft })
+    for (let i = 0; i < 200 && shown.preview?.commit !== kept; i++) {
+      await Bun.sleep(25)
+      shown = await drafts(editor).call('asked', undefined, { appId: site.id, draft })
+    }
+    expect(shown.ask).toMatchObject({ state: 'kept', kept })
+    expect(shown.preview).toMatchObject({ commit: kept })
+    expect(shown.preview.state).toMatch(/queued|building|failed|ready/)
     expect(shown.diff.map((f: any) => f.path)).toEqual(['content/faq/hours.md', 'content/routes/index.md'])
     expect(shown.diff[0].hunks).toContain('+Open at eight.')
     expect(shown.diff[1].hunks).toMatch(/^-.*nine.*\n\+.*eight/m)
-    expect((await refusal(drafts(admin).call('keep', undefined, { appId: site.id, draft: 'asked' }))).code).toBe(404)
-    expect((await refusal(drafts(editor).call('undo', undefined, { appId: site.id, draft: 'asked' }))).message)
-      .toBe('the ask on asked is waiting to be kept or discarded')
 
-    const kept = await drafts(editor).call('keep', undefined, { appId: site.id, draft: 'asked' })
-    expect(git(remote, 'rev-parse', 'draft/asked')).toBe(kept.commit)
-    expect(git(remote, 'rev-parse', `${kept.commit}^`)).toBe(head)
-    expect(git(remote, 'log', '-1', '--format=%an|%s', kept.commit)).toBe('Owner|Asked: Change the hours on every page')
-    expect(git(remote, 'show', `${kept.commit}:site/content/faq/hours.md`)).toBe('Open at eight.')
-    expect(askStatuses(site.id).asked).toMatchObject({ state: 'kept', kept: kept.commit })
-    expect((await refusal(drafts(editor).call('keep', undefined, { appId: site.id, draft: 'asked' }))).code).toBe(409)
-    expect((await refusal(drafts(editor).call('discard', undefined, { appId: site.id, draft: 'asked' }))).message)
-      .toBe('the ask on asked is kept')
+    expect((await refusal(drafts(admin).call('undo', undefined, { appId: site.id, draft }))).code).toBe(404)
+    expect((await refusal(drafts(editor).call('discard', undefined, { appId: site.id, draft }))).message)
+      .toBe(`the ask on ${draft} is kept`)
+    expect((await refusal(drafts(editor).call('keep', undefined, { appId: site.id, draft }))).code).toBe(405)
 
-    const undone = await drafts(editor).call('undo', undefined, { appId: site.id, draft: 'asked' })
-    expect(git(remote, 'rev-parse', `${undone.commit}^`)).toBe(kept.commit)
+    const undone = await drafts(editor).call('undo', undefined, { appId: site.id, draft })
+    expect(git(remote, 'rev-parse', `${undone.commit}^`)).toBe(kept)
     expect(git(remote, 'rev-parse', `${undone.commit}^{tree}`)).toBe(git(remote, 'rev-parse', `${head}^{tree}`))
     expect(git(remote, 'log', '-1', '--format=%s', undone.commit)).toBe('Undo Asked: Change the hours on every page')
-    expect(askStatuses(site.id).asked.state).toBe('undone')
-    await drafts(editor).call('discard', undefined, { appId: site.id, draft: 'asked' })
-    expect(askStatuses(site.id).asked).toBeUndefined()
-    expect((await drafts(editor).call('asked', undefined, { appId: site.id, draft: 'asked' })).ask).toBeNull()
+    expect(askStatuses(site.id)[draft].state).toBe('undone')
+    expect((await drafts(editor).call('asked', undefined, { appId: site.id, draft })).diff).toBeNull()
+    await drafts(editor).call('discard', undefined, { appId: site.id, draft })
+    const gone = await drafts(editor).call('asked', undefined, { appId: site.id, draft })
+    expect(gone.ask).toBeNull()
+    expect(gone.preview).not.toBeNull()
   })
 
-  test('an ask is kept only on the head it read, and Discard commits nothing', async () => {
-    await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'Change the hours on every page' })
-    await settled('asked')
+  test('a run that changes nothing is answered, commits nothing, and keeps its reply', async () => {
+    const draft = (await drafts(editor).call('open', undefined, { appId: site.id, name: 'Answered' })).name
+    const head = git(remote, 'rev-parse', `draft/${draft}`)
+    await drafts(editor).call('ask', undefined, { appId: site.id, draft, request: 'what hours do we keep' })
+    const status = await settled(draft)
+    expect(status).toMatchObject({ state: 'answered', files: [], reply: 'Which hours do you mean?', error: null })
+    expect(git(remote, 'rev-parse', `draft/${draft}`)).toBe(head)
+    const shown = await drafts(editor).call('asked', undefined, { appId: site.id, draft })
+    expect(shown.diff).toBeNull()
+    expect((await refusal(drafts(editor).call('undo', undefined, { appId: site.id, draft }))).message).toBe(`the ask on ${draft} changed nothing`)
+    await drafts(editor).call('discard', undefined, { appId: site.id, draft })
+    expect(askStatuses(site.id)[draft]).toBeUndefined()
+  })
+
+  test('a draft that moved while the run worked fails the ask with the stale message, and nothing is committed', async () => {
+    const draft = (await drafts(editor).call('open', undefined, { appId: site.id, name: 'Moving' })).name
     const work = join(tmp, 'moved')
-    git(tmp, 'clone', '--quiet', '--branch', 'draft/asked', remote, work)
+    git(tmp, 'clone', '--quiet', '--branch', `draft/${draft}`, remote, work)
     writeFileSync(join(work, 'site/content/settings/site.js'), 'export default { moved: true }')
     git(work, '-c', 'user.name=Dev', '-c', 'user.email=dev@x.co', 'commit', '--quiet', '-am', 'Moved')
-    git(work, 'push', '--quiet', 'origin', 'draft/asked')
-    const moved = git(remote, 'rev-parse', 'draft/asked')
 
-    const err = await refusal(drafts(editor).call('keep', undefined, { appId: site.id, draft: 'asked' }))
-    expect([err.code, err.message]).toEqual([409, 'asked has changed since the ask read it — ask again'])
-    expect(git(remote, 'rev-parse', 'draft/asked')).toBe(moved)
-    await drafts(editor).call('discard', undefined, { appId: site.id, draft: 'asked' })
-    expect(askStatuses(site.id).asked).toBeUndefined()
-    expect(git(remote, 'rev-parse', 'draft/asked')).toBe(moved)
+    await drafts(editor).call('ask', undefined, { appId: site.id, draft, request: 'Change the hours on every page while I save' })
+    const status = await settled(draft)
+    const moved = git(remote, 'rev-parse', `draft/${draft}`)
+    expect(status).toMatchObject({ state: 'failed', reply: 'The hours now say eight.', error: `${draft} has changed since the ask read it — ask again` })
+    expect(git(remote, 'log', '-1', '--format=%s', moved)).toBe('Moved')
+    expect(git(remote, 'show', `${moved}:site/content/routes/index.md`)).toContain('nine')
+    await drafts(editor).call('discard', undefined, { appId: site.id, draft })
+    expect(askStatuses(site.id)[draft]).toBeUndefined()
   })
 })
 

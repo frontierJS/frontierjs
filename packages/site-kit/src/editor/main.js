@@ -3,7 +3,7 @@
 // carries its tag, which names basecamp's page for this site's draft.
 //
 // The editor renders in a shadow root carrying its own copy of the kit, so a
-// site's stylesheet cannot reach it: in the page's DOM, ksite's surface-<color>
+// site's stylesheet cannot reach it: in the page's DOM, ksite's surface color
 // band read the panel's surface-body and turned its words white (FJS-4269). The
 // host carries data-fjs-editor-ui because a page-level listener sees an event
 // from inside the root as the host's.

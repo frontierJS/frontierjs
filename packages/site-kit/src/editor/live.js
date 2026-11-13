@@ -69,6 +69,49 @@ export function liveWords() {
   }
 }
 
+// A front-matter line: the page shows its value, not the key.
+const KEYED   = /^\s*[\w-]+:\s+(.*)$/
+const unquote = (v) => /^(["']).*\1$/.test(v) ? v.slice(1, -1) : v
+
+function lineChange(path, was, now) {
+  const a = KEYED.exec(was.text)
+  const b = KEYED.exec(now)
+  const [old, next] = a && b ? [unquote(a[1]), unquote(b[1])] : [was.text, now]
+  return { path, line: was.line, old: words(old), next: words(next), plain: plainSwap(old, next) }
+}
+
+/**
+ * The lines a file's diff changed, each placed at its line in the file the
+ * preview was built from. A run of removed lines followed by as many added
+ * ones pairs line for line; any other run (a line added or removed alone) is
+ * one change the page cannot place.
+ * @param {string} path
+ * @param {string} hunks the file's unified diff from its first `@@`
+ * @returns {{ changes: { path: string, line: number, old: string, next: string, plain: boolean }[], unplaced: number }}
+ */
+export function hunkChanges(path, hunks) {
+  const changes = []
+  let unplaced = 0
+  let line = 0
+  let dels = []
+  let adds = []
+  const flush = () => {
+    if (dels.length && dels.length === adds.length) dels.forEach((d, i) => changes.push(lineChange(path, d, adds[i])))
+    else if (dels.length || adds.length) unplaced++
+    dels = []; adds = []
+  }
+  for (const l of String(hunks ?? '').split('\n')) {
+    const at = /^@@ -(\d+)/.exec(l)
+    if (at) { flush(); line = Number(at[1]); continue }
+    if (!line || l.startsWith('\\')) continue
+    if (l[0] === '-') { if (adds.length) flush(); dels.push({ line, text: l.slice(1) }); line++ }
+    else if (l[0] === '+') adds.push(l.slice(1))
+    else { flush(); line++ }
+  }
+  flush()
+  return { changes, unplaced }
+}
+
 /** A body's blocks, the runs of non-blank lines, each with the 0-based line it opens on. */
 export function blocks(body) {
   const out = []

@@ -15,7 +15,7 @@ import { readSettings, writeSettingsModule } from '../config/content.js'
 import { siteKit } from '../config/vite.js'
 import { collection } from '../src/collection.js'
 import { LOCKED_KEYS, applyEdit, applyPhoto, arrangeCollection, changeRefusal, collectionOf, formOf, lockedKeysChanged, pathRefusal, photoName, photoOf } from '../src/editable.js'
-import { changedBlocks, plainSwap } from '../src/editor/live.js'
+import { changedBlocks, hunkChanges, plainSwap } from '../src/editor/live.js'
 import { routeFile } from '../src/editor/pick.js'
 
 const failed = []
@@ -391,6 +391,16 @@ try {
     }
     check('words that become a kicker wait', !plainSwap('Welcome in', 'WELCOME IN'))
     check('a kicker that stays one swaps', plainSwap('WELCOME', 'HELLO THERE'))
+
+    // An ask's diff, placed at the lines of the file the preview was built from.
+    const asked = hunkChanges('content/blocks/Hero.md', [
+      '@@ -3,3 +3,3 @@', ' title: Hero', '-stat: "70+ Live Websites"', '+stat: "55+ Live Websites"', ' ---',
+      '@@ -18,3 +18,4 @@', ' ', '-70+ Live Websites', '+55+ Live Websites', ' ', '+A new line',
+    ].join('\n'))
+    check('an ask\'s changed lines land at their old line numbers',
+      JSON.stringify(asked.changes.map((c) => [c.line, c.old, c.next])) === '[[4,"70+ Live Websites","55+ Live Websites"],[19,"70+ Live Websites","55+ Live Websites"]]', JSON.stringify(asked))
+    check('a front-matter value is compared without its key or quotes', asked.changes[0].plain === true)
+    check('a line added alone is one the page cannot place', asked.unplaced === 1)
   }
 
   // ─── the route file a preview's address was built from ────────────────────

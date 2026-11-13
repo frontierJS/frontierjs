@@ -62,6 +62,12 @@ export interface Draft {
 
 export interface Author { name: string, email: string }
 
+/** A user as a commit names them; `system` is a system client, since an editor holds a grant and no membership. */
+export async function commitAuthor(system: any, userId: string | null | undefined): Promise<Author> {
+  const user = userId ? await system.user.findFirst({ where: { id: userId } }) : null
+  return { name: user?.name || user?.email, email: user?.email }
+}
+
 export class CheckoutError extends Error {}
 
 /** The draft moved under the caller: what they read is no longer its head. */

@@ -533,6 +533,29 @@ Basecamp itself lists drafts and history and holds the grants.
     folder, cost read from usage.
   - **Recommend A** (confidence 2) — the scope, the cap and the stream reader
     are built and driven; B rebuilds them for a smaller image.
+- ~~**Q31 — Whether an ask waits for Keep (4.3).**~~ **Answered 2026-11-13 (`FJS-D2120`): A — the run commits to the draft as soon as its grade passes, shown after as lines per file with Undo; a run that changed nothing ends `answered`, and one whose draft moved while it worked fails and asks again. Publishing stays the gate to the live site.** `FJS-D1242` has the owner
+  see the diff before it commits. On kobami.com's try-edit draft the owner
+  asked for the change to land without approving it: a draft is not the live
+  site, and Undo is one revert commit already built.
+  - **A** — the run commits to the draft as soon as its grade passes, shown
+    after as lines per file with Undo; a run that changed nothing ends
+    `answered`, and one whose draft moved while it worked fails and asks again.
+    Publishing stays the gate to the live site.
+  - **B** — keep `FJS-D1242`: the diff first, Keep commits.
+  - **Recommend A** (confidence 2) — Cursor and Claude Code apply an agent's
+    edit and offer the review and revert after it; the grade still refuses a
+    developer file or a look key before anything commits.
+- ~~**Q32 — How a preview shows a kept ask before it rebuilds (4.3, `FJS-4270`).**~~ **Answered 2026-11-13 (`FJS-D2121`): A — the ask's changed lines are swapped onto the page as `FJS-D1399` swaps a typed edit, and the panel polls `drafts.asked`, which carries the draft's preview status, until the preview has built past the head the ask read; then it says so, with Reload when anything could not be swapped.**
+  A kept ask said the preview "rebuilds shortly" and never said when it had;
+  the owner refreshed inside the ~60 s build and read the change as lost.
+  - **A** — the ask's changed lines are swapped onto the page as `FJS-D1399`
+    swaps a typed edit, and the panel polls `drafts.asked`, which carries the
+    draft's preview status, until the preview has built past the head the ask
+    read; then it says so, with Reload when anything could not be swapped.
+  - **B** — no swap: show the rebuild's progress, then reload the page.
+  - **C** — the swap only, with no word of when the rebuild lands.
+  - **Recommend A** (confidence 2) — the swap is built and driven for typed
+    edits, and the status is a file read basecamp already keeps per draft.
 
 ## The plan
 

@@ -12,7 +12,7 @@
 
 import { defineJob }         from '@frontierjs/caravan'
 import { runsAsApp }         from '../domain/job/job-context.ts'
-import { buildDraftPreview } from '../domain/site/site-preview.ts'
+import { buildDraftPreview, markPreview, previewStatuses } from '../domain/site/site-preview.ts'
 import { BUILD_TIMEOUT_MS }  from '../providers/executor.ts'
 
 const sitePreview = defineJob<{ appId: string; draft: string }>({
@@ -36,3 +36,9 @@ export default sitePreview
 /** Queue the draft's preview; a no-op while one is building, which builds the newest head anyway. */
 export const dispatchPreview = (app: { jobs: { dispatch: Function } }, appId: string, draft: string) =>
   app.jobs.dispatch(sitePreview, { appId, draft }, { unique: `site:preview:${appId}:${draft}`, actor: null, tenant: null, queue: 'site' })
+
+/** Queue the draft's preview, and say so unless a build is already on it. */
+export async function queuePreview(app: { jobs: { dispatch: Function } }, appId: string, draft: string, head: string): Promise<void> {
+  await dispatchPreview(app, appId, draft)
+  if (previewStatuses(appId)[draft]?.state !== 'building') markPreview(appId, draft, { state: 'queued', commit: head })
+}

@@ -1,15 +1,20 @@
 <script>
   // Ask.mesa — the owner asks a model for a change across the draft
-  // (`FJS-D1242`). Basecamp runs it over a copy of the draft's content and
-  // grades what it changed; nothing reaches the draft until Keep, which is one
-  // commit, and Undo is that commit's revert. The change may reach pages this
-  // one does not draw, so it is shown as lines per file rather than on the page.
+  // (`FJS-D1242`, `FJS-D2120`). Basecamp runs it over a copy of the draft's content, grades
+  // what it changed, and commits what passes to the draft at once; Undo is that
+  // commit's revert, and publishing stays the gate to the live site. The change
+  // may reach pages this one does not draw, so it is also listed as lines per file.
+  //
+  // A run this panel watched end shows its words on the page straight away, as
+  // a typed edit does (`FJS-D2121`); what the page cannot show waits for the
+  // rebuild, and the panel says when the preview has it.
   //
   // It looks like the dev server's Ask panel (`cli/core/vite-ask-client.js`)
   // with that panel's developer controls left out: basecamp holds one ask per
   // draft, so the log is that ask, and Close is the whole toolbar because the
   // bar's Ask button reopens it.
   import { clientFor } from './handoff.js'
+  import { hunkChanges, liveWords } from './live.js'
 
   export let site
   export let key
@@ -18,28 +23,56 @@
   const drafts = clientFor(site, key).service('drafts')
   const call   = (method, data) => drafts.invoke(method, null, { appId: site.appId, draft: site.draft, ...data })
   const RUNNING = ['queued', 'running']
+  const CHANGED = ['kept', 'undone']
+  const live    = liveWords()
 
   let request = ''
   let ask     = null
   let diff    = null
+  let preview = null
   let error   = null
   let busy    = false
+  // What this page showed of the change, and whether it was loaded before the preview had it.
+  let shown   = null
+  let stale   = false
+
+  // The preview catches up once it has built a head past the one the ask read.
+  $: rebuilt = preview?.state === 'ready' && preview.built === preview.commit && preview.commit !== ask?.commit
+  $: { if (CHANGED.includes(ask?.state) && !rebuilt) stale = true }
+  // A page loaded before the rebuild shows only what could be swapped into it.
+  $: reload = CHANGED.includes(ask?.state) && rebuilt && stale && (!shown || shown.waiting > 0)
 
   async function look() {
+    const was = ask?.state
     try {
       const got = await call('asked')
-      ask = got.ask; diff = got.diff
+      ask = got.ask; diff = got.diff; preview = got.preview ?? null
     } catch (err) {
       ask = null; diff = null
       if (err.code !== 404) error = err.message
     }
+    if (RUNNING.includes(was) && ask?.state === 'kept') show(false)
+  }
+
+  // The kept lines on the page now, or put back after an Undo.
+  function show(back) {
+    let unplaced = 0
+    const changes = (diff ?? []).flatMap((f) => {
+      const r = hunkChanges(f.path, f.hunks)
+      unplaced += r.unplaced
+      return r.changes
+    })
+    const swapped = back ? changes.map((c) => ({ ...c, old: c.next, next: c.old })) : changes
+    shown = { waiting: unplaced + live.show(swapped) }
+    live.keep()
   }
 
   async function act(method, data) {
     busy = true; error = null
     try {
       await call(method, data)
-      if (method === 'ask') request = ''
+      if (method === 'ask') { request = ''; shown = null; stale = false }
+      if (method === 'undo' && shown) show(true)
     } catch (err) {
       error = err.message
     }
@@ -58,7 +91,8 @@
   const linesOf = (hunks) => hunks.split('\n').filter((l) => l && !l.startsWith('+++') && !l.startsWith('---'))
   const count   = (hunks, sign) => linesOf(hunks).filter((l) => l[0] === sign).length
   const opOf    = (l) => l.startsWith('@@') ? 'gap' : l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'keep'
-  const shown   = (l) => l.startsWith('@@') ? '…' : l
+  const shownAs = (l) => l.startsWith('@@') ? '…' : l
+  const changes = (n) => n === 1 ? 'One change shows' : `${n} changes show`
 
   function ago(at) {
     const s = Math.max(0, Math.round((Date.now() - Date.parse(at)) / 1000))
@@ -69,7 +103,7 @@
   }
 
   look()
-  $.every(2000, look, { when: RUNNING.includes(ask?.state) })
+  $.every(2000, look, { when: RUNNING.includes(ask?.state) || (CHANGED.includes(ask?.state) && !rebuilt && preview?.state !== 'failed') })
 </script>
 
 <article class="card glass theme-basecamp fjs-ask" data-fjs-editor-ui aria-label="Ask for a change">
@@ -85,7 +119,7 @@
 
   <div class="fjs-ask-log" role="log">
     {#if !ask}
-      <p class="text-muted">Say what should change, in your own words. Claude changes the draft's pages and shows you every line before anything is kept.</p>
+      <p class="text-muted">Say what should change, in your own words. Claude changes the draft's pages, shows you every line it changed, and Undo puts them back. Nothing reaches the live site until you publish.</p>
     {:else}
       <div class="fjs-ask-you">
         <div class="fjs-ask-who"><strong>You</strong><span class="text-muted">{ago(ask.at)}</span></div>
@@ -100,25 +134,37 @@
           <p id="fjs-ask-reply">{ask.reply}</p>
         </div>
       {/if}
-      {#if ask.state === 'ready'}
-        {#each diff ?? [] as f (f.path)}
-          <details class="fjs-ask-file" data-path={f.path} open>
-            <summary>
-              <span class="fjs-ask-path">{f.path}</span>
-              <span class="text-muted">+{count(f.hunks, '+')} −{count(f.hunks, '-')}</span>
-            </summary>
-            <pre>{#each linesOf(f.hunks) as l}<span class={opOf(l)}>{shown(l)}</span>{/each}</pre>
-          </details>
-        {/each}
-      {/if}
-      {#if ask.state === 'kept'}
+      {#if CHANGED.includes(ask.state)}
         <div class="fjs-ask-run">
-          <span role="status" id="fjs-ask-kept">Kept on {site.draft} as one change. The preview rebuilds with it shortly.</span>
-          <button class="btn ghost" id="fjs-ask-undo" title="Put back what this ask changed" disabled={busy} onclick={() => act('undo')}>Undo</button>
+          {#if ask.state === 'kept'}
+            <span role="status" id="fjs-ask-kept">
+              {#if rebuilt}Changed on {site.draft}. The preview has it now{reload ? '; reload to see all of it here.' : '.'}
+              {:else if shown?.waiting}Changed on {site.draft}. {changes(shown.waiting)} once the preview rebuilds…
+              {:else if shown}Changed on {site.draft}, shown on this page. The preview is rebuilding…
+              {:else}Changed on {site.draft}. The preview is rebuilding…{/if}
+            </span>
+          {:else}
+            <span class="text-muted" role="status" id="fjs-ask-undone">{rebuilt ? `Undone. The preview has it back${reload ? '; reload to see it here.' : '.'}` : 'Undone. The preview is rebuilding without it…'}</span>
+          {/if}
+          <span class="fjs-ask-acts">
+            {#if reload}<button class="btn ghost" id="fjs-ask-reload" onclick={() => location.reload()}>Reload</button>{/if}
+            {#if ask.state === 'kept'}<button class="btn ghost" id="fjs-ask-undo" title="Put back what this ask changed" disabled={busy} onclick={() => act('undo')}>Undo</button>{/if}
+          </span>
         </div>
+        {#if ask.state === 'kept'}
+          {#each diff ?? [] as f (f.path)}
+            <details class="fjs-ask-file" data-path={f.path} open>
+              <summary>
+                <span class="fjs-ask-path">{f.path}</span>
+                <span class="text-muted">+{count(f.hunks, '+')} −{count(f.hunks, '-')}</span>
+              </summary>
+              <pre>{#each linesOf(f.hunks) as l}<span class={opOf(l)}>{shownAs(l)}</span>{/each}</pre>
+            </details>
+          {/each}
+        {/if}
       {/if}
-      {#if ask.state === 'undone'}
-        <p class="fjs-ask-run text-muted" role="status">Undone. The preview rebuilds without it shortly.</p>
+      {#if preview?.state === 'failed' && CHANGED.includes(ask.state)}
+        <p class="fjs-ask-error" role="alert" id="fjs-ask-build-failed">The preview did not rebuild: {preview.error ?? 'its build failed'}</p>
       {/if}
       {#if ask.state === 'failed'}
         <p class="fjs-ask-error" role="alert" id="fjs-ask-failed">{ask.error}</p>
@@ -127,12 +173,7 @@
     {#if error}<p class="fjs-ask-error" role="alert">{error}</p>{/if}
   </div>
 
-  {#if ask?.state === 'ready'}
-    <footer class="fjs-ask-foot">
-      <button class="btn ghost" id="fjs-ask-discard" disabled={busy} onclick={() => act('discard')}>Discard</button>
-      <button class="btn primary" id="fjs-ask-keep" disabled={busy} onclick={() => act('keep')}>Keep on {site.draft}</button>
-    </footer>
-  {:else if !RUNNING.includes(ask?.state)}
+  {#if !RUNNING.includes(ask?.state)}
     <footer class="fjs-ask-compose">
       <textarea id="fjs-ask" rows="3" aria-label="What should change?" value={request}
                 oninput={(e) => request = e.target.value} onkeydown={keydown}
@@ -259,7 +300,13 @@
   }
   .fjs-ask-run {
     justify-content: space-between;
+    flex-wrap: wrap;
     font-size: 0.9em;
+  }
+  .fjs-ask-acts {
+    display: flex;
+    gap: 0.25rem;
+    margin-left: auto;
   }
   .fjs-ask-error {
     padding: 0.45rem 0.7rem;

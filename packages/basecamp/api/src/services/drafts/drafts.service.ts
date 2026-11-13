@@ -22,10 +22,9 @@
 //                         `photo` (a file) a new photo beside the old one, one commit
 //   POST /drafts  preview { appId, draft } — build its preview again
 //   POST /drafts  ask     { appId, draft, request } — a model's edit of the draft's content, run as a job
-//   GET  /drafts  asked   { appId, draft } — the draft's last ask, and while it waits, the lines it changes
-//   POST /drafts  keep    { appId, draft } — that ask's changes as one commit on the draft
-//   POST /drafts  discard { appId, draft } — that ask's changes dropped
-//   POST /drafts  undo    { appId, draft } — the kept ask's commit reverted on the draft
+//   GET  /drafts  asked   { appId, draft } — the draft's last ask, the lines a kept one changed, and the draft's preview
+//   POST /drafts  discard { appId, draft } — that ask's answer dismissed
+//   POST /drafts  undo    { appId, draft } — the ask's commit reverted on the draft
 //   POST /drafts  publish { appId, draft } — merge, build, deploy (the `publish` grant)
 //   GET  /drafts  history { appId } — the site's live releases, newest first, each with what it shipped
 //   POST /drafts  revert  { appId, release } — a draft undoing one publish
@@ -35,7 +34,7 @@
 // Opening a draft and every save that changes a file queue its preview
 // (`domain/site/site-preview.ts`), and `list` answers each draft's last one, and
 // its last ask (`domain/site/site-ask.ts`): a model's run over a copy of the draft's
-// content, which leaves a tree and commits nothing until the owner keeps it.
+// content, which commits to the draft when its grade passes; Undo is the review.
 //
 // Publish writes a `Deployment` through asSystem() — the publisher may be a
 // member of nothing, so the release is the app's, confined by the grant read
@@ -85,15 +84,15 @@ import { locateText } from '@frontierjs/toolbelt/textedit'
 import { db } from '../../core/resource.ts'
 import { isGit } from '../../domain/release/app-source.ts'
 import {
-  CheckoutError, StaleDraft, commitTree, diffTree, draftFiles, listDrafts, openDraft, readDraftFile, readDraftFolder,
+  CheckoutError, StaleDraft, commitAuthor, diffTree, draftFiles, listDrafts, openDraft, readDraftFile, readDraftFolder,
   revertDraft, revertOnDraft, saveDraftFile, saveDraftFiles, shipped, type Author, type FileChange, type GitSite,
 } from '../../domain/site/site-checkout.ts'
 import { PhotoRefused, reencodePhoto } from '../../domain/site/site-photo.ts'
-import { isSitePreviewOrigin, markPreview, previewStatuses } from '../../domain/site/site-preview.ts'
-import { dispatchPreview } from '../../jobs/site-preview.job.ts'
+import { isSitePreviewOrigin, previewStatuses } from '../../domain/site/site-preview.ts'
+import { queuePreview as queueBuild } from '../../jobs/site-preview.job.ts'
 import { dispatchAsk } from '../../jobs/site-ask.job.ts'
 import { anthropicKey } from '../../providers/model/anthropic.ts'
-import { ASK_MAX_REQUEST, NO_KEY, askBusy, askStatuses, dropAsk, markAsk, queueAsk, type AskStatus } from '../../domain/site/site-ask.ts'
+import { ASK_MAX_REQUEST, NO_KEY, askBusy, askMessage, askStatuses, dropAsk, markAsk, queueAsk, type AskStatus } from '../../domain/site/site-ask.ts'
 import { dispatchPublish } from '../../jobs/site-publish.job.ts'
 import { PUBLISH_STEPS, type PublishSnapshot } from '../../domain/site/site-publish.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -158,11 +157,7 @@ async function checkout<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Queue the draft's preview, and say so unless a build is already on it. */
-async function queuePreview(appId: string, draft: string, head: string): Promise<void> {
-  await dispatchPreview($.app, appId, draft)
-  if (previewStatuses(appId)[draft]?.state !== 'building') markPreview(appId, draft, { state: 'queued', commit: head })
-}
+const queuePreview = (appId: string, draft: string, head: string) => queueBuild($.app, appId, draft, head)
 
 /** The site's last publish, as /sites/ shows it: its state, the draft, and each step's words. */
 async function lastPublish(appId: string) {
@@ -177,13 +172,10 @@ async function lastPublish(appId: string) {
 }
 
 /** The caller as a commit names them. */
-async function author(): Promise<Author> {
-  const user = await sys().user.findFirst({ where: { id: me() } })
-  return { name: user?.name || user?.email, email: user?.email }
-}
+const author = (): Promise<Author> => commitAuthor(sys(), me())
 
 const ASK_STATE: Record<AskStatus['state'], string> = {
-  queued: 'is still running', running: 'is still running', ready: 'is waiting to be kept or discarded',
+  queued: 'is still running', running: 'is still running', answered: 'changed nothing',
   failed: 'kept nothing', kept: 'is kept', undone: 'was kept and undone',
 }
 
@@ -194,13 +186,6 @@ function askIn(appId: string, states: AskStatus['state'][]): { draft: string, as
   if (!ask) throw new NotFound(`there is no ask on ${draft}`)
   if (!states.includes(ask.state)) throw new Conflict(`the ask on ${draft} ${ASK_STATE[ask.state]}`)
   return { draft, ask }
-}
-
-/** A kept ask's commit message: the owner's words, the first line as its subject. */
-function askMessage(request: string): string {
-  const first = request.split('\n')[0].trim()
-  const subject = `Asked: ${first.length > 60 ? first.slice(0, 59) + '…' : first}`
-  return subject.slice(7) === request ? subject : `${subject}\n\n${request}`
 }
 
 /** A save's `text`, the words a click on the preview changed, or null when the save is a form's. */
@@ -238,7 +223,6 @@ export default createService({
     { method: 'preview', gate: LEVELS.VISITOR },
     { method: 'ask',     gate: LEVELS.VISITOR },
     { method: 'asked',   read: true, gate: LEVELS.VISITOR },
-    { method: 'keep',    gate: LEVELS.VISITOR },
     { method: 'discard', gate: LEVELS.VISITOR },
     { method: 'undo',    gate: LEVELS.VISITOR },
     { method: 'publish', gate: LEVELS.VISITOR },
@@ -405,24 +389,14 @@ export default createService({
     const draft = arg('draft')
     // The editor polls this from the moment it opens, so "never asked" is an answer, not a 404.
     const ask   = askStatuses(site.id)[draft] ?? null
-    if (ask?.state !== 'ready') return { draft, ask, diff: null }
-    return { draft, ask, diff: await checkout(() => diffTree(site, ask.commit!, ask.tree!)) }
-  },
-
-  async keep() {
-    const site = await grantedSite()
-    const { draft, ask } = askIn(site.id, ['ready'])
-    if (!ask.files.length) throw new BadRequest('that ask changed nothing, so there is nothing to keep')
-    const by = await author()
-    const saved = await checkout(() => commitTree(site, draft, { tree: ask.tree!, head: ask.commit!, message: askMessage(ask.request) }, by))
-    markAsk(site.id, draft, { state: 'kept', kept: saved.commit })
-    await queuePreview(site.id, draft, saved.commit)
-    return { draft, commit: saved.commit, files: ask.files.map(f => f.path) }
+    const preview = previewStatuses(site.id)[draft] ?? null
+    if (ask?.state !== 'kept') return { draft, ask, diff: null, preview }
+    return { draft, ask, diff: await checkout(() => diffTree(site, ask.commit!, ask.tree!)), preview }
   },
 
   async discard() {
     const site = await grantedSite()
-    const { draft } = askIn(site.id, ['ready', 'failed', 'undone'])
+    const { draft } = askIn(site.id, ['answered', 'failed', 'undone'])
     dropAsk(site.id, draft)
     return { draft }
   },

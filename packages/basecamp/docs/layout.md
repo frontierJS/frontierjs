@@ -68,9 +68,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           mode scoped to it, grades every file it added, changed or removed
           with site-kit's `changeRefusal` (`gradeAsk`; one refusal drops the
           run whole), and hashes what passed into a TREE on the head it read.
-          Nothing commits until the owner's `drafts.keep` (one commit on
-          the head the run read, refused if the draft moved); `discard`
-          forgets it and `undo` reverts the kept commit on the draft.
+          A pass commits that tree to the draft at once as the asker (one
+          commit on the head the run read, refused if the draft moved) and
+          the job queues the preview; a run that changed nothing is
+          `answered`. `drafts.asked` carries a kept ask's diff and the draft's
+          preview status; `undo` reverts the kept commit and `discard`
+          dismisses an answered, failed or undone ask.
           The key is the workspace's Anthropic `providerKey` Secret
           (`FJS-D2109`, `anthropicKey` in providers/model/anthropic.ts), handed
           to that child only as `ANTHROPIC_API_KEY`; the limit is the

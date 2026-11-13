@@ -15,16 +15,17 @@
 // `--max-budget-usd`. A run that hits it is a failed ask, and its half-made
 // edits are dropped with the folder.
 //
-// **What a run leaves is graded, then a tree, not a commit.** Every file it
-// added, changed or removed is held to the rule an owner's own save is
-// (`FJS-D1226`, `changeRefusal`), and one refusal drops the run whole
-// (`FJS-D1242`): the prompt asks the model to leave the look keys alone, and
-// this is what holds it to that. What passes is hashed into the clone as a tree
-// on the head the run read. The owner keeps it as one commit on the draft, or
-// discards it, and a kept ask's Undo is that commit's revert. A run's state is
-// a file beside the clone, `<SITES_DIR>/<appId>.asks.json`, keyed by draft, as
-// a preview's is: one ask per draft at a time, and losing the file loses an
-// ask nobody kept.
+// **What a run leaves is graded, then committed.** Every file it added,
+// changed or removed is held to the rule an owner's own save is (`FJS-D1226`,
+// `changeRefusal`), and one refusal drops the run whole (`FJS-D1242`): the
+// prompt asks the model to leave the look keys alone, and this is what holds it
+// to that. What passes is hashed into the clone as a tree on the head the run
+// read and committed to the draft as the asker, at once. The draft is not the
+// live site and Publish is still the gate, so Undo is the review: it reverts
+// that commit. A draft that moved while the run worked is refused, since the
+// tree would undo what moved it. A run's state is a file beside the clone,
+// `<SITES_DIR>/<appId>.asks.json`, keyed by draft, as a preview's is: one ask
+// per draft at a time.
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -32,15 +33,19 @@ import { join } from 'node:path'
 import { childEnv } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import { LOCKED_KEYS, changeRefusal } from '@frontierjs/site-kit/editable'
-import { exportDraftContent, filesUnder, sitesDir, treeFromExport, type Asked, type GitSite } from './site-checkout.ts'
+import { StaleDraft, commitAuthor, commitTree, exportDraftContent, filesUnder, sitesDir, treeFromExport, type Asked, type GitSite } from './site-checkout.ts'
 import { gitCredential } from '../../providers/source/index.ts'
 import { anthropicKey } from '../../providers/model/anthropic.ts'
 import { isGit } from '../release/app-source.ts'
 import { env } from '../../core/env.ts'
 
 export interface AskStatus {
-  /** `queued` and `running` are on their way; `ready` left a tree, `failed` says why it did not; `kept` and `undone` are the owner's. */
-  state:   'queued' | 'running' | 'ready' | 'failed' | 'kept' | 'undone'
+  /**
+   * `queued` and `running` are on their way. `kept` is committed to the draft;
+   * `answered` changed nothing and its `reply` says why; `failed` says why it
+   * did not commit. `undone` is a `kept` the owner reverted.
+   */
+  state:   'queued' | 'running' | 'answered' | 'failed' | 'kept' | 'undone'
   request: string
   by:      string | null
   /** The draft's head the run read, which a save must still find there. */
@@ -51,8 +56,15 @@ export interface AskStatus {
   reply:   string | null
   cost:    number | null
   error:   string | null
-  /** The commit a keep made on the draft, which Undo reverts. */
+  /** The commit the ask made on the draft, which Undo reverts. */
   kept?:   string | null
+}
+
+/** A kept ask's commit message: the owner's words, the first line as its subject. */
+export function askMessage(request: string): string {
+  const first = request.split('\n')[0].trim()
+  const subject = `Asked: ${first.length > 60 ? first.slice(0, 59) + '…' : first}`
+  return subject.slice(7) === request ? subject : `${subject}\n\n${request}`
 }
 
 /** Longest an ask runs before it is stopped; a stale `running` past twice this is no longer in the way. */
@@ -118,7 +130,7 @@ export function markAsk(appId: string, draft: string, patch: Partial<AskStatus> 
   return write(appId, draft, { ...prev, ...patch, at: new Date().toISOString(), error: patch.error ?? null }, root)
 }
 
-/** A discarded ask: its tree is left for git to collect, and the draft has no ask. */
+/** A discarded ask: the draft has no ask, and an unkept tree is left for git to collect. */
 export function dropAsk(appId: string, draft: string, root = sitesDir()): void {
   const all = askStatuses(appId, root)
   if (!(draft in all)) return
@@ -203,7 +215,16 @@ export async function askDraft(app: App, appId: string, draft: string,
     if (refused.length)
       return markAsk(appId, draft, { state: 'failed', cost, reply: texts.at(-1) ?? null, error: `nothing was kept: ${refused.join('; ')}` }, root)
     const { tree, files } = await treeFromExport(site, head, dir, blobs, root)
-    return markAsk(appId, draft, { state: 'ready', tree, files, cost, reply: texts.at(-1) ?? null }, root)
+    const reply = texts.at(-1) ?? null
+    if (!files.length) return markAsk(appId, draft, { state: 'answered', tree, files, cost, reply }, root)
+    try {
+      const by = await commitAuthor((app.db as any).asSystem(), asked.by)
+      const saved = await commitTree(site, draft, { tree, head, message: askMessage(asked.request) }, by, root)
+      return markAsk(appId, draft, { state: 'kept', tree, files, cost, reply, kept: saved.commit }, root)
+    } catch (err) {
+      if (err instanceof StaleDraft) return markAsk(appId, draft, { state: 'failed', cost, reply, error: err.message }, root)
+      throw err
+    }
   } catch (err) {
     return fail((err as Error).message)
   } finally {

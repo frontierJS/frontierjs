@@ -9008,6 +9008,12 @@ Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.
 
 The paper made no recommendation. The owner chose a Workbench page (list buckets, upload, download, delete) over a fli verb or a later paper.
 
+### <a id="fjs-d2120"></a>2026-11-13 · `FJS-D2120` — Q31 — Whether an ask waits for Keep (4.3) — The run commits to the draft as soon as its grade passes, shown after as lines per file with Undo; a run that changed nothing ends `answered`, and one whose draft moved while it worked fails and asks again. Publishing stays the gate to the live site.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (keep `FJS-D1242`: the diff first, Keep commits).
+
+The paper's recommendation, taken as written: (confidence 2) — Cursor and Claude Code apply an agent's edit and offer the review and revert after it; the grade still refuses a developer file or a look key before anything commits.
+
 ### <a id="fjs-d2099"></a>2026-11-12 · `FJS-D2099` — Q14 — Spaces beside B2 (Phase 11) — Either, per Basecamp: the row offers both setups.
 
 Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **C** was picked over **A** (B2 stays the locked primary; Spaces is a second copy. Needs a backup sent to two destinations, which no row can name today), **B** (Spaces replaces B2).
@@ -14006,6 +14012,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (keep that table internal and export `tableFor(state)`, the table a host steps for its mode and recording state), **C** (recording as a mode in `MODES`).
 
 Against the recommendation (**B**): the owner kept the exported table: the smallest change, and the string host already steps it; a host reads state.recording to choose it.
+
+### <a id="fjs-d2121"></a>2026-11-13 · `FJS-D2121` — Q32 — How a preview shows a kept ask before it rebuilds (4.3, `FJS-4270`) — The ask's changed lines are swapped onto the page as `FJS-D1399` swaps a typed edit, and the panel polls `drafts.asked`, which carries the draft's preview status, until the preview has built past the head the ask read; then it says so, with Reload when anything could not be swapped.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (no swap: show the rebuild's progress, then reload the page), **C** (the swap only, with no word of when the rebuild lands).
+
+The paper's recommendation, taken as written: (confidence 2) — the swap is built and driven for typed edits, and the status is a file read basecamp already keeps per draft.
 
 ### <a id="fjs-d2106"></a>2026-11-12 · `FJS-D2106` — Q19 — A replacement removing and inserting the same number of lines keeps an inside mark on its line and column, clamped to the new line; any other replacement moves it to the start.
 

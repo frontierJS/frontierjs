@@ -12,7 +12,7 @@
   // element whose stamp it is over, and a click changes its words in place, or
   // opens the file when they cannot be changed alone, instead of following a
   // link. Browse hands clicks back to the page. Ask is a change across the
-  // draft in the owner's words, shown as lines before it is kept.
+  // draft in the owner's words, kept at once and undone in one step.
   import Ask from './Ask.mesa'
   import Field from './Field.mesa'
   import Inline from './Inline.mesa'
@@ -151,7 +151,8 @@
 
 <style>
   /* Ask sits on the bar, whatever height the bar wraps to. The column is wider
-     than the bar, so only its children take the pointer. */
+     than the bar, so only its children take the pointer; Ask's root is Ask's
+     element, which a scoped selector would miss. */
   .fjs-editor-dock {
     position: fixed;
     right: 1rem;
@@ -165,7 +166,7 @@
     gap: 0.75rem;
     pointer-events: none;
   }
-  .fjs-editor-dock > * {
+  .fjs-editor-dock > :global(*) {
     pointer-events: auto;
   }
   .fjs-editor {

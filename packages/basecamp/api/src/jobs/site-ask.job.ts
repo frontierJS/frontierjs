@@ -2,6 +2,9 @@
 // of a copy of its content (`IDEAS/owner-editing.md` 4.1). Dispatched as
 // `site:ask` by `drafts.ask`; the work is `domain/site/site-ask.ts`.
 //
+// A passing ask commits to the draft inside `askDraft`; this handler queues the
+// preview of that commit, which a domain module cannot do without importing a job.
+//
 // The app's own work, dispatched `actor: null`, for `site:preview`'s reason:
 // an editor holds a grant and no membership. One attempt — a retry would spend
 // the run's budget again. `unique` per draft, so a second press while one runs
@@ -10,6 +13,7 @@
 import { defineJob }      from '@frontierjs/caravan'
 import { runsAsApp }      from '../domain/job/job-context.ts'
 import { ASK_TIMEOUT_MS, askDraft } from '../domain/site/site-ask.ts'
+import { queuePreview } from './site-preview.job.ts'
 
 const siteAsk = defineJob<{ appId: string; draft: string }>({
   name: 'site:ask',
@@ -17,6 +21,7 @@ const siteAsk = defineJob<{ appId: string; draft: string }>({
   handler: async (ctx) => {
     const { app } = runsAsApp(ctx, 'site:ask')
     const status = await askDraft(app, ctx.data.appId, ctx.data.draft)
+    if (status?.state === 'kept') await queuePreview(app, ctx.data.appId, ctx.data.draft, status.kept!)
     app.logger.child('site-ask').info(status?.state ?? 'nothing queued', {
       appId: ctx.data.appId, draft: ctx.data.draft, files: status?.files.length ?? 0, cost: status?.cost ?? null, error: status?.error ?? null,
     })
