@@ -77,7 +77,9 @@ title: Workbench
   import TabPanel   from '@frontierjs/ui/components/layout/TabPanel.mesa'
   import Tabs       from '@frontierjs/ui/components/layout/Tabs.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
-  import Terminal   from '../../components/Terminal.mesa'
+  import Terminal   from '@frontierjs/ui/components/display/Terminal.mesa'
+  import { terminalProtocols, terminalUrl } from '../../lib/terminal.js'
+  import { scaled } from '../../lib/text-size.js'
   import ClaudeCode from '../../components/claude/ClaudeCode.mesa'
 
   const POLL_MS   = 2000
@@ -2106,7 +2108,7 @@ title: Workbench
 
             {:else if tabOf(p) === 'terminal'}
               <div class="workbench-panel workbench-terminal-panel" role="region" aria-labelledby={`workbench-view-${p.id}`}>
-                <Terminal pin={p.id} />
+                <Terminal session={p.id} url={terminalUrl} protocols={terminalProtocols} fontSize={scaled(13)} />
               </div>
 
             {:else if tabOf(p) === 'settings'}
@@ -2512,7 +2514,7 @@ title: Workbench
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  .workbench-terminal-panel { display: flex; flex-direction: column; overflow: hidden; }
+  .workbench-terminal-panel { display: flex; flex-direction: column; overflow: hidden; --terminal-min-block: 16rem; }
   .workbench-chat-panel { display: flex; flex-direction: column; gap: var(--space-xs); overflow: hidden; }
   .workbench-composer textarea { resize: vertical; inline-size: 100%; max-block-size: 30vh; }
   .workbench-shots { gap: var(--space-xs); }

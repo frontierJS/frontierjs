@@ -22,6 +22,21 @@ export const words = (s) => String(s ?? '').replace(/\s+/g, ' ').trim()
 export const plainSwap = (old, next) =>
   !INLINE.test(next) && !OPENS.test(next) && !marksText(next) && isKickerText(words(old)) === isKickerText(words(next))
 
+// The editor's styles live in its shadow root and cannot reach the page, so
+// the rule hiding the words under the inline textarea is adopted by the page.
+const UNDER = 'data-fjs-editor-under'
+let underSheet
+
+/** Hides `el`'s words while a textarea lies over them, or shows them again. */
+export function hideWords(el, on) {
+  if (!underSheet) {
+    underSheet = new CSSStyleSheet()
+    underSheet.replaceSync(`[${UNDER}], [${UNDER}] * { color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important }`)
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, underSheet]
+  }
+  el.toggleAttribute(UNDER, on)
+}
+
 const quoted = (v) => v.replace(/["\\]/g, '\\$&')
 
 // The leaves a change is shown in: stamped by `loc` exactly, or at `path:line`,

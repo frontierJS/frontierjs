@@ -6,7 +6,17 @@ examples:
   - fli top
   - fli top --interval 1000
   - fli top --once
+  - fli top --hitlist
 flags:
+  hitlist:
+    char: H
+    type: boolean
+    description: one screen of what is maxing the machine — jobs (not process names), where each runs, who started it, how to stop it
+    defaultValue: false
+  json:
+    type: boolean
+    description: with --hitlist, print the jobs as JSON for a script or an agent
+    defaultValue: false
   once:
     type: boolean
     description: print the process table once and exit, for a script or an ssh session
@@ -71,10 +81,27 @@ process shows none unless fli top runs as root.
 `--once` prints the table with CPU over one second and exits, and needs no
 terminal.
 
+`--hitlist` answers "what is maxing the CPU?" in one screen. It samples for a
+second and groups every process into the JOB a launcher started — a Claude
+session, an interactive shell, the desktop, a service — so twenty `tsc` workers
+under one `bun run --filter * typecheck` are one row, not `node 540%`. Each row
+says where the job runs (an agent worktree reads `wt:agent-xxxx`), who started
+it, and its age; the head line says whether memory is part of it (swap,
+pressure stalls, the kernel reclaiming). It prints a `kill` for the top three
+and kills nothing. Plain JS in `core/hitlist.js`, so it needs no build.
+
 ```js
 if (process.platform !== 'linux') {
   log.error('fli top reads /proc, so it runs on Linux only')
   process.exitCode = 1; return
+}
+if (flag.hitlist) {
+  const { sample, buildHitlist, renderHitlist } = await import(resolve(global.fliRoot, 'core/hitlist.js'))
+  const { chalk } = await import(resolve(global.fliRoot, 'core/color.js'))
+  const list = buildHitlist(await sample(1000))
+  if (flag.json) console.log(JSON.stringify(list, null, 2))
+  else console.log(renderHitlist(list, { width: process.stdout.columns || Number(process.env.COLUMNS) || 120, c: chalk }).join('\n'))
+  return
 }
 if (!flag.once && (!process.stdin.isTTY || !process.stdout.isTTY)) {
   log.error('fli top needs a terminal')

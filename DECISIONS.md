@@ -1887,6 +1887,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1313"></a>2026-11-13 · `FJS-D1313` — How does auth finish an OAuth flow that connects a TENANT's third-party account — tokens to the app's own row, not a Credential and a session — One more flow kind on the existing engine: `oauthBegin` takes `grant: { model, id }` (and `OauthFlow` gains a guarded `grant` and the initiator's id, set only by a service that has graded the caller), and the callback route, seeing a grant on the flow, calls the provider's `onGrant({ tokens, identity, grant, initiator })` that the app declares in `oauthProviders` instead of `oauthResolve`. A provider declares `purpose: 'grant'` and is then absent from `oauthProviderNames()` for sign-in, so `google-business` cannot become a login. Auth owns the redirect, state, PKCE and exchange; the app owns where the tokens land, so auth never learns the app's `Integration` model.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`connections.connect(provider, { into })` completes `FJS-D960` and widens it: the Credential row stays the one place tokens land, with `ownerType`/`ownerId` (user, or the app's row), and conduit's resolver reads `Credential` for any owner. Nothing app-specific to wire, but a rotating refresh token then lives in auth's table rather than the app's `@secret` field, and an app whose row already holds the tokens (Jobber's `Integration`) copies them across), **C** (no auth change: the app composes `oauthBegin`/`oauthCallback` itself in its own routes, as serpgrid did, and auth documents it. Costs each app the pending-row-by-state-digest workaround `FJS-2246` records, and nothing marks the provider as grant-only).
+
+The paper's recommendation, taken as written: `oauthBegin`/`oauthCallback` are already the right engine and serpgrid spent them as-is, so what is missing is only the flow's purpose and who it was started for, both facts the flow row can carry; `onGrant` keeps the write at the app's model, where its gate and `@secret` already are, and `purpose` answers the sign-in-provider leak without a second provider table. B moves the tokens out of the row `FJS-D848`'s resolver is already written against, and C is the status quo the row exists to end. Confidence 2: Supabase leaves provider tokens to the app, but Better Auth ties them to a signed-in user's linked account, so precedent splits. - **Prior art** (read 2026-11-01) — Supabase Auth says "Provider tokens are intentionally not stored in your project's database" and leaves persisting and refreshing them to the app ([docs](https://supabase.com/docs/guides/auth/social-login)). Better Auth's `linkSocial` connects an extra provider, with more scopes by repeating the call, to an already signed-in user's account, and its token calls need that account ([docs](https://www.better-auth.com/docs/concepts/oauth)). Supabase matches A, Better Auth matches B. Neither has a grant-only flow.
+
 ### <a id="fjs-d2111"></a>2026-11-13 · `FJS-D2111` — Q14 — Where a Basecamp keeps what it dials with — A `Peer` model (`name`, `url`, `keyId`) per workspace, and the private key derived from `ENCRYPTION_KEY` per workspace as `hubSigningKeys` is (`FJS-D1604`), never stored.
 
 Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **D** was picked over **A** (a `Peer` model in Basecamp: `name`, `url`, `keyId`, per workspace; the private key one `Secret` row the workspace holds (`kind: peer`), the public half shown on the API keys screen for the other owner to paste), **B** (a conduit target per peer, held in `ConduitTarget` as every other provider is, with the private key in the conduit's credential store; the screen is the conduits screen), **C** (the Workbench shape: config, outside the database).
@@ -9002,17 +9008,21 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
-### <a id="fjs-d2100"></a>2026-11-12 · `FJS-D2100` — Q15 — Files to Spaces that are not backups (Phase 12) — A Workbench page: list buckets, upload, download, delete.
+### <a id="fjs-d2125"></a>2026-11-13 · `FJS-D2125` — The integrated terminal has one core in two halves: `@frontierjs/junction/terminal` serves the shell, `@frontierjs/ui`'s `Terminal.mesa` draws it, and a mount with no `refuse` throws.
 
-Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **B** was picked over **A** (`fli spaces:put <path> [bucket/prefix]`), **C** (A separate paper, later).
-
-The paper made no recommendation. The owner chose a Workbench page (list buckets, upload, download, delete) over a fli verb or a later paper.
+Workbench and Lathe each carried a copy of the same terminal — Bun's PTY behind a raw socket, the `{ i }`/`{ r }` frame protocol, the clamp bounds, the tmux reattach, xterm.js in the page — and the copies had already drifted (Lathe's lazy import and key passthrough, Workbench's Reconnect button and subprotocol token). The owner ruled *extract both halves*. The server half is `terminalSocket(app, path, { refuse, cwd, session, env, socket })` and `endShell(socket, session)` behind a junction subpath, a battery like `/cache` (`FJS-D640`); the page half is `components/display/Terminal.mesa`, which imports neither sierra nor a client — the app hands it `url` and `protocols` — and loads `@xterm/xterm` and `@xterm/addon-fit` by dynamic `import()`, so they are OPTIONAL peers of ui and each app's own dependencies. `refuse` is required and has no permissive default, because this is a shell on the machine and a forgotten check is a shell for whoever reaches the port: `refuse.upgrade` (a string is a 403) and/or `refuse.open` (`{ code, reason }` closes the socket) decide every refusal, including the app's own *no such folder*, so `cwd` and `session` only answer. Reopen as a separate `@frontierjs/terminal` package if a third consumer appears or the xterm peers make trouble in ui. Lives in `packages/junction/src/terminal/index.ts` and `packages/ui/components/display/Terminal.mesa`.
 
 ### <a id="fjs-d2120"></a>2026-11-13 · `FJS-D2120` — Q31 — Whether an ask waits for Keep (4.3) — The run commits to the draft as soon as its grade passes, shown after as lines per file with Undo; a run that changed nothing ends `answered`, and one whose draft moved while it worked fails and asks again. Publishing stays the gate to the live site.
 
 Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (keep `FJS-D1242`: the diff first, Keep commits).
 
 The paper's recommendation, taken as written: (confidence 2) — Cursor and Claude Code apply an agent's edit and offer the review and revert after it; the grade still refuses a developer file or a look key before anything commits.
+
+### <a id="fjs-d2100"></a>2026-11-12 · `FJS-D2100` — Q15 — Files to Spaces that are not backups (Phase 12) — A Workbench page: list buckets, upload, download, delete.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **B** was picked over **A** (`fli spaces:put <path> [bucket/prefix]`), **C** (A separate paper, later).
+
+The paper made no recommendation. The owner chose a Workbench page (list buckets, upload, download, delete) over a fli verb or a later paper.
 
 ### <a id="fjs-d2099"></a>2026-11-12 · `FJS-D2099` — Q14 — Spaces beside B2 (Phase 11) — Either, per Basecamp: the row offers both setups.
 
@@ -14007,17 +14017,17 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
-### <a id="fjs-d2107"></a>2026-11-12 · `FJS-D2107` — Q20 — An exported `RECORDING` table (`VIM.normal` with `q` as `recordStop`) a host steps in place of `VIM.normal` while `state.recording` is set.
-
-Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (keep that table internal and export `tableFor(state)`, the table a host steps for its mode and recording state), **C** (recording as a mode in `MODES`).
-
-Against the recommendation (**B**): the owner kept the exported table: the smallest change, and the string host already steps it; a host reads state.recording to choose it.
-
 ### <a id="fjs-d2121"></a>2026-11-13 · `FJS-D2121` — Q32 — How a preview shows a kept ask before it rebuilds (4.3, `FJS-4270`) — The ask's changed lines are swapped onto the page as `FJS-D1399` swaps a typed edit, and the panel polls `drafts.asked`, which carries the draft's preview status, until the preview has built past the head the ask read; then it says so, with Reload when anything could not be swapped.
 
 Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (no swap: show the rebuild's progress, then reload the page), **C** (the swap only, with no word of when the rebuild lands).
 
 The paper's recommendation, taken as written: (confidence 2) — the swap is built and driven for typed edits, and the status is a file read basecamp already keeps per draft.
+
+### <a id="fjs-d2107"></a>2026-11-12 · `FJS-D2107` — Q20 — An exported `RECORDING` table (`VIM.normal` with `q` as `recordStop`) a host steps in place of `VIM.normal` while `state.recording` is set.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (keep that table internal and export `tableFor(state)`, the table a host steps for its mode and recording state), **C** (recording as a mode in `MODES`).
+
+Against the recommendation (**B**): the owner kept the exported table: the smallest change, and the string host already steps it; a host reads state.recording to choose it.
 
 ### <a id="fjs-d2106"></a>2026-11-12 · `FJS-D2106` — Q19 — A replacement removing and inserting the same number of lines keeps an inside mark on its line and column, clamped to the new line; any other replacement moves it to the start.
 
@@ -21710,6 +21720,48 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2124"></a>2026-11-13 · `FJS-D2124` — One format for blueprints and App export — One format: an App export is a blueprint whose values are filled in, with secrets blanked.
+
+Asked in [`IDEAS/blueprint-catalog.md`](IDEAS/blueprint-catalog.md) § Open questions. **A** was picked over **B** (two formats: the blueprint file here, and a separate App export).
+
+The paper's recommendation, taken as written: an exported App with its values replaced by params IS a blueprint, so B is two origins for one truth (§ V *origin*), and the two would drift on the first field added to one of them.
+
+### <a id="fjs-d2123"></a>2026-11-13 · `FJS-D2123` — Where the converters run and what they write — A script in the basecamp package, `bun run blueprint:convert`, that writes `db/blueprints/<slug>.blueprint.yml` for review and commit.
+
+Asked in [`IDEAS/blueprint-catalog.md`](IDEAS/blueprint-catalog.md) § Open questions. **A** was picked over **B** (a `fli` command that does the same), **C** (a Basecamp screen that imports a CapRover, Coolify or Dokploy file at runtime).
+
+The paper's recommendation, taken as written: Phase 3 curates by hand, so conversion is a reviewed, offline, in-git job. A keeps three third-party parsers out of the framework CLI. C feeds a stranger's file to a fleet machine at runtime, against `FJS-D2017`'s curated catalog. Reopen as B if re-syncing a catalog becomes routine.
+
+### <a id="fjs-d2122"></a>2026-11-13 · `FJS-D2122` — How a param mints a value of a given length — `generate` names the kind only (`randomHex`), and a `generateLength Int?` column (`length:` in the file) is required when `generate` is set, between 1 and 256.
+
+Asked in [`IDEAS/blueprint-catalog.md`](IDEAS/blueprint-catalog.md) § Open questions. **B** was picked over **A** (keep the three, and the converter rounds each length to the nearest one), **C** (the length goes inside the value, as in `randomHex:24`).
+
+The paper's recommendation, taken as written: it is the existing field plus one integer that the schema range-checks. A is silently wrong: an app that needs exactly 24 characters gets 32. C puts a number inside a string that something has to parse. All three catalogs pass the length as an argument beside the kind. The ntfy token generator (`FJS-3657`) becomes a second kind with no length.
+
+### <a id="fjs-d2119"></a>2026-11-13 · `FJS-D2119` — Q5 — Whose Jobber developer app does the port spend — The live maid.tech's app, same client id and secret, with the new host's callback added to its redirect URIs.
+
+Asked in [`IDEAS/conduit-jobber.md`](IDEAS/conduit-jobber.md) § Open questions. **A** was picked over **B** (a new app registered for the port).
+
+The paper's recommendation, taken as written: the 8 accounts' refresh tokens refresh only under the client id that minted them, so B makes every account reconnect at cutover. A keeps the same app and adds one redirect URI. The cost is that the live app's secret becomes the port's deploy secret: it lives in the deploy env only, never in a file. Building and driving use a separate dev app on a Jobber developer test account (0.1) in either case.
+
+### <a id="fjs-d2118"></a>2026-11-13 · `FJS-D2118` — Q4 — Jobber's webhooks — B plus the object topics (`CLIENT_*`, `REQUEST_*`, `QUOTE_*`).
+
+Asked in [`IDEAS/conduit-jobber.md`](IDEAS/conduit-jobber.md) § Open questions. **C** was picked over **A** (none. A dead login is found by the next push, which already fails by name with "reconnect Jobber"), **B** (only `APP_DISCONNECT`, verified by HMAC, which sets `disconnectedAt` the moment an account disconnects the app).
+
+Against the recommendation (**A**): the owner wants Jobber's object events (client, request, quote) received in v1 rather than later; one HMAC-verified receiver carries them and APP_DISCONNECT with them.
+
+### <a id="fjs-d2117"></a>2026-11-13 · `FJS-D2117` — Q3 — What does the first version cover — A plus one paged reader, `walk()`, and `timesheets()` on it for payroll (`7e` in the port's `ROUTES.md`).
+
+Asked in [`IDEAS/conduit-jobber.md`](IDEAS/conduit-jobber.md) § Open questions. **B** was picked over **A** (the writes only: client, request, quote, plus refresh and connect).
+
+The paper's recommendation, taken as written: (confidence 2) — conduit-37signals, conduit-microsoft (`walkDelta`) and conduit-gmail (`walkHistory`) each keep a `walk` over their own paging, so this is the sibling pattern. Throttling matters most on a paged read (one dashboard load measured 13–20k points, a secondary source that 0.2 checks), so it is built and tested once inside the connector. If B costs more than expected, A with `walk()` deferred until payroll needs it is the fallback.
+
+### <a id="fjs-d2116"></a>2026-11-13 · `FJS-D2116` — Q1 — Scope and name — `@frontierjs/conduit-jobber` at `packages/conduits/conduit-jobber/`, held out of publishing like its siblings.
+
+Asked in [`IDEAS/conduit-jobber.md`](IDEAS/conduit-jobber.md) § Open questions. **A** was picked over **B** (`@kobami/conduit-jobber`, outside the tree, as `conduit-connectors.md`'s Service Autopilot row says).
+
+The paper's recommendation, taken as written: `FJS-D2057` put conduit-airtable in `packages/conduits/` "like its 28 siblings", and `FJS-D1181` made 37signals, another vertical, `@frontierjs/` and struck the `@kobami/` row. The owner has asked for its own package. Phase 1 strikes the Jobber clause of that row the same way.
 
 ### <a id="fjs-d2110"></a>2026-11-13 · `FJS-D2110` — Q30 — What runs an ask inside Basecamp's container (4.1) — Claude Code installed in the API image at a pinned version; `site-ask.ts` stays as built (`askArgv`, the folder scope, the budget cap), the key in the child's env.
 

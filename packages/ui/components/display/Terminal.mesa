@@ -1,0 +1,190 @@
+<script>
+  // Terminal.mesa — a shell drawn by xterm.js, over a socket that
+  // `@frontierjs/junction/terminal` serves (`FJS-D2125`).
+  //
+  // The app owns the address and the credential: `url` and `protocols` are
+  // called at each connect, so a size, a folder or a token that changed since
+  // the last one is the one sent. A change of `session` reconnects; a `url`
+  // that answers nothing leaves the pane idle.
+  //
+  // xterm and its stylesheet are imported when the component mounts, never
+  // with the page: an app that never shows a terminal pays for none of it, and
+  // they are optional peers of this kit, so an app that does show one depends
+  // on @xterm/xterm and @xterm/addon-fit itself.
+  //
+  // xterm takes every key it types and stops it there, so a page chord never
+  // sees Ctrl+W or Ctrl+P typed into a shell. `passthrough` hands a key back
+  // to the page, which is what lets it bubble to the page's keymap.
+  //
+  // The colors and font are read off the pane's own computed style, so the
+  // terminal follows the theme instead of naming one.
+  import Button from '../forms/Button.mesa'
+
+  export let url = (_size) => ''          // ({ cols, rows, session }) => the ws:// URL, or '' for no shell
+  export let protocols = undefined        // string[] or () => string[] — the subprotocol list
+  export let session = ''                 // which shell this pane shows; a change reconnects
+  export let passthrough = (_e) => false  // a key event the page answers instead of the shell
+  export let onproblem = (_message) => {} // xterm failed to load
+  export let fontSize = 0                 // px; 0 reads the pane's computed font size
+
+  let host = null
+  let state = 'idle' // idle · connecting · open · closed
+  let reason = ''
+
+  let term = null
+  let fit = null
+  let ws = null
+  let resizer = null
+  let starting = null
+  let gone = false
+
+  const send = (frame) => {
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame))
+  }
+
+  // A hidden pane measures zero, which fit() turns into a one-column terminal and a resize the shell then sees.
+  function refit() {
+    if (!fit || !host || host.clientWidth === 0 || host.clientHeight === 0) return
+    try { fit.fit() } catch {}
+  }
+
+  function drop() {
+    if (!ws) return
+    ws.onclose = null
+    ws.close()
+    ws = null
+  }
+
+  /** Attach to the shell `url` names now, dropping the socket held before. */
+  export function connect() {
+    drop()
+    if (!term) return
+    const address = url({ cols: term.cols, rows: term.rows, session })
+    if (!address) {
+      state = 'idle'
+      return
+    }
+    state = 'connecting'
+    reason = ''
+    term.reset()
+    const list = typeof protocols === 'function' ? protocols() : protocols
+    const mine = new WebSocket(address, list)
+    ws = mine
+    mine.onopen = () => {
+      if (ws !== mine) return
+      state = 'open'
+      refit()
+      send({ r: [term.cols, term.rows] })
+    }
+    mine.onmessage = (e) => { if (ws === mine) term.write(e.data) }
+    mine.onclose = (e) => {
+      if (ws !== mine) return
+      state = 'closed'
+      reason = e.reason || 'disconnected'
+    }
+  }
+
+  /** Load xterm and attach; the promise is the same one on every call. */
+  export function open() {
+    starting ??= (async () => {
+      let Terminal
+      let FitAddon
+      try {
+        ;[{ Terminal }, { FitAddon }] = await Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit'), import('@xterm/xterm/css/xterm.css')])
+      } catch (e) {
+        starting = null
+        onproblem(`the terminal did not load: ${e.message}`)
+        return
+      }
+      if (gone) return
+      const style = getComputedStyle(host)
+      term = new Terminal({
+        fontFamily: style.fontFamily,
+        fontSize: fontSize || parseFloat(style.fontSize) || 13,
+        cursorBlink: true,
+        scrollback: 5000,
+        theme: { background: style.backgroundColor, foreground: style.color, cursor: style.color },
+      })
+      fit = new FitAddon()
+      term.loadAddon(fit)
+      term.attachCustomKeyEventHandler((e) => !passthrough(e))
+      term.open(host)
+      refit()
+      term.onData((i) => send({ i }))
+      term.onResize(({ cols, rows }) => send({ r: [cols, rows] }))
+      resizer = new ResizeObserver(refit)
+      resizer.observe(host)
+      connect()
+    })()
+    return starting
+  }
+
+  export function focus() {
+    refit()
+    term?.focus()
+  }
+
+  export function holdsFocus() {
+    return !!host?.contains(document.activeElement)
+  }
+
+  $: session, connect
+
+  $.onMount(() => { open() })
+
+  $.onDestroy(() => {
+    gone = true
+    resizer?.disconnect()
+    drop()
+    term?.dispose()
+  })
+</script>
+
+<section class="terminal" aria-label="Terminal" data-state={state}>
+  <div class="terminal-screen" bind:this={host}></div>
+  {#if state === 'connecting' || state === 'closed'}
+    <p class="terminal-note" role="status">
+      {#if state === 'connecting'}
+        Connecting…
+      {:else}
+        <span>Terminal closed — {reason}</span>
+        <Button size="xs" treatment="outlined" onclick={connect}>Reconnect</Button>
+      {/if}
+    </p>
+  {/if}
+</section>
+
+<style>
+  .terminal {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    block-size: 100%;
+    min-block-size: var(--terminal-min-block, 0);
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .terminal-screen {
+    flex: 1;
+    min-block-size: 0;
+    padding: var(--space-3xs) var(--space-xs);
+    background: var(--surface-sunken);
+    color: var(--ink);
+    font: var(--text-sm) / 1.2 var(--font-mono);
+    overflow: hidden;
+  }
+  .terminal-note {
+    position: absolute;
+    inset-block-end: var(--space-xs);
+    inset-inline-end: var(--space-sm);
+    display: flex;
+    gap: var(--space-xs);
+    align-items: center;
+    margin: 0;
+    padding: var(--space-3xs) var(--space-xs);
+    background: var(--surface);
+    border: var(--border-width) solid var(--rule);
+    font-size: var(--text-sm);
+  }
+</style>

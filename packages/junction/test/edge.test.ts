@@ -32,6 +32,7 @@ const BATTERIES: Record<string, string> = {
   'mail':      'IMail and its adapters',
   'ai':        'the model registry',
   'plugins':   'every app.configure() battery, and the declared-plugin table',
+  'terminal':  'a shell over a raw socket -- terminalSocket, endShell (FJS-D2125)',
 }
 
 /** Neither: a tool an app's own tests import. */

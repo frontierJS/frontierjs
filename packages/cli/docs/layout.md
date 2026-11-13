@@ -727,6 +727,11 @@ core/
                 needs no login, and every call spends one of the Send's reads. `dotenvLine` writes
                 only a spelling `loadEnv` and Bun's own loader read back alike,
                 and answers null for the rest (`FJS-3415`)
+  hitlist.js    `fli top --hitlist`: what is maxing the machine, grouped by JOB
+                (the tree up to the nearest launcher — a Claude session, an
+                interactive shell, the desktop), not by process name or pgid.
+                Pure `buildHitlist()` over two /proc reads, so the test hands it
+                a made-up table; reaped children's CPU comes back through cutime
   health-target.js  where an app answers health and whether anything serves it —
                 the plugin call in the API source, `plugins: { health: true }` in
                 junction.config.js, or a route literal graded against the

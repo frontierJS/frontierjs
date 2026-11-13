@@ -25,9 +25,9 @@ The file-by-file map. `CLAUDE.md` keeps the owners and the traps. Paths under
 | `api/src/domain/basecamps/` | The Basecamps in `basecamps.json`: `basecamps.ts` (list, Back up now, Restart), `basecamps-create.ts` (`basecamp:create` as a logged child; `spawnFli` is the shared spawn) and `basecamps-reinstall.ts` (`basecamp:reinstall` on an entry's box under its admin `apiKey`, never its run `scopedKey`, `FJS-D2031`) |
 | `web/src/routes/charter/` | `/charter/`: the `runs: true` entry with which keys are filed, *New box* to `/basecamps/new/`, and *Reinstall* (restore or fresh, Plan only by default) with its log tailed (`IDEAS/charter-to-live.md` Phase 2) |
 | `web/src/routes/charter/drill/` | `/charter/drill/`: the restore drill. *Rehearse* reads the box and plans; *Run for real* backs the Basecamp up, reinstalls it, then grades the hub's rows, the Apps' serving and one kept App's data. `api/src/domain/charter/restore-drill.ts` grades, `restore-drill-run.ts` is the detached process, records in `~/.config/workbench/drills/` |
-| `web/src/routes/terminal/` | `/terminal/`: one shell in the home folder, outside any pin; `components/Terminal.mesa` with no `pin`, over `WS /ws/terminal` (`api/src/plugins/workbench-terminal.ts`), its tmux session the bare `workbench` |
+| `web/src/routes/terminal/` | `/terminal/`: one shell in the home folder, outside any pin; ui's `Terminal.mesa` with an empty `session` (`web/src/lib/terminal.js`), over `WS /ws/terminal` (`api/src/plugins/workbench-terminal.ts`), its tmux session the bare `workbench` |
 
-| `web/src/routes/terminal/` | `/terminal/`: one shell in the home folder, outside any pin; `components/Terminal.mesa` with no `pin`, over `WS /ws/terminal` (`api/src/plugins/workbench-terminal.ts`), its tmux session the bare `workbench` |
+| `web/src/routes/terminal/` | `/terminal/`: one shell in the home folder, outside any pin; ui's `Terminal.mesa` with an empty `session` (`web/src/lib/terminal.js`), over `WS /ws/terminal` (`api/src/plugins/workbench-terminal.ts`), its tmux session the bare `workbench` |
 | `api/config/junction.config.js` | port and CORS origins |
 | `web/config/` | `sierra.config.js`, `vite.config.js` (5508, `strictPort`), `api-paths.js` (derived from `app.snapshot.md`) |
 | `web/src/App.mesa` | the sign-in guard |

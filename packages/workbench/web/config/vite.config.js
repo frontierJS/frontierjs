@@ -41,6 +41,8 @@ export default defineConfig({
   // that does not work. Only when that directory is there (CLAUDE.md § Live hazards).
   resolve: {
     ...sierra.resolve,
+    // The aliased ui imports xterm from its own folder, where it is not installed.
+    dedupe: [...(sierra.resolve?.dedupe ?? []), '@xterm/xterm', '@xterm/addon-fit'],
     alias: existsSync(UI)
       ? { ...sierra.resolve?.alias, '@frontierjs/ui': UI }
       : sierra.resolve?.alias,

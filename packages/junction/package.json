@@ -11,6 +11,7 @@
     "./litestone": "./src/core/litestone.ts",
     "./cache": "./src/cache/index.ts",
     "./scheduler": "./src/scheduler/index.ts",
+    "./terminal": "./src/terminal/index.ts",
     "./mail": "./src/mail/index.ts",
     "./ai": "./src/ai/index.ts",
     "./testing": "./src/testing/index.ts",

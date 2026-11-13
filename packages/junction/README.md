@@ -134,6 +134,7 @@ packages/junction/
 ├── src/events/index.ts   ← IEventBus (in-process, Redis-swappable interface)
 ├── src/cache/index.ts    ← ICache — in-memory
 ├── src/scheduler/index.ts ← cron + interval + once, aligned ticks
+├── src/terminal/index.ts ← terminalSocket() — a shell over a raw socket (FJS-D2125)
 ├── src/mail/index.ts     ← IMail + SMTP/Resend adapters
 ├── src/ai/index.ts       ← IAIModel interface — adapters reach a vendor through conduit
 ├── src/client/index.ts   ← browser/Sierra client — service(), resource()
@@ -148,7 +149,7 @@ The main entry is the four axes of a call — admission, call, carriage, announc
 and the host: `createApp`, plugins, config (`FJS-D639`). Everything else is a battery
 reached by its subpath: `/mail`, `/ai`, `/cache`, `/scheduler`, `/webhooks`,
 `/openapi`, `/outbox`, `/backfill`, `/commitments`, `/manifest`, `/devtools`, `/export`,
-`/metrics`. A battery types its `app.<slot>` by augmenting an empty `App*` interface
+`/metrics`, `/terminal`. A battery types its `app.<slot>` by augmenting an empty `App*` interface
 (`AppMail`, `AppAI`, `AppCache`, `AppScheduler`, `AppOutbox`,
 `AppCommitments`, `AppWebhooks`), so importing the subpath is what brings the type
 (`FJS-D640`). Junction opens no database: `createApp({ db })` is the one way in.

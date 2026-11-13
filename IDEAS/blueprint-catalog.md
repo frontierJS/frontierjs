@@ -6,7 +6,7 @@ dated: 2026-10-11
 
 # Idea — a Blueprint file, and a catalog the size of the others
 
-**Status: IDEA.** Nothing here is built. Basecamp ships 8 blueprints as rows
+**Status: PLAN.** Nothing here is built. Basecamp ships 9 blueprints as rows
 (`packages/basecamp/db/blueprints.js`). There is no file form, so a blueprint cannot be
 exported, shared or imported. This expands `paas-parity.md` row 6 (blueprint shape) and
 answers row 7's *export and import are the same structure written as a file* for the
@@ -84,8 +84,8 @@ x-blueprint:            # the key name is open; see below
   healthCheck: /api/health
   params:
     - { key: PLAUSIBLE_VERSION, label: Version }
-    - { key: SECRET_KEY_BASE, label: Secret key base, secret: true, generate: random_hex_64 }
-    - { key: POSTGRES_PASSWORD, label: Database password, secret: true, generate: random_hex_16 }
+    - { key: SECRET_KEY_BASE, label: Secret key base, secret: true, generate: randomHex, length: 64 }
+    - { key: POSTGRES_PASSWORD, label: Database password, secret: true, generate: randomHex, length: 16 }
   links:
     - { label: Docs, url: https://plausible.io/docs/self-hosting }
 ```
@@ -120,30 +120,108 @@ SUBSET of compose and refuses everything else by name. Its first refusals are:
 A key it does not know is refused, never silently dropped. Silently dropping a key would
 deploy something different from what the file says.
 
+## The CapRover catalog, counted
+
+Counted 2026-11-13 from a sparse clone of `caprover/one-click-apps`
+(`public/v4/apps`). The file shape is compose-like YAML plus a `caproverOneClickApp:`
+form (see `plausible.yml` there for every feature at once).
+
+| Measure | Count |
+| --- | --- |
+| Apps | 363 |
+| Single-service | 212 |
+| … with no host access and no untranslatable `dockerfileLines` | 187 |
+| … of those 212, mounting more than one volume | 71 |
+| … of those 212, with a variable image tag (`image: x:$$cap_VERSION`) | 183 |
+| Multi-service | 151 |
+| Reference a sibling as `srv-captain--<name>` | 199 |
+| Use `dockerfileLines` / of which only `FROM`, `CMD`, `ENTRYPOINT`, `ENV`, `EXPOSE` | 57 / 36 |
+| Refused for host access (`docker.sock`, a host path, `privileged`, `cap_add`, host net or pid) | 23 |
+| `$$cap_gen_random_hex(n)` calls, at how many distinct `n` | 315 at 23 lengths (16: 104, 32: 66, 64: 47) |
+
+**What a converter maps:**
+
+| CapRover | Blueprint file |
+| --- | --- |
+| `$$cap_X` in any value | `${X}`, and a param `X` |
+| `$$cap_appname` / `$$cap_root_domain` | `BLUEPRINT_SLUG` / `BLUEPRINT_HOST` (`FJS-D2016`) |
+| `srv-captain--$$cap_appname-db` | `${DB_HOST}`, the sibling built-in (Phase 4) |
+| `$$cap_gen_random_hex(n)` | a param with `generate: randomHex`, `length: n` (Q6) |
+| `variables[].validRegex: /…/` | `validRegex` on the param, slashes stripped |
+| `caproverExtra.containerHttpPort` | `port` |
+| `caproverExtra.notExposeAsWebApp` | no domain on that service |
+| `dockerfileLines` of only `FROM` + `CMD`/`ENTRYPOINT`/`ENV`/`EXPOSE` | `image` + `command` + `environment` + `port` |
+| `instructions.start` / `.end`, `description`, `displayName` | `notes`, `description`, `name` |
+| `hostname`, `container_name`, `restart` | dropped, each with a reason the report prints |
+| anything else | refused by name |
+
 ## Phases
 
-0. **Decide the file and its supported compose subset.** Before any importer, because
-   phase 1 is the file's first reader and writer. Runs `decision-rules`.
-1. **Read and write the file for single-service blueprints.** `Blueprint` rows ⇄ file,
-   which gives export and import at the current shape. Add a `validRegex` column on
-   `BlueprintParam` (CapRover and Dokploy both validate). The params are already
-   interpolation-shaped once image and env can carry `${…}`. Compose's `command:` maps
-   onto the `command String[]` column `App` and `Blueprint` already carry (ntfy's row
-   needs `serve`); the string form is split, never run through a shell.
-2. **Importers for the single-service subset.** Coolify (170), Dokploy (275) and
-   CapRover (110 after the image-tag fix), curated by hand rather than bulk-loaded.
-3. **Several volumes.** `volumePath` becomes a list on `App` as well as `Blueprint`,
-   because `fromBlueprint` copies column for column. Over 100 main services in each
-   catalog have more than one.
-4. **Multi-service: one blueprint creates N Apps (weeks).** Needs:
-   - start order from `depends_on`;
-   - a service name that resolves as a hostname from its siblings;
-   - placement that keeps siblings on one machine or one network.
+### Phase 0 — Groundwork: the subset and the two shape questions
 
-   It touches `App`, `AppServer` and Outpost, and it is where half of every catalog is.
-   Compose already describes this, which is the strongest argument for the file shape.
-5. **`build:` and CapRover's `dockerfileLines`, last.** Possibly the `inline` source kind
-   in `api/src/domain/release/app-source.ts` plus FJS-1496's build.
+Goal: the file's accepted compose subset is written down, and nothing Phase 1 builds waits on a question.
+Done when: § Supported subset exists in this file, and Q6 and Q7 are ruled in `DECISIONS.md`.
+
+- [x] 0.1 Count the CapRover catalog — § The CapRover catalog, counted.
+- [ ] 0.2 Count Coolify and Dokploy with the same rules, which turns the 2026-10-11 totals into convertible counts.
+- [ ] 0.3 Write § Supported subset: every compose key the reader accepts, what each becomes, and every key it refuses with the reason. Start from the survey's key counts (`environment`, `volumes`, `image`, `depends_on`, `command`, `healthcheck`, `ports`, `user`, `networks`).
+- [x] 0.4 Rule Q6 and Q7 — `FJS-D2122` (kind + length), `FJS-D2123` (a basecamp script); Q2 ruled alongside, `FJS-D2124` (one format).
+
+### Phase 1 — The file, one service
+
+Goal: a `<slug>.blueprint.yml` is read into `Blueprint` rows and written back out, and the bundled catalog is files.
+Done when: every bundled blueprint goes file → rows → file unchanged, `docker compose -f <file> config` accepts each one, and `bun run test` in `packages/basecamp` is green.
+
+- [ ] 1.1 `image` and env values carry `${PARAM}`, interpolated by `apps.fromBlueprint` (183 of CapRover's 212 single-service apps put the version in the tag).
+- [ ] 1.2 `validRegex String?` on `BlueprintParam`, checked by the deploy form and by `fromBlueprint`.
+- [ ] 1.3 The generator per Q6: kind plus length, the 9 rows moved in the same change. A test mints at length 24 and asserts 24 hex characters.
+- [ ] 1.4 The reader: file → `Blueprint` + `BlueprintParam` rows. It is the one place a blueprint file is validated. It refuses § Supported subset's refusals and any unknown key by name, and it refuses a param under the `BLUEPRINT_` prefix.
+- [ ] 1.5 The writer: rows → file. Secrets are blank and a minted value is written as its rule (§ Export from a running App).
+- [ ] 1.6 The 9 rows in `db/blueprints.js` become `db/blueprints/<slug>.blueprint.yml`; `db:seed` and `db:catalog-sync` read the directory, and `blueprints.js` is deleted.
+
+### Phase 2 — Several volumes
+
+Goal: a blueprint, and the App made from it, mounts more than one volume.
+Done when: a two-volume blueprint deploys on the test camp and `docker inspect` shows both mounts.
+
+Before the converters, because 71 of CapRover's 212 single-service apps need it, and a converter written first would be rewritten when the column changes.
+
+- [ ] 2.1 `volumePath String?` becomes a list on `App` and `Blueprint`, with every caller moved in one change; Outpost passes one `-v` per entry.
+- [ ] 2.2 The reader and writer carry compose's own `volumes:` list.
+
+### Phase 3 — Converters: CapRover, Coolify, Dokploy
+
+Goal: a file from any of the three catalogs becomes a `.blueprint.yml`, and a first curated batch is in the catalog.
+Done when: the batch report converts at least 150 CapRover single-service apps, and 5 curated imports deploy on the test camp and pass their health check.
+
+A converter only translates. It writes a file and never writes rows, so the Phase 1 reader stays the only gate (Invariant 4).
+
+- [ ] 3.1 The converter's frame per Q7: input file or URL, `--from caprover|coolify|dokploy`, output a `.blueprint.yml` plus a report of what was dropped and what was refused.
+- [ ] 3.2 CapRover, per § What a converter maps. Golden fixtures: `plausible`, one with `validRegex`, one with a `FROM`+`CMD` `dockerfileLines`, one refused for `docker.sock`.
+- [ ] 3.3 Coolify: header comments → `x-blueprint`; `SERVICE_PASSWORD_X`, `SERVICE_URL_X` and `SERVICE_BASE64_n_X` → `generate` and built-ins.
+- [ ] 3.4 Dokploy: `template.toml` → `x-blueprint`; `${password:n}` and `${domain}` → `generate` and built-ins.
+- [ ] 3.5 Batch report: run each converter over its whole catalog and print converted, and refused by reason. This is the measure behind Done when.
+- [ ] 3.6 Curate the first batch from the owner's list. Each file carries `source:` (catalog, path, commit) and its license, and is deployed once before it is committed.
+
+### Phase 4 — Several services: one blueprint creates N Apps
+
+Goal: a multi-service blueprint deploys as a group of Apps that reach each other by service name.
+Done when: CapRover's `plausible` (app, Postgres, ClickHouse) converts, deploys on the test camp and records a pageview.
+
+Weeks of work. It touches `App`, `AppServer` and Outpost, and it is where half of every catalog is. Compose already describes this, which is the strongest argument for the file shape.
+
+- [ ] 4.1 A service name resolves as a hostname from its siblings, and `<SERVICE>_HOST` is filled (`FJS-D2016`).
+- [ ] 4.2 Start order from `depends_on`.
+- [ ] 4.3 Placement keeps siblings on one machine or one network.
+- [ ] 4.4 `fromBlueprint` creates N Apps. Whether the group needs a name is decided here (Q3).
+- [ ] 4.5 The converters drop their single-service limit, and 3.5's report runs again.
+
+### Phase 5 — Builds: `build:` and the rest of `dockerfileLines`
+
+Goal: the 21 CapRover apps whose `dockerfileLines` do more than pick an image and a command, and compose `build:` entries, deploy.
+Done when: one such app deploys on the test camp.
+
+- [ ] 5.1 Possibly the `inline` source kind in `api/src/domain/release/app-source.ts`, plus `FJS-1496`'s build. Scope it when Phase 4 is done.
 
 ## Open questions
 
@@ -155,7 +233,7 @@ deploy something different from what the file says.
    - **Recommend A** — export, paste and download all want one thing. The key names
      the noun the file is rather than the product that reads it, which is also the
      word Dokploy's catalog already uses. A logo goes in as a URL or a data URI.
-2. **One format for blueprints and App export.** `paas-parity.md` row 7 wants an App
+2. ~~**One format for blueprints and App export.**~~ **Answered 2026-11-13 (`FJS-D2124`): A — one format: an App export is a blueprint whose values are filled in, with secrets blanked.** `paas-parity.md` row 7 wants an App
    exported and imported as a file.
    - **A** — one format: an App export is a blueprint whose values are filled in,
      with secrets blanked.
@@ -190,3 +268,26 @@ deploy something different from what the file says.
    - **C** — B now, and A when a workspace asks for private blueprints.
    - **Recommend C** — B needs no schema change and fits a curated catalog. A is the
      right shape for private blueprints, but nobody has asked for them yet.
+6. ~~**How a param mints a value of a given length.**~~ **Answered 2026-11-13 (`FJS-D2122`): B — `generate` names the kind only (`randomHex`), and a `generateLength Int?` column (`length:` in the file) is required when `generate` is set, between 1 and 256.** CapRover calls
+   `$$cap_gen_random_hex(n)` at 23 different lengths. The enum offers `randomHex16`,
+   `randomHex32` and `randomHex64`. The length is counted in hex characters, not bytes.
+   - **A** — keep the three, and the converter rounds each length to the nearest one.
+   - **B** — `generate` names the kind only (`randomHex`), and a `generateLength Int?`
+     column (`length:` in the file) is required when `generate` is set, between 1 and 256.
+   - **C** — the length goes inside the value, as in `randomHex:24`.
+   - **Recommend B** — it is the existing field plus one integer that the schema
+     range-checks. A is silently wrong: an app that needs exactly 24 characters gets 32.
+     C puts a number inside a string that something has to parse. All three catalogs
+     pass the length as an argument beside the kind. The ntfy token generator
+     (`FJS-3657`) becomes a second kind with no length.
+7. ~~**Where the converters run and what they write.**~~ **Answered 2026-11-13 (`FJS-D2123`): A — a script in the basecamp package, `bun run blueprint:convert`, that writes `db/blueprints/<slug>.blueprint.yml` for review and commit.**
+   - **A** — a script in the basecamp package, `bun run blueprint:convert`, that writes
+     `db/blueprints/<slug>.blueprint.yml` for review and commit.
+   - **B** — a `fli` command that does the same.
+   - **C** — a Basecamp screen that imports a CapRover, Coolify or Dokploy file at runtime.
+   - **Recommend A** — Phase 3 curates by hand, so conversion is a reviewed, offline,
+     in-git job. A keeps three third-party parsers out of the framework CLI. C feeds a
+     stranger's file to a fleet machine at runtime, against `FJS-D2017`'s curated
+     catalog. Reopen as B if re-syncing a catalog becomes routine.
+
+

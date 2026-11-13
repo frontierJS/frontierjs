@@ -5,11 +5,13 @@ title: Terminal
   // A shell in the home folder, belonging to no pinned checkout. With tmux on
   // the API's machine it is one session (`tmux -L workbench attach -t workbench`),
   // so leaving the page or reloading lands back in the same shell.
-  import Terminal from '../../components/Terminal.mesa'
+  import Terminal from '@frontierjs/ui/components/display/Terminal.mesa'
+  import { terminalProtocols, terminalUrl } from '../../lib/terminal.js'
+  import { scaled } from '../../lib/text-size.js'
 </script>
 
 <div class="terminal-screen">
-  <Terminal />
+  <Terminal url={terminalUrl} protocols={terminalProtocols} fontSize={scaled(13)} />
 </div>
 
 <style>
