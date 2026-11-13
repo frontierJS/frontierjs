@@ -85,7 +85,8 @@ const textOf = (node) => (node.type === 'text' ? node.value : (node.children ?? 
 
 function labelCheckbox(li) {
   const box = li.children?.find((c) => isElement(c) && c.tagName === 'input' && c.properties?.type === 'checkbox')
-  const words = textOf(li).trim()
+  const own = li.children.filter((c) => !(isElement(c) && (c.tagName === 'ul' || c.tagName === 'ol')))
+  const words = own.map(textOf).join('').replace(/\s+/g, ' ').trim()
   if (box && words && !box.properties.ariaLabel) box.properties.ariaLabel = words
 }
 
