@@ -39,6 +39,7 @@ import { dirname, join } from 'node:path'
 import { childEnv } from '@frontierjs/junction'
 import { slug as slugOf } from '@frontierjs/toolbelt/inflect'
 import { env } from '../../core/env.ts'
+import { githubHttps } from '../../providers/source/index.ts'
 
 /** Environment entries that let one git call authenticate to GitHub. */
 export type GitCredential = Record<string, string>
@@ -79,12 +80,10 @@ export function sitesDir(): string {
 }
 
 function onGithub(site: GitSite): boolean {
-  let url: URL
-  try { url = new URL(site.source.repo.trim()) } catch { return false }
-  return url.protocol === 'https:' && url.hostname === 'github.com' && !url.username && !url.password && !url.port
+  return githubHttps(site.source.repo) !== null
 }
 
-/** The credential for a call that reaches the remote: the site's, and only where the remote is https://github.com. */
+/** The credential for a call that reaches the remote: the site's, and only where the remote is GitHub, reached over https. */
 export function remoteEnv(site: GitSite): GitCredential {
   return site.credential && onGithub(site) ? site.credential : {}
 }
@@ -158,7 +157,7 @@ async function synced(site: GitSite, root: string): Promise<string> {
   const dir = join(root, `${site.id}.git`)
   if (!existsSync(dir)) {
     mkdirSync(root, { recursive: true })
-    await git(root, ['clone', '--bare', '--quiet', '--', site.source.repo, dir], { env: remoteEnv(site) }).catch((err) => {
+    await git(root, ['clone', '--bare', '--quiet', '--', githubHttps(site.source.repo) ?? site.source.repo, dir], { env: remoteEnv(site) }).catch((err) => {
       rmSync(dir, { recursive: true, force: true })
       throw new CheckoutError(`could not clone ${site.source.repo}: ${said(site, err.message)}`)
     })

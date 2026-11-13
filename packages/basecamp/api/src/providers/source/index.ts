@@ -23,7 +23,7 @@ import { github }                 from './github.ts'
 
 // Importers go through this file: github.ts imports it back, so loading github.ts
 // first evaluates the table below before `github` exists.
-export { gitCredential }          from './github.ts'
+export { gitCredential, githubHttps } from './github.ts'
 
 /** A repository at a forge, as its API addresses it. */
 export interface SourceRepo {

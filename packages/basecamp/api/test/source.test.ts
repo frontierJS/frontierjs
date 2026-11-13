@@ -218,10 +218,16 @@ describe('git over https', () => {
     expect(Object.entries(got!).filter(([k]) => k !== 'FJS_GIT_TOKEN').map(([, v]) => v).join('\n')).not.toContain(GH_TOKEN)
   })
 
-  test('a remote that is not https://github.com, or that names no repository an account sees, answers null', async () => {
+  test('the ssh form of a repository the account sees answers the same token', async () => {
     await registerAtSink(account)
-    expect(await ask('git@github.com:sink-owner/app.git')).toBeNull()
-    expect(await ask('ssh://git@github.com/sink-owner/app.git')).toBeNull()
+    expect(await ask('git@github.com:sink-owner/app.git')).toMatchObject({ FJS_GIT_TOKEN: GH_TOKEN })
+    expect(await ask('ssh://git@github.com/sink-owner/app.git')).toMatchObject({ FJS_GIT_TOKEN: GH_TOKEN })
+  })
+
+  test('a remote that is not GitHub, or that names no repository an account sees, answers null', async () => {
+    await registerAtSink(account)
+    expect(await ask('git@gitlab.com:sink-owner/app.git')).toBeNull()
+    expect(await ask('git@github.com.evil.example:sink-owner/app.git')).toBeNull()
     expect(await ask('https://github.com.evil.example/sink-owner/app.git')).toBeNull()
     expect(await ask('https://x-access-token@github.com/sink-owner/app.git')).toBeNull()
     expect(await ask('https://gitlab.com/sink-owner/app.git')).toBeNull()

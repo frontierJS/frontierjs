@@ -181,6 +181,24 @@ export const github: SourceConnector = {
 // ─── git over https ──────────────────────────────────────────────────────
 
 const HTTPS_REPO = /^\/([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*?)(?:\.git)?\/?$/
+const SSH_REPO   = /^(?:ssh:\/\/)?git@github\.com[:/]([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*?)(?:\.git)?\/?$/
+
+/**
+ * A GitHub repository as the https address Basecamp's own git calls use, or
+ * null for any other remote. A private site's App stores the ssh form, because
+ * the machine clones it with the App's deploy key; Basecamp holds no such key
+ * and reaches the same repository over https with the workspace's token.
+ */
+export function githubHttps(repo: string): string | null {
+  const r = repo.trim()
+  const ssh = SSH_REPO.exec(r)
+  if (ssh) return `https://github.com/${ssh[1]}/${ssh[2]}.git`
+  let url: URL
+  try { url = new URL(r) } catch { return null }
+  if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password || url.port) return null
+  const named = HTTPS_REPO.exec(url.pathname)
+  return named ? `https://github.com/${named[1]}/${named[2]}.git` : null
+}
 
 /** Git asks the helper for `get`; the token comes from the environment of the
  *  one call, so it is in no argv, no config file and no row. Matched to the URL
@@ -192,7 +210,7 @@ const HELPER_KEY = 'credential.https://github.com.helper'
 /**
  * Environment entries that let one git call push to and fetch from a repository
  * as the workspace's GitHub account (`FJS-D2108`), or null where there is none:
- * the remote is not `https://github.com/<owner>/<name>`, or no account sees it.
+ * the remote is not a GitHub repository (`githubHttps`), or no account sees it.
  * Null leaves git to the host's own credentials, which are none, so a public
  * repository still fetches and a private one is refused by name.
  *
@@ -205,12 +223,10 @@ const HELPER_KEY = 'credential.https://github.com.helper'
 export async function gitCredential(
   app: App, { workspaceId, repo }: { workspaceId: string, repo: string },
 ): Promise<Record<string, string> | null> {
-  let url: URL
-  try { url = new URL(repo.trim()) } catch { return null }
-  if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password || url.port) return null
-  const named = HTTPS_REPO.exec(url.pathname)
-  if (!named) return null
-  const at: SourceRepo = { owner: named[1], name: named[2] }
+  const https = githubHttps(repo)
+  if (!https) return null
+  const [owner, name] = new URL(https).pathname.slice(1).replace(/\.git$/, '').split('/')
+  const at: SourceRepo = { owner, name }
 
   // accounts.ts imports ./index.ts, which builds its connector table from this
   // file: a static import here evaluates that table before `github` exists.

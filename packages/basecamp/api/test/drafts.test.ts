@@ -808,8 +808,8 @@ describe('the git credential', () => {
     return { err: err as Error, calls: readFileSync(log, 'utf8') }
   }
 
-  test('a remote that is not https://github.com is handed no token', async () => {
-    for (const repo of ['https://git.example.com/o/r.git', 'git@github.com:o/r.git', 'https://github.com.evil.example/o/r.git', 'https://u@github.com/o/r.git']) {
+  test('a remote that is not GitHub is handed no token', async () => {
+    for (const repo of ['https://git.example.com/o/r.git', 'git@gitlab.com:o/r.git', 'https://github.com.evil.example/o/r.git', 'https://u@github.com/o/r.git']) {
       const { calls } = await run(repo, CREDENTIAL)
       expect(calls).toContain('ARGV')
       expect(calls).not.toContain('FJS_GIT_TOKEN')
@@ -828,6 +828,16 @@ describe('the git credential', () => {
     for (const line of calls.split('\n').filter(l => l.startsWith('ARGV'))) expect(line).not.toContain(TOKEN)
     expect(err.message).not.toContain(TOKEN)
     said = err.message
+  })
+
+  test('an ssh GitHub remote, the form a deploy key clones, is cloned over https with the token', async () => {
+    for (const repo of ['git@github.com:o/r.git', 'ssh://git@github.com/o/r']) {
+      expect(remoteEnv({ id: 'a', source: { repo }, credential: CREDENTIAL })).toEqual(CREDENTIAL)
+      const { calls } = await run(repo, CREDENTIAL)
+      expect(calls).toContain(`ENV FJS_GIT_TOKEN=${TOKEN}`)
+      expect(calls).toMatch(/ARGV .*clone .* https:\/\/github\.com\/o\/r\.git /)
+      expect(calls).not.toContain('git@github.com')
+    }
   })
 
   test('a token GitHub refuses is named as the cause, and with no account the message says that instead', async () => {
