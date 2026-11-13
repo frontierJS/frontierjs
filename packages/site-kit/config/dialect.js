@@ -1,6 +1,7 @@
 // config/dialect.js — site-kit's Markdown dialect, as one value siteKit() hands
 // to Sierra: the remark and rehype passes every page compiles under, and the
-// post-build check that the class words a divider names exist.
+// post-build check that the class words a divider or a quote's decorator
+// names exist.
 //
 // A divider word that is not a css look word is the site's own class, and
 // nothing renders it wrong: a misspelt one leaves a band unstyled. The check
@@ -10,6 +11,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import remarkDecorators from './decorators.js'
 import remarkDividers from './dividers.js'
 import rehypeProse from './prose.js'
 
@@ -51,13 +53,14 @@ export function siteDialect() {
         `[site-kit] ${missing.length === 1 ? 'a divider names a class' : `${missing.length} divider words name classes`} no stylesheet in ${relative(root, outDir) || '.'} defines:\n` +
         `${lines.join('\n')}\n` +
         '  A divider word is a css look word (a Layout helper, a tone, treatment or density, align-start|center|end) ' +
-        'or a class the site\'s own stylesheet defines.',
+        'or a class the site\'s own stylesheet defines; a decorator\'s word (> [.checklist]) is always the site\'s.',
       )
     },
   }
 
   return {
-    remarkPlugins: [[remarkDividers, { words }]],
+    // Dividers clear a file's words before recording them, so decorators run after.
+    remarkPlugins: [[remarkDividers, { words }], [remarkDecorators, { words }]],
     rehypePlugins: [rehypeProse],
     check,
   }

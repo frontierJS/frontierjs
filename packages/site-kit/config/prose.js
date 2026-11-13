@@ -4,6 +4,8 @@
 //   WELCOME               a paragraph in capitals is a Kicker: <p class="kicker">
 //   ==quiet==             <mark>quiet</mark>
 //   (512) 555-0134        a tel: link; an email address, a mailto: link
+//   - [ ] Call the CRM    the checkbox is labelled with its item's words, since
+//                         GFM writes an <input> with no <label>
 //
 // Each is the element or css term an author would have written by hand
 // (FJS-D614), so a site styles `.kicker` and `mark` the way any app does.
@@ -79,8 +81,17 @@ function rewriteText(parent, inLink) {
   })
 }
 
+const textOf = (node) => (node.type === 'text' ? node.value : (node.children ?? []).map(textOf).join(''))
+
+function labelCheckbox(li) {
+  const box = li.children?.find((c) => isElement(c) && c.tagName === 'input' && c.properties?.type === 'checkbox')
+  const words = textOf(li).trim()
+  if (box && words && !box.properties.ariaLabel) box.properties.ariaLabel = words
+}
+
 function walk(node, inLink) {
   if (isElement(node) && VERBATIM.has(node.tagName)) return
+  if (isElement(node) && node.tagName === 'li') labelCheckbox(node)
   const linked = inLink || (isElement(node) && node.tagName === 'a')
   if (node.children?.some((c) => c.type === 'text')) rewriteText(node, linked)
   for (const child of node.children ?? []) {
