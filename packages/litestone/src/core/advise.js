@@ -1184,9 +1184,12 @@ export const RULES = [
     blurb:    'A required column with @default(auth().id) is filled from the signed-in principal. ' +
               'With create at level 0 a visitor has none, so the runtime refuses the create (401, ' +
               'naming the field) unless the visitor states the column — and a visitor naming a user ' +
-              'it cannot read is refused too. Raise the create level, or make the column optional.',
+              'it cannot read is refused too. A `claim … bearer` is exempt: the link or widget ' +
+              'principal carrying it grades at 0. Raise the create level, or make the column optional.',
     run(schema) {
       const out = []
+      // A bare claim stays flagged: it may be a signed-in member's, which a visitor lacks (`FJS-D1134`).
+      const bearers = new Set(schema.bearerClaims ?? [])
       for (const model of schema.models ?? []) {
         if (gateOf(model)?.create !== 0) continue
         for (const f of model.fields ?? []) {
@@ -1194,6 +1197,7 @@ export const RULES = [
           const def = (f.attributes ?? []).find(a => a.kind === 'default')
           // `generated` marks the tenancy stamp, which the claim fills for a visitor too.
           if (def?.value?.kind !== 'call' || def.value.fn !== 'auth' || def.generated) continue
+          if (bearers.has(def.value.field)) continue
           out.push({
             model: model.name, field: f.name,
             message: `${model.name}: @@gate gives create level 0 while ${f.name} is required and defaults to ` +

@@ -17,7 +17,7 @@
 
 import { describe, test, expect, vi, beforeEach, afterEach, afterAll } from 'vitest'
 import { createJunctionClient } from '../../junction/src/client/index.ts'
-import { setRenderEnvironment, flushSync } from '@frontierjs/mesa/runtime'
+import { setRenderEnvironment, flushSync, watchProxy } from '@frontierjs/mesa/runtime'
 import { initRouter, goto, page, _resetPage } from '../src/router/index.js'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -92,6 +92,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => client }))
 const { createResource, tetherOf } = await import('../src/resource/resource.js')
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
 const { generateSchemas }  = await import('../src/build/schema-plugin.js')
+const { session }          = await import('../src/resource/session.js')
 
 // ─── The router ─────────────────────────────────────────────────────────────
 
@@ -969,5 +970,58 @@ describe('a list over a filter owns its rows', () => {
     await settle()
     expect(handlers()).toBe(before)
     plain.destroy()
+  })
+})
+
+describe('a gate the visitor cannot pass: the list waits for somebody to ask as', () => {
+  // A home page that pitches to a visitor and lists a signed-in shelf declared
+  // its lists on the route, and every one answered 401 to the visitor (FJS-4170).
+  // The model's own `@@gate` already says the read is refused, so the list does
+  // not ask; an ungated model beside it still does, since unknown is permissive.
+  const signedIn = (level) => { watchProxy(session).level = level }
+
+  async function build() {
+    const dir  = mkdtempSync(join(tmpdir(), 'sierra-gated-'))
+    const file = join(dir, 'schema.lite')
+    writeFileSync(file, `
+      model Invoice {
+        id     Int    @id
+        number String
+        status String
+        total  Int
+        @@gate(4.4.4.4)
+      }
+      model Order {
+        id     Int    @id
+        number String
+      }
+    `)
+    const g = await generateSchemas(file, () => {}, SIERRA_ROOT)
+    registerSchemas(g.defs, g.models, g.updatePatch, g.readPatch)
+  }
+
+  afterEach(() => signedIn(0))
+
+  test('signed out it sends nothing and reports no error; signing in loads it', async () => {
+    await build()
+    await boot('/invoices/')
+    const list = track(createResource('invoices', { model: 'Invoice' }).tethered({ state: 'local', all: true }))
+    await settle()
+    expect(sent).toHaveLength(0)
+    expect(list.error).toBe(null)
+    expect(list.loading).toBe(false)
+
+    signedIn(null)
+    await settle()
+    expect(sent).toHaveLength(1)
+    expect(list.rows.map(r => r.id)).toEqual([1, 2, 3])
+  })
+
+  test('an ungated model is asked for by a visitor', async () => {
+    await build()
+    await boot('/orders/')
+    track(createResource('orders', { model: 'Order' }).tethered({ state: 'local' }))
+    await settle()
+    expect(sent).toHaveLength(1)
   })
 })

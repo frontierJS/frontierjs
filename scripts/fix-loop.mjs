@@ -11,12 +11,11 @@
 //   bun run fix:loop -- --trial s4 --model haiku --ids FJS-1,FJS-2 --lanes 5
 //   bun run fix:loop -- --rows 6 --lanes 2 --sev S3,S4 --source autopilot   # a scheduled run
 //
-// Each row runs `/fix-next <id>` in a FRESH `claude -p` session on the first
-// rung of FIX_LADDER, and a row that does not close is retried once on the next —
-// the outcome is checkable (the row moves to § Closed or it does not), so
-// paying for Opus only on the rows Sonnet did not close is cheaper per solved
-// row than running everything high. An S1 or S2 row skips the Sonnet rung and
-// runs once, on Opus. Model and effort are set per
+// Each row runs `/fix-next <id>` in a FRESH `claude -p` session, once, on
+// FIX_LADDER's one rung — Opus high, whatever the severity. Whether it closed
+// is checkable (the row moves to § Closed or it does not), and a row Opus high
+// does not close is a row a person reads next, not one a second identical
+// session finishes. Model and effort are set per
 // session, never changed inside one, since a mid-session change drops the
 // prompt cache.
 //
@@ -101,8 +100,8 @@ import { pathToFileURL }            from 'node:url'
 import { ROOT, LOG_DIR, logOf, runSession, printAttempt, appendLog, lastEntry, readLog, sentBack, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage, sourceOf, dayCapRefusal } from './headless.mjs'
 import { LANES_DIR, LINKED, MAX_LANES, openLanes, syncLane, applyPatch, lanePatch, harvest } from './lanes.mjs'
 
-// Not `LADDER`: frame-loop shares that one and stays on Opus.
-const FIX_LADDER = [{ model: 'sonnet', effort: 'high' }, { model: 'opus', effort: 'high' }]
+// Not `LADDER`: frame-loop shares that one and starts low.
+const FIX_LADDER = [{ model: 'opus', effort: 'high' }]
 
 // Haven's kitchen menu (`/menu` at the pass, IDEAS/haven.md 18.2): a bare run's
 // starting settings, kept per machine so a loop started with no terminal open
@@ -190,8 +189,7 @@ async function work(row, n, lane, tag) {
   if (dryRun) { console.log(await preBrief(row)); return }
 
   const brief   = await preBrief(row)
-  // An S1 or S2 that fails on Sonnet is retried on Opus anyway, so the Sonnet attempt is spend with no row at the end of it.
-  const ladder = pinned ?? (/^S[12]$/.test(row.severity) ? FIX_LADDER.slice(1) : FIX_LADDER)
+  const ladder = pinned ?? FIX_LADDER
   const patch   = trial
     ? join(LANES_DIR, 'patches', trial, `${row.id}.${ladder[0].model}.patch`)
     : join(LANES_DIR, 'patches', `${row.id}.patch`)

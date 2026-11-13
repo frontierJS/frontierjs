@@ -15815,6 +15815,35 @@ describe('createTestEnv', () => {
     env.close()
   })
 
+  // FJS-4205: the fresh parent belonged to a factory user, so a create
+  // policy reading the parent's owner refused every level and was skipped.
+  test('a create policy reading a parent\'s owner is graded, not skipped', async () => {
+    const schema = `
+      model Playlist {
+        id      Int    @id
+        ownerId String
+        name    String
+        entries PlaylistTrack[]
+        @@gate(2.4.4.5)
+      }
+      model PlaylistTrack {
+        id         Int      @id
+        playlistId Int
+        playlist   Playlist @relation(fields: [playlistId], references: [id])
+        position   Int
+        @@gate(2.4.4.5)
+        @@allow(create, playlist.ownerId == auth().id)
+      }
+    `
+    const env = await createTestEnv({ schema })
+    expect(await env.verifyGateLadder({ ops: ['create'] })).toEqual([])
+
+    const stricter = parse(schema.replaceAll('@@gate(2.4.4.5)', '@@gate(2.5.4.5)')).schema
+    const caught   = await env.verifyGateLadder({ against: stricter, ops: ['create'] })
+    expect(caught.map((m: any) => [m.model, m.level, m.got])).toEqual([['Playlist', 4, 'allow'], ['PlaylistTrack', 4, 'allow']])
+    env.close()
+  })
+
   test('a required @guarded column makes the create column ungradeable, and says so', async () => {
     // One layer below the row-policy case above and the same shape: @guarded
     // refuses the write before the gate is asked, and both arrive as an
@@ -16906,7 +16935,7 @@ describe('generateTypeScript', () => {
 
   test('emits TableClient<TRow, TCreate, TUpdate, TWhere>', () => {
     const dts = generateTypeScript(schema)
-    expect(dts).toContain('export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}>')
+    expect(dts).toContain('export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, TSudoCreate = {}>')
     expect(dts).toContain('findMany<')
     expect(dts).toContain('createMany<')
     expect(dts).toContain('findManyCursor(')
@@ -26094,6 +26123,29 @@ describe('@rank and @sequence — typegen', () => {
     expect(block).toContain('rank?: string')
     expect(block).toContain('number?: number')
     expect(block).toContain('scopeId: number')
+  })
+})
+
+describe('@default(auth().id) — typegen (FJS-4154)', () => {
+  const { schema } = parse(`
+    model Star {
+      id      Int    @id
+      trackId Int
+      userId  String @default(auth().id)
+    }`)
+
+  test('the column is optional on Create in both audiences, because the write fills it', () => {
+    for (const audience of ['system', 'client'] as const) {
+      const ts = generateTypeScript(schema, { audience })
+      const block = ts.slice(ts.indexOf('interface StarCreate {')).split('}')[0]
+      expect(block).toContain('userId?: string')
+      expect(block).toContain('trackId: number')
+    }
+  })
+
+  test('asSystem() has no principal to stamp from, so its table client re-requires it', () => {
+    const ts = generateTypeScript(schema)
+    expect(ts).toMatch(/TableClient<Star, StarCreate[^\n]*Required<Pick<StarCreate, 'userId'>>>/)
   })
 })
 

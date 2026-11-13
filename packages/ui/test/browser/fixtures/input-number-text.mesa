@@ -1,0 +1,10 @@
+<script>
+  // input-number-text.mesa — a number Input in the callback style its header
+  // documents: the caller keeps the box's own text and hands it back (FJS-4183).
+  import Input from '../../../components/forms/Input.mesa'
+
+  let text = ''
+</script>
+
+<Input id="scaled" type="number" step="any" value={text} oninput={(e) => text = e.target.value} />
+<output id="scaled-value">{text}</output>

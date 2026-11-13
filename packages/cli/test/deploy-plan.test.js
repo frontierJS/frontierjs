@@ -71,6 +71,26 @@ describe('the steps are read, not listed', () => {
       expect(fm?.title, `${f} has no title`).toBeTruthy()
     }
   })
+
+  // The runner warns when two steps share a prefix, so a shipped pair that does
+  // fires it on every run and teaches everyone to read past it (FJS-4207).
+  test('no shipped step folder has two steps on one prefix', () => {
+    const commands = resolve(import.meta.dir, '../commands')
+    const shared   = []
+    for (const ns of readdirSync(commands, { withFileTypes: true })) {
+      if (!ns.isDirectory()) continue
+      for (const dir of readdirSync(`${commands}/${ns.name}`, { withFileTypes: true })) {
+        if (!dir.isDirectory() || !dir.name.startsWith('_steps')) continue
+        const seen = new Map()
+        for (const f of stepFilesIn(readdirSync(`${commands}/${ns.name}/${dir.name}`))) {
+          const prefix = f.match(/^(\d+[a-z]*)/)[1]
+          if (seen.has(prefix)) shared.push(`${ns.name}/${dir.name}: ${seen.get(prefix)} and ${f}`)
+          else seen.set(prefix, f)
+        }
+      }
+    }
+    expect(shared).toEqual([])
+  })
 })
 
 // ─── skip ────────────────────────────────────────────────────────────────────

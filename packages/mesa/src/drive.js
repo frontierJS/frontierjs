@@ -91,9 +91,12 @@ export function findChrome({ run = whichSync, exists = existsSync, candidates = 
 //     profiles and 7.9GB survived that way (FJS-2762). A live launcher is
 //     what keeps a concurrent drive safe.
 //
-// Chrome's own temp files (`com.google.Chrome.*`) follow $TMPDIR, so it is
-// pointed inside the profile and they go with it; a SIGKILLed Chrome left
-// hundreds a day in /tmp.
+// Chrome's own temp files (`com.google.Chrome.*`) follow $TMPDIR — a SIGKILLed
+// Chrome left hundreds a day in /tmp — so each launch points it at a
+// directory of its own, named like a profile so the reap takes it too. Not
+// inside the profile: Chrome's singleton socket lives there, a UNIX socket
+// path stops at 107 bytes, and a kept profile under a deep path aborted the
+// launch (FJS-4230).
 //
 // The sweep cannot come from litestone's tmp-dirs.js: mesa is the leaf and
 // takes no framework dependency but @frontierjs/toolbelt, which does no I/O by
@@ -120,6 +123,14 @@ function killHolders(entry) {
   try { spawnSync('pkill', ['-KILL', '-f', `user-data-dir=${entry.profile}`]) } catch { /* no pkill */ }
 }
 
+/** Remove what a launch made: its TMPDIR always, its profile unless the
+ *  caller keeps it. */
+function removeLaunch(entry) {
+  const rm = (dir) => { try { rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch { /* the next run's reap gets it */ } }
+  rm(entry.tmp)
+  if (!entry.keep) rm(entry.profile)
+}
+
 function sweepLaunched() {
   if (!launched.size) return
   for (const entry of launched) killHolders(entry)
@@ -130,10 +141,7 @@ function sweepLaunched() {
   // and 16MB, while 200ms was already enough for it to stay gone. `maxRetries`
   // cannot cover that, because the removal is not what fails.
   sleepSync(300)
-  for (const entry of launched) {
-    if (entry.keep) continue
-    try { rmSync(entry.profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch { /* the next run's reap gets it */ }
-  }
+  for (const entry of launched) removeLaunch(entry)
   launched.clear()
 }
 
@@ -355,6 +363,9 @@ async function holdPageClock({ clock, bootstrap, cmd, evaluate, opener }) {
  *                 it — so a held spec clicks through `clickAt`/`press`, the
  *                 trusted-input path. Off by default
  *
+ *  `downloads` is the directory every file the browser saves lands in, removed
+ *  with it; a drive that keeps one copies it out before close().
+ *
  *  The handle's `send(method, params, sessionId)` is the browser-level call,
  *  for a drive that attaches targets of its own — an extension's popup or its
  *  service worker; `cmd` is the same call bound to the page.
@@ -377,11 +388,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   reapOrphanedProfiles()
   if (kept) mkdirSync(kept, { recursive: true })
   const profile = kept ?? mkdtempSync(join(tmpdir(), `${PROFILE_PREFIX}${process.pid}-`))
-  // Emptied each launch: a kept profile would otherwise collect what every
-  // SIGKILLed browser before this one left in it.
-  const chromeTmp = join(profile, 'tmp')
-  rmSync(chromeTmp, { recursive: true, force: true })
-  mkdirSync(chromeTmp)
+  const chromeTmp = mkdtempSync(join(tmpdir(), `${PROFILE_PREFIX}${process.pid}-tmp-`))
   // A port Chrome PICKS and a profile of its own, both. A fixed 9222 is held by
   // whichever browser bound it first, so a second drive attaches to another
   // run's session and grades that screen — measured in example's `verify:stock`,
@@ -402,14 +409,14 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, TMPDIR: chromeTmp } })
 
-  const entry = { chrome, profile, keep: !!kept }
+  const entry = { chrome, profile, tmp: chromeTmp, keep: !!kept }
   launched.add(entry)
 
   // A launch that fails leaves no browser and no temp profile behind.
   const abandon = (e) => {
     launched.delete(entry)
     try { chrome.kill('SIGKILL') } catch { /* never started */ }
-    if (!entry.keep) try { rmSync(profile, { recursive: true, force: true }) } catch {}
+    removeLaunch(entry)
     throw e
   }
 
@@ -563,6 +570,13 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     }
   })
 
+  // Chrome's default is the user's Downloads folder, so a drive that clicked a
+  // download wrote there on every run (FJS-4279). Browser-wide, so a newPage()
+  // saves here too, and inside the launch's TMPDIR, so close() removes it.
+  const downloads = join(chromeTmp, 'downloads')
+  mkdirSync(downloads)
+  await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads }).catch(abandon)
+
   const { targetId }  = await send('Target.createTarget', { url: 'about:blank' })
   const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
   const cmd = (method, params) => send(method, params, sessionId)
@@ -606,13 +620,52 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   /** Navigate, wait for load, and optionally poll an expression the page sets
    *  once its own boot has finished. */
   async function navigate(url, ready) {
-    await cmd('Page.navigate', { url })
-    await evaluate(`
-      if (document.readyState !== 'complete')
-        await new Promise(r => window.addEventListener('load', r, { once: true }));
-      ${ready ? `await new Promise(r => { const n = globalThis.__fjsClock?.native ?? globalThis; const t = n.setInterval(() => { if (${ready}) { n.clearInterval(t); r() } }, 10) });` : ''}
-      return true;
-    `)
+    await newDocument(cmd, sessionId, url)
+    await loaded(evaluate, ready)
+  }
+
+  // A URL that differs from the page's only by its fragment, or matches it and
+  // has one, is a same-document navigation: the hash moves, the page under test
+  // stays up, and the drive grades the old one (FJS-4238). Chrome answers such
+  // a navigation with no loaderId, and a reload sent before the hash commits
+  // reloads the old URL.
+  async function newDocument(call, session, url) {
+    const once = (event) => {
+      let off
+      const heard = new Promise((r) => { off = on(event, (_, s) => { if (s === session) { off(); r() } }) })
+      return { heard, off: () => off() }
+    }
+    const moved = once('Page.navigatedWithinDocument')
+    try {
+      const { loaderId } = await call('Page.navigate', { url })
+      if (loaderId) return
+      await moved.heard
+    } finally { moved.off() }
+    const reloaded = once('Page.loadEventFired')
+    try {
+      await call('Page.reload')
+      await reloaded.heard
+    } finally { reloaded.off() }
+  }
+
+  // A dev server on a cold dependency cache re-optimizes and reloads the page
+  // while this waits, and the wait dies with the old document (FJS-4245); it is
+  // asked again of the new one.
+  async function loaded(evalOn, ready) {
+    const until = Date.now() + 30000
+    for (;;) {
+      try {
+        return await evalOn(`
+          if (document.readyState !== 'complete')
+            await new Promise(r => window.addEventListener('load', r, { once: true }));
+          ${ready ? `await new Promise(r => { const n = globalThis.__fjsClock?.native ?? globalThis; const t = n.setInterval(() => { if (${ready}) { n.clearInterval(t); r() } }, 10) });` : ''}
+          return true;
+        `)
+      } catch (e) {
+        if (!/navigated or closed|context was destroyed|Cannot find context/i.test(e.message) || Date.now() > until) throw e
+        await new Promise((r) => setTimeout(r, 50))
+      }
+    }
   }
 
   /** Press a key through the input pipeline. A dispatched KeyboardEvent is not
@@ -716,11 +769,18 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
       // full-width field at the end of a long form. Scroll ONLY when that
       // point is out of view — a spec that has positioned the page
       // deliberately (a popover testing where it flips) must not have that
-      // undone.
+      // undone. In view is not enough either: a control scrolled under a
+      // sticky bar has its point on screen and the press lands on the bar, so
+      // a point something else answers for counts as out of view and the
+      // control is centered, where no bar reaches.
       let r = el.getBoundingClientRect();
       const at = () => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
       let p = at();
-      if (p.x < 0 || p.x > innerWidth || p.y < 0 || p.y > innerHeight) {
+      const covered = () => {
+        const top = document.elementFromPoint(p.x, p.y);
+        return !top || !(el.contains(top) || top.contains(el));
+      };
+      if (p.x < 0 || p.x > innerWidth || p.y < 0 || p.y > innerHeight || covered()) {
         el.scrollIntoView({ block: 'center', inline: 'center' });
         await new Promise((res) => n.setTimeout(res, 50));
         r = el.getBoundingClientRect();
@@ -733,8 +793,15 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   /** Poll an expression until it is truthy and answer its value. A drive
    *  that sleeps a guessed interval passes on a fast machine and fails on a
    *  loaded one. A throw counts as not yet: the element it reads may not
-   *  exist yet, and the last one is named if time runs out. */
-  async function waitFor(expression, { ms = 15000, every = 50, label = expression } = {}) {
+   *  exist yet, and the last one is named if time runs out. The budget is
+   *  `ms`; an option this does not read is refused by name, since `{ timeout }`
+   *  would otherwise wait the full default in silence (FJS-4225). */
+  async function waitFor(expression, opts = {}) {
+    const known = ['ms', 'every', 'label']
+    for (const k of Object.keys(opts))
+      if (!known.includes(k))
+        throw new Error(`waitFor: no option ${JSON.stringify(k)} — ${known.join(', ')}${k === 'timeout' ? ' (the budget is `ms`)' : ''}`)
+    const { ms = 15000, every = 50, label = expression } = opts
     const until = Date.now() + ms
     let threw = null
     for (;;) {
@@ -800,13 +867,8 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     }
 
     const navigate2 = async (to, waitFor) => {
-      await cmd2('Page.navigate', { url: to })
-      await evaluate2(`
-        if (document.readyState !== 'complete')
-          await new Promise(r => window.addEventListener('load', r, { once: true }));
-        ${waitFor ? `await new Promise(r => { const n = globalThis.__fjsClock?.native ?? globalThis; const t = n.setInterval(() => { if (${waitFor}) { n.clearInterval(t); r() } }, 10) });` : ''}
-        return true;
-      `)
+      await newDocument(cmd2, s2.sessionId, to)
+      await loaded(evaluate2, waitFor)
     }
 
     const pageClock = await holdPageClock({ clock: opts.clock, bootstrap, cmd: cmd2, evaluate: evaluate2, opener: 'newPage({ clock: true })' })
@@ -843,11 +905,11 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     await new Promise((r) => { chrome.once('exit', r); setTimeout(r, 3000) })
     killHolders(entry)
     await new Promise((r) => setTimeout(r, 300))
-    if (!entry.keep) try { rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch {}
+    removeLaunch(entry)
     launched.delete(entry)
   }
 
-  return { cmd, send, evaluate, navigate, newPage, clock: mainClock, key, press, type, clickAt, hoverAt, fill, waitFor, shot, on, errors, failed, close }
+  return { cmd, send, evaluate, navigate, newPage, clock: mainClock, key, press, type, clickAt, hoverAt, fill, waitFor, shot, on, errors, failed, downloads, close }
 }
 
 // ─── the network ──────────────────────────────────────────────────────

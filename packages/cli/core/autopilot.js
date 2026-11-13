@@ -86,7 +86,7 @@ export const FEEDERS = ['ci', 'stranger']
 /**
  * The loops autopilot runs, each with the caps its script takes. `check`
  * answers why a value is refused, or nothing. `rungs` is the most budgets one
- * row can spend: a ladder's second rung is capped at twice the first.
+ * row can spend; an Opus session is capped at twice the budget.
  */
 export const LOOPS = {
   fix: {
@@ -99,7 +99,8 @@ export const LOOPS = {
       sev:    { check: v => typeof v === 'string' && SEV.test(v) ? null : 'severities as the script takes them, like S3,S4' },
       model:  { check: v => MODELS.includes(v) ? null : `one of ${MODELS.join(', ')}` },
     },
-    rungs: caps => caps.model === 'sonnet' ? 1 : 3,
+    // One Opus session, capped at twice the budget; a pinned Sonnet is one budget.
+    rungs: caps => caps.model === 'sonnet' ? 1 : 2,
   },
   frame: {
     script: 'scripts/frame-loop.mjs',

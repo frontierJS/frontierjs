@@ -14,8 +14,10 @@ h1, h2, h3, h4, h5, h6,
    * `--font-display: var(--font-primary)` token would substitute once
    * against :root and then inherit past a scoped --font-primary override.
    * Unset, this is --font-primary and an app with one face sees nothing.
+   * The trailing generic is the floor when a named face never loads; without
+   * it the browser falls to its serif (FJS-4262).
    */
-  font-family: var(--font-display, var(--font-primary));
+  font-family: var(--font-display, var(--font-primary)), sans-serif;
   margin:      0;
   line-height: var(--leading-heading);
   /*

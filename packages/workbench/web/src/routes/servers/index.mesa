@@ -126,7 +126,7 @@ title: Servers
   {:else}
     <div class="stack" id="servers-accounts">
       {#each list.accounts as a (a.id)}
-        <section class="stack-sm" data-account={a.id}>
+        <section class="stack gap-sm" data-account={a.id}>
           <div class="section-header">
             <h2>{a.label} <span class="text-sm text-muted">{PROVIDER_LABEL[a.provider]}</span></h2>
             <ConfirmationPopover inline title={`Remove ${a.label}?`} message="Its token is deleted from this laptop; the machines are untouched."
@@ -164,7 +164,7 @@ title: Servers
     </div>
   {/if}
 
-  <section class="stack-sm" id="servers-ssh">
+  <section class="stack gap-sm" id="servers-ssh">
     <h2>ssh hosts</h2>
     {#if list.sshHosts.length}
       <Table columns={SSH_COLUMNS} rows={list.sshHosts}>
@@ -183,7 +183,7 @@ title: Servers
   </section>
 {/if}
 
-<section class="stack-sm">
+<section class="stack gap-sm">
   <h2>Add account</h2>
   <form class="stack" id="servers-add" onsubmit={(e) => { e.preventDefault(); add() }}>
     <Select id="add-provider" label="Provider" placeholder="" options={PROVIDERS} bind:value={provider} />

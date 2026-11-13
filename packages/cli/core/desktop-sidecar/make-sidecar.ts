@@ -17,6 +17,7 @@
 //     node_modules/<npm dep>    the npm packages the API imports and what they depend on, copied whole
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { importSpecifiers, frontierSpecifiers, npmImports, bundledSource } from './sidecar-fns.ts'
 
 const { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } = fs
 const { basename, dirname, join, resolve } = path
@@ -46,11 +47,7 @@ if (!triple) {
 // The packages compiled in are the ones the API's own files import. Derived on
 // every run, so an import added to a service is compiled in by the next build.
 // The same functions are @frontierjs/cli's core/desktop-sidecar.js, which
-// writes them here.
-/*__IMPORTS_FN__*/
-/*__SPECIFIERS_FN__*/
-/*__NPM_FN__*/
-/*__BUNDLED_FN__*/
+// writes them to sidecar-fns.ts.
 const imports = importSpecifiers(APP, fs, path)
 const specs = frontierSpecifiers(imports)
 const bundledFile = join(HERE, 'bundled.ts')

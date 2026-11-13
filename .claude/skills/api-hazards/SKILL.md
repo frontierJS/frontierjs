@@ -52,6 +52,7 @@ Detail: `references/routes-query-and-headers.md`
 - **A wire `$limit` above the service's `paginate.max` is a 400, not a clamp.**
 - **`hasRoute()` is a matching question, not an existence one**
 - **A header the caller varies per call must be DECLARED, or it works until the socket connects.**
+- **A `ReadableStream` body goes out chunked with no Content-Length; answer a held-open file as `Bun.file(fd)` and ask for the length over a socket** (`FJS-4187`)
 - **A raw route's own `new Response(readable)` is held to its end for a gzip caller; build a stream with `ctx.stream()` or name `content-encoding`** (`FJS-D509`)
 - **The client's address is declared, never discovered.**
 - **An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins`** (`FJS-2655`) — measured in Chrome: a host-only cookie rides only a fetch that says `credentials: 'include'`, and `app.localhost` / `api.localhost` are NOT the same site (`localhost` has no registrable domain). `fli deploy` derives the list as `FRONTIER_CORS_ORIGINS` (`FJS-D912`).

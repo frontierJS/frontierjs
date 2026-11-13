@@ -122,7 +122,7 @@ export { createChannelManager, Channel, channels, announce } from './src/transpo
 export type { Connection, AnnounceFn, ChannelFn, WSMessage, PresenceMember, ChannelClaimsFn }                         from './src/transport/channels.ts'
 
 // ─── Middleware plugins ───────────────────────────────────────────────────
-export { cors, helmet, rateLimit, requestLogger, bodyLimit, correlationId, csrf, combineOrigins } from './src/transport/middleware.ts'
+export { cors, helmet, defaultCsp, rateLimit, requestLogger, bodyLimit, correlationId, csrf, combineOrigins } from './src/transport/middleware.ts'
 export type { CorsOptions, HelmetOptions, RateLimitOptions, CorrelationIdOptions, CsrfOptions, OriginList, CombinedOrigins } from './src/transport/middleware.ts'
 
 // ─── Health + metrics ─────────────────────────────────────────────────────

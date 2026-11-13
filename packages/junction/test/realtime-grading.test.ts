@@ -70,7 +70,7 @@ const LITESTONE = resolve(import.meta.dir, '../../litestone/src/index.js')
 const running: Array<{ stop: () => Promise<void> }> = []
 afterEach(async () => { for (const a of running.splice(0)) await a.stop().catch(() => {}) })
 
-async function mkApp(opts: { telemetry?: boolean; second?: boolean; named?: boolean; schema?: string; file?: string; getLevel?: (u: unknown) => number } = {}) {
+async function mkApp(opts: { telemetry?: boolean; second?: boolean; named?: boolean; schema?: string; file?: string; getLevel?: (u: unknown) => number; service?: Record<string, unknown> } = {}) {
   const db: any = await createClient({
     ...(opts.file ? {} : { db: ':memory:' }), schema: opts.schema ?? SCHEMA,
     ...(opts.getLevel ? { plugins: [new GatePlugin({ getLevel: opts.getLevel })] } : {}),
@@ -90,7 +90,7 @@ async function mkApp(opts: { telemetry?: boolean; second?: boolean; named?: bool
   })
   // `named`: a channel FUNCTION answering a name — a definition holds no app to
   // build a channel with (FJS-D1079).
-  app.services.register(createService({ name: 'orders', model: 'Order', channel: opts.named ? () => 'orders' : 'orders' }))
+  app.services.register(createService({ name: 'orders', model: 'Order', channel: opts.named ? () => 'orders' : 'orders', ...opts.service } as never))
   // A service whose NAME maps to no model. `model:` is the declaration and the
   // name is only a fallback — grading off the name alone refused everybody here.
   if (opts.second)
@@ -620,5 +620,91 @@ describe('a write that changes who may read OTHER rows (FJS-1738)', () => {
     await settle()
 
     expect(gus.events.map(e => e.event)).toEqual(['tags created'])
+  })
+})
+
+// ─── FJS-4168 ─────────────────────────────────────────────────────────────
+
+describe('a job moving a row as the system reaches the screen showing it (FJS-4168)', () => {
+  // Measured on Chronicle's own schema as well: a system transition and update
+  // announce to the owner's socket with no service call involved, so a screen
+  // that stays on its first state is not waiting on the server's tap.
+  const RUN = `
+    enum RunStatus { requested running done }
+    model Order {
+      id         Int       @id @default(autoincrement())
+      customerId Int?
+      status     RunStatus @default(requested)
+      progress   String?
+      @@gate(1.4.4.5)
+      @@allow(read, customerId == auth().id || auth().isAdmin)
+      @@transitions(status, start: requested -> running, finish: running -> done)
+    }
+  `
+
+  test('start, a progress write and finish each reach the owner and no stranger', async () => {
+    const { db, port } = await mkApp({ schema: RUN })
+    const owner    = open(port, 'u5')
+    const stranger = open(port, 'u9')
+    expect(await ready(owner)).toBe(true)
+    expect(await ready(stranger)).toBe(true)
+
+    const sys = (db as any).asSystem()
+    await sys.order.create({ data: { customerId: '5' } })
+    await sys.order.transition(1, 'start', { system: true })
+    await sys.order.update({ where: { id: 1 }, data: { progress: 'half' } })
+    await sys.order.transition(1, 'finish', { system: true })
+    await settle()
+
+    expect(owner.events.map(e => [e.event, e.data.status])).toEqual([
+      ['orders created', 'requested'],
+      ['orders start', 'running'],
+      ['orders updated', 'running'],
+      ['orders finish', 'done'],
+    ])
+    expect(stranger.events).toEqual([])
+  })
+})
+
+describe('work left running by a service call (FJS-4275)', () => {
+  const RUN = `
+    enum RunStatus { requested running done }
+    model Order {
+      id         Int       @id @default(autoincrement())
+      customerId Int?
+      status     RunStatus @default(requested)
+      @@gate(1.4.4.5)
+      @@allow(read, customerId == auth().id || auth().isAdmin)
+      @@transitions(status, start: requested -> running, finish: running -> done)
+    }
+  `
+  // A timer started inside the method inherits the call's async context, so
+  // it is still "the call" after the call has answered.
+  test('detached work started by a method announces its own writes', async () => {
+    let sys: any
+    let done: () => void
+    const finished = new Promise<void>(r => { done = r })
+    const { db, app, port } = await mkApp({
+      schema: RUN,
+      service: {
+        methods: ['ask'],
+        async ask() {
+          const row = await sys.order.create({ data: { customerId: '5' } })
+          setTimeout(async () => {
+            await sys.order.transition(row.id, 'start', { system: true })
+            await sys.order.transition(row.id, 'finish', { system: true })
+            done()
+          }, 20)
+          return row
+        },
+      },
+    })
+    sys = (db as any).asSystem()
+    const owner = open(port, 'u5')
+    expect(await ready(owner)).toBe(true)
+    await app.service('orders').call('ask', null, {}, { user: sessionFor('admin') })
+    await finished
+    await settle()
+    expect(owner.events.map(e => e.event)).toEqual(['orders ask', 'orders start', 'orders finish'])
   })
 })

@@ -33,6 +33,12 @@ export async function run(t) {
   t.is(await t.evaluate(`return !!document.querySelector('#empty [data-file-current]');`), false,
     'and shows no preview, because there is nothing stored')
 
+  // The column's label is drawn by the control itself: a generated <Form> draws
+  // none outside it, so a control that blanks its label leaves the dropzone
+  // unlabeled (FJS-4182).
+  t.ok(await t.evaluate(`return !!document.querySelector('#empty label')?.textContent.trim();`),
+    'a File column draws its label')
+
   // `@accept` reaches the dialog. The Data boundary enforces the same list, so
   // this is not the guard — it is the difference between being told before
   // choosing a file and being told after uploading one.

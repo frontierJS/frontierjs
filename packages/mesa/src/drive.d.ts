@@ -51,6 +51,8 @@ export interface Chrome {
   send<T = any>(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<T>
   /** The body of an async function, run in the page; `return` answers it. */
   evaluate<T = any>(expression: string): Promise<T>
+  /** Loads `url` as a new document, even where it differs from the page's only
+   *  by its fragment; a drive that means a hash change sets `location.hash`. */
   navigate(url: string, ready?: string): Promise<void>
   newPage(url?: string, ready?: string): Promise<SecondPage>
   newPage(options: PageOptions): Promise<SecondPage>
@@ -68,6 +70,8 @@ export interface Chrome {
   errors: string[]
   /** Live: `'<status> <url>'` for each response of 400 and above. */
   failed: string[]
+  /** Where every file the browser saves lands; removed by `close()`. */
+  downloads: string
   close(): Promise<void>
 }
 

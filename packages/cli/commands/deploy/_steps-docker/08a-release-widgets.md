@@ -1,5 +1,5 @@
 ---
-title: 08-release-widgets
+title: 08a-release-widgets
 description: Point the widget origin at the new release via symlink
 optional: true
 skip: "!$.config.doWidgets"

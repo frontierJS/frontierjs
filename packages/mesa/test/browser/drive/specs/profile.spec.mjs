@@ -4,7 +4,8 @@
  * An offline app's rows live in IndexedDB, and a drive that writes, closes and
  * reopens on a fresh profile passes whether or not the app persisted anything.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 export const name = 'profile — kept across a relaunch, or gone with the browser'
@@ -23,6 +24,17 @@ export async function run(t) {
     await second.navigate(t.origin, 'window.get')
     t.is((await second.evaluate(`return await get()`)).v, 'written', 'and carries IndexedDB into the relaunch')
   } finally { await second.close() }
+
+  // A UNIX socket path stops at 107 bytes, and Chrome's singleton socket sits
+  // under $TMPDIR: a TMPDIR inside a deep kept profile aborted the launch
+  // before it announced a port (FJS-4230).
+  const deep = join(t.work, 'd'.repeat(90), 'chrome-profile')
+  const before = new Set(readdirSync(tmpdir()))
+  const third = await t.openChrome({ profile: deep })
+  try {
+    t.is(await third.evaluate(`return 1 + 1`), 2, 'a kept profile under a deep path launches')
+  } finally { await third.close() }
+  t.is(readdirSync(tmpdir()).filter((n) => !before.has(n)).length, 0, 'and its TMPDIR, outside the profile, goes with the browser')
 
   const temp = await t.openChrome()
   try {

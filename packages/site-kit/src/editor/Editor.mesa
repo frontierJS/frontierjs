@@ -110,9 +110,7 @@
        style:left="{box.x}px" style:top="{box.y}px" style:width="{box.w}px" style:height="{box.h}px"></div>
 {/if}
 
-{#if asking}
-  <Ask {site} key={who.key} onclose={() => asking = false} />
-{:else if opened?.inline}
+{#if opened?.inline}
   <Inline {site} key={who.key} path={opened.path} line={opened.line} el={opened.inline}
           onclose={inlineClosed} onform={toForm} />
 {:else if opened?.path}
@@ -131,31 +129,50 @@
   </article>
 {/if}
 
-<article class="card fjs-editor" data-fjs-editor-ui data-fjs-editor-bar>
-  {#if who}
-    <span>Editing <strong>{site.draft}</strong> as <strong>{who.editor?.name}</strong>
-      {#if files?.length} · {files.length} {files.length === 1 ? 'page' : 'pages'}{:else if files} · nothing on this site is editable{/if}</span>
-    {#if files?.length}<button class="btn ghost" id="fjs-ask-open" aria-pressed={asking} onclick={() => { asking = !asking; opened = null }}>Ask</button>{/if}
-    <button class="btn ghost" aria-pressed={picking} onclick={() => { picking = !picking; leave() }}>{picking ? 'Browse' : 'Pick'}</button>
-    <a class="btn ghost" href={site.page}>Open in basecamp</a>
-    <button class="btn ghost" onclick={signOut}>Sign out</button>
-  {:else}
-    <button class="btn primary" disabled={busy} onclick={edit}>Edit</button>
+<div class="fjs-editor-dock">
+  {#if asking}
+    <Ask {site} key={who.key} onclose={() => asking = false} />
   {/if}
-  {#if notice}<span role="status">{notice}</span>{/if}
-  {#if error}<span class="text-danger" role="alert">{error}</span>{/if}
-</article>
+  <article class="card fjs-editor" data-fjs-editor-ui data-fjs-editor-bar>
+    {#if who}
+      <span>Editing <strong>{site.draft}</strong> as <strong>{who.editor?.name}</strong>
+        {#if files?.length} · {files.length} {files.length === 1 ? 'page' : 'pages'}{:else if files} · nothing on this site is editable{/if}</span>
+      {#if files?.length}<button class="btn ghost" id="fjs-ask-open" aria-pressed={asking} onclick={() => { asking = !asking; opened = null }}>Ask</button>{/if}
+      <button class="btn ghost" aria-pressed={picking} onclick={() => { picking = !picking; leave() }}>{picking ? 'Browse' : 'Pick'}</button>
+      <a class="btn ghost" href={site.page}>Open in basecamp</a>
+      <button class="btn ghost" onclick={signOut}>Sign out</button>
+    {:else}
+      <button class="btn primary" disabled={busy} onclick={edit}>Edit</button>
+    {/if}
+    {#if notice}<span role="status">{notice}</span>{/if}
+    {#if error}<span class="text-danger" role="alert">{error}</span>{/if}
+  </article>
+</div>
 
 <style>
-  .fjs-editor {
+  /* Ask sits on the bar, whatever height the bar wraps to. The column is wider
+     than the bar, so only its children take the pointer. */
+  .fjs-editor-dock {
     position: fixed;
     right: 1rem;
     bottom: 1rem;
     z-index: 2147483000;
+    max-width: calc(100vw - 2rem);
+    max-height: calc(100vh - 2rem);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.75rem;
+    pointer-events: none;
+  }
+  .fjs-editor-dock > * {
+    pointer-events: auto;
+  }
+  .fjs-editor {
     display: flex;
     gap: 0.5rem;
     align-items: center;
-    max-width: calc(100vw - 2rem);
+    max-width: 100%;
     flex-wrap: wrap;
   }
   .fjs-editor-outline {

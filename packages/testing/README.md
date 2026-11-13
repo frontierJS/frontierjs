@@ -96,6 +96,59 @@ directly — plus:
 `env.close()` is **async** here — it stops the app's plugins before closing the
 client.
 
+## Mounting your app
+
+`api:` is handed the env's client and returns your app built over it. Use the
+app's own construction, and never give it a second client on the same file:
+`arrange` and `announced()` would then be watching different connections.
+
+That only works when the construction takes the client. A scaffolded
+`api/src/app.ts` imports `./core/db.ts`, which opens `db/app.db` at import, and
+`core/auth.ts` holds that client too. So a test that imports `app.ts` opens the
+dev database before `createTestEnv` runs. Export the construction as a function
+of the client, and open the file in the entry point. Basecamp does this:
+`buildBasecampApp({ db })` in `api/src/app.ts`, which `api/index.ts` calls with
+no arguments.
+
+```js fragment
+// api/test/env.ts
+const env = await createTestEnv({ schema, plugins: [gate], api: ({ db }) => buildApp({ db }) })
+```
+
+Until the app is split, the factory rebuilds those parts by hand:
+
+- `root`, pointed at `app.ts`, so its services autoload.
+- `createStubAuth()`, in place of the auth module that holds the client.
+- The app's `principal` resolvers.
+- Every raw route `app.ts` adds.
+
+That is a copy of the construction, and it drifts from the original.
+
+```js fragment
+api: ({ db }) => {
+  const app = createApp({ root: new URL('../src/app.ts', import.meta.url).href, auth: createStubAuth(), db, principal })
+  app.post('/share/redeem', share.redeem(db))
+  return app
+},
+```
+
+## Calling a service
+
+`env.as(user).service(name)` has the shapes of `app.service(name)`, with the
+principal bound where `CALL_OPTIONS_AT` says each method takes its options.
+
+- **`find(filters, opts)` takes filters bare:** `find({ status: 'open' })`.
+  `find({ query: { … } })` is refused with `Unknown filter key 'query'`. Paging
+  goes in the options: `find({}, { directives: { limit: 10 } })`.
+- **A custom method is `call(name, id, data)`.** `id` is positional, so pass
+  `null` when the method takes none. `call('reboot', { force: true })` arrives
+  as `ctx.id = { force: true }` and `ctx.data = null`, and nothing refuses it.
+- **`env.as(user)` sets `ctx.user` to `user` as given.** Nothing signs in and
+  no request is made. The app's `principal` resolvers still run on every call,
+  from the data hook, with that user and a `ctx` that has no request headers.
+  A claim a resolver reads off a header, such as a share link's bearer token,
+  is therefore absent. Put that claim on the user object instead.
+
 ## Transport parity
 
 A Junction service is reachable two ways, and the two paths share almost nothing:

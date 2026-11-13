@@ -66,9 +66,10 @@ export async function basecampAll(origin, key, path) {
  * @param {string} key
  * @param {string} anchorAppId  `BASECAMP_APP_ID`
  * @param {'dev'|'stage'|'production'} target  `resolveTarget`'s answer
- * @param {{ where?: string }} [opts]  how a 404 names the Basecamp (default its origin)
+ * @param {{ where?: string, hint?: string }} [opts]  `where` names the Basecamp in a 404 (default its origin);
+ *   `hint` replaces the way out a refusal names, for a reader that must not tell its user to make an environment
  */
-export async function resolveBasecampApp(origin, key, anchorAppId, target, { where = origin } = {}) {
+export async function resolveBasecampApp(origin, key, anchorAppId, target, { where = origin, hint: callerHint } = {}) {
   const tier = TIERS[target]
   if (!tier) throw new Error(`'${target}' is no deploy target — one of ${Object.keys(TIERS).join(', ')}`)
   const anchor = await basecamp(origin, key, `/apps/${encodeURIComponent(anchorAppId)}`).catch(err => {
@@ -80,7 +81,7 @@ export async function resolveBasecampApp(origin, key, anchorAppId, target, { whe
 
   const slug      = anchor.slug
   const projectId = anchor.environment?.projectId
-  const hint      = `run fli basecamp:app${target === 'stage' ? ' --stage' : target === 'production' ? ' --production' : ''}`
+  const hint      = callerHint ?? `run fli basecamp:app${target === 'stage' ? ' --stage' : target === 'production' ? ' --production' : ''}`
   if (!projectId) throw new Error(`App '${anchor.name}' (${anchorAppId}) names no project, so its ${tier} App cannot be found — ${hint}`)
   const environment = (await basecampAll(origin, key, `/environments?projectId=${encodeURIComponent(projectId)}`)).find(e => e.tier === tier)
   if (!environment) throw new Error(`no ${tier} environment in project '${anchor.environment?.project?.name ?? projectId}' — ${hint}`)

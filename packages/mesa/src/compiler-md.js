@@ -119,7 +119,6 @@ function fixUninitialized(script) {
 
 // Block-level Mesa directives get wrapped in <p> by remark.
 // Replace them with HTML comments (block-level, preserved by rehype).
-// Mesa component tags (<Counter />) pass through with allowDangerousHtml — no protection needed.
 // Inline expressions ({title}, {count}, etc.) survive Markdown intact.
 
 const PLACEHOLDER_RE = /<!--MESA:(\d+)-->/g
@@ -142,11 +141,86 @@ function protect(src) {
     (_, directive) => store(directive)
   )
 
-  return { protected: src, map }
+  const attrs = []
+  return { protected: protectAttrBraces(src, attrs), map, attrs }
 }
 
-function restore(src, map) {
-  return src.replace(PLACEHOLDER_RE, (_, idx) => map[Number(idx)] ?? '')
+function restore(src, map, attrs) {
+  src = src.replace(PLACEHOLDER_RE, (_, idx) => map[Number(idx)] ?? '')
+  for (const { token, filler, text } of attrs) src = src.split(token + filler).join(text).split(token).join(text)
+  return src
+}
+
+// CommonMark reads a tag only when every attribute is one it knows, and
+// `{count}`, `{...props}` or an unquoted `={a + b}` is not, so the whole tag
+// was escaped to prose and a component rendered as its own source (FJS-4261).
+// Each such brace crosses the Markdown step as names CommonMark accepts, one
+// per line it spans and the last as wide as its last line, so the line and
+// column `stampRawTags` measures after it are still the file's. Block syntax
+// is read before inline HTML, so a filler line of whitespace ends the
+// paragraph and one of `___` is a rule; `:` starts no block.
+const TAG_START = /<[A-Za-z][\w.:-]*/g
+
+function protectAttrBraces(src, attrs) {
+  let out = ''
+  let from = 0
+  TAG_START.lastIndex = 0
+  for (let m; (m = TAG_START.exec(src));) {
+    const tag = scanTag(src, TAG_START.lastIndex)
+    if (!tag) continue
+    for (const [start, end] of tag.braces) {
+      const text = src.slice(start, end)
+      if (src[start - 1] === '=' && !/[\s"'=<>`]/.test(text)) continue
+      const token = `:mesa-${attrs.length}:`
+      const lines = text.split('\n')
+      const last = lines.at(-1).length - (lines.length > 1 ? 0 : token.length)
+      const filler = '\n:'.repeat(lines.length - 1) + ':'.repeat(Math.max(0, last - (lines.length > 1 ? 1 : 0)))
+      attrs.push({ token, filler, text })
+      out += src.slice(from, start) + token + filler
+      from = end
+    }
+    TAG_START.lastIndex = tag.end
+  }
+  return out + src.slice(from)
+}
+
+// The `{…}` spans of one tag's attributes, or null where no tag closes before a
+// blank line — CommonMark reads none across one, so neither does this.
+function scanTag(src, j) {
+  const braces = []
+  let quote = null
+  for (; j < src.length; j++) {
+    const c = src[j]
+    if (c === '\n' && /^[ \t]*(\n|$)/.test(src.slice(j + 1, j + 80))) return null
+    if (quote) { if (c === quote) quote = null; continue }
+    if (c === '"' || c === "'") quote = c
+    else if (c === '<') return null
+    else if (c === '>') return { end: j + 1, braces }
+    else if (c === '{') {
+      const end = braceEnd(src, j)
+      if (end < 0) return null
+      braces.push([j, end])
+      j = end - 1
+    }
+  }
+  return null
+}
+
+function braceEnd(src, j) {
+  let depth = 0
+  let quote = null
+  for (; j < src.length; j++) {
+    const c = src[j]
+    if (quote) {
+      if (c === '\\') j++
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c
+    else if (c === '{') depth++
+    else if (c === '}' && --depth === 0) return j + 1
+  }
+  return -1
 }
 
 // ─── Markdown processor ───────────────────────────────────────────────────────
@@ -233,7 +307,7 @@ function buildProcessor(remarkPlugins = [], rehypePlugins = [], fileLine = null)
 // one (FJS-1711). The line of the file is only known here, from the hast
 // positions; the compiler makes the `line:column` file-relative.
 function stampLoc(node, fileLine) {
-  if (node.type === 'element' && node.position) {
+  if (node.type === 'element' && node.position && !isSlot(node.tagName)) {
     const { line, column } = node.position.start
     node.properties = { ...node.properties, [LOC_ATTR_PROP]: `${fileLine(line)}:${column}` }
   } else if (node.type === 'raw' && node.position) {
@@ -244,9 +318,10 @@ function stampLoc(node, fileLine) {
 
 // Raw HTML in prose reaches the Mesa compiler as text, so its tags get the
 // template's line unless they say otherwise. Each lowercase opening tag is
-// stamped with its own place in the raw text; a component tag makes no element
-// to stamp, and a `>` inside a quoted value or a `{}` expression does not end
-// a tag.
+// stamped with its own place in the raw text; a component tag and a `<slot>`
+// make no element to stamp, and Mesa refuses any attribute on a slot, so a
+// preview build of a layout holding one failed. A `>` inside a quoted value or
+// a `{}` expression does not end a tag.
 function stampRawTags(value, start, fileLine) {
   let out = ''
   let i = 0
@@ -275,7 +350,7 @@ function stampRawTags(value, start, fileLine) {
       else if (c === '>' && depth <= 0) break
     }
     const tag = value.slice(i, j)
-    if (/\sdata-fjs-loc[=\s>/]/.test(tag + '>')) {
+    if (isSlot(name.slice(1)) || /\sdata-fjs-loc[=\s>/]/.test(tag + '>')) {
       out += name + value.slice(i + name.length, j)
     } else {
       const before = value.slice(0, i)
@@ -288,6 +363,7 @@ function stampRawTags(value, start, fileLine) {
   }
   return out
 }
+const isSlot = (tag) => tag === 'slot' || tag.startsWith('slot:')
 const LOC_ATTR_PROP_NAME = 'data-fjs-loc'
 const LOC_ATTR_PROP = 'dataFjsLoc'
 
@@ -471,7 +547,7 @@ export async function compileMd(source, config = {}) {
   //     `\{` is the escape for a literal brace (FJS-D213), and CommonMark eats
   //     the backslash itself — `\{title}` reaches Mesa as `{title}` and
   //     interpolates. Carried across the Markdown step as a sentinel instead.
-  const { protected: protectedMd, map } = protect(mdBody.replace(/\\\{/g, BRACE_ESCAPE))
+  const { protected: protectedMd, map, attrs } = protect(mdBody.replace(/\\\{/g, BRACE_ESCAPE))
 
   // 4. Markdown → HTML
   const rawHTML = await markdownToHTML(protectedMd, {
@@ -482,7 +558,7 @@ export async function compileMd(source, config = {}) {
   })
 
   // 5. Restore
-  const html = restore(rawHTML, map)
+  const html = restore(rawHTML, map, attrs)
 
   // 5b. Syntax-highlight fenced code blocks that have a language tag,
   //     then escape { } inside all remaining <code> content so Mesa

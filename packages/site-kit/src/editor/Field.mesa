@@ -42,6 +42,7 @@
   let waiting = 0
   let photos  = {}
   let text
+  let card
 
   const live = liveWords()
   $.onDestroy(() => {
@@ -67,7 +68,7 @@
       // A stamp above the body names a value: its key's input, when the form has one.
       const key = select && !at ? form.keys.find((k) => k.field && k.line === line) : null
       if (at && text) { text.focus(); text.setSelectionRange(at.start, at.end) }
-      else if (key) document.getElementById(`fjs-key-${key.key}`)?.select?.()
+      else if (key) card?.querySelector(`#fjs-key-${key.key}`)?.select?.()
     } catch (err) {
       error = err.message
     }
@@ -167,7 +168,7 @@
   $: path, line, () => load()
 </script>
 
-<article class="card fjs-editor-field" data-fjs-editor-ui aria-label={`Editing ${path}`}>
+<article bind:this={card} class="card fjs-editor-field" data-fjs-editor-ui aria-label={`Editing ${path}`}>
   <div class="surface-header">
     <strong>{path}</strong>
     <button class="btn ghost" aria-label="Close" onclick={() => onclose?.()}>Close</button>

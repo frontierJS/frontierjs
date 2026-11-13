@@ -500,8 +500,8 @@ export interface CursorResult<T> {`,
     ``,
     `/** The \`@system\` columns a write may carry in its data: the ones its \`system\` names. */`,
     `type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>`,
-    `/** The client \`asSystem()\` returns: it writes a \`@system\` column with no \`system\` naming it, so every table takes the column in data. */`,
-    `type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D> ? TableClient<R, C & D, U & D, W, Rel, M, S, D> : T[K] }`,
+    `/** The client \`asSystem()\` returns: it writes a \`@system\` column with no \`system\` naming it, so every table takes the column in data. It has no claim to stamp the tenancy column from, so a create names it (\`TSudoCreate\`). */`,
+    `type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q> : T[K] }`,
     ``,
     `/** What \`include\` may name: a relation, or \`_count\`. A relation takes \`true\` or its own read options. */`,
     `export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }`,
@@ -530,7 +530,7 @@ export interface CursorResult<T> {`,
     `type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__SelectedColumns<E, NS>>[] : __Flat<__SelectedColumns<T, NS>>`,
     `type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>`,
     ``,
-    `export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}> {`,
+    `export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, TSudoCreate = {}> {`,
     `  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>`,
     `  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>`,
     `  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>`,
@@ -643,9 +643,18 @@ export interface CursorResult<T> {`,
       ...((model.attributes ?? []).some(a => a.kind === 'gate') ? ['@@gate'] : []),
     ]
     const sys = [...new Set(lifts)].map(n => `'${n}'`).join(' | ') || 'never'
+    const hasSystemData = model.fields.some(f => f.type.kind !== 'relation' && isSystemField(f))
+    // asSystem() has no principal to stamp from, so a create names every
+    // `auth()`-stamped column the principal's client leaves optional.
+    const tenantCols = model.fields
+      .filter(f => f.type.kind !== 'relation' && (isTenantStamp(f) || (isAuthStamp(f) && !f.type.optional)))
+      .filter(f => fieldCreateSpec(f, schema, audience, modelNames, model))
+      .map(f => `'${f.name}'`)
+    const tail = tenantCols.length
+      ? `, ${hasSystemData ? `${pascal(model.name)}System` : '{}'}, Required<Pick<${pascal(model.name)}Create, ${tenantCols.join(' | ')}>>`
+      : hasSystemData ? `, ${pascal(model.name)}System` : ''
     lines.push(
-      `  readonly ${accessor(model.name)}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where, ${pascal(model.name)}Relations, ${moves || 'never'}, ${sys}${
-        model.fields.some(f => f.type.kind !== 'relation' && isSystemField(f)) ? `, ${pascal(model.name)}System` : ''}>`
+      `  readonly ${accessor(model.name)}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where, ${pascal(model.name)}Relations, ${moves || 'never'}, ${sys}${tail}>`
     )
   }
   // And one per view. A view is reached exactly as a table is — `db.<name>` —
@@ -873,6 +882,12 @@ function fileInputTs(field, mode) {
 
 const isSystemField = field => field.attributes.some(a => a.kind === 'system')
 
+// The column row tenancy stamps from the claim (`@default(auth().<claim>)`, generated).
+// A column `@default(auth().<claim>)`, tenancy's or the schema's own: the write fills it from the principal.
+const isAuthStamp = field => field.attributes.some(a => a.kind === 'default' && a.value?.kind === 'call' && a.value.fn === 'auth')
+
+const isTenantStamp = field => field.attributes.some(a => a.kind === 'default' && a.generated === 'tenancy' && a.value?.kind === 'call' && a.value.fn === 'auth')
+
 function fieldCreateSpec(field, schema, audience, modelNames, model) {
   const { name, type, attributes } = field
 
@@ -894,8 +909,6 @@ function fieldCreateSpec(field, schema, audience, modelNames, model) {
 
   const isId      = attributes.some(a => a.kind === 'id')
   const hasDefault = attributes.some(a => a.kind === 'default')
-  const isAuthDefault = attributes.find(a => a.kind === 'default')?.value?.kind === 'call'
-                     && attributes.find(a => a.kind === 'default')?.value?.fn === 'auth'
 
   // A nullable column accepts an explicit null on write, and that is not the
   // same as omitting it: `null` CLEARS, absent leaves the column alone. Typing
@@ -912,9 +925,10 @@ function fieldCreateSpec(field, schema, audience, modelNames, model) {
   // does not compile
   const isDigestTarget = model.fields.some(f => f.attributes.some(a => a.kind === 'digest' && a.column === name))
 
-  // Optional in create if: has @default, is nullable, is @id (auto-increment), is minted,
-  // is a @digest target, or auth()-stamped
-  const optional = type.optional || isId || isMinted || isDigestTarget || (hasDefault && !isAuthDefault)
+  // Optional in create if: has @default (an `auth()` one included: a principal's
+  // client stamps it, and asSystem()'s table clients re-require it, see __Sudo),
+  // is nullable, is @id (auto-increment), is minted, or is a @digest target
+  const optional = type.optional || isId || isMinted || isDigestTarget || hasDefault
 
   return { name, tsType, optional, comment: null }
 }

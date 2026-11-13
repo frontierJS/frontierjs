@@ -196,7 +196,15 @@ describe('imported reads nothing here watches', () => {
   import { s } from './store.js'
 </script>
 <p>{s.n}</p>`, opts)
-    expect(viaTemplate.analysis.warnings.join('\n')).not.toContain('`var`')
+    // An imported data module read in the template is the same fixed value,
+    // and a watch on a path nothing writes is the wrong advice (FJS-4178).
+    expect(viaTemplate.analysis.warnings.join('\n')).toMatch(/Add '\$: s\.n'.* or read it once into a `var` and render that/)
+    const viaDerivation = await compileSource(`<script>
+  import { s } from './store.js'
+  $: d = s.n
+</script>
+<p>{d}</p>`, opts)
+    expect(viaDerivation.analysis.warnings.join('\n')).not.toContain('`var`')
   })
 
   // Svelte's spelling of a reactive read compiles to a derivation over the raw

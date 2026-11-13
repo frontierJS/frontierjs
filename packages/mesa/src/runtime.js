@@ -711,10 +711,12 @@ function _makeNode(fn) {
 }
 
 function _disposeNode(node, removeFromOwner) {
-  // Children first (inner-to-outer). Parent cleanups may reference DOM or
-  // subscriptions owned by children — children must go before parents do.
-  for (const child of node._children) _disposeNode(child, false)
-  node._children = []
+  // Children first (inner-to-outer), and the last-built child first: parent
+  // cleanups may reference DOM or subscriptions owned by children, and a
+  // sibling built later may hold objects on one built earlier — an
+  // {@attach} that owns a renderer and the components after it that put
+  // geometry on it (`FJS-4176`).
+  for (const child of node._children.splice(0).reverse()) _disposeNode(child, false)
   // This node's cleanups run after all children are disposed, LIFO.
   _runCleanups(node._cleanups)
   node._cleanups = []
@@ -1310,39 +1312,38 @@ const _guardRange = (dom) => {
   return [dom, first, last]
 }
 // ── Style injection ───────────────────────────────────────────────────────────
-// By default styles go into document.head. Shadow DOM mounts register their
-// shadow root via _registerStyleRoot() so styles land in the right place.
+// A component's styles go where the tree it renders into can see them: the
+// shadow root a `mount({ root })` named, else document.head. The root rides on
+// the context stack, which every later-instantiating block captures, so a
+// component an `{#if}` creates long after mount still finds it. A registry
+// every mount shared sent a page's components into the one shadow root on it,
+// and left document.head without them (FJS-4269: an editor on a page, both on
+// one runtime chunk).
 // Uses adoptedStyleSheets when available, on the document and on a shadow root
 // alike, with a <style> tag fallback for older environments.
 
-const _styleRoots  = new Map()   // styleRoot → Set<id> (already-injected style ids)
-let   _defaultRoot = null        // set to document.head after browser init
+const _styleRoots = new Map()    // styleRoot → Set<id> (already-injected style ids)
+const STYLE_ROOT  = Symbol('mesa.styleRoot')
 
-function _getStyleTarget(id) {
-  // Check if any registered shadow root should receive this style
-  for (const [root] of _styleRoots) return root   // first registered root for now
-  return _defaultRoot ?? document.head
+function _styleRootHere() {
+  for (let i = _contextStack.length - 1; i >= 0; i--) {
+    if (_contextStack[i].has(STYLE_ROOT)) return _contextStack[i].get(STYLE_ROOT)
+  }
+  return null
 }
 
 export const addStyles = (id, css) => {
   if (!_isBrowser) return
-  _defaultRoot = _defaultRoot ?? document.head
-
-  // Find the right target for this style
-  let target = document.head
-  for (const [root, ids] of _styleRoots) {
-    if (!ids.has(id)) {
-      ids.add(id)
-      _injectStyle(root, id, css)
-    }
-    target = null  // handled by registered roots
+  const root = _styleRootHere()
+  const ids  = root && _styleRoots.get(root)
+  if (ids) {
+    if (ids.has(id)) return
+    ids.add(id)
+    _injectStyle(root, id, css)
+    return
   }
-
-  // Also inject into document.head for non-shadow usage
-  if (target) {
-    if (document.head.querySelector(`style#${id}`)) return
-    _injectStyle(document.head, id, css)
-  }
+  if (document.head.querySelector(`style#${id}`)) return
+  _injectStyle(document.head, id, css)
 }
 
 function _injectStyle(target, id, css) {
@@ -2883,8 +2884,8 @@ export function mount(label, component, option) {
   const delegateRoot = option?.root ?? label.parentNode
   const cleanupDelegation = _registerDelegateRoot(delegateRoot)
 
-  // Register style root — if a shadow root is provided, styles are injected
-  // there via adoptedStyleSheets instead of document.head
+  // A shadow root takes this tree's styles; a frame under the component names
+  // it to addStyles, and blocks that render later capture the frame with the rest.
   const styleRoot = option?.root instanceof ShadowRoot ? option.root : null
   const cleanupStyles = styleRoot ? _registerStyleRoot(styleRoot) : () => {}
 
@@ -2903,11 +2904,13 @@ export function mount(label, component, option) {
   // tests write `disposeRoot(); instance.destroy()` — which is the shape that
   // says the handle is missing half a teardown.
   let disposeRoot = () => {}
+  if (styleRoot) _contextStack.push(new Map([[STYLE_ROOT, styleRoot]]))
   try {
     createRoot((dispose) => {
       disposeRoot = dispose
       component(anchor, option?.props ?? {})
     })
+    _contextStack.length = ctxs
   } catch (e) {
     _unwindComponents(comps, ctxs)
     disposeRoot()

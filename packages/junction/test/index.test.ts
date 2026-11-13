@@ -4970,6 +4970,17 @@ describe('helmet — security headers applied by default', () => {
     expect(res.headers['x-frame-options']).toBe('DENY')
   })
 
+  // FJS-4215 — an app that widens the default by one directive builds on it rather than restating it
+  it('defaultCsp is exported and is what helmet sends', async () => {
+    const { defaultCsp } = await import('../index.ts')
+    const app = await createTestApp({ config: { http: { helmet: { frame: 'sameorigin' } } } })
+    expect((await request(app).get('/no/such/deep/path')).headers['content-security-policy'])
+      .toBe(defaultCsp('sameorigin'))
+    const csp  = `${defaultCsp()}; font-src 'self' https://fonts.gstatic.com`
+    const wide = await createTestApp({ config: { http: { helmet: { csp } } } })
+    expect((await request(wide).get('/no/such/deep/path')).headers['content-security-policy']).toBe(csp)
+  })
+
   // One page with an inline script must not cost the whole app its policy
   it('a header the handler set stands over helmet\'s', async () => {
     const app = await createTestApp()

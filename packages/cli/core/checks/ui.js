@@ -1447,8 +1447,9 @@ export const CHECKS = {
             // A selector is what precedes a `{`; a declaration value never does.
             for (const rule of css.matchAll(/([^{};]+)\{/g)) {
               if (rule[1].trimStart().startsWith('@')) continue
-              // `:global(.item)` reaches the kit's rule on purpose.
-              const selector = rule[1].replace(/:global\([^)]*\)/g, s => ' '.repeat(s.length))
+              // `:global(.item)` reaches the kit's rule on purpose. Its parens
+              // are matched balanced: `:global(.a:has(.b))` ends at the second `)`.
+              const selector = blankGlobals(rule[1])
               for (const m of selector.matchAll(/\.([A-Za-z_][\w-]*)/g)) {
                 const term = owned.get(m[1])
                 if (!term || seen.has(m[1])) continue
@@ -1543,6 +1544,25 @@ const CSS_NAMED_COLORS = (
 ).split(' ').sort((a, b) => b.length - a.length)
 
 // ─── reading markup ───────────────────────────────────────────────────────────
+
+// A selector with each `:global(…)` blanked to spaces, offsets intact. The
+// parens are counted: `[^)]*` ends at the first `)` and leaves the classes
+// after a nested `:has(…)` or `:is(…)` to the class scan. Unbalanced blanks to the end.
+function blankGlobals(selector) {
+  let out = ''
+  for (let i = 0; i < selector.length;) {
+    if (!selector.startsWith(':global(', i)) { out += selector[i++]; continue }
+    let depth = 0
+    let j = i + ':global'.length
+    for (; j < selector.length; j++) {
+      if (selector[j] === '(') depth++
+      else if (selector[j] === ')' && --depth === 0) { j++; break }
+    }
+    out += ' '.repeat(j - i)
+    i = j
+  }
+  return out
+}
 
 // The array literals a `<Table>` is handed as `columns` — `columns={X}`, the
 // `{columns}` shorthand, or an inline `columns={[…]}` — as [start, end) offsets.

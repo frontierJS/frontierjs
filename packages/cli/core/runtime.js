@@ -3,7 +3,7 @@ import { createHash } from 'crypto'
 import { pathToFileURL } from 'url'
 import { compileCliWithMap, extractFrontmatter } from './compiler.js'
 import { registerShim } from './stack.js'
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, rmSync } from 'fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, rmSync, rmdirSync } from 'fs'
 import { resolve, dirname, basename, join } from 'path'
 import { logger, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } from './utils.js'
 import { getModule } from './registry.js'
@@ -74,14 +74,53 @@ const _signal = (code) => {
 }
 
 const _cleanupTmp = () => {
+  for (const dir of _appSessions.values()) {
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+    try { rmdirSync(dirname(dir)) } catch {}   // only when no other session shares it
+  }
   if (!_sessionDir) return
   try { rmSync(_sessionDir, { recursive: true, force: true }) } catch {}
 }
 
-const _tmpFile = () => join(
-  _ensureSession(),
-  `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}.mjs`
-)
+// A shim resolves a bare or `#` specifier from where it sits. Under fliRoot
+// that is the cli package, which has no `#shared/*` entry, so an app's own
+// command could not import the code its `imports` map names (FJS-4165). A
+// command outside fliRoot is therefore written beside the nearest package.json
+// that declares `imports`; every other command stays under `fliTmpRoot()`.
+const _appSessions = new Map()
+
+function _importsOwner(file) {
+  const root = global.fliRoot
+  if (!file || (root && (file === root || file.startsWith(root + '/')))) return null
+  for (let dir = dirname(resolve(file)); ; dir = dirname(dir)) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+      if (pkg.imports) return dir
+    } catch {}
+    if (dirname(dir) === dir) return null
+  }
+}
+
+function _appSession(owner) {
+  if (_appSessions.has(owner)) return _appSessions.get(owner)
+  const tmpRoot = join(owner, '.fli-tmp')
+  const dir     = join(tmpRoot, String(process.pid))
+  try {
+    mkdirSync(dir, { recursive: true })
+  } catch {
+    return null   // read-only app: the shim goes under fliTmpRoot as before
+  }
+  sweepStaleTmp(tmpRoot)
+  _ensureSession()   // registers the exit and signal handlers
+  _appSessions.set(owner, dir)
+  return dir
+}
+
+const _tmpFile = (sourceFile) => {
+  const owner = _importsOwner(sourceFile)
+  const dir   = (owner && _appSession(owner)) || _ensureSession()
+  return join(dir, `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}.mjs`)
+}
 
 // ─── Module cache ─────────────────────────────────────────────────────────────
 // Skips recompiling and temp file writes for commands invoked more than once
@@ -159,7 +198,7 @@ export async function Command({ file, arg, flag, emit }) {
 
     if (!run) {
       const { code: source, sourceLineOffset } = compileCliWithMap(template, mod?.script || '', file)
-      const tmpFile = _tmpFile()
+      const tmpFile = _tmpFile(file)
       // The only place holding the shim path and the .md path at once, which is
       // what lets a frame from this command name the line its author wrote.
       registerShim(tmpFile, file, sourceLineOffset)
@@ -720,7 +759,7 @@ export async function Command({ file, arg, flag, emit }) {
             // of a namespace, not a stranger to it.
             const { code: stepSource, sourceLineOffset: stepOffset } =
               compileCliWithMap(stepTemplate, mod?.script || '', stepFile)
-            const tmpStep = _tmpFile()
+            const tmpStep = _tmpFile(stepFile)
             registerShim(tmpStep, stepFile, stepOffset)
             try {
               writeFileSync(tmpStep, stepSource)

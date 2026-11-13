@@ -170,7 +170,7 @@ test('--template web-only writes web/ and nothing that needs an API or a databas
   const deps = { ...manifest.dependencies, ...manifest.devDependencies }
   expect(deps['@frontierjs/litestone']).toBeUndefined()
   expect(deps['@frontierjs/junction']).toBeUndefined()
-  expect(manifest.imports).toBeUndefined()
+  expect(manifest.imports['#db/*']).toBeUndefined()
   for (const s of ['api', 'start', 'db:migrate', 'db:backup', 'db:types'])
     expect(manifest.scripts[s]).toBeUndefined()
   expect(manifest.scripts.dev).toBe(manifest.scripts.web)
@@ -186,6 +186,27 @@ test('--template web-only writes web/ and nothing that needs an API or a databas
   expect(readFileSync(join(app, 'AGENTS.md'), 'utf8')).not.toContain('schema.lite`: **Data')
   expect(readFileSync(join(app, 'README.md'), 'utf8')).not.toMatch(/api\/|schema\.lite/)
 }, 60_000)
+
+// FJS-4161 — a template with no API of its own has no db/ either: the schema is
+// what an API and its clients derive from, and these talk to somebody else's.
+for (const template of ['site-only', 'widgets-only', 'extension-only']) {
+  test(`--template ${template} writes nothing that needs a database`, () => {
+    const app = scaffold(template, '--template', template)
+    for (const gone of ['api', 'db', '.env'])
+      expect(existsSync(join(app, gone))).toBe(false)
+    const manifest = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'))
+    const deps = { ...manifest.dependencies, ...manifest.devDependencies }
+    expect(deps['@frontierjs/litestone']).toBeUndefined()
+    expect(manifest.imports['#db/*']).toBeUndefined()
+    for (const s of ['db:migrate', 'db:backup', 'db:types'])
+      expect(manifest.scripts[s]).toBeUndefined()
+    for (const f of ['README.md', 'AGENTS.md']) {
+      const text = readFileSync(join(app, f), 'utf8')
+      expect(text).not.toContain('schema.lite')
+      expect(text).not.toMatch(/db:(migrate|types|push)/)
+    }
+  }, 60_000)
+}
 
 // FJS-1490 — a sub-command `fli new` composes opens a client before the initial
 // migration is written, so auto-DDL builds app.db and records no history; the
@@ -308,6 +329,22 @@ test('a scaffolded surface reaches db/ through #db/*', () => {
   expect(r.stderr).toBe('')
   expect(r.stdout.trim()).toBe('from db')
 }, 60_000)
+
+// FJS-4162 — shared/ is pure code two surfaces run, imported as #shared/<file>.
+// A surface is often added after `fli new` (five-to-nine began site-only and
+// grew cli/), so the entry is written for every app, db/ or not.
+for (const [name, ...flags] of [['sharing'], ['sharing-site', '--template', 'site-only']]) {
+  test(`a scaffolded surface reaches shared/ through #shared/* (${flags[1] ?? 'default'})`, () => {
+    const app = scaffold(name, ...flags)
+    mkdirSync(join(app, 'shared'), { recursive: true })
+    writeFileSync(join(app, 'shared/probe.js'), "export const probe = 'from shared'\n")
+    mkdirSync(join(app, 'cli/src'), { recursive: true })
+    writeFileSync(join(app, 'cli/src/probe.js'), "import { probe } from '#shared/probe.js'\nconsole.log(probe)\n")
+    const r = spawnSync(process.execPath, [join(app, 'cli/src/probe.js')], { cwd: app, encoding: 'utf8' })
+    expect(r.stderr).toBe('')
+    expect(r.stdout.trim()).toBe('from shared')
+  }, 60_000)
+}
 
 // FJS-2439 — auth.ts imports db.ts, which opens db/app.db at import, so what
 // 'admin' means has to live in gate.ts for a test to reach it without the

@@ -294,7 +294,8 @@ guest is a rule the app writes, because nothing reads admission as membership
 Junction emits the twin from two places: `membershipClaim({ standing: 'role',
 guests: ['guest'] })` for a roster row holding a guest standing, and `bearerClaim`
 for any grant whose `claims` name the tenant claim. A create by an admitted-only
-caller must state the tenant column, because the stamp is the member claim's.
+caller that omits the tenant column is stamped from the twin; a column naming
+another tenant is still refused.
 
 ### Models that carry no column
 

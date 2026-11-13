@@ -157,3 +157,34 @@ describe('temp root', () => {
     expect(existsSync(join(root, String(process.pid)))).toBe(true)
   })
 })
+
+// ─── a command inside an app resolves the app's own `imports` ─────────────────
+// FJS-4165: a shim written under fliRoot resolves `#shared/*` from the cli
+// package, which has no such entry, so an app's `cli/` command could not
+// import the code `shared/` exists to hold.
+describe('an app command resolves its own #-imports', () => {
+  let APP
+  beforeAll(async () => {
+    global.fliRoot ??= realpathSync(join(import.meta.dir, '..'))
+    APP = realpathSync(mkdirSync(join(tmpdir(), `fli-app-imports-${process.pid}`), { recursive: true }))
+    global.projectRoot ??= APP
+    mkdirSync(join(APP, 'shared'), { recursive: true })
+    mkdirSync(join(APP, 'cli', 'src', 'routes'), { recursive: true })
+    writeFileSync(join(APP, 'package.json'), JSON.stringify({ name: 'app', type: 'module', imports: { '#shared/*': './shared/*' } }))
+    writeFileSync(join(APP, 'shared', 'engine.js'), "export const answer = () => 'from-shared'\n")
+    writeFileSync(join(APP, 'cli', 'src', 'routes', 'play.md'), [
+      '---', 'title: probe:play', '---', '', '<script>', "import { answer } from '#shared/engine.js'", '</script>', '',
+      '```js', 'echo(answer())', '```', '',
+    ].join('\n'))
+  })
+  afterAll(() => { try { rmSync(APP, { recursive: true, force: true }) } catch {} })
+
+  test('`import "#shared/…"` in the command body reaches the app\'s shared/', async () => {
+    const { Command } = await import('../core/runtime.js')
+    const events = []
+    const emit = (e) => { events.push(e); return Promise.resolve() }
+    const file = join(APP, 'cli', 'src', 'routes', 'play.md')
+    await (await Command({ file, arg: [], flag: {}, emit }))()
+    expect(events.map(e => e.text).join('\n')).toMatch(/from-shared/)
+  })
+})

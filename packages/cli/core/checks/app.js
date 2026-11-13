@@ -17,7 +17,7 @@ import {
   lineOf, readCode, isAppRoot, SURFACES, sources, SCRIPT_EXT, stripComments,
   scripts, stem, staticSurfaces,
 } from './lib.js'
-import { safeRead, SKIP, rel }                                     from '../fs.js'
+import { safeRead, SKIP, rel, inTree }                             from '../fs.js'
 import { formatBytes }                                         from '@frontierjs/toolbelt/units'
 
 export const CHECKS = {
@@ -828,8 +828,11 @@ function sharedFindings(root, inside) {
   // Who reaches each shared file: a surface directly, or a shared file it imports.
   const reach = new Map(files.map(f => [stem(f), new Set()]))
   const via   = new Map(files.map(f => [stem(f), relativeImports(f).filter(t => inside(dir, t)).map(stem)]))
+  // A surface's test/ is not that surface running the file, so only src/ reaches.
+  // A cli/ command is a .md file whose fenced code imports like any script.
   for (const surface of SURFACES) {
-    for (const file of sources(root, [...SCRIPT_EXT, '.mesa'], `${surface}/src`)) {
+    const exts = surface === 'cli' ? [...SCRIPT_EXT, '.mesa', '.md'] : [...SCRIPT_EXT, '.mesa']
+    for (const file of sources(root, exts, `${surface}/src`)) {
       let text = ''
       try { text = stripComments(readFileSync(file, 'utf8')) } catch { continue }
       for (const m of text.matchAll(SHARED_RE)) reach.get(stem(join(dir, m[1])))?.add(surface)
@@ -931,9 +934,11 @@ function timeoutOwner(dir) {
 }
 
 // Every `*.test.*` file under `root` — the files `bun test` and vitest collect —
-// with fixtures and a nested app left out, the second to that app's own run.
+// with fixtures, what `inTree` refuses and a nested app left out, the last to
+// that app's own run.
 function collectedTests(root) {
   const apps  = new Set(findApps(root).filter(a => a !== root))
+  const owned = inTree(root)
   const files = []
   const visit = (dir, depth) => {
     if (depth < 0) return
@@ -942,7 +947,7 @@ function collectedTests(root) {
       const child = join(dir, name)
       let st
       try { st = statSync(child) } catch { continue }
-      if (st.isDirectory()) { if (!apps.has(child)) visit(child, depth - 1) }
+      if (st.isDirectory()) { if (!apps.has(child) && owned(child)) visit(child, depth - 1) }
       else if (/\.test\.[mc]?[jt]sx?$/.test(name)) files.push(child)
     }
   }
@@ -955,6 +960,7 @@ function collectedTests(root) {
 // project's source tree, and its drives are not this app's.
 function driveFiles(root, dirs) {
   const apps  = new Set(findApps(root).filter(a => a !== root))
+  const owned = inTree(root)
   const files = []
   const visit = (dir, depth, inTests) => {
     if (depth < 0) return
@@ -964,7 +970,7 @@ function driveFiles(root, dirs) {
       let st
       try { st = statSync(child) } catch { continue }
       if (st.isDirectory()) {
-        if (!apps.has(child)) visit(child, depth - 1, inTests || dirs.test(name))
+        if (!apps.has(child) && owned(child)) visit(child, depth - 1, inTests || dirs.test(name))
       } else if (inTests && /\.(mjs|js|ts)$/.test(name)) files.push(child)
     }
   }

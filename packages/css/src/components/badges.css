@@ -29,7 +29,7 @@
   --tone-fill:    var(--bg-mix, var(--color-muted));
   background:     var(--_fill, var(--tone-fill));
   color:          var(--_on-fill, white);
-  font-family:    var(--font-primary);
+  font-family:    var(--font-primary), sans-serif;
   font-weight:    var(--badge-font-weight);
   text-transform: var(--badge-text-transform);
   letter-spacing: var(--badge-letter-spacing);

@@ -205,7 +205,12 @@ Pinned by `test/system-transitions.test.ts` and `test/transition-entry.test.ts`.
 **Every `auth().x` in a policy must be a claim the principal is known to carry**,
 or it is refused at startup naming the set. That set is the framework's nine
 (`id`, `capabilities`, `level` and the six standing fields above), the `@@auth`
-model's columns, the `tenancy` claim, and what the schema declares:
+model's columns, the `tenancy` claim and its admission twin (`workspaceId` and
+`workspaceIdAdmitted`), and what the schema declares. A member carries the
+claim; a caller admitted without membership — a roster guest, a `bearerClaim`
+link holder — carries only the twin, which the tenant deny passes and
+`workspaceId == auth().workspaceId` does not (`FJS-D1100`,
+`docs/multi-tenancy.md` § Admitted is not a member):
 
 ```lite
 model User { id Int @id  @@auth }

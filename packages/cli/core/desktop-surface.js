@@ -47,12 +47,13 @@ import { encodePng }                            from './png.js'
 import { frontmatterValue }                     from './compiler.js'
 import { portAnswering }                        from './probe.js'
 import { appPorts, describeProcess, pidsOnPort, processCwd } from './ports.js'
-import { writeApiOrigin }                      from './app-config.js'
+import { writeApiOrigin, FJS_PACKAGES, VITE_VERSION } from './app-config.js'
+import { packageHostUrl }                   from './publish-hosts.js'
 import { SHELL_ORIGINS }                       from './shell-origins.js'
 import { scaffoldPort, writeAbsent, viteScript, surfaceViteConfig, surfaceIndexHtml } from './scaffold/surface.js'
 import {
   apiPrefixOf, sidecarBuildScript, sidecarBundled, sidecarCapabilities, sidecarCargoToml, sidecarConfig,
-  sidecarLauncher, sidecarMainRs, sidecarMake, sidecarShellGitignore, sidecarTauriConf,
+  sidecarFns, sidecarLauncher, sidecarMainRs, sidecarMake, sidecarShellGitignore, sidecarTauriConf,
 } from './desktop-sidecar.js'
 
 // ─── names ────────────────────────────────────────────────────────────────────
@@ -566,6 +567,7 @@ function sidecarFiles(root, names) {
     ['shell/capabilities/default.json',   sidecarCapabilities()],
     ['sidecar/launcher.ts',               sidecarLauncher(full)],
     ['sidecar/make-sidecar.ts',           sidecarMake(full)],
+    ['sidecar/sidecar-fns.ts',            sidecarFns()],
     ['sidecar/bundled.ts',                sidecarBundled(root)],
   ]
 }
@@ -828,4 +830,33 @@ export function desktopScripts({ wraps = null } = {}) {
     ...(wraps ? {} : { 'dev:desktop': viteScript('desktop') }),
     'build:desktop': 'bun desktop/deploy/build.mjs',
   }
+}
+
+/**
+ * What a desktop surface that owns its screens builds them with: vite, and the
+ * UI realm its config and routes import. A wrapped surface builds with the
+ * wrapped surface's, and a full-stack app's `web/` brought them already; an
+ * api-only app has none, so `dev:desktop` died with `Script not found "vite"`
+ * (`FJS-4185`). Only what the app does not name is returned, in the spec form
+ * its own `@frontierjs/*` entries are in (`link:`, the package host, or a pin).
+ *
+ * @param {object | null} appPkg the app's parsed package.json
+ */
+export function desktopDevDeps(appPkg, { wraps = null } = {}) {
+  if (wraps) return {}
+  const named = { ...appPkg?.devDependencies, ...appPkg?.dependencies }
+  const specs = Object.entries(named).filter(([key]) => key.startsWith('@frontierjs/')).map(([, spec]) => String(spec))
+  const source = specs.some(s => s.startsWith('link:')) ? 'local'
+    : specs.some(s => s.startsWith('https://')) ? 'url'
+    : 'npm'
+  const specFor = (key) => source === 'local' ? `link:${key}`
+    : source === 'url' ? packageHostUrl(key, FJS_PACKAGES[key])
+    : FJS_PACKAGES[key]
+  const wanted = {
+    vite: VITE_VERSION,
+    '@frontierjs/sierra': specFor('@frontierjs/sierra'),
+    '@frontierjs/mesa': specFor('@frontierjs/mesa'),
+    '@frontierjs/css': specFor('@frontierjs/css'),
+  }
+  return Object.fromEntries(Object.entries(wanted).filter(([key]) => !named[key]))
 }

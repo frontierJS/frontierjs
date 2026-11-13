@@ -96,13 +96,44 @@ describe('an attribute in a .md still takes any expression (FJS-D213)', () => {
   // author hand-wrote can only have been meant as an expression, where a brace
   // in prose usually was not.
   it('a component prop is compiled', async () => {
-    const ctx = await md('<Counter initialCount={2 + 3} />\n')
+    const ctx = await md(`<script>\n  import Counter from './Counter.mesa'\n</script>\n\n<Counter initialCount={2 + 3} />\n`)
+    expect(ctx.markdownHTML).toBe('<Counter initialCount={2 + 3} />')
     expect(ctx.result).toContain('2 + 3')
   })
 
   it('an element attribute is compiled', async () => {
     const ctx = await md('<span data-n="n={1 + 1}">x</span>\n')
     expect(ctx.result).toContain('1 + 1')
+  })
+})
+
+// CommonMark knows no `{count}` attribute and no unquoted value holding a
+// space or a `>`, so a tag with either was escaped to prose and the component
+// rendered as its own source text (FJS-4261).
+describe('a tag whose attribute CommonMark cannot read is still a tag', () => {
+  const html = async body => (await md(
+    `<script>\n  import Counter from './Counter.mesa'\n  let count = 1\n  let props = {}\n</script>\n\n${body}\n`
+  )).markdownHTML
+
+  it.each([
+    '<Counter {count}/>',
+    '<Counter {count} />',
+    '<Counter {...props} label="a" />',
+    '<Counter on={(n) => { count = n > 1 ? n : 1 }} />',
+  ])('%s', async (tag) => {
+    expect(await html(tag)).toBe(tag)
+  })
+
+  it.each([
+    'Now <Counter {count}/> clicks.',
+    '<button onclick={() => count++}>add</button>',
+    '<Counter\nstart={count}\nonchange={(n) => {\ncount = n\n}}\n/>',
+  ])('inline: %s', async (text) => {
+    expect(await html(text)).toBe(`<p>${text}</p>`)
+  })
+
+  it('in a code span it stays code', async () => {
+    expect(await html('`<Counter {count}/>`')).toBe('<p><code>&#x3C;Counter &#123;count&#125;/></code></p>')
   })
 })
 

@@ -286,11 +286,12 @@ const template  = flag.template
 // no API of its own and no SPA, because what it talks to is somebody else's.
 const surfaceOnly  = template === 'widgets-only' || template === 'extension-only' || template === 'site-only'
 // `web-only` is the same shape with web/ as the surface: a project whose only
-// product is the SPA, talking to nobody's API. It also has no db/, since the
-// schema is what an API and its clients derive from.
+// product is the SPA, talking to nobody's API.
 const webOnly      = template === 'web-only'
 const useApi       = !surfaceOnly && !webOnly
-const useDb        = !webOnly
+// No API of its own means no db/: the schema is what an API and its clients
+// derive from, and a project with neither has nothing to read it.
+const useDb        = useApi
 const useWeb       = webOnly || (!surfaceOnly && (template === 'full-stack' || template === undefined) && flag.web !== false)
 const useWidgets   = template === 'widgets-only'   || flag.widgets === true
 const useSite      = template === 'site-only'      || flag.site === true

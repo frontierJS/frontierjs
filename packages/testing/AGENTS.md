@@ -51,6 +51,11 @@ A test about a hook, a plugin guard or `ctx.user` wants `as`.
   `.addUser(user)` returns the bearer token (`test-token-<id>`) for
   `env.http…auth(token)`. The ladder reads `isAdmin` / `isOwner` /
   `isSystemAdmin`, not `role`: `role: 'admin'` grades 4.
+- **A link holder or roster guest carries the tenant claim's admission twin**
+  under `tenancy { strategy row }` (`FJS-D1100`): `bearerClaim` emits
+  `claims: { accountId: … }` as `accountIdAdmitted`. Build that caller as
+  `{ accountIdAdmitted, shareLinkId }`; `{ accountId, shareLinkId }` is a
+  member, and a test of the link then passes on the member's rule.
 - `testCtx`, `withTestMeta`, `enterCall`, `request` are Junction's own helpers,
   re-exported for a unit test of a hook or a service method.
 

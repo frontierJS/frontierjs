@@ -95,7 +95,7 @@ export function stampFromAuth(data, list, auth, stamped = null) {
 // whose author is gone; `fillsNull` is tenancy's claim column, where it cannot.
 /**
  * @param {Row | null | undefined} data
- * @param {{ field: string, authField: string, fillsNull?: boolean }[] | null | undefined} list
+ * @param {{ field: string, authField: string, fillsNull?: boolean, admission?: string }[] | null | undefined} list
  * @param {Row | null | undefined} auth
  * @param {Set<string> | null} [stamped]
  */
@@ -103,9 +103,11 @@ export function applyAuthDefaults(data, list, auth, stamped = null) {
   if (!list?.length || !auth) return data
   /** @type {Row} */
   const stamps = {}
-  for (const { field, authField, fillsNull } of list) {
+  for (const { field, authField, fillsNull, admission } of list) {
     const open = fillsNull ? data?.[field] == null : data?.[field] === undefined
-    if (open && auth[authField] != null) { stamps[field] = auth[authField]; noteStamp(stamped, data, field) }
+    // An admitted-only caller (a link holder) carries the tenant on the twin.
+    const value = auth[authField] ?? (admission ? auth[admission] : null)
+    if (open && value != null) { stamps[field] = value; noteStamp(stamped, data, field) }
   }
   return Object.keys(stamps).length ? { ...(data ?? {}), ...stamps } : data
 }

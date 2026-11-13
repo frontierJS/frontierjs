@@ -8,11 +8,11 @@
 // a snapshot or a page built off an unsorted listing reorders on someone
 // else's disk and reads as a change nobody made.
 //
-// A leaf: node:fs and node:path only, so `checks.js`, which may run before
-// install, can import it.
+// No dependency, so `checks.js`, which may run before install, can import it.
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { isAbsolute, join, relative }                     from 'node:path'
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { isAbsolute, join, relative }                                from 'node:path'
+import { treePaths }                                                 from './tree.js'
 
 /** Directories no walk descends into — build output and other people's code. */
 export const SKIP = new Set(['node_modules', 'dist', 'build', '.git', 'coverage', '.output', '.vite'])
@@ -40,15 +40,36 @@ export function rel(root, p) {
 }
 
 /**
+ * `(dir) => boolean`: would a clone of `root` hold this directory under it? A
+ * gitignored folder and a link are not, so a gate's clone parked under
+ * `measure/results/` and a link to the framework checkout beside it were graded
+ * as the app's own source (FJS-4242). Outside a repository, or from inside an
+ * ignored directory a caller asked for by name, git has no answer and only the
+ * link is refused.
+ */
+export function inTree(root) {
+  const tree = existsSync(root) ? treePaths(root) : null
+  const dirs = tree?.files.size ? tree.dirs : null
+  return dir => {
+    try { if (lstatSync(dir).isSymbolicLink()) return false } catch { return false }
+    return !dirs || dirs.has(rel(root, dir))
+  }
+}
+
+/**
  * `fn(dir)` for a directory and every directory under it to `depth`, parents
- * first, skipping SKIP and dot-directories.
+ * first, skipping SKIP, dot-directories and what `inTree` says a clone lacks.
  */
 export function walk(dir, depth, fn) {
-  if (depth < 0 || !existsSync(dir)) return
-  try { fn(dir) } catch { /* an unreadable directory is not a finding */ }
-  for (const name of safeRead(dir)) {
-    if (SKIP.has(name) || name.startsWith('.')) continue
-    const child = join(dir, name)
-    try { if (statSync(child).isDirectory()) walk(child, depth - 1, fn) } catch { /* dangling link */ }
+  const owned = inTree(dir)
+  const visit = (here, left) => {
+    if (left < 0 || !existsSync(here)) return
+    try { fn(here) } catch { /* an unreadable directory is not a finding */ }
+    for (const name of safeRead(here)) {
+      if (SKIP.has(name) || name.startsWith('.')) continue
+      const child = join(here, name)
+      if (isDir(child) && owned(child)) visit(child, left - 1)
+    }
   }
+  visit(dir, depth)
 }

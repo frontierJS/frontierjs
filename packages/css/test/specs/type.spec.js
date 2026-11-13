@@ -156,7 +156,7 @@ test('type: --font-display is unset by default and headings read --font-primary'
   var box = el('<div style="--font-primary: Palatino"><h2>a</h2><p class="text-md">b</p></div>');
   assert.equal(
     style(box.querySelector('h2'), 'font-family'),
-    'Palatino',
+    'Palatino, sans-serif',
     'a heading did not fall back to a SCOPED --font-primary'
   );
 });
@@ -172,11 +172,33 @@ test('type: --font-display moves the headings and nothing else', function () {
       '</div>'
   );
 
-  assert.equal(style(box.querySelector('h2'), 'font-family'), 'Courier', 'h2 ignored --font-display');
-  assert.equal(style(box.querySelector('h5'), 'font-family'), 'Courier', 'h5 ignored --font-display');
+  assert.equal(style(box.querySelector('h2'), 'font-family'), 'Courier, sans-serif', 'h2 ignored --font-display');
+  assert.equal(style(box.querySelector('h5'), 'font-family'), 'Courier, sans-serif', 'h5 ignored --font-display');
   assert.equal(
     style(box.querySelector('.btn'), 'font-family'),
-    'Palatino',
+    'Palatino, sans-serif',
     'a button followed the display face'
   );
+});
+
+test('type: every font-family reading --font-primary ends in a generic family', function () {
+  /*
+   * An app sets --font-primary to the one face it serves. When that face
+   * never loads, a list with no generic falls to the browser default, which
+   * is a serif, and every Block, button and field reads as unstyled
+   * (FJS-4262). The use site carries the floor so the token can stay a name.
+   */
+  var offenders = [];
+  allRules().forEach(function (rule) {
+    if (!rule.style) return;
+    var v = (rule.style.getPropertyValue('font-family') || '').trim();
+    if (v.indexOf('--font-primary') === -1) return;
+    if (!/,\s*sans-serif$/.test(v)) offenders.push(rule.selectorText + ' { font-family: ' + v + ' }');
+  });
+  assert.equal(offenders.length, 0, 'no generic family behind --font-primary:\n        ' + offenders.join('\n        '));
+
+  var box = el('<div style="--font-primary: NoSuchFace"><div class="card">a</div><button class="btn">b</button><h2>c</h2></div>');
+  ['.card', '.btn', 'h2'].forEach(function (sel) {
+    assert.equal(style(box.querySelector(sel), 'font-family'), 'NoSuchFace, sans-serif', sel);
+  });
 });

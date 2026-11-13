@@ -539,8 +539,8 @@ type __Flat<T> = { [K in keyof T]: T[K] }
 
 /** The `@system` columns a write may carry in its data: the ones its `system` names. */
 type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>
-/** The client `asSystem()` returns: it writes a `@system` column with no `system` naming it, so every table takes the column in data. */
-type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D> ? TableClient<R, C & D, U & D, W, Rel, M, S, D> : T[K] }
+/** The client `asSystem()` returns: it writes a `@system` column with no `system` naming it, so every table takes the column in data. It has no claim to stamp the tenancy column from, so a create names it (`TSudoCreate`). */
+type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q> : T[K] }
 
 /** What `include` may name: a relation, or `_count`. A relation takes `true` or its own read options. */
 export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }
@@ -569,7 +569,7 @@ type __Narrow<T, O> = [O] extends [{ select: infer NS }] ? __Rows<T, NS> : T
 type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__SelectedColumns<E, NS>>[] : __Flat<__SelectedColumns<T, NS>>
 type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>
 
-export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}> {
+export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, TSudoCreate = {}> {
   findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
   findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
   findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>

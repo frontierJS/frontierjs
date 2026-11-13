@@ -80,6 +80,7 @@ the Tauri bundle expects it; the shell itself still compiles on Windows.
 desktop/
   sidecar/launcher.ts        the sidecar's entry: the app's API, bound to 127.0.0.1
   sidecar/make-sidecar.ts    stages app files and compiles shell/sidecar/<app>-api-<triple>
+  sidecar/sidecar-fns.ts     the import-scanning functions, untyped (@ts-nocheck)
   sidecar/bundled.ts         generated: the packages compiled in
   shell/capabilities/        default.json — dialog:allow-open only
 ```
@@ -90,7 +91,7 @@ desktop/
 not carry it afterwards. The API's CORS list has to name the shell's origin.
 
 ```js
-const { scaffoldDesktopSurface, desktopScripts, desktopNames, desktopAppName } =
+const { scaffoldDesktopSurface, desktopScripts, desktopDevDeps, desktopNames, desktopAppName } =
   await import(resolve(global.fliRoot, 'core/desktop-surface.js'))
 const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
@@ -146,9 +147,17 @@ if (appPkg) {
     appPkg.scripts[key] = value
     added.push(key)
   }
-  if (added.length) {
+  // The screens' own build and UI realm, which an api-only app has none of.
+  const tools = []
+  for (const [key, spec] of Object.entries(desktopDevDeps(appPkg, { wraps }))) {
+    appPkg.devDependencies ??= {}
+    appPkg.devDependencies[key] = spec
+    tools.push(key)
+  }
+  if (added.length || tools.length) {
     writeFileSync(appPkgPath, `${JSON.stringify(appPkg, null, 2)}\n`, 'utf8')
-    log.done(`Added scripts: ${added.join(', ')}`)
+    if (added.length) log.done(`Added scripts: ${added.join(', ')}`)
+    if (tools.length) log.done(`Added devDependencies: ${tools.join(', ')} — run bun install before dev:desktop.`)
   }
 }
 

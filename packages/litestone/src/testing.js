@@ -583,7 +583,10 @@ export async function createTestEnv(opts = {}) {
               // the gate. `buildOne` alone is not enough either: its FKs point
               // at nothing, and the write fails on the constraint rather than
               // reaching the gate.
-              const data = factory.buildOne(await _freshParents(schema, row.model, chain))
+              const owned = row.level < 8
+                ? _ownedBy(schema, schema.models.find(x => x.name === modelName), { id: LADDER_PRINCIPAL_ID })
+                : { columns: {}, parents: {} }
+              const data  = factory.buildOne(await _freshParents(schema, row.model, chain, owned.parents))
               // The id comes out only where something else will make one. A key
               // with no `@default` is CALLER-supplied and required, so stripping
               // it fails the required check and the gate is never asked — which
@@ -603,7 +606,7 @@ export async function createTestEnv(opts = {}) {
               // the synthetic caller, so `@@allow(all, userId == auth().id)`
               // refused it at every level the gate admits and the create was
               // never graded. Owning the row leaves the gate as the only rule.
-              if (row.level < 8) Object.assign(data, _ownedBy(schema.models.find(x => x.name === modelName), { id: LADDER_PRINCIPAL_ID }))
+              Object.assign(data, owned.columns)
               run = () => client[acc].create({ data, ...named(data) })
             } else if (row.op !== 'read') {
               // Update and delete need a row that is already there, made as
@@ -2066,9 +2069,10 @@ function _fieldValue(schema, ownerName, field, seq, rng, { fkFields = new Set(),
   }
   if (nested && type.name !== 'Json') return opt ? null : _typeValue(schema, nested, seq, rng, depth)
 
-  // @id on String → '{modelName}-{seq}'
+  // @id on String → '{modelName}-{seq}', unless a @regex holds it to a shape
+  // the 'Model-1' form breaks (a slug key); that goes down the String case.
   const isId = attrs.some(a => a.kind === 'id')
-  if (isId && type.name === 'String') return rng ? `${ownerName}-${rng.str(6)}` : `${ownerName}-${seq}`
+  if (isId && type.name === 'String' && !attrs.some(a => a.kind === 'regex')) return rng ? `${ownerName}-${rng.str(6)}` : `${ownerName}-${seq}`
 
   // @default — check before type-based rules
   const defAttr = attrs.find(a => a.kind === 'default')
@@ -3486,28 +3490,46 @@ async function _refusedParentExists(sys, model, err) {
   return sys[modelToAccessor(err.target)].exists({ where })
 }
 
-// The columns a create `@@allow` pins to the caller (`userId == auth().id`),
-// valued from `who`. Only an allow made wholly of such equalities is used;
-// anything else answers `{}` and the create stays ungraded rather than guessed.
-function _ownedBy(model, who) {
+// What a create `@@allow` pins to the caller (`userId == auth().id`), valued
+// from `who`: `columns` on the row, and `parents` by relation name for a path
+// one hop away (`playlist.ownerId == auth().id`), which the fresh parent is
+// built carrying. Only an allow made wholly of such equalities is used;
+// anything else answers nothing and the create stays ungraded rather than guessed.
+function _ownedBy(schema, model, who) {
+  const column = (m, name) => {
+    const field = m?.fields.find(x => x.name === name)
+    return field && !field.attributes?.some(x => x.kind === 'guarded' || x.kind === 'system') ? field : null
+  }
+  const fitting = (field, value) => field.type?.name === 'String' ? typeof value === 'string'
+                                  : field.type?.name === 'Int'    ? Number.isInteger(value) : false
   const pins = (e) => {
     if (e?.type === 'and') { const l = pins(e.left), r = pins(e.right); return l && r && [...l, ...r] }
     if (e?.type !== 'compare' || e.op !== '==') return null
-    const [f, a] = e.left?.type === 'field' ? [e.left, e.right] : [e.right, e.left]
-    if (f?.type !== 'field' || a?.type !== 'auth' || !a.field) return null
-    const field = model.fields.find(x => x.name === f.name)
+    const [f, a] = e.left?.type === 'field' || e.left?.type === 'path' ? [e.left, e.right] : [e.right, e.left]
+    if (a?.type !== 'auth' || !a.field) return null
     const value = who[a.field]
-    if (!field || field.attributes?.some(x => x.kind === 'guarded' || x.kind === 'system')) return null
-    const fits = field.type?.name === 'String' ? typeof value === 'string'
-               : field.type?.name === 'Int'    ? Number.isInteger(value) : false
-    return fits ? [[f.name, value]] : null
+    if (f?.type === 'field') {
+      const field = column(model, f.name)
+      return field && fitting(field, value) ? [{ name: f.name, value }] : null
+    }
+    if (f?.type !== 'path') return null
+    const rel    = model.fields.find(x => x.name === f.rel && x.type.kind === 'relation' && !x.type.array)
+    const parent = rel && schema.models.find(m => m.name === rel.type.name)
+    const field  = column(parent, f.name)
+    // A parent column that is itself a foreign key names a row the fresh
+    // parent cannot point at (`ownerId` of a User that does not exist).
+    const isFk   = parent?.fields.some(x => x.attributes?.some(a => a.kind === 'relation' && a.fields?.includes(f.name)))
+    return field && !isFk && fitting(field, value) ? [{ rel: f.rel, name: f.name, value }] : null
   }
+  const out = { columns: {}, parents: {} }
   for (const a of model?.attributes ?? []) {
     if (a.kind !== 'allow' || !a.operations?.includes('create')) continue
     const p = pins(a.expr)
-    if (p) return Object.fromEntries(p)
+    if (!p) continue
+    for (const { rel, name, value } of p) rel ? (out.parents[rel] ??= {})[name] = value : out.columns[name] = value
+    return out
   }
-  return {}
+  return out
 }
 
 // Whether a ValidationError is the value set on a foreign key refusing a parent

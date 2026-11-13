@@ -17,6 +17,7 @@ import { RULES }                             from '../core/checks.js'
 import { extensionDevDeps }                  from '../core/extension-surface.js'
 import { siteDevDeps }                       from '../core/site-surface.js'
 import { addSurfaceToTsconfig }              from '../core/scaffold/surface.js'
+import { makePackageJson, makeGitignore }    from '../core/scaffold/app.js'
 import { checkDocCommands, builtinCommands } from '../core/doc-commands.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -614,4 +615,14 @@ describe('the scaffolded auth plugin is handed the app’s getLevel', () => {
     // The scaffold names none of them one by one: a new event must not need an edit here.
     expect(auth).toContain('${event}')
   })
+})
+
+// FJS-4189 -- typecheck rewrites both on every run, so one neither committed
+// nor ignored sits as ?? in git status from the first check on.
+test('every file db:types writes is in the scaffolded .gitignore', () => {
+  const { scripts } = JSON.parse(makePackageJson({ name: 'app', useWeb: true, useAuth: true, withPkgs: [], source: 'npm' }))
+  const outs = [...scripts['db:types'].matchAll(/--out (\S+)/g)].map(m => m[1])
+  expect(outs).toEqual(['db/schema.d.ts', 'web/src/lib/db.d.ts'])
+  const ignored = makeGitignore().split('\n')
+  for (const out of outs) expect(ignored).toContain(out)
 })

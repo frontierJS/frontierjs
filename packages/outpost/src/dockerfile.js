@@ -7,7 +7,8 @@
 // held beside this one is how the laptop came to refuse a plain repository
 // (`IDEAS/git-deploy.md` Phase 0.3).
 
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 
 export const GENERATED_DIR = 'deploy/generated'
 export const VENDOR_DIR    = 'deploy/generated/vendor'
@@ -48,7 +49,28 @@ export function linkedDeps(manifest) {
   return [...new Set(out)]
 }
 
-/** `deploy/generated/` for an app that links nothing: the manifest, and the
+/** The local tarballs under `root` whose bytes are not the ones `bun.lock`
+ *  recorded, as paths relative to it. Bun keys a tarball's cache entry by the
+ *  lockfile's integrity and never rewrites that integrity when a file is
+ *  repacked under the same name, so a warm install cache installs the old copy
+ *  where a cold one refuses (`FJS-4267`). A binary `bun.lockb` is not read. */
+export function staleTarballs(root) {
+  let lock
+  try { lock = JSON.parse(readFileSync(`${root}/bun.lock`, 'utf8').replace(/,(\s*[}\]])/g, '$1')) } catch { return [] }
+  const out = []
+  for (const entry of Object.values(lock?.packages ?? {})) {
+    if (!Array.isArray(entry) || typeof entry[0] !== 'string') continue
+    const path = entry[0].slice(entry[0].indexOf('@', 1) + 1).replace(/^file:/, '')
+    const integrity = entry.find(v => typeof v === 'string' && v.startsWith('sha512-'))
+    if (!integrity || !/\.(tgz|tar\.gz)$/.test(path) || /^[a-z][a-z0-9+.-]*:/i.test(path)) continue
+    let bytes
+    try { bytes = readFileSync(`${root}/${path}`) } catch { continue }
+    if (`sha512-${createHash('sha512').update(bytes).digest('base64')}` !== integrity) out.push(path.replace(/^\.\//, ''))
+  }
+  return out
+}
+
+/** `deploy/generated/` for an app that links nothing:the manifest, and the
  *  lockfile beside it, which the template's install freezes on. One Dockerfile
  *  serves both source modes because this half needs no workspace, so a machine
  *  building a clone writes it as a laptop does (`FJS-4066`). Answers the

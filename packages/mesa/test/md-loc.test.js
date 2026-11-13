@@ -71,4 +71,21 @@ describe('data-fjs-loc on raw HTML in Markdown', () => {
     const ctx = await compileMd(src, { filename: '/r/x.md', locRoot: '/r', loc: true })
     expect(locs(ctx)).toEqual(['p x.md:8:1', 'b x.md:8:4'])
   })
+
+  // The braces CommonMark cannot read cross it as a padded name (FJS-4261),
+  // which must not move the tags after them.
+  it('keeps the place of a tag after a brace attribute', async () => {
+    const src = 'Go <Counter {...props} /> and <b>x</b>\n\n<Counter\n  on={(n) => {\n    go(n)\n  }}\n/>\n\n<i>y</i>\n'
+    const ctx = await compileMd(src, { filename: '/r/x.md', locRoot: '/r', loc: true })
+    expect(locs(ctx)).toEqual(['p x.md:1:1', 'b x.md:1:31', 'p x.md:3:1', 'p x.md:9:1', 'i x.md:9:1'])
+  })
+
+  // Mesa refuses any attribute on a slot, so a stamped one failed every
+  // preview build of a layout written in Markdown.
+  it('leaves a slot unstamped', async () => {
+    const src = '# Head\n\n<slot />\n\n<div><slot name="aside" /></div>\n'
+    const ctx = await compileMd(src, { filename: '/r/x.md', locRoot: '/r', loc: true })
+    expect(ctx.markdownHTML).not.toMatch(/<slot[^>]*data-fjs-loc/)
+    expect(locs(ctx)).toEqual(['h1 x.md:1:1', 'div x.md:5:1'])
+  })
 })

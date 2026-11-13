@@ -30,5 +30,5 @@ export function treePaths(root) {
   }
   // Relative to `root`, which is what `git ls-files` answers from its cwd. A
   // trailing slash is a directory link written the way a reader writes one.
-  return { files, has: p => { const k = p.replace(/\/+$/, ''); return files.has(k) || dirs.has(k) } }
+  return { files, dirs, has: p => { const k = p.replace(/\/+$/, ''); return files.has(k) || dirs.has(k) } }
 }

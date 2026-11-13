@@ -261,7 +261,7 @@ browser extension, `desktop/` for a native app with its screens bundled in,
 Surfaces never import each other. Code two of them run lives in one of two places, split
 by origin: `db/` keeps what the schema points at (an `@computed` body), and `shared/` holds
 the rest. Each is imported by alias, through `"imports"` in the app's `package.json`
-(`#db/*`, which `fli new` writes, and `#shared/*`). Neither one imports a surface or the server, `db/` may import `shared/` but
+(`#db/*` and `#shared/*`, both written by `fli new`). Neither one imports a surface or the server, `db/` may import `shared/` but
 not the reverse, and a `shared/` file has to be pure and imported by two surfaces
 (`FJS-D1320`):
 
@@ -398,7 +398,7 @@ belongs to the Resource.
 
 **Which surfaces an app has is the app's business.** `fli new --template api-only`
 leaves out `web/`; `--template site-only`, `--template widgets-only` and `--template
-extension-only` leave out both `api/` and `web/`, because a project whose whole product
+extension-only` leave out `api/`, `web/` and `db/` (a schema is what an API derives from), because a project whose whole product
 is a public site — or embeddable widgets, or a browser extension — is a normal
 FrontierJS project. `fli check`'s `app-layout` rule asks only that the schema is at the
 root and that no surface is hiding inside another: folded into `web/`, a surface

@@ -338,3 +338,24 @@ test('code: numbered mode gutters the lines and the gutter is not selectable', f
   assert.equal(getComputedStyle(lines[0], '::before').userSelect, 'none');
   assert.equal(getComputedStyle(lines[0], '::before').content, 'counter(code-line)');
 });
+
+test('code: a direct-child span is the reserved numbered-line shape, and only numbered glow emits one', function () {
+  /*
+   * FJS-4224. code.css's line counter keys off `code[language] > span`, which
+   * glow marks with nothing else, so an app's own span appended there gets a
+   * number box (Lathe's column probe measured 0.45 px wide). The header names
+   * the shape as reserved; this pins both halves of that contract: glow
+   * emits no direct span unless `numbered`, and a direct span is numbered.
+   */
+  ['css', 'marked'].forEach(function (k) {
+    assert.equal(block(k).querySelectorAll(':scope > span').length, 0, k + ' emitted a direct-child span without numbered');
+  });
+  var c = block('css');
+  var probe = document.createElement('span');
+  c.appendChild(probe);
+  assert.equal(getComputedStyle(probe, '::before').content, 'counter(code-line)', 'a direct span is a numbered line');
+  var wrapped = document.createElement('i');
+  wrapped.appendChild(document.createElement('span'));
+  c.appendChild(wrapped);
+  assert.notEqual(getComputedStyle(wrapped.firstChild, '::before').content, 'counter(code-line)', 'a span inside <i> is not a line');
+});

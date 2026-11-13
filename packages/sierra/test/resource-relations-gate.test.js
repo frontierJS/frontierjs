@@ -120,6 +120,23 @@ describe('foreign keys are marked on the field rules', () => {
     expect(fk.type).toBe('integer')
     expect(fk.required).toBe(true)
   })
+
+  test('a composite belongsTo marks none of its columns, and the single-column relation keeps its mark', () => {
+    // FJS-4243 (ELA UserDaily.crewDay): each column marked as a reference to
+    // CrewDaily turned `day` into a required picker and re-pointed `crewId`.
+    const UserDaily = {
+      type: 'object', title: 'UserDaily',
+      properties: { crewId: { type: 'integer' }, day: { type: 'string' } },
+      required: ['crewId', 'day'],
+      'x-relations': [
+        { field: 'crew', model: 'Crew', type: 'belongsTo', fields: ['crewId'], references: ['id'], onDelete: null, optional: false },
+        { field: 'crewDay', model: 'CrewDaily', type: 'belongsTo', fields: ['crewId', 'day'], references: ['crewId', 'day'], onDelete: null, optional: true },
+      ],
+    }
+    const rules = buildFieldRules(UserDaily)
+    expect(rules.day.references).toBeUndefined()
+    expect(rules.crewId.references).toEqual({ model: 'Crew', field: 'id', relation: 'crew' })
+  })
 })
 
 describe('buildGate', () => {

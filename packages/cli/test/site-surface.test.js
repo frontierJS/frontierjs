@@ -246,3 +246,17 @@ describe('the API origin is pinned for a second checkout', () => {
     expect(jetty).toContain('pinApiOrigin(process.env, process.env)')
   })
 })
+
+// FJS-4174: the starter island was written with a rune Mesa does not have, and
+// the scaffold's own page never mounts it, so the first real island failed to
+// prerender with "$state is not defined".
+describe('the island starter is Mesa, not another framework', () => {
+  test('Counter.mesa makes its counter reactive with a plain let', () => {
+    const root = appRoot('island-starter')
+    scaffoldSiteSurface({ root })
+
+    const island = readFileSync(join(root, 'site', 'src', 'islands', 'Counter.mesa'), 'utf8')
+    expect(island).not.toContain('$state')
+    expect(island).toMatch(/let clicks = 0/)
+  })
+})

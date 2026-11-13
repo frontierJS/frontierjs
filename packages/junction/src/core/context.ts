@@ -1190,11 +1190,21 @@ export function warnEffectInDrain(what: string): void {
 // integer shared between two concurrent requests decrements under the wrong
 // one. A nested call re-runs this with its own record, so the innermost scope is
 // what the tap compares against — which is exactly the call that will announce.
+//
+// The store outlives the call: a timer or an unawaited promise started inside
+// the method inherits it, and its later writes to the returned row are not in
+// the frame the call already sent (`FJS-4275`). So coverage ends one
+// `setImmediate` after the call settles. Litestone hands a write to the tap
+// through one `setImmediate` (`defer`, litestone `core/hooks.js`), queued when
+// the write finished, so every write the call made reaches the tap before that
+// close and a write made after it reaches the tap after.
 export interface CallCoverage {
   name:     string
   /** The ids the call's announcement covers; null until the call settles. */
   ids:      Set<string> | null
   deferred: Array<{ id: unknown; announce: () => void }>
+  /** Set once the call's own writes have all reached the tap. */
+  closed?:  boolean
 }
 
 const _serviceCallStore = new AsyncLocalStorage<CallCoverage>()
@@ -1218,7 +1228,7 @@ export function coveredWrite(name: string, id: unknown, announce: () => void): b
   const inTransaction = _commitScopeStore.getStore()?.announced.get(name)
   if (inTransaction && id != null && inTransaction.has(String(id))) return true
   const call = _serviceCallStore.getStore()
-  if (call?.name !== name) return false
+  if (call?.name !== name || call.closed) return false
   if (call.ids === null) { call.deferred.push({ id, announce }); return true }
   return id != null && call.ids.has(String(id))
 }
@@ -1226,6 +1236,7 @@ export function coveredWrite(name: string, id: unknown, announce: () => void): b
 /** The call has its result: `ids` are the rows it announces, and every held write outside them announces now. */
 export function settleCoverage(call: CallCoverage, ids: Set<string>): void {
   call.ids = ids
+  setImmediate(() => { call.closed = true })
   const held = call.deferred
   call.deferred = []
   for (const { id, announce } of held) {

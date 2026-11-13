@@ -33,4 +33,29 @@ export async function run(t) {
     await b.clickAt('#hit')
     t.is(await b.evaluate(`return window.hits`), 1, 'a control moved by its own first measurement is clicked once')
   } finally { await b.close() }
+  await stickyBar(t)
+}
+
+// A control scrolled under a sticky bar has its center on screen, and the press
+// lands on the bar; `waitFor` takes `ms`, and `{ timeout }` is refused rather
+// than waiting the 15s default in silence (FJS-4225).
+async function stickyBar(t) {
+  const b = await t.openChrome()
+  try {
+    await b.navigate(t.origin)
+    await b.evaluate(`
+      document.body.innerHTML = '<nav id="bar" style="position:sticky;top:0;height:60px;background:#ccc">bar</nav>'
+        + '<div style="height:2000px"></div><button id="hit" style="height:30px">hit</button><div style="height:2000px"></div>';
+      window.hits = 0; window.barHits = 0;
+      document.getElementById('hit').addEventListener('click', () => { window.hits++ });
+      document.getElementById('bar').addEventListener('click', () => { window.barHits++ });
+      scrollTo(0, document.getElementById('hit').offsetTop - 15);
+      return true;
+    `)
+    await b.clickAt('#hit')
+    t.is(await b.evaluate(`return [window.hits, window.barHits].join()`), '1,0', 'a control under the sticky bar is clicked, not the bar')
+    let refused = ''
+    try { await b.waitFor('false', { timeout: 100 }) } catch (e) { refused = e.message }
+    t.ok(/no option "timeout".*`ms`/.test(refused), `waitFor refuses { timeout } by name: ${refused}`)
+  } finally { await b.close() }
 }

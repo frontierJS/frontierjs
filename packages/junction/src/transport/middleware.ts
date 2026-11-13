@@ -243,7 +243,9 @@ export interface HelmetOptions {
 // `img-src` names `data:` because @frontierjs/css paints the select arrow and
 // `--app-depth` as data: SVG, and vite inlines a small imported image the same
 // way (FJS-4214); the deploy CSP in the cli's `edge.js` says the same.
-function defaultCsp(frame: HelmetOptions['frame'] = 'deny'): string {
+// Exported so an app widening it appends a directive rather than restating
+// these and drifting from them (FJS-4215).
+export function defaultCsp(frame: HelmetOptions['frame'] = 'deny'): string {
   return [
     "default-src 'self'",
     "img-src 'self' data:",

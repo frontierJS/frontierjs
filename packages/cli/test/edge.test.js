@@ -710,7 +710,7 @@ describe('the widget route', () => {
 describe('the steps carry the widget side', () => {
   const read = (rel) => src(rel)
   test('build, release and rollback steps exist, skipped without doWidgets', () => {
-    for (const f of ['_steps-docker/03b-build-widgets.md', '_steps-docker/08-release-widgets.md', '_steps-rollback/01b-rollback-widgets.md'])
+    for (const f of ['_steps-docker/03b-build-widgets.md', '_steps-docker/08a-release-widgets.md', '_steps-rollback/01b-rollback-widgets.md'])
       expect(read(f)).toContain('skip: "!$.config.doWidgets"')
   })
 

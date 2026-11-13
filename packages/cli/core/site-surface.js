@@ -223,7 +223,7 @@ export function siteIslandStarter() {
   // The page declares WHEN it runs — \`client:load\` immediately, \`client:visible\`
   // when it scrolls into view — so a component below the fold costs nothing
   // until somebody reaches it.
-  let clicks = $state(0)
+  let clicks = 0
 </script>
 
 <button class="btn" onclick={() => clicks++}>

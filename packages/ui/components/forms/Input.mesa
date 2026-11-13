@@ -176,6 +176,14 @@
       : e.target.value
     oninput?.(e)
   }
+
+  // A number box that already holds `v` keeps its own text. A caller handing
+  // the box's text back as the value turns "8." into 8, and redrawing the box
+  // from that 8 drops the point the person just typed.
+  function shown(v) {
+    if (resolvedType !== 'number' || !inputEl || v === '' || v == null) return v
+    return inputEl.valueAsNumber === Number(v) ? inputEl.value : v
+  }
 </script>
 
 {#snippet field()}
@@ -185,7 +193,7 @@
     id={inputId}
     name={name || undefined}
     type={inputType}
-    value={value}
+    value={shown(value)}
     placeholder={placeholder}
     disabled={resolvedDisabled}
     required={resolvedRequired}

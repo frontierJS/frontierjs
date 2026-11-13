@@ -8,13 +8,11 @@
 // Every builder is a pure function of the spec: nothing here reads the disk.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { APP_DEV_DEPS, FJS_PACKAGES, FJS_TRANSITIVE, appCheckScripts, appSurfaceScripts } from '../app-config.js'
+import { APP_DEV_DEPS, FJS_PACKAGES, FJS_TRANSITIVE, VITE_VERSION, appCheckScripts, appSurfaceScripts } from '../app-config.js'
 import { widgetScripts }                      from '../widget-surface.js'
 import { siteScripts, siteDevDeps }           from '../site-surface.js'
 import { extensionScripts, extensionDevDeps } from '../extension-surface.js'
 import { packageHostUrl }                     from '../publish-hosts.js'
-
-const VITE_VERSION = '^8.0.0'
 
 // ─── Root template builders ───────────────────────────────────────────────────
 
@@ -158,10 +156,12 @@ export function makePackageJson(spec) {
     version: '0.1.0',
     private: true,
     type:    'module',
-    // Code the schema points at is imported as `#db/<file>`, so no surface
-    // climbs `../../db/` to reach it (FJS-D1320). Vite, Bun and tsc's bundler
-    // resolution all read this field.
-    imports: useDb ? { '#db/*': './db/*' } : undefined,
+    // Code the schema points at is imported as `#db/<file>` and pure code two
+    // surfaces run as `#shared/<file>`, so no surface climbs `../../` to reach
+    // either (FJS-D1320). Vite, Bun and tsc's bundler resolution all read this
+    // field. `#shared/*` is written for every app: a second surface is usually
+    // added after `fli new`, and nothing else would write the entry then.
+    imports: { ...(useDb && { '#db/*': './db/*' }), '#shared/*': './shared/*' },
     scripts,
     dependencies:    deps,
     devDependencies: devDeps,
@@ -180,6 +180,10 @@ export function makeGitignore() {
     'db/backups/',
     // The JSON Schema `db:push`, `db:migrate` and `db:jsonschema` derive.
     'db/.json/',
+    // What `db:types` writes from db/schema.lite; typecheck rewrites both
+    // before it reads them, so a committed copy only drifts.
+    'db/schema.d.ts',
+    'web/src/lib/db.d.ts',
     '.DS_Store',
     'dist/',
     // `jetty dev`'s launched browsers keep their profiles here — sign-ins,

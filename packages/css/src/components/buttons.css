@@ -26,7 +26,7 @@
   background:     var(--_base);
   color:          var(--_on-fill, white);
   border:         var(--border-width) solid transparent;
-  font-family:    var(--font-primary);
+  font-family:    var(--font-primary), sans-serif;
   font-weight:    var(--btn-font-weight);
   text-transform: var(--btn-text-transform);
   letter-spacing: var(--btn-letter-spacing);

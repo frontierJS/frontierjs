@@ -126,11 +126,15 @@ export const CHECKS = {
   // `FJS-D1750`: a duration column spells its unit. `Ms`, `Mb` and `Gb` are
   // symbols and stay; what is flagged is the abbreviation of a WORD, which two
   // schemas then spell two ways (`timeoutSeconds` beside `intervalSec`).
+  // `bandMin` beside `bandMax` is the low end of a range, not minutes (`FJS-4203`).
   'duration-unit-spelled': ({ root }) => {
     const schema = schemaFile(root)
     if (!schema) return { skipped: 'no db/schema.lite' }
-    return { findings: declaredFields(schema)
-      .filter(f => ABBREVIATED_UNIT.test(f.name))
+    const fields = declaredFields(schema)
+    const named  = new Set(fields.map(f => `${f.block}.${f.name}`))
+    const isRangeEnd = f => f.name.endsWith('Min') && named.has(`${f.block}.${f.name.slice(0, -3)}Max`)
+    return { findings: fields
+      .filter(f => ABBREVIATED_UNIT.test(f.name) && !isRangeEnd(f))
       .map(f => {
         const unit = f.name.match(ABBREVIATED_UNIT)[1]
         return {
@@ -1437,13 +1441,21 @@ function declaredEnums({ text }) {
       line  = m[2]
     }
 
-    let top = ''
-    for (const ch of line) {
-      if (ch === '{') { if (depth === 1) top = top.replace(/[A-Za-z_]\w*\s*$/, ' '); depth++ }
+    // A quoted argument (`@label("New ticket (intake)")`) holds braces and parens that are text.
+    let top = '', quote = false
+    for (let k = 0; k < line.length; k++) {
+      const ch = line[k]
+      if (quote) {
+        if (depth === 1) top += ch
+        if (ch === '\\' && k + 1 < line.length) { k++; if (depth === 1) top += line[k] }
+        else if (ch === '"') quote = false
+      }
+      else if (ch === '"') { quote = true; if (depth === 1) top += ch }
+      else if (ch === '{') { if (depth === 1) top = top.replace(/[A-Za-z_]\w*\s*$/, ' '); depth++ }
       else if (ch === '}') { depth--; if (depth === 0) break }
       else if (depth === 1) top += ch
     }
-    for (const name of top.replace(/@\w+(\([^)]*\))?/g, ' ').split(/[\s,]+/).filter(Boolean))
+    for (const name of top.replace(/@\w+(\((?:"(?:[^"\\]|\\.)*"|[^)"])*\))?/g, ' ').split(/[\s,]+/).filter(Boolean))
       cur.values.push({ name, line: i + 1 })
     if (depth === 0) { out.push(cur); cur = null }
   }

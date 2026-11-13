@@ -2334,7 +2334,7 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 
 ### `anonymous-create-auth-default` — a public create on a model whose required column defaults to auth()
 
-*warn*. A required column with @default(auth().id) is filled from the signed-in principal. With create at level 0 a visitor has none, so the runtime refuses the create (401, naming the field) unless the visitor states the column — and a visitor naming a user it cannot read is refused too. Raise the create level, or make the column optional.
+*warn*. A required column with @default(auth().id) is filled from the signed-in principal. With create at level 0 a visitor has none, so the runtime refuses the create (401, naming the field) unless the visitor states the column — and a visitor naming a user it cannot read is refused too. A `claim … bearer` is exempt: the link or widget principal carrying it grades at 0. Raise the create level, or make the column optional.
 
 ### `anonymous-beside-logged` — an @@anonymous model in a schema where other models log their writes
 

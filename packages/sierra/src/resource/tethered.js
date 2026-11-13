@@ -109,7 +109,9 @@ function overlay(base, top) {
 /**
  * @param {object} resource  the machinery these rows are read through — `load`, `more`, `hasMore`, `tether`,
  *                           `dispose` for rows of its own, and for a composed list `find`, `on`
- *                           and `onReconnected`; `dayKinds` names each date and instant column
+ *                           and `onReconnected`; `dayKinds` names each date and instant column;
+ *                           `mayList` answers false where the model's gate refuses this caller,
+ *                           and a list it refuses is not asked for until it answers otherwise
  * @param {{ query?: object, directives?: object } | undefined} tetheredQuery  the resource file's defaults
  * @param {object} [opts]
  * @param {'url'|'local'} [opts.state='url']
@@ -217,6 +219,15 @@ export function createTethered(resource, tetheredQuery, opts = {}) {
 
   async function run() {
     const stamp = ++issued
+    if (resource.mayList?.() === false) {
+      running = false
+      setLoading(false)
+      setError(null)
+      setMore(false)
+      setTotal(null)
+      if (composed) setRows([])
+      return
+    }
     running = true
     setLoading(true)
     setError(null)
@@ -289,6 +300,7 @@ export function createTethered(resource, tetheredQuery, opts = {}) {
   }
 
   const stop = createEffect(() => {
+    resource.mayList?.()
     if (state === 'url') {
       watchPath(page, 'query')[0]()
       watchPath(page, 'directives')[0]()

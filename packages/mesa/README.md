@@ -300,7 +300,8 @@ const app = mount(target, App, {
 ```
 
 `destroy()` removes both the delegation listeners and the adopted stylesheets
-from the shadow root.
+from the shadow root. The root is the mounted tree's alone: a component mounted
+elsewhere on the page, on the same runtime, still styles into the document.
 
 ---
 

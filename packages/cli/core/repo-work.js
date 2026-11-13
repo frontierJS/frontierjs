@@ -508,7 +508,7 @@ function client(D) {
   wire([[720, 128], [790, 128]], 'big', 'issue')
   proc('fixloop', 1060, 104, 530, 48, 'bun run fix:loop', 'one row per fresh session · checked against ISSUES.md', {
     title: 'bun run fix:loop', where: 'scripts/fix-loop.mjs · ~/.fli/fix-loop.jsonl',
-    d: 'Runs /fix-next on one row per fresh headless session, so no row pays for another\'s context. Each prompt carries a pre-brief built by script. Whether a row closed is read off ISSUES.md, never off what the session says. A row that didn\'t close gets one retry a rung up the model ladder; S1 and S2 rows start on the top rung.',
+    d: 'Runs /fix-next on one row per fresh headless session, so no row pays for another\'s context. Each prompt carries a pre-brief built by script. Whether a row closed is read off ISSUES.md, never off what the session says. Every row runs once, on Opus high.',
     n: L ? `${num(L.closed)} closed` : '',
     f: L ? [['closed', `${num(L.closed)} rows since ${L.since}`], ['blocked', `${num(L.blocked)}, each on a question it filed`], ['busy', `${num(L.busy)}, another session held the files`], ['failed', num(L.failed)], ['corrected', `${num(L.corrected)}, the row itself was wrong`]] : [] }, 'issue')
   wire([[1060, 128], [1010, 128]], '', 'issue')
@@ -545,14 +545,13 @@ function client(D) {
   guard('blocked', 1190, OY, 175, OH, 'A choice appears', 'file a question', {
     title: 'A choice appears', where: `decision-rules · fli file --sev decision --blocks ${P}-###`,
     d: 'Adding an option, coining a noun or picking between two designs is the owner\'s call, and a ruling made mid-fix is graded by the code already written. The session undoes its own edits, files the question, writes options A and B and a recommendation under it, and ends blocked. The loop goes on to the next row.' })
-  proc('failed', 1380, OY, 200, OH, 'Didn\'t close', 'failed: retry a rung up', {
+  proc('failed', 1380, OY, 200, OH, 'Didn\'t close', 'failed: kept for a later run', {
     title: 'Didn\'t close', where: 'scripts/fix-loop.mjs · FIX_LADDER',
-    d: 'The row is still open in ISSUES.md when the session ends. Its edits stay in the tree and the next attempt is told they are its own, since partial work is usually most of the fix. One retry, on the next rung.' }, 'trig')
+    d: 'The row is still open in ISSUES.md when the session ends. Its edits stay in the tree and a later run\'s attempt is told they are its own, since partial work is usually most of the fix. No retry in the same run: the one rung is Opus high, and a second identical session is not a better one.' }, 'trig')
   wire([[850, SY + SH], [850, OY]], '', 'guard')
   wire([[1114, SY + SH], [1114, OY]], '', 'guard')
   wire([[1230, SY + SH], [1230, OY]], '', 'guard')
   wire([[1410, SY + SH], [1410, OY]], '', 'trig')
-  wire([[1500, OY], [1500, 266], [1285, 266], [1285, SY + SH]], 'hot', 'trig', 'retry once, a rung up', [1400, 266], 'trig')
   wire([[SX[5] + SW, SY + SH / 2], [1598, SY + SH / 2], [1598, 460], [750, 460], [750, 250], [720, 250]], 'big', 'honest', 'fli close → § Closed · next row, fresh session', [940, 460], 'honest')
 
   if (L) {

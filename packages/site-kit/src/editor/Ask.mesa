@@ -4,6 +4,11 @@
   // grades what it changed; nothing reaches the draft until Keep, which is one
   // commit, and Undo is that commit's revert. The change may reach pages this
   // one does not draw, so it is shown as lines per file rather than on the page.
+  //
+  // It looks like the dev server's Ask panel (`cli/core/vite-ask-client.js`)
+  // with that panel's developer controls left out: basecamp holds one ask per
+  // draft, so the log is that ask, and Close is the whole toolbar because the
+  // bar's Ask button reopens it.
   import { clientFor } from './handoff.js'
 
   export let site
@@ -42,85 +47,232 @@
     busy = false
   }
 
-  const kind = (l) => l.startsWith('+') ? 'text-success' : l.startsWith('-') ? 'text-danger' : l.startsWith('@@') ? 'text-muted' : ''
-  const shown = (l) => l.startsWith('@@') ? '…' : l
+  function send() {
+    if (!busy && request.trim()) act('ask', { request: request.trim() })
+  }
+
+  function keydown(e) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() }
+  }
+
+  const linesOf = (hunks) => hunks.split('\n').filter((l) => l && !l.startsWith('+++') && !l.startsWith('---'))
+  const count   = (hunks, sign) => linesOf(hunks).filter((l) => l[0] === sign).length
+  const opOf    = (l) => l.startsWith('@@') ? 'gap' : l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'keep'
+  const shown   = (l) => l.startsWith('@@') ? '…' : l
+
+  function ago(at) {
+    const s = Math.max(0, Math.round((Date.now() - Date.parse(at)) / 1000))
+    if (!Number.isFinite(s)) return ''
+    if (s < 60) return 'just now'
+    if (s < 3600) return `${Math.round(s / 60)} min ago`
+    return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  }
 
   look()
   $.every(2000, look, { when: RUNNING.includes(ask?.state) })
 </script>
 
-<article class="card fjs-editor-ask" data-fjs-editor-ui aria-label="Ask for a change">
-  <div class="surface-header">
+<article class="card glass theme-basecamp fjs-ask" data-fjs-editor-ui aria-label="Ask for a change">
+  <header class="fjs-ask-head">
     <strong>Ask for a change</strong>
-    <button class="btn ghost" aria-label="Close" onclick={() => onclose?.()}>Close</button>
-  </div>
-  <div class="surface-body stack">
-    {#if error}<p class="text-danger" role="alert">{error}</p>{/if}
-    {#if RUNNING.includes(ask?.state)}
-      <p role="status" id="fjs-ask-running">Working on “{ask.request}”…</p>
-    {:else if ask?.state === 'ready'}
-      <p>“{ask.request}”</p>
-      {#if ask.reply}<p id="fjs-ask-reply">{ask.reply}</p>{/if}
-      {#each diff ?? [] as f (f.path)}
-        <section class="fjs-ask-file" data-path={f.path}>
-          <strong>{f.path}</strong>
-          <pre>{#each f.hunks.split('\n') as l}<span class={kind(l)}>{shown(l)}</span>{/each}</pre>
-        </section>
-      {/each}
+    <span class="text-muted">on {site.draft}</span>
+    <button class="btn ghost square" aria-label="Close" title="Close (the ask is kept)" onclick={() => onclose?.()}>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+      </svg>
+    </button>
+  </header>
+
+  <div class="fjs-ask-log" role="log">
+    {#if !ask}
+      <p class="text-muted">Say what should change, in your own words. Claude changes the draft's pages and shows you every line before anything is kept.</p>
     {:else}
-      {#if ask?.state === 'kept'}<p role="status" id="fjs-ask-kept">Kept on {site.draft} as one change. The preview rebuilds with it shortly.</p>{/if}
-      {#if ask?.state === 'undone'}<p role="status">Undone. The preview rebuilds without it shortly.</p>{/if}
-      {#if ask?.state === 'failed'}<p class="text-danger" role="alert" id="fjs-ask-failed">{ask.error}</p>{/if}
-      <div class="field-group">
-        <label for="fjs-ask">What should change?</label>
-        <textarea id="fjs-ask" rows="4" value={request} oninput={(e) => request = e.target.value}
-                  placeholder="Change the opening hours to 8am on every page"></textarea>
+      <div class="fjs-ask-you">
+        <div class="fjs-ask-who"><strong>You</strong><span class="text-muted">{ago(ask.at)}</span></div>
+        <p>{ask.request}</p>
       </div>
+      {#if RUNNING.includes(ask.state)}
+        <p class="fjs-ask-doing text-muted" role="status" id="fjs-ask-running">Claude is working…</p>
+      {/if}
+      {#if ask.reply}
+        <div class="fjs-ask-claude">
+          <div class="fjs-ask-who"><strong>Claude</strong></div>
+          <p id="fjs-ask-reply">{ask.reply}</p>
+        </div>
+      {/if}
+      {#if ask.state === 'ready'}
+        {#each diff ?? [] as f (f.path)}
+          <details class="fjs-ask-file" data-path={f.path} open>
+            <summary>
+              <span class="fjs-ask-path">{f.path}</span>
+              <span class="text-muted">+{count(f.hunks, '+')} −{count(f.hunks, '-')}</span>
+            </summary>
+            <pre>{#each linesOf(f.hunks) as l}<span class={opOf(l)}>{shown(l)}</span>{/each}</pre>
+          </details>
+        {/each}
+      {/if}
+      {#if ask.state === 'kept'}
+        <div class="fjs-ask-run">
+          <span role="status" id="fjs-ask-kept">Kept on {site.draft} as one change. The preview rebuilds with it shortly.</span>
+          <button class="btn ghost" id="fjs-ask-undo" title="Put back what this ask changed" disabled={busy} onclick={() => act('undo')}>Undo</button>
+        </div>
+      {/if}
+      {#if ask.state === 'undone'}
+        <p class="fjs-ask-run text-muted" role="status">Undone. The preview rebuilds without it shortly.</p>
+      {/if}
+      {#if ask.state === 'failed'}
+        <p class="fjs-ask-error" role="alert" id="fjs-ask-failed">{ask.error}</p>
+      {/if}
     {/if}
+    {#if error}<p class="fjs-ask-error" role="alert">{error}</p>{/if}
   </div>
-  <div class="surface-footer">
-    {#if ask?.state === 'ready'}
-      <button class="btn primary" id="fjs-ask-keep" disabled={busy} onclick={() => act('keep')}>Keep on {site.draft}</button>
+
+  {#if ask?.state === 'ready'}
+    <footer class="fjs-ask-foot">
       <button class="btn ghost" id="fjs-ask-discard" disabled={busy} onclick={() => act('discard')}>Discard</button>
-    {:else if !RUNNING.includes(ask?.state)}
-      <button class="btn primary" id="fjs-ask-send" disabled={busy || !request.trim()} onclick={() => act('ask', { request: request.trim() })}>Ask</button>
-      {#if ask?.state === 'kept'}<button class="btn ghost" id="fjs-ask-undo" disabled={busy} onclick={() => act('undo')}>Undo</button>{/if}
-    {/if}
-  </div>
+      <button class="btn primary" id="fjs-ask-keep" disabled={busy} onclick={() => act('keep')}>Keep on {site.draft}</button>
+    </footer>
+  {:else if !RUNNING.includes(ask?.state)}
+    <footer class="fjs-ask-compose">
+      <textarea id="fjs-ask" rows="3" aria-label="What should change?" value={request}
+                oninput={(e) => request = e.target.value} onkeydown={keydown}
+                placeholder="Change the opening hours to 8am on every page"></textarea>
+      <div class="fjs-ask-foot">
+        <span class="text-muted"><kbd class="kbd">Ctrl</kbd> + <kbd class="kbd">Enter</kbd></span>
+        <button class="btn primary" id="fjs-ask-send" disabled={busy || !request.trim()} onclick={send}>Send</button>
+      </div>
+    </footer>
+  {/if}
 </article>
 
 <style>
-  .fjs-editor-ask {
-    position: fixed;
-    top: 1rem;
-    right: 1rem;
-    max-height: calc(100vh - 6rem);
-    z-index: 2147483000;
-    width: min(36rem, calc(100vw - 2rem));
+  /* Over a white page the kit's 85% reads grey; the dev panel dims its backdrop for the same reason. */
+  .fjs-ask {
+    --glass-alpha: 96%;
+    width: min(40rem, calc(100vw - 2rem));
+    min-height: 0;
     display: flex;
     flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
   }
-  .fjs-editor-ask .surface-body {
+  .fjs-ask-head,
+  .fjs-ask-foot,
+  .fjs-ask-run,
+  .fjs-ask-who {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .fjs-ask-head .btn {
+    margin-left: auto;
+  }
+  .fjs-ask-foot {
+    justify-content: flex-end;
+  }
+  .fjs-ask-compose .fjs-ask-foot {
+    justify-content: space-between;
+    margin-top: 0.5rem;
+  }
+  .fjs-ask-log {
     flex: 1;
-    overflow: auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
   }
-  .fjs-editor-ask .surface-header,
-  .fjs-editor-ask .surface-footer {
+  .fjs-ask-log > * {
+    flex-shrink: 0;
+  }
+  p {
+    margin: 0;
+  }
+  .fjs-ask-you,
+  .fjs-ask-claude {
+    max-width: 88%;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid var(--rule);
+    border-radius: 0.625rem;
+  }
+  .fjs-ask-you p,
+  .fjs-ask-claude p {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .fjs-ask-you {
+    align-self: flex-end;
+    border-color: color-mix(in srgb, var(--color-primary) 60%, transparent);
+    background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+    border-bottom-right-radius: 0.2rem;
+  }
+  .fjs-ask-claude {
+    align-self: flex-start;
+    background: var(--surface-raised);
+    border-bottom-left-radius: 0.2rem;
+  }
+  .fjs-ask-who {
+    font-size: 0.85em;
+    margin-bottom: 0.15rem;
+  }
+  .fjs-ask-doing {
+    font-style: italic;
+  }
+  .fjs-ask-file {
+    border: 1px solid var(--rule);
+    border-radius: 0.375rem;
+    overflow: hidden;
+  }
+  .fjs-ask-file summary {
     display: flex;
     gap: 0.5rem;
-    align-items: center;
-    justify-content: space-between;
+    padding: 0.3rem 0.6rem;
+    background: var(--surface-raised);
+    font: 0.8rem/1.4 var(--font-mono, ui-monospace, monospace);
+  }
+  .fjs-ask-path {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .fjs-ask-file pre {
-    margin: 0.25rem 0 0;
+    margin: 0;
+    padding: 0.2rem 0;
     overflow-x: auto;
-    white-space: pre;
-    font-size: 0.85em;
+    font: 0.8rem/1.45 var(--font-mono, ui-monospace, monospace);
   }
   .fjs-ask-file pre span {
     display: block;
+    white-space: pre;
+    padding: 0 0.6rem;
+  }
+  .fjs-ask-file .add {
+    background: color-mix(in srgb, var(--color-success) 18%, transparent);
+  }
+  .fjs-ask-file .del {
+    background: color-mix(in srgb, var(--color-danger) 20%, transparent);
+  }
+  .fjs-ask-file .keep,
+  .fjs-ask-file .gap {
+    color: var(--ink-soft);
+  }
+  .fjs-ask-run {
+    justify-content: space-between;
+    font-size: 0.9em;
+  }
+  .fjs-ask-error {
+    padding: 0.45rem 0.7rem;
+    border: 1px solid color-mix(in srgb, var(--color-danger) 45%, transparent);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   textarea {
+    box-sizing: border-box;
     width: 100%;
+    resize: vertical;
+    font: inherit;
   }
 </style>

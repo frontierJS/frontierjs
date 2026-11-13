@@ -235,6 +235,13 @@ describe('resolveBasecampApp', () => {
     await expect(resolveBasecampApp(origin, 'k', 'anchor', 'production')).rejects.toThrow(/no production environment.*fli basecamp:app --production/)
   })
 
+  test('a caller\'s own hint replaces the one that makes the tier (a pull must not tell you to add production)', async () => {
+    const origin = start(['development'], [])
+    const err = await resolveBasecampApp(origin, 'k', 'anchor', 'production', { hint: 'pass --dev to pull its development App' }).catch(e => e)
+    expect(err.message).toMatch(/no production environment.*pass --dev to pull/)
+    expect(err.message).not.toMatch(/basecamp:app/)
+  })
+
   test('refuses an environment holding no App of the slug, and never falls back', async () => {
     const origin = start(['development', 'staging'], [{ id: 'other', tier: 'staging', slug: 'x' }])
     await expect(resolveBasecampApp(origin, 'k', 'anchor', 'stage')).rejects.toThrow(/no App 'kapp' in the staging environment.*fli basecamp:app --stage/)

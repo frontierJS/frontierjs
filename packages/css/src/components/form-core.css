@@ -44,7 +44,7 @@
    */
   border:        var(--field-border-width, var(--border-width)) solid var(--field-border);
   border-radius: var(--field-radius);
-  font-family:   var(--font-primary);
+  font-family:   var(--font-primary), sans-serif;
 
   transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
@@ -93,7 +93,7 @@ textarea.field {
   /* biome-ignore lint/suspicious/noDuplicateProperties: the 4lh above is the fallback, see the header */
   min-height:   calc(attr(rows type(<number>), 4) * 1lh);
   max-height:   16lh;
-  font-family:  var(--font-primary);
+  font-family:  var(--font-primary), sans-serif;
 }
 
 select.field {
@@ -130,7 +130,7 @@ input[type="file"]::file-selector-button {
   border-radius:     var(--btn-radius);
   background:        var(--surface);
   color:             var(--ink);
-  font-family:       var(--font-primary);
+  font-family:       var(--font-primary), sans-serif;
   font-size:         var(--text-md);
   font-weight:       var(--btn-font-weight);
   line-height:       1.25rem;
@@ -404,7 +404,7 @@ input[type="file"]:disabled::file-selector-button {
   background:  var(--surface-sunken);
   border:      var(--border-width) solid var(--rule-strong);
   color:       var(--ink-soft);
-  font-family: var(--font-primary);
+  font-family: var(--font-primary), sans-serif;
   font-size:   var(--text-md);
   white-space: nowrap;
 }

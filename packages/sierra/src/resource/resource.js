@@ -124,6 +124,7 @@
  */
 
 import { getClient } from '@frontierjs/sierra/resource'
+import { watchPath } from '@frontierjs/mesa/runtime'
 import { defaultRegistry, serviceNameFor, resolveRef } from './schema-registry.js'
 import {buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
@@ -2271,6 +2272,11 @@ export function createResource(serviceName, opts = {}, ...extra) {
     return rule['x-slot'] ? [[name, kind], [rule['x-slot'], kind]] : [[name, kind]]
   }))
 
+  // Read through the watch so a sign-in or a sign-out re-runs the list. A
+  // model whose gate refuses a stranger answered every signed-out visit with a
+  // 401 per list (FJS-4170); an unknown level is permissive.
+  const mayList = () => can('find', app ? app.user?.level : (watchPath(session, 'level')[0](), session.level))
+
   function tethered(opts) {
     const own = ownsRows(opts)
     const live = own ? client.resource(serviceName, { idField, ...liveOptions }) : junctionResource
@@ -2283,6 +2289,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
       loaded:   (rows) => warnComposed('list', rows),
       on:       service.on,
       onReconnected: (fn) => client.on('reconnected', fn),
+      mayList,
       dayKinds,
     }, tetheredQuery, opts)
   }

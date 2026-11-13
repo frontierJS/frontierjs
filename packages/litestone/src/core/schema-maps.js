@@ -18,6 +18,7 @@ import { quoteIdent }                                            from './query.j
 import { shiftInstant }                                          from '@frontierjs/toolbelt/predicate'
 import { compileDerived, compileFromWhere, checkDerivedType, dependsOnClock, evalDerived } from './policy.js'
 import { ID_GENERATORS, GENERATED_DEFAULTS }                       from './ids.js'
+import { tenantAdmission }                                         from './tenancy.js'
 
 
 // ─── Relation keys ────────────────────────────────────────────────────────────
@@ -261,7 +262,11 @@ export function buildAuthDefaultMap(schema) {
       const def = field.attributes.find(a => a.kind === 'default')
       if (def?.value?.kind !== 'call' || def.value.fn !== 'auth') continue
       if (!map[model.name]) map[model.name] = []
-      map[model.name].push({ field: field.name, authField: def.value.field, fillsNull: def.generated === 'tenancy' })
+      const fillsNull = def.generated === 'tenancy'
+      map[model.name].push({
+        field: field.name, authField: def.value.field, fillsNull,
+        ...(fillsNull ? { admission: tenantAdmission(def.value.field) } : {}),
+      })
     }
   }
   return map

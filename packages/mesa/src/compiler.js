@@ -8834,9 +8834,14 @@ function _checkExternalReactivity(ctx, imports) {
               `'${path}' is read ${at} but no '$: ${path}' watch covers it. ` +
               `Imported objects are inert — the read compiles to a static value and will ` +
               `not update when '${name}' mutates. Add '$: ${path}' to the script block` +
-              // A const fixed for the component's life (a leaf route's `const id =
-              // page.params.id` — a param change remounts it) needs no watch.
-              (where.startsWith('const ') ? `, or read it once in a \`var\` if it never changes while this component lives.` : `.`)
+              // A value fixed for the component's life needs no watch: a leaf
+              // route's `const id = page.params.id` (a param change remounts it),
+              // or a template read off an imported data module, which was told
+              // only to watch a path nothing ever writes (`FJS-4178`). `var` is
+              // the stated snapshot (`FJS-D381`); a `$: x =` asked to be live.
+              (where.startsWith('const ') ? `, or read it once in a \`var\` if it never changes while this component lives.`
+                : where === 'template' ? `, or read it once into a \`var\` and render that if it never changes while this component lives.`
+                : `.`)
             ctx.analysis.warnings.push(hint)
             // Named apart from the other warnings because it is true only of
             // code that re-renders in a browser: a static build that publishes

@@ -1060,6 +1060,13 @@ describe('naming rulings (FJS-D1748 to FJS-D1751)', () => {
       expect(names).toEqual(['pro_plus', 'Member'])
     })
 
+    test('a quoted @label holding a paren or a brace is not read as values (FJS-4166)', () => {
+      const root = tree('ev-label-paren', schema(
+        '\nenum Queue {\n  internalIntake @label("New ticket (intake)")\n  braced @label("a { b } c")\n  snake_one\n}\n'))
+      const names = only(root, 'enum-value-case').findings.map(f => f.message.match(/value (\S+)/)[1])
+      expect(names).toEqual(['snake_one'])
+    })
+
     test('camelCase, cancelled and a digit-bearing value pass', () => {
       const root = tree('ev-camel', schema('\nenum S { pastDue cancelled sha256 v2 }\n'))
       expect(only(root, 'enum-value-case').findings).toEqual([])
@@ -1122,6 +1129,16 @@ describe('naming rulings (FJS-D1748 to FJS-D1751)', () => {
       const root = tree('du-ok', schema(
         '\nmodel Monitor {\n  id Int @id\n  timeoutSeconds Int\n  retryMinutes Int\n  ageHours Int\n  latencyMs Int\n  sizeMb Int\n  quotaGb Int\n  isAdmin Boolean\n  minimum Int\n}\n'))
       expect(only(root, 'duration-unit-spelled').findings).toEqual([])
+    })
+
+    // FJS-4203
+    test('a Min column beside its Max sibling is a minimum, not minutes', () => {
+      const root = tree('du-band', schema(
+        '\nmodel Rule {\n  id Int @id\n  bandMin Float?\n  bandMax Float?\n}\n' +
+        '\nmodel Job {\n  id Int @id\n  retryMin Int\n  otherMax Int\n}\n'))
+      const { findings } = only(root, 'duration-unit-spelled')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].message).toMatch(/Job\.retryMin/)
     })
   })
 
@@ -1755,6 +1772,26 @@ describe('the silent config hazards', () => {
       .toEqual(['packages/store/bench/studio-sidebar.mjs', 'packages/store/test/browser/verify-studio.mjs'])
     // …and the app's own run is where its drive is graded.
     expect(only(join(root, 'packages/fleet'), 'drive-opens-chrome').findings).toHaveLength(1)
+  })
+
+  // FJS-4242: a gate cloned the app under a gitignored folder and linked the
+  // framework checkout beside it, and the app's check graded both — 344 errors
+  // from packages it does not own.
+  test('a gitignored folder and a directory link out of the tree are not graded', () => {
+    const launch  = "spawn(CHROME, ['--remote-debugging-port=0'])\n"
+    const outside = tree('cdp-outside', { 'packages/x/test/verify.mjs': launch, 'packages/x/test/a.test.js': 'test()\n' })
+    const root = tree('cdp-owned', {
+      ...CLEAN,
+      '.gitignore':                          'measure/results/\n',
+      'web/test/verify.mjs':                 launch,
+      'measure/results/run/web/test/v.mjs':  launch,
+    })
+    symlinkSync(outside, join(root, 'framework'))
+    const files = () => only(root, 'drive-opens-chrome').findings.map(f => relative(root, f.file))
+    // No repository: the link is still not the tree's.
+    expect(files().filter(f => f.startsWith('framework'))).toEqual([])
+    spawnSync('git', ['init', '-q'], { cwd: root })
+    expect(files()).toEqual(['web/test/verify.mjs'])
   })
 
   // `FJS-2277`: a literal ignores the branch offset, so the drive passes against
@@ -6018,6 +6055,30 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
     expect(f).toHaveLength(4)
   })
 
+  // FJS-4167: cli/ is a surface (Invariant 3), and its commands are .md files. A
+  // surface's test/ is not the surface running the code, so it reaches nothing.
+  test('cli/ counts as a surface that reaches shared/, and a test/ does not', () => {
+    const f = layout('lay-shared-cli', {
+      'shared/engine.js': 'export const step = 1\n',
+      'shared/solver.js': 'export const solve = 1\n',
+      'site/src/pages/index.js':   "import { step } from '#shared/engine.js'\n",
+      'site/test/play.drive.mjs':  "import { solve } from '#shared/solver.js'\n",
+      'cli/src/lib/game.js':       "export * from '#shared/engine.js'\n",
+      'cli/src/routes/game/solve.md': "# solve\n\n```js\nimport { solve } from '#shared/solver.js'\n```\n",
+    })
+    const at = (re) => f.filter(x => re.test(x.message)).map(x => x.file.replace(/.*lay-shared-cli[^/]*\//, '')).sort()
+    expect(at(/a shared\/ file only cli\/ imports/)).toEqual(['shared/solver.js'])
+    expect(f).toHaveLength(1)
+  })
+
+  test('a library with a cli/ folder is not an app root', () => {
+    const out = only(tree('lay-lib-cli', {
+      'package.json':    '{"name":"lib"}\n',
+      'cli/src/main.js': 'export const main = 1\n',
+    }), 'app-layout')
+    expect(out.skipped).toEqual([{ rule: 'app-layout', why: 'not an app root' }])
+  })
+
   test('a surface reaches db/ through #db/*, not a relative path', () => {
     const f = layout('lay-db', {
       'db/computed.js':           'export const total = 1\n',
@@ -6350,6 +6411,14 @@ describe('a .mesa <style> names no class the kit already owns (FJS-2512)', () =>
   test('an own name, a :global reach, a declaration value and a null-class term are not', () => {
     const root = styled('collide-ok', '  .queue-item { gap: var(--gap); animation: item 1s }\n  :global(.item) { gap: var(--gap) }\n  .btn-row { margin: 0 }\n  .heading { margin: 0 }')
     expect(only(root, 'css-class-collision').findings.map(f => f.message)).toEqual([])
+  })
+
+  // FJS-4164: the exemption ended at the first `)`, so a nested paren leaked the rest.
+  test('a :global() holding a nested paren exempts all of it, and a class after it is still read', () => {
+    const ok = styled('collide-nested', '  :global(.shell:has(.item) > :is(.item, .bar)) { gap: 0 }')
+    expect(only(ok, 'css-class-collision').findings.map(f => f.message)).toEqual([])
+    const bad = styled('collide-nested-bad', '  :global(.a:has(.b)) .item { gap: 0 }')
+    expect(only(bad, 'css-class-collision').findings.map(f => f.message.split(' ')[0])).toEqual(['.item'])
   })
 
   test('an app without @frontierjs/css is skipped', () => {

@@ -1344,7 +1344,7 @@ export interface FlowCreate {
   ownerId: string
   runsPerMinute?: number | null
   maxWrites?: number
-  workspaceId: string
+  workspaceId?: string
 }
 
 export interface FlowUpdate {
@@ -1691,7 +1691,7 @@ export interface FlowCredentialCreate {
   header?: string | null
   encoding?: string | null
   secret?: string | null
-  workspaceId: string
+  workspaceId?: string
 }
 
 export interface FlowCredentialUpdate {
@@ -1749,7 +1749,7 @@ export interface KvEntryCreate {
   key: string
   value: unknown
   expiresAt?: string | Date | null
-  workspaceId: string
+  workspaceId?: string
 }
 
 export interface KvEntryUpdate {
@@ -2261,7 +2261,7 @@ export interface Invitation {
 
 export interface InvitationCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   email: string
   role?: WorkspaceRole
   token: string
@@ -2345,7 +2345,7 @@ export interface Secret {
 
 export interface SecretCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   /**
    * A label people pick a secret from, never an environment variable key: a
    * secret is referenced by id (`secret:<id>#field`), and the env key, if one
@@ -2441,7 +2441,7 @@ export interface ApiKey {
 
 export interface ApiKeyCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   userId: string
   name: string
   scopes?: string[]
@@ -2588,7 +2588,7 @@ export interface Server {
 
 export interface ServerCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   name: string
   slug: string
   status?: ServerStatus
@@ -3004,7 +3004,7 @@ export interface Network {
 
 export interface NetworkCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   name: string
   slug: string
   kind?: NetworkKind
@@ -3118,7 +3118,7 @@ export interface Project {
 
 export interface ProjectCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   name: string
   slug: string
   description?: string | null
@@ -3187,7 +3187,7 @@ export interface Environment {
 export interface EnvironmentCreate {
   id?: string
   projectId: string
-  workspaceId: string
+  workspaceId?: string
   name: string
   slug: string
   tier?: EnvironmentTier
@@ -3277,7 +3277,7 @@ export interface App {
 
 export interface AppCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   environmentId: string
   name: string
   slug: string
@@ -3424,7 +3424,7 @@ export interface Variable {
 
 export interface VariableCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   environmentId?: string
   appId?: string | null
   key: string
@@ -3499,7 +3499,7 @@ export interface Domain {
 
 export interface DomainCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   appId: string
   hostname: string
   isPrimary?: boolean
@@ -3580,7 +3580,7 @@ export interface DomainRoute {
 
 export interface DomainRouteCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   domainId: string
   appId: string
   pathPrefix: string
@@ -3750,7 +3750,7 @@ export interface AppPlatform {
 
 export interface AppPlatformCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   appId: string
   providerSecretId: string
   providerKind: PlatformProvider
@@ -4145,7 +4145,7 @@ export interface Deployment {
 export interface DeploymentCreate {
   id?: string
   appId: string
-  workspaceId: string
+  workspaceId?: string
   status?: DeployStatus
   trigger?: DeployTrigger
   fromImage?: string | null
@@ -4313,7 +4313,7 @@ export interface Job {
 
 export interface JobCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   appId?: string | null
   name: string
   kind?: JobKind
@@ -4462,7 +4462,7 @@ export interface Recipe {
 
 export interface RecipeCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   name: string
   slug: string
   description?: string | null
@@ -4832,7 +4832,7 @@ export interface Flag {
 
 export interface FlagCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   key: string
   description?: string | null
   type?: FlagType
@@ -4965,7 +4965,7 @@ export interface NotificationChannel {
 
 export interface NotificationChannelCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   name: string
   kind: ChannelKind
   config?: unknown
@@ -5053,7 +5053,7 @@ export interface BackupDestination {
 
 export interface BackupDestinationCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   name: string
   endpoint: string
   region: string
@@ -5140,7 +5140,7 @@ export interface AlertRule {
 
 export interface AlertRuleCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   name: string
   description?: string | null
   severity?: AlertSeverity
@@ -5353,7 +5353,7 @@ export interface Monitor {
 
 export interface MonitorCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   name: string
   appId?: string | null
   url: string
@@ -5672,7 +5672,7 @@ export interface Dashboard {
 
 export interface DashboardCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   name: string
   slug: string
   description?: string | null
@@ -6060,7 +6060,7 @@ export interface RegistryImage {
 
 export interface RegistryImageCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   repository: string
   tag: string
   digest: string
@@ -6125,7 +6125,7 @@ export interface Dependency {
 
 export interface DependencyCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   name: string
 }
 
@@ -6186,7 +6186,7 @@ export interface DependencyUse {
 
 export interface DependencyUseCreate {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   projectId: string
   dependencyId: string
   member: string
@@ -6659,8 +6659,8 @@ type __Flat<T> = { [K in keyof T]: T[K] }
 
 /** The `@system` columns a write may carry in its data: the ones its `system` names. */
 type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>
-/** The client `asSystem()` returns: it writes a `@system` column with no `system` naming it, so every table takes the column in data. */
-type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D> ? TableClient<R, C & D, U & D, W, Rel, M, S, D> : T[K] }
+/** The client `asSystem()` returns: it writes a `@system` column with no `system` naming it, so every table takes the column in data. It has no claim to stamp the tenancy column from, so a create names it (`TSudoCreate`). */
+type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q> : T[K] }
 
 /** What `include` may name: a relation, or `_count`. A relation takes `true` or its own read options. */
 export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }
@@ -6689,7 +6689,7 @@ type __Narrow<T, O> = [O] extends [{ select: infer NS }] ? __Rows<T, NS> : T
 type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__SelectedColumns<E, NS>>[] : __Flat<__SelectedColumns<T, NS>>
 type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>
 
-export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}> {
+export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, TSudoCreate = {}> {
   findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
   findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
   findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
@@ -6798,72 +6798,72 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly metricSeries: TableClient<MetricSeries, MetricSeriesCreate, MetricSeriesUpdate, MetricSeriesWhere, MetricSeriesRelations, never, '@@gate'>
   readonly metricPoint: TableClient<MetricPoint, MetricPointCreate, MetricPointUpdate, MetricPointWhere, MetricPointRelations, never, '@@gate'>
   readonly metricHour: TableClient<MetricHour, MetricHourCreate, MetricHourUpdate, MetricHourWhere, MetricHourRelations, never, '@@gate'>
-  readonly flow: TableClient<Flow, FlowCreate, FlowUpdate, FlowWhere, FlowRelations, 'activate' | 'pause' | 'archive' | 'unarchive', 'status' | '@@gate'>
+  readonly flow: TableClient<Flow, FlowCreate, FlowUpdate, FlowWhere, FlowRelations, 'activate' | 'pause' | 'archive' | 'unarchive', 'status' | '@@gate', {}, Required<Pick<FlowCreate, 'workspaceId'>>>
   readonly flowVersion: TableClient<FlowVersion, FlowVersionCreate, FlowVersionUpdate, FlowVersionWhere, FlowVersionRelations, never, '@@gate'>
   readonly flowLayout: TableClient<FlowLayout, FlowLayoutCreate, FlowLayoutUpdate, FlowLayoutWhere, FlowLayoutRelations, never, '@@gate'>
   readonly run: TableClient<Run, RunCreate, RunUpdate, RunWhere, RunRelations, 'start' | 'suspend' | 'resume' | 'complete' | 'fail' | 'cancel', 'status' | '@@gate'>
   readonly runStep: TableClient<RunStep, RunStepCreate, RunStepUpdate, RunStepWhere, RunStepRelations, never, '@@gate'>
   readonly wait: TableClient<Wait, WaitCreate, WaitUpdate, WaitWhere, WaitRelations, never, '@@gate'>
-  readonly flowCredential: TableClient<FlowCredential, FlowCredentialCreate, FlowCredentialUpdate, FlowCredentialWhere, FlowCredentialRelations, never, '@@gate'>
-  readonly kvEntry: TableClient<KvEntry, KvEntryCreate, KvEntryUpdate, KvEntryWhere, KvEntryRelations, never, '@@gate'>
+  readonly flowCredential: TableClient<FlowCredential, FlowCredentialCreate, FlowCredentialUpdate, FlowCredentialWhere, FlowCredentialRelations, never, '@@gate', {}, Required<Pick<FlowCredentialCreate, 'workspaceId'>>>
+  readonly kvEntry: TableClient<KvEntry, KvEntryCreate, KvEntryUpdate, KvEntryWhere, KvEntryRelations, never, '@@gate', {}, Required<Pick<KvEntryCreate, 'workspaceId'>>>
   readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate'>
   readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, 'kind' | '@@gate', UserSystem>
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, '@@gate'>
   readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'expiresAt' | 'ingressZone' | 'ingressCertSecretId' | 'ingressCertExpiresAt' | 'pushTopic' | '@@gate', WorkspaceSystem>
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem>
-  readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
-  readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem>
-  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'publicKey' | 'tokenHint' | 'revokedAt' | 'lastUsedAt' | 'totalUses' | 'usageDate' | 'usesOnDate' | '@@gate', ApiKeySystem>
-  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerSecretId' | 'providerServerId' | 'registerMethod' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'backupPolicy' | 'backupReading' | 'status' | '@@gate', ServerSystem>
+  readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate', {}, Required<Pick<InvitationCreate, 'workspaceId'>>>
+  readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem, Required<Pick<SecretCreate, 'workspaceId'>>>
+  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'publicKey' | 'tokenHint' | 'revokedAt' | 'lastUsedAt' | 'totalUses' | 'usageDate' | 'usesOnDate' | '@@gate', ApiKeySystem, Required<Pick<ApiKeyCreate, 'workspaceId'>>>
+  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerSecretId' | 'providerServerId' | 'registerMethod' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'backupPolicy' | 'backupReading' | 'status' | '@@gate', ServerSystem, Required<Pick<ServerCreate, 'workspaceId'>>>
   readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, 'noticeOwedAt' | '@@gate', ServerEventSystem>
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>
   readonly conduit_targets: TableClient<Conduit_targets, Conduit_targetsCreate, Conduit_targetsUpdate, Conduit_targetsWhere, Conduit_targetsRelations, never, '@@gate'>
   readonly conduit_receipts: TableClient<Conduit_receipts, Conduit_receiptsCreate, Conduit_receiptsUpdate, Conduit_receiptsWhere, Conduit_receiptsRelations, never, '@@gate'>
   readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere, VolumeRelations, never, '@@gate'>
-  readonly network: TableClient<Network, NetworkCreate, NetworkUpdate, NetworkWhere, NetworkRelations, never, '@@gate'>
+  readonly network: TableClient<Network, NetworkCreate, NetworkUpdate, NetworkWhere, NetworkRelations, never, '@@gate', {}, Required<Pick<NetworkCreate, 'workspaceId'>>>
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>
-  readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate'>
-  readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate'>
-  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'isDeployedOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem>
-  readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, '@@gate'>
-  readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | 'copyCertSecretId' | 'copyCertExpiresAt' | '@@gate', DomainSystem>
-  readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate'>
+  readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate', {}, Required<Pick<ProjectCreate, 'workspaceId'>>>
+  readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate', {}, Required<Pick<EnvironmentCreate, 'workspaceId'>>>
+  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'isDeployedOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem, Required<Pick<AppCreate, 'workspaceId'>>>
+  readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, '@@gate', {}, Required<Pick<VariableCreate, 'workspaceId'>>>
+  readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | 'copyCertSecretId' | 'copyCertExpiresAt' | '@@gate', DomainSystem, Required<Pick<DomainCreate, 'workspaceId'>>>
+  readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate', {}, Required<Pick<DomainRouteCreate, 'workspaceId'>>>
   readonly appEditor: TableClient<AppEditor, AppEditorCreate, AppEditorUpdate, AppEditorWhere, AppEditorRelations, never, '@@gate'>
   readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere, AppServerRelations, never, '@@gate'>
-  readonly appPlatform: TableClient<AppPlatform, AppPlatformCreate, AppPlatformUpdate, AppPlatformWhere, AppPlatformRelations, never, 'receiverSecret' | 'status' | 'liveVersion' | 'observedAt' | '@@gate', AppPlatformSystem>
+  readonly appPlatform: TableClient<AppPlatform, AppPlatformCreate, AppPlatformUpdate, AppPlatformWhere, AppPlatformRelations, never, 'receiverSecret' | 'status' | 'liveVersion' | 'observedAt' | '@@gate', AppPlatformSystem, Required<Pick<AppPlatformCreate, 'workspaceId'>>>
   readonly appBackup: TableClient<AppBackup, AppBackupCreate, AppBackupUpdate, AppBackupWhere, AppBackupRelations, never, '@@gate'>
   readonly appDrill: TableClient<AppDrill, AppDrillCreate, AppDrillUpdate, AppDrillWhere, AppDrillRelations, never, '@@gate'>
   readonly appCopy: TableClient<AppCopy, AppCopyCreate, AppCopyUpdate, AppCopyWhere, AppCopyRelations, never, 'status' | 'asOf' | 'error' | 'refreshedAt' | 'certError' | '@@gate', AppCopySystem>
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate'>
-  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'imageSha256' | 'swap' | 'swapReason' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem>
+  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'imageSha256' | 'swap' | 'swapReason' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem, Required<Pick<DeploymentCreate, 'workspaceId'>>>
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>
-  readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate', JobSystem>
+  readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate', JobSystem, Required<Pick<JobCreate, 'workspaceId'>>>
   readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere, JobRunRelations, never, '@@gate'>
-  readonly recipe: TableClient<Recipe, RecipeCreate, RecipeUpdate, RecipeWhere, RecipeRelations, never, 'lastRunAt' | 'runCount' | '@@gate', RecipeSystem>
+  readonly recipe: TableClient<Recipe, RecipeCreate, RecipeUpdate, RecipeWhere, RecipeRelations, never, 'lastRunAt' | 'runCount' | '@@gate', RecipeSystem, Required<Pick<RecipeCreate, 'workspaceId'>>>
   readonly recipeRun: TableClient<RecipeRun, RecipeRunCreate, RecipeRunUpdate, RecipeRunWhere, RecipeRunRelations, never, '@@gate'>
   readonly diskUsage: TableClient<DiskUsage, DiskUsageCreate, DiskUsageUpdate, DiskUsageWhere, DiskUsageRelations, never, '@@gate'>
   readonly serverPosture: TableClient<ServerPosture, ServerPostureCreate, ServerPostureUpdate, ServerPostureWhere, ServerPostureRelations, never, '@@gate'>
   readonly maintenanceRun: TableClient<MaintenanceRun, MaintenanceRunCreate, MaintenanceRunUpdate, MaintenanceRunWhere, MaintenanceRunRelations, never, '@@gate'>
-  readonly flag: TableClient<Flag, FlagCreate, FlagUpdate, FlagWhere, FlagRelations, never, '@@gate'>
+  readonly flag: TableClient<Flag, FlagCreate, FlagUpdate, FlagWhere, FlagRelations, never, '@@gate', {}, Required<Pick<FlagCreate, 'workspaceId'>>>
   readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere, FlagOverrideRelations, never, '@@gate'>
-  readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, 'secretId' | 'lastTestAt' | 'lastDeliveryAt' | 'lastError' | 'lastErrorAt' | '@@gate', NotificationChannelSystem>
-  readonly backupDestination: TableClient<BackupDestination, BackupDestinationCreate, BackupDestinationUpdate, BackupDestinationWhere, BackupDestinationRelations, never, 'secretId' | 'lastTestAt' | 'lockDays' | 'lockAttestedAt' | '@@gate', BackupDestinationSystem>
-  readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem>
+  readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, 'secretId' | 'lastTestAt' | 'lastDeliveryAt' | 'lastError' | 'lastErrorAt' | '@@gate', NotificationChannelSystem, Required<Pick<NotificationChannelCreate, 'workspaceId'>>>
+  readonly backupDestination: TableClient<BackupDestination, BackupDestinationCreate, BackupDestinationUpdate, BackupDestinationWhere, BackupDestinationRelations, never, 'secretId' | 'lastTestAt' | 'lockDays' | 'lockAttestedAt' | '@@gate', BackupDestinationSystem, Required<Pick<BackupDestinationCreate, 'workspaceId'>>>
+  readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem, Required<Pick<AlertRuleCreate, 'workspaceId'>>>
   readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations, never, '@@gate'>
   readonly alert: TableClient<Alert, AlertCreate, AlertUpdate, AlertWhere, AlertRelations, never, '@@gate'>
-  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume' | 'retarget', 'isManaged' | 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'certExpiresAt' | 'certWarnedDays' | 'status' | '@@gate', MonitorSystem>
+  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume' | 'retarget', 'isManaged' | 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'certExpiresAt' | 'certWarnedDays' | 'status' | '@@gate', MonitorSystem, Required<Pick<MonitorCreate, 'workspaceId'>>>
   readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere, MonitorCheckRelations, never, '@@gate'>
   readonly monitorUptimeDay: TableClient<MonitorUptimeDay, MonitorUptimeDayCreate, MonitorUptimeDayUpdate, MonitorUptimeDayWhere, MonitorUptimeDayRelations, never, '@@gate'>
   readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere, MonitorEventRelations, never, 'noticeOwedAt' | '@@gate', MonitorEventSystem>
   readonly monitorChannel: TableClient<MonitorChannel, MonitorChannelCreate, MonitorChannelUpdate, MonitorChannelWhere, MonitorChannelRelations, never, '@@gate'>
-  readonly dashboard: TableClient<Dashboard, DashboardCreate, DashboardUpdate, DashboardWhere, DashboardRelations, never, '@@gate'>
+  readonly dashboard: TableClient<Dashboard, DashboardCreate, DashboardUpdate, DashboardWhere, DashboardRelations, never, '@@gate', {}, Required<Pick<DashboardCreate, 'workspaceId'>>>
   readonly dashboardTile: TableClient<DashboardTile, DashboardTileCreate, DashboardTileUpdate, DashboardTileWhere, DashboardTileRelations, never, '@@gate'>
-  readonly auditEvent: TableClient<AuditEvent, AuditEventCreate, AuditEventUpdate, AuditEventWhere, AuditEventRelations, never, '@@gate'>
+  readonly auditEvent: TableClient<AuditEvent, AuditEventCreate, AuditEventUpdate, AuditEventWhere, AuditEventRelations, never, '@@gate', {}, Required<Pick<AuditEventCreate, 'workspaceId'>>>
   readonly blueprint: TableClient<Blueprint, BlueprintCreate, BlueprintUpdate, BlueprintWhere, BlueprintRelations, never, '@@gate'>
   readonly blueprintParam: TableClient<BlueprintParam, BlueprintParamCreate, BlueprintParamUpdate, BlueprintParamWhere, BlueprintParamRelations, never, '@@gate'>
-  readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere, RegistryImageRelations, never, '@@gate'>
-  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecation' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem>
-  readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate'>
+  readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere, RegistryImageRelations, never, '@@gate', {}, Required<Pick<RegistryImageCreate, 'workspaceId'>>>
+  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecation' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem, Required<Pick<DependencyCreate, 'workspaceId'>>>
+  readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate', {}, Required<Pick<DependencyUseCreate, 'workspaceId'>>>
   readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'installId' | 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'appId' | '@@gate', HubConfigSystem>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>
   readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere, NotificationPreferenceRelations, never, '@@gate'>

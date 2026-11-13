@@ -326,6 +326,12 @@ offline: { db: true }    // …plus the @@sync models in the device's own SQLite
                          // an offline read is a real query, not a replay of one
 ```
 
+**A custom method's refusal payload is at `err.data.data`.** `orders.service.invoke('finish', id)`
+that throws `Conflict('…', { residentNotice: 'required' })` server-side rejects with an
+`Error` whose `.data` is the whole response body (`{ name, message, code, data }`), so the
+payload is `err.data.data` and its status `err.code`. The exception is `err.queued`
+(next paragraph), where `err.data` is the held write, not a body.
+
 **A write that cannot reach the server THROWS, with `queued` on the error.** It
 never resolves: resolving would claim the server has a row it may not have. Every
 write through the resource is held — `save()`, `service.create/patch/remove/restore`

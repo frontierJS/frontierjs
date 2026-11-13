@@ -201,7 +201,11 @@ watch:
 - **The template, and every top-level `const`.** `const d = store.n * 2` with no
   watch beside it is the same silence as `{store.n}` — the template reads `d`, a
   local, so a template-only check saw nothing. A `const` holding a function is not
-  graded, since it reads when it is called, and `var` is the stated snapshot.
+  graded, since it reads when it is called, and `var` is the stated snapshot. An
+  imported data module nothing writes is quieted the same way: `var ending =
+  room.ending`, then `{ending}`, and the hint at a template or `const` site offers
+  it beside the watch (`FJS-4178`). The compiler sees one file, so it cannot tell
+  a data module from a store; the component says which.
 - **A handler's deps count as watches.** `$: store.n, () => f()` registers the same
   proxy the bare `$: store.n` does, and the check read the bare lines alone, so a
   covered read was reported as uncovered. It now reads the list the emitter

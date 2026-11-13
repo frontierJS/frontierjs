@@ -1129,11 +1129,16 @@ model Note {
     expect((await guest(db, 2).note.findMany()).map((r: any) => r.name)).toEqual(['n2'])
   })
 
-  it('a create must state the admitted tenant, since the stamp is the member claim\'s', async () => {
+  // FJS-4232: the stamp falls back to the admission twin, so a link holder's
+  // create lands in the tenant that admitted them without naming it.
+  it('a create that omits the column is stamped from the admitted tenant; another tenant is still refused', async () => {
     const db = await seed()
-    await expect(guest(db, 1).note.create({ data: { name: 'x' } })).rejects.toThrow()
+    const made = await guest(db, 1).note.create({ data: { name: 'x' } })
+    expect(made.workspaceId).toBe(1)
     await expect(guest(db, 1).note.create({ data: { workspaceId: 2, name: 'x' } })).rejects.toThrow()
-    await guest(db, 1).note.create({ data: { workspaceId: 1, name: 'x' } })
+    await guest(db, 1).note.create({ data: { workspaceId: 1, name: 'y' } })
+    const nulled = await guest(db, 2).note.create({ data: { workspaceId: null, name: 'z' } })
+    expect(nulled.workspaceId).toBe(2)
   })
 })
 

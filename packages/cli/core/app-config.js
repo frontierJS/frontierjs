@@ -141,6 +141,9 @@ export const FJS_PACKAGES = {
   '@frontierjs/toolbelt':       '0.1.14',
 }
 
+// The Vite every UI surface builds with; jetty's peer range is the narrower one.
+export const VITE_VERSION = '^8.0.0'
+
 export const APP_DEV_DEPS = {
   '@frontierjs/cli':    '0.1.16',
   '@frontierjs/config': '0.1.6',

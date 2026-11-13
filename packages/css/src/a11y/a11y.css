@@ -96,7 +96,7 @@
    * has to mean nothing paints, not just that the box is gone.
    */
   box-shadow:     none;
-  font-family:    var(--font-primary);
+  font-family:    var(--font-primary), sans-serif;
   font-size:      var(--text-md);
   font-weight:    600;
   text-decoration: none;

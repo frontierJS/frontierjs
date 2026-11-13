@@ -243,7 +243,10 @@ const pullThroughBasecamp = async ({ $, flag, log, echo, chalk }, anchorId) => {
   const reader = lookupBasecamp(target.name).entry ?? target
   const goal   = flag.dev ? 'dev' : 'production'
   try {
-    const app = await resolveBasecampApp(reader.url, reader.key, anchorId, goal, { where: reader.name })
+    // A pull reads what exists: an App that lives in development is pulled with --dev,
+    // never by adding a production environment to the live Basecamp.
+    const hint = flag.dev ? undefined : 'pass --dev to pull the project\'s development App'
+    const app = await resolveBasecampApp(reader.url, reader.key, anchorId, goal, { where: reader.name, hint })
     appId = app.id
     if (app.id !== anchorId) say(`${goal} App '${app.name}' (${app.id}) in the same project`)
   } catch (err) { log.error(err.message); return null }

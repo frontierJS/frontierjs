@@ -127,6 +127,12 @@ webhook, a file download, a stream — and call a service from it for anything
 touching a model. A service answers JSON only, so a file is a raw route that
 calls the service and encodes what comes back. Verify a signature over `ctx.rawBody`, never a re-serialized `ctx.body`.
 
+A download a player must seek needs a Content-Length, and Bun.serve sends any
+`ReadableStream` body chunked without one — a header the route set is dropped,
+though `app.http.fetch` still shows it. Answer a path with `ctx.file(path)`, a
+file held open as `new Response(Bun.file(fd))`, and bytes in hand as a `Uint8Array`;
+ask for the length over a socket, never `app.http.fetch`.
+
 ---
 
 ## Services
@@ -163,6 +169,13 @@ export default createService({
 answers every CRUD verb and finds custom methods by scanning; the moment one
 entry exists — including one added only to carry an `input:` — every verb it
 does not name is a 405.
+
+**A CRUD verb's body is checked against the model's fields, even when you write
+the method.** A key naming no field is a 400 before your code runs. A key stored
+beside the row is `@transient`; a body that is not the row at all — `{ specId }`,
+from which a before hook derives a required column — declares a `type` and lists
+the verb as `{ method: 'create', input: 'ShareSpec' }`, which replaces the model
+check on that verb.
 
 **Every `@@transitions` move is already a method, named for the move.** It is
 `transition(id, move)` on the caller's client, so the gate, the row policy and
@@ -292,6 +305,17 @@ partial-write protocol `{ data, errors }` is a list on any other method.
 Never hedge with `answer?.data ?? …`: against an array answer, `?.data ?? []`
 is an empty screen and no error.
 
+**A refusal's payload is two `data`s deep in the browser.** A method that throws
+`new Conflict('Needs a notice', { residentNotice: 'required' })` puts the payload
+on the error's `data`, and `toJSON()` sends `{ name, message, code, data }`. The
+client then assigns that whole parsed body to `.data` on the `Error` it throws, so
+the caller reads `err.data.data` — `err.data` is the envelope, `err.data.code` its
+status. HTTP and WebSocket shape it alike, so one unwrapper serves both. In-process
+(`app.service(…).call`) there is no wire: the `FrameworkError` itself is thrown
+and the payload is `err.data`. Do not hedge with `err.data.data ?? err.data`;
+`toFieldErrors` in Sierra is the one reader that must handle both, and a page
+reads field errors through it.
+
 ---
 
 ## Who the caller is — sessions, claims, bearers
@@ -319,15 +343,22 @@ import { createLitestoneAuth } from '@frontierjs/auth'
 const auth = createLitestoneAuth(db)
 const env  = { LINK_KEY: 'ab'.repeat(32) }
 
-createApp({ auth, db, principal: bearerClaim({
+export const portal = bearerClaim({
   from:    cookie('portal'),                 // or header('x-cart-token'), or authorization()
   model:   'portalGrant',                    // the accessor of the grant model
   column:  'tokenHash',                      // holds the DIGEST, never the token
   key:     env.LINK_KEY,
   claims:  { portalClientId: 'clientId', capabilities: 'capabilities' },
   subject: 'clientId',                       // the audit trail's subjectId
-}) })
+})
+
+createApp({ auth, db, principal: portal })
 ```
+
+**The resolver is a module of its own, never a literal inside `createApp`** —
+`api/src/core/principal.ts`, beside `core/db.ts` — because the redeem route and
+any service calling `portal.mint` import it, and neither may import `app.ts`,
+the module whose boot loads them.
 
 **The grant model is the shipped trait** —
 `import "@frontierjs/litestone/references/Grant.lite"` then `@@trait(Grant)` on the
@@ -346,8 +377,12 @@ A definition has no `.hooks()` — that exists only on the service
 `app.service()` returns, so `svc.hooks(…)` in a service file fails to load. A
 grant with a past `expiresAt` or a set `revokedAt` is no claim, and so is no row.
 
-**A link is redeemed once for the cookie** (`FJS-D340`):
-`app.post('/portal/redeem', portal.redeem(db, { maxAge }))`. The page posts the
+**A link is redeemed once for the cookie** (`FJS-D340`), by a route file —
+`api/src/routes/portal/redeem.ts` answers `POST /portal/redeem` (`FJS-D626`) and
+holds three lines: `import { db } from '../../core/db.ts'`,
+`import { portal } from '../../core/principal.ts'` and
+`export const POST = portal.redeem(db, { maxAge })`. An `app.post` in `app.ts`
+answers the same, and `fli check`'s `app-layout` warns on it. The page posts the
 token from the URL fragment, the grant's digest is rotated to a fresh token's
 under the resolver's purpose, that token is set as the httpOnly
 `SameSite=Strict` cookie `from: cookie()` reads, and `{ subject }` comes back so
@@ -381,6 +416,18 @@ actor (`FJS-D832`).
 it reads is gated at 0 for that operation and its `@@allow` does the scoping; a
 custom method it calls states `gate: 0` and `claims: ['portalClientId']`
 (*Services*, above). A resolver may not set `id` or `userId`.
+
+**Under `tenancy { strategy row }` a grant's tenant claim arrives as its
+admission twin** (`FJS-D1100`): `claims: { accountId: 'accountId' }` reaches the
+principal as `accountIdAdmitted`, never `accountId`, because a link holder is
+admitted to the tenant without being a member of it. The schema's tenant deny
+passes the twin, and a create that omits the tenant column is stamped from it;
+`accountId == auth().accountId` answers false for the holder, so a rule that
+admits a link reads `auth().accountIdAdmitted`, and a test principal for a
+holder is `{ accountIdAdmitted, shareLinkId }` — `{ accountId, shareLinkId }` is
+a member. `membershipClaim({ standing: 'role', guests: ['guest'] })` emits the
+same twin for a roster guest (litestone's `docs/multi-tenancy.md`, *Admitted is
+not a member*).
 
 **A bearer's claims are not on `$.me`.** With no session `ctx.user` stays
 `null` — promoting the claims to a user would grade every guest CREATOR(3) — so the

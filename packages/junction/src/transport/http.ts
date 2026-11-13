@@ -750,6 +750,10 @@ export class HttpTransport {
   // The same function Bun.serve calls, exposed so tests can call it
   // directly without spinning up a real port.
   // router.build() must have been called first (or call app.start()).
+  // It answers before the wire, so it shows a Content-Length a route set on a
+  // ReadableStream body that Bun.serve drops, sending the body chunked. A test
+  // that asks a download's length asks a socket (test/raw-file-length.test.ts,
+  // FJS-4274).
   //
   // Usage in tests:
   //   const res = await app.http.fetch(new Request('http://localhost/users'))

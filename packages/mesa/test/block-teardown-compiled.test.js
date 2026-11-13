@@ -185,3 +185,39 @@ const data = await fetchIt()
     expect(wrap.querySelector('#content').textContent).toBe('DONE')
   })
 })
+
+// A parent that owns a device (a WebGL renderer, an audio context) makes it in
+// an attachment and lets it go in the attachment's cleanup, and the children
+// built after it release what they hold on it in their onDestroy. Torn down in
+// build order, the device was gone while children still held objects on it
+// (`FJS-4176`); the later-built goes first, as nested scopes unwind.
+describe('teardown order inside one {#if} branch', () => {
+  it('a child component built after an {@attach} is destroyed before the attachment cleanup', async () => {
+    const log = (globalThis.__fjs4176 = [])
+    const child = await compileSource(`<script>
+  export let id
+  $.onDestroy(() => globalThis.__fjs4176.push('child ' + id))
+</script>
+<i>{id}</i>`, { filename: `/C${n}.mesa`, dev: false })
+    const childFile = path.join(process.cwd(), `_tmp_compiled_child_${n}.mjs`)
+    writeFileSync(childFile, child.result.replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`))
+    try {
+      const wrap = await render(`<script>
+  import Child from './${path.basename(childFile)}'
+  let shown = true
+  const device = () => () => globalThis.__fjs4176.push('attach')
+</script>
+<button onclick={() => shown = false}>hide</button>
+{#if shown}
+  <div {@attach device}></div>
+  {#each [1, 2] as id}<Child id={id} />{/each}
+{/if}`)
+      expect(wrap.querySelectorAll('i').length).toBe(2)
+      await click(wrap, 'button')
+      expect(log).toEqual(['child 2', 'child 1', 'attach'])
+    } finally {
+      try { unlinkSync(childFile) } catch {}
+      delete globalThis.__fjs4176
+    }
+  })
+})

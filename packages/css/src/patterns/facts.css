@@ -55,7 +55,7 @@
   gap:                   var(--space-md) var(--space-3xl);
   align-items:           baseline;
 
-  font-family: var(--font-primary);
+  font-family: var(--font-primary), sans-serif;
   font-size:   var(--text-md);
   line-height: 1.5;
 }

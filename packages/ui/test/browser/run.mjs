@@ -167,7 +167,8 @@ if (serveOnly) {
     teardown: async (browser) => {
       await browser.cmd('Emulation.setTimezoneOverride', { timezoneId: '' })
       await browser.cmd('Emulation.clearDeviceMetricsOverride')
-      await browser.send('Browser.setDownloadBehavior', { behavior: 'default' })
+      // 'default' is the user's Downloads folder; the drive's own is put back.
+      await browser.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: browser.downloads })
       await browser.evaluate('return window.kitUnmount();')
     },
     coverage: { all: componentNames(), show: showGap, noun: 'components' },

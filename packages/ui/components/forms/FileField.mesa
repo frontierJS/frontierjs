@@ -104,6 +104,26 @@
   $: canClear = field?.required !== true && (existing || picked)
 </script>
 
+<!--
+  The caller's attributes go to the INPUT and not to the preview below it: this
+  is a form control, so what a `<label for>` and an `aria-describedby` have to
+  reach is the thing that emits input. FileUpload forwards them onward to its
+  own dropzone.
+
+  No `label` is passed: FileUpload's own Field draws the column's `@label` from
+  the enclosing form. A blank `label=""` suppressed it, and a generated <Form>
+  draws none outside, so the control had no visible label. The stored/picked
+  preview follows the control for that reason -- the label stays on top.
+-->
+<FileUpload
+  {name}
+  accept={resolvedAccept}
+  multiple={resolvedMultiple}
+  files={listed}
+  onchange={choose}
+  {...$attributes}
+/>
+
 {#if picked}
   <div class="file-field-current">
     {#if isImage(picked)}
@@ -132,22 +152,6 @@
     This file reference was not resolved into a URL, so it cannot be shown.
   </p>
 {/if}
-
-<!--
-  The caller's attributes go to the INPUT and not to the preview above it: this
-  is a form control, so what a `<label for>` and an `aria-describedby` have to
-  reach is the thing that emits input. FileUpload forwards them onward to its
-  own dropzone.
--->
-<FileUpload
-  {name}
-  label=""
-  accept={resolvedAccept}
-  multiple={resolvedMultiple}
-  files={listed}
-  onchange={choose}
-  {...$attributes}
-/>
 
 <style>
   .file-field-current {

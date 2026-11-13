@@ -193,7 +193,10 @@ what they mean in any app.
   box: `photo.js` shrinks the file to 2560 px before `drafts.photo`, which
   re-encodes it anyway (`FJS-D1408`). `Ask.mesa` is a change across the draft
   in the owner's words (`FJS-D1242`): `drafts.ask`, then the run's lines per
-  file, then Keep (one commit), Discard, or Undo after a keep. Everything the editor renders carries
+  file, then Keep (one commit), Discard, or Undo after a keep. The editor renders in a shadow root on
+  an `<fjs-editor>` host carrying its own copy of `@frontierjs/css`, so a site's
+  stylesheet never reaches it (`FJS-4269`); a lookup of its own elements goes
+  through its root, never `document`. The host and everything inside carry
   `data-fjs-editor-ui`, which is how a click on it is not taken for a pick.
 - `src/block-look.js` — the one owner of what a look word may be and where its
   class lands, imported by both `Block.mesa` and `config/dividers.js`.

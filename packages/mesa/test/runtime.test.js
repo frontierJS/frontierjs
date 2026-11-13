@@ -5653,11 +5653,39 @@ describe('event delegation — per-mount-container roots', () => {
 // ── Style injection — shadow root support ─────────────────────────────────────
 
 describe('addStyles — shadow root injection', () => {
+  // A component stands in for compiled output: push, addStyles, pop. `later`
+  // captures the stack the way an {#if} does, for a child created after mount.
   let imports
+  let later
 
   beforeEach(async () => {
     imports = await import('../src/runtime.js')
   })
+
+  const styled = (id, css) => () => {
+    const { push_component, pop_component, addStyles, captureContext } = imports
+    push_component()
+    later = captureContext()
+    addStyles(id, css)
+    pop_component()
+  }
+  const inShadow = (shadow, id) => shadow.adoptedStyleSheets.some(s => s.__mesaId === id)
+  const inDocument = (id) => document.adoptedStyleSheets.some(s => s.__mesaId === id)
+  const shadowHost = () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const shadow = host.attachShadow({ mode: 'open' })
+    const label = document.createComment('')
+    shadow.appendChild(label)
+    return { host, shadow, label }
+  }
+  const pageLabel = () => {
+    const box = document.createElement('div')
+    document.body.appendChild(box)
+    const label = document.createComment('')
+    box.appendChild(label)
+    return { box, label }
+  }
 
   it('addStyles puts the sheet on the document by default', () => {
     const { addStyles } = imports
@@ -5666,60 +5694,50 @@ describe('addStyles — shadow root injection', () => {
     expect(sheet.cssRules[0].cssText).toContain('color: red')
   })
 
-  it('_registerStyleRoot injects styles into shadow root via adoptedStyleSheets or <style>', () => {
-    const { _registerStyleRoot, addStyles } = imports
-
-    const host = document.createElement('div')
-    document.body.appendChild(host)
-    const shadow = host.attachShadow({ mode: 'open' })
-
-    const cleanup = _registerStyleRoot(shadow)
-    addStyles('test-shadow-style', '.btn { background: blue; }')
-
-    // Either adoptedStyleSheets or a <style> tag — check both
-    const viaAdopted = shadow.adoptedStyleSheets?.some(s => s.__mesaId === 'test-shadow-style')
-    const viaTag     = !!shadow.querySelector?.('style#test-shadow-style')
-    expect(viaAdopted || viaTag).toBe(true)
-
-    cleanup()
-    document.body.removeChild(host)
+  it('a mount into a shadow root puts its styles there and not on the document', () => {
+    const { mount } = imports
+    const { host, shadow, label } = shadowHost()
+    const app = mount(label, styled('test-shadow-style', '.btn { background: blue; }'), { root: shadow })
+    expect(inShadow(shadow, 'test-shadow-style')).toBe(true)
+    expect(inDocument('test-shadow-style')).toBe(false)
+    app.destroy()
+    expect(inShadow(shadow, 'test-shadow-style')).toBe(false)
+    host.remove()
   })
 
-  it('cleanup removes styles from shadow root', () => {
-    const { _registerStyleRoot, addStyles } = imports
+  it('a child created after mount still styles into the shadow root', () => {
+    const { mount } = imports
+    const { host, shadow, label } = shadowHost()
+    const app = mount(label, styled('test-shadow-parent', '.p {}'), { root: shadow })
+    later(styled('test-shadow-later', '.l { color: green; }'))
+    expect(inShadow(shadow, 'test-shadow-later')).toBe(true)
+    expect(inDocument('test-shadow-later')).toBe(false)
+    app.destroy()
+    host.remove()
+  })
 
-    const host = document.createElement('div')
-    document.body.appendChild(host)
-    const shadow = host.attachShadow({ mode: 'open' })
-
-    const cleanup = _registerStyleRoot(shadow)
-    addStyles('test-cleanup-style', '.x { color: green; }')
-    cleanup()
-
-    const viaAdopted = shadow.adoptedStyleSheets?.some(s => s.__mesaId === 'test-cleanup-style')
-    const viaTag     = !!shadow.querySelector?.('style#test-cleanup-style')
-    expect(viaAdopted || viaTag).toBe(false)
-
-    document.body.removeChild(host)
+  // FJS-4269: site-kit's editor mounts into a shadow root on a page whose own
+  // components share its runtime chunk; theirs must still reach the document.
+  it("a page's mount beside a shadow mount keeps its styles on the document", () => {
+    const { mount } = imports
+    const { host, shadow, label } = shadowHost()
+    const editor = mount(label, styled('test-editor-style', '.e {}'), { root: shadow })
+    const { box, label: pl } = pageLabel()
+    const page = mount(pl, styled('test-page-style', '.p { color: red; }'))
+    expect(inDocument('test-page-style')).toBe(true)
+    expect(inShadow(shadow, 'test-page-style')).toBe(false)
+    page.destroy(); editor.destroy()
+    box.remove(); host.remove()
   })
 
   it('does not inject the same style id twice into a shadow root', () => {
-    const { _registerStyleRoot, addStyles } = imports
-
-    const host = document.createElement('div')
-    document.body.appendChild(host)
-    const shadow = host.attachShadow({ mode: 'open' })
-
-    const cleanup = _registerStyleRoot(shadow)
-    addStyles('test-dedup-style', 'a { color: red; }')
-    addStyles('test-dedup-style', 'a { color: red; }')
-
-    const count = shadow.adoptedStyleSheets?.filter(s => s.__mesaId === 'test-dedup-style').length
-      ?? [...shadow.querySelectorAll?.('style#test-dedup-style') ?? []].length
-    expect(count).toBe(1)
-
-    cleanup()
-    document.body.removeChild(host)
+    const { mount } = imports
+    const { host, shadow, label } = shadowHost()
+    const twice = () => { styled('test-dedup-style', 'a { color: red; }')(); styled('test-dedup-style', 'a { color: red; }')() }
+    const app = mount(label, twice, { root: shadow })
+    expect(shadow.adoptedStyleSheets.filter(s => s.__mesaId === 'test-dedup-style').length).toBe(1)
+    app.destroy()
+    host.remove()
   })
 })
 

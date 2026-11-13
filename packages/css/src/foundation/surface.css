@@ -65,7 +65,7 @@
   color:         var(--_surface-color);
   border:        var(--border-width) solid var(--_surface-border);
   border-radius: var(--card-radius);
-  font-family:   var(--font-primary);
+  font-family:   var(--font-primary), sans-serif;
   /*
    * The body tokens, re-read for the same reason --ink and --font-primary
    * are: each inherits as a computed value, so a Block inside a nested

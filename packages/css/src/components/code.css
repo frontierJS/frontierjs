@@ -309,6 +309,13 @@ code[language] dfn {
  * glow's `numbered` option wraps each line in a <span>; the numbers are a
  * counter rather than content, so selecting the block and copying it gives
  * you the code without them.
+ *
+ * RESERVED SHAPE: a direct-child <span> of `code[language]` IS a numbered
+ * line. glow marks that line with nothing else, so an app that appends its
+ * own span there (to measure a column, to mark a position) gets a 3.5em
+ * number box in front of it -- measure with a Range, or put the probe in
+ * an element outside the block, or wrap it in a <b>/<i>. glow emits no
+ * direct span unless `numbered` is set (code.spec.js pins both halves).
  */
 code[language]:has(> span) { counter-reset: code-line 0; }
 

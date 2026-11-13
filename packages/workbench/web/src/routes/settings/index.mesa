@@ -215,7 +215,7 @@ title: Settings
   }
 </script>
 
-<header class="stack-sm">
+<header class="stack gap-sm">
   <h1 class="h3">Settings</h1>
   {#if session.user}
     <p class="cluster text-muted">
@@ -283,7 +283,7 @@ title: Settings
     <article class="alert danger"><div class="alert-content">{profilesError}</div></article>
   {/if}
   {#each profiles as p (p.name)}
-    <section class="stack-sm" data-profile={p.name}>
+    <section class="stack gap-sm" data-profile={p.name}>
       <h3 class="h6"><code>{p.name}</code> <span class="text-sm text-muted">mode {p.mode}</span></h3>
       {#if p.open}
         <p class="text-sm text-danger" data-profile-open={p.name}>Other users can read this file: <code>chmod 600 {p.path}</code></p>

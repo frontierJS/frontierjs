@@ -47,7 +47,7 @@
   background: var(--_fill, var(--tone-fill));
   color:      var(--_on-fill, white);
 
-  font-family: var(--font-primary);
+  font-family: var(--font-primary), sans-serif;
   /* Scales with the avatar, so one token resizes the whole thing. */
   font-size:   calc(var(--avatar-size) * 0.4);
   font-weight: 600;

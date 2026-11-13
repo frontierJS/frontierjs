@@ -4396,8 +4396,7 @@ function expandAuthorshipAttributes(schema) {
 // admitted-only caller (a guest, a link holder) carries its admission twin; the
 // deny passes either to the column's own value and nothing else, so the member
 // claim stays null for the second and `col == auth().claim` answers false.
-// A create states the column for an admitted-only caller, since the stamp is
-// the member claim's.
+// The stamp (applyAuthDefaults) falls back to the twin for the same caller.
 function tenantDenyExprs(column, claim) {
   const lit     = (value) => ({ type: 'literal', value })
   const auth    = (field) => ({ type: 'auth', field })

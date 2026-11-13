@@ -134,8 +134,15 @@ function fill(template, { slug, productName, apiPrefix = '' }) {
 
 export function sidecarLauncher(names) { return fill('launcher.ts', names) }
 
-export function sidecarMake(names) {
-  return fill('make-sidecar.ts', names)
+export function sidecarMake(names) { return fill('make-sidecar.ts', names) }
+
+/**
+ * sidecar-fns.ts: the self-contained functions above as Bun transpiled them,
+ * untyped, so the file is `@ts-nocheck` and only the declared signatures reach
+ * make-sidecar.ts (FJS-4184).
+ */
+export function sidecarFns() {
+  return readFileSync(join(TEMPLATES, 'sidecar-fns.ts'), 'utf8')
     // A function replacer: the sources hold `$` sequences a string replacement reads.
     .replace('/*__IMPORTS_FN__*/', () =>
       `const importSpecifiers: (root: string, fs: any, path: any) => string[] = ${importSpecifiers.toString()}`)

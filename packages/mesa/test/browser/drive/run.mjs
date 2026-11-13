@@ -77,9 +77,25 @@ const RAW = `<!doctype html><title>raw timers</title><script>
 
 const work     = mkdtempSync(join(tmpdir(), 'mesa-drive-test-'))
 const upgraded = new Set()
+// The first load of /reloads-once is held open by a slow script, then reloads
+// itself, as vite does after re-optimizing; the second load settles.
+let reloadLoads = 0
 const http = createServer((req, res) => {
   res.setHeader('content-type', 'text/html')
   res.setHeader('cache-control', 'no-store')
+  if (req.url === '/reloads-once') {
+    if (++reloadLoads > 1) return res.end('<!doctype html><title>reloaded</title><script>window.settled = true</script>')
+    return res.end('<!doctype html><title>cold</title><script src="/hang.js"></script>')
+  }
+  if (req.url.startsWith('/download/')) {
+    res.setHeader('content-type', 'text/plain')
+    res.setHeader('content-disposition', `attachment; filename="${req.url.slice('/download/'.length)}"`)
+    return res.end('saved by the drive')
+  }
+  if (req.url === '/hang.js') {
+    res.setHeader('content-type', 'text/javascript')
+    return setTimeout(() => res.end('location.reload()'), 400)
+  }
   res.end(req.url === '/sockets' ? SOCKETS : req.url === '/clock-raw' ? RAW : PAGE)
 })
 // Enough of a WebSocket server to open one and hold it: the handshake, and
@@ -118,8 +134,8 @@ function launchChild(withHost, signal = 'SIGTERM') {
     })` : ''}
     const before = new Set(readdirSync(tmpdir()))
     await openChrome()
-    const profile = readdirSync(tmpdir()).find((n) => n.startsWith('fjs-drive-') && !before.has(n))
-    console.log('up ' + profile)
+    const made = readdirSync(tmpdir()).filter((n) => n.startsWith('fjs-drive-') && !before.has(n))
+    console.log('up ' + made.find((n) => !n.includes('-tmp-')) + ' ' + made.find((n) => n.includes('-tmp-')))
     setInterval(() => {}, 1000)
   `
   const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] })
@@ -128,11 +144,11 @@ function launchChild(withHost, signal = 'SIGTERM') {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('child never came up: ' + out)) }, 20000)
     child.stdout.on('data', () => {
-      const m = out.match(/up (\S+)/)
+      const m = out.match(/up (\S+) (\S+)/)
       if (!m) return
       clearTimeout(t)
       child.kill(signal)
-      child.on('exit', (code) => resolve({ code, out, profile: join(tmpdir(), m[1]) }))
+      child.on('exit', (code) => resolve({ code, out, profile: join(tmpdir(), m[1]), tmp: join(tmpdir(), m[2]) }))
     })
   })
 }

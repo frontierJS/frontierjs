@@ -33,7 +33,7 @@
   background:     var(--_fill, var(--tone-fill));
   color:          var(--_on-fill, white);
   border:         var(--border-width) solid transparent;
-  font-family:    var(--font-primary);
+  font-family:    var(--font-primary), sans-serif;
   font-weight:    var(--pill-font-weight);
   text-transform: var(--pill-text-transform);
   letter-spacing: var(--pill-letter-spacing);

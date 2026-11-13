@@ -1210,6 +1210,27 @@ describe('anonymous-create-auth-default', () => {
         ownerId Int @default(auth().id)
       }`, rule)).toEqual([])
   })
+
+  // FJS-4235
+  test('stays quiet when the default reads a bearer claim, which a visitor carries', () => {
+    expect(findings(`
+      claim shareVersionId bearer
+      model Approval {
+        id            Int    @id
+        specVersionId String @default(auth().shareVersionId)
+        @@gate(0.0.9.8)
+      }`, rule)).toEqual([])
+  })
+
+  test('still fires on a bare claim, which a visitor may not carry', () => {
+    expect(findings(`
+      claim shareVersionId
+      model Approval {
+        id            Int    @id
+        specVersionId String @default(auth().shareVersionId)
+        @@gate(0.0.9.8)
+      }`, rule).length).toBe(1)
+  })
 })
 
 describe('create-reaches-unpickable-relation', () => {

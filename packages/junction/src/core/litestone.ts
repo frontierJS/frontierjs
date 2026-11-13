@@ -2443,7 +2443,8 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
     const one = (row: unknown): Record<string, unknown> => {
       checkUnknownKeys(
         ctx, row, compiled.fields, compiled.model,
-        'Declare it `@transient` on the model in db/schema.lite if a caller should be able to send it.',
+        'Declare it `@transient` on the model in db/schema.lite if a caller should be able to send it, ' +
+        `or, when the body is not the row (a hook derives the row from it), declare its type and list the verb as \`{ method: '${String(ctx.method)}', input: '<Type>' }\`, which replaces this check.`,
         compiled.guarded,
       )
       const parsed = compiled[mode].parse(row) as Record<string, unknown>

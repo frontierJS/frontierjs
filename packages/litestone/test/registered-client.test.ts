@@ -365,3 +365,40 @@ describe('asSystem() takes a @system column in data (FJS-3910)', () => {
     expect(ok).toBe(true)
   })
 })
+
+// ─── FJS-4202: the tenancy claim column ──────────────────────────────────────
+
+const TENANTED = `
+  model Account { id Int @id  name String }
+  model Client {
+    id        Int    @id
+    accountId Int
+    name      String
+  }
+  tenancy { strategy row  column accountId  claim accountId }
+`
+
+const TENANT_CLIENT = `
+  import { createClient } from '@frontierjs/litestone'
+
+  export async function run() {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    // the claim stamps the column, so a principal's create does not name it
+    await db.$setAuth({ accountId: 1 }).client.create({ data: { name: 'a' } })
+    await db.$setAuth({ accountId: 1 }).client.createMany({ data: [{ name: 'a' }] })
+    // asSystem() has no claim to stamp from
+    await db.asSystem().client.create({ data: { name: 'a', accountId: 1 } })
+    // @ts-expect-error -- asSystem() names the column
+    await db.asSystem().client.create({ data: { name: 'a' } })
+    // @ts-expect-error -- a column the model lacks
+    await db.$setAuth({ accountId: 1 }).client.create({ data: { name: 'a', nope: 1 } })
+  }
+`
+
+describe('the tenancy claim column is optional in Create (FJS-4202)', () => {
+  test('a principal omits it, asSystem() must name it', () => {
+    const { ok, out } = compile('system', TENANTED, TENANT_CLIENT)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+})

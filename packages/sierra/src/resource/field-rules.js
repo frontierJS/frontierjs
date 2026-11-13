@@ -334,16 +334,19 @@ export function buildFieldRules(schema, resolve = resolveRef, resolveName = mode
   // Mark foreign keys. `accountId` is emitted as a plain integer, so without
   // this a form generator renders a number input for what is a reference — the
   // one field where a picker is obviously right and a spinner obviously wrong.
+  // A composite key's columns are not each a reference: a picker on one of them
+  // chooses a row the other columns have not, it turns a plain required column
+  // (`day`) into a picker of the related rows, and it would re-point a column a
+  // single-column relation already owns (FJS-4243).
   for (const rel of Object.values(buildRelations(schema, resolveName))) {
-    if (rel.type !== 'belongsTo') continue
-    rel.foreignKeys.forEach((fk, i) => {
-      if (!out[fk]) return
-      out[fk].references = {
-        model:    rel.model,
-        field:    rel.references[i] ?? 'id',
-        relation: rel.field,
-      }
-    })
+    if (rel.type !== 'belongsTo' || rel.foreignKeys.length !== 1) continue
+    const [fk] = rel.foreignKeys
+    if (!out[fk]) continue
+    out[fk].references = {
+      model:    rel.model,
+      field:    rel.references[0] ?? 'id',
+      relation: rel.field,
+    }
   }
 
   // An implicit m2m is in `x-relations` and in no `properties`, so without a

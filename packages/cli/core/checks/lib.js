@@ -20,20 +20,21 @@ export const SCRIPT_EXT = new Set(['.ts', '.js', '.mjs', '.mts', '.cjs', '.cts']
 // that rule never reads, and nothing says so.
 export const CLIENT_SURFACES = ['web', 'widgets', 'site', 'extension', 'desktop', 'mobile']
 
-export const SURFACES        = ['api', ...CLIENT_SURFACES]
+export const SURFACES        = ['api', ...CLIENT_SURFACES, 'cli']
 
 /**
  * Whether `root` is an app, for the rules that read SURFACES. A schema is one
  * sign, and a web-only, widgets-only or site-only project has none — a manifest
  * (`package.json` or `.fli.json`) with a surface beside it is the other. The
  * manifest alone is not enough: any package has one, and a rule that scolds
- * every library is a rule people turn off. The rules that read the schema keep
- * their own `db/schema.lite` gate.
+ * every library is a rule people turn off. A cli/ folder is not that sign, since
+ * a library's bin often lives there and an app's cli/ is a client of its api/.
+ * The rules that read the schema keep their own `db/schema.lite` gate.
  */
 export function isAppRoot(root) {
   if (existsSync(join(root, 'db', 'schema.lite'))) return true
   const manifest = ['package.json', '.fli.json'].some(f => existsSync(join(root, f)))
-  return manifest && SURFACES.some(d => existsSync(join(root, d)))
+  return manifest && SURFACES.some(d => d !== 'cli' && existsSync(join(root, d)))
 }
 
 export const stem = p => p.replace(/\.(d\.)?(ts|js|mjs|mts|cjs|cts|mesa)$/, '')

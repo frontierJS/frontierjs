@@ -166,11 +166,16 @@ function buildCompiledSchema(schema: Schema, opts: SchemaOptions = {}): Compiled
 
   // Pre-compile any string patterns to RegExp once at build time,
   // not on every validate() call.
-  for (const def of Object.values(schema)) {
+  // An array's `items` def is validated by the same validateField, so it
+  // compiles too, to any depth; left a string it throws on `.test`.
+  const precompile = (def: FieldDef | undefined): void => {
+    if (!def) return
     if (def.pattern && typeof def.pattern === 'string') {
       def.pattern = new RegExp(def.pattern)
     }
+    precompile(def.items)
   }
+  for (const def of Object.values(schema)) precompile(def)
 
   const compiled: CompiledSchema = {
 

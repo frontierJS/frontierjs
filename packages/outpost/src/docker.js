@@ -24,7 +24,7 @@ import { pipeline }                from 'node:stream/promises'
 import { createGzip }              from 'node:zlib'
 import { validRelativePath, validName, LIMITS } from './static.js'
 import { ensureDeployKey }         from './deploy-key.js'
-import { chooseDockerfile, needsGenerated, exposedPort, linkedDeps, writeUnlinked, GENERATED_DIR } from './dockerfile.js'
+import { chooseDockerfile, needsGenerated, exposedPort, linkedDeps, staleTarballs, writeUnlinked, GENERATED_DIR } from './dockerfile.js'
 import { createSwap, portOf as portIn, runFlags, checkStopGrace, checkHealthTimeout, healthBudgetS, healthyStatus, livePivot, swapFor, HEALTH_INTERVAL_S, HEALTH_CHECK_TIMEOUT_S } from './swap.js'
 
 export { swapFor }
@@ -998,6 +998,7 @@ export function createDocker({
 
       const cloudflare = { env: { CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: accountId },
         flags: ['-e', 'CLOUDFLARE_API_TOKEN', '-e', 'CLOUDFLARE_ACCOUNT_ID'] }
+      refuseStaleTarballs(dir)
       await docker([...box(['-w', '/src']), 'bun', 'install', '--frozen-lockfile'], { timeoutMs: 900_000 })
 
       if (app) {
@@ -1047,7 +1048,17 @@ export function createDocker({
       '--mount', `type=bind,source=${dir},target=/src`, ...extra, PREVIEW_IMAGE]
   }
 
-  /** An empty checkout directory, and the install cache beside it. The cache
+  /** Refuses a clone whose bun.lock names a tarball by bytes it no longer
+   *  holds: the cache that outlives the checkout would install the old copy. */
+  function refuseStaleTarballs(root) {
+    const stale = staleTarballs(root)
+    if (!stale.length) return
+    throw new Error(`${stale.join(', ')} ${stale.length === 1 ? 'is not the tarball' : 'are not the tarballs'} bun.lock recorded. `
+      + 'bun install keeps the old integrity for a file repacked under the same name, '
+      + 'so a repacked tarball needs a new file name, installed and committed with its bun.lock')
+  }
+
+  /** An empty checkout directory, and the install cache beside it.The cache
    *  outlives the checkout, one per app, so one app's install scripts never
    *  write what another's install reads. */
   async function scratch(dir, cache) {
@@ -1125,6 +1136,7 @@ export function createDocker({
       if (linked.length)
         throw new Error(`web/ cannot be built from a clone: ${linked.join(', ')} ${linked.length === 1 ? 'is' : 'are'} linked, `
           + 'and a clone holds no workspace. Release from the workspace with fli deploy')
+      refuseStaleTarballs(host)
       const frozen = ['bun.lock', 'bun.lockb'].some(l => existsSync(`${host}/${l}`)) ? ['--frozen-lockfile'] : []
       await docker([...box(['-w', `/src${rel}`]), 'bun', 'install', ...frozen], { timeoutMs: 900_000 })
       // web/ reaches the API through its own Domain (`FJS-D1969`), so it is

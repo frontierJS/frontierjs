@@ -55,6 +55,17 @@ const CONFIG = {
 
 const DIGEST = 'sha256:' + 'ab'.repeat(32)
 
+// A bun.lock as bun 1.4 writes it, trailing commas included, naming one
+// file: tarball at `path` with the integrity of `bytes`.
+const lockFor = (path, bytes) => `{
+  "lockfileVersion": 1,
+  "workspaces": { "": { "name": "kos" } },
+  "packages": {
+    "@frontierjs/mesa": ["@frontierjs/mesa@${path}", {}, "sha512-${createHash('sha512').update(bytes).digest('base64')}"],
+  },
+}
+`
+
 // The default wait with no settle window, or every deploy here sleeps it.
 const FAST = { attempts: 10, intervalMs: 3_000, settleMs: 0 }
 
@@ -442,6 +453,20 @@ describe('what the machine is asked to do', () => {
       expect((await res.json()).error).toContain('no content/routes')
       expect(envs).toEqual([])
       expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.preview`)
+    })
+
+    // FJS-4267: bun keys a file: tarball's cache entry by the lockfile's
+    // integrity, so the per-App cache served the old copy of a repacked one.
+    test('a file: tarball that is not the one bun.lock recorded is refused by name before the install', async () => {
+      const { server, workDir, argv } = serverFor()
+      const dir = `${workDir}/app-1.preview`
+      mkdirSync(`${dir}/vendor`, { recursive: true })
+      writeFileSync(`${dir}/vendor/frontierjs-mesa-0.1.13.tgz`, 'repacked')
+      writeFileSync(`${dir}/bun.lock`, lockFor('./vendor/frontierjs-mesa-0.1.13.tgz', 'packed'))
+      const res = await send(server, 'POST', '/site/preview', BODY)
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('vendor/frontierjs-mesa-0.1.13.tgz is not the tarball bun.lock recorded')
+      expect(argv().some(c => c.startsWith('docker run'))).toBe(false)
     })
 
     test('a refused upload is wrangler\'s reason, not its footer', async () => {
@@ -5652,6 +5677,21 @@ describe('a web build', () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toContain('@frontierjs/junction is linked')
     expect(argv().some(c => c.startsWith('docker run -d'))).toBe(false)
+  })
+
+  test('a file: tarball is installed only when it is the one bun.lock recorded', async () => {
+    const manifest = { name: 'kos', dependencies: { '@frontierjs/mesa': 'file:./vendor/frontierjs-mesa-0.1.13.tgz' } }
+    for (const [bytes, installs] of [['packed', true], ['repacked', false]]) {
+      const { server, workDir, argv } = serverFor({ manifest })
+      const dir = `${workDir}/app-1.web`
+      mkdirSync(`${dir}/vendor`, { recursive: true })
+      writeFileSync(`${dir}/vendor/frontierjs-mesa-0.1.13.tgz`, bytes)
+      writeFileSync(`${dir}/bun.lock`, lockFor('./vendor/frontierjs-mesa-0.1.13.tgz', 'packed'))
+      const res = await send(server, 'POST', '/web/build', BODY)
+      expect(res.status).toBe(installs ? 200 : 500)
+      if (!installs) expect((await res.json()).error).toContain('a repacked tarball needs a new file name')
+      expect(argv().some(c => c.includes('bun install'))).toBe(installs)
+    }
   })
 
   test('a commit that is not a commit id is refused before anything runs', async () => {

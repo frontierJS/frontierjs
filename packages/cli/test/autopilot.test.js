@@ -100,9 +100,9 @@ describe('readSchedule', () => {
   test('an entry whose worst run is over the day cap is refused at read time, so nothing of the file runs', () => {
     expect(() => read({ day: { attempts: 20, dollars: 10 }, entries: [FIX] })).toThrow(/entry 1 \(fix\): its worst run is \$20 \(4 rows × \$5 × 1 rung\), over the day's \$10/)
     expect(() => read({ day: { attempts: 3, dollars: 100 }, entries: [FIX] })).toThrow(/4 rows in one run is over the day's 3 attempts/)
-    // Opus on the ladder is the first rung plus a second at twice its cap.
-    expect(() => read({ day: { attempts: 20, dollars: 50 }, entries: [{ ...FIX, caps: { ...FIX.caps, model: 'opus' } }] })).toThrow(/\$60 \(4 rows × \$5 × 3 rungs\), over the day's \$50/)
-    expect(read({ day: { attempts: 20, dollars: 60 }, entries: [{ ...FIX, caps: { ...FIX.caps, model: 'opus' } }] }).entries[0].worst).toBe(60)
+    // One Opus session is capped at twice the budget.
+    expect(() => read({ day: { attempts: 20, dollars: 30 }, entries: [{ ...FIX, caps: { ...FIX.caps, model: 'opus' } }] })).toThrow(/\$40 \(4 rows × \$5 × 2 rungs\), over the day's \$30/)
+    expect(read({ day: { attempts: 20, dollars: 60 }, entries: [{ ...FIX, caps: { ...FIX.caps, model: 'opus' } }] }).entries[0].worst).toBe(40)
   })
 
   test('a bad cron line, a bad switch and a bad day cap are each refused by name', () => {
@@ -119,7 +119,7 @@ describe('readSchedule', () => {
 describe('flagsOf and worstCost', () => {
   test('the model ceiling opus is the ladder as it is, so it is no flag', () => {
     expect(flagsOf({ loop: 'fix', caps: { rows: 2, model: 'opus' } })).toEqual(['--rows', '2', '--source', 'autopilot'])
-    expect(worstCost({ loop: 'fix', caps: { rows: 2, budget: 1.5, model: 'opus' } })).toBe(9)
+    expect(worstCost({ loop: 'fix', caps: { rows: 2, budget: 1.5, model: 'opus' } })).toBe(6)
     expect(worstCost({ loop: 'frame', caps: { rows: 1, budget: 2 } })).toBe(6)
     expect(worstCost({ loop: 'frame', caps: { rows: 1 } })).toBeNull()
   })

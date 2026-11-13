@@ -19,7 +19,7 @@ import { join, resolve } from 'path'
 import { tmpdir } from 'os'
 
 import {
-  scaffoldDesktopSurface, desktopScripts, desktopNames, desktopAppName, desktopSurfaceDirs,
+  scaffoldDesktopSurface, desktopScripts, desktopDevDeps, desktopNames, desktopAppName, desktopSurfaceDirs,
   desktopBinary, desktopApiTarget, desktopLauncher, desktopMainRs,
   ensureServer, movedShellBuild, surfaceRow, desktopApiEnv, desktopIcon, desktopIconIco,
 } from '../core/desktop-surface.js'
@@ -144,6 +144,22 @@ describe('names, scripts and ports', () => {
   test('a wrapped surface has no dev server of its own', () => {
     expect(Object.keys(desktopScripts({ wraps: 'web' }))).toEqual(['build:desktop'])
     expect(Object.keys(desktopScripts())).toEqual(['dev:desktop', 'build:desktop'])
+  })
+
+  // FJS-4185: an api-only app has no web/ to have brought vite and the UI realm.
+  test('a surface that owns its screens names what builds them, in the app\'s own spec form', () => {
+    const local = { dependencies: { '@frontierjs/junction': 'link:@frontierjs/junction' } }
+    expect(desktopDevDeps(local)).toEqual({
+      vite: expect.any(String),
+      '@frontierjs/sierra': 'link:@frontierjs/sierra',
+      '@frontierjs/mesa': 'link:@frontierjs/mesa',
+      '@frontierjs/css': 'link:@frontierjs/css',
+    })
+    const npm = desktopDevDeps({ dependencies: { '@frontierjs/junction': '0.1.16' } })
+    expect(npm['@frontierjs/sierra']).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(desktopDevDeps({ dependencies: { vite: '^8.0.0', '@frontierjs/mesa': 'link:@frontierjs/mesa' } }))
+      .not.toHaveProperty('vite')
+    expect(desktopDevDeps(local, { wraps: 'web' })).toEqual({})
   })
 
   test('desktopDev is its own category, never the SPA\'s row', () => {
@@ -445,7 +461,7 @@ describe('--sidecar: the shell starts its own API', () => {
     const build = read('deploy/build.mjs')
     expect(build).toContain("join(DESKTOP, 'sidecar', 'make-sidecar.ts'), '--target', target]")
     expect(build).toContain("bundleNames(dist, '__sierraApiUrl')")
-    for (const fn of [importSpecifiers, frontierSpecifiers, npmImports]) expect(read('sidecar/make-sidecar.ts')).toContain(fn.toString())
+    for (const fn of [importSpecifiers, frontierSpecifiers, npmImports]) expect(read('sidecar/sidecar-fns.ts')).toContain(fn.toString())
     expect(read('sidecar/bundled.ts')).toBe(bundledSource(frontierSpecifiers(importSpecifiers(root, nodeFs, nodePath))))
     expect(read('sidecar/launcher.ts')).toContain('shop-api: no API at')
 
@@ -453,10 +469,21 @@ describe('--sidecar: the shell starts its own API', () => {
       const r = spawnSync('node', ['--check', join(root, 'desktop', f)], { encoding: 'utf8' })
       expect(r.status, `${f}: ${r.stderr}`).toBe(0)
     }
-    for (const f of ['sidecar/make-sidecar.ts', 'sidecar/launcher.ts', 'sidecar/bundled.ts']) {
+    for (const f of ['sidecar/make-sidecar.ts', 'sidecar/sidecar-fns.ts', 'sidecar/launcher.ts', 'sidecar/bundled.ts']) {
       const r = spawnSync('bun', ['build', '--no-bundle', join(root, 'desktop', f)], { encoding: 'utf8' })
       expect(r.status, `${f}: ${r.stderr}`).toBe(0)
     }
+  })
+
+  // FJS-4184: the inlined functions are Bun's transpiled JS, so a strict app tsconfig failed on them.
+  test('make-sidecar.ts passes a strict typecheck', () => {
+    const root = appRoot('side-tsc', API)
+    scaffoldDesktopSurface({ root, appName: 'shop', wraps: 'web', sidecar: true })
+    const tsc = join(EXAMPLE, '..', 'node_modules', '.bin', 'tsc')
+    const r = spawnSync(tsc, ['--noEmit', '--strict', '--skipLibCheck', '--target', 'esnext', '--module', 'esnext',
+      '--moduleResolution', 'bundler', '--allowImportingTsExtensions', '--types', 'bun-types', '--typeRoots', join(EXAMPLE, '..', 'node_modules'),
+      join(root, 'desktop', 'sidecar', 'make-sidecar.ts')], { encoding: 'utf8', timeout: 120000 })
+    expect(r.stdout + r.stderr).toBe('')
   })
 
   // FJS-4246: an API that states no prefix mounts /health, not /api/health.

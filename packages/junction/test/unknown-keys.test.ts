@@ -279,6 +279,16 @@ describe('the refusal does not hand the caller the author\'s advice', () => {
     expect(out.join('\n')).toMatch(/type PayOrder.*db\/schema\.lite/)
   })
 
+  // A create whose body is not the row (FJS-4237: `{ specId }`, from which a
+  // before hook derives a required column) is not answered by @transient,
+  // so the log names the declared input that replaces autoValidate too.
+  test('a model write names both ways out: @transient and an input: on the verb', async () => {
+    const { app } = await mkApp()
+    const out = (await warns(() => call(app, 'create', null, { title: 'a', titel: 'x' }).catch(() => {}))).join('\n')
+    expect(out).toMatch(/@transient/)
+    expect(out).toMatch(/\{ method: 'create', input: /)
+  })
+
   test('…once per shape, so a stranger cannot flood the log', async () => {
     const { app } = await mkApp()
     const out = await warns(async () => {

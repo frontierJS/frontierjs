@@ -74,6 +74,13 @@ describe('biome', () => {
     expect(biome.assist.enabled).toBe(false)
   })
 
+  test('it names no schema version (FJS-4163)', () => {
+    // Biome compares a $schema URL's version against its own on every run,
+    // extended files included, and an app resolves whatever biome its range
+    // allows — so any pinned version prints a migrate notice in every app's gate.
+    expect(biome.$schema).toBeUndefined()
+  })
+
   test('the linter carries no style opinions', () => {
     // With the formatter refused, a linter that argues about style is a
     // formatter that cannot fix anything.

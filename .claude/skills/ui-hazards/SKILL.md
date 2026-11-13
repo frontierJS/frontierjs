@@ -43,6 +43,7 @@ Detail: `references/resources-and-forms.md`
 - **`tethered()` is the one door a screen lists rows through; a route that calls `service.find` itself owns keeping it current.**
 - **A resource's `<script module>` holds what the UI says about its model, so an enum's tone map lives there once.**
 - **`tethered().more()` catches its error into `.error`, so a loop on `hasMore` alone spins on a failing call.**
+- **A `tethered()` list over a model whose `@@gate` refuses the caller's `session.level` is never asked for: it sits empty with no `error`, and loads when the level changes.**
 - **A raw route is reached with `client.fetch(path)`, which carries the client's credentials.**
 
 ## Mesa
