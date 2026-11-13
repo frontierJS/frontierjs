@@ -20,6 +20,18 @@ export function pastedImages(e) {
   return { files, only: files.length > 0 && !e.clipboardData.types.includes('text/plain') }
 }
 
+/** The image files on the clipboard, read through the async API. WebKitGTK
+ *  (the Tauri shell on Linux) fires the paste event with no items for an image,
+ *  so the event alone cannot find it; the clipboard read can. */
+export async function clipboardImages() {
+  const out = []
+  for (const item of await navigator.clipboard.read()) {
+    const type = item.types.find(t => t.startsWith('image/'))
+    if (type) out.push(await item.getType(type))
+  }
+  return out
+}
+
 const canvasOf = (bitmap, edge) => {
   const k = Math.min(1, edge / Math.max(bitmap.width, bitmap.height))
   const c = document.createElement('canvas')

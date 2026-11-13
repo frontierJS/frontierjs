@@ -1214,7 +1214,10 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, conf
     const p = getPin(id)
     if (!p) return null
     const rows = await inventory(p.path, p.name, await membersOf(p))
-    return { id, rows: rows.map(({ argv: _argv, ...r }) => r) }
+    // What fli's lock says each app serves, whoever started it: a `fli dev`
+    // typed in a terminal holds the ports a start from here would be refused.
+    return { id, rows: await Promise.all(rows.map(async ({ argv: _argv, ...r }) => r.kind !== 'app' ? r
+      : { ...r, served: await servedBy(join(p.path, r.dir), portsLock).catch((): Served[] => []) })) }
   }
 
   async function run(id: string, rowId: unknown): Promise<{ started: string } | { refused: string }> {

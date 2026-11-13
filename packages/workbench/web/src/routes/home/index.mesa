@@ -130,13 +130,13 @@ title: Home
   // The chats screen reads this hash, stages the card and opens the chat.
   const chatHref = (pinId, chatId) => `/workbench/#workbench-${encodeURIComponent(pinId)}${chatId ? `/${encodeURIComponent(chatId)}` : ''}`
 
-  const live = () => pins.filter(p => !p.missing).map(p => ({ pin: p, s: status[p.id] })).filter(x => x.s)
+  const live = pins.filter(p => !p.missing).map(p => ({ pin: p, s: status[p.id] })).filter(x => x.s)
 
   const chatsOf = (s) => s.chats ?? []
 
   function needsYou() {
     const out = []
-    for (const { pin, s } of live()) {
+    for (const { pin, s } of live) {
       const chats = new Map(chatsOf(s).map(c => [c.id, c]))
       for (const n of s.notices ?? []) {
         if (n.kind === 'asks')
@@ -153,7 +153,7 @@ title: Home
 
   function working() {
     const out = []
-    for (const { pin, s } of live()) {
+    for (const { pin, s } of live) {
       for (const c of chatsOf(s)) if (c.state === 'working')
         out.push({ key: `${pin.id}:${c.id}`, pin, chat: c, href: chatHref(pin.id, c.id),
           tool: c.id === s.chat ? s.tool : c.tool, cost: c.id === s.chat ? s.cost : null })
@@ -165,20 +165,21 @@ title: Home
     return out
   }
 
+  const needs = needsYou()
+  const busy  = working()
+
   const LABEL = { asks: 'asks', question: 'plan question', unread: 'finished' }
   const KIND_TONE = { asks: 'warning', question: 'warning', unread: 'success' }
 
   // Busy first, then whatever needs you, then the most recently pinned.
-  function ordered() {
-    const weight = (p) => {
-      const s = status[p.id]
-      if (!s) return 3
-      if (s.state === 'working') return 0
-      if ((s.notices ?? []).length) return 1
-      return 2
-    }
-    return [...pins].sort((a, b) => weight(a) - weight(b) || String(b.pinnedAt).localeCompare(String(a.pinnedAt)))
+  function weight(p) {
+    const s = status[p.id]
+    if (!s) return 3
+    if (s.state === 'working') return 0
+    if ((s.notices ?? []).length) return 1
+    return 2
   }
+  const ordered = [...pins].sort((a, b) => weight(a) - weight(b) || String(b.pinnedAt).localeCompare(String(a.pinnedAt)))
 
   // A pin with nothing going on today gets a chip, not a card: a dozen idle
   // cards bury the three that moved.
@@ -187,15 +188,15 @@ title: Home
     if (!s || p.missing) return false
     return s.state !== 'idle' || !!s.notices?.length || s.spent?.today > 0 || !!s.runs?.some(r => r.running)
   }
-  const active = () => ordered().filter(stirring)
-  const quiet  = () => ordered().filter(p => !stirring(p))
+  const active = ordered.filter(stirring)
+  const quiet  = ordered.filter(p => !stirring(p))
 
   const CHECKS_TONE = { pass: 'success', fail: 'danger', error: 'danger', running: 'info' }
 
   // ─── the rest ───────────────────────────────────────────────────────────
 
   const money = (n) => n == null ? '—' : `$${n.toFixed(2)}`
-  const spentToday = () => live().reduce((sum, { s }) => sum + (s.spent?.today ?? 0), 0)
+  const spentToday = live.reduce((sum, { s }) => sum + (s.spent?.today ?? 0), 0)
 
   function recentSessions() {
     if (!sessions) return []
@@ -239,9 +240,9 @@ title: Home
 </div>
 
 <div class="tiles" id="home-tiles">
-  <StatCard label="Needs you" value={loaded ? needsYou().length : '…'} tone={needsYou().length ? 'warning' : ''} href="#home-needs" />
-  <StatCard label="Working" value={loaded ? working().length : '…'} tone={working().length ? 'info' : ''} href="#home-working" />
-  <StatCard label="Spent today" value={loaded ? money(spentToday()) : '…'} sub="across pinned checkouts" />
+  <StatCard label="Needs you" value={loaded ? needs.length : '…'} tone={needs.length ? 'warning' : ''} href="#home-needs" />
+  <StatCard label="Working" value={loaded ? busy.length : '…'} tone={busy.length ? 'info' : ''} href="#home-working" />
+  <StatCard label="Spent today" value={loaded ? money(spentToday) : '…'} sub="across pinned checkouts" />
   <StatCard label="To rule" value={autopilot ? autopilot.council.decidable : '…'} sub={autopilot ? `${autopilot.council.open} more without options` : ''} href="/atlas/decide/" />
   {#each meters() as x (x.id)}
     <StatCard label={`Claude ${x.label}`} value={`${x.pct}%`} tone={meterTone(x.pct)} sub={x.m.resetsAt ? `resets ${ago(x.m.resetsAt)}` : ''} />
@@ -256,11 +257,11 @@ title: Home
       <article class="alert danger"><div class="alert-content">{errors.pins}</div></article>
     {:else if !loaded}
       <p class="text-sm text-muted">Reading…</p>
-    {:else if !needsYou().length}
+    {:else if !needs.length}
       <p class="text-sm text-muted">Nothing is waiting on you.</p>
     {:else}
       <ul class="home-list">
-        {#each needsYou() as n (n.key)}
+        {#each needs as n (n.key)}
           <li data-kind={n.kind}>
             <a href={n.href} class="home-row">
               <Badge tone={KIND_TONE[n.kind]}>{LABEL[n.kind]}</Badge>
@@ -279,11 +280,11 @@ title: Home
     <h2>Working now</h2>
     {#if !loaded}
       <p class="text-sm text-muted">Reading…</p>
-    {:else if !working().length}
+    {:else if !busy.length}
       <p class="text-sm text-muted">Nothing is running.</p>
     {:else}
       <ul class="home-list">
-        {#each working() as w (w.key)}
+        {#each busy as w (w.key)}
           <li>
             <a href={w.href} class="home-row">
               <Dot tone="info" pulse label="working" />
@@ -329,7 +330,7 @@ title: Home
       <EmptyState title="Nothing pinned">Pin a checkout on the Chats screen to talk to Claude about it.</EmptyState>
     {:else}
       <div class="home-pins" style="--grid-min: 16rem">
-        {#each active() as p (p.id)}
+        {#each active as p (p.id)}
           {@const s = status[p.id]}
           <a class="home-pin card" href={chatHref(p.id)} data-pin={p.id}>
             <div class="cluster home-pin-head">
@@ -360,10 +361,10 @@ title: Home
           </a>
         {/each}
       </div>
-      {#if quiet().length}
+      {#if quiet.length}
         <div class="cluster home-quiet" id="home-quiet">
           <span class="text-sm text-muted">Quiet</span>
-          {#each quiet() as p (p.id)}
+          {#each quiet as p (p.id)}
             <a class="home-chip text-sm" href={chatHref(p.id)} data-pin={p.id}
                title={p.missing ? 'folder is gone' : `${p.git?.branch ?? 'detached'}${p.git?.changes ? ` · ${p.git.changes} changed` : ''}`}>
               {p.name}{#if p.git?.changes} <span class="text-muted home-num">{p.git.changes}</span>{/if}
@@ -468,6 +469,16 @@ title: Home
 </div>
 
 <style>
+  /* One row however many meters the quota reports; the shared .tiles grid
+     wraps at 12rem a card, which pushed the Claude meters onto a second row. */
+  #home-tiles {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: var(--space-lg);
+
+    :global(.tile-delta) { font-size: var(--text-2xs); }
+  }
   .home-grid {
     display: grid;
     gap: var(--space-lg);
@@ -475,11 +486,19 @@ title: Home
     margin-block-start: var(--space-lg);
   }
   .home-wide { grid-column: 1 / -1; }
-  .home-panel { display: grid; gap: var(--space-sm); align-content: start; min-inline-size: 0; }
-  .home-panel h2 { font-size: var(--text-lg); margin: 0; }
-  .home-panel h2 a { color: inherit; text-decoration: none; }
-  .home-panel h2 a:hover { text-decoration: underline; }
-  .home-panel h3 { margin: 0; }
+  .home-panel {
+    display: grid; gap: var(--space-sm); align-content: start; min-inline-size: 0;
+
+    h2 {
+      font-size: var(--text-lg); margin: 0;
+
+      a {
+        color: inherit; text-decoration: none;
+        &:hover { text-decoration: underline; }
+      }
+    }
+    h3 { margin: 0; }
+  }
 
   .home-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2xs); }
   .home-row {
@@ -487,8 +506,8 @@ title: Home
     padding: var(--space-2xs) var(--space-sm);
     border-radius: var(--btn-radius);
     color: inherit; text-decoration: none;
+    a&:hover { background: var(--surface-raised); }
   }
-  a.home-row:hover { background: var(--surface-raised); }
   .home-row-main { display: grid; flex: 1; min-inline-size: 0; }
   .home-row-end { display: grid; justify-items: end; }
   .home-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -498,8 +517,10 @@ title: Home
     display: grid; gap: var(--space-sm);
     grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--grid-min)), 1fr));
   }
-  .home-pin { display: grid; gap: var(--space-2xs); color: inherit; text-decoration: none; min-inline-size: 0; }
-  .home-pin:hover { outline: var(--border-width) solid var(--rule-strong); }
+  .home-pin {
+    display: grid; gap: var(--space-2xs); color: inherit; text-decoration: none; min-inline-size: 0;
+    &:hover { outline: var(--border-width) solid var(--rule-strong); }
+  }
   .home-fresh { align-items: center; gap: var(--space-2xs); }
   .home-quiet { align-items: center; gap: var(--space-2xs); }
   .home-chip {
@@ -507,8 +528,8 @@ title: Home
     border: var(--border-width) solid var(--rule);
     border-radius: var(--pill-radius);
     color: inherit; text-decoration: none;
+    &:hover { border-color: var(--rule-strong); }
   }
-  .home-chip:hover { border-color: var(--rule-strong); }
   .home-pin-head { align-items: center; }
   .home-pin-chats { align-items: center; gap: var(--space-3xs); }
 </style>

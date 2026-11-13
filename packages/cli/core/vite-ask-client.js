@@ -890,22 +890,36 @@
   // Copying from a page can put text and an image on the clipboard together;
   // the text still pastes, and only a paste with no text is taken over.
 
+  function addShot(f) {
+    if (shots.length >= MAX_IMAGES) { line(`${MAX_IMAGES} images is the most one ask takes`, 'error'); return }
+    const slot = { pending: true }
+    shots.push(slot)
+    shrink(f).then(s => Object.assign(slot, s, { pending: false }), err => {
+      shots = shots.filter(x => x !== slot)
+      line(`could not read the pasted image — ${err && err.message || err}`, 'error')
+    }).finally(drawTray)
+    drawTray()
+  }
+
+  // The async clipboard read, for a paste whose event carries no types at all
+  // (WebKitGTK, the Tauri shell on Linux): the image is not in the event there.
+  async function clipboardImages() {
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(t => t.startsWith('image/'))
+      if (type) addShot(await item.getType(type))
+    }
+  }
+
   function paste(e) {
     const files = [...(e.clipboardData?.items ?? [])]
       .filter(i => i.kind === 'file' && i.type.startsWith('image/'))
       .map(i => i.getAsFile()).filter(Boolean)
-    if (!files.length) return
-    if (!e.clipboardData.types.includes('text/plain')) e.preventDefault()
-    for (const f of files) {
-      if (shots.length >= MAX_IMAGES) { line(`${MAX_IMAGES} images is the most one ask takes`, 'error'); break }
-      const slot = { pending: true }
-      shots.push(slot)
-      shrink(f).then(s => Object.assign(slot, s, { pending: false }), err => {
-        shots = shots.filter(x => x !== slot)
-        line(`could not read the pasted image — ${err && err.message || err}`, 'error')
-      }).finally(drawTray)
+    if (!files.length) {
+      if (!e.clipboardData?.types?.length) clipboardImages().catch(err => line(`could not read the clipboard — ${err && err.message || err}`, 'error'))
+      return
     }
-    drawTray()
+    if (!e.clipboardData.types.includes('text/plain')) e.preventDefault()
+    for (const f of files) addShot(f)
   }
 
   const canvasOf = (bitmap, edge) => {

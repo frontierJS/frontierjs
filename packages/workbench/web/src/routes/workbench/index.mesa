@@ -52,7 +52,7 @@ title: Workbench
   import { page }      from '@frontierjs/sierra/router'
   import { getClient } from '@frontierjs/sierra/resource'
   import { workbench } from '../../resources/Workbench.mesa'
-  import { pastedImages, shrinkImage } from '../../lib/pasted-images.js'
+  import { clipboardImages, pastedImages, shrinkImage } from '../../lib/pasted-images.js'
   import { providePageCommands } from '../../lib/commands.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -683,19 +683,26 @@ title: Workbench
   let shots = {}
   const pending = (id) => (shots[id] ?? []).some(s => s.pending)
 
+  function addShot(p, f) {
+    if ((shots[p.id] ?? []).length >= MAX_IMAGES) { error = `${p.name}: ${MAX_IMAGES} images is the most one message takes`; return }
+    const slot = { key: Math.random().toString(36).slice(2), pending: true }
+    shots = { ...shots, [p.id]: [...(shots[p.id] ?? []), slot] }
+    shrinkImage(f).then(
+      (done) => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).map(s => s.key === slot.key ? { ...slot, ...done, pending: false } : s) } },
+      (err)  => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).filter(s => s.key !== slot.key) }; error = `${p.name}: could not read the pasted image — ${err?.message ?? err}` },
+    )
+  }
+
   function paste(p, e) {
     const { files, only } = pastedImages(e)
-    if (!files.length) return
-    if (only) e.preventDefault()
-    for (const f of files) {
-      if ((shots[p.id] ?? []).length >= MAX_IMAGES) { error = `${p.name}: ${MAX_IMAGES} images is the most one message takes`; break }
-      const slot = { key: Math.random().toString(36).slice(2), pending: true }
-      shots = { ...shots, [p.id]: [...(shots[p.id] ?? []), slot] }
-      shrinkImage(f).then(
-        (done) => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).map(s => s.key === slot.key ? { ...slot, ...done, pending: false } : s) } },
-        (err)  => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).filter(s => s.key !== slot.key) }; error = `${p.name}: could not read the pasted image — ${err?.message ?? err}` },
-      )
+    // WebKitGTK sends an image paste with no clipboard types at all; the
+    // async read is the only way to reach the image there.
+    if (!files.length) {
+      if (!e.clipboardData?.types?.length) clipboardImages().then(fs => fs.forEach(f => addShot(p, f)), err => { error = `${p.name}: could not read the clipboard — ${err?.message ?? err}` })
+      return
     }
+    if (only) e.preventDefault()
+    for (const f of files) addShot(p, f)
   }
   const dropShot = (p, key) => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).filter(s => s.key !== key) } }
 

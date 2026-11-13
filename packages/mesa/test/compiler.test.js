@@ -2713,35 +2713,39 @@ describe('scopeCSS', () => {
     expect(out).toContain('p.mesa-test')
   })
 
-  // CSS Nesting
-  it('nested rule with & — expands & to parent scoped selector', () => {
-    const out = scope('p { color: red; &:hover { color: blue; } }')
-    expect(out).toContain('p.mesa-test')
-    expect(out).toContain('p.mesa-test:hover')
+  // CSS Nesting. The output stays nested, so each case asserts the WHOLE
+  // string: a nested selector with no `&` is a descendant of its parent, and
+  // `toContain('p.mesa-test:hover')` passed while the rule matched
+  // `p p:hover` (`FJS-4289`).
+  it('nested rule with & — keeps &, which the browser resolves to the scoped parent', () => {
+    expect(scope('p { color: red; &:hover { color: blue; } }'))
+      .toBe('p.mesa-test { color: red;&:hover { color: blue;}}')
   })
   it('nested rule without & — scoped independently', () => {
-    const out = scope('div { p { color: red; } }')
-    expect(out).toContain('div.mesa-test')
-    expect(out).toContain('p.mesa-test')
+    expect(scope('div { p { color: red; } }'))
+      .toBe('div.mesa-test {p.mesa-test { color: red;}}')
   })
   it('deep nesting — scopes each level', () => {
-    const out = scope('div { p { color: red; span { color: blue; } } }')
-    expect(out).toContain('div.mesa-test')
-    expect(out).toContain('p.mesa-test')
-    expect(out).toContain('span.mesa-test')
+    expect(scope('div { p { color: red; span { color: blue; } } }'))
+      .toBe('div.mesa-test {p.mesa-test { color: red;span.mesa-test { color: blue;}}}')
   })
-  it('@layer with nested & — scopes and expands correctly', () => {
-    const out = scope('@layer base { p { color: red; &:hover { color: blue; } } }')
-    expect(out).toContain('@layer base')
-    expect(out).toContain('p.mesa-test')
-    expect(out).toContain('p.mesa-test:hover')
+  it('@layer with nested & — keeps &', () => {
+    expect(scope('@layer base { p { color: red; &:hover { color: blue; } } }'))
+      .toBe('@layer base {p.mesa-test { color: red;&:hover { color: blue;}}}')
   })
   it('multiple & selectors in one block', () => {
-    const out = scope('p { &.active { color: blue; } & + p { color: green; } }')
-    expect(out).toContain('p.mesa-test.active')
     // `& + p` — the SUBJECT is the trailing p, and it needs its own scope or it
     // matches any adjacent p on the page.
-    expect(out).toContain('p.mesa-test + p.mesa-test')
+    expect(scope('p { &.active { color: blue; } & + p { color: green; } }'))
+      .toBe('p.mesa-test {&.active { color: blue;}& + p.mesa-test { color: green;}}')
+  })
+  it('a type selector before & — left as written', () => {
+    expect(scope('.row { a&:hover { color: red; } }'))
+      .toBe('.row.mesa-test {a&:hover { color: red;}}')
+  })
+  it(':global inside a nested rule — unscoped, still a descendant of the parent', () => {
+    expect(scope('#t { :global(.d) { color: red; } }'))
+      .toBe('#t.mesa-test {.d { color: red;}}')
   })
 
   // Comments

@@ -1,6 +1,7 @@
 // src/domain/workbench/workbench-run.ts — what a pinned checkout can START, and reading one back.
 //
-// The Run tab of a workbench card: `fli dev` for each app in the checkout, the
+// The Run tab of a workbench card: `fli dev` for each app in the checkout,
+// `fli dev:desktop` for each one with a desktop surface, the
 // package.json scripts of the checkout and its apps, and each workspace
 // member's own `bun run test`. The apps and scripts are fli's
 // (`findApps` and `tasks` in `@frontierjs/cli/core/runnables.js`), so a row here
@@ -22,7 +23,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 export type Runnable = {
   id:     string
-  kind:   'app' | 'script' | 'test'
+  kind:   'app' | 'desktop' | 'script' | 'test'
   name:   string
   /** Where it runs, relative to the checkout; `.` is the checkout itself. */
   dir:    string
@@ -73,18 +74,25 @@ function readJson(path: string): Record<string, any> | null {
  *  member's test where no script row already runs it. */
 export async function inventory(root: string, name: string, members: Array<{ name: string, path: string }> = []): Promise<Runnable[]> {
   const { findApps, tasks } = await loadCli()
-  const apps: Runnable[] = findApps(root).map(dir => {
+  const found = findApps(root).map(dir => {
     const rel = relative(root, dir) || '.'
-    return {
-      id: `app:${rel}`, kind: 'app', dir: rel, start: 'fli dev', argv: ['fli', 'dev'], script: null,
-      name: rel === '.' ? name : (readJson(join(dir, 'package.json'))?.name ?? rel),
-    }
+    return { dir, rel, name: rel === '.' ? name : (readJson(join(dir, 'package.json'))?.name ?? rel) }
   })
+  const apps: Runnable[] = found.map(a => ({
+    id: `app:${a.rel}`, kind: 'app', dir: a.rel, start: 'fli dev', argv: ['fli', 'dev'], script: null, name: a.name,
+  }))
+  // Without its config, dev:desktop offers to scaffold the surface, which a
+  // run with no terminal cannot answer.
+  const desktops: Runnable[] = found
+    .filter(a => existsSync(join(a.dir, 'desktop', 'config', 'desktop.config.js')))
+    .map(a => ({
+      id: `desktop:${a.rel}`, kind: 'desktop', dir: a.rel, start: 'fli dev:desktop', argv: ['fli', 'dev:desktop'], script: null, name: `${a.name} desktop`,
+    }))
   const scripts: Runnable[] = tasks(root).map(t => ({
     id: t.id, kind: 'script', name: t.name, dir: t.dir, start: t.start, argv: t.argv, script: t.run ?? null,
   }))
   const claimed = new Set(scripts.map(r => `${r.dir} ${r.start}`))
-  return [...apps, ...scripts, ...memberTests(root, members).filter(r => !claimed.has(`${r.dir} ${r.start}`))]
+  return [...apps, ...desktops, ...scripts, ...memberTests(root, members).filter(r => !claimed.has(`${r.dir} ${r.start}`))]
 }
 
 /**

@@ -1259,13 +1259,15 @@ describe('CSS scoping — selectors match the markup they are emitted with', () 
     // needs its own scope or the rule reaches any adjacent p on the page.
     const { css, id } = await scoped(
       `<div><p>a</p><p>b</p></div>\n<style>p { color: red; & + p { color: green } }</style>`)
-    expect(css).toContain(`p.${id} + p.${id}`)
+    expect(css).toContain(`p.${id} { color: red;& + p.${id} {`)
   })
 
+  // The rule stays nested, so `&` must too: replaced by `p.id` it reads as a
+  // descendant, `p p:hover` (`FJS-4289`).
   it('does not double-scope a compound that already contains &', async () => {
     const { css, id } = await scoped(`<p>x</p>\n<style>p { &:hover { color: blue } }</style>`)
-    expect(css).toContain(`p.${id}:hover`)
-    expect(css).not.toContain(`.${id}:hover.${id}`)
+    expect(css).toContain(`p.${id} {&:hover {`)
+    expect(css).not.toContain(`:hover.${id}`)
   })
 
   it('emits no scope class when the component has no styles', async () => {

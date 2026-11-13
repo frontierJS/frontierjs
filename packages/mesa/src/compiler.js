@@ -5178,10 +5178,6 @@ export function scopeCSS(css, cssId, lower) {
       continue
     }
 
-    // Regular selector — find parent frame for & expansion
-    const parentFrame = stack.findLast ? stack.findLast(f => f.type === 'rule') : [...stack].reverse().find(f => f.type === 'rule')
-    const parentScoped = parentFrame?.scoped ?? null
-
     const scoped = _scopeSelectorList(cleanPrelude, cssId, lower)
 
     if (scoped === null) {
@@ -5190,16 +5186,12 @@ export function scopeCSS(css, cssId, lower) {
       continue
     }
 
-    // Handle & expansion if we have a parent scoped selector
-    let finalScoped = scoped
-    if (parentScoped && cleanPrelude.includes('&')) {
-      finalScoped = _splitSelectors(scoped)
-        .map(s => s.includes('&') ? s.replace(/&/g, parentScoped) : s)
-        .join(', ')
-    }
-
-    out += (commentStr ? commentStr + ' ' : '') + finalScoped + ' {'
-    stack.push({ type: 'rule', scoped: finalScoped })
+    // `&` is emitted as written, never replaced by the parent's text: the rule
+    // stays nested, and a nested selector with no `&` is read as a DESCENDANT
+    // of its parent, so `.x { &:hover }` emitted as `.x { .x:hover }` matched
+    // `.x .x:hover` and styled nothing (`FJS-4289`).
+    out += (commentStr ? commentStr + ' ' : '') + scoped + ' {'
+    stack.push({ type: 'rule', scoped })
   }
 
   return out

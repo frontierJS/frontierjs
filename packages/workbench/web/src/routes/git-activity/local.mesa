@@ -44,6 +44,13 @@ title: Local repositories
   let orderBy  = sortRemembered() || '-lastCommitAt'
   function sortBy(next) { orderBy = next ?? ''; rememberSort(orderBy) }
 
+  // Grid is the pinned checkouts alone, as tiles; list is the whole scan.
+  const VIEW_KEY = 'workbench.localRepos.view'
+  const viewRemembered = () => { try { return localStorage.getItem(VIEW_KEY) } catch { return null } }
+  const rememberView   = (v) => { try { localStorage.setItem(VIEW_KEY, v) } catch {} }
+  let view = viewRemembered() === 'grid' ? 'grid' : 'list'
+  function showView(next) { view = next; rememberView(next) }
+
   async function scan(e) {
     e?.preventDefault()
     error = null; scanning = true
@@ -65,11 +72,133 @@ title: Local repositories
   // Pinned to the workbench, by path. A failure leaves every row unpinned
   // rather than hiding the listing it sits beside.
   let pinned = {}
+  let pins   = []
+  // Until the first answer, an empty grid would read as nothing pinned.
+  let pinsLoaded = false
   async function loadPins() {
     try {
       const answer = await workbench.service.invoke('pins', null)
+      pins   = answer.pins
       pinned = Object.fromEntries(answer.pins.map(p => [p.path, p.id]))
+      runsOf = Object.fromEntries(answer.pins.map(p => [p.id, p.status?.runs ?? []]))
+      loadRunnables(answer.pins)
     } catch {}
+    pinsLoaded = true
+  }
+
+  // ─── dev and desktop, from a tile ──────────────────────────────────────
+  // The Chats screen's Run tab, one row each: the checkout's root app, or
+  // its only one. A checkout holding several apps starts from that tab.
+
+  let rowsOf  = {}
+  let runsOf  = {}
+  let runWait = {}
+  async function rowsFor(id) {
+    try { return (await workbench.service.invoke('runnables', id)).rows } catch { return rowsOf[id] ?? [] }
+  }
+  async function loadRunnables(list) {
+    const answers = await Promise.all(list.filter(p => !p.missing).map(async p => [p.id, await rowsFor(p.id)]))
+    rowsOf = Object.fromEntries(answers)
+  }
+  // A server started or stopped in a terminal moves nothing here, so coming
+  // back to the tab reads again.
+  function reread() {
+    if (document.visibilityState !== 'visible' || view !== 'grid') return
+    loadRunnables(pins); refreshRuns()
+  }
+  document.addEventListener('visibilitychange', reread)
+  $.onDestroy(() => document.removeEventListener('visibilitychange', reread))
+  function launcher(id, kind) {
+    const rows = (rowsOf[id] ?? []).filter(r => r.kind === kind)
+    return rows.find(r => r.dir === '.') ?? (rows.length === 1 ? rows[0] : null)
+  }
+  /** Started from the workbench and still up: only this one can be stopped here. */
+  const runOf = (id, row) => (runsOf[id] ?? []).find(r => r.id === row.id && r.running)
+  // web before site; the API is never the page a person opens.
+  const pageIn = (ports = []) => ports.find(s => s.label === 'web') ?? ports.find(s => s.label === 'site')
+    ?? ports.find(s => s.label !== 'API')
+  const pageOf = (id, row) => pageIn(launcher(id, row.kind)?.served)
+  const isUp   = (id, row) => row.kind === 'app' ? !!pageOf(id, row) : !!runOf(id, row)
+
+  async function refreshRuns() {
+    try {
+      const answer = await workbench.service.invoke('status', null)
+      runsOf = Object.fromEntries(answer.status.map(s => [s.id, s.runs ?? []]))
+    } catch {}
+  }
+
+  // The tab opens on the click, since one opened after a wait is a popup the
+  // browser blocks; it is pointed at the page once the server answers.
+  async function launch(p, row) {
+    const up = row.kind === 'app' && pageOf(p.id, row)
+    if (up) { window.open(`http://localhost:${up.port}/`, '_blank', 'noopener'); return }
+    // Null where the browser blocked it; the button then reads Open dev, and
+    // that click is a fresh gesture.
+    const tab = row.kind === 'app' ? window.open('about:blank', '_blank') : null
+    const key = `${p.id} ${row.id}`
+    runWait = { ...runWait, [key]: true }
+    error = null
+    try {
+      if (!runOf(p.id, row)) await workbench.service.invoke('run', p.id, { row: row.id })
+      runsOf = { ...runsOf, [p.id]: [...(runsOf[p.id] ?? []).filter(r => r.id !== row.id), { id: row.id, running: true, ports: [] }] }
+      if (row.kind === 'app') {
+        const page = await servedPage(p.id, row)
+        if (page && tab) tab.location.href = `http://localhost:${page.port}/`
+        if (!page) { tab?.close(); error = await whyNot(p, row) }
+      } else if (!await stillUp(p.id, row)) error = await whyNot(p, row)
+    } catch (err) {
+      tab?.close()
+      error = err.message
+    } finally {
+      runWait = { ...runWait, [key]: false }
+    }
+  }
+
+  // A desktop run opens its own window; one refused at startup (no shell
+  // built, a port held) ends inside a few seconds.
+  async function stillUp(id, row) {
+    for (let i = 0; i < 5; i++) {
+      await new Promise(done => setTimeout(done, 1000))
+      await refreshRuns()
+      if (!runOf(id, row)) return false
+    }
+    return true
+  }
+
+  // The port is in fli's lock before vite listens, so it is probed too.
+  async function servedPage(id, row) {
+    for (let i = 0; i < 60; i++) {
+      const [rows] = await Promise.all([rowsFor(id), refreshRuns()])
+      rowsOf = { ...rowsOf, [id]: rows }
+      const page = pageOf(id, row)
+      if (page) {
+        try { await fetch(`http://localhost:${page.port}/`, { mode: 'no-cors' }); return page } catch {}
+      }
+      if (!runOf(id, row)) return null
+      await $.sleep(1000)
+    }
+    return null
+  }
+
+  // fli's own refusal names the port and who holds it, which is the fix.
+  async function whyNot(p, row) {
+    try {
+      const out = await workbench.service.invoke('output', p.id, { row: row.id })
+      const told = out.lines.slice(1).filter(l => l.trim() && !l.startsWith('— exited')).slice(0, 6).join('\n')
+      if (!out.running && told) return `${row.start} in ${p.name} stopped:\n${told}`
+    } catch {}
+    return `${row.start} in ${p.name} is up but no page answered within a minute — its log is on the Chats screen's Run tab`
+  }
+
+  async function halt(p, row) {
+    try { await workbench.service.invoke('halt', p.id, { row: row.id }) } catch (err) { error = err.message }
+    // fli's lock reads alive until the killed process has exited.
+    for (let i = 0; i < 10; i++) {
+      const [rows] = await Promise.all([rowsFor(p.id), refreshRuns()])
+      rowsOf = { ...rowsOf, [p.id]: rows }
+      if (!isUp(p.id, row)) return
+      await new Promise(done => setTimeout(done, 500))
+    }
   }
   async function togglePin(r) {
     try {
@@ -87,6 +216,10 @@ title: Local repositories
   $: frontierCount = (answer?.repos ?? []).filter(r => r.frontier).length
   $: dirty = (answer?.repos ?? []).filter(r => r.changes).length
   $: noRemote = (answer?.repos ?? []).filter(r => !r.remote).length
+  // A pin outside the scanned folder still gets a tile, with only its path.
+  $: scanned = Object.fromEntries((answer?.repos ?? []).map(r => [r.path, r]))
+  $: tiles = pins.map(p => ({ pin: p, repo: scanned[p.path] ?? null }))
+  const tilde = (path) => path.replace(/^\/(home|Users)\/[^/]+/, '~')
 
   // `name` is the record field, so the header's ordering sorts the rows as is.
   const COLUMNS = [
@@ -101,6 +234,12 @@ title: Local repositories
 <div class="section-header">
   <h1>Local repositories</h1>
   <span class="cluster">
+    <span class="cluster local-repos-view" role="group" aria-label="View">
+      <Button treatment="ghost" size="sm" aria-pressed={view === 'list' ? 'true' : 'false'}
+              onclick={() => showView('list')}>List</Button>
+      <Button treatment="ghost" size="sm" aria-pressed={view === 'grid' ? 'true' : 'false'}
+              onclick={() => showView('grid')}>Grid</Button>
+    </span>
     <Button treatment="ghost" href="/workbench/">Workbench</Button>
   </span>
 </div>
@@ -122,11 +261,61 @@ title: Local repositories
 
   {#if error}
     <article class="alert danger" id="screen-error">
-      <div class="alert-content">{error}</div>
+      <div class="alert-content local-repos-error">{error}</div>
     </article>
   {/if}
 
-  {#if answer}
+  {#if view === 'grid'}
+    {#if !pinsLoaded}
+      <p class="text-muted">Loading pinned checkouts…</p>
+    {:else if !pins.length}
+      <EmptyState title="Nothing pinned">
+        Star a repository in the list view to pin it to the workbench.
+      </EmptyState>
+    {:else}
+      <div class="local-repos-tiles" id="local-repos-tiles">
+        {#each tiles as t (t.pin.id)}
+          <article class="card local-repos-tile" title={t.pin.path}>
+            <span class="local-repos-tile-head">
+              <a class="local-repos-tile-open" href={`/workbench/#workbench-${encodeURIComponent(t.pin.id)}`}><strong>{t.pin.name}</strong></a>
+              <Button class="local-repos-tile-unpin" treatment="ghost" size="xs" square
+                      aria-label={`Unpin ${t.pin.name} from the workbench`}
+                      onclick={() => togglePin(t.pin)}>★</Button>
+            </span>
+            <code class="text-sm text-muted">{t.repo?.relative ?? tilde(t.pin.path)}</code>
+            {#if t.repo}
+              <span class="cluster text-sm">
+                {#if t.repo.branch}<code>{t.repo.branch}</code>{:else}<Pill tone="warning">detached</Pill>{/if}
+                {#if t.repo.changes}<Pill tone="warning">{t.repo.changes} changed</Pill>{:else}<Pill tone="success">clean</Pill>{/if}
+                {#if t.repo.ahead}<Pill tone="info">↑{t.repo.ahead}</Pill>{/if}
+                {#if t.repo.behind}<Pill tone="info">↓{t.repo.behind}</Pill>{/if}
+              </span>
+              <span class="text-sm text-muted">{t.repo.lastCommitAt ? ago(t.repo.lastCommitAt) : 'no commits'}</span>
+            {/if}
+            {#if launcher(t.pin.id, 'app') || launcher(t.pin.id, 'desktop')}
+              <span class="local-repos-tile-run" role="group" aria-label={`Run ${t.pin.name}`}>
+                {#each [launcher(t.pin.id, 'app'), launcher(t.pin.id, 'desktop')].filter(Boolean) as row (row.id)}
+                  <Button size="xs" treatment="outlined" tone={isUp(t.pin.id, row) ? 'success' : undefined}
+                          disabled={runWait[`${t.pin.id} ${row.id}`] || (row.kind === 'desktop' && isUp(t.pin.id, row))}
+                          title={isUp(t.pin.id, row) && row.kind === 'app' ? `localhost:${pageOf(t.pin.id, row).port}` : row.start}
+                          onclick={() => launch(t.pin, row)}>
+                    {runWait[`${t.pin.id} ${row.id}`] ? 'Starting…'
+                      : row.kind === 'app' ? (isUp(t.pin.id, row) ? 'Open dev ↗' : '▶ Dev')
+                      : (isUp(t.pin.id, row) ? 'Desktop open' : '▶ Desktop')}
+                  </Button>
+                  {#if runOf(t.pin.id, row)}
+                    <Button size="xs" treatment="outlined" tone="danger" square
+                            aria-label={`Stop ${row.start} in ${t.pin.name}`}
+                            onclick={() => halt(t.pin, row)}>■</Button>
+                  {/if}
+                {/each}
+              </span>
+            {/if}
+          </article>
+        {/each}
+      </div>
+    {/if}
+  {:else if answer}
     {#if !answer.repos.length}
       <EmptyState title="No repositories">
         Nothing under <code>{answer.root}</code> holds a <code>.git</code> within four folders.
@@ -190,3 +379,33 @@ title: Local repositories
     {/if}
   {/if}
 {/if}
+
+<style>
+  .local-repos-view { gap: 0; }
+  .local-repos-error { white-space: pre-line; }
+  .local-repos-tiles {
+    display:               grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap:                   var(--space-md);
+  }
+  .local-repos-tile {
+    display:        flex;
+    flex-direction: column;
+    gap:            var(--space-2xs);
+    padding:        var(--space-md);
+    min-width:      0;
+  }
+  .local-repos-tile code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The name's link covers the tile so the whole card opens the chat; the
+     unpin button sits above it, since a button inside a link is invalid. */
+  .local-repos-tile { position: relative; }
+  .local-repos-tile-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); }
+  .local-repos-tile-open { color: inherit; text-decoration: none; min-width: 0; }
+  .local-repos-tile-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+  .local-repos-tile:hover { border-color: var(--color-primary); }
+  .local-repos-tile-run {
+    display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2xs);
+    margin-block-start: auto; position: relative; z-index: 1;
+  }
+  .local-repos-tile :global(.local-repos-tile-unpin) { position: relative; z-index: 1; margin-block: calc(-1 * var(--space-2xs)); }
+</style>

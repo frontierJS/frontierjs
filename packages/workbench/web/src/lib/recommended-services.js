@@ -19,7 +19,7 @@ export const groups = [
       alternatives: [] },
     { job: 'Code hosting',           pick: 'GitHub',             url: 'https://github.com',
       why: 'A push to a connected repo is what releases an App.',
-      alternatives: [] },
+      alternatives: [{ name: 'Bitbucket', url: 'https://bitbucket.org' }] },
     { job: 'Backups',                pick: 'Backblaze B2',       url: 'https://www.backblaze.com/cloud-storage',
       why: 'Object Lock for archives that cannot be deleted early; the recommended default in Basecamp\'s backup guide.',
       alternatives: [{ name: 'Cloudflare R2', url: 'https://developers.cloudflare.com/r2/' }] },

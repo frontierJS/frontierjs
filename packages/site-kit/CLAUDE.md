@@ -187,6 +187,9 @@ what they mean in any app.
   a loaded `.md` is stamped with its own line (Mesa records it), so it lands
   the same way and saves as `applyEdit`'s `field`; words basecamp cannot
   place alone open `Field.mesa`, Phase 1's form, at that line with the reason.
+  A click on a link is a pick too, so Cmd/Ctrl+K opens `Palette.mesa`: the
+  draft's route files as pages to go to, named by this page's menu link to each
+  (`palette.js`), every file to edit, and the bar's actions.
   A template's stamp offers the editable files. `live.js` shows what is typed
   on the page before the save, words only (`FJS-D1399`): a leaf showing the old
   words of a changed block or value takes the new ones, and new words with
