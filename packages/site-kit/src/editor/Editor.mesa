@@ -134,8 +134,8 @@
 <article class="card fjs-editor" data-fjs-editor-ui data-fjs-editor-bar>
   {#if who}
     <span>Editing <strong>{site.draft}</strong> as <strong>{who.editor?.name}</strong>
-      {#if files} · {files.length} {files.length === 1 ? 'page' : 'pages'}{/if}</span>
-    {#if files}<button class="btn ghost" id="fjs-ask-open" aria-pressed={asking} onclick={() => { asking = !asking; opened = null }}>Ask</button>{/if}
+      {#if files?.length} · {files.length} {files.length === 1 ? 'page' : 'pages'}{:else if files} · nothing on this site is editable{/if}</span>
+    {#if files?.length}<button class="btn ghost" id="fjs-ask-open" aria-pressed={asking} onclick={() => { asking = !asking; opened = null }}>Ask</button>{/if}
     <button class="btn ghost" aria-pressed={picking} onclick={() => { picking = !picking; leave() }}>{picking ? 'Browse' : 'Pick'}</button>
     <a class="btn ghost" href={site.page}>Open in basecamp</a>
     <button class="btn ghost" onclick={signOut}>Sign out</button>
