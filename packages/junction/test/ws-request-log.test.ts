@@ -5,11 +5,12 @@
 // one included (`FJS-1301`). Replayed held writes drained over the socket and
 // four refusals among them produced nothing an operator could read.
 
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createApp, createService, channels, defaultConfig } from '../index.ts'
 import { createLogger, type LogEntry } from '../src/core/logger.ts'
 import { correlationId, requestLogger } from '../src/transport/middleware.ts'
 import { Forbidden } from '../src/core/errors.ts'
+import { buildService } from '../src/core/service.ts'
 
 
 const lines: LogEntry[] = []
@@ -88,4 +89,88 @@ test('an HTTP request line carries the correlation id the response echoes', asyn
   expect(echoed).toBe('a'.repeat(32))
   const line = lines.filter(l => l.message === 'request' && l.data?.path === '/ok').at(-1)
   expect(line?.data?.correlationId).toBe(echoed)
+})
+
+// ─── log: false ─────────────────────────────────────────────────────────────
+// A method a client streams drowned the one line an operator greps. The flag
+// hides a call that succeeds and never one that is refused, because the line is
+// what a refused call leaves behind (`FJS-D2129`, `FJS-1301`).
+
+describe('a method declared log: false', () => {
+  const quietLines: LogEntry[] = []
+  const quiet = createService({
+    name: 'quiet',
+    methods: [
+      { method: 'nudge', gate: 0, log: false },
+      { method: 'ping',  gate: 0 },
+    ],
+    async nudge(ctx: any) { if (ctx.data?.refuse) throw new Forbidden('no'); return { ok: true } },
+    async ping()          { return { ok: true } },
+  })
+  let qapp: any
+
+  beforeAll(async () => {
+    qapp = createApp({
+      logger: createLogger({ level: 'debug', writers: [e => { quietLines.push(e) }] }),
+      config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 250 } },
+    })
+    qapp.services.register(quiet)
+    qapp.configure(channels())
+    qapp.configure(correlationId())
+    qapp.configure(requestLogger({ format: 'json' }))
+    await qapp.start()
+  })
+  afterAll(async () => { await qapp?.stop() })
+
+  const mark     = () => quietLines.length
+
+  async function socketCall(method: string, data?: unknown) {
+    const ws = new WebSocket(`ws://localhost:${qapp.http.port}/ws`)
+    await new Promise<void>((ok, no) => { ws.onopen = () => ok(); ws.onerror = () => no(new Error('ws')) })
+    const done = new Promise<void>(ok => {
+      ws.onmessage = (e: any) => {
+        const f = JSON.parse(e.data)
+        if (f.id === 'q1' && (f.type === 'service_result' || f.type === 'service_error')) ok()
+      }
+    })
+    ws.send(JSON.stringify({ type: 'service_call', id: 'q1', service: 'quiet', method, data }))
+    await done
+    ws.close()
+  }
+
+  const httpCall = (method: string, body?: unknown) =>
+    fetch(`http://localhost:${qapp.http.port}/quiet/1`, {
+      method:  'POST',
+      headers: { 'content-type': 'application/json', 'x-service-method': method },
+      body:    JSON.stringify(body ?? {}),
+    })
+
+  test('writes no line over the socket, while a sibling still does', async () => {
+    const from = mark()
+    await socketCall('nudge')
+    await socketCall('ping')
+    const seen = quietLines.slice(from).filter(l => l.message === 'request' && l.data?.transport === 'websocket')
+    expect(seen.map(l => l.data!.method)).toEqual(['ping'])
+  })
+
+  test('writes no line over HTTP, while a sibling still does', async () => {
+    const from = mark()
+    expect((await httpCall('nudge')).status).toBe(200)
+    expect((await httpCall('ping')).status).toBe(200)
+    const seen = quietLines.slice(from).filter(l => l.message === 'request')
+    expect(seen.map(l => l.data!.path)).toEqual(['/quiet/1'])
+    expect(seen).toHaveLength(1)
+  })
+
+  test('a refused call still logs, over both transports', async () => {
+    const from = mark()
+    await socketCall('nudge', { refuse: true })
+    expect((await httpCall('nudge', { refuse: true })).status).toBe(403)
+    const seen = quietLines.slice(from).filter(l => l.message === 'request')
+    expect(seen.map(l => [l.data!.method, l.data!.status])).toEqual([['nudge', 403], ['POST', 403]])
+  })
+
+  test('a CRUD verb declaring it is refused where it is written', () => {
+    expect(() => buildService({ name: 'x', methods: [{ method: 'find', log: false }] as any })).toThrow(/CRUD verb/)
+  })
 })

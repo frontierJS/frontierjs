@@ -16,6 +16,7 @@ import { siteKit } from '../config/vite.js'
 import { collection } from '../src/collection.js'
 import { LOCKED_KEYS, applyEdit, applyPhoto, arrangeCollection, changeRefusal, collectionOf, formOf, lockedKeysChanged, pathRefusal, photoName, photoOf } from '../src/editable.js'
 import { changedBlocks, hunkChanges, plainSwap } from '../src/editor/live.js'
+import { matching, pageAddress, pagesOf } from '../src/editor/palette.js'
 import { pageOf, routeFile } from '../src/editor/pick.js'
 
 const failed = []
@@ -419,6 +420,25 @@ try {
     check('a folder index in a route group is too', routeFile('/roofing/', files) === 'content/routes/(services)/roofing/index.md', routeFile('/roofing/', files))
     check('the group is not part of the address', routeFile('/(company)/about/', files) === null)
     check('the home page is the root index', routeFile('/', files) === 'content/routes/index.md')
+  }
+
+  // ─── the pages the palette goes to ────────────────────────────────────────
+  {
+    const files = ['content/settings/site.md', 'content/routes/(company)/about.md', 'content/routes/(services)/roofing/index.md',
+                   'content/routes/index.md', 'content/routes/blog/[slug].md', 'content/blocks/Hero.md',
+                   'content/routes/_module.md', 'content/routes/404.md']
+    for (const f of files) {
+      const at = pageAddress(f)
+      if (at) check(`${f} goes to an address routeFile reads back`, routeFile(at, files) === f, at)
+    }
+    check('a file that is not a page has no address',
+      [files[0], files[4], files[5], files[6], files[7]].every((f) => pageAddress(f) === null))
+    const pages = pagesOf(files, [{ pathname: '/', text: '© 2026 Kobami' }, { pathname: '/about/', text: '\n  About   us ' }, { pathname: '/about/', text: 'Later' }, { pathname: '/nowhere/', text: 'X' }], '/roofing/')
+    check('pages are home first, named by this page\'s link to them, this page marked',
+      JSON.stringify(pages.map((p) => [p.address, p.label, p.here])) === JSON.stringify([['/', 'Home', false], ['/about/', 'About us', false], ['/roofing/', '/roofing/', true]]),
+      JSON.stringify(pages))
+    const cmds = [{ group: 'Go to', label: 'About us', hint: '/about/' }, { group: 'Edit', label: 'About us', hint: 'routes/(company)/about.md' }]
+    check('every term of a query must match, in any field', matching(cmds, 'edit about').length === 1 && matching(cmds, 'ABOUT').length === 2 && matching(cmds, 'about zzz').length === 0)
   }
 
   // ─── the page an ask is typed on ──────────────────────────────────────────

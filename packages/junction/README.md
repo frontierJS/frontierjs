@@ -810,6 +810,8 @@ app.configure(correlationId())
 app.configure(csrf({ origins: ['https://myapp.com'] }))
 ```
 
+> **A method a client streams opts out of the line with `log: false`** — `methods: [{ method: 'nudge', gate: 0, read: true, log: false }]` (`FJS-D2129`). `requestLogger` writes no line for that method over HTTP or the socket while it answers below 400; a refused call still logs, so a streaming method's abuse leaves a trace. A custom method only.
+
 > **One id per request.** A request's correlation id is the trace id of the `traceparent` it states, else its `X-Request-ID`, else 32 hex junction mints, and the log line, the audit row, a job's row and conduit's outbound call all carry it. An inbound id that is malformed (a `traceparent` that does not parse, an `X-Request-ID` outside 1–128 characters of `[A-Za-z0-9_.:@-]`) is replaced, not refused (`FJS-D660`).
 
 > **Helmet sends a strict CSP by default** — `default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`, in development too (`FJS-D1192`). An inline `<script>`, a `style=` attribute and a CDN asset are refused. An app widens it with `http: { helmet: { csp: '…' } }` — `middleware: { helmet: { csp } }` in `junction.config.js` — or drops it with `csp: false`. Widen by appending to the exported default rather than restating it: `` `${defaultCsp()}; font-src 'self' https://fonts.gstatic.com` `` (`defaultCsp('sameorigin')` when `frame` is). One page loosens only itself by setting its own `Content-Security-Policy` on the Response it returns, which helmet leaves alone, as `openapi({ ui: true })`'s docs page does.

@@ -11,13 +11,16 @@
   // Signed in, the page is picked rather than browsed: a pointer outlines the
   // element whose stamp it is over, and a click changes its words in place, or
   // opens the file when they cannot be changed alone, instead of following a
-  // link. Browse hands clicks back to the page. Ask is a change across the
-  // draft in the owner's words, kept at once and undone in one step.
+  // link. Browse hands clicks back to the page, and Cmd/Ctrl+K lists the
+  // draft's pages to go to. Ask is a change across the draft in the owner's
+  // words, kept at once and undone in one step.
   import Ask from './Ask.mesa'
   import Field from './Field.mesa'
   import Inline from './Inline.mesa'
+  import Palette from './Palette.mesa'
   import { arrive, begin, clientFor, forget, held, onHeldChange } from './handoff.js'
-  import { LOC, fieldFor, parseLoc, stampedFrom } from './pick.js'
+  import { pagesOf } from './palette.js'
+  import { LOC, OURS, fieldFor, parseLoc, stampedFrom } from './pick.js'
 
   export let site
 
@@ -31,6 +34,9 @@
   let opened  = null
   let notice  = null
   let asking  = false
+  let palette = false
+
+  const MAC = /Mac|iPhone|iPad/.test(navigator.platform)
 
   async function check() {
     if (!who) return
@@ -59,7 +65,7 @@
   }
 
   function signedOut() {
-    who = null; files = null; opened = null; over = null; box = null; asking = false
+    who = null; files = null; opened = null; over = null; box = null; asking = false; palette = false
   }
 
   function signOut() { forget(); signedOut() }
@@ -106,6 +112,38 @@
 
   function leave() { over = null; box = null }
 
+  // The menu's words name a page before a button's ("Contact Us", not "Get started").
+  const rank = (a) => 2 * !!a.closest('nav, header') + !a.classList.contains('btn')
+
+  function commands() {
+    const links = [...document.querySelectorAll('a[href]')]
+      .filter((a) => !a.closest(OURS) && a.origin === location.origin && !a.getAttribute('href').startsWith('#'))
+      .sort((a, b) => rank(b) - rank(a))
+      .map((a) => ({ pathname: a.pathname, text: a.textContent }))
+    const pages = pagesOf(files, links, location.pathname)
+    const shown = new Set(pages.map((p) => p.file))
+    return [
+      ...pages.map((p) => ({ id: `go:${p.address}`, group: 'Go to', label: p.label, hint: p.here ? 'this page' : p.address,
+                             run: () => location.assign(p.address) })),
+      { id: 'ask', group: 'Action', label: 'Ask for a change', run: () => { asking = true; opened = null } },
+      { id: 'pick', group: 'Action', label: picking ? 'Browse — let clicks follow links' : 'Pick — click words to edit them',
+        run: () => { picking = !picking; leave() } },
+      ...pages.map((p) => ({ id: `edit:${p.file}`, group: 'Edit', label: p.label, hint: p.file.replace(/^content\//, ''),
+                             run: () => { asking = false; opened = { path: p.file, line: null } } })),
+      ...files.filter((f) => !shown.has(f)).map((f) => ({ id: `edit:${f}`, group: 'Edit', label: f.replace(/^content\//, ''),
+                             run: () => { asking = false; opened = { path: f, line: null } } })),
+      { id: 'basecamp', group: 'Action', label: 'Open in basecamp', run: () => location.assign(site.page) },
+      { id: 'signout', group: 'Action', label: 'Sign out', run: signOut },
+    ]
+  }
+
+  function keydown(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key?.toLowerCase() === 'k' && who && files?.length) {
+      e.preventDefault()
+      palette = !palette
+    } else if (e.key === 'Escape') { opened = null; asking = false; palette = false }
+  }
+
   document.addEventListener('pointermove', hover, { capture: true, passive: true })
   document.addEventListener('click', pick, { capture: true })
   addEventListener('scroll', leave, { passive: true })
@@ -117,7 +155,11 @@
   })
 </script>
 
-<mesa:window onkeydown={(e) => { if (e.key === 'Escape') { opened = null; asking = false } }} />
+<mesa:window onkeydown={keydown} />
+
+{#if palette}
+  <Palette commands={commands()} onclose={() => palette = false} />
+{/if}
 
 {#if box && picking && who}
   <div class="fjs-editor-outline" class:editable={box.editable} aria-hidden="true"
@@ -153,6 +195,8 @@
         {#if files?.length} · {files.length} {files.length === 1 ? 'page' : 'pages'}{:else if files} · nothing on this site is editable{/if}</span>
       {#if files?.length}<button class="btn ghost" id="fjs-ask-open" aria-pressed={asking} onclick={() => { asking = !asking; opened = null }}>Ask</button>{/if}
       <button class="btn ghost" aria-pressed={picking} onclick={() => { picking = !picking; leave() }}>{picking ? 'Browse' : 'Pick'}</button>
+      {#if files?.length}<button class="btn ghost" id="fjs-palette-open" title="Go to a page, edit a file" onclick={() => palette = true}>
+        Pages <kbd>{MAC ? '⌘K' : 'Ctrl K'}</kbd></button>{/if}
       <a class="btn ghost" href={site.page}>Open in basecamp</a>
       <button class="btn ghost" onclick={signOut}>Sign out</button>
     {#if notice}<span role="status">{notice}</span>{/if}
@@ -215,6 +259,15 @@
   }
   .fjs-editor-launch:active:not(:disabled) {
     transform: none;
+  }
+  kbd {
+    margin-inline-start: 0.35rem;
+    padding: 0 0.3rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.25rem;
+    font: inherit;
+    font-size: 0.75rem;
+    color: var(--color-muted);
   }
   .fjs-editor-outline {
     position: fixed;

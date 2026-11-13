@@ -359,6 +359,8 @@ export interface Service {
   _methodClaims?: Record<string, string[]>
   /** The custom methods DECLARED `read: true` in `methods:`. Read through `isReadMethod`. */
   _readMethods?: string[]
+  /** The custom methods DECLARED `log: false` in `methods:`. Read through `isUnloggedMethod`. */
+  _unloggedMethods?: string[]
   /** The model each custom method DECLARED it answers, keyed by name. Read through `answerAccessor`. */
   _answers?: Record<string, string>
   /** The `scope:` declarations, as written. Read through `requiredScope`. */
@@ -1731,6 +1733,15 @@ export interface MethodDeclaration {
    */
   read?: boolean
   /**
+   * `false` keeps a SUCCESSFUL call out of `requestLogger`'s per-call line, over
+   * HTTP and over the socket (`FJS-D2129`). For a method a client calls dozens
+   * of times a second, where the line is the whole log. A call that answers
+   * 400 or more still logs: the line is what a refused call leaves behind
+   * (`FJS-1301`). A custom method only; a CRUD verb is not addressable by name
+   * on the HTTP side.
+   */
+  log?: boolean
+  /**
    * The model whose row this method answers, when it is not the service's own
    * (`FJS-D914`). `messages.promote()` answers the Task a message became; the
    * announcement's completeness check, its re-read and its per-recipient grade
@@ -1816,6 +1827,32 @@ export function collectMethodClaims(
         `[Junction] service '${serviceName}': ${name} declares claims, but ${name} reads or writes rows, ` +
         `and which rows a claim reaches is the schema's @@allow. claims: is for a method that touches no row.`)
     out[name] = [...claims]
+  }
+  return out
+}
+
+/** The custom methods a `methods:` list declares `log: false`. */
+export function collectUnloggedMethods(
+  declared:    MethodSelection | undefined,
+  serviceName: string,
+): string[] {
+  const out: string[] = []
+  if (!declared || declared === 'readOnly') return out
+
+  for (const entry of declared) {
+    if (typeof entry === 'string' || entry?.log === undefined) continue
+    const name = methodEntryName(entry, serviceName)
+    if (typeof entry.log !== 'boolean')
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares log ${JSON.stringify(entry.log)}, ` +
+        `which is not true or false.`)
+    // The HTTP line learns its method from X-Service-Method, which a CRUD verb
+    // never rides, so the flag would silence the socket and not the request.
+    if (CRUD_METHOD_SET.has(name))
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares log, but ${name} is a CRUD verb. ` +
+        `log: is for a custom method.`)
+    if (!entry.log) out.push(name)
   }
   return out
 }
@@ -1950,6 +1987,15 @@ export function scopeRefusal(
   if (need === undefined)
     return `${name}.${method} states no scope, so a key issued with scopes (${held.join(', ')}) cannot call it`
   return held.includes(need) ? null : `${name}.${method} needs the '${need}' scope`
+}
+
+/**
+ * Whether a service's method declared `log: false`, so `requestLogger` writes
+ * no line for a call that succeeds. The one answer both transports take; the
+ * status test stays in `requestLogger`, which owns the line (`FJS-D2129`).
+ */
+export function isUnloggedMethod(service: Service | undefined, method: string): boolean {
+  return !!service?._unloggedMethods?.includes(method)
 }
 
 /**
@@ -2732,6 +2778,7 @@ export function buildService(def: ServiceDefinition): Service {
   const declaredGates  = collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredClaims = collectMethodClaims(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredReads  = collectReadMethods(def.methods, (def.name as string) ?? '(unnamed)')
+  const declaredUnlogged = collectUnloggedMethods(def.methods, (def.name as string) ?? '(unnamed)')
   const methodInputs   = collectMethodInputs(def.methods, (def.name as string) ?? '(unnamed)', def)
   const base = buildBase({
     inputMethods: Object.keys(methodInputs),
@@ -3102,6 +3149,7 @@ export function buildService(def: ServiceDefinition): Service {
   ;(service as Service)._methodGates = declaredGates
   ;(service as Service)._methodClaims = declaredClaims
   ;(service as Service)._readMethods = declaredReads
+  ;(service as Service)._unloggedMethods = declaredUnlogged
   ;(service as Service)._answers = collectMethodAnswers(def.methods, defName ?? '(unnamed)')
   ;(service as Service)._scope = collectMethodScopes(def.methods, def.scope, defName ?? '(unnamed)')
   resolveTable({})

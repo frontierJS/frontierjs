@@ -517,6 +517,9 @@ Everything above is loud. These are not.
   the service's channel. A method that writes no record — a search, a count, a
   report — is declared `{ method: 'search', read: true }` in `methods:`, which
   announces nothing and keeps no answer under an `Idempotency-Key` (`FJS-D505`).
+  A method a client calls dozens of times a second (a drag position) adds
+  `log: false`, which drops its request-log line while it succeeds; a refused
+  call still logs (`FJS-D2129`).
   A WRITE whose answer is not a row — a credential — sets `$.dispatch = false`.
   A write whose answer is a REPORT around a row (`{ sheet, lines, noRate }`) sets
   `$.dispatch = sheet`: other tabs get the record, the caller keeps the report.

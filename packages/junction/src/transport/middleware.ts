@@ -19,6 +19,7 @@ import {
   refuseLegacyRateLimitOptions,
   type RateLimitOptions as CoreRateLimitOptions,
 } from '../core/rate-limit.ts'
+import { isUnloggedMethod } from '../core/service.ts'
 
 // ─── Shared origin type ───────────────────────────────────────────────────
 // cors() and csrf() both accept the same origin specification.
@@ -361,6 +362,13 @@ export function requestLogger(opts: RequestLoggerOptions = {}) {
   return function requestLoggerPlugin(app: App): void {
     const log = app.logger.child('http')
 
+    // A method declared `log: false` writes no line while it succeeds, and one
+    // that answers 400 or more still does: the line is what a refused call
+    // leaves behind (`FJS-1301`), and hiding it would hide the abuse a
+    // streaming method is most open to (`FJS-D2129`). Both transports ask here.
+    const quiet = (service: string | undefined, method: string | undefined, status: number): boolean =>
+      status < 400 && !!service && !!method && isUnloggedMethod(app.services.get(service), method)
+
     const middleware: MiddlewareFn = async (ctx, next) => {
       if (skip?.(ctx)) { await next(); return }
 
@@ -382,6 +390,10 @@ export function requestLogger(opts: RequestLoggerOptions = {}) {
         // `undefined` here (`FJS-1414`).
         const correlationId = ctx.requestId
 
+        // A custom method rides POST with X-Service-Method; a CRUD verb never
+        // does, and cannot declare the flag.
+        if (quiet(ctx.route?.service, ctx.headers?.['x-service-method']?.trim(), status)) return
+
         const data = { method: ctx.method, path: ctx.path, status, ms, ip: ctx.ip, correlationId }
 
         if (format === 'json') log[level]('request', data)
@@ -395,6 +407,7 @@ export function requestLogger(opts: RequestLoggerOptions = {}) {
     // client — every screen after the first second — left no line for any
     // read or write, a refused one included (`FJS-1301`).
     socketCallLoggers.set(app, ({ service, method, id, status, ms, ip, correlationId }) => {
+      if (quiet(service, method, status)) return
       const path = id != null ? `${service}/${id}` : service
       const data = { transport: 'websocket', method, path, status, ms, ip, correlationId }
       if (format === 'json') log[level]('request', data)
