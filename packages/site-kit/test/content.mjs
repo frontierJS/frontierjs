@@ -401,6 +401,15 @@ try {
       JSON.stringify(asked.changes.map((c) => [c.line, c.old, c.next])) === '[[4,"70+ Live Websites","55+ Live Websites"],[19,"70+ Live Websites","55+ Live Websites"]]', JSON.stringify(asked))
     check('a front-matter value is compared without its key or quotes', asked.changes[0].plain === true)
     check('a line added alone is one the page cannot place', asked.unplaced === 1)
+
+    const html = (was, now) => hunkChanges('content/blocks/Hero.md', ['@@ -11,1 +11,1 @@', `-${was}`, `+${now}`].join('\n')).changes[0]
+    const gold = html('<p class="gold-text">SEO • Facebook Ads</p>', '<p class="gold-text">SEO • A Great Team</p>')
+    check('a raw-HTML line whose tags held swaps its words alone',
+      gold.plain === true && gold.old === 'SEO • Facebook Ads' && gold.next === 'SEO • A Great Team', JSON.stringify(gold))
+    check('a raw-HTML line whose tags changed waits for the rebuild',
+      html('<p class="gold-text">SEO</p>', '<p class="blue-text">SEO</p>').plain === false)
+    check('a raw-HTML line changed in two places waits for the rebuild',
+      html('<p>A <b>B</b></p>', '<p>X <b>Y</b></p>').plain === false)
   }
 
   // ─── the route file a preview's address was built from ────────────────────

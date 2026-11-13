@@ -1,5 +1,19 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-11-13 — Launch Editor signs in through a popup (`FJS-D2128`)
+
+- **The preview's Edit button is now Launch Editor**, a single floating button rather than a card holding a button.
+- **Signing in opens a small basecamp window** that closes itself, so the preview never leaves the page. If the browser blocks the popup, the whole tab goes to basecamp and comes back, as before.
+- **One sign-in covers every tab of the preview** until the key lapses, after 8 hours. Sign out in any tab signs out all of them.
+- After a redirect sign-in, the one-time code no longer reappears in the address bar once the site's router loads.
+
+## 2026-11-13 — a quote can name its element (`FJS-D2127`)
+
+- **`> [.checklist]`** as a quote's first line makes the quote `<div class="checklist">`, and the line is dropped. `> [section#faq.wide] Title` gives `<section id="faq" class="wide" title="Title">`. Any lowercase tag works. A capitalized word, or a bracket that is not `tag#id.class` (`[Note]`, `[!NOTE]`), stays a quote.
+- **`> [memo] ### Question`** or **`> [memo][### Question]`** gives `<details>` with the question as its `<summary>`.
+- A decorator's class words are checked at build like a divider's: a class no stylesheet defines stops `site-kit build`.
+- A task-list checkbox (`- [ ] item`) carries `aria-label` with its item's words.
+
 ## 2026-10-18 — preview deploys (`FJS-D1221`–`FJS-D1223`)
 
 - **`site-kit build <dir> --preview`** writes a review build. Every element is stamped `data-fjs-loc` with its source location, and `_headers` sends `X-Robots-Tag: noindex` on every path.

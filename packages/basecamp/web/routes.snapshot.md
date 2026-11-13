@@ -83,7 +83,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/setup/` | `src/routes/setup/index.mesa` | `src/routes/_module.mesa` | — |
 | `/sites/` | `src/routes/sites/index.mesa` | `src/routes/_module.mesa` | — |
 | `/sites/:id/` | `src/routes/sites/[id]/index.mesa` | `src/routes/_module.mesa` | `id` |
-| `/sites/:id/edit/` | `src/routes/sites/[id]/edit/index.mesa` | `src/routes/_module.mesa` | `id` |
+| `/sites/:id/edit/` | `src/routes/sites/[id]/edit/index.mesa` | — | `id` |
 | `/trash/` | `src/routes/trash/index.mesa` | `src/routes/_module.mesa` | — |
 | `/verify-email/` | `src/routes/verify-email/index.mesa` | `src/routes/_module.mesa` | — |
 | `/volumes/` | `src/routes/volumes/index.mesa` | `src/routes/_module.mesa` | — |
@@ -156,7 +156,7 @@ this section exists to show.
 - `/setup/` — siteName: `Basecamp` · title: `First run`
 - `/sites/` — siteName: `Basecamp` · title: `Sites`
 - `/sites/:id/` — siteName: `Basecamp` · title: `Site`
-- `/sites/:id/edit/` — siteName: `Basecamp` · title: `Edit from the preview`
+- `/sites/:id/edit/` — reset: `true` · siteName: `Basecamp` · title: `Opening the editor`
 - `/trash/` — siteName: `Basecamp` · title: `Trash`
 - `/verify-email/` — siteName: `Basecamp` · title: `Verify email`
 - `/volumes/` — siteName: `Basecamp` · title: `Volumes`
@@ -166,6 +166,6 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 51 routes: `/`, `/activity/`, `/alerts/`, `/api-keys/`, `/apps/`, `/apps/:id/`, `/blueprints/`, `/channels/`, `/cleanup/`, `/cloud-spend/`, `/dashboards/`, `/dashboards/:id/`, `/dependencies/`, `/deployments/`, `/deployments/:id/`, `/dns/`, `/environments/:id/`, `/flags/`, `/git-activity/`, `/infra-graph/`, `/invite/:token/`, `/jobs/`, `/jobs/:id/`, `/login/`, `/networks/`, `/notifications/`, `/observability/`, `/onboarding/`, `/pages/`, `/portal/`, `/portal/:id/`, `/projects/`, `/projects/:id/`, `/projects/create/`, `/recipes/`, `/registry/`, `/reset-password/`, `/secrets/`, `/security/`, `/servers/`, `/servers/:id/`, `/servers/import/`, `/servers/provision/`, `/settings/`, `/setup/`, `/sites/`, `/sites/:id/`, `/sites/:id/edit/`, `/trash/`, `/verify-email/`, `/volumes/`
+- `src/routes/_module.mesa` — 50 routes: `/`, `/activity/`, `/alerts/`, `/api-keys/`, `/apps/`, `/apps/:id/`, `/blueprints/`, `/channels/`, `/cleanup/`, `/cloud-spend/`, `/dashboards/`, `/dashboards/:id/`, `/dependencies/`, `/deployments/`, `/deployments/:id/`, `/dns/`, `/environments/:id/`, `/flags/`, `/git-activity/`, `/infra-graph/`, `/invite/:token/`, `/jobs/`, `/jobs/:id/`, `/login/`, `/networks/`, `/notifications/`, `/observability/`, `/onboarding/`, `/pages/`, `/portal/`, `/portal/:id/`, `/projects/`, `/projects/:id/`, `/projects/create/`, `/recipes/`, `/registry/`, `/reset-password/`, `/secrets/`, `/security/`, `/servers/`, `/servers/:id/`, `/servers/import/`, `/servers/provision/`, `/settings/`, `/setup/`, `/sites/`, `/sites/:id/`, `/trash/`, `/verify-email/`, `/volumes/`
 - `src/routes/admin/_module.mesa` — 4 routes: `/admin/`, `/admin/audit/`, `/admin/providers/`, `/admin/workspace/`
 - `src/routes/hub/_module.mesa` — 10 routes: `/hub/`, `/hub/accounts/`, `/hub/audit/`, `/hub/backups/`, `/hub/flags/`, `/hub/fleet/`, `/hub/security/`, `/hub/settings/`, `/hub/users/`, `/hub/workspaces/`

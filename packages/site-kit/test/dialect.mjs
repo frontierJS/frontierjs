@@ -196,6 +196,52 @@ Not A Kicker
   for (const [input, want] of cases) check(`telHref(${JSON.stringify(input)}) is ${want || "''"}`, telHref(input) === want, telHref(input))
 }
 
+// ── Decorators (FJS-D2127) ──────────────────────────────────────────────────
+{
+  const dialect = siteDialect()
+  const html = await compile(`
+>[.checklist]
+>
+>#### Discovery Meeting:
+>
+> - [ ] What is the current CRM?
+> - [x] Install Plausible
+> - _+ 28 more_
+
+> [section#faq.gap-square.wide] Questions
+>
+> Body.
+
+> [memo][### What does it cost?]
+>
+> It depends.
+
+> [memo] Plain title
+> Answer in the same paragraph.
+
+> [Note] stays a quote
+
+> [see p. 3] stays a quote
+`, dialect)
+
+  check('a [.class] quote is a div of that class, the decorator line gone',
+    /<div class="checklist">\s*<h4[^>]*>Discovery Meeting:<\/h4>/.test(html) && !html.includes('[.checklist]'), html)
+  check('a tag, id and classes land on the element, and a title is its title',
+    html.includes('<section class="gap-square wide" id="faq" title="Questions">') && /<p>Body\.<\/p>\s*<\/section>/.test(html), html)
+  check('memo is details, a # title its summary heading',
+    /<details>\s*<summary><h3 id="what-does-it-cost">What does it cost\?<\/h3><\/summary>\s*<p>It depends\.<\/p>\s*<\/details>/.test(html), html)
+  check('a plain title is a plain summary, and the rest of its paragraph stays',
+    /<details>\s*<summary>Plain title<\/summary>\s*<p>Answer in the same paragraph\.<\/p>/.test(html), html)
+  check('a capital or a bracket that is not tag#id.class stays a quote',
+    html.includes('<blockquote>\n<p>[Note] stays a quote</p>') && html.includes('<p>[see p. 3] stays a quote</p>'), html)
+  check('a task checkbox is labelled with its item, an item without one untouched',
+    html.includes('<input type="checkbox" disabled aria-label="What is the current CRM?">') &&
+    html.includes('<input type="checkbox" checked disabled aria-label="Install Plausible">') && html.includes('<li><em>+ 28 more</em></li>'), html)
+  check('decorator classes join the words the build checks',
+    JSON.stringify(dialect.remarkPlugins[0][1].words.get(PAGE).map((w) => w.word)) === JSON.stringify(['checklist', 'gap-square', 'wide']),
+    JSON.stringify(dialect.remarkPlugins[0][1].words.get(PAGE)))
+}
+
 // ── The build's check ────────────────────────────────────────────────────────
 {
   const css = '/* .commented {} */ .band{} .duo .x, a.prose:hover{background:url(a.png)} .md\\:flex{} @media (min-width:1.5rem){.night{}}'

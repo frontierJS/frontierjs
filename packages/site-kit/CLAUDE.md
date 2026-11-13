@@ -108,7 +108,10 @@ what they mean in any app.
   `config/dividers.js` (remark) turns `====` into a Band and `===` into an
   `<article>`, as markup rather than a `<Block>` tag, because Sierra binds a
   tag by scanning the source before a remark plugin runs. `config/prose.js`
-  (rehype) emits kickers, `<mark>` and tel:/mailto: links. A divider word
+  (rehype) emits kickers, `<mark>` and tel:/mailto: links, and labels a task
+  checkbox. `config/decorators.js` (remark, after dividers, whose per-file
+  reset it shares) turns a quote opening `[tag#id.class]` into that element,
+  `memo` into `details` (`FJS-D2127`). A divider or decorator word
   that is not a css look word is the site's class; the check stops the build
   when no stylesheet in the output defines it (`FJS-D918`). It runs as a
   Sierra config plugin's `closeBundle`, which Sierra calls once the pages are
@@ -176,7 +179,7 @@ what they mean in any app.
   `assets/fjs-editor.js` because Sierra's prune keeps only chunks a page names
   under `assets/`, and with `build.minify` stated, since Sierra skips minifying
   a bundle it expects no page to reach. Each page loads it through
-  `document.bodyEnd`. `handoff.js` is the PKCE sign-in (`FJS-D1357`).
+  `document.bodyEnd`. `handoff.js` is the PKCE sign-in (`FJS-D1357`), in a popup that hands its code back to the opener, with a redirect when the popup is blocked; the key is in `localStorage`, one sign-in for every tab of the preview (`FJS-D2128`).
   Signed in, a click on the page is a pick: `pick.js` turns the clicked
   element's `data-fjs-loc` into a field. On a `.md` the draft lists,
   `Inline.mesa` lays a textarea over the element and saves its words as
@@ -187,7 +190,8 @@ what they mean in any app.
   A template's stamp offers the editable files. `live.js` shows what is typed
   on the page before the save, words only (`FJS-D1399`): a leaf showing the old
   words of a changed block or value takes the new ones, and new words with
-  markup wait for the rebuild. The form also arranges lists, its entries and
+  markup wait for the rebuild; a raw-HTML line whose tags held is compared on
+  the one run of words that changed. The form also arranges lists, its entries and
   the file's place in its collection, through `drafts.arrange`, held still
   while words are unsaved. A photo key is a picker and its words, not a text
   box: `photo.js` shrinks the file to 2560 px before `drafts.photo`, which

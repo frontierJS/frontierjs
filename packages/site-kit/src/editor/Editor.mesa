@@ -16,7 +16,7 @@
   import Ask from './Ask.mesa'
   import Field from './Field.mesa'
   import Inline from './Inline.mesa'
-  import { arrive, begin, clientFor, forget, held } from './handoff.js'
+  import { arrive, begin, clientFor, forget, held, onHeldChange } from './handoff.js'
   import { LOC, fieldFor, parseLoc, stampedFrom } from './pick.js'
 
   export let site
@@ -44,20 +44,33 @@
     }
   }
 
-  arrive(site).then((back) => {
+  function settle(back) {
     if (back && 'error' in back) error = back.error
     if (back && 'held' in back) who = back.held
-    check()
-  })
+  }
+
+  arrive(site).then((back) => { settle(back); check() })
 
   async function edit() {
     busy = true; error = null
-    try { await begin(site) } catch (err) { error = err.message; busy = false }
+    settle(await begin(site).catch(err => ({ error: err.message })))
+    busy = false
+    check()
   }
 
-  function signOut() {
-    forget(); who = null; files = null; opened = null; over = null; asking = false
+  function signedOut() {
+    who = null; files = null; opened = null; over = null; box = null; asking = false
   }
+
+  function signOut() { forget(); signedOut() }
+
+  // The key is shared by every tab of the preview, so a sign-in or sign-out
+  // in one reaches the rest.
+  var unhear = onHeldChange((h) => {
+    if (!h) return signedOut()
+    who = h; error = null
+    check()
+  })
 
   const live = () => !!(who && files && picking)
 
@@ -100,6 +113,7 @@
     document.removeEventListener('pointermove', hover, { capture: true })
     document.removeEventListener('click', pick, { capture: true })
     removeEventListener('scroll', leave)
+    unhear()
   })
 </script>
 
@@ -116,7 +130,7 @@
 {:else if opened?.path}
   <Field {site} key={who.key} path={opened.path} line={opened.line} why={opened.why} onclose={() => opened = null} />
 {:else if opened?.template}
-  <article class="card fjs-editor-field" data-fjs-editor-ui aria-label="Pick a file">
+  <article class="card glass theme-basecamp fjs-editor-field" data-fjs-editor-ui aria-label="Pick a file">
     <div class="surface-header">
       <span>Drawn by <code>{opened.template}</code>, a developer's file. Its words are in one of these:</span>
       <button class="btn ghost" onclick={() => opened = null}>Close</button>
@@ -133,20 +147,30 @@
   {#if asking}
     <Ask {site} key={who.key} {files} onclose={() => asking = false} />
   {/if}
-  <article class="card fjs-editor" data-fjs-editor-ui data-fjs-editor-bar>
-    {#if who}
+  {#if who}
+  <article class="card glass theme-basecamp fjs-editor" data-fjs-editor-ui data-fjs-editor-bar>
       <span>Editing <strong>{site.draft}</strong> as <strong>{who.editor?.name}</strong>
         {#if files?.length} · {files.length} {files.length === 1 ? 'page' : 'pages'}{:else if files} · nothing on this site is editable{/if}</span>
       {#if files?.length}<button class="btn ghost" id="fjs-ask-open" aria-pressed={asking} onclick={() => { asking = !asking; opened = null }}>Ask</button>{/if}
       <button class="btn ghost" aria-pressed={picking} onclick={() => { picking = !picking; leave() }}>{picking ? 'Browse' : 'Pick'}</button>
       <a class="btn ghost" href={site.page}>Open in basecamp</a>
       <button class="btn ghost" onclick={signOut}>Sign out</button>
-    {:else}
-      <button class="btn primary" disabled={busy} onclick={edit}>Edit</button>
-    {/if}
     {#if notice}<span role="status">{notice}</span>{/if}
     {#if error}<span class="text-danger" role="alert">{error}</span>{/if}
   </article>
+  {:else}
+  {#if error}
+    <article class="card glass theme-basecamp fjs-editor" data-fjs-editor-ui><span class="text-danger" role="alert">{error}</span></article>
+  {/if}
+  <button class="btn primary raised theme-basecamp fjs-editor-launch" id="fjs-editor-launch" data-fjs-editor-ui data-fjs-editor-bar
+          aria-busy={busy ? 'true' : 'false'} disabled={busy} onclick={edit}>
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+    {busy ? 'Opening…' : 'Launch Editor'}
+  </button>
+  {/if}
 </div>
 
 <style>
@@ -170,11 +194,27 @@
     pointer-events: auto;
   }
   .fjs-editor {
+    --glass-alpha: 96%;
     display: flex;
     gap: 0.5rem;
     align-items: center;
     max-width: 100%;
     flex-wrap: wrap;
+  }
+  /* One floating control while signed out, not a card around a button. */
+  .fjs-editor-launch {
+    border-radius: var(--pill-radius);
+    padding: 0.75rem 1.35rem;
+    gap: 0.5rem;
+    box-shadow: var(--shadow-lg);
+    transition: transform var(--motion-base), box-shadow var(--motion-base), filter var(--motion-base);
+  }
+  .fjs-editor-launch:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg), var(--shadow-md);
+  }
+  .fjs-editor-launch:active:not(:disabled) {
+    transform: none;
   }
   .fjs-editor-outline {
     position: fixed;
@@ -187,6 +227,7 @@
     outline: 2px solid var(--color-primary);
   }
   .fjs-editor-field {
+    --glass-alpha: 96%;
     position: fixed;
     top: 1rem;
     right: 1rem;

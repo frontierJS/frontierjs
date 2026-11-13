@@ -88,10 +88,24 @@ export function liveWords() {
 const KEYED   = /^\s*[\w-]+:\s+(.*)$/
 const unquote = (v) => /^(["']).*\1$/.test(v) ? v.slice(1, -1) : v
 
+// A raw-HTML line (`<p class="gold-text">…</p>`) whose tags did not change and
+// whose words changed in one place: the page shows those words alone, in the
+// element the tags make, so they are what is compared and swapped. Without
+// this every ask on such a line waits for the rebuild.
+const TAG = /(<[^>]*>)/
+function innerWords(was, now) {
+  const a = was.split(TAG)
+  const b = now.split(TAG)
+  if (a.length < 3 || a.length !== b.length) return null
+  if (a.some((s, i) => i % 2 && s !== b[i])) return null
+  const moved = a.map((s, i) => i).filter((i) => a[i] !== b[i])
+  return moved.length === 1 ? [a[moved[0]], b[moved[0]]] : null
+}
+
 function lineChange(path, was, now) {
   const a = KEYED.exec(was.text)
   const b = KEYED.exec(now)
-  const [old, next] = a && b ? [unquote(a[1]), unquote(b[1])] : [was.text, now]
+  const [old, next] = a && b ? [unquote(a[1]), unquote(b[1])] : innerWords(was.text, now) ?? [was.text, now]
   return { path, line: was.line, old: words(old), next: words(next), plain: plainSwap(old, next) }
 }
 

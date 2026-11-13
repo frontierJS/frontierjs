@@ -26,6 +26,7 @@ The file-by-file map. `CLAUDE.md` keeps the owners and the traps. Paths under
 | `web/src/routes/charter/` | `/charter/`: the `runs: true` entry with which keys are filed, *New box* to `/basecamps/new/`, and *Reinstall* (restore or fresh, Plan only by default) with its log tailed (`IDEAS/charter-to-live.md` Phase 2) |
 | `web/src/routes/charter/drill/` | `/charter/drill/`: the restore drill. *Rehearse* reads the box and plans; *Run for real* backs the Basecamp up, reinstalls it, then grades the hub's rows, the Apps' serving and one kept App's data. `api/src/domain/charter/restore-drill.ts` grades, `restore-drill-run.ts` is the detached process, records in `~/.config/workbench/drills/` |
 | `web/src/routes/terminal/` | `/terminal/`: one shell in the home folder, outside any pin; ui's `Terminal.mesa` with an empty `session` (`web/src/lib/terminal.js`), over `WS /ws/terminal` (`api/src/plugins/workbench-terminal.ts`), its tmux session the bare `workbench` |
+| `web/src/routes/recommended-services/` · `web/src/lib/recommended-services.js` | `/recommended-services/`: one service per job that we run on and recommend, with alternatives; the rows are the static table in `lib/recommended-services.js`, edited there |
 
 | `web/src/routes/terminal/` | `/terminal/`: one shell in the home folder, outside any pin; ui's `Terminal.mesa` with an empty `session` (`web/src/lib/terminal.js`), over `WS /ws/terminal` (`api/src/plugins/workbench-terminal.ts`), its tmux session the bare `workbench` |
 | `api/config/junction.config.js` | port and CORS origins |

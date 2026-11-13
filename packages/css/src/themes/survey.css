@@ -26,6 +26,12 @@
   --tone-l-min: 0.74;
   --tone-l-max: 1;
 
+  /*
+   * Roomier than the default: the instrument panel reads as machined when
+   * its rungs have air between them. Same value as the .roomy preset.
+   */
+  --density: 1.25;
+
   /* ── Grounds ────────────────────────────────────────────────────────
    * Mocha's own ramp, each a role:
    *

@@ -18,6 +18,7 @@ export const groups = [
     { href: '/atlas/decide/',       label: 'Decide',          icon: 'atlas',         sub: 'the open questions one card at a time — swipe to rule, Claude to explain' },
     { href: '/atlas/autopilot/',    label: 'Autopilot',       icon: 'atlas',         sub: 'the project\'s loops as a town — lanes, the Dock, the Switch, and a replay of the day' },
     { href: '/notifications/',      label: 'Notifications',   icon: 'atlas',         sub: 'what you have been told' },
+    { href: '/recommended-services/', label: 'Recommended services', icon: 'atlas',         sub: 'one service per job — what we run on and recommend' },
   ] },
   { label: 'Machines', show: member, entries: [
     { href: '/basecamps/',          label: 'Basecamps',       icon: 'workbench',     sub: 'every Basecamp this laptop made — whether it answers, Back up now, Restart' },

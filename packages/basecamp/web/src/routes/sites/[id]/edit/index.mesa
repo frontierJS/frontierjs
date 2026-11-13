@@ -1,17 +1,22 @@
 ---
-title: Edit from the preview
+title: Opening the editor
+reset: true
 ---
 <script>
-  // Where a draft preview's Edit button sends the person (`FJS-D1357`): its
-  // address and a PKCE challenge come in on the query, and a one-time code goes
-  // back on the preview's own URL. Signing in first is the router guard's, which
-  // returns here. The server refuses an address that is not one of this site's
-  // previews, so a link naming another one hands nothing out.
+  // Where a draft preview's Launch Editor button sends the person, most often
+  // in a small popup (`FJS-D1357`, `FJS-D2128`): its address and a PKCE
+  // challenge come in on the query, and a one-time code goes back on the
+  // preview's own URL. Signing in first is the router guard's, which returns
+  // here. The server refuses an address that is not one of this site's
+  // previews, so a link naming another one hands nothing out. No shell: the
+  // page is seen for a moment, or in a window a few hundred pixels wide.
   import { page } from '@frontierjs/sierra/router'
   import { drafts } from '../../../../resources/Draft.mesa'
 
   let error = null
   var appId = page.params.id
+  var host  = (() => { try { return new URL(page.query?.return).host } catch { return null } })()
+  var popup = !!window.opener
 
   drafts.service.invoke('handoff', null, {
     appId, returnTo: page.query?.return, challenge: page.query?.challenge,
@@ -20,9 +25,46 @@ title: Edit from the preview
     .catch(err => { error = err.message })
 </script>
 
-{#if error}
-  <article class="alert danger" id="screen-error"><div class="alert-content">{error}</div></article>
-  <p><a href={`/sites/${appId}/`}>Edit this site here instead</a></p>
-{:else}
-  <p class="text-muted" id="handoff-pending">Signing you in to the preview…</p>
-{/if}
+<main class="handoff">
+  <article class="card stack handoff-card">
+    {#if error}
+      <strong>The editor could not open</strong>
+      <div class="alert danger" id="screen-error"><div class="alert-content">{error}</div></div>
+      <p class="cluster">
+        <a class="btn outlined" href={`/sites/${appId}/`}>Edit this site in basecamp</a>
+        {#if popup}<button class="btn ghost" onclick={() => close()}>Close</button>{/if}
+      </p>
+    {:else}
+      <span class="handoff-spinner" aria-hidden="true"></span>
+      <strong id="handoff-pending">Opening the editor…</strong>
+      {#if host}<span class="text-muted">for {host}</span>{/if}
+    {/if}
+  </article>
+</main>
+
+<style>
+  .handoff {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: var(--space-lg);
+  }
+  .handoff-card {
+    width: min(24rem, 100%);
+    align-items: center;
+    text-align: center;
+    padding: var(--space-xl);
+  }
+  .handoff-spinner {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    border: 3px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-block-start-color: var(--color-primary);
+    animation: handoff-spin 0.8s linear infinite;
+  }
+  @keyframes handoff-spin { to { transform: rotate(360deg) } }
+  @media (prefers-reduced-motion: reduce) {
+    .handoff-spinner { animation-duration: 2.4s }
+  }
+</style>

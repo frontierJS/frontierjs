@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-17 routes · 1 layout · target spa · trailing slash always
+18 routes · 1 layout · target spa · trailing slash always
 ```
 
 ## Routes
@@ -35,6 +35,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/laptop/` | `src/routes/laptop/index.mesa` | `src/routes/_module.mesa` | — |
 | `/login/` | `src/routes/login/index.mesa` | `src/routes/_module.mesa` | — |
 | `/notifications/` | `src/routes/notifications/index.mesa` | `src/routes/_module.mesa` | — |
+| `/recommended-services/` | `src/routes/recommended-services/index.mesa` | `src/routes/_module.mesa` | — |
 | `/servers/` | `src/routes/servers/index.mesa` | `src/routes/_module.mesa` | — |
 | `/settings/` | `src/routes/settings/index.mesa` | `src/routes/_module.mesa` | — |
 | `/terminal/` | `src/routes/terminal/index.mesa` | `src/routes/_module.mesa` | — |
@@ -60,6 +61,7 @@ this section exists to show.
 - `/laptop/` — siteName: `Workbench` · title: `Laptop`
 - `/login/` — siteName: `Workbench` · title: `Sign in`
 - `/notifications/` — siteName: `Workbench` · title: `Notifications`
+- `/recommended-services/` — siteName: `Workbench` · title: `Recommended services`
 - `/servers/` — siteName: `Workbench` · title: `Servers`
 - `/settings/` — siteName: `Workbench` · title: `Settings`
 - `/terminal/` — siteName: `Workbench` · title: `Terminal`
@@ -70,4 +72,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 17 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/charter/`, `/charter/drill/`, `/git-activity/local/`, `/home/`, `/laptop/`, `/login/`, `/notifications/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`
+- `src/routes/_module.mesa` — 18 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/charter/`, `/charter/drill/`, `/git-activity/local/`, `/home/`, `/laptop/`, `/login/`, `/notifications/`, `/recommended-services/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`

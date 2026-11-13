@@ -1,0 +1,50 @@
+---
+title: Recommended services
+---
+<script>
+  // The services we use and recommend, one pick per job. The rows are
+  // lib/recommended-services.js; edit them there, not here.
+  import { groups } from '../../lib/recommended-services.js'
+
+  import Pill  from '@frontierjs/ui/components/display/Pill.mesa'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
+
+  const COLUMNS = [
+    { name: 'job',          label: 'Job' },
+    { name: 'pick',         label: 'Pick' },
+    { name: 'why',          label: 'Why' },
+    { name: 'alternatives', label: 'Alternatives' },
+  ]
+</script>
+
+<div class="section-header">
+  <h1>Recommended services</h1>
+</div>
+<p class="text-sm text-muted">One pick per job: what we run on and what we recommend to others.</p>
+
+{#each groups as g (g.id)}
+  <section class="stack gap-sm" id={`recommended-${g.id}`}>
+    <h2>{g.label}</h2>
+    <Table columns={COLUMNS} rows={g.rows}>
+      {#snippet row(r)}
+        <tr data-job={r.job}>
+          <td class="text-sm">{r.job}</td>
+          <td>
+            <span class="cluster">
+              <a href={r.url} target="_blank" rel="noopener noreferrer"><strong>{r.pick}</strong> ↗</a>
+              {#if r.selfHosted}<Pill>self-hosted</Pill>{/if}
+            </span>
+          </td>
+          <td class="text-sm">{r.why}</td>
+          <td class="text-sm">
+            {#if r.alternatives.length}
+              {#each r.alternatives as a, i (a.name)}{#if i}, {/if}<a href={a.url} target="_blank" rel="noopener noreferrer">{a.name}</a>{/each}
+            {:else}
+              <span class="text-muted">—</span>
+            {/if}
+          </td>
+        </tr>
+      {/snippet}
+    </Table>
+  </section>
+{/each}

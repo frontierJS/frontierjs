@@ -10,7 +10,7 @@
 import { mount } from '@frontierjs/mesa/runtime'
 import kit from '@frontierjs/css?inline'
 import Editor from './Editor.mesa'
-import { siteOf } from './handoff.js'
+import { handBack, siteOf } from './handoff.js'
 
 // The host inherits the page's font, color and line-height; `all` resets them,
 // and custom properties, which it leaves, the kit seals at :host.
@@ -27,8 +27,10 @@ function shadowFor() {
   return root
 }
 
+// In the sign-in popup, back from basecamp, the page hands its code to the
+// preview that opened it and closes, so no editor is drawn there.
 const tag = document.querySelector('script[data-fjs-editor]')
-if (tag) {
+if (tag && !handBack()) {
   const root = shadowFor()
   const anchor = document.createComment('fjs-editor')
   root.append(anchor)

@@ -168,7 +168,7 @@
   $: path, line, () => load()
 </script>
 
-<article bind:this={card} class="card fjs-editor-field" data-fjs-editor-ui aria-label={`Editing ${path}`}>
+<article bind:this={card} class="card glass theme-basecamp fjs-editor-field" data-fjs-editor-ui aria-label={`Editing ${path}`}>
   <div class="surface-header">
     <strong>{path}</strong>
     <button class="btn ghost" aria-label="Close" onclick={() => onclose?.()}>Close</button>
@@ -245,7 +245,9 @@
 </article>
 
 <style>
+  /* Ask's glass, so the two panels read as one editor. */
   .fjs-editor-field {
+    --glass-alpha: 96%;
     position: fixed;
     top: 1rem;
     right: 1rem;
@@ -287,8 +289,16 @@
   .fjs-entries [aria-current] {
     outline: 2px solid currentColor;
   }
+  /* Solid, not glass: the page bleeding through the words being edited makes them hard to read. */
   textarea {
+    box-sizing: border-box;
     width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--rule-strong);
+    border-radius: 0.5rem;
+    background: var(--surface-sunken);
+    color: var(--ink);
+    line-height: 1.5;
     font-family: var(--font-mono, monospace);
   }
 </style>
