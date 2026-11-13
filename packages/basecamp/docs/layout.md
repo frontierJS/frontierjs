@@ -71,8 +71,9 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           Nothing commits until the owner's `drafts.keep` (one commit on
           the head the run read, refused if the draft moved); `discard`
           forgets it and `undo` reverts the kept commit on the draft.
-          The key is `ANTHROPIC_API_KEY`, one for every
-          site (`FJS-D1424`), handed to that child only; the limit is the
+          The key is the workspace's Anthropic `providerKey` Secret
+          (`FJS-D2109`, `anthropicKey` in providers/model/anthropic.ts), handed
+          to that child only as `ANTHROPIC_API_KEY`; the limit is the
           argv's $2 a run (`FJS-D1425`). Each draft's last ask is a file beside
           the clone, on `list` as its preview is.
           domain/site/site-preview.ts is a draft's preview: it BUILDS NOTHING — the

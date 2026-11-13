@@ -9,8 +9,9 @@
 // off. The run never sees the clone, so nothing it does reaches git until a
 // person saves it.
 //
-// **The key is basecamp's** (`FJS-D1424`), `ANTHROPIC_API_KEY` handed to that
-// one child; **the limit is the run's** (`FJS-D1425`), the argv's
+// **The key is the workspace's** (`FJS-D2109`), its Anthropic `providerKey`
+// Secret resolved by `anthropicKey` and handed to that one child as
+// `ANTHROPIC_API_KEY`; **the limit is the run's** (`FJS-D1425`), the argv's
 // `--max-budget-usd`. A run that hits it is a failed ask, and its half-made
 // edits are dropped with the folder.
 //
@@ -33,6 +34,7 @@ import type { App } from '@frontierjs/junction'
 import { LOCKED_KEYS, changeRefusal } from '@frontierjs/site-kit/editable'
 import { exportDraftContent, filesUnder, sitesDir, treeFromExport, type Asked, type GitSite } from './site-checkout.ts'
 import { gitCredential } from '../../providers/source/index.ts'
+import { anthropicKey } from '../../providers/model/anthropic.ts'
 import { isGit } from '../release/app-source.ts'
 import { env } from '../../core/env.ts'
 
@@ -58,7 +60,7 @@ export const ASK_TIMEOUT_MS = 10 * 60 * 1000
 
 export const ASK_MAX_REQUEST = 2000
 
-export const NO_KEY = 'asking a model is off here — whoever runs basecamp sets ANTHROPIC_API_KEY to turn it on'
+export const NO_KEY = 'asking a model is off for this workspace — connect an Anthropic key on /secrets/ to turn it on'
 
 interface AskEvent { type: string, text?: string, ok?: boolean, stop?: string | null, cost?: number | null, denied?: number }
 interface AskClaude {
@@ -149,17 +151,21 @@ export function gradeAsk(dir: string, before: Map<string, string>): string[] {
  * words that refused it; none throws, because a retry would spend again.
  */
 export async function askDraft(app: App, appId: string, draft: string,
-  { bin = env.CLAUDE_BIN, key = env.ANTHROPIC_API_KEY, root = sitesDir() }: { bin?: string, key?: string, root?: string } = {}): Promise<AskStatus | null> {
+  { bin = env.CLAUDE_BIN, root = sitesDir() }: { bin?: string, root?: string } = {}): Promise<AskStatus | null> {
   const asked = askStatuses(appId, root)[draft]
   if (!asked || asked.state !== 'queued') return asked ?? null
   const fail = (error: string) => markAsk(appId, draft, { state: 'failed', error }, root)
-  if (!key) return fail(NO_KEY)
 
   const row = await (app.db as any).asSystem().app.findFirst({ where: { id: appId } })
   if (!row || row.kind !== 'static' || !isGit(row.source)) return fail('this site is no longer a static site in git')
+  const key = await anthropicKey(app, row.workspaceId)
+  if (!key) return fail(NO_KEY)
   const site: GitSite = { id: row.id, source: row.source, credential: await gitCredential(app, { workspaceId: row.workspaceId, repo: row.source.repo }) }
 
   const dir = mkdtempSync(join(tmpdir(), 'basecamp-ask-'))
+  // Beside the run's folder and not in it: `gradeAsk` walks `dir`, and a
+  // transcript in there would refuse every ask as a file outside content/.
+  const config = mkdtempSync(join(tmpdir(), 'basecamp-ask-config-'))
   try {
     const { head, blobs } = await exportDraftContent(site, draft, dir, root)
     const before = new Map([...blobs.keys()].map(path => [path, readFileSync(join(dir, path), 'utf8')]))
@@ -173,7 +179,8 @@ export async function askDraft(app: App, appId: string, draft: string,
       root: dir, edit: join(dir, 'content'), bin,
       prompt: contentPrompt({ request: asked.request, locked: LOCKED_KEYS }),
       effort: editEffort('text'),
-      env: { ...childEnv(env), ANTHROPIC_API_KEY: key },
+      // Memory or a transcript in the camp's shared HOME is one workspace's text reaching another's ask.
+      env: { ...childEnv(env), ANTHROPIC_API_KEY: key, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', CLAUDE_CONFIG_DIR: config },
       onEvent: (e) => {
         if (e.type === 'text' && e.text) texts.push(e.text)
         if (e.type === 'error' && e.text) errors.push(e.text)
@@ -201,5 +208,6 @@ export async function askDraft(app: App, appId: string, draft: string,
     return fail((err as Error).message)
   } finally {
     rmSync(dir, { recursive: true, force: true })
+    rmSync(config, { recursive: true, force: true })
   }
 }

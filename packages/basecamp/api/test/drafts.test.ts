@@ -20,7 +20,7 @@
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { execFileSync }           from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 import { createTestEnv, session } from '@frontierjs/testing'
@@ -400,6 +400,8 @@ describe('asking a model for a change', () => {
       '#!/bin/sh',
       `printf '%s\\n' "$@" > ${seen}/argv`,
       `printf '%s' "$ANTHROPIC_API_KEY" > ${seen}/key`,
+      `printf '%s\\n%s\\n' "$CLAUDE_CODE_DISABLE_AUTO_MEMORY" "$CLAUDE_CONFIG_DIR" > ${seen}/isolation`,
+      `mkdir -p "$CLAUDE_CONFIG_DIR" && echo transcript > "$CLAUDE_CONFIG_DIR/session.jsonl"`,
       `cat > ${seen}/prompt`,
       `pwd > ${seen}/cwd`,
       `ok() { echo '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.04,"num_turns":3}'; }`,
@@ -428,19 +430,28 @@ describe('asking a model for a change', () => {
     ].join('\n') + '\n', { mode: 0o755 })
   })
   afterAll(() => {
-    delete (appEnv as Record<string, unknown>).ANTHROPIC_API_KEY
     ;(appEnv as Record<string, unknown>).CLAUDE_BIN = 'claude'
   })
 
-  test('with no key on this basecamp, an ask is refused by name and nothing is queued', async () => {
+  // FJS-D2109: the key is a workspace's Anthropic providerKey Secret.
+  const anthropicSecret = (workspaceId: string, token: string, name = 'anthropic') =>
+    (env.system as any).secret.create({ data: { workspaceId, name, kind: 'providerKey', providerKind: 'anthropic', data: JSON.stringify({ token }) } })
+
+  test('with no Anthropic key in this workspace, an ask is refused by name and nothing is queued, whoever else holds one', async () => {
+    const sys = env.system as any
+    const { accountId } = await sys.workspace.findFirst({ where: { id: site.workspaceId } })
+    const other = await sys.workspace.create({ data: { accountId, name: 'Other', slug: `w-${uniq()}` } })
+    await anthropicSecret(other.id, 'sk-ant-other')
+
     const draft = (await drafts(editor).call('open', undefined, { appId: site.id, name: 'Asked' })).name
     const err = await refusal(drafts(editor).call('ask', undefined, { appId: site.id, draft, request: 'Change the hours' }))
     expect([err.code, err.message]).toEqual([400, NO_KEY])
+    expect(NO_KEY).toContain('/secrets/')
     expect(askStatuses(site.id)[draft]).toBeUndefined()
   })
 
   test('a run edits a copy of the draft\'s content, and comes back as a tree with nothing committed', async () => {
-    ;(appEnv as Record<string, unknown>).ANTHROPIC_API_KEY = 'sk-ant-test'
+    await anthropicSecret(site.workspaceId, 'sk-ant-test')
     ;(appEnv as Record<string, unknown>).CLAUDE_BIN = fake
     expect((await refusal(drafts(admin).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'x' }))).code).toBe(404)
     expect((await refusal(drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: '  ' }))).code).toBe(400)
@@ -462,7 +473,16 @@ describe('asking a model for a change', () => {
     expect(argv[argv.indexOf('--max-budget-usd') + 1]).toBe('2')
     expect(argv).toContain(`Edit(/${cwd}/content)`)
     expect(argv[argv.indexOf('--setting-sources') + 1]).toBe('')
+    // This workspace's key, not the one another workspace holds, and in no argv.
     expect(readFileSync(join(seen, 'key'), 'utf8')).toBe('sk-ant-test')
+    expect(argv.join('\n')).not.toContain('sk-ant')
+    expect(JSON.stringify(status)).not.toContain('sk-ant')
+    // Per-run isolation: no memory, and a config dir that is neither the run's folder nor kept.
+    const [memory, config] = readFileSync(join(seen, 'isolation'), 'utf8').trim().split('\n')
+    expect(memory).toBe('1')
+    expect(config.startsWith(tmpdir()) && !config.startsWith(`${cwd}/`)).toBe(true)
+    for (let i = 0; i < 40 && existsSync(config); i++) await Bun.sleep(25)
+    expect(existsSync(config)).toBe(false)
     expect(readFileSync(join(seen, 'prompt'), 'utf8')).toContain('Leave these front-matter keys exactly as they are wherever a file has them at the top level: layout, name,')
     expect(cwd.startsWith(tmpdir())).toBe(true)
 
@@ -546,7 +566,7 @@ describe('asking a model for a change', () => {
     expect(askStatuses(site.id).asked.state).toBe('undone')
     await drafts(editor).call('discard', undefined, { appId: site.id, draft: 'asked' })
     expect(askStatuses(site.id).asked).toBeUndefined()
-    expect((await refusal(drafts(editor).call('asked', undefined, { appId: site.id, draft: 'asked' }))).code).toBe(404)
+    expect((await drafts(editor).call('asked', undefined, { appId: site.id, draft: 'asked' })).ask).toBeNull()
   })
 
   test('an ask is kept only on the head it read, and Discard commits nothing', async () => {

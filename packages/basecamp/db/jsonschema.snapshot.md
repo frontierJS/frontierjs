@@ -232,7 +232,7 @@ validates, and a select that silently drops an option.
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
 - `ServerEventKind` — `created`, `removed`, `rebootRequested`, `drainStarted`, `drainCancelled`, `provisionRequested`, `provisionCreated`, `provisionReady`, `provisionTimeout`, `destroyRequested`, `destroyFinished`, `enrollmentIssued`, `syncRequested`, `statusSynced`, `statusSyncIgnored`, `syncFailed`, `syncNoAccount`, `syncUnsupported`, `syncUnrecognized`, `backupsReadFailed`, `backupsSet`, `backupsRestored`, `backupsRestoreFailed`, `adopted`, `cameOnline`, `unreachable`, `rebooted`, `containerCrashLooping`, `containerRecovered`, `unitFailed`, `unitRestored`, `recipeRan`, `recipeFailed`, `cleanupQueued`, `cleanupRan`, `cleanupFailed`, `volumeRemoved`, `volumesPruned`, `appRetired`, `archiveDiscarded`, `postureFailed`, `postureRestored`
-- `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`
+- `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`, `anthropic`
 - `ComputeProvider` — `custom`, `hetzner`, `digitalocean`
 - `MachineBackupPlan` — `daily`, `weekly`
 - `MachineBackupChoice` — `on`, `off`, `unmanaged`

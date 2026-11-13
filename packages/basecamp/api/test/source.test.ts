@@ -19,6 +19,7 @@ import { buildBasecampApp }        from '../src/app.ts'
 import { startGhSink, NO_HOOKS_TOKEN } from '../src/providers/source/github-sink.ts'
 import { sourceConnectorFor }      from '../src/providers/source/index.ts'
 import { gitCredential }          from '../src/providers/source/index.ts'
+import { anthropicKey }           from '../src/providers/model/anthropic.ts'
 import { connectorFor }            from '../src/providers/compute/index.ts'
 import { edgeConnectorFor }        from '../src/providers/edge/index.ts'
 import { registerAccount, sendVia, accountConnectorFor } from '../src/providers/compute/accounts.ts'
@@ -244,5 +245,47 @@ describe('the schema', () => {
       workspaceId: ws.id, name: 'fine', slug: 'fine', providerKind: 'hetzner',
     }})
     expect(ok.providerKind).toBe('hetzner')
+  })
+})
+
+// FJS-D2109: an Anthropic key is a workspace account too. Verify is one GET at
+// /v1/models carrying the key and the version header, and `anthropicKey` is the
+// one reader a run's child gets its key from.
+describe('Anthropic account', () => {
+  const GOOD = 'sk-ant-good'
+  const seen: Record<string, string | null>[] = []
+  const stub = Bun.serve({
+    port: 0,
+    fetch(req) {
+      seen.push({ path: new URL(req.url).pathname, key: req.headers.get('x-api-key'), version: req.headers.get('anthropic-version') })
+      return req.headers.get('x-api-key') === GOOD
+        ? Response.json({ data: [] })
+        : Response.json({ type: 'error', error: { type: 'authentication_error' } }, { status: 401 })
+    },
+  })
+  afterAll(() => { stub.stop() })
+
+  const account = (name: string, token: string, workspaceId = ws.id) => (env.system as any).secret.create({ data: {
+    workspaceId, name, kind: 'providerKey', providerKind: 'anthropic', data: JSON.stringify({ token }),
+  }})
+  const verify = async (secret: any) => {
+    const target = await registerAccount(app, secret, { address: `http://localhost:${stub.port}` })
+    return accountConnectorFor('anthropic')!.verify(sendVia(app, target!))
+  }
+
+  test('verify asks /v1/models with the key and the pinned version; a refused key is false', async () => {
+    seen.length = 0
+    expect(await verify(await account('claude-ok', GOOD))).toBe(true)
+    expect(seen.at(-1)).toEqual({ path: '/v1/models', key: GOOD, version: '2023-06-01' })
+    expect(await verify(await account('claude-bad', 'sk-ant-revoked'))).toBe(false)
+  })
+
+  test('anthropicKey answers this workspace\'s first key by name, and null for a workspace with none', async () => {
+    const sys  = env.system as any
+    const other = await sys.workspace.create({ data: { accountId: ws.accountId, name: 'Elsewhere', slug: `else-${Math.random().toString(36).slice(2, 8)}` } })
+    await account('a-first', 'sk-ant-first', other.id)
+    await account('b-second', 'sk-ant-second', other.id)
+    expect(await anthropicKey(app, other.id)).toBe('sk-ant-first')
+    expect(await anthropicKey(app, 'someone-elses')).toBeNull()
   })
 })

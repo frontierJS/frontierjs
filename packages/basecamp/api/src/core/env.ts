@@ -206,12 +206,6 @@ export const spec = {
   // draft save is pushed, so losing it costs a clone and no work.
   SITES_DIR: {},
 
-  // The key an owner's ask runs `claude -p` with (`domain/site/site-ask.ts`), one for
-  // every site and billed to whoever runs basecamp (`FJS-D1424`). Unset, asking
-  // a model is off. Declared, so `childEnv` keeps it from every other child —
-  // every other `claude` run stays on the host's own login.
-  ANTHROPIC_API_KEY: {},
-
   // `1` says this Basecamp runs on its operator's own machine, so it may read
   // that machine: the Host aliases in ~/.ssh/config (`domain/local/local-ssh.ts`). Refused under
   // `NODE_ENV=production` whatever it says: a deployed control plane would be
@@ -219,7 +213,8 @@ export const spec = {
   // sets it.
   LOCAL_MACHINE: {},
 
-  // The Claude Code binary `domain/site/site-ask.ts` starts.
+  // The Claude Code binary `domain/site/site-ask.ts` starts: the one the API image installs at a
+  // pinned version (`FJS-D2110`). The key it runs with is the workspace's (`FJS-D2109`), not env.
   CLAUDE_BIN: { default: 'claude' },
 } satisfies EnvSpec
 

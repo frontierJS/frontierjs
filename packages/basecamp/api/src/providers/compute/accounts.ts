@@ -24,6 +24,7 @@ import { env }                       from '../../core/env.ts'
 import { connectorFor, targetFor }   from './index.ts'
 import { edgeConnectorFor }          from '../edge/index.ts'
 import { sourceConnectorFor }        from '../source/index.ts'
+import { modelConnectorFor }         from '../model/anthropic.ts'
 import type { AccountSend, ComputeConnector } from './index.ts'
 import type { App }                  from '@frontierjs/junction'
 import type { ProviderKind }         from '#db/schema.d.ts'
@@ -47,7 +48,7 @@ type SecretRow = { id: string; providerKind?: ProviderKind | null; kind?: string
 
 /** What every account's connector has, whichever realm of the vendor it opens:
  *  a name, a descriptor to register and a cheapest read to verify with. A
- *  compute, an edge and a source connector are each one. */
+ *  compute, an edge, a source and a model connector are each one. */
 export type AccountConnector = Pick<ComputeConnector, 'label' | 'descriptor' | 'verify'> & { kind: ProviderKind }
 
 /**
@@ -60,7 +61,7 @@ export type AccountConnector = Pick<ComputeConnector, 'label' | 'descriptor' | '
  * serves both, which is a question for that day.
  */
 export function accountConnectorFor(kind: ProviderKind | null | undefined): AccountConnector | null {
-  return connectorFor(kind) ?? edgeConnectorFor(kind) ?? sourceConnectorFor(kind)
+  return connectorFor(kind) ?? edgeConnectorFor(kind) ?? sourceConnectorFor(kind) ?? modelConnectorFor(kind)
 }
 
 /**

@@ -62,7 +62,7 @@ export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
 export type ServerEventKind = 'created' | 'removed' | 'rebootRequested' | 'drainStarted' | 'drainCancelled' | 'provisionRequested' | 'provisionCreated' | 'provisionReady' | 'provisionTimeout' | 'destroyRequested' | 'destroyFinished' | 'enrollmentIssued' | 'syncRequested' | 'statusSynced' | 'statusSyncIgnored' | 'syncFailed' | 'syncNoAccount' | 'syncUnsupported' | 'syncUnrecognized' | 'backupsReadFailed' | 'backupsSet' | 'backupsRestored' | 'backupsRestoreFailed' | 'adopted' | 'cameOnline' | 'unreachable' | 'rebooted' | 'containerCrashLooping' | 'containerRecovered' | 'unitFailed' | 'unitRestored' | 'recipeRan' | 'recipeFailed' | 'cleanupQueued' | 'cleanupRan' | 'cleanupFailed' | 'volumeRemoved' | 'volumesPruned' | 'appRetired' | 'archiveDiscarded' | 'postureFailed' | 'postureRestored'
 
-export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github'
+export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare' | 'github' | 'anthropic'
 
 export type ComputeProvider = 'custom' | 'hetzner' | 'digitalocean'
 

@@ -429,7 +429,7 @@ CREATE TABLE IF NOT EXISTS "secret" (
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   CHECK ("kind" IN ('sshKey', 'providerKey', 'registryAuth', 'tlsCert', 'notification', 'backup', 'generic')),
-  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare', 'github')),
+  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare', 'github', 'anthropic')),
   UNIQUE ("workspaceId", "name"),
   CHECK (kind != 'providerKey' OR providerKind IS NOT NULL),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE

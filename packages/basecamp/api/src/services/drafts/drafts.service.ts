@@ -92,8 +92,8 @@ import { PhotoRefused, reencodePhoto } from '../../domain/site/site-photo.ts'
 import { isSitePreviewOrigin, markPreview, previewStatuses } from '../../domain/site/site-preview.ts'
 import { dispatchPreview } from '../../jobs/site-preview.job.ts'
 import { dispatchAsk } from '../../jobs/site-ask.job.ts'
+import { anthropicKey } from '../../providers/model/anthropic.ts'
 import { ASK_MAX_REQUEST, NO_KEY, askBusy, askStatuses, dropAsk, markAsk, queueAsk, type AskStatus } from '../../domain/site/site-ask.ts'
-import { env } from '../../core/env.ts'
 import { dispatchPublish } from '../../jobs/site-publish.job.ts'
 import { PUBLISH_STEPS, type PublishSnapshot } from '../../domain/site/site-publish.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -138,13 +138,13 @@ function signedIn(): void {
 }
 
 /** The site the caller holds a grant on, or a 404 that says nothing about one they do not. */
-async function grantedSite(): Promise<GitSite & { role: string }> {
+async function grantedSite(): Promise<GitSite & { role: string, workspaceId: string }> {
   const appId = arg('appId')
   const grant = await db().appEditor.findFirst({ where: { appId, userId: me() } })
   const app   = grant && await sys().app.findFirst({ where: { id: appId } })
   if (!app || app.kind !== 'static' || !isGit(app.source)) throw new NotFound(`No site '${appId}' you may edit`)
   const credential = await gitCredential($.app, { workspaceId: app.workspaceId, repo: app.source.repo })
-  return { id: app.id, source: app.source, credential, role: grant.role }
+  return { id: app.id, source: app.source, credential, role: grant.role, workspaceId: app.workspaceId }
 }
 
 /** A refusal from git or from the draft, as the status a screen can act on. */
@@ -391,7 +391,7 @@ export default createService({
     const request = String((($.data ?? {}) as { request?: unknown }).request ?? '').trim()
     if (!request) throw new BadRequest('Say what to change')
     if (request.length > ASK_MAX_REQUEST) throw new BadRequest(`An ask is at most ${ASK_MAX_REQUEST} characters`)
-    if (!env.ANTHROPIC_API_KEY) throw new BadRequest(NO_KEY)
+    if (!await anthropicKey($.app, site.workspaceId)) throw new BadRequest(NO_KEY)
     const found = (await checkout(() => listDrafts(site))).find(d => d.name === draft)
     if (!found) throw new NotFound(`no draft named ${draft} — it may have been published or deleted`)
     if (askBusy(askStatuses(site.id)[found.name])) throw new Conflict('an ask is already running on this draft — wait for it to finish')
@@ -401,9 +401,11 @@ export default createService({
   },
 
   async asked() {
-    const site = await grantedSite()
-    const { draft, ask } = askIn(site.id, Object.keys(ASK_STATE) as AskStatus['state'][])
-    if (ask.state !== 'ready') return { draft, ask, diff: null }
+    const site  = await grantedSite()
+    const draft = arg('draft')
+    // The editor polls this from the moment it opens, so "never asked" is an answer, not a 404.
+    const ask   = askStatuses(site.id)[draft] ?? null
+    if (ask?.state !== 'ready') return { draft, ask, diff: null }
     return { draft, ask, diff: await checkout(() => diffTree(site, ask.commit!, ask.tree!)) }
   },
 

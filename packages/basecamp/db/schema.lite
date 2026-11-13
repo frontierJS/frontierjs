@@ -597,7 +597,7 @@ enum ServerEventKind {
   postureFailed postureRestored
 }
 // Every vendor a `providerKey` Secret can open, whatever role it plays.
-enum ProviderKind   { custom hetzner digitalocean cloudflare github }
+enum ProviderKind   { custom hetzner digitalocean cloudflare github anthropic }
 // The vendors that sell machines — what a Server can run on. Every member is a
 // `ProviderKind` member too (FJS-D1607); an edge or a forge is not one.
 enum ComputeProvider { custom hetzner digitalocean }

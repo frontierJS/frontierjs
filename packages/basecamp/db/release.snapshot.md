@@ -62,7 +62,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `PlatformBuild` | `outpost` · `platform` |
 | `PlatformProvider` | `cloudflare` |
 | `ProjectStatus` | `active` · `archived` |
-| `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `github` · `hetzner` |
+| `ProviderKind` | `anthropic` · `cloudflare` · `custom` · `digitalocean` · `github` · `hetzner` |
 | `ProvisionStepName` | `create` · `poll` · `start` · `timeout` |
 | `RegisterMethod` | `adopted` · `imported` · `provisioned` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |

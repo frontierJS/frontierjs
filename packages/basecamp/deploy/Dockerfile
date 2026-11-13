@@ -77,6 +77,20 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends git openssh-client \
  && rm -rf /var/lib/apt/lists/*
 
+# domain/site/site-ask.ts starts `claude -p` for an owner's ask (FJS-D2110), so
+# Claude Code ships in the image at an EXACT version: a moving tag changes what
+# an ask may do between two deploys. The npm package's `postinstall` is a node
+# script and this image has no node, so bun (which blocks it anyway) installs
+# the package and the native binary its platform package carries is linked onto
+# PATH directly. The key a run holds is the workspace's, never this image's.
+ARG CLAUDE_CODE_VERSION=2.1.311
+RUN mkdir /opt/claude-code \
+ && cd /opt/claude-code \
+ && echo '{}' > package.json \
+ && bun add --exact @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+ && ln -s /opt/claude-code/node_modules/@anthropic-ai/claude-code-linux-*/claude /usr/local/bin/claude \
+ && claude --version
+
 # The live database is a bind mount, never the image: `fli deploy` and compose
 # both mount it at /db, and a DATABASE_URL anywhere else is in the container's
 # own layer, so the next swap starts it empty and the app opens on /setup. The

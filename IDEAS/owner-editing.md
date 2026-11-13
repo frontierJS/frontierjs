@@ -512,6 +512,28 @@ Basecamp itself lists drafts and history and holds the grants.
     push, a relay per interactive save. B is the reopen path when a second
     forge arrives.
 
+- ~~**Q29 — Where a site's Anthropic key lives, once a Basecamp serves clients (4.1).**~~ **Answered 2026-11-13 (`FJS-D2109`): B — a `providerKey` Secret per workspace, `providerKind: anthropic`, resolved for a run by one owner and handed to that run's child alone; the env key goes.**
+  `FJS-D1424` put one `ANTHROPIC_API_KEY` in Basecamp's env for every site, so
+  every client's asks bill the operator's Console account, and a camp whose env
+  lacks it cannot ask at all.
+  - **A** — keep `FJS-D1424`: one env key per Basecamp, set in the box's
+    `.env.production`.
+  - **B** — a `providerKey` Secret per workspace, `providerKind: anthropic`,
+    resolved for a run by one owner and handed to that run's child alone; the
+    env key goes.
+  - **Recommend A** (confidence 1) — no new kind and no resolver; B is the
+    reopen path when one Basecamp serves more than one paying client.
+- ~~**Q30 — What runs an ask inside Basecamp's container (4.1).**~~ **Answered 2026-11-13 (`FJS-D2110`): A — Claude Code installed in the API image at a pinned version; `site-ask.ts` stays as built (`askArgv`, the folder scope, the budget cap), the key in the child's env.** The image has
+  no `claude` binary, so `CLAUDE_BIN` fails on every box; the host login the
+  4.1 drive used does not exist there.
+  - **A** — Claude Code installed in the API image at a pinned version;
+    `site-ask.ts` stays as built (`askArgv`, the folder scope, the budget
+    cap), the key in the child's env.
+  - **B** — `@anthropic-ai/sdk` and a tool loop of our own over the temp
+    folder, cost read from usage.
+  - **Recommend A** (confidence 2) — the scope, the cap and the stream reader
+    are built and driven; B rebuilds them for a smaller image.
+
 ## The plan
 
 ### Phase 0 — Measure
@@ -1059,6 +1081,13 @@ shows them, reviews the diff and saves it to their draft.
     site-kit's `LOCKED_KEYS` to leave alone. `runAsk` takes `env`, so the
     key goes to that child only; `ANTHROPIC_API_KEY` is declared in env.ts,
     so `childEnv` keeps it from every other child.
+  - **Changed 2026-11-13** (`FJS-D2109`, `FJS-D2110`): the key is the
+    workspace's Anthropic `providerKey` Secret (`ProviderKind` gains
+    `anthropic`; the connector verifies with `GET /v1/models`), resolved by
+    `anthropicKey` in `providers/model/anthropic.ts` and handed to the child
+    as `ANTHROPIC_API_KEY`; the env key is gone, and `drafts.ask` refuses a
+    workspace with none by name. The API image installs Claude Code at an
+    exact version, so `CLAUDE_BIN` resolves on every box.
   - Real run (scratch, host login through a wrapper, since no key is set
     here): "9am → 8am on every page" on a three-file fixture changed all three
     in 9.6 s for $0.03. On its own it left `tone` and a README outside

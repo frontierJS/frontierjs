@@ -21693,6 +21693,22 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d2110"></a>2026-11-13 · `FJS-D2110` — Q30 — What runs an ask inside Basecamp's container (4.1) — Claude Code installed in the API image at a pinned version; `site-ask.ts` stays as built (`askArgv`, the folder scope, the budget cap), the key in the child's env.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (`@anthropic-ai/sdk` and a tool loop of our own over the temp folder, cost read from usage).
+
+The paper's recommendation, taken as written: (confidence 2) — the scope, the cap and the stream reader are built and driven; B rebuilds them for a smaller image.
+
+*Lives in:* `packages/basecamp/deploy/Dockerfile` (`CLAUDE_CODE_VERSION`, installed by bun, the platform package's native binary linked as `/usr/local/bin/claude`), `CLAUDE_BIN` in `api/src/core/env.ts`. *Enforced by:* `api/test/drafts.test.ts` § the deployed image; `bun run image` runs `claude --version` in the build.
+
+### <a id="fjs-d2109"></a>2026-11-13 · `FJS-D2109` — Q29 — Where a site's Anthropic key lives, once a Basecamp serves clients (4.1) — A `providerKey` Secret per workspace, `providerKind: anthropic`, resolved for a run by one owner and handed to that run's child alone; the env key goes.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **B** was picked over **A** (keep `FJS-D1424`: one env key per Basecamp, set in the box's `.env.production`).
+
+Against the recommendation (**A**): each client's asks bill that client's own Console account, and a camp serving clients cannot carry the operator's key for all of them; supersedes FJS-D1424.
+
+*Lives in:* `packages/basecamp/api/src/providers/model/anthropic.ts` (`anthropic` connector, `anthropicKey` the one resolver), `packages/basecamp/api/src/providers/compute/accounts.ts` (`accountConnectorFor`), `api/src/domain/site/site-ask.ts`, `drafts.ask` in `api/src/services/drafts/drafts.service.ts`, `ProviderKind` in `db/schema.lite`. *Enforced by:* `api/test/drafts.test.ts` § asking a model for a change (the workspace's key reaches the child, another workspace's does not, none is refused by name); `api/test/source.test.ts` § Anthropic account.
+
 ### <a id="fjs-d2108"></a>2026-11-13 · `FJS-D2108` — Q28 — What credential Basecamp's checkout pushes a draft with (1.6) — The workspace's connected GitHub account token (`FJS-D1571`), minted for a git call by the GitHub connector and handed to git per call through `GIT_ASKPASS`, only when the remote is github.com; never in argv, `.git/config` or a row. The grant widens to Contents: write. GitHub only.
 
 Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (draft fetch, merge and push move to the Outpost, on its per-App key widened to write; Basecamp keeps no checkout), **C** (a per-App `sshKey` Secret held by Basecamp (`FJS-D1247`'s A), the shape `FJS-D1555` refused under `FJS-D241`).
@@ -21991,7 +22007,7 @@ Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. *
 
 Against the recommendation (**C**): the owner kept the limit to what the argv already holds: $2 a run, and a monthly cap set where the key was minted; basecamp keeps no total.
 
-### <a id="fjs-d1424"></a>2026-10-22 · `FJS-D1424` — Q26 — Where a site's Anthropic key lives (4.1) — One `ANTHROPIC_API_KEY` in basecamp's env for every site, billed to whoever runs basecamp. Not per site.
+### <a id="fjs-d1424"></a>2026-10-22 · `FJS-D1424` — Q26 — Where a site's Anthropic key lives (4.1) — One `ANTHROPIC_API_KEY` in basecamp's env for every site, billed to whoever runs basecamp. Not per site. *Superseded by `FJS-D2109`: the key is a workspace's Anthropic `providerKey` Secret, and the env key is gone.*
 
 Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **B** was picked over **A** (a workspace Secret, `provider_key` with `providerKind: anthropic` (`ProviderKind` grows one value), and a new App column `askKeyId` naming one. Unnamed, the workspace's only Anthropic key is used, as `cloudflareFor` picks; two and none named is refused by name. Per site when named, pooled when not), **C** (whatever account `claude` is logged in as on the host, as the workbench runs. Not per site, and an owner's ask spends the operator's plan).
 
