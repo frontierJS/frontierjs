@@ -16,7 +16,6 @@ loads it between that `.env` and the global env (`docs/configuration.md`
 | `fli profile:open <name>` | the file in `$VISUAL`, else `$EDITOR` |
 | `fli eset <KEY> <value> --profile <name>` | one key into it |
 
-**There is no `profile:use`.** A current profile remembered on the machine
-would make one directory spend whichever client was picked last, so the
-project's `.env` is the only thing that picks (`FJS-D1943`); `profile:use`
-refuses and says so.
+**There is no current profile.** One remembered on the machine would make one
+directory spend whichever client was picked last, so the project's `.env` is
+the only thing that picks (`FJS-D1943`).

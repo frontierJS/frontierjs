@@ -10,6 +10,10 @@
 //   POST /basecamps/:name    backup   take Basecamp's own backup and wait for its row
 //   POST /basecamps/:name    restart  restart its API container over ssh, then probe it
 //   GET  /basecamps/:name    outcome  the held outcome of the last verb on it, or null
+//   POST /basecamps/:name    download fetch the newest archive Basecamp holds into this laptop's copies; takes no backup
+//   (invoke)                 archiveLink /basecamps/:name the one-use link Basecamp mints for its newest archive, with its sha256
+//   (invoke)                 keyCopy  /basecamps/:name whether this laptop holds the box's ENCRYPTION_KEY, read over ssh; fingerprints only
+//   (invoke)                 saveKey  /basecamps/:name file the box's key on this laptop; attest it when the newest pulled archive was taken under it
 //   POST /basecamps          deleteLocal  { name, file } remove one backup pulled to this laptop -> { freed }
 //   (invoke)                 provision run `fli basecamp:create --yes` as a child, its output to a log (BUYS A BOX unless `dry`)
 //   (invoke)                 creation the held create run with the end of its log and its resume argv, or null
@@ -26,12 +30,12 @@
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS }                                 from '@frontierjs/litestone'
-import { listBasecamps, entryOf, startBackup, startRestart, outcomeOf, deleteLocal, backupsPlan, startB2Setup, startB2Undo, type B2Input } from '../../domain/basecamps/basecamps.ts'
+import { listBasecamps, entryOf, startBackup, startRestart, outcomeOf, deleteLocal, backupsPlan, startB2Setup, startB2Undo, startDownload, archiveLink, keyCopy, saveKey, type B2Input } from '../../domain/basecamps/basecamps.ts'
 import { startCreate, startResume, creationOf, type CreateInput }       from '../../domain/basecamps/basecamps-create.ts'
 import { startReinstall, reinstallationOf, type ReinstallInput }        from '../../domain/basecamps/basecamps-reinstall.ts'
 
-const READS  = ['list', 'outcome', 'creation', 'reinstallation', 'backupsPlan']
-const WRITES = ['backup', 'restart', 'provision', 'resume', 'reinstall', 'deleteLocal', 'setUpB2', 'undoB2']
+const READS  = ['list', 'outcome', 'creation', 'reinstallation', 'backupsPlan', 'keyCopy']
+const WRITES = ['backup', 'restart', 'provision', 'resume', 'reinstall', 'deleteLocal', 'setUpB2', 'undoB2', 'download', 'archiveLink', 'saveKey']
 
 async function named() {
   const name = String($.id ?? '')
@@ -103,6 +107,31 @@ export default createService({
 
   async undoB2() {
     const out = await startB2Undo(await named(), ($.data ?? {}) as B2Input)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async download() {
+    const out = await startDownload(await named())
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  // A write: each call mints a link on the Basecamp and logs who asked.
+  async archiveLink() {
+    const out = await archiveLink(await named())
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async keyCopy() {
+    const out = await keyCopy(await named())
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async saveKey() {
+    const out = await saveKey(await named())
     if ('refused' in out) throw new BadRequest(out.refused)
     return out
   },

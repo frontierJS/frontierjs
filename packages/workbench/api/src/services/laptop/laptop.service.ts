@@ -15,6 +15,11 @@
 //   GET  /laptop         globalEnv   the keys of ~/.config/fli/.env, values masked -> { path, keys }
 //   POST /laptop         setGlobalEnv    { key, value } set one key through core/global-env.js -> { key }
 //   POST /laptop         unsetGlobalEnv  { key } remove one key -> { key }
+//   GET  /laptop         profiles    each fli profile: key names masked, file mode, the projects naming it -> { dir, profiles }
+//   GET  /laptop         profileList the profile names alone, for a select -> { names }
+//   POST /laptop         createProfile   { name } make an empty profile -> { name }
+//   POST /laptop         setProfileKey   { name, key, value } set one key in a profile -> { name, key }
+//   POST /laptop         unsetProfileKey { name, key } remove one -> { name, key }
 //   GET  /laptop         commands    the user's own fli commands -> [{ name, description, alias, filePath }]
 //   GET  /laptop         ping        the ntfy topic Claude Code's Stop hook pings, from ~/.claude/ntfy-topic -> { path, topic, url }
 //   POST /laptop         setPing     { topic } write it; empty removes the file and turns the ping off -> { path, topic, url }
@@ -26,14 +31,14 @@ import { createService, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS }                       from '@frontierjs/litestone'
 import { disk, clear, removeLane }      from '../../domain/laptop/laptop.ts'
 import { keys, fixMode }                from '../../domain/laptop/keys.ts'
-import { globalEnv, setGlobalEnv, unsetGlobalEnv, commands } from '../../domain/laptop/settings.ts'
+import { globalEnv, setGlobalEnv, unsetGlobalEnv, commands, profiles, profileList, addProfile, setProfileEnv, unsetProfileEnv } from '../../domain/laptop/settings.ts'
 import { ping, setPing }                from '../../domain/laptop/ping.ts'
 import { running }                      from '../../domain/laptop/running.ts'
 import { servicesList, probeService }  from '../../domain/laptop/services.ts'
 
-const READS  = ['disk', 'keys', 'globalEnv', 'commands', 'ping', 'running', 'services']
+const READS  = ['disk', 'keys', 'globalEnv', 'profiles', 'profileList', 'commands', 'ping', 'running', 'services']
 // probeService shells out to a CLI, so it is a write: a keyed retry must run it again.
-const WRITES = ['clear', 'removeLane', 'fixMode', 'setGlobalEnv', 'unsetGlobalEnv', 'setPing', 'probeService']
+const WRITES = ['clear', 'removeLane', 'fixMode', 'setGlobalEnv', 'unsetGlobalEnv', 'createProfile', 'setProfileKey', 'unsetProfileKey', 'setPing', 'probeService']
 
 export default createService({
   name: 'laptop',
@@ -83,6 +88,38 @@ export default createService({
     const { key } = ($.data ?? {}) as { key?: unknown }
     if (typeof key !== 'string') throw new BadRequest('unsetGlobalEnv takes { key } as a string')
     const out = unsetGlobalEnv(key)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async profiles() {
+    return profiles()
+  },
+
+  async profileList() {
+    return profileList()
+  },
+
+  async createProfile() {
+    const { name } = ($.data ?? {}) as { name?: unknown }
+    if (typeof name !== 'string') throw new BadRequest('createProfile takes { name } as a string')
+    const out = addProfile(name)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async setProfileKey() {
+    const { name, key, value } = ($.data ?? {}) as { name?: unknown, key?: unknown, value?: unknown }
+    if (typeof name !== 'string' || typeof key !== 'string' || typeof value !== 'string') throw new BadRequest('setProfileKey takes { name, key, value } as strings')
+    const out = setProfileEnv(name, key, value)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async unsetProfileKey() {
+    const { name, key } = ($.data ?? {}) as { name?: unknown, key?: unknown }
+    if (typeof name !== 'string' || typeof key !== 'string') throw new BadRequest('unsetProfileKey takes { name, key } as strings')
+    const out = unsetProfileEnv(name, key)
     if ('refused' in out) throw new BadRequest(out.refused)
     return out
   },

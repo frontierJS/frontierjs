@@ -248,10 +248,23 @@ Goal: each row says whether the laptop holds a copy of that Basecamp's
 Done when: yuma and chartered read **key copy matches** and their
 `hub.key-escrowed` control is green. That closes `basecamp-safety.md` 0.6.
 
-- [ ] 3.1 Read the box's key digest over ssh (the digest only) and compare it
-  with the copy Q5 keeps: matches, missing or differs.
-- [ ] 3.2 **Keep a copy**: copy the key from the box into Q5's store over ssh,
-  compare digests, then call `hubConfig.attestEscrow`.
+- [x] 3.1 Read the box's key over ssh and compare its digest with the copies
+  `FJS-D1874`'s store keeps (`~/.config/fli/basecamp/<box>/encryption.key`,
+  `FJS-D2096`): matches, missing or differs. Built 2026-11-12 as `keyCopy`.
+  The API reads the key itself and answers fingerprints only, because a
+  digest made in shell would have to repeat `fileValue`'s trimming exactly.
+  Read live: chartered and yuma both **match**, and neither is attested.
+- [ ] 3.2 **Keep a copy**: copy the key from the box into that store over ssh,
+  compare digests, then call `hubConfig.attestEscrow`. Reuse `readBoxKey`,
+  `keepKey` and `attestKeyCopy` (`cli/core/basecamp.js`) with `FJS-D1876`'s
+  gate: attest only when the fingerprint matches the running key's.
+  - Built 2026-11-12 as `saveKey`. Basecamp answers no fingerprint for its
+    running key, so the gate is the newest archive in Local copies, as the
+    CLI's is the archive it just took. With no archive, or an older one under
+    another key, it files the copy and asks for Download first.
+  - Open: the live press on chartered and yuma, which turns `hub.key-escrowed` green.
+  - A differing copy is kept under its fingerprint, never overwritten, since
+    older archives need it.
 
 ### Phase 4 — The screen writes the index
 
@@ -321,6 +334,71 @@ and each row shows its count of failing controls.
   `fli basecamp:deploy` and the Outpost install.
 - [ ] 9.2 Each row shows its failing controls from `serverPostures`, each
   linking to the Basecamp page.
+
+### Phase 10 — Download a hub archive
+
+Goal: the newest hub archive reaches the laptop from the row (`FJS-D2095`).
+Done when: chartered's newest archive lists under Local copies and passes its
+manifest, and the saved `.tar.gz` hashes to the row's `sha256`.
+
+- [x] 10.1 **Download** runs `pullHubArchive`'s fetch half on the newest
+  `success` row, without taking a new backup, into
+  `backupsRoot()/<name>/<stamp>/`. It is held as an outcome like `backup`.
+  - Split `pullHubArchive` so taking and fetching are two exports; the CLI
+    keeps calling both.
+  - Built 2026-11-12 (`fetchHubArchive`, `newestHubArchive`). Driven on
+    chartered: the 2026-11-12 archive is in Local copies and passed its manifest check.
+- [x] 10.2 **Save .tar.gz** beside it: the Workbench API asks
+  `hubBackups.download` for the link and answers it to the page, which
+  navigates to it. The admin key never reaches the browser.
+  - The link is single-use and short-lived (`mintArchiveUrl`, or the bucket's
+    pre-signed GET), so it is fetched on press, never listed.
+  - Built 2026-11-12. The link fetched chartered's tar (15.8 MB). The row's
+    sha256 is null for an archive kept on the box's own disk (`FJS-4254`), so
+    the hash half of the done-when waits on that or on a destination.
+
+### Phase 11 — One-click Spaces backups
+
+Goal: a Basecamp backs its hub and its Apps up to DigitalOcean Spaces, set up
+from the row (`FJS-D2097`), as an alternative to B2 (`FJS-D2099`).
+Done when: on `yuma-test`, Spaces setup passes `backupDestinations.test` for
+every destination, a hub archive and one App archive land in their own
+buckets, a workspace's key is refused on another workspace's bucket, and no
+full-access key remains on the account.
+
+- [ ] 11.1 `cli/core/spaces.js`: with `DIGITALOCEAN_TOKEN`, mint a temporary
+  `fullaccess` key (`POST /v2/spaces/keys`), create the buckets over S3, mint
+  one `readwrite` key per bucket, then delete the temporary key in a
+  `finally`.
+  - DigitalOcean's how-to page says keys are console-only; the API reference
+    has the endpoint. Prove the endpoint before building on it.
+  - Bucket names are shared across every Spaces customer in a region, so a
+    taken name is refused by name, not retried with a suffix.
+- [ ] 11.2 `basecamp-backups.js` grows a vendor: the plan, setup and undo for
+  Spaces use `FJS-D2098`'s layout — `basecamp-<name>-hub`,
+  `basecamp-<name>-<workspace>` per workspace with an App, and
+  `basecamp-<name>-replica`. Destinations are named `Spaces <bucket>`.
+  - The region is the Basecamp droplet's when Spaces serves it, else asked.
+- [ ] 11.3 `fli basecamp:backups --vendor spaces`, and **Set up Spaces backups**
+  / **Undo** on the row through the same dialog as B2's.
+  - A row set up on one vendor names it and does not offer the other's setup
+    until undone (`FJS-D2099`: one vendor per Basecamp).
+- [ ] 11.4 Prove on `yuma-test`, then ask before chartered.
+  - `hub.bucket-locked` stays red on Spaces; the row says why.
+
+### Phase 12 — A Spaces files page
+
+Goal: any file goes from the laptop to Spaces and back from Workbench
+(`FJS-D2100`).
+Done when: a file uploaded from the page lists in its bucket, downloads with
+the same sha256, and deletes after a confirm.
+
+- [ ] 12.1 The page's credential (Q16).
+- [ ] 12.2 List buckets and the objects under a prefix, paged.
+- [ ] 12.3 Upload (streamed, file picker and drop), download, and delete with a
+  confirm naming the object.
+  - Buckets Phase 11 made are listed read-only here, so the page cannot delete
+    a Basecamp's archives.
 
 ## Open questions
 
@@ -406,6 +484,55 @@ and each row shows its count of failing controls.
   - **C** — The hub's workspace only; Apps elsewhere are named and skipped.
   - **Recommend A** — ssh is the standing (`FJS-D1827`) and nothing new is
     filed. B adds a per-workspace shape to `basecamps.json`, and C undoes Q3.
+- ~~**Q10 — What Download does on a row (Phase 10).**~~ **Answered 2026-11-12 (`FJS-D2095`): C — Both: A as the button, B as a link beside it.**
+  - **A** — Pull to the laptop: `pullHubArchive` fetches the archive into
+    `backupsRoot()/<name>/<stamp>/`, unpacks it and grades it against its
+    manifest, so it lists under Local copies.
+  - **B** — A browser save of the `.tar.gz` through `hubBackups.download`'s link.
+  - **C** — Both: A as the button, B as a link beside it.
+  - **Recommend A** — restore reads Local copies, and B's file is neither
+    unpacked nor checked.
+- ~~**Q11 — Which store the key copy uses (Phase 3; reopens Q5, `FJS-D2078`).**~~ **Answered 2026-11-12 (`FJS-D2096`): A — Keep `FJS-D1874`'s store; `FJS-D2078` is superseded.**
+  `FJS-D1874` built `~/.config/fli/basecamp/<box>/encryption.key`, which
+  restore reads and which holds chartered's and yuma's keys today.
+  - **A** — Keep `FJS-D1874`'s store; `FJS-D2078` is superseded.
+  - **B** — Move to `~/.config/fli/keys/<name>.key` and repoint restore and
+    `basecamp:backup`.
+  - **Recommend A** — nothing moves, and an older key filed under its
+    fingerprint stays where restore finds it.
+- ~~**Q12 — How far Spaces goes (Phase 11).**~~ **Answered 2026-11-12 (`FJS-D2097`): B — A **Set up Spaces backups** button now, as Phase 1's B2 one.** A `BackupDestination` already takes
+  any S3 endpoint (`FJS-D1488`); no Spaces bucket has been tried.
+  - **A** — Prove one hand-made Spaces destination first, build nothing.
+  - **B** — A **Set up Spaces backups** button now, as Phase 1's B2 one.
+  - **Recommend A** — it shows whether `s3.ts` speaks Spaces before a setup is
+    built on it.
+- ~~**Q13 — A Basecamp's Spaces bucket layout (Phase 11).**~~ **Answered 2026-11-12 (`FJS-D2098`): A — A bucket per workspace with an App (`basecamp-<name>-<workspace>`), plus the hub's, each with its own `readwrite` key.** A Spaces key is
+  limited to a bucket, never a prefix (`POST /v2/spaces/keys` grants
+  `{bucket, permission}`), so Q3's prefix keys cannot be copied.
+  - **A** — A bucket per workspace with an App (`basecamp-<name>-<workspace>`),
+    plus the hub's, each with its own `readwrite` key.
+  - **B** — One bucket per Basecamp; every workspace's key reads every other's.
+  - **Recommend A** — it keeps Q3's guarantee that one tenant's key cannot
+    reach another's archives.
+- ~~**Q14 — Spaces beside B2 (Phase 11).**~~ **Answered 2026-11-12 (`FJS-D2099`): C — Either, per Basecamp: the row offers both setups.** Spaces has no Object Lock, so a box's
+  key can delete its own archives and `hub.bucket-locked` stays red.
+  - **A** — B2 stays the locked primary; Spaces is a second copy. Needs a
+    backup sent to two destinations, which no row can name today.
+  - **B** — Spaces replaces B2.
+  - **C** — Either, per Basecamp: the row offers both setups.
+  - **Recommend A** — the lock is the defense against a stolen hub.
+- ~~**Q15 — Files to Spaces that are not backups (Phase 12).**~~ **Answered 2026-11-12 (`FJS-D2100`): B — A Workbench page: list buckets, upload, download, delete.**
+  - **A** — `fli spaces:put <path> [bucket/prefix]`.
+  - **B** — A Workbench page: list buckets, upload, download, delete.
+  - **C** — A separate paper, later.
+
+- **Q16 — The Spaces files page's credential (12.1).**
+  - **A** — A `fullaccess` Spaces key the owner files in `~/.config/fli/.env`
+    as `SPACES_KEY_ID` and `SPACES_SECRET`, beside `DIGITALOCEAN_TOKEN` (Q4).
+  - **B** — Mint a temporary `fullaccess` key when the page opens and delete it
+    when Workbench stops.
+  - **Recommend A** — B leaves a full-access key on the account whenever
+    Workbench dies without stopping cleanly, and nothing would notice it.
 
 ## Out of scope
 

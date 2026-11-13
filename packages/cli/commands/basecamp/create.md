@@ -161,6 +161,9 @@ answers, the install marks the box as Basecamp's host, which a later create
 passes over; it passes over a box `fli deploy:setup` readied an app on too. `fli server` shows it, and `fli server:stop <id>` then `fli server:destroy <id>` removes it. The box half alone is `fli server:create`; this is that and `fli basecamp:install` in one run.
 
 ```js
+const { profileLine } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+if (!flag.json) { const profile = profileLine(); if (profile) echo(profile) }
+
 const key = await publicKey(flag.key)
 if (key.error) { log.error(key.error); return }
 const keyPath = key.keyPath
@@ -364,6 +367,6 @@ if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, passwor
 if (!apiKey) return
 stages.at('api key')
 // The index is keyed by the ssh Host, so a box with no Host block is filed under the name it was bought as.
-const entry = { name: added ? box : made.name, host: added ? box : undefined, domain, cloud, boxId: String(made.id) }
+const entry = { name: added ? box : made.name, host: added ? box : undefined, domain, cloud, boxId: String(made.id), profile: global.fliProfile?.name || undefined }
 if (!await adminKey({ dest, admin, entry, yes, log, echo, chalk })) process.exitCode = 1
 ```

@@ -22,51 +22,17 @@ A project naming a profile with no file shows as one, since every command run
 there refuses until the file exists. `●` marks the profile this directory
 spends. Values are never printed; `fli profile:open <name>` opens the file.
 
-<script>
-import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
-import { join } from 'path'
-
-// ~/code/<client>/<app>/.env and a workspace's example/ sit within four.
-const DEPTH = 4
-const SKIP  = new Set(['node_modules', 'dist', 'build', 'vendor', 'target'])
-
-/** Every `.env` under `root` naming a profile, as [{ dir, name }]. */
-function projectsNaming(root, profileNamedIn) {
-  const out = []
-  const walk = (dir, depth) => {
-    let entries
-    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
-    if (entries.some(e => e.name === '.env' && e.isFile())) {
-      let text = ''
-      try { text = readFileSync(join(dir, '.env'), 'utf8') } catch {}
-      const name = profileNamedIn(text)
-      if (name) out.push({ dir, name })
-    }
-    if (depth === DEPTH) return
-    for (const e of entries)
-      if (e.isDirectory() && !e.name.startsWith('.') && !SKIP.has(e.name)) walk(join(dir, e.name), depth + 1)
-  }
-  walk(root, 0)
-  return out
-}
-
-/** The mode bits a profile holding account keys should not have. */
-const openMode = (file) => {
-  const mode = statSync(file).mode & 0o777
-  return mode & 0o077 ? mode.toString(8) : null
-}
-</script>
-
 ```js
-const { profileNames, profilePath, profilesDir, listProfile, badProfileName } = await import(path.resolve(global.fliRoot, 'core/global-env.js'))
-const { profileNamedIn } = await import(path.resolve(global.fliRoot, 'core/utils.js'))
+const { profileNames, profilePath, profilesDir, listProfile, badProfileName, openProfileMode } = await import(path.resolve(global.fliRoot, 'core/global-env.js'))
+const { projectsNaming } = await import(path.resolve(global.fliRoot, 'core/utils.js'))
 const { plural } = await import(path.resolve(global.fliRoot, 'core/text.js'))
+const { existsSync } = await import('fs')
 
 const home    = process.env.HOME ?? ''
 const tilde   = (p) => home && p.startsWith(home) ? '~' + p.slice(home.length) : p
 const root    = flag.in.replace(/^~(?=\/|$)/, home)
 const here    = global.fliProfile?.name ?? null
-const naming  = projectsNaming(root, profileNamedIn)
+const naming  = projectsNaming(root)
 const names   = [...new Set([...profileNames(), ...naming.map(p => p.name)])].sort()
 
 echo`{bold ${plural(profileNames().length, 'profile')}} {dim in ${tilde(profilesDir())}}`
@@ -91,7 +57,7 @@ for (const name of names) {
   }
 
   const keys = listProfile(name).map(k => k.key)
-  const mode = openMode(file)
+  const mode = openProfileMode(name)
   echo`  ${mark} {bold ${name}}  {dim ${plural(keys.length, 'key')}}  ${keys.join(', ')}`
   echo`      {dim named by}  ${by}`
   if (mode) echo`      {yellow ⚠ mode ${mode}} {dim — other users can read it:} chmod 600 ${tilde(file)}`

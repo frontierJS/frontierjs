@@ -9,7 +9,7 @@
  * reducer lacks shows here and not in a component.
  */
 
-import { textbox, edit, editDoc, stringDoc, visualRange, NORMAL, INSERT, VIM } from '../../src/textbox/textbox.js'
+import { textbox, edit, editDoc, stringDoc, visualRange, shiftMarks, NORMAL, INSERT, VIM, RECORDING } from '../../src/textbox/textbox.js'
 import { keymap, step, parseKeys } from '../../src/keys/keys.js'
 
 const nm = (text, cursor) => textbox(text, { mode: 'normal', cursor })
@@ -357,6 +357,7 @@ test('textbox: editDoc — on a long line a motion reads a window around the cur
 // ─── L2: the VIM tables (keys.md Phase 5) ────────────────────────────────
 
 const VIM_MAPS = Object.fromEntries(Object.entries(VIM).map(([mode, table]) => [mode, keymap(table)]))
+const RECORDING_MAP = keymap(RECORDING)
 
 // `script` stepped through `VIM[mode]` as a host steps it: an await-char's
 // key is its argument, and in INSERT a printable no row takes is typed.
@@ -365,7 +366,8 @@ function vim(text, cursor, script, { mode = 'normal', registers } = {}) {
   if (registers) s = { ...s, registers }
   let pending = null
   for (const chord of parseKeys(script)) {
-    const r = step(pending, chord, { active: [VIM_MAPS[s.mode]], mac: false, text: false }, 0)
+    const map = s.recording && s.mode === 'normal' ? RECORDING_MAP : VIM_MAPS[s.mode]
+    const r = step(pending, chord, { active: [map], mac: false, text: false }, 0)
     pending = r.state
     if (r.outcome?.action) s = edit(s, r.outcome.action, r.outcome.arg)
     else if (!r.outcome && s.mode === 'insert' && Array.from(chord.key).length === 1) s = edit(s, 'type', chord.key)
@@ -608,6 +610,11 @@ test('textbox: registers — "+ asks the host to copy, and a "+ the host filled 
   assert.equal(again.request, 'copy', 'the same text yanked again still asks, since the clipboard may have moved')
   const filled = { cursor: 2, mode: 'normal', named: '*', registers: { '+': reg('X') } }
   assert.deepEqual(editDoc(filled, 'putAfter', undefined, doc).edits, [{ from: 3, to: 3, insert: 'X' }])
+  const lines = { cursor: 0, mode: 'normal', registers: { '"': { text: 'L', linewise: true } } }
+  const two = stringDoc('ab\ncd')
+  assert.deepEqual(editDoc(lines, 'putAfter', undefined, two).edits, [{ from: 3, to: 3, insert: 'L\n' }],
+    'p begins its edit on the new line, so a host redoing to the edit start lands there')
+  assert.deepEqual(editDoc({ ...lines, cursor: 3 }, 'putAfter', undefined, two).edits, [{ from: 5, to: 5, insert: '\nL' }])
 })
 
 test('textbox: case and indent operators — gU gu g~ doubled for the line, > and < by the indent unit', function () {
@@ -768,4 +775,332 @@ test('textbox: editDoc — a bracket or % across a long document reads it a chun
   h.edit('yank')
   h.edit('innerParen')
   assert.equal(h.state.registers['"'].text.length, 600_001)
+})
+
+// ─── L3: counts, repeat, macros, marks (keys.md Phase 5.3) ───────────────
+
+test('textbox: counts — [count] operator [count] motion, doubled operators, x, p and j', function () {
+  assert.equal(vt('a b c d e f', 0, '3dw'), 'd e f')
+  assert.equal(vt('a b c d e f', 0, 'd3w'), 'd e f')
+  assert.equal(vt('a b c d e f', 0, '2d2w'), 'e f')
+  assert.equal(vt('a\nb\nc\nd', 0, '2dd'), 'c\nd')
+  assert.equal(vt('a\nb\nc\nd', 0, 'd2d'), 'c\nd')
+  assert.equal(vt('a\nb', 0, '5dd'), '', 'a count past the end takes what is there')
+  assert.equal(vim('a\nb\nc\nd', 0, '2j').cursor, 4)
+  assert.equal(vim('a\nb\nc\nd', 0, '5j').cursor, 6, 'a count past the end stops on the last line')
+  assert.equal(vt('abcdef', 0, '3x'), 'def')
+  assert.equal(vt('ab', 0, '9x'), '')
+  assert.equal(vt('a b c d e f', 0, 'c2wX<Esc>'), 'X c d e f')
+  assert.equal(vt('a\nb\nc\nd', 0, 'd2j'), 'd')
+  assert.equal(vt('ab', 0, 'x3p'), 'baaa', '3p puts the register three times')
+  assert.equal(vt('a\nb', 0, 'yy3p'), 'a\na\na\na\nb')
+  assert.equal(vt('a\nb\nc\nd', 0, '3J'), 'a b c\nd')
+  assert.equal(vim('abcdef', 0, '3l').cursor, 3)
+  assert.equal(vim('a b c d', 0, '2w').cursor, 4)
+  assert.equal(vt('a1b1c1d', 0, 'd2f1'), 'c1d', 'd2f1 deletes through the second 1')
+  assert.equal(vim('a\nb\nc\nd', 0, '3G').cursor, 4)
+  assert.equal(vt('abcd', 0, '2rx'), 'xxcd')
+  assert.equal(vt('abcd', 3, '2rx'), 'abcd', 'r with more than the line holds does nothing')
+  assert.equal(vt('abcd', 0, '2~'), 'ABcd')
+})
+
+test('textbox: counts — 0 with no count pending is still the line-start motion, and a digit is an await-char\'s argument', function () {
+  assert.equal(vim('abc def', 5, '0').cursor, 0)
+  assert.equal(vt('abc def', 5, 'd0'), 'ef')
+  assert.equal(vim('0123456789012', 0, '10l').cursor, 10, 'a 0 after a digit extends the count')
+  assert.equal(vt('a1b2', 0, 'f2x'), 'a1b', 'the digit after f is its character, not a count')
+  assert.equal(vt('abc', 0, 'r5'), '5bc')
+  const s = vim('abcdef', 0, '3')
+  assert.equal(s.count, 3)
+  assert.equal(vim('abcdef', 0, '3<Esc>l').cursor, 1, 'Esc drops a pending count')
+  assert.equal(vim('abcdef', 0, '3"ax').text, 'def', 'a register name keeps the count pending')
+})
+
+test('textbox: dot — repeats cw and its text, dd, and a new count replaces the old', function () {
+  assert.equal(vt('foo bar baz', 0, 'cwxx<Esc>w.'), 'xx xx baz')
+  assert.equal(vt('foo bar baz', 0, 'cwxx<Esc>w.w.'), 'xx xx xx')
+  assert.equal(vt('a\nb\nc\nd\ne', 0, 'dd.'), 'c\nd\ne')
+  assert.equal(vt('a b c d e f g h', 0, 'dw3.'), 'e f g h', '3. repeats dw as d3w')
+  assert.equal(vt('a b c d e f g h', 0, '2dw.'), 'e f g h', 'with no count the old one stands')
+  assert.equal(vt('a b c d e f g h', 0, '2dw3.'), 'f g h')
+  assert.equal(vt('abc', 0, 'x.x'), '', 'x . x')
+  assert.equal(vt('a\nb', 0, 'Ax<Esc>j.'), 'ax\nbx')
+  assert.equal(vt('a b', 0, 'yw.'), 'a b', 'a yank is no change, and with none yet . does nothing')
+  assert.equal(vt('abc abc', 0, 'xw.'), 'bc bc')
+  // `.` answers a request and leaves the text to the host.
+  const doc = stringDoc('abc')
+  let st = editDoc({ cursor: 0, mode: 'normal' }, 'deleteChar', undefined, doc).state
+  const out = editDoc(st, 'repeatChange', undefined, doc)
+  assert.equal(out.request, 'replay')
+  assert.deepEqual(out.actions, [['deleteChar'], ['replayEnd']])
+  assert.deepEqual(out.edits, [])
+  assert.equal(out.state.replaying, 1)
+})
+
+test('textbox: dot — a replay does not record itself, and one undo step takes the whole thing back', function () {
+  let s = vim('a b c d e f', 0, 'dw')
+  s = vim('a b c d e f', 0, 'dw..')
+  assert.equal(s.text, 'd e f')
+  assert.equal(s.replaying, undefined)
+  assert.deepEqual(s.last.actions, [['delete'], ['wordForward']])
+  const back = edit(vim('a b c d e f', 0, 'dw'), 'undo')
+  assert.equal(back.text, 'a b c d e f')
+  let c = vim('a b c d e f g', 0, '3dw')
+  c = edit(c, 'repeatChange')
+  assert.equal(c.text, 'g')
+  assert.equal(edit(c, 'undo').text, 'd e f g', 'a replay is one undo step')
+})
+
+test('textbox: macros — q records, @a plays with the host loop, 5@a and @@, an insert is one typed action', function () {
+  const rec = vim('x1\nx2\nx3\nx4', 0, 'qaAy<Esc>jq')
+  assert.equal(rec.recording, undefined)
+  assert.deepEqual(rec.macros.a, [['appendLineEnd'], ['type', 'y'], ['normal'], ['down']])
+  assert.equal(rec.text, 'x1y\nx2\nx3\nx4')
+  assert.equal(vt('x1\nx2\nx3\nx4', 0, 'qaAy<Esc>jq@a'), 'x1y\nx2y\nx3\nx4')
+  assert.equal(vt('x1\nx2\nx3\nx4', 0, 'qaAy<Esc>jq2@a'), 'x1y\nx2y\nx3y\nx4')
+  assert.equal(vt('x1\nx2\nx3\nx4', 0, 'qaAy<Esc>jq@a@@'), 'x1y\nx2y\nx3y\nx4')
+  assert.equal(vt('x1\nx2\nx3\nx4', 0, 'qaAy<Esc>jq5@a'), 'x1y\nx2y\nx3y\nx4y', 'the failed j on the last line stops the rest')
+  assert.equal(vt('ab', 0, '@a'), 'ab', 'an empty register is a failed play, not a throw')
+  assert.equal(vt('a\nb', 0, 'qaxqjqAxq@a'), '\n', 'qA appends to the register')
+  // A replay never records: a macro played while recording is `@a`, not what it did.
+  const nested = vim('a\nb\nc', 0, 'qaxjqqb@aq')
+  assert.deepEqual(nested.macros.b, [['play', 'a']])
+})
+
+test('textbox: macros — a failed motion stops the macro; so does @a calling @a, at the cap', function () {
+  // f; finds no `;` on the second line, so the delete after it never runs there.
+  const fs = vt('a;b\nab\nc;d', 0, 'qaf;xjq@a@a')
+  assert.equal(fs, 'ab\nab\nc;d', 'the miss on line two stopped the macro before its x')
+  // A macro that plays itself: the recursion idiom ends at the first failed j.
+  const loop = vim('a\nb\nc', 0, 'qaqqaA!<Esc>j@aq@a')
+  assert.equal(loop.text, 'a!\nb!\nc!')
+  assert.equal(loop.replaying, undefined)
+  // With nothing to fail, the cap does.
+  const forever = vim('abc', 0, 'qaqqaix<Esc>@aq@a')
+  assert.ok(forever.text.length < 300, `the cap held at ${forever.text.length}`)
+  assert.equal(forever.replaying, undefined)
+})
+
+test('textbox: macros — u inside a macro reaches the host as a request', function () {
+  const doc = stringDoc('abc')
+  const p = editDoc({ cursor: 0, mode: 'normal', macros: { a: [['deleteChar'], ['undo']] } }, 'play', 'a', doc)
+  assert.equal(p.request, 'replay')
+  assert.deepEqual(p.actions, [['deleteChar'], ['undo'], ['replayEnd']])
+  const u = editDoc(p.state, 'undo', undefined, doc)
+  assert.equal(u.request, 'undo')
+  assert.equal(u.state.replaying, 1, 'the replay is still running when the host travels')
+  // The string host travels its own history: x then u is what the text began as.
+  const s = textbox('abc', { mode: 'normal', cursor: 0 })
+  const ran = edit({ ...s, macros: { a: [['deleteChar'], ['undo']] } }, 'play', 'a')
+  assert.equal(ran.text, 'abc')
+  assert.equal(edit({ ...s, macros: { a: [['deleteChar'], ['deleteChar']] } }, 'play', 'a').text, 'c')
+})
+
+test('textbox: marks — m sets, backtick is exact, apostrophe is linewise to the first non-blank, both after an operator', function () {
+  assert.equal(vim('abc def', 0, 'wmb0`b').cursor, 4)
+  assert.equal(vim('a\n  bcd\ne', 4, 'mak\'a').cursor, 4)
+  assert.equal(vim('a\n  bcd\ne', 0, 'jllmagg\'a').cursor, 4, "'a is the first non-blank of the line")
+  assert.equal(vt('abc def', 0, 'wmb0d`b'), 'def')
+  assert.equal(vt('abc def', 0, 'wmb0y`bP'), 'abc abc def', 'y`b yanks the exclusive range and leaves the cursor at its start')
+  assert.equal(vt('a\nb\nc\nd', 0, 'majjd\'a'), 'd')
+  assert.equal(vt('a\nb\nc\nd', 4, 'maggd\'a'), 'd')
+  assert.equal(vim('abc', 0, '\'z').cursor, 0, "an unset mark is a failed motion, not a throw")
+  assert.equal(editDoc({ cursor: 0, mode: 'normal' }, 'markLine', 'z', stringDoc('abc')).failed, true)
+  assert.equal(vt('a\nb', 0, "d'z"), 'a\nb', 'an operator over a failed motion changes nothing')
+})
+
+test('textbox: marks — D2103: a mark moves with the text, an insert at it pushes it right, a delete over it lands at the start', function () {
+  // Typing above the mark.
+  let s = vim('one\ntwo', 4, 'ma')
+  s = vim('one\ntwo', 4, 'maggOnew<Esc>')
+  assert.equal(s.text, 'new\none\ntwo')
+  assert.equal(s.marks.a, 8, "the mark stayed on its character")
+  // An insert exactly at the mark pushes it right.
+  assert.equal(vim('abc', 1, 'maiX<Esc>').marks.a, 2)
+  assert.equal(vim('abc', 1, 'ma0iX<Esc>').marks.a, 2)
+  // A charwise delete over it moves it to the deletion's start.
+  assert.equal(vim('abcdef', 3, 'ma0d4l').marks.a, 0)
+  assert.equal(vim('abcdef', 3, 'ma0d3l').marks.a, 0, 'a delete ending at the mark leaves it on its character, now at the start')
+  assert.equal(vim('abcdef', 3, 'mallx').marks.a, 3)
+  // A delete of its whole line deletes the mark.
+  const gone = vim('a\nb\nc', 2, 'madd')
+  assert.equal(gone.text, 'a\nc')
+  assert.equal('a' in gone.marks, false)
+  assert.equal(vim('a\nb\nc', 4, 'madd').text, 'a\nb')
+  assert.equal('a' in vim('a\nb\nc', 4, 'madd').marks, false, 'the last line goes with the newline before it')
+  assert.equal(vim('a\nb\nc', 0, 'jmakdd').marks.a, 0, 'a mark below the deleted line moved up with its text')
+  assert.equal(vt('a\nb\nc', 4, "madd'a"), 'a\nb', "'a after the line went does nothing")
+  assert.equal(vim('a\nb\nc', 4, "mak'a").cursor, 4, 'sanity: a set mark jumps')
+  // d$ keeps the line and so keeps the mark.
+  assert.equal(vim('abc\nd', 1, 'mad$').marks.a, 1)
+  // A host applies its own edits with shiftMarks, over the document before.
+  const doc = stringDoc('abcdefgh')
+  const st = shiftMarks({ cursor: 0, mode: 'normal', marks: { a: 5, b: 1 } }, { from: 2, to: 2, insert: 'xyz' }, doc)
+  assert.deepEqual(st.marks, { a: 8, b: 1 })
+  assert.deepEqual(shiftMarks({ marks: { a: 3 } }, { from: 3, to: 3, insert: 'q' }, doc).marks, { a: 4 })
+  assert.deepEqual(shiftMarks({ marks: { a: 3 } }, { from: 1, to: 5, insert: '' }, doc).marks, { a: 1 })
+  assert.deepEqual(shiftMarks({ marks: { a: 3 } }, { from: 1, to: 3, insert: '' }, doc).marks, { a: 1 })
+  assert.deepEqual(shiftMarks({ marks: { a: 3 } }, { from: 3, to: 5, insert: 'Z' }, doc).marks, { a: 3 })
+  const frozen = Object.freeze({ marks: Object.freeze({ a: 3 }) })
+  assert.ok(shiftMarks(frozen, { from: 0, to: 0, insert: 'x' }, doc) !== frozen)
+  assert.deepEqual(frozen.marks, { a: 3 })
+  assert.throws(() => shiftMarks(frozen, { from: 0, to: 0, insert: 'x' }), /shiftMarks\(.*the document has length/)
+  assert.throws(() => shiftMarks(frozen, { from: 0, to: 0, insert: 'x' }, 'abc'), /shiftMarks\(.*the document has length/)
+  assert.throws(() => shiftMarks(frozen, { from: 0 }, doc), /an edit is/)
+})
+
+// A small seeded generator, so a failing case replays.
+function seeded(seed) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+test('textbox: shiftMarks — PROPERTY: a mark lands where a sentinel character put in its place does', function () {
+  const rand = seeded(2103)
+  const pick = (n) => Math.floor(rand() * n)
+  const SENTINEL = '\u0001'
+  for (let i = 0; i < 4000; i++) {
+    const text = Array.from({ length: pick(9) }, () => 'ab\n'[pick(3)]).join('')
+    const mark = pick(text.length + 1)
+    // Inserts and deletes: a replacement is graded by its own row.
+    const from = pick(text.length + 1)
+    const insertion = pick(2) === 0
+    const to = insertion ? from : from + pick(text.length - from + 1)
+    const insert = insertion ? Array.from({ length: 1 + pick(3) }, () => 'ab\n'[pick(3)]).join('') : ''
+    // The sentinel sits before the character the mark is on; an edit's offsets
+    // move past it when they are beyond the mark.
+    const marked = text.slice(0, mark) + SENTINEL + text.slice(mark)
+    const [f, t] = [from <= mark ? from : from + 1, to <= mark ? to : to + 1]
+    const after = marked.slice(0, f) + insert + marked.slice(t)
+    // A delete that takes a non-empty line's text and a newline beside it
+    // takes the mark with it.
+    const ls = mark === 0 ? 0 : text.lastIndexOf('\n', mark - 1) + 1
+    const le = text.indexOf('\n', mark) < 0 ? text.length : text.indexOf('\n', mark)
+    const wholeLine = !insertion && le > ls && from <= ls && to >= le && (to > le || from < ls)
+    const got = shiftMarks({ marks: { a: mark } }, { from, to, insert }, stringDoc(text)).marks
+    const label = `${JSON.stringify(text)} mark ${mark} edit ${from}-${to} ${JSON.stringify(insert)}`
+    if (wholeLine) assert.equal('a' in got, false, label)
+    else assert.equal(got.a, after.includes(SENTINEL) ? after.indexOf(SENTINEL) : f, label)
+  }
+})
+
+test('textbox: shiftMarks — PROPERTY: deleting a whole line deletes a mark on it, empty lines aside, and moves the rest as the lines do', function () {
+  const rand = seeded(2086)
+  const pick = (n) => Math.floor(rand() * n)
+  for (let i = 0; i < 1500; i++) {
+    const lines = Array.from({ length: 1 + pick(5) }, () => 'abab'.slice(0, pick(4)))
+    const text = lines.join('\n')
+    const start = (n, ls = lines) => ls.slice(0, n).reduce((at, l) => at + l.length + 1, 0)
+    const gone = pick(lines.length)
+    const marks = {}
+    for (let k = 0; k < 3; k++) {
+      const line = pick(lines.length)
+      marks['abc'[k]] = start(line) + pick(lines[line].length + 1)
+    }
+    // The three ways a line leaves: with the newline after it, before it, or alone.
+    let edit
+    if (lines.length === 1) edit = { from: 0, to: text.length, insert: '' }
+    else if (gone < lines.length - 1) edit = { from: start(gone), to: start(gone + 1), insert: '' }
+    else edit = { from: start(gone) - 1, to: text.length, insert: '' }
+    const after = lines.filter((_, n) => n !== gone)
+    const got = shiftMarks({ marks }, edit, stringDoc(text)).marks
+    for (const [name, at] of Object.entries(marks)) {
+      const line = text.slice(0, at).split('\n').length - 1
+      const col = at - start(line)
+      if (lines.length === 1) {
+        assert.equal(got[name], 0, `${JSON.stringify(lines)} the only line stays, empty, with its mark at the start`)
+      } else if (line === gone && lines[gone] === '') {
+        // Removing an empty line's newline is also a join, so the mark stays
+        // where the line was: at the end of the line before when it was last.
+        const into = gone < lines.length - 1 ? start(gone, after) : start(gone - 1, after) + after[gone - 1].length
+        assert.equal(got[name], into, `${JSON.stringify(lines)} mark ${name} on the empty line ${gone} stays where it was`)
+      } else if (line === gone) assert.equal(name in got, false, `${JSON.stringify(lines)} mark ${name} on line ${line} goes with it`)
+      else {
+        const into = line > gone ? line - 1 : line
+        assert.equal(got[name], start(into, after) + col, `${JSON.stringify(lines)} mark ${name} line ${line} col ${col}, line ${gone} deleted`)
+      }
+    }
+  }
+})
+
+test('textbox: <C-a> and <C-x> — the number at or after the cursor, counted, signed, zero-padded, hex', function () {
+  assert.equal(vt('x 9 y', 0, '<C-a>'), 'x 10 y')
+  assert.equal(vim('x 9 y', 0, '<C-a>').cursor, 3, 'the cursor rests on the last digit')
+  assert.equal(vt('x 9 y', 2, '<C-a>'), 'x 10 y')
+  assert.equal(vt('x 19 y', 3, '<C-a>'), 'x 20 y', 'the cursor in the middle of a number takes the whole')
+  assert.equal(vt('a 5 7', 0, '5<C-a>'), 'a 10 7')
+  assert.equal(vt('a 5', 0, '7<C-x>'), 'a -2')
+  assert.equal(vt('a -1', 0, '<C-a>'), 'a 0')
+  assert.equal(vt('a -1', 3, '3<C-a>'), 'a 2')
+  assert.equal(vt('a 007', 0, '<C-a>'), 'a 008')
+  assert.equal(vt('a 099', 0, '<C-a>'), 'a 100')
+  assert.equal(vt('a 0x0f', 0, '<C-a>'), 'a 0x10')
+  assert.equal(vt('a 0xFF', 0, '<C-a>'), 'a 0x100')
+  assert.equal(vt('a 0xff', 0, '<C-x>'), 'a 0xfe')
+  assert.equal(vt('1 2', 2, '<C-a>'), '1 3', 'past the first number it takes the next')
+  assert.equal(vt('1 2', 1, '<C-a>'), '1 3')
+  assert.equal(vt('ab', 0, '<C-a>'), 'ab', 'no number is a failed command')
+  assert.equal(vt('99999999999999999999', 0, '<C-a>'), '100000000000000000000')
+  assert.equal(vt('x 9', 0, '<C-a>.'), 'x 11', '. repeats it')
+  assert.equal(edit(textbox('x 9', { mode: 'normal', cursor: 0 }), 'increment').text, 'x 10')
+})
+
+test('textbox: editDoc — a failed motion says so, and nothing else does', function () {
+  const doc = stringDoc('ab\ncd')
+  const at = { cursor: 0, mode: 'normal' }
+  assert.equal(editDoc(at, 'findForward', 'z', doc).failed, true)
+  assert.equal(editDoc(at, 'findForward', 'b', doc).failed, false)
+  assert.equal(editDoc({ cursor: 3, mode: 'normal' }, 'down', undefined, doc).failed, true)
+  assert.equal(editDoc(at, 'down', undefined, doc).failed, false)
+  assert.equal(editDoc(at, 'repeatFind', undefined, doc).failed, true)
+  assert.equal(editDoc(at, 'putAfter', undefined, doc).failed, true, 'an empty register')
+})
+
+test('textbox: marks — a replacement with as many lines as it removed keeps a mark on its line and column; another lands at the start', function () {
+  // gUiw over the word the mark is inside.
+  const up = vim('foo bar baz', 4, 'ma')
+  const upped = edit(edit({ ...up, cursor: 5 }, 'uppercase'), 'innerWord')
+  assert.equal(upped.text, 'foo BAR baz')
+  assert.equal(upped.marks.a, 4, 'gUiw keeps the mark where it was')
+  assert.equal(vim('foo bar baz', 6, 'ma0gUiw').marks.a, 6, 'a mark inside the replaced word stays on its column')
+  assert.equal(vim('foo bar baz', 5, 'ma0wgUiw').marks.a, 5)
+  // >> rewrites the line; its mark stays on the line, at the same column.
+  const ind = vim('a\nbcd\ne', 4, 'ma>>')
+  assert.equal(ind.text, 'a\n  bcd\ne')
+  assert.equal(ind.marks.a, 4)
+  assert.equal(vim('a\n  bcd\ne', 4, 'ma<lt><lt>').marks.a, 4, 'clamped to the shorter line')
+  // A replacement that changes the line count takes the mark to the start.
+  assert.deepEqual(shiftMarks({ marks: { a: 4 } }, { from: 2, to: 6, insert: 'x\ny' }, stringDoc('abcdefgh')).marks, { a: 2 })
+  assert.deepEqual(shiftMarks({ marks: { a: 4 } }, { from: 2, to: 6, insert: 'xy' }, stringDoc('abcdefgh')).marks, { a: 4 })
+  assert.deepEqual(shiftMarks({ marks: { a: 5 } }, { from: 2, to: 8, insert: 'xy' }, stringDoc('abcdefgh')).marks, { a: 4 }, 'clamped to the new line')
+  assert.deepEqual(shiftMarks({ marks: { a: 5 } }, { from: 2, to: 6, insert: 'x\ny' }, stringDoc('ab\ncd\nefgh')).marks, { a: 2 }, 'lines 2 removed, 1 inserted')
+  // And a delete of an empty line through the operator is exact.
+  assert.equal('a' in vim('a\n\nb', 2, 'madd').marks, false)
+})
+
+test('textbox: dot — a visual change repeats on a region of the same size from the cursor', function () {
+  assert.equal(vt('abcdefghij', 0, 'vlld.'), 'ghij', 'characters on one line')
+  assert.equal(vt('abcdefghij', 0, 'vllld.'), 'ij')
+  assert.equal(vt('abc\ndef\nghi\njkl\nmno', 0, 'vjld.'), 'i\njkl\nmno', 'several lines, ending at the same column')
+  assert.equal(vt('a\nb\nc\nd\ne', 0, 'Vjd.'), 'e', 'whole lines')
+  assert.equal(vt('a\nb\nc\nd\ne', 0, 'Vd.'), 'c\nd\ne')
+  assert.equal(vt('ab cd ef gh', 0, 'vlcX<Esc>w.'), 'X X ef gh', 'a change repeats its typed text')
+  assert.equal(vt('abcde', 0, 'vlldl$.'), 'd', 'a region past the line end is clamped to it')
+  assert.equal(vt('ab\ncd', 0, 'vly.'), 'ab\ncd', 'a yank is no change')
+  assert.deepEqual(vim('abcd', 0, 'vld').last.actions, [['reselect', { mode: 'visual', lines: 1, width: 2 }], ['delete']])
+})
+
+test('textbox: dot — changes made inside a replayed macro set what . repeats, and . does not loop', function () {
+  assert.equal(vt('a b c d e f g h', 0, 'qadwqx@a.'), 'd e f g h', '. after @a repeats the macro\'s last change, not the x before it')
+  const s = vim('a b c d e f g h', 0, 'qadwq@a')
+  assert.deepEqual(s.macros.a, [['delete'], ['wordForward']], 'the replay recorded nothing into the register')
+  assert.deepEqual(s.last.actions, [['delete'], ['wordForward']])
+  assert.equal(s.replaying, undefined)
+  assert.equal(vt('a b c d e', 0, 'qa.q'), 'a b c d e', 'a . with nothing to repeat fails')
+  assert.equal(vt('a b c d e f', 0, 'dwqa.q@a'), 'd e f', '. inside a macro repeats the change and the replay ends')
 })

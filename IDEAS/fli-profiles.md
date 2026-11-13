@@ -10,7 +10,8 @@ dated: 2026-11-05
 (2026-11-12): the layer, `eset --profile`, the `fli doctor` rows and the
 profile as each outward command's first line; the behavior is described in
 `packages/cli/docs/configuration.md` § Credentials, not here. 2.2 is the
-owner's; Phases 3–4 are not built — see `VERIFYING.md`.
+owner's. Phase 3 is not built; Phase 4 is shaped (`FJS-D2087`–`FJS-D2089`)
+and not built — see `VERIFYING.md`.
 
 The want: one person runs `fli` for several clients from one machine, and each
 client has its own GitHub org, DigitalOcean and Cloudflare accounts, Basecamp
@@ -204,22 +205,32 @@ drill spawn fli (`spawnFli`, `basecamps-create.ts`), so `FLI_PROFILE` in the
 child's env picks the profile; the backup B2 lookup (`basecamps.ts`) and the
 services "held" probe (`laptop/services.ts`) read the global file by path.
 
-- [ ] 4.1 `basecamp:create` writes `profile` into the `basecamps.json` entry
-  it files when a profile is in use (Q5), and `fli doctor` refuses an entry
-  naming a profile with no file.
-- [ ] 4.2 `spawnFli` takes a profile and sets `FLI_PROFILE` in the child's
+- [x] 4.1 `basecamp:create` writes `profile` into the `basecamps.json` entry
+  it files when a profile is in use (Q5), and `fli doctor` warns on an entry
+  naming a profile with no file. `basecamp:create`, `install` and `reinstall`
+  print the profile line first, as 2.1's commands do.
+- [x] 4.2 `spawnFli` takes a profile and sets `FLI_PROFILE` in the child's
   env; reinstall, resume-install and the restore drill pass the entry's.
-- [ ] 4.3 The backup B2 lookup reads the entry's profile before the global
+- [x] 4.3 The backup B2 lookup reads the entry's profile before the global
   file, through the cli's own loader rather than a second path read.
-- [ ] 4.4 The New Basecamp page's Profile select, starting on nothing chosen
+- [x] 4.4 The New Basecamp page's Profile select, starting on nothing chosen
   (Q6): each profile, and *None — global file*; the run refuses until one is
   picked, and the shown command line carries `FLI_PROFILE=<name>`.
-- [ ] 4.5 A Profiles section on the Laptop screen beside the global env pane
-  (Q7): each profile's key names masked, its mode and the projects naming it,
+- [x] 4.5 A Profiles section beside the global env pane (Q7) -- that pane
+  is on the Settings page, so the card is there: each profile's key names masked, its mode and the projects naming it,
   create, set and unset a key — the `profile:` commands' helpers in
   `global-env.js`, never a second writer.
-- [ ] 4.6 Drive it: a dry create under a scratch profile, then the reinstall
-  refusal path, in Chrome.
+- [x] 4.6 Drive it: a profile made and a key set from Settings, then a dry
+  create under it, in Chrome against a scratch `HOME` (2026-11-12): the log's
+  first line names the profile. The reinstall half is
+  `basecamps-reinstall.test.ts`, a real `--plan` run of an entry filed under
+  a profile.
+- [x] 4.7 The terminal half of Q5: a verb that spends an account key on an
+  entry refuses when the entry's profile is not the one in use, naming both
+  and the `FLI_PROFILE=` rerun (Q8) -- `profileMismatch` in
+  `core/basecamps.js`, called by `basecamp:reinstall` (Cloudflare) and
+  `basecamp:backups` (B2). `backup`, `restore` and `restart` spend only ssh and
+  the entry's own key, so they do not check.
 
 ## Open questions
 
@@ -273,6 +284,14 @@ services "held" probe (`laptop/services.ts`) read the global file by path.
   - **B** — A Secrets screen now, profiles its first section.
   - **Recommend A** — the pane it sits beside already does the same job for
     the global file; B shapes a screen ahead of the ideas that would fill it.
+
+- ~~**Q8 — What a terminal verb does when its entry's profile is not the one in use.**~~ **Answered 2026-11-12 (`FJS-D2093`): A — Refuse, naming both: the entry's profile and the one in use, and the `FLI_PROFILE=<entry's>` rerun.**
+  - **A** — Refuse, naming both: the entry's profile and the one in use, and
+    the `FLI_PROFILE=<entry's>` rerun.
+  - **B** — Adopt the entry's: reload the env under the entry's profile.
+  - **Recommend A** — nothing switches accounts behind the person, and the
+    first line still names what is spent; B reloads env after startup, so two
+    profiles' keys can mix and the first line stops matching the folder.
 
 ## Out of scope
 

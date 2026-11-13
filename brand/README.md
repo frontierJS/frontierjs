@@ -26,6 +26,8 @@ A large design source goes beside them named `*.image-ref.*`, which the root
 cropped from `fjs-icons.image-ref.png` and `fjs-new-icons.image-ref.png`, and
 each file is named for a package folder or a section (`issues`, `decisions` …).
 The rings page draws a crate for a package with no file there.
+An icon redrawn as vector keeps `<name>.svg` beside its PNG as the source, and
+the 96px PNG is exported from it (`conduit` is the first).
 Those sheets and `example/site/public/brand/` are the example shop's brand,
 not this one.
 

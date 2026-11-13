@@ -560,6 +560,30 @@ export function profileNamedIn(text) {
   return m?.[1] || null
 }
 
+// ~/code/<client>/<app>/.env and a workspace's example/ sit within four.
+const PROJECT_DEPTH = 4
+const PROJECT_SKIP  = new Set(['node_modules', 'dist', 'build', 'vendor', 'target'])
+
+/** Every `.env` under `root` naming a profile, as `[{ dir, name }]` — the project is what picks a profile, so this is who spends each one. */
+export function projectsNaming(root) {
+  const out = []
+  const walk = (dir, depth) => {
+    let entries
+    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+    if (entries.some(e => e.name === '.env' && e.isFile())) {
+      let text = ''
+      try { text = readFileSync(join(dir, '.env'), 'utf8') } catch {}
+      const name = profileNamedIn(text)
+      if (name) out.push({ dir, name })
+    }
+    if (depth === PROJECT_DEPTH) return
+    for (const e of entries)
+      if (e.isDirectory() && !e.name.startsWith('.') && !PROJECT_SKIP.has(e.name)) walk(join(dir, e.name), depth + 1)
+  }
+  walk(root, 0)
+  return out
+}
+
 // Bun loads the cwd's `.env` before fli starts, so a project's FLI_PROFILE is
 // already in process.env and looks like the shell's; the file's own line says.
 function profileSource(projectRoot, name) {

@@ -7,22 +7,24 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 import { writeBasecamp } from '@frontierjs/cli/core/basecamps.js'
 
-import { createArgv, creationOf, resumeArgv, startCreate, startResume, stepsOf, type CreateInput } from '../src/domain/basecamps/basecamps-create.ts'
+import { NO_PROFILE, createArgv, creationOf, resumeArgv, spawnFli, startCreate, startResume, stepsOf, type CreateInput } from '../src/domain/basecamps/basecamps-create.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'wb-create-'))
 const home = join(root, 'home')
 const dir  = join(root, 'workbench')
 const opts = { dir, home, env: { ...process.env, HOME: home } }
 
-const input: CreateInput = { domain: 't.example.com', name: 't-dry', cloud: 'hetzner', admin: 'a@example.com', dry: true, approved: true }
+const input: CreateInput = { domain: 't.example.com', name: 't-dry', cloud: 'hetzner', admin: 'a@example.com', dry: true, approved: true, profile: NO_PROFILE }
 
 beforeAll(() => {
   writeBasecamp('taken', { url: 'http://127.0.0.1:9' }, { home })
+  mkdirSync(join(home, '.config', 'fli', 'profiles'), { recursive: true })
+  writeFileSync(join(home, '.config', 'fli', 'profiles', 'acme.env'), '# fli profile acme\n', { mode: 0o600 })
 })
 afterAll(() => rmSync(root, { recursive: true, force: true }))
 
@@ -97,6 +99,39 @@ describe('resumeArgv', () => {
   test('a failed install resumes by running itself again', () => {
     const install = ['fli', 'basecamp:install', 't-dry', '--domain', 't.example.com']
     expect(resumeArgv({ argv: install, exit: { code: 1, signal: null } }, '')).toEqual(install.slice(1))
+  })
+})
+
+describe('the profile a create runs under (FJS-D2088)', () => {
+  test('refuses until one is chosen, then a name that is not one, then one with no file', async () => {
+    const { profile: _, ...unchosen } = input
+    expect(await startCreate(unchosen, opts)).toEqual({ refused: 'Pick a profile, or None — global file' })
+    expect(await startCreate({ ...input, profile: '  ' }, opts)).toEqual({ refused: 'Pick a profile, or None — global file' })
+    expect(await startCreate({ ...input, profile: '../x' }, opts)).toEqual({ refused: expect.stringContaining('not a profile name') })
+    expect(await startCreate({ ...input, profile: 'ghost' }, opts)).toEqual({ refused: expect.stringContaining("No profile named 'ghost'") })
+    expect(creationOf()).toBeNull()
+  })
+
+  // `profile:list` marks the profile its own directory spends with a dot, and
+  // a FLI_PROFILE naming no file is refused before any command runs.
+  const ranIn = async (env: Record<string, string | undefined>, profile?: string) => {
+    const rec = spawnFli('profile-env', 'probe', ['profile:list', '--in', join(root, 'nothing')], { dir, env: { ...env, HOME: home }, ...(profile ? { profile } : {}) })
+    for (let i = 0; i < 300 && !rec.exit; i++) await Bun.sleep(100)
+    return { rec, said: existsSync(rec.log) ? (await Bun.file(rec.log).text()) : '' }
+  }
+
+  test('the child runs under the profile it is given', async () => {
+    const { rec, said } = await ranIn({ PATH: process.env.PATH }, 'acme')
+    expect(rec.exit).toEqual({ code: 0, signal: null })
+    expect(rec.profile).toBe('acme')
+    expect(said).toMatch(/● acme/)
+  })
+
+  test('an FLI_PROFILE inherited from this process does not reach a run that named none', async () => {
+    const { rec, said } = await ranIn({ PATH: process.env.PATH, FLI_PROFILE: 'leaked' })
+    expect(said).not.toContain('leaked')
+    expect(rec.exit).toEqual({ code: 0, signal: null })
+    expect(rec.profile).toBeUndefined()
   })
 })
 

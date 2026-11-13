@@ -6,7 +6,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 import {
-  reinstallDomain, readBasecamps, writeBasecamp, removeBasecamp, resolveBasecamp, designatedBasecamp, basecampsPath, lookupBasecamp, lookupBasecampFor, pingBasecamp,
+  reinstallDomain, readBasecamps, writeBasecamp, removeBasecamp, resolveBasecamp, designatedBasecamp, basecampsPath, lookupBasecamp, lookupBasecampFor, pingBasecamp, profileMismatch
 } from '../core/basecamps.js'
 import { globalEnvPath } from '../core/global-env.js'
 import { resolveBasecampApp } from '../core/basecamp.js'
@@ -271,5 +271,30 @@ describe('reinstallDomain', () => {
     expect(reinstallDomain({ domain: 'new.example.com', entry, box: 'yuma.kobami.cloud' })).toEqual({ domain: 'new.example.com' })
     expect(reinstallDomain({ domain: '', entry: undefined, box: 'yuma.kobami.cloud' })).toEqual({ domain: 'yuma.kobami.cloud' })
     expect(reinstallDomain({ domain: '', entry: undefined, box: null })).toEqual({ domain: '' })
+  })
+})
+
+describe('profileMismatch (FJS-D2093)', () => {
+  test('the profile the entry was bought under passes', () => {
+    expect(profileMismatch({ name: 'acme-bc', profile: 'acme' }, 'acme')).toBeNull()
+    expect(profileMismatch({ name: 'old' }, null)).toBeNull()
+    expect(profileMismatch({ name: 'old', profile: '' }, undefined)).toBeNull()
+  })
+  test('another client\'s profile is refused, naming both and the rerun', () => {
+    const r = profileMismatch({ name: 'acme-bc', profile: 'acme' }, 'kobami')
+    expect(r).toContain('profile acme')
+    expect(r).toContain('profile kobami')
+    expect(r).toContain('FLI_PROFILE=acme')
+  })
+  test('a profile in use against an entry bought under the global file is refused', () => {
+    const r = profileMismatch({ name: 'old' }, 'kobami')
+    expect(r).toContain('no profile (the global file)')
+    expect(r).toContain('FLI_PROFILE= in front')
+  })
+  test('no profile in use against an entry bought under one is refused', () => {
+    expect(profileMismatch({ name: 'acme-bc', profile: 'acme' }, null)).toContain('FLI_PROFILE=acme')
+  })
+  test('no entry names no refusal', () => {
+    expect(profileMismatch(null, 'acme')).toBeNull()
   })
 })

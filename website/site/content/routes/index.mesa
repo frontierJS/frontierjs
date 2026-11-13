@@ -174,6 +174,7 @@ render: static
 <section class="stack theme-dark" aria-labelledby="stack-title">
   <div class="container">
     <h2 id="stack-title">The packages</h2>
+    <div class="tiers">
     {#each d.packages as group}
     <ul class="icons {group.key}">
       {#each group.items as p}
@@ -190,6 +191,7 @@ render: static
       {/each}
     </ul>
     {/each}
+    </div>
     <p class="more"><a class="link" href="/packages/">Every package, its realm and how far along it is →</a></p>
   </div>
 </section>
@@ -460,24 +462,22 @@ render: static
       radial-gradient(32rem 22rem at 50% 88%, rgb(255 255 255 / .06), transparent 70%);
   }
   .stack h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.02em; margin: 0 0 1.25rem; }
+  /* One grid for all three tiers: a tier-1 card spans two columns, so tiers 2
+     and 3 line up under the middle two cards. Each list is a subgrid of it. */
+  .stack .tiers {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: .6rem;
+    max-width: 52rem;
+  }
   .stack .icons {
     list-style: none; padding: 0; margin: 0;
-    display: grid; gap: .75rem;
+    display: grid; grid-template-columns: subgrid; gap: inherit; grid-column: 1 / -1;
   }
-  .stack .icons + .icons { margin-top: 2rem; }
-  .stack .tier1 { grid-template-columns: repeat(2, 1fr); }
-  .stack .tier2 { grid-template-columns: repeat(4, 1fr); gap: .5rem; }
-  .stack .tier3 { grid-template-columns: repeat(4, 1fr); gap: .5rem; }
-  /* Tier 2 keeps the width a tile has in a six-column row, four to a row. */
-  @media (min-width: 40rem) {
-    .stack .tier1 { grid-template-columns: repeat(4, 1fr); }
-    .stack .tier2 { grid-template-columns: repeat(4, calc((100% - 3.75rem) / 6)); }
-    .stack .tier3 { grid-template-columns: repeat(6, 1fr); }
-  }
-  @media (min-width: 60rem) {
-    .stack .icons { gap: 1rem; }
-    .stack .tier2 { grid-template-columns: repeat(4, calc((100% - 5rem) / 6)); }
-    .stack .tier3 { grid-template-columns: repeat(8, 1fr); }
+  .stack .tier1 li { grid-column: span 2; }
+  .stack .tier2 { margin-top: 1.25rem; }
+  .stack .tier3 { margin-top: .75rem; }
+  @media (min-width: 48rem) {
+    .stack .tiers { grid-template-columns: repeat(8, 1fr); gap: .75rem; }
+    .stack .tier2, .stack .tier3 { grid-column: 3 / 7; }
   }
   .stack .icons a {
     display: grid; justify-items: center; align-content: center; gap: .65rem;
@@ -500,16 +500,15 @@ render: static
     font-size: 1.8rem; font-weight: 600; text-transform: uppercase;
   }
   .stack .name { font-size: .92rem; font-weight: 500; text-align: center; overflow-wrap: anywhere; }
-  .stack .tier1 a { gap: .9rem; border-radius: 1.25rem; }
-  .stack .tier1 img, .stack .tier1 .blank { width: clamp(4.5rem, 9vw, 8rem); }
-  .stack .tier2 img, .stack .tier2 .blank { width: clamp(2.4rem, 6vw, 5.5rem); }
-  .stack .tier2 .name { font-size: clamp(.8rem, 1.8vw, .92rem); }
-  .stack .tier1 .name { font-size: clamp(.95rem, 1.6vw, 1.15rem); font-weight: 600; }
-  .stack .tier2 a { padding: .6rem .3rem; }
-  .stack .tier3 a { gap: .35rem; padding: .45rem .25rem; border-radius: .75rem; }
-  .stack .tier3 img, .stack .tier3 .blank { width: clamp(1.9rem, 4vw, 3rem); }
+  .stack .tier1 a { gap: .8rem; border-radius: 1.1rem; }
+  .stack .tier1 img, .stack .tier1 .blank { width: clamp(4rem, 8vw, 6.5rem); }
+  .stack .tier1 .name { font-size: clamp(.92rem, 1.4vw, 1.05rem); font-weight: 600; }
+  .stack :is(.tier2, .tier3) a { gap: .35rem; padding: .45rem .25rem; border-radius: .7rem; }
+  .stack .tier2 img, .stack .tier2 .blank { width: clamp(2.2rem, 4vw, 3.1rem); }
+  .stack .tier2 .name { font-size: .84rem; font-weight: 600; }
+  .stack .tier3 img, .stack .tier3 .blank { width: clamp(1.9rem, 3.4vw, 2.6rem); }
   .stack .tier3 .blank { font-size: 1.1rem; border-radius: .6rem; }
-  .stack .tier3 .name { font-size: clamp(.66rem, 1.8vw, .78rem); overflow-wrap: normal; }
+  .stack .tier3 .name { font-size: clamp(.66rem, 1.6vw, .74rem); overflow-wrap: normal; }
   .stack .more { margin: 1.5rem 0 0; font-size: .92rem; }
 
   .derived { padding: 1rem 0 4rem; font-family: var(--font-primary); }

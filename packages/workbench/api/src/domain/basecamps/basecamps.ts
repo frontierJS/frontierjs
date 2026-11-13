@@ -19,15 +19,21 @@
 // `~/.config/fli/.env` here (the API's own env does not hold it). Each `say` line
 // is kept on the outcome for the page to show.
 //
+// Download fetches the newest archive Basecamp already holds into the same
+// folder, taking no backup; Save .tar.gz answers the one-use link Basecamp
+// mints for it, which the page navigates to. Key copy compares the box's
+// ENCRYPTION_KEY, read over ssh, with the copies filed under
+// `configDir()/basecamp/<name>`; Save key files it there and attests it.
+//
 // No credential leaves this module: an entry is answered without `apiKey`,
 // `scopedKey` or `peerKeyId`, only whether it holds one; the B2 key is read
-// for the session and never answered; a plan is summarized without holder emails.
+// for the session and never answered; a key is answered as a fingerprint; a plan is summarized without holder emails.
 
 import { rmSync, statSync } from 'node:fs'
 import { join }             from 'node:path'
 
 type Entry = {
-  url: string, host?: string, cloud?: string, boxId?: string | number, runs?: boolean,
+  url: string, host?: string, cloud?: string, boxId?: string | number, runs?: boolean, profile?: string,
   apiKey?: string, scopedKey?: string, peerKeyId?: string,
 }
 type Ping = { ok: true, ms: number } | { ok: false, why: string }
@@ -37,14 +43,23 @@ export type HubBackup = { id: string, status: string, createdAt?: string, starte
 type Cli = {
   readBasecamps: (o: { home?: string }) => Record<string, Entry>
   pingBasecamp:  (e: Entry, o: { timeout?: number, fetcher?: typeof fetch }) => Promise<Ping>
-  basecamp:      (origin: string, key: string, path: string) => Promise<unknown>
+  basecamp:      (origin: string, key: string, path: string, o?: { method?: string, headers?: Record<string, string>, body?: unknown }) => Promise<unknown>
   takeHubBackup: (o: { origin: string, key: string, log: Log }) => Promise<HubBackup>
   restartApi:    (o: { host: string, container: string }) => Promise<string>
   probeUntil:    (o: { host: string, port: number, until: (p: unknown) => boolean }) => Promise<unknown>
   basecampApi:   () => Promise<{ container: string, port: number }>
-  localBackups:  (dir: string) => Array<{ name: string, kind: string, takenAt: string | null, bytes: number }>
+  localBackups:  (dir: string) => Array<{ name: string, kind: string, takenAt: string | null, bytes: number, fingerprint: string | null }>
+  newestHubArchive: (o: { origin: string, key: string }) => Promise<HubBackup | null>
+  fetchHubArchive:  (o: { origin: string, key: string, row: HubBackup, out: string }) => Promise<{ dir: string }>
+  archiveDirName:   (row: HubBackup) => string
+  basecampFiles:    (server: string) => Promise<{ host: string, envFile: string, secretsDir: string }>
+  readBoxKey:       (o: { host: string, envFile: string, secretsDir: string }) => Promise<string | null>
+  keyCopyState:     (server: string, boxKey: string | null) => { state: KeyState, fingerprint: string | null, filed: string[] }
+  keepKey:          (o: { server: string, key: string, how: 'f', echo: (t: string) => void }) => { keyFile: string | null, already: boolean, fingerprint: string }
+  attestKeyCopy:    (o: { origin: string, key: string, fingerprint: string }) => Promise<unknown>
   dataDir:       (o: { home?: string }) => string
   listGlobal:    (o: { home?: string }) => Array<{ key: string, value: string }>
+  listProfile:   (name: string, o: { home?: string }) => Array<{ key: string, value: string }>
   replWhere:     (e: Entry & { name: string }) => unknown
   laptopSession: (o: { env: Record<string, string | undefined> }) => Promise<unknown>
   planBackups:   (e: Entry & { name: string }, o: { apps?: string[], session?: unknown }) => Promise<BackupsPlan>
@@ -80,13 +95,13 @@ const loadCli = () => cli ??= Promise.all([
 ]).then(mods => Object.assign({}, ...mods) as unknown as Cli)
 
 export type Outcome = {
-  verb:       'backup' | 'restart' | 'b2' | 'b2-undo'
+  verb:       'backup' | 'restart' | 'b2' | 'b2-undo' | 'download'
   state:      'working' | 'done' | 'error'
   startedAt:  string
   finishedAt: string | null
-  /** backup: the row Basecamp recorded. */
+  /** backup: the row Basecamp recorded; download: the row fetched. */
   row?:       HubBackup
-  /** backup: taken, but kept on the box rather than at its destination. */
+  /** backup: taken, but kept on the box rather than at its destination; download: already on this laptop. */
   note?:      string
   /** restart: what `/setup/probe` answered once the API came back. */
   probe?:     unknown
@@ -101,6 +116,8 @@ export type LocalCopy = { file: string, kind: string, takenAt: string | null, by
 
 export type Listed = {
   name: string, url: string, host: string | null, cloud: string | null, boxId: string | number | null, runs: boolean
+  /** The fli profile the box was bought under; null is the global file. */
+  profile:      string | null
   hasKey: boolean, hasScopedKey: boolean
   answers:      Ping
   newestBackup: HubBackup | null
@@ -180,6 +197,7 @@ export async function listBasecamps(opts: Options = {}): Promise<Listed[]> {
       cloud:        e.cloud ?? null,
       boxId:        e.boxId ?? null,
       runs:         e.runs === true,
+      profile:      e.profile ?? null,
       hasKey:       !!e.apiKey,
       hasScopedKey: !!e.scopedKey,
       answers,
@@ -278,10 +296,13 @@ export function summarizePlan(plan: BackupsPlan, lockDays: number): PlanSummary 
   }
 }
 
-// The API's env does not hold the laptop's B2 key; fli's global env file does.
-async function b2Env(c: Cli, opts: Options): Promise<Record<string, string>> {
+// The API's env does not hold the laptop's B2 key; fli's env files do. The
+// entry's profile is read before the global file, as `loadFliEnv` orders them.
+async function b2Env(c: Cli, opts: Options, profile?: string): Promise<Record<string, string>> {
   const env: Record<string, string> = {}
-  for (const { key, value } of c.listGlobal({ home: opts.home })) if (key === 'B2_KEY_ID' || key === 'B2_APPLICATION_KEY') env[key] = value
+  const want = (k: string) => k === 'B2_KEY_ID' || k === 'B2_APPLICATION_KEY'
+  const held = [...(profile ? c.listProfile(profile, { home: opts.home }) : []), ...c.listGlobal({ home: opts.home })]
+  for (const { key, value } of held) if (want(key) && value && !(key in env)) env[key] = value
   return env
 }
 
@@ -303,7 +324,7 @@ export async function backupsPlan(name: string, opts: Options = {}): Promise<Pla
   if ('refused' in got) return got
   const c = await loadCli()
   try {
-    const session = await c.laptopSession({ env: await b2Env(c, opts) })
+    const session = await c.laptopSession({ env: await b2Env(c, opts, got.entry.profile) })
     return summarizePlan(await c.planBackups(got.entry, { session }), c.LOCK_DAYS)
   } catch (err) {
     return { refused: (err as Error).message }
@@ -322,7 +343,7 @@ export async function startB2Setup(name: string, input: B2Input = {}, opts: Opti
   const c = await loadCli()
   return hold(name, 'b2', async (held) => {
     held.lines = []
-    const session = await c.laptopSession({ env: await b2Env(c, opts) })
+    const session = await c.laptopSession({ env: await b2Env(c, opts, got.entry.profile) })
     await c.setUpBackups(got.entry, { apps, session, say: (l) => { held.lines!.push(l) } })
   })
 }
@@ -335,8 +356,133 @@ export async function startB2Undo(name: string, input: B2Input = {}, opts: Optio
   const c = await loadCli()
   return hold(name, 'b2-undo', async (held) => {
     held.lines = []
-    const session = await c.laptopSession({ env: await b2Env(c, opts) })
+    const session = await c.laptopSession({ env: await b2Env(c, opts, got.entry.profile) })
     const out = await c.undoBackups(got.entry, { session, say: (l) => { held.lines!.push(l) } })
     held.note = `${out.removed} removed, ${out.kept} kept`
   })
+}
+
+// ─── Download a hub archive ───────────────────────────────────────────────
+
+async function adminEntry(name: string, opts: Options): Promise<Entry | { refused: string }> {
+  const e = await entryOf(name, opts)
+  if (!e) return { refused: `No Basecamp named '${name}' in basecamps.json` }
+  if (!e.apiKey) return { refused: `Basecamp '${name}' has no API key — fli basecamp:key --server ${e.host ?? '<box>'} files one` }
+  return e
+}
+
+/** Fetch the newest archive Basecamp holds into this laptop's copies, unpacked and checked against its manifest. Takes no backup. */
+export async function startDownload(name: string, opts: Options = {}): Promise<Outcome | { refused: string }> {
+  const e = await adminEntry(name, opts)
+  if ('refused' in e) return e
+  const c = await loadCli()
+  return hold(name, 'download', async (held) => {
+    const row = await c.newestHubArchive({ origin: e.url, key: e.apiKey! })
+    if (!row) throw new Error(`Basecamp '${name}' holds no backup that succeeded — Back up now takes one`)
+    held.row = row
+    const stamp = c.archiveDirName(row)
+    if (localCopies(c, name, opts).some(b => b.file === stamp && b.kind === 'archive')) {
+      held.note = `${stamp} is on this laptop already`
+      return
+    }
+    await c.fetchHubArchive({ origin: e.url, key: e.apiKey!, row, out: copiesDir(c, name, opts) })
+  })
+}
+
+/** The one-use link Basecamp mints for its newest archive, with the sha256 it recorded. The admin key stays here. */
+export async function archiveLink(name: string, opts: Options = {}): Promise<{ url: string, name: string, sha256: string | null } | { refused: string }> {
+  const e = await adminEntry(name, opts)
+  if ('refused' in e) return e
+  const c = await loadCli()
+  try {
+    const row = await c.newestHubArchive({ origin: e.url, key: e.apiKey! })
+    if (!row) return { refused: `Basecamp '${name}' holds no backup that succeeded — Back up now takes one` }
+    const got = await c.basecamp(e.url, e.apiKey!, `/hub-backups/${encodeURIComponent(row.id)}`,
+      { method: 'POST', headers: { 'x-service-method': 'download' }, body: {} }) as { url: string, name: string }
+    return { url: new URL(got.url, e.url + '/').href, name: got.name, sha256: (row.sha256 as string | null) ?? null }
+  } catch (err) {
+    return { refused: (err as Error).message }
+  }
+}
+
+// ─── The encryption key copy ──────────────────────────────────────────────
+
+export type KeyState = 'matches' | 'missing' | 'differs' | 'none'
+
+/** Fingerprints only, each its first 12 hex characters. */
+export type KeyCopy = {
+  state:       KeyState
+  /** The key on the box's disk. */
+  box:         string | null
+  /** The copies filed on this laptop. */
+  filed:       string[]
+  /** The key the newest archive on this laptop was taken under: the one Basecamp ran then. */
+  archive:     string | null
+  /** The copy Basecamp has on record as kept off the box, and when. */
+  attested:    string | null
+  attestedAt:  string | null
+}
+
+const short = (fp: string | null | undefined) => fp ? fp.slice(0, 12) : null
+
+async function keyEntry(name: string, opts: Options): Promise<Entry & { host: string } | { refused: string }> {
+  const e = await adminEntry(name, opts)
+  if ('refused' in e) return e
+  if (!e.host) return { refused: `Basecamp '${name}' has no ssh Host, and its key is read on its box over ssh — the dev Basecamp keeps its key in this checkout` }
+  return e as Entry & { host: string }
+}
+
+// The fingerprint the newest pulled archive names is the key the API ran when
+// it was taken; the box's disk can hold another one the API has not restarted on.
+function archiveKey(c: Cli, name: string, opts: Options): string | null {
+  return c.localBackups(copiesDir(c, name, opts)).filter(b => b.kind === 'archive').at(-1)?.fingerprint ?? null
+}
+
+async function attestation(c: Cli, e: Entry): Promise<{ fingerprint: string | null, at: string | null }> {
+  const row = await c.basecamp(e.url, e.apiKey!, '/hub-config', { method: 'POST', headers: { 'x-service-method': 'current' }, body: {} })
+    .catch((err: Error & { status?: number }) => { if (err.status === 404) return null; throw err }) as
+    { encryptionKeyFingerprint?: string | null, encryptionKeyEscrowedAt?: string | null } | null
+  return { fingerprint: row?.encryptionKeyFingerprint ?? null, at: row?.encryptionKeyEscrowedAt ?? null }
+}
+
+/** Whether this laptop holds a copy of the key on the box, read over ssh; changes nothing. */
+export async function keyCopy(name: string, opts: Options = {}): Promise<KeyCopy | { refused: string }> {
+  const e = await keyEntry(name, opts)
+  if ('refused' in e) return e
+  const c = await loadCli()
+  try {
+    const [boxKey, attested] = await Promise.all([c.basecampFiles(e.host).then(f => c.readBoxKey(f)), attestation(c, e)])
+    const got = c.keyCopyState(name, boxKey)
+    return {
+      state: got.state, box: short(got.fingerprint), filed: got.filed.map(f => short(f)!),
+      archive: short(archiveKey(c, name, opts)), attested: short(attested.fingerprint), attestedAt: attested.at,
+    }
+  } catch (err) {
+    return { refused: (err as Error).message }
+  }
+}
+
+/**
+ * File the box's key on this laptop, then attest it to Basecamp only when the
+ * newest pulled archive was taken under it (`FJS-D1876`): an attestation of a
+ * key the API does not run grades `hub.key-escrowed` green for nothing.
+ */
+export async function saveKey(name: string, opts: Options = {}): Promise<{ kept: string, already: boolean, attested: boolean, why: string | null } | { refused: string }> {
+  const e = await keyEntry(name, opts)
+  if ('refused' in e) return e
+  const c = await loadCli()
+  try {
+    const boxKey = await c.readBoxKey(await c.basecampFiles(e.host))
+    if (!boxKey) return { refused: `${e.host} keeps no ENCRYPTION_KEY, in its secrets directory or env file` }
+    const kept = c.keepKey({ server: name, key: boxKey, how: 'f', echo: () => {} })
+    const fp = kept.fingerprint
+    const archive = archiveKey(c, name, opts)
+    const out = { kept: short(fp)!, already: kept.already }
+    if (!archive) return { ...out, attested: false, why: 'No archive on this laptop shows which key Basecamp runs — Download one, then Save key again to attest it' }
+    if (archive !== fp) return { ...out, attested: false, why: `The newest archive on this laptop was taken under ${short(archive)}, not the ${short(fp)} on the box's disk — Download the newest archive, then Save key again to attest it` }
+    await c.attestKeyCopy({ origin: e.url, key: e.apiKey!, fingerprint: fp })
+    return { ...out, attested: true, why: null }
+  } catch (err) {
+    return { refused: (err as Error).message }
+  }
 }

@@ -3,26 +3,53 @@
  * over a temp `basecamps.json` so the laptop's own index is never read. The
  * stub answers what `takeHubBackup` asks: `/health`, the `/hub-backups` list,
  * `hub-config current`, the `take`, and the row it polls until settled.
- * Restart runs a root command over ssh, so only its refusal is tested here.
+ * Download asks `download` for a link and fetches a real tar.gz the stub
+ * built. Restart and the key copy run over ssh, so only their refusals are tested here.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 import { writeBasecamp } from '@frontierjs/cli/core/basecamps.js'
 
-import { listBasecamps, startBackup, startRestart, outcomeOf, deleteLocal, startB2Setup, startB2Undo, summarizePlan, type BackupsPlan } from '../src/domain/basecamps/basecamps.ts'
+import { spawnSync } from 'node:child_process'
+import { listBasecamps, startBackup, startRestart, outcomeOf, deleteLocal, startB2Setup, startB2Undo, summarizePlan, startDownload, archiveLink, keyCopy, saveKey, type BackupsPlan } from '../src/domain/basecamps/basecamps.ts'
 
 const home = mkdtempSync(join(tmpdir(), 'wb-basecamps-'))
 const KEY  = 'bc_admin_secret_key'
 
-const older = { id: 'hb_1', status: 'success', createdAt: '2026-11-01T10:00:00.000Z', startedAt: '2026-11-01T10:00:00.000Z' }
+const older: Record<string, unknown> = { id: 'hb_1', status: 'success', createdAt: '2026-11-01T10:00:00.000Z', startedAt: '2026-11-01T10:00:00.000Z' }
 const rows: Array<Record<string, unknown>> = [older]
 const asked: string[] = []
 let server: ReturnType<typeof Bun.serve>
 
+// One hub archive as `/setup` writes it: a basecamp-<stamp>/ directory whose manifest hashes its files.
+const FINGERPRINT = 'f'.repeat(64)
+const sha = (b: Uint8Array | string) => new Bun.CryptoHasher('sha256').update(b).digest('hex')
+let tar: Uint8Array<ArrayBuffer>
+let tarSha: string
+
+function buildArchive () {
+  const scratch = mkdtempSync(join(tmpdir(), 'wb-archive-'))
+  const top = join(scratch, 'basecamp-stub')
+  mkdirSync(top)
+  const db = 'not really sqlite'
+  writeFileSync(join(top, 'main.db'), db)
+  writeFileSync(join(top, 'manifest.json'), JSON.stringify({
+    takenAt: '2026-11-05T09:00:00.000Z', encryptionKeyFingerprint: FINGERPRINT,
+    files: [{ path: 'main.db', bytes: db.length, sha256: sha(db) }],
+  }))
+  const r = spawnSync('tar', ['-czf', join(scratch, 'a.tar.gz'), '-C', scratch, 'basecamp-stub'])
+  if (r.status !== 0) throw new Error(String(r.stderr))
+  tar = new Uint8Array(readFileSync(join(scratch, 'a.tar.gz')))
+  tarSha = sha(tar)
+  rmSync(scratch, { recursive: true, force: true })
+}
+
 beforeAll(() => {
+  buildArchive()
+  older.sha256 = tarSha
   server = Bun.serve({
     port: 0, hostname: '127.0.0.1',
     async fetch (req) {
@@ -30,6 +57,7 @@ beforeAll(() => {
       const method = req.headers.get('x-service-method')
       asked.push(`${req.method} ${url.pathname}${method ? ` ${method}` : ''}`)
       if (url.pathname === '/health') return Response.json({ status: 'ok' })
+      if (url.pathname.startsWith('/archive/')) return new Response(new Blob([tar]), { headers: { 'content-type': 'application/gzip' } })
       if (req.headers.get('authorization') !== `Bearer ${KEY}`) return Response.json({ message: 'no key' }, { status: 401 })
       if (url.pathname === '/hub-config' && method === 'current') return Response.json({ data: { app: { backupDestinationId: null } } })
       if (url.pathname === '/hub-backups' && req.method === 'GET') {
@@ -37,11 +65,12 @@ beforeAll(() => {
         return Response.json({ data: newest.slice(0, Number(url.searchParams.get('$limit') ?? 100)) })
       }
       if (url.pathname === '/hub-backups' && method === 'take') {
-        const row = { id: 'hb_2', status: 'running', createdAt: '2026-11-05T09:00:00.000Z', startedAt: '2026-11-05T09:00:00.000Z' }
+        const row = { id: 'hb_2', status: 'running', createdAt: '2026-11-05T09:00:00.000Z', startedAt: '2026-11-05T09:00:00.000Z', sha256: tarSha }
         rows.push(row)
         return Response.json({ data: row })
       }
       const one = url.pathname.match(/^\/hub-backups\/([^/]+)$/)
+      if (one && method === 'download') return Response.json({ data: { url: `/archive/${one[1]}`, name: 'basecamp-stub.tar.gz' } })
       if (one && req.method === 'GET') {
         const row = rows.find(r => r.id === decodeURIComponent(one[1]))
         if (!row) return Response.json({ message: 'not found' }, { status: 404 })
@@ -201,5 +230,51 @@ describe('B2 backups', () => {
     expect(out.blocked).toEqual(['Other'])
     expect(out.unset).toEqual([{ slug: 'ela' }])
     expect(JSON.stringify(out)).not.toMatch(/owner@example\.com|app_1|holder/)
+  })
+})
+
+describe('download', () => {
+  test('fetches the newest archive into the local copies, unpacked and checked, taking no backup', async () => {
+    const before = asked.filter(a => a.endsWith(' take')).length
+    const started = await startDownload('stub', { home })
+    expect('refused' in started).toBe(false)
+    const o = await settled('stub')
+    expect(o.verb).toBe('download')
+    expect(o.error).toBeUndefined()
+    expect(o.state).toBe('done')
+    expect(asked.filter(a => a.endsWith(' take')).length).toBe(before)
+
+    const stub = (await listBasecamps({ home })).find(e => e.name === 'stub')!
+    const copy = stub.local.find(c => c.file === '2026-11-05T09-00-00-000Z')
+    expect(copy?.kind).toBe('archive')
+  })
+
+  test('a second press finds it on this laptop and fetches nothing', async () => {
+    const fetched = asked.filter(a => a.startsWith('GET /archive/')).length
+    await startDownload('stub', { home })
+    const o = await settled('stub')
+    expect(o.note).toContain('on this laptop already')
+    expect(asked.filter(a => a.startsWith('GET /archive/')).length).toBe(fetched)
+  })
+
+  test('Save .tar.gz answers an absolute link and the sha256 Basecamp recorded, and no key', async () => {
+    const link = await archiveLink('stub', { home })
+    if ('refused' in link) throw new Error(link.refused)
+    expect(link.url).toBe(`http://127.0.0.1:${server.port}/archive/hb_2`)
+    expect(link.sha256).toBe(tarSha)
+    expect(JSON.stringify(link)).not.toContain(KEY)
+  })
+
+  test('an entry with no key is refused', async () => {
+    expect(await startDownload('nokey', { home })).toEqual({ refused: expect.stringContaining('fli basecamp:key') })
+    expect(await archiveLink('nokey', { home })).toEqual({ refused: expect.stringContaining('fli basecamp:key') })
+  })
+})
+
+describe('key copy', () => {
+  test('an entry with no ssh Host is refused before anything is read', async () => {
+    expect(await keyCopy('stub', { home })).toEqual({ refused: expect.stringContaining('no ssh Host') })
+    expect(await saveKey('stub', { home })).toEqual({ refused: expect.stringContaining('no ssh Host') })
+    expect(await keyCopy('nope', { home })).toEqual({ refused: expect.stringContaining("No Basecamp named 'nope'") })
   })
 })

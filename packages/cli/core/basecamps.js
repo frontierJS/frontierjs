@@ -2,7 +2,9 @@
 //
 // `basecamps.json` beside the global env: an object keyed by the ssh Host name
 // `basecamp:create` writes to `~/.ssh/config` (so no new noun), each entry
-//   { url, host?, cloud?, boxId?, apiKey, scopedKey?, peerKeyId?, runs? }
+//   { url, host?, cloud?, boxId?, profile?, apiKey, scopedKey?, peerKeyId?, runs? }
+// `profile` is the fli profile the box was bought under (`FJS-D2087`): every
+// later verb on this entry spends that profile's account keys.
 // `url` is the API origin; `host` is optional because the reserved name `dev`
 // is the local dev Basecamp and a CI machine has no ssh config. `scopedKey`
 // is the narrow key `ws:deps --push` and `db` use beside the admin `apiKey`.
@@ -92,6 +94,21 @@ export function resolveBasecamp(name, { home } = {}) {
   if (names.length === 0) throw new Error(`No Basecamps are known (${basecampsPath(home)}) — fli basecamp:create adds one`)
   if (names.length > 1) throw new Error(`Which Basecamp? Pass --basecamp <name>: ${names.join(', ')}`)
   return { name: names[0], ...all[names[0]] }
+}
+
+/**
+ * Why a run must not spend `entry`'s account keys under the profile in use, or
+ * null. A Basecamp spends the profile it was bought under (FJS-D2087), and the
+ * profile in use is the folder's or the shell's, so a verb typed in another
+ * client's repo would spend that client's keys; it refuses rather than switch
+ * (FJS-D2093). An entry with no `profile` was bought under the global file.
+ */
+export function profileMismatch(entry, active) {
+  const filed = entry?.profile || null, using = active || null
+  if (!entry || filed === using) return null
+  const was = filed ? `profile ${filed}` : 'no profile (the global file)'
+  const is  = using ? `profile ${using}` : 'no profile (the global file)'
+  return `Basecamp "${entry.name}" was bought under ${was}, and this run is under ${is}. Run it again with FLI_PROFILE=${filed ?? ''} in front`
 }
 
 const noRunKey = (name, home) =>

@@ -26,6 +26,7 @@ title: Settings
   import Slider      from '@frontierjs/ui/components/forms/Slider.mesa'
   import Button      from '@frontierjs/ui/components/forms/Button.mesa'
   import Input       from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select      from '@frontierjs/ui/components/forms/Select.mesa'
   import ThemePicker from '@frontierjs/ui/components/display/ThemePicker.mesa'
 
   $: (theme.value, theme.preference)
@@ -80,6 +81,79 @@ title: Settings
     }
   }
 
+  // Profiles (`FJS-D2089`): one client's account keys each, written through
+  // the same `global-env.js` helpers as the pane above. A profile's keys arrive
+  // masked, with its file mode and the projects whose `.env` names it.
+  let profiles      = []
+  let profilesDir   = ''
+  let profilesError = null
+  let newProfile    = ''
+  let makingProfile = false
+  let pickedProfile = ''
+  let pKey          = ''
+  let pValue        = ''
+  let settingP      = false
+  let unsettingP    = {}
+
+  async function loadProfiles() {
+    try {
+      const out = await laptop.service.invoke('profiles')
+      profiles      = out.profiles
+      profilesDir   = out.dir
+      profilesError = null
+    } catch (err) {
+      profilesError = err.message
+    }
+  }
+
+  async function makeProfile() {
+    makingProfile = true
+    try {
+      await laptop.service.invoke('createProfile', null, { name: newProfile.trim() })
+      const made = newProfile.trim()
+      toasts.success(`Profile ${made} made`)
+      newProfile = ''
+      // The select draws blank on a value none of its options carries yet.
+      await loadProfiles()
+      pickedProfile = made
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      makingProfile = false
+    }
+  }
+
+  async function setProfileKey() {
+    settingP = true
+    try {
+      await laptop.service.invoke('setProfileKey', null, { name: pickedProfile, key: pKey.trim(), value: pValue })
+      toasts.success(`${pKey.trim()} is set in ${pickedProfile}`)
+      pKey   = ''
+      pValue = ''
+      await loadProfiles()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      settingP = false
+    }
+  }
+
+  async function unsetProfileKey(name, key) {
+    const id = `${name}/${key}`
+    unsettingP = { ...unsettingP, [id]: true }
+    try {
+      await laptop.service.invoke('unsetProfileKey', null, { name, key })
+      toasts.success(`${key} is unset in ${name}`)
+      await loadProfiles()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      unsettingP = { ...unsettingP, [id]: false }
+    }
+  }
+
+  const profileOptions = () => [{ value: '', label: 'Choose a profile…' }, ...profiles.map(p => ({ value: p.name, label: p.name }))]
+
   // The ntfy topic Claude Code's Stop hook pings when a long turn ends.
   let pingInfo  = null
   let pingTopic = ''
@@ -123,6 +197,7 @@ title: Settings
   }
 
   loadEnv()
+  loadProfiles()
   loadPing()
   loadCommands()
 
@@ -196,6 +271,58 @@ title: Settings
     <Input id="settings-env-key" name="key" label="Key" placeholder="API_TOKEN" required bind:value={newKey} />
     <Input id="settings-env-value" name="value" label="Value" type="password" autocomplete="off" required bind:value={newValue} />
     <Button type="submit" tone="primary" loading={setting}>Set</Button>
+  </form>
+</Card>
+
+<Card id="settings-profiles">
+  <h2 class="h5">Profiles</h2>
+  <p class="text-sm text-muted">
+    One client's account keys each{#if profilesDir}, kept in <code>{profilesDir}</code>{/if}. A project's <code>.env</code> says <code>FLI_PROFILE=name</code> to spend one, and a Basecamp remembers the profile it was bought under. Values are masked here and never sent to this page.
+  </p>
+  {#if profilesError}
+    <article class="alert danger"><div class="alert-content">{profilesError}</div></article>
+  {/if}
+  {#each profiles as p (p.name)}
+    <section class="stack-sm" data-profile={p.name}>
+      <h3 class="h6"><code>{p.name}</code> <span class="text-sm text-muted">mode {p.mode}</span></h3>
+      {#if p.open}
+        <p class="text-sm text-danger" data-profile-open={p.name}>Other users can read this file: <code>chmod 600 {p.path}</code></p>
+      {/if}
+      <p class="text-sm text-muted" data-profile-projects={p.name}>
+        {p.projects.length ? `Named by ${p.projects.join(', ')}` : 'No project under ~/code names it.'}
+      </p>
+      {#if p.keys.length}
+        <table>
+          <thead><tr><th>Key</th><th>Value</th><th>Used by</th><th></th></tr></thead>
+          <tbody>
+            {#each p.keys as k (k.key)}
+              <tr data-profile-key={`${p.name}/${k.key}`}>
+                <td><code>{k.key}</code></td>
+                <td><code>{k.masked}</code></td>
+                <td class="text-sm">{k.usedBy.length ? k.usedBy.join(', ') : '—'}</td>
+                <td><Button size="sm" treatment="outlined" tone="danger" loading={!!unsettingP[`${p.name}/${k.key}`]} onclick={() => unsetProfileKey(p.name, k.key)}>Unset</Button></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else}
+        <p class="text-sm text-muted">No keys set.</p>
+      {/if}
+    </section>
+  {:else}
+    {#if !profilesError}
+      <p class="text-sm text-muted">No profiles yet.</p>
+    {/if}
+  {/each}
+  <form id="settings-profile-form" class="cluster" novalidate onsubmit={(e) => { e.preventDefault(); makeProfile() }}>
+    <Input id="settings-profile-name" name="name" label="New profile" placeholder="acme" required bind:value={newProfile} />
+    <Button type="submit" tone="primary" loading={makingProfile}>Make</Button>
+  </form>
+  <form id="settings-profile-key-form" class="cluster" novalidate onsubmit={(e) => { e.preventDefault(); setProfileKey() }}>
+    <Select id="settings-profile-pick" label="Profile" placeholder="" options={(profiles, profileOptions())} bind:value={pickedProfile} />
+    <Input id="settings-profile-key" name="key" label="Key" placeholder="CLOUDFLARE_API_TOKEN" required bind:value={pKey} />
+    <Input id="settings-profile-value" name="value" label="Value" type="password" autocomplete="off" required bind:value={pValue} />
+    <Button type="submit" tone="primary" loading={settingP} disabled={(pickedProfile, !pickedProfile)}>Set</Button>
   </form>
 </Card>
 

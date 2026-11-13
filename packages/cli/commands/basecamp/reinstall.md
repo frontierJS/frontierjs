@@ -363,9 +363,14 @@ const launchRows = async ({ server, as, chalk }) => {
 </script>
 
 ```js
+const { profileLine } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+{ const profile = profileLine(); if (profile) echo(profile) }
+
 const server = String(arg.server ?? '').trim() || await deployServer()
 if (!server) { log.error('Pass the box: fli basecamp:reinstall <server>, or set deploy.server in packages/basecamp/frontier.config.js'); process.exitCode = 1; return }
 const entryName = entryFor(flag.basecamp, server)
+{ const refusal = entryName && profileMismatch({ name: entryName, ...readBasecamps()[entryName] }, global.fliProfile?.name)
+  if (refusal) { log.error(refusal); process.exitCode = 1; return } }
 if (flag.fresh && flag.restore) { log.error('Pass one of --fresh and --restore'); process.exitCode = 1; return }
 
 const files = await deployFiles(server)

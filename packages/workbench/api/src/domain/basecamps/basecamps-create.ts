@@ -42,7 +42,12 @@ export type CreateInput = {
   dry?:        boolean
   /** The person said yes to this exact command line. */
   approved?:   boolean
+  /** The fli profile the box is bought under; `''` or absent is not chosen, `NO_PROFILE` is the global file (`FJS-D2088`). */
+  profile?:    string
 }
+
+/** The Profile select's answer for "None — global file": a value no profile name can be, since a name is lowercase letters, digits and dashes. */
+export const NO_PROFILE = '(global)'
 
 export type Creation = {
   name:      string
@@ -54,6 +59,8 @@ export type Creation = {
   log:       string
   /** The spawn itself failed, so there is no exit code to wait for. */
   error?:    string
+  /** The profile the child ran under; absent is the global file. */
+  profile?:  string
 }
 
 export type CreateOptions = {
@@ -63,6 +70,8 @@ export type CreateOptions = {
   home?: string
   /** The child's environment; this process's by default. */
   env?:  Record<string, string | undefined>
+  /** The fli profile the child spends (`FLI_PROFILE`); absent runs it on the global file. */
+  profile?: string
 }
 
 let held: Creation | null = null
@@ -81,6 +90,18 @@ const WORD   = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const HOST   = /^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$/
 const EMAIL  = /^[A-Za-z0-9][^\s@]*@[^\s@]+\.[^\s@]+$/
 const clean  = (v: unknown) => typeof v === 'string' ? v.trim() : ''
+
+/** The profile a create input names — `''` for the global file — or why it names none. */
+export async function profileOf(input: Pick<CreateInput, 'profile'>, opts: { home?: string } = {}): Promise<string | { refused: string }> {
+  const picked = clean(input.profile)
+  if (!picked) return { refused: 'Pick a profile, or None — global file' }
+  if (picked === NO_PROFILE) return ''
+  const cli = await import('@frontierjs/cli/core/global-env.js') as unknown as { badProfileName: (n: string) => string | null, profileNames: (o: { home?: string }) => string[] }
+  const bad = cli.badProfileName(picked)
+  if (bad) return { refused: bad }
+  if (!cli.profileNames({ home: opts.home }).includes(picked)) return { refused: `No profile named '${picked}' — make it on the Laptop screen` }
+  return picked
+}
 
 /** The argv the command runs with after `fli.js`, or why it cannot. */
 export function createArgv(input: CreateInput): string[] | { refused: string } {
@@ -116,8 +137,10 @@ export async function startCreate(input: CreateInput, opts: CreateOptions = {}):
   if (input.approved !== true) return { refused: 'basecamp:create is confirmed by a person each run: it was not approved' }
   const name = clean(input.name)
   if (await entryOf(name, { home: opts.home })) return { refused: `A Basecamp named '${name}' is already in basecamps.json` }
+  const profile = await profileOf(input, opts)
+  if (typeof profile !== 'string') return profile
 
-  held = spawnFli('basecamp-create', name, [...argv, '--approved'], opts)
+  held = spawnFli('basecamp-create', name, [...argv, '--approved'], { ...opts, profile })
   return { ...held }
 }
 
@@ -162,7 +185,7 @@ export function startResume(input: { approved?: boolean }, opts: CreateOptions =
   const argv = resumeArgv(held, readLog(held.log))
   if (!argv) return { refused: `'${held.name}' has nothing to resume: its log names no box to install on` }
   if (input.approved !== true) return { refused: 'Installing on a box is confirmed by a person each run: it was not approved' }
-  held = spawnFli('basecamp-install', held.name, argv, opts)
+  held = spawnFli('basecamp-install', held.name, argv, { ...opts, profile: held.profile })
   return { ...held }
 }
 
@@ -171,14 +194,19 @@ export function spawnFli(verb: string, name: string, full: string[], opts: Creat
   const dir  = logDir(opts.dir)
   const log  = join(dir, `${verb}.${name}.${new Date().toISOString().replace(/[:.]/g, '-')}.log`)
   mkdirSync(dir, { recursive: true })
-  const rec: Creation = { name, argv: ['fli', ...full], startedAt: new Date().toISOString(), pid: null, exit: null, log }
+  const rec: Creation = { name, argv: ['fli', ...full], startedAt: new Date().toISOString(), pid: null, exit: null, log, ...(opts.profile ? { profile: opts.profile } : {}) }
+
+  // A FLI_PROFILE inherited from this process would spend an account the person did not pick.
+  const env = { ...(opts.env ?? process.env), NO_COLOR: '1' } as NodeJS.ProcessEnv
+  delete env.FLI_PROFILE
+  if (opts.profile) env.FLI_PROFILE = opts.profile
 
   const fd = openSync(log, 'a')
   let child
   try {
     child = spawn(process.execPath, [fliBin(), ...full], {
       detached: true, stdio: ['ignore', fd, fd],
-      env: { ...(opts.env ?? process.env), NO_COLOR: '1' } as NodeJS.ProcessEnv,
+      env,
     })
   } finally { closeSync(fd) }
   child.unref()

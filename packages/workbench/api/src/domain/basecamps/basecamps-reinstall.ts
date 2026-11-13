@@ -56,7 +56,7 @@ export async function startReinstall(input: ReinstallInput, opts: CreateOptions 
   const drills = opts.drills ? opts.drills() : drillProcesses()
   if (drills.length) return { refused: `A restore drill is going (pid ${drills.join(', ')}), and it runs its own reinstall` }
 
-  held = spawnFli('basecamp-reinstall', name, [...argv, '--approved'], opts)
+  held = spawnFli('basecamp-reinstall', name, [...argv, '--approved'], { ...opts, profile: e.profile })
   return { ...held }
 }
 

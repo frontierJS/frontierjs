@@ -14,7 +14,7 @@ import { fileValue }                from '@frontierjs/toolbelt/env'
 import { chalk }                    from './color.js'
 import { ageOf }                    from './cloud.js'
 import { createMachine, pipeCommand, shQuote } from './machine.js'
-import { TIERS }                    from './deploy-target.js'
+import { TIERS, apiFiles, sshHost } from './deploy-target.js'
 
 /** One call to Basecamp's API, answering the body, or throwing with what Basecamp said. */
 export async function basecamp(origin, key, path, { method = 'GET', body, headers = {} } = {}) {
@@ -440,11 +440,27 @@ export async function pullHubArchive({ origin, key, out, dry = false, log, say =
     log.dry(`take a backup of Basecamp at ${origin} to ${hubWhere(await hubDestination(origin, key))}, then fetch it under ${out}`)
     return null
   }
-  const row = await takeHubBackup({ origin, key, log, say })
+  return fetchHubArchive({ origin, key, row: await takeHubBackup({ origin, key, log, say }), out })
+}
 
+/** The newest hub backup that succeeded, or null with none. */
+export async function newestHubArchive({ origin, key }) {
+  const rows = await basecamp(origin, key, '/hub-backups?status=success&$limit=1&$orderBy[createdAt]=desc')
+  return rows?.[0] ?? null
+}
+
+/** The stamp directory an archive taken at `row` lands in under `out`. */
+export const archiveDirName = (row) => (row.startedAt ?? row.createdAt).replace(/[:.]/g, '-')
+
+/**
+ * Fetch the archive of a `success` hub backup row into `<out>/<stamp>/` and
+ * unpack it there, graded against its manifest. Takes no backup. Answers
+ * `{ dir, file, archive, manifest, row }`, `archive` the unpacked `basecamp-<stamp>/`.
+ */
+export async function fetchHubArchive({ origin, key, row, out }) {
   const { url, name } = await basecamp(origin, key, `/hub-backups/${encodeURIComponent(row.id)}`,
     { method: 'POST', headers: { 'x-service-method': 'download' }, body: {} })
-  const dir  = resolve(out, (row.startedAt ?? row.createdAt).replace(/[:.]/g, '-'))
+  const dir  = resolve(out, archiveDirName(row))
   mkdirSync(dir, { recursive: true })
   const file = join(dir, basename(name))
   const got  = await fetchHashed(new URL(url, origin + '/').href, file, `the archive taken ${row.startedAt}`)
@@ -677,6 +693,18 @@ export function keepKey({ server, key, how, echo }) {
   return { keyFile: kept.path, already: kept.already, printed: how !== 'f', fingerprint }
 }
 
+/**
+ * Whether this laptop holds a copy of `boxKey` among the keys filed for
+ * `server`: `matches`, `missing` with none filed, `differs` when every filed
+ * one is another key, `none` when the box keeps no key. Answers fingerprints only.
+ */
+export function keyCopyState(server, boxKey) {
+  const filed = [...filedKeys(server).keys()]
+  if (!boxKey) return { state: 'none', fingerprint: null, filed }
+  const fingerprint = sha256Of(boxKey)
+  return { state: filed.includes(fingerprint) ? 'matches' : filed.length ? 'differs' : 'missing', fingerprint, filed }
+}
+
 /** Tell Basecamp a copy of its key is off the box (`hubConfig.attestEscrow`).
  *  The caller checks first that the API runs the key just kept — an
  *  attestation of a key nobody holds grades `hub.key-escrowed` green for
@@ -874,6 +902,15 @@ export async function basecampApi() {
   const { apiContainer } = await import('./ports.js')
   const { deploy } = (await import(new URL('../../basecamp/frontier.config.js', import.meta.url).href)).default
   return { container: apiContainer(deploy.app_id, deploy), port: deploy.api.port }
+}
+
+/**
+ * Basecamp's files on `server` — `{ host, dbDir, envFile, secretsDir }` — from
+ * the same deploy config, for a caller with no `global.fliRoot` (Workbench).
+ */
+export async function basecampFiles(server) {
+  const { deploy } = (await import(new URL('../../basecamp/frontier.config.js', import.meta.url).href)).default
+  return { ...apiFiles(deploy, deploy.path), host: sshHost(deploy.user ?? null, server) }
 }
 
 /** Restart the API container, so it boots on the key or the archive just staged. */

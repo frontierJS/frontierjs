@@ -27,6 +27,18 @@
  * counts in; a character `h`, `l` or `x` steps over is a grapheme. In visual
  * the anchor is the selection's other end and both ends are included.
  *
+ * Counts, `.`, macros and marks are the vim layer's own (`FJS-D2086`,
+ * `FJS-D2101`, `FJS-D2102`). A digit key is the action `digit0`–`digit9`:
+ * `count` holds the digits typed, `opCount` the ones before an operator, and
+ * `0` with none pending is `lineStart`. `.` and `@a` answer `request:
+ * 'replay'` with `actions`, `[[action, arg?], ...]` ending in `['replayEnd']`:
+ * the host calls `editDoc` for each in order, applies each edit to its own
+ * document, stops after one that answers `failed`, and makes the loop one undo
+ * step. `replaying` counts the replays under way and clears itself, so a host
+ * sets nothing, and a replay never records. `marks` are offsets that `editDoc`
+ * moves with its own edits; a host calls `shiftMarks` for every other edit.
+ * While `recording` is set a host steps `RECORDING` in place of `VIM.normal`.
+ *
  * Registers follow vim: a yank fills `"0`, a delete of a line or more shifts
  * `"1`–`"9`, a smaller one fills `"-`, `"A` appends to `"a`, `"_` keeps
  * nothing, and `""` is whatever was written last. Only `"+` (and `"*`, the
@@ -79,12 +91,17 @@ const MOTION_KEYS = {
   j: 'down', k: 'up', '<Down>': 'down', '<Up>': 'up',
   w: 'wordForward', b: 'wordBack', e: 'wordEnd', ge: 'wordEndBack',
   W: 'bigWordForward', B: 'bigWordBack', E: 'bigWordEnd', gE: 'bigWordEndBack',
-  0: 'lineStart', '^': 'firstNonBlank', $: 'lineEnd', '<Home>': 'lineStart', '<End>': 'lineEnd',
+  '^': 'firstNonBlank', $: 'lineEnd', '<Home>': 'lineStart', '<End>': 'lineEnd',
   gg: 'top', G: 'bottom',
   f: { await: 'findForward' }, F: { await: 'findBack' }, t: { await: 'tillForward' }, T: { await: 'tillBack' },
   ';': 'repeatFind', ',': 'repeatFindBack',
   '%': 'matchPair', '}': 'paragraphForward', '{': 'paragraphBack',
+  '`': { await: 'markJump' }, "'": { await: 'markLine' },
 }
+
+// A digit is a count while one is pending and `0` is the line-start motion
+// when none is (`FJS-D2086`); `/keys` hands the vim layer each as a chord.
+const DIGIT_KEYS = Object.fromEntries(Array.from({ length: 10 }, (_, d) => [String(d), `digit${d}`]))
 
 const OPERATOR_KEYS = {
   d: 'delete', c: 'change', y: 'yank', '>': 'indent', '<lt>': 'outdent',
@@ -109,7 +126,9 @@ for (const [keys, name] of [
  */
 export const VIM = (() => {
   const normal = Object.freeze({
-    ...MOTION_KEYS, ...OPERATOR_KEYS,
+    ...MOTION_KEYS, ...DIGIT_KEYS, ...OPERATOR_KEYS,
+    m: { await: 'markSet' }, q: { await: 'record' }, '@': { await: 'play' }, '.': 'repeatChange',
+    '<C-a>': 'increment', '<C-x>': 'decrement',
     i: 'insert', a: 'append', I: 'insertLineStart', A: 'appendLineEnd', o: 'openBelow', O: 'openAbove',
     x: 'deleteChar', '<Del>': 'deleteChar', X: 'deleteBack', D: 'deleteToEnd', C: 'changeToEnd',
     s: 'substitute', S: 'changeLines', Y: 'yankLines',
@@ -117,13 +136,13 @@ export const VIM = (() => {
     u: 'undo', '<C-r>': 'redo', v: 'visual', V: 'visualLine', '"': { await: 'register' }, '<Esc>': 'normal',
   })
   const operator = Object.freeze({
-    ...MOTION_KEYS, ...OPERATOR_KEYS, ...OBJECT_KEYS,
+    ...MOTION_KEYS, ...DIGIT_KEYS, ...OPERATOR_KEYS, ...OBJECT_KEYS,
     // `guu`, `gUU`, `g~~`: the operator's last key doubled is its line.
     u: 'lowercase', U: 'uppercase', '~': 'swapCase',
     '<Esc>': 'normal',
   })
   const visual = Object.freeze({
-    ...MOTION_KEYS, ...OPERATOR_KEYS, ...OBJECT_KEYS,
+    ...MOTION_KEYS, ...DIGIT_KEYS, ...OPERATOR_KEYS, ...OBJECT_KEYS,
     x: 'delete', '<Del>': 'delete', s: 'change', u: 'lowercase', U: 'uppercase', '~': 'swapCase',
     D: 'deleteLines', X: 'deleteLines', C: 'changeLines', S: 'changeLines', R: 'changeLines', Y: 'yankLines',
     p: 'putAfter', P: 'putBefore', J: 'join', r: { await: 'replaceChar' },
@@ -133,7 +152,15 @@ export const VIM = (() => {
   return Object.freeze({ normal, insert, operator, visual, visualLine: visual })
 })()
 
-const MODES = new Set(Object.keys(VIM))
+/**
+ * Host rule: step this table in place of `VIM.normal` while `state.recording`
+ * is set. It is `VIM.normal` with `q` as the stop. `q` in `VIM.normal` waits for a register
+ * name, so a host stepping it while recording would swallow the key after the
+ * stop.
+ */
+export const RECORDING = Object.freeze({ ...VIM.normal, q: 'recordStop' })
+
+const MODES = new Set(['normal', 'insert', 'operator', 'visual', 'visualLine'])
 const isVisual = (mode) => mode === 'visual' || mode === 'visualLine'
 
 function refuse(fn, input, why) {
@@ -174,9 +201,18 @@ export function textbox(text = '', { cursor, anchor, mode = 'insert' } = {}) {
 export function edit(state, action, arg) {
   if (!state || typeof state.text !== 'string' || !state.undo) refuse('edit', state, 'a textbox() state is required')
   if (action === 'sync') return sync(state, arg)
+  return Object.freeze(apply(state, action, arg, null).state)
+}
+
+// One action over the string. `group` is set while a replay runs, so the
+// whole loop is one undo step: only its first change keeps a snapshot. The
+// loop is this host's answer to `request: 'replay'`; every host writes it.
+function apply(state, action, arg, group) {
   const out = editDoc(state, action, arg, stringDoc(state.text))
 
-  const kept = out.step ? checkpoint(state) : state
+  const keep = out.step && !group?.began
+  if (out.step && group) group.began = true
+  const kept = keep ? checkpoint(state) : state
   let text = kept.text
   for (const e of out.edits) text = text.slice(0, e.from) + e.insert + text.slice(e.to)
   let s = { ...out.state, text, undo: kept.undo }
@@ -185,7 +221,14 @@ export function edit(state, action, arg) {
     s = { ...s, ...back, anchor: back.cursor ?? s.anchor }
     if (s.mode === 'normal') s = { ...s, ...rest(s, reader(stringDoc(s.text))) }
   }
-  return Object.freeze(s)
+  if (out.request !== 'replay') return { state: s, failed: out.failed }
+  const shared = group ?? { began: false }
+  for (const [name, input] of out.actions) {
+    const step = apply(s, name, input, shared)
+    s = step.state
+    if (step.failed) return { state: s, failed: true }
+  }
+  return { state: s, failed: false }
 }
 
 function sync(s, arg) {
@@ -281,7 +324,11 @@ export function editDoc(state, action, arg, doc) {
     mode: state.mode ?? 'insert',
     registers: state.registers ?? NO_REGISTERS,
   }
-  const out = dispatch(s, r, action, arg)
+  s.n = s.opCount || s.count ? Math.min((s.opCount ?? 1) * (s.count ?? 1), MAX_COUNT) : undefined
+  // `0` with no count pending is the motion; recorded as the motion, so a
+  // replay with a new count cannot mistake it for a digit.
+  const act = action === 'digit0' && !s.count && s.mode !== 'insert' ? 'lineStart' : action
+  const out = action === 'replayEnd' ? {} : dispatch(s, r, act, arg)
   const after = out.edit ? overlay(r, out.edit) : r
   const mode = out.mode ?? s.mode
   const cursor = out.cursor ?? s.cursor
@@ -290,7 +337,12 @@ export function editDoc(state, action, arg, doc) {
     : isVisual(mode) && isVisual(s.mode) ? s.anchor
       : 'cursor' in out ? cursor : s.anchor
   let next = { cursor, anchor, mode, registers: out.registers ?? s.registers }
-  if (mode === 'operator') next.operator = out.operator ?? s.operator
+  if (mode === 'operator') {
+    next.operator = out.operator ?? s.operator
+    const opCount = 'opCount' in out ? out.opCount : s.opCount
+    if (opCount) next.opCount = opCount
+  }
+  if (out.count) next.count = out.count
   if (out.named ?? (mode === 'operator' && s.named)) next.named = out.named ?? s.named
   const column = 'column' in out ? out.column : undefined
   if (column !== undefined) next.column = column
@@ -298,12 +350,172 @@ export function editDoc(state, action, arg, doc) {
   if (s.indent !== undefined) next.indent = s.indent
   if (mode === 'normal' || mode === 'operator') next = { ...next, ...rest(next, after) }
   else if (isVisual(mode)) next.cursor = onChar(after, next.cursor)
+
+  let request = out.request ?? (out.registers?.['+'] && out.registers['+'] !== s.registers['+'] ? 'copy' : undefined)
+  let actions
+  let failed = out.failed === true
+  if (request === 'replay') {
+    if ((s.replaying ?? 0) >= MAX_DEPTH) [request, failed] = [undefined, true]
+    else actions = Object.freeze([...out.actions, Object.freeze(['replayEnd'])])
+  }
+  remember(s, next, { action: act, arg, out, edited: Boolean(out.edit), depth: request === 'replay' ? (s.replaying ?? 0) + 1 : undefined, failed, end: action === 'replayEnd', r })
   return Object.freeze({
     state: Object.freeze(next),
     edits: Object.freeze(out.edit ? [Object.freeze(out.edit)] : []),
-    request: out.request ?? (out.registers?.['+'] && out.registers['+'] !== s.registers['+'] ? 'copy' : undefined),
+    request,
+    actions,
+    failed,
     step: s.mode !== 'insert' && (Boolean(out.edit) || (mode === 'insert' && s.mode !== 'insert')),
   })
+}
+
+// ─── What the state remembers beside the cursor ──────────────────────────
+//
+// `marks`, `macros`, `lastMacro`, `recording`, `last` (the last change as an
+// action list), `cmd` (the command under way) and `replaying` (how many
+// replays deep the host's loop is) ride in the state and are copied forward
+// here. A replay never records: the host feeds its actions back through
+// editDoc, and `replaying` is what tells them from keys a person pressed.
+
+const MAX_COUNT = 9999
+const MAX_DEPTH = 100
+const COUNT_DIGIT = /^digit\d$/
+const REGISTER_NAME = /^[a-z]$/
+
+const entry = (action, arg) => Object.freeze(arg === undefined ? [action] : [action, arg])
+function push(list, action, arg) {
+  const last = list[list.length - 1]
+  const merged = action === 'type' && last?.[0] === 'type' ? [...list.slice(0, -1), entry('type', last[1] + arg)] : [...list, entry(action, arg)]
+  return Object.freeze(merged)
+}
+
+function remember(s, next, { action, arg, out, edited, depth, failed, end, r }) {
+  for (const k of ['macros', 'lastMacro', 'recording', 'last', 'indent']) if (s[k] !== undefined) next[k] = s[k]
+  if (s.marks) next.marks = edited && out.marks === undefined ? shift(s.marks, out.edit, r, out.lineSpan) : s.marks
+  if (out.marks) next.marks = out.marks
+  if (out.lastMacro) next.lastMacro = out.lastMacro
+
+  if (end) {
+    if (s.replaying > 1) next.replaying = s.replaying - 1
+    if (s.cmd) next.cmd = s.cmd
+    return
+  }
+  if (depth) next.replaying = depth
+  else if (s.replaying && !failed) next.replaying = s.replaying
+
+  // A replay's changes set `last` and are not recorded into a register, which
+  // took the keys a person pressed.
+  if (!s.replaying) {
+    if (action === 'recordStop' && s.recording) {
+      next.macros = Object.freeze({ ...s.macros, [s.recording.name]: s.recording.actions })
+      delete next.recording
+    } else if (s.recording) {
+      next.recording = Object.freeze({ name: s.recording.name, actions: push(s.recording.actions, action, arg) })
+    }
+    if (out.recording) next.recording = out.recording
+  }
+
+  // A command is every action from the first key out of NORMAL until the mode
+  // is NORMAL again with no count or register pending; one that edited, or
+  // entered INSERT, is what `.` repeats. A visual one repeats as the operator
+  // over a region the size of the one it had (`:help visual-repeat`), so its
+  // actions from the first operator on follow a `reselect` of that size.
+  if (!s.cmd && s.mode === 'insert') return
+  const actions = push(s.cmd?.actions ?? [], action, arg)
+  const dirty = s.cmd?.dirty || edited || (next.mode === 'insert' && s.mode !== 'insert')
+  const visual = s.cmd?.visual || isVisual(s.mode) || isVisual(next.mode)
+  const operating = isVisual(s.mode) && (!isVisual(next.mode) || action === 'register')
+  const region = s.cmd?.region ?? (operating ? regionOf(s, r) : undefined)
+  const from = s.cmd?.from ?? (operating ? actions.length - 1 : undefined)
+  if (next.mode === 'normal' && !next.count && action !== 'register') {
+    if (dirty && !failed) {
+      if (!visual) next.last = Object.freeze({ actions })
+      else if (region) next.last = Object.freeze({ actions: Object.freeze([entry('reselect', region), ...actions.slice(from)]) })
+    }
+  } else next.cmd = Object.freeze({ actions, dirty, visual, region, from })
+}
+
+// The size of the selection `s` holds: whole lines, the characters of one
+// line, or several lines ending at the same column.
+function regionOf(s, r) {
+  const lo = Math.min(s.anchor, s.cursor)
+  const hi = Math.max(s.anchor, s.cursor)
+  const lines = r.lineOf(hi) - r.lineOf(lo) + 1
+  if (s.mode === 'visualLine') return Object.freeze({ mode: 'visualLine', lines })
+  if (lines > 1) return Object.freeze({ mode: 'visual', lines, col: hi - r.lineStartAt(hi) })
+  let width = 0
+  for (let i = lo; i <= hi && i < r.length; i = next(r, i)) width++
+  return Object.freeze({ mode: 'visual', lines, width: Math.max(width, 1) })
+}
+
+// Visual mode over a region the size `regionOf` measured, from the cursor.
+function reselect(s, r, spec) {
+  if (!spec || typeof spec !== 'object') return { failed: true }
+  const end = Math.min(r.lineOf(s.cursor) + spec.lines - 1, r.lineCount - 1)
+  if (spec.mode === 'visualLine') return { mode: 'visualLine', anchor: s.cursor, cursor: r.lineStart(end) }
+  if (spec.lines > 1) return { mode: 'visual', anchor: s.cursor, cursor: Math.min(r.lineStart(end) + spec.col, r.lineEnd(end)) }
+  let at = s.cursor
+  for (let i = 1; i < spec.width && next(r, at) < r.lineEndAt(at); i++) at = next(r, at)
+  return { mode: 'visual', anchor: s.cursor, cursor: at }
+}
+
+// ─── Marks ────────────────────────────────────────────────────────────────
+
+const newlines = (text) => text.split('\n').length - 1
+
+// Where a mark at `rel` inside `removed` lands in `insert` when both hold the
+// same number of lines: the same line and column, clamped to the new line.
+function within(removed, insert, rel) {
+  const k = newlines(removed.slice(0, rel))
+  const old = removed.split('\n')
+  const fresh = insert.split('\n')
+  const before = (parts, n) => parts.slice(0, n).reduce((at, line) => at + line.length + 1, 0)
+  return before(fresh, k) + Math.min(rel - before(old, k), fresh[k].length)
+}
+
+// `span` is the lines an operator deleted, `{ from, to }`, when the caller
+// knows them; a host that has only the edit and the document guesses from the
+// edit, and cannot tell a deleted empty line from a joined one.
+function shift(marks, { from, to, insert }, r, span) {
+  const removed = from < to ? r.slice(from, to) : ''
+  const sameLines = insert !== '' && newlines(removed) === newlines(insert)
+  const out = {}
+  for (const [name, at] of Object.entries(marks)) {
+    if (goneWith(at, { from, to, insert }, r, span)) continue
+    if (at < from) out[name] = at
+    else if (at < to) out[name] = sameLines ? from + within(removed, insert, at - from) : from
+    else out[name] = at + insert.length - (to - from)
+  }
+  return Object.freeze(out)
+}
+
+// With no `span`, only a non-empty line can be known deleted: removing an
+// empty line's newline is also what joining it to the next line removes.
+function goneWith(at, { from, to, insert }, r, span) {
+  if (insert !== '') return false
+  if (span) return r.lineCount > 1 && at >= span.from && at <= span.to
+  const ls = r.lineStartAt(at)
+  const le = r.lineEndAt(at)
+  return le > ls && ls >= from && le <= to && (to > le || from < ls)
+}
+
+/**
+ * `state` after `edit` (`{ from, to, insert }`, offsets in `doc`, the document
+ * BEFORE the edit): every mark moved as vim moves it. A host calls this for
+ * each edit it applies that did not come from `editDoc`, which shifts its own.
+ * An insert at a mark pushes it right; a delete over it leaves it at the
+ * deletion's start; a delete of a non-empty mark's whole line deletes the mark;
+ * a replacement with as many lines as it removed keeps a mark inside it on its
+ * line and column. An empty line is not known deleted from the edit alone, so
+ * its mark stays and lands where the line was.
+ */
+export function shiftMarks(state, edit, doc) {
+  if (!edit || !Number.isInteger(edit.from) || !Number.isInteger(edit.to) || typeof edit.insert !== 'string') {
+    refuse('shiftMarks', edit, 'an edit is { from, to, insert }')
+  }
+  checkDoc(doc, 'shiftMarks')
+  if (!state?.marks) return state
+  return Object.freeze({ ...state, marks: shift(state.marks, edit, reader(doc)) })
 }
 
 function checkPlace(fn, { cursor, anchor, mode = 'insert' }) {
@@ -313,10 +525,10 @@ function checkPlace(fn, { cursor, anchor, mode = 'insert' }) {
   }
 }
 
-function checkDoc(doc) {
+function checkDoc(doc, fn = 'editDoc') {
   const ok = doc && Number.isInteger(doc.length) && Number.isInteger(doc.lineCount)
     && typeof doc.slice === 'function' && typeof doc.lineStart === 'function' && typeof doc.positionAt === 'function'
-  if (!ok) refuse('editDoc', typeof doc, 'the document has length, lineCount, slice, lineStart and positionAt')
+  if (!ok) refuse(fn, typeof doc, 'the document has length, lineCount, slice, lineStart and positionAt')
 }
 
 const clamp = (i, length) => Math.max(0, Math.min(i, length))
@@ -336,10 +548,14 @@ function rest(s, r) {
 }
 
 function dispatch(s, r, action, arg) {
+  if (COUNT_DIGIT.test(action)) {
+    if (s.mode === 'insert') return {}
+    return { count: Math.min((s.count ?? 0) * 10 + Number(action.slice(5)), MAX_COUNT) }
+  }
   if (s.mode === 'operator') {
     if (OPERATORS.has(action)) {
       if (action !== s.operator) return { mode: 'normal' }
-      return operate(s, r, action, { ...lines(r, s.cursor, s.cursor), lo: s.cursor })
+      return operate(s, r, action, { ...lines(r, s.cursor, lastLine(r, s)), lo: s.cursor })
     }
     if (Object.hasOwn(MOTIONS, action)) return { ...operate(s, r, s.operator, motionRange(s, r, action, arg)), find: findMemory(s, action, arg) }
     if (Object.hasOwn(OBJECTS, action)) return operate(s, r, s.operator, OBJECTS[action](r, s.cursor))
@@ -351,7 +567,7 @@ function dispatch(s, r, action, arg) {
     if (Object.hasOwn(OBJECTS, action)) return selectObject(s, r, OBJECTS[action](r, s.cursor))
   }
   if (Object.hasOwn(MOTIONS, action)) return runMotion(s, r, action, arg)
-  if (OPERATORS.has(action)) return s.mode === 'normal' ? { mode: 'operator', operator: action, named: s.named } : {}
+  if (OPERATORS.has(action)) return s.mode === 'normal' ? { mode: 'operator', operator: action, named: s.named, opCount: s.count } : {}
   if (Object.hasOwn(ACTIONS, action)) return ACTIONS[action](s, r, arg)
   return {}
 }
@@ -361,11 +577,26 @@ function dispatch(s, r, action, arg) {
 // Each `to` answers where the motion lands from `s`, or null where it fails;
 // `kind` is vim's: exclusive, inclusive or linewise, what an operator takes.
 
-const column = (s, r) => s.column ?? s.cursor - r.lineStartAt(s.cursor)
+const columnOf = (s, r) => s.column ?? s.cursor - r.lineStartAt(s.cursor)
 
+// `3fx` is the third `x`; a till steps off it, so repeating `t` from the
+// character before a match would find the same one again.
 function finder(how) {
-  return { kind: how === 'f' || how === 't' ? 'inclusive' : 'exclusive', to: (s, r, ch) => find(r, s.cursor, how, ch) }
+  const base = how === 'f' || how === 't' ? 'f' : 'F'
+  return {
+    kind: how === 'f' || how === 't' ? 'inclusive' : 'exclusive',
+    to: (s, r, ch) => find(r, s.cursor, how, ch),
+    count(s, r, ch, n) {
+      let at = s.cursor
+      for (let i = 0; i < (n ?? 1) && at !== null; i++) at = find(r, at, base, ch)
+      return at === null || how === 'f' || how === 'F' ? at : how === 't' ? prev(r, at) : next(r, at)
+    },
+  }
 }
+
+const MARK_NAME = /^[a-z]$/
+const markAt = (s, r, ch) => (MARK_NAME.test(ch) && s.marks?.[ch] !== undefined ? Math.min(s.marks[ch], r.length) : null)
+const lineNumber = (r, n) => r.lineStart(Math.min(n, r.lineCount) - 1)
 const REVERSE = { f: 'F', F: 'f', t: 'T', T: 't' }
 function repeat(reversed) {
   const how = (s) => (s.find ? (reversed ? REVERSE[s.find.how] : s.find.how) : null)
@@ -392,8 +623,8 @@ const MOTIONS = {
       return next(r, s.cursor) < le ? next(r, s.cursor) : s.cursor
     },
   },
-  up: { kind: 'linewise', to: (s, r) => vertical(r, s.cursor, -1, column(s, r)) },
-  down: { kind: 'linewise', to: (s, r) => vertical(r, s.cursor, 1, column(s, r)) },
+  up: { kind: 'linewise', to: (s, r) => vertical(r, s.cursor, -1, columnOf(s, r)) },
+  down: { kind: 'linewise', to: (s, r) => vertical(r, s.cursor, 1, columnOf(s, r)) },
   wordForward: { kind: 'exclusive', to: (s, r) => wordForward(r, s.cursor) },
   bigWordForward: { kind: 'exclusive', to: (s, r) => wordForward(r, s.cursor, true) },
   wordBack: { kind: 'exclusive', to: (s, r) => wordBack(r, s.cursor) },
@@ -405,8 +636,14 @@ const MOTIONS = {
   lineStart: { kind: 'exclusive', to: (s, r) => r.lineStartAt(s.cursor) },
   firstNonBlank: { kind: 'exclusive', to: (s, r) => firstNonBlank(r, s.cursor) },
   lineEnd: { kind: 'exclusive', to: (s, r) => r.lineEndAt(s.cursor) },
-  top: { kind: 'linewise', to: (s, r) => firstNonBlank(r, 0) },
-  bottom: { kind: 'linewise', to: (s, r) => firstNonBlank(r, r.lineStart(r.lineCount - 1)) },
+  top: { kind: 'linewise', to: (s, r) => firstNonBlank(r, 0), count: (s, r, ch, n) => firstNonBlank(r, n === undefined ? 0 : lineNumber(r, n)) },
+  bottom: {
+    kind: 'linewise',
+    to: (s, r) => firstNonBlank(r, r.lineStart(r.lineCount - 1)),
+    count: (s, r, ch, n) => firstNonBlank(r, n === undefined ? r.lineStart(r.lineCount - 1) : lineNumber(r, n)),
+  },
+  markJump: { kind: 'exclusive', to: (s, r, ch) => markAt(s, r, ch) },
+  markLine: { kind: 'linewise', to: (s, r, ch) => (markAt(s, r, ch) === null ? null : firstNonBlank(r, markAt(s, r, ch))) },
   findForward: finder('f'),
   findBack: finder('F'),
   tillForward: finder('t'),
@@ -421,12 +658,29 @@ const MOTIONS = {
 const FINDS = { findForward: 'f', findBack: 'F', tillForward: 't', tillBack: 'T' }
 const findMemory = (s, action, ch) => (FINDS[action] ? Object.freeze({ how: FINDS[action], char: ch }) : s.find)
 
+// Where `action` lands after `s.n` repetitions, or null where the first fails.
+// A repetition that fails after the first stops there, as `5j` on the third
+// line from the end does; one that stands still ends the loop.
+function reach(s, r, action, arg) {
+  const m = MOTIONS[action]
+  if (m.count) return m.count(s, r, arg, s.n)
+  const column = action === 'up' || action === 'down' ? columnOf(s, r) : s.column
+  let at = s.cursor
+  for (let i = 0; i < (s.n ?? 1); i++) {
+    const to = m.to({ ...s, cursor: at, column }, r, arg)
+    if (to === null) return i === 0 ? null : at
+    if (to === at) break
+    at = to
+  }
+  return at
+}
+
 function runMotion(s, r, action, arg) {
-  const at = MOTIONS[action].to(s, r, arg)
+  const at = reach(s, r, action, arg)
   const out = { find: findMemory(s, action, arg) }
-  if (at === null) return out
+  if (at === null) return { ...out, failed: true }
   out.cursor = at
-  if (action === 'up' || action === 'down') out.column = column(s, r)
+  if (action === 'up' || action === 'down') out.column = columnOf(s, r)
   else if (action === 'lineEnd' && s.mode !== 'insert') out.column = Infinity
   return out
 }
@@ -435,7 +689,7 @@ function runMotion(s, r, action, arg) {
 // exclusive, `lo` where a yank leaves the cursor; null where it fails.
 function motionRange(s, r, action, arg) {
   const m = MOTIONS[action]
-  const at = m.to(s, r, arg)
+  const at = reach(s, r, action, arg)
   if (at === null) return null
   const kind = typeof m.kind === 'function' ? m.kind(s) : m.kind
   const from = Math.min(s.cursor, at)
@@ -444,10 +698,12 @@ function motionRange(s, r, action, arg) {
   if (kind === 'inclusive') return { from, to: next(r, to), linewise: false, lo: from }
 
   if (action === 'wordForward' || action === 'bigWordForward') {
-    // `cw` on a word changes to its end, the space after it kept.
-    if (s.operator === 'change' && !isSpaceAt(r, s.cursor)) return { from, to: runEnd(r, s.cursor, action === 'bigWordForward'), linewise: false, lo: from }
-    // The last word on a line ends the range there, not at the next line's first word.
-    to = Math.min(to, Math.max(from, r.lineEndAt(from)))
+    // The last word moved over starts at `last`: `cw` on a word changes to
+    // its end, the space after it kept, and a last word at a line's end ends
+    // the range there, not at the next line's first word.
+    const last = s.n > 1 ? reach({ ...s, n: s.n - 1 }, r, action) : s.cursor
+    if (s.operator === 'change' && !isSpaceAt(r, s.cursor)) return { from, to: runEnd(r, last, action === 'bigWordForward'), linewise: false, lo: from }
+    to = Math.min(to, Math.max(from, r.lineEndAt(last)))
   }
   // An exclusive range ending at a line's start ends on the line before it,
   // and covers whole lines when it also began at or before its first non-blank
@@ -460,6 +716,9 @@ function motionRange(s, r, action, arg) {
 }
 
 const lines = (r, a, b) => ({ from: r.lineStartAt(a), to: r.lineEndAt(b), linewise: true })
+
+// The start of the line `s.n - 1` below the cursor's, or the last line.
+const lastLine = (r, s) => r.lineStart(Math.min(r.lineOf(s.cursor) + (s.n ?? 1) - 1, r.lineCount - 1))
 
 // ─── Text objects ─────────────────────────────────────────────────────────
 
@@ -527,7 +786,7 @@ const CASES = {
 
 // `op` over `range`; a range that failed cancels the operator.
 function operate(s, r, op, range) {
-  if (!range) return { mode: 'normal' }
+  if (!range) return { mode: 'normal', failed: true }
   const { from, to, linewise } = range
   const lo = range.lo ?? from
   const text = r.slice(from, to)
@@ -535,7 +794,7 @@ function operate(s, r, op, range) {
     case 'yank':
       return { mode: 'normal', cursor: lo, registers: store(s, text, linewise, 'yank') }
     case 'delete':
-      if (linewise) return { ...removeLines(r, from, to), mode: 'normal', registers: store(s, text, true, 'delete') }
+      if (linewise) return { ...removeLines(r, from, to), mode: 'normal', registers: store(s, text, true, 'delete'), lineSpan: { from, to } }
       if (from === to) return { mode: 'normal' }
       return { edit: { from, to, insert: '' }, cursor: from, mode: 'normal', registers: store(s, text, false, 'delete') }
     case 'change': {
@@ -578,13 +837,20 @@ function removeLines(r, ls, le) {
 }
 
 function put(s, r, after) {
-  const { text, linewise } = read(s)
-  if (!text && !linewise) return {}
+  const { text: held, linewise } = read(s)
+  if (!held && !linewise) return { failed: true }
+  const n = s.n ?? 1
+  const text = linewise ? Array(n).fill(held).join('\n') : held.repeat(n)
   const cur = s.cursor
   if (linewise) {
-    const at = after ? r.lineEndAt(cur) : r.lineStartAt(cur)
-    const edit = { from: at, to: at, insert: after ? '\n' + text : text + '\n' }
-    return { edit, cursor: firstNonBlank(overlay(r, edit), after ? at + 1 : at) }
+    // Below goes in at the next line's start, so the edit begins on the new line:
+    // a host that redoes to the edit's start lands there. The last line has no
+    // next line to start at.
+    const end = r.lineEndAt(cur)
+    const below = after && end < r.length
+    const at = below ? end + 1 : after ? end : r.lineStartAt(cur)
+    const edit = { from: at, to: at, insert: after && !below ? '\n' + text : text + '\n' }
+    return { edit, cursor: firstNonBlank(overlay(r, edit), after && !below ? at + 1 : at) }
   }
   const at = after && cur < r.lineEndAt(cur) ? next(r, cur) : cur
   const edit = { from: at, to: at, insert: text }
@@ -669,16 +935,75 @@ const VISUAL = {
     return b > r.length ? { mode: 'normal' } : { mode: 'normal', ...join(r, lo, b) }
   },
   replaceChar: (s, r, ch) => replaceEach(r, selection(s, r), ch),
-  register: (s, r, ch) => (NAMES.test(ch) ? { named: ch } : {}),
+  register: (s, r, ch) => (NAMES.test(ch) ? { named: ch, count: s.count } : {}),
 }
 
 // ─── The actions ──────────────────────────────────────────────────────────
 
 const op = (name, rangeOf) => (s, r) => operate(s, r, name, rangeOf(s, r))
-const charRange = (s, r) => ({ from: s.cursor, to: Math.min(next(r, s.cursor), r.lineEndAt(s.cursor)), linewise: false })
-const backRange = (s, r) => ({ from: s.cursor > r.lineStartAt(s.cursor) ? prev(r, s.cursor) : s.cursor, to: s.cursor, linewise: false })
-const toEnd = (s, r) => ({ from: s.cursor, to: r.lineEndAt(s.cursor), linewise: false })
-const lineRange = (s, r) => ({ ...lines(r, s.cursor, s.cursor), lo: s.cursor })
+// `s.n` graphemes on the cursor's line, forward or back; fewer where the line ends.
+function charRange(s, r) {
+  const le = r.lineEndAt(s.cursor)
+  let to = s.cursor
+  for (let i = 0; i < (s.n ?? 1) && to < le; i++) to = next(r, to)
+  return { from: s.cursor, to: Math.min(to, le), linewise: false }
+}
+function backRange(s, r) {
+  const ls = r.lineStartAt(s.cursor)
+  let from = s.cursor
+  for (let i = 0; i < (s.n ?? 1) && from > ls; i++) from = prev(r, from)
+  return { from, to: s.cursor, linewise: false }
+}
+const toEnd = (s, r) => ({ from: s.cursor, to: r.lineEndAt(lastLine(r, s)), linewise: false })
+const lineRange = (s, r) => ({ ...lines(r, s.cursor, lastLine(r, s)), lo: s.cursor })
+
+// `<C-a>` and `<C-x>`: the number at or after the cursor on its line, in
+// decimal, hex or binary; a decimal's `-` is its sign, and zeros that led it stay.
+const NUMBER = /0[xX][0-9a-fA-F]+|0[bB][01]+|[0-9]+/g
+const WRAP = 1n << 64n
+function bump(s, r, sign) {
+  const ls = r.lineStartAt(s.cursor)
+  const line = r.slice(ls, r.lineEndAt(s.cursor))
+  const col = s.cursor - ls
+  for (const m of line.matchAll(NUMBER)) {
+    const [text] = m
+    if (m.index + text.length <= col) continue
+    const delta = BigInt(sign * (s.n ?? 1))
+    const radix = /^0[xX]/.test(text) ? 16 : /^0[bB]/.test(text) ? 2 : 10
+    let [start, insert] = [m.index, '']
+    if (radix === 10) {
+      const negative = m.index > 0 && line[m.index - 1] === '-'
+      if (negative) start -= 1
+      const v = (negative ? -BigInt(text) : BigInt(text)) + delta
+      const digits = (v < 0n ? -v : v).toString().padStart(text.length > 1 && text[0] === '0' ? text.length : 0, '0')
+      insert = (v < 0n ? '-' : '') + digits
+    } else {
+      const body = text.slice(2)
+      const v = (((BigInt(text) + delta) % WRAP) + WRAP) % WRAP
+      const digits = v.toString(radix).padStart(body.length, '0')
+      insert = text.slice(0, 2) + (/[A-F]/.test(body) && !/[a-f]/.test(body) ? digits.toUpperCase() : digits)
+    }
+    const edit = { from: ls + start, to: ls + m.index + text.length, insert }
+    return { edit, cursor: edit.from + insert.length - 1 }
+  }
+  return { failed: true }
+}
+
+// `q` and `@` take a register name; `@@` is the macro played last.
+function play(s, name) {
+  const which = name === '@' ? s.lastMacro : name
+  const actions = which && REGISTER_NAME.test(which) ? s.macros?.[which] : undefined
+  if (!actions?.length) return { failed: true }
+  return { request: 'replay', actions: Array.from({ length: s.n ?? 1 }, () => actions).flat(), lastMacro: which }
+}
+
+// `3.` replaces the count the change had; none given repeats it as it was.
+function repeatLast(s) {
+  if (!s.last) return { failed: true }
+  const kept = s.n === undefined ? s.last.actions : s.last.actions.filter(([a]) => !COUNT_DIGIT.test(a))
+  const count = s.n === undefined ? [] : Array.from(String(s.n), (d) => entry(`digit${d}`))
+  return { request: 'replay', actions: [...count, ...kept] }
+}
 
 const ACTIONS = {
   insert: () => ({ mode: 'insert' }),
@@ -701,7 +1026,20 @@ const ACTIONS = {
   }),
   visual: () => ({ mode: 'visual' }),
   visualLine: () => ({ mode: 'visualLine' }),
-  register: (s, r, ch) => (NAMES.test(ch) ? { named: ch } : {}),
+  register: (s, r, ch) => (NAMES.test(ch) ? { named: ch, count: s.count } : {}),
+  markSet: (s, r, ch) => (MARK_NAME.test(ch) ? { marks: Object.freeze({ ...s.marks, [ch]: s.cursor }) } : { failed: true }),
+  record: (s, r, ch) => {
+    if (!/^[a-zA-Z]$/.test(ch) || s.recording) return { failed: true }
+    const name = ch.toLowerCase()
+    return { recording: Object.freeze({ name, actions: ch === name ? Object.freeze([]) : (s.macros?.[name] ?? Object.freeze([])) }) }
+  },
+  recordStop: () => ({}),
+  play: (s, r, ch) => play(s, ch),
+  repeatChange: (s) => repeatLast(s),
+  increment: (s, r) => bump(s, r, 1),
+  decrement: (s, r) => bump(s, r, -1),
+  replayEnd: () => ({}),
+  reselect: (s, r, spec) => reselect(s, r, spec),
 
   deleteChar: op('delete', charRange),
   deleteBack: op('delete', backRange),
@@ -714,13 +1052,18 @@ const ACTIONS = {
   deleteWord: (s, r) => operate(s, r, 'delete', motionRange(s, r, 'wordForward')),
   putAfter: (s, r) => put(s, r, true),
   putBefore: (s, r) => put(s, r, false),
+  // `3J` joins three lines, and a count past the last line joins to it.
   join: (s, r) => {
     const le = r.lineEndAt(s.cursor)
-    return le < r.length ? join(r, s.cursor, le + 1) : {}
+    if (le >= r.length) return { failed: true }
+    const line = Math.min(r.lineOf(s.cursor) + Math.max(s.n ?? 1, 2) - 1, r.lineCount - 1)
+    return join(r, s.cursor, r.lineStart(line))
   },
+  // `3rx` replaces three characters or none.
   replaceChar: (s, r, ch) => {
     const range = charRange(s, r)
-    return range.from < range.to ? replaceEach(r, range, ch) : {}
+    const have = mapGraphemes(r.slice(range.from, r.lineEndAt(s.cursor)), () => '.').length
+    return range.from >= range.to || (s.n ?? 1) > have ? { failed: true } : replaceEach(r, range, ch)
   },
   // `~` swaps one character's case and steps on, never off the line.
   swapCaseChar: (s, r) => {
@@ -760,12 +1103,12 @@ function replaceSelection(s, put) {
   return { edit: { from, to, insert: put }, cursor: from + put.length }
 }
 
-const KNOWN = new Set([...Object.keys(MOTIONS), ...OPERATORS, ...Object.keys(OBJECTS), ...Object.keys(VISUAL), ...Object.keys(ACTIONS)])
-const AWAITS = new Set(['findForward', 'findBack', 'tillForward', 'tillBack', 'replaceChar', 'register'])
+const KNOWN = new Set([...Object.keys(DIGIT_KEYS).map((d) => `digit${d}`), ...Object.keys(MOTIONS), ...OPERATORS, ...Object.keys(OBJECTS), ...Object.keys(VISUAL), ...Object.keys(ACTIONS)])
+const AWAITS = new Set(['findForward', 'findBack', 'tillForward', 'tillBack', 'replaceChar', 'register', 'markSet', 'markJump', 'markLine', 'record', 'play'])
 
 // A row naming an action the box lacks is a key that does nothing, so it
 // fails the import rather than the press.
-for (const table of [NORMAL, INSERT, ...Object.values(VIM)]) {
+for (const table of [NORMAL, INSERT, RECORDING, ...Object.values(VIM)]) {
   for (const [keys, value] of Object.entries(table)) {
     const action = typeof value === 'string' ? value : value.await
     if (!KNOWN.has(action)) refuse('textbox', keys, `'${action}' is no action of the box`)

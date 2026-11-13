@@ -1,7 +1,7 @@
 ---
 title: basecamp:install
 description: Install Basecamp on a box that already install ssh, from any directory
-effects: installs docker, caddy and Basecamp on the box over ssh, and writes its DNS record at Cloudflare
+effects: installs docker, caddy and Basecamp on the box over ssh, writes its DNS record at Cloudflare, and files an admin API key for it in ~/.config/fli/basecamps.json
 examples:
   - fli basecamp:install root@203.0.113.7 --domain ops.example.com
   - fli basecamp:install ops --admin you@example.com
@@ -78,20 +78,32 @@ and skips the question. The enrollment runs last, as `fli deploy:outpost`,
 because it files the box under the workspace `POST /setup` makes. When that
 call fails the enrollment is not run, and the line that runs it is printed.
 
+Last, as `fli basecamp:create` does, it offers an admin API key for that admin
+— yes by default, and yes with no terminal — minted over ssh as `fli
+basecamp:key` mints one and filed in `~/.config/fli/basecamps.json` under the
+box's ssh Host name, with the hostname and the profile in use, so `fli
+basecamp:deploy` and the other Basecamp verbs reach it at once. At a terminal
+the key is printed once and one more question copies it; a run whose output is
+not a terminal files it and never prints it. Without it the new Basecamp is in
+no entry until `fli basecamp:key --server <box> --domain <hostname>` files one.
+
 ```js
+const { profileLine } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+{ const profile = profileLine(); if (profile) echo(profile) }
+
 const dest = String(arg.server ?? '').trim()
 if (!dest) { log.error('Pass the box: fli basecamp:install <ssh alias or user@host>'); process.exitCode = 1; return }
 
 if (process.stdin.isTTY) echo(chalk`\n  {bold fli basecamp:install}  {dim Basecamp on ${dest}}\n`)
 
 const asked = await askInstall({ flag, dest, tty, log, echo, chalk })
-const install = { ...asked, unverified: flag.unverified }
-if (install.refusal) {
-  log.error(`${install.refusal}. Nothing was installed`)
-  if (install.rejected) await tokenHint({ echo, chalk })
+if (asked.refusal) {
+  log.error(`${asked.refusal}. Nothing was installed`)
+  if (asked.rejected) await tokenHint({ echo, chalk })
   process.exitCode = 1
   return
 }
+const install = { ...asked, apiKey: await askAdminKey({ tty, chalk }), unverified: flag.unverified }
 if (!await deployGateOpen({ unverified: flag.unverified, log })) {
   log.error('Nothing was installed')
   process.exitCode = 1
@@ -103,5 +115,12 @@ if (process.stdin.isTTY) {
   echo.lines(['', ...rows, ''], { indent: 2 })
 }
 
-process.exitCode = (await runInstall(dest, install, { tty, log, echo, chalk })).code || process.exitCode
+const ran = await runInstall(dest, install, { tty, log, echo, chalk })
+process.exitCode = ran.code || process.exitCode
+if (!ran.installed || !install.apiKey) return
+
+// Filed under the ssh Host, as basecamp:key files one; a user@host box has no Host to name.
+const entry = { name: dest, host: dest.includes('@') ? undefined : dest, domain: install.domain, profile: global.fliProfile?.name || undefined }
+const yes = async (q) => await tty.keys(chalk`{cyan ?} {bold ${q}}`, { y: 'yes', n: 'no' }) === 'y'
+if (!await adminKey({ dest, admin: install.admin, entry, yes, log, echo, chalk })) process.exitCode = 1
 ```

@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path'
 import { disk, clear, removeLane } from '../src/domain/laptop/laptop.ts'
 import { keys, fixMode } from '../src/domain/laptop/keys.ts'
 import { ping, setPing } from '../src/domain/laptop/ping.ts'
-import { globalEnv, setGlobalEnv, unsetGlobalEnv, commands } from '../src/domain/laptop/settings.ts'
+import { globalEnv, setGlobalEnv, unsetGlobalEnv, commands, profiles, profileList, addProfile, setProfileEnv, unsetProfileEnv } from '../src/domain/laptop/settings.ts'
 import { running } from '../src/domain/laptop/running.ts'
 import { servicesList, probeService } from '../src/domain/laptop/services.ts'
 import { createHash } from 'node:crypto'
@@ -128,6 +128,55 @@ describe('fixMode', () => {
     expect(fixMode('../../etc/passwd', { home })).toHaveProperty('refused')
     expect(fixMode(join(home, '.config', 'fli', 'config.json'), { home })).toHaveProperty('refused')
     expect(fixMode('workbench/push.json', { home })).toHaveProperty('refused')
+  })
+})
+
+describe('profiles', () => {
+  const VALUE = 'acme-RAWVALUE-xy'
+  const code  = join(home, 'code')
+
+  test('a profile is made empty at 600, and making it twice or with a bad name is refused', () => {
+    expect(addProfile('acme', { home })).toEqual({ name: 'acme' })
+    expect(addProfile('acme', { home })).toHaveProperty('refused')
+    expect(addProfile('../x', { home })).toHaveProperty('refused')
+    expect(addProfile('Acme', { home })).toHaveProperty('refused')
+    expect(profileList({ home })).toEqual({ names: ['acme'] })
+    expect((statSync(join(home, '.config', 'fli', 'profiles', 'acme.env')).mode & 0o777).toString(8)).toBe('600')
+  })
+
+  test('set lists the key masked and the projects naming it; the value never leaves', () => {
+    put(join(code, 'client', 'app', '.env'), 'FLI_PROFILE=acme\n')
+    expect(setProfileEnv('acme', 'CLOUDFLARE_API_TOKEN', VALUE, { home })).toEqual({ name: 'acme', key: 'CLOUDFLARE_API_TOKEN' })
+    const out = profiles({ home })
+    const acme = out.profiles.find(p => p.name === 'acme')!
+    expect(acme).toMatchObject({ mode: '600', open: false, projects: [join(code, 'client', 'app')] })
+    expect(acme.keys.find(k => k.key === 'CLOUDFLARE_API_TOKEN')?.masked).toBe('••••xy')
+    expect(JSON.stringify(out)).not.toContain(VALUE)
+    expect(readFileSync(acme.path, 'utf8')).toContain(`CLOUDFLARE_API_TOKEN=${VALUE}`)
+    // The global env is a different file and holds none of it.
+    expect(readFileSync(globalEnv({ home }).path, 'utf8')).not.toContain(VALUE)
+  })
+
+  test('a file others can read is flagged open', () => {
+    chmodSync(join(home, '.config', 'fli', 'profiles', 'acme.env'), 0o644)
+    expect(profiles({ home }).profiles[0]).toMatchObject({ mode: '644', open: true })
+    chmodSync(join(home, '.config', 'fli', 'profiles', 'acme.env'), 0o600)
+  })
+
+  test('refuses a key or value the global env would, and a profile that is not there', () => {
+    expect(setProfileEnv('acme', 'lower', 'x', { home })).toHaveProperty('refused')
+    expect(setProfileEnv('acme', 'OK_KEY', '', { home })).toHaveProperty('refused')
+    expect(setProfileEnv('acme', 'OK_KEY', 'a\nEVIL=1', { home })).toHaveProperty('refused')
+    expect(setProfileEnv('ghost', 'OK_KEY', 'x', { home })).toHaveProperty('refused')
+    expect(setProfileEnv('../x', 'OK_KEY', 'x', { home })).toHaveProperty('refused')
+  })
+
+  test('unset removes the key and leaves the rest; unsetting twice is refused', () => {
+    setProfileEnv('acme', 'KEEP_ME', 'abc', { home })
+    expect(unsetProfileEnv('acme', 'CLOUDFLARE_API_TOKEN', { home })).toEqual({ name: 'acme', key: 'CLOUDFLARE_API_TOKEN' })
+    expect(profiles({ home }).profiles[0].keys.map(k => k.key)).toEqual(['KEEP_ME'])
+    expect(unsetProfileEnv('acme', 'CLOUDFLARE_API_TOKEN', { home })).toHaveProperty('refused')
+    expect(unsetProfileEnv('ghost', 'KEEP_ME', { home })).toHaveProperty('refused')
   })
 })
 

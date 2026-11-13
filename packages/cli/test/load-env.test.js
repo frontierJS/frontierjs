@@ -11,7 +11,8 @@ import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { loadEnv, loadFliEnv, profileLine, PROFILE_NAMED } from '../core/utils.js'
+import { loadEnv, loadFliEnv, profileLine, PROFILE_NAMED, projectsNaming } from '../core/utils.js'
+import { createProfile, storeKey, unsetProfileKey, listProfile, openProfileMode } from '../core/global-env.js'
 import { dotenvLine } from '../core/vaultwarden.js'
 
 const KEYS = ['FJS2631_SHELL', 'FJS2631_BOTH', 'FJS2631_GLOBAL']
@@ -261,5 +262,32 @@ describe('an outward command names its profile in its first line (fli-profiles 2
 
   test('a child its parent already named the profile to prints nothing', () => {
     expect(profileLine({ name: 'acme', source: 'project' }, { [PROFILE_NAMED]: '1' })).toBeNull()
+  })
+})
+
+describe('the profile helpers Workbench shares with fli profiles (fli-profiles 4.5)', () => {
+  test('unsetProfileKey drops one key, leaves the others, and answers whether it held it', () => {
+    const home = mkdtempSync(join(tmpdir(), 'fli-profile-home-'))
+    try {
+      createProfile('acme', { home })
+      storeKey('A', '1', { home, profile: 'acme' })
+      storeKey('B', '2', { home, profile: 'acme' })
+      expect(unsetProfileKey('acme', 'A', { home })).toBe(true)
+      expect(unsetProfileKey('acme', 'A', { home })).toBe(false)
+      expect(unsetProfileKey('nofile', 'A', { home })).toBe(false)
+      expect(listProfile('acme', { home }).map(k => k.key)).toEqual(['B'])
+      expect(openProfileMode('acme', { home })).toBeNull()
+    } finally { rmSync(home, { recursive: true, force: true }) }
+  })
+
+  test('projectsNaming finds each .env naming a profile within the walk', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-naming-'))
+    try {
+      mkdirSync(join(root, 'client', 'app'), { recursive: true })
+      mkdirSync(join(root, 'node_modules', 'x'), { recursive: true })
+      writeFileSync(join(root, 'client', 'app', '.env'), 'FLI_PROFILE=acme\n')
+      writeFileSync(join(root, 'node_modules', 'x', '.env'), 'FLI_PROFILE=skipped\n')
+      expect(projectsNaming(root)).toEqual([{ dir: join(root, 'client', 'app'), name: 'acme' }])
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 })

@@ -17,7 +17,7 @@ const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text
 const webDomain = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
 
-const { resolveBasecamp, readBasecamps, writeBasecamp, reachBasecamp, reachBasecampFor, reinstallDomain, DEV_BASECAMP, DEV_BASECAMP_ORIGIN } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
+const { resolveBasecamp, readBasecamps, writeBasecamp, profileMismatch, reachBasecamp, reachBasecampFor, reinstallDomain, DEV_BASECAMP, DEV_BASECAMP_ORIGIN } = await import(new URL('file://' + global.fliRoot + '/core/basecamps.js'))
 
 // The Basecamp a command talks to: `--basecamp <name>`, or the only entry
 // (`reachBasecamp` owns the refusal, which lists the names when several are known).
@@ -362,7 +362,7 @@ const adminThenFleet = async ({ outpost, domain, later, tty, stage, ...admin }) 
 const { replLine, holders, mint, keyName } = await import(new URL('file://' + global.fliRoot + '/core/basecamp-key.js'))
 
 // `create`'s key for the admin `/setup` just made, filed in `basecamps.json` as
-// `basecamp:key` files one. `entry` is `{ name, host, domain, cloud, boxId }`:
+// `basecamp:key` files one. `entry` is `{ name, host, domain, cloud, boxId, profile? }`:
 // the ssh Host name the index is keyed by, and the hostname the API origin is.
 // The token is printed only to a terminal: a run piped into a CI
 // log would keep a never-expiring admin credential in it. `yes` is create's
@@ -380,7 +380,7 @@ const adminKey = async ({ dest, admin, entry, yes, log, echo, chalk }) => {
   })().catch(e => ({ error: e.message }))
   if (made.error) { log.error(`${made.error}. Mint one later: ${later}`); return false }
 
-  const file = fileBasecamp(entry.name, { url: `https://${domain}`, host: entry.host, cloud: entry.cloud, boxId: entry.boxId, apiKey: made.token })
+  const file = fileBasecamp(entry.name, { url: `https://${domain}`, host: entry.host, cloud: entry.cloud, boxId: entry.boxId, profile: entry.profile, apiKey: made.token })
   echo`  {green ✓} {bold api key} {dim ${made.tokenHint ?? ''} for ${entry.name}} → ${file}`
   if (!process.stdout.isTTY) return made.token
 
@@ -462,12 +462,19 @@ const askIngress = async ({ zone, zones, asking, tty, echo, chalk }) => {
   }
 }
 
+/** Whether `install` files an admin key, which `create` asks too: without one the
+ *  new Basecamp is in no `basecamps.json` entry and no Basecamp verb reaches it.
+ *  No terminal is yes, since `adminKey` then files the key and never prints it. */
+const askAdminKey = async ({ tty, chalk }) =>
+  !process.stdin.isTTY || await tty.keys(questionLine(chalk, KEY_QUESTION), { y: 'yes', n: 'no' }) === 'y'
+
 /** The answers as `[label, value]` rows, for the summary before the run. */
-const installRows = ({ domain, admin, password, outpost, unneeded, ingress, unverified }, chalk, restore = false) => [
+const installRows = ({ domain, admin, password, outpost, unneeded, ingress, unverified, apiKey }, chalk, restore = false) => [
   ['hostname', domain],
   unverified && ['deploy', chalk`{yellow unverified} {dim — HEAD ships though it is unpushed or CI did not pass on it}`],
   ingress !== undefined && ['ingress', ingress ? `${ingress.zoneName} ${chalk.dim('— the token kept as a provider key, app records there')}` : chalk.dim('no')],
   admin && ['admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`],
+  apiKey !== undefined && ['api key', apiKey ? `admin ${chalk.dim('— shown once, filed in basecamps.json')}` : chalk.dim('no — fli basecamp:key later')],
   ['outpost', !outpost ? chalk.dim('no') : `yes ${chalk.dim(restore ? '— enrolled into the restored workspace' : '— fli deploy:outpost once the admin is made')}`],
   ['services', unneededRow(unneeded, chalk)],
 ].filter(Boolean)

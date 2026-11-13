@@ -84,6 +84,8 @@ const planLines = (plan, chalk) => {
 
 ```js
 const entry = resolveBasecamp(String(arg.basecamp ?? '').trim() || undefined)
+{ const refusal = profileMismatch(entry, global.fliProfile?.name)
+  if (refusal) { log.error(refusal); process.exitCode = 1; return } }
 const say   = (line) => echo`  {green ✓} ${line}`
 
 if (flag.undo) {

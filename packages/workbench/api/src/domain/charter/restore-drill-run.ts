@@ -63,7 +63,7 @@ const deps: Deps = {
   box:   (script, what) => asRootOn(host, script, what),
   reinstall: plan => {
     const argv = reinstallArgv(drill.basecamp, host, { name: drill.basecamp, mode: 'restore', plan }) as string[]
-    return spawnFli('restore-drill-reinstall', drill.basecamp, [...argv, '--approved'], { dir: join(dirname(dirname(file))) })
+    return spawnFli('restore-drill-reinstall', drill.basecamp, [...argv, '--approved'], { dir: join(dirname(dirname(file))), profile: entry.profile })
   },
   sleep: ms => new Promise(done => setTimeout(done, ms)),
   now:   () => Date.now(),

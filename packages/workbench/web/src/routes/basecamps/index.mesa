@@ -17,7 +17,12 @@ title: Basecamps
   //
   // Under each entry sit the backups already pulled to this laptop, with Delete
   // on each. The page sends the entry's name and the copy's folder name and
-  // never a path; the API resolves what to remove.
+  // never a path; the API resolves what to remove. Download adds the newest
+  // archive Basecamp holds to them; Save .tar.gz asks the API for Basecamp's
+  // one-use link to it and navigates there, so the admin key stays in the API.
+  //
+  // Key copy reads each box's ENCRYPTION_KEY over ssh in the API and answers
+  // fingerprints only; it is read on load and on Refresh, not on each poll.
   import { basecamps } from '../../resources/Basecamp.mesa'
   import { ago, at }   from '../../lib/datetime.js'
   import { bytes }     from '../../lib/bytes.js'
@@ -39,6 +44,70 @@ title: Basecamps
   let pressed   = {}     // name → the verb whose request is in flight
 
   const working = () => rows.filter(r => r.outcome?.state === 'working')
+
+  let keys = {}        // name → KeyCopy, { error }, or 'reading'
+
+  const keyed = (r) => !!r.host && r.hasKey && r.answers.ok
+
+  async function readKey(r) {
+    keys = { ...keys, [r.name]: 'reading' }
+    try {
+      keys = { ...keys, [r.name]: await basecamps.service.invoke('keyCopy', r.name) }
+    } catch (err) {
+      keys = { ...keys, [r.name]: { error: err.message } }
+    }
+  }
+
+  async function refresh() {
+    await load()
+    for (const r of rows.filter(keyed)) readKey(r)
+  }
+
+  async function saveKey(r) {
+    pressed = { ...pressed, [r.name]: 'saveKey' }
+    try {
+      const out = await basecamps.service.invoke('saveKey', r.name)
+      const kept = `Key ${out.kept} ${out.already ? 'was already filed' : 'filed'} on this laptop`
+      if (out.attested) toasts.success(`${kept} and attested to ${r.name}`)
+      else toasts.warning(`${kept}, not attested: ${out.why}`)
+      readKey(r)
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      pressed = { ...pressed, [r.name]: null }
+    }
+  }
+
+  async function saveArchive(r) {
+    pressed = { ...pressed, [r.name]: 'archiveLink' }
+    try {
+      const link = await basecamps.service.invoke('archiveLink', r.name)
+      if (link.sha256) toasts.info(`${link.name} — sha256 ${link.sha256}`)
+      location.assign(link.url)
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      pressed = { ...pressed, [r.name]: null }
+    }
+  }
+
+  const KEY_SAID = {
+    matches: 'matches the box',
+    missing: 'none on this laptop',
+    differs: 'this laptop holds another key',
+    none:    'the box keeps none',
+  }
+
+  function keyLine(k) {
+    if (k === 'reading') return 'reading over ssh…'
+    if (k.error)         return k.error
+    const parts = [`${KEY_SAID[k.state]}${k.box ? ` (${k.box})` : ''}`]
+    if (k.attested) parts.push(k.attested === k.box ? 'attested to Basecamp' : `Basecamp's attestation names ${k.attested}`)
+    else if (k.box) parts.push('not attested to Basecamp')
+    return parts.join(' · ')
+  }
+
+  const keyTone = (k) => k === 'reading' ? 'text-muted' : k.error || k.state === 'differs' ? 'text-danger' : k.state === 'matches' && k.attested === k.box ? 'text-success' : 'text-warning'
 
   async function load() {
     try {
@@ -124,8 +193,8 @@ title: Basecamps
   const filed = (plan) => plan.destinations.filter(d => d.filed)
   const canRun = (d) => !!d.plan && !d.plan.blocked.length && (d.kind === 'setup' || filed(d.plan).length > 0)
 
-  const VERB  = { backup: 'Backing up', restart: 'Restarting', b2: 'Setting up B2 backups', 'b2-undo': 'Undoing B2 backups' }
-  const LABEL = { backup: 'Back up', restart: 'Restart', b2: 'Set up B2 backups', 'b2-undo': 'Undo B2 backups' }
+  const VERB  = { backup: 'Backing up', restart: 'Restarting', b2: 'Setting up B2 backups', 'b2-undo': 'Undoing B2 backups', download: 'Downloading the newest archive' }
+  const LABEL = { backup: 'Back up', restart: 'Restart', b2: 'Set up B2 backups', 'b2-undo': 'Undo B2 backups', download: 'Download' }
 
   // A path starts with a slash; an object key under the destination's prefix does not.
   const whereIs = (b) => !b.location || String(b.location).startsWith('/') ? 'on the box only' : 'in B2'
@@ -144,9 +213,15 @@ title: Basecamps
     if (o.state === 'error')   return `${LABEL[o.verb]} failed after ${o.seconds ?? 0} s: ${o.error}`
     if (o.verb === 'b2')       return `Set up B2 backups in ${o.seconds} s`
     if (o.verb === 'b2-undo')  return `Undid B2 backups in ${o.seconds} s — ${o.note}`
+    if (o.verb === 'download') return o.note ? `Nothing to download — ${o.note}` : `Downloaded the archive of ${at(o.row?.finishedAt ?? o.row?.createdAt)} in ${o.seconds} s — under Local copies, checked against its manifest`
     if (o.verb === 'backup')   return `Backed up in ${o.seconds} s — Basecamp recorded ${o.row?.id} (${o.row?.status}) at ${at(o.row?.finishedAt ?? o.row?.createdAt)}${o.note ? `. ${o.note}` : ''}`
     return `Restarted in ${o.seconds} s — ${probeSaid(o.probe)}`
   }
+
+  // Every row carries the same buttons in the same places; one that does not apply is disabled with its reason as the title.
+  const busy     = (r) => r.outcome?.state === 'working' || !!pressed[r.name]
+  const archived = (r) => r.hasKey && r.newestBackup?.status === 'success'
+  const setUp    = (r) => !!r.host || r.name === 'dev'
 
   const toneOf = (o) => o.state === 'error' ? 'text-danger' : o.state === 'done' ? 'text-success' : ''
 
@@ -156,13 +231,13 @@ title: Basecamps
     { name: 'actions', label: '' },
   ]
 
-  load()
+  refresh()
 </script>
 
 <div class="section-header">
   <h1>Basecamps</h1>
   <span class="cluster">
-    <Button treatment="outlined" id="basecamps-refresh" onclick={load}>Refresh</Button>
+    <Button treatment="outlined" id="basecamps-refresh" onclick={refresh}>Refresh</Button>
     <Button id="basecamps-new" href="/basecamps/new/">New Basecamp</Button>
   </span>
 </div>
@@ -223,6 +298,18 @@ title: Basecamps
               <span class="text-muted">Local copies — none on this laptop</span>
             {/if}
           </div>
+          {#if keys[r.name]}
+            <div class="text-sm cluster" data-key={r.name}>
+              <span class={keyTone(keys[r.name])}>Key copy — {keyLine(keys[r.name])}</span>
+              {#if keys[r.name] !== 'reading' && !keys[r.name].error && keys[r.name].box && (keys[r.name].state !== 'matches' || keys[r.name].attested !== keys[r.name].box)}
+                <Button size="sm" treatment="outlined"
+                  disabled={!!pressed[r.name]}
+                  loading={pressed[r.name] === 'saveKey'}
+                  title="Copy the box's ENCRYPTION_KEY to this laptop over ssh, then attest it to Basecamp"
+                  onclick={() => saveKey(r)}>Save key</Button>
+              {/if}
+            </div>
+          {/if}
         </td>
         <td class="text-sm">
           {#if r.newestBackup}
@@ -240,38 +327,47 @@ title: Basecamps
           {/if}
         </td>
         <td>
-          <span class="cluster">
+          <div class="actions">
             <Button size="sm" treatment="outlined"
-              disabled={!r.hasKey || r.outcome?.state === 'working' || !!pressed[r.name]}
+              disabled={!r.hasKey || busy(r)}
               loading={pressed[r.name] === 'backup'}
               title={r.hasKey ? 'Take Basecamp\'s own backup now' : 'needs an API key: fli basecamp:key'}
               onclick={() => run(r, 'backup')}>Back up now</Button>
-            {#if r.host || r.name === 'dev'}
-              <Button size="sm" treatment="outlined"
-                disabled={r.outcome?.state === 'working' || !!pressed[r.name]}
-                loading={pressed[r.name] === 'setUpB2'}
-                title="Make this Basecamp's B2 buckets and keys and point its backups at them"
-                onclick={() => ask(r, 'setup')}>Set up B2 backups</Button>
-              <Button size="sm" treatment="ghost"
-                disabled={r.outcome?.state === 'working' || !!pressed[r.name]}
-                loading={pressed[r.name] === 'undoB2'}
-                title="Take the B2 destinations off and delete their keys; the buckets stay"
-                onclick={() => ask(r, 'undo')}>Undo B2 backups</Button>
-            {/if}
+            <Button size="sm" treatment="outlined"
+              disabled={!archived(r) || busy(r)}
+              loading={pressed[r.name] === 'download'}
+              title={archived(r) ? 'Fetch the newest archive into Local copies, unpacked and checked; takes no backup' : 'no backup that succeeded to fetch'}
+              onclick={() => run(r, 'download')}>Download</Button>
+            <Button size="sm" treatment="outlined"
+              disabled={!archived(r) || !!pressed[r.name]}
+              loading={pressed[r.name] === 'archiveLink'}
+              title={archived(r) ? 'Save the newest archive\'s .tar.gz through this browser' : 'no backup that succeeded to save'}
+              onclick={() => saveArchive(r)}>Save .tar.gz</Button>
+
+            <Button size="sm" treatment="outlined"
+              disabled={!setUp(r) || busy(r)}
+              loading={pressed[r.name] === 'setUpB2'}
+              title={setUp(r) ? 'Make this Basecamp\'s B2 buckets and keys and point its backups at them' : 'needs an ssh Host'}
+              onclick={() => ask(r, 'setup')}>Set up B2</Button>
+            <Button size="sm" treatment="outlined"
+              disabled={!setUp(r) || busy(r)}
+              loading={pressed[r.name] === 'undoB2'}
+              title={setUp(r) ? 'Take the B2 destinations off and delete their keys; the buckets stay' : 'needs an ssh Host'}
+              onclick={() => ask(r, 'undo')}>Undo B2</Button>
             {#if r.host}
               <ConfirmationPopover inline title={`Restart ${r.name}?`} confirmLabel="Restart" onconfirm={() => run(r, 'restart')}>
                 {#snippet trigger()}
-                  <Button size="sm" treatment="ghost" tone="danger"
-                    disabled={r.outcome?.state === 'working' || !!pressed[r.name]}
-                    loading={pressed[r.name] === 'restart'}>Restart</Button>
+                  <Button size="sm" treatment="outlined" tone="danger"
+                    disabled={busy(r)}
+                    loading={pressed[r.name] === 'restart'}
+                    title="Restart its API container over ssh">Restart</Button>
                 {/snippet}
               </ConfirmationPopover>
             {:else}
-              <Button size="sm" treatment="ghost" disabled title="needs an ssh Host">Restart</Button>
+              <Button size="sm" treatment="outlined" tone="danger" disabled title="needs an ssh Host">Restart</Button>
             {/if}
-          </span>
+          </div>
           {#if !r.hasKey}<div class="text-sm text-muted">no API key — fli basecamp:key files one</div>{/if}
-          {#if !r.host}<div class="text-sm text-muted">Restart needs an ssh Host</div>{/if}
         </td>
       </tr>
     {/snippet}
@@ -342,3 +438,12 @@ title: Basecamps
     <Button id="b2-cancel" treatment="ghost" onclick={() => { dialogOpen = false }}>Cancel</Button>
   {/snippet}
 </Modal>
+
+<style>
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(3, max-content);
+    gap: var(--space-sm);
+    align-items: center;
+  }
+</style>

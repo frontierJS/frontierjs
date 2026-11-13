@@ -8996,6 +8996,42 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2100"></a>2026-11-12 · `FJS-D2100` — Q15 — Files to Spaces that are not backups (Phase 12) — A Workbench page: list buckets, upload, download, delete.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **B** was picked over **A** (`fli spaces:put <path> [bucket/prefix]`), **C** (A separate paper, later).
+
+The paper made no recommendation. The owner chose a Workbench page (list buckets, upload, download, delete) over a fli verb or a later paper.
+
+### <a id="fjs-d2099"></a>2026-11-12 · `FJS-D2099` — Q14 — Spaces beside B2 (Phase 11) — Either, per Basecamp: the row offers both setups.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **C** was picked over **A** (B2 stays the locked primary; Spaces is a second copy. Needs a backup sent to two destinations, which no row can name today), **B** (Spaces replaces B2).
+
+Against the recommendation (**A**): The owner chose per-Basecamp either/or over B2-primary-plus-Spaces-copy: the row offers both setups. The owner gave no further reason.
+
+### <a id="fjs-d2098"></a>2026-11-12 · `FJS-D2098` — Q13 — A Basecamp's Spaces bucket layout (Phase 11) — A bucket per workspace with an App (`basecamp-<name>-<workspace>`), plus the hub's, each with its own `readwrite` key.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (One bucket per Basecamp; every workspace's key reads every other's).
+
+The paper's recommendation, taken as written: it keeps Q3's guarantee that one tenant's key cannot reach another's archives.
+
+### <a id="fjs-d2097"></a>2026-11-12 · `FJS-D2097` — Q12 — How far Spaces goes (Phase 11) — A **Set up Spaces backups** button now, as Phase 1's B2 one.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **B** was picked over **A** (Prove one hand-made Spaces destination first, build nothing).
+
+Against the recommendation (**A**): The owner chose to build the Set up Spaces backups button now rather than prove one hand-made destination first. The owner gave no further reason.
+
+### <a id="fjs-d2096"></a>2026-11-12 · `FJS-D2096` — Q11 — Which store the key copy uses (Phase 3; reopens Q5, `FJS-D2078`) — Keep `FJS-D1874`'s store; `FJS-D2078` is superseded.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Move to `~/.config/fli/keys/<name>.key` and repoint restore and `basecamp:backup`).
+
+The paper's recommendation, taken as written: nothing moves, and an older key filed under its fingerprint stays where restore finds it.
+
+### <a id="fjs-d2095"></a>2026-11-12 · `FJS-D2095` — Q10 — What Download does on a row (Phase 10) — Both: A as the button, B as a link beside it.
+
+Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **C** was picked over **A** (Pull to the laptop: `pullHubArchive` fetches the archive into `backupsRoot()/<name>/<stamp>/`, unpacks it and grades it against its manifest, so it lists under Local copies), **B** (A browser save of the `.tar.gz` through `hubBackups.download`'s link).
+
+Against the recommendation (**A**): The owner picked both: A is the button restore reads, B stays as a link beside it for a plain browser save. The owner gave no further reason.
+
 ### <a id="fjs-d2082"></a>2026-11-11 · `FJS-D2082` — Q9 — How the verb reaches a workspace its key is not bound to (1.2, 1.3) — Call Basecamp's own services through `deploy:repl` as an owner of each workspace, the way `basecamp:key` mints; `dev` runs it locally.
 
 Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Mint an admin key per workspace and file each under the entry, then use HTTP), **C** (The hub's workspace only; Apps elsewhere are named and skipped).
@@ -9014,7 +9050,7 @@ Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.
 
 The paper's recommendation, taken as written: B puts an account-wide credential on a box, which is the exposure this plan's pattern exists to avoid.
 
-### <a id="fjs-d2078"></a>2026-11-11 · `FJS-D2078` — Q5 — Where the laptop keeps each Basecamp's `ENCRYPTION_KEY` — `~/.config/fli/keys/<name>.key`, mode `0600`.
+### <a id="fjs-d2078"></a>2026-11-11 · `FJS-D2078` — Q5 — Where the laptop keeps each Basecamp's `ENCRYPTION_KEY` — `~/.config/fli/keys/<name>.key`, mode `0600`. *Superseded by `FJS-D2096`: the key copy stays in `FJS-D1874`'s store.*
 
 Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked over **B** (Vaultwarden. `core/vaultwarden.js` is read-only today, so this needs writing (encrypting a cipher on the client)), **C** (Only compare digests. The owner keeps the copy wherever they like).
 
@@ -13959,6 +13995,63 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2107"></a>2026-11-12 · `FJS-D2107` — Q20 — An exported `RECORDING` table (`VIM.normal` with `q` as `recordStop`) a host steps in place of `VIM.normal` while `state.recording` is set.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (keep that table internal and export `tableFor(state)`, the table a host steps for its mode and recording state), **C** (recording as a mode in `MODES`).
+
+Against the recommendation (**B**): the owner kept the exported table: the smallest change, and the string host already steps it; a host reads state.recording to choose it.
+
+### <a id="fjs-d2106"></a>2026-11-12 · `FJS-D2106` — Q19 — A replacement removing and inserting the same number of lines keeps an inside mark on its line and column, clamped to the new line; any other replacement moves it to the start.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (always the start of the span).
+
+The paper's recommendation, taken as written: vim keeps a mark on its line through a case change or an indent; the same-line-count test covers `gU gu g~ ~ > < r`. Confidence 2.
+
+### <a id="fjs-d2105"></a>2026-11-12 · `FJS-D2105` — Q18 — `shiftMarks(state, edit, doc)` with `doc` required and a missing one refused by name.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (`doc` optional: two arguments clamp a mark on a deleted line, three delete it).
+
+The paper's recommendation, taken as written: a host always holds its document before applying an edit, and an optional argument lets two hosts disagree about the same mark without either noticing. Confidence 3.
+
+### <a id="fjs-d2104"></a>2026-11-12 · `FJS-D2104` — Q17 — Vim's: a visual change records its region's size and `.` reapplies it to a same-size region from the cursor (`:help visual-repeat`); a change made while a macro replays sets the last change, so `.` after `@a` repeats the macro's last change, and a replay still never records into a macro register.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (leave both differences and list them here as known).
+
+The paper's recommendation, taken as written: a vim user's hands expect both, and each is one spec row. Confidence 3.
+
+### <a id="fjs-d2103"></a>2026-11-12 · `FJS-D2103` — Q16 — Vim's rule: deleting a mark's line deletes the mark (`'a` then reports it unset), a charwise delete moves it to the deletion's start, and an insert at the mark pushes it right so it stays on its character.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (always clamp to the deletion's start, so `'a` always lands somewhere), **C** (always delete the mark when its character goes).
+
+The paper's recommendation, taken as written: it is what a vim user's hands expect, and the property spec pins each case. Confidence 3.
+
+### <a id="fjs-d2102"></a>2026-11-12 · `FJS-D2102` — Q15 — Marks are offsets in the vim state; `/textbox` exports a pure `shiftMarks(state, edit)` that `editDoc` calls for its own edits and the host calls for every other edit it applies.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (the host owns marks and the layer asks with `request: 'mark'` and `'jump'`), **C** (marks are line and column with no adjustment).
+
+The paper's recommendation, taken as written: `d'a` needs the mark mid-grammar, which B's one-way requests cannot answer, and C silently moves a mark under any insert above it, so `d'a` deletes the wrong range. A is one implementation both paths share, graded by a property spec against a tracked sentinel character; the residual risk is a host that skips the call, so it is a documented host rule. Confidence 2.
+
+### <a id="fjs-d2101"></a>2026-11-12 · `FJS-D2101` — Q14 — The layer records the last change and each macro as action lists and answers `request: 'replay', actions`; the host calls `editDoc` per action, applies each edit to its own document, and groups the loop into one undo step. The layer marks the state `replaying` so a replay does not re-record, reports a failed motion so a macro stops there, and caps `@a` calling `@a`.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **B** was picked over **A** (`editDoc` replays inside the layer and answers several edits in order; the host applies them as one undo step), **C** (the layer folds the replay into one span edit from the first change to the last).
+
+The paper's recommendation, taken as written: `overlay()` answers offsets only, so A needs a second whole document inside the layer before a `j` in a macro works; B keeps the host's buffer the only document and lets a `u` or `"+p` inside a macro reach the host, as `request` already carries `undo`, `redo` and `copy`. C slices the whole span for `5@a` and wipes out a host's selections. Confidence 2.
+
+### <a id="fjs-d2092"></a>2026-11-12 · `FJS-D2092` — `/textbox` state carries an optional `indent`, the unit `>` and `<` shift by; absent means two spaces.
+
+Ruled by the owner on Lathe 5.2 (`IDEAS/keys.md` 5.2), after the build. A host that indents with tabs or four spaces sets it, so Lathe can follow a file's own indentation without `/textbox` reading an editor config. It is state rather than an `editDoc` option because the reducer's other inputs are the action and the document, and a per-buffer setting travels with the buffer's state. `<` removes one leading tab, or up to the unit's width of leading spaces.
+*Lives in:* `packages/toolbelt/src/textbox/textbox.js` (the shift operator reads `s.indent ?? '  '`).
+
+### <a id="fjs-d2091"></a>2026-11-12 · `FJS-D2091` — Only `"+` (and `"*`, the same register) reaches the system clipboard: any write to it answers `request: 'copy'`, even when the text is unchanged, and a host that wants `"+p` to read the clipboard writes `registers['+']` before the put.
+
+Ruled by the owner on Lathe 5.2, following Lathe Q16 (`fjs-prototypes/lathe/PLAN.md`): plain yank and put use vim's own registers, as vim's default `clipboard=` does. The reducer is pure (toolbelt's license, `FJS-D26`), so it cannot read or write the clipboard; it asks, and the host acts. A write always asks because the clipboard may have changed outside the editor since the last one. Every write stores a new frozen entry, so the identity check is the signal.
+*Lives in:* `packages/toolbelt/src/textbox/textbox.js` (`store`, and `request` in `editDoc`'s answer).
+
+### <a id="fjs-d2090"></a>2026-11-12 · `FJS-D2090` — Vim's L2 is a separate `/textbox` export, `VIM` (normal, insert, operator, visual, visualLine), next to L1's `NORMAL`/`INSERT`; ui's `<Textbox>` stays on L1.
+
+Ruled by the owner on Lathe 5.2 (`IDEAS/keys.md` 5.2). A form field asks for vim's home row, not operators, visual mode and registers, and swapping L1's tables would change every `<Textbox>` user's keys. Both levels share one reducer, `editDoc` (`FJS-D2085`), so a caller that wants L2 imports `VIM` and nothing else changes. A `<` key in a `/keys` table is spelled `<lt>`.
+*Lives in:* `packages/toolbelt/src/textbox/textbox.js` (`NORMAL`, `INSERT`, `VIM`) · `packages/ui` (`<Textbox>` imports L1).
+
 ### <a id="fjs-d2086"></a>2026-11-12 · `FJS-D2086` — Q13 — The vim layer parses `[count] operator [count] motion|object` itself over the chords `/keys` delivers; `/keys` is unchanged and `FJS-D1384` stands for app keymaps.
 
 Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (`/keys` gains a count prefix for every keymap (`FJS-D1384`'s reopen path), so `rowlist` and Haven get `5j` too; the operator grammar is still the vim layer's).
@@ -17045,6 +17138,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2094"></a>2026-11-12 · `FJS-D2094` — Q14 — May a single control's fix run on a click, and on the host too — A **remedy**: a control may name a `remedy` id; the Outpost's signed `POST /system/remedy/:id` runs the argv its own table holds for that id and refuses any other; Basecamp re-reads posture after. Behind `isSystemAdmin` and a confirm, on a fleet machine and on the host alike. The table holds only steps that are safe to repeat and restart no app; sshd, the firewall, a reboot and an upgrade are never remedies on the host, which keeps showing the `fli deploy` line.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **A** was picked over **B** (Remedies on fleet machines only; the host keeps every fix as prose), **C** (A, plus the sshd and firewall fixes on the host behind a precheck (an `authorized_keys` holds a key). A wrong ruleset there cuts off the one box that must stay reachable).
+
+The paper's recommendation, taken as written: ring 2's objection is to draining the plane, not to restarting chrony on it; the argv stays the Outpost's (§ The nine, 7), so no caller text reaches a shell, and the next posture read proves the click.
+
+### <a id="fjs-d2093"></a>2026-11-12 · `FJS-D2093` — Q8 — What a terminal verb does when its entry's profile is not the one in use — Refuse, naming both: the entry's profile and the one in use, and the `FLI_PROFILE=<entry's>` rerun.
+
+Asked in [`IDEAS/fli-profiles.md`](IDEAS/fli-profiles.md) § Open questions. **A** was picked over **B** (Adopt the entry's: reload the env under the entry's profile).
+
+The paper's recommendation, taken as written: nothing switches accounts behind the person, and the first line still names what is spent; B reloads env after startup, so two profiles' keys can mix and the first line stops matching the folder.
 
 ### <a id="fjs-d2089"></a>2026-11-12 · `FJS-D2089` — Q7 — Where Workbench lists and edits profiles — The Laptop screen, beside the global env pane, with its masked list and set/unset; it moves to a Secrets screen once the owner's secrets ideas are written.
 

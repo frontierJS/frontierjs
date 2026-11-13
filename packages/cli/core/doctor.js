@@ -26,7 +26,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basecampsPath, readBasecamps } from './basecamps.js'
 import { requiresOf }                 from './requires.js'
-import { esetHint, globalEnvPath, listGlobal, listProfile, profileNames, profilePath } from './global-env.js'
+import { badProfileName, esetHint, globalEnvPath, listGlobal, listProfile, profileNames, profilePath } from './global-env.js'
 import { homeReport, holdsOf, exposed } from './home.js'
 import { servicesReport } from './services.js'
 import { execSync }     from 'node:child_process'
@@ -158,6 +158,12 @@ function basecampRows(home) {
   try { all = readBasecamps({ home }) } catch (err) { rows.push({ label: 'basecamps.json', ok: false, hint: err.message, path: file }) }
   const hosts = sshHosts(home ?? homedir())
   for (const [name, entry] of Object.entries(all ?? {})) {
+    // Every Workbench verb on this entry spawns fli under its profile, and that refuses at the first line when the file is gone.
+    if (entry.profile) {
+      const bad = badProfileName(entry.profile)
+      const ok  = !bad && existsSync(profilePath(entry.profile, home))
+      rows.push({ label: `${name} profile`, ok, hint: bad ?? `names profile '${entry.profile}', which has no file  \u2192  fli profile:create ${entry.profile}, or drop "profile" from its entry`, path: file })
+    }
     if (!entry.host) continue
     rows.push({ label: name, ok: hosts.has(entry.host), hint: `no 'Host ${entry.host}' in ~/.ssh/config  \u2192  fli basecamp:create writes it, or add the block by hand`, path: file })
   }

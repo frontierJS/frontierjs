@@ -225,7 +225,8 @@ machine, `net.reachable-unexpected` is `unknown` and the screen says why.
 **The host is graded and never acted on through ring 2.** *Harden* and the patch run
 are refused on it: draining the plane drains the thing running the drain, and
 *the plane never upgrades itself through ring 2* (`IDEAS/deploy-plane.md`). Its fixes go
-through ring 0. The screen shows the `fli deploy` command to run.
+through ring 0. The screen shows the `fli deploy` command to run. A *remedy*
+(`FJS-D2094`), safe to repeat and restarting no app, is the one exception: it runs on the host too.
 
 **`/hub/security/`** shows the host's controls under the same grading and states as
 `/security/`, behind `isSystemAdmin` like every other `/hub/` screen. It is a second
@@ -460,6 +461,19 @@ Done when: the phase-1 box after *Harden* grades clean, and the outside probe ag
   after, never automatic.
   - The `basecamp-host` row is a fleet machine now (`FJS-D1241`), so the action
     refuses that row by `HOST_SLUG` or it acts on the plane through ring 2.
+- [ ] 4.9 Remedies (Q14): a `remedy` id on a control, the Outpost's signed
+  `POST /system/remedy/:id` with the argv in its own table, and a *Fix* button
+  on `/security/` and `/hub/security/` that confirms, runs, and re-reads posture.
+  - The Outpost lists its remedy ids in the posture reading; Fix shows only for a
+    listed id, so an older Outpost keeps the prose rather than a 404 button.
+  - The body is empty: no path or argument comes from the request; `hub.*-mode`
+    paths come from the Outpost's own `hostFiles`. A test sends one and it is ignored.
+  - Each argv runs through `/exec`'s `systemd-run` path (`FJS-D602`), not a
+    second spawn; the click is announced and audited through the existing owner.
+  - One test pins the table: ids match `posture.ts` both ways, no argv holds
+    `sshd`, `nft`, `docker`, `reboot` or `apt-get upgrade`, each runs twice clean.
+  Done when: a box with chrony stopped grades `time.synced` failing, one click
+  turns it passing, and an id outside the table is refused by the Outpost.
 
 ### Phase 5 — The patch run
 
@@ -819,6 +833,27 @@ fallback goes on the same command, not a new one.
     B is the reopen path if owners want passes outside working hours. C undoes
     *by hand for anything that restarts*. D's *off* and *everything* turn a
     hardened control into a preference.
+
+- ~~**Q14 — May a single control's fix run on a click, and on the host too?**~~ **Answered 2026-11-12 (`FJS-D2094`): A — A **remedy**: a control may name a `remedy` id; the Outpost's signed `POST /system/remedy/:id` runs the argv its own table holds for that id and refuses any other; Basecamp re-reads posture after. Behind `isSystemAdmin` and a confirm, on a fleet machine and on the host alike. The table holds only steps that are safe to repeat and restart no app; sshd, the firewall, a reboot and an upgrade are never remedies on the host, which keeps showing the `fli deploy` line.**
+  Every `fix:` line is prose a person types on the box, and § Basecamp's own
+  host refuses every action on the host through ring 2. Several fixes undo
+  nothing and restart no app: `time.synced` (restart chrony), `hub.db-mode` and
+  `hub.env-mode` (`chmod o-rwx` a path Basecamp names), `patch.auto-updates-on`
+  (enable the apt timers), and the multipathd/fwupd disable. Ring 2's reason is
+  a drain or upgrade of the box running the drain, which none of those is.
+  - **A** — A **remedy**: a control may name a `remedy` id; the Outpost's signed
+    `POST /system/remedy/:id` runs the argv its own table holds for that id and
+    refuses any other; Basecamp re-reads posture after. Behind `isSystemAdmin`
+    and a confirm, on a fleet machine and on the host alike. The table holds
+    only steps that are safe to repeat and restart no app; sshd, the firewall, a reboot and an upgrade
+    are never remedies on the host, which keeps showing the `fli deploy` line.
+  - **B** — Remedies on fleet machines only; the host keeps every fix as prose.
+  - **C** — A, plus the sshd and firewall fixes on the host behind a precheck
+    (an `authorized_keys` holds a key). A wrong ruleset there cuts off the one
+    box that must stay reachable.
+  - **Recommend A** — ring 2's objection is to draining the plane, not to
+    restarting chrony on it; the argv stays the Outpost's (§ The nine, 7), so
+    no caller text reaches a shell, and the next posture read proves the click.
 
 ## See also
 

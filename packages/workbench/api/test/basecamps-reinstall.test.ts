@@ -5,7 +5,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 import { writeBasecamp } from '@frontierjs/cli/core/basecamps.js'
@@ -46,5 +46,22 @@ describe('startReinstall', () => {
   test('refuses a run nobody approved, before it spawns', async () => {
     expect(await startReinstall({ name: 'box', plan: true }, opts)).toEqual({ refused: expect.stringContaining('not approved') })
     expect(reinstallationOf()).toBeNull()
+  })
+})
+
+describe('the entry\'s profile (FJS-D2087)', () => {
+  // --plan reads the box over ssh, which an empty HOME cannot reach, so the run
+  // fails fast; what is asserted is the first line it prints before that.
+  test('a reinstall of an entry bought under a profile runs under it, unasked', async () => {
+    mkdirSync(join(home, '.config', 'fli', 'profiles'), { recursive: true })
+    writeFileSync(join(home, '.config', 'fli', 'profiles', 'acme.env'), '# fli profile acme\n', { mode: 0o600 })
+    writeBasecamp('bought', { url: 'https://bought.example.com', host: 'bought', apiKey: 'admin', profile: 'acme' }, { home })
+    const out = await startReinstall({ name: 'bought', plan: true, approved: true }, { ...opts, drills: () => [], env: { ...opts.env, FLI_PROFILE: 'leaked' } })
+    expect('refused' in out).toBe(false)
+    for (let i = 0; i < 300 && !reinstallationOf()?.exit; i++) await Bun.sleep(100)
+    const done = reinstallationOf()!
+    expect(done.profile).toBe('acme')
+    expect(readFileSync(done.log, 'utf8')).toMatch(/profile\s+acme/)
+    expect(readFileSync(done.log, 'utf8')).not.toContain('leaked')
   })
 })

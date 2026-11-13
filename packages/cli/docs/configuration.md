@@ -54,8 +54,8 @@ and who named it, each profile file's mode, and any key set in both a profile
 and the global env. `fli profiles` (`profile:list`) lists every profile with
 its key names (never values), its mode, and the projects under `~/code`
 (`--in <dir>`) whose `.env` names it; `fli profile:open [name]` opens one in
-`$VISUAL`/`$EDITOR`. There is no current profile: `fli profile:use` refuses
-and names `FLI_PROFILE`. A command that spends an account key — `deploy`,
+`$VISUAL`/`$EDITOR`. There is no current profile — the project's `.env` is
+the only thing that picks. A command that spends an account key — `deploy`,
 `basecamp:deploy`, `ws:pub`, `ws:post`, `eset` — prints the profile, or
 `profile none`, as its first line (`profileLine` in `core/utils.js`), so a
 wrong client's keys are seen before they are spent.

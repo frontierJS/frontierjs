@@ -126,6 +126,6 @@ const made = await mint(key, holder, where)
 if (made.error) return refuse(log, made.error)
 
 const host = local || name.includes('@') ? undefined : name
-const file = fileBasecamp(name, { url, host, apiKey: made.token })
+const file = fileBasecamp(name, { url, host, apiKey: made.token, profile: global.fliProfile?.name || undefined })
 echo`  {green ✓} {bold api key} {dim ${made.tokenHint} for ${name}} → ${file}\n`
 ```

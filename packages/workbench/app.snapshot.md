@@ -82,14 +82,15 @@ name when it declares none.
 
 ### `basecamps` · model `basecamps`
 
-- **methods** — `list`, `outcome`, `creation`, `reinstallation`, `backupsPlan`, `backup`, `restart`, `provision`, `resume`, `reinstall`, `deleteLocal`, `setUpB2`, `undoB2`
-- **custom methods** — `list`, `outcome`, `creation`, `reinstallation`, `backupsPlan`, `backup`, `restart`, `provision`, `resume`, `reinstall`, `deleteLocal`, `setUpB2`, `undoB2`
+- **methods** — `list`, `outcome`, `creation`, `reinstallation`, `backupsPlan`, `keyCopy`, `backup`, `restart`, `provision`, `resume`, `reinstall`, `deleteLocal`, `setUpB2`, `undoB2`, `download`, `archiveLink`, `saveKey`
+- **custom methods** — `list`, `outcome`, `creation`, `reinstallation`, `backupsPlan`, `keyCopy`, `backup`, `restart`, `provision`, `resume`, `reinstall`, `deleteLocal`, `setUpB2`, `undoB2`, `download`, `archiveLink`, `saveKey`
 - **who may call** —
   - `list` — standing 5 or above — declared `gate: 5`
   - `outcome` — standing 5 or above — declared `gate: 5`
   - `creation` — standing 5 or above — declared `gate: 5`
   - `reinstallation` — standing 5 or above — declared `gate: 5`
   - `backupsPlan` — standing 5 or above — declared `gate: 5`
+  - `keyCopy` — standing 5 or above — declared `gate: 5`
   - `backup` — standing 5 or above — declared `gate: 5`
   - `restart` — standing 5 or above — declared `gate: 5`
   - `provision` — standing 5 or above — declared `gate: 5`
@@ -98,6 +99,9 @@ name when it declares none.
   - `deleteLocal` — standing 5 or above — declared `gate: 5`
   - `setUpB2` — standing 5 or above — declared `gate: 5`
   - `undoB2` — standing 5 or above — declared `gate: 5`
+  - `download` — standing 5 or above — declared `gate: 5`
+  - `archiveLink` — standing 5 or above — declared `gate: 5`
+  - `saveKey` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -168,12 +172,14 @@ name when it declares none.
 
 ### `laptop` · model `laptop`
 
-- **methods** — `disk`, `keys`, `globalEnv`, `commands`, `ping`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `setPing`, `probeService`
-- **custom methods** — `disk`, `keys`, `globalEnv`, `commands`, `ping`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `setPing`, `probeService`
+- **methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`
+- **custom methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`
 - **who may call** —
   - `disk` — standing 5 or above — declared `gate: 5`
   - `keys` — standing 5 or above — declared `gate: 5`
   - `globalEnv` — standing 5 or above — declared `gate: 5`
+  - `profiles` — standing 5 or above — declared `gate: 5`
+  - `profileList` — standing 5 or above — declared `gate: 5`
   - `commands` — standing 5 or above — declared `gate: 5`
   - `ping` — standing 5 or above — declared `gate: 5`
   - `running` — standing 5 or above — declared `gate: 5`
@@ -183,6 +189,9 @@ name when it declares none.
   - `fixMode` — standing 5 or above — declared `gate: 5`
   - `setGlobalEnv` — standing 5 or above — declared `gate: 5`
   - `unsetGlobalEnv` — standing 5 or above — declared `gate: 5`
+  - `createProfile` — standing 5 or above — declared `gate: 5`
+  - `setProfileKey` — standing 5 or above — declared `gate: 5`
+  - `unsetProfileKey` — standing 5 or above — declared `gate: 5`
   - `setPing` — standing 5 or above — declared `gate: 5`
   - `probeService` — standing 5 or above — declared `gate: 5`
 

@@ -278,6 +278,25 @@ describe('the index of Basecamps', () => {
     } finally { m.cleanup() }
   })
 
+  test('an entry naming a profile with no file is a warning naming the fix; one whose file exists is ok', () => {
+    const m = machine()
+    try {
+      mkdirSync(join(m.home, '.config', 'fli', 'profiles'), { recursive: true })
+      writeFileSync(join(m.home, '.config', 'fli', 'profiles', 'acme.env'), '', { mode: 0o600 })
+      writeBasecamp('a', { url: 'https://a.test', profile: 'acme', apiKey: 'k' }, { home: m.home })
+      writeBasecamp('b', { url: 'https://b.test', profile: 'ghost', apiKey: 'k' }, { home: m.home })
+      writeBasecamp('c', { url: 'https://c.test', profile: '../x', apiKey: 'k' }, { home: m.home })
+      writeBasecamp('d', { url: 'https://d.test', apiKey: 'k' }, { home: m.home })
+      const rows = doctor(m).basecamps
+      expect(rows.find(r => r.label === 'a profile').ok).toBe(true)
+      const ghost = rows.find(r => r.label === 'b profile')
+      expect(ghost.level).toBe('warn')
+      expect(ghost.hint).toContain('fli profile:create ghost')
+      expect(rows.find(r => r.label === 'c profile').ok).toBe(false)
+      expect(rows.some(r => r.label === 'd profile')).toBe(false)
+    } finally { m.cleanup() }
+  })
+
   test('with no ssh config at all every Host is missing', () => {
     const m = machine()
     try {

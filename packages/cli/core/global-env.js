@@ -12,7 +12,7 @@
 // `~/.fli/` is a different directory on purpose: locks, caches, holds and a
 // walk's defaults live there — machine STATE, never a secret.
 
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { configDir } from './paths.js'
 import { dirname, join, resolve } from 'path'
 
@@ -156,6 +156,28 @@ export function profileNames({ home } = {}) {
     .map(f => f.slice(0, -'.env'.length))
     .filter(n => !badProfileName(n))
     .sort()
+}
+
+/** Profile `name`'s file mode as an octal string like `'600'`; no file is null. */
+export function profileMode(name, { home } = {}) {
+  const file = profilePath(name, home)
+  return existsSync(file) ? (statSync(file).mode & 0o777).toString(8) : null
+}
+
+/** Profile `name`'s mode when others can read it, else null: the one a file holding account keys should not have. */
+export function openProfileMode(name, { home } = {}) {
+  const mode = profileMode(name, { home })
+  return mode !== null && parseInt(mode, 8) & 0o077 ? mode : null
+}
+
+/** Remove `key` from profile `name`'s file. Answers whether it held it; no file is no key. */
+export function unsetProfileKey(name, key, { home } = {}) {
+  const file = profilePath(name, home)
+  if (!existsSync(file)) return false
+  const text = readFileSync(file, 'utf8')
+  if (!hasEnvLine(text, key)) return false
+  writeEnv(file, unsetEnvLine(text, key))
+  return true
 }
 
 /**

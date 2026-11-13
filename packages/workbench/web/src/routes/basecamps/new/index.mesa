@@ -11,6 +11,7 @@ title: New Basecamp
   // yes, and `approved: true` goes with it; the owner's first real purchase
   // from here is the proof, and Plan only (--dry) is the rehearsal.
   import { basecamps } from '../../../resources/Basecamp.mesa'
+  import { laptop }    from '../../../resources/Laptop.mesa'
 
   import Button              from '@frontierjs/ui/components/forms/Button.mesa'
   import Checkbox            from '@frontierjs/ui/components/forms/Checkbox.mesa'
@@ -22,6 +23,27 @@ title: New Basecamp
   import { toasts }          from '@frontierjs/ui/stores/toastStore'
 
   const POLL = 2000
+
+  // The account the box is charged to is chosen on purpose (`FJS-D2088`): the
+  // select starts on nothing, and the API refuses a run until one is picked.
+  // The sentinel is `NO_PROFILE` in api basecamps-create.ts.
+  const NO_PROFILE = '(global)'
+  let profile      = ''
+  let profileNames = []
+  const profileOptions = () => [
+    { value: '',         label: 'Choose a profile…' },
+    { value: NO_PROFILE, label: 'None — global file' },
+    ...profileNames.map(n => ({ value: n, label: n })),
+  ]
+  const fliPrefix = (p) => p && p !== NO_PROFILE ? `FLI_PROFILE=${p} ` : ''
+
+  async function loadProfiles() {
+    try {
+      profileNames = (await laptop.service.invoke('profileList')).names
+    } catch (err) {
+      toasts.error(err.message)
+    }
+  }
 
   // The kinds `CLOUDS` names in packages/cli/core/cloud.js.
   const CLOUDS = [
@@ -49,7 +71,7 @@ title: New Basecamp
   const firstLabel = () => domain.trim().split('.')[0]
   const boxName    = () => name.trim() || firstLabel()
   const running    = () => !!run && !run.exit && !run.error
-  const ready      = () => !!domain.trim() && !!boxName() && !starting && !running()
+  const ready      = () => !!domain.trim() && !!boxName() && !!profile && !starting && !running()
   const formShown  = () => !run || (again && !running())
   const isDry      = () => !!run && run.argv.includes('--dry')
   const failed     = () => !!run && (!!run.error || (!!run.exit && run.exit.code !== 0))
@@ -81,7 +103,7 @@ title: New Basecamp
     starting = true
     try {
       await basecamps.service.invoke('provision', null, {
-        domain, name: boxName(), cloud, size, region, admin, reservedIp, backups, outpost, dry, approved: true,
+        domain, name: boxName(), cloud, size, region, admin, reservedIp, backups, outpost, dry, profile, approved: true,
       })
       again = false
       run = await basecamps.service.invoke('creation', null)
@@ -136,6 +158,7 @@ title: New Basecamp
   }
 
   poll()
+  loadProfiles()
 </script>
 
 <div class="section-header">
@@ -156,6 +179,10 @@ title: New Basecamp
       <Input id="new-size" label="Size" placeholder="4gb" bind:value={size} />
       <Input id="new-region" label="Region" placeholder="US default" bind:value={region} />
     </div>
+    <Select id="new-profile" label="Profile" placeholder="" options={(profileNames, profileOptions())} bind:value={profile} />
+    <p id="new-command" class="text-sm text-muted">
+      Runs as <code>{(profile, fliPrefix(profile))}fli basecamp:create</code>{(profile, profile === NO_PROFILE) ? ', on the keys in the global file' : ''}. Every later reinstall, backup and drill of this box runs under it too.
+    </p>
     <Input id="new-admin" label="Admin email" type="email" placeholder="blank buys the box and installs nothing" bind:value={admin} />
     <div class="cluster" style="gap: var(--space-xl)">
       <Checkbox id="new-reserved-ip" label="Reserved IP" checked={reservedIp} onchange={(v) => { reservedIp = v }}
@@ -229,7 +256,7 @@ title: New Basecamp
 
     <details id="new-details" open={(run, failed() || isDry())}>
       <summary class="text-sm text-muted">Full log</summary>
-      <div class="text-sm text-muted">{run.argv.join(' ')}{(run, running()) ? ` · pid ${run.pid}` : ''}</div>
+      <div class="text-sm text-muted" id="new-argv">{(run, fliPrefix(run.profile))}{run.argv.join(' ')}{(run, running()) ? ` · pid ${run.pid}` : ''}</div>
       <pre id="new-log" class="text-sm">{run.lines.join('\n') || ((run.exit, run.error, running()) ? 'Started, no output yet…' : '')}</pre>
     </details>
   </section>

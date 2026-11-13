@@ -10,8 +10,10 @@ siteName: Workbench
   import ConfirmProvider from '@frontierjs/ui/components/overlay/ConfirmProvider.mesa'
   import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
   import Drawer from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore'
-  import { paletteItems } from '@frontierjs/ui/nav'
+  import { paletteItems, visible } from '@frontierjs/ui/nav'
   import Bell from '../components/Bell.mesa'
   import { session, signOut } from '../lib/session.js'
   import { groups } from '../lib/nav.js'
@@ -21,8 +23,11 @@ siteName: Workbench
   $: (session.user)
   $: commandPalette.open
 
-  const entries = () => groups.filter(g => g.show({ user: session.user })).flatMap(g => g.entries)
+  const shown   = () => visible(groups, { user: session.user })
   const current = (e) => e.exact ? page.pathname === e.href : page.pathname.startsWith(e.href)
+  // A menu's trigger names the screen on show, so a page behind a closed menu
+  // still says where it is.
+  const within  = (g) => g.entries.find(current)
 
   // Below md the bar's nav gives way to a drawer (frame.css shows the toggle
   // there). Navigating with it open would leave it over the page it went to.
@@ -83,8 +88,23 @@ siteName: Workbench
       <a href="/home/" class="wb-brand" title="Home"><strong>Workbench</strong></a>
       {#if session.user}
         <nav class="cluster wb-nav topbar-nav" aria-label="Workbench">
-          {#each entries() as e}
-            <a href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}</a>
+          {#each shown() as g}
+            {#if g.label}
+              <DropdownMenu>
+                {#snippet trigger()}
+                  <Button treatment="ghost" size="sm" class="wb-menu" data-current={within(g) ? 'true' : undefined}>
+                    {g.label}{#if within(g) && within(g).label !== g.label}<span class="text-muted">· {within(g).label}</span>{/if} ▾
+                  </Button>
+                {/snippet}
+                {#each g.entries as e}
+                  <DropdownItem href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}</DropdownItem>
+                {/each}
+              </DropdownMenu>
+            {:else}
+              {#each g.entries as e}
+                <Button treatment="ghost" size="sm" href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}</Button>
+              {/each}
+            {/if}
           {/each}
         </nav>
       {/if}
@@ -111,10 +131,15 @@ siteName: Workbench
 {#if session.user}
   <Drawer side="left" bind:open={navOpen} title="Workbench">
     <nav class="stack" aria-label="Workbench">
+      {#each shown() as g}
+        {#if g.label}<div class="navlist-label">{g.label}</div>{/if}
+        <ul class="navlist">
+          {#each g.entries as e}
+            <li><a class="navlink" href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}</a></li>
+          {/each}
+        </ul>
+      {/each}
       <ul class="navlist">
-        {#each entries() as e}
-          <li><a class="navlink" href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}</a></li>
-        {/each}
         <li><a class="navlink" href="/settings/" aria-current={page.pathname.startsWith('/settings/') ? 'page' : undefined}>Settings</a></li>
       </ul>
     </nav>
@@ -137,25 +162,14 @@ siteName: Workbench
 
 <style>
   .wb-brand { color: inherit; text-decoration: none; }
+  /* A ghost button draws nothing for the page on show; the bar's items do. */
+  .wb-nav :global(.btn[aria-current]),
+  .wb-nav :global(.btn[data-current]) { font-weight: 600; color: var(--ink); }
+  .wb-nav { gap: var(--space-2xs); }
   /* The workbench and Autopilot's town are working surfaces, not reading
      columns: let them take the whole width the screen gives them. */
   .screen-body:has(:global(.workbench)) { max-inline-size: none; }
   .screen-body:has(:global(.autopilot-screen)) { max-inline-size: none; }
-  /* Below 2xl (1536px): brand left and search/bell/owner right on the first line,
-     the nav on a line of its own below. The brand's span dissolves so its
-     children order against the tools as flex items of the topbar. */
-  @media (max-width: 95.99rem) {
-    .wb-head { display: contents; }
-    .wb-tools { order: 1; margin-inline-start: auto; }
-    .wb-nav { order: 2; flex-basis: 100%; }
-  }
-  /* Below md the toggle is shown and the nav is `.topbar-nav` (frame.css), so
-     the drawer carries it. The head is a cluster again so the toggle and the
-     brand stay together instead of spreading as two items of a space-between
-     bar. */
-  @media (max-width: 767px) {
-    .wb-head { display: flex; gap: var(--space-sm); }
-  }
   /* The workbench page's Focus sets this, and clears it when the page goes. */
   :global(html[data-workbench-focus] .topbar) { display: none; }
 </style>
