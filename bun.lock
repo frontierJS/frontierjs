@@ -104,7 +104,7 @@
     },
     "packages/cli": {
       "name": "@frontierjs/cli",
-      "version": "0.1.15",
+      "version": "0.1.16",
       "bin": {
         "fli": "./bin/fli.js",
       },
@@ -563,7 +563,7 @@
     },
     "packages/junction": {
       "name": "@frontierjs/junction",
-      "version": "0.1.15",
+      "version": "0.1.16",
       "bin": {
         "junction": "./tools/cli.ts",
       },
@@ -582,7 +582,7 @@
     },
     "packages/litestone": {
       "name": "@frontierjs/litestone",
-      "version": "1.1.20",
+      "version": "1.1.21",
       "bin": {
         "litestone": "./src/tools/cli.js",
       },
@@ -834,7 +834,7 @@
     },
     "packages/toolbelt": {
       "name": "@frontierjs/toolbelt",
-      "version": "0.1.13",
+      "version": "0.1.14",
     },
     "packages/ui": {
       "name": "@frontierjs/ui",

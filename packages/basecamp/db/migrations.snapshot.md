@@ -17,3 +17,4 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 | `migrations/main/20261108045317_flow_workspace_index.sql` | `cc157b21eaffcfa7` |
 | `migrations/main/20261109192532_domain_route_soft_delete.sql` | `2242f502ec189e90` |
 | `migrations/main/20261109220302_hub_logo_url.sql` | `df86794e649615ad` |
+| `migrations/main/20261113043047_anthropic_provider_kind.sql` | `0ded510c3ade4be2` |

@@ -281,7 +281,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./routes` | `web/routes.js` | yes |
 | exports | `./orion.lite` | `db/orion.lite` | yes |
 
-- peers — `@frontierjs/junction`: `^0.1.15` · `@frontierjs/litestone`: `^1.1.20` · `@frontierjs/conduit`: `^0.1.10` · `@frontierjs/sierra`: `^0.1.14` · `@frontierjs/ui`: `^0.1.12`
+- peers — `@frontierjs/junction`: `^0.1.16` · `@frontierjs/litestone`: `^1.1.21` · `@frontierjs/conduit`: `^0.1.10` · `@frontierjs/sierra`: `^0.1.14` · `@frontierjs/ui`: `^0.1.12`
 
 ## `@frontierjs/outpost`
 

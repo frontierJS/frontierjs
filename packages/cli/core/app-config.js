@@ -127,10 +127,10 @@ indent_style = tab
 // MINOR — and `test/app-config.test.js` fails the day it does.
 
 export const FJS_PACKAGES = {
-  '@frontierjs/junction':       '0.1.15',
+  '@frontierjs/junction':       '0.1.16',
   '@frontierjs/sierra':         '0.1.14',
   '@frontierjs/mesa':           '0.1.13',
-  '@frontierjs/litestone':      '1.1.20',
+  '@frontierjs/litestone':      '1.1.21',
   '@frontierjs/css':            '0.16.12',
   '@frontierjs/ui':             '0.1.12',
   '@frontierjs/auth':           '1.0.14',
@@ -138,11 +138,11 @@ export const FJS_PACKAGES = {
   '@frontierjs/caravan':        '0.1.10',
   '@frontierjs/notifications':  '0.1.9',
   '@frontierjs/jetty':          '0.0.11',
-  '@frontierjs/toolbelt':       '0.1.13',
+  '@frontierjs/toolbelt':       '0.1.14',
 }
 
 export const APP_DEV_DEPS = {
-  '@frontierjs/cli':    '0.1.15',
+  '@frontierjs/cli':    '0.1.16',
   '@frontierjs/config': '0.1.6',
   '@frontierjs/testing': '0.1.10',
   '@biomejs/biome':     '^2.5.0',
@@ -155,7 +155,7 @@ export const APP_DEV_DEPS = {
 // npm for a version only the host serves, and the install stops. Exact, so
 // `ws:pub` raises it with the rest.
 export const FJS_TRANSITIVE = {
-  '@frontierjs/outpost': '0.1.16',
+  '@frontierjs/outpost': '0.1.17',
 }
 
 // ─── tsconfig.json ────────────────────────────────────────────────────────────
