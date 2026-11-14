@@ -80,7 +80,9 @@ not a piece of this plan.
   - Whichever is picked, the agent-facing docs (`CLAUDE.md`, hazards,
     registers) are not the user docs. That split is the work of Phase 2.
 - **Q4 — Must the Basecamp/Oracle renames land before the announcement?**
-  - **Recommend yes** — a public page that ships a package called Basecamp
+  - **A** — yes: the renames land before Phase 7's announcement.
+  - **B** — no: announce under the current names and rename later.
+  - **Recommend A** — a public page that ships a package called Basecamp
     invites the conflict [trademark.md](trademark.md) Q3 exists to avoid.
     Pre-alpha, a rename moves every caller with no alias, so before outsiders
     arrive is when it is cheapest. The renames wait on trademark.md 0.2's

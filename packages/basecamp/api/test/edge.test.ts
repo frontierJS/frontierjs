@@ -964,7 +964,8 @@ describe('sync', () => {
     for (const [k, v] of Object.entries(headers)) req.set(k, v as string)
     expect((await req.send(body)).status).toBe(200)
 
-    expect(await until(ingressAt, (v: string[]) => v[0] === '203.0.113.5')).toEqual(['203.0.113.5'])
+    // The whole value: the push writes .5 before it deletes .6, so a read between holds both (FJS-3509).
+    expect(await until(ingressAt, (v: string[]) => v.join() === '203.0.113.5')).toEqual(['203.0.113.5'])
   })
 })
 

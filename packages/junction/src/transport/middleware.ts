@@ -392,12 +392,13 @@ export function requestLogger(opts: RequestLoggerOptions = {}) {
 
         // A custom method rides POST with X-Service-Method; a CRUD verb never
         // does, and cannot declare the flag.
-        if (quiet(ctx.route?.service, ctx.headers?.['x-service-method']?.trim(), status)) return
+        // A `return` here would swallow the error the catch rethrew.
+        if (!quiet(ctx.route?.service, ctx.headers?.['x-service-method']?.trim(), status)) {
+          const data = { method: ctx.method, path: ctx.path, status, ms, ip: ctx.ip, correlationId }
 
-        const data = { method: ctx.method, path: ctx.path, status, ms, ip: ctx.ip, correlationId }
-
-        if (format === 'json') log[level]('request', data)
-        else log[level](`${ctx.method} ${ctx.path} ${status} ${ms}ms - ${ctx.ip}`, { correlationId })
+          if (format === 'json') log[level]('request', data)
+          else log[level](`${ctx.method} ${ctx.path} ${status} ${ms}ms - ${ctx.ip}`, { correlationId })
+        }
       }
     }
 

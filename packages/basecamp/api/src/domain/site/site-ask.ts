@@ -74,6 +74,7 @@ export function askPage(raw: unknown): AskPage | null | { refused: string } {
   if (raw == null) return null
   const { path, files } = raw as { path?: unknown, files?: unknown }
   // The address goes into the prompt as written, so a line break there is a line of the prompt.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern refuses
   if (typeof path !== 'string' || !path.startsWith('/') || path.length > 2048 || /[\u0000-\u001f\u007f]/.test(path)) return { refused: 'page.path is a page\'s address, starting with /' }
   if (!Array.isArray(files) || files.length > PAGE_MAX_FILES) return { refused: `page.files lists at most ${PAGE_MAX_FILES} files` }
   for (const f of files) {

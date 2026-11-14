@@ -384,8 +384,9 @@ title: Local repositories
   .local-repos-view { gap: 0; }
   .local-repos-error { white-space: pre-line; }
   .local-repos-tiles {
+    --local-repos-tile-min: 14rem;
     display:               grid;
-    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(var(--local-repos-tile-min), 1fr));
     gap:                   var(--space-md);
   }
   .local-repos-tile {
