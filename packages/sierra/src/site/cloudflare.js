@@ -105,10 +105,16 @@ export function previewAlias(name, given) {
   return alias
 }
 
+// The attribute inside an opening tag. A page documenting the stamp carries
+// the same text in its prose and was refused as a preview build. A preview
+// stamps every element, so one tag whose earlier attribute holds a `>` costs
+// nothing.
+const STAMP = /<[a-zA-Z][^<>]*\sdata-fjs-loc=/
+
 /** The first page a preview build stamped, or null for a production build. */
 export async function stampedPage(outDir) {
   for (const file of await htmlFiles(outDir)) {
-    if ((await readFile(file, 'utf8')).includes('data-fjs-loc=')) return file
+    if (STAMP.test(await readFile(file, 'utf8'))) return file
   }
   return null
 }

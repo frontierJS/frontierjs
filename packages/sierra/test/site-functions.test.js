@@ -261,6 +261,9 @@ describe('the Cloudflare adapter', () => {
       writeFileSync(join(both, 'dist', 'index.html'), '<h1>home</h1>')
       writeFileSync(join(both, 'dist', 'about', 'index.html'), '<h1>about</h1>')
       await expect(adapter.writeCloudflare({ root: both, config, preview: true })).rejects.toThrow(/dist is a production build/)
+      // A page that documents the stamp is still a production page.
+      writeFileSync(join(both, 'dist', 'about', 'index.html'), '<p>Each element gets <code>data-fjs-loc="File.mesa:1:1"</code> in dev, or data-fjs-loc="x" in prose.</p>')
+      expect((await adapter.writeCloudflare({ root: both, config })).wrangler.name).toBe('a-dev')
       writeFileSync(join(both, 'dist', 'about', 'index.html'), '<h1 data-fjs-loc="content/routes/about.md:1:1">about</h1>')
       await expect(adapter.writeCloudflare({ root: both, config })).rejects.toThrow(/dist\/about\/index\.html is a preview build's/)
       expect((await adapter.writeCloudflare({ root: both, config, preview: true })).wrangler.name).toBe('a-dev')
