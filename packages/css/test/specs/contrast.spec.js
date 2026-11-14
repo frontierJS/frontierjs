@@ -49,6 +49,7 @@ var FILLED = [
 var TEXTUAL = [
   { name: '.btn.outlined', html: '<button class="btn outlined TONE">Save</button>' },
   { name: '.btn.link', html: '<button class="btn link TONE">Save</button>' },
+  { name: '.link', html: '<a class="link TONE" href="#x">More</a>' },
   { name: '.btn.ghost', html: '<button class="btn ghost TONE">Save</button>' },
   { name: '.btn.tinted', html: '<button class="btn tinted TONE">Save</button>' },
   { name: '.pill.tinted', html: '<span class="pill tinted TONE">Due</span>' },
@@ -387,6 +388,29 @@ test('contrast: body text clears AA on every theme surface', function () {
     0,
     failures.length + ' neutral text pairs below AA:\n        ' + failures.join('\n        ')
   );
+});
+
+/*
+ * --app-bg is the ground the frame paints behind every card, and text sits
+ * on it outside any card; the pairs above name only the three surfaces. A
+ * theme that leaves it unset falls back to --surface-sunken, as frame.css does.
+ */
+function contrastAppBg(cs) {
+  return cs.getPropertyValue('--app-bg').trim() || cs.getPropertyValue('--surface-sunken').trim();
+}
+
+test('contrast: the ink ramp clears AA on --app-bg in every theme', function () {
+  var failures = [];
+  THEMES.forEach(function (theme) {
+    var cs = getComputedStyle(themed(theme, '<div>x</div>'));
+    var bg = contrastAppBg(cs);
+    ['--ink', '--ink-soft', '--ink-mute'].forEach(function (ink) {
+      var ratio = contrast(cs.getPropertyValue(ink).trim(), bg);
+      if (ratio < AA) failures.push('theme-' + theme + '  ' + ink + '  ' + ratio.toFixed(2) + ':1');
+    });
+    cleanup();
+  });
+  assert.equal(failures.length, 0, failures.length + ' ink pairs on --app-bg below AA:\n        ' + failures.join('\n        '));
 });
 
 /*

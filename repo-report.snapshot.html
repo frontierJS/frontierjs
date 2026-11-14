@@ -8454,7 +8454,7 @@ try {
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">178 rows · 325 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">181 rows · 328 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>the app prompt — junction/tools/call.ts, litestone/src/tools/repl.js, fli app:repl / deploy:repl, runAs(null, { operator }), or what an app declares as createApp({ system })</td>
       <td>example: verify:repl — the only thing that runs the prompt over a real app&#39;s gate; junction&#39;s call-tool.test.ts asks a fixture</td>
@@ -9051,6 +9051,18 @@ try {
       <td>the desktop surface — desktop/shell/, desktop/deploy/build.mjs, wraps, core/desktop-surface.js, a page served from a custom scheme</td>
       <td>packages/cli: test/desktop-surface.test.js, which holds example/desktop/ to the generator byte for byte — then example: verify:desktop, the only place a page runs from a scheme that is not http(s), and the only drive that builds a native binary, so it is what proves the generator. packages/sierra: test/router-hardening.test.js for the link guard alone</td>
       <td><span class="tally"><b>packages/cli</b>test/desktop-surface.test.js</span><span class="tally"><b>example</b>verify:desktop</span><span class="tally"><b>packages/sierra</b>test/router-hardening.test.js</span></td>
+    </tr><tr data-row>
+      <td>the example&#39;s desktop drive itself — example/desktop/test/</td>
+      <td>example: verify:desktop</td>
+      <td><span class="tally"><b>example</b>verify:desktop</span></td>
+    </tr><tr data-row>
+      <td>Basecamp&#39;s desktop drive itself — packages/basecamp/desktop/test/</td>
+      <td>basecamp: verify:desktop</td>
+      <td><span class="tally"><b>basecamp</b>verify:desktop</span></td>
+    </tr><tr data-row>
+      <td>Workbench&#39;s desktop drive itself — packages/workbench/desktop/test/</td>
+      <td>workbench: verify:desktop</td>
+      <td><span class="tally"><b>workbench</b>verify:desktop</span></td>
     </tr><tr data-row>
       <td>matchesQuery / a tether&#39;s membership rule</td>
       <td>packages/toolbelt: bun run test match (the behavior) · packages/jetty: test/phase3.test.js and packages/sierra: test/live-filter.test.js (the two SEAMS — that each store actually asks) · example: verify:extension, where a shipped order has to leave the queue</td>

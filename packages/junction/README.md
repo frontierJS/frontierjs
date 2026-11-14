@@ -810,6 +810,8 @@ app.configure(correlationId())
 app.configure(csrf({ origins: ['https://myapp.com'] }))
 ```
 
+> **A cross-origin page reads only the response headers `cors()` exposes.** Fetch hides the rest, so a version a raw route stamps reads as absent: name it in `cors({ origins, exposeHeaders: ['X-Lathe-Version'] })`, or `middleware: { cors: { exposeHeaders } }` in `junction.config.js`. Junction's own `x-frontier-build` and `x-frontier-credential`, which the browser client reads, are always exposed (`FJS-4227`).
+
 > **A method a client streams opts out of the line with `log: false`** — `methods: [{ method: 'nudge', gate: 0, read: true, log: false }]` (`FJS-D2129`). `requestLogger` writes no line for that method over HTTP or the socket while it answers below 400; a refused call still logs, so a streaming method's abuse leaves a trace. A custom method only.
 
 > **One id per request.** A request's correlation id is the trace id of the `traceparent` it states, else its `X-Request-ID`, else 32 hex junction mints, and the log line, the audit row, a job's row and conduit's outbound call all carry it. An inbound id that is malformed (a `traceparent` that does not parse, an `X-Request-ID` outside 1–128 characters of `[A-Za-z0-9_.:@-]`) is replaced, not refused (`FJS-D660`).

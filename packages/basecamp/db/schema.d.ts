@@ -128,7 +128,7 @@ export type FlagType = 'boolean' | 'variant'
 
 export type TileKind = 'serverFleet' | 'serverHealth' | 'appStatus' | 'deployFeed' | 'jobHistory' | 'activityFeed' | 'alertStatus' | 'serviceHealth' | 'statCounter'
 
-export type ParamGenerator = 'randomHex16' | 'randomHex32' | 'randomHex64'
+export type ParamGenerator = 'randomHex' | 'randomAlphanumeric' | 'randomBase64' | 'uuid'
 
 export type BackupKind = 'manual' | 'scheduled' | 'found' | 'release'
 
@@ -5889,6 +5889,7 @@ export interface Blueprint {
   command: string[]
   notes?: string | null
   links: unknown
+  environment: unknown
   deprecatedAt?: string | null
   createdAt: string
   updatedAt: string
@@ -5915,6 +5916,7 @@ export interface BlueprintCreate {
   command?: string[]
   notes?: string | null
   links?: unknown
+  environment?: unknown
   deprecatedAt?: string | Date | null
 }
 
@@ -5937,6 +5939,7 @@ export interface BlueprintUpdate {
   command?: string[]
   notes?: string | null
   links?: unknown
+  environment?: unknown
   deprecatedAt?: string | Date | null
   revision: number
 }
@@ -5960,6 +5963,7 @@ export interface BlueprintWhere extends WhereBase {
   command?: string[] | WhereOp<string[]> | null
   notes?: string | WhereOp<string> | null
   links?: unknown | WhereOp<unknown> | null
+  environment?: unknown | WhereOp<unknown> | null
   deprecatedAt?: string | Date | WhereOp<string | Date> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -5990,6 +5994,8 @@ export interface BlueprintParam {
   isRequired: boolean
   isSecret: boolean
   generate?: ParamGenerator | null
+  generateLength?: number | null
+  validRegex?: string | null
   position: number
 }
 
@@ -6003,6 +6009,8 @@ export interface BlueprintParamCreate {
   isRequired?: boolean
   isSecret?: boolean
   generate?: ParamGenerator | null
+  generateLength?: number | null
+  validRegex?: string | null
   position?: number
 }
 
@@ -6016,6 +6024,8 @@ export interface BlueprintParamUpdate {
   isRequired?: boolean
   isSecret?: boolean
   generate?: ParamGenerator | null
+  generateLength?: number | null
+  validRegex?: string | null
   position?: number
 }
 
@@ -6029,6 +6039,8 @@ export interface BlueprintParamWhere extends WhereBase {
   isRequired?: boolean | WhereOp<boolean> | null
   isSecret?: boolean | WhereOp<boolean> | null
   generate?: ParamGenerator | WhereOp<ParamGenerator> | null
+  generateLength?: number | WhereOp<number> | null
+  validRegex?: string | WhereOp<string> | null
   position?: number | WhereOp<number> | null
   AND?: BlueprintParamWhere[]
   OR?:  BlueprintParamWhere[]

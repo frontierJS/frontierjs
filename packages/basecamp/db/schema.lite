@@ -733,8 +733,10 @@ enum TileKind {
 // DECLARED vocabulary rather than the mock's free string, which it parsed with
 // a regex in the browser (`parseInt(generate.replace(/[^0-9]/g,''))`) — so a
 // typo produced a 32-character default and said nothing. The server owns what
-// each name means; the browser is told which one applies.
-enum ParamGenerator { randomHex16 randomHex32 randomHex64 }
+// each name means; the browser is told which one applies. The kind only: how
+// many characters is `BlueprintParam.generateLength` (`FJS-D2122`), and `uuid`
+// is the one kind whose length is its own.
+enum ParamGenerator { randomHex randomAlphanumeric randomBase64 uuid }
 
 // How an archive came to have a row: by hand, by the schedule, or `found` — a
 // rescan met it in the bucket with no row naming it (`FJS-D1493`), so nobody
@@ -3655,6 +3657,13 @@ model Blueprint {
   // became a real join. A link names nothing here.
   links          Json       @default([])
 
+  // The compose file's `environment:`, key → value: one App `Variable` each.
+  // A value may carry `${PARAM}`, `${PARAM:-default}` or a `BLUEPRINT_`
+  // built-in (`FJS-D2016`), interpolated by `apps.fromBlueprint`. A fixed
+  // value nobody is asked for lives here; the params stay the values a person
+  // is asked for (`FJS-D2140`).
+  environment    Json       @default("{}")
+
   // A blueprint that is no longer offered but is still referenced by the apps
   // it created. Withdrawn rather than deleted, for the same reason `Recipe`
   // soft-deletes: the record of what something was built from outlives the
@@ -3714,12 +3723,22 @@ model BlueprintParam {
   // Absent means the person supplies it. Present means the form offers a minted
   // value they can regenerate.
   generate     ParamGenerator?
+  // How many CHARACTERS `generate` mints (`FJS-D2122`) — not bytes, which is
+  // what the retired `randomHex32` counted. Every kind but `uuid` needs one.
+  generateLength Int?          @gte(1) @lte(256)
+
+  // What a supplied value must match, as a regex with no slashes. Checked by
+  // the deploy form and again by `apps.fromBlueprint`.
+  validRegex   String?         @length(1, 500)
 
   // The order the form asks in. Explicit, because a blueprint's parameters have
   // an order its author chose and `createdAt` is not it.
   position     Int             @default(0)
 
   @@gate(1.7)
+  @@check("generate IS NULL OR generate = 'uuid' OR generateLength IS NOT NULL",
+          "randomHex, randomAlphanumeric and randomBase64 need a generateLength")
+  @@check("generate IS NOT 'uuid' OR generateLength IS NULL", "a uuid generator takes no generateLength")
   @@unique([blueprintId, key])
   @@index([blueprintId])
 

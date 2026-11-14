@@ -2319,7 +2319,9 @@ try {
   await click('#param-add'); await click('#param-add')
   await typeIn('#param-key-0', 'API_TOKEN'); await typeIn('#param-label-0', 'API token')
   await evaluate(`document.querySelector('#param-secret-0')?.click()`)
-  await pickIn('#param-generate-0', 'randomHex32')
+  await pickIn('#param-generate-0', 'randomHex')
+  await until(`!!document.getElementById('param-length-0')`, v => v, 'a measured generator never asked for its length')
+  await typeIn('#param-length-0', '24')
   await typeIn('#param-key-1', 'PORT'); await typeIn('#param-label-1', 'Port'); await typeIn('#param-default-1', '8080')
   await byLabel('Move parameter 2 up')
   await click('#params-save')
@@ -2327,7 +2329,7 @@ try {
   check('its parameters are saved in the order arranged',
     withParams?.params?.map(p => p.key).join() === 'PORT,API_TOKEN', withParams?.params?.map(p => p.key).join())
   check('with the secret flag and the generator', withParams?.params?.[1]?.isSecret === true
-    && withParams?.params?.[1]?.generate === 'randomHex32', JSON.stringify(withParams?.params?.[1]))
+    && withParams?.params?.[1]?.generate === 'randomHex' && withParams?.params?.[1]?.generateLength === 24, JSON.stringify(withParams?.params?.[1]))
   await click('#blueprint-edit')
   await until(`!!document.querySelector('dialog[open] [name=description]')`, v => v, 'the blueprint edit never opened')
   check('the edit does not offer the slug', !(await present('dialog[open] [name=slug]')))

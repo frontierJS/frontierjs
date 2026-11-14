@@ -59,6 +59,18 @@ beforeAll(() => {
       if (url.pathname === '/health') return Response.json({ status: 'ok' })
       if (url.pathname.startsWith('/archive/')) return new Response(new Blob([tar]), { headers: { 'content-type': 'application/gzip' } })
       if (req.headers.get('authorization') !== `Bearer ${KEY}`) return Response.json({ message: 'no key' }, { status: 401 })
+      if (url.pathname === '/hub' && method === 'hostPosture') return Response.json({ data: {
+        enrolled: true, serverId: 'srv_hub', serverName: 'hub-box', reported: true, stale: false, at: '2026-11-14T12:00:00.000Z',
+        controls: [
+          { id: 'hub.key-escrowed', ok: false, message: 'No copy of ENCRYPTION_KEY is attested off this box', fix: 'Attest it on /hub/backups/' },
+          { id: 'ssh.unknown-key',  ok: 'unknown', message: 'No SSH key is named for this machine' },
+          { id: 'os.patched',       ok: true, message: 'Patched' },
+        ] } })
+      if (url.pathname === '/hub' && method === 'fleet') return Response.json({ total: 3, limit: 500, offset: 0, data: [
+        { id: 'srv_hub', name: 'hub-box', posture: { reported: true,  stale: false, failing: 1 } },
+        { id: 'srv_a',   name: 'app-a',   posture: { reported: true,  stale: false, failing: 2 } },
+        { id: 'srv_b',   name: 'app-b',   posture: { reported: false, stale: false, failing: 0 } },
+      ] })
       if (url.pathname === '/hub-config' && method === 'current') return Response.json({ data: { app: { backupDestinationId: null } } })
       if (url.pathname === '/hub-backups' && req.method === 'GET') {
         const newest = [...rows].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
@@ -121,6 +133,21 @@ describe('list', () => {
     const said = JSON.stringify(listed)
     for (const secret of [KEY, 'bc_scoped_secret', 'key_peer_secret']) expect(said).not.toContain(secret)
     for (const field of ['apiKey', 'scopedKey', 'peerKeyId']) expect(said).not.toContain(field)
+  })
+
+  test('the hub\'s failing and unknown checks, and its other machines — not its own box twice', async () => {
+    const by = Object.fromEntries((await listBasecamps({ home })).map(e => [e.name, e]))
+    const h  = by.stub.health!
+    expect(by.stub.healthError).toBeNull()
+    expect(h.serverName).toBe('hub-box')
+    expect(h.failing.map(c => c.id)).toEqual(['hub.key-escrowed'])
+    expect(h.failing[0].fix).toBe('Attest it on /hub/backups/')
+    expect(h.unknown.map(c => c.id)).toEqual(['ssh.unknown-key'])
+    expect(h.fleet).toEqual({ machines: 2, failing: ['app-a'], quiet: ['app-b'] })
+
+    expect(by.nokey.health).toBeNull()
+    expect(by.nokey.healthError).toBeNull()
+    expect(by.down.health).toBeNull()
   })
 
   test('hostKnown says whether ~/.ssh/config defines the entry\'s Host', async () => {

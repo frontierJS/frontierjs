@@ -130,7 +130,10 @@ name, so a tag already released is refused the way npm refuses a spent version.
 **The tag comes last, after a green CI run.** The bump is committed and nothing
 is tagged. The full `ci` then runs in a checkout of that commit, and only a green
 run tags it (`FJS-D1720`, `FJS-D1721`). A red run leaves a commit and no tag, so
-fixes land and the next run keeps the commit rather than moving a tag. The
+fixes land and the next run tags that version at HEAD rather than bumping again.
+When a workspace dependency of it has been committed to past its own tag since,
+the untagged version is unspent, being on no host, and the run bumps past it
+like any other (`FJS-4311`). The
 `deploy --source npm` branch is skipped by name: the bump raised the scaffold's
 pins to versions no host holds yet, and `04-verify-assets` grades the published
 framework afterwards (`FJS-D1726`).
@@ -230,7 +233,7 @@ const repo = $.wsRepo(all)
 // release in flight is FINISHED rather than bumped: a bump over an unshipped
 // version skips it for good. Per destination, so a version that reached one
 // and not the other is completed, not bumped and not republished.
-const { unpublished, untaggedBumps } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
+const { unpublished, untaggedBumps, releaseSet } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
 
 const onHosts = await Promise.all(packages.map(async ({ dir, pkg }) => {
   const state  = $.git.pkgState(pkg.name, dir)
@@ -296,7 +299,23 @@ if (unknown.length) {
 }
 
 // An untagged bump on no host: the CI gate failed before the tag was written.
-const retag = untaggedBumps(onHosts)
+let retag = untaggedBumps(onHosts)
+
+// The retag is of HEAD, and a retag run holds only the bumped set, so a
+// workspace dependency committed to past its own tag could never join it and
+// the release refused forever (FJS-4311). An untagged version is on no host,
+// so it is unspent: the run bumps past it like any other.
+if (retag.length && !pending.length) {
+  const { movedDependencies } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
+  const held  = packages.filter(({ pkg }) => retag.includes(pkg.name)).map(({ pkg }) => ({ name: pkg.name, pkg }))
+  const stuck = movedDependencies(held, all.map(m => ({ name: m.pkg.name, dir: m.dir, pkg: m.pkg })),
+                                  (name, dir, paths, opts) => $.git.pkgState(name, dir, paths, opts))
+  if (stuck.length) {
+    log.info(`${retag.length} package(s) hold a version never tagged, and ${[...new Set(stuck.map(s => s.dep))].join(', ')} moved since -- bumping past it, not tagging it`)
+    retag = []
+  }
+}
+
 if (retag.length && pending.length) {
   log.error(`  ✗  a shipped-tag release (${pending.join(', ')}) and an untagged bump (${retag.join(', ')}) are both in flight`)
   log.error('      finish the tagged one first, narrowing the run with --filter, then run again')
@@ -304,13 +323,21 @@ if (retag.length && pending.length) {
   return
 }
 
+// A package with no commits since its own tag is held back by DEFAULT, because
+// the version it would spend buys nothing and the republish is not reversible.
+// The sibling `ws:*` commands ask for that filter with `--affected`; here the
+// cost of the wrong answer is a burned version rather than a wasted test run,
+// so the filter is the default and `--all` is what turns it off.
 const resume = pending.length > 0
+const { release, kept } = releaseSet(onHosts, { pending, retag, all: flag.all })
+const heldBack = packages.length - release.length
+packages = packages.filter(({ pkg }) => release.includes(pkg.name))
+
 if (retag.length) {
-  packages = packages.filter(({ pkg }) => retag.includes(pkg.name))
   log.info(`${retag.length} package(s) have a bumped version that was never tagged -- tagging it after CI, not bumping again`)
-  log.info(`  '${arg.bump}' is ignored: ${retag.join(', ')} already hold the version`)
-} else if (resume) {
-  packages = packages.filter(({ pkg }) => pending.includes(pkg.name))
+  log.info(`  '${arg.bump}' is ignored for ${retag.join(', ')}: they already hold the version`)
+}
+if (resume) {
   // What each one still lacks, read by step 02 so a half-shipped version goes
   // only where it is missing.
   $.config.missing = Object.fromEntries(onHosts.filter(m => pending.includes(m.name)).map(m => [m.name, m.missing]))
@@ -320,18 +347,8 @@ if (retag.length) {
   // not in the tarball. Said, because the working tree is not what ships.
   for (const m of onHosts) if (fromTag.includes(m.name)) log.info(`  ${m.name}@${m.version} has commits since its tag, which the remote holds -- shipping from the tag, not from HEAD`)
   log.info(`  '${arg.bump}' is ignored: a bump over an unpublished version skips it for good`)
-}
-
-// A package with no commits since its own tag is held back by DEFAULT, because
-// the version it would spend buys nothing and the republish is not reversible.
-// The sibling `ws:*` commands ask for that filter with `--affected`; here the
-// cost of the wrong answer is a burned version rather than a wasted test run,
-// so the filter is the default and `--all` is what turns it off.
-else if (!flag.all) {
-  const before = packages.length
-  packages = packages.filter(({ dir, pkg }) => $.git.pkgState(pkg.name, dir).affected)
-  if (packages.length < before)
-    log.info(`${before - packages.length} package(s) have no commits since their own tag — holding back (--all publishes them)`)
+} else if (heldBack > 0) {
+  log.info(`${heldBack} package(s) have no commits since their own tag — holding back (--all publishes them)`)
 }
 
 if (!packages.length) {
@@ -341,7 +358,7 @@ if (!packages.length) {
 
 // Target versions are resolved here rather than in the version step, so the
 // preview below states the numbers a user is approving.
-let planned = packages.map(p => ({ ...p, newVersion: resume || retag.length ? p.pkg.version : bumpVersion(p.pkg.version, arg.bump) }))
+let planned = packages.map(p => ({ ...p, newVersion: kept.includes(p.pkg.name) ? p.pkg.version : bumpVersion(p.pkg.version, arg.bump) }))
 
 // ─── prompts ──────────────────────────────────────────────────────────────────
 // Constructed ONCE and carried to the steps on `$.config`. A step
@@ -362,7 +379,7 @@ log.info(`To:     ${to.join(' + ')}`)
 if (to.includes('npm')) log.info(`Tag:    ${flag.tag}`)
 log.info(`Repo:   ${repo ? `one repo at ${repo}` : 'one per package'}`)
 echo('')
-for (const { pkg, newVersion } of planned) log.info(resume ? `  ${pkg.name}  ${newVersion}` : `  ${pkg.name}  ${pkg.version} → ${newVersion}`)
+for (const { pkg, newVersion } of planned) log.info(kept.includes(pkg.name) ? `  ${pkg.name}  ${newVersion}` : `  ${pkg.name}  ${pkg.version} → ${newVersion}`)
 echo('')
 
 $.config.wsRoot     = wsRoot

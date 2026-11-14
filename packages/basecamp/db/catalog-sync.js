@@ -31,7 +31,9 @@ for (const bp of BLUEPRINTS) {
         defaultValue: p.defaultValue ?? null,
         isRequired:   p.isRequired === true,
         isSecret:     p.isSecret   === true,
-        generate:     p.generate ?? null,
+        generate:       p.generate ?? null,
+        generateLength: p.generateLength ?? null,
+        validRegex:     p.validRegex ?? null,
         position,
       },
     })

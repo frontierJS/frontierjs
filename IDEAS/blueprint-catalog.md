@@ -155,6 +155,103 @@ form (see `plausible.yml` there for every feature at once).
 | `hostname`, `container_name`, `restart` | dropped, each with a reason the report prints |
 | anything else | refused by name |
 
+## The Coolify and Dokploy catalogs, counted
+
+Counted 2026-11-14 with the CapRover rules, from `coollabsio/coolify` `templates/compose`
+at `93c7e53` and `Dokploy/templates` `blueprints/` at `145076b`. *Convertible* means one
+service, no host access, no `build:`, no mounted file, and every service key inside
+§ Supported subset or dropped by the converter. The counting script was a session scratch
+file and was not kept; 3.5's batch report is the reproducible count.
+
+| Measure | Coolify | Dokploy |
+| --- | --- | --- |
+| Entries / marked `ignore` | 388 / 34 | 616 / 0 |
+| Single-service | 167 | 294 |
+| … with no host access and no `build:` | 141 | 250 |
+| … and no mounted file and no key outside the subset | **127** | **196** |
+| … of those, mounting more than one volume | 27 | 45 |
+| … of those, with a variable image tag | 5 | 5 |
+| Multi-service | 187 | 322 |
+| Refused for host access | 46 | 73 |
+| `build:` | 0 | 14 |
+| Mount a file whose content the template carries | 35 (`content:` on a bind) | 95 (`[[config.mounts]]`) |
+
+Host access, by kind (an entry can hit several): Coolify `docker.sock` 18, a host path 13,
+`cap_add` 10, `privileged` 7, `security_opt` 7, host network 6, `sysctls` 2, `devices` 1,
+host pid 1. Dokploy `docker.sock` 31, a host path 29, `security_opt` 16, `cap_add` 13,
+`devices` 6, host network 3, `privileged` 2, host pid 2, `sysctls` 2.
+
+**Generated values come in four kinds, not one.** `FJS-D2122`'s kind-plus-length holds,
+but `randomHex` alone covers a minority:
+
+| Kind | Coolify | Dokploy |
+| --- | --- | --- |
+| alphanumeric password | `SERVICE_PASSWORD_X` 831, `_64_` 111 | `${password:n}` 756, 24 lengths (32: 425, 16: 96, 64: 95) |
+| hex | `SERVICE_HEX_n_X` 25 (64, 32) | `${hash:n}` 101 (64: 51, 32: 27) |
+| base64 | `SERVICE_BASE64_n_X` 67, `SERVICE_REALBASE64_n_X` 21 | `${base64:n}` 141 (32: 77, 64: 37) |
+| uuid | — | `${uuid}` 9 |
+| username | `SERVICE_USER_X` 511 | `${username}` 38 |
+| the app's URL or host | `SERVICE_URL_X` 649, `SERVICE_FQDN_X` 66 | `${domain}` 668 |
+
+Coolify's `SERVICE_BASE64_n` is in fact alphanumeric and `SERVICE_REALBASE64_n` is base64.
+A generated username has no length and is a fifth kind, or a default the converter writes.
+Two of Dokploy's helpers (`${email}`, `${jwt}`) and `${randomPort}` (3) are left out of the count: a converter refuses them by name until a curated app needs one.
+
+**Mounted files are the one gap the counts add.** 35 Coolify and 95 Dokploy entries write
+a config file into the container (8 and 27 of them single-service). § Supported subset
+refuses them for now. Whether they become a Blueprint feature is decided after 3.5's report shows how many curated picks need one.
+
+## Supported subset
+
+The reader (1.4) accepts these keys and refuses everything else by name. The converters
+(Phase 3) write only these keys. A key the converter can't translate is either dropped
+with a printed reason (it changes nothing Basecamp does) or refused (dropping it would
+deploy something different). The reader never drops anything, because a file it accepts
+must mean exactly what it says.
+
+**Top level**
+
+| Key | Reader | Becomes |
+| --- | --- | --- |
+| `name` | refused: a second copy of `x-blueprint.slug` | dropped by the converter |
+| `services` | accepted; exactly one until Phase 4 | the App |
+| `volumes` | accepted; each a bare name, or `{}` | the named volume |
+| `x-blueprint` | required | the `Blueprint` row and its `BlueprintParam`s |
+| `volumes.<v>.driver` / `external` / `driver_opts` | refused | — |
+| `networks`, `configs`, `secrets`, `include` | refused | — |
+| any other `x-` key | refused; the converter drops it after YAML has expanded its anchors | — |
+
+**Per service**
+
+| Key | Reader | Becomes |
+| --- | --- | --- |
+| `image` | accepted; may carry `${PARAM}` (1.1) | `Blueprint.image` |
+| `environment` (list or map) | accepted; a `${X}` must name a param or a `BLUEPRINT_` built-in | one App `Variable` per key, interpolated (1.1) |
+| `volumes` | a named volume only; one until Phase 2 | `volumePath`, a list after 2.1 |
+| `command` | accepted; a string is split as compose splits it | `command` (argv) |
+| `ports` | at most one `host:container`, and only for a port reached directly rather than through Caddy (`FJS-D930`) | `port`, `containerPort`, `hasExposedPort: true`. A web app has no `ports:`: its container port is `x-blueprint.port` and placement picks the host port (`FJS-D1557`), so the converter drops a `ports:` entry for the web port with that reason |
+| `restart` | refused | dropped by the converter; Outpost runs every container `--restart unless-stopped` |
+| `deploy.resources.limits.cpus` / `.memory` | accepted; every other `deploy` key refused | `cpuLimit`, `memLimitMb` |
+| `depends_on` | refused until Phase 4 | 4.2 |
+| `build` | refused until Phase 5 | 5.1 |
+| `healthcheck` | refused; Basecamp checks an HTTP path, so the check moves to `x-blueprint.healthCheck` | the converter translates a `curl`/`wget` against localhost into the path and drops anything else with a reason |
+| `expose` | refused | the converter folds a single entry into `x-blueprint.port` |
+| `mem_limit`, `cpus` | refused | the converter moves them into `deploy.resources.limits` |
+| `hostname`, `container_name`, `logging`, `pull_policy`, `platform`, Coolify's `exclude_from_hc` | refused | dropped by the converter; Basecamp names containers and Outpost owns logs and pulls |
+| `labels` | refused | dropped by the converter when every label is a proxy's (`traefik.`, `caddy`, `coolify.`), else refused |
+| `privileged`, `cap_add`, `devices`, `security_opt`, `sysctls`, `userns_mode`, `ipc`, `network_mode`, `pid`, `runtime`, `extra_hosts`, `dns` | refused: host access | — |
+| a volume naming `docker.sock`, an absolute host path, or `~` | refused: host access | — |
+| a volume carrying `content:`, or Dokploy's `../files/` | refused: a mounted file (see above) | — |
+| `entrypoint`, `user`, `working_dir`, `stop_grace_period`, `shm_size`, `ulimits`, `tmpfs`, `init`, `tty`, `stdin_open`, `env_file` | refused: no App column | each gets a column when a curated app needs one |
+| `cap_drop`, `read_only` | refused | dropping a restriction would deploy something less safe |
+| `networks`, `links`, `volumes_from`, `profiles`, `secrets`, `configs` | refused | Phase 4 owns how siblings reach each other |
+
+**`x-blueprint`**: `slug`, `name`, `category`, `description`, `version`, `icon`,
+`brandColor`, `port`, `healthCheck`, `notes`, `links`, `params`, and on an import `source`
+(`catalog`, `path`, `commit`) and `license`. A param is `key`, `label`, `hint`, `default`,
+`required`, `secret`, `generate`, `length` and `validRegex`. `main` is refused until
+Phase 4, because one service has nothing to choose between.
+
 ## Phases
 
 ### Phase 0 — Groundwork: the subset and the two shape questions
@@ -163,8 +260,8 @@ Goal: the file's accepted compose subset is written down, and nothing Phase 1 bu
 Done when: § Supported subset exists in this file, and Q6 and Q7 are ruled in `DECISIONS.md`.
 
 - [x] 0.1 Count the CapRover catalog — § The CapRover catalog, counted.
-- [ ] 0.2 Count Coolify and Dokploy with the same rules, which turns the 2026-10-11 totals into convertible counts.
-- [ ] 0.3 Write § Supported subset: every compose key the reader accepts, what each becomes, and every key it refuses with the reason. Start from the survey's key counts (`environment`, `volumes`, `image`, `depends_on`, `command`, `healthcheck`, `ports`, `user`, `networks`).
+- [x] 0.2 Count Coolify and Dokploy with the same rules — § The Coolify and Dokploy catalogs, counted: 127 and 196 convertible.
+- [x] 0.3 Write § Supported subset: every compose key the reader accepts, what each becomes, and every key it refuses with the reason.
 - [x] 0.4 Rule Q6 and Q7 — `FJS-D2122` (kind + length), `FJS-D2123` (a basecamp script); Q2 ruled alongside, `FJS-D2124` (one format).
 
 ### Phase 1 — The file, one service
@@ -174,7 +271,7 @@ Done when: every bundled blueprint goes file → rows → file unchanged, `docke
 
 - [ ] 1.1 `image` and env values carry `${PARAM}`, interpolated by `apps.fromBlueprint` (183 of CapRover's 212 single-service apps put the version in the tag).
 - [ ] 1.2 `validRegex String?` on `BlueprintParam`, checked by the deploy form and by `fromBlueprint`.
-- [ ] 1.3 The generator per Q6: kind plus length, the 9 rows moved in the same change. A test mints at length 24 and asserts 24 hex characters.
+- [ ] 1.3 The generator per Q6: kind plus length, the 9 rows moved in the same change. The kinds are `randomHex`, `randomAlphanumeric` and `randomBase64`, plus `uuid`, which takes no length and is the kind with no length that `FJS-D2122` foresaw. They come from § The Coolify and Dokploy catalogs, counted. `mint` in `apps.service.ts` grows; no second minter. **The unit changes:** today's number is bytes (`randomHex32` is 64 characters), and `length` counts characters, so the 9 rows move as `randomHex32` → `length: 64`. Converters 3.3 and 3.4 check their catalog's unit and do not assume it. Tests: one mints at length 24 and asserts 24 hex characters, and one refuses `uuid` with a `length` by name.
 - [ ] 1.4 The reader: file → `Blueprint` + `BlueprintParam` rows. It is the one place a blueprint file is validated. It refuses § Supported subset's refusals and any unknown key by name, and it refuses a param under the `BLUEPRINT_` prefix.
 - [ ] 1.5 The writer: rows → file. Secrets are blank and a minted value is written as its rule (§ Export from a running App).
 - [ ] 1.6 The 9 rows in `db/blueprints.js` become `db/blueprints/<slug>.blueprint.yml`; `db:seed` and `db:catalog-sync` read the directory, and `blueprints.js` is deleted.
@@ -192,7 +289,7 @@ Before the converters, because 71 of CapRover's 212 single-service apps need it,
 ### Phase 3 — Converters: CapRover, Coolify, Dokploy
 
 Goal: a file from any of the three catalogs becomes a `.blueprint.yml`, and a first curated batch is in the catalog.
-Done when: the batch report converts at least 150 CapRover single-service apps, and 5 curated imports deploy on the test camp and pass their health check.
+Done when: for each catalog, the batch report converts at least 85% of the convertible count it computes itself, by § Supported subset's rules (the paper's 187, 127 and 196 are the sanity check), and 5 curated imports deploy on the test camp and pass their health check.
 
 A converter only translates. It writes a file and never writes rows, so the Phase 1 reader stays the only gate (Invariant 4).
 
@@ -289,5 +386,17 @@ Done when: one such app deploys on the test camp.
      in-git job. A keeps three third-party parsers out of the framework CLI. C feeds a
      stranger's file to a fleet machine at runtime, against `FJS-D2017`'s curated
      catalog. Reopen as B if re-syncing a catalog becomes routine.
+8. ~~**Where a fixed env value lives.**~~ **Answered 2026-11-14 (`FJS-D2140`): B — `Blueprint.environment Json` (key → value, which may carry `${PARAM}`), and params stay the values a person is asked for.** A compose `environment:` entry is often a value
+   nobody should be asked for (`TMPDIR=/var/lib/plausible/tmp`,
+   `DATABASE_URL=postgres://u:${PASS}@db/x`). Today every env var on the 9 built-ins is
+   a `BlueprintParam`, and `Blueprint` has no column for a fixed one.
+   - **A** — every entry is a param, and a fixed one carries its value as `defaultValue`.
+   - **B** — `Blueprint.environment Json` (key → value, which may carry `${PARAM}`),
+     and params stay the values a person is asked for.
+   - **C** — every entry is a param, plus an `isAsked Boolean` that hides the fixed ones.
+   - **Recommend B** — the file's `environment:` and `x-blueprint.params` map one to one
+     onto the column and the rows, so file → rows → file round-trips with no guessing.
+     A puts about 20 rows on Coolify's Plausible form, and the writer can't tell which
+     params the file asked for. C is a "param" that is never a parameter.
 
 

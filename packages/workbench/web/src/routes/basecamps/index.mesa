@@ -2,8 +2,9 @@
 title: Basecamps
 ---
 <script>
-  // Every Basecamp in this laptop's basecamps.json, whether it answers, and
-  // the newest backup it holds — with Back up now (Basecamp's own backup,
+  // Every Basecamp in this laptop's basecamps.json, whether it answers, what
+  // its /hub/ screen lists as needing attention (the hub box's failing checks
+  // and its other machines), and the newest backup it holds — with Back up now (Basecamp's own backup,
   // over its API) and Restart (its API container, over ssh) on each.
   //
   // A verb runs in the API and its outcome is held there (api
@@ -241,8 +242,17 @@ title: Basecamps
 
   const toneOf = (o) => o.state === 'error' ? 'text-danger' : o.state === 'done' ? 'text-success' : ''
 
+  // The machines line counts the hub's other boxes; its own box is the checks above it.
+  function fleetLine(f) {
+    const parts = [`${f.machines} other machine${f.machines === 1 ? '' : 's'}`]
+    if (f.failing.length) parts.push(`${f.failing.length} failing (${f.failing.join(', ')})`)
+    if (f.quiet.length)   parts.push(`${f.quiet.length} stale or never reported (${f.quiet.join(', ')})`)
+    return parts.join(' · ')
+  }
+
   const COLUMNS = [
     { name: 'name',    label: 'Basecamp' },
+    { name: 'health',  label: 'Needs attention' },
     { name: 'backup',  label: 'Newest backup' },
     { name: 'actions', label: '' },
   ]
@@ -297,7 +307,7 @@ title: Basecamps
           <div class="text-sm" data-local={r.name}>
             {#if r.local.length}
               <details>
-                <summary>Local copies — {r.local.length}, {bytes(copiesBytes(r))}</summary>
+                <summary>Local copies — {r.local.length} ({bytes(copiesBytes(r))})</summary>
                 <ul class="stack gap-sm">
                   {#each r.local as c (copyKey(c))}
                     <li class="cluster" data-copy={c.file}>
@@ -331,7 +341,55 @@ title: Basecamps
             </div>
           {/if}
         </td>
-        <td class="text-sm">
+        <td class="text-sm" data-health={r.name}>
+          {#if r.health}
+            <div class="stack gap-sm">
+              {#if !r.health.enrolled}
+                <span class="text-warning">no Outpost reads this box</span>
+              {:else if !r.health.reported}
+                <span class="text-warning">{r.health.serverName} has never reported</span>
+              {:else if r.health.stale}
+                <span class="text-warning" title={at(r.health.at)}>stale — last report {ago(r.health.at)}</span>
+              {/if}
+              {#if r.health.failing.length}
+                <ul class="checks">
+                  {#each r.health.failing as c (c.id)}
+                    <li data-control={c.id}>
+                      <details>
+                        <summary class="text-danger" title={c.message}>{c.id}</summary>
+                        <div>{c.message}</div>
+                        {#if c.fix}<div class="text-muted">{c.fix}</div>{/if}
+                      </details>
+                    </li>
+                  {/each}
+                </ul>
+              {:else if r.health.reported}
+                <span class="text-success">nothing failing</span>
+              {/if}
+              {#if r.health.unknown.length}
+                <details>
+                  <summary class="text-muted">{r.health.unknown.length} unknown</summary>
+                  <ul class="stack gap-sm text-muted">
+                    {#each r.health.unknown as c (c.id)}
+                      <li data-control={c.id}><code>{c.id}</code> {c.message}{#if c.fix}<div>{c.fix}</div>{/if}</li>
+                    {/each}
+                  </ul>
+                </details>
+              {/if}
+              {#if r.health.fleet?.machines}
+                <span class={r.health.fleet.failing.length ? 'text-danger' : r.health.fleet.quiet.length ? 'text-warning' : 'text-muted'} data-fleet={r.name}>
+                  <a href={`${r.url}/hub/fleet/`} target="_blank" rel="noopener noreferrer">{fleetLine(r.health.fleet)}</a>
+                </span>
+              {/if}
+              <a href={`${r.url}/hub/security/`} target="_blank" rel="noopener noreferrer">Host security</a>
+            </div>
+          {:else if r.healthError}
+            <span class="text-danger">{r.healthError}</span>
+          {:else}
+            <span class="text-muted">{!r.hasKey ? 'no API key' : '—'}</span>
+          {/if}
+        </td>
+        <td class="text-sm nowrap">
           {#if r.newestBackup}
             <span title={at(r.newestBackup.createdAt)}>{ago(r.newestBackup.createdAt)}</span>
             <div class="text-muted">{r.newestBackup.status}</div>
@@ -466,4 +524,14 @@ title: Basecamps
     gap: var(--space-sm);
     align-items: center;
   }
+  .nowrap { white-space: nowrap; }
+  .checks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-xs);
+  }
+  .checks summary { font-family: var(--font-mono, monospace); white-space: nowrap; }
+  .checks details[open] { padding-block-end: var(--space-xs); }
 </style>

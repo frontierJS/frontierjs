@@ -33,7 +33,7 @@ export const BLUEPRINTS = [
       { key: 'N8N_BASIC_AUTH_USER',     label: 'Admin username', defaultValue: 'admin', isRequired: true, hint: 'Your login username' },
       { key: 'N8N_BASIC_AUTH_PASSWORD', label: 'Admin password', isRequired: true, isSecret: true, hint: 'Min 8 characters' },
       { key: 'WEBHOOK_URL',             label: 'Public URL', hint: 'https://n8n.acme.com — used for webhooks' },
-      { key: 'N8N_ENCRYPTION_KEY',      label: 'Encryption key', isRequired: true, isSecret: true, generate: 'randomHex32', hint: 'Random string to encrypt credentials' },
+      { key: 'N8N_ENCRYPTION_KEY',      label: 'Encryption key', isRequired: true, isSecret: true, generate: 'randomHex', generateLength: 64, hint: 'Random string to encrypt credentials' },
       { key: 'GENERIC_TIMEZONE',        label: 'Timezone', defaultValue: 'UTC', hint: 'e.g. America/New_York' },
     ],
   },
@@ -49,7 +49,7 @@ export const BLUEPRINTS = [
     params: [
       { key: 'POSTGRES_DB',       label: 'Database name', defaultValue: 'app_db', isRequired: true },
       { key: 'POSTGRES_USER',     label: 'Superuser', defaultValue: 'postgres', isRequired: true },
-      { key: 'POSTGRES_PASSWORD', label: 'Superuser password', isRequired: true, isSecret: true, generate: 'randomHex16' },
+      { key: 'POSTGRES_PASSWORD', label: 'Superuser password', isRequired: true, isSecret: true, generate: 'randomHex', generateLength: 32 },
     ],
   },
   {
@@ -77,7 +77,7 @@ export const BLUEPRINTS = [
     notes: 'The master key is used to generate API keys for your applications. Changing it invalidates all existing keys.',
     links: [{ label: 'Docs', url: 'https://www.meilisearch.com/docs' }],
     params: [
-      { key: 'MEILI_MASTER_KEY', label: 'Master key', isRequired: true, isSecret: true, generate: 'randomHex32', hint: 'All API keys are derived from this. Keep it safe.' },
+      { key: 'MEILI_MASTER_KEY', label: 'Master key', isRequired: true, isSecret: true, generate: 'randomHex', generateLength: 64, hint: 'All API keys are derived from this. Keep it safe.' },
       { key: 'MEILI_ENV',        label: 'Environment', defaultValue: 'production' },
     ],
   },
@@ -92,7 +92,7 @@ export const BLUEPRINTS = [
     links: [{ label: 'Docs', url: 'https://plausible.io/docs/self-hosting' }],
     params: [
       { key: 'BASE_URL',                label: 'Public URL', isRequired: true, hint: 'https://analytics.acme.com' },
-      { key: 'SECRET_KEY_BASE',         label: 'Secret key base', isRequired: true, isSecret: true, generate: 'randomHex64' },
+      { key: 'SECRET_KEY_BASE',         label: 'Secret key base', isRequired: true, isSecret: true, generate: 'randomHex', generateLength: 128 },
       { key: 'DATABASE_URL',            label: 'Postgres URL', isRequired: true, isSecret: true, hint: 'postgresql://user:pass@postgres:5432/plausible_db' },
       { key: 'CLICKHOUSE_DATABASE_URL', label: 'ClickHouse URL', defaultValue: 'http://clickhouse:8123/plausible_events_db', isRequired: true },
       { key: 'MAILER_EMAIL',            label: 'From email' },
@@ -109,7 +109,7 @@ export const BLUEPRINTS = [
     links: [{ label: 'Docs', url: 'https://umami.is/docs' }],
     params: [
       { key: 'DATABASE_URL', label: 'Postgres URL', isRequired: true, isSecret: true, hint: 'postgresql://user:pass@postgres:5432/umami' },
-      { key: 'APP_SECRET',   label: 'App secret', isRequired: true, isSecret: true, generate: 'randomHex32' },
+      { key: 'APP_SECRET',   label: 'App secret', isRequired: true, isSecret: true, generate: 'randomHex', generateLength: 64 },
     ],
   },
   {
@@ -124,8 +124,8 @@ export const BLUEPRINTS = [
     notes: 'S3 API on port 8333, path-style. The image runs `weed mini`, which also starts an Admin UI on 23646 with no password, so never publish that port. Once 10 GiB are stored it reports anonymous usage to telemetry.seaweedfs.com.',
     links: [{ label: 'Docs', url: 'https://github.com/seaweedfs/seaweedfs/wiki/Amazon-S3-API' }],
     params: [
-      { key: 'AWS_ACCESS_KEY_ID',     label: 'Access key', isRequired: true, generate: 'randomHex16' },
-      { key: 'AWS_SECRET_ACCESS_KEY', label: 'Secret key', isRequired: true, isSecret: true, generate: 'randomHex32' },
+      { key: 'AWS_ACCESS_KEY_ID',     label: 'Access key', isRequired: true, generate: 'randomHex', generateLength: 32 },
+      { key: 'AWS_SECRET_ACCESS_KEY', label: 'Secret key', isRequired: true, isSecret: true, generate: 'randomHex', generateLength: 64 },
     ],
   },
   {

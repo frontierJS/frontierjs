@@ -1686,6 +1686,22 @@ describe('the catalog takes no workspace', () => {
     // …and still there by id, which is what an App pointing at it needs.
     expect((await env.as(sysadmin).service('blueprints').get(bp.id)).deprecatedAt).toBeTruthy()
   })
+
+  test('a generator and its length are stated together, and uuid takes none (FJS-D2122)', async () => {
+    const made = await env.as(sysadmin).service('blueprints').create({
+      name: 'Gen', slug: `gen-${Math.random().toString(36).slice(2, 8)}`,
+      category: 'Cache', description: 'x', version: '1', image: 'gen:1',
+    })
+    const set = (p: Record<string, unknown>) =>
+      env.as(sysadmin).service('blueprints').call('setParams', made.id, { params: [{ key: 'K', label: 'K', ...p }] })
+
+    await expect(set({ generate: 'uuid', generateLength: 32 })).rejects.toThrow(/a uuid generator takes no generateLength/)
+    await expect(set({ generate: 'randomHex' })).rejects.toThrow(/randomHex.* need a generateLength/)
+    await expect(set({ generate: 'randomHex', generateLength: 257 })).rejects.toThrow(/generateLength/)
+    await expect(set({ validRegex: '([a-z' })).rejects.toThrow(/'K' has a validRegex/)
+    expect((await set({ generate: 'uuid' })).params[0].generateLength).toBeNull()
+    expect((await set({ generate: 'randomBase64', generateLength: 40 })).params[0].generateLength).toBe(40)
+  })
 })
 
 describe('the registry mirror is a tenant service, unlike the catalog beside it', () => {
@@ -3045,7 +3061,7 @@ describe('an app made from a blueprint', () => {
     for (const [i, p] of [
       { key: 'KV_PASSWORD', label: 'Password',      isRequired: true,  isSecret: true },
       { key: 'KV_POLICY',   label: 'Policy',        defaultValue: 'allkeys-lru' },
-      { key: 'KV_KEY',      label: 'Encryption key', isRequired: true, isSecret: true, generate: 'randomHex16' },
+      { key: 'KV_KEY',      label: 'Encryption key', isRequired: true, isSecret: true, generate: 'randomHex', generateLength: 32 },
       { key: 'KV_NOTE',     label: 'Note' },
     ].entries())
       await sys.blueprintParam.create({ data: { blueprintId: bp.id, position: i, ...p } })
@@ -3092,7 +3108,7 @@ describe('an app made from a blueprint', () => {
     const shipped = await releaseEnv(env.system, snap)
     expect(shipped.KV_PASSWORD).toBe('hunter2-kv')
     expect(shipped.KV_POLICY).toBe('allkeys-lru')
-    // `randomHex16` is sixteen BYTES, the way `openssl rand -hex 16` reads.
+    // A length is CHARACTERS (`FJS-D2122`).
     expect(shipped.KV_KEY).toMatch(/^[0-9a-f]{32}$/)
 
     // No Secret row: /secrets/ is the workspace's credentials, not an app's env.
@@ -3125,6 +3141,87 @@ describe('an app made from a blueprint', () => {
     const snap = await snapshotVariables(env.system, r)
     await (env.system as any).variable.delete({ where: { id: snap.secretEnv.KV_PASSWORD } })
     await expect(releaseEnv(env.system, snap)).rejects.toThrow(/KV_PASSWORD/)
+  })
+
+  // A blueprint whose image and environment carry `${...}` (`FJS-D2140`).
+  async function composed(image: string, environment: Record<string, string>, params: Record<string, unknown>[]) {
+    const sys = env.system as any
+    const row = await sys.blueprint.create({ data: {
+      slug: `cmp-${tag()}`, name: 'Composed', category: 'Data', description: 'x', version: '1',
+      image, environment,
+    } })
+    for (const [i, p] of params.entries())
+      await sys.blueprintParam.create({ data: { blueprintId: row.id, position: i, ...p } })
+    return row
+  }
+  const shippedEnv = async (r: any) => releaseEnv(env.system, await snapshotVariables(env.system, r))
+
+  test('a generator mints the number of characters it states', async () => {
+    const row = await composed('mint:1', {}, [
+      { key: 'HEX',  label: 'Hex',  generate: 'randomHex',          generateLength: 24 },
+      { key: 'ALNUM', label: 'An',  generate: 'randomAlphanumeric', generateLength: 37 },
+      { key: 'B64',  label: 'B64',  generate: 'randomBase64',       generateLength: 43 },
+      { key: 'ID',   label: 'Id',   generate: 'uuid' },
+    ])
+    const r = await make(developer, { blueprintId: row.id, environmentId: environment.id, name: `Mint ${tag()}` }) as any
+    const shipped = await shippedEnv(r)
+    expect(shipped.HEX).toMatch(/^[0-9a-f]{24}$/)
+    expect(shipped.ALNUM).toMatch(/^[A-Za-z0-9]{37}$/)
+    expect(shipped.B64).toMatch(/^[A-Za-z0-9+/]{43}$/)
+    expect(shipped.ID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  })
+
+  test('${PARAM} in the image and the environment is interpolated, and a secret one stays secret', async () => {
+    const row = await composed('postgres:${PG_VERSION}', {
+      DATABASE_URL: 'postgres://app:${PG_PASS}@db/${PG_DB:-app}',
+      TZ:           '${TIMEZONE:-UTC}',
+      APP_NAME:     '${BLUEPRINT_SLUG}',
+      TMPDIR:       '/var/lib/app/tmp',
+    }, [
+      { key: 'PG_VERSION', label: 'Version',  defaultValue: '16' },
+      { key: 'PG_PASS',    label: 'Password', isRequired: true, isSecret: true },
+      { key: 'PG_DB',      label: 'Database' },
+      { key: 'TIMEZONE',   label: 'Zone' },
+    ])
+    const r = await make(developer, {
+      blueprintId: row.id, environmentId: environment.id, name: `Interp ${tag()}`,
+      values: { PG_PASS: 's3cret-interp' },
+    }) as any
+    expect(r.source).toEqual({ kind: 'image', image: 'postgres:16' })
+
+    const vars = await (env.system as any).variable.findMany({ where: { appId: r.id } })
+    const byKey = Object.fromEntries(vars.map((v: any) => [v.key, v]))
+    expect(byKey.DATABASE_URL.isSecret).toBe(true)
+    expect(byKey.DATABASE_URL.value ?? null).toBeNull()
+    expect(byKey.TMPDIR.isSecret).toBe(false)
+
+    const shipped = await shippedEnv(r)
+    expect(shipped.DATABASE_URL).toBe('postgres://app:s3cret-interp@db/app')
+    expect(shipped.TZ).toBe('UTC')
+    expect(shipped.APP_NAME).toBe(r.slug)
+    expect(shipped.TMPDIR).toBe('/var/lib/app/tmp')
+  })
+
+  test('a ${X} that names neither a param nor a built-in is refused by name', async () => {
+    const inEnv = await composed('ok:1', { URL: 'http://${NOPE_HOST}/' }, [])
+    await expect(make(developer, { blueprintId: inEnv.id, environmentId: environment.id }))
+      .rejects.toThrow(/NOPE_HOST/)
+    const inImage = await composed('ok:${MISSING_TAG}', {}, [])
+    await expect(make(developer, { blueprintId: inImage.id, environmentId: environment.id }))
+      .rejects.toThrow(/MISSING_TAG/)
+  })
+
+  test('a value that does not match its param validRegex is refused, naming the param and the pattern', async () => {
+    const row = await composed('ok:1', {}, [
+      { key: 'SUBDOMAIN', label: 'Subdomain', isRequired: true, validRegex: '^[a-z0-9-]+$' },
+    ])
+    await expect(make(developer, {
+      blueprintId: row.id, environmentId: environment.id, values: { SUBDOMAIN: 'Not Valid!' },
+    })).rejects.toThrow(/'SUBDOMAIN' must match the pattern \^\[a-z0-9-\]\+\$/)
+    const ok = await make(developer, {
+      blueprintId: row.id, environmentId: environment.id, name: `Rx ${tag()}`, values: { SUBDOMAIN: 'fine-1' },
+    }) as any
+    expect((await shippedEnv(ok)).SUBDOMAIN).toBe('fine-1')
   })
 
   test('a required parameter is refused by its label, an unknown one by its key', async () => {

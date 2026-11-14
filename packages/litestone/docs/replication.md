@@ -29,7 +29,7 @@ export default {
     url:             's3://mybucket/myapp',
     syncInterval:    '10s',
     retentionPeriod: '720h',    // 30 days — litestream's snapshot.retention
-    l0Retention:     '24h',     // time-travel window via PRAGMA litestream_time
+    l0Retention:     '1h',      // time-travel window via PRAGMA litestream_time
   }
 }
 ```
@@ -262,14 +262,23 @@ Litestone sets the SQLite pragmas Litestream needs on every connection it opens
 Uploads go out at the replica's `sync-interval`, but every L0 expiry check and
 every compaction LISTS the bucket, which B2 bills and caps per account as a
 Class C call. The config litestone writes checks every 30 minutes and compacts
-L1/L2/L3 at 1h/6h/24h (`L0_CHECK_INTERVAL`, `LEVEL_INTERVALS`), about 77
-listings a day per database; Litestream's own defaults list about 9,000, and
+L1/L2/L3 at 1h/6h/24h (`L0_CHECK_INTERVAL`, `LEVEL_INTERVALS`), about 96
+listings of L0 a day per database; Litestream's own defaults list about 9,000, and
 three databases ran a free B2 account's 2,500 out (`FJS-4250`).
+
+A listing is not one call: Litestream pages through every file at a level,
+1,000 keys a call. L0 holds one file per `monitor-interval` tick that saw a
+write, for the whole `l0Retention` window, so at Litestream's 1s tick a 24h
+window is about 88 calls a listing, ~8,400 a day for one busy database
+(`FJS-4315`). Litestone writes `monitor-interval: 10s` on every database and a
+1h window (`MONITOR_INTERVAL`, `L0_RETENTION`), which keeps L0 inside one page.
+The price is a crash losing up to ~10s more than the 1s tick did.
 
 ## Point-in-time restore
 
-`l0Retention` is how far back `litestone restore --at <instant>` can reach.
-Default: `24h`. Litestream also answers a past instant on a live connection
+`l0Retention` is how far back `litestone restore --at <instant>` can reach
+at L0's 10s grain. Default: `1h` — a longer window multiplies every L0 listing
+(§ above). Litestream also answers a past instant on a live connection
 through its own VFS; that is Litestream's feature and not a litestone command.
 
 

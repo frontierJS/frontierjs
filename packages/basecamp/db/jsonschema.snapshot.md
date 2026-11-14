@@ -265,7 +265,7 @@ validates, and a select that silently drops an option.
 - `ChannelKind` — `slack`, `pagerduty`, `email`, `webhook`, `chat`
 - `FlagType` — `boolean`, `variant`
 - `TileKind` — `serverFleet`, `serverHealth`, `appStatus`, `deployFeed`, `jobHistory`, `activityFeed`, `alertStatus`, `serviceHealth`, `statCounter`
-- `ParamGenerator` — `randomHex16`, `randomHex32`, `randomHex64`
+- `ParamGenerator` — `randomHex`, `randomAlphanumeric`, `randomBase64`, `uuid`
 - `BackupKind` — `manual`, `scheduled`, `found`, `release`
 - `DrillKind` — `manual`, `scheduled`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
@@ -1786,6 +1786,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `command` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `notes` | `string`? | — | — | `minLength: 0` `maxLength: 1000` | — |
 | `links` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `environment` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `deprecatedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `revision` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -1807,6 +1808,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `isRequired` | `boolean` = `false` | — | — | — | — |
 | `isSecret` | `boolean` = `false` | — | — | — | — |
 | `generate` | `ParamGenerator`? | — | — | — | — |
+| `generateLength` | `integer`? | — | — | `minimum: 1` `maximum: 256` | — |
+| `validRegex` | `string`? | — | — | `minLength: 1` `maxLength: 500` | — |
 | `position` | `integer` = `0` | — | — | — | — |
 
 **On create**: required — `blueprintId`, `key`, `label` · not accepted — `id`

@@ -184,7 +184,9 @@ interface ParamInput {
   defaultValue?: string | null
   isRequired?:   boolean
   isSecret?:     boolean
-  generate?:     string | null
+  generate?:       string | null
+  generateLength?: number | null
+  validRegex?:     string | null
 }
 
 /**
@@ -225,6 +227,10 @@ async function writeParams(blueprintId: string, params: ParamInput[]): Promise<v
     if (!p?.key)        throw new BadRequest('Every param needs a `key`')
     if (seen.has(p.key)) throw new Conflict(`Duplicate param key '${p.key}'`)
     seen.add(p.key)
+    if (p.validRegex) {
+      try { new RegExp(p.validRegex) }
+      catch { throw new BadRequest(`'${p.key}' has a validRegex that is not a regular expression: ${p.validRegex}`) }
+    }
   }
 
   await db().blueprintParam.deleteMany({ where: { blueprintId } })
@@ -239,8 +245,10 @@ async function writeParams(blueprintId: string, params: ParamInput[]): Promise<v
         defaultValue: p.defaultValue ?? null,
         isRequired:   p.isRequired === true,
         isSecret:     p.isSecret   === true,
-        generate:     p.generate ?? null,
-        position:     position++,
+        generate:       p.generate ?? null,
+        generateLength: p.generateLength ?? null,
+        validRegex:     p.validRegex || null,
+        position:       position++,
       },
     })
   }

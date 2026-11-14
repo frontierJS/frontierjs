@@ -20,6 +20,8 @@ import {
   type RateLimitOptions as CoreRateLimitOptions,
 } from '../core/rate-limit.ts'
 import { isUnloggedMethod } from '../core/service.ts'
+import { BUILD_HEADER }     from '../core/build-id.ts'
+import { CREDENTIAL_HEADER } from '../core/ws-auth.ts'
 
 // ─── Shared origin type ───────────────────────────────────────────────────
 // cors() and csrf() both accept the same origin specification.
@@ -93,6 +95,9 @@ export interface CorsOptions {
   // `headers` so an app declaring one place gets both readers — the WS frame
   // merge is the other — rather than having to remember the CORS half too.
   callHeaders?: string[]
+  // Response headers a cross-origin page may read. Fetch hides every other
+  // one, so a version a raw route stamps never reaches the page.
+  exposeHeaders?: string[]
   credentials?: boolean
   maxAge?:      number      // seconds
 }
@@ -151,6 +156,9 @@ export function cors(opts: CorsOptions) {
   // defaultConfig, so every app that configured CORS through config replaced
   // the default with three names and lost all three protocol headers.
   const headerStr  = _uniqueHeaders([...headers, ...PROTOCOL_HTTP_ONLY_HEADERS, ...PROTOCOL_CALL_HEADERS, ...(opts.callHeaders ?? [])])
+  // The browser client reads these two off every answer; cross-origin they
+  // read as absent, so a new build and a changed cookie go unnoticed.
+  const exposeStr  = _uniqueHeaders([...(opts.exposeHeaders ?? []), BUILD_HEADER, CREDENTIAL_HEADER])
 
   function isAllowed(origin: string): boolean {
     if (origins === '*') return true
@@ -172,6 +180,7 @@ export function cors(opts: CorsOptions) {
         'access-control-allow-origin':      origin || '*',
         'access-control-allow-methods':     methodStr,
         'access-control-allow-headers':     headerStr,
+        'access-control-expose-headers':    exposeStr,
         'access-control-max-age':           String(maxAge),
         // A reflected origin makes the response origin-dependent; without this
         // a shared cache hands one site's ACAO to the next caller.

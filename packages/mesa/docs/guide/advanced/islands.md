@@ -88,6 +88,11 @@ answers no clicks.
   loader reads them with a `TreeWalker`, not `querySelectorAll`.
 - **Async data is the loader's to fetch again.** Nothing from the server render
   is serialized except the props.
+- **Islands do not share state.** Each mounts alone, so `$context` from a
+  provider outside it reads `undefined`, and a store two islands import starts
+  from its client default, not from what the server rendered. Pass what an
+  island needs as props, or make the shared region one island
+  ([STATIC_RENDERING.md § Status](../../STATIC_RENDERING.md#status), `FJS-4313`).
 
 ---
 

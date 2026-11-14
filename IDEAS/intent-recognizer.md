@@ -553,6 +553,10 @@ the customer-facing word can be loose while the verdict stays precise.
   - **B** — Three lanes: `you can do this`; `needs us` in the UI realm goes to a PR a developer approves; `needs us` in API or Data is scoped by a developer.
   - **Recommend B** (confidence 2) — the PR the ask panel's Submit opens is a ready review gate for UI, and Decap CMS's editorial workflow (a branch and PR per entry) is the same shape; A either lets a client ship code unreviewed or sends every button nudge to the devs. Unstated: who the client is on that panel. What fails if the lane stops: a test that a UI-lane run refuses a write outside the UI realm — none yet.
 - **Where does a `needs us` land?** Waits on the lanes ruling. Default: a row in the app's request register, which `FJS-D728` already rules is a model in the app's own schema (confidence 2); a Basecamp to-do or a draft PR would be a second place to look.
+  - **A** — Only a row in the request register (`FJS-D728`), keyed by the verdict's `target` (`packages/cli/core/intent.js:370`–`446` already returns one); nothing is opened elsewhere, and a developer works from the register.
+  - **B** — Always a register row; a UI-realm `needs us` also opens the draft PR the ask panel's Submit already opens, and the row stores its link, so the register stays the one place to look and the PR is where the change is reviewed. Under lanes **A** this collapses to A.
+  - **C** — An outside tracker: a Basecamp to-do (or the app's issue tracker) per `needs us`, with no register row; the client's request lives where the developers already work.
+  - **Recommend B** — `FJS-D728` makes the register the home and gives it the gate, audit trail and dedupe-by-target for free; linking the PR rather than replacing the row keeps one place to look while lanes **B** (recommended) wants a review gate for UI. C drops `FJS-D728`'s register and makes *read it backwards* a cross-system join.
 
 **The falsification run was set a bar before it ran**: seven in ten answered by
 lookup alone keeps the shape, four in ten changes it. **Run 1 landed at 5.2 — 31 of

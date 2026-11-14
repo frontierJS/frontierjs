@@ -90,10 +90,12 @@ h6, .h6 {
  * in lists.css but never actually defined; .btn.link is a button that
  * looks like a link, which is a different thing.
  *
- * Reads --bg-mix, so `class="link danger"` works like any other tone.
+ * A tone as text, so it goes through the window the way .btn.link does
+ * (FJS-D93): the raw brand put a light theme's links under AA.
  */
 .link {
-  color:           var(--bg-mix, var(--color-primary));
+  color:           var(--tone-ink, oklch(from var(--color-primary)
+                     clamp(var(--tone-l-min), l, var(--tone-l-max)) c h));
   text-decoration: none;
   cursor:          pointer;
 }

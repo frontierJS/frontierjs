@@ -4408,7 +4408,7 @@ async function cmdReplicate(cfg) {
       `         url:             's3://bucket/myapp',\n` +
       `         syncInterval:    '10s',    // optional\n` +
       `         retentionPeriod: '720h',   // optional\n` +
-      `         l0Retention:     '24h',    // optional — time-travel window\n` +
+      `         l0Retention:     '1h',     // optional — time-travel window\n` +
       `       }`
     )
   }

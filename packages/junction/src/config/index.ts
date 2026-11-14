@@ -79,6 +79,7 @@ export interface AppConfig {
       origins:    string[] | ((origin: string) => boolean)
       methods:    string[]
       headers:    string[]
+      exposeHeaders?: string[]
     }
     ddos: {
       enabled:    boolean
@@ -317,7 +318,7 @@ export const defaultConfig: AppConfig = {
 export interface JunctionMiddlewareConfig {
   // `credentials` is read by `applyConfiguredCors` and was undeclared, so a
   // config that works had a type saying it did not.
-  cors?:          { origins?: string[]; methods?: string[]; headers?: string[]; credentials?: boolean; maxAge?: number }
+  cors?:          { origins?: string[]; methods?: string[]; headers?: string[]; exposeHeaders?: string[]; credentials?: boolean; maxAge?: number }
   /**
    * The app's own per-call headers, ADDED to junction's CORS allow-list and
    * let through on a socket frame — lands on `http.callHeaders` (`FJS-1226`).

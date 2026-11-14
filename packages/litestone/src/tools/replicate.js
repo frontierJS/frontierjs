@@ -199,6 +199,8 @@ const q = v => JSON.stringify(String(v))
 
 export const L0_CHECK_INTERVAL = '30m'
 export const LEVEL_INTERVALS   = ['1h', '6h', '24h']
+export const L0_RETENTION      = '1h'
+export const MONITOR_INTERVAL  = '10s'
 
 export function buildYaml(targets, opts) {
   // l0-retention is the STORE's setting in v0.5: read at the top of the file
@@ -207,16 +209,18 @@ export function buildYaml(targets, opts) {
   // `retention` either (FJS-1396): how long snapshots live is `snapshot.retention`
   // at the top, and the YAML is not parsed strictly, so a misplaced key is
   // dropped and the 24h default stays.
-  const l0    = opts.l0Retention ?? '24h'
+  const l0    = opts.l0Retention ?? L0_RETENTION
   const lines = [
-    ...(l0 ? [`l0-retention: ${l0}`] : []),
     // Every expiry check and every compaction lists the bucket, a Class C call
-    // on B2. On Litestream's defaults (a check every 15s, L1/L2/L3 at 30s/5m/1h)
-    // one database lists about 9,000 times a day, and B2's free account allows
-    // 2,500 for every bucket together: three replicated databases ran the cap
-    // out and every replica and backup on the account was refused (FJS-4250).
-    // These list about 77 times a day per database. The check stays shorter
-    // than L1, as Litestream asks, and L0 still keeps l0-retention's window.
+    // on B2, and B2's free account allows 2,500 a day for every bucket
+    // together (FJS-4250). A listing is not one call: Litestream pages through
+    // EVERY file at a level, 1,000 keys a call, and drops the old ones on its
+    // side. L0 holds one file per monitor tick that saw a write, for the whole
+    // l0-retention window, and is listed whole about 96 times a day — so a
+    // database written every second on a 24h window cost ~88 calls a listing,
+    // ~8,400 a day alone (FJS-4315). A 10s tick and a 1h window keep L0 under
+    // one page. The check stays shorter than L1, as Litestream asks.
+    ...(l0 ? [`l0-retention: ${l0}`] : []),
     `l0-retention-check-interval: ${L0_CHECK_INTERVAL}`,
     'levels:',
     ...LEVEL_INTERVALS.map(i => `  - interval: ${i}`),
@@ -242,6 +246,7 @@ export function buildYaml(targets, opts) {
     } else {
       lines.push(`  - path: ${t.path}`)
     }
+    lines.push(`    monitor-interval: ${MONITOR_INTERVAL}`)
     lines.push(`    replicas:`)
     // A target carrying its own `replica` holds its own key: one machine
     // replicates several apps, and the environment holds one key.
@@ -406,7 +411,7 @@ export async function replicate({ targets, options, dir, verbose = true }) {
     }
     if (options.syncInterval)    console.log(`   ${c.dim}interval:${c.reset}     ${options.syncInterval}`)
     if (options.retentionPeriod) console.log(`   ${c.dim}snapshot-retention:${c.reset} ${options.retentionPeriod}`)
-    console.log(`   ${c.dim}l0-retention:${c.reset} ${options.l0Retention ?? '24h'}`)
+    console.log(`   ${c.dim}l0-retention:${c.reset} ${options.l0Retention ?? L0_RETENTION}`)
     console.log(`   ${c.dim}config:${c.reset}       ${ymlPath}`)
     console.log(`   ${c.dim}binary:${c.reset}       ${binary}`)
     console.log(`\n${c.dim}   Streaming WAL to replica. Press Ctrl+C to stop.${c.reset}\n`)

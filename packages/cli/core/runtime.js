@@ -1262,9 +1262,16 @@ function buildGitUtils(defaultDir) {
     //
     // No tag yet means never released, so every commit touching the path counts.
     // `paths` narrows the commits to those pathspecs, relative to `dir`.
-    pkgState: (name, dir, paths = ['.']) => {
-      const lastTag = list(['tag', '--list', `${name}@*`, '--sort=-v:refname'], dir)[0] || ''
-      const commits = list(['log', ...(lastTag ? [`${lastTag}..HEAD`] : []), '--format=%h|%s|%an', '--no-merges', '--', ...paths], dir)
+    // `until` asks the question as of that commit: the newest tag it contains,
+    // and the commits up to it. A release in flight packs its tag's commit, and
+    // counting to HEAD read commits it never packs as movement (FJS-4310). A
+    // sha from another repo of a multi-repo workspace names nothing here, and
+    // there the package is packed from its own tree, so HEAD answers.
+    pkgState: (name, dir, paths = ['.'], { until = '' } = {}) => {
+      const at      = until && run(['rev-parse', '--verify', '-q', `${until}^{commit}`], dir) ? until : ''
+      const lastTag = list(['tag', '--list', `${name}@*`, ...(at ? ['--merged', at] : []), '--sort=-v:refname'], dir)[0] || ''
+      const tip     = at || 'HEAD'
+      const commits = list(['log', lastTag ? `${lastTag}..${tip}` : tip, '--format=%h|%s|%an', '--no-merges', '--', ...paths], dir)
         .map(line => {
           const [hash, subject, author] = line.split('|')
           return { hash, subject, author }

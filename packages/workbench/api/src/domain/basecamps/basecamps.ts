@@ -1,6 +1,7 @@
 // api/src/domain/basecamps/basecamps.ts
 // The Basecamps this laptop made, from `~/.config/fli/basecamps.json`: each one
-// read with whether it answers and the newest backup it holds, and the two
+// read with whether it answers, the newest backup it holds and the checks its
+// `/hub/` screen lists as needing attention, and the two
 // verbs the screen offers on one — Basecamp's own backup, taken over its API
 // with the entry's admin key, and a restart of its API container over ssh.
 //
@@ -126,6 +127,10 @@ export type Listed = {
   newestBackup: HubBackup | null
   /** Why the newest backup could not be read from a Basecamp that answers. */
   backupError:  string | null
+  /** What the hub's `/hub/` screen lists as needing attention; null when there is no key or no answer. */
+  health:       HubHealth | null
+  /** Why the hub's checks could not be read from a Basecamp that answers. */
+  healthError:  string | null
   outcome:      Outcome | null
   /** The backups on this laptop, oldest first. */
   local:        LocalCopy[]
@@ -162,6 +167,56 @@ async function newestBackup(c: Cli, e: Entry): Promise<{ row: HubBackup | null, 
   }
 }
 
+/** One graded check, as Basecamp's `domain/host/posture.ts` answers it. */
+export type Control = { id: string, group?: string, severity?: string, ok: boolean | 'unknown', message: string, fix?: string }
+
+export type HubHealth = {
+  /** The box this Basecamp runs on, as its own Outpost last reported it. */
+  serverName: string | null
+  enrolled:   boolean
+  reported:   boolean
+  stale:      boolean
+  at:         string | null
+  failing:    Control[]
+  unknown:    Control[]
+  /** The other machines this hub runs — the hub's own box is `failing` above; null when the fleet could not be read. */
+  fleet: { machines: number, failing: string[], quiet: string[] } | null
+}
+
+type FleetRow = { id: string, name: string, posture: { reported: boolean, stale: boolean, failing: number } }
+
+const hubMethod = (c: Cli, e: Entry, method: string) =>
+  c.basecamp(e.url, e.apiKey!, '/hub', { method: 'POST', headers: { 'x-service-method': method }, body: {} })
+
+// The same two reads Basecamp's `/hub/` and `/hub/fleet/` screens make. A 404 is
+// a key whose holder is no system admin, which reads as nothing to show; a
+// fleet that fails to read leaves the hub's own checks standing.
+async function hubHealth(c: Cli, e: Entry): Promise<{ health: HubHealth | null, error: string | null }> {
+  const [host, fleet] = await Promise.allSettled([hubMethod(c, e, 'hostPosture'), hubMethod(c, e, 'fleet')])
+  if (host.status === 'rejected') {
+    const err = host.reason as Error & { status?: number, unreachable?: boolean }
+    if (err.status === 404 || err.unreachable) return { health: null, error: null }
+    return { health: null, error: err.message }
+  }
+  const h = host.value as { serverId: string | null, serverName: string | null, enrolled: boolean, reported: boolean, stale: boolean, at: string | null, controls: Control[] }
+  const others = fleet.status === 'fulfilled' && Array.isArray(fleet.value)
+    ? (fleet.value as FleetRow[]).filter(s => s.id !== h.serverId)
+    : null
+  return {
+    error: null,
+    health: {
+      serverName: h.serverName, enrolled: h.enrolled, reported: h.reported, stale: h.stale, at: h.at,
+      failing: h.controls.filter(c => c.ok === false),
+      unknown: h.controls.filter(c => c.ok === 'unknown'),
+      fleet: others && {
+        machines: others.length,
+        failing:  others.filter(s => s.posture.failing > 0).map(s => s.name),
+        quiet:    others.filter(s => !s.posture.reported || s.posture.stale).map(s => s.name),
+      },
+    },
+  }
+}
+
 const copiesDir = (c: Cli, name: string, opts: Options) => join(c.dataDir({ home: opts.home }), 'basecamp', name)
 
 function localCopies(c: Cli, name: string, opts: Options): LocalCopy[] {
@@ -193,7 +248,11 @@ export async function listBasecamps(opts: Options = {}): Promise<Listed[]> {
   const hosts = c.sshHosts(opts.home)
   return Promise.all(Object.entries(all).map(async ([name, e]) => {
     const answers = await c.pingBasecamp(e, { ...(opts.fetcher ? { fetcher: opts.fetcher } : {}) })
-    const newest  = answers.ok && e.apiKey ? await newestBackup(c, e) : { row: null, error: null }
+    const asked   = answers.ok && !!e.apiKey
+    const [newest, checks] = await Promise.all([
+      asked ? newestBackup(c, e) : { row: null, error: null },
+      asked ? hubHealth(c, e)    : { health: null, error: null },
+    ])
     return {
       name,
       url:          e.url,
@@ -208,7 +267,9 @@ export async function listBasecamps(opts: Options = {}): Promise<Listed[]> {
       answers,
       newestBackup: newest.row,
       backupError:  newest.error,
-      outcome:      outcomeOf(name),
+      health:       checks.health,
+      healthError:  checks.error,
+      outcome:     outcomeOf(name),
       local:        localCopies(c, name, opts),
     }
   }))

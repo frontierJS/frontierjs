@@ -87,13 +87,26 @@ not a piece of this plan.
     Pre-alpha, a rename moves every caller with no alias, so before outsiders
     arrive is when it is cheapest. The renames wait on trademark.md 0.2's
     clearance. They do not block the invited beta.
-- **Q5 — What does the first public version promise?**
+- ~~**Q5 — What does the first public version promise?**~~ **Answered 2026-11-14 (`FJS-D2152`): A — Anything may break in any `0.x` release: the README says so, and each train release's notes list what broke. Nothing grades a bump, which matches today: no `fli ws:compat` exists in `packages/cli`, and `packages/litestone/package.json:3` is still `1.1.21`, so D949 is unbuilt.**
   - Half-ruled already: `FJS-D949` puts every package on `0.x` until a graded
     surface diff earns 1.0. What is left is what the 0.x README says: either
     anything may break and the release notes say what did, or minor versions
     break and patches do not. That belongs in
     [version-compatibility.md](version-compatibility.md); this plan only needs
     the answer, and D949's renumbering built, before Phase 7.
+  - **A** — Anything may break in any `0.x` release: the README says so, and each
+    train release's notes list what broke. Nothing grades a bump, which matches
+    today: no `fli ws:compat` exists in `packages/cli`, and `packages/litestone/package.json:3`
+    is still `1.1.21`, so D949 is unbuilt.
+  - **B** — Within a `0.x` minor, patches never break: a breaking change bumps the
+    train's minor (`0.1` → `0.2`) for every package under `FJS-D948`, and the
+    README states it. The level-1 export diff from version-compatibility.md
+    § Three levels checks the patch claim, with `unknown` shipping on a warning
+    (`FJS-D767`).
+  - **Recommend B** — npm's caret already reads `^0.3.1` as `<0.4.0`, so an installer
+    pulls patches unasked; under A a routine `bun install` can take a break. B
+    costs one rule over a train of one number, and its check is the cheapest
+    level that paper names.
 - **Q6 — What is measured after launch, and with what?**
   - **A** — by hand: GitHub stars and issues, npm downloads, the launch post's
     score.

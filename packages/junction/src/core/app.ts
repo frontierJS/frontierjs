@@ -2511,6 +2511,7 @@ function applyConfiguredCors(app: App, config: AppConfig): void {
     // The same list the socket frame reads. Without it an app's own header is
     // allowed on the socket and refused at a cross-origin preflight.
     ...(callHeaders.length ? { callHeaders }           : {}),
+    ...(c.exposeHeaders ? { exposeHeaders: c.exposeHeaders } : {}),
     ...(c.credentials ? { credentials: c.credentials } : {}),
     ...(c.maxAge      ? { maxAge:      c.maxAge }      : {}),
   }))

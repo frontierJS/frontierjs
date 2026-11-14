@@ -21,6 +21,8 @@ export declare function buildYaml(
 /** How often Litestream checks for expired L0 files, and each compaction level's interval from L1 up: every one lists the bucket (FJS-4250). */
 export declare const L0_CHECK_INTERVAL: string
 export declare const LEVEL_INTERVALS: string[]
+export declare const L0_RETENTION: string
+export declare const MONITOR_INTERVAL: string
 /** The `dir:` of each target in a file `buildYaml` wrote. */
 export declare function yamlDirs(yaml: string): string[]
 export declare function findLitestream(): string | null

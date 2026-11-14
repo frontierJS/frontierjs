@@ -396,6 +396,15 @@ describe('over this repo', () => {
     expect(run(['packages/orion/web/src/App.mesa']).some(s => s.includes('verify:automations'))).toBe(true)
   })
 
+  test('a desktop drive\'s own files name that app\'s verify:desktop, and no other app\'s (FJS-4307)', () => {
+    const run = files => provesFor(REPO, { files, rows: runnables(REPO) }).flatMap(r => r.targets.map(t => `${t.dir}:${t.name}`))
+    for (const app of ['example', 'packages/basecamp', 'packages/workbench']) {
+      const got = run([`${app}/desktop/test/probe.js`, `${app}/desktop/test/verify.mjs`])
+      expect(got).toContain(`${app}:verify:desktop`)
+      expect(got.filter(s => s.endsWith(':verify:desktop') && !s.startsWith(`${app}:`))).toEqual([])
+    }
+  })
+
   test('a lesson step under commands/tutor/ names the tutor row by path (FJS-1377)', () => {
     const rows = provesFor(REPO, {
       files: ['packages/cli/commands/tutor/_steps-access/06-policy.md'],

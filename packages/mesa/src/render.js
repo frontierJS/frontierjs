@@ -88,11 +88,15 @@ export function initRenderer(options = {}) {
   })
 
   // Install all browser globals into the Node.js process so compiled
-  // component modules can reference them at the top level.
+  // component modules can reference them at the top level. Defined rather
+  // than assigned: Node 21+ makes `navigator` a getter with no setter, so an
+  // assignment throws and the bare name kept answering as Node (FJS-4309).
   for (const key of GLOBALS) {
     try {
-      const val = _win[key] ?? _win.document?.[key]
-      if (val !== undefined) global[key] = val
+      const value = _win[key] ?? _win.document?.[key]
+      if (value !== undefined) {
+        Object.defineProperty(global, key, { value, writable: true, configurable: true, enumerable: true })
+      }
     } catch (_) {}
   }
 

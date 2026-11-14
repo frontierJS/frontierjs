@@ -149,15 +149,58 @@ and `packages/litestone/references/`, the folder of reference models.
     host is a location.
   - **Recommend B** — it is the one stable identity on the board; low confidence,
     since it is unbuilt.
-- **Q2 — Is the relative form schemeless (`Order/42`), or does it carry one?**
-- **Q3 — How is a pin spelled?** `?v=sha256:…` keeps the path the row's;
+- ~~**Q2 — Is the relative form schemeless (`Order/42`), or does it carry one?**~~ **Answered 2026-11-14 (`FJS-D2146`): A — schemeless: `Order/42` is a `relative-ref` (RFC 3986 §4.2), resolved against the holder's base, and the row scheme is implied by the base; a column stores the same string `subjectType`/`subjectId` spell today (`packages/notifications/db/notification.lite:53`).**
+  - **A** — schemeless: `Order/42` is a `relative-ref` (RFC 3986 §4.2), resolved
+    against the holder's base, and the row scheme is implied by the base; a
+    column stores the same string `subjectType`/`subjectId` spell today
+    (`packages/notifications/db/notification.lite:53`).
+  - **B** — scheme-carrying: `row:Order/42`, matching the `secret:<id>` and
+    `env:NAME` precedent (`packages/basecamp/api/src/core/credentials.ts:39-40`);
+    every value names its resolver, but it is then absolute and cannot be
+    rebased across apps by §5.
+  - **Recommend A** — the definition borrows RFC 3986 whole, and only a
+    relative-ref gets §5 resolution against a peer's base; B makes the short
+    form an absolute URI with no authority, so peering would need a second
+    rewrite rule.
+- ~~**Q3 — How is a pin spelled?**~~ **Answered 2026-11-14 (`FJS-D2147`): A — a query: `Order/42?v=sha256:…`; the path stays the row's, so the live and pinned forms share a resolver and a gate, and the resolver checks the digest against the owner's trail.** `?v=sha256:…` keeps the path the row's;
   a path segment makes the pinned thing its own resource. Not `#`, per the
   definition.
-- **Q4 — Where does the scheme registry live?** `@frontierjs/toolbelt` sits below
+  - **A** — a query: `Order/42?v=sha256:…`; the path stays the row's, so the
+    live and pinned forms share a resolver and a gate, and the resolver checks
+    the digest against the owner's trail.
+  - **B** — a path segment: `Order/42/v/sha256:…`; the version is its own
+    resource with its own route and could carry its own gate.
+  - **C** — a pair beside the name, as AT Protocol's `strongRef` is `{uri, cid}`;
+    the Reference string never carries a pin.
+  - **Recommend A** — the paper's case is "two strengths of one name" (the
+    county's live and pinned license); A keeps one resolver per row and one
+    string a column can hold, where C needs two columns and B a second route.
+- ~~**Q4 — Where does the scheme registry live?**~~ **Answered 2026-11-14 (`FJS-D2148`): A — `@frontierjs/toolbelt/reference`: the parser and the scheme table, beside `packages/toolbelt/src/directives/`; each owner registers its resolver (litestone `row`, basecamp `secret`/`env`, mcp `ui`), and `credentials.ts` drops its two regexes.** `@frontierjs/toolbelt` sits below
   every realm, as the `$`-directives table does; litestone would own only the
   row scheme's resolver.
-- **Q5 — Is the first build the polymorphic column?** It needs only the relative
+  - **A** — `@frontierjs/toolbelt/reference`: the parser and the scheme table,
+    beside `packages/toolbelt/src/directives/`; each owner registers its
+    resolver (litestone `row`, basecamp `secret`/`env`, mcp `ui`), and
+    `credentials.ts` drops its two regexes.
+  - **B** — junction owns the registry on `app` (`app.own('references', …)`);
+    a resolver runs per request, but litestone and the browser could not parse
+    a Reference without importing junction, against Invariant 1's direction.
+  - **Recommend A** — the parse is pure and every realm needs it, the
+    directives table is the precedent for exactly that, and resolvers stay
+    with their owners (Invariant 4).
+- ~~**Q5 — Is the first build the polymorphic column?**~~ **Answered 2026-11-14 (`FJS-D2149`): A — yes: a `Reference` column in litestone that checks the model exists and `include` resolves through its gate, replacing the `subjectType`/`subjectId` pair in `notification.lite:53`; needs Q2 and Q4.** It needs only the relative
   form, so Q1 and Q3 can wait, and it would replace the pairs above.
+  - **A** — yes: a `Reference` column in litestone that checks the model
+    exists and `include` resolves through its gate, replacing the
+    `subjectType`/`subjectId` pair in `notification.lite:53`; needs Q2 and Q4.
+  - **B** — the registry alone first: toolbelt's parser plus `credentials.ts`
+    moved onto it, with the two tests from § The nine; no schema keyword yet.
+  - **C** — a notification action link (`'Deployment/d81f'` replacing
+    `DeployFailed.notification.ts:24-41`): the smallest consumer, but it needs
+    the Resource-route derivation, which is UI work.
+  - **Recommend A** — "what blesses the row" asks for one consumer replacing
+    its own spelling, and the column is the one consumer `Tag.lite` already
+    names as missing; B proves the registry but replaces no pair.
 
 **What blesses the row:** answers to Q1–Q4, the registry with its two tests, and
 one consumer replacing its own spelling.

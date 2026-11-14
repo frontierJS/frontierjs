@@ -34,7 +34,7 @@
 // spelled out — and it returns a nested object instead of flattened
 // `environment_name` / `environment_tier` columns.
 
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { Resolver } from 'node:dns/promises'
 import { createService, NotFound, BadRequest, BadGateway, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
@@ -89,14 +89,59 @@ const _WITH_ENV = { environment: true }
 
 /** A build is up to 24 MB written file by file; conduit's 10s default fails it mid-write. */
 
-/** A value for a parameter that says how to mint one. The number is BYTES,
- *  read the way `openssl rand -hex 32` reads it — so `randomHex32` is 64
- *  characters, and a key a vendor documents by that command is the length it
- *  asked for. */
-function mint(generator: string): string {
-  const bytes = Number(/^randomHex(\d+)$/.exec(generator)?.[1])
-  if (!bytes) throw new BadRequest(`No generator named '${generator}'`)
-  return randomBytes(bytes).toString('hex')
+const ALPHANUMERIC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+const MEASURED_KINDS = new Set(['randomHex', 'randomAlphanumeric', 'randomBase64'])
+
+/** A value for a parameter that says how to mint one: `length` CHARACTERS of
+ *  the kind (`FJS-D2122`), where the retired `randomHex32` counted bytes and
+ *  minted 64. `uuid` is its own length, so one given a length is refused
+ *  rather than ignored. */
+function mint(kind: string, length?: number | null): string {
+  if (kind === 'uuid') {
+    if (length != null) throw new BadRequest(`The 'uuid' generator takes no length, and was given ${length}`)
+    return randomUUID()
+  }
+  if (!MEASURED_KINDS.has(kind)) throw new BadRequest(`No generator named '${kind}'`)
+  if (!Number.isInteger(length) || (length as number) < 1 || (length as number) > 256)
+    throw new BadRequest(`The '${kind}' generator needs a length between 1 and 256 characters`)
+  const n = length as number
+  if (kind === 'randomHex')    return randomBytes(Math.ceil(n / 2)).toString('hex').slice(0, n)
+  if (kind === 'randomBase64') return randomBytes(Math.ceil(n * 3 / 4)).toString('base64').slice(0, n)
+  // A byte at or above 248 is redrawn: 256 is not a multiple of 62, and taking
+  // the remainder of every byte would make the first eight characters likelier.
+  let out = ''
+  while (out.length < n)
+    for (const b of randomBytes(n - out.length + 8)) if (b < 248 && out.length < n) out += ALPHANUMERIC[b % 62]
+  return out
+}
+
+/** Compose's interpolation over one value: `${NAME}` and `${NAME:-default}`,
+ *  from the param values and the `BLUEPRINT_` built-ins (`FJS-D2016`). A name
+ *  that is neither is refused by name rather than left in the container's env
+ *  as literal text. Answers whether a secret param's value went in. */
+function interpolate(text: string, where: string, scope: Interpolation): { value: string, isSecret: boolean } {
+  if (text.replace(/\$\{[^}]*\}/g, '').includes('${')) throw new BadRequest(`${where} has a '\${' that is never closed`)
+  let isSecret = false
+  const value = text.replace(/\$\{([^}]*)\}/g, (_, inner: string) => {
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?$/s.exec(inner)
+    if (!m) throw new BadRequest(`${where} has '\${${inner}}', which is not \${NAME} or \${NAME:-default}`)
+    const [, name, fallback] = m
+    if (name.startsWith('BLUEPRINT_')) {
+      if (!(name in scope.builtins)) throw new BadRequest(`${where} names '${name}', which is not a BLUEPRINT_ built-in this deploy can answer`)
+      return scope.builtins[name] || (fallback ?? '')
+    }
+    if (!scope.declared.has(name)) throw new BadRequest(`${where} names '\${${name}}', which is not one of this blueprint's params`)
+    const p = scope.values.get(name)
+    if (p?.value && p.isSecret) isSecret = true
+    return p?.value || (fallback ?? '')
+  })
+  return { value, isSecret }
+}
+
+interface Interpolation {
+  declared: Set<string>
+  values:   Map<string, { value: string, isSecret: boolean }>
+  builtins: Record<string, string>
 }
 
 // The detail read. `domains` comes with the app because `App.domain` — one
@@ -602,12 +647,38 @@ function paramValues(params: any[], values: Record<string, unknown>) {
       throw new BadRequest(`'${p.key}' must be text`)
     const value = (given as string | undefined)?.trim()
       || p.defaultValue
-      || (p.generate ? mint(p.generate) : '')
+      || (p.generate ? mint(p.generate, p.generateLength) : '')
     if (!value) { if (p.isRequired) missing.push(p.label); continue }
+    if (p.validRegex && !patternOf(p).test(value))
+      throw new BadRequest(`'${p.key}' must match the pattern ${p.validRegex}`)
     out.push({ key: p.key, value, isSecret: Boolean(p.isSecret) })
   }
   if (missing.length) throw new BadRequest(`Required: ${missing.join(', ')}`)
   return out
+}
+
+/** A param's `validRegex`, compiled — a row the catalog stored badly is
+ *  refused by name rather than as a 500. */
+function patternOf(p: { key: string, validRegex: string }): RegExp {
+  try { return new RegExp(p.validRegex) }
+  catch { throw new BadRequest(`'${p.key}' has a validRegex that is not a regular expression: ${p.validRegex}`) }
+}
+
+/**
+ * The blueprint's `environment` (`FJS-D2140`), interpolated: one variable per
+ * key, written as a secret when a secret param's value went into it. A key the
+ * params also declare is the environment's, because it names the value the
+ * compose file put there.
+ */
+function environmentValues(environment: unknown, scope: Interpolation) {
+  if (environment == null) return []
+  if (typeof environment !== 'object' || Array.isArray(environment))
+    throw new BadRequest('The blueprint\'s `environment` must be an object of key → value')
+  return Object.entries(environment as Record<string, unknown>).map(([key, raw]) => {
+    if (raw != null && typeof raw !== 'string' && typeof raw !== 'number' && typeof raw !== 'boolean')
+      throw new BadRequest(`The blueprint's environment value for '${key}' must be text`)
+    return { key, ...interpolate(raw == null ? '' : String(raw), `The environment value for '${key}'`, scope) }
+  })
 }
 
 // ─── liveCheck's two lookups ─────────────────────────────────────────────
@@ -1116,6 +1187,16 @@ export default createService({
       throw new BadRequest('`values` must be an object of parameter → text')
     const params = paramValues(bp.params, values)
 
+    const scope: Interpolation = {
+      declared: new Set(bp.params.map((p: any) => p.key)),
+      values:   new Map(params.map(p => [p.key, p])),
+      builtins: { BLUEPRINT_SLUG: slug },
+    }
+    const image = interpolate(bp.image, 'The image', scope).value
+    const fixed = environmentValues(bp.environment, scope)
+    const fixedKeys = new Set(fixed.map(v => v.key))
+    const variables = [...params.filter(p => !fixedKeys.has(p.key)), ...fixed]
+
     // One transaction: an app whose variables did not land is an app whose
     // first release starts a container without its password.
     const created = await db().$transaction(async (tx: any) => {
@@ -1123,13 +1204,13 @@ export default createService({
         data: {
           environmentId, name: appName, slug,
           kind:   bp.appKind,
-          source: parseAppSource({ kind: 'image', image: bp.image }),
+          source: parseAppSource({ kind: 'image', image }),
           ...runtimeOf(bp),
           blueprintId: bp.id,
         },
         system: ['blueprintId'],
       })
-      for (const p of params)
+      for (const p of variables)
         await tx.variable.create({
           data: { environmentId, appId: row.id, key: p.key, isSecret: p.isSecret,
                   ...(p.isSecret ? { secretValue: p.value } : { value: p.value }) },

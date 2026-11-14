@@ -421,8 +421,14 @@ only control on the page that touches the box.
   file, the confirmation; not confirmed), and the queue over a fake checkout (stages arrive, a
   second start refused, a killed case reads `stopped`, a kept App listed). **Owed:** a real Run
   from the page and a real Delete of a kept App, both on chartered and both the owner's to start.
-- [ ] 2.4 Once the owner calls the runner settled, add a test that it calls only the verbs on its
-  list.
+- [x] 2.4 Once the owner calls the runner settled, add a test that it calls only the verbs on its
+  list. **Built 2026-11-14** (owner called it settled after the 2026-11-10 matrix and the
+  FJS-4142 rerun passed every stage, `runs/2026-11-10-live-01-saas-signup.json`). Charter
+  `builder/verbs.ts` lists the 15 Basecamp verbs and 2 fli commands `live.ts` uses;
+  `listedOnly` wraps the one Basecamp client `live.ts` holds and refuses any other verb by name
+  before it leaves. `api/test/runner-verbs.test.ts` proves the refusal and reads `live.ts` for
+  a second client, an unlisted fli command or service method, and a listed verb it never names.
+  Not driven live; the next live run is the proof that the list is complete.
 
 ## Open questions
 

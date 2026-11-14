@@ -15,7 +15,7 @@ function packedFrom(shipping, members, { resume, releaseTag }) {
   const git  = (cwd, args) => execSync(`git ${args}`, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
   const tree = new Map(members.map(m => [m.pkg.name, m.pkg]))
   for (const p of shipping) tree.set(p.pkg.name, { ...p.pkg, version: p.newVersion })
-  if (!resume) return shipping.map(p => ({ name: p.pkg.name, version: p.newVersion, pkg: tree.get(p.pkg.name), siblings: tree }))
+  if (!resume) return shipping.map(p => ({ name: p.pkg.name, version: p.newVersion, pkg: tree.get(p.pkg.name), siblings: tree, at: null }))
 
   const commits = new Map()
   return shipping.map(p => {
@@ -29,7 +29,7 @@ function packedFrom(shipping, members, { resume, releaseTag }) {
       catch { return [] }
     })))
     const siblings = commits.get(key)
-    return { name: p.pkg.name, version: p.newVersion, pkg: siblings.get(p.pkg.name) ?? p.pkg, siblings }
+    return { name: p.pkg.name, version: p.newVersion, pkg: siblings.get(p.pkg.name) ?? p.pkg, siblings, at: sha }
   })
 }
 
@@ -52,9 +52,9 @@ const { peerDrift, movedDependencies, siblingPins, unheldPins, pinsLeftBehind, p
   await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
 const { hosts } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 
-const stateOf = (name, dir, paths) => $.git.pkgState(name, dir, paths)
+const stateOf = (name, dir, paths, opts) => $.git.pkgState(name, dir, paths, opts)
 const drift  = peerDrift((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })), planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
-const moved  = movedDependencies(planned.map(p => ({ name: p.pkg.name, pkg: p.pkg })),
+const moved  = movedDependencies(packedFrom(planned, members ?? [], $.config),
                                  (members ?? []).map(m => ({ name: m.pkg.name, dir: m.dir, pkg: m.pkg })), stateOf)
 const sorted = publishOrder(planned.map(p => ({ ...p, name: p.pkg.name })))
 const behind = pinsLeftBehind((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })),

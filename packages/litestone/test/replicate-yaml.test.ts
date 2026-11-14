@@ -7,7 +7,7 @@ import { describe, expect, it } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildYaml, yamlDirs, L0_CHECK_INTERVAL, LEVEL_INTERVALS, LITESTREAM_MIN, LITESTREAM_PIN, litestreamInstall } from '../src/tools/replicate.js'
+import { buildYaml, yamlDirs, L0_CHECK_INTERVAL, LEVEL_INTERVALS, L0_RETENTION, MONITOR_INTERVAL, LITESTREAM_MIN, LITESTREAM_PIN, litestreamInstall } from '../src/tools/replicate.js'
 
 const targets = [{ name: 'main', path: '/data/app.db', url: 's3://b/main' }]
 
@@ -32,9 +32,21 @@ describe('buildYaml', () => {
     expect(perDay).toBeLessThan(100)
   })
 
+  it('keeps a busy database\'s L0 inside one listing page (FJS-4315)', () => {
+    const yml = buildYaml(targets, {})
+    expect(yml.startsWith(`l0-retention: ${L0_RETENTION}\n`)).toBe(true)
+    // monitor-interval is a database's key: on a replica it is dropped and the 1s default stays.
+    expect(yml).toContain(`  - path: /data/app.db\n    monitor-interval: ${MONITOR_INTERVAL}\n    replicas:\n`)
+    // Litestream pages a level 1,000 keys a call and lists L0 whole; L0 holds one
+    // file per tick that saw a write, for the retention window plus one check.
+    const seconds = (d: string) => Number.parseInt(d, 10) * ({ s: 1, m: 60, h: 3600 } as Record<string, number>)[d.at(-1)!]
+    const files = (seconds(L0_RETENTION) + seconds(L0_CHECK_INTERVAL)) / seconds(MONITOR_INTERVAL)
+    expect(files).toBeLessThanOrEqual(1000)
+  })
+
   it('keeps sync-interval on the replica and l0-retention at the top', () => {
     const yml = buildYaml(targets, { syncInterval: '5s' })
-    expect(yml.startsWith('l0-retention: 24h\n')).toBe(true)
+    expect(yml.startsWith(`l0-retention: ${L0_RETENTION}\n`)).toBe(true)
     expect(yml).toContain('        sync-interval: 5s\n')
     expect(yml).not.toContain('snapshot:')
   })

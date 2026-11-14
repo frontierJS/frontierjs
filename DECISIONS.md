@@ -35,6 +35,18 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d2147"></a>2026-11-14 · `FJS-D2147` — Q3 — How is a pin spelled — A query: `Order/42?v=sha256:…`; the path stays the row's, so the live and pinned forms share a resolver and a gate, and the resolver checks the digest against the owner's trail.
+
+Asked in [`IDEAS/reference.md`](IDEAS/reference.md) § Open questions. **A** was picked over **B** (a path segment: `Order/42/v/sha256:…`; the version is its own resource with its own route and could carry its own gate), **C** (a pair beside the name, as AT Protocol's `strongRef` is `{uri, cid}`; the Reference string never carries a pin).
+
+The paper's recommendation, taken as written: the paper's case is "two strengths of one name" (the county's live and pinned license); A keeps one resolver per row and one string a column can hold, where C needs two columns and B a second route.
+
+### <a id="fjs-d2146"></a>2026-11-14 · `FJS-D2146` — Q2 — Is the relative form schemeless (`Order/42`), or does it carry one — Schemeless: `Order/42` is a `relative-ref` (RFC 3986 §4.2), resolved against the holder's base, and the row scheme is implied by the base; a column stores the same string `subjectType`/`subjectId` spell today (`packages/notifications/db/notification.lite:53`).
+
+Asked in [`IDEAS/reference.md`](IDEAS/reference.md) § Open questions. **A** was picked over **B** (scheme-carrying: `row:Order/42`, matching the `secret:<id>` and `env:NAME` precedent (`packages/basecamp/api/src/core/credentials.ts:39-40`); every value names its resolver, but it is then absolute and cannot be rebased across apps by §5).
+
+The paper's recommendation, taken as written: the definition borrows RFC 3986 whole, and only a relative-ref gets §5 resolution against a peer's base; B makes the short form an absolute URI with no authority, so peering would need a second rewrite rule.
+
 ### <a id="fjs-d2080"></a>2026-11-11 · `FJS-D2080` — Q7 — The fli verb's name (1.2) — A, weakly.
 
 Asked in [`IDEAS/workbench-basecamp-setups.md`](IDEAS/workbench-basecamp-setups.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, weakly*) over **B** (`fli basecamp:destination <name>`, after Basecamp's `BackupDestination`).
@@ -1886,6 +1898,30 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d2155"></a>2026-11-14 · `FJS-D2155` — Q2 — Does a `fli`-bought box record the key it carried — A, if 0.2 finds a Server row to write.
+
+Asked in [`IDEAS/box-ssh-keys.md`](IDEAS/box-ssh-keys.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, if 0.2 finds a Server row to write*) over **B** (Leave it. The person picks the Secret on the server's page).
+
+0.2 found the point: after basecamp:create enrolls the box and mints its admin key, a Server row exists and fli records the Secret through Basecamp's own API, so no second path into the Secret opens.
+
+### <a id="fjs-d2154"></a>2026-11-14 · `FJS-D2154` — Q1 — Does a box Basecamp's API makes get a key at create — Install the public half of the `sshKeyId` Secret at create: `connector.sshKey()` once per public key line, then `sshKeys` on `connector.create`. Basecamp still never connects. The vendor writes the key, and the app uses no private key. The Provision screen gains the `sshKeyId` picker. If the workspace has exactly one `sshKey` Secret, the picker defaults to it. If nothing is picked, the screen says the box will carry no key and will keep password login on, so a keyless box is never created silently.
+
+Asked in [`IDEAS/box-ssh-keys.md`](IDEAS/box-ssh-keys.md) § Open questions. **A** was picked over **B** (No key. Recovery goes through the vendor's console or a root password, and the Provision screen says so), **C** (Every `sshKey` Secret in the workspace goes on every box, with no per-box choice).
+
+The paper's recommendation, taken as written: It lays the recovery path `FJS-D241` kept, through a connector method that already exists (`sshKey()`, used by ring 0). It turns password login off on fleet boxes, because the enrollment script's check then finds a key. And `ssh.unknown-key` grades from the first heartbeat instead of reading `unknown`. C installs a key on boxes its owner never meant it for, and `FJS-D1834` already made the choice per box.
+
+### <a id="fjs-d2153"></a>2026-11-14 · `FJS-D2153` — Q3 — Does Basecamp manage a box's `authorized_keys`, or only grade it — The Secret stays the declaration and the box is never rewritten wholesale. The server's page lists every key on the box, marked held-by-the-Secret or not, and a key the Secret does not hold carries two acts: **Trust** copies its public line into the Secret, and **Remove from box** has the Outpost delete that one line. Basecamp refuses to remove a key the Secret holds (only it knows the Secret), and the Outpost refuses the file's last key. Root's file only, as the Outpost reads today, and the panel says so.
+
+Asked in [`IDEAS/box-ssh-keys.md`](IDEAS/box-ssh-keys.md) § Open questions. **B** was picked over **A** (Reconcile: the Outpost writes the whole file from the `sshKeyId` Secret, so a Secret edit adds or removes root SSH on every box that names it).
+
+The paper's recommendation, taken as written: reading and trusting change nothing on the box, and a removal touches one line a person chose, so no single save locks every box out, Basecamp's own included. A makes a Secret edit a fleet-wide root grant, and a second writer of the file beside the vendor's cloud-init and `fli`. Under B `ssh.unknown-key` keeps catching keys laid by any other path, which A would silently overwrite.
+
+### <a id="fjs-d2151"></a>2026-11-14 · `FJS-D2151` — Q10 — Where the force comes from — No domain is named yet. 10.1 stays open until 5.3 (Kobami asks ELA) and Phase 6's drive are done, and the hearing then picks from what that pair actually hit under 5.2.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **A** was picked over **B** (name a regulated domain now (health records, where FHIR and Carequality already force an exchange), and steer Phases 6–9 toward its rules for audit and consent), **C** (the domain is the one the project already serves: field-service trades between owners like Kobami and ELA, where money forces the exchange (who earned a lead) and no regulator does. Liability is a contract between two owners, with no certification).
+
+The paper's recommendation, taken as written: 5.3 and every box in Phase 6 are still open, so neither domain has evidence behind it, and B binds the spine to a regulator's rules before a single cross-owner read has run (`FJS-D2066` builds 5–10 in order). C is the likely answer once 5.3 runs, but it fails the paper's own test of a body willing to run a side.
 
 ### <a id="fjs-d2128"></a>2026-11-13 · `FJS-D2128` — A preview's sign-in runs in a popup, and its key is shared by every tab of the preview — Amends `FJS-D1357`'s sign-in round trip and its key storage, not its exchange. Launch Editor opens basecamp's `/sites/<id>/edit/` in a small popup. The popup comes back on the preview's origin, posts the code to the tab that opened it and closes, and that tab redeems it with the verifier it holds. A blocked popup falls back to the whole tab going, as before. The key moves from `sessionStorage` to `localStorage`, so every tab of that preview shares one sign-in until the key lapses (8 hours), and Sign out in one tab signs out all of them. The handoff page renders with `reset: true`, so it shows no basecamp shell.
 
@@ -5182,6 +5218,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d2149"></a>2026-11-14 · `FJS-D2149` — Q5 — Is the first build the polymorphic column — Yes: a `Reference` column in litestone that checks the model exists and `include` resolves through its gate, replacing the `subjectType`/`subjectId` pair in `notification.lite:53`; needs Q2 and Q4.
+
+Asked in [`IDEAS/reference.md`](IDEAS/reference.md) § Open questions. **A** was picked over **B** (the registry alone first: toolbelt's parser plus `credentials.ts` moved onto it, with the two tests from § The nine; no schema keyword yet), **C** (a notification action link (`'Deployment/d81f'` replacing `DeployFailed.notification.ts:24-41`): the smallest consumer, but it needs the Resource-route derivation, which is UI work).
+
+The paper's recommendation, taken as written: "what blesses the row" asks for one consumer replacing its own spelling, and the column is the one consumer `Tag.lite` already names as missing; B proves the registry but replaces no pair.
 
 ### <a id="fjs-d1921"></a>2026-11-05 · `FJS-D1921` — Q8 — Where does the copy's boot move `Session` — A litestone client option, `placeModels: { Session: 'sessions' }` or similar: after the schema is parsed and before it is validated, it declares the named database if the schema has none and moves the named models into it, for this client only, so the parser's refusal of a relation across databases still runs. It is the AST form of what `import … into` already does to text (`retargetDbText`, `parser.js`).
 
@@ -14041,6 +14083,66 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2145"></a>2026-11-14 · `FJS-D2145` — Q5 — Where does code that must run on every page live — In the loader: `widgets.loader: { everyPage: 'src/lib/source.js' }` names a module, resolved from the widgets root, that Sierra bundles into `embed.js`; the site pastes one tag on every page, and the form bundle is fetched only where the tag carries `data-form`. A throw in the module is caught inside the loader, so a capture bug never blanks a form; an unresolvable path fails the build by name.
+
+Asked in [`IDEAS/widget-loader.md`](IDEAS/widget-loader.md) § Open questions. **A** was picked over **B** (a separate tracker script the site pastes site-wide beside `embed.js`, with its own cache rule; the form reads the stored source as it does today), **C** (it stays in the form bundle, as today: every page pays for the form to capture the source).
+
+The paper's recommendation, taken as written: `embed.js` is already the one short-cached URL every page holds (`packages/sierra/src/postbuild/widget-headers.js`), so a fix to the capture reaches every site in five minutes; B is a second paste and a second copy of the cache rule, and C is the cost the owner raised. The fixture test below also asserts the module is in `embed.js` and no form code is.
+
+### <a id="fjs-d2144"></a>2026-11-14 · `FJS-D2144` — Q4 — Where does the key live — Key on the loader's `<script>` tag, read through `document.currentScript`; the widget mounts beside that tag or into an optional `data-target`.
+
+Asked in [`IDEAS/widget-loader.md`](IDEAS/widget-loader.md) § Open questions. **A** was picked over **B** (key on a placeholder (`<div data-form="KEY">`) the loader scans for, which is also the mount point; the script tag carries nothing).
+
+The paper's recommendation, taken as written: one pasted line, the Plausible shape the paper cites; placement-by-element is already covered by the element form (`<ela-basic-form data-form>`), so B adds a second paste shape for what `data-target` already does.
+
+### <a id="fjs-d2143"></a>2026-11-14 · `FJS-D2143` — Q3 — IIFE or ESM bundles behind the loader — Keep IIFE: the loader injects each bundle as a classic `<script>`, and the runtime in `packages/sierra/src/widget/index.js:8` stays one build mode; two widgets on a page each carry their own runtime.
+
+Asked in [`IDEAS/widget-loader.md`](IDEAS/widget-loader.md) § Open questions. **A** was picked over **B** (ESM chunks behind the loader: a second build mode emits shared-runtime chunks the loader `import()`s cross-origin, which makes the CORS headers mandatory; the element form keeps the IIFE build).
+
+The paper's recommendation, taken as written: B's only gain is a smaller page carrying two widgets, which no app has asked for, against a second build mode to keep correct; B is the reopen path when a page carries two.
+
+### <a id="fjs-d2142"></a>2026-11-14 · `FJS-D2142` — Q2 — What does the resolve call return, and who owns it — A declared method path, no new noun: `widgets.loader: { key: 'data-form', resolve: 'formResponses.widget' }`; the loader calls that method with `{ key }`, and the one framework fact is that the answer carries `view` (a missing `view` is refused by name).
+
+Asked in [`IDEAS/widget-loader.md`](IDEAS/widget-loader.md) § Open questions. **A** was picked over **B** (a named contract: Sierra coins a noun for the answer (`{ view, … }`) and documents its fields; every app's resolve method returns that shape).
+
+The paper's recommendation, taken as written: only `view` is load-bearing for the loader, so a named field in the config doc covers it without spending a noun; the app keeps naming its own method (ELA's `formResponses.widget` is unchanged), and the fixture test the paper names adds a no-`view` refusal case.
+
+### <a id="fjs-d2141"></a>2026-11-14 · `FJS-D2141` — Q1 — Whose loader is it — Sierra's widget target emits `embed.js` beside the bundles when `sierra.config.js` carries `widgets.loader`, served under the entry rule `cacheFor` already gives (`packages/sierra/src/postbuild/widget-headers.js`, used at `packages/sierra/src/widget/serve.js:119`); an app without the key builds as today.
+
+Asked in [`IDEAS/widget-loader.md`](IDEAS/widget-loader.md) § Open questions. **A** was picked over **B** (no framework loader: ELA hand-writes `embed.js` at the final URL and copies the entry-versus-hashed cache rule into its own release; any later app writes its own).
+
+The paper's recommendation, taken as written: the cache split is the part that goes wrong and it already has one owner in `widget-headers.js`, so the loader belongs beside it; opt-in keeps the four apps without strangers' CMSs unchanged, and B stays the reopen path if no second app opts in.
+
+### <a id="fjs-d2138"></a>2026-11-14 · `FJS-D2138` — Q2 — Where does a code's page live — One heading per code in a new diagnostics.md in mesa's docs/, the message ending in its anchor; a check fails on a code emitted with no heading or a heading no site emits.
+
+Asked in [`IDEAS/mesa-diagnostics.md`](IDEAS/mesa-diagnostics.md) § Open questions. **A** was picked over **B** (beside the rule in mesa's VISION.md, cited by `RULE n`).
+
+The paper's recommendation, taken as written: most runtime findings have no RULE (a duplicate `{#each}` key, a frozen store); VISION states the language, and this is a list of the ways to get it wrong. A compile finding that enforces a `RULE n` links the rule from its heading. The check is Phase 3, so a code can ship without a page through Phases 1–2.
+
+### <a id="fjs-d2137"></a>2026-11-14 · `FJS-D2137` — Q5 — Which messages are in scope — Mesa's four runtimes and its compiler; Sierra adopts the emitter after.
+
+Asked in [`IDEAS/mesa-diagnostics.md`](IDEAS/mesa-diagnostics.md) § Open questions. **A** was picked over **B** (Mesa and Sierra's 141 together).
+
+The paper's recommendation, taken as written: Sierra depends on Mesa (Invariant 1), so the emitter lands in Mesa first and Sierra's move is its own plan once the shape is proven.
+
+### <a id="fjs-d2136"></a>2026-11-14 · `FJS-D2136` — Q4 — Does a production build report — Yes, *warn* and *error* print in production; the sites gated today are moved to printing, so production behavior is one rule.
+
+Asked in [`IDEAS/mesa-diagnostics.md`](IDEAS/mesa-diagnostics.md) § Open questions. **A** was picked over **B** (no, as Solid: a production build reports nothing).
+
+The paper's recommendation, taken as written: (confidence 2) — Mesa's findings mostly name a render it survived wrong, which is as wrong in production; the once-per-key sets bound the noise. The sites gated today change, so 0.1 lists them.
+
+### <a id="fjs-d2135"></a>2026-11-14 · `FJS-D2135` — Q3 — Which severities, meaning what — *error* and *warn* with Solid's meanings, *info* added when its first producer arrives.
+
+Asked in [`IDEAS/mesa-diagnostics.md`](IDEAS/mesa-diagnostics.md) § Open questions. **B** was picked over **A** (Solid's three: *error* broken, *warn* works but structurally wrong, *info* advisory and sent to subscribers only).
+
+The paper's recommendation, taken as written: (confidence 2) — nothing in the inventory is advisory; *info* would be a level with no emitter, and the cost findings that would use it (a hot node, a waterfall) are later. Either way the meanings move sites: a duplicate `{#each}` key leaves an orphan node (`FJS-315`), which is broken, so it is an *error* though it prints as a warning; 0.1 grades each site.
+
+### <a id="fjs-d2134"></a>2026-11-14 · `FJS-D2134` — Q1 — What does a code look like — Solid's form, `SCREAMING_SNAKE`, and Solid's own name where the meaning matches (`REACTIVE_WRITE_IN_OWNED_SCOPE` for a derivation's write), a new name otherwise.
+
+Asked in [`IDEAS/mesa-diagnostics.md`](IDEAS/mesa-diagnostics.md) § Open questions. **A** was picked over **B** (Svelte's form, `snake_case`, Mesa's own names throughout), **C** (a number (`M104`), as React does).
+
+The paper's recommendation, taken as written: (confidence 3) — a name reads in a console without a lookup, which C gives up for bytes Mesa does not need to save; the API realm already spells its codes this way (junction's `NOT_FOUND` in `core/app.ts`, litestone's `PRINCIPAL_MISSING` in `core/client.js`); sharing Solid's names where they mean the same thing makes the comparison in this paper a lookup instead of a translation, the choice ReactiveScript made for the same reason.
+
 ### <a id="fjs-d1367"></a>2026-11-14 · `FJS-D1367` — Does a memo or `$:` refuse a write to a signal it already read this run, as Signalium throws at the line, or keep the `_running` guard and the 100-run cycle cap — Split by kind, and for `$:` by whether the write converges. A memo that writes a signal is refused: a compile error where the compiler sees it, a dev throw at the write otherwise. A `$:` keeps `_running` and the cap; the compiler warns on a `$:` that writes a signal it reads unless the write sits inside a branch whose condition reads that same signal (`$: { n = n + 1 }` warns, and `_running` turns it into once per outside change with nothing said today; an unguarded clamp `n = Math.min(n, 10)` warns too, since a clamp is a memo); the cap names the line as in A. The compile check sees only a write in the initializer's own text: a memo that calls a function which writes is caught by the dev throw and not at all in prod, a known limit. Cost: the memo refusal and the warning are new compiler checks (`FJS-4291`); nothing in the corpus breaks, and its three test-then-write `$:` are the must-not-warn fixtures.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **D** was picked over **A** (keep both guards, and make the cap NAME the line: when it trips in dev, the message carries the memo's `_src` and the signal written (the graph already holds both for devtools, `_cause`). Cost: a dev message. Nothing refuses), **B** (refuse in dev at the write: a write to a signal the running memo or `$:` already read this run throws naming both; prod keeps today's guards. Cost: a `$:` that normalizes its own input (a clamp, a trim) converges today and would throw; the 21-app corpus (`bun run corpus`) has to be tallied first), **C** (refuse in prod too, Signalium's answer. Cost: an app that converges today fails at runtime).
@@ -16516,6 +16618,12 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d2150"></a>2026-11-14 · `FJS-D2150` — Q3 — Is a spring a token or a solver — `FJS-D1235` option B: one duration `--motion-travel` (~400 ms) and one easing `--motion-ease-spring` (a `linear()` curve) beside `--motion-ease` (`tokens.css:291`). A fixed spring is a token; a retargeting one is Motion's `animate()` through `$.entrance`.
+
+Asked in [`IDEAS/motion.md`](IDEAS/motion.md) § Open questions. **B** was picked over **A** (three tokens mirroring Portal's `--stage-spring`/`--stage-move`/ `--stage-morph` (`FJS-2257`): `--motion-spring` (a `linear()` overshoot easing), `--motion-move` and `--motion-morph` (durations) beside the four in `packages/css/src/foundation/tokens.css:279`), **C** (no token: a view transition is the app's choreography and Portal's `--stage-*` on `:root` stays the owner. `FJS-2257` closes as won't-fix and `$.animate` (Q1 **C**) has no spring to default to), **D** (a solver: Mesa ships a spring integrator (`$.spring`, stiffness/ damping, retargets mid-flight). One owner for fixed and live springs, at the cost of a physics engine § 3.2 hands to a maintained library).
+
+The paper's recommendation, taken as written: the kit's motion words name the job, and its easings already live in `--motion-ease-*`, so two words cover Portal's three fixed springs (`BookmarkStage.mesa`) without a third rung; no app in the tree retargets a spring, so D is complexity with no caller.
+
 ### <a id="fjs-d2013"></a>2026-11-07 · `FJS-D2013` — Q1 — Where does the Shell live — `@frontierjs/ui`, props-driven. The route, the session, `isActive` and sign-out are passed in.
 
 Asked in [`IDEAS/app-shell.md`](IDEAS/app-shell.md) § Open questions. **A** was picked over **B** (`@frontierjs/sierra/shell`, reading the router and session directly. Sierra would then import ui's `Drawer`, which is a new edge).
@@ -17204,6 +17312,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2139"></a>2026-11-14 · `FJS-D2139` — When an untagged bump cannot ship because a workspace dependency moved past its tag, does `ws:pub` pull the dependency in or bump past the untagged version — An untagged version is on no host, so it is unspent. The run bumps past it like any other, and retag holds only when nothing moved.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (A retag run keeps the held versions and pulls each moved dependency in as a fresh bump: one commit and one CI. changesets and lerna `from-package` ship an unpublished version as it stands).
+
+Against the recommendation (**A**): an untagged version was never on any host, so skipping its number costs nothing and the run stays an ordinary bump, with no second mode that mixes held and bumped versions.
 
 ### <a id="fjs-d2094"></a>2026-11-12 · `FJS-D2094` — Q14 — May a single control's fix run on a click, and on the host too — A **remedy**: a control may name a `remedy` id; the Outpost's signed `POST /system/remedy/:id` runs the argv its own table holds for that id and refuses any other; Basecamp re-reads posture after. Behind `isSystemAdmin` and a confirm, on a fleet machine and on the host alike. The table holds only steps that are safe to repeat and restart no app; sshd, the firewall, a reboot and an upgrade are never remedies on the host, which keeps showing the `fli deploy` line.
 
@@ -21758,6 +21872,24 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2152"></a>2026-11-14 · `FJS-D2152` — Q5 — What does the first public version promise — Anything may break in any `0.x` release: the README says so, and each train release's notes list what broke. Nothing grades a bump, which matches today: no `fli ws:compat` exists in `packages/cli`, and `packages/litestone/package.json:3` is still `1.1.21`, so D949 is unbuilt.
+
+Asked in [`IDEAS/public-release.md`](IDEAS/public-release.md) § Open questions. **A** was picked over **B** (Within a `0.x` minor, patches never break: a breaking change bumps the train's minor (`0.1` → `0.2`) for every package under `FJS-D948`, and the README states it. The level-1 export diff from version-compatibility.md § Three levels checks the patch claim, with `unknown` shipping on a warning (`FJS-D767`)).
+
+Against the recommendation (**B**): 0.x promises nothing it cannot yet check: no ws:compat exists and D949 is unbuilt, so a patch-never-breaks rule would be a claim with no grader.
+
+### <a id="fjs-d2148"></a>2026-11-14 · `FJS-D2148` — Q4 — Where does the scheme registry live — `@frontierjs/toolbelt/reference`: the parser and the scheme table, beside `packages/toolbelt/src/directives/`; each owner registers its resolver (litestone `row`, basecamp `secret`/`env`, mcp `ui`), and `credentials.ts` drops its two regexes.
+
+Asked in [`IDEAS/reference.md`](IDEAS/reference.md) § Open questions. **A** was picked over **B** (junction owns the registry on `app` (`app.own('references', …)`); a resolver runs per request, but litestone and the browser could not parse a Reference without importing junction, against Invariant 1's direction).
+
+The paper's recommendation, taken as written: the parse is pure and every realm needs it, the directives table is the precedent for exactly that, and resolvers stay with their owners (Invariant 4).
+
+### <a id="fjs-d2140"></a>2026-11-14 · `FJS-D2140` — Where a fixed env value lives — `Blueprint.environment Json` (key → value, which may carry `${PARAM}`), and params stay the values a person is asked for.
+
+Asked in [`IDEAS/blueprint-catalog.md`](IDEAS/blueprint-catalog.md) § Open questions. **B** was picked over **A** (every entry is a param, and a fixed one carries its value as `defaultValue`), **C** (every entry is a param, plus an `isAsked Boolean` that hides the fixed ones).
+
+The paper's recommendation, taken as written: the file's `environment:` and `x-blueprint.params` map one to one onto the column and the rows, so file → rows → file round-trips with no guessing. A puts about 20 rows on Coolify's Plausible form, and the writer can't tell which params the file asked for. C is a "param" that is never a parameter.
 
 ### <a id="fjs-d2124"></a>2026-11-13 · `FJS-D2124` — One format for blueprints and App export — One format: an App export is a blueprint whose values are filled in, with secrets blanked.
 

@@ -84,10 +84,9 @@ present and answering rather than missing. They answer as a wide desktop:
 |---|---|
 | `window.innerWidth` / `window.innerHeight` | `1280` / `800` |
 | `window.matchMedia(query).matches` | evaluated against that window: `(min-width: 900px)` true, `(hover: hover)` true |
-| `window.navigator.userAgent` | a HappyDOM user agent |
+| `navigator.userAgent`, bare or through `window` | a HappyDOM user agent |
 | `window.devicePixelRatio` | `1` |
 | `innerWidth`, `matchMedia`, `localStorage`, bare | not defined: reading one throws |
-| `navigator.userAgent`, bare | `Node.js/22`, Node's own `navigator` |
 
 None of this is reported. A component that branches on width bakes the desktop
 branch into the page, and nothing warns. Write the branch so the server's answer

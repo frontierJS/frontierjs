@@ -119,7 +119,12 @@ export function peerDrift(members = [], planned = []) {
  * dependency has to go first, as a new version. devDependencies are dropped by
  * the packer and never reach an install.
  *
- * @param planned  [{ name, pkg }]
+ * A release in flight packs its tag's commit, so its dependencies are asked as
+ * of that commit (`at`), never HEAD: commits landed since are in no tarball it
+ * ships, and counting them refused every resume (`FJS-4310`).
+ *
+ * @param planned  [{ name, pkg, at?, siblings? }]  `at` the sha packed on a
+ *                 resume, `siblings` the manifests on it (`packedFrom`)
  * @param members  [{ name, dir, pkg }]  every workspace member
  * Uncommitted files are not movement: the pack reads the release commit, so
  * an edit in the main tree reaches no tarball on either side. Nor is a commit
@@ -127,7 +132,7 @@ export function peerDrift(members = [], planned = []) {
  * `docs/*.snapshot.md`, and counting it refused the next release of every
  * dependent (`FJS-4251`).
  *
- * @param stateOf  (name, dir, paths) => { lastTag, commits }   — `context.git.pkgState`
+ * @param stateOf  (name, dir, paths, { until }) => { lastTag, commits }   — `context.git.pkgState`
  */
 /**
  * The pathspecs, relative to the package directory, whose bytes reach its
@@ -154,11 +159,13 @@ export function movedDependencies(planned = [], members = [], stateOf = () => ({
     for (const [dep, spec] of Object.entries(deps)) {
       const m = byName.get(dep)
       if (!m || releasing.has(dep) || !String(spec).startsWith('workspace:')) continue
-      if (!states.has(dep)) states.set(dep, stateOf(dep, m.dir, packedPaths(m.pkg)) ?? {})
-      const s = states.get(dep)
+      const key = `${dep}\0${p.at ?? ''}`
+      if (!states.has(key)) states.set(key, stateOf(dep, m.dir, packedPaths(m.pkg), p.at ? { until: p.at } : {}) ?? {})
+      const s = states.get(key)
       const commits = s.commits?.length ?? 0
       if (s.lastTag && !commits) continue
-      out.push({ by: p.name, dep, version: m.pkg?.version ?? null, tag: s.lastTag || null, commits })
+      const version = (p.at && p.siblings?.get(dep)?.version) || (m.pkg?.version ?? null)
+      out.push({ by: p.name, dep, version, tag: s.lastTag || null, commits })
     }
   }
   return out
@@ -471,6 +478,27 @@ export function untaggedBumps(members = []) {
     const now = parseVersion(m.version), last = parseVersion(m.lastTagVersion)
     return Boolean(now && last && gte(now, last) && !sameVersion(now, last))
   }).map(m => m.name)
+}
+
+/**
+ * The packages this run releases, and which of them keep the version their
+ * manifest holds rather than taking the bump.
+ *
+ * A release in flight is finished alone. An untagged bump keeps its version and
+ * the rest of the selection is chosen as a fresh run chooses it: narrowed to the
+ * retag set, a dependency that moved since its tag could join by neither
+ * `--filter` nor an unfiltered run, which is what workspace-dep-moved tells the
+ * operator to do (`FJS-4265`). A package with no commits since its own tag is
+ * held back unless `all`.
+ *
+ * @param selected  [{ name, moved }]  what --filter and --except left; `moved`
+ *                  is whether it has commits since its own tag
+ * @returns { release: [name], kept: [name] }
+ */
+export function releaseSet(selected = [], { pending = [], retag = [], all = false } = {}) {
+  if (pending.length) return { release: selected.filter(m => pending.includes(m.name)).map(m => m.name), kept: pending }
+  const release = selected.filter(m => retag.includes(m.name) || all || m.moved).map(m => m.name)
+  return { release, kept: retag.filter(n => release.includes(n)) }
 }
 
 // ─── selecting packages ──────────────────────────────────────────────────────

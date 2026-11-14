@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS "blueprint" (
   "command" TEXT NOT NULL DEFAULT '[]' CHECK (json_valid("command") AND json_type("command") = 'array'),
   "notes" TEXT,
   "links" TEXT NOT NULL DEFAULT '[]',
+  "environment" TEXT NOT NULL DEFAULT '{}',
   "deprecatedAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -248,9 +249,13 @@ CREATE TABLE IF NOT EXISTS "blueprint_param" (
   "isRequired" INTEGER NOT NULL DEFAULT 0,
   "isSecret" INTEGER NOT NULL DEFAULT 0,
   "generate" TEXT,
+  "generateLength" INTEGER,
+  "validRegex" TEXT,
   "position" INTEGER NOT NULL DEFAULT 0,
-  CHECK ("generate" IN ('randomHex16', 'randomHex32', 'randomHex64')),
+  CHECK ("generate" IN ('randomHex', 'randomAlphanumeric', 'randomBase64', 'uuid')),
   UNIQUE ("blueprintId", "key"),
+  CHECK (generate IS NULL OR generate = 'uuid' OR generateLength IS NOT NULL),
+  CHECK (generate IS NOT 'uuid' OR generateLength IS NULL),
   FOREIGN KEY ("blueprintId") REFERENCES "blueprint" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_blueprint_param_blueprintId" ON "blueprint_param" ("blueprintId");

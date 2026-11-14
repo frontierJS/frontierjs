@@ -474,11 +474,26 @@ Done when: somebody other than this project's owner runs one side in production.
     the unit. Low confidence: it fails for a person who cannot present anything,
     and it widens the chain from members to the public, which `FJS-D1444` took on
     for members only.
-- **Q10 — Where the force comes from.** Waits for Phases 5–6. A domain with an
+- ~~**Q10 — Where the force comes from.**~~ **Answered 2026-11-14 (`FJS-D2151`): A — no domain is named yet. 10.1 stays open until 5.3 (Kobami asks ELA) and Phase 6's drive are done, and the hearing then picks from what that pair actually hit under 5.2.** Waits for Phases 5–6. A domain with an
   exchange already mandated or already paid for, small enough that one sector can
   adopt it, and with a body willing to run a side. Liability, procurement and
   certification are decided here, and they are probably harder than every phase
   above.
+  - **A** — no domain is named yet. 10.1 stays open until 5.3 (Kobami asks ELA)
+    and Phase 6's drive are done, and the hearing then picks from what that pair
+    actually hit under 5.2.
+  - **B** — name a regulated domain now (health records, where FHIR and
+    Carequality already force an exchange), and steer Phases 6–9 toward its
+    rules for audit and consent.
+  - **C** — the domain is the one the project already serves: field-service
+    trades between owners like Kobami and ELA, where money forces the exchange
+    (who earned a lead) and no regulator does. Liability is a contract between
+    two owners, with no certification.
+  - **Recommend A** — 5.3 and every box in Phase 6 are still open, so neither
+    domain has evidence behind it, and B binds the spine to a regulator's rules
+    before a single cross-owner read has run (`FJS-D2066` builds 5–10 in order).
+    C is the likely answer once 5.3 runs, but it fails the paper's own test of a
+    body willing to run a side.
 - ~~**Q11 — Where the dialer lives.**~~ **Answered 2026-11-11 (`FJS-D2068`): A — `createPeer` moves into `@frontierjs/conduit` and takes a method. Both apps already depend on conduit, which holds the `ed25519` signer. Workbench keeps its own mapping of a refusal to a status.** Blocks 5.1. Basecamp and Workbench import
   nothing from each other, and only Workbench has `createPeer`.
   - **A** — `createPeer` moves into `@frontierjs/conduit` and takes a method.

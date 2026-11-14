@@ -305,3 +305,17 @@ hand count of its source, and the scene passes Phase 6's checks.
 
 - Q1 Does a harvest belong to the person who closed it or the one who filed it?
   Built as the closer; the filer gets nothing yet.
+  - **A** — the closer keeps it, as built on `world`: the git author of the commit
+    that first shows the row under § Closed (`packages/cli/core/world-ledger.js:189`,
+    `:211`), falling back to blame on the archive; the filer is not recorded
+  - **B** — the filer takes it: the same revision walk records the author of the
+    commit where the id first appears in an open section, and `:211` books the
+    reward to that author instead; closing earns nothing but the session's cost
+  - **C** — split: the walk records both, and the harvest rate in `RATES.harvest`
+    (`:63`) divides, say a fifth to the filer and the rest to the closer, each
+    booked to their own town on their own date (`:521`)
+  - **Recommend A** — the reward prices work done, and the cost side already
+    pairs each harvest with the session that ran `fli close` (`:39`), so only the
+    closer has both halves of the books; filing is cheap and nearly every row is
+    filed and closed under the one git author, so B or C adds a second walk for
+    a difference the ledger would barely show

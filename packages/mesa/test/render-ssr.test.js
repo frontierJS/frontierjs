@@ -438,8 +438,8 @@ describe('renderToHTML — what a browser global answers (FJS-4298)', () => {
 
   it('answers as a 1280 by 800 desktop through window, and the bare names a browser has throw', () => {
     expect(got.size).toEqual([1280, 800])
-    expect(got.ua).toMatch(/^Node\.js\//)
     expect(got.winUa).toMatch(/HappyDOM\//)
+    expect(got.ua).toBe(got.winUa)   // FJS-4309
     expect(got.media).toEqual([true, true, false, false])
     expect(got.dpr).toBe(1)
     expect(got.bare).toEqual(['ReferenceError', 'ReferenceError', 'ReferenceError'])

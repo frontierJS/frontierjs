@@ -241,6 +241,14 @@ correctly.
 hydrated: mesa writes the markers (§ *Island markers*) and sierra's
 `src/islands/loader.js` mounts each one, which `site/` does in its built output.
 
+**Islands do not share state.** Each mounts as its own root with its props and
+nothing else, so a `$context` provider above one is absent on the client and a
+store two islands import starts from its client default (`FJS-4313`). Deferred
+hydration per island across shared state is the trap to stay out of. When
+hydration lands, one client root adopts the server's DOM and server-only regions
+are holes inside it, so context and stores reach every widget through one owner
+tree.
+
 `renderToHTML` was broken for months before this was written — it called a
 calling convention the compiler had stopped emitting, and nothing imported or
 tested it, so nobody found out. The suite exists so that cannot recur silently.
@@ -315,8 +323,7 @@ name written bare can answer differently or not at all. Measured under happy-dom
 | --- | --- |
 | `window.innerWidth` / `window.innerHeight` | `1280` / `800` |
 | `window.matchMedia(q).matches` | evaluated against that desktop: `(min-width: 900px)` true, `(hover: hover)` true, `(max-width: 600px)` false, `(prefers-color-scheme: dark)` false |
-| `window.navigator.userAgent` | happy-dom's: `Mozilla/5.0 (X11; Linux x64) … HappyDOM/20.x` |
-| `navigator.userAgent`, bare | `Node.js/22` — Node's own `navigator`, which `initRenderer` cannot replace |
+| `navigator.userAgent`, bare or through `window` | happy-dom's: `Mozilla/5.0 (X11; Linux x64) … HappyDOM/20.x` — `initRenderer` defines the bare name over Node's own getter |
 | `window.devicePixelRatio` | `1` |
 | `window.localStorage` | happy-dom's in-memory store, empty each process |
 | `innerWidth`, `matchMedia`, `localStorage`, `devicePixelRatio`, bare | **absent** — a read throws `<name> is not defined` |

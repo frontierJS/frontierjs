@@ -123,10 +123,28 @@ layout measured only when flagged), not of API.
   - **C** — nothing; document it.
   - **Recommend A**, and B only when a site asks for an entrance on first
     paint.
-- **Q3 — Is a spring a token or a solver?** This is `FJS-D1235`'s ruling. Its
+- ~~**Q3 — Is a spring a token or a solver?**~~ **Answered 2026-11-14 (`FJS-D2150`): B — `FJS-D1235` option B: one duration `--motion-travel` (~400 ms) and one easing `--motion-ease-spring` (a `linear()` curve) beside `--motion-ease` (`tokens.css:291`). A fixed spring is a token; a retargeting one is Motion's `animate()` through `$.entrance`.** This is `FJS-D1235`'s ruling. Its
   option **B** (`--motion-travel` plus `--motion-ease-spring` as a `linear()`
   curve) covers every fixed spring in the tree. A retargeting spring stays a
   library call (§ 3.2). Rule `FJS-D1235` before Phase 1.
+  - **A** — three tokens mirroring Portal's `--stage-spring`/`--stage-move`/
+    `--stage-morph` (`FJS-2257`): `--motion-spring` (a `linear()` overshoot
+    easing), `--motion-move` and `--motion-morph` (durations) beside the four
+    in `packages/css/src/foundation/tokens.css:279`.
+  - **B** — `FJS-D1235` option B: one duration `--motion-travel` (~400 ms) and
+    one easing `--motion-ease-spring` (a `linear()` curve) beside
+    `--motion-ease` (`tokens.css:291`). A fixed spring is a token; a
+    retargeting one is Motion's `animate()` through `$.entrance`.
+  - **C** — no token: a view transition is the app's choreography and Portal's
+    `--stage-*` on `:root` stays the owner. `FJS-2257` closes as won't-fix and
+    `$.animate` (Q1 **C**) has no spring to default to.
+  - **D** — a solver: Mesa ships a spring integrator (`$.spring`, stiffness/
+    damping, retargets mid-flight). One owner for fixed and live springs, at
+    the cost of a physics engine § 3.2 hands to a maintained library.
+  - **Recommend B** — the kit's motion words name the job, and its easings
+    already live in `--motion-ease-*`, so two words cover Portal's three
+    fixed springs (`BookmarkStage.mesa`) without a third rung; no app in the
+    tree retargets a spring, so D is complexity with no caller.
 
 ## Plan
 

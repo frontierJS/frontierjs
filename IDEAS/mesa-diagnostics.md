@@ -62,7 +62,7 @@ the compiler runs in Node and the runtime in a tab, a terminal or a phone: the c
 
 ## Open questions
 
-- **Q1 — What does a code look like?**
+- ~~**Q1 — What does a code look like?**~~ **Answered 2026-11-14 (`FJS-D2134`): A — Solid's form, `SCREAMING_SNAKE`, and Solid's own name where the meaning matches (`REACTIVE_WRITE_IN_OWNED_SCOPE` for a derivation's write), a new name otherwise.**
   - **A** — Solid's form, `SCREAMING_SNAKE`, and Solid's own name where the meaning matches
     (`REACTIVE_WRITE_IN_OWNED_SCOPE` for a derivation's write), a new name otherwise.
   - **B** — Svelte's form, `snake_case`, Mesa's own names throughout.
@@ -73,15 +73,15 @@ the compiler runs in Node and the runtime in a tab, a terminal or a phone: the c
     `core/client.js`); sharing Solid's names where they mean the same thing makes the
     comparison in this paper a lookup instead of a translation, the choice ReactiveScript
     made for the same reason.
-- **Q2 — Where does a code's page live?**
-  - **A** — one heading per code in `packages/mesa/docs/diagnostics.md`, the message ending in
+- ~~**Q2 — Where does a code's page live?**~~ **Answered 2026-11-14 (`FJS-D2138`): A — one heading per code in a new diagnostics.md in mesa's docs/, the message ending in its anchor; a check fails on a code emitted with no heading or a heading no site emits.**
+  - **A** — one heading per code in a new diagnostics.md in mesa's docs/, the message ending in
     its anchor; a check fails on a code emitted with no heading or a heading no site emits.
-  - **B** — beside the rule in `docs/VISION.md`, cited by `RULE n`.
+  - **B** — beside the rule in mesa's VISION.md, cited by `RULE n`.
   - **Recommend A** — most runtime findings have no RULE (a duplicate `{#each}` key, a frozen
     store); VISION states the language, and this is a list of the ways to get it wrong. A
     compile finding that enforces a `RULE n` links the rule from its heading. The check is
     Phase 3, so a code can ship without a page through Phases 1–2.
-- **Q3 — Which severities, meaning what?**
+- ~~**Q3 — Which severities, meaning what?**~~ **Answered 2026-11-14 (`FJS-D2135`): B — *error* and *warn* with Solid's meanings, *info* added when its first producer arrives.**
   - **A** — Solid's three: *error* broken, *warn* works but structurally wrong, *info*
     advisory and sent to subscribers only.
   - **B** — *error* and *warn* with Solid's meanings, *info* added when its first producer
@@ -91,14 +91,14 @@ the compiler runs in Node and the runtime in a tab, a terminal or a phone: the c
     are later. Either way the meanings move sites: a duplicate `{#each}` key leaves an orphan
     node (`FJS-315`), which is broken, so it is an *error* though it prints as a warning;
     0.1 grades each site.
-- **Q4 — Does a production build report?**
+- ~~**Q4 — Does a production build report?**~~ **Answered 2026-11-14 (`FJS-D2136`): A — yes, *warn* and *error* print in production; the sites gated today are moved to printing, so production behavior is one rule.**
   - **A** — yes, *warn* and *error* print in production; the sites gated today are moved
     to printing, so production behavior is one rule.
   - **B** — no, as Solid: a production build reports nothing.
   - **Recommend A** (confidence 2) — Mesa's findings mostly name a render it survived wrong,
     which is as wrong in production; the once-per-key sets bound the noise. The sites
     gated today change, so 0.1 lists them.
-- **Q5 — Which messages are in scope?**
+- ~~**Q5 — Which messages are in scope?**~~ **Answered 2026-11-14 (`FJS-D2137`): A — Mesa's four runtimes and its compiler; Sierra adopts the emitter after.**
   - **A** — Mesa's four runtimes and its compiler; Sierra adopts the emitter after.
   - **B** — Mesa and Sierra's 141 together.
   - **Recommend A** — Sierra depends on Mesa (Invariant 1), so the emitter lands in Mesa

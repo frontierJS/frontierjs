@@ -198,6 +198,21 @@ describe('middleware declared in config is installed', () => {
       .not.toContain('X-Booking-Token')
   })
 
+  // Cross-origin, fetch hides every response header the answer does not
+  // expose, so a page cannot read a version a raw route stamps (`FJS-4227`) —
+  // nor the build and credential headers junction's own client reads.
+  test('cors exposeHeaders reaches a response, beside junction\'s own', async () => {
+    const on = await serve({ middleware: { cors: { origins: ['https://shop.test'], exposeHeaders: ['X-Lathe-Version'] } } })
+    const exposed = (await on.get('/probe', { origin: 'https://shop.test' })).headers.get('access-control-expose-headers') ?? ''
+    expect(exposed).toContain('X-Lathe-Version')
+    expect(exposed).toContain('x-frontier-build')
+    expect(exposed).toContain('x-frontier-credential')
+
+    const off = await serve({ middleware: { cors: { origins: ['https://shop.test'] } } })
+    expect((await off.get('/probe', { origin: 'https://shop.test' })).headers.get('access-control-expose-headers') ?? '')
+      .not.toContain('X-Lathe-Version')
+  })
+
   test('correlationId stamps a response, and nothing does without it', async () => {
     const on  = await serve({ middleware: { correlationId: true } })
     expect((await on.get()).headers.get('x-request-id')).toBeTruthy()

@@ -10,7 +10,7 @@ import { describe, test, expect } from 'bun:test'
 
 import { satisfiesRange, peerDrift, movedDependencies, packedPaths, publishOrder, writePins,
          publishRefusals, formatRefusals, matchesSelector, unpublished, untaggedBumps,
-         siblingPins, unheldPins, pinsLeftBehind } from '../core/publish-preflight.js'
+         releaseSet, siblingPins, unheldPins, pinsLeftBehind } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
   // The trap this whole check exists for. Below 1.0 a caret pins the MINOR, so
@@ -136,6 +136,27 @@ describe('a workspace dependency that moved past its tag', () => {
   test('a registry range is not a workspace dependency', () => {
     const pinned = { name: '@frontierjs/outpost', pkg: { dependencies: { '@frontierjs/litestone': '^1.1.10' } } }
     expect(movedDependencies([pinned], members, state({ commits: [{}] }))).toEqual([])
+  })
+
+  // FJS-4310: a resume packs its tag's commit, so commits on HEAD past the
+  // dependency's tag are in no tarball it ships, and counting them deadlocked
+  // two releases in flight against each other.
+  test('a release in flight asks as of the commit it packs, and names the version pinned there', () => {
+    const siblings = new Map([['@frontierjs/litestone', { version: '1.1.9' }]])
+    const resumed  = { ...outpost, at: 'abc123', siblings }
+    const asked    = []
+    const stateOf  = (name, dir, paths, opts) => { asked.push(opts); return opts.until ? state()() : state({ commits: [{}] })() }
+    expect(movedDependencies([resumed], members, stateOf)).toEqual([])
+    expect(asked).toEqual([{ until: 'abc123' }])
+
+    const moved = movedDependencies([resumed], members, () => state({ commits: [{}] })())
+    expect(moved[0].version).toBe('1.1.9')
+  })
+
+  test('a fresh bump still asks as of HEAD', () => {
+    const asked = []
+    movedDependencies([outpost], members, (name, dir, paths, opts) => { asked.push(opts); return state()() })
+    expect(asked).toEqual([{}])
   })
 })
 
@@ -400,6 +421,34 @@ describe('an untagged bump', () => {
 
   test('a version at or below the last tag is not a bump', () => {
     expect(untaggedBumps([m({ version: '0.1.1' }), m({ version: '0.1.0' })])).toEqual([])
+  })
+})
+
+describe('the set a run releases', () => {
+  const selected = [
+    { name: 'cli',    moved: true  },
+    { name: 'mesa',   moved: true  },
+    { name: 'router', moved: false },
+  ]
+
+  // FJS-4265: the resume kept only the untagged bump, so a moved dependency the
+  // workspace-dep-moved refusal said to add to --filter could never join it.
+  test('an untagged bump is resumed beside the selected packages a fresh run would bump', () => {
+    expect(releaseSet(selected, { retag: ['cli'] })).toEqual({ release: ['cli', 'mesa'], kept: ['cli'] })
+    expect(releaseSet(selected, { retag: ['cli'], all: true })).toEqual({ release: ['cli', 'mesa', 'router'], kept: ['cli'] })
+  })
+
+  test('an untagged bump with no commits since it is still resumed', () => {
+    expect(releaseSet([{ name: 'cli', moved: false }], { retag: ['cli'] })).toEqual({ release: ['cli'], kept: ['cli'] })
+  })
+
+  test('a release in flight is finished alone', () => {
+    expect(releaseSet(selected, { pending: ['cli'] })).toEqual({ release: ['cli'], kept: ['cli'] })
+  })
+
+  test('a fresh run holds back what has no commits since its tag', () => {
+    expect(releaseSet(selected, {})).toEqual({ release: ['cli', 'mesa'], kept: [] })
+    expect(releaseSet(selected, { all: true }).release).toEqual(['cli', 'mesa', 'router'])
   })
 })
 

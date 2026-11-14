@@ -58,7 +58,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `NetworkProvider` | `netbird` · `tailscale` · `wireguard` |
 | `NotificationContext` | `Alert` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
 | `NotificationKind` | `AlertFiring` · `AlertResolved` · `AppBackupFailed` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorCertExpiring` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
-| `ParamGenerator` | `randomHex16` · `randomHex32` · `randomHex64` |
+| `ParamGenerator` | `randomAlphanumeric` · `randomBase64` · `randomHex` · `uuid` |
 | `PlatformBuild` | `outpost` · `platform` |
 | `PlatformProvider` | `cloudflare` |
 | `ProjectStatus` | `active` · `archived` |
@@ -687,6 +687,7 @@ table `blueprint` · db `main` · gate `1.7`
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deprecatedAt` | `DateTime` | yes | — | — |
 | `description` | `String` | no | — | **required on write** |
+| `environment` | `Json` | no | `'{}'` | — |
 | `healthCheck` | `String` | yes | — | — |
 | `icon` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
@@ -717,6 +718,7 @@ table `blueprint_param` · db `main` · gate `1.7`
 | `blueprintId` | `String` | no | — | **required on write** |
 | `defaultValue` | `String` | yes | — | — |
 | `generate` | `ParamGenerator` | yes | — | — |
+| `generateLength` | `Int` | yes | — | — |
 | `hint` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isRequired` | `Boolean` | no | `0` | — |
@@ -724,10 +726,13 @@ table `blueprint_param` · db `main` · gate `1.7`
 | `key` | `String` | no | — | **required on write** |
 | `label` | `String` | no | — | **required on write** |
 | `position` | `Int` | no | `0` | — |
+| `validRegex` | `String` | yes | — | — |
 
 ```
 @@unique(blueprintId, key)
 @@index(blueprintId)
+@@check(generate IS NOT 'uuid' OR generateLength IS NULL)
+@@check(generate IS NULL OR generate = 'uuid' OR generateLength IS NOT NULL)
 ```
 
 ### `conduit_receipts`
