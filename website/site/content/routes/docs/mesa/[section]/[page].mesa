@@ -1,0 +1,77 @@
+---
+render: static
+---
+<!--
+  One page of the Mesa guide, prerendered, from `[page].meta.js`. The body is
+  markdown rendered at build time and handed over as HTML, so it goes through
+  {@html} and ships no renderer and no highlighter.
+
+  Styles that reach into it are :global(), under `.prose`: the markup is written
+  by {@html} and carries no scope class, so a scoped rule would match nothing.
+-->
+<script>
+  import MesaGuideNav from '../../../../components/MesaGuideNav.mesa'
+
+  export let data = null
+
+  const d = data ?? { guide: [], html: '', prev: null, next: null, href: '' }
+</script>
+
+<div class="container"><div class="gbody">
+  <aside class="gside">
+    <MesaGuideNav guide={d.guide} current={d.href} />
+  </aside>
+
+  <article class="prose">
+    <p class="crumb"><a href="/docs/mesa/">Mesa guide</a> / {d.section}</p>
+    {@html d.html}
+
+    <nav class="pager" aria-label="Previous and next page">
+      {#if d.prev}
+        <a class="prev" href={d.prev.href}><span>Previous</span><b>{d.prev.title}</b></a>
+      {/if}
+      {#if d.next}
+        <a class="next" href={d.next.href}><span>Next</span><b>{d.next.title}</b></a>
+      {/if}
+    </nav>
+  </article>
+</div></div>
+
+<style>
+  /* minmax(0, ...): a bare 1fr track floors at its widest code sample, and the
+     page then scrolls sideways on a phone. */
+  .gbody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; align-items: start; padding: 2.5rem 0 4rem; }
+  .gside { order: 2; }
+  .prose { order: 1; }
+  @media (min-width: 62rem) {
+    .gbody { grid-template-columns: 15rem minmax(0, 1fr); gap: 3rem; }
+    .gside { order: 0; position: sticky; top: 5rem; max-height: calc(100vh - 6rem); overflow-y: auto; }
+    .prose { order: 0; }
+  }
+
+  .prose { max-width: 48rem; line-height: 1.7; color: var(--ink-soft); }
+  .crumb { font-size: .78rem; color: var(--ink-mute); margin: 0 0 .75rem; }
+  .crumb a { color: inherit; }
+  .prose :global(h1) { font-size: clamp(1.9rem, 4.5vw, 2.6rem); letter-spacing: -.03em; line-height: 1.1; margin: 0 0 1rem; color: var(--ink); }
+  .prose :global(h2) { font-size: 1.35rem; letter-spacing: -.01em; margin: 2.5rem 0 .6rem; color: var(--ink); scroll-margin-top: 5.5rem; }
+  .prose :global(h3) { font-size: 1.1rem; margin: 1.75rem 0 .5rem; color: var(--ink); scroll-margin-top: 5.5rem; }
+  .prose :global(h4) { scroll-margin-top: 5.5rem; }
+  .prose :global(:is(p, ul, ol, pre, table)) { margin: 0 0 1rem; }
+  /* Most titles are syntax (`{#each}`); a code chip that size reads as a button. */
+  .prose :global(h1 code) { background: none; padding: 0; font-size: inherit; }
+  .prose :global(hr) { border: 0; border-top: 1px solid var(--rule); margin: 2.5rem 0 1rem; }
+  /* Samples are the design system's code block; only the dense-grid rung is ours. */
+  .prose :global(pre.code) { font-size: var(--text-sm); overflow-x: auto; }
+  .prose :global(table) { display: block; overflow-x: auto; }
+
+  .pager { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; margin-top: 3rem; }
+  .pager a {
+    text-decoration: none; border: 1px solid var(--rule); border-radius: 9px;
+    padding: .7rem .9rem; background: var(--surface-raised); display: block;
+  }
+  .pager a:hover { border-color: var(--rule-strong); }
+  .pager .next { text-align: right; grid-column: 2; }
+  .pager .prev { grid-column: 1; }
+  .pager span { display: block; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-mute); }
+  .pager b { display: block; font-size: .95rem; color: var(--ink); margin-top: .15rem; }
+</style>

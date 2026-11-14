@@ -1,0 +1,59 @@
+---
+render: static
+---
+<!--
+  The Mesa guide's landing page: what the guide is, and every page in it. Built
+  from `index.meta.js`, which reads the same list the sidebar does.
+-->
+<script>
+  import MesaGuideNav from '../../../components/MesaGuideNav.mesa'
+
+  export let data = null
+
+  const guide = data?.guide ?? []
+</script>
+
+<div class="container"><div class="gbody">
+  <aside class="gside">
+    <MesaGuideNav {guide} current="" />
+  </aside>
+
+  <article class="prose">
+    <p class="crumb"><a href="/docs/">Docs</a> / Mesa</p>
+    <h1>The Mesa guide</h1>
+    <p class="lede">How to write Mesa, one short page per primitive. Each page ends by naming the rule in the spec it teaches.</p>
+    {#if guide.length}
+      <p><a class="btn" href={guide[0].pages[0].href}>Start with {guide[0].pages[0].title}</a></p>
+    {/if}
+
+    {#each guide as s}
+      <section class="sect">
+        <h2>{s.section}</h2>
+        <ul>
+          {#each s.pages as p}
+            <li><a href={p.href}>{p.title}</a></li>
+          {/each}
+        </ul>
+      </section>
+    {/each}
+  </article>
+</div></div>
+
+<style>
+  .gbody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; align-items: start; padding: 2.5rem 0 4rem; }
+  .gside { display: none; }
+  @media (min-width: 62rem) {
+    .gbody { grid-template-columns: 15rem minmax(0, 1fr); gap: 3rem; }
+    .gside { display: block; position: sticky; top: 5rem; max-height: calc(100vh - 6rem); overflow-y: auto; }
+  }
+
+  .prose { max-width: 48rem; line-height: 1.7; color: var(--ink-soft); }
+  .crumb { font-size: .78rem; color: var(--ink-mute); margin: 0 0 .75rem; }
+  .crumb a { color: inherit; }
+  h1 { font-size: clamp(1.9rem, 4.5vw, 2.6rem); letter-spacing: -.03em; line-height: 1.1; margin: 0 0 1rem; color: var(--ink); }
+  .lede { font-size: 1.1rem; }
+
+  .sect { border-top: 1px solid var(--rule); margin-top: 1.75rem; padding-top: 1.25rem; }
+  .sect h2 { font-size: 1.1rem; margin: 0 0 .5rem; color: var(--ink); }
+  .sect ul { margin: 0; padding-left: 1.1rem; columns: 2 16rem; }
+</style>

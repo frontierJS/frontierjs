@@ -14,11 +14,11 @@ html { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
    body rule, so without this, text outside a component prints in the
    browser's serif. Not `.app` itself, which paints the sunken app ground and
    a 100vh floor that paper has no use for. The page's margin is @page's. */
-body.print { margin: 0; background: var(--surface); color: var(--ink); font-family: var(--font-primary); }
+body.print { margin: 0; background: var(--surface); color: var(--ink); font-family: var(--font-primary), sans-serif; }
 
 /* The margin boxes are text the page context draws, and it inherits from the
    root, so the kit's tokens reach it. */
-@page { font-family: var(--font-primary); font-size: 8pt; color: var(--ink-mute); }
+@page { font-family: var(--font-primary), sans-serif; font-size: 8pt; color: var(--ink-mute); }
 
 /* A group starts a page: the banded report's group break (R3). The first
    group shares the page with the report's header. */

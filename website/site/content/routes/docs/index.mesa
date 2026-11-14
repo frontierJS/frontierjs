@@ -23,6 +23,11 @@ render: static
     <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/docs/QUICKSTART.md">docs/QUICKSTART.md</a> and the package READMEs</p>
   </section>
   <section>
+    <h2>Mesa guide</h2>
+    <p>How to write Mesa, one short page per primitive: reactivity, template syntax, styling, the runtime and the reference. Built from the markdown in the package.</p>
+    <p class="from">Page: <a href="/docs/mesa/">Mesa guide</a></p>
+  </section>
+  <section>
     <h2>Reference</h2>
     <p>Every package, every feature. The package pages cover it today; API detail links out to each README until it moves here.</p>
     <p class="from">From: <a href="/packages/">Packages</a></p>

@@ -2817,17 +2817,18 @@ function readsName(node, name, enter) {
 }
 
 // The first member read `node` makes, outside any function, on one of `roots` —
-// `list.rows` in `[...list.rows]`. A member that is CALLED is left out: a call
-// through a local binding already promotes the const that makes it.
-function memberReadOn(node, roots) {
+// `list.rows` in `[...list.rows]` — or on an inline call `isHandleCall` accepts,
+// `r.tethered().rows`, where `root` is null. A member that is CALLED is left
+// out: a call through a local binding already promotes the const that makes it.
+function memberReadOn(node, roots, isHandleCall = () => false) {
   let found = null
   const walk = (n, key, parent) => {
     if (found || !n || typeof n !== 'object') return
     if (/^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression|ClassBody)$/.test(n.type)) return
-    if (n.type === 'MemberExpression' && n.object.type === 'Identifier' && roots.has(n.object.name) &&
-        !(key === 'callee' && parent?.type === 'CallExpression')) {
-      found = { root: n.object.name, prop: !n.computed && n.property.type === 'Identifier' ? n.property.name : null }
-      return
+    if (n.type === 'MemberExpression' && !(key === 'callee' && parent?.type === 'CallExpression')) {
+      const prop = !n.computed && n.property.type === 'Identifier' ? n.property.name : null
+      if (n.object.type === 'Identifier' && roots.has(n.object.name)) { found = { root: n.object.name, prop }; return }
+      if (isHandleCall(n.object)) { found = { root: null, call: n.object, prop }; return }
     }
     for (const k of Object.keys(n)) {
       if (k === 'start' || k === 'end' || k === 'type') continue
@@ -4560,7 +4561,7 @@ function closeReactiveSet(st, rawRefs, reactiveSet, opaqueLocalCall) {
 }
 
 /** Pass of analyzeScript: warns on a static const read through a call's handle. */
-function warnHandleReads(raw, ast, st, yieldsCall) {
+function warnHandleReads(raw, ast, st, yieldsCall, importedNameSet) {
   const { vars, warnings } = st
 
   // A static `const` over a MEMBER of a call's handle is computed once, and the
@@ -4582,16 +4583,31 @@ function warnHandleReads(raw, ast, st, yieldsCall) {
       if (decl.kind === 'const' && d.init) topConsts.push(d)
     }
   }
+  // The same read on a call never bound to a name — `r.tethered().rows.filter(…)`
+  // compiled static and silent (FJS-4284). Only a call rooted at an import, the
+  // opaque door a handle comes through: `Object.keys(cfg).length` and
+  // `title.split(' ').length` are values, and warning on them buries this one.
+  // The call's own callee holds no call, so the read named is the innermost one.
+  const isHandleCall = (n) => {
+    while (n.type === 'AwaitExpression' || n.type === 'ChainExpression') n = n.argument ?? n.expression
+    if (n.type !== 'CallExpression' && n.type !== 'NewExpression') return false
+    let c = n.callee
+    while (c.type === 'MemberExpression') c = c.object
+    return c.type === 'Identifier' && importedNameSet.has(c.name)
+  }
   for (const d of topConsts) {
     const name = d.id.name
     if (vars[name]?.isDerived) continue
-    const read = memberReadOn(d.init, new Set([...handleInit.keys()].filter((h) => h !== name)))
+    const read = memberReadOn(d.init, new Set([...handleInit.keys()].filter((h) => h !== name)), isHandleCall)
     if (!read) continue
-    const path = read.prop ? `${read.root}.${read.prop}` : `${read.root}[…]`
-    const call = raw.slice(handleInit.get(read.root).start, handleInit.get(read.root).end)
+    const callNode = read.root ? handleInit.get(read.root) : read.call
+    const call = raw.slice(callNode.start, callNode.end)
+    const root = read.root ?? call
+    const path = read.prop ? `${root}.${read.prop}` : `${root}[…]`
+    const holder = read.root ? `'${read.root}' holds what ${call.length > 40 ? 'a call' : call} handed back` : `'${call}' hands back a handle`
     warnings.push(
       `'${name}' reads '${path}' and is read once, when the component is set up — ` +
-      `'${read.root}' holds what ${call.length > 40 ? 'a call' : call} handed back, and a getter on it can move. ` +
+      `${holder}, and a getter on it can move. ` +
       `Write $: ${name} = … to follow it, or destructure at the call — ` +
       `const { ${read.prop ?? '…'} } = ${call.length > 40 ? '…' : call} — when one read is meant.`
     )
@@ -4840,7 +4856,7 @@ export function analyzeScript(raw, ast) {
   const { rawRefs, reactiveSet, opaqueLocalCall } = seedReactiveSet(ast, st)
   const { opaqueValues, yieldsCall } = collectOpaqueValues(ast)
   closeReactiveSet(st, rawRefs, reactiveSet, opaqueLocalCall)
-  warnHandleReads(raw, ast, st, yieldsCall)
+  warnHandleReads(raw, ast, st, yieldsCall, importedNameSet)
   refuseSelfReads(st)
   refuseDerivedBeforeDeclaration(st)
   refuseTimerBeforeDeclaration(ast, st)
@@ -8654,6 +8670,9 @@ function _checkUnreadDerived(ctx) {
   for (const v of Object.values(vars ?? {})) {
     if (v.kind !== 'const' || !v.isDerived || v.isProp || v.isAsync || v.isContextConsume) continue
     if (!v.initNode || exported.has(v.name) || !callsEagerly(v.initNode)) continue
+    // The `$.mounted` gate is emitted as an eager Promise the template awaits by
+    // name, so it runs with no reader — and RULE 37a makes `const` its only form.
+    if (v.name === ctx.analysis.mountedVar) continue
     // A destructuring pattern's synthetic var is read through the names it
     // binds; the author wrote those and never wrote the temp.
     const synthetic = v.name.startsWith('$$pattern_')

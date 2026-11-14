@@ -430,6 +430,66 @@ t('tutor.transcripts', {
 t('demos.noRuntimeFetch',
   !bodyOf('why/landscape').includes('Loading') && !bodyOf('why/landscape').includes('projects.json'))
 
+// ─── the Mesa guide ───────────────────────────────────────────────────────
+// /docs/mesa/ is GENERATED from packages/mesa/docs/guide/, so the failures are
+// silent ones: a page the README lists that never built, a rewritten link that
+// still points at a `.md` file the site does not serve, a renderer that ate the
+// first sample. The list is read independently of data/mesa-guide.js, which is
+// the thing under test.
+const GUIDE_SRC = join(HERE, '..', '..', 'packages', 'mesa', 'docs', 'guide')
+const guidePages = [...readFileSync(join(GUIDE_SRC, 'README.md'), 'utf8')
+  .matchAll(/^- \[[^\]]+\]\(([a-z0-9-]+\/[a-z0-9-]+)\.md\)\s*$/gm)].map((m) => m[1])
+const guideFile = (p) => join(DIST, 'docs', 'mesa', p, 'index.html')
+const built = guidePages.filter((p) => existsSync(guideFile(p)))
+const guideHtml = Object.fromEntries(built.map((p) => [p, readFileSync(guideFile(p), 'utf8')]))
+const textOfHtml = (h) => textOf(h).replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+const squash = (s) => s.replace(/\s+/g, ' ').trim()
+
+t('guide.listed', guidePages.length, counted)
+t('guide.everyPageBuilt', guidePages.filter((p) => !built.includes(p)), none)
+
+// The H1 and the first fence, each compared as TEXT: glow wraps tokens in
+// elements, so the markup differs and the characters must not.
+t('guide.h1AndFirstFence', built.filter((p) => {
+  const md = readFileSync(join(GUIDE_SRC, `${p}.md`), 'utf8')
+  const h1 = squash((/^# (.+)$/m.exec(md) ?? [, ''])[1].replace(/`/g, ''))
+  const fence = /^```[^\n]*\n([\s\S]*?)^```/m.exec(md)
+  const h1Built = textOfHtml((guideHtml[p].match(/<h1[^>]*>([\s\S]*?)<\/h1>/) ?? [, ''])[1])
+  const pre = (guideHtml[p].match(/<pre[^>]*>[\s\S]*?<\/pre>/g) ?? []).map((x) => squash(textOfHtml(x)))
+  return squash(h1Built) !== h1 || (fence && !pre.includes(squash(fence[1])))
+}), none)
+
+// A relative `.md` href is a link the site cannot serve: the guide's own pages
+// become site paths and every other file becomes an absolute GitHub URL.
+t('guide.noRelativeMdLinks', built.filter((p) =>
+  [...guideHtml[p].matchAll(/href="([^"]*)"/g)]
+    .some((m) => !/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(m[1]) && /\.md(?:#.*)?$/.test(m[1]))), none)
+
+// Every in-guide link lands on a page that was built.
+t('guide.linksResolve', built.flatMap((p) =>
+  [...guideHtml[p].matchAll(/href="\/docs\/mesa\/([^"#]+)\/(?:#[^"]*)?"/g)]
+    .map((m) => m[1]).filter((target) => !guidePages.includes(target)).map((x) => `${p} -> ${x}`)), none)
+
+// Previous/next: the chain from the first page by following Next visits every
+// page exactly once, in README order, and each Previous names the page before.
+const hrefOf = (h, cls) => (h.match(new RegExp(`<a class="${cls}[^"]*" href="([^"]+)"`)) ?? [, null])[1]
+const chain = []
+let at = guidePages[0]
+while (at && !chain.includes(at) && guideHtml[at]) {
+  chain.push(at)
+  const nx = hrefOf(guideHtml[at], 'next')
+  at = nx ? nx.replace('/docs/mesa/', '').replace(/\/$/, '') : null
+}
+t('guide.nextChain', { visited: chain.length, inOrder: chain.join() === guidePages.join() }, (v) => v.visited === guidePages.length && v.inOrder)
+t('guide.prevChain', built.filter((p, i) => hrefOf(guideHtml[p], 'prev') !== (i ? `/docs/mesa/${guidePages[i - 1]}/` : null)), none)
+
+// The sidebar names every page, and marks the current one on its own page.
+t('guide.sidebar', built.filter((p) =>
+  (guideHtml[p].match(/aria-current="page"/g) ?? []).length !== 1
+  || guidePages.some((q) => !guideHtml[p].includes(`href="/docs/mesa/${q}/"`))), none)
+t('guide.landing', existsSync(join(DIST, 'docs', 'mesa', 'index.html'))
+  && readFileSync(join(DIST, 'docs', 'mesa', 'index.html'), 'utf8').includes('href="/docs/mesa/reactivity/let/"'))
+
 // ─── the server ───────────────────────────────────────────────────────────
 const head = async (p) => {
   const r = await fetch(`${ORIGIN}${p}`)

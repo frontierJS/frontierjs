@@ -3,6 +3,7 @@
 // a real Chrome.
 
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { pageRules, printDocument, printer } from '../index.js'
 
 describe('the document', () => {
@@ -27,6 +28,15 @@ describe('the document', () => {
   test('the title is escaped and a stylesheet cannot close its element', () => {
     expect(printDocument({ body: '', title: '<b>R&D</b>' })).toContain('<title>&lt;b&gt;R&amp;D&lt;/b&gt;</title>')
     expect(() => printDocument({ body: '', css: ['a{}</style><p>'] })).toThrow(/<\/style>/)
+  })
+
+  // An app whose --font-primary face is not inlined prints in the browser's
+  // serif unless the list ends in a generic family (FJS-4287).
+  test('every font-family the print sheet sets ends in a generic family', () => {
+    const sheet = readFileSync(new URL('../src/print.css', import.meta.url), 'utf8')
+    const families = [...sheet.matchAll(/font-family:\s*([^;}]+)/g)].map(m => m[1].trim())
+    expect(families.length).toBeGreaterThan(0)
+    for (const f of families) expect(f).toMatch(/,\s*(sans-serif|serif|monospace)$/)
   })
 })
 

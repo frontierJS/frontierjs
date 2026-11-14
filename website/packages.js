@@ -23,672 +23,1287 @@
 
 ;(function () {
 const PKGS = [
-{
-  id:'litestone', install:'npm i @frontierjs/litestone', slug:'litestone', name:'Litestone', realm:'Data · Model', who:'@frontierjs/litestone',
-  pitch:'Authorization is part of the data definition, not a layer above it.',
-  rows:[
-    { k:'Shape', v:'Models · enums · relations · reusable functions',
-      why:'One declarative file describes your data. Functions are reusable expressions you can call from defaults and policies, so logic lives beside the data it governs.',
-      code:'model Invoice {\n  id      Int    @id\n  total   Float  @gte(0)\n  ownerId Int\n  owner   User   @relation(ownerId)\n}',
-      r:['Prisma schema','Drizzle schema','TypeORM entities'] },
-    { k:'Types', v:'<code>Int String Float Bool DateTime Json Bytes</code>',
-      why:'Seven scalars, mapped to SQLite storage classes and to TypeScript. Optionality is a trailing ? and it means the same thing in the database, the API and the editor.',
-      r:[] },
-    { k:'Access', v:'Gates on a 0–9 scale · policies compiled into <code>WHERE</code>',
-      why:'A gate grades each operation against a trust level. A policy is a row predicate compiled into the query itself — so there is no code path that can forget to apply it.',
-      code:"@@gate(0.4.4.5)            // read.create.update.delete\n@@allow(read, ownerId == auth().id)\n\n-- every read becomes:\nSELECT * FROM invoices WHERE ownerId = ?",
-      r:['CASL','Oso','Postgres RLS','hand-rolled middleware'] },
-    { k:'Fields', v:'<code>@guarded</code> · <code>@secret</code> · <code>@encrypted</code> at rest',
-      why:'Field-level protection travels with the field. Guarded fields never leave the data layer, secrets are redacted from logs and responses, and encrypted fields are ciphertext on disk.',
-      r:['manual redaction helpers','field-encryption libraries'] },
-    { k:'Lifecycle', v:'Defaults · transforms · <code>@updatedAt</code> · soft delete',
-      why:'What happens automatically over a row\'s life, declared once. Transforms like @trim and @lower run on the way in, so the database never holds the unnormalized version.',
-      code:'email     String   @email @lower @trim\nupdatedAt DateTime @updatedAt\ndeletedAt DateTime?          // soft delete',
-      r:['ORM lifecycle hooks','paranoid / soft-delete plugins'] },
-    { k:'Audit', v:'<code>@@trail(audit)</code>, per model',
-      why:'Mark a model and every write is recorded with the actor, the operation and the before/after. No decorator on every mutation, no forgetting the one that matters.',
-      r:['audit-trail libraries','database triggers','temporal tables'] },
-    { k:'Querying', v:'Relations · cursor pagination · transactions · <code>$raw</code>',
-      why:'A full query API with nested reads, aggregates, windowing and distinct — plus a documented raw escape hatch for the cases a builder should not try to own.',
-      code:"await db.invoice.findMany({\n  where:   { total: { gte: 500 }, owner: { is: { active: true } } },\n  orderBy: { createdAt: 'desc' },\n  cursor:  { id: 120 },\n  take:    20,\n})",
-      r:['Knex','Kysely','raw SQL scattered in handlers'] },
-    { k:'Multi-db', v:'<code>@@db(name)</code> · database-per-tenant registries',
-      why:'Route models to separate databases from the schema, and get database-per-tenant isolation from one accessor rather than a connection-juggling layer of your own.',
-      r:['manual connection routing','per-tenant connection pools'] },
-    { k:'External', v:"<code>@@external</code> mirrors tables you don't own",
-      why:'Describe a table another system owns and query it with the same client. Migrations leave it alone, so you get typed reads without claiming responsibility for the schema.',
-      r:['a second read-only ORM client'] },
-    { k:'Migrations', v:'Diffed from the schema as reviewable SQL',
-      why:'Change the schema, and the diff against the live database becomes a migration file you read before applying. Drift between file and database is a command, not a surprise.',
-      code:'$ fli db:migrate\n  + ALTER TABLE invoices ADD COLUMN company TEXT\n  ✓ migrations/0002_company.sql applied\n\n$ fli db:status\n  ✓ live database matches the schema',
-      r:['Prisma Migrate','Knex migrations','Flyway','hand-written SQL'] },
-    { k:'Generates', v:'TypeScript declarations · JSON Schema',
-      why:'The same file emits types for your editor and JSON Schema for validation and the browser — so the three can never describe different shapes.',
-      code:'$ litestone types ./types.d.ts --audience=client\n\ninterface Invoice       { id: number; total: number }\ninterface InvoiceCreate { total: number }',
-      r:['openapi-typescript','zod-to-ts','orval','hand-written types'] },
-    { k:'Tooling', v:'Litestone Studio · REPL · doctor · seed · backup',
-      why:'A local web UI over your data, an interactive shell against the live client, a health check for your setup, and seeding and backup as first-class commands.',
-      r:['Prisma Studio','TablePlus','ad-hoc scripts'] },
-  ],
-},
-{
-  id:'junction', install:'npm i @frontierjs/junction', slug:'junction', name:'Junction', realm:'API · Service', who:'@frontierjs/junction',
-  pitch:'Name a model and its CRUD, validation and authorization come with it.',
-  rows:[
-    { k:'Services', v:'Five methods plus named actions',
-      why:'A service is the unit, not a route. It exposes find, get, create, patch and remove, plus any custom action — callable over HTTP, over WebSocket, or in-process.',
-      code:"createService({ name: 'invoices', model: 'invoice',\n  async markPaid(ctx) { … },\n})\n\n// same service, three ways in:\nGET /api/invoices\nws  { service: 'invoices', method: 'find' }\napp.service('invoices').call('markPaid', id)",
-      r:['Express routers','Fastify plugins','NestJS controllers'] },
-    { k:'Hooks', v:'<code>around</code> · <code>before</code> · <code>after</code> · <code>error</code>',
-      why:'Four phases, per method or for all of them, at app or service level. around wraps everything including failures, which is where timing and tracing belong.',
-      code:'hooks: {\n  around: { all:    [timing] },\n  before: { create: [setOwner] },\n  after:  { create: [broadcast] },\n  error:  { all:    [report] },\n}',
-      r:['Express middleware','Fastify hooks','NestJS interceptors'] },
-    { k:'Context', v:'One shape: auth · client · route · locals · query',
-      why:'Every hook and every method receives the same object, with the caller, the parsed query, the result and the error in known places — not a request object you decorate by convention.',
-      r:['req/res + res.locals conventions'] },
-    { k:'Envelope', v:'Lists keep <code>{ data, total }</code>; singles unwrap',
-      why:'One module decides the response shape for the entire framework, so pagination metadata is always in the same place and a single record is never wrapped for no reason.',
-      code:'GET /api/invoices     → { object: "list", data: [...], total: 17 }\nGET /api/invoices/8   → { id: 8, total: 500 }',
-      r:['hand-rolled response wrappers'] },
-    { k:'Transport', v:'HTTP and WebSocket over one bridge',
-      why:'Both protocols enter through the same boundary and produce the same Context, so a service does not know or care which one a caller used.',
-      r:['Express + Socket.IO wired separately'] },
-    { k:'Directives', v:'<code>$limit $offset $orderBy $select</code>, parsed at the edge',
-      why:'Result shaping is transport syntax, split from filters once at the boundary. Past that line nothing sees a $ — services receive clean filters and a directives object.',
-      code:'GET /api/invoices?status=open&$limit=20&$orderBy=-createdAt\n\nctx.query      → { status: "open" }\nctx.directives → { limit: 20, orderBy: "-createdAt" }',
-      r:['query-string parsers','manual pagination plumbing'] },
-    { k:'Security', v:'CORS · CSRF · headers · rate limiting',
-      why:'The usual middleware stack, configured rather than assembled, and ordered correctly by default — preflights short-circuit before CSRF, which is easy to get wrong by hand.',
-      r:['helmet','cors','csurf','express-rate-limit'] },
-    { k:'Channels', v:'One announcement, two fan-outs, gated on the way out',
-      why:'Declare channel: on a service and every mutation announces once, reaching both the event bus and WebSocket subscribers. Gates still apply, so nobody is pushed a row they could not fetch.',
-      code:"createService({ name: 'invoices', channel: 'invoices' })\n\n// subscribers receive:\n{ type: 'invoices created', data: { id: 9 } }",
-      r:['Socket.IO rooms + manual emit calls'] },
-    { k:'Errors', v:'Named classes; data denials normalize into them',
-      why:'Throw BadRequest or NotFound anywhere and the transport serializes it correctly. A data-layer denial becomes a 403 with the same shape, so clients match one contract.',
-      r:['http-errors','Boom','ad-hoc error middleware'] },
-    { k:'Client', v:'Typed resources and live subscriptions in the browser',
-      why:'The same service API from the other side of the wire, including subscriptions and session handling — not a fetch wrapper you maintain alongside the server.',
-      r:['axios wrappers','generated API clients'] },
-    { k:'Testing', v:'Real apps, real pipelines, no port binding',
-      why:'Boot an app in-process, send real requests through the full hook pipeline, and stub only auth. Tests exercise the code that runs in production.',
-      code:"const app = await createTestApp({ db, auth: createStubAuth() })\nawait request(app).post('/api/invoices').send({ total: 5 })",
-      r:['supertest + mock layers'] },
-  ],
-},
-{
-  id:'auth', install:'npm i @frontierjs/auth', slug:'auth', name:'Auth', realm:'API · Identity', who:'@frontierjs/auth',
-  pitch:'A route establishes a session. Everything after it is an ordinary service.',
-  rows:[
-    { k:'Sessions', v:'Register · login · logout · password reset · email verify',
-      why:'Login cannot be gated by login, so these five are raw routes and always will be. Everything past that line is a service with the normal pipeline over it.',
-      r:['Auth.js','Lucia','Passport','Clerk'] },
-    { k:'Cookies', v:'<code>cookieAuth: true</code> authenticates end to end',
-      why:'One session works for a fetch, for a browser navigation and for an OAuth callback — which is a redirect, and cannot carry a bearer header.',
-      r:['session middleware beside a second token scheme'] },
-    { k:'OAuth', v:'The flow engine is split from the transport',
-      why:'Building the URL, trading the code and normalizing the identity are one module with no HTTP, no database and no session in it. The plugin owns the routes; the provider list is data.',
-      r:['Passport strategies'] },
-    { k:'Two-factor', v:'TOTP, base32 and recovery codes — clockless',
-      why:'RFC 6238 with the instant as a parameter rather than a read of the clock, so a code is testable and a drifting device is a value you pass in.',
-      r:['otplib wired by hand','speakeasy'] },
-    { k:'Services', v:'<code>account</code> · <code>sessions</code> · <code>api-keys</code>',
-      why:'What a signed-in person does next is not a route. Three ordinary services, gated like everything else, so there is no second authorization story for account management.',
-      r:['bespoke /me endpoints'] },
-    { k:'Schema', v:'Two <code>.lite</code> files, split by who owns them',
-      why:'User is appended into your own schema so you can edit it; the machinery models are imported, so an upgrade reaches an installed app. extend model adjusts them at your end rather than by pasting.',
-      code:'extend model User {\n  company String?\n}',
-      r:['copy-pasted auth tables','a migration you own forever'] },
-    { k:'Hooks', v:'Four awaited callbacks; a throw refuses the call',
-      why:'Each one runs BEFORE the thing it can refuse, so declining a registration is returning early rather than undoing a write.',
-      r:['after-the-fact event listeners'] },
-  ],
-},
-{
-  id:'caravan', install:'npm i @frontierjs/caravan', slug:'caravan', name:'Caravan', realm:'API · Jobs', who:'@frontierjs/caravan',
-  pitch:'Background work in the database you already have. No second service to run.',
-  rows:[
-    { k:'Queue', v:'SQLite job queue and cron on <code>app.jobs</code>',
-      why:'Queues, retries and exponential backoff in the same database as everything else — so local development, CI and a single-box deployment all run the real thing.',
-      r:['BullMQ + Redis','Agenda','node-cron'] },
-    { k:'Declaration', v:'The file names the job, and the file is the whole of it',
-      why:'send-email.job.ts is send-email. A defineJob naming anything else is refused at load rather than registered, because a handler answering to send-emial while every dispatch says send-email never runs and never says so.',
-      code:"export default defineJob({\n  handler: async ({ data }) => { await mail.send(data) },\n  queue: 'mail',\n  maxAttempts: 5,\n})",
-      r:['a registry file listing every job'] },
-    { k:'Recurring', v:'<code>cron</code> is an option on the handler, not a second system',
-      why:'A job file declares its own schedule, so moving the file moves the schedule. A name is one schedule — registering it twice replaces, where two entries used to fire the job twice a minute.',
-      r:['node-cron tables','a crontab on the host'] },
-    { k:'Idempotency', v:'<code>dispatch({ id })</code> is a no-op for all time',
-      why:'A stated id is the jobs table’s primary key, so the same dispatch can never run twice — where a unique key frees itself the moment the job goes terminal.',
-      r:['dedupe keys with a TTL'] },
-    { k:'Identity', v:'A job runs as whoever asked for it',
-      why:'The principal travels with the dispatch, so a queued write is gated exactly as the request that queued it would have been. Background work is not a hole in the access model.',
-      r:['a service account every job shares'] },
-    { k:'Recovery', v:'Heartbeats, crash resume, two instances on one queue',
-      why:'A running row carries the id of the instance holding it and that instance heartbeats, so a worker killed mid-job is replaced rather than leaving the job claimed forever.',
-      r:['a stuck-job cleanup script'] },
-    { k:'Operator', v:'<code>caravan queue …</code> from a shell, JSON out',
-      why:'The verbs an operator needs are a binary, not an admin page — which is what a paused deploy runs inside the serving container.',
-      r:['Bull Board','a psql session'] },
-  ],
-},
-{
-  id:'conduit', install:'npm i @frontierjs/conduit', slug:'conduit', name:'Conduit', realm:'API · Integrations', who:'@frontierjs/conduit',
-  pitch:'Every third party an app talks to, declared in one place.',
-  rows:[
-    { k:'Targets', v:'A counterparty is named once — credential, policy and all',
-      why:'Because targets are declared, an application’s entire outbound surface is a list rather than an audit. Useful in review, and to anyone self-hosting who wants to know what the process can reach.',
-      r:['scattered fetch calls','a per-vendor HTTP client each'] },
-    { k:'Receivers', v:'The route a Provider calls you on, declared beside its Target',
-      why:'A connector exports how the vendor signs, the app says which key verifies and what to do, conduit runs the order and keeps the receipt — so a redelivery is a duplicate only once the first was applied, and a throw hands the sender a clean retry.',
-      r:['a raw webhook route per vendor','an inbound-events table per app'] },
-    { k:'Policy', v:'Seven numbers per target, falling back field by field',
-      why:'One conduit carries a card processor, a mail sink and a health probe. One set of timeouts and retries fits none of them, so each target states its own and inherits the rest.',
-      r:['one global axios instance'] },
-    { k:'Encoding', v:'<code>json</code> or <code>form</code>, decided in the transport',
-      why:'The raw body is the same string the auth headers are built over, so an encoder living in a caller or a connector signs bytes that were never sent.',
-      r:['hand-built form bodies beside a signer'] },
-    { k:'Signing', v:'Method, path, timestamp, nonce and a hash of the body',
-      why:'A captured signature cannot be replayed, moved to another endpoint, or kept while the body is swapped underneath it. The same module verifies on the far side.',
-      r:['a bespoke HMAC helper per integration'] },
-    { k:'Strictness', v:'An unknown field on a descriptor is refused by name',
-      why:'Dropped silently is how a mistyped timeout becomes a production default that nobody can find.',
-      r:['config objects with loose shapes'] },
-    { k:'Observers', v:'Callbacks that receive and cannot act',
-      why:'A throw in one is swallowed, so the word on the option says the tier: these observe. The management pipeline keeps the word hook, because that one can refuse the call.',
-      r:['event emitters whose failures vanish'] },
-    { k:'Not a wall', v:'Conduit is where an outbound call belongs — not a boundary around the process',
-      why:'Nothing here blocks a raw fetch, and two batteries dial out directly on purpose. A contract with a working default is what keeps this package optional.',
-      r:[] },
-  ],
-},
-{
-  id:'notifications', install:'npm i @frontierjs/notifications', slug:'notifications', name:'Notifications', realm:'API · Slice', who:'@frontierjs/notifications',
-  pitch:'One call fans out to a record, a live event and an email.',
-  rows:[
-    { k:'Definition', v:'A notification is a file, and the file names it',
-      why:'OrderPaid.notification.ts is OrderPaid — the same rule job files already follow, so there is no registry to keep in step with the filesystem.',
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: the text is emitted into a template literal
-      code:"export default defineNotification({\n  via:    (p) => p.total > 100 ? ['inApp', 'email'] : ['inApp'],\n  format: async (p) => ({ title: `Order ${p.id} paid` }),\n})",
-      r:['Novu','Courier','a hand-rolled fan-out'] },
-    { k:'Fan-out', v:'<code>app.notify</code> → in-app record, WebSocket event, email',
-      why:'One send reaches every transport the definition asked for, and the in-app record is a row like any other — queryable, gated, and readable back.',
-      r:['three separate send calls'] },
-    { k:'The type is persisted', v:'<code>type:</code> holds the name still',
-      why:'The type is a column the browser reads to pick a renderer, so renaming the file orphans every existing row. State it and the file is free to move; a divergence is warned about.',
-      r:[] },
-    { k:'Recipient', v:'The unit of address is a Recipient, not a User',
-      why:'A notification can reach an address that was never an account — an invitee, a webhook, a shared inbox — without inventing a user row to hold it.',
-      r:['a nullable user on every notification'] },
-    { k:'Transports', v:'inApp and email, plus drivers of your own',
-      why:'A transport is a delivery medium, kept separate from the broadcast set a WebSocket subscriber joins — two things one word usually covers.',
-      r:['per-medium send helpers'] },
-    { k:'Introspection', v:'<code>app.notifications</code> answers what this app can send',
-      why:'Formatters may be async and take the payload rather than closing over it, so the catalog can be listed with nothing actually sent.',
-      r:['reading the source to find out'] },
-  ],
-},
-{
-  id:'mcp', install:'npm i @frontierjs/mcp', slug:'mcp', name:'MCP', realm:'API · Agent', who:'@frontierjs/mcp',
-  pitch:'An MCP endpoint over the app you are already running, with the gate as the permission model.',
-  rows:[
-    { k:'Mounting', v:'One plugin, inside the running API',
-      why:'Stdio would have to boot the app a second time — a second job worker, a second migration check, and an event bus no browser tab is on. Mounted, a tool call is one more caller of the process that is already serving.',
-      code:"import { mcp } from '@frontierjs/mcp'\n\napp.configure(mcp())   // POST/GET/DELETE at {apiPrefix}/mcp",
-      r:['a separate MCP server process'] },
-    { k:'Scoping', v:'Tools are computed per standing, not described in a prompt',
-      why:'What an agent may do is the gate it is already graded by. A stranger sees a stranger’s tools; a prompt can be talked out of a rule, and the database layer cannot.',
-      r:['a system prompt listing what not to touch'] },
-    { k:'One path', v:'A tool call goes through <code>app.service(name)</code>',
-      why:'The same hooks, transaction and announcement an HTTP or WebSocket call gets, so nothing an agent does is invisible to a browser watching the same rows.',
-      r:['tool handlers that call the database directly'] },
-    { k:'Arguments', v:'The schema the browser already gets',
-      why:'Each tool’s input is the client-audience JSON Schema, and no call through this package can ask for the system audience — so a protected column cannot reach a tool description.',
-      r:['hand-written tool schemas'] },
-    { k:'Stateless', v:'Nothing is kept between two requests',
-      why:'The projection is rebuilt at the caller’s standing on every request, so nothing an agent was shown outlives a sign-out.',
-      r:[] },
-  ],
-},
-{
-  id:'orion', install:'npm i @frontierjs/orion', slug:'orion', name:'Orion', realm:'API · Automations', who:'@frontierjs/orion',
-  pitch:'Automations that run inside your app, against your schema, refused by your gates.',
-  rows:[
-    { k:'Installing', v:'A schema import and one plugin',
-      why:'Flows, versions and runs are declared models with real gates, so they are data in your database rather than rows in somebody else’s.',
-      code:"// db/schema.lite\nimport \"@frontierjs/orion/orion.lite\"\n\n// api\nimport { orion } from '@frontierjs/orion'\napp.configure(orion())",
-      r:['Zapier','n8n','a hosted workflow service'] },
-    { k:'Flows', v:'Triggers, conditions and actions',
-      why:'A trigger is a model write, a cron schedule, a webhook or a manual run. An action creates or patches a model, calls a service, makes an HTTP request or sends a notification. All of them are nouns the app already has.',
-      r:['webhook glue code'] },
-    { k:'Access', v:'A flow runs as its owner',
-      why:'Every step goes through the same gates a person does. A flow cannot read or write anything its owner could not, and run history redacts protected fields the way the audit trail does.',
-      r:['a service account with every permission'] },
-    { k:'Durability', v:'Runs on the job queue and survives a crash',
-      why:'The run is checkpointed once per stage, so a worker killed mid-run is replaced by another that finishes without repeating the finished stages. A wait can last days and resumes once.',
-      r:['Temporal','Inngest','a cron job and a status column'] },
-    { k:'Screens', v:'Flows, runs and credentials, mounted by one file',
-      why:'The builder and the run inspector are components from the same kit as the rest of the app. Each node’s settings form is built from its schema, so a node you add gets a form too.',
-      r:[] },
-  ],
-},
-{
-  id:'sierra', install:'npm i @frontierjs/sierra', slug:'sierra', name:'Sierra', realm:'UI · Resource', who:'@frontierjs/sierra',
-  pitch:'Your file tree is the route table. A Resource is a service, made reactive.',
-  rows:[
-    { k:'Routing', v:'File tree · dynamic · catch-all · layouts · groups',
-      why:'Routes come from the filesystem, so the URL structure and the folder structure cannot drift. Layouts nest by directory and groups organize without affecting the path.',
-      code:'src/routes/invoices/index.mesa   → /invoices\nsrc/routes/invoices/[id].mesa    → /invoices/42\nsrc/routes/[...404].mesa         → anything else\nsrc/routes/_module.mesa          → the layout',
-      r:['React Router config','TanStack Router','Next app directory'] },
-    { k:'Frontmatter', v:'Title · guards · render mode, per route',
-      why:'Route metadata lives at the top of the route file rather than in a separate config, so moving a page moves its configuration with it.',
-      r:['route config objects','route manifest files'] },
-    { k:'Navigation', v:'Guards · hooks · prefetch · scroll restore · slots',
-      why:'A navigation API with before and after hooks, guards that can redirect, link prefetching, and scroll restoration handled rather than reimplemented per app.',
-      r:['React Router loaders and guards'] },
-    { k:'Resources', v:"The API's four hook phases, client-side",
-      why:'A Resource binds a service to reactive state, with the identical around/before/after/error phases the server uses. Learn the pipeline once and it holds on both sides.',
-      code:"const invoices = createResource('invoices', {\n  hooks: { around: { all: [withSpinner] } },\n})\nawait invoices.find({ status: 'open' })",
-      r:['TanStack Query + a store','SWR + Zustand','RTK Query'] },
-    { k:'make()', v:"A blank record shaped by the schema's defaults",
-      why:'Start a create form from the schema itself, with declared defaults already applied and server-owned fields left out. No hand-written initial state to fall out of sync.',
-      code:"invoices.make()\n// { total: 0, status: 'draft' }  — id and createdAt omitted",
-      r:['hand-written initial form state'] },
-    { k:'Schema', v:'JSON Schema shipped into the bundle',
-      why:'The build puts your schema in the browser, so the client knows the same field rules the server enforces — without a second copy of them written in a client-side validator.',
-      r:['duplicated Zod schemas on the client'] },
-    { k:'Targets', v:'<code>spa</code> · <code>static</code> · <code>widget</code> · <code>extension</code>',
-      why:'One route tree, several outputs, chosen at build time. A prerendered marketing page, an embedded widget and a browser extension come from the same components.',
-      r:['separate build configs per output'] },
-    { k:'Loading', v:'Route loaders · parallel fetch · connection state',
-      why:'Data loading declared per route and resolved in parallel, with live connection state you can render against instead of tracking your own online flag.',
-      r:['suspense boilerplate','manual loading flags'] },
-    { k:'Devtools', v:'Routes, resources, requests, events, jobs',
-      why:'An in-page overlay fed by the server\'s own telemetry, so you see the request, the hooks that ran and the job it queued in one timeline.',
-      r:['React Query Devtools','Router Devtools','network tab archaeology'] },
-    { k:'Build', v:'Vite · state-preserving HMR · auto-imports',
-      why:'Vite underneath with Mesa compilation, hot replacement that keeps signal state across edits, and auto-imports so common components need no import line.',
-      r:['hand-tuned Vite config','plugin wiring'] },
-  ],
-},
-{
-  id:'mesa', install:'npm i @frontierjs/mesa', slug:'mesa', name:'Mesa', realm:'UI · Component', who:'@frontierjs/mesa',
-  pitch:'One file renders to a page, an email, a fragment or a module. Zero dependencies.',
-  rows:[
-    { k:'Reactivity', v:'Signals · <code>watchProxy()</code> makes plain objects reactive',
-      why:'Fine-grained signals with automatic dependency tracking. State stays a plain object — no wrapper to unwrap, no dependency array to keep correct.',
-      code:'let total = 0\n$: withTax = total * 1.2      // recomputes when total changes',
-      r:['React hooks + dependency arrays','MobX','Immer'] },
-    { k:'Template', v:'<code>{#if}</code> <code>{#each}</code> <code>{#await}</code> <code>{#key}</code> · snippets · bindings',
-      why:'Block directives rather than expressions, keyed lists, await blocks for promises, reusable snippets, and two-way binding that does not require an onChange handler.',
-      code:'{#each rows as row (row.id)}\n  <Row {row} />\n{:else}\n  <EmptyState />\n{/each}',
-      r:['JSX + .map() + ternaries'] },
-    { k:'Styles', v:'Scoped per component',
-      why:'A style block applies to its own component only, with no naming convention to maintain and no runtime style injection.',
-      r:['CSS Modules','styled-components','Emotion'] },
-    { k:'Source', v:'<code>.mesa</code> or Markdown with frontmatter',
-      why:'Content-shaped pages stay content-shaped: a Markdown file compiles to the same component, with tables and syntax highlighting already handled.',
-      r:['MDX'] },
-    { k:'Targets', v:'DOM · SSR · static · email · fragment · modules',
-      why:'The same component renders live in the browser, to an HTML string on the server, to a prerendered file, to an email, or to an isolated fragment for embedding.',
-      r:['separate SSR and email renderers'] },
-    { k:'Attachments', v:'<code>{@attach}</code> — an element handed to your code',
-      why:'The escape hatch for a chart library or a focus trap: you get the node and a teardown. It does not run on the server, which is what makes a server-rendered page safe to write this way.',
-      r:['useEffect + a ref','directives','lifecycle hooks'] },
-    { k:'Leaf', v:'No framework dependency of its own',
-      why:'Mesa sits at the bottom, so it can be adopted with any bundler and any server. The rest of the framework is what happens when you keep going.',
-      r:[] },
-  ],
-},
-{
-  id:'ui', install:'npm i @frontierjs/ui', slug:'ui', name:'The component kit', realm:'UI · Kit', who:'@frontierjs/ui',
-  pitch:'Sixty-odd components over the design system. A form that already knows what it is editing.',
-  rows:[
-    { k:'Forms', v:'<code>&lt;Form&gt;</code> takes a resource; every control resolves itself',
-      why:'A control reads its own label, its constraints and its server error from the form context, so a field is one tag with a name on it and the three things that usually drift cannot.',
-      code:'<Form resource={invoices} record={invoice}>\n  <Input name="total" />\n  <Select name="status" />\n</Form>',
-      r:['React Hook Form + a resolver','Formik + Yup'] },
-    { k:'Attributes', v:'Every component forwards its caller’s attributes',
-      why:'A form control puts them on the CONTROL rather than the wrapper, because that is what a label’s for and an aria-describedby have to reach. A kit that swallows them cannot be made accessible from outside.',
-      r:['wrapper components you fork to add an id'] },
-    { k:'Autosave', v:'<code>&lt;Form autosave&gt;</code> saves once the typing stops',
-      why:'The debounce, the in-flight state and the last-write-wins question are the form’s, not yours — one attribute rather than an effect in every screen.',
-      r:['a useEffect with a timer per form'] },
-    { k:'Style', v:'A tone and a treatment, never a color',
-      why:'danger and outlined are what a button is; blue is what it happens to look like this theme. A kit component may not style a class the design system owns, so the two cannot fight.',
-      r:['color props','className overrides'] },
-    { k:'Destructive', v:'A destructive action confirms itself',
-      why:'The confirmation is part of the component rather than a modal you remember to wire, so the dangerous path is the one with a guard on it by default.',
-      r:['a confirm modal copied per screen'] },
-    { k:'Contributing', v:'A control of your own is two registrations',
-      why:'A custom control joins the form contract the same way the built-in ones did, so it gets labels, errors and constraints without special-casing.',
-      r:['a control that only works outside the form'] },
-  ],
-  chips:[
-    ['Forms','Form Button Field Fieldset Label Input Textarea Select Checkbox Switch RadioGroup NumberInput Slider Combobox MultiSelect DatePicker DateTimeInput JsonInput FileUpload'],
-    ['Display','Badge Pill Tag Dot Kbd Mono Divider Breadcrumbs Pagination Steps SectionHeader Callout EmptyState CopyButton Code Avatar AvatarGroup Stat StatCard Table Bar Sparkline AccountStatus Json'],
-    ['Layout','Card Accordion AccordionItem Tabs TabList Tab TabPanel'],
-    ['Overlay','Modal Drawer Popover Tooltip DropdownMenu DropdownItem DropdownGroup DropdownSeparator CommandPalette ConfirmationPopover ConfirmPanel ConfirmProvider'],
-    ['Feedback & stores','Alert AlertProvider Toast Toaster Progress Spinner Skeleton toastStore alertStore commandPaletteStore'],
-  ],
-},
-{
-  id:'css', install:'npm i @frontierjs/css', slug:'css', name:'The design system', realm:'UI · Style', who:'@frontierjs/css',
-  pitch:'Thirty-five semantic terms. Plain CSS, no build step. This site is styled by it.',
-  rows:[
-    { k:'Layers', v:'tokens → themes → tones → base → components → patterns',
-      why:'Cascade layers give an explicit precedence contract, which replaces the usual "do not reorder these imports" comment with something the browser enforces.',
-      r:['import-order conventions','BEM discipline'] },
-    { k:'Override', v:'Your CSS is unlayered, so it always wins',
-      why:'Because every rule in the package sits in a layer, any unlayered rule you write beats it — no specificity war, and no !important.',
-      code:'/* yours, unlayered — wins by definition */\n.btn { border-radius: 0 }',
-      r:['!important','arbitrary-variant escape hatches'] },
-    { k:'Contrast', v:'Fill and text derived together — AA by construction',
-      why:'Text color is computed from the fill\'s own luminance, so any tone in any theme — including a brand color added later — meets AA without being audited.',
-      r:['manual contrast audits','axe passes after the fact'] },
-    { k:'State', v:'From <code>[aria-current]</code> and <code>:user-invalid</code>, never a class',
-      why:'Styling keys off the accessibility state that has to be correct anyway. A tab cannot look selected while telling a screen reader otherwise.',
-      r:['is-active class bookkeeping'] },
-    { k:'Themes', v:'Six, swapped with one class on the root',
-      why:'A theme overrides token values only, so every component follows automatically — no provider, no runtime, no re-render.',
-      r:['CSS-in-JS theme providers'] },
-    { k:'Build', v:'None',
-      why:'Plain CSS files with an import entry point. No compile step, no config, no purge pass, and no build tooling to keep current.',
-      r:['Tailwind + PostCSS pipeline','Sass build'] },
-  ],
-  chips:[
-    ['Frame','app shell topbar sidebar screen pane view'],
-    ['Inline','btn pill badge link chip tooltip avatar kbd icon'],
-    ['Surfaces','card tile alert toast dialog popover drawer'],
-    ['Forms & data','field field-hint switch table tiles facts'],
-    ['Navigation & patterns','tabs breadcrumb pagination navlist steps bar feed disclosure'],
-  ],
-},
-{
-  id:'email-kit', install:'npm i @frontierjs/email-kit', slug:'email-kit', name:'Email kit', realm:'UI · Email', who:'@frontierjs/email-kit',
-  pitch:'An email is a component. The same language, compiled for a worse renderer.',
-  rows:[
-    { k:'Components', v:'Table-based blocks, compiled by the same compiler',
-      why:'An email body is written the way a page is, so a designer moving between the two learns nothing new and the components are testable in a browser.',
-      r:['MJML','react-email','a templating language'] },
-    { k:'Compilation', v:'an <code>email</code> build target inlines styles to attributes',
-      why:'Mail clients strip style blocks, so the compiler puts the styles where they survive rather than asking you to write it that way by hand.',
-      r:['juice','inline styles written by hand'] },
-    { k:'The rest of the message', v:'Plain-text alternative and the subject, from the component',
-      why:'The three things a message needs come out of one file, so a subject cannot drift from the body it belongs to.',
-      r:['a subject string in the calling code'] },
-    { k:'Compatibility', v:'The limits are written down',
-      why:'Outlook’s conditional-comment handling is the fragile part and the package’s docs say so. A compatibility claim nobody has opened in a real client is worth what it cost to write.',
-      r:[] },
-  ],
-},
-{
-  id:'print-kit', install:'npm i @frontierjs/print-kit', slug:'print-kit', name:'Print kit', realm:'UI · Print', who:'@frontierjs/print-kit',
-  pitch:'A document to a PDF, an element to a PNG, in one headless Chrome.',
-  rows:[
-    { k:'Rendering', v:'<code>printer.pdf(html)</code> · <code>printer.png(html, selector)</code>',
-      why:'One Chrome, opened on the first job and reused after. It drives the browser with the same tool the component tests use, so an app that prints adds no second browser driver.',
-      code:"import { createPrinter, printDocument } from '@frontierjs/print-kit'\n\nconst printer = createPrinter()\nconst pdf = await printer.pdf(printDocument({ title, body, css }))\nawait printer.close()",
-      r:['Puppeteer','Playwright','wkhtmltopdf'] },
-    { k:'In an app', v:'<code>app.configure(printer())</code> gives you <code>app.printer</code>',
-      why:'With no Chrome on the machine, the app refuses to start and says why. You find out at boot, not on the first invoice.',
-      r:[] },
-    { k:'Safety', v:'The page runs offline with scripts off',
-      why:'A printed document is built from data somebody else entered. A URL in it cannot make your server fetch anything, and markup in a name runs nothing.',
-      r:['sanitizing every field by hand'] },
-    { k:'Pages', v:'<code>print.css</code> handles page breaks and margins',
-      why:'Every printed document carries it after the app’s own styles, so page groups, break rules and margin boxes are already set up.',
-      r:['Paged.js','print styles written per document'] },
-  ],
-},
-{
-  id:'jetty', install:'npm i @frontierjs/jetty', slug:'jetty', name:'Jetty', realm:'UI · Extension', who:'@frontierjs/jetty',
-  pitch:'A browser extension as a surface of the app, not a second app.',
-  rows:[
-    { k:'A surface', v:'<code>extension/</code> sits beside <code>api/</code> and <code>web/</code>',
-      why:'It earns its own directory because its config, its tests and its release are all different answers — and it reaches the same services with the same client.',
-      code:'$ fli make:extension\n$ fli dev:extension     # MV3, hot-reloaded\n$ fli extension:build',
-      r:['Plasmo','WXT','a hand-rolled MV3 setup'] },
-    { k:'The relay', v:'A service worker carries calls to the API',
-      why:'The adapter is the real client rather than a lookalike, so sign-in, live updates and gating behave exactly as they do in the app.',
-      r:['fetch calls duplicated in the worker'] },
-    { k:'Islands', v:'A content script builds in lib mode',
-      why:'An MV3 content script is a CLASSIC script, so the preload helper a bundler normally writes makes the engine reject the whole file at parse time — before one line of it runs, with nothing at build time saying so.',
-      r:[] },
-    { k:'The store', v:'It remembers the query its rows answer',
-      why:'Nothing else can grade a record that arrives later: without the query, an update belonging to a different filter lands in the list anyway.',
-      r:['a cache keyed by id alone'] },
-    { k:'Permissions', v:'<code>extension:audit</code> grades the manifest',
-      why:'A permission is easy to add while debugging and invisible afterwards, right up until a store review.',
-      r:['reading the manifest before you submit'] },
-  ],
-},
-{
-  id:'toolbelt', install:'npm i @frontierjs/toolbelt', slug:'toolbelt', name:'Toolbelt', realm:'Substrate', who:'@frontierjs/toolbelt',
-  pitch:'The facts that have many possible answers and must have exactly one.',
-  rows:[
-    { k:'Zero dependencies', v:'Substrate below the graph, not a member of it',
-      why:'That is what buys the import licence: because it depends on nothing, every package may import it without inverting the dependency direction the framework is built on.',
-      r:['a shared utils package nobody may depend on'] },
-    { k:'One kit per import', v:'No root entry — you import the kit you need',
-      why:'A grab-bag with one entry point is a package every consumer pulls whole. A subpath per kit means a browser bundle carries the two you used.',
-      code:"import { plural } from '@frontierjs/toolbelt/inflect'\nimport { canAtLevel } from '@frontierjs/toolbelt/gate'",
-      r:['lodash','a utils folder copied between projects'] },
-    { k:'Spelling', v:'<code>/inflect</code> — singular, plural, table, model, human',
-      why:'Three separate resolvers have to agree on what a model is called. One kit is how they do, rather than three regexes that agree until an irregular noun arrives.',
-      r:['pluralize','a naming helper per package'] },
-    { k:'Meaning', v:'<code>/query</code> and <code>/directives</code> — what a query string says',
-      why:'A string is a number only if it round-trips as one; true, false and null are themselves; structure is bracket notation. Three readers agree because there is one table.',
-      r:['qs','a parser per boundary'] },
-    { k:'Time and money', v:'<code>/datetime</code> · <code>/units</code>',
-      why:'An instant read in a zone and written back, with the runtime’s own zone rules; rounding, allocation and currency data that ship rather than being read off the host.',
-      r:['date-fns + a timezone library','dinero.js','Intl called directly'] },
-    { k:'Rules', v:'<code>/gate</code> · <code>/predicate</code> · <code>/match</code> · <code>/signature</code> · <code>/redact</code> · <code>/cron</code>',
-      why:'The access ladder and its grader, the schema expression language, whether a record still belongs in a query, a signed machine-to-machine request, whether a key is a credential, and what five fields mean.',
-      r:['a copy of each, per package'] },
-  ],
-  chips:[
-    ['Kits','inflect gate directives query history match signature redact cron predicate hooks jsonschema json units glow search datetime'],
-  ],
-},
-{
-  id:'testing', install:'npm i -D @frontierjs/testing', slug:'testing', name:'Testing', realm:'Testing · Suite', who:'@frontierjs/testing',
-  pitch:'A real app, a real database, a real port when you want one. Stub nothing but the clock.',
-  rows:[
-    { k:'The environment', v:'A template-cloned database, factories and a standing',
-      why:'Every check the Data layer ships works unchanged here, because they ask the data boundary directly rather than through a mock of it.',
-      code:"const env = await createTestEnv({ schema })\nconst orders = env.as(alice).service('orders')\nawait orders.create({ total: 5 })",
-      r:['supertest + a pile of mocks','testcontainers'] },
-    { k:'Who is calling', v:'<code>env.as(user)</code> binds the principal into every call',
-      why:'With no principal you get STRANGER, which is what an unauthenticated caller actually is — so the unhappy path is the default rather than something you remember to test.',
-      r:['a fake JWT per test'] },
-    { k:'Announcements', v:'<code>env.announced()</code> — what the act broadcast',
-      why:'A mutation that should have announced and did not is invisible to an assertion on the response, and it is exactly what breaks a live client.',
-      r:['spying on the socket'] },
-    { k:'Transport parity', v:'The same call down HTTP and WS, compared',
-      why:'Two real transports grading each other. A service that behaves differently depending on how it was reached is a bug no single-transport suite can see.',
-      r:[] },
-    { k:'A real port', v:'Asked for as zero and read back',
-      why:'For the tests that need an origin — a browser, a webhook, a redirect — without hard-coding a number that collides with the app you left running.',
-      r:['a port constant per suite'] },
-    { k:'Where it sits', v:'Above the API, and imported by nothing',
-      why:'Which is the whole reason it is a separate package: the Data layer’s own test environment cannot mount an app without importing the API layer, and that would invert the dependency direction.',
-      r:[] },
-  ],
-},
-{
-  id:'cli', install:'npm i -g @frontierjs/cli', slug:'fli', name:'fli', realm:'Tooling', who:'@frontierjs/cli',
-  pitch:'Every command is a markdown file. Help text and implementation cannot disagree.',
-  rows:[
-    { k:'Scaffold', v:'<code>project:new</code> · <code>make:model</code> <code>:service</code> <code>:resource</code> <code>:route</code>',
-      why:'Generators append to the schema you already have rather than dropping a pile of boilerplate, so the seed stays the single source after generation.',
-      code:'$ fli make:model Invoice\n  ✓ appended to db/schema.lite\n  ✓ api/src/services/invoices.ts\n  ✓ src/routes/invoices/',
-      r:['Yeoman','Plop','Hygen'] },
-    { k:'Data', v:'<code>db:migrate</code> <code>:status</code> <code>:studio</code> <code>:seed</code> <code>:backup</code>',
-      why:'The whole data lifecycle in one namespace — diff and apply migrations, check for drift, browse rows, seed fixtures and take backups.',
-      r:['prisma CLI','knex CLI','ad-hoc scripts'] },
-    { k:'Run', v:'<code>ports:claim</code> claims a port session per project',
-      why:'A broker assigns and remembers ports per project, so two apps on one machine never collide and the URLs are stable between restarts.',
-      code:'$ fli ports:claim\n  api → http://localhost:3200\n  web → http://localhost:5173',
-      r:['concurrently','manual PORT juggling'] },
-    { k:'Ship', v:'<code>deploy</code> infers the environment from your git branch',
-      why:'Build, upload, migrate and cut over in one command, with the target derived from the branch you are on rather than a flag you have to remember.',
-      r:['bespoke shell scripts','hand-written CI deploy jobs'] },
-    { k:'Recover', v:'<code>deploy:rollback</code> · <code>:status</code> · <code>:logs</code> · <code>:doctor</code>',
-      why:'Releases are versioned, so going back is a command. Status reports what is actually running, and doctor checks the target before you find out the hard way.',
-      r:['manual SSH and symlink swaps'] },
-    { k:'Secrets', v:'<code>env:set</code> <code>:get</code> <code>:list</code> <code>:pull</code>, per environment',
-      why:'Environment values are managed per environment and never committed, with pull to bring them down and copy to promote between environments.',
-      r:['dotenv-vault','copying .env files by hand'] },
-    { k:'Monorepo', v:'<code>workspace:</code> link · graph · version · publish',
-      why:'Workspace commands for linking packages, viewing the dependency graph, versioning together and publishing — without adding another build orchestrator.',
-      r:['Lerna','Changesets','Nx'] },
-    { k:'Extend', v:'<code>make:command</code> writes a new markdown command',
-      why:'Frontmatter declares flags, arguments and examples; the body is the script. Your team\'s operational knowledge becomes readable files instead of tribal npm scripts.',
-      code:'--- commands/reports/weekly.md ---\ntitle: reports:weekly\nflags:\n  since: { type: string, defaultValue: 7d }\n---',
-      r:['npm scripts + a README that drifts'] },
-  ],
-},
-{
-  id:'create', install:'npm create frontier@' + range('create-frontier') + ' my-app', slug:'create-frontier', name:'create-frontier', realm:'Tooling', who:'create-frontier',
-  pitch:'The front door, and nothing else — it resolves the CLI and runs it.',
-  rows:[
-    { k:'One implementation', v:'It resolves <code>@frontierjs/cli</code> and runs <code>fli new</code>',
-      why:'What a new app looks like is written once, in the CLI. A create package with a scaffolder of its own is a second answer that drifts from the first release onward.',
-      r:['create-next-app','create-vite'] },
-    { k:'Where it lands', v:'The target directory is pinned, not searched for',
-      why:'fli walks UP to find a project root, which is right when you are inside an app and wrong when npm create runs you inside an existing repo — without the pin the scaffold lands in that repo’s root.',
-      r:[] },
-    { k:'Pass-through', v:'Arguments are forwarded untouched',
-      why:'Every flag the scaffolder has works here on the day it is added, because this package does not know what they are.',
-      r:['a wrapper that lists flags and forgets one'] },
-  ],
-},
-{
-  id:'config', install:'npm i -D @frontierjs/config', slug:'config', name:'The tooling opinion', realm:'Tooling', who:'@frontierjs/config',
-  pitch:'tsconfig, biome and editorconfig as a dependency — never as a copy.',
-  rows:[
-    { k:'Extend, don’t copy', v:'One line in your <code>tsconfig.json</code>',
-      why:'A copied config is frozen at the moment it was written. A dependency moves when the framework does, which is the entire difference between a template and a package.',
-      code:'{ "extends": "@frontierjs/config/tsconfig" }',
-      r:['a config pasted from a starter'] },
-    { k:'No formatter', v:'Linter only, and the refusal is measured',
-      why:'This house aligns columns and no formatter can express that. The code the scaffolder writes is aligned, so the first format run would rewrite the app the scaffold had just produced.',
-      r:['Prettier','dprint'] },
-    { k:'The boundary', v:'A linter owns generic JavaScript',
-      why:'It reads neither .mesa nor .lite, on purpose: everything derived from the seed is graded by the framework’s own checks, which can see the schema the linter cannot.',
-      r:['ESLint plugins that parse your DSL'] },
-  ],
-},
-{
-  id:'basecamp', install:'git clone frontierjs/basecamp && bun run dev', slug:'basecamp', name:'Basecamp', realm:'Control plane', who:'@frontierjs/basecamp',
-  pitch:'The app for managing your apps — and itself a FrontierJS app.',
-  rows:[
-    { k:'Releases', v:'What is deployed where, and one button to undo it',
-      why:'Every environment, its current release, what changed since the last one, and a rollback that does not require finding the right host first.',
-      r:['deploy dashboards','SSH sessions'] },
-    { k:'Migrations', v:'Applied, pending and drifted, per environment',
-      why:'Read from each app\'s own manifest endpoint, so drift between the schema in your repo and the database in production is visible before it bites.',
-      r:['running migrate status by hand on each host'] },
-    { k:'Jobs', v:'Queues across every app — in flight, failed, retry',
-      why:'One view over every Caravan queue you run, with failures and their reasons, and retries triggered from here.',
-      r:['Bull Board','Agendash'] },
-    { k:'Audit', v:'Every trail, searchable by model, actor and window',
-      why:'The @@trail(audit) trails from all your apps in one place, so answering "who changed this record" does not start with a database console.',
-      r:['log aggregation queries'] },
-    { k:'Egress', v:"Each app's declared targets — everything it can reach",
-      why:'Because Conduit targets are declared, the complete outbound surface of an application is a list rather than an audit. Useful for review, and for self-hosters who want to know.',
-      r:['reading the source to find fetch calls'] },
-    { k:'Tenants', v:'Registries, sizes, migration state, and a way in',
-      why:'Database-per-tenant means many databases. This is the list, their sizes, whether each is migrated, and a route into any one of them.',
-      r:['bespoke admin scripts'] },
-    { k:'Health', v:'Liveness and metrics, including plugin-contributed',
-      why:'Every app exposes /health and /metrics, and plugins add their own providers — so a new battery appears here with no configuration.',
-      r:['Grafana dashboards','uptime checkers'] },
-    { k:'Live', v:'Over the same channels your apps use — not polling',
-      why:'Basecamp subscribes the way any client does. It is a demonstration that the realtime layer works, because it is the thing depending on it.',
-      r:['polling dashboards'] },
-  ],
-},
-{
-  id:'workbench', install:'fli desktop:install  # from a FrontierJS checkout — private, never published', slug:'workbench', name:'Workbench', realm:'Tooling · Laptop', who:'@frontierjs/workbench',
-  pitch:'Basecamp runs your servers. Workbench runs the machine you build on — and it is a FrontierJS app too.',
-  rows:[
-    { k:'Chats', v:'A Claude Code chat per pinned checkout',
-      why:'Each repo you pin has its own chats, and the ~/.claude history is indexed into the app\'s own database, so last week\'s conversation is a row you open rather than a file you dig for.',
-      r:['one terminal tab per repo','grepping ~/.claude by hand'] },
-    { k:'Atlas', v:'Issues, open questions and rulings, read and ruled on',
-      why:'The project\'s registers rendered as one screen, with Claude beside it to talk an item through. Decide shows the open questions one card at a time: swipe to rule.',
-      r:['reading markdown registers in an editor'] },
-    { k:'Autopilot', v:'The project\'s loops as a town',
-      why:'Lanes, the Dock, the Switch and a replay of the day, so seeing what your agents did overnight means opening one page rather than reading their logs.',
-      r:['tailing logs','a tmux session per loop'] },
-    { k:'Terminal', v:'A shell in your home folder that outlives the tab',
-      why:'Close the browser and the session keeps running; open it again and you are back where you were.',
-      r:['tmux','screen'] },
-    { k:'Fleet view', v:'Basecamps · Servers · Charter',
-      why:'Every Basecamp this laptop made, whether it answers, plus Back up now and Restart. Servers lists the machines your Hetzner and DigitalOcean tokens reach; it only lists and verifies them, and each token is stored encrypted and guarded.',
-      r:['provider consoles in four tabs'] },
-    { k:'Laptop', v:'fli\'s own files on this machine — disk, keys, what is running',
-      why:'A secret never leaves the API. The page gets presence, mode and a masked key, and a probe like gh auth status runs only when you press Check.',
-      r:['ls ~/.config and hoping'] },
-    { k:'Notifications', v:'An in-app bell, plus a push to your phone',
-      why:'Built on @frontierjs/notifications with ntfy as the push transport. Autopilot can ask for a ruling on your phone and act on the button you tap.',
-      r:['a Slack bot you wrote for yourself'] },
-    { k:'Peering', v:'A signed call to Basecamp, never an import',
-      why:'The laptop holds an Ed25519 key that Basecamp enrolls as a peer. Neither package imports the other, so the only thing that crosses between them is a request Basecamp can verify.',
-      r:['a shared admin token','SSH from the laptop'] },
-    { k:'Loopback only', v:'Binds 127.0.0.1, signs in with one pass-phrase',
-      why:'It can start a shell and spawn claude on the machine it runs on, so it is a laptop tool and never a hosted service. Production mode refuses the dev pass-phrase.',
-      r:[] },
-    { k:'Desktop', v:'The same <code>web/</code> in a Tauri window',
-      why:'The browser app bundled into a native shell and added to your launcher. Clicking it starts the API if nothing is answering yet.',
-      code:'$ fli desktop:install   # add it to the app launcher\n$ fli desktop:run       # build, start the API, open the window',
-      r:['Electron wrappers','a pinned browser tab'] },
-  ],
-},
-{
-  id:'editor', install:'bun run package  # build the .vsix — not on the marketplace yet', slug:'vscode', name:'Editor support', realm:'Tooling', who:'vscode-frontierjs',
-  pitch:'The seed is as pleasant to write as the code it produces.',
-  rows:[
-    { k:'Diagnostics', v:'Errors as you type, from the parser the runtime uses',
-      why:'The extension runs the same parser the framework runs, so the editor cannot tell you something is fine that the build will reject.',
-      r:['finding schema errors at runtime'] },
-    { k:'Completions', v:'Types, attributes, functions, and every model in scope',
-      why:'Field types, @attributes, @@model-attributes and your own schema functions — including models pulled in through schema imports.',
-      r:['memorizing attribute names'] },
-    { k:'Hover', v:'Attribute and type docs, model and function signatures',
-      why:'What an attribute does and what it takes, in the file, without a documentation tab.',
-      r:['tab-switching to docs'] },
-    { k:'Go to def', v:'Model references and function calls, across imported files',
-      why:'Jump from a relation to the model it points at, or from a function call to its block, following schema imports across files.',
-      r:['project-wide text search'] },
-    { k:'Format', v:'Aligned field columns, on command or on save',
-      why:'Canonical formatting for schema files, so aligned columns are automatic rather than something reviewers ask for.',
-      r:['manual alignment','formatting nits in review'] },
-    { k:'Mesa', v:'Markup, script, style, directives and interpolation',
-      why:'Component files highlight correctly across all three regions, including block directives and interpolation inside markup.',
-      r:['plain-text component files'] },
-  ],
-},
-{
-  id:'outpost', install:'npm i @frontierjs/outpost', slug:'outpost', name:'Outpost', realm:'Ops · Fleet', who:'@frontierjs/outpost',
-  pitch:'The process on the machine. A control plane’s hands, with a signature on every one of them.',
-  rows:[
-    { k:'Signed by default', v:'Every route but unsigned liveness requires a signature',
-      why:'One of these routes runs a shell command as the process’s user, so refuse is the default and a route opts out rather than in.',
-      r:['an agent behind a firewall rule'] },
-    { k:'The verbs', v:'pull · deploy · stop · health-check · exec · logs · prune',
-      why:'The route table is read off the control plane’s own engines rather than invented here, so a verb it can ask for is a verb this answers.',
-      r:['SSH plus a pile of shell scripts'] },
-    { k:'Injectable runner', v:'The thing that touches Docker is a parameter',
-      why:'Which is what makes the package testable with no daemon and no network, and lets the control plane’s own drive run the REAL server over a fake machine.',
-      r:['tests that need a docker socket'] },
-    { k:'Digests', v:'It builds on the target and answers what it built',
-      why:'The digest comes back from the machine that produced it, so what is running is identified by content rather than by a tag someone may have moved.',
-      r:['latest tags','trusting the registry'] },
-  ],
-},
+  {
+    id: 'litestone',
+    install: 'npm i @frontierjs/litestone',
+    slug: 'litestone',
+    name: 'Litestone',
+    realm: 'Data · Model',
+    who: '@frontierjs/litestone',
+    pitch: 'Authorization is part of the data definition, not a layer above it.',
+    rows: [
+      {
+        k: 'Shape',
+        v: 'Models · enums · relations · reusable functions',
+        why: 'One declarative file describes your data. Functions are reusable expressions you can call from defaults and policies, so logic lives beside the data it governs.',
+        code: 'model Invoice {\n  id      Int    @id\n  total   Float  @gte(0)\n  ownerId Int\n  owner   User   @relation(ownerId)\n}',
+        r: ['Prisma schema', 'Drizzle schema', 'TypeORM entities']
+      },
+      {
+        k: 'Types',
+        v: '<code>Int String Float Bool DateTime Json Bytes</code>',
+        why: 'Seven scalars, mapped to SQLite storage classes and to TypeScript. Optionality is a trailing ? and it means the same thing in the database, the API and the editor.',
+        r: []
+      },
+      {
+        k: 'Access',
+        v: 'Gates on a 0–9 scale · policies compiled into <code>WHERE</code>',
+        why: 'A gate grades each operation against a trust level. A policy is a row predicate compiled into the query itself — so there is no code path that can forget to apply it.',
+        code: '@@gate(0.4.4.5)            // read.create.update.delete\n@@allow(read, ownerId == auth().id)\n\n-- every read becomes:\nSELECT * FROM invoices WHERE ownerId = ?',
+        r: ['CASL', 'Oso', 'Postgres RLS', 'hand-rolled middleware']
+      },
+      {
+        k: 'Fields',
+        v: '<code>@guarded</code> · <code>@secret</code> · <code>@encrypted</code> at rest',
+        why: 'Field-level protection travels with the field. Guarded fields never leave the data layer, secrets are redacted from logs and responses, and encrypted fields are ciphertext on disk.',
+        r: ['manual redaction helpers', 'field-encryption libraries']
+      },
+      {
+        k: 'Lifecycle',
+        v: 'Defaults · transforms · <code>@updatedAt</code> · soft delete',
+        why: "What happens automatically over a row's life, declared once. Transforms like @trim and @lower run on the way in, so the database never holds the unnormalized version.",
+        code: 'email     String   @email @lower @trim\nupdatedAt DateTime @updatedAt\ndeletedAt DateTime?          // soft delete',
+        r: ['ORM lifecycle hooks', 'paranoid / soft-delete plugins']
+      },
+      {
+        k: 'Audit',
+        v: '<code>@@trail(audit)</code>, per model',
+        why: 'Mark a model and every write is recorded with the actor, the operation and the before/after. No decorator on every mutation, no forgetting the one that matters.',
+        r: ['audit-trail libraries', 'database triggers', 'temporal tables']
+      },
+      {
+        k: 'Querying',
+        v: 'Relations · cursor pagination · transactions · <code>$raw</code>',
+        why: 'A full query API with nested reads, aggregates, windowing and distinct — plus a documented raw escape hatch for the cases a builder should not try to own.',
+        code: "await db.invoice.findMany({\n  where:   { total: { gte: 500 }, owner: { is: { active: true } } },\n  orderBy: { createdAt: 'desc' },\n  cursor:  { id: 120 },\n  take:    20,\n})",
+        r: ['Knex', 'Kysely', 'raw SQL scattered in handlers']
+      },
+      {
+        k: 'Multi-db',
+        v: '<code>@@db(name)</code> · database-per-tenant registries',
+        why: 'Route models to separate databases from the schema, and get database-per-tenant isolation from one accessor rather than a connection-juggling layer of your own.',
+        r: ['manual connection routing', 'per-tenant connection pools']
+      },
+      {
+        k: 'External',
+        v: "<code>@@external</code> mirrors tables you don't own",
+        why: 'Describe a table another system owns and query it with the same client. Migrations leave it alone, so you get typed reads without claiming responsibility for the schema.',
+        r: ['a second read-only ORM client']
+      },
+      {
+        k: 'Migrations',
+        v: 'Diffed from the schema as reviewable SQL',
+        why: 'Change the schema, and the diff against the live database becomes a migration file you read before applying. Drift between file and database is a command, not a surprise.',
+        code: '$ fli db:migrate\n  + ALTER TABLE invoices ADD COLUMN company TEXT\n  ✓ migrations/0002_company.sql applied\n\n$ fli db:status\n  ✓ live database matches the schema',
+        r: ['Prisma Migrate', 'Knex migrations', 'Flyway', 'hand-written SQL']
+      },
+      {
+        k: 'Generates',
+        v: 'TypeScript declarations · JSON Schema',
+        why: 'The same file emits types for your editor and JSON Schema for validation and the browser — so the three can never describe different shapes.',
+        code: '$ litestone types ./types.d.ts --audience=client\n\ninterface Invoice       { id: number; total: number }\ninterface InvoiceCreate { total: number }',
+        r: ['openapi-typescript', 'zod-to-ts', 'orval', 'hand-written types']
+      },
+      {
+        k: 'Tooling',
+        v: 'Litestone Studio · REPL · doctor · seed · backup',
+        why: 'A local web UI over your data, an interactive shell against the live client, a health check for your setup, and seeding and backup as first-class commands.',
+        r: ['Prisma Studio', 'TablePlus', 'ad-hoc scripts']
+      }
+    ]
+  },
+  {
+    id: 'junction',
+    install: 'npm i @frontierjs/junction',
+    slug: 'junction',
+    name: 'Junction',
+    realm: 'API · Service',
+    who: '@frontierjs/junction',
+    pitch: 'Name a model and its CRUD, validation and authorization come with it.',
+    rows: [
+      {
+        k: 'Services',
+        v: 'Five methods plus named actions',
+        why: 'A service is the unit, not a route. It exposes find, get, create, patch and remove, plus any custom action — callable over HTTP, over WebSocket, or in-process.',
+        code: "createService({ name: 'invoices', model: 'invoice',\n  async markPaid(ctx) { … },\n})\n\n// same service, three ways in:\nGET /api/invoices\nws  { service: 'invoices', method: 'find' }\napp.service('invoices').call('markPaid', id)",
+        r: ['Express routers', 'Fastify plugins', 'NestJS controllers']
+      },
+      {
+        k: 'Hooks',
+        v: '<code>around</code> · <code>before</code> · <code>after</code> · <code>error</code>',
+        why: 'Four phases, per method or for all of them, at app or service level. around wraps everything including failures, which is where timing and tracing belong.',
+        code: 'hooks: {\n  around: { all:    [timing] },\n  before: { create: [setOwner] },\n  after:  { create: [broadcast] },\n  error:  { all:    [report] },\n}',
+        r: ['Express middleware', 'Fastify hooks', 'NestJS interceptors']
+      },
+      {
+        k: 'Context',
+        v: 'One shape: auth · client · route · locals · query',
+        why: 'Every hook and every method receives the same object, with the caller, the parsed query, the result and the error in known places — not a request object you decorate by convention.',
+        r: ['req/res + res.locals conventions']
+      },
+      {
+        k: 'Envelope',
+        v: 'Lists keep <code>{ data, total }</code>; singles unwrap',
+        why: 'One module decides the response shape for the entire framework, so pagination metadata is always in the same place and a single record is never wrapped for no reason.',
+        code: 'GET /api/invoices     → { object: "list", data: [...], total: 17 }\nGET /api/invoices/8   → { id: 8, total: 500 }',
+        r: ['hand-rolled response wrappers']
+      },
+      {
+        k: 'Transport',
+        v: 'HTTP and WebSocket over one bridge',
+        why: 'Both protocols enter through the same boundary and produce the same Context, so a service does not know or care which one a caller used.',
+        r: ['Express + Socket.IO wired separately']
+      },
+      {
+        k: 'Directives',
+        v: '<code>$limit $offset $orderBy $select</code>, parsed at the edge',
+        why: 'Result shaping is transport syntax, split from filters once at the boundary. Past that line nothing sees a $ — services receive clean filters and a directives object.',
+        code: 'GET /api/invoices?status=open&$limit=20&$orderBy=-createdAt\n\nctx.query      → { status: "open" }\nctx.directives → { limit: 20, orderBy: "-createdAt" }',
+        r: ['query-string parsers', 'manual pagination plumbing']
+      },
+      {
+        k: 'Security',
+        v: 'CORS · CSRF · headers · rate limiting',
+        why: 'The usual middleware stack, configured rather than assembled, and ordered correctly by default — preflights short-circuit before CSRF, which is easy to get wrong by hand.',
+        r: ['helmet', 'cors', 'csurf', 'express-rate-limit']
+      },
+      {
+        k: 'Channels',
+        v: 'One announcement, two fan-outs, gated on the way out',
+        why: 'Declare channel: on a service and every mutation announces once, reaching both the event bus and WebSocket subscribers. Gates still apply, so nobody is pushed a row they could not fetch.',
+        code: "createService({ name: 'invoices', channel: 'invoices' })\n\n// subscribers receive:\n{ type: 'invoices created', data: { id: 9 } }",
+        r: ['Socket.IO rooms + manual emit calls']
+      },
+      {
+        k: 'Errors',
+        v: 'Named classes; data denials normalize into them',
+        why: 'Throw BadRequest or NotFound anywhere and the transport serializes it correctly. A data-layer denial becomes a 403 with the same shape, so clients match one contract.',
+        r: ['http-errors', 'Boom', 'ad-hoc error middleware']
+      },
+      {
+        k: 'Client',
+        v: 'Typed resources and live subscriptions in the browser',
+        why: 'The same service API from the other side of the wire, including subscriptions and session handling — not a fetch wrapper you maintain alongside the server.',
+        r: ['axios wrappers', 'generated API clients']
+      },
+      {
+        k: 'Testing',
+        v: 'Real apps, real pipelines, no port binding',
+        why: 'Boot an app in-process, send real requests through the full hook pipeline, and stub only auth. Tests exercise the code that runs in production.',
+        code: "const app = await createTestApp({ db, auth: createStubAuth() })\nawait request(app).post('/api/invoices').send({ total: 5 })",
+        r: ['supertest + mock layers']
+      }
+    ]
+  },
+  {
+    id: 'auth',
+    install: 'npm i @frontierjs/auth',
+    slug: 'auth',
+    name: 'Auth',
+    realm: 'API · Identity',
+    who: '@frontierjs/auth',
+    pitch: 'A route establishes a session. Everything after it is an ordinary service.',
+    rows: [
+      {
+        k: 'Sessions',
+        v: 'Register · login · logout · password reset · email verify',
+        why: 'Login cannot be gated by login, so these five are raw routes and always will be. Everything past that line is a service with the normal pipeline over it.',
+        r: ['Auth.js', 'Lucia', 'Passport', 'Clerk']
+      },
+      {
+        k: 'Cookies',
+        v: '<code>cookieAuth: true</code> authenticates end to end',
+        why: 'One session works for a fetch, for a browser navigation and for an OAuth callback — which is a redirect, and cannot carry a bearer header.',
+        r: ['session middleware beside a second token scheme']
+      },
+      {
+        k: 'OAuth',
+        v: 'The flow engine is split from the transport',
+        why: 'Building the URL, trading the code and normalizing the identity are one module with no HTTP, no database and no session in it. The plugin owns the routes; the provider list is data.',
+        r: ['Passport strategies']
+      },
+      {
+        k: 'Two-factor',
+        v: 'TOTP, base32 and recovery codes — clockless',
+        why: 'RFC 6238 with the instant as a parameter rather than a read of the clock, so a code is testable and a drifting device is a value you pass in.',
+        r: ['otplib wired by hand', 'speakeasy']
+      },
+      {
+        k: 'Services',
+        v: '<code>account</code> · <code>sessions</code> · <code>api-keys</code>',
+        why: 'What a signed-in person does next is not a route. Three ordinary services, gated like everything else, so there is no second authorization story for account management.',
+        r: ['bespoke /me endpoints']
+      },
+      {
+        k: 'Schema',
+        v: 'Two <code>.lite</code> files, split by who owns them',
+        why: 'User is appended into your own schema so you can edit it; the machinery models are imported, so an upgrade reaches an installed app. extend model adjusts them at your end rather than by pasting.',
+        code: 'extend model User {\n  company String?\n}',
+        r: ['copy-pasted auth tables', 'a migration you own forever']
+      },
+      {
+        k: 'Hooks',
+        v: 'Four awaited callbacks; a throw refuses the call',
+        why: 'Each one runs BEFORE the thing it can refuse, so declining a registration is returning early rather than undoing a write.',
+        r: ['after-the-fact event listeners']
+      }
+    ]
+  },
+  {
+    id: 'caravan',
+    install: 'npm i @frontierjs/caravan',
+    slug: 'caravan',
+    name: 'Caravan',
+    realm: 'API · Jobs',
+    who: '@frontierjs/caravan',
+    pitch: 'Background work in the database you already have. No second service to run.',
+    rows: [
+      {
+        k: 'Queue',
+        v: 'SQLite job queue and cron on <code>app.jobs</code>',
+        why: 'Queues, retries and exponential backoff in the same database as everything else — so local development, CI and a single-box deployment all run the real thing.',
+        r: ['BullMQ + Redis', 'Agenda', 'node-cron']
+      },
+      {
+        k: 'Declaration',
+        v: 'The file names the job, and the file is the whole of it',
+        why: 'send-email.job.ts is send-email. A defineJob naming anything else is refused at load rather than registered, because a handler answering to send-emial while every dispatch says send-email never runs and never says so.',
+        code: "export default defineJob({\n  handler: async ({ data }) => { await mail.send(data) },\n  queue: 'mail',\n  maxAttempts: 5,\n})",
+        r: ['a registry file listing every job']
+      },
+      {
+        k: 'Recurring',
+        v: '<code>cron</code> is an option on the handler, not a second system',
+        why: 'A job file declares its own schedule, so moving the file moves the schedule. A name is one schedule — registering it twice replaces, where two entries used to fire the job twice a minute.',
+        r: ['node-cron tables', 'a crontab on the host']
+      },
+      {
+        k: 'Idempotency',
+        v: '<code>dispatch({ id })</code> is a no-op for all time',
+        why: 'A stated id is the jobs table’s primary key, so the same dispatch can never run twice — where a unique key frees itself the moment the job goes terminal.',
+        r: ['dedupe keys with a TTL']
+      },
+      {
+        k: 'Identity',
+        v: 'A job runs as whoever asked for it',
+        why: 'The principal travels with the dispatch, so a queued write is gated exactly as the request that queued it would have been. Background work is not a hole in the access model.',
+        r: ['a service account every job shares']
+      },
+      {
+        k: 'Recovery',
+        v: 'Heartbeats, crash resume, two instances on one queue',
+        why: 'A running row carries the id of the instance holding it and that instance heartbeats, so a worker killed mid-job is replaced rather than leaving the job claimed forever.',
+        r: ['a stuck-job cleanup script']
+      },
+      {
+        k: 'Operator',
+        v: '<code>caravan queue …</code> from a shell, JSON out',
+        why: 'The verbs an operator needs are a binary, not an admin page — which is what a paused deploy runs inside the serving container.',
+        r: ['Bull Board', 'a psql session']
+      }
+    ]
+  },
+  {
+    id: 'conduit',
+    install: 'npm i @frontierjs/conduit',
+    slug: 'conduit',
+    name: 'Conduit',
+    realm: 'API · Integrations',
+    who: '@frontierjs/conduit',
+    pitch: 'Every third party an app talks to, declared in one place.',
+    rows: [
+      {
+        k: 'Targets',
+        v: 'A counterparty is named once — credential, policy and all',
+        why: 'Because targets are declared, an application’s entire outbound surface is a list rather than an audit. Useful in review, and to anyone self-hosting who wants to know what the process can reach.',
+        r: ['scattered fetch calls', 'a per-vendor HTTP client each']
+      },
+      {
+        k: 'Receivers',
+        v: 'The route a Provider calls you on, declared beside its Target',
+        why: 'A connector exports how the vendor signs, the app says which key verifies and what to do, conduit runs the order and keeps the receipt — so a redelivery is a duplicate only once the first was applied, and a throw hands the sender a clean retry.',
+        r: ['a raw webhook route per vendor', 'an inbound-events table per app']
+      },
+      {
+        k: 'Policy',
+        v: 'Seven numbers per target, falling back field by field',
+        why: 'One conduit carries a card processor, a mail sink and a health probe. One set of timeouts and retries fits none of them, so each target states its own and inherits the rest.',
+        r: ['one global axios instance']
+      },
+      {
+        k: 'Encoding',
+        v: '<code>json</code> or <code>form</code>, decided in the transport',
+        why: 'The raw body is the same string the auth headers are built over, so an encoder living in a caller or a connector signs bytes that were never sent.',
+        r: ['hand-built form bodies beside a signer']
+      },
+      {
+        k: 'Signing',
+        v: 'Method, path, timestamp, nonce and a hash of the body',
+        why: 'A captured signature cannot be replayed, moved to another endpoint, or kept while the body is swapped underneath it. The same module verifies on the far side.',
+        r: ['a bespoke HMAC helper per integration']
+      },
+      {
+        k: 'Strictness',
+        v: 'An unknown field on a descriptor is refused by name',
+        why: 'Dropped silently is how a mistyped timeout becomes a production default that nobody can find.',
+        r: ['config objects with loose shapes']
+      },
+      {
+        k: 'Observers',
+        v: 'Callbacks that receive and cannot act',
+        why: 'A throw in one is swallowed, so the word on the option says the tier: these observe. The management pipeline keeps the word hook, because that one can refuse the call.',
+        r: ['event emitters whose failures vanish']
+      },
+      {
+        k: 'Not a wall',
+        v: 'Conduit is where an outbound call belongs — not a boundary around the process',
+        why: 'Nothing here blocks a raw fetch, and two batteries dial out directly on purpose. A contract with a working default is what keeps this package optional.',
+        r: []
+      }
+    ]
+  },
+  {
+    id: 'notifications',
+    install: 'npm i @frontierjs/notifications',
+    slug: 'notifications',
+    name: 'Notifications',
+    realm: 'API · Slice',
+    who: '@frontierjs/notifications',
+    pitch: 'One call fans out to a record, a live event and an email.',
+    rows: [
+      {
+        k: 'Definition',
+        v: 'A notification is a file, and the file names it',
+        why: 'OrderPaid.notification.ts is OrderPaid — the same rule job files already follow, so there is no registry to keep in step with the filesystem.',
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the text is emitted into a template literal
+        code: "export default defineNotification({\n  via:    (p) => p.total > 100 ? ['inApp', 'email'] : ['inApp'],\n  format: async (p) => ({ title: `Order ${p.id} paid` }),\n})",
+        r: ['Novu', 'Courier', 'a hand-rolled fan-out']
+      },
+      {
+        k: 'Fan-out',
+        v: '<code>app.notify</code> → in-app record, WebSocket event, email',
+        why: 'One send reaches every transport the definition asked for, and the in-app record is a row like any other — queryable, gated, and readable back.',
+        r: ['three separate send calls']
+      },
+      {
+        k: 'The type is persisted',
+        v: '<code>type:</code> holds the name still',
+        why: 'The type is a column the browser reads to pick a renderer, so renaming the file orphans every existing row. State it and the file is free to move; a divergence is warned about.',
+        r: []
+      },
+      {
+        k: 'Recipient',
+        v: 'The unit of address is a Recipient, not a User',
+        why: 'A notification can reach an address that was never an account — an invitee, a webhook, a shared inbox — without inventing a user row to hold it.',
+        r: ['a nullable user on every notification']
+      },
+      {
+        k: 'Transports',
+        v: 'inApp and email, plus drivers of your own',
+        why: 'A transport is a delivery medium, kept separate from the broadcast set a WebSocket subscriber joins — two things one word usually covers.',
+        r: ['per-medium send helpers']
+      },
+      {
+        k: 'Introspection',
+        v: '<code>app.notifications</code> answers what this app can send',
+        why: 'Formatters may be async and take the payload rather than closing over it, so the catalog can be listed with nothing actually sent.',
+        r: ['reading the source to find out']
+      }
+    ]
+  },
+  {
+    id: 'mcp',
+    install: 'npm i @frontierjs/mcp',
+    slug: 'mcp',
+    name: 'MCP',
+    realm: 'API · Agent',
+    who: '@frontierjs/mcp',
+    pitch:
+      'An MCP endpoint over the app you are already running, with the gate as the permission model.',
+    rows: [
+      {
+        k: 'Mounting',
+        v: 'One plugin, inside the running API',
+        why: 'Stdio would have to boot the app a second time — a second job worker, a second migration check, and an event bus no browser tab is on. Mounted, a tool call is one more caller of the process that is already serving.',
+        code: "import { mcp } from '@frontierjs/mcp'\n\napp.configure(mcp())   // POST/GET/DELETE at {apiPrefix}/mcp",
+        r: ['a separate MCP server process']
+      },
+      {
+        k: 'Scoping',
+        v: 'Tools are computed per standing, not described in a prompt',
+        why: 'What an agent may do is the gate it is already graded by. A stranger sees a stranger’s tools; a prompt can be talked out of a rule, and the database layer cannot.',
+        r: ['a system prompt listing what not to touch']
+      },
+      {
+        k: 'One path',
+        v: 'A tool call goes through <code>app.service(name)</code>',
+        why: 'The same hooks, transaction and announcement an HTTP or WebSocket call gets, so nothing an agent does is invisible to a browser watching the same rows.',
+        r: ['tool handlers that call the database directly']
+      },
+      {
+        k: 'Arguments',
+        v: 'The schema the browser already gets',
+        why: 'Each tool’s input is the client-audience JSON Schema, and no call through this package can ask for the system audience — so a protected column cannot reach a tool description.',
+        r: ['hand-written tool schemas']
+      },
+      {
+        k: 'Stateless',
+        v: 'Nothing is kept between two requests',
+        why: 'The projection is rebuilt at the caller’s standing on every request, so nothing an agent was shown outlives a sign-out.',
+        r: []
+      }
+    ]
+  },
+  {
+    id: 'orion',
+    install: 'npm i @frontierjs/orion',
+    slug: 'orion',
+    name: 'Orion',
+    realm: 'API · Automations',
+    who: '@frontierjs/orion',
+    pitch:
+      'Automations that run inside your app, against your schema, refused by your gates.',
+    rows: [
+      {
+        k: 'Installing',
+        v: 'A schema import and one plugin',
+        why: 'Flows, versions and runs are declared models with real gates, so they are data in your database rather than rows in somebody else’s.',
+        code: '// db/schema.lite\nimport "@frontierjs/orion/orion.lite"\n\n// api\nimport { orion } from \'@frontierjs/orion\'\napp.configure(orion())',
+        r: ['Zapier', 'n8n', 'a hosted workflow service']
+      },
+      {
+        k: 'Flows',
+        v: 'Triggers, conditions and actions',
+        why: 'A trigger is a model write, a cron schedule, a webhook or a manual run. An action creates or patches a model, calls a service, makes an HTTP request or sends a notification. All of them are nouns the app already has.',
+        r: ['webhook glue code']
+      },
+      {
+        k: 'Access',
+        v: 'A flow runs as its owner',
+        why: 'Every step goes through the same gates a person does. A flow cannot read or write anything its owner could not, and run history redacts protected fields the way the audit trail does.',
+        r: ['a service account with every permission']
+      },
+      {
+        k: 'Durability',
+        v: 'Runs on the job queue and survives a crash',
+        why: 'The run is checkpointed once per stage, so a worker killed mid-run is replaced by another that finishes without repeating the finished stages. A wait can last days and resumes once.',
+        r: ['Temporal', 'Inngest', 'a cron job and a status column']
+      },
+      {
+        k: 'Screens',
+        v: 'Flows, runs and credentials, mounted by one file',
+        why: 'The builder and the run inspector are components from the same kit as the rest of the app. Each node’s settings form is built from its schema, so a node you add gets a form too.',
+        r: []
+      }
+    ]
+  },
+  {
+    id: 'sierra',
+    install: 'npm i @frontierjs/sierra',
+    slug: 'sierra',
+    name: 'Sierra',
+    realm: 'UI · Resource',
+    who: '@frontierjs/sierra',
+    pitch: 'Your file tree is the route table. A Resource is a service, made reactive.',
+    rows: [
+      {
+        k: 'Routing',
+        v: 'File tree · dynamic · catch-all · layouts · groups',
+        why: 'Routes come from the filesystem, so the URL structure and the folder structure cannot drift. Layouts nest by directory and groups organize without affecting the path.',
+        code: 'src/routes/invoices/index.mesa   → /invoices\nsrc/routes/invoices/[id].mesa    → /invoices/42\nsrc/routes/[...404].mesa         → anything else\nsrc/routes/_module.mesa          → the layout',
+        r: ['React Router config', 'TanStack Router', 'Next app directory']
+      },
+      {
+        k: 'Frontmatter',
+        v: 'Title · guards · render mode, per route',
+        why: 'Route metadata lives at the top of the route file rather than in a separate config, so moving a page moves its configuration with it.',
+        r: ['route config objects', 'route manifest files']
+      },
+      {
+        k: 'Navigation',
+        v: 'Guards · hooks · prefetch · scroll restore · slots',
+        why: 'A navigation API with before and after hooks, guards that can redirect, link prefetching, and scroll restoration handled rather than reimplemented per app.',
+        r: ['React Router loaders and guards']
+      },
+      {
+        k: 'Resources',
+        v: "The API's four hook phases, client-side",
+        why: 'A Resource binds a service to reactive state, with the identical around/before/after/error phases the server uses. Learn the pipeline once and it holds on both sides.',
+        code: "const invoices = createResource('invoices', {\n  hooks: { around: { all: [withSpinner] } },\n})\nawait invoices.find({ status: 'open' })",
+        r: ['TanStack Query + a store', 'SWR + Zustand', 'RTK Query']
+      },
+      {
+        k: 'make()',
+        v: "A blank record shaped by the schema's defaults",
+        why: 'Start a create form from the schema itself, with declared defaults already applied and server-owned fields left out. No hand-written initial state to fall out of sync.',
+        code: "invoices.make()\n// { total: 0, status: 'draft' }  — id and createdAt omitted",
+        r: ['hand-written initial form state']
+      },
+      {
+        k: 'Schema',
+        v: 'JSON Schema shipped into the bundle',
+        why: 'The build puts your schema in the browser, so the client knows the same field rules the server enforces — without a second copy of them written in a client-side validator.',
+        r: ['duplicated Zod schemas on the client']
+      },
+      {
+        k: 'Targets',
+        v: '<code>spa</code> · <code>static</code> · <code>widget</code> · <code>extension</code>',
+        why: 'One route tree, several outputs, chosen at build time. A prerendered marketing page, an embedded widget and a browser extension come from the same components.',
+        r: ['separate build configs per output']
+      },
+      {
+        k: 'Loading',
+        v: 'Route loaders · parallel fetch · connection state',
+        why: 'Data loading declared per route and resolved in parallel, with live connection state you can render against instead of tracking your own online flag.',
+        r: ['suspense boilerplate', 'manual loading flags']
+      },
+      {
+        k: 'Devtools',
+        v: 'Routes, resources, requests, events, jobs',
+        why: "An in-page overlay fed by the server's own telemetry, so you see the request, the hooks that ran and the job it queued in one timeline.",
+        r: ['React Query Devtools', 'Router Devtools', 'network tab archaeology']
+      },
+      {
+        k: 'Build',
+        v: 'Vite · state-preserving HMR · auto-imports',
+        why: 'Vite underneath with Mesa compilation, hot replacement that keeps signal state across edits, and auto-imports so common components need no import line.',
+        r: ['hand-tuned Vite config', 'plugin wiring']
+      }
+    ]
+  },
+  {
+    id: 'mesa',
+    install: 'npm i @frontierjs/mesa',
+    slug: 'mesa',
+    name: 'Mesa',
+    realm: 'UI · Component',
+    who: '@frontierjs/mesa',
+    pitch: 'One file renders to a page, an email, a fragment or a module. Zero dependencies.',
+    rows: [
+      {
+        k: 'Reactivity',
+        v: 'Signals · <code>watchProxy()</code> makes plain objects reactive',
+        why: 'Fine-grained signals with automatic dependency tracking. State stays a plain object — no wrapper to unwrap, no dependency array to keep correct.',
+        code: 'let total = 0\nconst withTax = total * 1.2      // recomputes when total changes',
+        r: ['React hooks + dependency arrays', 'MobX', 'Immer']
+      },
+      {
+        k: 'Template',
+        v: '<code>{#if}</code> <code>{#each}</code> <code>{#await}</code> <code>{#key}</code> · snippets · bindings',
+        why: 'Block directives rather than expressions, keyed lists, await blocks for promises, reusable snippets, and two-way binding that does not require an onChange handler.',
+        code: '{#each rows as row (row.id)}\n  <Row {row} />\n{:else}\n  <EmptyState />\n{/each}',
+        r: ['JSX + .map() + ternaries']
+      },
+      {
+        k: 'Styles',
+        v: 'Scoped per component',
+        why: 'A style block applies to its own component only, with no naming convention to maintain and no runtime style injection.',
+        r: ['CSS Modules', 'styled-components', 'Emotion']
+      },
+      {
+        k: 'Source',
+        v: '<code>.mesa</code> or Markdown with frontmatter',
+        why: 'Content-shaped pages stay content-shaped: a Markdown file compiles to the same component, with tables and syntax highlighting already handled.',
+        r: ['MDX']
+      },
+      {
+        k: 'Targets',
+        v: 'DOM · SSR · static · email · fragment · modules',
+        why: 'The same component renders live in the browser, to an HTML string on the server, to a prerendered file, to an email, or to an isolated fragment for embedding.',
+        r: ['separate SSR and email renderers']
+      },
+      {
+        k: 'Attachments',
+        v: '<code>{@attach}</code> — an element handed to your code',
+        why: 'The escape hatch for a chart library or a focus trap: you get the node and a teardown. It does not run on the server, which is what makes a server-rendered page safe to write this way.',
+        r: ['useEffect + a ref', 'directives', 'lifecycle hooks']
+      },
+      {
+        k: 'Leaf',
+        v: 'No framework dependency of its own',
+        why: 'Mesa sits at the bottom, so it can be adopted with any bundler and any server. The rest of the framework is what happens when you keep going.',
+        r: []
+      }
+    ]
+  },
+  {
+    id: 'ui',
+    install: 'npm i @frontierjs/ui',
+    slug: 'ui',
+    name: 'The component kit',
+    realm: 'UI · Kit',
+    who: '@frontierjs/ui',
+    pitch:
+      'Sixty-odd components over the design system. A form that already knows what it is editing.',
+    rows: [
+      {
+        k: 'Forms',
+        v: '<code>&lt;Form&gt;</code> takes a resource; every control resolves itself',
+        why: 'A control reads its own label, its constraints and its server error from the form context, so a field is one tag with a name on it and the three things that usually drift cannot.',
+        code: '<Form resource={invoices} record={invoice}>\n  <Input name="total" />\n  <Select name="status" />\n</Form>',
+        r: ['React Hook Form + a resolver', 'Formik + Yup']
+      },
+      {
+        k: 'Attributes',
+        v: 'Every component forwards its caller’s attributes',
+        why: 'A form control puts them on the CONTROL rather than the wrapper, because that is what a label’s for and an aria-describedby have to reach. A kit that swallows them cannot be made accessible from outside.',
+        r: ['wrapper components you fork to add an id']
+      },
+      {
+        k: 'Autosave',
+        v: '<code>&lt;Form autosave&gt;</code> saves once the typing stops',
+        why: 'The debounce, the in-flight state and the last-write-wins question are the form’s, not yours — one attribute rather than an effect in every screen.',
+        r: ['a useEffect with a timer per form']
+      },
+      {
+        k: 'Style',
+        v: 'A tone and a treatment, never a color',
+        why: 'danger and outlined are what a button is; blue is what it happens to look like this theme. A kit component may not style a class the design system owns, so the two cannot fight.',
+        r: ['color props', 'className overrides']
+      },
+      {
+        k: 'Destructive',
+        v: 'A destructive action confirms itself',
+        why: 'The confirmation is part of the component rather than a modal you remember to wire, so the dangerous path is the one with a guard on it by default.',
+        r: ['a confirm modal copied per screen']
+      },
+      {
+        k: 'Contributing',
+        v: 'A control of your own is two registrations',
+        why: 'A custom control joins the form contract the same way the built-in ones did, so it gets labels, errors and constraints without special-casing.',
+        r: ['a control that only works outside the form']
+      }
+    ],
+    chips: [
+      [
+        'Forms',
+        'Form Button Field Fieldset Label Input Textarea Select Checkbox Switch RadioGroup NumberInput Slider Combobox MultiSelect DatePicker DateTimeInput JsonInput FileUpload'
+      ],
+      [
+        'Display',
+        'Badge Pill Tag Dot Kbd Mono Divider Breadcrumbs Pagination Steps SectionHeader Callout EmptyState CopyButton Code Avatar AvatarGroup Stat StatCard Table Bar Sparkline AccountStatus Json'
+      ],
+      ['Layout', 'Card Accordion AccordionItem Tabs TabList Tab TabPanel'],
+      [
+        'Overlay',
+        'Modal Drawer Popover Tooltip DropdownMenu DropdownItem DropdownGroup DropdownSeparator CommandPalette ConfirmationPopover ConfirmPanel ConfirmProvider'
+      ],
+      [
+        'Feedback & stores',
+        'Alert AlertProvider Toast Toaster Progress Spinner Skeleton toastStore alertStore commandPaletteStore'
+      ]
+    ]
+  },
+  {
+    id: 'css',
+    install: 'npm i @frontierjs/css',
+    slug: 'css',
+    name: 'The design system',
+    realm: 'UI · Style',
+    who: '@frontierjs/css',
+    pitch: 'Thirty-five semantic terms. Plain CSS, no build step. This site is styled by it.',
+    rows: [
+      {
+        k: 'Layers',
+        v: 'tokens → themes → tones → base → components → patterns',
+        why: 'Cascade layers give an explicit precedence contract, which replaces the usual "do not reorder these imports" comment with something the browser enforces.',
+        r: ['import-order conventions', 'BEM discipline']
+      },
+      {
+        k: 'Override',
+        v: 'Your CSS is unlayered, so it always wins',
+        why: 'Because every rule in the package sits in a layer, any unlayered rule you write beats it — no specificity war, and no !important.',
+        code: '/* yours, unlayered — wins by definition */\n.btn { border-radius: 0 }',
+        r: ['!important', 'arbitrary-variant escape hatches']
+      },
+      {
+        k: 'Contrast',
+        v: 'Fill and text derived together — AA by construction',
+        why: "Text color is computed from the fill's own luminance, so any tone in any theme — including a brand color added later — meets AA without being audited.",
+        r: ['manual contrast audits', 'axe passes after the fact']
+      },
+      {
+        k: 'State',
+        v: 'From <code>[aria-current]</code> and <code>:user-invalid</code>, never a class',
+        why: 'Styling keys off the accessibility state that has to be correct anyway. A tab cannot look selected while telling a screen reader otherwise.',
+        r: ['is-active class bookkeeping']
+      },
+      {
+        k: 'Themes',
+        v: 'Six, swapped with one class on the root',
+        why: 'A theme overrides token values only, so every component follows automatically — no provider, no runtime, no re-render.',
+        r: ['CSS-in-JS theme providers']
+      },
+      {
+        k: 'Build',
+        v: 'None',
+        why: 'Plain CSS files with an import entry point. No compile step, no config, no purge pass, and no build tooling to keep current.',
+        r: ['Tailwind + PostCSS pipeline', 'Sass build']
+      }
+    ],
+    chips: [
+      ['Frame', 'app shell topbar sidebar screen pane view'],
+      ['Inline', 'btn pill badge link chip tooltip avatar kbd icon'],
+      ['Surfaces', 'card tile alert toast dialog popover drawer'],
+      ['Forms & data', 'field field-hint switch table tiles facts'],
+      [
+        'Navigation & patterns',
+        'tabs breadcrumb pagination navlist steps bar feed disclosure'
+      ]
+    ]
+  },
+  {
+    id: 'email-kit',
+    install: 'npm i @frontierjs/email-kit',
+    slug: 'email-kit',
+    name: 'Email kit',
+    realm: 'UI · Email',
+    who: '@frontierjs/email-kit',
+    pitch: 'An email is a component. The same language, compiled for a worse renderer.',
+    rows: [
+      {
+        k: 'Components',
+        v: 'Table-based blocks, compiled by the same compiler',
+        why: 'An email body is written the way a page is, so a designer moving between the two learns nothing new and the components are testable in a browser.',
+        r: ['MJML', 'react-email', 'a templating language']
+      },
+      {
+        k: 'Compilation',
+        v: 'an <code>email</code> build target inlines styles to attributes',
+        why: 'Mail clients strip style blocks, so the compiler puts the styles where they survive rather than asking you to write it that way by hand.',
+        r: ['juice', 'inline styles written by hand']
+      },
+      {
+        k: 'The rest of the message',
+        v: 'Plain-text alternative and the subject, from the component',
+        why: 'The three things a message needs come out of one file, so a subject cannot drift from the body it belongs to.',
+        r: ['a subject string in the calling code']
+      },
+      {
+        k: 'Compatibility',
+        v: 'The limits are written down',
+        why: 'Outlook’s conditional-comment handling is the fragile part and the package’s docs say so. A compatibility claim nobody has opened in a real client is worth what it cost to write.',
+        r: []
+      }
+    ]
+  },
+  {
+    id: 'print-kit',
+    install: 'npm i @frontierjs/print-kit',
+    slug: 'print-kit',
+    name: 'Print kit',
+    realm: 'UI · Print',
+    who: '@frontierjs/print-kit',
+    pitch: 'A document to a PDF, an element to a PNG, in one headless Chrome.',
+    rows: [
+      {
+        k: 'Rendering',
+        v: '<code>printer.pdf(html)</code> · <code>printer.png(html, selector)</code>',
+        why: 'One Chrome, opened on the first job and reused after. It drives the browser with the same tool the component tests use, so an app that prints adds no second browser driver.',
+        code: "import { createPrinter, printDocument } from '@frontierjs/print-kit'\n\nconst printer = createPrinter()\nconst pdf = await printer.pdf(printDocument({ title, body, css }))\nawait printer.close()",
+        r: ['Puppeteer', 'Playwright', 'wkhtmltopdf']
+      },
+      {
+        k: 'In an app',
+        v: '<code>app.configure(printer())</code> gives you <code>app.printer</code>',
+        why: 'With no Chrome on the machine, the app refuses to start and says why. You find out at boot, not on the first invoice.',
+        r: []
+      },
+      {
+        k: 'Safety',
+        v: 'The page runs offline with scripts off',
+        why: 'A printed document is built from data somebody else entered. A URL in it cannot make your server fetch anything, and markup in a name runs nothing.',
+        r: ['sanitizing every field by hand']
+      },
+      {
+        k: 'Pages',
+        v: '<code>print.css</code> handles page breaks and margins',
+        why: 'Every printed document carries it after the app’s own styles, so page groups, break rules and margin boxes are already set up.',
+        r: ['Paged.js', 'print styles written per document']
+      }
+    ]
+  },
+  {
+    id: 'jetty',
+    install: 'npm i @frontierjs/jetty',
+    slug: 'jetty',
+    name: 'Jetty',
+    realm: 'UI · Extension',
+    who: '@frontierjs/jetty',
+    pitch: 'A browser extension as a surface of the app, not a second app.',
+    rows: [
+      {
+        k: 'A surface',
+        v: '<code>extension/</code> sits beside <code>api/</code> and <code>web/</code>',
+        why: 'It earns its own directory because its config, its tests and its release are all different answers — and it reaches the same services with the same client.',
+        code: '$ fli make:extension\n$ fli dev:extension     # MV3, hot-reloaded\n$ fli extension:build',
+        r: ['Plasmo', 'WXT', 'a hand-rolled MV3 setup']
+      },
+      {
+        k: 'The relay',
+        v: 'A service worker carries calls to the API',
+        why: 'The adapter is the real client rather than a lookalike, so sign-in, live updates and gating behave exactly as they do in the app.',
+        r: ['fetch calls duplicated in the worker']
+      },
+      {
+        k: 'Islands',
+        v: 'A content script builds in lib mode',
+        why: 'An MV3 content script is a CLASSIC script, so the preload helper a bundler normally writes makes the engine reject the whole file at parse time — before one line of it runs, with nothing at build time saying so.',
+        r: []
+      },
+      {
+        k: 'The store',
+        v: 'It remembers the query its rows answer',
+        why: 'Nothing else can grade a record that arrives later: without the query, an update belonging to a different filter lands in the list anyway.',
+        r: ['a cache keyed by id alone']
+      },
+      {
+        k: 'Permissions',
+        v: '<code>extension:audit</code> grades the manifest',
+        why: 'A permission is easy to add while debugging and invisible afterwards, right up until a store review.',
+        r: ['reading the manifest before you submit']
+      }
+    ]
+  },
+  {
+    id: 'toolbelt',
+    install: 'npm i @frontierjs/toolbelt',
+    slug: 'toolbelt',
+    name: 'Toolbelt',
+    realm: 'Substrate',
+    who: '@frontierjs/toolbelt',
+    pitch: 'The facts that have many possible answers and must have exactly one.',
+    rows: [
+      {
+        k: 'Zero dependencies',
+        v: 'Substrate below the graph, not a member of it',
+        why: 'That is what buys the import licence: because it depends on nothing, every package may import it without inverting the dependency direction the framework is built on.',
+        r: ['a shared utils package nobody may depend on']
+      },
+      {
+        k: 'One kit per import',
+        v: 'No root entry — you import the kit you need',
+        why: 'A grab-bag with one entry point is a package every consumer pulls whole. A subpath per kit means a browser bundle carries the two you used.',
+        code: "import { plural } from '@frontierjs/toolbelt/inflect'\nimport { canAtLevel } from '@frontierjs/toolbelt/gate'",
+        r: ['lodash', 'a utils folder copied between projects']
+      },
+      {
+        k: 'Spelling',
+        v: '<code>/inflect</code> — singular, plural, table, model, human',
+        why: 'Three separate resolvers have to agree on what a model is called. One kit is how they do, rather than three regexes that agree until an irregular noun arrives.',
+        r: ['pluralize', 'a naming helper per package']
+      },
+      {
+        k: 'Meaning',
+        v: '<code>/query</code> and <code>/directives</code> — what a query string says',
+        why: 'A string is a number only if it round-trips as one; true, false and null are themselves; structure is bracket notation. Three readers agree because there is one table.',
+        r: ['qs', 'a parser per boundary']
+      },
+      {
+        k: 'Time and money',
+        v: '<code>/datetime</code> · <code>/units</code>',
+        why: 'An instant read in a zone and written back, with the runtime’s own zone rules; rounding, allocation and currency data that ship rather than being read off the host.',
+        r: ['date-fns + a timezone library', 'dinero.js', 'Intl called directly']
+      },
+      {
+        k: 'Rules',
+        v: '<code>/gate</code> · <code>/predicate</code> · <code>/match</code> · <code>/signature</code> · <code>/redact</code> · <code>/cron</code>',
+        why: 'The access ladder and its grader, the schema expression language, whether a record still belongs in a query, a signed machine-to-machine request, whether a key is a credential, and what five fields mean.',
+        r: ['a copy of each, per package']
+      }
+    ],
+    chips: [
+      [
+        'Kits',
+        'inflect gate directives query history match signature redact cron predicate hooks jsonschema json units glow search datetime'
+      ]
+    ]
+  },
+  {
+    id: 'testing',
+    install: 'npm i -D @frontierjs/testing',
+    slug: 'testing',
+    name: 'Testing',
+    realm: 'Testing · Suite',
+    who: '@frontierjs/testing',
+    pitch:
+      'A real app, a real database, a real port when you want one. Stub nothing but the clock.',
+    rows: [
+      {
+        k: 'The environment',
+        v: 'A template-cloned database, factories and a standing',
+        why: 'Every check the Data layer ships works unchanged here, because they ask the data boundary directly rather than through a mock of it.',
+        code: "const env = await createTestEnv({ schema })\nconst orders = env.as(alice).service('orders')\nawait orders.create({ total: 5 })",
+        r: ['supertest + a pile of mocks', 'testcontainers']
+      },
+      {
+        k: 'Who is calling',
+        v: '<code>env.as(user)</code> binds the principal into every call',
+        why: 'With no principal you get STRANGER, which is what an unauthenticated caller actually is — so the unhappy path is the default rather than something you remember to test.',
+        r: ['a fake JWT per test']
+      },
+      {
+        k: 'Announcements',
+        v: '<code>env.announced()</code> — what the act broadcast',
+        why: 'A mutation that should have announced and did not is invisible to an assertion on the response, and it is exactly what breaks a live client.',
+        r: ['spying on the socket']
+      },
+      {
+        k: 'Transport parity',
+        v: 'The same call down HTTP and WS, compared',
+        why: 'Two real transports grading each other. A service that behaves differently depending on how it was reached is a bug no single-transport suite can see.',
+        r: []
+      },
+      {
+        k: 'A real port',
+        v: 'Asked for as zero and read back',
+        why: 'For the tests that need an origin — a browser, a webhook, a redirect — without hard-coding a number that collides with the app you left running.',
+        r: ['a port constant per suite']
+      },
+      {
+        k: 'Where it sits',
+        v: 'Above the API, and imported by nothing',
+        why: 'Which is the whole reason it is a separate package: the Data layer’s own test environment cannot mount an app without importing the API layer, and that would invert the dependency direction.',
+        r: []
+      }
+    ]
+  },
+  {
+    id: 'cli',
+    install: 'npm i -g @frontierjs/cli',
+    slug: 'fli',
+    name: 'fli',
+    realm: 'Tooling',
+    who: '@frontierjs/cli',
+    pitch: 'Every command is a markdown file. Help text and implementation cannot disagree.',
+    rows: [
+      {
+        k: 'Scaffold',
+        v: '<code>project:new</code> · <code>make:model</code> <code>:service</code> <code>:resource</code> <code>:route</code>',
+        why: 'Generators append to the schema you already have rather than dropping a pile of boilerplate, so the seed stays the single source after generation.',
+        code: '$ fli make:model Invoice\n  ✓ appended to db/schema.lite\n  ✓ api/src/services/invoices.ts\n  ✓ src/routes/invoices/',
+        r: ['Yeoman', 'Plop', 'Hygen']
+      },
+      {
+        k: 'Data',
+        v: '<code>db:migrate</code> <code>:status</code> <code>:studio</code> <code>:seed</code> <code>:backup</code>',
+        why: 'The whole data lifecycle in one namespace — diff and apply migrations, check for drift, browse rows, seed fixtures and take backups.',
+        r: ['prisma CLI', 'knex CLI', 'ad-hoc scripts']
+      },
+      {
+        k: 'Run',
+        v: '<code>ports:claim</code> claims a port session per project',
+        why: 'A broker assigns and remembers ports per project, so two apps on one machine never collide and the URLs are stable between restarts.',
+        code: '$ fli ports:claim\n  api → http://localhost:3200\n  web → http://localhost:5173',
+        r: ['concurrently', 'manual PORT juggling']
+      },
+      {
+        k: 'Ship',
+        v: '<code>deploy</code> infers the environment from your git branch',
+        why: 'Build, upload, migrate and cut over in one command, with the target derived from the branch you are on rather than a flag you have to remember.',
+        r: ['bespoke shell scripts', 'hand-written CI deploy jobs']
+      },
+      {
+        k: 'Recover',
+        v: '<code>deploy:rollback</code> · <code>:status</code> · <code>:logs</code> · <code>:doctor</code>',
+        why: 'Releases are versioned, so going back is a command. Status reports what is actually running, and doctor checks the target before you find out the hard way.',
+        r: ['manual SSH and symlink swaps']
+      },
+      {
+        k: 'Secrets',
+        v: '<code>env:set</code> <code>:get</code> <code>:list</code> <code>:pull</code>, per environment',
+        why: 'Environment values are managed per environment and never committed, with pull to bring them down and copy to promote between environments.',
+        r: ['dotenv-vault', 'copying .env files by hand']
+      },
+      {
+        k: 'Monorepo',
+        v: '<code>workspace:</code> link · graph · version · publish',
+        why: 'Workspace commands for linking packages, viewing the dependency graph, versioning together and publishing — without adding another build orchestrator.',
+        r: ['Lerna', 'Changesets', 'Nx']
+      },
+      {
+        k: 'Extend',
+        v: '<code>make:command</code> writes a new markdown command',
+        why: "Frontmatter declares flags, arguments and examples; the body is the script. Your team's operational knowledge becomes readable files instead of tribal npm scripts.",
+        code: '--- commands/reports/weekly.md ---\ntitle: reports:weekly\nflags:\n  since: { type: string, defaultValue: 7d }\n---',
+        r: ['npm scripts + a README that drifts']
+      }
+    ]
+  },
+  {
+    id: 'create',
+    install: 'npm create frontier@' + range('create-frontier') + ' my-app',
+    slug: 'create-frontier',
+    name: 'create-frontier',
+    realm: 'Tooling',
+    who: 'create-frontier',
+    pitch: 'The front door, and nothing else — it resolves the CLI and runs it.',
+    rows: [
+      {
+        k: 'One implementation',
+        v: 'It resolves <code>@frontierjs/cli</code> and runs <code>fli new</code>',
+        why: 'What a new app looks like is written once, in the CLI. A create package with a scaffolder of its own is a second answer that drifts from the first release onward.',
+        r: ['create-next-app', 'create-vite']
+      },
+      {
+        k: 'Where it lands',
+        v: 'The target directory is pinned, not searched for',
+        why: 'fli walks UP to find a project root, which is right when you are inside an app and wrong when npm create runs you inside an existing repo — without the pin the scaffold lands in that repo’s root.',
+        r: []
+      },
+      {
+        k: 'Pass-through',
+        v: 'Arguments are forwarded untouched',
+        why: 'Every flag the scaffolder has works here on the day it is added, because this package does not know what they are.',
+        r: ['a wrapper that lists flags and forgets one']
+      }
+    ]
+  },
+  {
+    id: 'config',
+    install: 'npm i -D @frontierjs/config',
+    slug: 'config',
+    name: 'The tooling opinion',
+    realm: 'Tooling',
+    who: '@frontierjs/config',
+    pitch: 'tsconfig, biome and editorconfig as a dependency — never as a copy.',
+    rows: [
+      {
+        k: 'Extend, don’t copy',
+        v: 'One line in your <code>tsconfig.json</code>',
+        why: 'A copied config is frozen at the moment it was written. A dependency moves when the framework does, which is the entire difference between a template and a package.',
+        code: '{ "extends": "@frontierjs/config/tsconfig" }',
+        r: ['a config pasted from a starter']
+      },
+      {
+        k: 'No formatter',
+        v: 'Linter only, and the refusal is measured',
+        why: 'This house aligns columns and no formatter can express that. The code the scaffolder writes is aligned, so the first format run would rewrite the app the scaffold had just produced.',
+        r: ['Prettier', 'dprint']
+      },
+      {
+        k: 'The boundary',
+        v: 'A linter owns generic JavaScript',
+        why: 'It reads neither .mesa nor .lite, on purpose: everything derived from the seed is graded by the framework’s own checks, which can see the schema the linter cannot.',
+        r: ['ESLint plugins that parse your DSL']
+      }
+    ]
+  },
+  {
+    id: 'basecamp',
+    install: 'git clone frontierjs/basecamp && bun run dev',
+    slug: 'basecamp',
+    name: 'Basecamp',
+    realm: 'Control plane',
+    who: '@frontierjs/basecamp',
+    pitch: 'The app for managing your apps — and itself a FrontierJS app.',
+    rows: [
+      {
+        k: 'Releases',
+        v: 'What is deployed where, and one button to undo it',
+        why: 'Every environment, its current release, what changed since the last one, and a rollback that does not require finding the right host first.',
+        r: ['deploy dashboards', 'SSH sessions']
+      },
+      {
+        k: 'Migrations',
+        v: 'Applied, pending and drifted, per environment',
+        why: "Read from each app's own manifest endpoint, so drift between the schema in your repo and the database in production is visible before it bites.",
+        r: ['running migrate status by hand on each host']
+      },
+      {
+        k: 'Jobs',
+        v: 'Queues across every app — in flight, failed, retry',
+        why: 'One view over every Caravan queue you run, with failures and their reasons, and retries triggered from here.',
+        r: ['Bull Board', 'Agendash']
+      },
+      {
+        k: 'Audit',
+        v: 'Every trail, searchable by model, actor and window',
+        why: 'The @@trail(audit) trails from all your apps in one place, so answering "who changed this record" does not start with a database console.',
+        r: ['log aggregation queries']
+      },
+      {
+        k: 'Egress',
+        v: "Each app's declared targets — everything it can reach",
+        why: 'Because Conduit targets are declared, the complete outbound surface of an application is a list rather than an audit. Useful for review, and for self-hosters who want to know.',
+        r: ['reading the source to find fetch calls']
+      },
+      {
+        k: 'Tenants',
+        v: 'Registries, sizes, migration state, and a way in',
+        why: 'Database-per-tenant means many databases. This is the list, their sizes, whether each is migrated, and a route into any one of them.',
+        r: ['bespoke admin scripts']
+      },
+      {
+        k: 'Health',
+        v: 'Liveness and metrics, including plugin-contributed',
+        why: 'Every app exposes /health and /metrics, and plugins add their own providers — so a new battery appears here with no configuration.',
+        r: ['Grafana dashboards', 'uptime checkers']
+      },
+      {
+        k: 'Live',
+        v: 'Over the same channels your apps use — not polling',
+        why: 'Basecamp subscribes the way any client does. It is a demonstration that the realtime layer works, because it is the thing depending on it.',
+        r: ['polling dashboards']
+      }
+    ]
+  },
+  {
+    id: 'workbench',
+    install: 'fli desktop:install  # from a FrontierJS checkout — private, never published',
+    slug: 'workbench',
+    name: 'Workbench',
+    realm: 'Tooling · Laptop',
+    who: '@frontierjs/workbench',
+    pitch:
+      'Basecamp runs your servers. Workbench runs the machine you build on — and it is a FrontierJS app too.',
+    rows: [
+      {
+        k: 'Chats',
+        v: 'A Claude Code chat per pinned checkout',
+        why: "Each repo you pin has its own chats, and the ~/.claude history is indexed into the app's own database, so last week's conversation is a row you open rather than a file you dig for.",
+        r: ['one terminal tab per repo', 'grepping ~/.claude by hand']
+      },
+      {
+        k: 'Atlas',
+        v: 'Issues, open questions and rulings, read and ruled on',
+        why: "The project's registers rendered as one screen, with Claude beside it to talk an item through. Decide shows the open questions one card at a time: swipe to rule.",
+        r: ['reading markdown registers in an editor']
+      },
+      {
+        k: 'Autopilot',
+        v: "The project's loops as a town",
+        why: 'Lanes, the Dock, the Switch and a replay of the day, so seeing what your agents did overnight means opening one page rather than reading their logs.',
+        r: ['tailing logs', 'a tmux session per loop']
+      },
+      {
+        k: 'Terminal',
+        v: 'A shell in your home folder that outlives the tab',
+        why: 'Close the browser and the session keeps running; open it again and you are back where you were.',
+        r: ['tmux', 'screen']
+      },
+      {
+        k: 'Fleet view',
+        v: 'Basecamps · Servers · Charter',
+        why: 'Every Basecamp this laptop made, whether it answers, plus Back up now and Restart. Servers lists the machines your Hetzner and DigitalOcean tokens reach; it only lists and verifies them, and each token is stored encrypted and guarded.',
+        r: ['provider consoles in four tabs']
+      },
+      {
+        k: 'Laptop',
+        v: "fli's own files on this machine — disk, keys, what is running",
+        why: 'A secret never leaves the API. The page gets presence, mode and a masked key, and a probe like gh auth status runs only when you press Check.',
+        r: ['ls ~/.config and hoping']
+      },
+      {
+        k: 'Notifications',
+        v: 'An in-app bell, plus a push to your phone',
+        why: 'Built on @frontierjs/notifications with ntfy as the push transport. Autopilot can ask for a ruling on your phone and act on the button you tap.',
+        r: ['a Slack bot you wrote for yourself']
+      },
+      {
+        k: 'Peering',
+        v: 'A signed call to Basecamp, never an import',
+        why: 'The laptop holds an Ed25519 key that Basecamp enrolls as a peer. Neither package imports the other, so the only thing that crosses between them is a request Basecamp can verify.',
+        r: ['a shared admin token', 'SSH from the laptop']
+      },
+      {
+        k: 'Loopback only',
+        v: 'Binds 127.0.0.1, signs in with one pass-phrase',
+        why: 'It can start a shell and spawn claude on the machine it runs on, so it is a laptop tool and never a hosted service. Production mode refuses the dev pass-phrase.',
+        r: []
+      },
+      {
+        k: 'Desktop',
+        v: 'The same <code>web/</code> in a Tauri window',
+        why: 'The browser app bundled into a native shell and added to your launcher. Clicking it starts the API if nothing is answering yet.',
+        code: '$ fli desktop:install   # add it to the app launcher\n$ fli desktop:run       # build, start the API, open the window',
+        r: ['Electron wrappers', 'a pinned browser tab']
+      }
+    ]
+  },
+  {
+    id: 'editor',
+    install: 'bun run package  # build the .vsix — not on the marketplace yet',
+    slug: 'vscode',
+    name: 'Editor support',
+    realm: 'Tooling',
+    who: 'vscode-frontierjs',
+    pitch: 'The seed is as pleasant to write as the code it produces.',
+    rows: [
+      {
+        k: 'Diagnostics',
+        v: 'Errors as you type, from the parser the runtime uses',
+        why: 'The extension runs the same parser the framework runs, so the editor cannot tell you something is fine that the build will reject.',
+        r: ['finding schema errors at runtime']
+      },
+      {
+        k: 'Completions',
+        v: 'Types, attributes, functions, and every model in scope',
+        why: 'Field types, @attributes, @@model-attributes and your own schema functions — including models pulled in through schema imports.',
+        r: ['memorizing attribute names']
+      },
+      {
+        k: 'Hover',
+        v: 'Attribute and type docs, model and function signatures',
+        why: 'What an attribute does and what it takes, in the file, without a documentation tab.',
+        r: ['tab-switching to docs']
+      },
+      {
+        k: 'Go to def',
+        v: 'Model references and function calls, across imported files',
+        why: 'Jump from a relation to the model it points at, or from a function call to its block, following schema imports across files.',
+        r: ['project-wide text search']
+      },
+      {
+        k: 'Format',
+        v: 'Aligned field columns, on command or on save',
+        why: 'Canonical formatting for schema files, so aligned columns are automatic rather than something reviewers ask for.',
+        r: ['manual alignment', 'formatting nits in review']
+      },
+      {
+        k: 'Mesa',
+        v: 'Markup, script, style, directives and interpolation',
+        why: 'Component files highlight correctly across all three regions, including block directives and interpolation inside markup.',
+        r: ['plain-text component files']
+      }
+    ]
+  },
+  {
+    id: 'outpost',
+    install: 'npm i @frontierjs/outpost',
+    slug: 'outpost',
+    name: 'Outpost',
+    realm: 'Ops · Fleet',
+    who: '@frontierjs/outpost',
+    pitch:
+      'The process on the machine. A control plane’s hands, with a signature on every one of them.',
+    rows: [
+      {
+        k: 'Signed by default',
+        v: 'Every route but unsigned liveness requires a signature',
+        why: 'One of these routes runs a shell command as the process’s user, so refuse is the default and a route opts out rather than in.',
+        r: ['an agent behind a firewall rule']
+      },
+      {
+        k: 'The verbs',
+        v: 'pull · deploy · stop · health-check · exec · logs · prune',
+        why: 'The route table is read off the control plane’s own engines rather than invented here, so a verb it can ask for is a verb this answers.',
+        r: ['SSH plus a pile of shell scripts']
+      },
+      {
+        k: 'Injectable runner',
+        v: 'The thing that touches Docker is a parameter',
+        why: 'Which is what makes the package testable with no daemon and no network, and lets the control plane’s own drive run the REAL server over a fake machine.',
+        r: ['tests that need a docker socket']
+      },
+      {
+        k: 'Digests',
+        v: 'It builds on the target and answers what it built',
+        why: 'The digest comes back from the machine that produced it, so what is running is identified by content rather than by a tag someone may have moved.',
+        r: ['latest tags', 'trusting the registry']
+      }
+    ]
+  }
 ]
 
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')

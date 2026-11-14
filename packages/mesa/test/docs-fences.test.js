@@ -31,7 +31,11 @@ const fencesOf = (src) => {
   return out
 }
 
-const files = readdirSync(DOCS).filter((f) => f.endsWith('.md'))
+const files = readdirSync(DOCS, { recursive: true }).filter((f) => f.endsWith('.md'))
+
+// The guide is what a reader copies from, so an example there that compiles
+// with a warning teaches the warned-about shape.
+const isGuide = (file) => file.startsWith('guide/')
 
 describe('the docs compile', () => {
   for (const file of files) {
@@ -46,6 +50,8 @@ describe('the docs compile', () => {
           const ctx = await compileSource(f.code, { filename: `${file}:${f.line}`, dev: false, css: false })
           const errs = ctx?.analysis?.errors ?? []
           if (errs.length) bad.push(`${file}:${f.line} — ${errs[0]}`)
+          const warns = isGuide(file) ? ctx?.analysis?.warnings ?? [] : []
+          if (warns.length) bad.push(`${file}:${f.line} — warning: ${warns[0]?.message ?? warns[0]}`)
         } catch (e) {
           bad.push(`${file}:${f.line} — ${e.message}`)
         }
@@ -86,5 +92,9 @@ describe('the docs compile', () => {
   it('finds the component examples in VISION.md rather than nothing', () => {
     expect(files).toContain('VISION.md')
     expect(fencesOf(readFileSync(join(DOCS, 'VISION.md'), 'utf8')).length).toBeGreaterThanOrEqual(8)
+  })
+
+  it('finds the guide pages rather than nothing', () => {
+    expect(files.filter(isGuide).length).toBeGreaterThan(0)
   })
 })

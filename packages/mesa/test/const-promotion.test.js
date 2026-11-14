@@ -434,6 +434,28 @@ const out = list.rows`)).toEqual([])
 const { port: out } = load()`)).toEqual([])
   })
 
+  // FJS-4284: the handle never named, so there was no local to look through.
+  it('warns for a member read on an inline call to an import', async () => {
+    const w = await warned(`import { r } from './r.js'
+const out = r.tethered().rows.filter((x) => x.on)
+const busy = (await r.record(1)).value
+const n = r.tethered().rows.filter((x) => x.on).length`)
+    expect(w).toHaveLength(3)
+    expect(w[0]).toMatch(/'out' reads 'r\.tethered\(\)\.rows'/)
+    expect(w[0]).toMatch(/\$: out = /)
+    expect(w[0]).toMatch(/const \{ rows \} = r\.tethered\(\)/)
+    expect(w[1]).toMatch(/'busy' reads '.*\.value'/)
+    expect(w[2]).toMatch(/'n' reads 'r\.tethered\(\)\.rows'/)
+  })
+
+  it('is quiet for an inline call to a global or a method of a local', async () => {
+    expect(await warned(`const cfg = { a: 1 }
+const title = 'a b'
+const out = Object.keys(cfg).length
+const host = new URL('https://x.test').host
+const words = title.split(' ').length`)).toEqual([])
+  })
+
   it('is quiet for a call through the handle, which is already derived', async () => {
     expect(await warned(`import { r } from './r.js'
 const list = r.tethered()

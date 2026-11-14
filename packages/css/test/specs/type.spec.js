@@ -202,3 +202,24 @@ test('type: every font-family reading --font-primary ends in a generic family', 
     assert.equal(style(box.querySelector(sel), 'font-family'), 'NoSuchFace, sans-serif', sel);
   });
 });
+
+test('type: every font-family reading --font-mono ends in monospace', function () {
+  /*
+   * The same failure as --font-primary (FJS-4262) in code: an app that sets
+   * --font-mono to one face it never loads gets code, pre and kbd in the
+   * browser's serif, so a code block stops reading as code (FJS-4287).
+   */
+  var offenders = [];
+  allRules().forEach(function (rule) {
+    if (!rule.style) return;
+    var v = (rule.style.getPropertyValue('font-family') || '').trim();
+    if (v.indexOf('--font-mono') === -1) return;
+    if (!/,\s*monospace$/.test(v)) offenders.push(rule.selectorText + ' { font-family: ' + v + ' }');
+  });
+  assert.equal(offenders.length, 0, 'no generic family behind --font-mono:\n        ' + offenders.join('\n        '));
+
+  var box = el('<div style="--font-mono: NoSuchFace"><code>a</code><kbd>b</kbd><pre class="code">c</pre></div>');
+  ['code', 'kbd', 'pre'].forEach(function (sel) {
+    assert.equal(style(box.querySelector(sel), 'font-family'), 'NoSuchFace, monospace', sel);
+  });
+});

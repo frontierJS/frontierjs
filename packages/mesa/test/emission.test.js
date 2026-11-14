@@ -1164,6 +1164,14 @@ describe('the $ door', () => {
     expect(two.analysis.errors.some((e) => /only be called once/.test(e))).toBe(true)
   })
 
+  // FJS-4296: the spec's one form drew "never runs", which sent readers to `var`.
+  it('runs the $.mounted gate eagerly and does not call it unread', async () => {
+    const ctx = await compile(src(`let user\n  const ready = $.mounted(async () => { user = 1 })`,
+      '<mesa:mounted />\n<p>{user}</p>'), 'T.mesa')
+    expect(ctx.analysis.warnings.filter((w) => /never runs/.test(w))).toEqual([])
+    expect(ctx.result).toMatch(/const ready = \$\$?mounted\(/)
+  })
+
   it('reaches $.async from a template, where the script rewrite cannot see it', async () => {
     const ctx = await compile(src(`const rows = await fetch('/x')`, '<p>{$.async.rows.loading}</p>'), 'T.mesa')
     expect(ctx.result).toContain('$.async = $$async;')

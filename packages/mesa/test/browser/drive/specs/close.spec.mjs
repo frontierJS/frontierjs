@@ -16,7 +16,8 @@ export const name = 'close — a browser that stopped answering'
 export async function run(t) {
   const before = new Set(readdirSync(tmpdir()))
   const b = await t.openChrome()
-  const made = readdirSync(tmpdir()).find((n) => n.startsWith(`fjs-drive-${process.pid}-`) && !before.has(n))
+  // the launch's TMPDIR shares the profile's prefix, and no process names it
+  const made = readdirSync(tmpdir()).find((n) => n.startsWith(`fjs-drive-${process.pid}-`) && !n.includes('-tmp-') && !before.has(n))
   if (!made) { await b.close(); throw new Error('the launch made no profile this spec can find') }
   const held = `user-data-dir=${join(tmpdir(), made)}`
   spawnSync('pkill', ['-STOP', '-f', held])

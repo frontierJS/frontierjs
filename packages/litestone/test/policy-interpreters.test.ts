@@ -119,6 +119,10 @@ const FORMS = [
   `qty in [1, 5, 9]`,
   `ownerId in auth().teamIds`,
   `auth().id in editorIds`,
+  // a list claim's presence binds its nullness, never the list (`FJS-4200`)
+  `auth().teamIds == null`,
+  `auth().teamIds != null`,
+  `auth().teamIds == null || ownerId in auth().teamIds`,
   // the gate's grade, which no principal carries (`FJS-D296`)
   `auth().level >= 5`,
   `ownerId == auth().id || auth().level >= 5`,

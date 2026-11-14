@@ -13666,6 +13666,18 @@ describe('snapshot / restore', () => {
     db.$close()
   })
 
+  test('a @generated column is recomputed, not inserted (FJS-4179)', async () => {
+    const { db } = await makeTestClient(
+      `model Line { id Int @id @default(autoincrement()); qty Int; dbl Int? @generated("qty * 2") }`)
+    await db.line.create({ data: { qty: 3 } })
+    const snap = snapshot(db)
+    expect(Object.keys(snap.main.line[0])).toEqual(['id', 'qty'])
+    await db.line.create({ data: { qty: 4 } })
+    restore(db, snap)
+    expect((await db.line.findMany()).map(r => r.dbl)).toEqual([6])
+    db.$close()
+  })
+
   test('restore() without a snapshot says so', async () => {
     const { db } = await makeTestClient(SNAP_SCHEMA)
     expect(() => restore(db, null as any)).toThrow('pass the value snapshot() returned')

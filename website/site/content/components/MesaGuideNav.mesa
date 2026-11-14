@@ -1,0 +1,44 @@
+<!--
+  The Mesa guide's sidebar: every section and every page, the current one marked.
+  Used by the guide's landing page and its page template, so the two cannot
+  disagree about what is in the guide.
+
+  The sidebar is the longest nav on the site, so it scrolls inside itself; a
+  sticky box taller than the viewport would hide its own bottom half.
+-->
+<script>
+  export let guide = []
+  export let current = ''
+</script>
+
+<nav class="gnav" aria-label="Mesa guide">
+  {#each guide as s}
+    <p class="lbl">{s.section}</p>
+    {#each s.pages as p}
+      {#if p.href === current}
+        <a href={p.href} aria-current="page">{p.title}</a>
+      {:else}
+        <a href={p.href}>{p.title}</a>
+      {/if}
+    {/each}
+  {/each}
+</nav>
+
+<style>
+  .gnav { display: grid; gap: .05rem; align-content: start; }
+  .lbl {
+    font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-mute); margin: 1.1rem 0 .4rem .6rem;
+  }
+  .lbl:first-child { margin-top: 0; }
+  .gnav a {
+    font-size: .82rem; text-decoration: none; color: var(--ink-soft);
+    padding: .3rem .6rem; border-radius: 0 6px 6px 0;
+    border-left: 2px solid var(--rule);
+  }
+  .gnav a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .gnav a[aria-current] {
+    border-left-color: var(--color-primary); color: var(--ink); font-weight: 600;
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  }
+</style>

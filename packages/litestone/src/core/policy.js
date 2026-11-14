@@ -1911,14 +1911,16 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       }
 
       // auth() == null  /  auth() != null
+      //
+      // Only the claim's presence is bound: a list claim pushed whole is one
+      // parameter bun:sqlite refuses, or is spread into binds the statement
+      // does not have (`FJS-4200`).
       if (left.type === 'auth' && right.type === 'literal' && right.value === null) {
-        const val = claimValue(ctx, left.field, modelName)
-        params.push(val)
+        params.push(claimValue(ctx, left.field, modelName) == null ? null : 1)
         return node.op === '==' ? '? IS NULL' : '? IS NOT NULL'
       }
       if (right.type === 'auth' && left.type === 'literal' && left.value === null) {
-        const val = claimValue(ctx, right.field, modelName)
-        params.push(val)
+        params.push(claimValue(ctx, right.field, modelName) == null ? null : 1)
         return node.op === '==' ? '? IS NULL' : '? IS NOT NULL'
       }
 

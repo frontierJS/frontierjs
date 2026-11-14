@@ -1878,10 +1878,21 @@ export function snapshot(db) {
     if (!raw) continue
     const tables = _userTables(raw)
     const perDb  = {}
-    for (const t of tables) perDb[t] = _once(raw, `SELECT * FROM "${t}"`, s => s.all())
+    for (const t of tables) {
+      const cols = _insertableColumns(raw, t).map(c => `"${c}"`).join(', ')
+      perDb[t] = _once(raw, `SELECT ${cols} FROM "${t}"`, s => s.all())
+    }
     out[dbName] = perDb
   }
   return out
+}
+
+// SELECT * includes a @generated column and SQLite refuses an INSERT naming one,
+// so a snapshot holding one could not be restored. table_xinfo marks them
+// hidden 2 (virtual) or 3 (stored); 1 is a virtual table's hidden column.
+function _insertableColumns(raw, table) {
+  return _once(raw, `PRAGMA table_xinfo("${table}")`, s => s.all())
+    .filter(c => c.hidden === 0).map(c => c.name)
 }
 
 export function restore(db, snap) {
