@@ -72,10 +72,10 @@
     if (!next || next === old) return done(null)
     busy = true
     try {
-      await clientFor(site, key).service('drafts').invoke('save', null, {
+      const saved = await clientFor(site, key).service('drafts').invoke('save', null, {
         appId: site.appId, draft: site.draft, path, text: { line, old, next },
       })
-      done({ saved: next })
+      done({ saved: next, commit: saved.changed ? saved.commit : null })
     } catch (err) {
       over = true
       live.restore()

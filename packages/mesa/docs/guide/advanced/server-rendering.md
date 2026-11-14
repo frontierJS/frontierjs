@@ -77,15 +77,17 @@ props, no `$:`, no `$context`, no async derived values, no event handlers and no
 
 ## What a browser global answers
 
-A server render runs in happy-dom, so browser globals are present and answering
-rather than missing. They answer as a wide desktop:
+A server render runs in happy-dom, so browser globals read through `window` are
+present and answering rather than missing. They answer as a wide desktop:
 
 | Read | On the server |
 |---|---|
-| `window.innerWidth` / `innerHeight` | `1280` / `1024` |
-| `matchMedia(query).matches` | evaluated against that 1280 by 1024 window |
+| `window.innerWidth` / `window.innerHeight` | `1280` / `800` |
+| `window.matchMedia(query).matches` | evaluated against that window: `(min-width: 900px)` true, `(hover: hover)` true |
+| `window.navigator.userAgent` | a HappyDOM user agent |
 | `window.devicePixelRatio` | `1` |
-| `localStorage` | not defined: reading it throws |
+| `innerWidth`, `matchMedia`, `localStorage`, bare | not defined: reading one throws |
+| `navigator.userAgent`, bare | `Node.js/22`, Node's own `navigator` |
 
 None of this is reported. A component that branches on width bakes the desktop
 branch into the page, and nothing warns. Write the branch so the server's answer

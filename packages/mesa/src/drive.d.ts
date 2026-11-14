@@ -62,6 +62,8 @@ export interface Chrome {
   press(k: string, modifiers?: number): Promise<void>
   type(text: string): Promise<void>
   clickAt(selector: string): Promise<void>
+  /** A real pointer move onto the element's center, so `:hover` and `pointerenter` come from the browser. */
+  hoverAt(selector: string): Promise<void>
   fill(selector: string, text: string): Promise<void>
   waitFor<T = any>(expression: string, opts?: { ms?: number, every?: number, label?: string }): Promise<T>
   shot(path: string): Promise<string>

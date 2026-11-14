@@ -55,11 +55,11 @@
 import { defineJob }        from '@frontierjs/caravan'
 import { Database }         from 'bun:sqlite'
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { runsAsApp }        from '../domain/job/job-context.ts'
 import { jobsDatabasePath } from '../core/db.ts'
 import { keyUnder }         from '../providers/storage/index.ts'
-import { backupDir, claimPrefix, dropWarmCopies, hubArchiveName, hubInstallId, pruneBackups } from '../domain/backup/backup-archives.ts'
+import { archiveTarArgs, archiveTarSha256, backupDir, claimPrefix, dropWarmCopies, hubArchiveName, hubInstallId, pruneBackups } from '../domain/backup/backup-archives.ts'
 import { errorCode, fileMd5 } from '../providers/storage/s3.ts'
 import { mintPut }          from './app-backup-run.job.ts'
 import { sha256Of, writeManifest } from '../domain/backup/archive-manifest.ts'
@@ -177,7 +177,7 @@ export function checkStaged(dir: string): string | null {
 /** `<dir>.tar.gz` beside `dir`, with `dir`'s own name as its one top entry. */
 async function tarball(dir: string): Promise<string> {
   const out  = `${dir}.tar.gz`
-  const proc = Bun.spawn(['tar', '-czf', out, '-C', dirname(dir), basename(dir)], { stderr: 'pipe' })
+  const proc = Bun.spawn(archiveTarArgs(dir, out), { stderr: 'pipe' })
   const code = await proc.exited
   if (code !== 0) throw new Error(`tar exited ${code}: ${(await new Response(proc.stderr).text()).trim()}`)
   return out
@@ -268,12 +268,12 @@ export async function takeBackup(app: App, backupId: string, fs: DiskDeps = {}):
         await finish({ status: 'success', sizeBytes: sent.bytes, fileCount, location: sent.key, sha256: sent.sha256, error: null })
         log.info('backup uploaded', { id: backupId, destinationId: row.destinationId, key: sent.key, bytes: sent.bytes })
       } else {
-        await finish({ status: 'success', sizeBytes: treeSize(path), fileCount, location: path, error: sent.warning })
+        await finish({ status: 'success', sizeBytes: treeSize(path), fileCount, location: path, sha256: await archiveTarSha256(path), error: sent.warning })
         log.warn('backup kept local', { id: backupId, destinationId: row.destinationId, warning: sent.warning })
       }
     } else {
       const size = treeSize(path)
-      await finish({ status: 'success', sizeBytes: size, fileCount, location: path, error: null })
+      await finish({ status: 'success', sizeBytes: size, fileCount, location: path, sha256: await archiveTarSha256(path), error: null })
       log.info('backup complete', { id: backupId, path, bytes: size })
     }
   } catch (err) {

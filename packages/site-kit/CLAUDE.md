@@ -194,7 +194,9 @@ what they mean in any app.
   on the page before the save, words only (`FJS-D1399`): a leaf showing the old
   words of a changed block or value takes the new ones, and new words with
   markup wait for the rebuild; a raw-HTML line whose tags held is compared on
-  the one run of words that changed. The form also arranges lists, its entries and
+  the one run of words that changed. After a save the bar polls `drafts.list`
+  until `live.js`'s `rebuildOf` says the preview has built that commit
+  (`FJS-4270`). The form also arranges lists, its entries and
   the file's place in its collection, through `drafts.arrange`, held still
   while words are unsaved. A photo key is a picker and its words, not a text
   box: `photo.js` shrinks the file to 2560 px before `drafts.photo`, which

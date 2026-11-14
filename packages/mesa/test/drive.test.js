@@ -8,7 +8,7 @@
 // drive at `test/browser/drive/`.
 
 import { describe, test, expect } from 'vitest'
-import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, chmodSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openChrome, findChrome } from '../src/drive.js'
@@ -88,3 +88,15 @@ test('openChrome rejects at once, with what Chrome printed, when Chrome exits be
     rmSync(dir, { recursive: true, force: true })
   }
 }, 20000)
+
+// FJS-4303: the handle grew `hoverAt` and drive.d.ts did not, so a typed
+// caller was told the method the README names does not exist.
+test('drive.d.ts declares every key the openChrome handle returns', () => {
+  const src = readFileSync(new URL('../src/drive.js', import.meta.url), 'utf8')
+  const dts = readFileSync(new URL('../src/drive.d.ts', import.meta.url), 'utf8')
+  const handle = src.match(/return \{ (cmd, send,[^}]*)\}/)[1]
+    .split(',').map((k) => k.trim().split(':')[0].trim()).filter(Boolean)
+  const iface = dts.match(/export interface Chrome \{([\s\S]*?)\n\}/)[1]
+  const declared = new Set([...iface.matchAll(/^ {2}(\w+)\s*[(<?:]/gm)].map((m) => m[1]))
+  expect(handle.filter((k) => !declared.has(k))).toEqual([])
+})

@@ -15,7 +15,8 @@
  * a reference implementation to copy.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { writeFileSync, unlinkSync, mkdirSync, rmSync } from 'node:fs'
+import { writeFileSync, unlinkSync, mkdirSync, rmSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import * as acorn from 'acorn'
 import { compileSource } from '../src/compiler.js'
@@ -411,6 +412,44 @@ describe('renderToHTML — server semantics (RULE 19)', () => {
       write(1); flushSync()
       expect(runs).toBe(3)          // and nothing survives the render
     })()
+  })
+})
+
+// The docs' table of what a browser global answers is a measurement, and it
+// drifted (FJS-4298). This file's vitest environment is happy-dom's own
+// window, so the reads run in a child node process holding only what
+// initRenderer installs, as a build does.
+describe('renderToHTML — what a browser global answers (FJS-4298)', () => {
+  const probe = `
+    import { initRenderer } from './src/render.js'
+    initRenderer()
+    const bare = (read) => { try { read(); return 'present' } catch (e) { return e.name } }
+    const media = (q) => window.matchMedia(q).matches
+    console.log(JSON.stringify({
+      size:   [window.innerWidth, window.innerHeight],
+      ua:     navigator.userAgent,
+      winUa:  window.navigator.userAgent,
+      media:  [media('(min-width: 900px)'), media('(hover: hover)'), media('(max-width: 600px)'), media('(prefers-color-scheme: dark)')],
+      dpr:    window.devicePixelRatio,
+      bare:   [bare(() => innerWidth), bare(() => matchMedia), bare(() => localStorage)],
+    }))`
+  const got = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', probe], { encoding: 'utf8' }))
+  const DOCS = ['docs/STATIC_RENDERING.md', 'docs/guide/advanced/server-rendering.md']
+
+  it('answers as a 1280 by 800 desktop through window, and the bare names a browser has throw', () => {
+    expect(got.size).toEqual([1280, 800])
+    expect(got.ua).toMatch(/^Node\.js\//)
+    expect(got.winUa).toMatch(/HappyDOM\//)
+    expect(got.media).toEqual([true, true, false, false])
+    expect(got.dpr).toBe(1)
+    expect(got.bare).toEqual(['ReferenceError', 'ReferenceError', 'ReferenceError'])
+  })
+
+  it.each(DOCS)('%s states the measured viewport and media answers', (doc) => {
+    const text = readFileSync(doc, 'utf8')
+    expect(text).toContain(`\`${got.size[0]}\` / \`${got.size[1]}\``)
+    expect(text).toContain('`(min-width: 900px)` true')
+    expect(text).not.toMatch(/every query, regardless|by 1024/)
   })
 })
 

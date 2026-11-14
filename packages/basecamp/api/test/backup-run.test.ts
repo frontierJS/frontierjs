@@ -22,6 +22,7 @@ import { registerDestination } from '../src/providers/storage/index.ts'
 import { deleteArchive, isForeign, pruneBackups, rescanDestination } from '../src/domain/backup/backup-archives.ts'
 import { archiveRefusals, MANIFEST_FILE, sha256Of } from '../src/domain/backup/archive-manifest.ts'
 import { drillHubArchive } from '../src/domain/backup/archive-drill.ts'
+import { mintArchiveUrl }  from '../src/plugins/backup-archive.ts'
 import { verifyHubBackup } from '../src/jobs/backup-verify.job.ts'
 import { encryptionKeyFingerprint, jobsDatabasePath } from '../src/core/db.ts'
 import { fetchHubArchive, listHubArchives, readBucket, restoreStaged, stageHubArchive, stagedDir } from '../src/domain/backup/hub-restore.ts'
@@ -103,6 +104,21 @@ describe('the archive is the framework\'s backup', () => {
     try {
       expect(copy.query('SELECT value FROM "_litestone_meta" WHERE key LIKE ?').get('%taken%')).toBeTruthy()
     } finally { copy.close() }
+  })
+})
+
+// FJS-4254: a Workbench Save .tar.gz is checked against the row's sha256, and
+// a local archive is tarred afresh by every download.
+describe('a local archive records the sha256 of the .tar.gz its download serves', () => {
+  test('the row carries a sha256, and the downloaded bytes match it', async () => {
+    const sys = env.system as any
+    const row = await sys.appBackup.create({ data: { appId: hubId } })
+    await takeBackup(env.app, row.id, ROOMY)
+    const done = await sys.appBackup.findUnique({ where: { id: row.id } })
+    expect(done.status).toBe('success')
+    const res = await env.http.get(mintArchiveUrl(row.id))
+    expect(res.status).toBe(200)
+    expect(new Bun.CryptoHasher('sha256').update(res.bytes).digest('hex')).toBe(done.sha256)
   })
 })
 
@@ -361,7 +377,7 @@ describe('a hub archive is staged at /setup and swapped in at the next boot', ()
 // signer, so the request is what B2 would be sent.
 
 describe('a backup naming a destination is uploaded, and a failed upload keeps the local copy', () => {
-  const puts: { path: string; auth: string; bytes: number }[] = []
+  const puts: { path: string; auth: string; bytes: number; md5: string | null; md5Of: string }[] = []
   let refuse = false
   let server: ReturnType<typeof Bun.serve>
   let destinationId: string
@@ -373,7 +389,10 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
       // The archive goes by a pre-signed URL (the credential is in the query);
       // the claim marker goes through conduit (the credential is a header).
       const url = new URL(req.url)
-      puts.push({ path: url.pathname, auth: req.headers.get('authorization') ?? url.searchParams.get('X-Amz-Credential') ?? '', bytes: body.length })
+      puts.push({
+        path: url.pathname, auth: req.headers.get('authorization') ?? url.searchParams.get('X-Amz-Credential') ?? '', bytes: body.length,
+        md5: req.headers.get('content-md5'), md5Of: new Bun.CryptoHasher('md5').update(body).digest('base64'),
+      })
       return new Response(null, { headers: { etag: '"stand-in"' } })
     } })
 
@@ -422,6 +441,10 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
     expect(claims.map(c => c.path)).toEqual([`/frontier-basecamp/basecamp-/basecamp-claim-${installId}`])
     expect(claims[0].auth).toStartWith('AWS4-HMAC-SHA256 Credential=keyid/')
 
+    // A bucket with Object Lock refuses a PUT with no Content-MD5 (FJS-4218).
+    expect(archives[0].md5).toBe(archives[0].md5Of)
+    expect(claims[0].md5).toBe(claims[0].md5Of)
+
     expect(existsSync(join(localOf(done.location), 'main.db'))).toBe(true)
     expect(existsSync(`${localOf(done.location)}.tar.gz`)).toBe(false)
   })
@@ -447,6 +470,7 @@ describe('a backup naming a destination is uploaded, and a failed upload keeps t
     expect(done.error).toContain('AccessDenied')
     expect(existsSync(join(done.location, 'main.db'))).toBe(true)
     expect(existsSync(`${done.location}.tar.gz`)).toBe(false)
+    expect(done.sha256).toMatch(/^[0-9a-f]{64}$/)
     // The failed one is now the newest on disk, so the uploaded one's goes.
     expect(existsSync(localOf(uploaded.location))).toBe(false)
 

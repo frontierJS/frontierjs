@@ -20,7 +20,7 @@ import {
   rewriteExpr, rewriteAssignments, rewriteTextResult,
   analyzeScript, parseText, compile, scopeCSS, compileSource,
 } from '../src/compiler.js'
-import { setRenderEnvironment } from '../src/runtime.js'
+import { setRenderEnvironment, bindMask } from '../src/runtime.js'
 
 setRenderEnvironment(true)
 
@@ -4534,6 +4534,16 @@ describe('bind:value|mask', () => {
   it('phone pattern with parens and dash', async () => {
     const out = await cx(`<script>let p = ''</script><input bind:value|mask({"(999) 999-9999"})={p} />`)
     expect(out).toContain('"(999) 999-9999"')
+  })
+
+  // FJS-4297 — VISION and the guide promise this slot; a `*` that took any
+  // character would swallow a typed separator as content.
+  it('* takes a letter or a digit and drops anything else', () => {
+    const el = { value: '', addEventListener() {}, removeEventListener() {} }
+    let held
+    bindMask(el, () => 'ab#c1-d2', v => { held = v }, '***-***')
+    expect(held).toBe('abc-1d2')
+    expect(el.value).toBe('abc-1d2')
   })
 
   it('$money special pattern', async () => {

@@ -19,6 +19,7 @@
   import Inline from './Inline.mesa'
   import Palette from './Palette.mesa'
   import { arrive, begin, clientFor, forget, held, onHeldChange } from './handoff.js'
+  import { rebuildOf } from './live.js'
   import { pagesOf } from './palette.js'
   import { LOC, OURS, fieldFor, parseLoc, stampedFrom } from './pick.js'
 
@@ -35,6 +36,10 @@
   let notice  = null
   let asking  = false
   let palette = false
+  // The last save's way to the preview: `building`, `ready` or `failed`.
+  let rebuild = null
+  let rebuildError = null
+  var hasSave = null
 
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform)
 
@@ -66,6 +71,28 @@
 
   function signedOut() {
     who = null; files = null; opened = null; over = null; box = null; asking = false; palette = false
+    rebuild = null; hasSave = null
+  }
+
+  // A refresh while the save builds shows the page without it, which reads as
+  // a lost change, so the bar says when the preview serves it.
+  function watch(commit) {
+    if (!commit) return
+    hasSave = rebuildOf(commit)
+    rebuild = 'building'; rebuildError = null
+    rebuilding()
+  }
+
+  async function rebuilding() {
+    if (!hasSave || !who) return
+    try {
+      const { drafts } = await clientFor(site, who.key).service('drafts').invoke('list', null, { appId: site.appId })
+      const preview = drafts.find((d) => d.name === site.draft)?.preview ?? null
+      rebuild = hasSave(preview)
+      if (rebuild === 'failed') rebuildError = preview.error ?? 'its build failed'
+    } catch {
+      // A missed look is retried on the next tick; the save itself stands.
+    }
   }
 
   function signOut() { forget(); signedOut() }
@@ -102,7 +129,7 @@
   }
 
   function inlineClosed(result) {
-    if (result?.saved) notice = `Saved to ${site.draft}. The preview rebuilds with it shortly.`
+    if (result?.saved) { notice = `Saved to ${site.draft}.`; watch(result.commit) }
     opened = null
   }
 
@@ -153,6 +180,7 @@
     removeEventListener('scroll', leave)
     unhear()
   })
+  $.every(3000, rebuilding, { when: rebuild === 'building' })
 </script>
 
 <mesa:window onkeydown={keydown} />
@@ -170,7 +198,7 @@
   <Inline {site} key={who.key} path={opened.path} line={opened.line} el={opened.inline}
           onclose={inlineClosed} onform={toForm} />
 {:else if opened?.path}
-  <Field {site} key={who.key} path={opened.path} line={opened.line} why={opened.why} onclose={() => opened = null} />
+  <Field {site} key={who.key} path={opened.path} line={opened.line} why={opened.why} onclose={() => opened = null} onsaved={watch} />
 {:else if opened?.template}
   <article class="card glass theme-basecamp fjs-editor-field" data-fjs-editor-ui aria-label="Pick a file">
     <div class="surface-header">
@@ -200,6 +228,9 @@
       <a class="btn ghost" href={site.page}>Open in basecamp</a>
       <button class="btn ghost" onclick={signOut}>Sign out</button>
     {#if notice}<span role="status">{notice}</span>{/if}
+    {#if rebuild === 'building'}<span role="status" id="fjs-rebuilding">The preview is rebuilding with the change…</span>
+    {:else if rebuild === 'ready'}<span role="status" id="fjs-rebuilt">The preview has the change now; a reload shows it.</span>
+    {:else if rebuild === 'failed'}<span class="text-danger" role="alert" id="fjs-rebuild-failed">The preview did not rebuild: {rebuildError}</span>{/if}
     {#if error}<span class="text-danger" role="alert">{error}</span>{/if}
   </article>
   {:else}

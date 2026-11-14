@@ -305,20 +305,25 @@ sharing, `render-component.test.js` § *temp module lifetime* the sweeps.
 
 ## What a browser global answers, and why nothing says so
 
-A server render runs inside happy-dom, so the browser globals are **present and
-answering** rather than absent. Measured under happy-dom 20:
+A server render runs inside happy-dom, so the browser globals read through
+`window` are **present and answering** rather than absent. `initRenderer` lifts
+only a short list onto the global scope (`GLOBALS` in `render.js`), so the same
+name written bare can answer differently or not at all. Measured under happy-dom
+20 on Node 22, pinned by `render-ssr.test.js` § *what a browser global answers*:
 
 | Read | Answer on the server |
 | --- | --- |
-| `window.innerWidth` / `innerHeight` | `1280` / `1024` |
-| `navigator.userAgent` | `Node.js/22` (not a browser UA) |
-| `matchMedia('(min-width: 900px)').matches` | `false` — every query, regardless |
+| `window.innerWidth` / `window.innerHeight` | `1280` / `800` |
+| `window.matchMedia(q).matches` | evaluated against that desktop: `(min-width: 900px)` true, `(hover: hover)` true, `(max-width: 600px)` false, `(prefers-color-scheme: dark)` false |
+| `window.navigator.userAgent` | happy-dom's: `Mozilla/5.0 (X11; Linux x64) … HappyDOM/20.x` |
+| `navigator.userAgent`, bare | `Node.js/22` — Node's own `navigator`, which `initRenderer` cannot replace |
 | `window.devicePixelRatio` | `1` |
-| `localStorage` | **absent** — a read throws `localStorage is not defined` |
+| `window.localStorage` | happy-dom's in-memory store, empty each process |
+| `innerWidth`, `matchMedia`, `localStorage`, `devicePixelRatio`, bare | **absent** — a read throws `<name> is not defined` |
 
-So a component that branches on viewport width bakes the desktop branch into the
-page, and a component that branches on a media query bakes the false one. Both
-are plausible pages. Neither reports.
+So a component that branches on viewport width or on a media query through
+`window` bakes the desktop branch into the page — a plausible page, and nothing
+reports.
 
 **That silence is deliberate** (`FJS-D214`). Every neighbouring rule here is
 silent by design — `{@attach}` does not run on the server, `$.onMount` is inert,
@@ -332,10 +337,10 @@ style preference here: the server always answers with the wide viewport, so a
 layout that starts narrow and widens is correct in the baked page and a layout
 that starts wide and narrows is not.
 
-`localStorage` is the one that fails loudly rather than quietly, and the error
-now names the component and the `.mesa` file it came from (`FJS-872`). Guard it
-with `typeof localStorage !== 'undefined'`, which works — the global is genuinely
-undefined rather than a throwing accessor.
+A bare read of a name the table marks absent fails loudly rather than quietly,
+and the error names the component and the `.mesa` file it came from (`FJS-872`).
+Guard it with `typeof localStorage !== 'undefined'`, which works — the global is
+genuinely undefined rather than a throwing accessor.
 
 ---
 

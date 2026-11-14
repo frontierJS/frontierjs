@@ -84,6 +84,32 @@ export function liveWords() {
   }
 }
 
+/**
+ * Whether the preview serves a save yet, read off `drafts.list`'s preview for
+ * the draft each time it is polled: `building`, `ready` or `failed`. A refresh
+ * before `ready` shows the page without the change, which reads as lost.
+ *
+ * A save queues its commit, but a build already running finishes first and
+ * reports `ready` on the head before it; so a commit seen before the save's
+ * own is older, and only a build of the save's commit, or of one seen after
+ * it, has the change.
+ * @param {string} saved the commit the save answered with
+ * @returns {(preview: { state: string, commit: string, built: string | null } | null) => 'building' | 'ready' | 'failed'}
+ */
+export function rebuildOf(saved) {
+  const older = new Set()
+  let seen = false
+  const past = (c) => c === saved || (seen && !older.has(c))
+  return (p) => {
+    if (!p) return 'building'
+    if (p.commit === saved) seen = true
+    else if (!seen) older.add(p.commit)
+    if (p.state === 'ready' && p.built === p.commit && past(p.built)) return 'ready'
+    if (p.state === 'failed' && past(p.commit)) return 'failed'
+    return 'building'
+  }
+}
+
 // A front-matter line: the page shows its value, not the key.
 const KEYED   = /^\s*[\w-]+:\s+(.*)$/
 const unquote = (v) => /^(["']).*\1$/.test(v) ? v.slice(1, -1) : v

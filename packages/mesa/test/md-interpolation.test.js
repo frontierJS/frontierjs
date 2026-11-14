@@ -182,3 +182,34 @@ describe('a heading id is never slugged from a brace (FJS-1500)', () => {
     expect(await idOf('## A set {1, 2, 3}\n')).toBe('a-set-1-2-3')
   })
 })
+
+// ─── a list inside {#each} ───────────────────────────────────────────────────
+
+// Markdown is converted before the loop exists, so remark saw one item and
+// wrote one list around it, and every iteration repeated the list (FJS-4299).
+describe('a markdown list inside {#each} is one list', () => {
+  const tags = `<script>const tags = ['a', 'b']</script>\n\n`
+
+  it('a bullet per iteration renders one <ul>', async () => {
+    const html = await renderMd(tags + '{#each tags as tag (tag)}\n- {tag}\n{/each}\n')
+    expect(html.match(/<ul>/g)).toHaveLength(1)
+    expect(html).toMatch(/<ul>\s*<li>a<\/li>\s*<li>b<\/li>\s*<\/ul>/)
+  })
+
+  it('a numbered item per iteration renders one <ol>, nested lists kept', async () => {
+    const html = await renderMd(tags + '{#each tags as tag (tag)}\n1. {tag}\n   - x\n{/each}\n')
+    expect(html.match(/<ol>/g)).toHaveLength(1)
+    expect(html.match(/<ul>/g)).toHaveLength(2)
+  })
+
+  it('an {:else} keeps its prose out of the list', async () => {
+    const html = await renderMd(`<script>const tags = []</script>\n\n{#each tags as tag (tag)}\n- {tag}\n{:else}\nnone\n{/each}\n`)
+    expect(html).toContain('<p>none</p>')
+    expect(html).not.toContain('<ul>')
+  })
+
+  it('a body holding more than the list is left alone', async () => {
+    const html = await renderMd(tags + '{#each tags as tag (tag)}\n- {tag}\n\nafter\n{/each}\n')
+    expect(html.match(/<ul>/g)).toHaveLength(2)
+  })
+})

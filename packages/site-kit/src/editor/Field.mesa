@@ -32,6 +32,8 @@
   export let line = null
   export let why = null
   export let onclose
+  /** Called with the commit of each save that changed the draft, so the bar can say when the preview has it. */
+  export let onsaved = null
 
   let form    = null
   let body    = ''
@@ -102,9 +104,10 @@
       const done = await drafts().invoke('arrange', null, sent)
       const what = entry ? `'${entry.label}'` : 'This item'
       notice = !done.changed ? 'Nothing had changed'
-        : act === 'remove' && !entry ? `Removed ${path} from ${site.draft}. The preview rebuilds without it shortly.`
-        : done.copy ? `Copied as ${done.copy} on ${site.draft}. The preview rebuilds with it shortly.`
-        : `${act === 'copy' ? `Copied ${what}` : act === 'remove' ? `Removed ${what}` : `Moved ${what} ${act}`} on ${site.draft}. The preview rebuilds with it shortly.`
+        : act === 'remove' && !entry ? `Removed ${path} from ${site.draft}.`
+        : done.copy ? `Copied as ${done.copy} on ${site.draft}.`
+        : `${act === 'copy' ? `Copied ${what}` : act === 'remove' ? `Removed ${what}` : `Moved ${what} ${act}`} on ${site.draft}.`
+      if (done.changed) onsaved?.(done.commit)
       if (act === 'remove' && !entry) form = null
       else await load(false)
     } catch (err) {
@@ -136,8 +139,9 @@
       if (p.file) sent.photo = p.file
       const done = await drafts().invoke('photo', null, sent)
       notice = !done.changed ? 'Nothing had changed'
-        : done.photo ? `Saved ${done.photo} as ${k.key} on ${site.draft}. The preview rebuilds with it shortly.`
-        : `Saved the words for ${k.key} on ${site.draft}. The preview rebuilds with them shortly.`
+        : done.photo ? `Saved ${done.photo} as ${k.key} on ${site.draft}.`
+        : `Saved the words for ${k.key} on ${site.draft}.`
+      if (done.changed) onsaved?.(done.commit)
       if (p.url) URL.revokeObjectURL(p.url)
       const { [k.key]: _, ...rest } = photos
       photos = rest
@@ -157,7 +161,8 @@
       const saved = await drafts().invoke('save', null, sent)
       live.keep()
       await load(false)
-      notice = saved.changed ? `Saved to ${site.draft}. The preview rebuilds with it shortly.` : 'Nothing had changed'
+      notice = saved.changed ? `Saved to ${site.draft}.` : 'Nothing had changed'
+      if (saved.changed) onsaved?.(saved.commit)
     } catch (err) {
       error = err.message
     }

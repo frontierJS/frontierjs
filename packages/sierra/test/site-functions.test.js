@@ -294,6 +294,26 @@ describe('the Cloudflare adapter', () => {
     expect(src).not.toMatch(/^\s*import\b|\bimport\s*\(|\brequire\s*\(/m)
   })
 
+  // FJS-4268: a camp whose account lacks the zone uploaded the Worker, then failed on the custom domain.
+  test('a deploy refuses a host whose zone is not on the account, before anything is uploaded', async () => {
+    const asked = []
+    const zones = (names) => async (url) => {
+      const name = new URL(url).searchParams.get('name')
+      asked.push(name)
+      return Response.json({ success: true, result: names.includes(name) ? [{ name }] : [] })
+    }
+    const env = { CLOUDFLARE_API_TOKEN: 't', CLOUDFLARE_ACCOUNT_ID: 'acct1' }
+    const config = { siteUrl: 'https://www.kobami.com' }
+    await expect(adapter.deploySite({ root: CF, config, env, fetch: zones([]), log: () => {} }))
+      .rejects.toThrow(/www\.kobami\.com is in no zone on Cloudflare account acct1/)
+    expect(asked).toEqual(['www.kobami.com', 'kobami.com'])
+
+    expect(await adapter.zoneOnAccount({ host: 'www.kobami.com', env, fetch: zones(['kobami.com']) })).toBe(true)
+    // Unknown is not a no: wrangler is left to answer.
+    expect(await adapter.zoneOnAccount({ host: 'kobami.com', env, fetch: async () => new Response('', { status: 403 }) })).toBe(null)
+    expect(await adapter.zoneOnAccount({ host: 'kobami.com', env: {}, fetch: zones([]) })).toBe(null)
+  })
+
   test('the Worker answers a function, with strings only, and hands every other path to ASSETS', async () => {
     const { default: entry } = await import(join(CF, adapter.WORKER_ENTRY))
     const env = { KEY: 'cf-secret', ASSETS: { fetch: () => new Response('from assets') } }

@@ -15,7 +15,7 @@ import { readSettings, writeSettingsModule } from '../config/content.js'
 import { siteKit } from '../config/vite.js'
 import { collection } from '../src/collection.js'
 import { LOCKED_KEYS, applyEdit, applyPhoto, arrangeCollection, changeRefusal, collectionOf, formOf, lockedKeysChanged, pathRefusal, photoName, photoOf } from '../src/editable.js'
-import { changedBlocks, hunkChanges, plainSwap } from '../src/editor/live.js'
+import { changedBlocks, hunkChanges, plainSwap, rebuildOf } from '../src/editor/live.js'
 import { matching, pageAddress, pagesOf } from '../src/editor/palette.js'
 import { pageOf, routeFile } from '../src/editor/pick.js'
 
@@ -411,6 +411,20 @@ try {
       html('<p class="gold-text">SEO</p>', '<p class="blue-text">SEO</p>').plain === false)
     check('a raw-HTML line changed in two places waits for the rebuild',
       html('<p>A <b>B</b></p>', '<p>X <b>Y</b></p>').plain === false)
+
+    // FJS-4270: a save says when the preview serves it, so a refresh before then is not read as a lost change.
+    const status = (state, commit, built) => ({ state, commit, built, error: state === 'failed' ? 'boom' : null })
+    const seen = (saved, ...previews) => { const has = rebuildOf(saved); return previews.map(has) }
+    check('a save is rebuilding until the preview has built its commit',
+      seen('s1', status('queued', 's1', 'a0'), status('building', 's1', 'a0'), status('ready', 's1', 's1')).join() === 'building,building,ready')
+    check('the last build finishing, before the save is picked up, is not the save live',
+      seen('s1', status('building', 'a0', 'z9'), status('ready', 'a0', 'a0'), status('building', 's1', 'a0'), status('ready', 's1', 's1')).join()
+        === 'building,building,building,ready')
+    check('a later save built past this one has it too',
+      seen('s1', status('queued', 's1', 'a0'), status('ready', 's2', 's2')).join() === 'building,ready')
+    check("the save's build failing is said", seen('s1', status('building', 's1', 'a0'), status('failed', 's1', 'a0')).at(-1) === 'failed')
+    check('an older build that failed is not this save failing', seen('s1', status('failed', 'a0', 'z9')).join() === 'building')
+    check('no preview yet is rebuilding', seen('s1', null).join() === 'building')
   }
 
   // ─── the route file a preview's address was built from ────────────────────

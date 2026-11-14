@@ -169,6 +169,26 @@ export function localArchive(app: App, row: ArchiveRow): string | null {
   return dir && existsSync(dir) ? dir : null
 }
 
+/** The `tar` that turns the archive directory `dir` into the .tar.gz an upload
+ *  sends and a download streams, `dir`'s own name its one top entry, written to
+ *  `out` (`-` is stdout). A local archive is tarred afresh by every download
+ *  and checked against the sha256 taken when it was written (`FJS-4254`), so
+ *  entry order and owner are pinned: readdir order is the filesystem's. */
+export function archiveTarArgs(dir: string, out = '-'): string[] {
+  return ['tar', '--sort=name', '--owner=0', '--group=0', '--numeric-owner', '-czf', out, '-C', dirname(dir), basename(dir)]
+}
+
+/** sha256 of the .tar.gz `archiveTarArgs` makes of `dir`, streamed, so taking
+ *  it needs no second copy on the disk. */
+export async function archiveTarSha256(dir: string): Promise<string> {
+  const proc   = Bun.spawn(archiveTarArgs(dir), { stdout: 'pipe', stderr: 'pipe' })
+  const hasher = new Bun.CryptoHasher('sha256')
+  for await (const chunk of proc.stdout) hasher.update(chunk)
+  const code = await proc.exited
+  if (code !== 0) throw new Error(`tar exited ${code}: ${(await new Response(proc.stderr).text()).trim()}`)
+  return hasher.digest('hex')
+}
+
 /**
  * Delete the bucket object a remote row names, every version of it. Answers
  * why not when it could not, and null once it is gone.

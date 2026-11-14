@@ -353,9 +353,9 @@ manifest, and the saved `.tar.gz` hashes to the row's `sha256`.
   navigates to it. The admin key never reaches the browser.
   - The link is single-use and short-lived (`mintArchiveUrl`, or the bucket's
     pre-signed GET), so it is fetched on press, never listed.
-  - Built 2026-11-12. The link fetched chartered's tar (15.8 MB). The row's
-    sha256 is null for an archive kept on the box's own disk (`FJS-4254`), so
-    the hash half of the done-when waits on that or on a destination.
+  - Built 2026-11-12. The link fetched chartered's tar (15.8 MB). A local
+    archive records its sha256 since `FJS-4254` closed in the tree, so the hash
+    half of the done-when waits on a redeploy to chartered and a new backup.
 
 ### Phase 11 — One-click Spaces backups
 

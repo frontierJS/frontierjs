@@ -146,9 +146,47 @@ function protect(src) {
 }
 
 function restore(src, map, attrs) {
+  src = hoistEachLists(src, map)
   src = src.replace(PLACEHOLDER_RE, (_, idx) => map[Number(idx)] ?? '')
   for (const { token, filler, text } of attrs) src = src.split(token + filler).join(text).split(token).join(text)
   return src
+}
+
+// Markdown is converted before the loop exists, so `- {tag}` in a `{#each}`
+// body is one item remark wraps in its own list, and every iteration repeated
+// the list (FJS-4299). A body that is exactly one list is moved inside it, so
+// the iterations write items into one list. A body with an `{:else}` or more
+// than the list stays as written: the else branch is not an item.
+const EACH_LIST_RE = /<!--MESA:(\d+)-->\s*<(ul|ol)(\s[^>]*)?>/g
+const EACH_END_RE = /^\s*<!--MESA:(\d+)-->/
+
+function hoistEachLists(src, map) {
+  EACH_LIST_RE.lastIndex = 0
+  let m
+  while ((m = EACH_LIST_RE.exec(src))) {
+    if (!map[Number(m[1])]?.startsWith('{#each')) continue
+    const tag = m[2]
+    const bodyStart = m.index + m[0].length
+    const close = listCloseOf(src, tag, bodyStart)
+    if (close < 0) continue
+    const after = close + `</${tag}>`.length
+    const end = EACH_END_RE.exec(src.slice(after))
+    if (!end || !/^\{\/each\s*\}$/.test(map[Number(end[1])] ?? '')) continue
+    const open = `<${tag}${m[3] ?? ''}>`
+    src = src.slice(0, m.index)
+      + `${open}\n<!--MESA:${m[1]}-->` + src.slice(bodyStart, close) + `<!--MESA:${end[1]}-->\n</${tag}>`
+      + src.slice(after + end[0].length)
+    EACH_LIST_RE.lastIndex = m.index + open.length
+  }
+  return src
+}
+
+function listCloseOf(src, tag, from) {
+  const re = new RegExp(`<(/?)${tag}(?:\\s[^>]*)?>`, 'g')
+  re.lastIndex = from
+  let depth = 1, m
+  while ((m = re.exec(src))) if (!(depth += m[1] ? -1 : 1)) return m.index
+  return -1
 }
 
 // CommonMark reads a tag only when every attribute is one it knows, and

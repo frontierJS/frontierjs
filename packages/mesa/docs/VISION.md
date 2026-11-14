@@ -1535,7 +1535,7 @@ inside the compiler that owns it is one an author cannot hold either.
 
 The `|mask` modifier enforces a character pattern as the user types and writes
 the masked value back through the binding. The pattern uses `9` for digit
-positions, `a` for letter positions, and `*` for any character; all other
+positions, `a` for letter positions, and `*` for a letter or a digit; all other
 characters are literal separators.
 
 ```html
@@ -2562,6 +2562,11 @@ which is not the one this rule is about (`FJS-D213`).
 - {tag}
 {/each}
 ```
+
+An `{#each}` whose body is exactly one list renders ONE list: the list's tags
+move outside the loop and each iteration writes its items. A body with an
+`{:else}` or with anything beside the list is repeated as written — one list per
+iteration — because the else branch is not an item.
 
 ### 18.6 `client:*` Directives
 

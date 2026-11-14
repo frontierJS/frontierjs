@@ -68,9 +68,10 @@ a `.mesa` file. An unclosed brace is still a compile error, in `.md` as in
 {/each}
 ```
 
-Markdown is processed once per branch or iteration, so each pass of the `{#each}`
-above becomes its own `<ul>` with one item. For one list, write the HTML in the
-loop:
+An `{#each}` whose body is exactly one list renders one list, each pass adding
+its items. A body with an `{:else}`, or with anything beside the list, is
+repeated as written, so each pass is its own `<ul>`. For one list there, write
+the HTML in the loop:
 
 ```md
 <ul>

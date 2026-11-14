@@ -6,7 +6,8 @@
  * key of the wrangler config is derived (`FJS-D1213`).
  *
  *   name       `siteUrl`'s host, dots as dashes — `frontierjs.com` → `frontierjs-com`
- *   routes     that host as a custom domain
+ *   routes     that host as a custom domain, refused before upload when a token
+ *              shows its zone is not on the account (`zoneOnAccount`)
  *   assets.*   the outDir, `trailingSlash`, and whether the build wrote `404.html`
  *   main       `.sierra/worker.js`, only when the site has host functions
  *   preview_urls  on, because with `routes` set wrangler turns it off
@@ -261,6 +262,39 @@ export function workerDeployed({ root, config }) {
 }
 
 /**
+ * Whether `host` sits in a zone on the account wrangler deploys with, read
+ * with the same `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` wrangler
+ * reads. Wrangler checks the custom domain only after it has uploaded the
+ * Worker, so a zone on another account left a stray Worker and a late
+ * `only partially updated: Custom domains`.
+ *
+ * @param {object} opts
+ * @param {string} opts.host
+ * @param {Record<string, string | undefined>} [opts.env]
+ * @param {typeof fetch} [opts.fetch]
+ * @returns {Promise<boolean | null>}  null with no token, or when Cloudflare answered neither yes nor no
+ */
+export async function zoneOnAccount({ host, env = process.env, fetch = globalThis.fetch }) {
+  const token = env.CLOUDFLARE_API_TOKEN
+  if (!token) return null
+  const labels = host.split('.')
+  // A zone may be a subdomain's own, so every suffix down to the registrable pair is asked.
+  for (let i = 0; i < labels.length - 1; i++) {
+    const url = new URL('https://api.cloudflare.com/client/v4/zones')
+    url.searchParams.set('name', labels.slice(i).join('.'))
+    if (env.CLOUDFLARE_ACCOUNT_ID) url.searchParams.set('account.id', env.CLOUDFLARE_ACCOUNT_ID)
+    let body
+    try {
+      const res = await fetch(url.href, { headers: { authorization: `Bearer ${token}` } })
+      body = res.ok ? await res.json() : null
+    } catch { return null }
+    if (!body?.success || !Array.isArray(body.result)) return null
+    if (body.result.length) return true
+  }
+  return false
+}
+
+/**
  * Ship the dist the last build wrote, never a rebuild, so what goes out is
  * what the drive just passed. The one caller of `wrangler deploy` and
  * `wrangler versions upload`: site-kit, `sierra site --deploy` and fli's
@@ -276,12 +310,21 @@ export function workerDeployed({ root, config }) {
  * @param {string} [opts.alias]  the preview's name; the git branch otherwise
  * @param {boolean} [opts.dry]  wrangler's `--dry-run`: bundle, upload nothing
  * @param {(line: string) => void} [opts.log]
+ * @param {Record<string, string | undefined>} [opts.env]  where the token is read for the zone check
+ * @param {typeof fetch} [opts.fetch]
  * @returns {Promise<{ name: string, alias: string | null, exitCode: number }>}
  */
-export async function deploySite({ root, config, preview = false, alias, dry = false, log = console.log }) {
+export async function deploySite({ root, config, preview = false, alias, dry = false, log = console.log, env = process.env, fetch }) {
   const made = await writeCloudflare({ root, config, preview })
   const name = made.wrangler.name
   const named = preview ? previewAlias(name, alias ?? gitBranch(root)) : null
+  // A preview claims no domain, and a dry run uploads nothing.
+  if (!named && !dry) {
+    const host = made.wrangler.routes[0].pattern
+    if (await zoneOnAccount({ host, env, fetch }) === false) {
+      throw new Error(`[Sierra] cloudflare: ${host} is in no zone on Cloudflare account ${env.CLOUDFLARE_ACCOUNT_ID ?? 'the token reaches'}, and the Worker claims siteUrl's host as its custom domain — nothing was uploaded; deploy with the account that holds the zone, or set siteUrl to a host this one holds`)
+    }
+  }
   const wrangler = wranglerBin(root)
 
   // A preview is uploaded and never deployed: wrangler prints its version URL,

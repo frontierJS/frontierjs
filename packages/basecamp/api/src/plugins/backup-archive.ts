@@ -20,7 +20,7 @@
 // proxies answer the navigation with the SPA shell.
 
 import { basename }      from 'node:path'
-import { localArchive }  from '../domain/backup/backup-archives.ts'
+import { archiveTarArgs, localArchive } from '../domain/backup/backup-archives.ts'
 import { mint, check }   from './signed-link.ts'
 import type { App }      from '@frontierjs/junction'
 
@@ -47,7 +47,7 @@ export function backupArchive(app: App) {
     if (!dir) return plain(404, `Backup '${id}' has no archive on this disk`)
 
     const name = basename(dir)
-    const proc = Bun.spawn(['tar', '-czf', '-', '-C', `${dir}/..`, name], { stdout: 'pipe', stderr: 'pipe' })
+    const proc = Bun.spawn(archiveTarArgs(dir), { stdout: 'pipe', stderr: 'pipe' })
     // The 200 is sent before tar finishes, so a failure mid-stream reaches the
     // browser only as a truncated file; this line is where it is said.
     proc.exited.then(async code => {
