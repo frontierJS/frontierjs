@@ -38,9 +38,10 @@ if (!src.includes('caravan(')) {
   // Matched rather than compared: the scaffold configures the channels plugin
   // with a connection handler, and an app that has narrowed that down to a bare
   // `channels()` is still the same anchor. A literal would report either shape
-  // as *a file that has been changed under the lesson*.
-  const CONFIGURE = (src.match(/app\.configure\(channels\(\([\s\S]*?\n\}\)\)/)
-                  ?? src.match(/app\.configure\(channels\(\)\)/))?.[0]
+  // as *a file that has been changed under the lesson*. The match keeps its
+  // indent, buildApp's body, and the lines added below take it.
+  const CONFIGURE = (src.match(/[ \t]*app\.configure\(channels\(\([\s\S]*?\n[ \t]*\}\)\)/)
+                  ?? src.match(/[ \t]*app\.configure\(channels\(\)\)/))?.[0]
   const imports   = [...src.matchAll(/^import .*$/gm)]
 
   if (!CONFIGURE || imports.length === 0) {
@@ -61,12 +62,15 @@ if (!src.includes('caravan(')) {
     + "\nimport { caravan }          from '@frontierjs/caravan'"
     + src.slice(last.index + last[0].length)
 
+  const indent = CONFIGURE.match(/^[ \t]*/)[0]
   src = src.replace(CONFIGURE, [
     CONFIGURE,
     '',
-    '// ─── Background work ──────────────────────────────────────────────────────',
-    '// app.jobs from here on; *.job.ts files load from jobs/ beside the root.',
-    'app.configure(caravan())',
+    ...[
+      '// ─── Background work ────────────────────────────────────────────────────',
+      '// app.jobs from here on; *.job.ts files load from jobs/ beside the root.',
+      'app.configure(caravan())',
+    ].map(line => indent + line),
   ].join('\n'))
 
   writeFileSync(appTs, src, 'utf8')

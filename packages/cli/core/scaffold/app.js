@@ -109,6 +109,7 @@ export function makePackageJson(spec) {
   // convenience — without it the container exits non-zero on every start.
   // `--schema` also fixes the migrations directory: litestone resolves it as a
   // sibling of the schema, so this finds db/migrations without a second flag.
+  // It applies only, where `fli db:migrate` creates and applies (FJS-4286).
   //
   // A web-only app has no db/ and installs no litestone, so none of these
   // scripts has a binary to run.

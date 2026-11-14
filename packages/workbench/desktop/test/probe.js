@@ -69,14 +69,18 @@
     if (!form) throw new Error(`the sign-in form never rendered at ${location.pathname}`)
     fill({ key: KEY })
     document.querySelector('button[type=submit]').click()
-    const landed = await waitFor(() => location.pathname === '/workbench/')
+    const landed = await waitFor(() => location.pathname === '/home/')
     say('signIn', { landed: !!landed, path: location.pathname, token: !!localStorage.getItem('workbench_token') })
 
+    // Home carries no link to Local repos; the Chats screen does.
     const before = pagehides()
+    const chats = await waitFor(() => document.querySelector('a[href="/workbench/"]'))
+    chats?.click()
+    await waitFor(() => location.pathname === '/workbench/')
     const link = await waitFor(() => document.querySelector('a[href="/git-activity/local/"]'))
     link?.click()
     const field = await waitFor(() => document.getElementById('root'))
-    say('nav', { linkFound: !!link, arrived: !!field, path: location.pathname, reloads: pagehides() - before })
+    say('nav', { chatsFound: !!chats, linkFound: !!link, arrived: !!field, path: location.pathname, reloads: pagehides() - before })
 
     fill({ root: '~/code' })
     document.querySelector('#local-repos-form button[type=submit]').click()

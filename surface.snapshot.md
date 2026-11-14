@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4541 source file(s) read
+27 package(s) · 4547 source file(s) read
 258 entry point(s), 32 imported by nothing outside their package, 14 emitted
-1782 value export(s), 654 reached by nothing outside, 183 emitted
+1782 value export(s), 654 reached by nothing outside, 184 emitted
 468 type export(s), 341 reached by nothing outside
 ```
 
@@ -37,7 +37,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `litestone` | 28 | 5 | 274 | 129 | 42 | 1 | 1 |
 | `junction` | 28 | 3 | 280 | 120 | 13 | 274 | 211 |
 | `mesa` | 19 | 4 | 327 | 111 | 79 | 0 | 0 |
-| `sierra` | 26 | 6 | 204 | 84 | 20 | 0 | 0 |
+| `sierra` | 26 | 6 | 204 | 84 | 21 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
 | `toolbelt` | 69 | 0 | 324 | 42 | 12 | 0 | 0 |
 | `ui` | 9 | 0 | 56 | 36 | 3 | 0 | 0 |
@@ -274,7 +274,7 @@ Every entry is imported and every name reached.
 
 **Unreached values (84):** `_deepMerge` `_findCatchAll` `_resetInternals` `_resetMcpApp` `_resetPage` `_resetPresenceHolders` `_scrollMemoryHas` `_scrollMemorySize` `afterNavigate` `allSchemas` `appFailed` `applyHostContext` `buildCommitments` `buildGate` `buildLayoutMap` `buildRelations` `buildTransitions` `buildVersion` `ChainRenderer` `columnList` `commitmentsAt` `COMMITTED_MESSAGE` `COMPATIBILITY_DATE` `configureFetch` `createMemoryHistory` `defaultControlFor` `defaultDisplayFor` `fromFor` `generatedFor` `generateRouteTable` `generateWidgetOrigin` `getComponents` `getDirection` `getLayoutChainForNode` `gitBranch` `hasFileComponent` `hasSchemas` `hmrInvalidate` `isPublicRoute` `isSameDocumentOrigin` `isStaleWrite` `labelFieldInfo` `linkHrefOf` `loadLayoutChain` `mountIsland` `mountView` `normalizeBlanks` `oauthErrorMessage` `offlineStatus` `PAGE_RESERVED` `pathAliases` `pickFilter` `previewAlias` `readFrontmatter` `refusedFor` `registeredDisplays` `registerFileComponent` `registerModule` `renderRouteTable` `resolveHtmlClass` `ResourceHookError` `runPostBuild` `scanAndWrite` `seedDetermined` `setScheme` `sierraFetch` `siteEntry` `STALE_WRITE_MESSAGE` `stampedPage` `stripReadOnly` `submitInPlace` `suggestModel` `toConflict` `toolAnswer` `toolCall` `transitionsAt` `unregisterDisplay` `updateParams` `whenReady` `WORKER_ENTRY` `workerDeployed` `workerName` `WRANGLER_CONFIG` `writeCloudflare`
 
-**Emitted (20):** `_setStaticPage` `buildThemeScript` `columnLabel` `configureAnalytics` `configureLocalDb` `CSS_MARK` `generateSchemas` `hmrReload` `hydrateIslands` `initAnalytics` `initRouter` `INTERACTION_TASKS` `mcpApp` `paletteSource` `pendingQueue` `registerSchemas` `remountKey` `resolveChain` `resourceIn` `startView`
+**Emitted (21):** `_setStaticPage` `buildThemeScript` `columnLabel` `configureAnalytics` `configureLocalDb` `CSS_MARK` `generateSchemas` `hmrReload` `hydrateIslands` `initAnalytics` `initRouter` `initTheme` `INTERACTION_TASKS` `mcpApp` `paletteSource` `pendingQueue` `registerSchemas` `remountKey` `resolveChain` `resourceIn` `startView`
 
 ## `@frontierjs/site-kit`
 

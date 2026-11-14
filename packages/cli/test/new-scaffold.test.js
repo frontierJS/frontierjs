@@ -131,7 +131,7 @@ test('--full wires the commitments plugin, the system principal and the notifica
   const appTs = readFileSync(join(app, 'api/src/app.ts'), 'utf8')
   expect(appTs).toContain("import { commitments } from '@frontierjs/junction/commitments'")
   expect(appTs).toMatch(/^\s*system: SYSTEM,$/m)
-  expect(appTs).toMatch(/^app\.configure\(notifications\(\{ db \}\)\)$/m)
+  expect(appTs).toMatch(/^\s*app\.configure\(notifications\(\{ db \}\)\)$/m)
   // After caravan, which commitments() requires.
   expect(appTs.indexOf('app.configure(caravan())')).toBeLessThan(appTs.indexOf('app.configure(commitments())'))
   expect(readFileSync(join(app, 'api/src/core/gate.ts'), 'utf8')).toMatch(/export const SYSTEM\s*=/)
@@ -142,8 +142,8 @@ test('--full wires the commitments plugin, the system principal and the notifica
 test('--with caravan,notifications wires both plugins into app.ts', () => {
   const app = scaffold('with-both', '--with', 'caravan,notifications')
   const appTs = readFileSync(join(app, 'api/src/app.ts'), 'utf8')
-  expect(appTs).toMatch(/^app\.configure\(caravan\(\)\)$/m)
-  expect(appTs).toMatch(/^app\.configure\(notifications\(\{ db \}\)\)$/m)
+  expect(appTs).toMatch(/^\s*app\.configure\(caravan\(\)\)$/m)
+  expect(appTs).toMatch(/^\s*app\.configure\(notifications\(\{ db \}\)\)$/m)
   expect(existsSync(join(app, 'api/src/notifications'))).toBe(true)
 }, 60_000)
 
@@ -487,3 +487,36 @@ test('make:deploy writes deploy.widgets only when it is given the hostname', () 
   expect(without).not.toContain('widgets')
   expect(withIt).toContain("widgets: {\n      domain: 'widgets.shop.example.com',\n      keep_releases: 3,")
 })
+
+// FJS-4288 — app.ts imported core/db.ts, which opens DATABASE_URL at module
+// load, so a test could not mount the app over createTestEnv's client:
+// importing it opened the dev database first. Run for real -- --source local
+// links the workspace's packages -- since an import that opens a file is only
+// seen by evaluating it. fli new has already written db/app.db, so the app is
+// pointed at a file nothing else makes.
+test('a test mounts the scaffolded app over createTestEnv without opening its database', () => {
+  const app = scaffold('mounted', '--full')
+  const drive = `
+    import { existsSync } from 'node:fs'
+    import { randomBytes } from 'node:crypto'
+    const { buildApp } = await import('./api/src/app.ts')
+    console.log('opened-at-import', existsSync('db/opened.db'))
+    const { createTestEnv } = await import('@frontierjs/testing')
+    const { gate } = await import('./api/src/core/gate.ts')
+    const env = await createTestEnv({
+      schema: 'db/schema.lite', plugins: [gate], encryptionKey: randomBytes(32).toString('hex'),
+      api: ({ db }) => buildApp({ db }),
+    })
+    const user = await env.system.user.create({ data: { email: 'a@example.test', name: 'A' } })
+    const row  = await env.as({ id: user.id, isAdmin: true }).service('users').get(user.id)
+    console.log('served', row.email)
+    await env.close()
+    console.log('opened-at-all', existsSync('db/opened.db'))
+  `
+  writeFileSync(join(app, 'drive.ts'), drive)
+  const r = spawnSync(process.execPath, ['drive.ts'], { cwd: app, encoding: 'utf8', env: { ...process.env, DATABASE_URL: './db/opened.db' } })
+  expect(r.stderr.split('\n').filter(l => /error|Error/.test(l))).toEqual([])
+  expect(r.stdout).toContain('opened-at-import false')
+  expect(r.stdout).toContain('served a@example.test')
+  expect(r.stdout).toContain('opened-at-all false')
+}, 60_000)

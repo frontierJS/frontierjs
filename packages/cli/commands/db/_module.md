@@ -276,6 +276,7 @@ The `db:` commands manage a **Litestone** SQLite database defined in `db/schema.
 ```
 fli db:push        — apply schema.lite to the database directly (no migration file)
 fli db:migrate     — create + apply a migration file; one that deletes values waits to be accepted in it
+                     (the app's `bun run db:migrate` is the deploy's half: apply only, = --apply-only)
 fli db:status      — show pending migrations
 fli db:studio      — open Litestone Studio in the browser
 fli db:explain     — what a .lite word is (aliased `fli explain`; needs no schema)

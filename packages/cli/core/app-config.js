@@ -385,7 +385,8 @@ const AGENT_RULES = [
     text: '`db.$setAuth(user)` returns a scoped client and changes nothing: `const userDb = db.$setAuth(user)`.' },
   { needs: '@frontierjs/litestone', rules: ['migration-history'],
     text: 'A schema change ships as a migration file, `fli db:migrate`. `fli db:push` changes the local tables '
-        + 'and writes no file, and a deploy replays only files.' },
+        + 'and writes no file, and a deploy replays only files. `bun run db:migrate` is the deploy\'s half and only '
+        + 'applies files that exist — the same as `fli db:migrate --apply-only` — so after a schema change it writes nothing.' },
   { needs: '@frontierjs/sierra', rules: ['resource-dir-mesa', 'resource-script', 'resource-file-name', 'resource-one-per-file', 'resource-export-name'],
     text: 'A Resource is a `.mesa` file in `src/resources/`, one per file and named for its model (`Lead.mesa`). '
         + 'Its `<script module>` calls `createResource` with, and exports, the model\'s camelCase plural (`export const leads = createResource(\'leads\')`; a one-row model, its `@id` defaulting to a constant, stays singular); '

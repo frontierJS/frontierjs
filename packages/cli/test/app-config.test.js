@@ -489,6 +489,15 @@ describe('the agent guidance', () => {
     expect(appAgentsMd({ name: 'demo', packages: ['@frontierjs/litestone'] })).not.toContain('app:atlas')
   })
 
+  test('the guide says the app script db:migrate only applies, where fli db:migrate creates one', () => {
+    // FJS-4286. A reader who sees `db:migrate` in package.json and runs it after a
+    // schema change applies nothing new and writes no file the deploy replays.
+    const scripts = JSON.parse(makePackageJson({ name: 'demo', useWeb: false, withPkgs: [], source: 'npm' })).scripts
+    expect(scripts['db:migrate']).toContain('migrate apply')
+    expect(apiOnly).toContain('`bun run db:migrate`')
+    expect(apiOnly).toMatch(/`bun run db:migrate`[^.]*only applies/)
+  })
+
   test('a guide is read a section at a time, through a package the app has', () => {
     // A reader told only not to read a guide whole read it whole anyway
     // (FJS-1549); the command is the instruction. Paired: the path it outlines

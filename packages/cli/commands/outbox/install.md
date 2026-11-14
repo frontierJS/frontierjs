@@ -79,6 +79,7 @@ import { env }              from './core/env.ts'
 const appRoot = fileURLToPath(new URL('../../', import.meta.url))
 const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), 'jobs.db')
 
+// Inside buildApp(), beside its other app.configure calls:
 app.configure(caravan({ db: jobsDb }))  // the outbox needs a queue
 app.configure(outbox())
 

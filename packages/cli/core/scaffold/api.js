@@ -11,8 +11,9 @@ export function makeApiIndexTs() {
   return `// api/index.ts
 // Run with: bun run api/index.ts
 
-import app from './src/app.ts'
+import { buildApp } from './src/app.ts'
 
+const app = await buildApp()
 await app.start()
 `
 }
@@ -27,122 +28,135 @@ export function makeApiAppTs(useAuth, useQueue = false, useNotify = false) {
   const systemImport = useQueue ? `\nimport { SYSTEM }           from './core/gate.ts'` : ''
   // Deferred work nobody asked for -- a commitment's clock firing -- has no
   // caller, and no caller grades STRANGER on a gated model.
-  const systemLine = useQueue ? `\n  system: SYSTEM,` : ''
+  const systemLine = useQueue ? `\n    system: SYSTEM,` : ''
   // The queue's own settings are DECLARED in junction.config.js (its database),
   // and its job directory is jobs/ beside the root, so the call takes none.
-  const queue = useQueue ? `// ─── Deferred work ────────────────────────────────────────────────────────
-// Caravan is a SQLite queue in its own file, jobs.db beside DATABASE_URL. \`boot()\` autoloads
-// api/src/jobs/*.job.ts and \`work()\` starts the workers; a job that declares
-// \`cron\` needs no line here. retention.job.ts is the one that matters on day
-// one: the schema declares \`retention 90d\` on the audit trail, and litestone
-// sweeps it once when the client opens, so a server that stays up prunes
-// nothing after that unless a job does.
-app.configure(caravan())
+  const queue = useQueue ? `  // ─── Deferred work ──────────────────────────────────────────────────────
+  // Caravan is a SQLite queue in its own file, jobs.db beside DATABASE_URL.
+  // \`boot()\` autoloads api/src/jobs/*.job.ts and \`work()\` starts the workers;
+  // a job that declares \`cron\` needs no line here. retention.job.ts is the one
+  // that matters on day one: the schema declares \`retention 90d\` on the audit
+  // trail, and litestone sweeps it once when the client opens, so a server that
+  // stays up prunes nothing after that unless a job does.
+  app.configure(caravan())
 
-// A \`@@commitment\` in db/schema.lite is swept and fired by this plugin, which
-// boot refuses to start without once the schema declares one. With none
-// declared it holds a sweep that finds nothing. It requires caravan, so it
-// stays below it.
-app.configure(commitments())
-
-` : ''
-  const notify = useNotify ? `// ─── Notifications ────────────────────────────────────────────────────────
-// app.notify(recipient, notification) -- an in-app record and a live event on
-// the recipient's channel. A notification is a FILE and the file names it:
-// api/src/notifications/OrderPaid.notification.ts is type "OrderPaid". Email is
-// off: it needs app.configure(mail(...)) from
-// '@frontierjs/junction/mail' above this line, then
-// \`transports: { email: { mailer: 'default' } }\` here.
-app.configure(notifications({ db }))
+  // A \`@@commitment\` in db/schema.lite is swept and fired by this plugin, which
+  // boot refuses to start without once the schema declares one. With none
+  // declared it holds a sweep that finds nothing. It requires caravan, so it
+  // stays below it.
+  app.configure(commitments())
 
 ` : ''
-  if (useAuth) {
-    return `// api/src/app.ts
+  const notify = useNotify ? `  // ─── Notifications ──────────────────────────────────────────────────────
+  // app.notify(recipient, notification) -- an in-app record and a live event
+  // on the recipient's channel. A notification is a FILE and the file names
+  // it: api/src/notifications/OrderPaid.notification.ts is type "OrderPaid".
+  // Email is off: it needs app.configure(mail(...)) from
+  // '@frontierjs/junction/mail' above this line, then
+  // \`transports: { email: { mailer: 'default' } }\` here.
+  app.configure(notifications({ db }))
+
+` : ''
+  // core/db.ts opens db/app.db when it is imported, so a static import of it
+  // here would open the dev database inside every test that builds the app.
+  const header = `// api/src/app.ts
 // The construction site — createApp + every plugin registration lives here.
 // Read top-to-bottom for "how this app is wired."
 //
-// The default export is the configured but-not-yet-started app. The actual
-// \`app.start()\` call lives in api/index.ts so that test code can import this
-// file without binding a port.
+// buildApp() is the app configured but not started, and a function of its
+// client: api/index.ts calls it bare, which opens db/app.db, and a test hands
+// it createTestEnv's client --
+//   createTestEnv({ schema, plugins: [gate], api: ({ db }) => buildApp({ db }) })
+// Nothing in this file opens a database while it is being imported.`
+  const openDb = `  db ??= (await import('./core/db.ts')).db`
+
+  if (useAuth) {
+    return `${header}
 
 import { createApp, channels } from '@frontierjs/junction'${queueImport}
-import { auth, authPlugin } from './core/auth.ts'
+import { makeAuth }         from './core/auth.ts'
 import { joinChannels }     from './core/channels.ts'
-import { db }               from './core/db.ts'
 import { principal }        from './core/principal.ts'${systemImport}
+import type { db as Db }    from './core/db.ts'
 
-// ─── The app ──────────────────────────────────────────────────────────────
-// The db client is passed rather than wired, and it is not a convenience:
-// handing it here installs the per-request scoping AND four things that have
-// no other install site — the write announcement that reaches open tabs, the
-// request context on every audit row, the audit metrics, and the query
-// telemetry the devtools console reads. Scoping the client by hand instead
-// gets the first of those and none of the rest, silently.
-const app = createApp({
-  // services/, jobs/, notifications/ beside this file, ../config above it.
-  root: import.meta.url,
-  auth,
-  db,
-  principal,${systemLine}
-})
+export async function buildApp({ db }: { db?: typeof Db } = {}) {
+${openDb}
+  const { auth, authPlugin } = makeAuth(db)
 
-// ─── Real-time ────────────────────────────────────────────────────────────
-// Registers the /ws route. Without it the browser client has nothing to
-// upgrade to: it falls back to HTTP, which works, and reports itself
-// disconnected forever with no error anywhere.
-//
-// The callback is the other half and is just as silent when it is missing: a
-// service's \`channel:\` says where a write is announced, and until a
-// connection JOINS that channel the announcement reaches nobody. core/channels.ts
-// is where an app decides who listens to what.
-app.configure(channels((a) => {
-  a.channels.on('connection', (session, conn) => joinChannels(a, session, conn))
-}))
+  // ─── The app ────────────────────────────────────────────────────────────
+  // The db client is passed rather than wired, and it is not a convenience:
+  // handing it here installs the per-request scoping AND four things that have
+  // no other install site — the write announcement that reaches open tabs, the
+  // request context on every audit row, the audit metrics, and the query
+  // telemetry the devtools console reads. Scoping the client by hand instead
+  // gets the first of those and none of the rest, silently.
+  const app = createApp({
+    // services/, jobs/, notifications/ beside this file, ../config above it.
+    root: import.meta.url,
+    auth,
+    db,
+    principal,${systemLine}
+  })
 
-// ─── Auth routes ──────────────────────────────────────────────────────────
-// Mounts {apiPrefix}/auth/register, /auth/login, /auth/logout and the
-// rest — apiPrefix moves the plugin's routes with everything else.
-// Its work() phase also starts the hourly sweep of expired sessions and
-// tokens, which a one-shot boot (junction call) skips.
-app.configure(authPlugin)
+  // ─── Real-time ──────────────────────────────────────────────────────────
+  // Registers the /ws route. Without it the browser client has nothing to
+  // upgrade to: it falls back to HTTP, which works, and reports itself
+  // disconnected forever with no error anywhere.
+  //
+  // The callback is the other half and is just as silent when it is missing: a
+  // service's \`channel:\` says where a write is announced, and until a
+  // connection JOINS that channel the announcement reaches nobody.
+  // core/channels.ts is where an app decides who listens to what.
+  app.configure(channels((a) => {
+    a.channels.on('connection', (session, conn) => joinChannels(a, session, conn))
+  }))
 
-${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot.
+  // ─── Auth routes ────────────────────────────────────────────────────────
+  // Mounts {apiPrefix}/auth/register, /auth/login, /auth/logout and the
+  // rest — apiPrefix moves the plugin's routes with everything else.
+  // Its work() phase also starts the hourly sweep of expired sessions and
+  // tokens, which a one-shot boot (junction call) skips.
+  app.configure(authPlugin)
 
-export default app
+${queue}${notify}  // Services in api/src/services/*.service.ts are autoloaded at boot.
+  return app
+}
 `
   }
 
-  return `// api/src/app.ts
-// The construction site — createApp + every plugin registration lives here.
+  return `${header}
 
 import { createApp, channels } from '@frontierjs/junction'${queueImport}
 import { joinChannels }                                  from './core/channels.ts'
-import { db }                                            from './core/db.ts'
 import { principal }                                     from './core/principal.ts'${systemImport}
+import type { db as Db }                                 from './core/db.ts'
 
-// ─── The app ──────────────────────────────────────────────────────────────
-// The db client is passed rather than wired: handing it here installs the
-// per-request scoping AND the write announcement, the audit request context,
-// the audit metrics and the query telemetry, none of which has another install
-// site. Scoping by hand gets the scoping alone, and says nothing.
-const app = createApp({
-  // services/, jobs/, notifications/ beside this file, ../config above it.
-  root: import.meta.url,
-  db,
-  principal,${systemLine}
-})
+export async function buildApp({ db }: { db?: typeof Db } = {}) {
+${openDb}
 
-// ─── Real-time ────────────────────────────────────────────────────────────
-// Registers the /ws route the browser client upgrades to. The callback is the
-// half that is silent without it: a write is announced on the channel its
-// service declares, and reaches nobody until a connection has joined one.
-app.configure(channels((a) => {
-  a.channels.on('connection', (session, conn) => joinChannels(a, session, conn))
-}))
+  // ─── The app ────────────────────────────────────────────────────────────
+  // The db client is passed rather than wired: handing it here installs the
+  // per-request scoping AND the write announcement, the audit request context,
+  // the audit metrics and the query telemetry, none of which has another
+  // install site. Scoping by hand gets the scoping alone, and says nothing.
+  const app = createApp({
+    // services/, jobs/, notifications/ beside this file, ../config above it.
+    root: import.meta.url,
+    db,
+    principal,${systemLine}
+  })
 
-${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot.
+  // ─── Real-time ──────────────────────────────────────────────────────────
+  // Registers the /ws route the browser client upgrades to. The callback is
+  // the half that is silent without it: a write is announced on the channel
+  // its service declares, and reaches nobody until a connection has joined one.
+  app.configure(channels((a) => {
+    a.channels.on('connection', (session, conn) => joinChannels(a, session, conn))
+  }))
 
-export default app
+${queue}${notify}  // Services in api/src/services/*.service.ts are autoloaded at boot.
+  return app
+}
 `
 }
 
@@ -441,19 +455,22 @@ export function makeRetentionJobTs() {
 // api/src/jobs/ is the rest.
 
 import { defineJob } from '@frontierjs/caravan'
-import { sys }       from '../core/db.ts'
 
 /**
  * Sweep every declared retention policy.
  *
  * \`sys\` because it is a DELETE against the base table and applies no gate, no
  * row policy and no \`@@softDelete\`. Answers one row per table it touched.
+ * Imported when the job RUNS: the queue loads this file at boot, and a test
+ * that builds the app over createTestEnv's client would otherwise open
+ * db/app.db through it.
  *
  * 04:00 daily, the hour an app is quietest.
  */
 export default defineJob({
   cron: '0 4 * * *',
   handler: async () => {
+    const { sys } = await import('../core/db.ts')
     const swept   = await sys.$retain()
     const removed = swept.reduce((n, r) => n + r.removed, 0)
 
@@ -534,78 +551,80 @@ ${notify}}
 
 export function makeApiCoreAuthTs() {
   return `// api/src/core/auth.ts
-// Auth instance + plugin. The instance exposes IAuth for use in
-// createApp({ auth }); the plugin mounts /auth/* HTTP routes.
-//
-// Both reference the same \`db\` import — auth uses db.asSystem()
-// internally so its writes bypass gates and policies.
+// Auth instance + plugin, built over the client the app is built over. The
+// instance is createApp({ auth }); the plugin mounts the /auth/* HTTP routes.
+// auth uses db.asSystem() internally, so its writes bypass gates and policies.
 
 import { createLitestoneAuth, auth as authRoutes } from '@frontierjs/auth'
-import { db }   from './db.ts'
+import type { db as Db } from './db.ts'
 import { env }  from './env.ts'
 import { getLevel, standing } from './gate.ts'
 
-export const auth = createLitestoneAuth(db, {
-  encryptionKey:        env.ENCRYPTION_KEY,
+export function makeAuth(db: typeof Db) {
+  const auth = createLitestoneAuth(db, {
+    encryptionKey:        env.ENCRYPTION_KEY,
 
-  // standing() in gate.ts is the one place this app says what 'admin' MEANS,
-  // and it is load-bearing.
-  // gate.ts grades the gate on \`isAdmin\`, and schema.lite spends it three times —
-  // \`@@gate(4.4.4.5)\` for who may delete a person, \`@@allow(update, … ||
-  // auth().isAdmin)\` for whose row, \`@allow(write, auth().isAdmin)\` on role
-  // and isEmailVerified. The User model ships a role STRING, which auth stores
-  // and never interprets, so without this line \`isAdmin\` is never on the
-  // session and all three are dead: an administrator grades USER(4), a delete
-  // is a 403 nobody can clear, editing another person's row is a 404 because a
-  // row policy that matches nothing hides it, and a write to role returns 200
-  // with the field silently stripped.
-  sessionFields:        standing,
+    // standing() in gate.ts is the one place this app says what 'admin' MEANS,
+    // and it is load-bearing.
+    // gate.ts grades the gate on \`isAdmin\`, and schema.lite spends it three times —
+    // \`@@gate(4.4.4.5)\` for who may delete a person, \`@@allow(update, … ||
+    // auth().isAdmin)\` for whose row, \`@allow(write, auth().isAdmin)\` on role
+    // and isEmailVerified. The User model ships a role STRING, which auth stores
+    // and never interprets, so without this line \`isAdmin\` is never on the
+    // session and all three are dead: an administrator grades USER(4), a delete
+    // is a 403 nobody can clear, editing another person's row is a 404 because a
+    // row policy that matches nothing hides it, and a write to role returns 200
+    // with the field silently stripped.
+    sessionFields:        standing,
 
-  sessionTtl:           '30 days',
-  passwordResetTtl:     '1 hour',
-  emailVerificationTtl: '24 hours',
+    sessionTtl:           '30 days',
+    passwordResetTtl:     '1 hour',
+    emailVerificationTtl: '24 hours',
 
-  // Neither sends anything yet: there is no mailer, so the link is printed to
-  // this terminal instead, where you can click it. Both routes answer the same
-  // whether or not the address has an account — they must never reveal who is
-  // registered — so this log is the only place a reset is visible at all.
-  // Wire app.mail.send() in here once the app has a mailer.
-  onPasswordResetRequested: async ({ email, token }) => {
-    // FRONTIER_APP_URL, not the API's origin: the link lands on
-    // web/src/routes/reset/, and the API has no page to answer it. The token rides the fragment:
-    // a fragment is never sent in a request, a Referer or an access log, and
-    // an analytics tag that reads location.href does not forward it.
-    const link = \`\${env.FRONTIER_APP_URL}/reset/#token=\${encodeURIComponent(token)}\`
-    console.log(\`[auth] password reset for \${email} — no mailer, so here is the link:\\n  \${link}\`)
-  },
-  onEmailVerificationRequested: async ({ email, token }) => {
-    const link = \`\${env.FRONTIER_APP_URL}/verify-email/#token=\${encodeURIComponent(token)}\`
-    console.log(\`[auth] verify \${email} — no mailer, so here is the link:\\n  \${link}\`)
-  },
+    // Neither sends anything yet: there is no mailer, so the link is printed to
+    // this terminal instead, where you can click it. Both routes answer the same
+    // whether or not the address has an account — they must never reveal who is
+    // registered — so this log is the only place a reset is visible at all.
+    // Wire app.mail.send() in here once the app has a mailer.
+    onPasswordResetRequested: async ({ email, token }) => {
+      // FRONTIER_APP_URL, not the API's origin: the link lands on
+      // web/src/routes/reset/, and the API has no page to answer it. The token rides the fragment:
+      // a fragment is never sent in a request, a Referer or an access log, and
+      // an analytics tag that reads location.href does not forward it.
+      const link = \`\${env.FRONTIER_APP_URL}/reset/#token=\${encodeURIComponent(token)}\`
+      console.log(\`[auth] password reset for \${email} — no mailer, so here is the link:\\n  \${link}\`)
+    },
+    onEmailVerificationRequested: async ({ email, token }) => {
+      const link = \`\${env.FRONTIER_APP_URL}/verify-email/#token=\${encodeURIComponent(token)}\`
+      console.log(\`[auth] verify \${email} — no mailer, so here is the link:\\n  \${link}\`)
+    },
 
-  // Runs after a password change or reset, an email change, TOTP on or off,
-  // an API key, a linked provider. The person who did NOT make the change
-  // learns of it here or nowhere, so send it with app.mail.send() once the
-  // app has a mailer. A throw is logged and refuses nothing. Say what changed
-  // and never put a link in it that undoes it: a forged copy would be the phish.
-  onCredentialChanged: async ({ event, email }) => {
-    console.log(\`[auth] \${event} on the account of \${email} — no mailer, so nobody was told\`)
-  },
-})
+    // Runs after a password change or reset, an email change, TOTP on or off,
+    // an API key, a linked provider. The person who did NOT make the change
+    // learns of it here or nowhere, so send it with app.mail.send() once the
+    // app has a mailer. A throw is logged and refuses nothing. Say what changed
+    // and never put a link in it that undoes it: a forged copy would be the phish.
+    onCredentialChanged: async ({ event, email }) => {
+      console.log(\`[auth] \${event} on the account of \${email} — no mailer, so nobody was told\`)
+    },
+  })
 
-export const authPlugin = authRoutes({
-  auth,
+  const authPlugin = authRoutes({
+    auth,
 
-  // Token in response body by default. Set true for httpOnly session cookie.
-  cookieAuth: false,
+    // Token in response body by default. Set true for httpOnly session cookie.
+    cookieAuth: false,
 
-  // The same ladder every @@gate is graded on, published as \`session.level\`
-  // on account.me. Without it that level is null and the browser's can()
-  // answers true for everyone: a nav that offers a manager's links by can()
-  // shows them to a plain user. gate.ts is the one resolver; this is not a
-  // second mapping.
-  services: { level: getLevel },
-})
+    // The same ladder every @@gate is graded on, published as \`session.level\`
+    // on account.me. Without it that level is null and the browser's can()
+    // answers true for everyone: a nav that offers a manager's links by can()
+    // shows them to a plain user. gate.ts is the one resolver; this is not a
+    // second mapping.
+    services: { level: getLevel },
+  })
+
+  return { auth, authPlugin }
+}
 `
 }
 

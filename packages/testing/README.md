@@ -103,34 +103,20 @@ app's own construction, and never give it a second client on the same file:
 `arrange` and `announced()` would then be watching different connections.
 
 That only works when the construction takes the client. A scaffolded
-`api/src/app.ts` imports `./core/db.ts`, which opens `db/app.db` at import, and
-`core/auth.ts` holds that client too. So a test that imports `app.ts` opens the
-dev database before `createTestEnv` runs. Export the construction as a function
-of the client, and open the file in the entry point. Basecamp does this:
-`buildBasecampApp({ db })` in `api/src/app.ts`, which `api/index.ts` calls with
-no arguments.
+`api/src/app.ts` exports `buildApp({ db })`: `api/index.ts` calls it bare, which
+opens `db/app.db`, and a test hands it this env's client. Basecamp's
+`buildBasecampApp({ db })` is the same shape.
 
 ```js fragment
 // api/test/env.ts
 const env = await createTestEnv({ schema, plugins: [gate], api: ({ db }) => buildApp({ db }) })
 ```
 
-Until the app is split, the factory rebuilds those parts by hand:
-
-- `root`, pointed at `app.ts`, so its services autoload.
-- `createStubAuth()`, in place of the auth module that holds the client.
-- The app's `principal` resolvers.
-- Every raw route `app.ts` adds.
-
-That is a copy of the construction, and it drifts from the original.
-
-```js fragment
-api: ({ db }) => {
-  const app = createApp({ root: new URL('../src/app.ts', import.meta.url).href, auth: createStubAuth(), db, principal })
-  app.post('/share/redeem', share.redeem(db))
-  return app
-},
-```
+An app whose `app.ts` imports a module that opens the database at load cannot
+be mounted this way: importing it opens the dev database before
+`createTestEnv` runs. Move the construction into a function of the client, as
+the scaffold does, rather than rebuilding `createApp` in the test, since that
+copy drifts from the original.
 
 ## Calling a service
 

@@ -82,6 +82,7 @@ import orderShippedAt       from './backfills/order-shipped-at.ts'
 const appRoot = fileURLToPath(new URL('../../', import.meta.url))
 const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), 'jobs.db')
 
+// Inside buildApp(), beside its other app.configure calls:
 app.configure(caravan({ db: jobsDb }))  // a chunk runs as a job
 app.configure(backfill([orderShippedAt]))
 

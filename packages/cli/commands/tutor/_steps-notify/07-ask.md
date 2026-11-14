@@ -37,8 +37,9 @@ const appTs = join(app, 'api', 'src', 'app.ts')
 
 let src = readFileSync(appTs, 'utf8')
 if (!src.includes('/notification-types')) {
-  const ANCHOR = "  transports: { email: { mailer: 'default' } },\n}))"
-  if (!src.includes(ANCHOR)) {
+  // At any indent: the block sits in buildApp's body.
+  const ANCHOR = src.match(/\n([ \t]*)  transports: \{ email: \{ mailer: 'default' \} \},\n[ \t]*\}\)\)/)
+  if (!ANCHOR) {
     await must($, {
       ok:    false,
       name:  'api/src/app.ts has the place this step edits',
@@ -50,12 +51,14 @@ if (!src.includes('/notification-types')) {
     })
     return
   }
-  src = src.replace(ANCHOR, [
-    ANCHOR,
+  src = src.replace(ANCHOR[0], [
+    ANCHOR[0],
     '',
-    '// What this app can send, asked with nothing sent. `via` takes its payload',
-    '// rather than closing over one, which is what makes the answer free.',
-    "app.get('/notification-types', (ctx) => ctx.json([...(app.notifications?.keys() ?? [])]))",
+    ...[
+      '// What this app can send, asked with nothing sent. `via` takes its payload',
+      '// rather than closing over one, which is what makes the answer free.',
+      "app.get('/notification-types', (ctx) => ctx.json([...(app.notifications?.keys() ?? [])]))",
+    ].map(line => ANCHOR[1] + line),
   ].join('\n'))
   writeFileSync(appTs, src, 'utf8')
 }
