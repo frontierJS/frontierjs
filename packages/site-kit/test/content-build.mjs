@@ -171,7 +171,7 @@ try {
     check('a redirect page and the 404 are left out', !byUrl['/old-reviews/'] && !(index ?? []).some((p) => /404/.test(p.url)))
     // Islands from the kit's own folder, not the site's src, reach the page and ship chunks.
     const guideHtml = read('guide/index.html') ?? ''
-    check('Search and Toc imported from the package are islands on the page',
+    check('Search and Toc from the kit's folder are islands on the page',
       /mesa-island/.test(guideHtml) && /Search/.test(guideHtml) && /Toc/.test(guideHtml), guideHtml.slice(0, 400))
 
     const preview = kit('--preview')
