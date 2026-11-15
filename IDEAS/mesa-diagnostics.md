@@ -6,7 +6,7 @@ dated: 2026-11-14
 
 # Idea — Mesa diagnostics: a code, a severity and one shape for every finding Mesa reports
 
-**Status: PROPOSED. Q1–Q5 open; 0.1 next.**
+**Status: PROPOSED. Q1–Q5 ruled 2026-11-14 (`FJS-D2134`–`FJS-D2138`); 0.1 next.**
 Probed against the tree 2026-11-14. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-14): take from Solid 2's diagnostics what Mesa lacks. The
@@ -114,7 +114,7 @@ Done when: Q1–Q5 are ruled and the inventory table names a code and severity f
   current level, the level Q3's meaning gives it, production gating, once-per what.
 - [ ] 0.2 Map each to the Solid code of the same meaning, or coin one; mark the ones Solid has
   and Mesa does not (the comparison is in chat, 2026-11-14; FJS-4290 to FJS-4292 came from it).
-- [ ] 0.3 Rule Q1–Q5.
+- [x] 0.3 Rule Q1–Q5 — ruled 2026-11-14, `FJS-D2134`–`FJS-D2138`.
 
 ## Phase 1 — One shape, two emitters
 

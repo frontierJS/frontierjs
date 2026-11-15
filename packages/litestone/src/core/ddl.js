@@ -298,9 +298,10 @@ function defaultExpr(attr) {
 // `release.js` asks of a new required field, and it has to be the same answer
 // the DDL gives or the two disagree about the same schema.
 //
-// `@updatedAt` implies DEFAULT now() and `@version` implies DEFAULT 1; an array
-// column defaults to '[]' unless it declares its own, because an empty array is
-// its null state. Everything else with no SQL expression (`auth()`, `cuid()`,
+// `@updatedAt` implies DEFAULT now() and `@version` implies DEFAULT 1; a
+// required array column defaults to '[]' unless it declares its own, and a
+// `T[]?` defaults to NULL so "no list" stays distinct from `[]` (`FJS-D2114`).
+// Everything else with no SQL expression (`auth()`, `cuid()`,
 // a sibling field) is stamped by the client at write time and is therefore NOT
 // a default as far as a hand-written INSERT is concerned.
 
@@ -310,7 +311,7 @@ export function columnDefaultExpr(field) {
     ?? (attrs.some(a => a.kind === 'updatedAt') ? `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` : null)
     ?? (attrs.some(a => a.kind === 'version')   ? '1' : null)
 
-  if (field.type?.array) return expr ?? `'[]'`
+  if (field.type?.array && !field.type.optional) return expr ?? `'[]'`
   return expr
 }
 
@@ -323,10 +324,7 @@ function columnDef(field, schema = null, compositePk = false, strict = true, cma
   // NOT NULL — unless optional, and not for GENERATED/funcCall columns
   // SQLite rejects NOT NULL on GENERATED ALWAYS AS columns
   const isGenerated = field.attributes.find(a => a.kind === 'generated' || a.kind === 'funcCall')
-  if (field.type.array) {
-    // Arrays: always NOT NULL (empty array is the null state), always default to '[]'
-    parts.push('NOT NULL')
-  } else if (!field.type.optional && !isGenerated) {
+  if (!field.type.optional && !isGenerated) {
     parts.push('NOT NULL')
   }
 

@@ -279,7 +279,7 @@ export function webPush(opts: WebPushOptions): NotificationDriver & { vapidPubli
   const deliver = opts.deliver ?? viaFetch
   return {
     transport: 'push',
-    // Read by the plugin, which serves it at GET /push-subscriptions/key.
+    // Read by the plugin, which serves it at GET /pushSubscriptions/key.
     vapidPublicKey: opts.vapid.publicKey,
     async send(recipient: Recipient, message: unknown, app: App): Promise<void> {
       const msg = message as PushMessage

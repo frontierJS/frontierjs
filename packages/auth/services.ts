@@ -15,10 +15,10 @@
 //   sessions   GET  /sessions              where else am I signed in
 //              DEL  /sessions/{id}         end one of them
 //              POST /sessions              X-Service-Method: revokeOthers
-//   api-keys   GET/POST /api-keys · DEL /api-keys/{id}
+//   apiKeys    GET/POST /apiKeys · DEL /apiKeys/{id}
 //   connections GET /connections      which providers are attached
 //               DEL /connections/{id} detach one
-//   account-recovery POST /account-recovery/{userId}  X-Service-Method: resetTotp
+//   account-recovery POST /accountRecovery/{userId}  X-Service-Method: resetTotp
 //   people     GET  /people/{userId}               their sessions and API keys
 //              POST /people/{userId}               X-Service-Method: revokeSession ·
 //                                                  revokeApiKey · signOut
@@ -56,9 +56,9 @@ const PRINCIPAL_RESOLVER = Symbol.for('junction.principalResolver')
 export const DEFAULT_SERVICE_NAMES = {
   account:  'account',
   sessions: 'sessions',
-  apiKeys:  'api-keys',
+  apiKeys:  'apiKeys',
   connections: 'connections',
-  accountRecovery: 'account-recovery',
+  accountRecovery: 'accountRecovery',
   people:   'people',
 } as const
 

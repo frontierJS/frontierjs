@@ -149,7 +149,7 @@ describe('an authorized app is refused what outlives the approval', () => {
   test('minting an API key is 403', async () => {
     const p = await person()
     const { token } = await mint(p.userId)
-    const res = await call(token, '/api-keys', { name: 'kept' })
+    const res = await call(token, '/apiKeys', { name: 'kept' })
     expect(res.status).toBe(403)
     expect(await res.text()).toContain('from an authorized app')
   })

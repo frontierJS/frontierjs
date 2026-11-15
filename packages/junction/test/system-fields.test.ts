@@ -224,14 +224,14 @@ describe('the set itself', () => {
     const { app } = await appWith()
     const seen: string[][] = []
     app.services.register(createService({
-      name: 'two-hooks', model: 'Doc',
+      name: 'twoHooks', model: 'Doc',
       hooks: { validated: { create: [
         (ctx: ServiceContext) => { ctx.system.add('slug') },
         (ctx: ServiceContext) => { ctx.system.add('slug'); seen.push([...ctx.system]) },
       ] } },
     } as never))
 
-    await request(app).post('/two-hooks').send({ title: 'x' })
+    await request(app).post('/twoHooks').send({ title: 'x' })
 
     expect(seen[0]).toEqual(['slug'])
   })

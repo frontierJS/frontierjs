@@ -219,7 +219,7 @@ try {
   await signIn()
   // The workspace the browser will open after sign-in, so the App is on its screen.
   auth.workspace = (await call('/auth/workspace')).body?.workspace_id
-  const destination = async (name, prefix) => (await call('/backup-destinations', { body: {
+  const destination = async (name, prefix) => (await call('/backupDestinations', { body: {
     name, endpoint: S3, region: 'us-east-1', bucket: BUCKET, prefix, secret: S3_KEY } })).body
   const archives = await destination('Hub archives', 'hub')
   const appDest  = await destination('App replica', 'apps')
@@ -227,8 +227,8 @@ try {
   const appArch  = await destination('App archives', 'apparch')
   check('four destinations on SeaweedFS', [archives, appDest, hubDest, appArch].every(d => d?.id), JSON.stringify([archives, appDest, hubDest, appArch]))
 
-  const current = (await call('/hub-config', { serviceMethod: 'current', body: {} })).body
-  const saved   = await call('/hub-config', { serviceMethod: 'save',
+  const current = (await call('/hubConfig', { serviceMethod: 'current', body: {} })).body
+  const saved   = await call('/hubConfig', { serviceMethod: 'save',
     body: { replicaDestinationId: hubDest.id, ...(current?.version ? { version: current.version } : {}) } })
   check('the hub replicates to a destination of its own', saved.status < 300 && saved.body?.app?.replicaDestinationId === hubDest.id,
     JSON.stringify(saved))
@@ -308,9 +308,9 @@ try {
   const lockSet  = await fetch(`${S3}/${LOCKED}?object-lock=`, { method: 'PUT', body: lockBody,
     headers: { 'content-md5': createHash('md5').update(lockBody).digest('base64') } })
   if (!lockMade.ok || !lockSet.ok) throw new Error(`the locked bucket: create ${lockMade.status}, lock ${lockSet.status}`)
-  const lockedDest = (await call('/backup-destinations', { body: {
+  const lockedDest = (await call('/backupDestinations', { body: {
     name: 'Locked archives', endpoint: S3, region: 'us-east-1', bucket: LOCKED, prefix: 'hub', secret: S3_KEY } })).body
-  const lockTest = await call(`/backup-destinations/${lockedDest?.id}`, { serviceMethod: 'test', body: {} })
+  const lockTest = await call(`/backupDestinations/${lockedDest?.id}`, { serviceMethod: 'test', body: {} })
   check('a destination test reads the bucket\'s one-day compliance lock', lockTest.body?.lockDays === 1, JSON.stringify(lockTest))
   const takeTo = async (destinationId) => {
     const taken = (await call('/hubBackups', { serviceMethod: 'take', body: { destinationId } })).body
@@ -398,12 +398,12 @@ try {
   check('the reconcile records the App replica, last synced at the bucket\'s newest object',
     !!found?.replicaFoundAt && found?.replicaSyncedAt === appNewest, JSON.stringify({ found: found?.replicaSyncedAt, appNewest }) + '\n' +
       api.out.split('\n').filter(l => /reconcile|replica|restore/i.test(l)).slice(-12).join('\n'))
-  const hub = (await call('/hub-config', { serviceMethod: 'current', body: {} })).body
+  const hub = (await call('/hubConfig', { serviceMethod: 'current', body: {} })).body
   const hubNewest = newest(await bucketObjects(`${hubKey}/`))
   check('…and Basecamp\'s own replica on the hub App', !!hub?.app?.replicaFoundAt && hub?.app?.replicaSyncedAt === hubNewest,
     JSON.stringify({ hub: hub?.app?.replicaSyncedAt, hubNewest }))
   let foundArchive = null
-  await until(async () => (foundArchive = ((await call(`/app-backups?appId=${target.id}`)).body?.data ?? [])
+  await until(async () => (foundArchive = ((await call(`/appBackups?appId=${target.id}`)).body?.data ?? [])
     .find(r => r.kind === 'found'))?.status === 'success', 30_000)
   check('…and the App archive newer than the hub\'s, found with no machine and hashed by the hub',
     foundArchive?.location === appArchiveKey && foundArchive?.serverId == null

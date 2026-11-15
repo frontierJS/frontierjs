@@ -221,7 +221,6 @@ name when it declares none.
 
 - **methods** — `resetTotp`
 - **custom methods** — `resetTotp`
-- **also answers to** — `account-recovery`
 - **who may call** —
   - `resetTotp` — standing 1 or above — declared `gate: 1`
 
@@ -233,7 +232,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `unsnooze`, `attachChannel`, `detachChannel`, `snooze`
 - **custom methods** — `unsnooze`, `attachChannel`, `detachChannel`, `snooze`
-- **also answers to** — `alert-rules`
 - **input** — `attachChannel` takes `AlertChannelRef`
 - **input** — `detachChannel` takes `AlertChannelRef`
 - **input** — `snooze` takes `AlertSnooze`
@@ -282,7 +280,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `revoke`, `scopes`, `owners`, `enrollPeer`
 - **custom methods** — `revoke`, `scopes`, `owners`, `enrollPeer`
-- **also answers to** — `api-keys`
 - **who may call** —
   - `revoke` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
   - `scopes` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
@@ -305,7 +302,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `take`, `discard`, `rescan`, `download`, `upload`
 - **custom methods** — `take`, `discard`, `rescan`, `download`, `upload`
-- **also answers to** — `app-backups`
 - **input** — `rescan` takes `AppBackupRescan`
 - **input** — `take` takes `AppBackupTake`
 - **input** — `upload` takes `AppBackupUpload`
@@ -333,7 +329,6 @@ name when it declares none.
 ### `appCopies` · model `AppCopy`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`
-- **also answers to** — `app-copies`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -351,7 +346,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `run`
 - **custom methods** — `run`
-- **also answers to** — `app-drills`
 - **input** — `run` takes `AppDrillRun`
 - **who may call** —
   - `run` — standing 5 or above — declared `gate: 5`
@@ -371,7 +365,6 @@ name when it declares none.
 ### `appEditors` · model `AppEditor`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`
-- **also answers to** — `app-editors`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -441,7 +434,6 @@ name when it declares none.
 ### `auditEvents` · model `AuditEvent`
 
 - **methods** — `find`, `get`, `aggregate`
-- **also answers to** — `audit-events`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -458,7 +450,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `test`, `attestLock`
 - **custom methods** — `test`, `attestLock`
-- **also answers to** — `backup-destinations`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `test` — standing 5 or above — declared `gate: 5`
@@ -499,7 +490,6 @@ name when it declares none.
 ### `conduitTargets` · model `conduitTargets`
 
 - **methods** — `find`, `get`, `remove`
-- **also answers to** — `conduit-targets`
 - **who may call** —
   - `find` — standing 7 or above — declared `gate: 7`
   - `get` — standing 7 or above — declared `gate: 7`
@@ -611,7 +601,6 @@ name when it declares none.
 ### `domainRoutes` · model `DomainRoute`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`
-- **also answers to** — `domain-routes`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -860,7 +849,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `take`, `discard`, `rescan`, `download`
 - **custom methods** — `take`, `discard`, `rescan`, `download`
-- **also answers to** — `hub-backups`
 - **input** — `rescan` takes `BackupRescan`
 - **who may call** —
   - `take` — **any signed-in caller** — floor, read gate 5; standing not graded; then `requireSystemAdmin`; body writes as the app
@@ -884,7 +872,6 @@ name when it declares none.
 
 - **methods** — `current`, `save`, `attestEscrow`, `dismissFound`
 - **custom methods** — `current`, `save`, `attestEscrow`, `dismissFound`
-- **also answers to** — `hub-config`
 - **who may call** —
   - `current` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
   - `save` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
@@ -972,7 +959,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
 - **custom methods** — `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
-- **also answers to** — `maintenance-runs`
 - **who may call** —
   - `usage` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `targets` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -999,7 +985,6 @@ name when it declares none.
 
 - **methods** — `find`, `read`
 - **custom methods** — `read`
-- **also answers to** — `metrics-store`
 - **who may call** —
   - `find` — standing 7 or above — declared `gate: 7`
   - `read` — standing 7 or above — declared `gate: 7`
@@ -1071,7 +1056,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `rules`, `test`
 - **custom methods** — `rules`, `test`
-- **also answers to** — `notification-channels`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `rules` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -1093,7 +1077,6 @@ name when it declares none.
 
 - **methods** — `find`, `save`, `reset`
 - **custom methods** — `save`, `reset`
-- **also answers to** — `notification-preferences`
 - **input** — `reset` takes `NotificationPreferenceReset`
 - **input** — `save` takes `NotificationPreferenceSave`
 - **who may call** —
@@ -1258,7 +1241,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `repositories`
 - **custom methods** — `repositories`
-- **also answers to** — `registry-images`
 - **who may call** —
   - `repositories` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
 
@@ -1318,7 +1300,6 @@ name when it declares none.
 
 - **methods** — `latest`, `fleet`, `check`, `report`
 - **custom methods** — `latest`, `fleet`, `check`, `report`
-- **also answers to** — `server-postures`
 - **who may call** —
   - `latest` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `fleet` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`

@@ -452,9 +452,9 @@ t('guide.everyPageBuilt', guidePages.filter((p) => !built.includes(p)), none)
 // elements, so the markup differs and the characters must not.
 t('guide.h1AndFirstFence', built.filter((p) => {
   const md = readFileSync(join(GUIDE_SRC, `${p}.md`), 'utf8')
-  const h1 = squash((/^# (.+)$/m.exec(md) ?? [, ''])[1].replace(/`/g, ''))
+  const h1 = squash((/^# (.+)$/m.exec(md)?.[1] ?? '').replace(/`/g, ''))
   const fence = /^```[^\n]*\n([\s\S]*?)^```/m.exec(md)
-  const h1Built = textOfHtml((guideHtml[p].match(/<h1[^>]*>([\s\S]*?)<\/h1>/) ?? [, ''])[1])
+  const h1Built = textOfHtml(guideHtml[p].match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] ?? '')
   const pre = (guideHtml[p].match(/<pre[^>]*>[\s\S]*?<\/pre>/g) ?? []).map((x) => squash(textOfHtml(x)))
   return squash(h1Built) !== h1 || (fence && !pre.includes(squash(fence[1])))
 }), none)
@@ -472,7 +472,7 @@ t('guide.linksResolve', built.flatMap((p) =>
 
 // Previous/next: the chain from the first page by following Next visits every
 // page exactly once, in README order, and each Previous names the page before.
-const hrefOf = (h, cls) => (h.match(new RegExp(`<a class="${cls}[^"]*" href="([^"]+)"`)) ?? [, null])[1]
+const hrefOf = (h, cls) => h.match(new RegExp(`<a class="${cls}[^"]*" href="([^"]+)"`))?.[1] ?? null
 const chain = []
 let at = guidePages[0]
 while (at && !chain.includes(at) && guideHtml[at]) {

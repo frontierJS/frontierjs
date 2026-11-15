@@ -46,7 +46,7 @@ import { refreshCopy } from '../src/jobs/app-copy-refresh.job.ts'
 import { routedHosts } from '../src/domain/release/runtime.ts'
 import { exportReleaseImage, imageKey } from '../src/domain/release/image-export.ts'
 import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
-import { mintArchiveUrl } from '../src/plugins/backup-archive.ts'
+import { mintArchiveUrl } from '../src/routes/backup-archive/[id].ts'
 import { mintUploadUrl } from '../src/plugins/app-archive-upload.ts'
 import { mintPullUrls, pullDir, sweepPulls } from '../src/plugins/app-archive-pull.ts'
 import { BODY_CEILING_BYTES } from '../src/plugins/signed-link.ts'
@@ -4219,12 +4219,12 @@ describe('a custom method grades its caller before a system read or a guarded wr
       id: `outpost:fjs-1087-${Math.random().toString(36).slice(2, 8)}`, kind: 'outpost', protocol: 'http',
       address: 'http://127.0.0.1:9', auth: { type: 'hmac', ref: 'secret:none' }, registered_at: Date.now(), last_seen_at: null,
     })
-    const listed = await env.as(sysadmin).service('conduit-targets').find()
+    const listed = await env.as(sysadmin).service('conduitTargets').find()
     const rows   = Array.isArray(listed) ? listed : listed.data
     expect(rows.some((t: any) => String(t.id).startsWith('outpost:fjs-1087-'))).toBe(true)
 
-    await expect(env.as(owner).service('conduit-targets').find()).rejects.toThrow()
-    await expect(env.as(owner).service('conduit-targets').remove(rows[0].id)).rejects.toThrow()
+    await expect(env.as(owner).service('conduitTargets').find()).rejects.toThrow()
+    await expect(env.as(owner).service('conduitTargets').remove(rows[0].id)).rejects.toThrow()
     expect((await (env.app as any).conduit.list()).some((t: any) => t.id === rows[0].id)).toBe(true)
   })
 

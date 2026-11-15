@@ -9218,6 +9218,24 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2181"></a>2026-11-15 · `FJS-D2181` — Q4 — Does the configuration generation stay a counter beside the Release, or fold into the Release — Fold configuration into the Release, as the code already does. `generation` leaves `mintRelease`. Order and the readable list are carried by the release sequence: journal rows on `fli`'s side, `Deployment` rows on Basecamp's. `Environment.version` stays a concurrency guard. Invariants 1 and 2 are amended together, with invariant 1 rewritten as `D636` puts it: the digest promotes, and the Release does not.
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **B** was picked over **A** (Keep the generation as the paper wrote it, and add it to Basecamp's `Environment`).
+
+The paper's recommendation, taken as written: none of the 15 systems keeps a configuration counter apart from the release. Heroku, Cloud Run and Cloud Foundry each make a configuration change a new release, and the per-release `configSnapshot` already holds what a generation would point at. A counter beside a hash that already moves is two answers to *did the configuration change*.
+
+### <a id="fjs-d2178"></a>2026-11-15 · `FJS-D2178` — Q1 — Where is the authoritative release record for an app Basecamp deploys — `Deployment` is authoritative for apps Basecamp deploys. Outpost keeps a one-way copy of the last N release records (Release id, image digest, configuration snapshot, secret refs) beside the images it already keeps, so a revert works with Basecamp down. `D746` is amended to cover only `fli deploy`, which has no control plane.
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **B** was picked over **A** (Outpost writes the same `deploy.lite` journal on the machine, and `Deployment` becomes Basecamp's view of it. `D746` stands as written), **C** (Two records, never synced, joined by a shared Release id (Q2)).
+
+The paper's recommendation, taken as written: the balena shape. Every system surveyed that has both a control plane and an agent puts history in the control plane. A would make Outpost write a journal that Basecamp then mirrors back, which is two writers for one fact. - **What B owes.** - **The amendment says why `D746`'s rejection of *in Basecamp* does not apply.** That rejection was *two operators get two histories of one server*. One control plane per machine cannot produce two histories. - **The copy is checked, not trusted.** Outpost refuses by name a revert whose cached Release id or digest disagrees with the request or with the image on disk. A stale or pruned copy then says so instead of reverting to the wrong thing. - **It retires a rule for this path.** `release-transitions.md`'s *Basecamp is a viewer and a trigger, never the source of truth* was written before Basecamp deployed anything. Its purpose, *a revert works without Basecamp*, is what the Outpost copy keeps.
+
+### <a id="fjs-d2171"></a>2026-11-15 · `FJS-D2171` — Q2 — Does a Basecamp release carry the same content-addressed Release id as `fli deploy` — Yes. `mintRelease` and `RELEASE_FORMAT` move to a package Basecamp, Outpost and `cli` all import, and `Deployment` gains a `releaseId`.
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **A** was picked over **B** (No. Basecamp keeps its row id, and drift grading (`FJS-D740`) and *promote* (`FJS-D636`) stay `fli`-only).
+
+The paper's recommendation, taken as written: `D740` splits drift by Release id and `D636` recognizes a promotion by digest, and both are worth most on the fleet path. The mint is one pure function and a format constant. Two things to settle while moving it: - **Dependency direction.** The new home must not make `cli` import Basecamp or the reverse (Invariant 1's spirit). - **One id test.** It proves both paths mint the same id for the same terms, because a format bump on one side alone would silently split them.
+
 ### <a id="fjs-d1663"></a>2026-11-14 · `FJS-D1663` — How does a route file (`FJS-D626`) reach the app: a second argument, `ctx.app`, or an ambient import — `ctx.app` on `TransportContext`, parallel to `ServiceContext.app`. Cost: the HTTP and WS transports build contexts apart from the app (`http.ts` `_buildContext`, `bridge.internal()`), so each must be handed the app, `context-contract` and the testing parity runner gain a field, and every middleware and plugin handler sees it too.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (`autoloadRoutes` binds the app as a second argument: `register(url, ctx => mod[v](ctx, app))`, so `GET(ctx, app)`. Cost: a handler signature the plain `app.get` form lacks; the one place that knows both is the loader, so no transport changes), **C** (an ambient `app` export from `@frontierjs/junction` set at boot, like `$`. Cost: a process-global that a test mounting two apps cannot hold, and a second owner of `app` beside `createApp`'s result (Invariant 5)).
@@ -10665,6 +10683,8 @@ The paper's recommendation, taken as written: A is what `fli release:mint` reads
 Asked in [`IDEAS/release-transitions.md`](IDEAS/release-transitions.md) § Open questions. **A** was picked over **B** (A second `database` block on the app's own client), **C** (Off the target: on the operator's machine, or in Basecamp).
 
 The paper's recommendation, taken as written: A is what ships (`deploy.lite`, and `journal.path` defaulting to `.fli/deploy.db` in `deploy/_module.md`). The negative control above measured B putting the lock in the app's `main` and the journal in the app's backup set, and C gives two operators two histories of one server.
+
+**Amended by [`FJS-D2178`](#fjs-d2178) (2026-11-14):** this holds for `fli deploy`. For an app Basecamp deploys through Outpost, Basecamp's `Deployment` is the authoritative record and Outpost keeps a one-way copy. C's objection, two operators with two histories of one server, does not arise there, because one control plane owns each machine.
 
 ### <a id="fjs-d745"></a>2026-10-09 · `FJS-D745` — Tenancy — Notes are bundle-global and the seen-set lives on each tenant's `User`, proved in `example/`, which already runs `strategy database`.
 
@@ -14275,6 +14295,42 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2177"></a>2026-11-15 · `FJS-D2177` — Q6 — What happens when the DOM and the compiled walk disagree — Fail closed: abort adoption for that root, replace as today, and report it through the dev overlay.
+
+Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) § Open questions. **A** was picked over **B** (Adopt what matches and bind the rest by best guess).
+
+The paper's recommendation, taken as written: binding to the wrong node is silent and costly, so the code must never guess.
+
+### <a id="fjs-d2176"></a>2026-11-15 · `FJS-D2176` — Q5 — Which server path writes the anchors — The string mode (`FJS-D1634`) writes them, behind a flag, so default output stays byte-identical.
+
+Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) § Open questions. **A** was picked over **B** (A second anchor-writing emitter beside the string mode).
+
+The paper's recommendation, taken as written: a second emitter beside `FJS-D1634`'s would break Invariant 4.
+
+### <a id="fjs-d2175"></a>2026-11-15 · `FJS-D2175` — Q4 — How does server state reach the client — Serialize settled `{#await}` and `$async` values and store snapshots into the page.
+
+Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) § Open questions. **B** was picked over **A** (Refetch, as today), **C** (Serialize the reactive graph, as Qwik does).
+
+The paper's recommendation, taken as written: The server already awaits every `{#await}` (`FJS-D1647`), so the value exists. It is the same value the loader would fetch, so it is not a second origin. C adds a serializer for closures that nothing else needs.
+
+### <a id="fjs-d2174"></a>2026-11-15 · `FJS-D2174` — Q3 — What do `client:*` directives become — They stay as timing: inside the one tree, a subtree's bindings attach on `idle`, `visible` or `media`.
+
+Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) § Open questions. **B** was picked over **A** (They are cut once hydration lands).
+
+The paper's recommendation, taken as written: The timing is the part authors chose on purpose. The "own root per island" part is what goes.
+
+### <a id="fjs-d2173"></a>2026-11-15 · `FJS-D2173` — Q2 — At what granularity does the client adopt — A first, with C as the design target.
+
+Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) § Open questions. **A** was picked as the recommendation qualifies it (*A first, with C as the design target*) over **B** (Per component), **C** (Per reactive edge: attach each binding to its node and ship nothing for the rest).
+
+Whole page first, for one owner tree (which fixes $context), with the marker protocol keyed by reactive edge from the start so per-edge adoption (C) is a narrowing of A, not a new protocol; per component (B) is skipped.
+
+### <a id="fjs-d2172"></a>2026-11-15 · `FJS-D2172` — Q1 — Does Mesa hydrate at all — Yes, as the direction. Amend RULE 20 now to say hydration is the planned replacement for islands-replace, and build it in phases. - **Recommend B as the direction, with A's guide note kept until Phase 2 lands.** Building § 5 means building a state transport that B then throws away. The guide note already covers the common case.
+
+Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) § Open questions. **B** was picked over **A** (No. Keep RULE 20. Fix `FJS-4313` with § 5's payload, and document "pass what an island needs as props").
+
+Hydration is the direction and RULE 20 is amended to say so; the 'pass what an island needs as props' guide note stays until Phase 2 lands. Building the islands payload (A) is a state transport hydration throws away.
+
 ### <a id="fjs-d2145"></a>2026-11-14 · `FJS-D2145` — Q5 — Where does code that must run on every page live — In the loader: `widgets.loader: { everyPage: 'src/lib/source.js' }` names a module, resolved from the widgets root, that Sierra bundles into `embed.js`; the site pastes one tag on every page, and the form bundle is fetched only where the tag carries `data-form`. A throw in the module is caught inside the loader, so a capture bug never blanks a form; an unresolvable path fails the build by name.
 
 Asked in [`IDEAS/widget-loader.md`](IDEAS/widget-loader.md) § Open questions. **A** was picked over **B** (a separate tracker script the site pastes site-wide beside `embed.js`, with its own cache rule; the form reads the stored source as it does today), **C** (it stays in the form bundle, as today: every page pays for the form to capture the source).
@@ -17504,6 +17560,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2180"></a>2026-11-15 · `FJS-D2180` — When a question is ruled, who removes the `blocked by` marker it left on each row — `fli decide` removes the marker from every row the question held up, in the same write as the ruling. `register:check` is unchanged.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`register:check` stops warning on a marker that resolves to a ruling, and the marker stays as a history pointer).
+
+The paper's recommendation, taken as written: a ruled question blocks nothing, so the marker carries no information `fli find` does not, and the row and `fli next` keep reading the same; the hand edit after each ruling goes.
 
 ### <a id="fjs-d2162"></a>2026-11-14 · `FJS-D2162` — Q3 — What may a fix button do — An install command is shown with Copy and never run from the page. The fixes Workbench already owns stay one click: Fix a mode, set a key in Settings, Check a login, open the vendor's key page.
 
@@ -22082,6 +22144,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2179"></a>2026-11-15 · `FJS-D2179` — How does a plain-JS framework subpath get types for an app installed from the package host — Generate them: `tsc --allowJs --declaration --emitDeclarationOnly` over the JS kits, committed beside the source, with a snapshot check that fails when the emit differs. Mostly `any` where the JS carries no JSDoc, but never wrong and no hand upkeep; a second artifact per kit.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (Hand-write `.d.ts` beside each untyped kit and add the `types` condition, the toolbelt precedent. Precise types, 24 files to write now; a hand `.d.ts` can drift from its `.js` unless a check compares them), **C** (One shorthand `declare module '@frontierjs/toolbelt/inflect'` list shipped in `@frontierjs/config`. One file, no per-kit work, but every import is `any`, and a shorthand wins over a real `.d.ts` so a kit that later gains types stays `any` unless it leaves the list).
+
+The paper's recommendation, taken as written: it follows the toolbelt `.d.ts`-beside-the-kit shape without 24 hand files that can lie, and the snapshot check is the drift guard `FJS-D1028` named; hand-tighten the few kits an app leans on later.
 
 ### <a id="fjs-d2168"></a>2026-11-14 · `FJS-D2168` — Q1 — Build the teams rig and the general installer together, or the rig first — Together: `@frontierjs/teams` in the rig layout and `fli add` / `rig:list`, proving the whole format on its first rig.
 

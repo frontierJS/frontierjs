@@ -183,11 +183,12 @@ function imageJson(image) {
 // onLog is the user-supplied function from createClient options.
 /**
  * @param {{ operation: LogEntry['operation'], model: string, field?: string | null, transition?: string | null,
- *           records?: unknown[], before?: unknown, after?: unknown, lifted?: string[] | null }} write
+ *           records?: unknown[], before?: unknown, after?: unknown, lifted?: string[] | null, attempted?: string | null,
+ *           rowTenant?: string | null }} write
  * @param {Ctx} ctx
  * @param {((entry: Record<string, unknown>, ctx: Ctx) => Record<string, any> | null | void) | null | undefined} onLog
  */
-export function buildLogEntry({ operation, model, field, transition, records, before, after, lifted }, ctx, onLog) {
+export function buildLogEntry({ operation, model, field, transition, records, before, after, lifted, attempted, rowTenant }, ctx, onLog) {
   // WHERE the write came from. Supplied by whoever owns the request — junction
   // installs a closure over its own request store — because this package sits
   // BELOW the one that has a request (Invariant 1) and must not learn about it.
@@ -241,11 +242,13 @@ export function buildLogEntry({ operation, model, field, transition, records, be
     origin:        from?.origin        ?? null,
     ip:            from?.ip            ?? null,
     userAgent:     from?.userAgent     ?? null,
-    tenant:        from?.tenant        ?? null,
+    // The caller's tenant, else the described rows' (`FJS-D1745`).
+    tenant:        from?.tenant        ?? rowTenant ?? null,
     // A write that named `system: ['@@gate']` is filed under the person who
     // caused it, at a level they do not hold — without the mark the row reads
     // as a gate the trail watched fail (`FJS-D575`).
-    meta:      lifted?.length ? JSON.stringify({ lifted }) : null,
+    // A `denied` entry says which verb was refused (`FJS-D1707`).
+    meta:      lifted?.length || attempted ? JSON.stringify({ ...(attempted && { attempted }), ...(lifted?.length && { lifted }) }) : null,
     createdAt: new Date().toISOString(),
   }
 

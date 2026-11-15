@@ -1668,9 +1668,8 @@ class Parser {
 
   // @default([]) · @default(["a", "b"]) · @default([Active, Pending])
   //
-  // An array column already has a zero — `columnDefaultExpr` gives every one of
-  // them `DEFAULT '[]'`, because an empty array is the null state of a list — so
-  // `@default([])` restates what the column already does. It parses anyway: it
+  // A required array column already has a zero — `columnDefaultExpr` gives it
+  // `DEFAULT '[]'` — so `@default([])` restates what the column already does. It parses anyway: it
   // is what a Prisma schema writes (11 occurrences across three real ones), and
   // a language that refuses the redundant spelling of its own behavior makes a
   // port fail on a line that means what the tree already does.

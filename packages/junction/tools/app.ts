@@ -240,7 +240,6 @@ export function renderAppSnapshot(desc: AppDescription, opts: { source?: string;
     out.push('')
     out.push(`- **methods** — ${svc.methods.length ? svc.methods.map(m => `\`${m}\``).join(', ') : '(none)'}`)
     if (svc.customMethods.length) out.push(`- **custom methods** — ${svc.customMethods.map(a => `\`${a}\``).join(', ')}`)
-    if (svc.aliases.length)       out.push(`- **also answers to** — ${svc.aliases.map(a => `\`${a}\``).join(', ')}`)
     // A declared input is a fact about the wire that is written in a service
     // file and readable nowhere else.
     for (const [method, type] of Object.entries(svc.inputs).sort())

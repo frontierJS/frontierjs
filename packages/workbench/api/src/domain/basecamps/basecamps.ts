@@ -158,7 +158,7 @@ export async function entryOf(name: string, opts: Options = {}): Promise<Entry |
 // show" rather than as the Basecamp being down.
 async function newestBackup(c: Cli, e: Entry): Promise<{ row: HubBackup | null, error: string | null }> {
   try {
-    const rows = await c.basecamp(e.url, e.apiKey!, '/hub-backups?$limit=1&$orderBy[createdAt]=desc') as HubBackup[]
+    const rows = await c.basecamp(e.url, e.apiKey!, '/hubBackups?$limit=1&$orderBy[createdAt]=desc') as HubBackup[]
     return { row: rows?.[0] ?? null, error: null }
   } catch (err) {
     const e2 = err as Error & { status?: number, unreachable?: boolean }
@@ -463,7 +463,7 @@ export async function archiveLink(name: string, opts: Options = {}): Promise<{ u
   try {
     const row = await c.newestHubArchive({ origin: e.url, key: e.apiKey! })
     if (!row) return { refused: `Basecamp '${name}' holds no backup that succeeded — Back up now takes one` }
-    const got = await c.basecamp(e.url, e.apiKey!, `/hub-backups/${encodeURIComponent(row.id)}`,
+    const got = await c.basecamp(e.url, e.apiKey!, `/hubBackups/${encodeURIComponent(row.id)}`,
       { method: 'POST', headers: { 'x-service-method': 'download' }, body: {} }) as { url: string, name: string }
     return { url: new URL(got.url, e.url + '/').href, name: got.name, sha256: (row.sha256 as string | null) ?? null }
   } catch (err) {
@@ -505,7 +505,7 @@ function archiveKey(c: Cli, name: string, opts: Options): string | null {
 }
 
 async function attestation(c: Cli, e: Entry): Promise<{ fingerprint: string | null, at: string | null }> {
-  const row = await c.basecamp(e.url, e.apiKey!, '/hub-config', { method: 'POST', headers: { 'x-service-method': 'current' }, body: {} })
+  const row = await c.basecamp(e.url, e.apiKey!, '/hubConfig', { method: 'POST', headers: { 'x-service-method': 'current' }, body: {} })
     .catch((err: Error & { status?: number }) => { if (err.status === 404) return null; throw err }) as
     { encryptionKeyFingerprint?: string | null, encryptionKeyEscrowedAt?: string | null } | null
   return { fingerprint: row?.encryptionKeyFingerprint ?? null, at: row?.encryptionKeyEscrowedAt ?? null }

@@ -132,7 +132,6 @@ describe('createApp({ root })', () => {
     writeFileSync(join(base, 'api/src/app.ts'), '')
     const a = createApp({ root: pathToFileURL(join(base, 'api/src/app.ts')).href, logLevel: 'silent', config: { port: 0 } })
     expect(a.root).toBe(join(base, 'api/src'))
-    await a.applyConfigFile()
     await a._startForTest()
     expect(a.services.list()).toContain('widgets')
     expect(a.config.name).toBe('rooted')

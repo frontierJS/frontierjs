@@ -683,7 +683,7 @@ decides the whole shape:
 **Nothing had ever sent to an outpost, and it could not have.** The conduit target
 was registered with the secret inline (`{ type: 'hmac', secret }`) where the
 signer reads `ref`, so every call failed `auth_failed` — and the shared secret
-sat in the registry in plaintext, which `GET /conduit-targets` returns. It was
+sat in the registry in plaintext, which `GET /conduitTargets` returns. It was
 also registered only inside the `cameOnline` branch, so a machine already
 online when its outpost first reported a URL was never registered at all.
 
@@ -1243,7 +1243,7 @@ database this process is reading from, in place, while it serves — an operator
 job with the process stopped, and the most dangerous control this app could
 have. *Download* is there: `backups.download` answers the bucket's pre-signed
 GET, or a five-minute link this process signed to a route that tars the local
-directory as it sends it (`api/src/plugins/backup-archive.ts`).
+directory as it sends it (`api/src/routes/backup-archive/[id].ts`).
 
 **The backups screen says an archive without its key cannot be read**, and
 whether a copy of `ENCRYPTION_KEY` is kept off the box is `hub.key-escrowed`,

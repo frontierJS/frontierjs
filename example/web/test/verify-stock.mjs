@@ -129,7 +129,7 @@ const post = (svc, method, id, body, headers = {}) =>
 const cart = (method, id, body, token) => post('carts', method, id, body, token ? { 'x-cart-token': token } : {})
 
 const availabilityOf = async (variantId) => {
-  const r = await (await post('product-variants', 'availability', null, { variantIds: [variantId] })).json()
+  const r = await (await post('productVariants', 'availability', null, { variantIds: [variantId] })).json()
   return r.variants[0]
 }
 
@@ -415,7 +415,7 @@ check('a fully held shelf says so, and does not say sold out',
 // paths — `product-variants.availability` computing it as the shop, and this
 // page summing what it was handed — and a unit test on either side passes with
 // the crossing broken.
-const productAvail = await (await post('product-variants', 'availability', null,
+const productAvail = await (await post('productVariants', 'availability', null,
   { productId: shelf.productId })).json()
 check("the page's total is the server's, not the browser's own arithmetic",
       shelfState?.available,

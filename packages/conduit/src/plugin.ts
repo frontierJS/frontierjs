@@ -302,7 +302,7 @@ function registerManagementService(
   instance:   IConduit,
   management: NonNullable<ConduitOptions['management']>
 ): void {
-  const name = management.path ?? 'conduit-targets'
+  const name = management.path ?? 'conduitTargets'
 
   // Structural problems first — a path that can never route is worth
   // reporting before a policy decision that only matters once it can.

@@ -191,7 +191,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
           throw new Error(
             `[auth] service '${svc.name}' is already registered by this app. ` +
             `Rename or drop auth's — auth(auth, { services: { ` +
-            `${svc.name === 'api-keys' ? 'apiKeys' : svc.name}: false } }).`
+            `${svc.name}: false } }).`
           )
         }
         app.services.register(svc)

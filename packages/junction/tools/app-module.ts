@@ -153,12 +153,10 @@ async function build(value: unknown, label: string): Promise<App> {
     : value
   if (!isApp(app)) fatal(`\`${label}\` is not a Junction app (no .service()/.configure())`)
 
-  // `load-config` is a `needsHost` phase too, and skipping it means every
-  // section of junction.config.js is absent from the app this tool describes.
-  // Run BEFORE the boot below, in the position production runs it, or a
-  // plugin's boot() reads the config as it was without the file, and
-  // `junction jobs` reported **no handlers registered** for an app with three
-  // (`FJS-418`).
+  // `_startOnce()` reads the file only for a rooted app (`FJS-D2112`); a
+  // rootless one would boot without its env overrides, and `junction jobs`
+  // reported **no handlers registered** for an app with three (`FJS-418`).
+  // Applies once, so a rooted app is not read twice.
   await quietly(() => app.applyConfigFile())
 
   // Plugins boot, hooks compile, service routes mount — everything except the

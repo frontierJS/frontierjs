@@ -27,6 +27,11 @@ test('a developer archives a lead', async () => {
 })
 ```
 
+**An app built with `createApp({ root })` reads its `junction.config.js` under
+test as `start()` does** (`FJS-D2112`): its CORS, CSRF and plugins are installed,
+and a section `start()` refuses fails the test too. An app with no root reads no
+file; call `app.applyConfigFile()` before the first request if it should.
+
 ## Doubles
 
 `createTestMailer()` is an `IMail` that keeps what it was given — `sent`, `last`,

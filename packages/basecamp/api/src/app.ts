@@ -29,7 +29,6 @@ import { mcp }         from '@frontierjs/mcp'
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
 import { machineStream }             from './plugins/machine-stream.ts'
-import { backupArchive }             from './plugins/backup-archive.ts'
 import { appArchiveUpload }          from './plugins/app-archive-upload.ts'
 import { appArchivePull }            from './plugins/app-archive-pull.ts'
 import { bucketFromEnv, fetchHubArchive, listHubArchives, readBucket, receiveUpload, restoreStaged, restoreState, scratchTarball, stageHubArchive } from './domain/backup/hub-restore.ts'
@@ -344,7 +343,7 @@ export async function buildBasecampApp(
   // ── Conduit — integrations ────────────────────────────────────────────
   // Plugin augments app with app.conduit, wires /metrics, and registers
   // the management service. It is a Junction service, so it lands at
-  // GET|DELETE /conduit-targets — verified, not the /api/conduit/targets this
+  // GET|DELETE /conduitTargets — verified, not the /api/conduit/targets this
   // comment used to claim, which never existed.
   // The mail provider is the one target declared at boot rather than registered
   // by a machine checking in — an outpost target arrives with a heartbeat, a
@@ -380,7 +379,7 @@ export async function buildBasecampApp(
     // serves every destination (providers/storage/s3.ts).
     signers:     { [S3_SIGNER]: s3Signer },
     // Conduit refuses to register management routes without an explicit access
-    // decision — GET|DELETE /conduit-targets is an operational endpoint.
+    // decision — GET|DELETE /conduitTargets is an operational endpoint.
     //
     // The registry spans every workspace — each outpost and channel target —
     // so it is the hub tier. Signed in alone let any account list them all and
@@ -704,7 +703,7 @@ export async function buildBasecampApp(
   // apiPrefix is ''), so prefixing only these two made the app's own paths
   // disagree with each other and with the browser client, whose needsSetup()
   // asks for `${apiPrefix}/setup/probe` and swallows the 404.
-  // `apiKeys: false` because this app already has an `api-keys` service, and
+  // `apiKeys: false` because this app already has an `apiKeys` service, and
   // its keys are a WORKSPACE's rather than a person's — a different noun that
   // happens to share a word. The plugin refuses the collision by name rather
   // than one of the two silently replacing the other.
@@ -1022,10 +1021,6 @@ export async function buildBasecampApp(
   // A machine's output as it is written — a container's log today
   // (plugins/machine-stream.ts).
   app.configure(function machineStreamRoute() { machineStream(app) })
-
-  // A local hub archive behind a link `backups.download` signed
-  // (plugins/backup-archive.ts).
-  app.configure(function backupArchiveRoute() { backupArchive(app) })
 
   // An app archive a person uploads, behind a link `appBackups.upload` signed
   // (plugins/app-archive-upload.ts).

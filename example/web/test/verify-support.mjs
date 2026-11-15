@@ -264,7 +264,7 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
 // ─── The refusals ──────────────────────────────────────────────────────────
 
 {
-  const inside = await fetch(`${BASE}/api-keys`, {
+  const inside = await fetch(`${BASE}/apiKeys`, {
     method: 'POST', headers: as(adminToken), body: JSON.stringify({ name: 'stolen' }),
   })
   check('minting an API key from inside an episode is refused', inside.status, 403)
@@ -277,7 +277,7 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
 
   // PAIRED — the subject, as themselves, may mint one. Without this the two
   // rows above are satisfied by a service that refuses everybody.
-  const outside = await fetch(`${BASE}/api-keys`, {
+  const outside = await fetch(`${BASE}/apiKeys`, {
     method: 'POST', headers: as(shopperToken), body: JSON.stringify({ name: 'theirs' }),
   })
   check('while the subject, as themselves, may mint one', outside.status, s => s === 200 || s === 201)

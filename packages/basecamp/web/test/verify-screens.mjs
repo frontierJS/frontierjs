@@ -442,7 +442,7 @@ try {
   const conflict = await evaluate(`
     (async () => {
       try {
-        await window.__fjsClient.service('hub-config')
+        await window.__fjsClient.service('hubConfig')
           .invoke('save', null, { name: 'Stale write', version: 1 })
         return 'accepted'
       } catch (e) { return e.message }
@@ -586,7 +586,7 @@ try {
   // refusal is the MACHINE's, not a 400 or 404 about the request.
   console.log('\n  /apps/[id]/ — the Backups tab')
   const appArchives = await evaluate(`
-    fetch('/app-backups', { headers: {
+    fetch('/appBackups', { headers: {
       accept: 'application/json',
       authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
       'x-workspace-id': localStorage.getItem('basecamp_workspace'),
@@ -636,7 +636,7 @@ try {
     }, ${body ? `body: ${JSON.stringify(JSON.stringify(body))}` : ''} }).then(r => r.json())`)
   const appBefore = await replicaApi(`/apps/${foundArchive?.appId}`, 'GET')
   check('the seeded App shows the replica it already has', /Replica bucket/.test(await text('#app-replica-state') ?? ''), await text('#app-replica-state'))
-  const closedBucket = await replicaApi('/backup-destinations', 'POST', {
+  const closedBucket = await replicaApi('/backupDestinations', 'POST', {
     name: 'Drive replica', endpoint: 'http://127.0.0.1:1', region: 'auto', bucket: 'drive-replica', secret: 'drive-id:drive-key',
   })
   check('a destination to point the App at was created', !!closedBucket?.id, JSON.stringify(closedBucket)?.slice(0, 160))
@@ -651,7 +651,7 @@ try {
   check('Change destination puts replicaDestinationId on the App row', (await replicaOf()) === closedBucket?.id, String(await replicaOf()))
   check('the bucket check runs after the save and its refusal is shown', /bucket check failed/.test(replicaSaid), replicaSaid.trim().slice(0, 160))
   check('the state names the destination now in use', /Drive replica/.test(await text('#app-replica-state') ?? ''), await text('#app-replica-state'))
-  const sinkBucket = await replicaApi('/backup-destinations', 'POST', {
+  const sinkBucket = await replicaApi('/backupDestinations', 'POST', {
     name: 'Drive sink', endpoint: S3_SINK, region: 'us-east-1', bucket: 'drive-sink', secret: 'AKIADEV:devsecret',
   })
   await goto(`/apps/${foundArchive?.appId}/?tab=backups`)
@@ -670,7 +670,7 @@ try {
   await until(`document.getElementById('app-replica-state')?.textContent?.trim() === 'off'`, v => v, 'Stop replicating left the state on')
   check('Stop replicating clears replicaDestinationId on the App row', (await replicaOf()) === null, String(await replicaOf()))
   await replicaApi(`/apps/${foundArchive?.appId}`, 'PATCH', { replicaDestinationId: appBefore?.replicaDestinationId ?? null })
-  for (const made of [closedBucket, sinkBucket]) await replicaApi(`/backup-destinations/${made?.id}`, 'DELETE')
+  for (const made of [closedBucket, sinkBucket]) await replicaApi(`/backupDestinations/${made?.id}`, 'DELETE')
   await goto(`/apps/${foundArchive?.appId}/?tab=backups`)
   await until(`!!document.getElementById('app-backups-history')`, v => v, 'the Backups tab never came back')
 
@@ -765,7 +765,7 @@ try {
       'x-workspace-id': localStorage.getItem('basecamp_workspace'),
     }, ${payload ? `body: JSON.stringify(${JSON.stringify(payload)}),` : ''} })
     .then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))`)
-  const standIn = (await asOwner('GET', '/backup-destinations'))?.body?.data?.find(d => d.name === 'Stand-in bucket')
+  const standIn = (await asOwner('GET', '/backupDestinations'))?.body?.data?.find(d => d.name === 'Stand-in bucket')
   const archiveApp = (await asOwner('GET', `/apps/${foundArchive?.appId}`))?.body
   const moved = await asOwner('PATCH', `/apps/${foundArchive?.appId}`, { backupDestinationId: standIn?.id, version: archiveApp?.version })
   check('the archive\'s app moves onto the stand-in bucket', moved.status < 300 && !!standIn, JSON.stringify(moved).slice(0, 160))
@@ -805,9 +805,9 @@ try {
   // answer says the machine could not be told: both prove the card reached
   // the service and the job with a real row.
   console.log('\n  /apps/[id]/ — the read-only copy card')
-  const seededCopy = (await asOwner('GET', '/app-copies'))?.body?.data?.[0]
+  const seededCopy = (await asOwner('GET', '/appCopies'))?.body?.data?.[0]
   check('the seeded workspace has a read-only copy', !!seededCopy?.appId, JSON.stringify(seededCopy)?.slice(0, 160))
-  const copyOf = async () => (await asOwner('GET', `/app-copies?appId=${seededCopy?.appId}`))?.body?.data?.[0] ?? null
+  const copyOf = async () => (await asOwner('GET', `/appCopies?appId=${seededCopy?.appId}`))?.body?.data?.[0] ?? null
   await goto(`/apps/${seededCopy?.appId}/?tab=backups`)
   const asOfLine = await until(`document.getElementById('app-copy-as-of')?.textContent ?? ''`, t => /As of/.test(t),
     'the card never said how old the copy is').catch(e => e.message)
@@ -2096,7 +2096,7 @@ try {
   const bot = await (async () => {
     for (let i = 0; i < 40; i++) {
       const m = await evaluate(`
-        fetch('/api-keys', { method: 'POST', headers: {
+        fetch('/apiKeys', { method: 'POST', headers: {
           accept: 'application/json', 'content-type': 'application/json', 'x-service-method': 'owners',
           authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
           'x-workspace-id': ${JSON.stringify(homeWs)} }, body: '{}' }).then(r => r.json())`)
@@ -2117,7 +2117,7 @@ try {
   await evaluate(`document.querySelector('#scope-picker input[type=checkbox]').click()`)
   await click('#issue-key')
   await until(`!!document.getElementById('minted-token')`, v => v, 'no token was minted for the bot')
-  const botKey = (await apiGet('/api-keys')).body?.data?.find(k => k.name === 'drive-bot-key')
+  const botKey = (await apiGet('/apiKeys')).body?.data?.find(k => k.name === 'drive-bot-key')
   check('a key issued from the form belongs to the bot it named', botKey?.userId === bot?.userId,
     JSON.stringify({ key: botKey?.userId, bot: bot?.userId }))
 
@@ -2205,7 +2205,7 @@ try {
   await choose('dialog[open] [name=appId]', `${routeApp?.name} · ${routeEnv?.name}`)
   await typeIn('dialog[open] [name=pathPrefix]', '/api')
   await click('#route-save')
-  const madeRoute = await eventually(async () => (await apiGet(`/domain-routes?domainId=${dnsRow?.id}`)).body?.data?.[0], r => !!r)
+  const madeRoute = await eventually(async () => (await apiGet(`/domainRoutes?domainId=${dnsRow?.id}`)).body?.data?.[0], r => !!r)
   check('a path route is made from DNS', madeRoute?.pathPrefix === '/api' && madeRoute?.appId === routeApp?.id,
     `prefix ${madeRoute?.pathPrefix} app ${madeRoute?.appId} wanted ${routeApp?.id}`)
   await until(`document.querySelectorAll('#route-rows tbody tr').length`, n => n > 0, 'the new route never listed')
@@ -2214,7 +2214,7 @@ try {
     routeText.includes('dns-drive.example.test') && routeText.includes('/api') && routeText.includes(routeApp?.name), routeText.slice(0, 160))
   await byLabel('Delete /api')
   await confirmIt()
-  const routesLeft = await eventually(async () => (await apiGet(`/domain-routes?domainId=${dnsRow?.id}`)).body?.data, rs => rs?.length === 0)
+  const routesLeft = await eventually(async () => (await apiGet(`/domainRoutes?domainId=${dnsRow?.id}`)).body?.data, rs => rs?.length === 0)
   check('and removed from DNS', routesLeft?.length === 0, JSON.stringify(routesLeft))
   await goto('/dns/')
   await until(`!!document.querySelector('[aria-label="Upload a certificate for dns-drive.example.test"]')`, v => v,

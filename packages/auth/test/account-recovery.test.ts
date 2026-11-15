@@ -53,7 +53,7 @@ async function person(role = 'user', factor = true) {
 }
 
 const reset = (asToken: string | null, userId: string, on = app) => {
-  const r = request(on).post(`/account-recovery/${userId}`).set('x-service-method', 'resetTotp')
+  const r = request(on).post(`/accountRecovery/${userId}`).set('x-service-method', 'resetTotp')
   return (asToken ? r.auth(asToken) : r).send({})
 }
 const enabled = async (userId: string) => (await h.auth.totpStatus!(userId)).enabled

@@ -6,7 +6,7 @@ dated: 2026-11-14
 
 # Idea — one release record for both deploy paths
 
-**Status: PROPOSED. 0.1–0.2 done (prior art read, Outpost probed); 0.3 probe next, then Q1–Q4 wait on the owner.**
+**Status: PROPOSED. 0.1–0.3 done (prior art read, Outpost and both pivot paths probed); Q1–Q4 wait on the owner, Q2 first.**
 Probed against the tree 2026-11-14. Do not cite this file as behavior — see `VERIFYING.md`.
 
 This continues `IDEAS/release-transitions.md` (overview row 2.3b). That paper fixed the recorded-state format for `fli deploy`, and its Phase 1 shipped on 2026-08-26. Since then Basecamp started deploying through Outpost and writing release state of its own, in a different shape. A recorded-state format is the one thing that cannot be added later, so the two have to be reconciled before more depends on either.
@@ -23,7 +23,7 @@ This continues `IDEAS/release-transitions.md` (overview row 2.3b). That paper fi
 | Secrets on revert | Pinned by reference (the paper's invariant) | A secret is recorded as the id of its `Variable` row (`domain/release/variables.ts`). A rollback after a key rotation runs the new value |
 | Configuration generation | A `generation` field beside `configurationHash`, outside the id | `Environment.version` is an `@version` concurrency guard, not a generation. The per-release `configSnapshot` does that job |
 | History depth | `FJS-D748` counts, measured by `deploy:status` | `previousDeploymentId` chains every release. Outpost keeps images past a per-repository `keep` count, plus one `_replaced` container |
-| Schema pivot | The classifier refuses a contract deploy | Outpost reads the pivot to choose the swap order (`server.js`), and a rollback skips it. Whether a contract is refused on this path is unprobed (0.3) |
+| Schema pivot | Both doors ask Outpost's classifier (`livePivot`) and run a contract or unknown stop-first. The journal records the verdict, and `deploy:revert` refuses past it by name (`--past-pivot`) | Outpost returns the verdict, and Basecamp stores only `swap` and `swapReason`. A rollback skips the classifier (`FJS-D2044`), and nothing refuses one across a contract up front. The old image's own boot refuses (`FJS-D2041`), and `isRestoringVolume` crosses back at the cost of writes since |
 
 **What Outpost holds alone** (`packages/outpost/src/docker.js`). Outpost keeps the images and the `_replaced` container. It keeps no record of which release ran with which configuration. Basecamp sends the image, the digest and the configuration on every request, rollbacks included. With Basecamp down, the bytes to revert to are on the machine, but nothing there says which release they belong to or what it ran with. A rollback whose image a prune removed refuses by name.
 
@@ -77,7 +77,7 @@ The August survey in `release-transitions.md` read single-tool deploys (Capistra
 
 Rule them in the order Q2, Q1, Q4, Q3. Q2 gives Q1's cache its key, and Q4 settles what the id contains before Q3 pins secrets into it.
 
-- **Q1 — Where is the authoritative release record for an app Basecamp deploys?** `FJS-D746` says on the machine, written by `fli` alone. Basecamp's `Deployment` is the record in practice.
+- ~~**Q1 — Where is the authoritative release record for an app Basecamp deploys?**~~ **Answered 2026-11-15 (`FJS-D2178`): B — `Deployment` is authoritative for apps Basecamp deploys. Outpost keeps a one-way copy of the last N release records (Release id, image digest, configuration snapshot, secret refs) beside the images it already keeps, so a revert works with Basecamp down. `D746` is amended to cover only `fli deploy`, which has no control plane.** `FJS-D746` says on the machine, written by `fli` alone. Basecamp's `Deployment` is the record in practice.
   - **A** — Outpost writes the same `deploy.lite` journal on the machine, and `Deployment` becomes Basecamp's view of it. `D746` stands as written.
   - **B** — `Deployment` is authoritative for apps Basecamp deploys. Outpost keeps a one-way copy of the last N release records (Release id, image digest, configuration snapshot, secret refs) beside the images it already keeps, so a revert works with Basecamp down. `D746` is amended to cover only `fli deploy`, which has no control plane.
   - **C** — Two records, never synced, joined by a shared Release id (Q2).
@@ -86,7 +86,7 @@ Rule them in the order Q2, Q1, Q4, Q3. Q2 gives Q1's cache its key, and Q4 settl
     - **The amendment says why `D746`'s rejection of *in Basecamp* does not apply.** That rejection was *two operators get two histories of one server*. One control plane per machine cannot produce two histories.
     - **The copy is checked, not trusted.** Outpost refuses by name a revert whose cached Release id or digest disagrees with the request or with the image on disk. A stale or pruned copy then says so instead of reverting to the wrong thing.
     - **It retires a rule for this path.** `release-transitions.md`'s *Basecamp is a viewer and a trigger, never the source of truth* was written before Basecamp deployed anything. Its purpose, *a revert works without Basecamp*, is what the Outpost copy keeps.
-- **Q2 — Does a Basecamp release carry the same content-addressed Release id as `fli deploy`?**
+- ~~**Q2 — Does a Basecamp release carry the same content-addressed Release id as `fli deploy`?**~~ **Answered 2026-11-15 (`FJS-D2171`): A — Yes. `mintRelease` and `RELEASE_FORMAT` move to a package Basecamp, Outpost and `cli` all import, and `Deployment` gains a `releaseId`.**
   - **A** — Yes. `mintRelease` and `RELEASE_FORMAT` move to a package Basecamp, Outpost and `cli` all import, and `Deployment` gains a `releaseId`.
   - **B** — No. Basecamp keeps its row id, and drift grading (`FJS-D740`) and *promote* (`FJS-D636`) stay `fli`-only.
   - **Recommend A** — `D740` splits drift by Release id and `D636` recognizes a promotion by digest, and both are worth most on the fleet path. The mint is one pure function and a format constant. Two things to settle while moving it:
@@ -101,7 +101,7 @@ Rule them in the order Q2, Q1, Q4, Q3. Q2 gives Q1's cache its key, and Q4 settl
   - **What C owes.**
     - **Old values are a new store of plaintext.** Keeping superseded secret values means `@encrypted` and audit redaction (Invariants 6 and 7) apply to every kept version.
     - **One sentence in invariant 2 changes.** *Never "the same secret values"* becomes *the same reference, refused by name once revoked*.
-- **Q4 — Does the configuration generation stay a counter beside the Release, or fold into the Release?**
+- ~~**Q4 — Does the configuration generation stay a counter beside the Release, or fold into the Release?**~~ **Answered 2026-11-15 (`FJS-D2181`): B — Fold configuration into the Release, as the code already does. `generation` leaves `mintRelease`. Order and the readable list are carried by the release sequence: journal rows on `fli`'s side, `Deployment` rows on Basecamp's. `Environment.version` stays a concurrency guard. Invariants 1 and 2 are amended together, with invariant 1 rewritten as `D636` puts it: the digest promotes, and the Release does not.**
   - **The tension.** `release-transitions.md` invariant 2 keeps both: `generation` *for order and for a person reading a list*, `configurationHash` for identity. `mintRelease` already hashes `configurationHash` into the id, so any configuration change is already a new Release. Invariant 1's *a Release is environment-independent and promotes unchanged* no longer describes the code. `FJS-D636` already says *what moves is the digest, not the Release*.
   - **A** — Keep the generation as the paper wrote it, and add it to Basecamp's `Environment`.
   - **B** — Fold configuration into the Release, as the code already does. `generation` leaves `mintRelease`. Order and the readable list are carried by the release sequence: journal rows on `fli`'s side, `Deployment` rows on Basecamp's. `Environment.version` stays a concurrency guard. Invariants 1 and 2 are amended together, with invariant 1 rewritten as `D636` puts it: the digest promotes, and the Release does not.
@@ -118,8 +118,8 @@ Done when: Q1–Q4 are ruled into `DECISIONS.md`.
   - Above. Two research passes on 2026-11-14, with four load-bearing quotes re-read on the primary page (Heroku, Fly, Coolify, Cloud Run).
 - [x] 0.2 What Outpost holds with Basecamp down
   - The images and the `_replaced` container, but no record. A rollback's image, digest and configuration all arrive in Basecamp's request (`docker.js` `deploy`, `server.js`).
-- [ ] 0.3 Is a contract deploy refused on the Basecamp path, as `fli deploy` refuses one?
-  - Probe before Q4. Outpost skips the pivot on a rollback (`server.js`), and what a rollback restores is what Q4 rules on.
+- [x] 0.3 Is a contract deploy refused on the Basecamp path, as `fli deploy` refuses one?
+  - The question's premise was out of date: neither door refuses a contract deploy now. Both run `livePivot` and `swapFor` (`packages/outpost/src/swap.js`) and swap stop-first, and a failed contract stays down (`FJS-D2044`). The paths differ on the way BACK. `fli deploy:revert` reads the recorded verdict and refuses past a pivot by name. Basecamp's `Deployment` never stores the verdict, so its `rollback` cannot refuse up front, and the protection is the old image refusing at boot (`FJS-D2041`). Read in code, not driven. Step 1.7 closes it.
 - [ ] 0.4 Rule Q2, Q1, Q4, Q3, one at a time
 
 ### Phase 1 — One record
@@ -133,6 +133,8 @@ Done when: a Basecamp release and a `fli deploy` release of the same digest and 
 - [ ] 1.4 Secrets pin by version, and a rotation revokes the version it replaced (Q3); kept versions are `@encrypted` and redacted in the trail
 - [ ] 1.5 Outpost refuses a revert whose cached Release id or digest disagrees with the request or the image on disk (Q1)
 - [ ] 1.6 The drill: stop `frontier-basecamp` and revert an app from the machine
+- [ ] 1.7 `Deployment` records the pivot verdict Outpost already returns, and `rollback` refuses by name across a contract, naming `isRestoringVolume` as the way back, the way `deploy:revert` names `--past-pivot`
+- [ ] 1.8 `generation` leaves `mintRelease`, the journal's `Release` row and the transition id, and `deploy:revert`'s configuration check reads `configurationHash` (Q4); 79 mentions across `packages/cli/core`, `db/deploy.lite` and `commands/deploy/` — the journal's `formatVersion` moves with it
 
 ## See also
 

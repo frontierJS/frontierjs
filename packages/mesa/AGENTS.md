@@ -107,7 +107,7 @@ title: Orders
   const cities = await fetch(`/api/c?u=${userId}`).then(r => r.json())
 </script>
 
-{#if $async.cities.loading}<p>Loading</p>{:else}<p>{cities.length}</p>{/if}
+{#if $async.cities.error}<p>Could not load</p>{:else if $async.cities.loading}<p>Loading</p>{:else}<p>{cities.length}</p>{/if}
 ```
 
 `$:` is top-level only. `$: if (…)` and a `$: { }` block that only reads are

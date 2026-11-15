@@ -76,7 +76,7 @@ export function createShop({ api }) {
 
   return {
     /** Everything a buy button shows, in one call — see product-variants.embed. */
-    item: (sku) => call('product-variants', 'embed', null, { sku }),
+    item: (sku) => call('productVariants', 'embed', null, { sku }),
 
     /** How many of this basket's items are in it, or 0 for no basket. */
     count: () => held()?.count ?? 0,

@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "demo": "bun demo/serve.js",
-    "test": "node ../../scripts/tmp-run.mjs 'r=0; bun test test/doc-examples.test.js test/grade-theme.test.js || r=$?; bun test/run.js || r=$?; exit $r'",
+    "test": "node ../../scripts/tmp-run.mjs 'r=0; node ../../scripts/emit-types.mjs --check || r=$?; bun test test/doc-examples.test.js test/grade-theme.test.js || r=$?; bun test/run.js || r=$?; exit $r'",
     "build": "bun build.js && bun run build:vocabulary",
     "build:vocabulary": "bun build-vocabulary.js",
     "prepack": "bun run build",
     "prepublishOnly": "bun run test",
+    "types": "node ../../scripts/emit-types.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "main": "./src/index.css",
@@ -31,7 +32,10 @@
     "./bundle.min.css": "./dist/frontier.min.css",
     "./vocabulary.json": "./vocabulary.json",
     "./vocabulary.js": "./vocabulary.js",
-    "./themes.js": "./themes.js"
+    "./themes.js": {
+      "types": "./themes.d.ts",
+      "default": "./themes.js"
+    }
   },
   "files": [
     "src",
@@ -39,6 +43,7 @@
     "vocabulary.js",
     "vocabulary.json",
     "themes.js",
+    "themes.d.ts",
     "AGENTS.md"
   ],
   "devDependencies": {

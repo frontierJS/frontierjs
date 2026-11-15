@@ -183,7 +183,8 @@ export function archiveTarArgs(dir: string, out = '-'): string[] {
 export async function archiveTarSha256(dir: string): Promise<string> {
   const proc   = Bun.spawn(archiveTarArgs(dir), { stdout: 'pipe', stderr: 'pipe' })
   const hasher = new Bun.CryptoHasher('sha256')
-  for await (const chunk of proc.stdout) hasher.update(chunk)
+  const reader = proc.stdout.getReader()
+  for (let r = await reader.read(); !r.done; r = await reader.read()) hasher.update(r.value)
   const code = await proc.exited
   if (code !== 0) throw new Error(`tar exited ${code}: ${(await new Response(proc.stderr).text()).trim()}`)
   return hasher.digest('hex')

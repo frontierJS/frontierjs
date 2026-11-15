@@ -176,7 +176,7 @@ const SKU = 'FJS-TEE-NVY-M'
 
 console.log('\n  widget — what the shop answers an embed')
 
-const embed = await (await post('product-variants', 'embed', null, { sku: SKU })).json()
+const embed = await (await post('productVariants', 'embed', null, { sku: SKU })).json()
 check('one call carries the product, the price and what may be sold',
       [typeof embed.product, typeof embed.price, typeof embed.available, embed.sku],
       ['string', 'number', 'number', SKU])
@@ -187,10 +187,10 @@ check('and a photograph as a URL, not a stored reference',
 check('but nothing about anybody else\'s basket', 'held' in embed, false)
 
 check('a SKU the merchant typed in lower case still finds the product',
-      (await (await post('product-variants', 'embed', null, { sku: SKU.toLowerCase() })).json()).variantId,
+      (await (await post('productVariants', 'embed', null, { sku: SKU.toLowerCase() })).json()).variantId,
       embed.variantId)
 
-const missing = await post('product-variants', 'embed', null, { sku: 'NO-SUCH-SKU' })
+const missing = await post('productVariants', 'embed', null, { sku: 'NO-SUCH-SKU' })
 check('a SKU the shop never issued is a 404 in the shop\'s words',
       [missing.status, (await missing.json()).message], [404, 'No product with SKU NO-SUCH-SKU'])
 
@@ -323,7 +323,7 @@ check('the script really did come from another origin',
 
 console.log('\n  widget — buying from a page the shop does not own')
 
-const before = (await (await post('product-variants', 'embed', null, { sku: SKU })).json()).available
+const before = (await (await post('productVariants', 'embed', null, { sku: SKU })).json()).available
 
 await evaluate(`(document.querySelector('fjs-buy-button').shadowRoot.querySelector('[data-add]').click(), true)`)
 
@@ -336,7 +336,7 @@ check('the basket lives in the HOST page\'s storage, not the shop\'s',
       await evaluate(`!!JSON.parse(localStorage.getItem('fjs-shop-widget-cart') ?? 'null')?.token`), true)
 
 check('the shop set the stock aside, so what may be sold went down by one',
-      (await (await post('product-variants', 'embed', null, { sku: SKU })).json()).available,
+      (await (await post('productVariants', 'embed', null, { sku: SKU })).json()).available,
       before - 1)
 
 check('and the widget re-read it rather than showing a stale number',

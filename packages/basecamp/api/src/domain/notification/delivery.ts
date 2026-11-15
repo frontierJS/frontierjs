@@ -17,7 +17,7 @@
 // live in a `Secret` (`@encrypted`), are read at send time, and a target's
 // stored ADDRESS is the origin only — never the full URL, because the secret
 // part of a Slack webhook is its path and a target address is echoed by
-// `GET /conduit-targets`.
+// `GET /conduitTargets`.
 
 import { secretRef } from '../../core/credentials.ts'
 

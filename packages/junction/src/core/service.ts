@@ -3178,13 +3178,9 @@ export function canonicalServiceName(name: string): string {
 
 export class ServiceRegistry {
 
+  // A service answers to one name, with no second spelling mounted beside it
+  // (`FJS-D1317`).
   private _map:      Map<string, Service> = new Map()
-  // alias → canonical name. A service has ONE name and may answer to older
-  // spellings of it: `product-variants.service.ts` registers `productVariants`
-  // and keeps `product-variants` reachable, so a URL, a `app.service(…)` and a
-  // WS frame written against the filename are not broken by the reconciliation
-  // (`FJS-570`). Every lookup goes through `get`, so this covers all of them.
-  private _aliases:  Map<string, string>  = new Map()
   // Set by app.start() after all plugins have registered — used to
   // immediately compile pipelines for services registered late (e.g. inside
   // a plugin's boot() or ready() hook) so they never fall back to per-request
@@ -3233,17 +3229,15 @@ export class ServiceRegistry {
    * service reaches an app — the loader, a plugin, a test env — comes through
    * here, so this is the one place a definition becomes a `Service`.
    */
-  register(def: ServiceDefinition | Service, aliases: string[] = []): Service {
+  register(def: ServiceDefinition | Service): Service {
     if (!def.name)
       throw new Error(`a service registered by hand needs a name — createService({ name: 'posts', … })`)
     // A STATED kebab name is the same fourth spelling a kebab filename was
     // (`FJS-D159`): sierra asks for `backupDestinations` and a service held as
     // 'backup-destinations' left every picker onto it empty (`FJS-3477`).
     const name = canonicalServiceName(def.name)
-    if (name !== def.name && !isBuiltService(def)) {
-      aliases = [def.name, ...aliases]
-      def     = { ...def, name } as ServiceDefinition
-    }
+    if (name !== def.name && !isBuiltService(def))
+      def = { ...def, name } as ServiceDefinition
     const service = buildService(def as ServiceDefinition)
     // HERE, because this is the first place a built service and the schema meet:
     // a service module is imported before any client exists. Before the warm
@@ -3251,10 +3245,6 @@ export class ServiceRegistry {
     serveDeclaredTransitions(service, this._schema())
     this._map.set(service.name, service)
     this._version++
-    for (const alias of aliases) {
-      if (alias === service.name || this._map.has(alias)) continue
-      this._aliases.set(alias, service.name)
-    }
     // Registered after start() — warm it here so it is on the same footing as
     // everything registered before. This used to also monkey-patch hooks() on
     // the instance, because a late svc.hooks() left a compiled cache that
@@ -3265,21 +3255,11 @@ export class ServiceRegistry {
   }
 
   get(name: string): Service | undefined {
-    const direct = this._map.get(name)
-    if (direct) return direct
-    const canonical = this._aliases.get(name)
-    return canonical ? this._map.get(canonical) : undefined
+    return this._map.get(name)
   }
 
   has(name: string): boolean {
-    return this._map.has(name) || this._aliases.has(name)
-  }
-
-  /** The older spellings this name still answers to. `[]` for most services. */
-  aliasesOf(name: string): string[] {
-    return Array.from(this._aliases.entries())
-      .filter(([, canonical]) => canonical === name)
-      .map(([alias]) => alias)
+    return this._map.has(name)
   }
 
   list(): string[] {

@@ -183,7 +183,7 @@ Do not spend the argument again.
 - **The token is a `Secret`**, like every other machine credential here. The
   target carries the ref (`secret:<id>` or `env:<NAME>`) and never the material —
   `api/src/core/credentials.ts` is the one resolver, and a target holding the
-  material writes it into the registry, which `GET /conduit-targets` returns.
+  material writes it into the registry, which `GET /conduitTargets` returns.
 - **Two screens are named for the job, not the vendor.** `/dns/` and
   `/cloud-spend/`, where the mock drew Cloudflare and DigitalOcean. Whichever
   provider gains an adapter first fills them, and a screen called Cloudflare

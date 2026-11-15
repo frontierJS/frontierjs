@@ -5429,7 +5429,10 @@ function _localTrie(signalMap) {
 // starts only when one LANDS, so for that one's whole flight the value here is
 // stale; reading pending through them says so. Their own upstream is read
 // through theirs, so a chain is pending end to end.
-export function makeAsyncState(upstream = []) {
+//
+// `unshown` is the const's name when nothing in the component shows it failing
+// (`FJS-4290`); its rejection is then printed, in production too (`FJS-D2136`).
+export function makeAsyncState(upstream = [], unshown = null) {
   const [loading, setLoading] = createSignal(true)
   const [pending, setPending] = createSignal(true)
   const [error, setError] = createSignal(null)
@@ -5463,6 +5466,7 @@ export function makeAsyncState(upstream = []) {
         setPending(false)
         setStatus('success')
       } else {
+        if (unshown) console.error(`[Mesa] UNHANDLED_FAILURE: the load of '${unshown}' rejected and nothing shows it; read $async.${unshown}.error or wrap its read in a <mesa:boundary> with a failed snippet.`, err)
         setLoading(false)
         setPending(false)
         setError(err)

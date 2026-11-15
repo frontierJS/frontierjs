@@ -16,11 +16,11 @@
 // ─── why this is read rather than written ────────────────────────────────
 //
 // It was a hand-kept copy of the service registry and it went stale six times:
-// `auditEvents`, `notificationChannels`, `flags`, `api-keys`, `invitations`, and `connections`,
+// `auditEvents`, `notificationChannels`, `flags`, `apiKeys`, `invitations`, and `connections`,
 // which was still missing when this was rewritten. Three of those six were
 // registered by a PLUGIN rather than by this app, which is the half no author
 // can be expected to remember — `connections` belongs to junction's channels
-// plugin, `account`/`sessions` to @frontierjs/auth, `conduit-targets` to
+// plugin, `account`/`sessions` to @frontierjs/auth, `conduitTargets` to
 // conduit. Nothing here wrote them and they still answer on this origin.
 //
 // The failure is silent and asymmetric, which is why it kept happening: a
@@ -127,7 +127,7 @@ export const API_PATHS = derive(readSnapshot())
  * neither has a page of the same name. Always proxied, whatever `Accept` says.
  * The provider routes are mounted only when a provider is configured, so the
  * snapshot above never names them. `/backup-archive/` is a hub archive's
- * download (`api/src/plugins/backup-archive.ts`) and `/app-archive-pull/` a
+ * download (`api/src/routes/backup-archive/[id].ts`) and `/app-archive-pull/` a
  * machine-kept app archive's (`api/src/plugins/app-archive-pull.ts`), each a
  * file and not a page.
  */

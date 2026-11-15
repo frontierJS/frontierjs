@@ -66,7 +66,7 @@ const serverId = created.json.id
 // reading the row — so a run that had one left over from an earlier attempt
 // would show step 5 passing for the wrong reason.
 if (!await must($, await probe.httpJson({
-  url:      hubUrl($, '/conduit-targets'),
+  url:      hubUrl($, '/conduitTargets'),
   headers:  as,
   expect:   (j) => !(j.data ?? []).some((t) => t.id === `outpost:${serverId}`),
   describe: 'no way to reach this machine',

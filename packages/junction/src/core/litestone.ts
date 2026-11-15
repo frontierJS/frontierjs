@@ -35,7 +35,7 @@ import { CRUD_METHODS } from './methods.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPagination, pageBounds, type PageBounds } from './directives.ts'
 import { columnsUnmoved } from './write-narrowing.ts'
-import { coveredWrite, freezeUser, setPrincipal, requestMeta, currentCall, callDb, setCallDb } from './context.ts'
+import { coveredWrite, freezeUser, setPrincipal, requestMeta, currentCall, callDb, setCallDb, enterCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, list, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { COMBINATORS } from '@frontierjs/toolbelt/directives'
@@ -4132,6 +4132,60 @@ export function withLitestoneDb(
 
     guardReadCall(ctx)
     await next()
+  }
+}
+
+/** What a raw route is answered when it asks who its caller is. */
+export interface RawRouteCaller {
+  /** The client scoped to this caller, claims included. */
+  db:     unknown
+  /** Every claim the request proved, guest or session, as `heldClaims` reads them. */
+  claims: PrincipalClaims
+  /** The session with its claims merged, or `null` for a guest: a guest's
+   *  claims scope `db` and never become a user (`FJS-D113`). */
+  user:   import('../auth/types.ts').SessionContext | null
+}
+
+/**
+ * Run the app's data hook for a raw route, against a service context built
+ * from the request, and answer what it resolved.
+ *
+ * A raw route runs below the service pipeline, and the pipeline is the only
+ * place `createApp({ principal })` runs — so without this a bearer on a stream
+ * upload is neither read nor refused, and a dead key passes with a 200
+ * (`FJS-3977`, `FJS-D1856`). A resolver's refusal travels out of here as
+ * thrown, so a dead key is the same 401 a service answers.
+ *
+ * Under `createApp({ tenants })` the tenant client's lease ends when this
+ * returns: a raw route holds `db` for one request, never across requests.
+ */
+export async function resolveRawCaller(
+  around: import('./hooks.ts').AroundHook,
+  app:    unknown,
+  route:  { user?: unknown; headers?: unknown; ip?: unknown; route?: unknown },
+  opts:   { query?: Record<string, unknown>; reserved?: Record<string, unknown> } = {},
+): Promise<RawRouteCaller> {
+  const ctx = {
+    app,
+    user:       route.user ?? null,
+    caller:     { headers: route.headers ?? {}, ip: route.ip },
+    route:      route.route ?? {},
+    query:      { ...opts.query },
+    reserved:   { ...opts.reserved },
+    directives: {},
+    locals:     {},
+    data:       null,
+    id:         null,
+    result:     null,
+    raw:        route,
+  } as unknown as ServiceContext
+  let db: unknown = null
+  // Entered as a call, so a resolver reading `$.db` reads this client.
+  await enterCall(ctx, () => around(ctx, async () => { db = callDb(ctx) }))
+  return {
+    db,
+    claims: heldClaims(ctx),
+    user:   (ctx.user ?? null) as RawRouteCaller['user'],
   }
 }
 

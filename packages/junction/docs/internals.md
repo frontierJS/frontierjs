@@ -319,8 +319,9 @@ by a browser gets the shell too; a `fetch` or a missing asset stays a 404.
 - **Plugin phases run breadth-first, and only `ready` is forgiving.** `register`
   for every plugin, then `boot` for every plugin, then `ready` for every plugin,
   and `shutdown` in reverse configure order. A throw in `register` or `boot` fails
-  `start()`. A throw in `ready` is logged and the app starts anyway, so anything
-  that must succeed belongs in `boot()`. `app._plugins` is complete by `boot()`
+  `start()`. `ready` runs after `listen`, so the app is answering before it
+  finishes, and a throw in it is logged and the app starts anyway (`FJS-D973`),
+  so anything that must succeed or hold the first request belongs in `boot()`. `app._plugins` is complete by `boot()`
   and holds only the plugins configured BEFORE yours during `register()`.
   Configuring one plugin twice registers it twice — nothing deduplicates by
   name.

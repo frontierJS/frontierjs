@@ -36,7 +36,7 @@ async function person() {
   return { email, userId: String(user.id), login }
 }
 
-const mint = (token: string, data: unknown) => request(app).post('/api-keys').auth(token).send(data as any)
+const mint = (token: string, data: unknown) => request(app).post('/apiKeys').auth(token).send(data as any)
 const me   = (token: string) => request(app).get('/account/me').auth(token)
 const keysOf = (userId: string) => h.sys.credential.findMany({ where: { userId, type: 'apiKey' } })
 
@@ -67,7 +67,7 @@ describe('expiresAt from the caller', () => {
     const res = await mint(t, { name: 'nan', expiresAt: 'not-a-date' })
     if (res.status !== 201) return   // refused — nothing to compare
     const key  = (res.body as any).key as string
-    const list = (await request(app).get('/api-keys').auth(t)).body as any
+    const list = (await request(app).get('/apiKeys').auth(t)).body as any
     const row  = (Array.isArray(list) ? list : list.data).find((k: any) => k.name === 'nan')
     const reported = row?.expiresAt
     const live = await h.auth.verifySession(key)
@@ -113,7 +113,7 @@ describe('scopes from the caller', () => {
       const res = await mint(t, { name: 'blank', scopes })
       if (res.status !== 201) { expect(res.status).toBe(400); continue }
       const key = (res.body as any).key as string
-      const asKey = await request(app).post('/api-keys').auth(key).send({ name: 'minted-by-blank' })
+      const asKey = await request(app).post('/apiKeys').auth(key).send({ name: 'minted-by-blank' })
       expect(asKey.status).toBe(403)
     }
   })
@@ -125,7 +125,7 @@ describe('an UNSCOPED key holds its owner’s whole standing at the credential s
     const u = await person()
     const t = await u.login()
     const key = ((await mint(t, { name: 'root' })).body as any).key as string
-    const res = await request(app).post('/api-keys').auth(key).send({ name: 'child' })
+    const res = await request(app).post('/apiKeys').auth(key).send({ name: 'child' })
     expect(res.status).toBe(403)
   })
 
@@ -152,7 +152,7 @@ describe('an UNSCOPED key holds its owner’s whole standing at the credential s
     const t = await u.login()
     const a = (await mint(t, { name: 'a' })).body as any
     const b = (await mint(t, { name: 'b' })).body as any
-    const res = await request(app).delete(`/api-keys/${b.id}`).auth(a.key)
+    const res = await request(app).delete(`/apiKeys/${b.id}`).auth(a.key)
     expect(res.status).toBe(403)
     expect(await h.auth.verifySession(b.key)).not.toBeNull()
   })
@@ -165,7 +165,7 @@ describe('refutation rows — expected to pass on current code', () => {
     const t = await u.login()
     const k = (await mint(t, { name: 'r' })).body as any
     expect((await me(k.key)).status).toBe(200)
-    expect((await request(app).delete(`/api-keys/${k.id}`).auth(t)).status).toBe(200)
+    expect((await request(app).delete(`/apiKeys/${k.id}`).auth(t)).status).toBe(200)
     expect((await me(k.key)).status).toBe(401)
     expect(await h.auth.verifySession(k.key)).toBeNull()
   })
@@ -192,8 +192,8 @@ describe('refutation rows — expected to pass on current code', () => {
     const t = await u.login()
     const k = (await mint(t, { name: 's', scopes: ['search'] })).body as any
     expect((await request(app).get('/sessions').auth(k.key)).status).toBe(403)
-    expect((await request(app).get('/api-keys').auth(k.key)).status).toBe(403)
-    expect((await request(app).post('/api-keys').auth(k.key).send({ name: 'x' })).status).toBe(403)
+    expect((await request(app).get('/apiKeys').auth(k.key)).status).toBe(403)
+    expect((await request(app).post('/apiKeys').auth(k.key).send({ name: 'x' })).status).toBe(403)
     expect((await me(k.key)).status).toBe(200)
   })
 })

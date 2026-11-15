@@ -41,7 +41,6 @@
 // survives, which is the audit trail `runExport` writes.
 
 import type { App } from '../../core/app.ts'
-import { callDb, enterCall } from '../../core/context.ts'
 
 /** Options for `exporter()`. */
 export interface ExportPluginOptions {
@@ -154,8 +153,6 @@ export function exporter(opts: ExportPluginOptions = {}) {
        * The client this caller reads through, resolved by the SAME hook the
        * service pipeline uses — never by a copy.
        *
-       * A synthetic service context is the price of being below the pipeline,
-       * and every field in it is one the hooks are documented to read.
        * `reserved` is the keys the plugin's `reservedQuery` names, as on a
        * service: that is what lets an app whose `tenantFrom` reads
        * `?workspace_id=` keep working here beside the filters.
@@ -166,26 +163,18 @@ export function exporter(opts: ExportPluginOptions = {}) {
         // The same two hooks `createApp` installs, and the same two symbols it
         // parks them under — read rather than guessed, so a rename moves both
         // halves together.
-        const { withLitestoneDb, withTenantDb, toDataPrincipal, PRINCIPAL_RESOLVER, TENANT_REGISTRY } =
+        const { withLitestoneDb, withTenantDb, toDataPrincipal, resolveRawCaller, PRINCIPAL_RESOLVER, TENANT_REGISTRY } =
           await import('../../core/litestone.ts')
         const tenants   = (app as any)[TENANT_REGISTRY] ?? null
         const principal = (app as any)[PRINCIPAL_RESOLVER] ?? undefined
-
-        const sctx: any = {
-          user: (ctx as any).user ?? null,
-          caller:   { headers: (ctx as any).headers ?? {}, ip: (ctx as any).ip },
-          query:    { ...query },
-          reserved: { ...reserved },
-          locals:   {},
-        }
 
         const around = tenants
           ? withTenantDb(tenants, principal)
           : withLitestoneDb(db as never, principal)
 
-        let resolved: unknown = null
-        // Entered as a call, so a resolver reading `$.db` reads this client.
-        await enterCall(sctx, () => around(sctx, async () => { resolved = callDb(sctx) }))
+        // `app.principalFor(ctx)` without the reserved keys, which only this
+        // plugin's `reservedQuery` can name.
+        const { db: resolved, user } = await resolveRawCaller(around, app, ctx as any, { query, reserved })
 
         // BOTH halves, and the second is the one that is easy to miss.
         // `runExport` scopes the client itself from `as`, so handing it an
@@ -197,7 +186,7 @@ export function exporter(opts: ExportPluginOptions = {}) {
         // `toDataPrincipal` for the same reason `applyClaims` uses it before
         // its own `$setAuth`: the trail's `actorType` reads `type`, which a
         // session states as `userType`.
-        return { client: resolved ?? db, principal: toDataPrincipal(sctx.user) }
+        return { client: resolved ?? db, principal: toDataPrincipal(user) }
       }
 
       // ── What may leave ───────────────────────────────────────────────

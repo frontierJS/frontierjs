@@ -109,7 +109,11 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
 - **`after` is after the METHOD.** An effect that must not run early goes in
   `ctx.afterCommit(fn)`, and one that must not be lost in `ctx.enqueue(job, payload)`.
 - **`register` is sync.** Async setup and reading `junction.config.js` go in
-  `boot()`; only a throw in `ready` lets the app start.
+  `boot()`.
+- **`ready` runs after `listen`, and a throw in it is logged, not fatal**
+  (`FJS-D973`). The app answers requests before every plugin's `ready` has
+  finished, so work that must hold the first request goes in `boot()`. Pinned by
+  `test/plugin-ready.test.ts`.
 - **A timer in `boot()` ticks in every one-shot process.** `junction call` and
   the snapshot tools boot with `_startOnce()`, which runs `boot()` and skips
   `work()`; a worker, poller or `setInterval` goes in `work()`, and

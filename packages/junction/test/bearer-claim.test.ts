@@ -938,3 +938,69 @@ describe('redeem({ where }) holds a second factor in the one lookup', () => {
     expect((await answer(await redeem(routeCtx({ token }).ctx as never))).status).toBe(200)
   })
 })
+
+// A raw route runs below the service pipeline, so nothing resolves the app's
+// principal for it unless it asks: a device key on a stream upload passed in
+// silence, dead or alive (`FJS-3977`). `app.principalFor(ctx)` is the asking
+// (`FJS-D1856`) — the same hook a service runs, so the two see the same rows.
+describe('a raw route asks for its caller with app.principalFor(ctx)', () => {
+  async function routed() {
+    const db = await seeded()
+    const app: any = createApp({
+      db,
+      logLevel:  'silent',
+      config:    { port: 0 },
+      principal: bearerClaim({ from: authorization(), model: 'portalLink', column: 'tokenHash', key: KEY, claims: { portalClientId: 'clientId' } }),
+    })
+    app.services.register(buildService({
+      name: 'answers',
+      async find() { return ($.db as any).formResponse.findMany({}) },
+    }))
+    const seen: { pulled?: boolean; claims?: unknown; grant?: unknown } = {}
+    app.put('/chunk', async (ctx: any) => {
+      const { db: scoped, claims, user } = await app.principalFor(ctx)
+      seen.claims = claims
+      seen.grant  = user
+      const rows = await scoped.formResponse.findMany({})
+      await new Response(ctx.body).arrayBuffer()
+      return ctx.json({ rows: rows.map((r: any) => r.answer) })
+    }, { body: 'stream' })
+    await app.start()
+    const put = (authorization?: string) => app.http.fetch(new Request('http://localhost/chunk', {
+      method:  'PUT',
+      headers: { 'content-type': 'application/octet-stream', ...(authorization ? { authorization } : {}) },
+      body:    new Uint8Array(8),
+    }))
+    const service = (authorization: string) => app.http.fetch(new Request('http://localhost/answers', { headers: { authorization } }))
+    return { app, put, service, seen }
+  }
+
+  test('a live key is read: the route sees the rows its claim reaches, and the claim itself', async () => {
+    const { app, put, service, seen } = await routed()
+    try {
+      const res = await put('Bearer live-one')
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ rows: ['one'] })
+      expect(seen.claims).toEqual({ portalClientId: 1 })
+      // A grant scopes rows and never becomes a session (`FJS-D113`).
+      expect(seen.grant).toBeNull()
+
+      // The pair: the service pipeline answers the same rows for the same key.
+      const viaService: any = await (await service('Bearer live-one')).json()
+      expect(viaService.data.map((r: any) => r.answer)).toEqual(['one'])
+    } finally { await app.stop() }
+  })
+
+  test('a dead key is refused 401 in the bearer\'s own words, and no key reaches nothing', async () => {
+    const { app, put } = await routed()
+    try {
+      const dead = await put('Bearer never-minted')
+      expect(dead.status).toBe(401)
+      expect(((await dead.json()) as any).message).toBe('This key does not work. It may have expired or been revoked.')
+
+      const none = await put()
+      expect(none.status).toBe(200)
+      expect(await none.json()).toEqual({ rows: [] })
+    } finally { await app.stop() }
+  })
+})

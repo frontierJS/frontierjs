@@ -201,7 +201,8 @@ export interface HookContext {
 // ─── Log entry ────────────────────────────────────────────────────────────────
 
 export interface LogEntry {
-  operation:  'create' | 'update' | 'delete' | 'read'
+  /** `denied` is a refused access; `meta.attempted` names the verb's policy op (`FJS-D1707`). */
+  operation:  'create' | 'update' | 'delete' | 'read' | 'denied'
   model:      string
   field:      string | null
   /** The named `@@transitions` move an update made, or null. */

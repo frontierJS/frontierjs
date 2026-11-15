@@ -278,8 +278,8 @@ const keyToCarry = async ({ server, mode, kept, newKey, how, echo, chalk }) => {
   return key
 }
 
-/** Why `fli deploy` would refuse this commit. It runs after the retire, so a
- *  refusal met there leaves the box with no Basecamp (`FJS-D2040`). */
+/** Why `fli deploy` would refuse this commit. Asked before the backup: met
+ *  after the retire, a refusal leaves the box with no Basecamp (`FJS-D2040`). */
 const deployRefusals = async () => {
   const { gateVerdict, readGateFacts } = await import(new URL('file://' + global.fliRoot + '/core/deploy-gate.js'))
   return gateVerdict(readGateFacts(provisionScript().root)).refusals

@@ -1764,7 +1764,8 @@ h6, .h6 {
 
 
 .link {
-  color:           var(--bg-mix, var(--color-primary));
+  color:           var(--tone-ink, oklch(from var(--color-primary)
+                     clamp(var(--tone-l-min), l, var(--tone-l-max)) c h));
   text-decoration: none;
   cursor:          pointer;
 }
@@ -5867,7 +5868,7 @@ try {
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Management service</td>
-      <td class="m sub">Conduit can register a Junction service named conduit-targets that exposes:</td>
+      <td class="m sub">Conduit can register a Junction service named conduitTargets that exposes:</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>

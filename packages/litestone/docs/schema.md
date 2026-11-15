@@ -19,14 +19,17 @@ Schemas live in `.lite` files. Syntax is close to Prisma's SDL with SQLite-nativ
 | `EnumName[]` | `TEXT` JSON, no CHECK | `string[]` — a set of declared values |
 | `Capability[]` | `TEXT` JSON, no CHECK | `string[]` — synthesized from the models declaring `@@capabilities`; see `access-control.md` |
 | `Type[]` | `TEXT` JSON | `Array` (auto-parsed) |
+| `Type[]?` | nullable `TEXT` JSON | `Array`, or `null` when absent |
 | `Type?` | nullable | `null` when absent |
 
-An array column is JSON text with a `json_type = 'array'` CHECK, and the empty
-array is its null state — every array field is `NOT NULL DEFAULT '[]'`, so an
-absent one reads back as `[]` rather than `null`, and a write of `null` is
-refused. That holds with no attribute at all, which is why `@default([])` says
-out loud what the column already does; declare it if the schema reads better for
-saying so.
+An array column is JSON text with a `json_type = 'array'` CHECK. A list with no
+`?` is `NOT NULL DEFAULT '[]'`: an absent one reads back as `[]` and a write of
+`null` is refused. That holds with no attribute at all, which is why
+`@default([])` says out loud what the column already does; declare it if the
+schema reads better for saying so. A list with `?` is nullable and has no
+default: an absent one reads back as `null`, a write of `null` clears it, and
+`[]` stays a different answer — "no list" against "an empty list"
+(`FJS-D2114`).
 
 A non-empty default is an array literal — `@default(["a", "b"])`, `@default([1, 2])`,
 `@default([Active, Pending])` for enum members, written bare exactly as a scalar

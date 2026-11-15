@@ -607,3 +607,130 @@ describe('a read through a relation files the related model\'s read entry (FJS-3
     expect(await reads(sys)).toEqual(['Patient 1'])
   })
 })
+
+// A refused access is the event a privacy officer most needs, and the policy
+// folded into the WHERE made it an empty answer that filed nothing (FJS-3708).
+// FJS-D1707: a `denied` entry, carrying the id only where the caller named it.
+describe('a refused access files a denied entry (FJS-3708)', () => {
+  const lite = `
+    database main { path ":memory:" model AuditRow }
+    model AuditRow { ${TRAIL} }
+    model Patient { id Int @id  name String  careId Int  @@trail(main, reads: true)  @@allow(all, careId == auth().id) }
+    model Memo { id String @id  careId Int  @@trail(main)  @@allow(all, careId == auth().id) }
+  `
+  const denied = async (sys: any) =>
+    (await sys.auditRow.findMany({ where: { operation: 'denied' }, orderBy: { id: 'asc' } }))
+      .map((r: any) => `${r.meta?.attempted} ${r.model} ${JSON.stringify(r.records)} ${r.actorId}`)
+
+  async function seeded() {
+    const db = await client(lite)
+    const sys = db.asSystem()
+    await sys.patient.create({ data: { id: 1, name: 'Kestrel', careId: 5 } })
+    await sys.memo.create({ data: { id: 'm1', careId: 5 } })
+    await tick()
+    await sys.auditRow.deleteMany({})
+    return { db, sys }
+  }
+
+  test('a read the policy empties names the id the caller named, and a list names none', async () => {
+    const { db, sys } = await seeded()
+    const out = db.$setAuth({ id: 9 })
+    expect(await out.patient.findUnique({ where: { id: 1 } })).toBeNull()
+    expect(await out.patient.findFirst({ where: { id: 1 } })).toBeNull()
+    expect(await out.patient.findMany({ where: { name: 'Kestrel' } })).toEqual([])
+    await tick()
+    expect(await denied(sys)).toEqual(['read Patient [1] 9', 'read Patient [1] 9', 'read Patient [] 9'])
+  })
+
+  test('a miss is not a refusal, the caller allowed files a read, and the system files nothing', async () => {
+    const { db, sys } = await seeded()
+    expect(await db.$setAuth({ id: 9 }).patient.findUnique({ where: { id: 2 } })).toBeNull()
+    expect(await db.$setAuth({ id: 9 }).patient.findMany({ where: { name: 'Nobody' } })).toEqual([])
+    expect((await db.$setAuth({ id: 5 }).patient.findUnique({ where: { id: 1 } })).name).toBe('Kestrel')
+    await sys.patient.findMany({ where: { name: 'Nobody' } })
+    await tick()
+    expect(await denied(sys)).toEqual([])
+    expect((await sys.auditRow.findMany({})).map((r: any) => r.operation)).toEqual(['read'])
+  })
+
+  test('a refused write files the verb it tried; a model without reads files no refused read', async () => {
+    const { db, sys } = await seeded()
+    const out = db.$setAuth({ id: 9 })
+    expect(await out.patient.update({ where: { id: 1 }, data: { name: 'x' } })).toBeNull()
+    expect(await out.patient.delete({ where: { id: 1 } })).toBeNull()
+    expect(await out.memo.updateMany({ where: {}, data: { careId: 9 } })).toEqual({ count: 0 })
+    expect(await out.memo.findUnique({ where: { id: 'm1' } })).toBeNull()
+    await expect(out.memo.create({ data: { id: 'm2', careId: 5 } })).rejects.toThrow()
+    await tick()
+    expect(await denied(sys)).toEqual(['update Patient [1] 9', 'delete Patient [1] 9', 'update Memo [] 9', 'create Memo [] 9'])
+    expect((await sys.patient.findUnique({ where: { id: 1 } })).name).toBe('Kestrel')
+  })
+
+  test('a named id is logged only as the id field\'s type, and a refusal inside a rolled-back transaction stays filed', async () => {
+    const { db, sys } = await seeded()
+    const out = db.$setAuth({ id: 9 })
+    await out.memo.update({ where: { id: 'x'.repeat(500) }, data: { careId: 9 } })
+    await sys.memo.create({ data: { id: 'x'.repeat(500), careId: 5 } })
+    await out.memo.update({ where: { id: 'x'.repeat(500) }, data: { careId: 9 } })
+    await expect(out.$transaction(async (tx: any) => {
+      await tx.patient.update({ where: { id: 1 }, data: { name: 'x' } })
+      throw new Error('roll back')
+    })).rejects.toThrow('roll back')
+    await tick()
+    expect(await denied(sys)).toEqual(['update Memo [] 9', 'update Patient [1] 9'])
+  })
+})
+
+// An entry whose call carries no tenant — a system write, a seed — was filed
+// under no tenant, so a tenant's reader policy (`tenant == auth().clinicId`)
+// never saw it (FJS-3783). FJS-D1745: it takes the tenant of the row it
+// describes; the caller's tenant still wins where there is one.
+describe('an entry with no tenant on the call takes the described row\'s tenant (FJS-3783)', () => {
+  const lite = `
+    tenancy { strategy row  column clinicId }
+    database main { path ":memory:" model AuditRow }
+    model AuditRow { ${TRAIL} @@tenant(none) }
+    model Chart { id Int @id  clinicId Int  name String  @@trail(main, reads: true)  @@allow(all, true) }
+    model Visit { id Int @id  orgId Int  note String  @@tenant(column: "orgId")  @@trail(main)  @@allow(all, true) }
+    model Region { id Int @id  name String  @@tenant(none)  @@trail(main)  @@allow(all, true) }
+    model Flag { id Int @id  clinicId Int @guarded  @@trail(main)  @@allow(all, true) }
+  `
+  const tenants = async (sys: any) =>
+    (await sys.auditRow.findMany({ orderBy: { id: 'asc' } })).map((r: any) => `${r.operation} ${r.model} ${r.tenant}`)
+
+  test('a system write and a system read file under the row\'s tenant; a per-model column is read too', async () => {
+    const db = await client(lite)
+    const sys = db.asSystem()
+    await sys.chart.create({ data: { id: 1, clinicId: 7, name: 'A' } })
+    await sys.chart.update({ where: { id: 1 }, data: { name: 'B' } })
+    await sys.chart.findFirst({ where: { id: 1 } })
+    await sys.visit.create({ data: { id: 1, orgId: 3, note: 'x' } })
+    await sys.chart.delete({ where: { id: 1 } })
+    await tick()
+    expect(await tenants(sys)).toEqual(['create Chart 7', 'update Chart 7', 'read Chart 7', 'create Visit 3', 'delete Chart 7'])
+  })
+
+  test('the caller\'s tenant wins, and rows in two tenants name none', async () => {
+    const db = await client(lite)
+    const sys = db.asSystem()
+    await sys.chart.create({ data: { id: 1, clinicId: 7, name: 'A' } })
+    await sys.chart.create({ data: { id: 2, clinicId: 8, name: 'B' } })
+    await tick()
+    await sys.auditRow.deleteMany({})
+
+    await sys.chart.findMany({})
+    db.$logContext(() => ({ tenant: '9' }))
+    await sys.chart.update({ where: { id: 1 }, data: { name: 'C' } })
+    await tick()
+    expect(await tenants(sys)).toEqual(['read Chart null', 'update Chart 9'])
+  })
+
+  test('a model with @@tenant(none) and a protected tenant column file no tenant', async () => {
+    const db = await client(lite)
+    const sys = db.asSystem()
+    await sys.region.create({ data: { id: 1, name: 'north' } })
+    await sys.flag.create({ data: { id: 1, clinicId: 7 } })
+    await tick()
+    expect(await tenants(sys)).toEqual(['create Region null', 'create Flag null'])
+  })
+})

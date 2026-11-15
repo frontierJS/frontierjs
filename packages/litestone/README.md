@@ -1482,7 +1482,10 @@ await db.$audit({
 
 **It awaits and throws**, where `@@trail` is fire-and-forget — there the record is a
 side effect of a write that already succeeded and must not fail it; here it *is*
-the point. An unknown key is refused by name, a stated `actorId` beats `onLog`'s,
+the point. **Inside a `$transaction` it files at call time and survives a rollback**,
+where a write's line waits for the commit: an event is true whether or not the
+transaction around it does, and a failed attempt inside a refused transaction is
+the row this call exists for (`FJS-D1740`). An unknown key is refused by name, a stated `actorId` beats `onLog`'s,
 and `meta` is **not redacted** — it is yours, so do not put a secret in it. On
 every flavor of client.
 

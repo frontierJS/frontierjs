@@ -1550,7 +1550,7 @@ export class JunctionClient extends EventEmitter {
     this._authNames = {
       account:  opts.authServices?.account  ?? 'account',
       sessions: opts.authServices?.sessions ?? 'sessions',
-      apiKeys:  opts.authServices?.apiKeys  ?? 'api-keys',
+      apiKeys:  opts.authServices?.apiKeys  ?? 'apiKeys',
       connections: opts.authServices?.connections ?? 'connections',
     }
     this._cookieAuth = opts.cookieAuth ?? false

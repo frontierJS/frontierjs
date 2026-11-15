@@ -68,14 +68,7 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
 
       const name = def.name ? canonicalServiceName(def.name) : deriveName(filename)
       if (!registry.has(name)) {
-        // The filename's own spelling stays reachable — a URL and an
-        // `app.service(…)` written against it are not the app's mistake. Only
-        // when it is a spelling of the declared name: `metrics.service.ts`
-        // declaring 'metrics-store' is a different word, and aliasing it claims
-        // 'metrics' for a service that never answered to it.
-        const raw = rawStem(filename)
-        const said = def.name && def.name !== name ? [def.name] : []
-        registry.register({ ...def, name }, raw !== name && deriveName(filename) === name ? [...said, raw] : said)
+        registry.register({ ...def, name })
         registeredBy.set(name, file)
         // An inventory line, not news — `GET /manifest` answers the same
         // question on demand, and an app with 21 services printed 21 of these
@@ -199,7 +192,7 @@ function definitionOf(mod: Record<string, unknown>): ServiceDefinition | null {
 
 // ─── Derive service name from filename ───────────────────────────────────
 // accounts.service.ts → 'accounts'
-// user-profiles.service.ts → 'user-profiles'
+// user-profiles.service.ts → 'userProfiles'
 
 /**
  * The canonical service name a filename derives.
@@ -214,17 +207,11 @@ function definitionOf(mod: Record<string, unknown>): ServiceDefinition | null {
  * nothing, so every relation picker onto a multi-word model offered an empty
  * list and read as *there are none*.
  *
- * The file keeps its kebab name; the SERVICE gets one spelling. The old name is
- * registered as an alias, so `/product-variants` and
- * `app.service('product-variants')` keep working — nothing on the wire moves.
+ * The file keeps its kebab name; the SERVICE gets one spelling, and only that
+ * spelling is mounted: `/product-variants` answers 404 (`FJS-D1317`).
  */
 export function deriveName(filename: string): string {
   return canonicalServiceName(filename.replace(/\.service\.(ts|js|mts|mjs)$/, ''))
-}
-
-/** The filename's own spelling, for the alias — `product-variants`. */
-function rawStem(filename: string): string {
-  return filename.replace(/\.service\.(ts|js|mts|mjs)$/, '')
 }
 
 // ─── Manual service file loader ───────────────────────────────────────────

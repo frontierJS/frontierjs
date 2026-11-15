@@ -34,10 +34,6 @@ export type MethodBody = 'derived' | 'elevated' | 'scoped'
 
 export interface AppServiceDescription {
   name:          string
-  // Older spellings this service still answers to. A kebab FILENAME derives a
-  // camel service name now (`FJS-570`), and the filename's own spelling stays
-  // mounted — which is a fact about the wire and therefore belongs here.
-  aliases:       string[]
   /** `null` is a service declared over no model (`FJS-D628`). */
   model:         string | null
   methods:       string[]
@@ -94,7 +90,6 @@ export function describeApp(app: App): AppDescription {
 
     return {
       name:          d.name,
-      aliases:       app.services.aliasesOf(d.name),
       model:         d.model,
       methods:       d.methods,
       customMethods: d.customMethods,

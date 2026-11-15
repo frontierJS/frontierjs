@@ -64,6 +64,13 @@ function argue(root, id) {
 
 const errors = (root) => runRegisterCheck({ root }).errors
 
+// The answer removes the marker it would otherwise leave for a hand edit (`FJS-D2180`).
+function markerLeft(root) {
+  const held = readFileSync(join(root, 'ISSUES.md'), 'utf8').split('\n').find(l => l.includes('FJS-010'))
+  expect(held).toContain('| Measured by hand |')
+  return runRegisterCheck({ root }).warnings.filter(w => w.rule === 'blocked-by-closed')
+}
+
 describe('a question that holds a row up', () => {
   test('filed with --blocks: a D id in § Needs a decision, and the held row is set aside by fli next', () => {
     const root = project()
@@ -104,6 +111,7 @@ describe('a question that holds a row up', () => {
     expect(next.blocked).toEqual([])
     expect(next.ready.map(r => r.id)).toContain('FJS-010')
     expect(errors(root)).toEqual([])
+    expect(markerLeft(root)).toEqual([])
   })
 
   test('a settle closes the row citing the ruling that already answered it, and mints nothing', () => {
@@ -122,6 +130,7 @@ describe('a question that holds a row up', () => {
     expect(readFileSync(join(root, 'DECISIONS.md'), 'utf8')).not.toContain('fjs-d4')
     expect(rankNext(root).ready.map(r => r.id)).toContain('FJS-010')
     expect(errors(root)).toEqual([])
+    expect(markerLeft(root)).toEqual([])
   })
 
   test('--blocks refuses a row that is unknown or closed, and writes nothing', () => {

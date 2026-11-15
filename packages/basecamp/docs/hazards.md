@@ -172,7 +172,7 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
 - **A conduit target carries a REF, not a credential.** `auth: { type: 'hmac',
   secret }` type-checks through a cast and cannot work: the signer reads `ref`,
   so every send fails `auth_failed` naming credential `undefined` — and the
-  material is written into the registry, which `GET /conduit-targets` returns.
+  material is written into the registry, which `GET /conduitTargets` returns.
   `core/credentials.ts` resolves `secret:<id>` and `env:<NAME>`. Nothing had
   ever sent to an outpost, so neither half showed for two phases.
 - **`bun run db:seed` is the only thing here that writes every model, and `db/test/seed.test.ts` runs it** — as a process, in a throwaway cwd, including `--force`. **It discovers the tables rather than listing them**: every table in the seeded database must have rows unless it is named in `NOT_SEEDED` with a reason, and the exemptions are asserted empty too, so neither list can go stale. Adding a model is a choice between seeding it and saying why not. **`--force` deletes the database file**, not rows: AuditEvent is locked at delete and a locked child blocks its parent's Cascade (`FJS-D1281`), so a Workspace with a trail row cannot be row-deleted even by `asSystem()`.
@@ -212,7 +212,7 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   It was a hand-kept copy of the service registry and went stale six times;
   three of those were paths this app's source names nowhere, because a plugin
   registered them (`connections` is junction's channels, `account`/`sessions`
-  are auth's, `conduit-targets` is conduit's). It is parsed now, off the file
+  are auth's, `conduitTargets` is conduit's). It is parsed now, off the file
   `junction app` writes and CI already reruns with `--check`, so a service
   reaches both proxies by regenerating the snapshot. The failure it removes is
   silent and asymmetric: a signed-in browser makes every service call as a frame

@@ -1,8 +1,8 @@
 /**
  * basecamps.test.ts -- the Basecamps screen's verbs against a stub Basecamp,
  * over a temp `basecamps.json` so the laptop's own index is never read. The
- * stub answers what `takeHubBackup` asks: `/health`, the `/hub-backups` list,
- * `hub-config current`, the `take`, and the row it polls until settled.
+ * stub answers what `takeHubBackup` asks: `/health`, the `/hubBackups` list,
+ * `hubConfig current`, the `take`, and the row it polls until settled.
  * Download asks `download` for a link and fetches a real tar.gz the stub
  * built. Restart and the key copy run over ssh, so only their refusals are tested here.
  */
@@ -71,17 +71,17 @@ beforeAll(() => {
         { id: 'srv_a',   name: 'app-a',   posture: { reported: true,  stale: false, failing: 2 } },
         { id: 'srv_b',   name: 'app-b',   posture: { reported: false, stale: false, failing: 0 } },
       ] })
-      if (url.pathname === '/hub-config' && method === 'current') return Response.json({ data: { app: { backupDestinationId: null } } })
-      if (url.pathname === '/hub-backups' && req.method === 'GET') {
+      if (url.pathname === '/hubConfig' && method === 'current') return Response.json({ data: { app: { backupDestinationId: null } } })
+      if (url.pathname === '/hubBackups' && req.method === 'GET') {
         const newest = [...rows].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
         return Response.json({ data: newest.slice(0, Number(url.searchParams.get('$limit') ?? 100)) })
       }
-      if (url.pathname === '/hub-backups' && method === 'take') {
+      if (url.pathname === '/hubBackups' && method === 'take') {
         const row = { id: 'hb_2', status: 'running', createdAt: '2026-11-05T09:00:00.000Z', startedAt: '2026-11-05T09:00:00.000Z', sha256: tarSha }
         rows.push(row)
         return Response.json({ data: row })
       }
-      const one = url.pathname.match(/^\/hub-backups\/([^/]+)$/)
+      const one = url.pathname.match(/^\/hubBackups\/([^/]+)$/)
       if (one && method === 'download') return Response.json({ data: { url: `/archive/${one[1]}`, name: 'basecamp-stub.tar.gz' } })
       if (one && req.method === 'GET') {
         const row = rows.find(r => r.id === decodeURIComponent(one[1]))
@@ -174,8 +174,8 @@ describe('backup', () => {
     const o = await settled('stub')
     expect(o).toMatchObject({ verb: 'backup', state: 'done', row: { id: 'hb_2', status: 'success' } })
     expect(o.finishedAt).toBeString()
-    expect(asked).toContain('POST /hub-backups take')
-    expect(asked.some(a => a.startsWith('GET /hub-backups/hb_2'))).toBe(true)
+    expect(asked).toContain('POST /hubBackups take')
+    expect(asked.some(a => a.startsWith('GET /hubBackups/hb_2'))).toBe(true)
     expect(asked.some(a => a.includes('download'))).toBe(false)
 
     const listed = await listBasecamps({ home })

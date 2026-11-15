@@ -39,7 +39,7 @@ async function boot() {
     config: { port: 0,
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   } as never)
-  app.services.register(createService({ name: 'clock-entries', model: 'ClockEntry' }))
+  app.services.register(createService({ name: 'clockEntries', model: 'ClockEntry' }))
   app.services.register(createService({
     name: 'probes',
     methods: [{ method: 'when', gate: 0 }],
@@ -66,7 +66,7 @@ describe('a replayed write is dated when it was made', () => {
     const { call, close } = await boot()
     try {
       const made = Date.now() - 8 * HOUR
-      const { status, body } = await call('POST', '/clock-entries', { note: 'in' },
+      const { status, body } = await call('POST', '/clockEntries', { note: 'in' },
         { 'x-frontier-made-at': iso(made), 'x-frontier-sent-at': iso(Date.now()) })
       expect(status).toBe(201)
       near(body.startedAt, made)
@@ -79,7 +79,7 @@ describe('a replayed write is dated when it was made', () => {
     try {
       const skew = 3 * HOUR                     // the device runs three hours fast
       const made = Date.now() - 8 * HOUR
-      const { body } = await call('POST', '/clock-entries', { note: 'in' },
+      const { body } = await call('POST', '/clockEntries', { note: 'in' },
         { 'x-frontier-made-at': iso(made + skew), 'x-frontier-sent-at': iso(Date.now() + skew) })
       near(body.startedAt, made)
     } finally { await close() }
@@ -88,9 +88,9 @@ describe('a replayed write is dated when it was made', () => {
   test('`@updatedAt` on a patch resolves to the made-at', async () => {
     const { call, close } = await boot()
     try {
-      const { body: row } = await call('POST', '/clock-entries', { note: 'in' })
+      const { body: row } = await call('POST', '/clockEntries', { note: 'in' })
       const made = Date.now() - 2 * HOUR
-      const { body } = await call('PATCH', `/clock-entries/${row.id}`, { note: 'out' },
+      const { body } = await call('PATCH', `/clockEntries/${row.id}`, { note: 'out' },
         { 'x-frontier-made-at': iso(made), 'x-frontier-sent-at': iso(Date.now()) })
       near(body.updatedAt, made)
       near(body.startedAt, Date.now())          // the create's stamp is untouched
@@ -100,7 +100,7 @@ describe('a replayed write is dated when it was made', () => {
   test('a live call states nothing and lands at the server\'s now', async () => {
     const { call, close } = await boot()
     try {
-      const { body } = await call('POST', '/clock-entries', { note: 'in' })
+      const { body } = await call('POST', '/clockEntries', { note: 'in' })
       near(body.startedAt, Date.now())
     } finally { await close() }
   })
@@ -130,7 +130,7 @@ describe('what the boundary refuses', () => {
   test('a made-at with no sent-at — a device clock with nothing to compare it against', async () => {
     const { call, close } = await boot()
     try {
-      const { status, body } = await call('POST', '/clock-entries', { note: 'in' },
+      const { status, body } = await call('POST', '/clockEntries', { note: 'in' },
         { 'x-frontier-made-at': iso(Date.now() - HOUR) })
       expect(status).toBe(400)
       expect(JSON.stringify(body)).toContain('X-Frontier-Sent-At')
@@ -140,7 +140,7 @@ describe('what the boundary refuses', () => {
   test('a made-at later than its own sent-at', async () => {
     const { call, close } = await boot()
     try {
-      const { status, body } = await call('POST', '/clock-entries', { note: 'in' },
+      const { status, body } = await call('POST', '/clockEntries', { note: 'in' },
         { 'x-frontier-made-at': iso(Date.now() + HOUR), 'x-frontier-sent-at': iso(Date.now()) })
       expect(status).toBe(400)
       expect(JSON.stringify(body)).toContain('X-Frontier-Made-At')
@@ -150,7 +150,7 @@ describe('what the boundary refuses', () => {
   test('an instant that does not parse', async () => {
     const { call, close } = await boot()
     try {
-      const { status } = await call('POST', '/clock-entries', { note: 'in' },
+      const { status } = await call('POST', '/clockEntries', { note: 'in' },
         { 'x-frontier-made-at': 'yesterday', 'x-frontier-sent-at': iso(Date.now()) })
       expect(status).toBe(400)
     } finally { await close() }
@@ -169,7 +169,7 @@ describe('over the socket', () => {
       config: { port: 0,
                 http: { ...defaultConfig.http, drainTimeout: 50 } },
     } as never)
-    app.services.register(createService({ name: 'clock-entries', model: 'ClockEntry' }))
+    app.services.register(createService({ name: 'clockEntries', model: 'ClockEntry' }))
     app.configure(channels())
     await app.start()
     try {
@@ -183,7 +183,7 @@ describe('over the socket', () => {
       })
       const made = Date.now() - 8 * HOUR
       ws.send(JSON.stringify({
-        type: 'service_call', id: 'c1', service: 'clock-entries', method: 'create', data: { note: 'in' },
+        type: 'service_call', id: 'c1', service: 'clockEntries', method: 'create', data: { note: 'in' },
         meta: { headers: { 'x-frontier-made-at': iso(made + HOUR), 'x-frontier-sent-at': iso(Date.now() + HOUR) } },
       }))
       const frame = await reply
@@ -208,7 +208,7 @@ describe('the client states `madeAt` on either transport, with its own clock at 
     }) as never
     const c: any = createJunctionClient({ url: 'http://localhost:3000', timeout: 2_000 })
     const made = Date.now() - HOUR
-    await c.service('clock-entries').create({ note: 'in' }, undefined, { madeAt: made, idempotencyKey: 'k1' })
+    await c.service('clockEntries').create({ note: 'in' }, undefined, { madeAt: made, idempotencyKey: 'k1' })
     const h = Object.fromEntries(Object.entries(seen[0]).map(([k, v]) => [k.toLowerCase(), v]))
     expect(h['x-frontier-made-at']).toBe(iso(made))
     near(h['x-frontier-sent-at'], Date.now())
@@ -225,7 +225,7 @@ describe('the client states `madeAt` on either transport, with its own clock at 
       queueMicrotask(() => c._wsCallMap.get(String(frame.id))?.resolve({ ok: true }))
     } }
     const made = Date.now() - HOUR
-    await c.service('clock-entries').patch(3, { note: 'out' }, undefined, { madeAt: new Date(made) })
+    await c.service('clockEntries').patch(3, { note: 'out' }, undefined, { madeAt: new Date(made) })
     expect(sent[0].meta.headers['x-frontier-made-at']).toBe(iso(made))
     near(sent[0].meta.headers['x-frontier-sent-at'], Date.now())
   })
@@ -237,7 +237,7 @@ describe('the client states `madeAt` on either transport, with its own clock at 
       return new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } })
     }) as never
     const c: any = createJunctionClient({ url: 'http://localhost:3000', timeout: 2_000 })
-    await c.service('clock-entries').create({ note: 'in' })
+    await c.service('clockEntries').create({ note: 'in' })
     expect(Object.keys(seen[0]).map(k => k.toLowerCase())).not.toContain('x-frontier-sent-at')
   })
 })

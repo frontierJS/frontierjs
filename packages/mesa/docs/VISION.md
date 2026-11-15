@@ -1862,8 +1862,10 @@ Both elements look for `pending` and `failed` snippets in the same priority orde
 
 1. Snippets defined inside the wrapping element (co-located form)
 2. Global `{#snippet pending()}` / `{#snippet failed(error, reset)}` defined anywhere in the template
-3. Nothing — blank pending state, and a rejection is silently swallowed. A boundary
-   with no `failed` does not catch a throw; it goes on to the boundary above
+3. Nothing — blank pending state, and a boundary with no `failed` does not catch a
+   throw; it goes on to the boundary above. A template read of an awaited `const`
+   with no catching boundary above it and no `$async.x.error` or `.status` read is
+   a compile error, `UNHANDLED_FAILURE` (`FJS-4290`)
 
 ```html
 <!-- global snippets — shared by both mesa:boundary and mesa:mounted -->
@@ -2132,6 +2134,12 @@ that is not a form submit needs no hand-kept `busy`/`error` pair:
 > synchronous function, an async arrow held in a `const`, an async generator — is a
 > compile error naming both forms (`FJS-1720`). `.refresh()` exists on every awaited
 > `const` (`FJS-D2062`); on a function it is a compile error that names `.for(key)`.
+> A rejected load must show somewhere: the template reading an awaited `const` outside
+> a `<mesa:boundary>` with a `failed` snippet, with no `$async.x.error` or `.status`
+> read in the script or template, is the compile error `UNHANDLED_FAILURE`. A load the
+> template never reads directly is not refused; when it rejects with nothing showing
+> it, the runtime prints `[Mesa] UNHANDLED_FAILURE` and the error, in production too
+> (`FJS-4290`, `FJS-D2136`).
 
 ### 13.3 Optimistic Updates
 
@@ -2837,6 +2845,7 @@ components hydrate to their initial render and serialize cleanly.
 | `on:click` or `@click` anywhere | Write `onclick={handler}`, the modifiers piped on |
 | `once`, `passive` or `capture` on a component | An `addEventListener` option, and a component has no listener of its own |
 | `$async.x` where `x` is neither an awaited top-level `const` nor a top-level `async function` | `$async.x` names no async state (RULE 16) |
+| Template reads an awaited `const` with no catching `<mesa:boundary>` above it and no `$async.x.error` or `.status` read | `UNHANDLED_FAILURE` (RULE 16) |
 | `$.mounted(fn)` used more than once | Only one `$.mounted` per component — use `Promise.all` for multiple operations |
 | `bind:value\|mask` without pattern argument | `\|mask` requires a pattern wrapped in `{ }` |
 | `$.inspect` inside a function or block, or used as a value | `$.inspect` is declared at the top level of `<script>` |

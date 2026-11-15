@@ -15,8 +15,8 @@
 // nothing. So every relation picker onto a multi-word model rendered, opened,
 // and offered NOTHING, which a person reads as *there are no variants*.
 //
-// The file keeps its name; the service gets one spelling, and the filename's
-// own spelling stays reachable as an alias so no URL moves.
+// The file keeps its name and the service gets one spelling. The filename's
+// own spelling is not mounted (`FJS-D1317`): a service answers to one name.
 
 import { describe, test, expect } from 'bun:test'
 import { deriveName }             from '../src/core/loader.ts'
@@ -44,82 +44,68 @@ describe('deriveName', () => {
   })
 })
 
-describe('the registry answers to the older spelling', () => {
+describe('a service answers to one name (FJS-D1317)', () => {
   const registry = new ServiceRegistry()
-  const svc = buildService({ name: 'productVariants', model: 'ProductVariant',
+  const svc = registry.register({ name: 'productVariants', model: 'ProductVariant',
     find: async () => [] })
-  registry.register(svc, ['product-variants'])
 
   test('the canonical name is the one it HAS', () => {
     expect(registry.get('productVariants')).toBe(svc)
     expect(registry.list()).toEqual(['productVariants'])
-    expect(registry.aliasesOf('productVariants')).toEqual(['product-variants'])
   })
 
-  test('the alias resolves — a URL, an app.service() and a WS frame all go through get()', () => {
-    expect(registry.get('product-variants')).toBe(svc)
-    expect(registry.has('product-variants')).toBe(true)
+  test('the kebab spelling is refused — a URL, an app.service() and a WS frame all go through get()', () => {
+    expect(registry.get('product-variants')).toBeUndefined()
+    expect(registry.has('product-variants')).toBe(false)
   })
 
   test('a name nobody registered is still nothing', () => {
     expect(registry.get('productVariant')).toBeUndefined()
     expect(registry.has('nope')).toBe(false)
   })
-
-  test('an alias never shadows a real service', () => {
-    const r = new ServiceRegistry()
-    const real  = buildService({ name: 'product-variants', find: async () => [] })
-    const other = buildService({ name: 'productVariants',  find: async () => [] })
-    r.register(real)
-    r.register(other, ['product-variants'])   // would collide — refused
-    expect(r.get('product-variants')).toBe(real)
-    expect(r.get('productVariants')).toBe(other)
-  })
-
-  test('list() is canonical names only, so a surface does not double-count', () => {
-    expect(registry.list()).not.toContain('product-variants')
-  })
 })
 
-describe('the loader aliases a spelling of the name, not a different word', () => {
-  const load = async (file: string, name: string) => {
+describe('the loader mounts the folded name only', () => {
+  const load = async (file: string, name?: string) => {
     const { mkdtempSync, writeFileSync } = await import('node:fs')
     const { tmpdir }                     = await import('node:os')
     const { join }                       = await import('node:path')
     const { autoloadServices }           = await import('../src/core/loader.ts')
-    const dir = mkdtempSync(join(tmpdir(), 'fjs-2899-'))
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-2960-'))
     writeFileSync(join(dir, file),
-      `export default { name: '${name}', find: async () => [] }\n`)
+      `export default { ${name ? `name: '${name}', ` : ''}find: async () => [] }\n`)
     const registry = new ServiceRegistry()
     await autoloadServices({ dir, registry })
     return registry
   }
 
-  test('a kebab file declaring its camelCase name still answers to the kebab', async () => {
-    const r = await load('product-variants.service.ts', 'productVariants')
-    expect(r.aliasesOf('productVariants')).toEqual(['product-variants'])
+  test('a kebab file with no name: answers to the camelCase name and not to its stem', async () => {
+    const r = await load('product-variants.service.ts')
+    expect(r.list()).toEqual(['productVariants'])
+    expect(r.has('product-variants')).toBe(false)
   })
 
   test('a file declaring a different word does not answer to its stem', async () => {
     const r = await load('metrics.service.ts', 'metrics-store')
-    expect(r.has('metrics-store')).toBe(true)
+    expect(r.list()).toEqual(['metricsStore'])
     expect(r.has('metrics')).toBe(false)
   })
 
   // `FJS-3477`: a stated kebab name kept its spelling, so sierra's
   // `serviceNameFor('BackupDestination')` found nothing and the picker was empty.
-  test('a STATED kebab name folds like a filename and keeps its spelling as an alias', async () => {
+  test('a STATED kebab name folds like a filename, and its kebab spelling is refused', async () => {
     const r = await load('backup-destinations.service.ts', 'backup-destinations')
     expect(r.list()).toEqual(['backupDestinations'])
-    expect(r.aliasesOf('backupDestinations')).toEqual(['backup-destinations'])
+    expect(r.has('backup-destinations')).toBe(false)
   })
 })
 
 describe('a definition registered by hand folds the same way', () => {
-  test('its canonical name is camelCase, and the stated spelling still resolves', () => {
+  test('its canonical name is camelCase, and the stated spelling is refused', () => {
     const r   = new ServiceRegistry()
     const svc = r.register({ name: 'backup-destinations', find: async () => [] })
     expect(svc.name).toBe('backupDestinations')
-    expect(r.get('backup-destinations')).toBe(svc)
+    expect(r.get('backupDestinations')).toBe(svc)
+    expect(r.get('backup-destinations')).toBeUndefined()
   })
 })

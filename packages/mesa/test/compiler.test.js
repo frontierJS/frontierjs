@@ -688,9 +688,9 @@ describe('compile() output shape', () => {
       expect(out).toContain('search($$runtime.get($$sig_q))')
     })
     it('async derived reads the pending of an awaited const it depends on (FJS-3390)', async () => {
-      const out = await cx(`<script>let x = 1; const a = await f(x); const b = await g(a);</script><p>{$async.b.pending}{b}</p>`)
+      const out = await cx(`<script>let x = 1; const a = await f(x); const b = await g(a);</script><p>{$async.b.pending}{b}{$async.b.error}</p>`)
       expect(out).toContain('const $$async_b = $$runtime.makeAsyncState([$$async_a]);')
-      expect(out).toContain('const $$async_a = $$runtime.makeAsyncState();')
+      expect(out).toContain(`const $$async_a = $$runtime.makeAsyncState([], 'a');`)
     })
     it('async derived result is a signal', async () => {
       const out = await cx(`<script>let q = ''; const results = await search(q);</script><p>{results}</p>`)
@@ -2837,6 +2837,7 @@ const data = await fetchIt()
 </script>
 <mesa:boundary>
   {#snippet pending()}<p id="pending">Loading</p>{/snippet}
+  {#snippet failed(error, reset)}<p id="failed">{error}</p>{/snippet}
   <p id="content">{data}</p>
 </mesa:boundary>`, runtime, {
       './fetchIt': { fetchIt: () => dataPromise }

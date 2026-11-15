@@ -518,7 +518,7 @@ console.log('\n  users — a lost second factor, reset by an operator')
 await fetch(`${MAIL}/outbox`, { method: 'DELETE' })
 const lost   = await enrolledAccount(API, addr('r'), PASSWORD)
 const lostId = (await (await fetch(`${BASE}/account/me`, { headers: { authorization: `Bearer ${lost.token}` } })).json())?.id
-const resetFor = (tok) => post(`/account-recovery/${encodeURIComponent(lostId)}`, {}, tok, 'resetTotp')
+const resetFor = (tok) => post(`/accountRecovery/${encodeURIComponent(lostId)}`, {}, tok, 'resetTotp')
 
 check('an admin (5) resetting somebody\'s factor is refused', (await resetFor(asAdmin)).status, 403)
 check('…and the factor is still owed at sign-in', typeof (await password(addr('r'))).body?.challenge, 'string')
@@ -529,7 +529,7 @@ check('…so the session on the lost phone is gone', await whoami(lost.token), 4
 check('…and the password alone signs them in to set it up again',
       typeof (await password(addr('r'))).body?.token, 'string')
 check('a sysadmin resetting their own is refused — that is disableTotp, behind reauthentication',
-      (await post(`/account-recovery/me`, {}, asOps, 'resetTotp')).status, 403)
+      (await post(`/accountRecovery/me`, {}, asOps, 'resetTotp')).status, 403)
 
 await new Promise(r => setTimeout(r, 800))
 const told = ((await (await fetch(`${MAIL}/outbox`)).json().catch(() => [])) ?? [])

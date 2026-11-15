@@ -152,7 +152,7 @@ title: Hub users
     }
   }
 
-  // auth's `account-recovery`, not the hub service: auth owns the rule that the
+  // auth's `accountRecovery`, not the hub service: auth owns the rule that the
   // person must stand below the operator, graded here by `standingLevel`
   // (app.ts). The list does not know who has a second factor, so the button is
   // on every human who is not an administrator and the service answers the
@@ -160,7 +160,7 @@ title: Hub users
   async function resetTotp(u) {
     error = null; busy = u.id
     try {
-      await getClient().service('account-recovery').invoke('resetTotp', u.id)
+      await getClient().service('accountRecovery').invoke('resetTotp', u.id)
       toasts.success(`${label(u)}'s two-step sign-in is off. They are signed out everywhere, and sign in with their password alone until they set it up again.`)
     } catch (e) {
       error = e.message

@@ -179,18 +179,31 @@ describe('every write verb that takes a payload', () => {
   })
 })
 
-// A list column is NOT NULL DEFAULT '[]' whether or not it says `?`, so the
-// `?` cannot make `null` a clear (FJS-4032).
-describe('an explicit null on an optional list', () => {
-  test('is refused by name, and [] is the clear', async () => {
-    const d = await createClient({
-      schema: 'model P {\n  id Int @id @default(autoincrement())\n  tags String[]?\n}',
-      db: ':memory:',
-    })
-    const p = await d.p.create({ data: { tags: ['a'] } })
-    const err = await refusal(() => d.p.update({ where: { id: p.id }, data: { tags: null } }))
-    expect(err).toBeInstanceOf(ValidationError)
-    expect(err.errors[0].path).toEqual(['tags'])
+// `?` on a list means nullable, so "no list" and "an empty list" are two
+// answers (`FJS-D2114`, FJS-4204); a list with no `?` keeps `[]` as its zero.
+describe('an optional list', () => {
+  const LISTS = 'model P {\n  id Int @id @default(autoincrement())\n  tags String[]?\n  ids Int[]? @minItems(1)\n  must String[]\n}'
+
+  test('stores null when left out, clears to null, and keeps [] distinct', async () => {
+    const d = await createClient({ schema: LISTS, db: ':memory:' })
+    const p = await d.p.create({ data: {} })
+    expect(p.tags).toBeNull()
+    expect(p.ids).toBeNull()
+    expect(p.must).toEqual([])
+
+    const full = await d.p.update({ where: { id: p.id }, data: { tags: ['a'], ids: [1] } })
+    expect(full.tags).toEqual(['a'])
+    const cleared = await d.p.update({ where: { id: p.id }, data: { tags: null, ids: null } })
+    expect(cleared.tags).toBeNull()
+    expect(cleared.ids).toBeNull()
     expect((await d.p.update({ where: { id: p.id }, data: { tags: [] } })).tags).toEqual([])
+  })
+
+  test('a list with no ? still refuses null by name', async () => {
+    const d = await createClient({ schema: LISTS, db: ':memory:' })
+    const p = await d.p.create({ data: {} })
+    const err = await refusal(() => d.p.update({ where: { id: p.id }, data: { must: null } }))
+    expect(err).toBeInstanceOf(ValidationError)
+    expect(err.errors[0].path).toEqual(['must'])
   })
 })

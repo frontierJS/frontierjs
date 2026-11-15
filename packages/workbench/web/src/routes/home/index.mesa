@@ -490,15 +490,21 @@ title: Home
 </div>
 
 <style>
-  /* One row however many meters the quota reports; the shared .tiles grid
-     wraps at 12rem a card, which pushed the Claude meters onto a second row. */
+  /* One column on a phone, where four squeezed cards break their labels
+     mid-word; one row once there is room, however many meters the quota
+     reports -- the shared .tiles grid wraps at 12rem a card, which pushed the
+     Claude meters onto a second row. */
   #home-tiles {
-    grid-template-columns: none;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
+    grid-template-columns: 1fr;
     gap: var(--space-lg);
 
     :global(.tile-delta) { font-size: var(--text-2xs); }
+
+    @media (min-width: 768px) {
+      grid-template-columns: none;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(0, 1fr);
+    }
   }
   .home-grid {
     display: grid;

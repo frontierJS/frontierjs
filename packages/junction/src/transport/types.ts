@@ -6,6 +6,7 @@
 import type { SessionContext } from '../auth/types.ts'
 import type { SseEvent as SseFrame } from '@frontierjs/toolbelt/sse'
 import type { ServedFile } from './static.ts'
+import type { App } from '../core/app.ts'
 
 // ─── Raw request — lives entirely inside transport ───────────────────────────
 
@@ -138,6 +139,12 @@ export interface TransportContext {
   protocol: 'http' | 'https'
   host:     string
   user:     SessionContext | null
+  /**
+   * The app this request reached — the one `ServiceContext.app` holds. A route
+   * file under `api/src/routes/` has no closure over it, so without this its
+   * handler cannot reach the client, the logger or a slot (`FJS-D1663`).
+   */
+  app:      App
 
   // response helpers — bound to current request
   json:     (data: unknown, status?: number)  => Response

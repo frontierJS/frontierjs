@@ -3,7 +3,7 @@
 //   import { getClient } from '@frontierjs/sierra/resource'
 //   import { subscribeToPush, unsubscribeFromPush } from '@frontierjs/notifications/client'
 //
-//   const service = getClient().service('push-subscriptions')
+//   const service = getClient().service('pushSubscriptions')
 //   button.onclick = () => subscribeToPush({ service })
 //
 // Plain functions, not a signal (`FJS-D1625`). The caller hands over the
@@ -23,7 +23,7 @@ export interface PushSubscriptionsService {
 }
 
 export interface SubscribeToPushOptions {
-  /** `getClient().service('push-subscriptions')`, or whatever the app renamed it to. */
+  /** `getClient().service('pushSubscriptions')`, or whatever the app renamed it to. */
   service:        PushSubscriptionsService
   /** The VAPID public key, base64url, 65 bytes uncompressed. Default: read from the service. */
   vapidPublicKey?: string
@@ -90,7 +90,7 @@ async function retire(service: PushSubscriptionsService, subscription: PushSubsc
 function assertService(service: unknown, fn: string): asserts service is PushSubscriptionsService {
   const s = service as Partial<PushSubscriptionsService> | null
   if (!s || typeof s.create !== 'function' || typeof s.find !== 'function' || typeof s.get !== 'function' || typeof s.remove !== 'function') {
-    throw new TypeError(`${fn}({ service }) takes a service proxy — getClient().service('push-subscriptions'), not the client itself`)
+    throw new TypeError(`${fn}({ service }) takes a service proxy — getClient().service('pushSubscriptions'), not the client itself`)
   }
 }
 

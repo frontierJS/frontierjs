@@ -45,8 +45,8 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 4 |
 | `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | 4 |
 | `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 4 |
+| `signRequest()` | `packages/toolbelt/src/signature/signature.js` | 4 |
 | `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 4 |
-| `signRequest()` | `packages/toolbelt/src/signature/signature.js` | 3 |
 | `island(anchor, Comp, props, block, meta)` | `packages/mesa/src/runtime.js` | 3 |
 
 ## Data → API
@@ -108,7 +108,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | --- | --- | --- | --- |
 | `app.conduit.receive(receiver)` / `Dialect` | `packages/conduit/src/conduit.ts` | yes | 4 |
 | `app.conduit.mirror(claim)` / `mirrored(accessor)` | `packages/conduit/src/mirror.ts` | yes | 7 |
-| `signRequest()` / `verifyRequest()` | `packages/toolbelt/src/signature/signature.js` | yes | 3 |
+| `signRequest()` / `verifyRequest()` | `packages/toolbelt/src/signature/signature.js` | yes | 4 |
 | `requestMeta().traceparent` / `.tracestate` | `packages/junction/src/core/context.ts` | yes | 1 |
 | `ctx.raw.rawBody` | `packages/junction/src/transport/http.ts` | mentioned | — |
 ## API internals
@@ -157,7 +157,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |
 | `tokenStorage` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.entries` / `resource.record(id)` | `packages/junction/src/client/entries.ts` | mentioned | — |
-| `matchesQuery(fields, record, query)` | `packages/toolbelt/src/match/match.js` | yes | 1 |
+| `matchesQuery(fields, record, query)` | `packages/toolbelt/src/match/match.js` | yes | 2 |
 | `$after` / `endCursor` / `tethered().more()` | `packages/toolbelt/src/directives/directives.js` | mentioned | — |
 | `comparatorFor(orderBy)` | `packages/toolbelt/src/query/query.js` | yes | 2 |
 ## UI

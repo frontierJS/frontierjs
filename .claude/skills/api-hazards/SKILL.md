@@ -83,6 +83,7 @@ Detail: `references/plugins-config-and-autoload.md`
 - **A plugin reads `junction.config.js` in `boot()`, never in `register()`.**
 - **A missing config DIRECTORY is not a missing config file.**
 - **Where an app's services are is PROBED, not derived**
+- **A service answers to ONE name, its camelCase one: `product-variants.service.ts` mounts `/productVariants`, and `/product-variants` is 404** (`FJS-D1317`)
 - **An `app.<slot>` no plugin installed THROWS on read; `'jobs' in app` is the presence test**
 
 ## The four snapshots

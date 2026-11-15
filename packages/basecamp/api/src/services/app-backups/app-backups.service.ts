@@ -153,7 +153,7 @@ export default createService({
     return { queued: true }
   },
 
-  // ── download — POST /app-backups/{id}  X-Service-Method: download ──
+  // ── download — POST /appBackups/{id}  X-Service-Method: download ──
   /** One archive as `<slug>-<stamp>.tar.gz`. A bucket's is its pre-signed GET.
    *  A machine-kept one is PULLED THROUGH THE HUB (`FJS-D1833`): the hub mints
    *  a PUT to `plugins/app-archive-pull.ts`, the machine's Outpost sends the
@@ -176,7 +176,7 @@ export default createService({
     return bucketDownload($.app, row, name)
   },
 
-  // ── discard — POST /app-backups/{id}  X-Service-Method: discard ──
+  // ── discard — POST /appBackups/{id}  X-Service-Method: discard ──
   /** Delete an archive, then its row (`FJS-D2012`): the bucket's object, then
    *  the machine's file, the only copy of a machine-kept archive and a warm
    *  one of an uploaded archive. A delete that fails keeps the row and answers

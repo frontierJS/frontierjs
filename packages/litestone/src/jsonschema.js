@@ -1278,16 +1278,12 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
   if (defaultAttr) {
     const dv = defaultValueToJson(defaultAttr.value, type)
     if (dv !== undefined) typeSchema.default = dv
-  } else if (type?.array && type.kind !== 'relation' && type.kind !== 'implicitM2M' &&
-             !(nullable && typeSchema.minItems > 0)) {
-    // Every array column is NOT NULL DEFAULT '[]' whether or not it says so —
-    // an empty array is the null state of a list. The boundary already answers
-    // that way; saying it here is what lets a form, a factory and a generated
-    // type answer the same, instead of seeding `undefined` for a column that
-    // can never hold one.
-    // Not on an OPTIONAL list with a minimum: a boundary that fills the
-    // default for an absent key then refuses `[]` for too few items, so the
-    // list could never be left out (`FJS-3328`).
+  } else if (type?.array && type.kind !== 'relation' && type.kind !== 'implicitM2M' && !nullable) {
+    // A required list is NOT NULL DEFAULT '[]'; saying it here is what lets a
+    // form, a factory and a generated type answer the same as the column. A
+    // `T[]?` gets none: a boundary filling `[]` for an absent key would store
+    // "an empty list" where the caller said nothing (`FJS-D2114`), and refuse
+    // it outright under `@minItems` (`FJS-3328`).
     typeSchema.default = []
   }
 

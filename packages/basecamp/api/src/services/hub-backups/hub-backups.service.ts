@@ -30,7 +30,7 @@ import { db, actor, callerOrder, callerSelect }               from '../../core/r
 import { requireHubAppId }                                  from '../../domain/host/host-machine.ts'
 import { queueBackup, SETTLED }                             from '../../jobs/backup-run.job.ts'
 import { deleteArchive, rescanDestination, isRemote, localArchive, bucketDownload } from '../../domain/backup/backup-archives.ts'
-import { mintArchiveUrl }                                 from '../../plugins/backup-archive.ts'
+import { mintArchiveUrl }                                 from '../../routes/backup-archive/[id].ts'
 import { LEVELS }                                           from '@frontierjs/litestone'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
@@ -136,7 +136,7 @@ export default createService({
   // ── download — POST /hubBackups/{id}  X-Service-Method: download ──
   /** The URL one archive is fetched by (`IDEAS/backups.md` 4.2): the bucket's
    *  pre-signed GET for a remote one, a five-minute link this process signed
-   *  for a local one (`plugins/backup-archive.ts`). Both save as
+   *  for a local one (`routes/backup-archive/[id].ts`). Both save as
    *  `basecamp-<stamp>.tar.gz`. */
   async download() {
     const row = await hubArchive($.id as string)

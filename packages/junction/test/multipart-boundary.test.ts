@@ -28,7 +28,7 @@ function multipart(boundary: string, headerValue = `multipart/form-data; boundar
     `Content-Type: image/png\r\n\r\n` +
     `PNGBYTES\r\n` +
     `--${boundary}--\r\n`
-  return new Request('http://localhost/product-images', {
+  return new Request('http://localhost/productImages', {
     method:  'POST',
     headers: { 'content-type': headerValue },
     body,

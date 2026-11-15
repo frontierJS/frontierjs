@@ -114,8 +114,9 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
     const values = trailRowValues(built)
     // The entry is BUILT now, so its clock and actor are the write's own; only
     // its filing waits. A write's line goes with its transaction (`FJS-3712`);
-    // a read happened whether or not the transaction that asked for it did.
-    if (entry.operation !== 'read' && tx.owns()) tx.queueLog(() => fireLog(table, values, ctx._logStats))
+    // a read or a refusal happened whether or not the transaction that asked
+    // for it did.
+    if (entry.operation !== 'read' && entry.operation !== 'denied' && tx.owns()) tx.queueLog(() => fireLog(table, values, ctx._logStats))
     else fireLog(table, values, ctx._logStats)
   }
 
@@ -188,6 +189,34 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
     return out ?? shaped
   }
 
+  // ── The tenant an entry is filed under (FJS-D1745) ────────────────────────
+  // A call carrying no tenant -- a system write, a seed -- filed its entry
+  // under none, and no tenant's reader policy ever saw it (FJS-3783). It takes
+  // the tenant of the rows it describes instead: one tenant, or none where the
+  // rows span two. A marked tenant column names none, since the entry's own
+  // `tenant` column is never redacted; a model scoped through a parent
+  // (`@@tenant(via:)`) carries no column and stays null. Resolved on first use:
+  // the schema's tenancy is not settled when the table is built.
+  /** @type {string | null | undefined} */
+  let _tenantColumn
+  function tenantColumn() {
+    if (_tenantColumn !== undefined) return _tenantColumn
+    const t   = ctx.schema?.tenancy
+    const tag = shape.model.attributes.find((/** @type {any} */ a) => a.kind === 'tenant')
+    const column = t?.strategy !== 'row' || tag?.mode === 'none' || tag?.mode === 'via' ? null : (tag?.column ?? t.column)
+    const carried = !!column && shape.model.fields.some((/** @type {any} */ f) => f.name === column) && !logMarks.has(column)
+    return _tenantColumn = carried ? column : null
+  }
+
+  function rowTenantOf(/** @type {any[]} */ rows) {
+    const column = tenantColumn()
+    if (!column || !rows?.length) return null
+    const seen = new Set(rows.map(r => r?.[column]))
+    if (seen.size !== 1) return null
+    const [only] = seen
+    return only == null ? null : String(only)
+  }
+
   // Emit field-level and model-level log entries for a completed operation.
   // Called once per operation — extracts ids once, shared by both helpers.
   // operation: 'read' | 'write' | 'create' | 'update' | 'delete'
@@ -206,6 +235,7 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
     }
     if (tableAnonymous) return
     const ids = readIds ?? extractIds(rows)         // extract once, shared below
+    const rowTenant = rowTenantOf(rows)
 
     // ── Field-level logs ──────────────────────────────────────────────────
     if (tableNeedsField) {
@@ -243,6 +273,7 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
             before:  beforeMap ? redactValue(field, beforeMap[field] ?? null) : null,
             after:   afterMap  ? redactValue(field, afterMap[field]  ?? null) : null,
             lifted,
+            rowTenant,
           })
         }
       }
@@ -264,10 +295,50 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
           before:  beforeMap ? redactSnapshot(beforeMap) : null,
           after:   afterMap  ? redactSnapshot(afterMap)  : null,
           lifted,
+          rowTenant,
         })
       }
     }
   }
 
-  return { tableHasLogWork, extractIds, logReadParse, redactValue, trailImage, emitLogs }
+  // ── Refused access (FJS-D1707) ────────────────────────────────────────────
+  //
+  // One model-level entry per refused call, heard by a log's `reads` flag for a
+  // read and its `writes` flag for a write. It names no row read from storage:
+  // only the id the caller wrote in a single-key `where`, which the caller
+  // already holds. A caller's string can be anything, so it is kept only when it
+  // reads as the id field's type and is no longer than an id is.
+  const idType = shape.model.fields.find((/** @type {any} */ f) => f.name === idField)?.type?.name
+  const NAMED_ID_MAX = 128
+
+  function hearsDenied(/** @type {string} */ attempted) {
+    if (!tableNeedsModel || tableAnonymous) return false
+    return tableModelLogs.some((/** @type {any} */ l) => attempted === 'read' ? l.reads : l.writes)
+  }
+
+  function namedId(/** @type {any} */ where) {
+    if (!where || typeof where !== 'object') return []
+    const keys = Object.keys(where)
+    if (keys.length !== 1 || keys[0] !== idField) return []
+    const v = where[idField]
+    if (idType === 'Int') {
+      const n = typeof v === 'number' ? v : typeof v === 'string' && /^-?\d{1,16}$/.test(v) ? Number(v) : NaN
+      return Number.isSafeInteger(n) ? [n] : []
+    }
+    if (idType === 'String') return typeof v === 'string' && v.length > 0 && v.length <= NAMED_ID_MAX ? [v] : []
+    return []
+  }
+
+  // Filed now rather than at commit: the refusal happened whether or not the
+  // transaction that tried it commits, and a refused write is usually why it
+  // rolls back.
+  function emitDenied(/** @type {string} */ attempted, /** @type {any} */ where) {
+    const records = namedId(where)
+    for (const { db, reads, writes } of tableModelLogs) {
+      if (attempted === 'read' ? !reads : !writes) continue
+      emitLog(db, { operation: 'denied', model: modelName, field: null, transition: null, records, before: null, after: null, attempted })
+    }
+  }
+
+  return { tableHasLogWork, extractIds, logReadParse, redactValue, trailImage, emitLogs, hearsDenied, emitDenied }
 }

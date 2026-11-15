@@ -242,8 +242,8 @@ async function dataRoundTrip(s: Sample, deps: Deps): Promise<string> {
   let container = await containerOf(deps, s.appId)
   const taken = await inVolume(deps, container, dir, A)
 
-  const started = await deps.call('/app-backups', 'take', { appId: s.appId, serverId }) as Row
-  const backup  = await settled(deps, `/app-backups/${started.id}`, BACKUP_WAIT_MS, 'The App backup')
+  const started = await deps.call('/appBackups', 'take', { appId: s.appId, serverId }) as Row
+  const backup  = await settled(deps, `/appBackups/${started.id}`, BACKUP_WAIT_MS, 'The App backup')
   const archive = String(backup.location ?? '')
   if (!PATH.test(archive) || !/\/backups\/[^/]+$/.test(archive)) throw new Error(`The App backup is not on the machine's disk: ${archive || 'no location'}`)
 

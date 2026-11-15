@@ -3098,6 +3098,92 @@ function asyncStateReads(scriptAST, source) {
   return reads
 }
 
+/**
+ * The names the template reads where a rejected load has nowhere to show: not
+ * inside a `<mesa:boundary>` that has a `failed` to mount. A top-level snippet
+ * counts only when something counted renders it, so one rendered solely inside
+ * a catching boundary is not a read. Prose in a text node is not a read; a
+ * name after a `.` is a property, and a string literal names nothing.
+ */
+function uncaughtTemplateReads(body, catching = []) {
+  const top = body || []
+  const globalFailed = top.some((n) => n.type === 'snippet' && n.name === 'failed')
+  const catches = (n) => n.type === 'node' && n.name === 'mesa' && n.elArg === 'boundary' &&
+    (globalFailed || (n.body || []).some((c) => c.type === 'snippet' && c.name === 'failed'))
+  const braces = (s) => {
+    const out = []
+    for (let i = 0, depth = 0, from = -1; i < s.length; i++) {
+      if (s[i] === '{') { if (depth++ === 0) from = i + 1 }
+      else if (s[i] === '}' && depth > 0 && --depth === 0) out.push(s.slice(from, i))
+    }
+    return out
+  }
+  const code = (node, out) => {
+    if (Array.isArray(node)) { for (const n of node) code(n, out); return out }
+    if (!node || typeof node !== 'object' || node.type === 'comment') return out
+    if (catches(node)) { catching.push(node); return out }
+    if (node.type === 'text') { out.push(...braces(node.value || '')); return out }
+    if (node.type === 'node') {
+      for (const a of node.attributes || []) out.push(...braces(a.raw ?? a.value ?? ''))
+      return code(node.body, out)
+    }
+    for (const k of Object.keys(node)) {
+      if (k === 'content' || k === 'openTag' || k === 'type' || k === 'name') continue
+      const v = node[k]
+      if (typeof v === 'string') out.push(v)
+      else if (v && typeof v === 'object') code(v, out)
+    }
+    return out
+  }
+  const namesIn = (parts) => new Set(
+    parts.join('\n').replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g, '')
+      .match(/(?<![\w$.])[A-Za-z_$][\w$]*/g) || []
+  )
+  const snippets = top.filter((n) => n.type === 'snippet' && n.name !== 'failed' && n.name !== 'pending')
+  const names = namesIn(code(top.filter((n) => n.type !== 'snippet'), []))
+  const counted = new Set()
+  for (let grew = true; grew;) {
+    grew = false
+    for (const s of snippets) {
+      if (counted.has(s) || !names.has(s.name)) continue
+      counted.add(s)
+      for (const n of namesIn(code(s.body, []))) names.add(n)
+      grew = true
+    }
+  }
+  return names
+}
+
+/**
+ * An awaited const the template reads, with no boundary above the read to
+ * catch its rejection and no `$async.<name>.error` or `.status` read anywhere,
+ * fails with nothing on the page saying so (`FJS-4290`). ReactiveScript refuses
+ * the same shape (`UNHANDLED_FAILURE`, its rule R-f-5); the code is its name
+ * (`FJS-D2134`). Returns the awaited consts whose failure nothing shows, which
+ * the runtime reports when one rejects.
+ */
+function refuseUnhandledFailures(ctx, reads) {
+  const awaited = Object.values(ctx.analysis.vars || {}).filter((v) => v.isAsync && v.kind === 'const')
+  const unshown = new Set()
+  if (!awaited.length) return unshown
+  const catching = []
+  const read = uncaughtTemplateReads(ctx.DOM?.body, catching)
+  const caught = new Set(catching.flatMap((b) => boundaryWatchSet(awaited, b.body)))
+  for (const v of awaited) {
+    const { name } = v
+    const r = reads.get(name)
+    if (r && (r.errorInTemplate || r.fields.has('error') || r.fields.has('status'))) continue
+    if (!caught.has(v)) unshown.add(name)
+    if (!read.has(name)) continue
+    ctx.analysis.errors.push(
+      `UNHANDLED_FAILURE: the template reads '${name}', an awaited \`const\`, and nothing shows it ` +
+      `failing, so a rejected load reaches only the console. Read it inside a <mesa:boundary> ` +
+      `with {#snippet failed(error, reset)}, or read \`$async.${name}.error\` (RULE 16).`
+    )
+  }
+  return unshown
+}
+
 const REFUSED_BARE = DOOR_MEMBERS.filter((m) => !SUGAR_MEMBERS.includes(m))
 
 function refuseBareBuiltins(rawScript, source, ctx) {
@@ -9983,7 +10069,11 @@ function emitDeclarations(ctx, sorted, watchedCalls) {
       ctx.accessors[v.name] = `$$runtime.get(${sigR})`
       const stateVar = `$$async_${v.name}`
       const upstream = v.deps.filter((dep) => vars[dep]?.isAsync && dep !== v.name).map((dep) => `$$async_${dep}`)
-      mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState(${upstream.length ? `[${upstream.join(', ')}]` : ''});`))
+      // A load nothing shows failing carries its name, which the runtime prints when it rejects.
+      const stateArgs = ctx.analysis.unshownAsync?.has(v.name)
+        ? `[${upstream.join(', ')}], '${v.name}'`
+        : upstream.length ? `[${upstream.join(', ')}]` : ''
+      mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState(${stateArgs});`))
       mod.code.push(xNode.raw(`$$async.${v.name} = ${stateVar};`))
       // Dep array: signal function references (strip trailing () to get the fn).
       // A derived const with no nameable dep (a local call) passes `[]` and is
@@ -11616,6 +11706,7 @@ function checkAsyncStateReads(ctx, scriptAST) {
       }
     }
     ctx.analysis.asyncFns = asyncFns
+    ctx.analysis.unshownAsync = refuseUnhandledFailures(ctx, reads)
   }
 }
 

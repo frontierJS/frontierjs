@@ -214,7 +214,7 @@ describe('on the resource', () => {
     registerSchemas({
       CreditNote: { type: 'object', title: 'CreditNote', properties: {}, 'x-gate': { read: 1, create: 8, update: 8, delete: 8 } },
     }, ['CreditNote'])
-    const notes = createResource('credit-notes', { model: 'CreditNote' })
+    const notes = createResource('creditNotes', { model: 'CreditNote' })
     expect(notes.can('update')).toBe(false)
     expect(notes.can('read')).toBe(true)
   })

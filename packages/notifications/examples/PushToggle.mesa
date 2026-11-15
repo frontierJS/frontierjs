@@ -18,7 +18,7 @@
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Pill   from '@frontierjs/ui/components/display/Pill.mesa'
 
-  export let service = 'push-subscriptions'   // the name the API serves it under
+  export let service = 'pushSubscriptions'   // the name the API serves it under
 
   let state = 'checking'   // checking | unsupported | denied | off | on
   let error = null

@@ -127,7 +127,6 @@ name when it declares none.
 
 - **methods** — `resetTotp`
 - **custom methods** — `resetTotp`
-- **also answers to** — `account-recovery`
 - **who may call** —
   - `resetTotp` — standing 1 or above — declared `gate: 1`
 
@@ -138,7 +137,6 @@ name when it declares none.
 ### `apiKeys`
 
 - **methods** — `find`, `create`, `remove`
-- **also answers to** — `api-keys`
 - **who may call** —
   - `find` — standing 1 or above — declared `gate: 1`
   - `create` — standing 1 or above — declared `gate: 1`
@@ -211,7 +209,6 @@ name when it declares none.
 ### `creditNotes` · model `CreditNote`
 
 - **methods** — `find`, `get`
-- **also answers to** — `credit-notes`
 - **broadcasts on** — `credit-notes`
 
 | Phase | Method | Chain |
@@ -248,7 +245,6 @@ name when it declares none.
 ### `customFields` · model `CustomField`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
-- **also answers to** — `custom-fields`
 - **broadcasts on** — `customFields`
 
 | Phase | Method | Chain |
@@ -352,7 +348,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `levels`, `receive`, `adjust`
 - **custom methods** — `levels`, `receive`, `adjust`
-- **also answers to** — `inventory-movements`
 - **input** — `adjust` takes `StockAdjustment`
 - **input** — `receive` takes `StockReceipt`
 - **who may call** —
@@ -376,7 +371,6 @@ name when it declares none.
 ### `invoiceLines` · model `InvoiceLine`
 
 - **methods** — `find`, `get`
-- **also answers to** — `invoice-lines`
 - **broadcasts on** — `invoice-lines`
 
 | Phase | Method | Chain |
@@ -411,7 +405,6 @@ name when it declares none.
 ### `journalEntries` · model `JournalEntry`
 
 - **methods** — `find`, `get`
-- **also answers to** — `journal-entries`
 - **broadcasts on** — `journal-entries`
 
 | Phase | Method | Chain |
@@ -427,7 +420,6 @@ name when it declares none.
 ### `journalLines` · model `JournalLine`
 
 - **methods** — `find`, `get`
-- **also answers to** — `journal-lines`
 - **broadcasts on** — `journal-lines`
 
 | Phase | Method | Chain |
@@ -458,7 +450,6 @@ name when it declares none.
 ### `orderLines` · model `OrderLine`
 
 - **methods** — `find`, `get`
-- **also answers to** — `order-lines`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -499,7 +490,6 @@ name when it declares none.
 ### `paymentEvents` · model `PaymentEvent`
 
 - **methods** — `find`, `get`
-- **also answers to** — `payment-events`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -515,7 +505,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `startSetup`
 - **custom methods** — `startSetup`
-- **also answers to** — `payment-methods`
 - **who may call** —
   - `startSetup` — **any signed-in caller** — floor, read gate 1; standing not graded
 - **broadcasts on** — `payment-methods`
@@ -554,7 +543,6 @@ name when it declares none.
 ### `payRates` · model `PayRate`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`
-- **also answers to** — `pay-rates`
 - **broadcasts on** — `pay-rates`
 
 | Phase | Method | Chain |
@@ -571,7 +559,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `calculate`, `calculateNow`, `revert`, `pay`
 - **custom methods** — `calculate`, `calculateNow`, `revert`, `pay`
-- **also answers to** — `pay-runs`
 - **who may call** —
   - `calculate` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`; body writes as the app
   - `calculateNow` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`; body writes as the app
@@ -593,7 +580,6 @@ name when it declares none.
 ### `payslipLines` · model `PayslipLine`
 
 - **methods** — `find`, `get`
-- **also answers to** — `payslip-lines`
 - **broadcasts on** — `payslip-lines`
 
 | Phase | Method | Chain |
@@ -624,7 +610,6 @@ name when it declares none.
 ### `payWindows` · model `PayWindow`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`
-- **also answers to** — `pay-windows`
 - **broadcasts on** — `pay-windows`
 
 | Phase | Method | Chain |
@@ -656,7 +641,6 @@ name when it declares none.
 ### `pickupPoints` · model `PickupPoint`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
-- **also answers to** — `pickup-points`
 - **broadcasts on** — `pickup-points`
 
 | Phase | Method | Chain |
@@ -693,7 +677,6 @@ name when it declares none.
 ### `planVersions` · model `PlanVersion`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
-- **also answers to** — `plan-versions`
 - **broadcasts on** — `plan-versions`
 
 | Phase | Method | Chain |
@@ -709,7 +692,6 @@ name when it declares none.
 ### `productImages` · model `ProductImage`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
-- **also answers to** — `product-images`
 - **who may call** —
   - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `product-images`
@@ -745,7 +727,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `availability`, `embed`
 - **custom methods** — `availability`, `embed`
-- **also answers to** — `product-variants`
 - **who may call** —
   - `availability` — anyone, a stranger included — floor, the model's read gate is 0
   - `embed` — anyone, a stranger included — floor, the model's read gate is 0
@@ -764,7 +745,6 @@ name when it declares none.
 ### `pushSubscriptions`
 
 - **methods** — `find`, `get`, `create`, `remove`
-- **also answers to** — `push-subscriptions`
 - **who may call** —
   - `find` — standing 1 or above — declared `gate: 1`
   - `get` — standing 1 or above — declared `gate: 1`
@@ -827,7 +807,6 @@ name when it declares none.
 ### `shippingMethods` · model `ShippingMethod`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
-- **also answers to** — `shipping-methods`
 - **broadcasts on** — `shipping-methods`
 
 | Phase | Method | Chain |
@@ -860,7 +839,6 @@ name when it declares none.
 ### `stocktakeCounts` · model `StocktakeCount`
 
 - **methods** — `find`, `get`, `create`, `patch`
-- **also answers to** — `stocktake-counts`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -876,7 +854,6 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `patch`, `close`
 - **custom methods** — `close`
-- **also answers to** — `stocktake-sheets`
 - **who may call** —
   - `close` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
 - **transactional** — `close`
@@ -918,7 +895,6 @@ name when it declares none.
 ### `taxRates` · model `TaxRate`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
-- **also answers to** — `tax-rates`
 - **broadcasts on** — `tax-rates`
 
 | Phase | Method | Chain |

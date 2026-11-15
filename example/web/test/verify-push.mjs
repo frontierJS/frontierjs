@@ -20,7 +20,7 @@
  *
  * **The push service.** A real one accepts only a subscription its own browser
  * made, so the devices here are key pairs this drive holds, subscribed through
- * the real `push-subscriptions` service. The API runs with PUSH_SINK_URL, which
+ * the real `pushSubscriptions` service. The API runs with PUSH_SINK_URL, which
  * hands every request webPush() builds to api/src/providers/push/sink.ts. The
  * drive decrypts what arrived from the device's private key alone, so a body the
  * device could not read fails here rather than passing on a 201.
@@ -240,12 +240,12 @@ let stoppedEarly = null
 let browser = null
 try {
   const admin = await signIn('alex@shop.test')
-  const key = await fetch(`${API}/api/push-subscriptions/key`, { headers: admin })
+  const key = await fetch(`${API}/api/pushSubscriptions/key`, { headers: admin })
   if (key.status === 404) throw new Error('the API has no VAPID pair — run `fli crypto:keygen vapid --env --subject mailto:shop@example.test` in example/')
 
   const phone = device('phone'), laptop = device('laptop')
   for (const d of [phone, laptop]) {
-    const res = await fetch(`${API}/api/push-subscriptions`, { method: 'POST', headers: admin, body: JSON.stringify(d.subscription) })
+    const res = await fetch(`${API}/api/pushSubscriptions`, { method: 'POST', headers: admin, body: JSON.stringify(d.subscription) })
     if (!res.ok) throw new Error(`subscribing ${d.endpoint} answered ${res.status}: ${await res.text()}`)
   }
 
@@ -332,7 +332,7 @@ try {
   await payAnOrder(admin)
   const refused = await pushesTo([phone, laptop], 2)
   const listed = async () => {
-    const mine = await (await fetch(`${API}/api/push-subscriptions`, { headers: admin })).json()
+    const mine = await (await fetch(`${API}/api/pushSubscriptions`, { headers: admin })).json()
     return (mine.data ?? mine).map(r => r.endpoint).filter(e => e === phone.endpoint || e === laptop.endpoint)
   }
   let left = await listed()
@@ -345,9 +345,9 @@ try {
   t('gone.nextSendListsOneFewer', (await pushesTo([phone, laptop], 2, 3_000)).map(r => r.url === phone.endpoint ? 'phone' : 'laptop'))
 
   // Leave no device behind: a later run's staff fan-out would push to it.
-  const mine = await (await fetch(`${API}/api/push-subscriptions`, { headers: admin })).json()
+  const mine = await (await fetch(`${API}/api/pushSubscriptions`, { headers: admin })).json()
   for (const row of (mine.data ?? mine).filter(r => r.endpoint.includes(`/verify-push/${RUN}-`)))
-    await fetch(`${API}/api/push-subscriptions/${row.id}`, { method: 'DELETE', headers: admin })
+    await fetch(`${API}/api/pushSubscriptions/${row.id}`, { method: 'DELETE', headers: admin })
   for (const id of orders) await fetch(`${API}/api/orders/${id}`, { method: 'DELETE', headers: admin })
 } catch (err) {
   stoppedEarly = err

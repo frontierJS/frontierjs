@@ -5,11 +5,15 @@
   "type": "module",
   "sideEffects": false,
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'r=0; bun test test/doc-examples.test.js || r=$?; bun test/run.js || r=$?; exit $r'",
+    "test": "node ../../scripts/tmp-run.mjs 'r=0; node ../../scripts/emit-types.mjs --check || r=$?; bun test test/doc-examples.test.js || r=$?; bun test/run.js || r=$?; exit $r'",
+    "types": "node ../../scripts/emit-types.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "exports": {
-    "./aria": "./src/aria/aria.js",
+    "./aria": {
+      "types": "./src/aria/aria.d.ts",
+      "default": "./src/aria/aria.js"
+    },
     "./bearer": {
       "types": "./src/bearer/bearer.d.ts",
       "default": "./src/bearer/bearer.js"
@@ -42,19 +46,34 @@
       "types": "./src/gate/gate.d.ts",
       "default": "./src/gate/gate.js"
     },
-    "./frontier": "./src/frontier/frontier.js",
+    "./frontier": {
+      "types": "./src/frontier/frontier.d.ts",
+      "default": "./src/frontier/frontier.js"
+    },
     "./geo": {
       "types": "./src/geo/geo.d.ts",
       "default": "./src/geo/geo.js"
     },
-    "./docfences": "./src/docfences/docfences.js",
+    "./docfences": {
+      "types": "./src/docfences/docfences.d.ts",
+      "default": "./src/docfences/docfences.js"
+    },
     "./env": {
       "types": "./src/env/env.d.ts",
       "default": "./src/env/env.js"
     },
-    "./frontmatter": "./src/frontmatter/frontmatter.js",
-    "./glow": "./src/glow/glow.js",
-    "./history": "./src/history/history.js",
+    "./frontmatter": {
+      "types": "./src/frontmatter/frontmatter.d.ts",
+      "default": "./src/frontmatter/frontmatter.js"
+    },
+    "./glow": {
+      "types": "./src/glow/glow.d.ts",
+      "default": "./src/glow/glow.js"
+    },
+    "./history": {
+      "types": "./src/history/history.d.ts",
+      "default": "./src/history/history.js"
+    },
     "./hooks": {
       "types": "./src/hooks/hooks.d.ts",
       "default": "./src/hooks/hooks.js"
@@ -63,12 +82,30 @@
       "types": "./src/ids/ids.d.ts",
       "default": "./src/ids/ids.js"
     },
-    "./inflect": "./src/inflect/inflect.js",
-    "./json": "./src/json/json.js",
-    "./jsonschema": "./src/jsonschema/jsonschema.js",
-    "./keys": "./src/keys/keys.js",
-    "./markdown": "./src/markdown/markdown.js",
-    "./match": "./src/match/match.js",
+    "./inflect": {
+      "types": "./src/inflect/inflect.d.ts",
+      "default": "./src/inflect/inflect.js"
+    },
+    "./json": {
+      "types": "./src/json/json.d.ts",
+      "default": "./src/json/json.js"
+    },
+    "./jsonschema": {
+      "types": "./src/jsonschema/jsonschema.d.ts",
+      "default": "./src/jsonschema/jsonschema.js"
+    },
+    "./keys": {
+      "types": "./src/keys/keys.d.ts",
+      "default": "./src/keys/keys.js"
+    },
+    "./markdown": {
+      "types": "./src/markdown/markdown.d.ts",
+      "default": "./src/markdown/markdown.js"
+    },
+    "./match": {
+      "types": "./src/match/match.d.ts",
+      "default": "./src/match/match.js"
+    },
     "./mailbox": {
       "types": "./src/mailbox/mailbox.d.ts",
       "default": "./src/mailbox/mailbox.js"
@@ -77,7 +114,10 @@
       "types": "./src/mime/mime.d.ts",
       "default": "./src/mime/mime.js"
     },
-    "./predicate": "./src/predicate/predicate.js",
+    "./predicate": {
+      "types": "./src/predicate/predicate.d.ts",
+      "default": "./src/predicate/predicate.js"
+    },
     "./qr": {
       "types": "./src/qr/qr.d.ts",
       "default": "./src/qr/qr.js"
@@ -86,7 +126,10 @@
       "types": "./src/query/query.d.ts",
       "default": "./src/query/query.js"
     },
-    "./transforms": "./src/transforms/transforms.js",
+    "./transforms": {
+      "types": "./src/transforms/transforms.d.ts",
+      "default": "./src/transforms/transforms.js"
+    },
     "./rank": {
       "types": "./src/rank/rank.d.ts",
       "default": "./src/rank/rank.js"
@@ -95,13 +138,22 @@
       "types": "./src/redact/redact.d.ts",
       "default": "./src/redact/redact.js"
     },
-    "./seal": "./src/seal/seal.js",
-    "./search": "./src/search/search.js",
+    "./seal": {
+      "types": "./src/seal/seal.d.ts",
+      "default": "./src/seal/seal.js"
+    },
+    "./search": {
+      "types": "./src/search/search.d.ts",
+      "default": "./src/search/search.js"
+    },
     "./share": {
       "types": "./src/share/share.d.ts",
       "default": "./src/share/share.js"
     },
-    "./signature": "./src/signature/signature.js",
+    "./signature": {
+      "types": "./src/signature/signature.d.ts",
+      "default": "./src/signature/signature.js"
+    },
     "./sigv4": {
       "types": "./src/sigv4/sigv4.d.ts",
       "default": "./src/sigv4/sigv4.js"
@@ -110,14 +162,26 @@
       "types": "./src/sse/sse.d.ts",
       "default": "./src/sse/sse.js"
     },
-    "./sugar": "./src/sugar/sugar.js",
-    "./textbox": "./src/textbox/textbox.js",
-    "./textedit": "./src/textedit/textedit.js",
+    "./sugar": {
+      "types": "./src/sugar/sugar.d.ts",
+      "default": "./src/sugar/sugar.js"
+    },
+    "./textbox": {
+      "types": "./src/textbox/textbox.d.ts",
+      "default": "./src/textbox/textbox.js"
+    },
+    "./textedit": {
+      "types": "./src/textedit/textedit.d.ts",
+      "default": "./src/textedit/textedit.js"
+    },
     "./trace": {
       "types": "./src/trace/trace.d.ts",
       "default": "./src/trace/trace.js"
     },
-    "./tty": "./src/tty/tty.js",
+    "./tty": {
+      "types": "./src/tty/tty.d.ts",
+      "default": "./src/tty/tty.js"
+    },
     "./typo": {
       "types": "./src/typo/typo.d.ts",
       "default": "./src/typo/typo.js"

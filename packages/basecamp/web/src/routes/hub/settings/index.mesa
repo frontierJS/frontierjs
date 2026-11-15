@@ -4,7 +4,7 @@ title: Hub settings
 <script>
   // The mock's HubSettingsView — the installation's own settings.
   //
-  // ONE ROW, and the service says so: `hub-config` answers `current` and `save`
+  // ONE ROW, and the service says so: `hubConfig` answers `current` and `save`
   // and no CRUD verb at all, because a singleton has no collection and its id is
   // a constant no screen should have to know.
   //
@@ -258,7 +258,7 @@ title: Hub settings
       unset  = false
       toasts.success('Settings saved')
     } catch (e) {
-      // Litestone validates on the write — `hub-config` mounts no create or
+      // Litestone validates on the write — `hubConfig` mounts no create or
       // patch, so there is no autoValidate — and its refusal carries an
       // `errors` array, which the resource turns into per-field messages.
       const mapped = hubConfig.fieldErrors(e)

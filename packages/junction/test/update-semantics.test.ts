@@ -6,7 +6,7 @@
 // STRIPPED the version a PUT carried, and the Data boundary then refused the
 // write for not carrying one. **`FJS-335` exactly, one method along**, and it
 // went unfound because nothing in this repo drives a PUT on a versioned model.
-// Measured on `example`: `PUT /api/tax-rates/1` carrying the version read one
+// Measured on `example`: `PUT /api/taxRates/1` carrying the version read one
 // request earlier was a 400 naming `version`; the identical payload through
 // PATCH was a 200.
 //

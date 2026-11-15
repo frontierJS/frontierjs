@@ -89,7 +89,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/css`
 
-`packages/css` · ships `AGENTS.md` `LICENSE` `README.md` `dist/` `package.json` `src/` `themes.js` `vocabulary.js` `vocabulary.json`
+`packages/css` · ships `AGENTS.md` `LICENSE` `README.md` `dist/` `package.json` `src/` `themes.d.ts` `themes.js` `vocabulary.js` `vocabulary.json`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -106,7 +106,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./bundle.min.css` | `dist/frontier.min.css` | yes |
 | exports | `./vocabulary.json` | `vocabulary.json` | yes |
 | exports | `./vocabulary.js` | `vocabulary.js` | yes |
-| exports | `./themes.js` | `themes.js` | yes |
+| exports | `./themes.js (types)` | `themes.d.ts` | yes |
+| exports | `./themes.js (default)` | `themes.js` | yes |
 | main | `main` | `src/index.css` | yes |
 
 ## `@frontierjs/email-kit`
@@ -369,7 +370,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
-| exports | `./aria` | `src/aria/aria.js` | yes |
+| exports | `./aria (types)` | `src/aria/aria.d.ts` | yes |
+| exports | `./aria (default)` | `src/aria/aria.js` | yes |
 | exports | `./bearer (types)` | `src/bearer/bearer.d.ts` | yes |
 | exports | `./bearer (default)` | `src/bearer/bearer.js` | yes |
 | exports | `./cells (types)` | `src/cells/cells.d.ts` | yes |
@@ -386,54 +388,74 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./fill (default)` | `src/fill/fill.js` | yes |
 | exports | `./gate (types)` | `src/gate/gate.d.ts` | yes |
 | exports | `./gate (default)` | `src/gate/gate.js` | yes |
-| exports | `./frontier` | `src/frontier/frontier.js` | yes |
+| exports | `./frontier (types)` | `src/frontier/frontier.d.ts` | yes |
+| exports | `./frontier (default)` | `src/frontier/frontier.js` | yes |
 | exports | `./geo (types)` | `src/geo/geo.d.ts` | yes |
 | exports | `./geo (default)` | `src/geo/geo.js` | yes |
-| exports | `./docfences` | `src/docfences/docfences.js` | yes |
+| exports | `./docfences (types)` | `src/docfences/docfences.d.ts` | yes |
+| exports | `./docfences (default)` | `src/docfences/docfences.js` | yes |
 | exports | `./env (types)` | `src/env/env.d.ts` | yes |
 | exports | `./env (default)` | `src/env/env.js` | yes |
-| exports | `./frontmatter` | `src/frontmatter/frontmatter.js` | yes |
-| exports | `./glow` | `src/glow/glow.js` | yes |
-| exports | `./history` | `src/history/history.js` | yes |
+| exports | `./frontmatter (types)` | `src/frontmatter/frontmatter.d.ts` | yes |
+| exports | `./frontmatter (default)` | `src/frontmatter/frontmatter.js` | yes |
+| exports | `./glow (types)` | `src/glow/glow.d.ts` | yes |
+| exports | `./glow (default)` | `src/glow/glow.js` | yes |
+| exports | `./history (types)` | `src/history/history.d.ts` | yes |
+| exports | `./history (default)` | `src/history/history.js` | yes |
 | exports | `./hooks (types)` | `src/hooks/hooks.d.ts` | yes |
 | exports | `./hooks (default)` | `src/hooks/hooks.js` | yes |
 | exports | `./ids (types)` | `src/ids/ids.d.ts` | yes |
 | exports | `./ids (default)` | `src/ids/ids.js` | yes |
-| exports | `./inflect` | `src/inflect/inflect.js` | yes |
-| exports | `./json` | `src/json/json.js` | yes |
-| exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |
-| exports | `./keys` | `src/keys/keys.js` | yes |
-| exports | `./markdown` | `src/markdown/markdown.js` | yes |
-| exports | `./match` | `src/match/match.js` | yes |
+| exports | `./inflect (types)` | `src/inflect/inflect.d.ts` | yes |
+| exports | `./inflect (default)` | `src/inflect/inflect.js` | yes |
+| exports | `./json (types)` | `src/json/json.d.ts` | yes |
+| exports | `./json (default)` | `src/json/json.js` | yes |
+| exports | `./jsonschema (types)` | `src/jsonschema/jsonschema.d.ts` | yes |
+| exports | `./jsonschema (default)` | `src/jsonschema/jsonschema.js` | yes |
+| exports | `./keys (types)` | `src/keys/keys.d.ts` | yes |
+| exports | `./keys (default)` | `src/keys/keys.js` | yes |
+| exports | `./markdown (types)` | `src/markdown/markdown.d.ts` | yes |
+| exports | `./markdown (default)` | `src/markdown/markdown.js` | yes |
+| exports | `./match (types)` | `src/match/match.d.ts` | yes |
+| exports | `./match (default)` | `src/match/match.js` | yes |
 | exports | `./mailbox (types)` | `src/mailbox/mailbox.d.ts` | yes |
 | exports | `./mailbox (default)` | `src/mailbox/mailbox.js` | yes |
 | exports | `./mime (types)` | `src/mime/mime.d.ts` | yes |
 | exports | `./mime (default)` | `src/mime/mime.js` | yes |
-| exports | `./predicate` | `src/predicate/predicate.js` | yes |
+| exports | `./predicate (types)` | `src/predicate/predicate.d.ts` | yes |
+| exports | `./predicate (default)` | `src/predicate/predicate.js` | yes |
 | exports | `./qr (types)` | `src/qr/qr.d.ts` | yes |
 | exports | `./qr (default)` | `src/qr/qr.js` | yes |
 | exports | `./query (types)` | `src/query/query.d.ts` | yes |
 | exports | `./query (default)` | `src/query/query.js` | yes |
-| exports | `./transforms` | `src/transforms/transforms.js` | yes |
+| exports | `./transforms (types)` | `src/transforms/transforms.d.ts` | yes |
+| exports | `./transforms (default)` | `src/transforms/transforms.js` | yes |
 | exports | `./rank (types)` | `src/rank/rank.d.ts` | yes |
 | exports | `./rank (default)` | `src/rank/rank.js` | yes |
 | exports | `./redact (types)` | `src/redact/redact.d.ts` | yes |
 | exports | `./redact (default)` | `src/redact/redact.js` | yes |
-| exports | `./seal` | `src/seal/seal.js` | yes |
-| exports | `./search` | `src/search/search.js` | yes |
+| exports | `./seal (types)` | `src/seal/seal.d.ts` | yes |
+| exports | `./seal (default)` | `src/seal/seal.js` | yes |
+| exports | `./search (types)` | `src/search/search.d.ts` | yes |
+| exports | `./search (default)` | `src/search/search.js` | yes |
 | exports | `./share (types)` | `src/share/share.d.ts` | yes |
 | exports | `./share (default)` | `src/share/share.js` | yes |
-| exports | `./signature` | `src/signature/signature.js` | yes |
+| exports | `./signature (types)` | `src/signature/signature.d.ts` | yes |
+| exports | `./signature (default)` | `src/signature/signature.js` | yes |
 | exports | `./sigv4 (types)` | `src/sigv4/sigv4.d.ts` | yes |
 | exports | `./sigv4 (default)` | `src/sigv4/sigv4.js` | yes |
 | exports | `./sse (types)` | `src/sse/sse.d.ts` | yes |
 | exports | `./sse (default)` | `src/sse/sse.js` | yes |
-| exports | `./sugar` | `src/sugar/sugar.js` | yes |
-| exports | `./textbox` | `src/textbox/textbox.js` | yes |
-| exports | `./textedit` | `src/textedit/textedit.js` | yes |
+| exports | `./sugar (types)` | `src/sugar/sugar.d.ts` | yes |
+| exports | `./sugar (default)` | `src/sugar/sugar.js` | yes |
+| exports | `./textbox (types)` | `src/textbox/textbox.d.ts` | yes |
+| exports | `./textbox (default)` | `src/textbox/textbox.js` | yes |
+| exports | `./textedit (types)` | `src/textedit/textedit.d.ts` | yes |
+| exports | `./textedit (default)` | `src/textedit/textedit.js` | yes |
 | exports | `./trace (types)` | `src/trace/trace.d.ts` | yes |
 | exports | `./trace (default)` | `src/trace/trace.js` | yes |
-| exports | `./tty` | `src/tty/tty.js` | yes |
+| exports | `./tty (types)` | `src/tty/tty.d.ts` | yes |
+| exports | `./tty (default)` | `src/tty/tty.js` | yes |
 | exports | `./typo (types)` | `src/typo/typo.d.ts` | yes |
 | exports | `./typo (default)` | `src/typo/typo.js` | yes |
 | exports | `./units (types)` | `src/units/units.d.ts` | yes |

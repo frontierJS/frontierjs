@@ -25,6 +25,7 @@ import { BadRequest, TooManyRequests, isDevelopmentEnv, type ErrorMapper } from 
 import { createStats, SESSION_SOCKET }    from './types.ts'
 import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
 import type { TransportStats }            from './types.ts'
+import type { App }                       from '../core/app.ts'
 import type { TransportContext, RouteHandler, MiddlewareFn,
               WsData, WsContext, WsHandlerSet,
               RouteSegment }              from './types.ts'
@@ -545,6 +546,14 @@ export class HttpTransport {
 
   setBuildId(id: string | null): void {
     this._buildId = id
+  }
+
+  // `createApp` builds the transport before the app object it returns, so the
+  // app arrives here once it exists, and before any request can.
+  private _app: App | null = null
+
+  setApp(app: App): void {
+    this._app = app
   }
 
   // The as-of time of the read-only copy this process serves, or null for a
@@ -1298,6 +1307,7 @@ export class HttpTransport {
       protocol: url.protocol.startsWith('https') ? 'https' : 'http',
       host:     url.host,
       user,
+      app:      this._app as App,
       signal:   req.signal,
 
       file: async (filePath, served = {}) => {

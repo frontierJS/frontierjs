@@ -1706,7 +1706,7 @@ export default createService({
 
     // This app signs TO a machine with its own pair, whose public half the
     // machine pinned at enrollment (`FJS-D1604`). A REF, never the material:
-    // the registry hands descriptors back over `GET /conduit-targets`.
+    // the registry hands descriptors back over `GET /conduitTargets`.
 
     // No target without a pin, and no pin over plain http. That port takes
     // every deploy's decrypted env, and an Outpost's heartbeat names its own

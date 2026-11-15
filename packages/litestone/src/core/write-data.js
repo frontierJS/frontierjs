@@ -442,9 +442,9 @@ export function makeWriteData(shape, ctx, {
       if (data[key] !== null) continue
       const f = _fieldsByName.get(key)
       // A virtual column is refused by name upstream (`_virtualWriteKeys`) and
-      // is not a column here either; an optional one is what `null` is for.
-      // A list is NOT NULL whatever its `?` says (ddl.js columnDef), so `[]` is its clear.
-      if (!f || (f.type.optional && !f.type.array) || !isStoredField(f)) continue
+      // is not a column here either; an optional one is what `null` is for,
+      // a `T[]?` list included (`FJS-D2114`).
+      if (!f || f.type.optional || !isStoredField(f)) continue
       clearing.push(requiredFailure(f))
     }
     if (clearing.length) throw new ValidationError(clearing)

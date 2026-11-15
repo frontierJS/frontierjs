@@ -6,11 +6,11 @@ dated: 2026-11-14
 
 # Idea — Hydration, and what a server-only region is
 
-**Status: IDEA. Nothing here is built, and nothing here is ruled.** Dated
-2026-11-14. This is the guiding paper for hydration and server components in
-Mesa and Sierra. Until the owner rules Q1–Q6, **VISION RULE 20 governs: there
-is no hydration.** Amending RULE 20 is a ruling that `fli decide` mints, and it
-lands in the same commit as the `VISION.md` edit.
+**Status: PROPOSED. Q1–Q6 ruled 2026-11-15 (`FJS-D2172`–`FJS-D2177`); nothing
+built; 0.5 next.** This is the guiding paper for hydration and server components
+in Mesa and Sierra. Hydration is the direction (`FJS-D2172`), but until 0.5
+lands **VISION RULE 20 still reads: there is no hydration.** The `VISION.md`
+edit lands in the same commit as the rulings.
 
 The design sketch this paper builds on is `IDEAS/one-mental-model.md` § 5, *The
 target set's missing member*. Read it there; it is not restated here.
@@ -107,7 +107,7 @@ reads.
 
 ## 6. Open questions
 
-- **Q1 — Does Mesa hydrate at all?**
+- ~~**Q1 — Does Mesa hydrate at all?**~~ **Answered 2026-11-15 (`FJS-D2172`): B — Yes, as the direction. Amend RULE 20 now to say hydration is the planned replacement for islands-replace, and build it in phases. - **Recommend B as the direction, with A's guide note kept until Phase 2 lands.** Building § 5 means building a state transport that B then throws away. The guide note already covers the common case.**
   - **A** — No. Keep RULE 20. Fix `FJS-4313` with § 5's payload, and document
     "pass what an island needs as props".
   - **B** — Yes, as the direction. Amend RULE 20 now to say hydration is the
@@ -115,7 +115,7 @@ reads.
   - **Recommend B as the direction, with A's guide note kept until Phase 2
     lands.** Building § 5 means building a state transport that B then throws
     away. The guide note already covers the common case.
-- **Q2 — At what granularity does the client adopt?**
+- ~~**Q2 — At what granularity does the client adopt?**~~ **Answered 2026-11-15 (`FJS-D2173`): A first, with C as the design target.**
   - **A** — Whole page: one client root adopts the server's DOM.
   - **B** — Per component.
   - **C** — Per reactive edge: attach each binding to its node and ship
@@ -125,13 +125,13 @@ reads.
     tree, which fixes `$context`. Key the marker protocol by reactive edge from
     the start, so C is a narrowing of A rather than a new protocol. Skip B,
     because it adds a noun and forecloses C.
-- **Q3 — What do `client:*` directives become?**
+- ~~**Q3 — What do `client:*` directives become?**~~ **Answered 2026-11-15 (`FJS-D2174`): B — They stay as timing: inside the one tree, a subtree's bindings attach on `idle`, `visible` or `media`.**
   - **A** — They are cut once hydration lands.
   - **B** — They stay as timing: inside the one tree, a subtree's bindings
     attach on `idle`, `visible` or `media`.
   - **Recommend B.** The timing is the part authors chose on purpose. The
     "own root per island" part is what goes.
-- **Q4 — How does server state reach the client?**
+- ~~**Q4 — How does server state reach the client?**~~ **Answered 2026-11-15 (`FJS-D2175`): B — Serialize settled `{#await}` and `$async` values and store snapshots into the page.**
   - **A** — Refetch, as today.
   - **B** — Serialize settled `{#await}` and `$async` values and store
     snapshots into the page.
@@ -140,14 +140,18 @@ reads.
     (`FJS-D1647`), so the value exists. It is the same value the loader would
     fetch, so it is not a second origin. C adds a serializer for closures that
     nothing else needs.
-- **Q5 — Which server path writes the anchors?**
-  - **Recommend the string mode, behind a flag**, so default output stays
-    byte-identical. A second emitter beside `FJS-D1634`'s would break
+- ~~**Q5 — Which server path writes the anchors?**~~ **Answered 2026-11-15 (`FJS-D2176`): A — The string mode (`FJS-D1634`) writes them, behind a flag, so default output stays byte-identical.**
+  - **A** — The string mode (`FJS-D1634`) writes them, behind a flag, so
+    default output stays byte-identical.
+  - **B** — A second anchor-writing emitter beside the string mode.
+  - **Recommend A** — a second emitter beside `FJS-D1634`'s would break
     Invariant 4.
-- **Q6 — What happens when the DOM and the compiled walk disagree?**
-  - **Recommend fail closed:** abort adoption for that root, replace as today,
-    and report it through the dev overlay. Binding to the wrong node is silent
-    and costly, so the code must never guess.
+- ~~**Q6 — What happens when the DOM and the compiled walk disagree?**~~ **Answered 2026-11-15 (`FJS-D2177`): A — Fail closed: abort adoption for that root, replace as today, and report it through the dev overlay.**
+  - **A** — Fail closed: abort adoption for that root, replace as today, and
+    report it through the dev overlay.
+  - **B** — Adopt what matches and bind the rest by best guess.
+  - **Recommend A** — binding to the wrong node is silent and costly, so the
+    code must never guess.
 
 ## 7. What must stay true, and what proves it
 
@@ -179,5 +183,7 @@ Done when: `FJS-4313` is driven in a browser, the costs in § 2 are measured on
   count, island bytes
 - [ ] 0.3 Read the marker protocols of Svelte 5, Solid and Marko 6 for one
   keyed by reactive edge
-- [ ] 0.4 Owner rules Q1–Q4; the RULE 20 amendment and the `VISION.md` edit
-  land in one commit
+- [x] 0.4 Owner rules Q1–Q6 — ruled 2026-11-15, `FJS-D2172`–`FJS-D2177`
+- [ ] 0.5 Amend RULE 20 in mesa's `docs/VISION.md` to name hydration as the
+  planned replacement for islands-replace (`FJS-D2172`), committed with the
+  rulings

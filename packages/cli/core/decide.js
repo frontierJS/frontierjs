@@ -14,9 +14,9 @@
 // A bullet whose lead names an open row in `ISSUES.md` § Needs a decision is
 // that row's question, argued where it has room for options (`fli file --sev
 // decision`). Answering it closes the row in the same act, and a pick takes the
-// row's id rather than the next one: the row reserved it, and every `blocked by`
-// naming it then resolves to the ruling. Left open, the row would hold its
-// blocked work up after the question was answered, with nothing saying so.
+// row's id rather than the next one: the row reserved it. Every `blocked by`
+// naming the row is dropped in the same write, since a ruled question blocks
+// nothing and `register:check` warns on the marker (`FJS-D2180`).
 //
 // `file` names the one file a question is argued in, for a plan outside
 // `IDEAS/` — an app's `PLAN.md` is no register source, so `readDecisions` never
@@ -45,6 +45,7 @@ import { basename, join, relative, resolve, sep }              from 'node:path'
 import { paperQuestions, readDecisions, rulingSections, QUESTION_ID } from './decisions.js'
 import { extractFrontmatter }        from './compiler.js'
 import { moveToClosed }                from './close.js'
+import { blockedBy }                   from './next.js'
 import { checkedEdit, isoDate }    from './register-edit.js'
 import { readRegisters, registerLayout, withRegisterGuard, requirePrefix } from './registers.js'
 
@@ -116,13 +117,13 @@ function decideUnguarded({ root, id, pick, why = '', section, file, dry = false,
   const close = row && closeRow(root, row, `Ruled [\`${ruling}\`](DECISIONS.md#${ruling.toLowerCase()}): **${letter}** — ${trimStop(option.text)}.`, today)
   if (close?.reason) return refuse(close.reason)
 
-  const files = ['DECISIONS.md', q.file, ...(row ? [row.file] : [])]
+  const files = ['DECISIONS.md', ...new Set([q.file, ...(close?.files ?? [])])]
   if (dry) return { ok: true, dry: true, ruling, date, question: q.question, pick: letter, closed: row?.id ?? null, files }
 
   const done = checkedEdit(root, 'ruling', write => {
     write(decPath, dec)
     write(paperAbs, struck)
-    if (close) write(close.abs, close.text)
+    for (const [abs, text] of close?.writes ?? []) write(abs, text)
   })
   if (!done.ok) return done
 
@@ -174,12 +175,12 @@ function settleUnguarded({ root, id, by, why = '', file, dry = false, today = ne
   const close = row && closeRow(root, row, `Answered by [\`${found.id}\`](DECISIONS.md#${found.id.toLowerCase()}), an existing ruling.`, today)
   if (close?.reason) return refuse(close.reason)
 
-  const files = [q.file, ...(row ? [row.file] : [])]
+  const files = [...new Set([q.file, ...(close?.files ?? [])])]
   if (dry) return { ok: true, dry: true, ruling: found.id, question: q.question, closed: row?.id ?? null, files }
 
   const done = checkedEdit(root, 'strike', write => {
     write(paperAbs, struck)
-    if (close) write(close.abs, close.text)
+    for (const [abs, text] of close?.writes ?? []) write(abs, text)
   })
   if (!done.ok) return done
 
@@ -224,13 +225,31 @@ function heldRow(root, q) {
   return readRegisters(root).issues.find(r => !r.closed && r.severity === 'decision' && named.has(r.id.toUpperCase())) ?? null
 }
 
-// The row's move to § Closed, computed now and written by the caller alongside
+// The row's move to § Closed, with the `blocked by` marker naming it dropped
+// from every row it held (`FJS-D2180`): left, each is a `blocked-by-closed`
+// warning owed a hand edit. Computed now and written by the caller alongside
 // its other files, so one register:check grades them together.
 function closeRow(root, row, how, today) {
+  const texts = new Map()
+  const read  = abs => texts.get(abs) ?? readFileSync(abs, 'utf8')
+  const id    = row.id.toUpperCase()
+
+  // Before the move, so each held row's line number is still its own.
+  for (const held of readRegisters(root).issues) {
+    if (held.closed || !blockedBy(held).includes(id)) continue
+    const abs   = join(root, held.file)
+    const lines = read(abs).split('\n')
+    const at    = held.line - 1
+    if (!lines[at]?.includes(held.id)) return { reason: `${held.file}:${held.line} no longer reads as ${held.id}'s row — reread it` }
+    lines[at] = lines[at].replace(new RegExp(`\\s*·?\\s*\\bblocked by\\s+\`?${id}\`?(?!\\d)`, 'gi'), '')
+    texts.set(abs, lines.join('\n'))
+  }
+
   const abs   = join(root, row.file)
-  const moved = moveToClosed(readFileSync(abs, 'utf8'), row, how, today)
+  const moved = moveToClosed(read(abs), row, how, today)
   if (moved.reason) return { reason: moved.reason }
-  return { abs, text: moved.text }
+  texts.set(abs, moved.text)
+  return { writes: [...texts], files: [...texts.keys()].map(f => relative(root, f)) }
 }
 
 // ─── the two edits ────────────────────────────────────────────────────────────

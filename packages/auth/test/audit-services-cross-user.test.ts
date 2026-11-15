@@ -78,26 +78,26 @@ describe('sessions', () => {
 
 describe('api-keys', () => {
 
-  test('DELETE /api-keys/{victim key id} by a stranger leaves the key live', async () => {
+  test('DELETE /apiKeys/{victim key id} by a stranger leaves the key live', async () => {
     const alice = await person(), bob = await person()
-    const k = (await request(app).post('/api-keys').auth(bob.token).send({ name: 'bob' })).body as any
-    const res = await request(app).delete(`/api-keys/${k.id}`).auth(alice.token)
+    const k = (await request(app).post('/apiKeys').auth(bob.token).send({ name: 'bob' })).body as any
+    const res = await request(app).delete(`/apiKeys/${k.id}`).auth(alice.token)
     expect(res.status).not.toBe(200)
     expect(res.status).not.toBe(401)
     expect(await h.auth.verifySession(k.key)).not.toBeNull()
   })
 
-  test("DELETE /api-keys/{own PASSWORD credential id} does not delete the password", async () => {
+  test("DELETE /apiKeys/{own PASSWORD credential id} does not delete the password", async () => {
     const alice = await person()
     const pw = await h.sys.credential.findFirst({ where: { userId: alice.userId, type: 'password' } })
-    const res = await request(app).delete(`/api-keys/${pw.id}`).auth(alice.token)
+    const res = await request(app).delete(`/apiKeys/${pw.id}`).auth(alice.token)
     expect(res.status).not.toBe(200)
     expect(await h.sys.credential.findFirst({ where: { id: pw.id } })).not.toBeNull()
   })
 
   test('a userId in the create payload mints for the caller, not the named person', async () => {
     const alice = await person(), bob = await person()
-    const res = await request(app).post('/api-keys').auth(alice.token).send({ name: 'spoof', userId: bob.userId })
+    const res = await request(app).post('/apiKeys').auth(alice.token).send({ name: 'spoof', userId: bob.userId })
     expect(res.status).toBe(201)
     const who = await h.auth.verifySession((res.body as any).key)
     expect(who?.id).toBe(alice.userId)
@@ -134,7 +134,7 @@ describe('connections', () => {
 
 describe('account-recovery', () => {
   const reset = (token: string, id: string) =>
-    request(app).post(`/account-recovery/${id}`).set('x-service-method', 'resetTotp').auth(token).send({})
+    request(app).post(`/accountRecovery/${id}`).set('x-service-method', 'resetTotp').auth(token).send({})
 
   async function withFactor(role = 'user') {
     const u = await person(role)
@@ -164,7 +164,7 @@ describe('account-recovery', () => {
 
   test('a userId in the BODY does not redirect the reset', async () => {
     const op = await person('sysadmin'), u = await withFactor('user'), other = await withFactor('user')
-    const res = await request(app).post(`/account-recovery/${u.userId}`).set('x-service-method', 'resetTotp')
+    const res = await request(app).post(`/accountRecovery/${u.userId}`).set('x-service-method', 'resetTotp')
       .auth(op.token).send({ userId: other.userId, id: other.userId })
     expect(res.status).toBe(200)
     expect((await h.auth.totpStatus!(u.userId)).enabled).toBe(false)

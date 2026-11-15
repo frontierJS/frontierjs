@@ -201,7 +201,7 @@ function describeField(field, access) {
     name:       field.name,
     kind,
     type:       `${field.type?.name ?? '?'}${array ? '[]' : ''}`,
-    optional:   column ? (!!field.type?.optional && !array) : null,
+    optional:   column ? !!field.type?.optional : null,
     id:         has('id'),
     unique:     has('unique'),
     default:    dflt,

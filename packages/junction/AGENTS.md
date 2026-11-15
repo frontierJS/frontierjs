@@ -124,7 +124,8 @@ A raw route gets a different context: `ctx.user` (flat, may be `null`),
 `ctx.rawBody`, and `ctx.json(body, status)` to answer. It runs no hook pipeline
 and no gate, so reach for one only where there is no service shape — a vendor's
 webhook, a file download, a stream — and call a service from it for anything
-touching a model. A service answers JSON only, so a file is a raw route that
+touching a model. Nor does it resolve `createApp({ principal })`: a route whose
+caller is a bearer asks with `app.principalFor(ctx)` (*Who the caller is*). A service answers JSON only, so a file is a raw route that
 calls the service and encodes what comes back. Verify a signature over `ctx.rawBody`, never a re-serialized `ctx.body`.
 
 A download a player must seek needs a Content-Length, and Bun.serve sends any
@@ -322,8 +323,12 @@ reads field errors through it.
 
 **A session says who; a claim says what they hold for THIS request.** The session
 comes from the auth plugin. Claims come from `createApp({ principal })` — one
-resolver, or a LIST of them run in order and merged — on every request, for a
-guest too, before the Data boundary scopes `$.db`. Whatever they return is what a
+resolver, or a LIST of them run in order and merged — on every service call, for
+a guest too, before the Data boundary scopes `$.db`. A raw route runs none of it
+unless it asks: `const { db, claims, user } = await app.principalFor(ctx)` runs
+the same resolver, answers the scoped client, and throws the 401 for a dead key —
+call it before reading a streamed body, since a route that never does lets a
+revoked bearer through with a 200 (`FJS-D1856`). Whatever they return is what a
 policy reads as `auth().x`, and every name must be declared in `db/schema.lite`
 (litestone's AGENTS.md, *Claims*).
 

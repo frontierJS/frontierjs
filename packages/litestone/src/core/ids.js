@@ -85,10 +85,10 @@ export function isServerFilled(field, model = null) {
   // A declared machine's state column takes its scope's one entry when a
   // create names none (`FJS-D365`); the attribute is the model's, not the field's.
   if (model?.attributes?.some((/** @type {any} */ a) => a.kind === 'transitions' && a.declaredBy && a.field === field.name)) return true
-  // An array column is filled with no attribute at all: ddl.js gives it
-  // DEFAULT '[]', the empty list being its null state. The client's pre-flight
-  // skipped arrays and the schema did not, so a browser create that omitted
-  // `tags` was refused by name (FJS-1956).
-  if (field.type?.array && field.type.kind !== 'relation' && field.type.kind !== 'implicitM2M') return true
+  // A required array column is filled with no attribute at all: ddl.js gives
+  // it DEFAULT '[]'. The client's pre-flight skipped arrays and the schema did
+  // not, so a browser create that omitted `tags` was refused by name
+  // (FJS-1956). A `T[]?` is filled with nothing — absent is NULL (`FJS-D2114`).
+  if (field.type?.array && !field.type.optional && field.type.kind !== 'relation' && field.type.kind !== 'implicitM2M') return true
   return (field.attributes ?? []).some((/** @type {any} */ a) => SERVER_FILLED.has(a.kind))
 }

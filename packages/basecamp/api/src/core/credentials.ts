@@ -2,7 +2,7 @@
 // Conduit's credential resolver, backed by Basecamp's own Secret model.
 //
 // A conduit target carries a credential REFERENCE, never the credential — the
-// registry, `resolve()`, `list()` and the `GET /conduit-targets` management
+// registry, `resolve()`, `list()` and the `GET /conduitTargets` management
 // route all see the ref and nothing else. Conduit's default resolver reads
 // `process.env`, which is exactly wrong for a credential a person typed into a
 // form five seconds ago: it is in the database, encrypted, and there is no
@@ -24,7 +24,7 @@
 // cannot silently downgrade a request.
 //
 // All are REFS. A descriptor that carried the material instead would put it in
-// the registry and on the `GET /conduit-targets` answer, in plaintext.
+// the registry and on the `GET /conduitTargets` answer, in plaintext.
 //
 // asSystem(): `Secret.data` is `@encrypted`, so a scoped client does not merely
 // redact it, the key is absent from the row entirely. Reading it is a system

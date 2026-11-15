@@ -377,3 +377,51 @@ describe('app.publicUrl is the API origin, stated once', () => {
     expect(ok.app.config.publicUrl).toBe('http://localhost:8100')
   })
 })
+
+// ─── A boot without a port reads the file too ─────────────────────────────
+// `FJS-D2112`: a rooted app reads its junction.config.js under `_startForTest()`
+// and `_startOnce()` as `start()` does, so the authoring mistake `start()`
+// refuses fails the test too, and a declared middleware is installed under
+// test. A rootless app reads nothing from disk.
+
+describe('a rooted app reads junction.config.js in every start mode', () => {
+  const boot = (file: Record<string, unknown>) =>
+    createApp({ root: configDir(file), config: { port: 0 } as never, logLevel: 'silent' })
+
+  test('_startForTest refuses the section start() refuses (FJS-4193)', async () => {
+    const app = boot({ http: { idleTimeout: 30 } })
+    running.push(app as unknown as { stop: () => Promise<void> })
+    await expect(app._startForTest()).rejects.toThrow(/declares 'http', which nothing reads/)
+  })
+
+  test('_startOnce refuses it too', async () => {
+    const app = boot({ http: { idleTimeout: 30 } })
+    running.push(app as unknown as { stop: () => Promise<void> })
+    await expect(app._startOnce()).rejects.toThrow(/declares 'http', which nothing reads/)
+  })
+
+  test('a declared middleware is installed under _startForTest', async () => {
+    const app = boot({ middleware: { cors: { origins: ['https://shop.test'] } } })
+    app.get('/probe', (ctx: { json: (b: unknown) => unknown }) => ctx.json({ ok: true }))
+    await app._startForTest()
+    running.push(app as unknown as { stop: () => Promise<void> })
+    const res = await app.http.fetch(new Request('http://x/probe', { headers: { origin: 'https://shop.test' } }))
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://shop.test')
+  })
+
+  // The tools call applyConfigFile() before booting; the phase must not apply
+  // it a second time, or every finding is reported twice.
+  test('applyConfigFile() before the boot reports each mistake once', async () => {
+    const app = boot({ http: { idleTimeout: 30 } })
+    running.push(app as unknown as { stop: () => Promise<void> })
+    await app.applyConfigFile()
+    await expect(app._startForTest()).rejects.toThrow(/\[Junction\] 1 authoring mistake/)
+  })
+
+  test('a rootless app stays hermetic', async () => {
+    const app = createApp({ config: { port: 0 } as never, logLevel: 'silent' })
+    await app._startForTest()
+    running.push(app as unknown as { stop: () => Promise<void> })
+    expect(app.root).toBeNull()
+  })
+})

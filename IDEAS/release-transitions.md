@@ -117,6 +117,8 @@ failure.
 from staging to production unchanged; only configuration differs. Content-addressed, the
 way Mesa scope ids already are.
 
+**Amended by `FJS-D2181` (2026-11-14):** configuration is folded into the Release. `mintRelease` hashes `configurationHash` into the id, so staging and production configured differently are two Releases of one artifact. What promotes unchanged is the **digest**, not the Release (`FJS-D636`).
+
 *Needs an enforcer, or it is a wish.* A build that bakes configuration into the
 artefact must be refused. This is live for us specifically: SvelteKit's
 `$env/static/private` inlines at build time and its own documentation says *"Do not
@@ -131,6 +133,8 @@ Environment is mutable and uncounted, then reverting a Release restores the code
 whatever configuration happens to exist at that moment, which is precisely the Fly and
 Heroku failure quoted above. **Serving state is the pair (Release, Generation)**, and
 both halves are recorded.
+
+**Amended by `FJS-D2181` (2026-11-14):** there is no separate generation. A configuration change mints a new Release, and order comes from the release sequence (journal rows, `Deployment` rows). `configurationHash` stays the identity half this section argues for; the counter beside it goes. `IDEAS/release-record.md` Q3 is open on the secret paragraph below.
 
 **A counter alone is the weaker half, and the field has already found the stronger
 one.** Kubernetes' documented gap is that `kubectl rollout undo` does not restore a

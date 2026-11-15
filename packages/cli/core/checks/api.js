@@ -645,6 +645,6 @@ export const CHECKS = {
 // The services `auth()` registers, by the option key that renames or
 // drops each. `auth-service-collision` reads it; a test holds it to auth's own.
 export const AUTH_SERVICES = {
-  account: 'account', sessions: 'sessions', apiKeys: 'api-keys',
-  connections: 'connections', accountRecovery: 'account-recovery', people: 'people',
+  account: 'account', sessions: 'sessions', apiKeys: 'apiKeys',
+  connections: 'connections', accountRecovery: 'accountRecovery', people: 'people',
 }

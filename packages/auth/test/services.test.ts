@@ -349,7 +349,7 @@ describe('sessions', () => {
 
 describe('api-keys', () => {
   test('the raw key comes back once, works as a Bearer token, and is never listed', async () => {
-    const made = await request(app).post('/api-keys').auth(aliceToken).send({ name: 'ci', scopes: ['read'] })
+    const made = await request(app).post('/apiKeys').auth(aliceToken).send({ name: 'ci', scopes: ['read'] })
     expect(made.status).toBe(201)
     expect((made.body as any).key).toBeTruthy()
 
@@ -361,7 +361,7 @@ describe('api-keys', () => {
     expect((asKey.body as any).authMethod).toBe('apiKey')
     expect((asKey.body as any).scopes).toEqual(['read'])
 
-    const list = await request(app).get('/api-keys').auth(aliceToken)
+    const list = await request(app).get('/apiKeys').auth(aliceToken)
     const row  = (list.body as any).data.find((k: any) => k.id === (made.body as any).id)
     expect(row.name).toBe('ci')
     expect(row.scopes).toEqual(['read'])
@@ -371,23 +371,23 @@ describe('api-keys', () => {
   })
 
   test('a list is the caller\'s own', async () => {
-    await request(app).post('/api-keys').auth(bobToken).send({ name: 'bobs' })
-    const list = await request(app).get('/api-keys').auth(aliceToken)
+    await request(app).post('/apiKeys').auth(bobToken).send({ name: 'bobs' })
+    const list = await request(app).get('/apiKeys').auth(aliceToken)
     expect((list.body as any).data.some((k: any) => k.name === 'bobs')).toBe(false)
   })
 
   test('revoking somebody else\'s key by id leaves it working', async () => {
-    const bobs = await request(app).post('/api-keys').auth(bobToken).send({ name: 'bobs-live' })
+    const bobs = await request(app).post('/apiKeys').auth(bobToken).send({ name: 'bobs-live' })
 
-    const res = await request(app).delete(`/api-keys/${(bobs.body as any).id}`).auth(aliceToken)
+    const res = await request(app).delete(`/apiKeys/${(bobs.body as any).id}`).auth(aliceToken)
     expect(res.status).toBeGreaterThanOrEqual(400)
 
     expect((await request(app).get('/account/me').auth((bobs.body as any).key)).status).toBe(200)
   })
 
   test('revoking your own stops the key authenticating', async () => {
-    const made = await request(app).post('/api-keys').auth(aliceToken).send({ name: 'doomed' })
-    expect((await request(app).delete(`/api-keys/${(made.body as any).id}`).auth(aliceToken)).status).toBe(200)
+    const made = await request(app).post('/apiKeys').auth(aliceToken).send({ name: 'doomed' })
+    expect((await request(app).delete(`/apiKeys/${(made.body as any).id}`).auth(aliceToken)).status).toBe(200)
     expect((await request(app).get('/account/me').auth((made.body as any).key)).status).toBe(401)
   })
 })
@@ -412,8 +412,8 @@ describe('an API key reaches none of the credential services', () => {
   beforeAll(async () => {
     await request(app).post('/auth/register').send({ email, password: PW })
     session = ((await request(app).post('/auth/login').send({ email, password: PW })).body as any).token
-    scoped  = ((await request(app).post('/api-keys').auth(session).send({ name: 'search', scopes: ['search'] })).body as any).key
-    whole   = ((await request(app).post('/api-keys').auth(session).send({ name: 'whole' })).body as any).key
+    scoped  = ((await request(app).post('/apiKeys').auth(session).send({ name: 'search', scopes: ['search'] })).body as any).key
+    whole   = ((await request(app).post('/apiKeys').auth(session).send({ name: 'whole' })).body as any).key
   })
 
   test('it may still ask who holds it', async () => {
@@ -425,10 +425,10 @@ describe('an API key reaches none of the credential services', () => {
 
   test('it cannot mint a key, scoped or not', async () => {
     for (const key of [scoped, whole]) {
-      expect((await request(app).post('/api-keys').auth(key).send({ name: 'escape' })).status).toBe(403)
-      expect((await request(app).post('/api-keys').auth(key).send({ name: 'same', scopes: ['search'] })).status).toBe(403)
+      expect((await request(app).post('/apiKeys').auth(key).send({ name: 'escape' })).status).toBe(403)
+      expect((await request(app).post('/apiKeys').auth(key).send({ name: 'same', scopes: ['search'] })).status).toBe(403)
     }
-    expect((await request(app).post('/api-keys').auth(session).send({ name: 'fine' })).status).toBe(201)
+    expect((await request(app).post('/apiKeys').auth(session).send({ name: 'fine' })).status).toBe(201)
   })
 
   test('it cannot list or revoke sessions, and its owner stays signed in', async () => {
@@ -442,12 +442,12 @@ describe('an API key reaches none of the credential services', () => {
   })
 
   test('it cannot list or revoke keys, connections or the second factor', async () => {
-    const list = await request(app).get('/api-keys').auth(session)
+    const list = await request(app).get('/apiKeys').auth(session)
     const id   = (list.body as any).data.find((k: any) => k.name === 'whole').id
 
     for (const key of [scoped, whole]) {
-      expect((await request(app).get('/api-keys').auth(key)).status).toBe(403)
-      expect((await request(app).delete(`/api-keys/${id}`).auth(key)).status).toBe(403)
+      expect((await request(app).get('/apiKeys').auth(key)).status).toBe(403)
+      expect((await request(app).delete(`/apiKeys/${id}`).auth(key)).status).toBe(403)
       expect((await request(app).get('/connections').auth(key)).status).toBe(403)
       expect((await request(app).delete('/connections/github').auth(key)).status).toBe(403)
       expect((await request(app).post('/account').set('x-service-method', 'confirmTotp').auth(key).send({ code: '000000' })).status).toBe(403)
@@ -479,7 +479,7 @@ describe('how the three are registered', () => {
 
     expect(bare.services.has('account')).toBe(false)
     expect(bare.services.has('sessions')).toBe(false)
-    expect(bare.services.has('api-keys')).toBe(false)
+    expect(bare.services.has('apiKeys')).toBe(false)
     scoped.cleanup()
   })
 

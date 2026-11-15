@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 190**.
+Graded: **13 of 191**.
 
 ## data — 3 of 63
 
@@ -127,7 +127,7 @@ Graded: **13 of 190**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 71
+## api — 6 of 72
 
 ### `ctx` and the call
 
@@ -209,6 +209,7 @@ Graded: **13 of 190**.
 | A plugin reads `junction.config.js` in `boot()`, never in `register()`. | **none** |
 | A missing config DIRECTORY is not a missing config file. | `surface-config` |
 | Where an app's services are is PROBED, not derived | **none** |
+| A service answers to ONE name, its camelCase one: `product-variants.service.ts` mounts `/productVariants`, and `/product-variants` is 404 | **none** |
 | An `app.<slot>` no plugin installed THROWS on read; `'jobs' in app` is the presence test | **none** |
 
 ### The four snapshots

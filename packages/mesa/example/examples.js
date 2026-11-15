@@ -1278,7 +1278,9 @@ export const EXAMPLES = {
 
 <h2>Async — one-shot</h2>
 
-{#if $async.config.loading}
+{#if $async.config.error}
+  <p>Could not load config: {$async.config.error.message}</p>
+{:else if $async.config.loading}
   <p><em>Loading config…</em></p>
 {:else}
   <p>Theme: {config?.theme}</p>
@@ -1514,7 +1516,9 @@ export const EXAMPLES = {
   {/if}
 
 {:else}
-  {#if $async.orders.loading}
+  {#if $async.orders.error}
+    <p>Could not load orders: {$async.orders.error.message}</p>
+  {:else if $async.orders.loading}
     <p><em>Loading orders…</em></p>
   {:else}
     {#each orders as o (o.id)}

@@ -375,7 +375,7 @@ describe('the default store — the installed PushSubscription', () => {
 
 describe('the push-subscriptions service', () => {
   let h: Harness
-  const svc = () => h.app.service('push-subscriptions')
+  const svc = () => h.app.service('pushSubscriptions')
   const as = (id: string, extra: Record<string, unknown> = {}) => ({ user: { id, ...extra } as never })
   // A public address literal: the endpoint is graded as a URL a stranger chose,
   // and a name would need DNS. Nothing is sent to it -- no notify runs here.
@@ -451,7 +451,7 @@ describe('the push-subscriptions service', () => {
   test('GET /key answers the registered driver\'s public key to a signed-in caller, and says why when there is none', async () => {
     const vapid = generateVapidKeys('mailto:ops@example.test')
     const keyed = await makeApp({ push: true, transports: { push: webPush({ vapid, deliver: async () => ({ status: 201 }) }) } })
-    const keySvc = keyed.app.service('push-subscriptions')
+    const keySvc = keyed.app.service('pushSubscriptions')
     expect(await keySvc.get('key', as('u1'))).toEqual({ publicKey: vapid.publicKey })
     expect(await status(keySvc.get('key', {}))).toBe(401)
     expect(await status(keySvc.get(1, as('u1')))).toBe(404)
@@ -459,7 +459,7 @@ describe('the push-subscriptions service', () => {
   })
 
   test('an app already serving the name is refused at boot, and renaming ours is the way out', async () => {
-    const own = (app: any) => app.services.register(createService({ name: 'push-subscriptions', model: null, async find() { return [] } }))
+    const own = (app: any) => app.services.register(createService({ name: 'pushSubscriptions', model: null, async find() { return [] } }))
     await expect(makeApp({ push: true, beforeBoot: own })).rejects.toThrow(/already registered/)
     const renamed = await makeApp({ push: true, beforeBoot: own, services: { pushSubscriptions: 'devices' } })
     expect(renamed.app.services.has('devices')).toBe(true)
@@ -479,7 +479,7 @@ describe('the push-subscriptions service', () => {
 
   test('nothing registers without the model', async () => {
     const bare = await makeApp()
-    expect(bare.app.services.has('push-subscriptions')).toBe(false)
+    expect(bare.app.services.has('pushSubscriptions')).toBe(false)
   })
 })
 
@@ -507,7 +507,7 @@ describe('subscribeToPush — the browser faked, the service real', () => {
 
   /** The service as getClient().service() hands it over, signed in as `user`, recording each call. */
   const service = (user: string): PushSubscriptionsService => {
-    const svc = h.app.service('push-subscriptions')
+    const svc = h.app.service('pushSubscriptions')
     return {
       find:   async q => { calls.push('find'); return svc.find(q ?? {}, as(user)) },
       get:    async id => { calls.push('get key'); return svc.get(id, as(user)) },

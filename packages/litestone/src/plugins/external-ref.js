@@ -114,6 +114,13 @@ export class ExternalRefPlugin extends LitestonePlugin {
     return this._perClient.get(ctx.shapes ?? ctx) ?? NO_MAPS
   }
 
+  // The table a model's rows live in. The model name is not one: a derived
+  // name (WhiteboardItem → whiteboard_item) throws "no such table", and the
+  // reads that catch it leave a replaced object on disk (FJS-4316).
+  _table(model, ctx) {
+    return ctx.shapes?.[model]?.tableName ?? model
+  }
+
   onInit(schema, ctx) {
     if (!this.fieldType)
       throw new Error(`${this.constructor.name}: fieldType must be set`)
@@ -327,7 +334,7 @@ export class ExternalRefPlugin extends LitestonePlugin {
         const whereSql = buildWhere(args.where, params)
         if (whereSql) {
           const colSql = rawFields.map(([f]) => `"${f}"`).join(', ')
-          const oldRow = ctx.readDb.query(`SELECT ${colSql} FROM "${model}" WHERE ${whereSql}`).get(...params)
+          const oldRow = ctx.readDb.query(`SELECT ${colSql} FROM "${this._table(model, ctx)}" WHERE ${whereSql}`).get(...params)
           for (const [field, opts] of rawFields) {
             const old = opts.isArray ? this._parseRefArray(oldRow?.[field]) : [this._parseRef(oldRow?.[field])]
             for (const oldRef of old) if (oldRef) this._replaces(args.data, field, oldRef)

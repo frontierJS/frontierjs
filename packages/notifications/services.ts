@@ -2,9 +2,9 @@
 // createPushSubscriptionsService(db, name, opts): the door a browser subscribes by.
 //
 //   push-subscriptions  GET  /push-subscriptions        this person's devices, no keys
-//                       GET  /push-subscriptions/key    the VAPID public key (`FJS-D1626`)
+//                       GET  /pushSubscriptions/key    the VAPID public key (`FJS-D1626`)
 //                       POST /push-subscriptions        subscription.toJSON(), upserted by endpoint
-//                       DEL  /push-subscriptions/{id}   retire one
+//                       DEL  /pushSubscriptions/{id}   retire one
 //
 // Registered by the plugin at boot when the app's schema installs
 // `PushSubscription` (`db/notification.lite`). Every method is the caller's
@@ -22,7 +22,7 @@ import type { ServiceContext, ServiceDefinition } from '@frontierjs/junction'
 import { subscriptionKeyProblem } from './drivers/webpush.ts'
 
 export const DEFAULT_SERVICE_NAMES = {
-  pushSubscriptions: 'push-subscriptions',
+  pushSubscriptions: 'pushSubscriptions',
 } as const
 
 type Row = { id: number, endpoint: string, userAgent: string | null, lastSeenAt: Date | null, createdAt: Date, deletedAt?: Date | null }

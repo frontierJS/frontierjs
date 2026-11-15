@@ -276,7 +276,7 @@ const inBucket = (b) => b.status === 'success' && !!b.destinationId && !b.error 
 /** The newest archive of the app in a bucket, or one taken now and waited on. */
 async function archiveRow(origin, key, appId, { take, dry, log, say }) {
   if (!take) {
-    const rows = (await basecampAll(origin, key, `/app-backups?appId=${encodeURIComponent(appId)}&status=success`)).filter(inBucket)
+    const rows = (await basecampAll(origin, key, `/appBackups?appId=${encodeURIComponent(appId)}&status=success`)).filter(inBucket)
     const newest = rows.sort((a, b) => Date.parse(b.startedAt ?? b.createdAt) - Date.parse(a.startedAt ?? a.createdAt))[0]
     if (!newest) throw new Error(`App ${appId} has no archive in a bucket to fetch — take one with fli db:download --take, once the App has a backup destination`)
     return newest
@@ -289,7 +289,7 @@ async function archiveRow(origin, key, appId, { take, dry, log, say }) {
   const machine = placed.server?.name ?? placed.serverId
   if (dry) { log.dry(`take a backup of ${app.name} on ${machine}, then fetch it`); return null }
   say(`Backing up ${app.name} on ${machine} — answered once the archive is in the bucket`)
-  const row = await basecamp(origin, key, '/app-backups', {
+  const row = await basecamp(origin, key, '/appBackups', {
     method: 'POST', headers: { 'x-service-method': 'take' },
     body: { appId: app.id, serverId: placed.serverId, destinationId: app.backupDestinationId },
   })
@@ -332,7 +332,7 @@ export async function pullAppArchive({ origin, key, appId, take = false, dbDir, 
   const dir   = resolve(out ?? join(dbDir, 'backups', stamp))
   if (dry) { log.dry(`fetch the archive taken ${row.startedAt ?? row.createdAt} into ${dir}`); return null }
 
-  const { url, name } = await basecamp(origin, key, `/app-backups/${encodeURIComponent(row.id)}`,
+  const { url, name } = await basecamp(origin, key, `/appBackups/${encodeURIComponent(row.id)}`,
     { method: 'POST', headers: { 'x-service-method': 'download' }, body: {} })
   mkdirSync(dir, { recursive: true })
   const file = join(dir, basename(name))
@@ -362,11 +362,11 @@ const HUB_SETTLED = ['success', 'failed', 'timeout']
 async function hubDestination(origin, key) {
   // `find` answers a list even before the hub App exists, so a 404 from it is
   // `requireSystemAdmin`'s, where one from `current` is no settings saved yet.
-  await basecamp(origin, key, '/hub-backups?$limit=1').catch(err => {
+  await basecamp(origin, key, '/hubBackups?$limit=1').catch(err => {
     if (err.status !== 404) throw err
-    throw new Error("Basecamp answered 404 for /hub-backups: the key's holder is not a system admin — mint a key for the first admin with fli basecamp:key --as <email>")
+    throw new Error("Basecamp answered 404 for /hubBackups: the key's holder is not a system admin — mint a key for the first admin with fli basecamp:key --as <email>")
   })
-  const config = await basecamp(origin, key, '/hub-config', { method: 'POST', headers: { 'x-service-method': 'current' }, body: {} })
+  const config = await basecamp(origin, key, '/hubConfig', { method: 'POST', headers: { 'x-service-method': 'current' }, body: {} })
     .catch(err => { if (err.status === 404) return null; throw err })
   if (!config?.app) throw Object.assign(new Error(`Basecamp at ${origin} has no hub App, so it cannot back itself up — it was installed --no-outpost, or Use this Basecamp server was never pressed`), { noHubApp: true })
   return config.app.backupDestinationId ?? null
@@ -376,7 +376,7 @@ async function hubDestination(origin, key) {
  *  its attempts, not one timeout. */
 async function hubSettled(origin, key, id, { everyMs = 2_000, forMs = 40 * 60_000 } = {}) {
   for (const until = Date.now() + forMs; Date.now() < until; await Bun.sleep(everyMs)) {
-    const row = await basecamp(origin, key, `/hub-backups/${encodeURIComponent(id)}`)
+    const row = await basecamp(origin, key, `/hubBackups/${encodeURIComponent(id)}`)
     if (HUB_SETTLED.includes(row.status)) return row
   }
   throw new Error(`backup ${id} had not settled after ${forMs / 60_000} minutes — its row on /hub/backups/ says where it is`)
@@ -424,7 +424,7 @@ const hubWhere = (destinationId) => destinationId ? 'its backup destination' : '
 export async function takeHubBackup({ origin, key, log, say = () => {} }) {
   const destinationId = await hubDestination(origin, key)
   say(`Backing up Basecamp to ${hubWhere(destinationId)} — answered once the archive is written`)
-  const queued = await basecamp(origin, key, '/hub-backups', { method: 'POST', headers: { 'x-service-method': 'take' }, body: { destinationId } })
+  const queued = await basecamp(origin, key, '/hubBackups', { method: 'POST', headers: { 'x-service-method': 'take' }, body: { destinationId } })
   const row = await hubSettled(origin, key, queued.id)
   if (row.status !== 'success') throw new Error(`The backup ${row.status}: ${row.error ?? 'no reason given'}`)
   if (row.error) log.warn(`The backup was taken and kept on the box: ${row.error}`)
@@ -446,7 +446,7 @@ export async function pullHubArchive({ origin, key, out, dry = false, log, say =
 
 /** The newest hub backup that succeeded, or null with none. */
 export async function newestHubArchive({ origin, key }) {
-  const rows = await basecamp(origin, key, '/hub-backups?status=success&$limit=1&$orderBy[createdAt]=desc')
+  const rows = await basecamp(origin, key, '/hubBackups?status=success&$limit=1&$orderBy[createdAt]=desc')
   return rows?.[0] ?? null
 }
 
@@ -459,7 +459,7 @@ export const archiveDirName = (row) => (row.startedAt ?? row.createdAt).replace(
  * `{ dir, file, archive, manifest, row }`, `archive` the unpacked `basecamp-<stamp>/`.
  */
 export async function fetchHubArchive({ origin, key, row, out }) {
-  const { url, name } = await basecamp(origin, key, `/hub-backups/${encodeURIComponent(row.id)}`,
+  const { url, name } = await basecamp(origin, key, `/hubBackups/${encodeURIComponent(row.id)}`,
     { method: 'POST', headers: { 'x-service-method': 'download' }, body: {} })
   const dir  = resolve(out, archiveDirName(row))
   mkdirSync(dir, { recursive: true })
@@ -711,7 +711,7 @@ export function keyCopyState(server, boxKey) {
  *  attestation of a key nobody holds grades `hub.key-escrowed` green for
  *  nothing — and an answer naming another key is still refused here. */
 export async function attestKeyCopy({ origin, key, fingerprint }) {
-  const row = await basecamp(origin, key, '/hub-config', { method: 'POST', headers: { 'x-service-method': 'attestEscrow' }, body: {} })
+  const row = await basecamp(origin, key, '/hubConfig', { method: 'POST', headers: { 'x-service-method': 'attestEscrow' }, body: {} })
   if (row?.encryptionKeyFingerprint !== fingerprint)
     throw new Error(`Basecamp attested ${row?.encryptionKeyFingerprint?.slice(0, 12) ?? 'no key'}, not the ${fingerprint.slice(0, 12)} just kept`)
   return row
@@ -955,7 +955,7 @@ export async function restoreFindings({ origin, key, takenAt, forMs = 90_000, ev
     if (servers.every(beat) || Date.now() >= end) break
   }
   // A key without hubConfig:read still reads the rest; the hub's own replica is then unknown.
-  const hub  = await basecamp(origin, key, '/hub-config', { method: 'POST', headers: { 'x-service-method': 'current' }, body: {} }).catch(() => null)
+  const hub  = await basecamp(origin, key, '/hubConfig', { method: 'POST', headers: { 'x-service-method': 'current' }, body: {} }).catch(() => null)
   const apps = await basecampAll(origin, key, '/apps')
   const named = new Map(apps.map(a => [a.id, a.name]))
   return {
@@ -963,7 +963,7 @@ export async function restoreFindings({ origin, key, takenAt, forMs = 90_000, ev
     replicas:   apps.filter(a => a.replicaFoundAt).map(a => ({ name: a.name, syncedAt: a.replicaSyncedAt })),
     hubReplica: hub?.app?.replicaFoundAt ? { syncedAt: hub.app.replicaSyncedAt } : hub ? null : undefined,
     // appBackups.find refuses `kind` as a filter, so the found rows are picked here.
-    archives:   (await basecampAll(origin, key, '/app-backups')).filter(r => r.kind === 'found')
+    archives:   (await basecampAll(origin, key, '/appBackups')).filter(r => r.kind === 'found')
       .map(r => ({ app: named.get(r.appId) ?? r.appId, location: r.location, status: r.status })),
   }
 }

@@ -112,3 +112,25 @@ describe('routes/ — a file\'s path is the URL it answers', () => {
     expect(msg).toContain('route file did not load')
   })
 })
+
+// FJS-3596 / FJS-D1663. A route file is handed only its TransportContext, so a
+// handler needing the app's client, logger or sqlite path had to stay a plugin.
+describe('routes/ — a handler reaches the app as ctx.app', () => {
+  it('a route file reads the app it is mounted on', async () => {
+    const src = `export const GET = (ctx: any) => new Response(typeof ctx.app?.service + ' ' + typeof ctx.app?.logger?.info)\n`
+    await withApp({ 'whoami.ts': src }, async base => {
+      expect(await (await fetch(`${base}/whoami`)).text()).toBe('function function')
+    })
+  })
+
+  it('app.get hands the same app, so both spellings take one signature', async () => {
+    const app = createApp({ logLevel: 'silent', config: { port: 0 } })
+    app.get('/same', ctx => new Response(String(ctx.app === app)))
+    try {
+      await app.start()
+      expect(await (await fetch(`http://localhost:${app.http.port}/same`)).text()).toBe('true')
+    } finally {
+      await app.stop().catch(() => {})
+    }
+  })
+})

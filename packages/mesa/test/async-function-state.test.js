@@ -273,7 +273,8 @@ describe('$async.<const>.refresh() re-runs an awaited const (FJS-D2058)', () => 
 </script>
 <button onclick={() => $async.rows.refresh()}>Reload</button>
 <p id="rows">{rows}</p>
-<p id="pending">{$async.rows.pending}</p>`
+<p id="pending">{$async.rows.pending}</p>
+<p id="error">{$async.rows.error}</p>`
 
   it('compiles to parseable output that calls the state object', async () => {
     const ctx = await compile(SRC)
@@ -325,7 +326,8 @@ describe('$async.<const>.refresh() re-runs an awaited const (FJS-D2058)', () => 
 </script>
 <button onclick={() => $async.rows.refresh()}>Reload</button>
 <p id="rows">{rows}</p>
-<p id="pending">{$async.rows.pending}</p>`
+<p id="pending">{$async.rows.pending}</p>
+<p id="error">{$async.rows.error}</p>`
 
   it('compiles .refresh() on an awaited const that reads nothing reactive', async () => {
     const ctx = await compile(ONE_SHOT)
@@ -379,5 +381,78 @@ describe('$async.<const>.refresh() re-runs an awaited const (FJS-D2058)', () => 
   it('refuses .refresh() on a plain variable as a name with no async state', async () => {
     const [e] = await errorsOf(`<script>let n = 1</script><button onclick={() => $async.n.refresh()}>{n}</button>`)
     expect(e).toContain('`$async.n` names no async state')
+  })
+})
+
+// A rejected load with nothing on the page to show it failed (`FJS-4290`).
+// ReactiveScript refuses the same shape as UNHANDLED_FAILURE (its rule R-f-5).
+describe('an awaited const whose failure nothing shows', () => {
+  const errorsOf = async (src) => (await compile(src)).analysis.errors
+  const LOAD = `<script>let id = 1; const user = await fetchUser(id)</script>`
+
+  it('refuses a template read with no catching boundary and no .error read', async () => {
+    const [e, ...rest] = await errorsOf(LOAD + `<h1>{user.name}</h1>`)
+    expect(rest).toEqual([])
+    expect(e).toMatch(/^UNHANDLED_FAILURE: /)
+    expect(e).toContain(`'user'`)
+    expect(e).toContain('{#snippet failed(error, reset)}')
+    expect(e).toContain('`$async.user.error`')
+  })
+
+  it('refuses a read under a boundary that has no failed snippet', async () => {
+    const [e] = await errorsOf(LOAD + `<mesa:boundary><h1>{user.name}</h1></mesa:boundary>`)
+    expect(e).toMatch(/^UNHANDLED_FAILURE: /)
+  })
+
+  it('refuses a read in a snippet rendered outside a catching boundary', async () => {
+    const [e] = await errorsOf(LOAD + `{#snippet row()}<i>{user}</i>{/snippet}{@render row()}`)
+    expect(e).toMatch(/^UNHANDLED_FAILURE: /)
+  })
+
+  it.each([
+    ['a template .error read', `<h1>{user.name}</h1>{#if $async.user.error}<p>failed</p>{/if}`],
+    ['a template .status read', `<h1>{user.name}</h1><p>{$.async.user.status}</p>`],
+    ['a boundary with a failed snippet', `<mesa:boundary><h1>{user.name}</h1>{#snippet failed(e, r)}<p>failed</p>{/snippet}</mesa:boundary>`],
+    ['a top-level failed snippet', `{#snippet failed(e, r)}<p>failed</p>{/snippet}<mesa:boundary><h1>{user.name}</h1></mesa:boundary>`],
+    ['a snippet rendered only inside a catching boundary', `{#snippet row()}<i>{user}</i>{/snippet}<mesa:boundary>{@render row()}{#snippet failed(e, r)}no{/snippet}</mesa:boundary>`],
+    ['the name in prose, a property or a string', `<h1>user {x.user} {'user'}</h1>`],
+  ])('compiles when the failure is shown or never read: %s', async (_, tpl) => {
+    expect(await errorsOf(LOAD.replace('let id = 1', 'let id = 1; let x = {}') + tpl)).toEqual([])
+  })
+
+  it('compiles a script .error read as handled', async () => {
+    const ctx = await compile(`<script>let id = 1; const user = await fetchUser(id)
+  $effect(() => { if ($async.user.error) console.log('failed') })</script><h1>{user.name}</h1>`)
+    expect(ctx.analysis.errors).toEqual([])
+    expect(ctx.result).toContain('$$runtime.makeAsyncState();')
+  })
+
+  const rejecting = (src) => async () => {
+    const seen = []
+    const spy = console.error
+    console.error = (...a) => seen.push(a)
+    globalThis.__failLoad = () => Promise.reject(new Error('down'))
+    try {
+      mount(await build(src))
+      await settle()
+    } finally {
+      console.error = spy
+      delete globalThis.__failLoad
+    }
+    return seen
+  }
+
+  it('prints UNHANDLED_FAILURE with the error when a load nothing shows rejects', async () => {
+    const seen = await rejecting(`<script>const user = await globalThis.__failLoad()
+  const name = user?.name</script><h1>{name}</h1>`)()
+    expect(seen).toHaveLength(1)
+    expect(seen[0][0]).toMatch(/^\[Mesa\] UNHANDLED_FAILURE: the load of 'user' rejected/)
+    expect(seen[0][1].message).toBe('down')
+  })
+
+  it('prints nothing when the template shows the failure', async () => {
+    const seen = await rejecting(`<script>const user = await globalThis.__failLoad()</script>
+{#if $async.user.error}<p>failed</p>{:else}<h1>{user?.name}</h1>{/if}`)()
+    expect(seen).toEqual([])
   })
 })

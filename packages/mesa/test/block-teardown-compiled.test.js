@@ -145,6 +145,7 @@ const data = await fetchIt()
 </script>
 <mesa:boundary>
   {#snippet pending()}<p id="pending">{n}</p>{/snippet}
+  {#snippet failed(error, reset)}<p id="failed">{error}</p>{/snippet}
   <p id="content">{data}</p>
 </mesa:boundary>
 <button id="b" onclick={() => n = n + 1}>b</button>`, () => p)
@@ -175,6 +176,7 @@ const data = await fetchIt()
 </script>
 <mesa:boundary>
   {#snippet pending()}<p id="pending">Loading</p>{/snippet}
+  {#snippet failed(error, reset)}<p id="failed">{error}</p>{/snippet}
   <p id="content">{data}</p>
 </mesa:boundary>`, () => p)
 

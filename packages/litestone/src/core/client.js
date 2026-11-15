@@ -44,7 +44,8 @@ import { runSqliteRetention, compactJsonl, RETENTION_BATCH } from './retention.j
 import { ensureEventsTable, makeEventRecorder, createEventWatcher } from './cross-process.js'
 import {TransitionConflictError, VersionRequiredError,
   VersionConflictError, SyncConflictError,
-  TransitionNotFoundError, BulkTransitionError, SoftDeletedUniqueError,isUniqueConflict, CapabilityNotDeclaredError } from './errors.js'
+  TransitionNotFoundError, BulkTransitionError, SoftDeletedUniqueError,isUniqueConflict, CapabilityNotDeclaredError,
+  SealedDocumentError, TransitionGateError, TransitionSystemError } from './errors.js'
 import { threeWay } from './three-way.js'
 import { buildCommitmentMap, dueSql, readBy, LATEST_DAY } from './commitment.js'
 import { dueAt, } from '@frontierjs/toolbelt/datetime'
@@ -969,7 +970,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     read: (...a) => read(...a),
   })
 
-  const { tableHasLogWork, extractIds, logReadParse, redactValue, trailImage, emitLogs } =
+  const { tableHasLogWork, extractIds, logReadParse, redactValue, trailImage, emitLogs, hearsDenied, emitDenied } =
     makeTrailEntries(shape, ctx, {
       tx, idField,
       // Hoisted function, reached only at call time.
@@ -4168,7 +4169,50 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     return table
   }
 
-  return installHooks(settlingWrites({
+  // A refused access files a `denied` entry (FJS-D1707). The row policy is
+  // folded into the WHERE, so a refusal reaches the caller as a miss: null, [],
+  // { count: 0 }. It is told from a real miss by asking the same where once
+  // more without the policy, on that empty answer only. A thrown refusal (a
+  // create policy, a sealed document, a move's gate) is one already. A system
+  // caller is refused by nothing it can be blamed for, and files none.
+  const REFUSED = [AccessDeniedError, SealedDocumentError, TransitionGateError, TransitionSystemError]
+  const DENIABLE = {
+    findUnique: r => r == null, findFirst: r => r == null, findMany: r => r.length === 0,
+    findManyAndCount: r => r.rows.length === 0,
+    update: r => r == null, delete: r => r == null, remove: r => r == null,
+    updateMany: r => r.count === 0, deleteMany: r => (r.count ?? r.length) === 0, removeMany: r => (r.count ?? r.length) === 0,
+    create: () => false, createMany: () => false, upsert: () => false,
+  }
+
+  function policyEmptied(verb, where, args) {
+    const vis = visibleWhere(verb, where, args)
+    if (!vis.policy) return false
+    const w = whereFragment(vis.where)
+    return readDb.query(`SELECT 1 FROM ${quoteIdent(tableName)}` + (w ?` WHERE ${w.sql}` : '') + ' LIMIT 1').get(...(w?.params ?? [])) != null
+  }
+
+  function refusalsFiled(table) {
+    for (const [verb, empty] of Object.entries(DENIABLE)) {
+      const attempted = VERBS[verb] ?? 'create'
+      if (!hearsDenied(attempted)) continue
+      const fn = table[verb]
+      if (typeof fn !== 'function') continue
+      table[verb] = async function (args = {}) {
+        const heard = !ctx.isSystem && !args?.[UNTRAILED]
+        let result
+        try { result = await fn.call(this, args) }
+        catch (e) {
+          if (heard && REFUSED.some(E => e instanceof E)) emitDenied(attempted, args?.where)
+          throw e
+        }
+        if (heard && empty(result) && policyEmptied(verb, args?.where, args)) emitDenied(attempted, args?.where)
+        return result
+      }
+    }
+    return table
+  }
+
+  return installHooks(refusalsFiled(settlingWrites({
 
     // The plan a bulk write would run, without running it — the way `$checkWhere`
     // answers a where without querying. A test's view of a verb, keyed by the
@@ -5259,7 +5303,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       return { optimized: true, table: `${tableName}_fts` }
     },
 
-  }), ctx, modelName)
+  })), ctx, modelName)
 }
 
 // ─── Multi-database helpers ───────────────────────────────────────────────────
@@ -7409,7 +7453,8 @@ export async function createClient({
     if (entry.meta      != null) built.meta      = JSON.stringify(entry.meta)
 
     // An explicit event lines up with an @@anonymous row by clock exactly as a
-    // @@trail entry does, and the trail is not rolled back with the transaction.
+    // @@trail entry does, and the event is not rolled back with the transaction:
+    // it files at call time, where a write line waits for the commit (FJS-D1740).
     if (tx.owns()) {
       const other = tx.noteWrite('$audit', false)
       if (other) throw new Error(

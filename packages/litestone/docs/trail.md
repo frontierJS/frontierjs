@@ -58,7 +58,7 @@ await new Promise(r => setTimeout(r, 0))   // an entry lands one event-loop tick
 
 const [entry] = await sys.auditTrail.findMany({ where: { operation: 'update', field: 'salary' } })
 // {
-//   operation:  'update',             // create | update | delete | read
+//   operation:  'update',             // create | update | delete | read | denied
 //   model:      'User',               // the model name, as a $audit event spells it
 //   field:      'salary',             // only for @trail field-level entries; null on a model-level one
 //   transition: null,                 // the named @@transitions move, where an update was one
@@ -101,6 +101,12 @@ if (entry.before !== null || entry.after !== null || !/1,2,3/.test(JSON.stringif
 Every write path reaches the trail: `create`, `createMany`, `update`, `updateMany`, `upsert`, `upsertMany`, `remove`, `removeMany`, `delete`, `deleteMany` and `restore`. A bulk op on a logged model takes a `RETURNING` path so the entry can name the rows by id — an autoincrement id does not exist until SQLite assigns one — and `upsertMany` splits its batch into a `create` entry and an `update` entry, because it did both. `restore` logs as `update`: a restored row changed state, it was not created. `remove` and `delete` both log as `delete`, and the entry tells them apart: a trash has an `after` (the row, stamped with `deletedAt`) and a purge has none. A `restore` of one row carries `before` (stamped) and `after` (cleared).
 
 An unlogged model pays none of this — the `RETURNING` path is taken only when the model declares `@trail` / `@@trail`.
+
+### A refused access — `denied`
+
+A row policy is folded into the statement, so a caller it refuses gets a miss: `null` from `findUnique`, `[]` from `findMany`, `null` from `update`, `{ count: 0 }` from `updateMany`. The trail tells that from a real miss by asking the same `where` once more without the policy, on the empty answer only, and files one model-level entry with `operation: 'denied'` and `meta.attempted` naming the policy op (`read`, `create`, `update`, `delete`). A thrown refusal (a create policy, a sealed document, a move's gate) files the same entry. A refused read is heard by `reads: true` and a refused write by the write log, so `@@trail(audit)` alone records refused writes and not refused reads.
+
+`records` holds the id only where the caller named it, as a single-key `where` on the id field, and only when it reads as that field's type and is at most 128 characters: the caller already held it, so it discloses nothing. A list or a filter names none (`FJS-D1707`). The entry files at once, not at commit, so a refused write whose transaction rolls back still leaves it. A system caller is refused by nothing it can be blamed for and files none; `@@require` holding silently under `asSystem()` is a separate question.
 
 ## Protected fields are redacted
 
@@ -283,7 +289,7 @@ model AuditTrail {
 
 Then a service over it (`createService({ channel })` in `api/src/services/auditTrails.service.ts`) serves `GET /api/auditTrails`. `@@tenant(none)` is what lets the policy name `tenant` itself: the trail spans tenants, and the `@@allow` is the only thing narrowing it. Three limits of this shape:
 
-- **`tenant` is stamped only when the actor carries a tenant.** A system write, a seed, and a read the engine makes for its own check (`FJS-3714`) land with `tenant` null, so no tenant's reader sees them. A review queue built on this policy omits them silently; read them as `asSystem()`.
+- **`tenant` is the caller's tenant, else the tenant of the rows the entry describes** (`FJS-D1745`), so a system write or a seed files under the tenant it touched. It stays null where the rows span two tenants (an `asSystem()` list across clinics), on a `@@tenant(none)` or `@@tenant(via:)` model, where the tenant column is protected, and on a `denied` entry; a review queue built on this policy omits those, so read them as `asSystem()`. A support write across tenants keeps the caller's tenant, so the touched tenant's reader misses it.
 - **`records` is a JSON array of ids**, so a policy cannot ask "reads on charts the actor has no row for". That anti-join is done by the service after the read.
 - **Invariant:** the gate and the policy are enforced at the Data boundary, so a client `x-gate` is only an affordance.
 

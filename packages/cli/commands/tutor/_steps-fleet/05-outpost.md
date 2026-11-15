@@ -182,7 +182,7 @@ if (!await must($, await probe.httpJson({
 })) ) return
 
 if (!await must($, await probe.httpJson({
-  url:      hubUrl($, '/conduit-targets'),
+  url:      hubUrl($, '/conduitTargets'),
   headers:  as,
   expect:   (j) => (j.data ?? []).some((t) => t.id === `outpost:${$.config.serverId}` && t.address === publicUrl),
   describe: `a target at ${publicUrl}`,

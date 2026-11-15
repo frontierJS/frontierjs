@@ -67,7 +67,7 @@ describe('actions on the subject that outlive the episode', () => {
     const { secret } = await h.auth.setupTotp!(third.userId)
     await h.auth.confirmTotp!(third.userId, totp(secret, new Date(Date.now() - 5 * TOTP_STEP_SEC * 1000)))
     await start(op.token, sub.userId)
-    const res = await request(app).post(`/account-recovery/${third.userId}`).set('x-service-method', 'resetTotp')
+    const res = await request(app).post(`/accountRecovery/${third.userId}`).set('x-service-method', 'resetTotp')
       .auth(op.token).send({})
     expect(res.status).toBe(403)
     expect((await h.auth.totpStatus!(third.userId)).enabled).toBe(true)
@@ -90,11 +90,11 @@ describe('refutation rows — expected to pass', () => {
     await start(op.token, sub.userId)
     expect(((await me(op.token)).body as any).email).toBe(sub.email)
     expect((await request(app).get('/sessions').auth(op.token)).status).toBe(200)
-    expect((await request(app).get('/api-keys').auth(op.token)).status).toBe(200)
+    expect((await request(app).get('/apiKeys').auth(op.token)).status).toBe(200)
     expect((await request(app).get('/connections').auth(op.token)).status).toBe(200)
     expect((await request(app).post('/account/me').set('x-service-method', 'totpStatus').auth(op.token).send({})).status).toBe(200)
     expect((await request(app).delete('/connections/x').auth(op.token)).status).toBe(403)
-    expect((await request(app).post('/api-keys').auth(op.token).send({ name: 'x' })).status).toBe(403)
+    expect((await request(app).post('/apiKeys').auth(op.token).send({ name: 'x' })).status).toBe(403)
     expect((await request(app).post('/sessions').set('x-service-method', 'revokeOthers').auth(op.token).send({})).status).toBe(403)
     await end(op.token)
   })
@@ -109,12 +109,12 @@ describe('refutation rows — expected to pass', () => {
     const row = await h.sys.session.findFirst({ where: { token: op.token } })
     await h.sys.session.update({ where: { id: row.id }, data: { impersonationEndsAt: new Date(Date.now() - 1000).toISOString() } })
     expect(((await me(op.token)).body as any).email).toBe(op.email)
-    expect((await request(app).post('/api-keys').auth(op.token).send({ name: 'own' })).status).toBe(201)
+    expect((await request(app).post('/apiKeys').auth(op.token).send({ name: 'own' })).status).toBe(201)
   })
 
   test('starting with an API key is refused — a key is not a session', async () => {
     const op = await person(), sub = await person()
-    const k = (await request(app).post('/api-keys').auth(op.token).send({ name: 'k' })).body as any
+    const k = (await request(app).post('/apiKeys').auth(op.token).send({ name: 'k' })).body as any
     const res = await request(app).post('/auth/support/start').auth(k.key).send({ subjectId: sub.userId, reason: 'r' })
     expect(res.status).not.toBe(200)
     expect(((await me(k.key)).body as any).email).toBe(op.email)

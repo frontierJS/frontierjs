@@ -9,7 +9,7 @@
 //
 // The token is a REF on the descriptor, resolved at send time by
 // `core/credentials.ts`, so it is not in the registry and not on the
-// `GET /conduit-targets` answer.
+// `GET /conduitTargets` answer.
 //
 // ─── Money ───────────────────────────────────────────────────────────────
 //

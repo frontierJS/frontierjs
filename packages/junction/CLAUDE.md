@@ -87,7 +87,7 @@ touching a hook, a transport context, a battery or `boot()`.
 - **`app.get`/`app.post` apply `apiPrefix`**; `app.http.router` is the escape.
 - **`update` is `patch` with an id required, and it MERGES** (`FJS-D179`).
 - **`after` is after the METHOD** — `ctx.afterCommit(fn)` must not run early, `ctx.enqueue(job, payload)` must not be lost.
-- **`register` is sync**; async setup goes in `boot()`; only a throw in `ready` lets the app start.
+- **`register` is sync**; async setup goes in `boot()`. **`ready` runs after `listen` and a throw in it is logged, not fatal** — the app answers before it finishes, so what must hold the first request goes in `boot()` (`FJS-D973`).
 - **A timer in `boot()` ticks in every one-shot process** — `_startOnce()` skips `work()`; a worker or `setInterval` goes in `work()` (`FJS-D551`).
 - **Internal directives ride `{ directives }`**, filters first argument; **`_find`/`_get`/`_create` skip junction's hooks, keep Litestone's gate.**
 - **A frame goes out through `wsSend()`** (`transport/send-queue.ts`), which holds what Bun drops.

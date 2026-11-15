@@ -473,7 +473,7 @@ try {
   check('…and a path off the restore directory is refused', /under/.test(off?.message ?? ''))
 
   // ── Backing it up: the data tarred on the machine, the path recorded (`FJS-1782`) ──
-  const taken = await call('/app-backups', { ...auth, serviceMethod: 'take', body: { appId: adopt?.id, serverId: first.serverId } })
+  const taken = await call('/appBackups', { ...auth, serviceMethod: 'take', body: { appId: adopt?.id, serverId: first.serverId } })
   check('an app\'s data is archived on its machine and the row says where',
     taken?.status === 'success' && taken?.fileCount === 1 && taken?.location?.startsWith(`${join(OWN, 'backups')}/`))
   check('…and the archive holds the file the directory did',
@@ -484,7 +484,7 @@ try {
   // The bucket is the S3 stand-in in this process; the Outpost fetches and
   // PUTs on the host, so 127.0.0.1 reaches it.
   bucket = startS3Sink()
-  const dest = await call('/backup-destinations', { ...auth, body: {
+  const dest = await call('/backupDestinations', { ...auth, body: {
     name: `archives-${process.pid}`, endpoint: bucket.url, region: bucket.region, bucket: 'archives', secret: bucket.credential,
   } })
   const archived = async (name) => {
@@ -500,17 +500,17 @@ try {
   const write = (dir, line) => { const d = new Database(join(dir, 'app.db')); d.run('CREATE TABLE IF NOT EXISTS note (line TEXT)'); d.run('INSERT INTO note VALUES (?)', [line]); d.close() }
   const lines = (dir) => { const d = new Database(join(dir, 'app.db'), { readonly: true }); try { return d.query('SELECT line FROM note').all().map(r => r.line) } finally { d.close() } }
   write(from.dataDir, 'written before the download')
-  const sent = await call('/app-backups', { ...auth, serviceMethod: 'take', body: { appId: from.id, serverId: first.serverId, destinationId: dest?.id } })
+  const sent = await call('/appBackups', { ...auth, serviceMethod: 'take', body: { appId: from.id, serverId: first.serverId, destinationId: dest?.id } })
   check('an app with a destination is archived into its bucket by an Outpost that is not root (FJS-3793)',
     sent?.status === 'success' && !!sent?.location && !sent.location.startsWith('/') && !sent?.error)
-  const link  = await call(`/app-backups/${sent?.id}`, { ...auth, serviceMethod: 'download' })
+  const link  = await call(`/appBackups/${sent?.id}`, { ...auth, serviceMethod: 'download' })
   const bytes = link?.url ? new Uint8Array(await (await fetch(link.url)).arrayBuffer()) : new Uint8Array()
   check('…and downloads by its link as the bytes the machine took',
     bytes.byteLength > 0 && createHash('sha256').update(bytes).digest('hex') === sent?.sha256 && link?.name?.startsWith(`${from.slug}-`))
 
   const to = await archived('to')
   const upload = async (name, body) => {
-    const signed = await call('/app-backups', { ...auth, serviceMethod: 'upload', body: { appId: to.id, name } })
+    const signed = await call('/appBackups', { ...auth, serviceMethod: 'upload', body: { appId: to.id, name } })
     const res = await fetch(API + signed?.url, { method: 'PUT', body })
     return { status: res.status, row: await res.json().catch(() => null) }
   }
@@ -539,7 +539,7 @@ try {
   // App's source is a git repository that does not exist, so a release that
   // built anything would fail on the clone.
   const me     = await call('/account/me', auth).catch(() => null)
-  const minted = await call('/api-keys', { ...auth, body: {
+  const minted = await call('/apiKeys', { ...auth, body: {
     userId: me?.id ?? me?.user?.id, name: `deploy-${process.pid}`, scopes: ['apps:read', 'deployments:read', 'deployments:write'],
   } })
   const fliApp = await call('/apps', { ...auth, body: {

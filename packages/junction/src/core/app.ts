@@ -13,7 +13,7 @@ import { hookContext } from '@frontierjs/toolbelt/hooks'
 import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
-import { declaredCallHeaders, checkPrincipalSetting, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, dataRealmFacts, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS, accessorIfModel } from './litestone.ts'
+import { declaredCallHeaders, checkPrincipalSetting, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, dataRealmFacts, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS, accessorIfModel, resolveRawCaller } from './litestone.ts'
 import { configFor, createTenantConfigStore } from './config-scope.ts'
 import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
@@ -102,6 +102,13 @@ export interface Plugin {
    * and a worker claims jobs the serving process was owed.
    */
   work?:      (app: App) => void | Promise<void>
+  /**
+   * Runs after `listen`, so the app is already answering requests while it
+   * runs, and a throw is logged while `start()` resolves (`FJS-D973`). For work
+   * that must not hold the first request — devtools binds its own port here, and
+   * a held port must not stop the app. Anything that must finish, or succeed,
+   * before the first request goes in boot().
+   */
   ready?:     (app: App) => void | Promise<void>
   shutdown?:  (app: App) => void | Promise<void>
 
@@ -544,6 +551,19 @@ export interface App {
   withDb: <T>(fn: (db: unknown, user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>) => Promise<T>
 
   /**
+   * Who a RAW route's caller is: `createApp({ principal })` resolved for it,
+   * and the client scoped to it. A raw route runs below the service pipeline,
+   * so nothing resolves the principal unless it asks — a route that never calls
+   * this lets a dead bearer key through with a 200 (`FJS-3977`, `FJS-D1856`).
+   * Call it before reading a streamed body: a resolver's refusal throws, and a
+   * dead key answers the 401 a service would.
+   *
+   * `user` is `ctx.user` with its claims merged, `null` for a guest, whose
+   * claims scope `db` and stay in `claims`.
+   */
+  principalFor: (ctx: import('../transport/types.ts').TransportContext) => Promise<import('./litestone.ts').RawRouteCaller>
+
+  /**
    * An Observer, called once for each tenant client the app opens under
    * `createApp({ tenants })`, with the tenant it serves. What a plugin taps a
    * tenant's writes through, since there is no one app client to tap. Register
@@ -701,15 +721,13 @@ export interface App {
   /**
    * Read `junction.config.js` and merge it under `opts.config`.
    *
-   * This IS the `load-config` start phase, exposed because the phase is
-   * `needsHost` and `_startForTest()` therefore skips it — so anything a plugin
-   * reads out of that file is absent for every caller that boots an app without
-   * a port — the snapshot tools, where `junction jobs` reported **no handlers
-   * registered** for an app with three (`FJS-418`). Run it BEFORE
-   * `_startForTest()`, or a plugin's `boot()` reads the config as it was
-   * without the file.
+   * This IS the `load-config` start phase, which every start mode runs for an
+   * app with a root (`FJS-D2112`). A rootless app runs it only under
+   * `start()`, so a test or tool booting one without a port calls it first,
+   * or a plugin's `boot()` reads the config as it was without the file
+   * (`FJS-418`).
    *
-   * Idempotent in effect: the merge is over the same two inputs every time.
+   * Applies once; a second call, or the phase after a call, does nothing.
    */
   applyConfigFile: () => Promise<void>
 }
@@ -1076,6 +1094,8 @@ export function createApp(opts: AppOptions = {}): App {
   // an app has a config, N service files and a hook table, so throwing on the
   // first makes fixing them serial — one boot per typo (`FJS-D199`).
   const _authoringFindings: string[] = []
+  // A second applyConfigFile() would push every finding above twice.
+  let _configFileApplied = false
   // start() is once per app, and this is not `started`: `stop()` clears that
   // one, and a second start() then reached `security-headers` and died on
   // `Cannot add middleware after the router is built` — an internal sentence
@@ -1474,6 +1494,12 @@ export function createApp(opts: AppOptions = {}): App {
       return out
     },
 
+    async principalFor(ctx) {
+      const user = (ctx.user ?? null) as import('../auth/types.ts').SessionContext | null
+      if (!dataHook) return { db: app.db, claims: {}, user }
+      return resolveRawCaller(dataHook, app, ctx)
+    },
+
     onTenantClient(observer) {
       tenantClientObservers.add(observer)
       return () => { tenantClientObservers.delete(observer) }
@@ -1650,6 +1676,8 @@ export function createApp(opts: AppOptions = {}): App {
     },
 
     async applyConfigFile(): Promise<void> {
+      if (_configFileApplied) return
+      _configFileApplied = true
       try {
         const junctionCfg = await loadConfig(_root ? configDirOf(_root) : null)
         const merged = deepMerge(
@@ -1813,8 +1841,8 @@ export function createApp(opts: AppOptions = {}): App {
     // 4, 4.5, 4.6, 5, 6, 7: decimals and gaps are what a sequence looks like
     // after it has been patched rather than redesigned. They are named now.
 
-    /** Test-only lifecycle: every phase except the ones needing a port,
-     *  a config file on disk, or process signal handlers.
+    /** Test-only lifecycle: every phase except the ones needing a port or
+     *  process signal handlers. A rooted app reads its junction.config.js.
      *  Never call this in production — use start() instead. */
     async _startForTest(): Promise<void> {
       if (started) return          // idempotent — safe to call multiple times
@@ -1906,6 +1934,7 @@ export function createApp(opts: AppOptions = {}): App {
   }
   // Every reader — a plugin's register(), ctx.app, the caller — holds this one.
   const app = new Proxy(body, slotGuard) as App
+  http.setApp(app)
 
   // ── Litestone scoping ──────────────────────────────────────────────────
   // A client exposing $setAuth is a Litestone client, and every request must
@@ -1979,15 +2008,15 @@ export function createApp(opts: AppOptions = {}): App {
   // ─── Startup phases ──────────────────────────────────────────────────────
   //
   // ONE ordered list, shared by start() and _startForTest(). Phases marked
-  // `needsHost` are skipped by the test lifecycle: they bind a port, read a
-  // config file from disk, install process signal handlers, or announce.
+  // `needsHost` are skipped by the test lifecycle: they bind a port, install
+  // process signal handlers, or announce.
   // Everything else runs identically in both, which is the point — the test
   // path can no longer drift from production ordering, because there is only
   // one ordering.
 
   interface StartPhase {
     name:       string
-    /** Skipped by _startForTest(): needs a port, the filesystem, or signals. */
+    /** Skipped by _startForTest() and _startOnce(): needs a port or signals. */
     needsHost?: boolean
     /** Skipped by _startOnce(): starts what acts on its own clock. */
     isWork?:    boolean
@@ -2054,7 +2083,9 @@ export function createApp(opts: AppOptions = {}): App {
 
       // Load junction.config.js and deep-merge into the live config.
       // Final priority: defaultConfig < junction.config.js < opts.config.
-      { name: 'load-config', needsHost: true, run: () => app.applyConfigFile() },
+      // A rooted app reads it in every mode, or a test passes on a config
+      // start() refuses (`FJS-D2112`); a rootless one only when it serves.
+      { name: 'load-config', needsHost: !_root, run: () => app.applyConfigFile() },
 
       // Every middleware an app DECLARED, in the one order that works: cors
       // before csrf, so a preflight short-circuits ahead of the origin check.
@@ -2695,15 +2726,13 @@ function refuseShadowedServices(app: App): void {
   }
 
   for (const name of app.services.list()) {
-    for (const spelling of [name, ...app.services.aliasesOf(name)]) {
-      const route = shadows.get(spelling)
-      if (!route) continue
-      throw new Error(
-        `Service '${name}' is shadowed by ${route}. A fixed route beats the service's ` +
-        `\`${prefix}/{service}\` mount, so a request for the service reaches the route and the service ` +
-        `never answers. Rename the service, or move the route (health({ path }) moves the health endpoints).`
-      )
-    }
+    const route = shadows.get(name)
+    if (!route) continue
+    throw new Error(
+      `Service '${name}' is shadowed by ${route}. A fixed route beats the service's ` +
+      `\`${prefix}/{service}\` mount, so a request for the service reaches the route and the service ` +
+      `never answers. Rename the service, or move the route (health({ path }) moves the health endpoints).`
+    )
   }
 }
 

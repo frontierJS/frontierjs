@@ -698,7 +698,7 @@ async function apiCall(path, { method = 'GET', body, workspace, header, outpost 
 
 // The hub row is where `fli deploy` points the host machine (FJS-D1514), so an
 // install that skipped /hub/settings/ must still have one.
-const hubAfterSetup = await apiCall('/hub-config', { method: 'POST', header: { 'x-service-method': 'current' } })
+const hubAfterSetup = await apiCall('/hubConfig', { method: 'POST', header: { 'x-service-method': 'current' } })
   .catch(e => ({ id: e.message }))
 check('setup wrote the hub settings', hubAfterSetup?.id, 'hub')
 
@@ -2105,7 +2105,7 @@ check('the list shows a hint, not the key',
   t => t.includes('ci-bot') && t.includes('…') && !t.includes(minted))
 check('…and the API never answers the token again',
   await evaluate(`
-    fetch('/api-keys', { headers: {
+    fetch('/apiKeys', { headers: {
       accept: 'application/json',
       authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
       'x-workspace-id': ${JSON.stringify(secondWs.id)},
@@ -2141,7 +2141,7 @@ check('a scope it does not hold is refused by name',
     }}).then(r => r.json()).then(j => j.message)`),
   t => typeof t === 'string' && t.includes("'secrets:read' scope"))
 check('read does not imply write', await asKey('/servers', 'POST'), 403)
-check('a key cannot manage keys', await asKey('/api-keys'), 403)
+check('a key cannot manage keys', await asKey('/apiKeys'), 403)
 check('a key cannot be pointed at another workspace',
   await evaluate(`
     fetch('/servers', { headers: {
@@ -2155,7 +2155,7 @@ check('a key cannot be pointed at another workspace',
 // one allowed call above, four refusals.
 check('usage is counted against the key that made the call',
   await waitFor(`
-    fetch('/api-keys', { headers: {
+    fetch('/apiKeys', { headers: {
       accept: 'application/json',
       authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
       'x-workspace-id': ${JSON.stringify(secondWs.id)},
@@ -2907,7 +2907,7 @@ check('…at an address that can never receive mail',
 // belonged to whoever pressed the button, so CI's key was a person's key.
 const botId = (await apiCall('/hub', { method: 'POST', header: { 'x-service-method': 'users' } }))
   .data.find(u => u.kind === 'bot').id
-const botKey = await apiCall('/api-keys', {
+const botKey = await apiCall('/apiKeys', {
   method: 'POST', workspace: firstWs.id,
   body: { name: 'ci-pipeline', userId: botId, scopes: ['servers:read'] },
 })
@@ -2915,7 +2915,7 @@ check('a key can now belong to a bot rather than to a person', botKey.userId, bo
 
 let humanKey = null
 try {
-  await apiCall('/api-keys', {
+  await apiCall('/apiKeys', {
     method: 'POST', workspace: firstWs.id,
     body: { name: 'not-mine', userId: botId + 'x', scopes: ['servers:read'] },
   })

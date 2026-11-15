@@ -186,10 +186,10 @@ describe('management service over real routes', () => {
     app.configure(conduitPlugin({
       credentials: secrets(),
       targets:     [providerTarget()],
-      management:  { path: 'conduit-targets', public: true },
+      management:  { path: 'conduitTargets', public: true },
     }))
 
-    const res = await request(app).get('/conduit-targets')
+    const res = await request(app).get('/conduitTargets')
 
     expect(res.status).toBe(200)
     const body = res.body as { data?: unknown[] } | unknown[]
@@ -205,10 +205,10 @@ describe('management service over real routes', () => {
     app.configure(conduitPlugin({
       credentials: secrets(),
       targets:     [providerTarget()],
-      management:  { path: 'conduit-targets', public: true },
+      management:  { path: 'conduitTargets', public: true },
     }))
 
-    const res = await request(app).get('/conduit-targets')
+    const res = await request(app).get('/conduitTargets')
 
     expect(res.text).toContain('HETZNER_TOKEN')     // the ref
     expect(res.text).not.toContain('htz-token-abc') // the secret
@@ -219,10 +219,10 @@ describe('management service over real routes', () => {
     app.configure(conduitPlugin({
       credentials: secrets(),
       targets:     [providerTarget({ id: 'hetzner' })],
-      management:  { path: 'conduit-targets', public: true },
+      management:  { path: 'conduitTargets', public: true },
     }))
 
-    const res = await request(app).get('/conduit-targets/hetzner')
+    const res = await request(app).get('/conduitTargets/hetzner')
 
     expect(res.status).toBe(200)
     expect((res.body as TargetDescriptor).id).toBe('hetzner')
@@ -232,10 +232,10 @@ describe('management service over real routes', () => {
     const app = await createTestApp()
     app.configure(conduitPlugin({
       credentials: secrets(),
-      management:  { path: 'conduit-targets', public: true },
+      management:  { path: 'conduitTargets', public: true },
     }))
 
-    const res = await request(app).get('/conduit-targets/nope')
+    const res = await request(app).get('/conduitTargets/nope')
     expect(res.status).toBe(404)
   })
 
@@ -244,10 +244,10 @@ describe('management service over real routes', () => {
     app.configure(conduitPlugin({
       credentials: secrets(),
       targets:     [providerTarget({ id: 'hetzner' })],
-      management:  { path: 'conduit-targets', public: true },
+      management:  { path: 'conduitTargets', public: true },
     }))
 
-    const res = await request(app).delete('/conduit-targets/hetzner')
+    const res = await request(app).delete('/conduitTargets/hetzner')
 
     expect(res.status).toBe(200)
     expect(await conduitOf(app).resolve('hetzner')).toBeNull()
@@ -265,7 +265,7 @@ describe('management service over real routes', () => {
       management:  { public: true },
     }))
 
-    const res = await request(app).get('/conduit-targets')
+    const res = await request(app).get('/conduitTargets')
     expect(res.status).toBe(200)
     expect((res.body as { data?: unknown[] }).data ?? res.body).toHaveLength(1)
   })
@@ -296,12 +296,12 @@ describe('management service over real routes', () => {
       credentials: secrets(),
       targets:     [providerTarget()],
       management:  {
-        path:  'conduit-targets',
+        path:  'conduitTargets',
         hooks: { before: { all: [() => { throw new Forbidden('nope') }] } },
       },
     }))
 
-    const res = await request(app).get('/conduit-targets')
+    const res = await request(app).get('/conduitTargets')
 
     expect(res.status).toBe(403)
     expect(res.text).not.toContain('provider:hetzner')
@@ -317,13 +317,13 @@ describe('management service over real routes', () => {
     app.configure(conduitPlugin({
       credentials: secrets(),
       targets:     [providerTarget()],
-      management:  { path: 'conduit-targets', gate: 7 },
+      management:  { path: 'conduitTargets', gate: 7 },
     }))
 
-    const stranger = await request(app).get('/conduit-targets')
-    const admin    = await request(app).get('/conduit-targets').auth('test-token-admin')
-    const removed  = await request(app).delete('/conduit-targets/provider:hetzner').auth('test-token-admin')
-    const root     = await request(app).get('/conduit-targets').auth('test-token-root')
+    const stranger = await request(app).get('/conduitTargets')
+    const admin    = await request(app).get('/conduitTargets').auth('test-token-admin')
+    const removed  = await request(app).delete('/conduitTargets/provider:hetzner').auth('test-token-admin')
+    const root     = await request(app).get('/conduitTargets').auth('test-token-root')
 
     expect(stranger.status).toBe(401)
     expect(admin.status).toBe(403)
@@ -338,7 +338,7 @@ describe('management service over real routes', () => {
     app.configure(conduitPlugin({ credentials: secrets() }))
     await app._startForTest()
 
-    expect(app.services.get('conduit-targets')).toBeUndefined()
+    expect(app.services.get('conduitTargets')).toBeUndefined()
   })
 })
 
@@ -357,10 +357,10 @@ describe('app-level hooks apply to the management service', () => {
     app.configure(conduitPlugin({
       credentials: secrets(),
       targets:     [providerTarget()],
-      management:  { path: 'conduit-targets', public: true },
+      management:  { path: 'conduitTargets', public: true },
     }))
 
-    const res = await request(app).get('/conduit-targets')
+    const res = await request(app).get('/conduitTargets')
 
     expect(res.status).toBe(403)
     expect(res.text).not.toContain('provider:hetzner')
@@ -372,10 +372,10 @@ describe('app-level hooks apply to the management service', () => {
     app.configure(conduitPlugin({
       credentials: secrets(),
       targets:     [providerTarget()],
-      management:  { path: 'conduit-targets', public: true },
+      management:  { path: 'conduitTargets', public: true },
     }))
 
-    const res = await request(app).get('/conduit-targets')
+    const res = await request(app).get('/conduitTargets')
     expect(res.status).toBe(200)
   })
 })

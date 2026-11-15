@@ -21,7 +21,7 @@ title: Your settings
   //                  first through `client.auth.reauthenticate`; left empty,
   //                  the change goes through within the hour after a sign-in
   //                  and is refused by reason after it.
-  //   Notifications  the new `notification-preferences` service.
+  //   Notifications  the new `notificationPreferences` service.
   //   Sessions       `client.auth.sessions()` — every live sign-in, revocable.
   //   Two-step       `client.auth.setupTotp` → `confirmTotp`; three of the four
   //                  writes are behind the same confirmation, because they

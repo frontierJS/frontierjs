@@ -1082,11 +1082,19 @@ A route is a URL an outsider fixes — a vendor's webhook setting, a link in an
 inbox. Junction loads the `routes/` folder **beside the services folder** (or
 beside the entry, when there are no services), and a file's path there is the
 URL it answers. Its `GET`, `POST`, `PUT`, `PATCH` and `DELETE` exports are the
-handlers, the same `(ctx) => …` that `app.get` takes:
+handlers, the same `(ctx) => …` that `app.get` takes. A route file has no
+closure over the app, so it reaches the app as `ctx.app`, the object
+`createApp` returned (`FJS-D1663`):
 
 ```ts
 // api/src/routes/hooks/calendar.ts  →  POST /hooks/calendar
 export const POST = async (ctx) => { /* verify the signature, answer 200 */ }
+
+// api/src/routes/archive/[id].ts    →  GET /archive/{id}
+export const GET = async (ctx) => {
+  ctx.app.logger.info('archive fetched', { id: ctx.route.id })
+  return ctx.app.service('archives').get(ctx.route.id).then(row => ctx.json(row))
+}
 
 // api/src/routes/files/[id].ts      →  GET /files/{id}, read as ctx.route.id
 // api/src/routes/index.ts           →  GET /
@@ -2638,7 +2646,7 @@ app.configure(conduit({
       auth:     { type: 'bearer', ref: 'HETZNER_TOKEN' },
     },
   ],
-  // registers a service at {apiPrefix}/conduit-targets. It must state an access
+  // registers a service at {apiPrefix}/conduitTargets. It must state an access
   // decision — `hooks` or `public: true` — or configure() throws.
   // Rename with `path: '…'` (one path segment, no slashes).
   management: { hooks: { before: { all: [authenticate] } } },

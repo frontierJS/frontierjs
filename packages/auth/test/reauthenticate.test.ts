@@ -169,7 +169,7 @@ describe('over HTTP', () => {
       await call(p.token, 'setupTotp'),
       await call(p.token, 'disableTotp'),
       await call(p.token, 'regenerateRecoveryCodes'),
-      await request(app).post('/api-keys').auth(p.token).send({ name: 'ci' } as any),
+      await request(app).post('/apiKeys').auth(p.token).send({ name: 'ci' } as any),
       await request(app).delete('/connections/anything').auth(p.token),
     ]
     expect(stale.map(r => [r.status, (r.body as any)?.data?.reason]))
@@ -186,7 +186,7 @@ describe('over HTTP', () => {
     expect(confirmed.status).toBe(200)
     expect(typeof (confirmed.body as any).until).toBe('string')
     expect((await call(p.token, 'setupTotp')).status).toBe(200)
-    expect((await request(app).post('/api-keys').auth(p.token).send({ name: 'ci' } as any)).status).toBe(201)
+    expect((await request(app).post('/apiKeys').auth(p.token).send({ name: 'ci' } as any)).status).toBe(201)
   })
 
   test('a confirmed change of address ends the other sessions and keeps the one that posted the click', async () => {

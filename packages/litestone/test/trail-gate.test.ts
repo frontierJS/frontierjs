@@ -213,4 +213,19 @@ describe('a trailed write inside a transaction', () => {
     expect((await trail()).length).toBe(1)
     close()
   })
+
+  // FJS-D1740 — an event is true whether or not the transaction around it
+  // survives: a failed attempt recorded inside a refused transaction is the row
+  // $audit exists for, so it files at call time and stays.
+  test('a $audit event inside a rolled-back transaction is still filed', async () => {
+    const { sys, trail, close } = await open()
+    await expect(sys.$transaction(async (tx: any) => {
+      await tx.note.create({ data: { id: 1, body: 'a' } })
+      await tx.$audit({ operation: 'login.failed', model: 'Note', records: [1] })
+      throw new Error('refused')
+    })).rejects.toThrow('refused')
+    expect(await sys.note.count()).toBe(0)
+    expect(await trail()).toEqual(['login.failed'])
+    close()
+  })
 })

@@ -910,15 +910,15 @@ Precedence: trace headers sit under `req.headers`, which sit under auth. A calle
 
 ## Management service
 
-Conduit can register a Junction service named `conduit-targets` that exposes:
+Conduit can register a Junction service named `conduitTargets` that exposes:
 
 | method | route | |
 |---|---|---|
-| `find` | `GET {apiPrefix}/conduit-targets` | list all registered targets |
-| `get` | `GET {apiPrefix}/conduit-targets/:id` | look up a single target by ID |
-| `remove` | `DELETE {apiPrefix}/conduit-targets/:id` | deregister a target |
+| `find` | `GET {apiPrefix}/conduitTargets` | list all registered targets |
+| `get` | `GET {apiPrefix}/conduitTargets/:id` | look up a single target by ID |
+| `remove` | `DELETE {apiPrefix}/conduitTargets/:id` | deregister a target |
 
-Junction's `apiPrefix` defaults to `''`, so out of the box these sit at `/conduit-targets`.
+Junction's `apiPrefix` defaults to `''`, so out of the box these sit at `/conduitTargets`.
 
 Responses carry credential **refs**, never secret material — see [Credentials](#credentials).
 
@@ -950,7 +950,7 @@ conduit({ management: { public: true } })
 Use a custom path if needed:
 
 ```ts
-conduit({ management: { path: 'ops-conduit-targets', public: true } })
+conduit({ management: { path: 'ops-conduitTargets', public: true } })
 ```
 
 The path must be a **single path segment** — Junction routes services as `{apiPrefix}/{service}` and `{service}` matches one segment. A path containing `/` throws at `configure()` rather than registering a service that silently 404s on every request.

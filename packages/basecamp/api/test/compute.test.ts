@@ -2561,7 +2561,7 @@ describe('two clouds, one vocabulary', () => {
       expect((d.auth as any).type).toBe('bearer')
       expect((d.auth as any).ref).toBe(`secret:${secret.id}#token`)
       // The material is resolved at send time. A descriptor holding it is what
-      // `GET /conduit-targets` would then hand out.
+      // `GET /conduitTargets` would then hand out.
       expect(JSON.stringify(d)).not.toContain('dop_v1_devtoken')
       expect(JSON.stringify(d)).not.toContain(HZ_TOKEN)
     })

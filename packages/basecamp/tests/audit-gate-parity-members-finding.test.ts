@@ -40,17 +40,17 @@ test('a viewer reading the roster is shown a colleague\'s name, address and avat
 })
 
 test('owners lists the bots an admin may issue a key to, and none senior to them', async () => {
-  const r = await call('admin', 'api-keys', 'owners')
+  const r = await call('admin', 'apiKeys', 'owners')
   expect(r.status).toBe(200)
   const ids = ((await r.json() as any).data as any[]).map(b => b.userId)
   expect(ids).toEqual([bots.developer])
 })
 
 test('owners lists every bot to an owner', async () => {
-  const ids = ((await (await call('owner', 'api-keys', 'owners')).json() as any).data as any[]).map(b => b.userId)
+  const ids = ((await (await call('owner', 'apiKeys', 'owners')).json() as any).data as any[]).map(b => b.userId)
   expect(ids.sort()).toEqual([bots.developer, bots.owner].sort())
 })
 
 test('owners is refused below admin, as create is', async () => {
-  for (const who of ['viewer', 'developer'] as const) expect([who, (await call(who, 'api-keys', 'owners')).status]).toEqual([who, 403])
+  for (const who of ['viewer', 'developer'] as const) expect([who, (await call(who, 'apiKeys', 'owners')).status]).toEqual([who, 403])
 })

@@ -125,7 +125,7 @@ describe('an agent cannot change the credentials of the person it acts for', () 
 
   test('the same person mints the same key over HTTP', async () => {
     const p   = await person()
-    const res = await http(p.token, '/api-keys', { method: 'POST', body: { name: 'from-browser' } })
+    const res = await http(p.token, '/apiKeys', { method: 'POST', body: { name: 'from-browser' } })
     expect(res.status).toBe(201)
     expect(((await res.json()) as { key?: string }).key).toMatch(/^fjs_/)
     expect(await keyCount(p.userId)).toBe(1)

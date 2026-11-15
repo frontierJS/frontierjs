@@ -153,7 +153,7 @@ describe('inside an episode the caller IS the subject', () => {
 
     // Not a blanket refusal: seeing what they see is the feature.
     expect((await request(app).get('/sessions').auth(opToken)).status).toBe(200)
-    expect((await request(app).get('/api-keys').auth(opToken)).status).toBe(200)
+    expect((await request(app).get('/apiKeys').auth(opToken)).status).toBe(200)
     // Including whether they have a second factor. It is a read, so it answers,
     // and it answers about the SUBJECT — which is what makes the four refusals
     // below about the writes rather than about the feature.
@@ -191,13 +191,13 @@ describe('the credential paths refuse, and only inside an episode', () => {
 
   test('minting an API key — the one that outlives the episode', async () => {
     await start('ticket-5')
-    const inside = await request(app).post('/api-keys').auth(opToken).send({ name: 'stolen' })
+    const inside = await request(app).post('/apiKeys').auth(opToken).send({ name: 'stolen' })
     expect(inside.status).toBe(403)
     await end()
 
     // 201: a create answers Created, which is the pair's whole point — the
     // subject may mint one and the operator standing in for them may not.
-    const outside = await request(app).post('/api-keys').auth(subToken).send({ name: 'theirs' })
+    const outside = await request(app).post('/apiKeys').auth(subToken).send({ name: 'theirs' })
     expect(outside.status).toBe(201)
   })
 

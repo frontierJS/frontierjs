@@ -590,7 +590,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
       const params   = []
       const whereSql = buildWhere(where, params)
       if (!whereSql) return null
-      const rows = ctx.readDb.query(`SELECT "${field}" FROM "${model}" WHERE ${whereSql}`).all(...params)
+      const rows = ctx.readDb.query(`SELECT "${field}" FROM "${this._table(model, ctx)}" WHERE ${whereSql}`).all(...params)
       const held = rows.map(row => new Map(this._parseRefArray(row[field]).filter(ref => ref?.key).map(ref => [ref.key, ref])))
       const [first = new Map(), ...rest] = held
       return new Map([...first].filter(([key]) => rest.every(m => m.has(key))))
@@ -706,7 +706,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
         const whereSql = buildWhere(args.where, params)
         if (whereSql) {
           const colSql = stashFields.map(([f]) => `"${f}"`).join(', ')
-          const oldRow = ctx.readDb.query(`SELECT ${colSql} FROM "${model}" WHERE ${whereSql}`).get(...params)
+          const oldRow = ctx.readDb.query(`SELECT ${colSql} FROM "${this._table(model, ctx)}" WHERE ${whereSql}`).get(...params)
           for (const [field, opts] of stashFields) {
             if (opts.isArray) {
               // A ref the new array carries forward is still in use; cleaning it
