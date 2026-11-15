@@ -39,6 +39,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
 import { BadRequest, CALL_OPTIONS_AT, LEVELS, NotFound, Unauthorized, errorBody, normalizePrefix, principalGateLevel, scopeRefusal, toDataPrincipal, withholdProtected, setCallDb } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
 import { BREADCRUMBS_META, answersOneRow, breadcrumbsFor, describeBreadcrumbs } from './breadcrumbs.ts'
 
@@ -98,9 +99,20 @@ export interface McpOptions {
    * with every tool still answering.
    */
   ui?: { root: string }
+  /**
+   * Calls one principal may make in a window, or `false` for none (`FJS-D703`,
+   * `FJS-D2183`). Defaults to 120 a minute, keyed by the signed-in user and by
+   * address for an anonymous caller.
+   *
+   * On by default because an agent in a loop does not slow down on errors, and
+   * on SQLite its writes queue every other caller's behind them. Counted per
+   * process and reset on restart (`FJS-D1193`).
+   */
+  rateLimit?: { max: number; window: string } | false
 }
 
 const DEFAULT_KEEP_ALIVE_MS = 5_000
+const DEFAULT_RATE_LIMIT    = { max: 120, window: '1 minute' }
 const DEFAULT_AWAIT_MS      = 10 * 60_000
 const AWAIT_POLL_MS         = 500
 
@@ -112,6 +124,10 @@ export function mcp(opts: McpOptions = {}): Plugin {
   let trail:     string | null          = null
   let documents: Map<string, string> | null = null
   let signIn = false
+
+  // Devtools' `app.mcp.answer` is not counted: it is a person at the console,
+  // already signed in to devtools, not an agent on the wire.
+  const limiter = opts.rateLimit === false ? null : rateLimitHook({ ...DEFAULT_RATE_LIMIT, ...opts.rateLimit })
 
   return {
     name: 'mcp',
@@ -129,6 +145,7 @@ export function mcp(opts: McpOptions = {}): Plugin {
             ...(ctx.headers.authorization ? { error: 'invalid_token' } : {}),
           })
         }
+        limiter?.(ctx as never)
         return answer(app, (ctx.$raw as { $req: Request }).$req, ctx.rawBody, ctx.user ?? null, views, shapes, opts, trail, documents)
       }
 
@@ -186,6 +203,10 @@ export function mcp(opts: McpOptions = {}): Plugin {
       trail     = trailOf((app as { db?: unknown }).db, (await import('@frontierjs/litestone/ddl')).modelToAccessor)
       documents = opts.ui ? readDocuments(opts.ui.root) : null
       if (views) disclose(app, projectTools(shapes, views, 8), documents)
+    },
+
+    shutdown() {
+      ;(limiter as unknown as { dispose?(): void } | null)?.dispose?.()
     },
   }
 }

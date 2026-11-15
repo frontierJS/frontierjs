@@ -6,9 +6,11 @@
   "main": "./index.js",
   "exports": {
     ".": {
+      "types": "./index.d.ts",
       "import": "./index.js"
     },
     "./render": {
+      "types": "./render.d.ts",
       "import": "./render.js"
     },
     "./components/*.mesa": {
@@ -16,7 +18,8 @@
     }
   },
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'vitest run email-kit.test.js test/doc-examples.test.js'",
+    "test": "node ../../scripts/tmp-run.mjs 'node ../../scripts/emit-types.mjs --check && vitest run email-kit.test.js test/doc-examples.test.js'",
+    "types": "node ../../scripts/emit-types.mjs",
     "test:watch": "vitest",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
@@ -44,7 +47,9 @@
   "_built": "2026-04-13",
   "files": [
     "index.js",
+    "index.d.ts",
     "render.js",
+    "render.d.ts",
     "components",
     "README.md",
     "LICENSE"

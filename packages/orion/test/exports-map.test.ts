@@ -10,7 +10,7 @@ import { test, expect } from "bun:test"
 import pkg from "../package.json"
 
 test("the package root is the plugin, and no second key reaches it", () => {
-  const exports = pkg.exports as Record<string, string>
+  const exports = pkg.exports as Record<string, unknown>
   expect(exports["."]).toBe("./src/plugin.ts")
   expect(Object.entries(exports).filter(([key, file]) => file === "./src/plugin.ts").map(([key]) => key)).toEqual(["."])
 })

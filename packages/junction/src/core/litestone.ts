@@ -1122,6 +1122,15 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     )
   }
 
+  // The scoped client getTable cached, so the transaction runs as the caller.
+  // A client with no $transaction (a plain adapter) writes as it did, row by row.
+  function transactionOf(ctx: ServiceContext): <T>(fn: () => Promise<T>) => Promise<T> {
+    const db = ctx.locals['__litestoneScopedDb'] as LitestoneClient | undefined
+    return db && '$transaction' in db
+      ? fn => db.$transaction(() => fn())
+      : fn => fn()
+  }
+
   async function restoreImpl(ctx: ServiceContext): Promise<unknown> {
     const table = getTable(ctx)
     const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
@@ -1713,25 +1722,22 @@ const columns = writableColumns(db, m.accessor)
         if (ctx.data.length > bulkMax) {
           throw new BadRequest(
             `Bulk create carried ${ctx.data.length} rows, above this service's limit of ${bulkMax}. ` +
-            `A bulk create runs one statement per row, so the limit is what stops one ` +
-            `request holding the write lock for the length of the array. Send fewer rows per ` +
+            `A bulk create holds the write lock for the whole array, so the limit bounds how ` +
+            `long one request keeps every other writer waiting. Send fewer rows per ` +
             `request, or raise bulkMax on the service.`
           )
         }
 
-        // Partial success: rows are created individually so ONE bad row does
-        // not reject the other forty-nine. Successes land in `data`, failures
-        // in `errors` as { data, error } pairs — the input that failed, paired
-        // with why, so a caller can tell which row was rejected.
+        // Partial success: ONE bad row does not reject the other forty-nine.
+        // Successes land in `data`, failures in `errors` as { data, error }
+        // pairs, so a caller can tell which row was rejected. Not
+        // table.createMany(): it answers { count } with no records, so the
+        // stamped fields (ids, defaults, @slug) could not be echoed.
         //
-        // Two deliberate trade-offs against table.createMany():
-        //   • N statements instead of one, and no all-or-nothing rollback.
-        //     That IS the feature — atomicity and partial success are
-        //     mutually exclusive. `transactional:` on the service turns any
-        //     row's failure into a rollback of the whole call.
-        //   • It fixes a documented wart in passing: createMany returns
-        //     { count } and no records, so bulk create could never echo
-        //     stamped fields (ids, defaults, @slug). Now it can.
+        // One transaction with a savepoint per row: a row that fails rolls
+        // back alone, its held announcements with it, and the request pays
+        // one WAL commit rather than one per row (IDEAS/speed-and-footprint.md).
+        // `transactional:` on the service makes any failure roll back the call.
         const sys = systemFields(ctx)
         const created:  unknown[] = []
         // Seeded with anything the validation hooks already rejected, so a
@@ -1740,16 +1746,19 @@ const columns = writableColumns(db, m.accessor)
         const failures: BulkFailure[] =
           (ctx.locals[BULK_FAILURES] as BulkFailure[] | undefined) ?? []
 
-        for (const row of ctx.data) {
-          try {
-            created.push(await table.create({
-              data: row as Record<string, unknown>,
-              ...(sys ? { system: sys } : {}),
-            }))
-          } catch (err) {
-            failures.push(toBulkFailure(row, err))
+        const inTransaction = transactionOf(ctx)
+        await inTransaction(async () => {
+          for (const row of ctx.data as unknown[]) {
+            try {
+              created.push(await inTransaction(() => table.create({
+                data: row as Record<string, unknown>,
+                ...(sys ? { system: sys } : {}),
+              })))
+            } catch (err) {
+              failures.push(toBulkFailure(row, err))
+            }
           }
-        }
+        })
 
         // Shape recognized by wrapResult → a list envelope carrying errors.
         return { data: created, total: created.length, errors: failures }

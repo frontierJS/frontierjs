@@ -1,0 +1,82 @@
+<script>
+  // Toc.mesa — a page's outline: the <main> headings, numbered, behind a button
+  // that floats once the visitor has scrolled. A page turns it on with `toc: true`
+  // and a preset places it as `<Toc client:idle />`.
+  //
+  // A heading inside `.ignore-toc` is left out, and so is one with no id, since
+  // there is nothing to scroll to. An h4 counts as the next h3, so the numbers
+  // run 1. / 1.1 / 1.2 whichever of the two a section uses (maid.tech's).
+
+  let headings = []
+  let scrolled = false
+  let open     = false
+
+  $.onMount(() => {
+    const root = document.querySelector('main') ?? document.body
+    let h2 = 0
+    let h3 = 0
+    headings = [...root.querySelectorAll('h2, h3, h4')]
+      .filter((h) => h.id && !h.closest('.ignore-toc'))
+      .map((h) => {
+        const level = Number(h.tagName[1])
+        if (level === 2) { h2++; h3 = 0 } else h3++
+        return { id: h.id, level, text: h.textContent.trim(), number: level === 2 ? `${h2}.` : `${h2}.${h3}` }
+      })
+    scrolled = window.scrollY > 0
+  })
+
+  function go(e, id) {
+    e.preventDefault()
+    const el = document.getElementById(id)
+    if (!el) return
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.05, behavior: 'smooth' })
+    open = false
+  }
+</script>
+
+<mesa:window onscroll={() => { scrolled = window.scrollY > 0; if (!scrolled) open = false }} />
+
+{#if headings.length && scrolled}
+  <nav class="toc ignore-toc" aria-label="Table of contents">
+    <button class="btn outlined" type="button" aria-label="Table of contents" aria-expanded={open ? 'true' : 'false'} onclick={() => { open = !open }}>
+      <svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />
+      </svg>
+    </button>
+    {#if open}
+      <ol class="card glass toc-list">
+        {#each headings as h}
+          <li class={`level-${h.level}`}>
+            <a class="link" href={`#${h.id}`} onclick={(e) => go(e, h.id)}>
+              <span class="toc-number">{h.number}</span> {h.text}
+            </a>
+          </li>
+        {/each}
+      </ol>
+    {/if}
+  </nav>
+{/if}
+
+<style>
+  .toc {
+    position: fixed;
+    top: var(--space-lg);
+    left: var(--space-md);
+    z-index: var(--z-popover);
+    max-width: calc(100vw - 2 * var(--space-md));
+  }
+  .toc-list {
+    list-style: none;
+    margin: var(--space-xs) 0 0;
+    padding: var(--space-sm);
+    max-height: 70vh;
+    overflow-y: auto;
+    width: max-content;
+    max-width: 100%;
+  }
+  .toc-list a { display: block; padding: var(--space-2xs) var(--space-xs); text-decoration: none; }
+  .level-2 { font-size: var(--text-sm); font-weight: 600; }
+  .level-3 { font-size: var(--text-xs); padding-inline-start: var(--space-md); }
+  .level-4 { font-size: var(--text-xs); padding-inline-start: var(--space-xl); opacity: 0.8; }
+  .toc-number { font-size: var(--text-xs); opacity: 0.7; }
+</style>

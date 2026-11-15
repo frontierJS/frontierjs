@@ -226,7 +226,8 @@ const RAW = Symbol.for('litestone.rawClause')
  */
 /** @param {string} sql @param {any[]} [params] */
 export function rawClause(sql, params = []) {
-  return { [RAW]: true, _litestoneRaw: true, sql, params }
+  // Cast, or the declaration emit names the private RAW symbol and fails.
+  return /** @type {{ _litestoneRaw: true, sql: string, params: any[] }} */ ({ [RAW]: true, _litestoneRaw: true, sql, params })
 }
 
 /**

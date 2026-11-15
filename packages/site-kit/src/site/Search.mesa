@@ -1,0 +1,64 @@
+<script>
+  // Search.mesa — a visitor's way into the site's words: a button, Cmd/Ctrl+K and
+  // `/`, over @frontierjs/ui's CommandPalette (FJS-D2189, FJS-D2192). A preset
+  // places it in a header as `<Search client:idle />`.
+  //
+  // The palette ranks the Pages group itself from `items`; the Results group is
+  // its `search` hook, whole words in headings and text (search.js). Enter goes
+  // to the page, or to the heading's #id when the hit is under one.
+  //
+  // `/` is the visitor's key, so it is left alone in a field: a form on the
+  // page, and the palette's own box, take it as a character.
+  import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
+  import { createSearch } from './search.js'
+
+  export let label = 'Search this site'
+
+  const index = createSearch()
+  let open  = false
+  let pages = null   // null until the index has arrived
+
+  const go = (url) => { location.href = url }
+
+  async function show() {
+    open = true
+    if (pages) return
+    try { pages = await index.pages(go) } catch (err) {
+      console.warn('[site-kit] search index unavailable:', err.message)
+      pages = []
+    }
+  }
+
+  const typing = (el) => el?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el?.tagName ?? '')
+
+  function keydown(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault()
+      if (open) open = false
+      else show()
+    } else if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !open && !typing(e.target)) {
+      e.preventDefault()
+      show()
+    }
+  }
+</script>
+
+<mesa:window onkeydown={keydown} />
+
+<button class="btn ghost search-open" type="button" aria-label={label} aria-haspopup="dialog" onclick={show} {...$attributes}>
+  <svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+    <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+  </svg>
+</button>
+
+{#if open && pages}
+  <CommandPalette
+    items={pages}
+    groupOrder={['Pages', 'Results']}
+    placeholder="Search this site…"
+    search={(query) => index.results(query, go)}
+    searchMinLength={2}
+    emptyText={(q) => `Nothing found for “${q}”`}
+    onclose={() => { open = false }}
+  />
+{/if}

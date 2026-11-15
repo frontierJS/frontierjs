@@ -22,6 +22,7 @@ import { siteImages } from './images.js'
 import { loadPreset } from './preset.js'
 import { presetPublic } from './public.js'
 import { siteRedirects } from './redirects.js'
+import { siteSearch } from './search.js'
 import { siteShell } from './shell.js'
 
 const KIT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -144,9 +145,10 @@ export async function siteKit({ root, port, host = false, preview = false, edito
       remarkPlugins: [...dialect.remarkPlugins, ...(mesa.remarkPlugins ?? [])],
       rehypePlugins: [...dialect.rehypePlugins, ...(mesa.rehypePlugins ?? [])],
     },
-    // Images go last, so their srcsets are added to the pages a preset's
-    // steps leave behind rather than to pages those steps then replace.
-    plugins: [dialect.check, ...(sierra.plugins ?? []), siteImages()],
+    // The index reads the pages a preset's steps leave behind. Images go last,
+    // so their srcsets are added to those pages rather than to pages a later
+    // step then replaces.
+    plugins: [dialect.check, ...(sierra.plugins ?? []), siteSearch(), siteImages()],
   })
 
   return {

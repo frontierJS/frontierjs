@@ -385,6 +385,116 @@ describe('stop() and the crash path (FJS-1875)', () => {
   })
 })
 
+// ─── FJS-D2185 · a crash tells its listeners before the drain ──────────────
+
+describe('app:crash (FJS-D2185, FJS-D2187)', () => {
+
+  /** Start an app, take the crash handler it installed, and stub the exit. */
+  async function crashable(shutdown: Record<string, unknown>, setup?: (app: ReturnType<typeof createApp>) => void) {
+    const before = process.listeners('uncaughtException')
+    const app = createApp({ logLevel: 'silent', config: { port: 0, shutdown } })
+    setup?.(app)
+    await app.start()
+    const handler = process.listeners('uncaughtException').find(l => !before.includes(l))!
+    expect(handler).toBeDefined()
+    const codes: Array<number | undefined> = []
+    const realExit  = process.exit
+    const realWrite = process.stderr.write
+    const written: string[] = []
+    process.exit = ((code?: number) => { codes.push(code) }) as typeof process.exit
+    process.stderr.write = ((chunk: unknown) => { written.push(String(chunk)); return true }) as typeof process.stderr.write
+    const restore = () => { process.exit = realExit; process.stderr.write = realWrite }
+    const exited = async (limit = 2_000) => {
+      const t = Date.now()
+      while (!codes.length && Date.now() - t < limit) await Bun.sleep(5)
+      return Date.now() - t
+    }
+    // The stop() a crash started outlives the exit stub; the next test finds
+    // no handler of its own until this one has detached.
+    const detached = async () => {
+      const t = Date.now()
+      while (process.listeners('uncaughtException').length !== before.length && Date.now() - t < 3_000) await Bun.sleep(10)
+      expect(process.listeners('uncaughtException')).toEqual(before)
+    }
+    return { app, handler, codes, written, restore, exited, detached }
+  }
+
+  test('listeners finish before the drain starts, and see the error', async () => {
+    const order: string[] = []
+    let seen: any
+    const c = await crashable({ timeout: 1_000 }, (app) => {
+      app.events.on('app:crash', async (e: any) => {
+        seen = { ...e, draining: app.draining }
+        await Bun.sleep(50)
+        order.push('listener')
+      })
+      app.configure({ name: 'witness', register() {}, shutdown() { order.push('drain') } })
+    })
+    try {
+      c.handler(new Error('boom-crash'), 'uncaughtException')
+      await c.exited()
+    } finally { c.restore() }
+    expect(c.codes).toEqual([1])
+    expect(order).toEqual(['listener', 'drain'])
+    expect(seen.draining).toBe(false)
+    expect(seen.error.message).toBe('boom-crash')
+    expect(seen.message).toContain('Uncaught exception')
+    await c.detached()
+  })
+
+  test('the listener and the drain share one deadline, not two', async () => {
+    // A 150ms listener and a drain that never ends, under a 250ms whole budget:
+    // two budgets in a row would exit near 400ms.
+    const c = await crashable({ timeout: 250, pluginTimeout: 400 }, (app) => {
+      app.events.on('app:crash', () => Bun.sleep(150))
+      app.configure({ name: 'hangs', register() {}, shutdown() { return new Promise<void>(() => {}) } })
+    })
+    let waited: number
+    try {
+      c.handler(new Error('boom'), 'uncaughtException')
+      waited = await c.exited()
+    } finally { c.restore() }
+    expect(c.codes).toEqual([1])
+    expect(waited).toBeGreaterThanOrEqual(240)
+    expect(waited).toBeLessThan(380)
+    await c.detached()
+  })
+
+  test('a listener that never settles is cut at the budget and the app still stops', async () => {
+    const c = await crashable({ timeout: 120 }, (app) => {
+      app.events.on('app:crash', () => new Promise<void>(() => {}))
+    })
+    let waited: number
+    try {
+      c.handler(new Error('boom'), 'uncaughtException')
+      waited = await c.exited()
+    } finally { c.restore() }
+    expect(c.codes).toEqual([1])
+    expect(waited).toBeLessThan(400)
+    expect(c.written.join('')).toContain('app:crash listeners did not finish within 120ms')
+    await c.detached()
+  })
+
+  test('a second throw while the first crash is running is logged and starts nothing', async () => {
+    let crashes = 0, stops = 0
+    const c = await crashable({ timeout: 1_000 }, (app) => {
+      app.events.on('app:crash', async () => { crashes++; await Bun.sleep(50) })
+      app.configure({ name: 'witness', register() {}, shutdown() { stops++ } })
+    })
+    try {
+      c.handler(new Error('first-throw'), 'uncaughtException')
+      c.handler(new Error('second-throw'), 'uncaughtException')
+      await c.exited()
+      await Bun.sleep(50)
+    } finally { c.restore() }
+    expect(c.codes).toEqual([1])
+    expect(crashes).toBe(1)
+    expect(stops).toBe(1)
+    expect(c.written.join('')).toContain('second-throw')
+    await c.detached()
+  })
+})
+
 // ─── FJS-747 · a crash under a silent logger still names itself ────────────
 
 describe('crash handlers under a silent logger (FJS-747)', () => {

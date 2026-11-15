@@ -49,6 +49,9 @@ import type { RouteHandler, RouteOptions, WsHandlerSet, HttpMethod } from '../tr
  * timer unref'd the loop empties and node exits **0**, which is what an
  * orchestrator reads as a clean stop (`FJS-693`).
  */
+/** The most of `shutdown.timeout` a crash spends on its `app:crash` listeners (`FJS-D2185`). */
+const CRASH_PING_MS = 3_000
+
 async function withDeadline(work: Promise<unknown>, ms: number, onTimeout: () => void): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<'timeout'>(resolve => { timer = setTimeout(() => resolve('timeout'), ms) })
@@ -1143,14 +1146,31 @@ export function createApp(opts: AppOptions = {}): App {
 
   // A silent logger drops the crash line, and the exit below is 1: the run
   // ends red naming nothing (`FJS-747`). stderr is the floor under the logger.
-  const crashStop = (what: string, err: unknown) => {
+  const crashLine = (what: string, err?: unknown) => {
     logger.error(what, err as Error)
     if (logger.level === 'silent') {
-      const detail = err instanceof Error ? (err.stack ?? err.message) : String(err)
-      process.stderr.write(`${what}\n${detail}\n`)
+      const detail = err === undefined ? '' : `${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`
+      process.stderr.write(`${what}\n${detail}`)
     }
-    const ms = shutdownBudgets(config).timeout
-    withDeadline(app.stop(), ms, () => {})
+  }
+  // `app:crash` listeners run before the drain and inside the same deadline
+  // (`FJS-D2185`): a drain that hangs never reaches a ping queued behind it,
+  // and two budgets in a row would outlast the container's stop grace. A
+  // second throw, from a listener or from the drain, is logged and starts
+  // nothing: two `stop()`s race each other's closes.
+  let _crashing = false
+  const crashStop = (what: string, err: unknown) => {
+    crashLine(what, err)
+    if (_crashing) return
+    _crashing = true
+    const ms      = shutdownBudgets(config).timeout
+    const pingMs  = Math.min(CRASH_PING_MS, ms)
+    const started = Date.now()
+    withDeadline(events.emit('app:crash', { message: what, error: err }), pingMs, () => {
+      crashLine(`[App] app:crash listeners did not finish within ${pingMs}ms — stopping without them`)
+    })
+      .catch(() => {})
+      .then(() => withDeadline(app.stop(), Math.max(0, ms - (Date.now() - started)), () => {}))
       .then(() => process.exit(1))
       .catch(() => process.exit(1))
   }

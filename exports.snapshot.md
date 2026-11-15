@@ -112,11 +112,13 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/email-kit`
 
-`packages/email-kit` · ships `LICENSE` `README.md` `components/` `index.js` `package.json` `render.js`
+`packages/email-kit` · ships `LICENSE` `README.md` `components/` `index.d.ts` `index.js` `package.json` `render.d.ts` `render.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
+| exports | `. (types)` | `index.d.ts` | yes |
 | exports | `. (import)` | `index.js` | yes |
+| exports | `./render (types)` | `render.d.ts` | yes |
 | exports | `./render (import)` | `render.js` | yes |
 | exports | `./components/*.mesa (import)` | `components/*.mesa` | 22 files |
 | main | `main` | `index.js` | yes |
@@ -129,13 +131,20 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
-| exports | `.` | `src/index.js` | yes |
-| exports | `./browser` | `src/browser/index.js` | yes |
-| exports | `./runtime` | `src/runtime/index.js` | yes |
-| exports | `./resources` | `src/resources/index.js` | yes |
-| exports | `./island` | `src/island/index.js` | yes |
-| exports | `./audit` | `src/audit/index.js` | yes |
-| exports | `./junction` | `src/junction/junction-adapter.js` | yes |
+| exports | `. (types)` | `src/index.d.ts` | yes |
+| exports | `. (default)` | `src/index.js` | yes |
+| exports | `./browser (types)` | `src/browser/index.d.ts` | yes |
+| exports | `./browser (default)` | `src/browser/index.js` | yes |
+| exports | `./runtime (types)` | `src/runtime/index.d.ts` | yes |
+| exports | `./runtime (default)` | `src/runtime/index.js` | yes |
+| exports | `./resources (types)` | `src/resources/index.d.ts` | yes |
+| exports | `./resources (default)` | `src/resources/index.js` | yes |
+| exports | `./island (types)` | `src/island/index.d.ts` | yes |
+| exports | `./island (default)` | `src/island/index.js` | yes |
+| exports | `./audit (types)` | `src/audit/index.d.ts` | yes |
+| exports | `./audit (default)` | `src/audit/index.js` | yes |
+| exports | `./junction (types)` | `src/junction/junction-adapter.d.ts` | yes |
+| exports | `./junction (default)` | `src/junction/junction-adapter.js` | yes |
 | bin | `jetty` | `bin/jetty.js` | yes |
 | main | `main` | `src/index.js` | yes |
 
@@ -188,21 +197,33 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | --- | --- | --- | --- |
 | exports | `. (import)` | `src/index.js` | yes |
 | exports | `. (types)` | `src/index.d.ts` | yes |
+| exports | `./engine (types)` | `src/core/engine.d.ts` | yes |
 | exports | `./engine (import)` | `src/core/engine.js` | yes |
+| exports | `./browser (types)` | `src/browser/client.d.ts` | yes |
 | exports | `./browser (import)` | `src/browser/client.js` | yes |
+| exports | `./browser/worker (types)` | `src/browser/worker.d.ts` | yes |
 | exports | `./browser/worker (import)` | `src/browser/worker.js` | yes |
+| exports | `./engines/sqlite-wasm (types)` | `src/engines/sqlite-wasm.d.ts` | yes |
 | exports | `./engines/sqlite-wasm (import)` | `src/engines/sqlite-wasm.js` | yes |
+| exports | `./migrate (types)` | `src/core/migrate.d.ts` | yes |
 | exports | `./migrate (import)` | `src/core/migrate.js` | yes |
 | exports | `./migrations (import)` | `src/core/migrations.js` | yes |
 | exports | `./migrations (types)` | `src/core/migrations.d.ts` | yes |
+| exports | `./parser (types)` | `src/core/parser.d.ts` | yes |
 | exports | `./parser (import)` | `src/core/parser.js` | yes |
+| exports | `./device-schema (types)` | `src/device-schema.d.ts` | yes |
 | exports | `./device-schema (import)` | `src/device-schema.js` | yes |
+| exports | `./import (types)` | `src/import/index.d.ts` | yes |
 | exports | `./import (import)` | `src/import/index.js` | yes |
+| exports | `./jsonschema (types)` | `src/jsonschema.d.ts` | yes |
 | exports | `./jsonschema (import)` | `src/jsonschema.js` | yes |
+| exports | `./export (types)` | `src/export.d.ts` | yes |
 | exports | `./export (import)` | `src/export.js` | yes |
+| exports | `./ddl (types)` | `src/core/ddl.d.ts` | yes |
 | exports | `./ddl (import)` | `src/core/ddl.js` | yes |
 | exports | `./testing (import)` | `src/testing.js` | yes |
 | exports | `./testing (types)` | `src/testing.d.ts` | yes |
+| exports | `./types (types)` | `src/tools/typegen.d.ts` | yes |
 | exports | `./types (import)` | `src/tools/typegen.js` | yes |
 | exports | `./storage (import)` | `src/storage/index.js` | yes |
 | exports | `./storage (types)` | `src/storage/index.d.ts` | yes |
@@ -212,6 +233,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./repl (types)` | `src/tools/repl.d.ts` | yes |
 | exports | `./transform (import)` | `src/transform/framework.js` | yes |
 | exports | `./transform (types)` | `src/transform/framework.d.ts` | yes |
+| exports | `./external-ref (types)` | `src/plugins/external-ref.d.ts` | yes |
 | exports | `./external-ref (import)` | `src/plugins/external-ref.js` | yes |
 | exports | `./references/*` | `references/*` | 12 files |
 | bin | `litestone` | `src/tools/cli.js` | yes |
@@ -239,24 +261,39 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
+| exports | `. (types)` | `src/compiler.d.ts` | yes |
 | exports | `. (import)` | `src/compiler.js` | yes |
+| exports | `./runtime (types)` | `src/runtime.d.ts` | yes |
 | exports | `./runtime (import)` | `src/runtime.js` | yes |
+| exports | `./runtime/terminal (types)` | `src/runtime-terminal.d.ts` | yes |
 | exports | `./runtime/terminal (import)` | `src/runtime-terminal.js` | yes |
+| exports | `./runtime/native (types)` | `src/runtime-native.d.ts` | yes |
 | exports | `./runtime/native (import)` | `src/runtime-native.js` | yes |
+| exports | `./runtime/server (types)` | `src/runtime-server.d.ts` | yes |
 | exports | `./runtime/server (import)` | `src/runtime-server.js` | yes |
+| exports | `./compiler (types)` | `src/compiler.d.ts` | yes |
 | exports | `./compiler (import)` | `src/compiler.js` | yes |
+| exports | `./compiler-md (types)` | `src/compiler-md.d.ts` | yes |
 | exports | `./compiler-md (import)` | `src/compiler-md.js` | yes |
+| exports | `./render (types)` | `src/render.d.ts` | yes |
 | exports | `./render (import)` | `src/render.js` | yes |
+| exports | `./css-inliner (types)` | `src/css-inliner.d.ts` | yes |
 | exports | `./css-inliner (import)` | `src/css-inliner.js` | yes |
+| exports | `./render-component (types)` | `src/render-component.d.ts` | yes |
 | exports | `./render-component (import)` | `src/render-component.js` | yes |
 | exports | `./drive (types)` | `src/drive.d.ts` | yes |
 | exports | `./drive (import)` | `src/drive.js` | yes |
 | exports | `./browser (types)` | `src/browser/browser.d.ts` | yes |
 | exports | `./browser (import)` | `src/browser/index.js` | yes |
+| exports | `./keys (types)` | `src/keys.d.ts` | yes |
 | exports | `./keys (import)` | `src/keys.js` | yes |
+| exports | `./vite (types)` | `mesa-vite/index.d.ts` | yes |
 | exports | `./vite (import)` | `mesa-vite/index.js` | yes |
+| exports | `./vite/client (types)` | `mesa-vite/client.d.ts` | yes |
 | exports | `./vite/client (import)` | `mesa-vite/client.js` | yes |
+| exports | `./vite/swap (types)` | `mesa-vite/swap.d.ts` | yes |
 | exports | `./vite/swap (import)` | `mesa-vite/swap.js` | yes |
+| exports | `./vite/hmr (types)` | `mesa-vite/hmr.d.ts` | yes |
 | exports | `./vite/hmr (import)` | `mesa-vite/hmr.js` | yes |
 | main | `main` | `src/compiler.js` | yes |
 
@@ -280,7 +317,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `src/plugin.ts` | yes |
-| exports | `./routes` | `web/routes.js` | yes |
+| exports | `./routes (types)` | `web/routes.d.ts` | yes |
+| exports | `./routes (default)` | `web/routes.js` | yes |
 | exports | `./orion.lite` | `db/orion.lite` | yes |
 
 - peers — `@frontierjs/junction`: `^0.1.16` · `@frontierjs/litestone`: `^1.1.21` · `@frontierjs/conduit`: `^0.1.10` · `@frontierjs/sierra`: `^0.1.14` · `@frontierjs/ui`: `^0.1.12`
@@ -291,17 +329,28 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
-| exports | `.` | `src/index.js` | yes |
-| exports | `./server` | `src/server.js` | yes |
-| exports | `./docker` | `src/docker.js` | yes |
-| exports | `./swap` | `src/swap.js` | yes |
-| exports | `./dockerfile` | `src/dockerfile.js` | yes |
-| exports | `./doors` | `src/doors.js` | yes |
-| exports | `./static` | `src/static.js` | yes |
-| exports | `./serve` | `src/serve.js` | yes |
-| exports | `./vitals` | `src/vitals.js` | yes |
-| exports | `./cert` | `src/cert.js` | yes |
-| exports | `./layout` | `src/layout.js` | yes |
+| exports | `. (types)` | `src/index.d.ts` | yes |
+| exports | `. (default)` | `src/index.js` | yes |
+| exports | `./server (types)` | `src/server.d.ts` | yes |
+| exports | `./server (default)` | `src/server.js` | yes |
+| exports | `./docker (types)` | `src/docker.d.ts` | yes |
+| exports | `./docker (default)` | `src/docker.js` | yes |
+| exports | `./swap (types)` | `src/swap.d.ts` | yes |
+| exports | `./swap (default)` | `src/swap.js` | yes |
+| exports | `./dockerfile (types)` | `src/dockerfile.d.ts` | yes |
+| exports | `./dockerfile (default)` | `src/dockerfile.js` | yes |
+| exports | `./doors (types)` | `src/doors.d.ts` | yes |
+| exports | `./doors (default)` | `src/doors.js` | yes |
+| exports | `./static (types)` | `src/static.d.ts` | yes |
+| exports | `./static (default)` | `src/static.js` | yes |
+| exports | `./serve (types)` | `src/serve.d.ts` | yes |
+| exports | `./serve (default)` | `src/serve.js` | yes |
+| exports | `./vitals (types)` | `src/vitals.d.ts` | yes |
+| exports | `./vitals (default)` | `src/vitals.js` | yes |
+| exports | `./cert (types)` | `src/cert.d.ts` | yes |
+| exports | `./cert (default)` | `src/cert.js` | yes |
+| exports | `./layout (types)` | `src/layout.d.ts` | yes |
+| exports | `./layout (default)` | `src/layout.js` | yes |
 | bin | `outpost` | `src/index.js` | yes |
 
 ## `@frontierjs/print-kit`
@@ -323,32 +372,55 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
-| exports | `.` | `src/index.js` | yes |
-| exports | `./scanner` | `src/scanner/index.js` | yes |
-| exports | `./build` | `src/build/index.js` | yes |
-| exports | `./router` | `src/router/entry.js` | yes |
-| exports | `./router/internals` | `src/router/internals.js` | yes |
-| exports | `./analytics` | `src/analytics/index.js` | yes |
-| exports | `./resource` | `src/resource/index.js` | yes |
-| exports | `./field-rules` | `src/resource/field-rules.js` | yes |
-| exports | `./islands` | `src/islands/loader.js` | yes |
-| exports | `./fetch` | `src/fetch/index.js` | yes |
-| exports | `./theme` | `src/theme/index.js` | yes |
-| exports | `./postbuild` | `src/postbuild/index.js` | yes |
+| exports | `. (types)` | `src/index.d.ts` | yes |
+| exports | `. (default)` | `src/index.js` | yes |
+| exports | `./scanner (types)` | `src/scanner/index.d.ts` | yes |
+| exports | `./scanner (default)` | `src/scanner/index.js` | yes |
+| exports | `./build (types)` | `src/build/index.d.ts` | yes |
+| exports | `./build (default)` | `src/build/index.js` | yes |
+| exports | `./router (types)` | `src/router/entry.d.ts` | yes |
+| exports | `./router (default)` | `src/router/entry.js` | yes |
+| exports | `./router/internals (types)` | `src/router/internals.d.ts` | yes |
+| exports | `./router/internals (default)` | `src/router/internals.js` | yes |
+| exports | `./analytics (types)` | `src/analytics/index.d.ts` | yes |
+| exports | `./analytics (default)` | `src/analytics/index.js` | yes |
+| exports | `./resource (types)` | `src/resource/index.d.ts` | yes |
+| exports | `./resource (default)` | `src/resource/index.js` | yes |
+| exports | `./field-rules (types)` | `src/resource/field-rules.d.ts` | yes |
+| exports | `./field-rules (default)` | `src/resource/field-rules.js` | yes |
+| exports | `./islands (types)` | `src/islands/loader.d.ts` | yes |
+| exports | `./islands (default)` | `src/islands/loader.js` | yes |
+| exports | `./fetch (types)` | `src/fetch/index.d.ts` | yes |
+| exports | `./fetch (default)` | `src/fetch/index.js` | yes |
+| exports | `./theme (types)` | `src/theme/index.d.ts` | yes |
+| exports | `./theme (default)` | `src/theme/index.js` | yes |
+| exports | `./postbuild (types)` | `src/postbuild/index.d.ts` | yes |
+| exports | `./postbuild (default)` | `src/postbuild/index.js` | yes |
 | exports | `./components/RouterView` | `src/components/RouterView.mesa` | yes |
 | exports | `./components/ChainRenderer` | `src/components/ChainRenderer.mesa` | yes |
 | exports | `./components/SupportBanner` | `src/resource/SupportBanner.mesa` | yes |
-| exports | `./presence` | `src/presence/index.js` | yes |
-| exports | `./devtools` | `src/devtools/index.js` | yes |
-| exports | `./widget` | `src/widget/index.js` | yes |
-| exports | `./widget/serve` | `src/widget/serve.js` | yes |
-| exports | `./widget-headers` | `src/postbuild/widget-headers.js` | yes |
-| exports | `./mcp` | `src/mcp/index.js` | yes |
-| exports | `./site/serve` | `src/site/serve.js` | yes |
-| exports | `./site/compile` | `src/site/compile.js` | yes |
-| exports | `./site/cloudflare` | `src/site/cloudflare.js` | yes |
-| exports | `./check` | `src/build/mesa-check.js` | yes |
-| exports | `./tui` | `src/tools/tui.js` | yes |
+| exports | `./presence (types)` | `src/presence/index.d.ts` | yes |
+| exports | `./presence (default)` | `src/presence/index.js` | yes |
+| exports | `./devtools (types)` | `src/devtools/index.d.ts` | yes |
+| exports | `./devtools (default)` | `src/devtools/index.js` | yes |
+| exports | `./widget (types)` | `src/widget/index.d.ts` | yes |
+| exports | `./widget (default)` | `src/widget/index.js` | yes |
+| exports | `./widget/serve (types)` | `src/widget/serve.d.ts` | yes |
+| exports | `./widget/serve (default)` | `src/widget/serve.js` | yes |
+| exports | `./widget-headers (types)` | `src/postbuild/widget-headers.d.ts` | yes |
+| exports | `./widget-headers (default)` | `src/postbuild/widget-headers.js` | yes |
+| exports | `./mcp (types)` | `src/mcp/index.d.ts` | yes |
+| exports | `./mcp (default)` | `src/mcp/index.js` | yes |
+| exports | `./site/serve (types)` | `src/site/serve.d.ts` | yes |
+| exports | `./site/serve (default)` | `src/site/serve.js` | yes |
+| exports | `./site/compile (types)` | `src/site/compile.d.ts` | yes |
+| exports | `./site/compile (default)` | `src/site/compile.js` | yes |
+| exports | `./site/cloudflare (types)` | `src/site/cloudflare.d.ts` | yes |
+| exports | `./site/cloudflare (default)` | `src/site/cloudflare.js` | yes |
+| exports | `./check (types)` | `src/build/mesa-check.d.ts` | yes |
+| exports | `./check (default)` | `src/build/mesa-check.js` | yes |
+| exports | `./tui (types)` | `src/tools/tui.d.ts` | yes |
+| exports | `./tui (default)` | `src/tools/tui.js` | yes |
 | bin | `sierra` | `src/tools/cli.js` | yes |
 
 - peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0` · `@frontierjs/litestone`: `^1.1.0`
@@ -463,17 +535,24 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/ui`
 
-`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `drag.js` `nav.js` `package.json` `rowlist.js` `selection.js` `stores/` `utils.js`
+`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.d.ts` `controls.js` `dnd.d.ts` `dnd.js` `drag.d.ts` `drag.js` `nav.d.ts` `nav.js` `package.json` `rowlist.d.ts` `rowlist.js` `selection.d.ts` `selection.js` `stores/` `utils.d.ts` `utils.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
-| exports | `./utils` | `utils.js` | yes |
-| exports | `./dnd` | `dnd.js` | yes |
-| exports | `./drag` | `drag.js` | yes |
-| exports | `./nav` | `nav.js` | yes |
-| exports | `./selection` | `selection.js` | yes |
-| exports | `./rowlist` | `rowlist.js` | yes |
-| exports | `./controls` | `controls.js` | yes |
+| exports | `./utils (types)` | `utils.d.ts` | yes |
+| exports | `./utils (default)` | `utils.js` | yes |
+| exports | `./dnd (types)` | `dnd.d.ts` | yes |
+| exports | `./dnd (default)` | `dnd.js` | yes |
+| exports | `./drag (types)` | `drag.d.ts` | yes |
+| exports | `./drag (default)` | `drag.js` | yes |
+| exports | `./nav (types)` | `nav.d.ts` | yes |
+| exports | `./nav (default)` | `nav.js` | yes |
+| exports | `./selection (types)` | `selection.d.ts` | yes |
+| exports | `./selection (default)` | `selection.js` | yes |
+| exports | `./rowlist (types)` | `rowlist.d.ts` | yes |
+| exports | `./rowlist (default)` | `rowlist.js` | yes |
+| exports | `./controls (types)` | `controls.d.ts` | yes |
+| exports | `./controls (default)` | `controls.js` | yes |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
 | exports | `./components/*.mesa` | `components/*.mesa` | 103 files |
 

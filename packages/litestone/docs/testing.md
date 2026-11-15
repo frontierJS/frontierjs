@@ -666,6 +666,9 @@ const seeded  = users.seed(42).buildMany(10)   // deterministic, no DB write
 const custom  = await users.state({ role: 'admin', email: 'custom@test.com' }).createOne()
 ```
 
+`createMany(n)` writes its rows in one transaction, so a row that fails leaves
+none of the batch, and inside a caller's `$transaction` it nests as a savepoint.
+
 `model` is the model name as the schema declares it — **PascalCase singular**
 (`'User'`, not `'users'`); the accessor is derived from it. Factory names in the
 `factories` map follow the accessor (`db.user` → `factories.user`). The `rng` a

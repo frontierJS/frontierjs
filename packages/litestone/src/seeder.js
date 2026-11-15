@@ -660,13 +660,18 @@ export class Factory {
     }
   }
 
+  // One transaction for the batch: on a file database a bare create() is its
+  // own WAL commit, so a loop pays one commit per row (IDEAS/speed-and-footprint.md).
+  // createOne writes through this._db and joins it by async context.
   async createMany(count, overrides = {}) {
-    const rows = []
-    for (let i = 0; i < count; i++) {
-      const o = typeof overrides === 'function' ? overrides(i) : overrides
-      rows.push(await this.createOne(o))
-    }
-    return rows
+    return this._db.$transaction(async () => {
+      const rows = []
+      for (let i = 0; i < count; i++) {
+        const o = typeof overrides === 'function' ? overrides(i) : overrides
+        rows.push(await this.createOne(o))
+      }
+      return rows
+    })
   }
 
   // build()/create() overload on the FIRST argument:

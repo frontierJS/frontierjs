@@ -27,26 +27,26 @@ surface gains an unreached export or loses its last caller, and not on every imp
 
 ```
 27 package(s) · 4551 source file(s) read
-280 entry point(s), 32 imported by nothing outside their package, 14 emitted
+359 entry point(s), 32 imported by nothing outside their package, 14 emitted
 1786 value export(s), 655 reached by nothing outside, 186 emitted
 469 type export(s), 342 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `litestone` | 28 | 5 | 276 | 129 | 44 | 1 | 1 |
+| `litestone` | 41 | 5 | 276 | 129 | 44 | 1 | 1 |
 | `junction` | 28 | 3 | 281 | 120 | 13 | 275 | 212 |
-| `mesa` | 19 | 4 | 327 | 111 | 79 | 0 | 0 |
-| `sierra` | 26 | 6 | 205 | 85 | 21 | 0 | 0 |
+| `mesa` | 34 | 4 | 327 | 111 | 79 | 0 | 0 |
+| `sierra` | 49 | 6 | 205 | 85 | 21 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
 | `toolbelt` | 90 | 0 | 324 | 42 | 12 | 0 | 0 |
-| `ui` | 9 | 0 | 56 | 36 | 3 | 0 | 0 |
-| `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
-| `outpost` | 11 | 1 | 58 | 19 | 1 | 0 | 0 |
+| `ui` | 16 | 0 | 56 | 36 | 3 | 0 | 0 |
+| `jetty` | 14 | 4 | 43 | 29 | 3 | 0 | 0 |
+| `outpost` | 22 | 1 | 58 | 19 | 1 | 0 | 0 |
 | `conduit` | 5 | 1 | 29 | 12 | 0 | 61 | 33 |
 | `site-kit` | 9 | 4 | 36 | 9 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 22 |
-| `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
+| `email-kit` | 5 | 0 | 10 | 4 | 1 | 0 | 0 |
 | `notifications` | 3 | 0 | 16 | 4 | 0 | 30 | 22 |
 | `oracle` | 1 | 0 | 19 | 3 | 2 | 0 | 0 |
 | `caravan` | 1 | 0 | 4 | 1 | 1 | 24 | 21 |
@@ -59,7 +59,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `create-frontier` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `frontierjs-vscode` | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `haven` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| `orion` | 3 | 0 | 2 | 0 | 0 | 9 | 4 |
+| `orion` | 4 | 0 | 2 | 0 | 0 | 9 | 4 |
 | `workbench` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
 ## `@frontierjs/auth`
@@ -132,9 +132,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/email-kit`
 
-`packages/email-kit` · 3 entry point(s) · 10 value, 0 type export(s)
+`packages/email-kit` · 5 entry point(s) · 10 value, 0 type export(s)
 
 **Entries emitted (1):** `.`
+
+**Entries not source (2, not graded):** `.` `./render`
 
 **Unreached values (4):** `COMPONENTS_DIR` `renderEmail` `renderStored` `TEMPLATES_DIR`
 
@@ -156,9 +158,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/jetty`
 
-`packages/jetty` · 7 entry point(s) · 43 value, 0 type export(s)
+`packages/jetty` · 14 entry point(s) · 43 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./browser` `./runtime` `./island` `./audit`
+
+**Entries not source (7, not graded):** `.` `./browser` `./runtime` `./resources` `./island` `./audit` `./junction`
 
 **Unreached values (29):** `_resetPermissionsCache` `bootstrapUnoMirror` `buildRegistration` `closePier` `defineDock` `defineOptions` `definePier` `formatAuditReport` `getActivePort` `getConnectionSignals` `httpOrigin` `injectPageScript` `isFreePermission` `makePageBridge` `makePortName` `onConnectionChange` `openOptions` `openPier` `parsePortName` `PERMISSION_CATALOG` `permissionFor` `PORT_NAME_PATTERN` `readPageNonce` `registerAllIslands` `registerIsland` `reloadIslandTabs` `runAudit` `scanSource` `unregisterIsland`
 
@@ -180,11 +184,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · 28 entry point(s) · 276 value, 1 type export(s)
+`packages/litestone` · 41 entry point(s) · 276 value, 1 type export(s)
 
 **Entries imported by nothing outside (5):** `./engines/sqlite-wasm` `./device-schema` `./import` `./transform` `./external-ref`
 
-**Entries not source (8, not graded):** `.` `./migrations` `./testing` `./storage` `./replicate` `./repl` `./transform` `./references/*`
+**Entries not source (21, not graded):** `.` `./engine` `./browser` `./browser/worker` `./engines/sqlite-wasm` `./migrate` `./migrations` `./parser` `./device-schema` `./import` `./jsonschema` `./export` `./ddl` `./testing` `./types` `./storage` `./replicate` `./repl` `./transform` `./external-ref` `./references/*`
 
 **Unreached values (129):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `describeStanding` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `FILES_ENV` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isSearchModel` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `LEVEL_INTERVALS` `LITESTREAM_MIN` `LITESTREAM_PIN` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `modifiedRefusal` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `REACHABLE_LEVELS` `readScaleConstraint` `recordReplayed` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `replCommands` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError`
 
@@ -204,13 +208,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · 19 entry point(s) · 327 value, 0 type export(s)
+`packages/mesa` · 34 entry point(s) · 327 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./render` `./css-inliner` `./vite/client` `./vite/hmr`
 
 **Entries emitted (2):** `./runtime/native` `./runtime/server`
 
-**Entries not source (2, not graded):** `./drive` `./browser`
+**Entries not source (17, not graded):** `.` `./runtime` `./runtime/terminal` `./runtime/native` `./runtime/server` `./compiler` `./compiler-md` `./render` `./css-inliner` `./render-component` `./drive` `./browser` `./keys` `./vite` `./vite/client` `./vite/swap` `./vite/hmr`
 
 **Unreached values (111):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `boundaryWatchSet` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `fieldRead` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isAnchorComment` `isClient` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locateReported` `locateThrown` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `readSourceMarks` `refer` `removeElements` `renderAll` `renderFailure` `replaceKeyword` `resetAttributeWarnings` `resetDerivedWriteWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `settleAwaits` `shellDeliversBrowserChords` `slotProp` `snippetParam` `spliceEdits` `SPREAD_REFUSED` `stripSourceMarks` `styleSource` `svgElements` `templateSource` `terminalSource` `trackOwners` `unspliceOffset` `unwrapExp` `use_context` `warnRefusedHandler` `warnRefusedMarkup` `warnRefusedName` `withAwaitParam` `withoutWatchedCalls` `writtenOnce` `xBuild` `xNode`
 
@@ -238,17 +242,19 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/orion`
 
-`packages/orion` · 3 entry point(s) · 2 value, 9 type export(s)
+`packages/orion` · 4 entry point(s) · 2 value, 9 type export(s)
 
-**Entries not source (1, not graded):** `./orion.lite`
+**Entries not source (2, not graded):** `./routes` `./orion.lite`
 
 **Unreached types (4):** `FlowTemplate` `NodeCategory` `NodeTypeDescriptor` `OrionOptions`
 
 ## `@frontierjs/outpost`
 
-`packages/outpost` · 11 entry point(s) · 58 value, 0 type export(s)
+`packages/outpost` · 22 entry point(s) · 58 value, 0 type export(s)
 
 **Entries imported by nothing outside (1):** `.`
+
+**Entries not source (11, not graded):** `.` `./server` `./docker` `./swap` `./dockerfile` `./doors` `./static` `./serve` `./vitals` `./cert` `./layout`
 
 **Unreached values (19):** `archivesIn` `BACKUP_SCRIPT` `checkRunConfig` `checkStopGrace` `checkSwap` `createInspector` `createStatic` `digestOfFiles` `DRAIN_MS` `exactCopies` `followLines` `healthyStatus` `logArgs` `repointRoutes` `spawnRun` `spawnStream` `staleTarballs` `validName` `validRelativePath`
 
@@ -266,11 +272,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/sierra`
 
-`packages/sierra` · 26 entry point(s) · 205 value, 0 type export(s)
+`packages/sierra` · 49 entry point(s) · 205 value, 0 type export(s)
 
 **Entries imported by nothing outside (6):** `./scanner` `./fetch` `./components/RouterView` `./components/ChainRenderer` `./check` `./tui`
 
 **Entries emitted (6):** `.` `./router/internals` `./analytics` `./islands` `./devtools` `./mcp`
+
+**Entries not source (23, not graded):** `.` `./scanner` `./build` `./router` `./router/internals` `./analytics` `./resource` `./field-rules` `./islands` `./fetch` `./theme` `./postbuild` `./presence` `./devtools` `./widget` `./widget/serve` `./widget-headers` `./mcp` `./site/serve` `./site/compile` `./site/cloudflare` `./check` `./tui`
 
 **Unreached values (85):** `_deepMerge` `_findCatchAll` `_resetInternals` `_resetMcpApp` `_resetPage` `_resetPresenceHolders` `_scrollMemoryHas` `_scrollMemorySize` `afterNavigate` `allSchemas` `appFailed` `applyHostContext` `buildCommitments` `buildGate` `buildLayoutMap` `buildRelations` `buildTransitions` `buildVersion` `ChainRenderer` `columnList` `commitmentsAt` `COMMITTED_MESSAGE` `COMPATIBILITY_DATE` `configureFetch` `createMemoryHistory` `defaultControlFor` `defaultDisplayFor` `fromFor` `generatedFor` `generateRouteTable` `generateWidgetOrigin` `getComponents` `getDirection` `getLayoutChainForNode` `gitBranch` `hasFileComponent` `hasSchemas` `hmrInvalidate` `isPublicRoute` `isSameDocumentOrigin` `isStaleWrite` `labelFieldInfo` `linkHrefOf` `loadLayoutChain` `mountIsland` `mountView` `normalizeBlanks` `oauthErrorMessage` `offlineStatus` `PAGE_RESERVED` `pathAliases` `pickFilter` `previewAlias` `readFrontmatter` `refusedFor` `registeredDisplays` `registerFileComponent` `registerModule` `renderRouteTable` `resolveHtmlClass` `ResourceHookError` `runPostBuild` `scanAndWrite` `seedDetermined` `setScheme` `sierraFetch` `siteEntry` `STALE_WRITE_MESSAGE` `stampedPage` `stripReadOnly` `submitInPlace` `suggestModel` `toConflict` `toolAnswer` `toolCall` `transitionsAt` `unregisterDisplay` `updateParams` `whenReady` `WORKER_ENTRY` `workerDeployed` `workerName` `WRANGLER_CONFIG` `writeCloudflare` `zoneOnAccount`
 
@@ -308,9 +316,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/ui`
 
-`packages/ui` · 9 entry point(s) · 56 value, 0 type export(s)
+`packages/ui` · 16 entry point(s) · 56 value, 0 type export(s)
 
 **Entries emitted (4):** `./dnd` `./drag` `./selection` `./rowlist`
+
+**Entries not source (7, not graded):** `./utils` `./dnd` `./drag` `./nav` `./selection` `./rowlist` `./controls`
 
 **Unreached values (36):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `fitDropdown` `formControl` `lockedBy` `menuWalk` `nativeValidationGuard` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `sizeClass` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
 

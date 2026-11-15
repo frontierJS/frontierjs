@@ -130,6 +130,21 @@ what they mean in any app.
   derives it from the rendered `width`. `data-original` opts a tag out. It
   refuses a site with `offline` set: Sierra runs config plugins after the
   offline shell digests the pages.
+- `config/search.js` — `siteSearch()`, `dist/search.json` (`FJS-D2188`): per
+  built page `{ url, title, headings, text }`, read from the pages with
+  happy-dom after the dialect check and a preset's steps. `<main>` (the body
+  when a page has none) minus nav, header and footer; headings are the h2-h4
+  with an id outside `.ignore-toc`; text is capped at `TEXT_LIMIT`. `404.html`
+  and a `noindex` page are left out. `url` carries no `base`; the browser adds
+  it. Ahead of `siteImages()`, which stays last.
+- `src/site/` — what a visitor's page loads, as islands a preset places, exported
+  as `@frontierjs/site-kit/site/<Name>.mesa`. `search.js` fetches the index once
+  on first open and answers whole-word `results(query)` (a fuzzy run through a
+  page's text matches almost anything) beside the `pages` the palette ranks.
+  `Search.mesa` is the button, Cmd/Ctrl+K and `/` (not in a field) over
+  `@frontierjs/ui`'s `CommandPalette` (`FJS-D2192`). `Toc.mesa` is the
+  floating outline for a page with `toc: true`, shown after the first scroll.
+  Both want `client:idle`; neither shares state with another island.
 - `fetch/run.js` — `site-kit fetch <dir> <url|sitemap>`: an existing site's
   pages into `content/routes/` as Markdown, `<meta>` as front-matter, and an
   image a config's `transform` names downloaded under `content/public/`. A

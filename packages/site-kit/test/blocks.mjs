@@ -15,10 +15,12 @@ import { parse as parseJs } from 'acorn'
 // a snapshot from install time, so the specifier would test stale compiler code.
 import { compileSource } from '../../mesa/src/compiler.js'
 import { renderComponent } from '../../mesa/src/render-component.js'
+import { excerptOf, patternsOf, searchPages } from '../src/site/search.js'
 
 const ROOT   = fileURLToPath(new URL('..', import.meta.url))
 const BLOCKS = join(ROOT, 'src', 'blocks')
 const LAYOUTS = join(ROOT, 'src', 'layouts')
+const SITE_ISLANDS = join(ROOT, 'src', 'site')
 // Temp render modules land here rather than in mesa's own directory, so a
 // bare import inside a layout (@frontierjs/css) resolves the way the site's does.
 const TMP = join(ROOT, 'test')
@@ -29,7 +31,7 @@ const check = (label, ok, detail = '') => {
   if (!ok) failed.push(label)
 }
 
-const files = [BLOCKS, LAYOUTS].flatMap((dir) =>
+const files = [BLOCKS, LAYOUTS, SITE_ISLANDS].flatMap((dir) =>
   readdirSync(dir).filter((f) => f.endsWith('.mesa')).sort().map((f) => [f, join(dir, f)]))
 for (const [name, path] of files) {
   const src = readFileSync(path, 'utf8')
@@ -110,6 +112,36 @@ for (const [name, path] of files) {
   const classes = await refusal('<Block name="Solution" classes="bg-block margin-y"><p>x</p></Block>')
   check('classes: is refused, pointing at the typed keys and the site stylesheet',
     /classes: "bg-block margin-y" is not read — state template, tone/.test(classes) && /under \.solution/.test(classes), classes)
+}
+
+// ── Search and Toc ───────────────────────────────────────────────────────────
+// Both are islands: the server render is only the button, and what they do
+// needs a browser (test drive). Matching is a plain function, so it is read here.
+{
+  const render = async (tag, name) => (await renderComponent(
+    `<script>import ${name} from './src/site/${name}.mesa'</script>${tag}`,
+    // renderComponent resolves a bare .mesa import from mesa's own folder, where ui is not a dependency.
+    { cwd: ROOT, tmpDir: TMP, filename: `${name}Probe.mesa`, alias: { '@frontierjs/ui': join(ROOT, '..', 'ui') } })).html.replace(/\s+/g, ' ')
+
+  const search = await render('<Search />', 'Search')
+  check('Search renders a labelled button and no palette until asked',
+    /<button[^>]*class="[^"]*\bbtn\b[^"]*"[^>]*aria-label="Search this site"/.test(search) && !/role="dialog"|role="combobox"/.test(search), search)
+  check('Toc renders no outline before it has read the page and a scroll', !/<ol|<nav/.test(await render('<Toc />', 'Toc')))
+
+  const pages = [
+    { url: '/', title: 'Home', headings: [], text: 'Welcome to Acme. We clean offices and homes.' },
+    { url: '/services/', title: 'Services', headings: [{ id: 'deep-cleaning', text: 'Deep Cleaning', level: 2 }],
+      text: 'Our carpet shampooing is thorough. Deep cleaning covers ovens too, and windows are washed by hand.' },
+  ]
+  const urls = (q) => searchPages(pages, q).map((h) => h.url)
+  check('a word in a page\'s text finds that page', urls('carpet').join() === '/services/', urls('carpet').join())
+  check('a heading hit links to the page with its #id', urls('deep cleaning').includes('/services/#deep-cleaning'), urls('deep cleaning').join())
+  check('a word matches whole, not as the start of a longer one', urls('clean').join() === '/', urls('clean').join())
+  check('every word must be present', urls('carpet windows').join() === '/services/' && urls('carpet acme').length === 0)
+  check('a blank query finds nothing', searchPages(pages, '  ').length === 0)
+  check('regex characters in a query are plain letters', searchPages(pages, '(.*').length === 0 && patternsOf('a.c')[0].test('abc') === false)
+  const ex = excerptOf(pages[1].text, patternsOf('windows'))
+  check('an excerpt holds the matched word and is shorter than the page', ex.includes('windows') && ex.length < pages[1].text.length, ex)
 }
 
 if (failed.length) {

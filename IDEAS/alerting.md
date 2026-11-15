@@ -118,6 +118,59 @@ next.
   for its own reasons. If it lands, *a caller was refused N times in a minute* is
   a series and this record inherits it for free.
 
+## Phases
+
+The owner picked two of the four arrangements on 2026-11-15: **outside-in from
+Basecamp** for an app that is down, and **the crash handler rings once** for an
+app that threw. They cover each other's hole. A process that dies before the
+crash handlers install, or hangs without throwing, sends nothing, and Basecamp's
+`Monitor` sees the URL stop answering. A process that throws and restarts inside
+a sweep interval never looks down to a `Monitor`, and the crash handler sees it.
+The other two are not planned: in-app rules (§ The shape) and a dead man's switch
+both wait for an app with no Basecamp to ask for them.
+
+### Phase 0 — Prove what Basecamp already does
+
+Goal: a `Monitor` going down rings a phone today, with no new code.
+Done when: on a local Basecamp with rung 1 (`NTFY_BASE_URL`) pointed at a local listener, a monitored URL stops answering, `monitor-sweep` moves the `Monitor` down, and the listener receives one POST to the workspace's critical topic at priority 5.
+
+- [x] 0.1 Find the drive that already covers `MonitorDown` → push (`packages/basecamp` `verify:*`), and run it. If none does, drive it by hand as the Done line reads. **Done 2026-11-15:** no drive covered it — `api/test/monitor-sweep.test.ts` stops at the queued `notify:deliver`. Driven by hand on `createTestEnv` with rung 1 at a loopback listener and `sweepMonitors` (the job's body) at stated instants: up, then the target stopped, then down on the second failure (`retries: 1`). The listener received one POST to `/fleet-critical-<suffix>` with `Priority: 5`, `Tags: rotating_light`, `Title: Monitor down`, a `Click` to the monitor and the probe's error as the body.
+- [x] 0.2 Anything that does not ring is an `FJS-###` row, and Phase 1 waits on it only if it is in `@frontierjs/notifications`. **Nothing failed to ring; no row filed.**
+
+### Phase 1 — A crash rings once
+
+Goal: a junction app that throws an uncaught error sends one critical ping before it exits, and a crash loop does not ring all night.
+Done when: in `packages/notifications`, an app crashed by an uncaught throw delivers one push through the `ntfy()` driver's `deliver` stub before `process.exit`; a second crash inside the window delivers none; an app with no ntfy settings crashes exactly as it does today.
+
+- [x] 1.1 Rule Q1–Q4. (`FJS-D2184`–`FJS-D2187`)
+- [ ] 1.2 junction: `crashStop` emits the crash on the app's event bus and waits for its listeners under the Q2 cap, before `app.stop()` (per Q4). It runs once: a second throw during the ping does not start a second stop.
+- [ ] 1.3 notifications: listens, sends one push through `ntfy()` to the Q1 address, and keeps the Q3 record.
+- [ ] 1.4 `example`: one drive that crashes the API on purpose against a local listener, run twice inside the window.
+- [ ] 1.5 `packages/notifications/README.md` § the crash ping, and `example/.env.example` names the settings.
+
+## Open questions
+
+- ~~**Q1 — Where does a crash ping go in an app with no Basecamp?**~~ **Answered 2026-11-15 (`FJS-D2184`): A — three settings, all or none: `NTFY_BASE_URL`, `NTFY_TOKEN` (optional on a public server) and `NTFY_TOPIC`. Absent, no ping, and the boot banner says so once.** `app.notify` takes a `User`, and an app has no operator row to name. Basecamp's ladder (`api/src/push.ts`) is Basecamp's own and an app cannot import it.
+  - **A** — three settings, all or none: `NTFY_BASE_URL`, `NTFY_TOKEN` (optional on a public server) and `NTFY_TOPIC`. Absent, no ping, and the boot banner says so once.
+  - **B** — an operator `Recipient` in `notifications` config, delivered through `app.notify` on every transport it has (email too).
+  - **C** — public ntfy.sh by default with a random topic printed at boot, as Basecamp's rung 3.
+  - **Recommend A** — the spelling Basecamp's rung 1 already reads, so an app Basecamp deploys can be handed the same pair later. B is the more complete answer and needs an operator noun nobody has asked for. C publishes to a server the owner did not choose, from an app that never said it wanted pings.
+- ~~**Q2 — How long may the ping hold the exit, and before or after `app.stop()`?**~~ **Answered 2026-11-15 (`FJS-D2185`): A — before `app.stop()`, capped at 3 s and taken out of the shutdown budget (`FJS-D1841`), so ping plus `stop()` is one deadline and `stop()` gets `timeout − 3 s`. A send that fails or runs out of time writes one stderr line and the exit goes on.**
+  - **A** — before `app.stop()`, capped at 3 s and taken out of the shutdown budget (`FJS-D1841`), so ping plus `stop()` is one deadline and `stop()` gets `timeout − 3 s`. A send that fails or runs out of time writes one stderr line and the exit goes on.
+  - **B** — after `app.stop()`, once the drain is done.
+  - **C** — fire and forget. `process.exit` can land before the POST leaves.
+  - **Recommend A** — the drain is what a crash waits on longest, and a `stop()` that hangs never reaches a ping queued behind it. 3 s is one ntfy round trip plus the driver's one `fallback` try. Two caps in a row would be 3 s + 9 s under `fli dev`'s 10 s grace, which is why it is one deadline.
+- ~~**Q3 — What keeps a crash loop from ringing all night?**~~ **Answered 2026-11-15 (`FJS-D2186`): A — one ping per 10 minutes, recorded as a timestamp file beside the main database file, else in the working directory (`:memory:`, or no client). A suppressed ping is counted into the next one (*crashed 14 times since*).** `--restart unless-stopped` brings the app straight back, and memory dies with the process, so a counter in memory sends one ping per restart.
+  - **A** — one ping per 10 minutes, recorded as a timestamp file beside the main database file, else in the working directory (`:memory:`, or no client). A suppressed ping is counted into the next one (*crashed 14 times since*).
+  - **B** — the same window, read from the app's own database.
+  - **C** — no window: one ping per crash.
+  - **Recommend A** — the record that stops the loop must not depend on what may be broken, and the database is the likeliest thing to be. A file needs only a directory the app already writes.
+- ~~**Q4 — Who owns the send?**~~ **Answered 2026-11-15 (`FJS-D2187`): A — junction emits `app:crash` on `app.events` and awaits its listeners; notifications listens.** junction owns the crash (`crashStop`), and notifications owns delivery; junction may not import notifications (`AppNotify`'s header).
+  - **A** — junction emits `app:crash` on `app.events` and awaits its listeners; notifications listens.
+  - **B** — junction calls `app.notify` when a plugin has installed it.
+  - **C** — notifications installs its own `uncaughtException` handler.
+  - **Recommend A** — one owner each (Invariant 4). C is wrong twice: junction installs its handlers only when `listenerCount` is zero, so a plugin's handler would switch junction's drain off and the app would vanish rather than stop. B needs a `User` (Q1) and puts a delivery decision in junction.
+
 ## See also
 
 - `IDEAS/lantern.md` — hole 4, the decision that emits nothing

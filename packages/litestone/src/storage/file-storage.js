@@ -747,6 +747,7 @@ export const FILES_ENV = Object.freeze({
   publicBase:      'FILES_PUBLIC_BASE',
 })
 
+/** @param {Record<string, any>} [config] */
 export function FileStorage(config) {
   return new FileStoragePlugin({ autoResolve: true, ...config })
 }

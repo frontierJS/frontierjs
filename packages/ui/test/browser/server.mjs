@@ -59,7 +59,8 @@ const TOOLBELT = resolve(fileURLToPath(new URL('../../../toolbelt', import.meta.
 // Read off sierra's `exports` for the reason the toolbelt half below is: a
 // hand-written file path stays green until that file moves, and then every form
 // spec dies on an unresolved import reported as "spec threw".
-const FIELD_RULES = JSON.parse(readFileSync(join(SIERRA, 'package.json'), 'utf8')).exports['./field-rules']
+const FIELD_RULES_ENTRY = JSON.parse(readFileSync(join(SIERRA, 'package.json'), 'utf8')).exports['./field-rules']
+const FIELD_RULES = typeof FIELD_RULES_ENTRY === 'string' ? FIELD_RULES_ENTRY : (FIELD_RULES_ENTRY.default ?? FIELD_RULES_ENTRY.import)
 
 // Every toolbelt subpath, read off that package's OWN `exports` rather than
 // listed by hand. The hand list held two kits and `field-rules` grew a third

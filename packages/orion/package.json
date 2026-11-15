@@ -12,7 +12,10 @@
   },
   "exports": {
     ".": "./src/plugin.ts",
-    "./routes": "./web/routes.js",
+    "./routes": {
+      "types": "./web/routes.d.ts",
+      "default": "./web/routes.js"
+    },
     "./orion.lite": "./db/orion.lite"
   },
   "files": [
@@ -25,7 +28,8 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'bun test test'",
+    "test": "node ../../scripts/tmp-run.mjs 'node ../../scripts/emit-types.mjs --check && bun test test'",
+    "types": "node ../../scripts/emit-types.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs",
     "bench": "bun bench/checkpoint.ts"
   },

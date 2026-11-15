@@ -13,8 +13,12 @@
 // Which files are generated is read off `exports`: an entry whose `types` file
 // is absent or opens with HEADER. A `types` file without the header is
 // hand-written and is never touched. In write mode a bare `"./x.js"` entry
-// becomes `{ types, default }`; under `--check` it is a failure, since a new
-// kit added that way is the regression this guards.
+// becomes `{ types, default }` and an `{ import }` one gains `types`; under
+// `--check` either is a failure, since a new kit added that way is the
+// regression this guards.
+//
+// An untyped JS parameter emits as required, so a caller that omits it is
+// TS2554 against the declaration: `/** @param {T} [x] */` on the JS is the fix.
 //
 // The emit runs over a temp copy with every generated file removed: left in
 // place, an import of `./helper.js` resolves to the committed `helper.d.ts`, and
@@ -22,7 +26,7 @@
 
 import { spawnSync }                                  from 'node:child_process'
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync,
-         rmSync, writeFileSync, mkdirSync }           from 'node:fs'
+         rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir }                                     from 'node:os'
 import { basename, dirname, join, relative }          from 'node:path'
 
@@ -74,8 +78,22 @@ function collectRoots(pkg) {
       continue
     }
 
-    const { types, default: entry } = target ?? {}
-    if (typeof types !== 'string' || typeof entry !== 'string' || !entry.endsWith('.js')) continue
+    const { types, import: esm, default: fallback } = target ?? {}
+    const entry = esm ?? fallback
+    if (typeof entry !== 'string' || !entry.endsWith('.js')) continue
+    if (types === undefined) {
+      if (isClassicScript(join(pkgDir, entry))) continue
+      if (check) {
+        problems.push(`exports["${subpath}"] names ${entry} with no types condition — run bun run types`)
+        continue
+      }
+      // `types` leads: conditions match in key order, and tsc stops at the first.
+      pkg.exports[subpath] = { types: entry.replace(/\.js$/, '.d.ts'), ...target }
+      rewrote = true
+      roots.push(entry)
+      continue
+    }
+    if (typeof types !== 'string') continue
     if (types !== entry.replace(/\.js$/, '.d.ts')) continue
     if (isHandWritten(join(pkgDir, types))) continue
     roots.push(entry)
@@ -113,9 +131,16 @@ function emit(roots) {
   try {
     cpSync(pkgDir, copy, { recursive: true, filter: src => !SKIP.has(basename(src)) })
     for (const file of walk(copy)) if (isGenerated(file)) rmSync(file)
+    // The node_modules tsc came from, for bun-types: without node's modules a
+    // re-export from 'fs' emits as nothing, and litestone's #host loses half
+    // its names to every importer.
+    symlinkSync(dirname(dirname(tsc)), join(tmp, 'node_modules'), 'dir')
 
+    // --noCheck: a `// @ts-check` file's type errors are its typecheck's to
+    // report, not a reason to withhold its declarations.
     const run = spawnSync(tsc, [
-      '--allowJs', '--declaration', '--emitDeclarationOnly', '--skipLibCheck',
+      '--allowJs', '--declaration', '--emitDeclarationOnly', '--skipLibCheck', '--noCheck',
+      '--types', 'bun-types',
       '--target', 'ESNext', '--module', 'Preserve', '--moduleResolution', 'bundler',
       '--newLine', 'lf', '--rootDir', '.', '--outDir', out,
       ...roots,
@@ -127,7 +152,10 @@ function emit(roots) {
     for (const file of walk(out)) {
       const rel = relative(out, file)
       const src = './' + basename(rel).replace(/\.d\.ts$/, '.js')
-      files.set(rel, `${HEADER} from ${src} — edit the JS and run bun run types.\n${readFileSync(file, 'utf8')}`)
+      // tsc copies a bin's #! line into its declaration, and below the header
+      // it is a syntax error in every app that imports it.
+      const body = readFileSync(file, 'utf8').replace(/^#!.*\n/, '')
+      files.set(rel, `${HEADER} from ${src} — edit the JS and run bun run types.\n${body}`)
     }
     return files
   } finally {

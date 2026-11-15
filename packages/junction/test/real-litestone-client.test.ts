@@ -1031,3 +1031,47 @@ describe('start over a database that is not the schema\'s', () => {
     expect(await started(db)).toHaveLength(0)
   })
 })
+
+// ─── A bulk create is one transaction with a savepoint per row ────────────────
+//
+// One commit for the request, not one per row (IDEAS/speed-and-footprint.md), and
+// partial success kept: a row that fails rolls back alone, announcements included.
+
+describe('bulk create: one transaction, a savepoint per row', () => {
+  const items = buildService({ name: 'items', model: 'item', allowBulk: true } as never)
+  async function mkItems(): Promise<any> {
+    return await createClient({ db: ':memory:', schema: `model Item { id Int @id; name String @length(1, 10) }` })
+  }
+  const bulk = (db: any, data: unknown[]) =>
+    items.create(ctx(db.asSystem(), { service: 'items', method: 'create', data })) as Promise<{ data: unknown[]; errors: unknown[] }>
+
+  test('a row that fails is reported and the rows around it land', async () => {
+    const db = await mkItems()
+    const out = await bulk(db, [{ id: 1, name: 'a' }, { id: 2, name: 'far too long a name' }, { id: 3, name: 'c' }])
+    expect(out.data).toHaveLength(2)
+    expect(out.errors).toHaveLength(1)
+    expect(await db.asSystem().item.count()).toBe(2)
+  })
+
+  test('only the rows that landed are announced', async () => {
+    const db = await mkItems()
+    const events: unknown[] = []
+    db.$tapEvents((e: { event: string; result: { id: number } }) => { if (e.event === 'create') events.push(e.result.id) })
+    await bulk(db, [{ id: 1, name: 'a' }, { id: 1, name: 'dup' }, { id: 2, name: 'b' }])
+    await new Promise(r => setTimeout(r, 0))
+    expect(events).toEqual([1, 2])
+  })
+
+  test('another writer waits for the batch rather than landing between its rows', async () => {
+    const db = await mkItems()
+    const order: string[] = []
+    db.$tapEvents((e: { event: string; result: { id: number } }) => { if (e.event === 'create') order.push(e.result.id >= 100 ? 'other' : 'bulk') })
+    await Promise.all([
+      bulk(db, Array.from({ length: 20 }, (_, i) => ({ id: i + 1, name: 'n' + i }))),
+      (async () => { await Promise.resolve(); await db.asSystem().item.create({ data: { id: 100, name: 'other' } }) })(),
+    ])
+    await new Promise(r => setTimeout(r, 0))
+    const at = order.indexOf('other')
+    expect(at === 0 || at === order.length - 1).toBe(true)
+  })
+})

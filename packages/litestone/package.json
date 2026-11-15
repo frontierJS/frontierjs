@@ -45,18 +45,23 @@
       "types": "./src/index.d.ts"
     },
     "./engine": {
+      "types": "./src/core/engine.d.ts",
       "import": "./src/core/engine.js"
     },
     "./browser": {
+      "types": "./src/browser/client.d.ts",
       "import": "./src/browser/client.js"
     },
     "./browser/worker": {
+      "types": "./src/browser/worker.d.ts",
       "import": "./src/browser/worker.js"
     },
     "./engines/sqlite-wasm": {
+      "types": "./src/engines/sqlite-wasm.d.ts",
       "import": "./src/engines/sqlite-wasm.js"
     },
     "./migrate": {
+      "types": "./src/core/migrate.d.ts",
       "import": "./src/core/migrate.js"
     },
     "./migrations": {
@@ -64,21 +69,27 @@
       "types": "./src/core/migrations.d.ts"
     },
     "./parser": {
+      "types": "./src/core/parser.d.ts",
       "import": "./src/core/parser.js"
     },
     "./device-schema": {
+      "types": "./src/device-schema.d.ts",
       "import": "./src/device-schema.js"
     },
     "./import": {
+      "types": "./src/import/index.d.ts",
       "import": "./src/import/index.js"
     },
     "./jsonschema": {
+      "types": "./src/jsonschema.d.ts",
       "import": "./src/jsonschema.js"
     },
     "./export": {
+      "types": "./src/export.d.ts",
       "import": "./src/export.js"
     },
     "./ddl": {
+      "types": "./src/core/ddl.d.ts",
       "import": "./src/core/ddl.js"
     },
     "./testing": {
@@ -86,6 +97,7 @@
       "types": "./src/testing.d.ts"
     },
     "./types": {
+      "types": "./src/tools/typegen.d.ts",
       "import": "./src/tools/typegen.js"
     },
     "./storage": {
@@ -105,6 +117,7 @@
       "types": "./src/transform/framework.d.ts"
     },
     "./external-ref": {
+      "types": "./src/plugins/external-ref.d.ts",
       "import": "./src/plugins/external-ref.js"
     },
     "./references/*": "./references/*"
@@ -126,7 +139,8 @@
   },
   "scripts": {
     "dev": "bun src/tools/cli.js",
-    "test": "node ../../scripts/tmp-run.mjs 'bun test test/ && bun bench/statements.mjs'",
+    "test": "node ../../scripts/tmp-run.mjs 'node ../../scripts/emit-types.mjs --check && bun test test/ && bun bench/statements.mjs'",
+    "types": "node ../../scripts/emit-types.mjs",
     "test:watch": "bun test --watch test/",
     "test:smoke": "bun test test/cli-smoke.test.ts",
     "test:browser": "node test/browser/verify-browser-client.mjs",

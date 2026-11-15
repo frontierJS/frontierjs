@@ -1,0 +1,19 @@
+<script module>
+  import { collection } from '@frontierjs/site-kit/collection'
+  import { frontmatter as menu } from '@content/menus/main.md'
+  const steps = collection(import.meta.glob('/content/collections/steps/*.md', { eager: true }))
+</script>
+
+<nav>
+  {#each menu.items as item}
+    <a href={item.link}>{item.name}</a>
+    {#each item.items as sub}<a href={sub.link}>{sub.name}</a>{/each}
+  {/each}
+  {#each menu.items.map((i) => ({ ...i, name: i.name + '!' })) as loud}<i>{loud.name}</i><s>{loud.link}</s>{/each}
+</nav>
+<slot />
+<ol>
+  {#each steps as { slug, frontmatter, Body }}
+    <li data-slug={slug}><b>{frontmatter.title}</b><Body /></li>
+  {/each}
+</ol>

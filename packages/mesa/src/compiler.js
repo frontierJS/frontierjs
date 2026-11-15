@@ -1793,6 +1793,9 @@ export function xNode(type, ...args) {
   this.$done = false
   this.$inserted = false
   this.$result = []
+  // Typed, or tsc reads this function as a class (it assigns this.value) and
+  // the declaration emit fails on the private name.
+  /** @type {(value?: any) => void} */
   this.$setValue = function (value = true) {
     assert(!this.$done, 'setValue on resolved node')
     if (typeof value === 'object') Object.assign(this, value)

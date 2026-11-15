@@ -5,38 +5,108 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.js",
-    "./scanner": "./src/scanner/index.js",
-    "./build": "./src/build/index.js",
-    "./router": "./src/router/entry.js",
-    "./router/internals": "./src/router/internals.js",
-    "./analytics": "./src/analytics/index.js",
-    "./resource": "./src/resource/index.js",
-    "./field-rules": "./src/resource/field-rules.js",
-    "./islands": "./src/islands/loader.js",
-    "./fetch": "./src/fetch/index.js",
-    "./theme": "./src/theme/index.js",
-    "./postbuild": "./src/postbuild/index.js",
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./scanner": {
+      "types": "./src/scanner/index.d.ts",
+      "default": "./src/scanner/index.js"
+    },
+    "./build": {
+      "types": "./src/build/index.d.ts",
+      "default": "./src/build/index.js"
+    },
+    "./router": {
+      "types": "./src/router/entry.d.ts",
+      "default": "./src/router/entry.js"
+    },
+    "./router/internals": {
+      "types": "./src/router/internals.d.ts",
+      "default": "./src/router/internals.js"
+    },
+    "./analytics": {
+      "types": "./src/analytics/index.d.ts",
+      "default": "./src/analytics/index.js"
+    },
+    "./resource": {
+      "types": "./src/resource/index.d.ts",
+      "default": "./src/resource/index.js"
+    },
+    "./field-rules": {
+      "types": "./src/resource/field-rules.d.ts",
+      "default": "./src/resource/field-rules.js"
+    },
+    "./islands": {
+      "types": "./src/islands/loader.d.ts",
+      "default": "./src/islands/loader.js"
+    },
+    "./fetch": {
+      "types": "./src/fetch/index.d.ts",
+      "default": "./src/fetch/index.js"
+    },
+    "./theme": {
+      "types": "./src/theme/index.d.ts",
+      "default": "./src/theme/index.js"
+    },
+    "./postbuild": {
+      "types": "./src/postbuild/index.d.ts",
+      "default": "./src/postbuild/index.js"
+    },
     "./components/RouterView": "./src/components/RouterView.mesa",
     "./components/ChainRenderer": "./src/components/ChainRenderer.mesa",
     "./components/SupportBanner": "./src/resource/SupportBanner.mesa",
-    "./presence": "./src/presence/index.js",
-    "./devtools": "./src/devtools/index.js",
-    "./widget": "./src/widget/index.js",
-    "./widget/serve": "./src/widget/serve.js",
-    "./widget-headers": "./src/postbuild/widget-headers.js",
-    "./mcp": "./src/mcp/index.js",
-    "./site/serve": "./src/site/serve.js",
-    "./site/compile": "./src/site/compile.js",
-    "./site/cloudflare": "./src/site/cloudflare.js",
-    "./check": "./src/build/mesa-check.js",
-    "./tui": "./src/tools/tui.js"
+    "./presence": {
+      "types": "./src/presence/index.d.ts",
+      "default": "./src/presence/index.js"
+    },
+    "./devtools": {
+      "types": "./src/devtools/index.d.ts",
+      "default": "./src/devtools/index.js"
+    },
+    "./widget": {
+      "types": "./src/widget/index.d.ts",
+      "default": "./src/widget/index.js"
+    },
+    "./widget/serve": {
+      "types": "./src/widget/serve.d.ts",
+      "default": "./src/widget/serve.js"
+    },
+    "./widget-headers": {
+      "types": "./src/postbuild/widget-headers.d.ts",
+      "default": "./src/postbuild/widget-headers.js"
+    },
+    "./mcp": {
+      "types": "./src/mcp/index.d.ts",
+      "default": "./src/mcp/index.js"
+    },
+    "./site/serve": {
+      "types": "./src/site/serve.d.ts",
+      "default": "./src/site/serve.js"
+    },
+    "./site/compile": {
+      "types": "./src/site/compile.d.ts",
+      "default": "./src/site/compile.js"
+    },
+    "./site/cloudflare": {
+      "types": "./src/site/cloudflare.d.ts",
+      "default": "./src/site/cloudflare.js"
+    },
+    "./check": {
+      "types": "./src/build/mesa-check.d.ts",
+      "default": "./src/build/mesa-check.js"
+    },
+    "./tui": {
+      "types": "./src/tools/tui.d.ts",
+      "default": "./src/tools/tui.js"
+    }
   },
   "bin": {
     "sierra": "./src/tools/cli.js"
   },
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'vitest run && node bench/run.mjs && bun test test/doc-examples.test.js'",
+    "test": "node ../../scripts/tmp-run.mjs 'node ../../scripts/emit-types.mjs --check && vitest run && node bench/run.mjs && bun test test/doc-examples.test.js'",
+    "types": "node ../../scripts/emit-types.mjs",
     "bench": "node bench/run.mjs",
     "test:safety": "bun test/static-safety-real.mjs && bun test/filter-operators-real.mjs",
     "test:installable": "node test/browser/installable.mjs",

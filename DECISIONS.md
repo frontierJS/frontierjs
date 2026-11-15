@@ -9218,6 +9218,34 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2187"></a>2026-11-15 · `FJS-D2187` — Q4 — Who owns the send — Junction emits `app:crash` on `app.events` and awaits its listeners; notifications listens.
+
+Asked in [`IDEAS/alerting.md`](IDEAS/alerting.md) § Open questions. **A** was picked over **B** (junction calls `app.notify` when a plugin has installed it), **C** (notifications installs its own `uncaughtException` handler).
+
+The paper's recommendation, taken as written: one owner each (Invariant 4). C is wrong twice: junction installs its handlers only when `listenerCount` is zero, so a plugin's handler would switch junction's drain off and the app would vanish rather than stop. B needs a `User` (Q1) and puts a delivery decision in junction.
+
+### <a id="fjs-d2186"></a>2026-11-15 · `FJS-D2186` — Q3 — What keeps a crash loop from ringing all night — One ping per 10 minutes, recorded as a timestamp file beside the main database file, else in the working directory (`:memory:`, or no client). A suppressed ping is counted into the next one (*crashed 14 times since*).
+
+Asked in [`IDEAS/alerting.md`](IDEAS/alerting.md) § Open questions. **A** was picked over **B** (the same window, read from the app's own database), **C** (no window: one ping per crash).
+
+The paper's recommendation, taken as written: the record that stops the loop must not depend on what may be broken, and the database is the likeliest thing to be. A file needs only a directory the app already writes.
+
+### <a id="fjs-d2185"></a>2026-11-15 · `FJS-D2185` — Q2 — How long may the ping hold the exit, and before or after `app.stop()` — Before `app.stop()`, capped at 3 s and taken out of the shutdown budget (`FJS-D1841`), so ping plus `stop()` is one deadline and `stop()` gets `timeout − 3 s`. A send that fails or runs out of time writes one stderr line and the exit goes on.
+
+Asked in [`IDEAS/alerting.md`](IDEAS/alerting.md) § Open questions. **A** was picked over **B** (after `app.stop()`, once the drain is done), **C** (fire and forget. `process.exit` can land before the POST leaves).
+
+The paper's recommendation, taken as written: the drain is what a crash waits on longest, and a `stop()` that hangs never reaches a ping queued behind it. 3 s is one ntfy round trip plus the driver's one `fallback` try. Two caps in a row would be 3 s + 9 s under `fli dev`'s 10 s grace, which is why it is one deadline.
+
+### <a id="fjs-d2184"></a>2026-11-15 · `FJS-D2184` — Q1 — Where does a crash ping go in an app with no Basecamp — Three settings, all or none: `NTFY_BASE_URL`, `NTFY_TOKEN` (optional on a public server) and `NTFY_TOPIC`. Absent, no ping, and the boot banner says so once.
+
+Asked in [`IDEAS/alerting.md`](IDEAS/alerting.md) § Open questions. **A** was picked over **B** (an operator `Recipient` in `notifications` config, delivered through `app.notify` on every transport it has (email too)), **C** (public ntfy.sh by default with a random topic printed at boot, as Basecamp's rung 3).
+
+The paper's recommendation, taken as written: the spelling Basecamp's rung 1 already reads, so an app Basecamp deploys can be handed the same pair later. B is the more complete answer and needs an operator noun nobody has asked for. C publishes to a server the owner did not choose, from an app that never said it wanted pings.
+
+### <a id="fjs-d2183"></a>2026-11-15 · `FJS-D2183` — Is the `/mcp` rate limit on by default, and at what budget — On, 120 calls a minute per principal (the signed-in user, else the address), through junction's `rateLimitHook`; `mcp({ rateLimit: { max, window } })` moves it and `rateLimit: false` turns it off.
+
+Settles what `FJS-D703` left open: whether the limit is on with no option, and the number. Asked by the owner in chat after a readiness report named *the agent surface without a default limit* as a self-inflicted outage. **On at 120/min** was picked over **off, scaffolded into config** (an app built before the scaffold, or by hand, carries no limit), **60/min** (a bulk read job trips it) and **600/min** (a write loop gets a minute of damage before it is stopped). 120/min passes an agent making one call per turn and a short burst of reads, and stops a loop inside a minute. Devtools' `app.mcp.answer` is not counted: a person at the console, not an agent on the wire. Built in `packages/mcp/src/plugin.ts`, proved in `packages/mcp/test/plugin.test.ts` § a principal is held to a budget.
+
 ### <a id="fjs-d2182"></a>2026-11-15 · `FJS-D2182` — Q3 — Does Basecamp adopt `release-transitions.md` invariant 2's pinned secret reference, and what does a revert do when the pinned version is revoked — As A, plus a rotation marks the version it replaced as revoked. A rollback that would restore a revoked version refuses by name, and the refusal offers *roll back with today's value* as the explicit way out.
 
 Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **C** was picked over **A** (Adopt it as written. `Variable` keeps versions, `configSnapshot` records the version, and a rollback restores that reference), **B** (Keep today's behavior (current value) and amend invariant 2 for Basecamp. Document it on the rollback screen the way Coolify and Fly do).
@@ -14301,6 +14329,36 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2192"></a>2026-11-15 · `FJS-D2192` — Q5 — The component the one palette is built on — `@frontierjs/ui`'s `CommandPalette`, already Basecamp's, Workbench's and the example's, over `toolbelt/search`.
+
+Asked in [`IDEAS/site-search.md`](IDEAS/site-search.md) § Open questions. **A** was picked over **B** (site-kit's `Palette.mesa`, moved out of the editor and switched to `rank()`).
+
+The paper's recommendation, taken as written: B leaves the repo with two palette components.
+
+### <a id="fjs-d2191"></a>2026-11-15 · `FJS-D2191` — Q4 — The owner's palette and the visitor's — One palette; the editor adds its groups to it.
+
+Asked in [`IDEAS/site-search.md`](IDEAS/site-search.md) § Open questions. **A** was picked over **B** (two; the editor's takes Cmd+K while signed in).
+
+The paper's recommendation, taken as written: two palettes is the fork site-kit exists to prevent.
+
+### <a id="fjs-d2190"></a>2026-11-15 · `FJS-D2190` — Q3 — What it lists beside results — Pages.
+
+Asked in [`IDEAS/site-search.md`](IDEAS/site-search.md) § Open questions. **A** was picked over **B** (pages and this page's sections), **C** (pages, sections and contact actions (call, book)).
+
+Against the recommendation (**C**): the owner kept the first version to pages and results; this page's sections are the table of contents' job, and contact actions can join later as one more group.
+
+### <a id="fjs-d2189"></a>2026-11-15 · `FJS-D2189` — Q2 — How a visitor opens it — Cmd/Ctrl+K and `/`, and a header button the preset places.
+
+Asked in [`IDEAS/site-search.md`](IDEAS/site-search.md) § Open questions. **A** was picked over **B** (the keys only), **C** (a site.md setting turns it on).
+
+The paper's recommendation, taken as written: a phone has no Cmd+K.
+
+### <a id="fjs-d2188"></a>2026-11-15 · `FJS-D2188` — Q1 — Where visitor search gets its data — Site-kit writes its own JSON index at build and ranks it with `@frontierjs/toolbelt/search`.
+
+Asked in [`IDEAS/site-search.md`](IDEAS/site-search.md) § Open questions. **A** was picked over **B** (Pagefind, a chunked WASM index (Starlight's)), **C** (MiniSearch over the same JSON (VitePress's local search)).
+
+The paper's recommendation, taken as written: client sites are tens of pages, the toolbelt already owns fuzzy ranking, and neither B nor C is a dependency a site that size needs.
+
 ### <a id="fjs-d2177"></a>2026-11-15 · `FJS-D2177` — Q6 — What happens when the DOM and the compiled walk disagree — Fail closed: abort adoption for that root, replace as today, and report it through the dev overlay.
 
 Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) § Open questions. **A** was picked over **B** (Adopt what matches and bind the rest by best guess).
@@ -17566,6 +17624,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1370"></a>2026-11-15 · `FJS-D1370` — Does enabling deploy on push register the hook on the forge, and with whose credential, or is pasting the shown URL the design — Pasting is the design: the screen shows the URL, secret and token URL once (CapRover's and Cloudflare's deploy-hook shape, `FJS-D884`), and `createWebhook` leaves `IGit` since nothing calls it. No credential held, nothing to rotate on a forge.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (a ForgejoGit behind `IGit` (the `TODO: if (cfg.git?.url)` in `providers/index.ts`): `createWebhook` gains the secret, `enablePush` registers on Basecamp's own forge when the repo URL is that host and `disablePush` deletes the hook. One host, one installation-level token; every other host still pastes), **B** (a per-workspace forge connection (a `Secret` of kind `forge_token` per host, like `provider_key` for a compute account, `FJS-D558`): `enablePush` registers on whichever host `source.repo` names through a GitHub/Forgejo/Gitea dialect, `disablePush` removes it. Coins a noun and a screen to hold the token; covers customers' repos).
+
+The paper's recommendation, taken as written: (confidence 3) — a token able to write hooks on a customer's repository is a bigger secret to hold than the one it saves a paste of, the token URL already serves a forge that signs nothing, and B can be added later as a convenience without moving anything built here. Coolify already ships paste-the-webhook as its fallback beside an automatic GitHub App path, the same layering as C now and B later. - **Prior art** (read 2026-11-01) — Coolify registers nothing itself for public repositories and deploy-key repositories: you copy its webhook URL, set a webhook secret, and create the hook at the provider ([docs](https://coolify.io/docs/applications/ci-cd/github/auto-deploy)). Its GitHub App path configures events automatically. Vercel registers hooks through an installed GitHub App holding `Web Hooks` write permission ([docs](https://vercel.com/docs/git/vercel-for-github)). Automatic registration needs a per-forge app, which is B's cost, and paste stays the fallback everywhere.
 
 ### <a id="fjs-d2180"></a>2026-11-15 · `FJS-D2180` — When a question is ruled, who removes the `blocked by` marker it left on each row — `fli decide` removes the marker from every row the question held up, in the same write as the ruling. `register:check` is unchanged.
 

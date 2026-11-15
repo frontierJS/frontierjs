@@ -25,7 +25,8 @@ const pkg  = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const doc  = readFileSync(join(ROOT, 'AGENTS.md'), 'utf8')
 
 function resolveExport(subpath) {
-  for (const [key, target] of Object.entries(pkg.exports)) {
+  for (const [key, entry] of Object.entries(pkg.exports)) {
+    const target = typeof entry === 'string' ? entry : (entry.import ?? entry.default)
     if (!key.includes('*')) { if (key === subpath) return target; continue }
     const [pre, post] = key.split('*')
     if (subpath.startsWith(pre) && subpath.endsWith(post) && subpath.length >= pre.length + post.length)

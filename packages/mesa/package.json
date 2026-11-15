@@ -8,33 +8,43 @@
   "module": "./src/compiler.js",
   "exports": {
     ".": {
+      "types": "./src/compiler.d.ts",
       "import": "./src/compiler.js"
     },
     "./runtime": {
+      "types": "./src/runtime.d.ts",
       "import": "./src/runtime.js"
     },
     "./runtime/terminal": {
+      "types": "./src/runtime-terminal.d.ts",
       "import": "./src/runtime-terminal.js"
     },
     "./runtime/native": {
+      "types": "./src/runtime-native.d.ts",
       "import": "./src/runtime-native.js"
     },
     "./runtime/server": {
+      "types": "./src/runtime-server.d.ts",
       "import": "./src/runtime-server.js"
     },
     "./compiler": {
+      "types": "./src/compiler.d.ts",
       "import": "./src/compiler.js"
     },
     "./compiler-md": {
+      "types": "./src/compiler-md.d.ts",
       "import": "./src/compiler-md.js"
     },
     "./render": {
+      "types": "./src/render.d.ts",
       "import": "./src/render.js"
     },
     "./css-inliner": {
+      "types": "./src/css-inliner.d.ts",
       "import": "./src/css-inliner.js"
     },
     "./render-component": {
+      "types": "./src/render-component.d.ts",
       "import": "./src/render-component.js"
     },
     "./drive": {
@@ -46,23 +56,29 @@
       "import": "./src/browser/index.js"
     },
     "./keys": {
+      "types": "./src/keys.d.ts",
       "import": "./src/keys.js"
     },
     "./vite": {
+      "types": "./mesa-vite/index.d.ts",
       "import": "./mesa-vite/index.js"
     },
     "./vite/client": {
+      "types": "./mesa-vite/client.d.ts",
       "import": "./mesa-vite/client.js"
     },
     "./vite/swap": {
+      "types": "./mesa-vite/swap.d.ts",
       "import": "./mesa-vite/swap.js"
     },
     "./vite/hmr": {
+      "types": "./mesa-vite/hmr.d.ts",
       "import": "./mesa-vite/hmr.js"
     }
   },
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && node test/browser/kit/run.mjs && node test/browser/drive/run.mjs && bun test/terminal/run.mjs && node test/native/run.mjs && node bench/run.mjs --gate'",
+    "test": "node ../../scripts/tmp-run.mjs 'node ../../scripts/emit-types.mjs --check && vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && node test/browser/kit/run.mjs && node test/browser/drive/run.mjs && bun test/terminal/run.mjs && node test/native/run.mjs && node bench/run.mjs --gate'",
+    "types": "node ../../scripts/emit-types.mjs",
     "test:watch": "vitest",
     "test:docs": "vitest run test/doc-examples.test.js",
     "test:browser": "node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && node test/browser/kit/run.mjs && node test/browser/drive/run.mjs",

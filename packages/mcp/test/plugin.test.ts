@@ -298,6 +298,55 @@ describe('a @system transition is offered only where a method lifts it (FJS-1925
 
 // ─── an app's own narrowing ──────────────────────────────────────────────────
 
+// ─── the rate limit ───────────────────────────────────────────────────────────
+
+// Apps of their own, so a budget spent here is not one the suite above draws on.
+describe('a principal is held to a budget (FJS-D703, FJS-D2183)', () => {
+  const apps: App[] = []
+  afterAll(async () => { for (const a of apps) await a.stop?.() })
+
+  async function serve(rateLimit?: { max: number; window: string } | false) {
+    const db = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: '0'.repeat(64) }) as Record<string, never>
+    const own = createApp({
+      db, auth: createStubAuth({ users: [{ id: 'staff', isAdmin: true }, { id: 'shopper' }] }),
+      config:   { port: 0, database: { url: '', log: false } },
+      logLevel: 'silent',
+    }) as never as App
+    own.services.register(createService({ name: 'customers', model: 'Customer', methods: ['find'] }))
+    own.configure(mcp({ name: 'shop', ...(rateLimit === undefined ? {} : { rateLimit }) }))
+    await own.start()
+    apps.push(own)
+    const url = `http://localhost:${own.http.port}/mcp`
+    return (who?: string) => fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream',
+                 ...(who ? { authorization: `Bearer test-token-${who}` } : {}) },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+    })
+  }
+
+  test('past its budget a caller is answered 429 with when to retry, and another caller is not', async () => {
+    const speak = await serve({ max: 2, window: '1 minute' })
+    expect((await speak('shopper')).status).toBe(200)
+    expect((await speak('shopper')).status).toBe(200)
+    const over = await speak('shopper')
+    expect(over.status).toBe(429)
+    expect(((await over.json()) as { data: { retryAfter: number } }).data.retryAfter).toBeGreaterThan(0)
+    expect((await speak('staff')).status).toBe(200)
+  })
+
+  test('on with no option: the 121st call in a minute is refused', async () => {
+    const speak = await serve()
+    for (let i = 0; i < 120; i++) expect((await speak('shopper')).status).toBe(200)
+    expect((await speak('shopper')).status).toBe(429)
+  })
+
+  test('false turns it off', async () => {
+    const speak = await serve(false)
+    for (let i = 0; i < 125; i++) expect((await speak('shopper')).status).toBe(200)
+  })
+})
+
 describe('narrow withholds what a standing cannot say (FJS-D407)', () => {
 
   // A read-only credential for staff alone — the shape of an API key's scopes.

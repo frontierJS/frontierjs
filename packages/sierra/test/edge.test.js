@@ -167,7 +167,7 @@ describe('sierra edge (FJS-D649)', () => {
 
   it('every battery has a subpath', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
-    const targets = Object.values(pkg.exports).map(t => relative(SRC, resolve(ROOT, t)))
+    const targets = Object.values(pkg.exports).map(t => relative(SRC, resolve(ROOT, typeof t === 'string' ? t : t.default)))
     const without = [...Object.keys(BATTERIES), ...Object.keys(BATTERY_FILES)]
       .filter(b => !targets.some(t => covers(t, b)))
     expect(without).toEqual([])

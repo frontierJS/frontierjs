@@ -16,6 +16,7 @@
     "./check/schema/*": "./check/schema/*.js",
     "./blocks/*.mesa": "./src/blocks/*.mesa",
     "./layouts/*.mesa": "./src/layouts/*.mesa",
+    "./site/*.mesa": "./src/site/*.mesa",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -38,6 +39,7 @@
     "@frontierjs/mesa": "*",
     "@frontierjs/sierra": "*",
     "@frontierjs/toolbelt": "*",
+    "@frontierjs/ui": "*",
     "vite": "^8.3.2"
   },
   "devDependencies": {

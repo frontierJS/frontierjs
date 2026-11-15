@@ -30,30 +30,34 @@ that claimed the strong check while holding the weak one would be worse than no 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
 | `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | 34 |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 19 |
-| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 14 |
-| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 11 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 20 |
+| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 15 |
+| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 13 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 13 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 11 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 10 |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 9 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 8 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
+| `$setAuth(user)` | `packages/litestone/src/core/client.js` | 7 |
 | `app.conduit.mirror(claim)` | `packages/conduit/src/mirror.ts` | 7 |
-| `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
-| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 5 |
-| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 5 |
+| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 6 |
+| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 6 |
+| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | 5 |
+| `island(anchor, Comp, props, block, meta)` | `packages/mesa/src/runtime.js` | 5 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 4 |
-| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | 4 |
 | `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 4 |
 | `signRequest()` | `packages/toolbelt/src/signature/signature.js` | 4 |
 | `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 4 |
-| `island(anchor, Comp, props, block, meta)` | `packages/mesa/src/runtime.js` | 3 |
+| `db.$readAs(accessor, row, principal)` | `packages/litestone/src/core/client.js` | 3 |
+| `db.$primaryKey(accessor)` | `packages/litestone/src/core/client.js` | 3 |
+| `db.$mirrorKey(accessor)` | `packages/litestone/src/core/client.js` | 3 |
+| `db.$claimsFor(principal)` | `packages/litestone/src/core/client.js` | 3 |
 
 ## Data → API
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
-| `$setAuth(user)` / `asSystem()` | `packages/litestone/src/core/client.js` | yes | 6 |
+| `$setAuth(user)` / `asSystem()` | `packages/litestone/src/core/client.js` | yes | 7 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | yes | 4 |
 | `withLitestoneDb(db)` | `packages/junction/src/core/litestone.ts` | yes | 1 |
 | `gateAuth()` | `packages/junction/src/core/litestone.ts` | yes | — |
@@ -64,41 +68,41 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `toDataPrincipal(user)` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `bearerClaim({ from, model, column, claims, key, subject, session })` / `BEARER` / `bearerOf(ctx, model)` | `packages/junction/src/core/bearer.ts` | yes | — |
 | `bearerClaim(...).mint(db, data)` / `.mintOnCreate()` / `.redeem(db)` | `packages/junction/src/core/bearer.ts` | yes | — |
-| `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` | `packages/litestone/src/core/tenancy.js` | yes | — |
+| `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` | `packages/litestone/src/core/tenancy.js` | yes | 1 |
 | `accessorCandidates()` | `packages/junction/src/core/litestone.ts` | yes | — |
-| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 5 |
-| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | yes | 5 |
+| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 6 |
+| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | yes | 6 |
 | `nearest(word, candidates)` / `nearestAll` | `packages/toolbelt/src/typo/typo.js` | yes | 2 |
-| `db.$readAs(accessor, row, principal)` | `packages/litestone/src/core/client.js` | yes | 2 |
+| `db.$readAs(accessor, row, principal)` | `packages/litestone/src/core/client.js` | yes | 3 |
 | `db.$checkWrite(accessor, op, row, changes?)` | `packages/litestone/src/core/client.js` | yes | 2 |
 | `db.$levelOf(accessor?, principal?)` | `packages/litestone/src/core/client.js` | yes | 2 |
-| `db.$primaryKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 2 |
-| `db.$mirrorKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 2 |
-| `db.$claimsFor(principal)` | `packages/litestone/src/core/client.js` | yes | 2 |
-| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | yes | 4 |
+| `db.$primaryKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 3 |
+| `db.$mirrorKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 3 |
+| `db.$claimsFor(principal)` | `packages/litestone/src/core/client.js` | yes | 3 |
+| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | yes | 5 |
 ## Schema → API/UI
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
-| `generateJsonSchema(schema)` | `packages/litestone/src/jsonschema.js` | yes | — |
+| `generateJsonSchema(schema)` | `packages/litestone/src/jsonschema.js` | yes | 1 |
 | `ctx.system` | `packages/junction/src/core/context.ts` | mentions `system` — weak | — |
 | `ctx.transients` | `packages/junction/src/core/litestone.ts` | mentioned | — |
 | `ServiceTypes` | `packages/litestone/src/tools/typegen.js` | mentioned | — |
 | `@label` | `packages/litestone/src/jsonschema.js` | mentioned | — |
-| `buildFieldRules()` / `validateAgainstFields()` / `coerceToSchema()` / `normalizeBlanks()` | `packages/sierra/src/resource/field-rules.js` | yes | — |
-| `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` | `packages/sierra/src/resource/field-rules.js` | yes | — |
-| `labelFieldInfo(fields, fallback, declared)` | `packages/sierra/src/resource/field-rules.js` | yes | — |
+| `buildFieldRules()` / `validateAgainstFields()` / `coerceToSchema()` / `normalizeBlanks()` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
+| `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
+| `labelFieldInfo(fields, fallback, declared)` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
 | `x-values` | `packages/litestone/src/jsonschema.js` | mentioned | — |
-| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | yes | 11 |
-| `toFieldErrors(err)` | `packages/sierra/src/resource/field-rules.js` | yes | — |
+| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | yes | 13 |
+| `toFieldErrors(err)` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
 | `$context.form` | `packages/ui/components/forms/Form.mesa` | mentions `form` — weak | — |
-| `buildRelations()` / `buildGate()` / `canAtLevel()` | `packages/sierra/src/resource/field-rules.js` | yes | — |
+| `buildRelations()` / `buildGate()` / `canAtLevel()` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
 | `x-version` | `packages/litestone/src/jsonschema.js` | mentioned | — |
 | `x-rank` | `packages/litestone/src/jsonschema.js` | mentioned | — |
 | `retryable` | `packages/junction/src/core/errors.ts` | mentioned | — |
-| `buildTransitions()` / `transitionsAt()` | `packages/sierra/src/resource/field-rules.js` | yes | — |
-| `buildCommitments()` / `commitmentsAt()` | `packages/sierra/src/resource/field-rules.js` | yes | — |
-| `modelNameFor()` / `schemaFor()` | `packages/sierra/src/resource/schema-registry.js` | yes | — |
+| `buildTransitions()` / `transitionsAt()` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
+| `buildCommitments()` / `commitmentsAt()` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
+| `modelNameFor()` / `schemaFor()` | `packages/sierra/src/resource/schema-registry.js` | yes | 1 |
 | `authUserModel(db)` / `authMachineryModels(db)` | `packages/auth/schema.ts` | yes | — |
 | `extend model X { … }` | `packages/litestone/src/core/parser.js` | mentions `extend` — weak | — |
 | `attachments` | `packages/junction/src/core/attachments.ts` | mentioned | — |
@@ -149,9 +153,9 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `wsSend()` / `flushSendQueue()` | `packages/junction/src/transport/send-queue.ts` | yes | 2 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | yes | 8 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
-| `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
-| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 14 |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 19 |
+| `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | 1 |
+| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 15 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 20 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |
@@ -166,10 +170,10 @@ that claimed the strong check while holding the weak one would be worse than no 
 | --- | --- | --- | --- |
 | `*.mount.js` | `packages/sierra/src/scanner/walk.js` | mentions `mount` — weak | — |
 | `page.query` / `page.directives` | `packages/sierra/src/router/index.js` | mentions `query` — weak | — |
-| `watchProxy()` / `createSignal()` / `createRoot(fn)` | `packages/mesa/src/runtime.js` | yes | — |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 9 |
-| `renderComponent(src, opts)` | `packages/mesa/src/render-component.js` | yes | — |
-| `appSrcDir(root)` / `appAliasPlugin()` | `packages/sierra/src/build/app-alias-plugin.js` | yes | — |
-| `swapInstances(entries, newFn, newSetMark, label)` | `packages/mesa/mesa-vite/swap.js` | yes | 1 |
-| `island(anchor, Comp, props, block, meta)` | `packages/mesa/src/runtime.js` | yes | 3 |
-| `deploySite({ root, config, preview, alias, dry })` | `packages/sierra/src/site/cloudflare.js` | yes | — |
+| `watchProxy()` / `createSignal()` / `createRoot(fn)` | `packages/mesa/src/runtime.js` | yes | 1 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 13 |
+| `renderComponent(src, opts)` | `packages/mesa/src/render-component.js` | yes | 1 |
+| `appSrcDir(root)` / `appAliasPlugin()` | `packages/sierra/src/build/app-alias-plugin.js` | yes | 1 |
+| `swapInstances(entries, newFn, newSetMark, label)` | `packages/mesa/mesa-vite/swap.js` | yes | 2 |
+| `island(anchor, Comp, props, block, meta)` | `packages/mesa/src/runtime.js` | yes | 5 |
+| `deploySite({ root, config, preview, alias, dry })` | `packages/sierra/src/site/cloudflare.js` | yes | 1 |

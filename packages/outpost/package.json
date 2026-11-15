@@ -7,21 +7,55 @@
     "outpost": "./src/index.js"
   },
   "exports": {
-    ".": "./src/index.js",
-    "./server": "./src/server.js",
-    "./docker": "./src/docker.js",
-    "./swap": "./src/swap.js",
-    "./dockerfile": "./src/dockerfile.js",
-    "./doors": "./src/doors.js",
-    "./static": "./src/static.js",
-    "./serve": "./src/serve.js",
-    "./vitals": "./src/vitals.js",
-    "./cert": "./src/cert.js",
-    "./layout": "./src/layout.js"
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./server": {
+      "types": "./src/server.d.ts",
+      "default": "./src/server.js"
+    },
+    "./docker": {
+      "types": "./src/docker.d.ts",
+      "default": "./src/docker.js"
+    },
+    "./swap": {
+      "types": "./src/swap.d.ts",
+      "default": "./src/swap.js"
+    },
+    "./dockerfile": {
+      "types": "./src/dockerfile.d.ts",
+      "default": "./src/dockerfile.js"
+    },
+    "./doors": {
+      "types": "./src/doors.d.ts",
+      "default": "./src/doors.js"
+    },
+    "./static": {
+      "types": "./src/static.d.ts",
+      "default": "./src/static.js"
+    },
+    "./serve": {
+      "types": "./src/serve.d.ts",
+      "default": "./src/serve.js"
+    },
+    "./vitals": {
+      "types": "./src/vitals.d.ts",
+      "default": "./src/vitals.js"
+    },
+    "./cert": {
+      "types": "./src/cert.d.ts",
+      "default": "./src/cert.js"
+    },
+    "./layout": {
+      "types": "./src/layout.d.ts",
+      "default": "./src/layout.js"
+    }
   },
   "scripts": {
     "start": "bun src/index.js",
-    "test": "node ../../scripts/tmp-run.mjs 'bun test'",
+    "test": "node ../../scripts/tmp-run.mjs 'node ../../scripts/emit-types.mjs --check && bun test'",
+    "types": "node ../../scripts/emit-types.mjs",
     "verify:docker": "bun test/verify-docker.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },

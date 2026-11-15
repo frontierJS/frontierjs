@@ -542,3 +542,28 @@ describe('generateFactory reads a Json @default as JSON, not as its text', () =>
     expect(row(`model T { id Int @id; meta Json @default("{}") }`).meta).toEqual({})
   })
 })
+
+// ─── createMany writes one batch ─────────────────────────────────────────────
+
+describe('createMany() is one transaction', () => {
+  // A row-at-a-time loop paid a WAL commit per row (IDEAS/speed-and-footprint.md);
+  // the batch is all-or-nothing, so a seed that fails part-way leaves no half of itself.
+  test('a row that fails leaves none of the batch', async () => {
+    const { db, factories } = await makeTestClient(
+      'model T { id Int @id @default(autoincrement()); age Int @gte(0) }', { autoFactories: true })
+    const run = factories.t.asSystem().createMany(5, (i: number) => (i === 3 ? { age: -1 } : { age: i }))
+    await expect(run).rejects.toThrow()
+    expect(await db.asSystem().t.count()).toBe(0)
+  })
+
+  test('inside a caller\'s transaction it nests, and the caller\'s rollback takes it', async () => {
+    const { db, factories } = await makeTestClient(
+      'model T { id Int @id @default(autoincrement()); age Int }', { autoFactories: true })
+    const sys = db.asSystem()
+    await expect(sys.$transaction(async () => {
+      expect(await factories.t.asSystem().createMany(4)).toHaveLength(4)
+      throw new Error('caller gives up')
+    })).rejects.toThrow('caller gives up')
+    expect(await sys.t.count()).toBe(0)
+  })
+})

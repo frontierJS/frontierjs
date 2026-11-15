@@ -82,7 +82,7 @@ try {
   write(join(SITE, 'node_modules/demo-preset/public/shared.txt'), 'preset')
   write(join(SITE, 'content/public/shared.txt'), 'site')
   write(join(SITE, 'content/settings/site.js'),
-    `export default { preset: 'demo-preset', document: { head: '<meta name="site-own" content="1">' } }\n`)
+    `export default { preset: 'demo-preset', document: { head: '<meta name="site-own" content="1">' }, autoImport: { components: [${JSON.stringify(join(ROOT, 'src/site'))}] } }\n`)
   // A client's campaign links, as maid.tech's are written: no status, both slash forms.
   write(join(SITE, 'content/settings/_redirects'), '/cbf-live/ /?utm_source=cbf\n/cbf-live /?utm_source=cbf\n')
   write(join(SITE, 'content/routes/old-reviews.md'), ['---', 'redirect: /reviews/', '---', ''].join('\n'))
@@ -91,6 +91,21 @@ try {
     ['---', 'render: static', 'layout: Block', 'name: Testimonials', '---', '',
       "<script>import Block from '@frontierjs/site-kit/layouts/Block.mesa'</script>", '',
       '<Block name="Reviews">Kind words.</Block>', ''].join('\n'))
+
+  // The search index and the two visitor islands, bound by autoImport the way a
+  // preset places them. A bare import of the package's .mesa as an island is
+  // not used: Sierra resolves an island specifier as a path (prerender.js).
+  // `robots: noindex` in front-matter is Sierra's sitemap switch and writes no
+  // meta tag, so the page states its own, as a preset's head does.
+  write(join(SITE, 'content/routes/guide.md'),
+    ['---', 'render: static', 'title: Cleaning guide', '---', '',
+      '<Search client:idle />', '<Toc client:idle />', '',
+      'Intro about carpet shampooing.', '',
+      '## Kitchens', '', 'Ovens are degreased.', '',
+      '### Ovens', '', 'Racks soak overnight.', '',
+      '## Bathrooms', '', 'Grout is brushed.', ''].join('\n'))
+  write(join(SITE, 'content/routes/private.md'),
+    ['---', 'render: static', 'robots: noindex', '---', '', '<meta name="robots" content="noindex">', '', '## Secret', '', 'Hidden zebra words.', ''].join('\n'))
 
   // SITE_EDITOR is set on both builds: a release ignores it, a preview carries the editor (FJS-D1357).
   const EDITOR = 'https://basecamp.test/sites/app-1/?draft=spring'
@@ -138,6 +153,26 @@ try {
       (reviews.match(/class="band/g) ?? []).length === 1 && /<article class="reviews"[^>]*>\s*Kind words\./.test(reviews),
       reviews.match(/<section class="band[\s\S]*?<\/section>/)?.[0] ?? reviews.slice(0, 600))
     check('a release carries no editor, whatever SITE_EDITOR says', !html.includes('fjs-editor') && read('assets/fjs-editor.js') === null)
+
+    // The index: one entry per page a visitor may find (FJS-D2188).
+    const index = JSON.parse(read('search.json') ?? 'null')
+    const byUrl = Object.fromEntries((index ?? []).map((p) => [p.url, p]))
+    check('the build writes search.json, a page per indexable route',
+      Array.isArray(index) && ['/', '/reviews/', '/guide/'].every((u) => byUrl[u]), JSON.stringify(index)?.slice(0, 400))
+    const guide = byUrl['/guide/']
+    check("a page's entry holds its title, h2-h4 headings with ids, and its words",
+      guide?.title === 'Cleaning guide'
+        && guide.headings.map((h) => `${h.level}:${h.id}:${h.text}`).join() === '2:kitchens:Kitchens,3:ovens:Ovens,2:bathrooms:Bathrooms'
+        && guide.text.includes('carpet shampooing') && guide.text.includes('Grout is brushed'),
+      JSON.stringify(guide))
+    check('a page with no <main> is indexed from its body, without its scripts',
+      /Welcome to Acme Cleaning/.test(byUrl['/']?.text ?? '') && !/import Search|\bfunction\b/.test(guide?.text ?? ''), byUrl['/']?.text)
+    check('a noindex page is left out of the index', !byUrl['/private/'] && !read('search.json')?.includes('zebra'))
+    check('a redirect page and the 404 are left out', !byUrl['/old-reviews/'] && !(index ?? []).some((p) => /404/.test(p.url)))
+    // Islands from the kit's own folder, not the site's src, reach the page and ship chunks.
+    const guideHtml = read('guide/index.html') ?? ''
+    check('Search and Toc imported from the package are islands on the page',
+      /mesa-island/.test(guideHtml) && /Search/.test(guideHtml) && /Toc/.test(guideHtml), guideHtml.slice(0, 400))
 
     const preview = kit('--preview')
     check('the site builds as a preview', preview.status === 0, `${preview.stdout}\n${preview.stderr}`.slice(-1200))
