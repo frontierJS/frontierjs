@@ -6,7 +6,7 @@ dated: 2026-11-14
 
 # Idea — one release record for both deploy paths
 
-**Status: PROPOSED. 0.1–0.3 done (prior art read, Outpost and both pivot paths probed); Q1–Q4 wait on the owner, Q2 first.**
+**Status: PROPOSED. Phase 0 done 2026-11-14: Q1–Q4 ruled (`FJS-D2171`, `D2178`, `D2181`, `D2182`). Phase 1 is the build, 1.1 next. Phase 1's steps were drafted against the recommendations, and every one was taken.**
 Probed against the tree 2026-11-14. Do not cite this file as behavior — see `VERIFYING.md`.
 
 This continues `IDEAS/release-transitions.md` (overview row 2.3b). That paper fixed the recorded-state format for `fli deploy`, and its Phase 1 shipped on 2026-08-26. Since then Basecamp started deploying through Outpost and writing release state of its own, in a different shape. A recorded-state format is the one thing that cannot be added later, so the two have to be reconciled before more depends on either.
@@ -92,7 +92,7 @@ Rule them in the order Q2, Q1, Q4, Q3. Q2 gives Q1's cache its key, and Q4 settl
   - **Recommend A** — `D740` splits drift by Release id and `D636` recognizes a promotion by digest, and both are worth most on the fleet path. The mint is one pure function and a format constant. Two things to settle while moving it:
     - **Dependency direction.** The new home must not make `cli` import Basecamp or the reverse (Invariant 1's spirit).
     - **One id test.** It proves both paths mint the same id for the same terms, because a format bump on one side alone would silently split them.
-- **Q3 — Does Basecamp adopt `release-transitions.md` invariant 2's pinned secret reference, and what does a revert do when the pinned version is revoked?**
+- ~~**Q3 — Does Basecamp adopt `release-transitions.md` invariant 2's pinned secret reference, and what does a revert do when the pinned version is revoked?**~~ **Answered 2026-11-15 (`FJS-D2182`): C — As A, plus a rotation marks the version it replaced as revoked. A rollback that would restore a revoked version refuses by name, and the refusal offers *roll back with today's value* as the explicit way out.**
   - **The gap.** Invariant 2 already rules that a Release records a secret as `name@version`, refuses `latest`, and treats a rotation as a configuration change. Basecamp records a bare `Variable` id, which is `latest` by another name. A rollback after a rotation runs the new value.
   - **A** — Adopt it as written. `Variable` keeps versions, `configSnapshot` records the version, and a rollback restores that reference.
   - **B** — Keep today's behavior (current value) and amend invariant 2 for Basecamp. Document it on the rollback screen the way Coolify and Fly do.
@@ -120,7 +120,8 @@ Done when: Q1–Q4 are ruled into `DECISIONS.md`.
   - The images and the `_replaced` container, but no record. A rollback's image, digest and configuration all arrive in Basecamp's request (`docker.js` `deploy`, `server.js`).
 - [x] 0.3 Is a contract deploy refused on the Basecamp path, as `fli deploy` refuses one?
   - The question's premise was out of date: neither door refuses a contract deploy now. Both run `livePivot` and `swapFor` (`packages/outpost/src/swap.js`) and swap stop-first, and a failed contract stays down (`FJS-D2044`). The paths differ on the way BACK. `fli deploy:revert` reads the recorded verdict and refuses past a pivot by name. Basecamp's `Deployment` never stores the verdict, so its `rollback` cannot refuse up front, and the protection is the old image refusing at boot (`FJS-D2041`). Read in code, not driven. Step 1.7 closes it.
-- [ ] 0.4 Rule Q2, Q1, Q4, Q3, one at a time
+- [x] 0.4 Rule Q2, Q1, Q4, Q3, one at a time
+  - Ruled 2026-11-14, every recommendation taken: Q2 `FJS-D2171`, Q1 `FJS-D2178` (amends `FJS-D746`), Q4 `FJS-D2181` and Q3 `FJS-D2182` (both amend `release-transitions.md` invariants 1 and 2).
 
 ### Phase 1 — One record
 

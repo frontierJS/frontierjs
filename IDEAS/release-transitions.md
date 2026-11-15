@@ -134,7 +134,7 @@ whatever configuration happens to exist at that moment, which is precisely the F
 Heroku failure quoted above. **Serving state is the pair (Release, Generation)**, and
 both halves are recorded.
 
-**Amended by `FJS-D2181` (2026-11-14):** there is no separate generation. A configuration change mints a new Release, and order comes from the release sequence (journal rows, `Deployment` rows). `configurationHash` stays the identity half this section argues for; the counter beside it goes. `IDEAS/release-record.md` Q3 is open on the secret paragraph below.
+**Amended by `FJS-D2181` (2026-11-14):** there is no separate generation. A configuration change mints a new Release, and order comes from the release sequence (journal rows, `Deployment` rows). `configurationHash` stays the identity half this section argues for; the counter beside it goes. The secret paragraph below is amended by `FJS-D2182`.
 
 **A counter alone is the weaker half, and the field has already found the stronger
 one.** Kubernetes' documented gap is that `kubectl rollout undo` does not restore a
@@ -157,6 +157,8 @@ revoked. It also means a revert can resurrect a credential, which is why Helm
 practitioners reach for SOPS or External Secrets. **The guarantee is therefore
 "revert restores the same configuration", never "the same secret values."** A rotation
 underneath is invisible and correct.
+
+**Amended by `FJS-D2182` (2026-11-14):** a revert restores the pinned *reference*, and so the value it names. A rotation marks the version it replaced as revoked, and a revert that would restore a revoked version refuses by name, offering *roll back with today's value* as the explicit way out. That answers the resurrected credential this paragraph names. Kept versions are `@encrypted` and redacted in the trail.
 
 **A reference must be pinned, and `latest` is refused.** Cloud Run resolves a secret
 reference **at instance startup** and its own documentation says to pin the version

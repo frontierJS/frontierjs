@@ -1865,7 +1865,9 @@ Both elements look for `pending` and `failed` snippets in the same priority orde
 3. Nothing — blank pending state, and a boundary with no `failed` does not catch a
    throw; it goes on to the boundary above. A template read of an awaited `const`
    with no catching boundary above it and no `$async.x.error` or `.status` read is
-   a compile error, `UNHANDLED_FAILURE` (`FJS-4290`)
+   a compile error, `UNHANDLED_FAILURE` (`FJS-4290`). A read with no boundary at all
+   above it and no `$async.x.loading`, `.pending` or `.status` read is
+   `ASYNC_OUTSIDE_LOADING_BOUNDARY` (`FJS-4292`)
 
 ```html
 <!-- global snippets — shared by both mesa:boundary and mesa:mounted -->
@@ -2140,6 +2142,12 @@ that is not a form submit needs no hand-kept `busy`/`error` pair:
 > template never reads directly is not refused; when it rejects with nothing showing
 > it, the runtime prints `[Mesa] UNHANDLED_FAILURE` and the error, in production too
 > (`FJS-4290`, `FJS-D2136`).
+> A load must be waited for too: an awaited `const` is `undefined` until its first answer,
+> so the template reading it outside any `<mesa:boundary>`, with no `$async.x.loading`,
+> `.pending` or `.status` read, is the compile error `ASYNC_OUTSIDE_LOADING_BOUNDARY`.
+> A boundary holds its body until the values it reads land, `pending` snippet or not. A
+> read the compiler cannot see — a derived `const label = user.name` — that throws on
+> mount prints `[Mesa] ASYNC_OUTSIDE_LOADING_BOUNDARY` naming the const (`FJS-4292`).
 
 ### 13.3 Optimistic Updates
 
@@ -2846,6 +2854,7 @@ components hydrate to their initial render and serialize cleanly.
 | `once`, `passive` or `capture` on a component | An `addEventListener` option, and a component has no listener of its own |
 | `$async.x` where `x` is neither an awaited top-level `const` nor a top-level `async function` | `$async.x` names no async state (RULE 16) |
 | Template reads an awaited `const` with no catching `<mesa:boundary>` above it and no `$async.x.error` or `.status` read | `UNHANDLED_FAILURE` (RULE 16) |
+| Template reads an awaited `const` outside every `<mesa:boundary>` and no `$async.x.loading`, `.pending` or `.status` read | `ASYNC_OUTSIDE_LOADING_BOUNDARY` (RULE 16) |
 | `$.mounted(fn)` used more than once | Only one `$.mounted` per component — use `Promise.all` for multiple operations |
 | `bind:value\|mask` without pattern argument | `\|mask` requires a pattern wrapped in `{ }` |
 | `$.inspect` inside a function or block, or used as a value | `$.inspect` is declared at the top level of `<script>` |

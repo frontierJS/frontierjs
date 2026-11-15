@@ -381,6 +381,34 @@ function _raise(node, e) {
   console.error(e)
 }
 
+// Awaited consts still waiting on their first answer, each with the owner it was
+// declared under. One holds `undefined` until then, and a read of it the
+// compiler cannot see (a derived `const label = user.name`, a child's prop)
+// threw a bare "reading 'name' of undefined" out of mount that named neither
+// the const nor the fix (`FJS-4292`). Printed in production too (`FJS-D2136`).
+// `asyncDerived` installs the reporter, so an app with no awaited const ships
+// none of it (the `bench/run.mjs --gate` floor).
+const _unanswered = new Set()
+const _namedThrows = new WeakSet()
+let _onFirstRunThrow = null
+
+function _reportUnanswered(node, e) {
+  if (!_unanswered.size || !(e instanceof TypeError) || _namedThrows.has(e)) return
+  const under = (owner) => {
+    if (!owner) return true
+    for (let o = node; o; o = o._owner) if (o === owner) return true
+    return false
+  }
+  const names = [..._unanswered].filter((u) => under(u.owner)).map((u) => u.name)
+  if (!names.length) return
+  _namedThrows.add(e)
+  const list = names.map((n) => `'${n}'`).join(', ')
+  console.error(
+    `[Mesa] ASYNC_OUTSIDE_LOADING_BOUNDARY: a read threw while ${list} had not answered its first ` +
+    `load, and an awaited const is undefined until then. Read it inside a <mesa:boundary>, ` +
+    `or branch on $async.${names[0]}.loading.`, e)
+}
+
 function _catcherOf(node) {
   for (let o = node; o; o = o._owner) if (o._catch && !o._disposed) return o._catch
   return null
@@ -545,6 +573,7 @@ export function createEffect(fn, opts) {
     // caller has no disposer for it. Left alone it re-runs a body that has
     // already failed on the next write, and inside a root component nothing
     // ever collects it (`FJS-879`).
+    _onFirstRunThrow?.(node, e)
     _disposeNode(node, true)
     _unwindComponents(comps, ctxs)
     throw e
@@ -5579,8 +5608,17 @@ export function makeCallState(handled = false) {
 // flight and the later run's reply is the one kept (`FJS-D2058`). It runs
 // untracked: called from inside an effect, the loader's synchronous reads
 // would otherwise subscribe that effect to them.
-export function asyncDerived(getAsyncState, fn, deps, setValue) {
+//
+// `name` is the const's, held in `_unanswered` until the first run settles.
+export function asyncDerived(getAsyncState, fn, deps, setValue, name) {
   let controller = null
+  const entry = name ? { name, owner: _owner } : null
+  const answered = () => { if (entry) _unanswered.delete(entry) }
+  if (entry) {
+    _onFirstRunThrow = _reportUnanswered
+    _unanswered.add(entry)
+    if (_owner) onCleanup(answered)
+  }
   const run = () => {
     controller?.abort()
     controller = new AbortController()
@@ -5591,10 +5629,12 @@ export function asyncDerived(getAsyncState, fn, deps, setValue) {
       (value) => {
         if (signal.aborted) return
         setValue(value)
+        answered()
         state._update('done')
       },
       (err) => {
         if (signal.aborted) return
+        answered()
         state._update('error', err)
       }
     )

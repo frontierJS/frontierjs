@@ -9218,6 +9218,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2182"></a>2026-11-15 · `FJS-D2182` — Q3 — Does Basecamp adopt `release-transitions.md` invariant 2's pinned secret reference, and what does a revert do when the pinned version is revoked — As A, plus a rotation marks the version it replaced as revoked. A rollback that would restore a revoked version refuses by name, and the refusal offers *roll back with today's value* as the explicit way out.
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **C** was picked over **A** (Adopt it as written. `Variable` keeps versions, `configSnapshot` records the version, and a rollback restores that reference), **B** (Keep today's behavior (current value) and amend invariant 2 for Basecamp. Document it on the rollback screen the way Coolify and Fly do).
+
+The paper's recommendation, taken as written: invariant 2 names the risk itself (*a revert can resurrect a credential*) and leaves it unanswered. The revoked marker answers it, so a revert never quietly brings back a leaked key and never runs against a credential the release never saw. Heroku and Cloud Run show pinning works, and none of the 15 systems handles the revoked case. - **What C owes.** - **Old values are a new store of plaintext.** Keeping superseded secret values means `@encrypted` and audit redaction (Invariants 6 and 7) apply to every kept version. - **One sentence in invariant 2 changes.** *Never "the same secret values"* becomes *the same reference, refused by name once revoked*.
+
 ### <a id="fjs-d2181"></a>2026-11-15 · `FJS-D2181` — Q4 — Does the configuration generation stay a counter beside the Release, or fold into the Release — Fold configuration into the Release, as the code already does. `generation` leaves `mintRelease`. Order and the readable list are carried by the release sequence: journal rows on `fli`'s side, `Deployment` rows on Basecamp's. `Environment.version` stays a concurrency guard. Invariants 1 and 2 are amended together, with invariant 1 rewritten as `D636` puts it: the digest promotes, and the Release does not.
 
 Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **B** was picked over **A** (Keep the generation as the paper wrote it, and add it to Basecamp's `Environment`).

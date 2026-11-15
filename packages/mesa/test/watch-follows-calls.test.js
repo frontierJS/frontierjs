@@ -172,7 +172,7 @@ describe('where a watch adds no trigger (FJS-D404)', () => {
   $: prefs.currency
   const row = await load(id)
 </script>
-<p>{row}</p><p>{$async.row.error}</p>`, { load, prefs })
+<p>{row}</p><p>{$async.row.status}</p>`, { load, prefs })
     flip(); await settle()
     expect(loads).toBe(1)
   })

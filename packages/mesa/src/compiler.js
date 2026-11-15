@@ -3099,17 +3099,18 @@ function asyncStateReads(scriptAST, source) {
 }
 
 /**
- * The names the template reads where a rejected load has nowhere to show: not
- * inside a `<mesa:boundary>` that has a `failed` to mount. A top-level snippet
- * counts only when something counted renders it, so one rendered solely inside
- * a catching boundary is not a read. Prose in a text node is not a read; a
- * name after a `.` is a property, and a string literal names nothing.
+ * The names the template reads outside every node `holds` accepts — by default
+ * a `<mesa:boundary>` that has a `failed` to mount, where a rejected load has
+ * somewhere to show. A top-level snippet counts only when something counted
+ * renders it, so one rendered solely inside a holding boundary is not a read.
+ * Prose in a text node is not a read; a name after a `.` is a property, and a
+ * string literal names nothing.
  */
-function uncaughtTemplateReads(body, catching = []) {
+function uncaughtTemplateReads(body, catching = [], holds = null) {
   const top = body || []
   const globalFailed = top.some((n) => n.type === 'snippet' && n.name === 'failed')
-  const catches = (n) => n.type === 'node' && n.name === 'mesa' && n.elArg === 'boundary' &&
-    (globalFailed || (n.body || []).some((c) => c.type === 'snippet' && c.name === 'failed'))
+  const catches = holds || ((n) => isBoundary(n) &&
+    (globalFailed || (n.body || []).some((c) => c.type === 'snippet' && c.name === 'failed')))
   const braces = (s) => {
     const out = []
     for (let i = 0, depth = 0, from = -1; i < s.length; i++) {
@@ -3182,6 +3183,34 @@ function refuseUnhandledFailures(ctx, reads) {
     )
   }
   return unshown
+}
+
+const isBoundary = (n) => n.type === 'node' && n.name === 'mesa' && n.elArg === 'boundary'
+
+/**
+ * An awaited const holds `undefined` until its first answer, so a template read
+ * of it outside a `<mesa:boundary>` runs before there is anything to read, and
+ * `{user.name}` threw a bare TypeError out of mount (`FJS-4292`). Any boundary
+ * holds the read: one whose body reads the const shows its `pending`, or
+ * nothing, until it lands. Reading `$async.<name>.loading`, `.pending` or
+ * `.status` anywhere says the wait is handled. The code is Solid's name for the
+ * same read (`FJS-D2134`); what the compiler cannot see is the runtime's
+ * `_reportUnanswered`.
+ */
+function refuseUnheldLoads(ctx, reads) {
+  const awaited = Object.values(ctx.analysis.vars || {}).filter((v) => v.isAsync && v.kind === 'const')
+  if (!awaited.length) return
+  const read = uncaughtTemplateReads(ctx.DOM?.body, [], isBoundary)
+  for (const { name } of awaited) {
+    const r = reads.get(name)
+    if (r && ['loading', 'pending', 'status'].some((f) => r.fields.has(f))) continue
+    if (!read.has(name)) continue
+    ctx.analysis.errors.push(
+      `ASYNC_OUTSIDE_LOADING_BOUNDARY: the template reads '${name}', an awaited \`const\`, ` +
+      `outside a <mesa:boundary>, and it is \`undefined\` until its first answer. Read it inside ` +
+      `a <mesa:boundary>, which holds it until it lands, or branch on \`$async.${name}.loading\` (RULE 16).`
+    )
+  }
 }
 
 const REFUSED_BARE = DOOR_MEMBERS.filter((m) => !SUGAR_MEMBERS.includes(m))
@@ -10097,7 +10126,7 @@ function emitDeclarations(ctx, sorted, watchedCalls) {
       const rewrittenArg = rewriteExpr(argRaw, ctx.accessors)
       mod.code.push(
         xNode.raw(
-          `$$runtime.asyncDerived(() => ${stateVar}, async ($$signal) => (${rewrittenArg}), ${v.isDerived ? `[${depFns}]` : 'null'}, ${sigW});`
+          `$$runtime.asyncDerived(() => ${stateVar}, async ($$signal) => (${rewrittenArg}), ${v.isDerived ? `[${depFns}]` : 'null'}, ${sigW}, '${v.name}');`
         )
       )
       if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', '${v.isDerived ? 'async-derived' : 'async'}');`))
@@ -11707,6 +11736,7 @@ function checkAsyncStateReads(ctx, scriptAST) {
     }
     ctx.analysis.asyncFns = asyncFns
     ctx.analysis.unshownAsync = refuseUnhandledFailures(ctx, reads)
+    refuseUnheldLoads(ctx, reads)
   }
 }
 

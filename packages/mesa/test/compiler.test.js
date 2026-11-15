@@ -4870,7 +4870,7 @@ describe('top-level await in expressions', () => {
   const data = await fetch('/api').then(r => r.json())
 </script>
 <div></div>`)
-    expect(out).toContain("$$runtime.asyncDerived(() => $$async_data, async ($$signal) => (fetch('/api').then(r => r.json())), null, $$set_data)")
+    expect(out).toContain("$$runtime.asyncDerived(() => $$async_data, async ($$signal) => (fetch('/api').then(r => r.json())), null, $$set_data, 'data')")
     expect(out).not.toContain('(async () => {')
   })
 

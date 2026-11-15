@@ -391,9 +391,9 @@ describe('an awaited const whose failure nothing shows', () => {
   const LOAD = `<script>let id = 1; const user = await fetchUser(id)</script>`
 
   it('refuses a template read with no catching boundary and no .error read', async () => {
-    const [e, ...rest] = await errorsOf(LOAD + `<h1>{user.name}</h1>`)
-    expect(rest).toEqual([])
-    expect(e).toMatch(/^UNHANDLED_FAILURE: /)
+    const errors = await errorsOf(LOAD + `<h1>{user.name}</h1>`)
+    expect(errors.map((m) => m.split(':')[0])).toEqual(['UNHANDLED_FAILURE', 'ASYNC_OUTSIDE_LOADING_BOUNDARY'])
+    const [e] = errors
     expect(e).toContain(`'user'`)
     expect(e).toContain('{#snippet failed(error, reset)}')
     expect(e).toContain('`$async.user.error`')
@@ -410,7 +410,7 @@ describe('an awaited const whose failure nothing shows', () => {
   })
 
   it.each([
-    ['a template .error read', `<h1>{user.name}</h1>{#if $async.user.error}<p>failed</p>{/if}`],
+    ['a template .error read', `<h1 aria-busy={$async.user.pending}>{user?.name}</h1>{#if $async.user.error}<p>failed</p>{/if}`],
     ['a template .status read', `<h1>{user.name}</h1><p>{$.async.user.status}</p>`],
     ['a boundary with a failed snippet', `<mesa:boundary><h1>{user.name}</h1>{#snippet failed(e, r)}<p>failed</p>{/snippet}</mesa:boundary>`],
     ['a top-level failed snippet', `{#snippet failed(e, r)}<p>failed</p>{/snippet}<mesa:boundary><h1>{user.name}</h1></mesa:boundary>`],
@@ -422,7 +422,7 @@ describe('an awaited const whose failure nothing shows', () => {
 
   it('compiles a script .error read as handled', async () => {
     const ctx = await compile(`<script>let id = 1; const user = await fetchUser(id)
-  $effect(() => { if ($async.user.error) console.log('failed') })</script><h1>{user.name}</h1>`)
+  $effect(() => { if ($async.user.error) console.log('failed') })</script><h1 aria-busy={$async.user.pending}>{user?.name}</h1>`)
     expect(ctx.analysis.errors).toEqual([])
     expect(ctx.result).toContain('$$runtime.makeAsyncState();')
   })
@@ -452,7 +452,77 @@ describe('an awaited const whose failure nothing shows', () => {
 
   it('prints nothing when the template shows the failure', async () => {
     const seen = await rejecting(`<script>const user = await globalThis.__failLoad()</script>
-{#if $async.user.error}<p>failed</p>{:else}<h1>{user?.name}</h1>{/if}`)()
+{#if $async.user.error}<p>failed</p>{:else if $async.user.loading}<p>…</p>{:else}<h1>{user.name}</h1>{/if}`)()
     expect(seen).toEqual([])
+  })
+})
+
+// An awaited const holds `undefined` until its first answer, so a template that
+// reads it with nothing holding the read threw a bare TypeError out of mount
+// (`FJS-4292`). Solid names the shape ASYNC_OUTSIDE_LOADING_BOUNDARY.
+describe('an awaited const read before its first answer', () => {
+  const errorsOf = async (src) => (await compile(src)).analysis.errors
+  const LOAD = `<script>let id = 1; const user = await fetchUser(id)</script>`
+  const SHOWN = `{#if $async.user.error}<p>failed</p>{/if}`
+
+  it('refuses a template read with no boundary and no loading read', async () => {
+    const errors = await errorsOf(LOAD + `<h1>{user.name}</h1>` + SHOWN)
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatch(/^ASYNC_OUTSIDE_LOADING_BOUNDARY: /)
+    expect(errors[0]).toContain(`'user'`)
+    expect(errors[0]).toContain('<mesa:boundary>')
+    expect(errors[0]).toContain('`$async.user.loading`')
+  })
+
+  it('refuses a read in a snippet rendered outside a boundary', async () => {
+    const [e] = await errorsOf(LOAD + `{#snippet row()}<i>{user.name}</i>{/snippet}{@render row()}` + SHOWN)
+    expect(e).toMatch(/^ASYNC_OUTSIDE_LOADING_BOUNDARY: /)
+  })
+
+  it.each([
+    ['a boundary with a failed snippet', `<mesa:boundary><h1>{user.name}</h1>{#snippet failed(e, r)}<p>failed</p>{/snippet}</mesa:boundary>`],
+    ['a boundary with no pending snippet', `<mesa:boundary><h1>{user.name}</h1></mesa:boundary>` + SHOWN],
+    ['a template .loading read', `{#if $async.user.loading}<p>…</p>{:else}<h1>{user.name}</h1>{/if}` + SHOWN],
+    ['a template .pending read', `<h1 aria-busy={$async.user.pending}>{user?.name}</h1>` + SHOWN],
+    ['a template .status read', `{#if $async.user.status === 'success'}<h1>{user.name}</h1>{/if}`],
+  ])('compiles when the read is held or the wait is read: %s', async (_, tpl) => {
+    expect(await errorsOf(LOAD + tpl)).toEqual([])
+  })
+
+  it('names the const when a read the compiler cannot see throws on mount', async () => {
+    const seen = []
+    const spy = console.error
+    console.error = (...a) => seen.push(a)
+    globalThis.__slowLoad = () => new Promise((r) => setTimeout(() => r({ name: 'Ada' }), 5))
+    let thrown
+    try {
+      mount(await build(`<script>const user = await globalThis.__slowLoad()
+  const label = user.name</script><h1>{label}</h1>${SHOWN}`))
+    } catch (e) {
+      thrown = e
+    } finally {
+      console.error = spy
+      delete globalThis.__slowLoad
+    }
+    expect(thrown).toBeInstanceOf(TypeError)
+    const mesa = seen.filter((a) => /^\[Mesa\] ASYNC_OUTSIDE_LOADING_BOUNDARY/.test(a[0]))
+    expect(mesa).toHaveLength(1)
+    expect(mesa[0][0]).toContain(`'user'`)
+  })
+
+  it('says nothing when a binding throws with every load answered', async () => {
+    const seen = []
+    const spy = console.error
+    console.error = (...a) => seen.push(a)
+    let thrown
+    try {
+      mount(await build(`<script>let box = null</script><h1>{box.name}</h1>`))
+    } catch (e) {
+      thrown = e
+    } finally {
+      console.error = spy
+    }
+    expect(thrown).toBeInstanceOf(TypeError)
+    expect(seen.filter((a) => /ASYNC_OUTSIDE_LOADING_BOUNDARY/.test(String(a[0])))).toEqual([])
   })
 })
