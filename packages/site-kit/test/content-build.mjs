@@ -163,7 +163,7 @@ try {
     check("a page's entry holds its title, h2-h4 headings with ids, and its words",
       guide?.title === 'Cleaning guide'
         && guide.headings.map((h) => `${h.level}:${h.id}:${h.text}`).join() === '2:kitchens:Kitchens,3:ovens:Ovens,2:bathrooms:Bathrooms'
-        && guide.text.includes('carpet shampooing') && guide.text.includes('Grout is brushed'),
+        && guide.text.includes('carpet shampooing') && guide.text.includes('Bathrooms Grout is brushed'),
       JSON.stringify(guide))
     check('a page with no <main> is indexed from its body, without its scripts',
       /Welcome to Acme Cleaning/.test(byUrl['/']?.text ?? '') && !/import Search|\bfunction\b/.test(guide?.text ?? ''), byUrl['/']?.text)
@@ -171,7 +171,7 @@ try {
     check('a redirect page and the 404 are left out', !byUrl['/old-reviews/'] && !(index ?? []).some((p) => /404/.test(p.url)))
     // Islands from the kit's own folder, not the site's src, reach the page and ship chunks.
     const guideHtml = read('guide/index.html') ?? ''
-    check('Search and Toc from the kit's folder are islands on the page',
+    check('Search and Toc from the kit folder are islands on the page',
       /mesa-island/.test(guideHtml) && /Search/.test(guideHtml) && /Toc/.test(guideHtml), guideHtml.slice(0, 400))
 
     const preview = kit('--preview')

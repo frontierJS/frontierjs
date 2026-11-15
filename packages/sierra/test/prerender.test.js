@@ -523,11 +523,11 @@ describe('prerenderRoutes', () => {
     expect(html).toMatch(/^<!DOCTYPE html>/)
   }, REAL_RENDER_TIMEOUT)
 
-  test('routes without render:static are not emitted', async () => {
+  test('a route that declares no render mode is emitted (FJS-D2194)', async () => {
     const out = tmpDir('sierra-pre-')
     const res = await run(out)
     // The fixture's '/' route declares no render mode.
-    expect(res.written).not.toContain('index.html')
+    expect(res.written).toContain('index.html')
   }, REAL_RENDER_TIMEOUT)
 
   test('renders the page INSIDE its layout chain', async () => {

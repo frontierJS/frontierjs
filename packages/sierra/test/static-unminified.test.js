@@ -78,6 +78,21 @@ describe('bundleUnreachable reads the tree', () => {
     }))).toBe(false)
   })
 
+  test('routes that declare nothing are prerendered, so the bundle is unreachable (FJS-D2194)', async () => {
+    expect(bundleUnreachable(await treeOf('undeclared', {
+      ...shell,
+      'src/routes/_module.mesa': '<main><slot /></main>\n',
+    }))).toBe(true)
+  })
+
+  test('an undeclared home with a companion may fall back, so the shell is kept', async () => {
+    expect(bundleUnreachable(await treeOf('fallback', {
+      ...shell,
+      'src/routes/_module.mesa': '<main><slot /></main>\n',
+      'src/routes/index.meta.js': 'export async function load() { return {} }\n',
+    }))).toBe(false)
+  })
+
   test('no home route at all keeps the shell', async () => {
     const files = { ...shell }
     delete files['src/routes/index.md']

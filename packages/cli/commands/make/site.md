@@ -154,9 +154,9 @@ log.info(`  bun run dev:site      write it, live at :${devPort}`)
 log.info(`  bun run build:site    → ${dir}/dist/, one index.html per route`)
 log.info(`  bun run serve:site    the site origin, at :${servePort}`)
 log.info('')
-log.info(`  Every page needs \`render: static\` in its frontmatter — the build emits`)
-log.info(`  nothing for a route without it, and says so rather than shipping an`)
-log.info(`  empty site.`)
+log.info(`  Every page is prerendered unless it says \`render: spa\`; one the build`)
+log.info(`  cannot prerender is left to the browser and named. \`render: static\``)
+log.info(`  makes that a build failure instead.`)
 log.info('')
 
 if (flag.open) {

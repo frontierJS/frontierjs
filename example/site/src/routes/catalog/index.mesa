@@ -1,6 +1,5 @@
 ---
 title: Catalog
-render: static
 ---
 <!--
   The public catalog — prerendered to plain HTML at build time.

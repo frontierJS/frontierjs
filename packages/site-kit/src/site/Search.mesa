@@ -9,6 +9,10 @@
   //
   // `/` is the visitor's key, so it is left alone in a field: a form on the
   // page, and the palette's own box, take it as a character.
+  //
+  // On a draft's preview with its owner signed in, the editor's palette is the
+  // one (FJS-D2191): Cmd/Ctrl+K is the editor's, and the button and `/` ask it
+  // to open.
   import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
   import { createSearch } from './search.js'
 
@@ -19,8 +23,10 @@
   let pages = null   // null until the index has arrived
 
   const go = (url) => { location.href = url }
+  const editing = () => document.documentElement.hasAttribute('data-fjs-editing')
 
   async function show() {
+    if (editing()) return document.dispatchEvent(new CustomEvent('fjs-editor:palette'))
     open = true
     if (pages) return
     try { pages = await index.pages(go) } catch (err) {
@@ -33,6 +39,7 @@
 
   function keydown(e) {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if (editing()) return
       e.preventDefault()
       if (open) open = false
       else show()
@@ -45,7 +52,7 @@
 
 <mesa:window onkeydown={keydown} />
 
-<button class="btn ghost search-open" type="button" aria-label={label} aria-haspopup="dialog" onclick={show} {...$attributes}>
+<button class="btn ghost search-open" {class} type="button" aria-label={label} aria-haspopup="dialog" onclick={show} {...$attributes}>
   <svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
     <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
   </svg>

@@ -18,7 +18,7 @@ import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 
 import { islandEntrySource, injectIslandScript, injectIntoPages, relativeApiCalls, buildIslandBundle } from '../src/build/island-bundle.js'
 import { build } from 'vite'
-import { prerenderRoutes } from '../src/build/prerender.js'
+import { prerenderRoutes, islandModule } from '../src/build/prerender.js'
 import { tmpDir } from './tmp.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -149,6 +149,24 @@ describe('injectIntoPages', () => {
 })
 
 // ── Collection during prerender ───────────────────────────────────────────────
+
+describe('islandModule', () => {
+  const file = join(__dirname, 'fixtures/x/routes/index.mesa')
+
+  test('a relative import resolves beside the call site', () => {
+    expect(islandModule(file, './C.mesa')).toBe(join(__dirname, 'fixtures/x/routes/C.mesa'))
+  })
+
+  test('an alias resolves to its target, not under the call site', () => {
+    expect(islandModule(file, '@/islands/C.mesa', { '@': '/app/src' })).toBe('/app/src/islands/C.mesa')
+  })
+
+  test('a package island resolves through the package, not under the call site', () => {
+    const got = islandModule(join(__dirname, 'islands.test.js'), '@frontierjs/toolbelt/search')
+    expect(got.endsWith('/toolbelt/src/search/search.js')).toBe(true)
+    expect(got.includes('/test/@frontierjs/')).toBe(false)
+  })
+})
 
 describe('prerenderRoutes — island collection', () => {
   /** Minimal fake renderer: returns whatever islands the test declares. */

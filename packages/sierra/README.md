@@ -253,7 +253,8 @@ Keys Sierra acts on:
 | Key | Effect |
 | --- | --- |
 | `reset: true` | render this route with no layout |
-| `render: static` | prerender to its own `index.html` under `target: 'static'` |
+| `render: static` | under `target: 'static'`, the page MUST prerender — one the build cannot prerender fails it |
+| `render: spa` | under `target: 'static'`, never prerendered — the browser renders it |
 | `redirect: /path/` | navigating here redirects; also emitted to `_redirects` |
 | `status: draft` | excluded from `published` and `indexed` |
 | `robots: noindex` | excluded from `indexed` and the sitemap |
@@ -1017,7 +1018,7 @@ Everything in `sierra.config.js`:
 | --- | --- | --- |
 | `target` | `'spa'` | `'spa'` \| `'static'` \| `'widget'` |
 | `widgets` | — | `widget` target only — `{ dir, outDir, prefix, minify }`: where the widgets are (`src/embeds`), where their scripts go (`dist/embeds`), the tag prefix |
-| `dev.staticData` | `true` | run a `render: static` route's `load()` on the dev server, so dev shows the page with its data |
+| `dev.staticData` | `true` | run a prerendered route's `load()` on the dev server, so dev shows the page with its data |
 | `islands` | `true` | `static` only — the island marker pass; `false` turns it off |
 | `db` | — | `static` only — a module exporting a Litestone client, used to grade what a prerendered route reads against `@@gate` |
 | `routesDir` | `'src/routes'` | scanned directory |
@@ -1055,12 +1056,15 @@ WebSocket-heavy app keeps every response payload alive for the tab's lifetime.
 **`spa`** — the supported path. Vite's default chunking, client-side routing, one
 `index.html`. Verified end-to-end.
 
-**`static`** — same bundle, plus a prerender pass in `closeBundle`. Every route declaring
-`render: static` in its frontmatter is rendered to its own `index.html` via Mesa's
-`renderComponent`, with layouts composed around it. A dynamic route with `render: static`
-**must** have a companion exporting `getStaticPaths()` — production builds fail loudly
-otherwise. A static build that produces no pages says so rather than silently emitting an
-SPA.
+**`static`** — same bundle, plus a prerender pass in `closeBundle`. Every route but
+`render: spa` is rendered to its own `index.html` via Mesa's `renderComponent`, with
+layouts composed around it (`FJS-D2194`). A route that cannot be — the static-safety
+check refuses what it reads, its `load()` or render throws, or it is dynamic with no
+`getStaticPaths()` — is left to the browser and listed under *Rendered in the browser*
+with the reason, and the safety table marks it `browser` (`FJS-D2195`). Declaring
+`render: static` turns each of those into a build failure, and a dynamic route that
+declares it **must** have a companion exporting `getStaticPaths()`. A static build that
+produces no pages says so rather than silently emitting an SPA.
 
 A prerendered layout reads `page` as it does in the browser. Before each page renders,
 `page` holds what a navigation to it would commit: its `pathname`, `params`, load() `data`,
@@ -1075,9 +1079,7 @@ and its frontmatter merged down the layout chain, spread and as `meta`. A route 
 > linked workspace and that page is skipped.
 >
 > One caveat remains: `load()` cannot use relative URLs at build time — there is no
-> origin, so `sierraFetch` throws and directs you to `getStaticPaths()`. When a render
-> does fail, the summary still reports "no route declares `render: static`", which is
-> misleading — read the `prerender:` warning above it.
+> origin, so `sierraFetch` throws and directs you to `getStaticPaths()`.
 
 **`static/` is a SURFACE too, and it is `site/`** — a peer of `api/` and `web/`,
 never a second config inside the SPA (Invariant 3, `FJS-D127`). Its build

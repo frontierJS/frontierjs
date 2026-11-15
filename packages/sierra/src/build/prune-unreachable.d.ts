@@ -5,8 +5,8 @@
  *
  * The only page that can name a main-bundle chunk is Vite's own index.html,
  * the SPA shell: a prerendered page loads its islands and nothing else, and
- * islands are a second build. So when every route declares `render: static`
- * and the home route is one the prerender writes, the shell is overwritten and
+ * islands are a second build. So when every route is prerendered and the home
+ * route is one the prerender writes, the shell is overwritten and
  * `pruneUnreachable` keeps nothing. Every route rather than the home alone,
  * because a static target with a client-routed route and no shell is a site
  * with a dead URL, and that is not a shape to optimize.

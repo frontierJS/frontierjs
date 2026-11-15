@@ -1028,7 +1028,7 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | `http.drainTimeout` | `number` | a third of `shutdown.timeout` | ms an in-flight request gets to finish during shutdown |
 | `shutdown.timeout` | `number` | the stop grace less 1 s | ms the WHOLE shutdown gets, inside `FRONTIER_STOP_GRACE` (10 s when unset). Past it the process exits **1** rather than waiting — a hung step used to end with node exiting 0 |
 | `shutdown.pluginTimeout` | `number` | the rest of `shutdown.timeout` | ms each plugin's `shutdown()` gets. One that never settles is logged and skipped instead of taking the rest of the list with it |
-| `shutdown.crashHandlers` | `boolean` | `true` | install `unhandledRejection`/`uncaughtException` handlers that log, stop the app and exit 1. Skipped where the app already has its own |
+| `shutdown.crashHandlers` | `boolean` | `true` | install `unhandledRejection`/`uncaughtException` handlers that log, emit `app:crash` (`{ message, error }`) and await its listeners for at most 3 s, stop the app and exit 1. The listeners and the stop share `shutdown.timeout`; a second throw is logged and starts nothing. Skipped where the app already has its own |
 | `http.compress` | `boolean` | `true` | gzip responses |
 | `http.maxBodySize` | `number` | `262144` | max request body bytes. A body declaring no length is read incrementally and cancelled at the bound, so it is a memory limit and not only a check |
 | `http.idleTimeout` | `number` | the runtime's `10` | seconds a connection may go without progress before the RUNTIME closes it. `0` disables; above `255` is refused at boot. Coarse — measured, it closes at about twice the value with a floor near four seconds, so it is not a deadline |

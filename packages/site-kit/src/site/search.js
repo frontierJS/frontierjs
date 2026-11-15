@@ -15,10 +15,16 @@ const WORD = '[\\p{L}\\p{N}]'
 
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** The words of a query, each as a whole-word pattern. Empty for blank input. */
+/**
+ * The words of a query as patterns, empty for blank input. Each is a whole
+ * word but the one still being typed, which matches a word's start: otherwise
+ * "insur" finds nothing until the visitor finishes "insurance".
+ */
 export function patternsOf(query) {
-  return [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))]
-    .map((w) => new RegExp(`(?<!${WORD})${escape(w)}(?!${WORD})`, 'iu'))
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const typing = /\S$/.test(query) ? words.at(-1) : null
+  return [...new Set(words)]
+    .map((w) => new RegExp(`(?<!${WORD})${escape(w)}${w === typing ? '' : `(?!${WORD})`}`, 'iu'))
 }
 
 /** A short run of `text` around the first matched word, cut at word edges. */

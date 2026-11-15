@@ -557,7 +557,7 @@ Everything above is loud. These are not.
    is hand-built into an object.
 5. A kept row is `record(id)`, released with its component; a list is `tethered()`.
 6. Money is rendered through the declaration, never as the integer.
-7. A `site/` route declaring `render: static` has `db:` in its surface config, a
+7. A prerendered `site/` route that reads data has `db:` in its surface config, a
    `getStaticPaths` if it is dynamic, a `select:` on every read of a gated model,
    and no column in `publishes:` it does not mean.
 8. `index.html` loads `virtual:sierra`, and `main.js` mounts nothing; every Vite

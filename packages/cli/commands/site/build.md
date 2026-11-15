@@ -22,16 +22,18 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 </script>
 
-An ordinary Vite build, and then Sierra prerenders every route declaring
-`render: static` in its frontmatter into its own `index.html`.
+An ordinary Vite build, and then Sierra prerenders every route but `render: spa`
+into its own `index.html`. A route it cannot prerender is left to the browser and
+named, with the reason.
 
-Two things fail here and nowhere else. A route whose `load()` read data gated
-above what it declares is **refused** rather than emitted — `publishes: N` in
-that route's frontmatter is the override, and it is in the route snapshot so a
-reviewer sees it. And a route that declares `render: static` but produces no
-page — a `getStaticPaths()` that returned nothing, a `load()` that threw, a
-render that failed — stops the build naming the route, rather than exiting 0
-with one line among the bundler's own.
+Two things fail here and nowhere else, and both only for a route that declares
+`render: static`. A route whose `load()` read data gated above what it declares
+is **refused** rather than emitted — `publishes:` in that route's frontmatter is
+the override, and it is in the route snapshot so a reviewer sees it. And a route
+that produces no page — a `getStaticPaths()` that returned nothing, a `load()`
+that threw, a render that failed — stops the build naming the route, rather than
+exiting 0 with one line among the bundler's own. An undeclared route in either
+case is left to the browser and listed with the reason.
 
 `--binary` then compiles `dist/` and the server `fli site:serve` runs into one
 executable at `bin/site` — nothing installed on the machine that runs it, and

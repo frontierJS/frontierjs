@@ -47,12 +47,12 @@ the router merges them — layout, then companion, then the page's own. A key
 arriving from a layout appears on every page under it, which is the change
 this section exists to show.
 
-- `/` — description: `Gear for developers who get their hands dirty. Tees, hoodies, caps and mugs for the three realms.` · render: `static` · title: `FrontierJS Supply Co. — Built for The Wild`
-- `/404/` — render: `static` · title: `Page not found — FrontierJS Supply Co.`
-- `/account/` — description: `Sign in to see what you have ordered.` · render: `static` · title: `Your account — FrontierJS Supply Co.`
-- `/cart/` — render: `static` · title: `Basket`
-- `/catalog/` — render: `static` · title: `Catalog`
-- `/pricing/` — description: `What a standing order costs, and what each one includes.` · render: `static` · title: `Pricing — FrontierJS Supply Co.`
+- `/` — description: `Gear for developers who get their hands dirty. Tees, hoodies, caps and mugs for the three realms.` · title: `FrontierJS Supply Co. — Built for The Wild`
+- `/404/` — title: `Page not found — FrontierJS Supply Co.`
+- `/account/` — description: `Sign in to see what you have ordered.` · title: `Your account — FrontierJS Supply Co.`
+- `/cart/` — title: `Basket`
+- `/catalog/` — title: `Catalog`
+- `/pricing/` — description: `What a standing order costs, and what each one includes.` · title: `Pricing — FrontierJS Supply Co.`
 - `/products/:slug/` — render: `static`
 
 ## Layouts

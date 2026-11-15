@@ -93,7 +93,7 @@ export function declaredPublishes(meta: any): {
  * @param {(model: string) => string[]|null} [o.columnsOf]  a model's columns, to check the declaration against
  * @param {number}  o.taps        how many clients a recorder was installed on
  * @param {boolean} o.readsData   does the route have a load/getStaticPaths?
- * @returns {{ ok: boolean, message: string|null, published: Array<{model:string, level:number}>, observedNothing?: boolean }}
+ * @returns {{ ok: boolean, message: string|null, reason?: string, published: Array<{model:string, level:number}>, observedNothing?: boolean }}
  */
 export function checkRoute({ routeId, meta, models, unresolved, columns, exposed, columnsOf, taps, readsData, }: {
     routeId: string;
@@ -108,6 +108,7 @@ export function checkRoute({ routeId, meta, models, unresolved, columns, exposed
 }): {
     ok: boolean;
     message: string | null;
+    reason?: string;
     published: Array<{
         model: string;
         level: number;
@@ -118,6 +119,7 @@ export function checkRoute({ routeId, meta, models, unresolved, columns, exposed
  * Format the per-route table.
  *
  * A check nobody has run is a rule nobody trusts, so the build reports what it
- * proved rather than only what it rejected.
+ * proved rather than only what it rejected. A `browser` row is an undeclared
+ * route the build could not prerender, with the reason (`FJS-D2195`).
  */
 export function formatReport(rows: any): string;

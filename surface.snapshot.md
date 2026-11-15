@@ -26,8 +26,8 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4551 source file(s) read
-359 entry point(s), 32 imported by nothing outside their package, 14 emitted
+27 package(s) · 4560 source file(s) read
+360 entry point(s), 33 imported by nothing outside their package, 14 emitted
 1786 value export(s), 655 reached by nothing outside, 186 emitted
 469 type export(s), 342 reached by nothing outside
 ```
@@ -43,8 +43,8 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `ui` | 16 | 0 | 56 | 36 | 3 | 0 | 0 |
 | `jetty` | 14 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `outpost` | 22 | 1 | 58 | 19 | 1 | 0 | 0 |
+| `site-kit` | 10 | 5 | 36 | 9 | 1 | 0 | 0 |
 | `conduit` | 5 | 1 | 29 | 12 | 0 | 61 | 33 |
-| `site-kit` | 9 | 4 | 36 | 9 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 22 |
 | `email-kit` | 5 | 0 | 10 | 4 | 1 | 0 | 0 |
 | `notifications` | 3 | 0 | 16 | 4 | 0 | 30 | 22 |
@@ -286,9 +286,9 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/site-kit`
 
-`packages/site-kit` · 9 entry point(s) · 36 value, 0 type export(s)
+`packages/site-kit` · 10 entry point(s) · 36 value, 0 type export(s)
 
-**Entries imported by nothing outside (4):** `./tel` `./check` `./check/schema/*` `./layouts/*.mesa`
+**Entries imported by nothing outside (5):** `./tel` `./check` `./check/schema/*` `./layouts/*.mesa` `./site/*.mesa`
 
 **Entries not source (1, not graded):** `./package.json`
 

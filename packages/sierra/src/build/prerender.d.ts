@@ -89,14 +89,29 @@ export function wrapDocument(bodyHTML: any, { title, description, css, styles, l
 /** '/blog/hello/' → 'blog/hello/index.html' */
 export function outputFileFor(urlPath: any): string;
 /**
- * Prerender every `render: static` route in the tree.
+ * The file an island's import names, as the bundle has to find it. Joined to the
+ * call site as a path, `@frontierjs/site-kit/site/Toc.mesa` became
+ * `content/routes/@frontierjs/...` and the island bundle failed to build, and
+ * `@/x.mesa` the same way; a package island resolves the way Node finds it.
+ * @param {string} file — the .mesa the island was written in
+ * @param {string} specifier — its import specifier
+ * @param {Record<string, string>} alias — the prerender's aliases
+ */
+export function islandModule(file: string, specifier: string, alias?: Record<string, string>): string;
+/**
+ * Prerender every route the static target prerenders.
  *
- * @returns {Promise<{ written: string[], urls: string[], skipped: Array<{route:string, reason:string}> }>}
+ * @returns {Promise<{ written: string[], urls: string[], skipped: Array<{route:string, reason:string}>,
+ *   fallback: Array<{route:string, reason:string}> }>}
  */
 export function prerenderRoutes(opts: any): Promise<{
     written: string[];
     urls: string[];
     skipped: Array<{
+        route: string;
+        reason: string;
+    }>;
+    fallback: Array<{
         route: string;
         reason: string;
     }>;

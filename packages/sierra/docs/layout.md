@@ -212,7 +212,7 @@ src/
                          is what the WORKER is built with, and it stubs
                          litestone's parser out of it (`FJS-2318`)
     slot-rewrite.js      named slots only (`page.slots`); the default `<slot />` is Mesa's to lower
-    prerender.js         routes declaring `render: static` → HTML
+    prerender.js         every route but `render: spa` → HTML
     document-shell.js    a static app's `document` applied to index.html, dev and build
     island-bundle.js     one chunk per island the static build needs
     prune-unreachable.js what a static build may publish: the emitted pages walked;

@@ -560,6 +560,82 @@ describe('prerenderRoutes — the read set comes from load()', () => {
   }, RENDER_TIMEOUT)
 })
 
+describe('prerenderRoutes — a route that declares nothing (FJS-D2194, FJS-D2195)', () => {
+
+  const RENDER_TIMEOUT = 30_000
+
+  function scaffold(load, frontmatter = 'title: Report') {
+    const root = tmpDir('sierra-undeclared-')
+    mkdirSync(resolve(root, 'src/routes/report'), { recursive: true })
+    writeFileSync(resolve(root, 'src/routes/report/index.mesa'),
+      `---\n${frontmatter}\n---\n<script>export let data = null</script>\n<h1>{data?.n ?? 0}</h1>\n`)
+    writeFileSync(resolve(root, 'src/routes/report/index.meta.js'), `export async function load() { ${load} }\n`)
+    return root
+  }
+  const reads = (model) => `globalThis.__READ__?.('${model}'); return { n: 1 }`
+
+  function fakeClient() {
+    const listeners = new Set()
+    globalThis.__READ__ = (model) => { for (const fn of listeners) fn({ model, operation: 'findMany' }) }
+    return { $tapQuery(fn) { listeners.add(fn); return () => listeners.delete(fn) } }
+  }
+
+  async function run(root, db = fakeClient()) {
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
+    const { scan } = await import('../src/scanner/index.js')
+    const tree = await scan('src/routes', { cwd: root })
+    return prerenderRoutes({
+      tree, root,
+      outDir: tmpDir('sierra-undeclared-out-'),
+      renderComponent,
+      schemaDefs: DEFS, schemaModels: MODELS, db,
+    })
+  }
+
+  test('is prerendered when the check passes', async () => {
+    const res = await run(scaffold(reads('product')))
+    expect(res.written).toContain('report/index.html')
+    expect(res.fallback).toEqual([])
+    expect(res.safety.rows[0]).toMatchObject({ route: '/report/', group: 'static' })
+  }, RENDER_TIMEOUT)
+
+  test('falls back when it reads a gated model, and the build goes on', async () => {
+    const res = await run(scaffold(reads('invoice')))
+    expect(res.fallback).toEqual([{ route: '/report/', reason: 'reads Invoice, gate 4' }])
+    expect(res.safety.rows[0]).toMatchObject({ group: 'browser', reason: 'reads Invoice, gate 4' })
+    expect(res.safety.report).toMatch(/\/report\/\s+browser\s+Invoice\(4\)\s+— reads Invoice, gate 4/)
+  }, RENDER_TIMEOUT)
+
+  test('…and writes no file for it — a refused page on disk is published', async () => {
+    const res = await run(scaffold(reads('invoice')))
+    expect(res.written).toEqual([])
+    expect(res.urls).toEqual([])
+  }, RENDER_TIMEOUT)
+
+  test('falls back when its load() throws, rather than failing the build', async () => {
+    const res = await run(scaffold(`throw new Error('needs a session')`))
+    expect(res.skipped).toEqual([])
+    expect(res.fallback[0].reason).toMatch(/^load\(\) threw: .*needs a session/)
+  }, RENDER_TIMEOUT)
+
+  test('falls back when nothing can observe its reads', async () => {
+    const res = await run(scaffold(reads('product')), null)
+    expect(res.fallback).toEqual([{ route: '/report/', reason: 'reads data the build could not observe' }])
+  }, RENDER_TIMEOUT)
+
+  test('`render: spa` is never prerendered or listed', async () => {
+    const res = await run(scaffold(reads('invoice'), 'render: spa'))
+    expect(res.written).toEqual([])
+    expect(res.fallback).toEqual([])
+    expect(res.safety.rows).toEqual([])
+  }, RENDER_TIMEOUT)
+
+  test('`render: static` still fails the build on the same read', async () => {
+    await expect(run(scaffold(reads('invoice'), 'render: static')))
+      .rejects.toThrow(/cannot be published as static HTML/)
+  }, RENDER_TIMEOUT)
+})
+
 describe('prerenderRoutes — a companion that will not import', () => {
 
   const RENDER_TIMEOUT = 30_000

@@ -509,6 +509,26 @@ push: (monitor) => push()
 
 **The topic is the recipient's address**, `recipient.pushTopic`, and a recipient without one is refused by name: on a public server a guessable name is readable by anyone, so an app mints `<slug>-critical-<random>` once and shows it as a subscribe link. `title`, `body`, `priority`, `tags`, `url` (sent as `Click`) and `actions` go on the wire; `data`, `ttl`, `urgency` and `topic` are web push's and are dropped. ntfy's own limits are applied rather than refused: a body is cut to 4095 bytes with an ellipsis, since 4096 makes it a file attachment, and only the first three actions are sent. `.action(label, url)` adds a `view` button; `.post(label, url, body)` adds an `http` one the phone POSTs itself (`clear: true`), with no `Authorization` header, so the topic behind `url` must accept an anonymous write. `webPush()` sends no actions. A payload carries titles and links, never a secret — the `push:` formatter is where `@guarded` columns stay out, for both drivers.
 
+### The crash ping
+
+When a process dies of an uncaught throw or an unhandled rejection, junction emits `app:crash` and waits for its listeners before it drains. This package listens at boot and sends one `ntfy()` push at priority 5, tagged `rotating_light`, titled `<app name> crashed on <hostname>`. The body is the error message, the first five stack lines and, when earlier crashes sent nothing, a count of them. The settings come from the environment:
+
+| Setting | Meaning |
+| ------- | ------- |
+| `NTFY_BASE_URL` | The ntfy server. |
+| `NTFY_TOPIC` | The topic the ping is published to. |
+| `NTFY_TOKEN` | Optional; sent as the bearer token. |
+
+`NTFY_BASE_URL` and `NTFY_TOPIC` together turn it on. With either missing it is off, and the boot line says `crash ping off` and names what is missing; boot proceeds. The boot line of a running ping names the server and never the topic, because on a public server whoever knows the topic reads the pings.
+
+**One ping per 10 minutes.** The time of the last ping and a count of the crashes since live in a `.crash-ping` file in the main database's directory, else the working directory (`:memory:` or no `db`). A file survives `--restart unless-stopped`, where a counter in memory would ring once per restart, and the database is the likeliest thing to be broken at a crash. A crash inside the window sends nothing and is counted into the next ping. A failed send writes one `[notifications]` line to stderr, counts as missed and does not open the window, so the next crash tries again. Under `tenancy { strategy database }` the main database is a tenant's file, so the record lands beside it: in `example`, `db/shops/.crash-ping`.
+
+**The ping holds the exit for at most 3 s**, taken out of the shutdown budget (`shutdown.timeout`) and not added to it; a listener that has not finished by then is abandoned and the drain proceeds.
+
+**It does not cover a process that hangs, or dies before `boot()` has run.** Those send nothing. An app that is down is Basecamp's `Monitor`.
+
+`example`'s `bun run verify:crash` drives it: a real API process crashes with the settings pointed at a local listener, rings once, and a second crash inside the window rings nothing.
+
 ---
 
 ## Sierra resource

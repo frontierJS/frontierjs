@@ -391,7 +391,7 @@ export function declaredPublishes(meta) {
  * @param {(model: string) => string[]|null} [o.columnsOf]  a model's columns, to check the declaration against
  * @param {number}  o.taps        how many clients a recorder was installed on
  * @param {boolean} o.readsData   does the route have a load/getStaticPaths?
- * @returns {{ ok: boolean, message: string|null, published: Array<{model:string, level:number}>, observedNothing?: boolean }}
+ * @returns {{ ok: boolean, message: string|null, reason?: string, published: Array<{model:string, level:number}>, observedNothing?: boolean }}
  */
 export function checkRoute({
   routeId, meta, models, unresolved = [], columns = new Map(), exposed = [],
@@ -400,19 +400,19 @@ export function checkRoute({
   const declared = declaredPublishes(meta)
 
   if (declared.error)
-    return { ok: false, message: `${routeId}: ${declared.error}`, published: [] }
+    return { ok: false, message: `${routeId}: ${declared.error}`, reason: declared.error, published: [] }
 
   // A misspelt model or column in the declaration matches nothing, so it would
   // read as a page publishing less than it does. Refused by name instead.
   for (const [model, cols] of declared.models) {
     if (modelNameFor(model) !== model)
-      return { ok: false, published: [], message:
+      return { ok: false, published: [], reason: `publishes names ${model}, not a model`, message:
         `${routeId}: publishes names \`${model}\`, which is not a model in the schema` +
         (modelNameFor(model) ? ` — write \`${modelNameFor(model)}\`` : '') }
     const known = columnsOf(model)
     const stray = known ? [...cols].filter(c => !known.includes(c)) : []
     if (stray.length)
-      return { ok: false, published: [], message:
+      return { ok: false, published: [], reason: `publishes.${model} names ${stray.join(', ')}, not columns`, message:
         `${routeId}: publishes.${model} names ${stray.map(c => `\`${c}\``).join(', ')}, ` +
         `which ${stray.length === 1 ? 'is not a column' : 'are not columns'} of ${model}` }
   }
@@ -425,6 +425,7 @@ export function checkRoute({
     return {
       ok: false,
       published: [],
+      reason: 'reads data the build could not observe',
       message:
         `${routeId} — render: static\n` +
         `   reads data in its .meta.js, and the build could not observe what it read,\n` +
@@ -453,6 +454,7 @@ export function checkRoute({
     return {
       ok: false,
       published,
+      reason: `reads ${unknown.join(', ')}, gate unresolved`,
       message:
         `${routeId} — render: static\n` +
         `   read ${unknown.map(u => `\`${u}\``).join(', ')}, whose gate the build could not\n` +
@@ -470,6 +472,7 @@ export function checkRoute({
     return {
       ok: false,
       published,
+      reason: `reads ${leaked.join(', ')} through asSystem()`,
       message:
         `${routeId} — render: static\n` +
         `   reads ${leaked.map(c => `\`${c}\``).join(', ')} through asSystem(), which\n` +
@@ -504,6 +507,7 @@ export function checkRoute({
     return {
       ok: false,
       published,
+      reason: over.map(o => `reads ${o.model}, gate ${o.level}`).join('; '),
       message:
         `${routeId} — render: static\n` +
         over.map(o => o.declared
@@ -545,7 +549,8 @@ export function checkRoute({
  * Format the per-route table.
  *
  * A check nobody has run is a rule nobody trusts, so the build reports what it
- * proved rather than only what it rejected.
+ * proved rather than only what it rejected. A `browser` row is an undeclared
+ * route the build could not prerender, with the reason (`FJS-D2195`).
  */
 export function formatReport(rows) {
   if (!rows.length) return ''
@@ -554,10 +559,11 @@ export function formatReport(rows) {
     const models = r.published.length
       ? r.published.map(p => `${p.model}(${p.level})`).join(' ')
       : '—'
-    return `    ${r.route.padEnd(w)}  ${models}`
+    const group = (r.group ?? 'static').padEnd(7)
+    return `    ${r.route.padEnd(w)}  ${group}  ${models}${r.reason ? `  — ${r.reason}` : ''}`
   }
   return [
-    `    ${'route'.padEnd(w)}  models read (gate)`,
+    `    ${'route'.padEnd(w)}  ${'renders'.padEnd(7)}  models read (gate)`,
     ...rows.map(line),
   ].join('\n')
 }

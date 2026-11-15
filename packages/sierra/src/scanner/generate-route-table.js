@@ -14,6 +14,7 @@
 
 import { writeFile, readFile, mkdir } from 'fs/promises'
 import { dirname, relative, resolve } from 'path'
+import { prerenders } from './render-mode.js'
 
 /**
  * Where the route table lives, per Vite command — the writer and the importer
@@ -67,6 +68,9 @@ export async function generateRouteTable(tree, outputPath, projectRoot = '.', op
  * @param {import('./build-tree.js').RouteNode} tree
  * @param {string} projectRoot
  * @param {string} tableOutput  — path of the route table file relative to projectRoot
+ * @param {{ omitLoaders?: boolean, devStaticData?: boolean, target?: string }} [opts]
+ *   `target` decides which routes are prerendered (`render-mode.js`); left out,
+ *   only a `render: static` route is.
  */
 export function renderRouteTable(tree, projectRoot = '.', tableOutput = 'config/routes.js', opts = {}) {
   const allNodes = flattenTree(tree)
@@ -136,7 +140,7 @@ export function renderRouteTable(tree, projectRoot = '.', tableOutput = 'config/
   // it stays: this narrows what dev ships, never what the build does.
   const loaderNodes = opts.omitLoaders
     ? []
-    : routeNodes.filter(n => n.companion && n.meta?.render !== 'static')
+    : routeNodes.filter(n => n.companion && !prerenders(n, opts.target))
   const loaderEntries = loaderNodes
     .map(n => {
       const absFile = resolve(projectRoot, n.companion)
@@ -164,7 +168,7 @@ export function renderRouteTable(tree, projectRoot = '.', tableOutput = 'config/
   // running under `serve`, and each is guarded by `import.meta.env.DEV` as well,
   // so a table written by a dev run and then bundled by a build carries nothing.
   const devStaticNodes = opts.devStaticData
-    ? routeNodes.filter(n => n.companion && n.meta?.render === 'static')
+    ? routeNodes.filter(n => n.companion && prerenders(n, opts.target))
     : []
   const devStaticEntries = devStaticNodes
     .map(n => `  ${jsString(n.id)}: () => __sierraDevStatic(${jsString(n.id)}),`)

@@ -12,6 +12,7 @@ import { resolve, relative, basename } from 'path'
 import { scan } from '../scanner/index.js'
 import { generateRouteTable, routeTablePath } from '../scanner/generate-route-table.js'
 import { classify } from '../scanner/classify.js'
+import { declaresStatic } from '../scanner/render-mode.js'
 import { RESOLVED_BOOT_ID } from '../virtual/virtual-sierra.js'
 import { warnDuplicateSnippets, warnReservedFrontmatter } from './warnings.js'
 // From page-fields.js, not router/index.js: this runs in Node during the
@@ -76,7 +77,7 @@ export function scannerPlugin(config, sierraContext) {
     // `dev: { staticData: false }`; never in a build, where the data is baked.
     const devStaticData = command === 'serve' && (config.dev?.staticData ?? true)
     const code = await generateRouteTable(tree, resolve(root, routeTablePath(config, command)), root, {
-      omitLoaders, devStaticData,
+      omitLoaders, devStaticData, target: config.target ?? 'spa',
     })
     const tableChanged = _lastTable !== null && _lastTable !== code
     _lastTable = code
@@ -108,7 +109,9 @@ export function scannerPlugin(config, sierraContext) {
     const nodes = flattenTree(tree)
     for (const node of nodes) {
       if (!node.meta?.dynamic) continue
-      if (node.meta?.render !== 'static') continue
+      // An undeclared dynamic route with no getStaticPaths() falls back to the
+      // browser at prerender (`FJS-D2195`); only the declaration is held to it.
+      if (!declaresStatic(node)) continue
 
       // Dynamic route with render:static — companion must export getStaticPaths
       if (!node.companion) {

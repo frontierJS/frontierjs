@@ -16,7 +16,7 @@ import { siteKit } from '../config/vite.js'
 import { collection } from '../src/collection.js'
 import { LOCKED_KEYS, applyEdit, applyPhoto, arrangeCollection, changeRefusal, collectionOf, formOf, lockedKeysChanged, pathRefusal, photoName, photoOf } from '../src/editable.js'
 import { changedBlocks, hunkChanges, plainSwap, rebuildOf } from '../src/editor/live.js'
-import { matching, pageAddress, pagesOf } from '../src/editor/palette.js'
+import { pageAddress, pagesOf } from '../src/editor/palette.js'
 import { pageOf, routeFile } from '../src/editor/pick.js'
 
 const failed = []
@@ -451,8 +451,6 @@ try {
     check('pages are home first, named by this page\'s link to them, this page marked',
       JSON.stringify(pages.map((p) => [p.address, p.label, p.here])) === JSON.stringify([['/', 'Home', false], ['/about/', 'About us', false], ['/roofing/', '/roofing/', true]]),
       JSON.stringify(pages))
-    const cmds = [{ group: 'Go to', label: 'About us', hint: '/about/' }, { group: 'Edit', label: 'About us', hint: 'routes/(company)/about.md' }]
-    check('every term of a query must match, in any field', matching(cmds, 'edit about').length === 1 && matching(cmds, 'ABOUT').length === 2 && matching(cmds, 'about zzz').length === 0)
   }
 
   // ─── the page an ask is typed on ──────────────────────────────────────────

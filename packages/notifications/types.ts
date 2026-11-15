@@ -224,6 +224,10 @@ export interface App {
    * to plain assignment against an older Junction.
    */
   own?: (name: string, value: unknown) => void
+  /** Junction's event bus; the crash ping listens for `app:crash` on it. */
+  events?: { on(event: string, handler: (data: unknown) => unknown): unknown }
+  logger?: { info(msg: string, meta?: Record<string, unknown>): void }
+  config?: { name?: string }
 }
 
 // ─── Plugin options ───────────────────────────────────────────────────────────

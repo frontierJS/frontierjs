@@ -11,19 +11,27 @@
   // Signed in, the page is picked rather than browsed: a pointer outlines the
   // element whose stamp it is over, and a click changes its words in place, or
   // opens the file when they cannot be changed alone, instead of following a
-  // link. Browse hands clicks back to the page, and Cmd/Ctrl+K lists the
-  // draft's pages to go to. Ask is a change across the draft in the owner's
-  // words, kept at once and undone in one step.
+  // link. Browse hands clicks back to the page, and Cmd/Ctrl+K is the site's
+  // one palette: the draft's pages to go to, the visitor's search results, the
+  // files and the bar's actions (FJS-D2191). Ask is a change across the draft
+  // in the owner's words, kept at once and undone in one step.
+  import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
   import Ask from './Ask.mesa'
   import Field from './Field.mesa'
   import Inline from './Inline.mesa'
-  import Palette from './Palette.mesa'
+  import { createSearch } from '../site/search.js'
   import { arrive, begin, clientFor, forget, held, onHeldChange } from './handoff.js'
   import { rebuildOf } from './live.js'
   import { pagesOf } from './palette.js'
   import { LOC, OURS, fieldFor, parseLoc, stampedFrom } from './pick.js'
 
   export let site
+  // The palette portals here: overlayHost() is the page's body, outside the
+  // root, where the kit's stylesheet and the pick's exemption do not reach.
+  export let root = null
+
+  const index = createSearch()
+  const EDITING = 'data-fjs-editing'
 
   let who   = held()
   let error = null
@@ -164,6 +172,15 @@
     ]
   }
 
+  const items = () => commands().map((c) => ({ id: c.id, group: c.group, label: c.label, sub: c.hint, action: c.run }))
+  const results = (q) => index.results(q, (url) => location.assign(url))
+
+  // The visitor's Search island hands its key and button to this palette while
+  // the attribute is up, so Cmd/Ctrl+K never opens two.
+  function editing(on) { document.documentElement.toggleAttribute(EDITING, on) }
+  $: who, files, () => editing(!!(who && files?.length))
+  function openPalette() { if (who && files?.length) palette = true }
+
   function keydown(e) {
     if ((e.metaKey || e.ctrlKey) && e.key?.toLowerCase() === 'k' && who && files?.length) {
       e.preventDefault()
@@ -174,7 +191,10 @@
   document.addEventListener('pointermove', hover, { capture: true, passive: true })
   document.addEventListener('click', pick, { capture: true })
   addEventListener('scroll', leave, { passive: true })
+  document.addEventListener('fjs-editor:palette', openPalette)
   $.onDestroy(() => {
+    editing(false)
+    document.removeEventListener('fjs-editor:palette', openPalette)
     document.removeEventListener('pointermove', hover, { capture: true })
     document.removeEventListener('click', pick, { capture: true })
     removeEventListener('scroll', leave)
@@ -186,7 +206,9 @@
 <mesa:window onkeydown={keydown} />
 
 {#if palette}
-  <Palette commands={commands()} onclose={() => palette = false} />
+  <CommandPalette host={root} items={items()} search={results} searchMinLength={2}
+                  groupOrder={['Go to', 'Results', 'Action', 'Edit']}
+                  placeholder="Go to a page, find words, edit a file…" onclose={() => palette = false} />
 {/if}
 
 {#if box && picking && who}
@@ -223,7 +245,7 @@
         {#if files?.length} · {files.length} {files.length === 1 ? 'page' : 'pages'}{:else if files} · nothing on this site is editable{/if}</span>
       {#if files?.length}<button class="btn ghost" id="fjs-ask-open" aria-pressed={asking} onclick={() => { asking = !asking; opened = null }}>Ask</button>{/if}
       <button class="btn ghost" aria-pressed={picking} onclick={() => { picking = !picking; leave() }}>{picking ? 'Browse' : 'Pick'}</button>
-      {#if files?.length}<button class="btn ghost" id="fjs-palette-open" title="Go to a page, edit a file" onclick={() => palette = true}>
+      {#if files?.length}<button class="btn ghost" id="fjs-palette-open" title="Go to a page, find words, edit a file" onclick={() => palette = true}>
         Pages <kbd>{MAC ? '⌘K' : 'Ctrl K'}</kbd></button>{/if}
       <a class="btn ghost" href={site.page}>Open in basecamp</a>
       <button class="btn ghost" onclick={signOut}>Sign out</button>

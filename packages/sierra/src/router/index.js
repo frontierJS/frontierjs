@@ -1021,11 +1021,11 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   //
   // Dev only. In the built output this is not a state anybody reaches: the page
   // is a file with its data already in it.
-  if (import.meta.env?.DEV && !loaderFactory && toNode.meta?.render === 'static' && toNode.companion) {
+  if (import.meta.env?.DEV && !loaderFactory && toNode.companion) {
     if (!_prerenderNoted.has(toNode.id)) {
       _prerenderNoted.add(toNode.id)
       console.info(
-        `[Sierra] ${toNode.file ?? toNode.id} declares \`render: static\`, so its ` +
+        `[Sierra] ${toNode.file ?? toNode.id} is prerendered, so its ` +
         `load() runs at BUILD time — \`data\` is null here and the page renders empty. ` +
         `Run the build to see it with data.`
       )

@@ -1736,7 +1736,7 @@ const columns = writableColumns(db, m.accessor)
         //
         // One transaction with a savepoint per row: a row that fails rolls
         // back alone, its held announcements with it, and the request pays
-        // one WAL commit rather than one per row (IDEAS/speed-and-footprint.md).
+        // one WAL commit rather than one per row (FJS-D2193).
         // `transactional:` on the service makes any failure roll back the call.
         const sys = systemFields(ctx)
         const created:  unknown[] = []

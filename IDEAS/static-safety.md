@@ -1,12 +1,15 @@
 ---
 id: static-safety
-status: partial
+status: shipped
 dated: 2026-08-06
 ---
 
 # Idea — Prove a static page is safe to publish
 
-**Status: THE CHECK IS BUILT (2026-08-06). The classifier is not.** `FJS-081` is
+**Status: THE CHECK IS BUILT (2026-08-06), and the classifier (2026-11-15).** On a
+`target: 'static'` surface every route but `render: spa` is prerendered unless the
+check refuses it, and the build table names each route's group and reason
+(`FJS-D2194`–`FJS-D2196`; `packages/sierra/src/scanner/render-mode.js`). `FJS-081` is
 closed — `packages/sierra/src/build/static-safety.js`, wired into
 `build/prerender.js`, 39 tests plus `bun run test:safety` against a real
 Litestone client, exercised in `example/` (`bun run build:site`). See
@@ -158,10 +161,48 @@ Two cautions, both inherited from above rather than new:
    will happen).
 5. **The classifier and its table** (section above) — the same read set and the same
    `buildGate()` comparison, reported per route instead of thrown per violation.
+   **Built 2026-11-15:** the `renders` column of the build's safety table, and an
+   undeclared route the check refuses falls back with its reason.
    Worth building second: a check nobody has run is a rule nobody trusts, and the
    table is what makes it legible.
 
 ## Open questions
+
+**The classifier's three buckets are two in Sierra (probed 2026-11-15).** A route
+is prerendered (`render: static`) or rendered in the browser; nothing renders per
+request, so *server-needed* has no mode to send a route to. On a `target: 'static'`
+surface a *pure client* page is still prerendered as a shell — `example/site`'s
+`/account/` and `/cart/` declare `render: static` and take their data through
+islands. What the classifier decides is therefore one thing: may this page be
+prerendered, which the check already answers per route. The three questions below
+are about what that answer replaces.
+
+- ~~**What does an undeclared route on a `target: 'static'` surface do?**~~ **Answered 2026-11-15 (`FJS-D2194`): A — prerender it unless the check refuses: `render: static` becomes optional and `render: spa` is the opt-out (Astro's default on a static build, `prerender = false` to leave).** Today a route
+  without `render: static` is not prerendered.
+  - **A** — prerender it unless the check refuses: `render: static` becomes optional and
+    `render: spa` is the opt-out (Astro's default on a static build, `prerender = false`
+    to leave)
+  - **B** — report only: the build prints each route's group, `render: static` stays the
+    only switch
+  - **C** — warn on an undeclared route that classifies as prerenderable
+  - **Recommend A** — it is the payoff this section names: a hand annotation that can be
+    wrong retires, and the check already proves each page; B retires nothing and C keeps
+    the annotation while saying it is redundant
+- ~~**What does the build do with an undeclared route the check refuses?**~~ **Answered 2026-11-15 (`FJS-D2195`): A — fall back to the browser render and name the reason in the table (`reads Invoice, gate 4`); only an explicit `render: static` fails, as Next.js's `dynamic = 'error'` fails and its default silently goes dynamic.**
+  - **A** — fall back to the browser render and name the reason in the table (`reads
+    Invoice, gate 4`); only an explicit `render: static` fails, as Next.js's
+    `dynamic = 'error'` fails and its default silently goes dynamic
+  - **B** — fail the build for every refused route, declared or not
+  - **Recommend A** — the declaration is checkable intent; under B a gate change in the
+    schema breaks a build that touched no route
+- ~~**Where does the classification table live?**~~ **Answered 2026-11-15 (`FJS-D2196`): A — the build output: `prerenderRoutes` already returns `safety.rows` and the build prints them; add the group and its reason.**
+  - **A** — the build output: `prerenderRoutes` already returns `safety.rows` and the build
+    prints them; add the group and its reason
+  - **B** — also a column in `routes.snapshot.md`, so a gate change that flips a page shows
+    in a diff
+  - **Recommend A** — `sierra routes` writes the snapshot with no database, so B needs it
+    to run each `load()` or the build to write the snapshot; a later step if a flipped
+    page is ever missed
 
 - ~~**Is level 0 the right bar, or should it be "the gate the build ran as"?**~~ **Answered 2026-09-28 (`FJS-D516`): A — keep what shipped: a model gated at 0 is public and needs no declaration, and a column of a gated model fails the build unless the route's `publishes:` names it (`FJS-D496`); an `asSystem()` catalog names its columns once, visible in `routes.snapshot.md` (`FJS-D464`).** A static
   build that reads through `asSystem()` to publish a public product catalog from a

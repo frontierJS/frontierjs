@@ -128,7 +128,7 @@ try {
 const page = join(site, 'dist', 'notes', 'index.html')
 
 if (!await must($, probe.fileExists({ path: page, name: 'site/dist/notes/index.html' }), {
-  likely:    'the route did not declare render: static, so nothing was prerendered',
+  likely:    'the route was not prerendered — the build lists it under Rendered in the browser, with why',
   reproduce: `ls -R ${join(site, 'dist')}`,
 })) return
 

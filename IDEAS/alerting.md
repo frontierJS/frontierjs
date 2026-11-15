@@ -143,10 +143,10 @@ Goal: a junction app that throws an uncaught error sends one critical ping befor
 Done when: in `packages/notifications`, an app crashed by an uncaught throw delivers one push through the `ntfy()` driver's `deliver` stub before `process.exit`; a second crash inside the window delivers none; an app with no ntfy settings crashes exactly as it does today.
 
 - [x] 1.1 Rule Q1–Q4. (`FJS-D2184`–`FJS-D2187`)
-- [ ] 1.2 junction: `crashStop` emits the crash on the app's event bus and waits for its listeners under the Q2 cap, before `app.stop()` (per Q4). It runs once: a second throw during the ping does not start a second stop.
-- [ ] 1.3 notifications: listens, sends one push through `ntfy()` to the Q1 address, and keeps the Q3 record.
-- [ ] 1.4 `example`: one drive that crashes the API on purpose against a local listener, run twice inside the window.
-- [ ] 1.5 `packages/notifications/README.md` § the crash ping, and `example/.env.example` names the settings.
+- [x] 1.2 junction: `crashStop` emits the crash on the app's event bus and waits for its listeners under the Q2 cap, before `app.stop()` (per Q4). It runs once: a second throw during the ping does not start a second stop. **Built 2026-11-15:** `app:crash` carries `{ message, error }`; `packages/junction/test/shutdown.test.ts` § app:crash pins the order, the one deadline, a listener that never settles, and the second throw.
+- [x] 1.3 notifications: listens, sends one push through `ntfy()` to the Q1 address, and keeps the Q3 record. **Built 2026-11-15:** `packages/notifications/crash.ts`, called from the plugin's `boot()`. `NTFY_BASE_URL` without `NTFY_TOPIC` turns the ping off with a boot line rather than refusing boot, because Basecamp and Workbench set the first for their own pushes and configure this package. The record is `.crash-ping` in the main database's directory, else the working directory. A failed send is counted like a suppressed one and opens no window. `test/crash-ping.test.ts` covers this, including a real process crashed twice against a loopback listener: one ping, then none.
+- [x] 1.4 `example`: one drive that crashes the API on purpose against a local listener, run twice inside the window. **Built 2026-11-15:** `example` `verify:crash` (`web/test/verify-crash.mjs`). It runs the API from a scratch copy of the app on 7110, because a `tenancy { strategy database }` fleet is fixed beside the schema file and no setting moves it; a `--preload` fixture throws on `SIGUSR2`, so the app carries no crash switch. One ping at priority 5, then none and `since: 1`. The record lands in `db/shops/`, the directory of the shop file, which `.gitignore` already covers.
+- [x] 1.5 `packages/notifications/README.md` § the crash ping, and `example/.env.example` names the settings. **Written 2026-11-15:** README § The crash ping, after § ntfy; `.env.example` § Crash ping.
 
 ## Open questions
 

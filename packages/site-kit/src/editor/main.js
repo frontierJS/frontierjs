@@ -34,5 +34,5 @@ if (tag && !handBack()) {
   const root = shadowFor()
   const anchor = document.createComment('fjs-editor')
   root.append(anchor)
-  mount(anchor, Editor, { root, props: { site: siteOf(tag.dataset.fjsEditor) } })
+  mount(anchor, Editor, { root, props: { site: siteOf(tag.dataset.fjsEditor), root } })
 }

@@ -1,7 +1,7 @@
 /**
  * static-data-plugin.js — a prerendered route's `load()`, in dev
  *
- * A `render: static` route's `load()` runs in Node at build time and is where
+ * A prerendered route's `load()` runs in Node at build time and is where
  * an app reads its own database. Its companion may never enter the browser
  * graph: following one there published a storefront's Litestone client, the DDL
  * emitter and the migration engine as fetchable files on a public origin
@@ -37,6 +37,7 @@
 import { resolve } from 'path'
 import { statSync }  from 'fs'
 import { importFresh } from '../scanner/import-fresh.js'
+import { prerenders }  from '../scanner/render-mode.js'
 
 const ENDPOINT = '/__sierra/static-data'
 
@@ -105,14 +106,14 @@ export function staticDataPlugin(config, sierraContext) {
           if (!node)          return send(404, { error: `no such route: ${routeId}` })
           if (!node.companion) return send(404, { error: `${routeId} has no companion` })
 
-          // Only a route that DECLARES `render: static`. This endpoint exists
-          // because a static route's companion never enters the browser graph;
-          // a route that does not declare it has its loader in the graph
-          // already and reaches it there. Without the check the endpoint runs
-          // the companion of any route in the tree, which is a second way into
-          // code the client route table deliberately imports differently.
-          if (node.meta?.render !== 'static') {
-            return send(404, { error: `${routeId} is not a render: static route` })
+          // Only a route this surface prerenders. This endpoint exists because
+          // a prerendered route's companion never enters the browser graph; any
+          // other route has its loader in the graph already and reaches it
+          // there. Without the check the endpoint runs the companion of any
+          // route in the tree, which is a second way into code the client route
+          // table imports differently.
+          if (!prerenders(node, config.target)) {
+            return send(404, { error: `${routeId} is not a prerendered route` })
           }
 
           // Only the params the ROUTE declares, and each one a string, which is

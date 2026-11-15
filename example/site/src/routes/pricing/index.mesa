@@ -1,7 +1,6 @@
 ---
 title: Pricing — FrontierJS Supply Co.
 description: What a standing order costs, and what each one includes.
-render: static
 ---
 <!--
   The price list, prerendered to plain HTML at build time.

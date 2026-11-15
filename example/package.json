@@ -40,6 +40,7 @@
     "verify:cart": "node web/test/verify-cart.mjs",
     "verify:money": "node web/test/verify-money.mjs",
     "verify:migrate": "bun web/test/verify-migrate.mjs",
+    "verify:crash": "bun web/test/verify-crash.mjs",
     "verify:replicate": "bun web/test/verify-replicate.mjs",
     "verify:views": "bun web/test/verify-views.mjs",
     "verify:stock": "node web/test/verify-stock.mjs",

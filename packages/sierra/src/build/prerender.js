@@ -1,15 +1,16 @@
 /**
- * build/prerender.js — emit HTML for routes that declare `render: static`.
+ * build/prerender.js — emit HTML for every route a `target: 'static'` surface
+ * prerenders: each one but `render: spa` (`scanner/render-mode.js`).
  *
- * The declaration layer for static rendering already existed and was enforced:
- * a route sets `render: static` in frontmatter, a dynamic one exports
- * `getStaticPaths()` from its `.meta.js` companion, and scanner-plugin fails the
- * build if that export is missing. Nothing ever consumed any of it — the
- * `static` target returned the SPA Vite config with a comment saying SSG "is
- * handled separately", so `target: 'static'` silently produced a single
- * index.html and no pre-rendered route at all. No error, no warning.
+ * A route that DECLARES `render: static` must be written: a refusal by the
+ * static-safety check fails the build, and a page that throws while rendering
+ * does too. A route that declares nothing is written when it can be, and
+ * otherwise falls back to the browser with the reason in `fallback` and the
+ * table (`FJS-D2195`) — so a gate tightened in the schema changes which pages
+ * are files rather than breaking a build that touched no route.
  *
- * This is that missing step.
+ * A route's pages are held until its verdict is in. A refused page that was
+ * already on disk would be published by a build that then carried on.
  *
  * ── Composition ───────────────────────────────────────────────────────────
  * A route renders inside its layout chain. Mesa hands a component its content
@@ -35,10 +36,12 @@ import { resolve, dirname, join, relative, sep } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync, readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { createRequire } from 'module'
 import { appSrcDir } from './app-alias-plugin.js'
 import { explainModuleInitFailure } from './warnings.js'
 import { importAppModule }           from './app-import.js'
 import { ROUTE_EXTENSIONS, layoutRole } from '../scanner/classify.js'
+import { prerenders, declaresStatic }   from '../scanner/render-mode.js'
 import {
   installSchemas, createReadRecorder, checkRoute, formatReport,
 } from './static-safety.js'
@@ -420,9 +423,28 @@ export function outputFileFor(urlPath) {
 }
 
 /**
- * Prerender every `render: static` route in the tree.
+ * The file an island's import names, as the bundle has to find it. Joined to the
+ * call site as a path, `@frontierjs/site-kit/site/Toc.mesa` became
+ * `content/routes/@frontierjs/...` and the island bundle failed to build, and
+ * `@/x.mesa` the same way; a package island resolves the way Node finds it.
+ * @param {string} file — the .mesa the island was written in
+ * @param {string} specifier — its import specifier
+ * @param {Record<string, string>} alias — the prerender's aliases
+ */
+export function islandModule(file, specifier, alias = {}) {
+  if (/^\.{1,2}(\/|$)/.test(specifier) || specifier.startsWith('/')) return resolve(dirname(file), specifier)
+  for (const [key, target] of Object.entries(alias)) {
+    if (specifier === key) return target
+    if (specifier.startsWith(key + '/')) return join(target, specifier.slice(key.length + 1))
+  }
+  return createRequire(file).resolve(specifier)
+}
+
+/**
+ * Prerender every route the static target prerenders.
  *
- * @returns {Promise<{ written: string[], urls: string[], skipped: Array<{route:string, reason:string}> }>}
+ * @returns {Promise<{ written: string[], urls: string[], skipped: Array<{route:string, reason:string}>,
+ *   fallback: Array<{route:string, reason:string}> }>}
  */
 export async function prerenderRoutes(opts) {
   const {
@@ -501,11 +523,13 @@ export async function prerenderRoutes(opts) {
   // redirect it is the only thing ever served (FJS-1533, FJS-1534). Neither
   // is written, and both are named in `omitted` rather than silently absent.
   const omitted = []
-  const staticNodes = flatten(tree).filter(n => n.meta?.render === 'static' && n.file).filter((n) => {
+  const staticNodes = flatten(tree).filter(n => prerenders(n, 'static') && n.file).filter((n) => {
     const reason = omittedReason(n)
     if (reason) omitted.push({ route: n.path ?? n.id, reason })
     return !reason
   })
+  // Undeclared routes the build could not prerender, and why (`FJS-D2195`).
+  const fallback = []
 
   // The browser gets the app's methods on the built-in types from `main.js`,
   // which no prerender imports, so without this a page calling `.toMoney()`
@@ -523,38 +547,30 @@ export async function prerenderRoutes(opts) {
     }
   }
 
-  for (const node of staticNodes) {
-    const pageFile = resolve(root, node.file)
-    if (!existsSync(pageFile)) {
-      skipped.push({ route: node.id, reason: 'route file not found' })
-      continue
+  /**
+   * Render one route's pages without writing any. A route-level failure is
+   * `failure`; for a declared route each failed URL is in `skipped` instead and
+   * the rest of its pages still render, as the build reports them all.
+   */
+  async function renderRoute(node, pageFile, declared) {
+    const out = { pages: [], skipped: [], failure: null, readsData: false }
+    const fail = (route, reason) => {
+      if (declared) out.skipped.push({ route, reason })
+      else out.failure = reason
     }
-
-    // One recorder per ROUTE, opened before getStaticPaths() and closed after
-    // the last page it contributes. The read set is a property of the route,
-    // not of one emitted URL: a `[slug]` route that reads a gated model does so
-    // for every slug, and reporting it once is what makes the message useful.
-    //
-    // try/finally rather than a stop() before each `continue` — there are five
-    // exits from this body and a missed one leaks a tap onto the next route,
-    // which would attribute one route's reads to another and fail the wrong
-    // build.
-    const recorder = safetyOn ? createReadRecorder(db) : null
-    // Hoisted so the finally can read it — a `continue` from any of the exits
-    // below still has to produce a verdict for this route.
-    let _readsData = false
-    try {
 
     let targets
     try {
       targets = await bounded(`${node.id}: getStaticPaths()`, timeout, () => pathsForRoute(node, root))
     } catch (err) {
-      skipped.push({ route: node.id, reason: `getStaticPaths() threw: ${explainModuleInitFailure(err.message, node.file)}` })
-      continue
+      fail(node.id, `getStaticPaths() threw: ${explainModuleInitFailure(err.message, node.file)}`)
+      return out
     }
     if (targets.length === 0) {
-      skipped.push({ route: node.id, reason: 'no paths to emit' })
-      continue
+      fail(node.id, !declared && node.meta?.dynamic
+        ? 'a dynamic route with no getStaticPaths() naming its pages'
+        : 'no paths to emit')
+      return out
     }
 
     const chain    = layoutChainFor(pageFile, routesDirAbs)
@@ -564,17 +580,10 @@ export async function prerenderRoutes(opts) {
 
     // Does this route pull data at all? A page with no companion has no way to
     // read a model at build time, so it has nothing to prove and is never asked
-    // for a declaration. That keeps the check off the pages it cannot help.
-    //
-    // The `?? companionExists` half was written when `importCompanion` swallowed
-    // an import error and returned null, which made a `.meta.js` that throws
-    // look identical to a route with no companion at all — a fail-OPEN hole,
-    // waved through as "reads nothing". That case now throws (`FJS-551`), so
-    // this reads as belt and braces; it stays because the fallback is what the
-    // check wants to be true of ANY companion it could not read, and being
-    // right for a reason that has moved is not a reason to remove it.
+    // for a declaration. A companion that exists and could not be read counts
+    // as reading data, so a fail-open there is not waved through as "reads nothing".
     const companionExists = !!companion && existsSync(companion)
-    _readsData = mod
+    out.readsData = mod
       ? (typeof mod.load === 'function' || typeof mod.getStaticPaths === 'function')
       : companionExists
 
@@ -585,7 +594,8 @@ export async function prerenderRoutes(opts) {
           data = await bounded(`${urlPath}: load()`, timeout,
             () => mod.load({ params, fetch: makeBuildFetch(node.id), url: urlPath }))
         } catch (err) {
-          skipped.push({ route: urlPath, reason: `load() threw: ${explainModuleInitFailure(err.message, node.file)}` })
+          fail(urlPath, `load() threw: ${explainModuleInitFailure(err.message, node.file)}`)
+          if (out.failure) return out
           continue
         }
       }
@@ -618,7 +628,8 @@ export async function prerenderRoutes(opts) {
           ...(tmpDir ? { tmpDir } : {}),
         }))
       } catch (err) {
-        skipped.push({ route: urlPath, reason: `render failed: ${explainModuleInitFailure(err.message, node.file)}` })
+        fail(urlPath, `render failed: ${explainModuleInitFailure(err.message, node.file)}`)
+        if (out.failure) return out
         continue
       }
 
@@ -639,7 +650,8 @@ export async function prerenderRoutes(opts) {
           // Same grade as a load() that threw: this page is not emitted. A
           // page silently missing its title is the failure the function exists
           // to fix, so producing one anyway would defeat it.
-          skipped.push({ route: urlPath, reason: `head() threw: ${err.message}` })
+          fail(urlPath, `head() threw: ${err.message}`)
+          if (out.failure) return out
           continue
         }
       }
@@ -673,87 +685,123 @@ export async function prerenderRoutes(opts) {
           `of the tree writes a file anywhere the build can reach.`
         )
 
-      const rel = relative(outDirAbs, file)
-      // Two getStaticPaths() entries that fill to one file. Refused rather than
-      // warned, alongside the empty-param case in fillPath: one file is one
-      // page, so the second entry does not produce a bad page, it produces no
-      // page — and a build that exits 0 ships a catalog one product short
-      // with the evidence in a log CI does not read (`FJS-803`).
-      //
-      // The escape is in the app and there is deliberately no option for it: a
-      // route's URL is its identity, so two entries claiming one URL is a
-      // question the build cannot answer — `getStaticPaths()` picks which row
-      // wins, or gives the two rows different paths.
-      const prevUrl = writtenFrom.get(rel)
-      if (prevUrl !== undefined) {
-        collisions.push(prevUrl === urlPath
-          ? `   ${node.id}: getStaticPaths() named '${urlPath}' twice, and both entries fill ` +
-            `${rel}. Deduplicate the rows it returns.`
-          : `   ${node.id}: '${urlPath}' and '${prevUrl}' both fill ${rel}. Two entries name one ` +
-            `output file, so only one of those pages can exist.`)
+      out.pages.push({ urlPath, file, doc, islands: rendered.islands ?? [] })
+    }
+    return out
+  }
+
+  /** Write one held page, refusing a second page for the same file. */
+  async function writePage({ urlPath, file, doc, islands: pageIslands }, node) {
+    const rel = relative(outDirAbs, file)
+    // Two getStaticPaths() entries that fill to one file. Refused rather than
+    // warned, alongside the empty-param case in fillPath: one file is one
+    // page, so the second entry does not produce a bad page, it produces no
+    // page — and a build that exits 0 ships a catalog one product short
+    // with the evidence in a log CI does not read (`FJS-803`).
+    //
+    // The escape is in the app and there is no option for it: a route's URL is
+    // its identity, so two entries claiming one URL is a question the build
+    // cannot answer — `getStaticPaths()` picks which row wins, or gives the two
+    // rows different paths.
+    const prevUrl = writtenFrom.get(rel)
+    if (prevUrl !== undefined) {
+      collisions.push(prevUrl === urlPath
+        ? `   ${node.id}: getStaticPaths() named '${urlPath}' twice, and both entries fill ` +
+          `${rel}. Deduplicate the rows it returns.`
+        : `   ${node.id}: '${urlPath}' and '${prevUrl}' both fill ${rel}. Two entries name one ` +
+          `output file, so only one of those pages can exist.`)
+      return
+    }
+    writtenFrom.set(rel, urlPath)
+
+    await mkdir(dirname(file), { recursive: true })
+    await writeFile(file, doc, 'utf8')
+    written.push(rel)
+    urls.push(urlPath)
+
+    // Record which islands this page carries. Mesa tags each entry with the
+    // file the call site was written in and the import specifier it came
+    // from, which together resolve a marker's component NAME to a module —
+    // the one thing a bundle needs and a marker cannot carry.
+    for (const entry of pageIslands) {
+      if (!entry.specifier) {
+        warn(`${urlPath}: <${entry.component} client:${entry.directive}> has no import specifier ` +
+             `— it cannot be bundled and will stay inert. Import it from a .mesa file.`)
         continue
       }
-      writtenFrom.set(rel, urlPath)
-
-      await mkdir(dirname(file), { recursive: true })
-      await writeFile(file, doc, 'utf8')
-      written.push(rel)
-      urls.push(urlPath)
-
-      // Record which islands this page carries. Mesa tags each entry with the
-      // file the call site was written in and the import specifier it came
-      // from, which together resolve a marker's component NAME to a module —
-      // the one thing a bundle needs and a marker cannot carry.
-      for (const entry of rendered.islands ?? []) {
-        if (!entry.specifier) {
-          warn(`${urlPath}: <${entry.component} client:${entry.directive}> has no import specifier ` +
-               `— it cannot be bundled and will stay inert. Import it from a .mesa file.`)
-          continue
-        }
-        const module = resolve(dirname(entry.file), entry.specifier)
-        const prev = islandsByName.get(entry.component)
-        if (prev && prev.module !== module) {
-          warn(`two different modules are both used as <${entry.component}>: ` +
-               `${relative(root, prev.module)} and ${relative(root, module)}. ` +
-               `Island markers carry a name, so only the first can be mounted — rename one.`)
-        } else if (!prev) {
-          islandsByName.set(entry.component, { component: entry.component, module })
-        }
-        if (!islandPages.has(rel)) islandPages.set(rel, new Set())
-        islandPages.get(rel).add(entry.component)
+      const module = islandModule(entry.file, entry.specifier, alias)
+      const prev = islandsByName.get(entry.component)
+      if (prev && prev.module !== module) {
+        warn(`two different modules are both used as <${entry.component}>: ` +
+             `${relative(root, prev.module)} and ${relative(root, module)}. ` +
+             `Island markers carry a name, so only the first can be mounted — rename one.`)
+      } else if (!prev) {
+        islandsByName.set(entry.component, { component: entry.component, module })
       }
+      if (!islandPages.has(rel)) islandPages.set(rel, new Set())
+      islandPages.get(rel).add(entry.component)
     }
+  }
 
+  for (const node of staticNodes) {
+    const pageFile = resolve(root, node.file)
+    if (!existsSync(pageFile)) {
+      skipped.push({ route: node.id, reason: 'route file not found' })
+      continue
+    }
+    const declared = declaresStatic(node)
+
+    // One recorder per ROUTE, opened before getStaticPaths() and closed after
+    // the last page it contributes. The read set is a property of the route,
+    // not of one emitted URL: a `[slug]` route that reads a gated model does so
+    // for every slug, and reporting it once is what makes the message useful.
+    // Stopped in a finally, or a throw leaks the tap onto the next route.
+    const recorder = safetyOn ? createReadRecorder(db) : null
+    let route
+    try {
+      route = await renderRoute(node, pageFile, declared)
     } finally {
-      if (recorder) {
-        recorder.stop()
-        const routeId = node.file ? relative(root, resolve(root, node.file)) : node.id
-        const verdict = checkRoute({
-          routeId,
-          meta:       node.meta,
-          models:     recorder.models,
-          unresolved: recorder.unresolved,
-          columns:    recorder.columns,
-          exposed:    recorder.exposed,
-          columnsOf:  recorder.columnsOf,
-          taps:       recorder.taps,
-          readsData:  _readsData,
-        })
-        if (!verdict.ok) violations.push(verdict.message)
-        // Not a violation — a `load()` that only fetches an absolute URL is
-        // legitimate and reads nothing here. But so is one that built its own
-        // Litestone client, whose reads the build's tap never saw, and the two
-        // are the same silence (`FJS-782`).
-        if (verdict.observedNothing)
-          warn(`${routeId}: reads data in its .meta.js and the build observed no model read. ` +
-               `If its load() queries a database, it is doing so through a client this build ` +
-               `was not given, and what it publishes has not been checked.`)
-        safetyRows.push({
-          route:     node.path ?? node.id,
-          published: verdict.published,
-        })
-      }
+      recorder?.stop()
     }
+    skipped.push(...route.skipped)
+
+    let verdict = null
+    if (recorder) {
+      const routeId = node.file ? relative(root, resolve(root, node.file)) : node.id
+      verdict = checkRoute({
+        routeId,
+        meta:       node.meta,
+        models:     recorder.models,
+        unresolved: recorder.unresolved,
+        columns:    recorder.columns,
+        exposed:    recorder.exposed,
+        columnsOf:  recorder.columnsOf,
+        taps:       recorder.taps,
+        readsData:  route.readsData,
+      })
+      if (!verdict.ok && declared) violations.push(verdict.message)
+      // Not a violation — a `load()` that only fetches an absolute URL is
+      // legitimate and reads nothing here. But so is one that built its own
+      // Litestone client, whose reads the build's tap never saw, and the two
+      // are the same silence (`FJS-782`).
+      if (verdict.observedNothing)
+        warn(`${routeId}: reads data in its .meta.js and the build observed no model read. ` +
+             `If its load() queries a database, it is doing so through a client this build ` +
+             `was not given, and what it publishes has not been checked.`)
+    }
+
+    const refused  = !!verdict && !verdict.ok
+    const fellBack = declared ? null : (route.failure ?? (refused ? verdict.reason : null))
+    if (fellBack) fallback.push({ route: node.path ?? node.id, reason: fellBack })
+    if (!fellBack && !refused)
+      for (const page of route.pages) await writePage(page, node)
+
+    if (verdict) safetyRows.push({
+      route:     node.path ?? node.id,
+      published: verdict.published,
+      group:     fellBack ? 'browser' : 'static',
+      ...(fellBack ? { reason: fellBack } : {}),
+    })
   }
 
   // ── The static-safety gate (FJS-081) ──────────────────────────────────
@@ -792,6 +840,7 @@ export async function prerenderRoutes(opts) {
     urls,
     skipped,
     omitted,
+    fallback,
     islands: [...islandsByName.values()],
     islandPages,
     // What the check PROVED, not only what it rejected. A check nobody has seen

@@ -44,18 +44,3 @@ export function pagesOf(files, links, pathname) {
     .map((p) => ({ ...p, label: p.address === '/' ? 'Home' : named.get(p.file) ?? p.address, here: p.file === here }))
     .sort((a, b) => (a.address === '/' ? -1 : b.address === '/' ? 1 : a.address.localeCompare(b.address)))
 }
-
-/**
- * The commands whose words hold every term of the query, in their own order.
- * @template {{ label: string, hint?: string, group: string }} C
- * @param {C[]} commands
- * @param {string} query
- * @returns {C[]}
- */
-export function matching(commands, query) {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
-  return commands.filter((c) => {
-    const text = `${c.group} ${c.label} ${c.hint ?? ''}`.toLowerCase()
-    return terms.every((t) => text.includes(t))
-  })
-}

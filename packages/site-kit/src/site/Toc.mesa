@@ -44,7 +44,7 @@
       </svg>
     </button>
     {#if open}
-      <ol class="card glass toc-list">
+      <ol class="card raised edge toc-list">
         {#each headings as h}
           <li class={`level-${h.level}`}>
             <a class="link" href={`#${h.id}`} onclick={(e) => go(e, h.id)}>

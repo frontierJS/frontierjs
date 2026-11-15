@@ -1,6 +1,5 @@
 ---
 title: Basket
-render: static
 ---
 <!--
   The basket screen — a prerendered SHELL with one island in it.

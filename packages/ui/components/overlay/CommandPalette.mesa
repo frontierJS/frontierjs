@@ -75,6 +75,7 @@
   export let searchMinLength = 0       // `search` is not asked until the trimmed words are this long
   export let groupLimit   = undefined  // rows drawn per group: a number, or { group: number }
   export let item         = null       // snippet (row, { active }) — replaces the icon, label and sub line
+  export let host         = null       // where it portals; a shadow root's own overlay passes that root, which overlayHost() cannot see into
 
   // export var — snapshot at mount, layout never changes after open
   export var maxHeight     = '62vh'
@@ -275,7 +276,7 @@
   })
 </script>
 
-<mesa:portal to={overlayHost()}>
+<mesa:portal to={host ?? overlayHost()}>
 
   <!-- Backdrop -->
   <!--

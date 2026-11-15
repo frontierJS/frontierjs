@@ -37,7 +37,15 @@ on the device.
 
 **Nothing needs building.** `createMany()` and `$transaction()` both ship and both
 work. The gap is adoption: a seeder, a fixture load, a Caravan job and a
-sync-from-upstream all loop `create()` today and pay 26× for it.
+sync-from-upstream all loop `create()` and pay 26× for it.
+
+**Taken 2026-11-15 for the framework's own loops.** `loadRows`/`loadFixture` already
+wrote through `createMany`/`upsertMany`. `Factory.createMany` is now one transaction,
+and junction's array create one transaction with a savepoint per row (§ Open
+questions). Re-measured at load 14 on 12 cores, a file database: the Factory 174 → 117
+µs/row; a raw `create()` 137 in a loop against 69 inside a transaction. The commit is
+cheaper on this disk than on the one first measured, so the ratio is the claim, not
+the microseconds. The per-row `@default(now())` format is not taken.
 
 Where the framework should push the batch rather than leave it to a caller who will not
 find it:
@@ -195,12 +203,32 @@ it reaches anyone.
 Named so that nobody reads absence as a clean result:
 
 - **`include` relation loading.** Untouched, and the likeliest remaining N+1.
-- **Whether Junction's bulk protocol actually reaches `createMany()`.** Assumed above
-  that it may not; unverified either way, and it gates the largest recommendation here.
+- ~~**Whether Junction's bulk protocol actually reaches `createMany()`.**~~ It does not,
+  and should not: `createMany` answers `{ count }`, and an array create echoes each
+  stamped row. It writes one transaction with a savepoint per row instead (§ Open questions).
 - **ARM.** Everything is x64. The allocator behavior behind the memory findings in
   particular may differ on a Pi.
 - **`bun build --compile`.** The plausible answer to bun's 39 MB file-module overhead,
   and the one number in the memory section nobody has run.
+
+## Open questions
+
+- ~~**How does junction's array create pay its commits, given it keeps partial success?**~~ **Answered 2026-11-15 (`FJS-D2193`): A — one transaction around the loop and a savepoint per row: partial success and the `{ data, errors }` envelope unchanged, one commit per request; a failed row's held announcements roll back with its savepoint (`FJS-D170`). The write lock is held for the whole array, so `bulkMax` becomes the bound on how long one request keeps other writers waiting, and a crash mid-array keeps none of it.**
+  An array POST wrote each row as its own commit, so one bad row never sank the rest
+  (`FJS-D78`) and paid a WAL commit per row. `bulkMax` (default 1000) caps the array.
+  - **A** — one transaction around the loop and a savepoint per row: partial success
+    and the `{ data, errors }` envelope unchanged, one commit per request; a failed
+    row's held announcements roll back with its savepoint (`FJS-D170`). The write lock
+    is held for the whole array, so `bulkMax` becomes the bound on how long one request
+    keeps other writers waiting, and a crash mid-array keeps none of it.
+  - **B** — leave one commit per row and document it; `transactional:` already makes
+    the call one all-or-nothing transaction for a caller who wants the speed.
+  - **C** — commit in fixed chunks of 100, each row under a savepoint: the lock is
+    released between chunks, at the price of a constant and a third behavior to explain.
+  - **Recommend A** — one rule (one request, one commit) with partial success kept, and
+    the lock hold bounded by a cap that already exists. `Factory.createMany` follows
+    without a question: a test seed has no partial success to keep, so it is one plain
+    transaction and a failed row leaves none of the batch.
 
 ---
 

@@ -35,6 +35,7 @@
 import { readdir, readFile, rm, stat } from 'fs/promises'
 import { join, resolve } from 'path'
 import { omittedReason } from './prerender.js'
+import { prerenders, declaresStatic } from '../scanner/render-mode.js'
 
 /**
  * Whether this build's bundle will be pruned whole — known BEFORE the bundle
@@ -42,8 +43,8 @@ import { omittedReason } from './prerender.js'
  *
  * The only page that can name a main-bundle chunk is Vite's own index.html,
  * the SPA shell: a prerendered page loads its islands and nothing else, and
- * islands are a second build. So when every route declares `render: static`
- * and the home route is one the prerender writes, the shell is overwritten and
+ * islands are a second build. So when every route is prerendered and the home
+ * route is one the prerender writes, the shell is overwritten and
  * `pruneUnreachable` keeps nothing. Every route rather than the home alone,
  * because a static target with a client-routed route and no shell is a site
  * with a dead URL, and that is not a shape to optimize.
@@ -57,8 +58,17 @@ import { omittedReason } from './prerender.js'
 export function bundleUnreachable(tree) {
   const routes = flattenRoutes(tree)
   if (!routes.length) return false
-  if (!routes.every((n) => n.meta?.render === 'static')) return false
-  return routes.some((n) => n.path === '/' && omittedReason(n) === null)
+  if (!routes.every((n) => prerenders(n, 'static'))) return false
+  return routes.some((n) => n.path === '/' && omittedReason(n) === null && !mayFallBack(n))
+}
+
+/**
+ * An undeclared route with a companion can be refused by the safety check and
+ * fall back (`FJS-D2195`), and a home page that falls back leaves the SPA shell
+ * standing — with every chunk the prediction left unminified reachable from it.
+ */
+function mayFallBack(node) {
+  return !declaresStatic(node) && !!node.companion
 }
 
 function flattenRoutes(node) {

@@ -476,6 +476,9 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
       // have to enumerate the site. Stays null on an SPA, where the route
       // table is the whole answer (`FJS-502`).
       let prerenderedUrls = null
+      // The home page, when it fell back to the browser — the SPA shell is then
+      // what serves `/`, and the guard on an unminified bundle has to say so.
+      let homeFellBack = null
 
       // Build a minimal route table from the tree Sierra already has
       const tree = sierraContext.tree
@@ -512,9 +515,8 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
       // Prerender before postbuild so the emitted HTML is on disk when
       // move404 / sitemap / speculation inspect the output directory.
       //
-      // Gated on target:'static' — the per-route `render: static` frontmatter
-      // is the unit of control, and this target is what opts the build into
-      // acting on it. An 'spa' build ignores the frontmatter exactly as before.
+      // Gated on target:'static', which prerenders every route but `render: spa`
+      // (`FJS-D2194`). An 'spa' build prerenders nothing.
       if ((config.target ?? 'spa') === 'static') {
         const { renderComponent } = await import('@frontierjs/mesa/render-component')
 
@@ -608,6 +610,13 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           console.log(`\n  [Sierra] Not prerendered, by their frontmatter:`)
           for (const o of pre.omitted) console.log(`    · ${o.route} — ${o.reason}`)
         }
+        // Undeclared routes the build could not prerender (`FJS-D2195`). Printed
+        // whether or not the safety table is: an app with no schema has no table
+        // and still has routes that threw.
+        if (pre.fallback?.length) {
+          console.log(`\n  [Sierra] Rendered in the browser — no \`render: static\`, and not prerenderable:`)
+          for (const f of pre.fallback) console.log(`    · ${f.route} — ${f.reason}`)
+        }
 
         // Print what the safety check proved. A rule whose passing case is
         // invisible is a rule people assume is not running.
@@ -684,11 +693,12 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         // Silence is how the static target failed before — it emitted nothing
         // and said nothing. If a static build produced no pages, say so.
         prerenderedUrls = pre.urls
+        homeFellBack = pre.fallback?.find((f) => f.route === '/') ?? null
 
         if (pre.written.length === 0) {
           console.warn(
-            `\n  [Sierra] target:'static' produced no pages — no route declares ` +
-            `\`render: static\` in its frontmatter.`
+            `\n  [Sierra] target:'static' produced no pages — every route says ` +
+            `\`render: spa\`, is a draft or a redirect, or fell back above.`
           )
         }
       }
@@ -703,6 +713,13 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         const pruned = await pruneUnreachable({ outDir })
         const own = new Set(sierraContext.jsChunks ?? [])
         const reachable = pruned.kept.filter((f) => own.has(f))
+        if (unminified && reachable.length && homeFellBack) {
+          throw new Error(
+            `[Sierra] the home page fell back to the browser (${homeFellBack.reason}), so the ` +
+            `SPA shell serves / and loads ${reachable.length} chunk(s) built unminified. Fix the ` +
+            `home page so it prerenders, or set \`build.minify\` in the app's config.`
+          )
+        }
         if (unminified && reachable.length) {
           throw new Error(
             `[Sierra] the bundle was built unminified because no page could reach it, ` +

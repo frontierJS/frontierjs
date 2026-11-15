@@ -11800,7 +11800,11 @@ function detectStaticAndIslands(ctx) {
           ctx.islands.push(entry)
         }
       }
-      walkForIslands(n.body)
+      // A branch is not `body`: an island under {#if} or {#each} was rendered
+      // with its marker and left out of the bundle, so it never mounted.
+      for (const k of ['body', 'mainBlock', 'elseBlock', 'elsePart']) walkForIslands(n[k])
+      if (Array.isArray(n.parts)) for (const p of n.parts) walkForIslands(p?.body)
+      else if (n.parts && typeof n.parts === 'object') for (const v of Object.values(n.parts)) if (Array.isArray(v)) walkForIslands(v)
     }
   })(ctx.DOM?.body)
 }

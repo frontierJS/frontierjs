@@ -1,7 +1,6 @@
 ---
 title: Your account — FrontierJS Supply Co.
 description: Sign in to see what you have ordered.
-render: static
 ---
 <!--
   The account page, and there is no `index.meta.js` beside it — deliberately.

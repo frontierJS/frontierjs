@@ -1,6 +1,5 @@
 ---
 title: Page not found — FrontierJS Supply Co.
-render: static
 ---
 <!--
   The 404 page, and it is a ROUTE like any other so it goes through the layout

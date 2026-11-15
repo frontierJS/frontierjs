@@ -49,7 +49,7 @@ export async function scan(routesDir, options = {}) {
  */
 export async function scanAndWrite(routesDir, outputPath, options = {}) {
   const tree = await scan(routesDir, options)
-  await generateRouteTable(tree, outputPath, options.cwd ?? process.cwd())
+  await generateRouteTable(tree, outputPath, options.cwd ?? process.cwd(), { target: options.target })
   return tree
 }
 

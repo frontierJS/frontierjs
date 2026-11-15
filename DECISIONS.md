@@ -1899,6 +1899,24 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d2196"></a>2026-11-15 · `FJS-D2196` — Where does the classification table live — The build output: `prerenderRoutes` already returns `safety.rows` and the build prints them; add the group and its reason.
+
+Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. **A** was picked over **B** (also a column in `routes.snapshot.md`, so a gate change that flips a page shows in a diff).
+
+The paper's recommendation, taken as written: `sierra routes` writes the snapshot with no database, so B needs it to run each `load()` or the build to write the snapshot; a later step if a flipped page is ever missed.
+
+### <a id="fjs-d2195"></a>2026-11-15 · `FJS-D2195` — What does the build do with an undeclared route the check refuses — Fall back to the browser render and name the reason in the table (`reads Invoice, gate 4`); only an explicit `render: static` fails, as Next.js's `dynamic = 'error'` fails and its default silently goes dynamic.
+
+Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. **A** was picked over **B** (fail the build for every refused route, declared or not).
+
+The paper's recommendation, taken as written: the declaration is checkable intent; under B a gate change in the schema breaks a build that touched no route.
+
+### <a id="fjs-d2194"></a>2026-11-15 · `FJS-D2194` — What does an undeclared route on a `target: 'static'` surface do — Prerender it unless the check refuses: `render: static` becomes optional and `render: spa` is the opt-out (Astro's default on a static build, `prerender = false` to leave).
+
+Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. **A** was picked over **B** (report only: the build prints each route's group, `render: static` stays the only switch), **C** (warn on an undeclared route that classifies as prerenderable).
+
+The paper's recommendation, taken as written: it is the payoff this section names: a hand annotation that can be wrong retires, and the check already proves each page; B retires nothing and C keeps the annotation while saying it is redundant.
+
 ### <a id="fjs-d2170"></a>2026-11-14 · `FJS-D2170` — Q3 — Is an Invitation its own model, or a Grant with an email and a role — Its own model with `pending → accepted | expired | revoked` declared as `@@transitions`, lifted from basecamp's `Invitation`.
 
 Asked in [`IDEAS/teams-rig.md`](IDEAS/teams-rig.md) § Open questions. **A** was picked over **B** (a Grant (`references/Grant.lite`) with an `email` and a `role`, so invitations and the share-links rig share one shape), **C** (read `Grant.lite` against basecamp's and sstime's invitations before choosing).
@@ -9218,6 +9236,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2193"></a>2026-11-15 · `FJS-D2193` — How does junction's array create pay its commits, given it keeps partial success — One transaction around the loop and a savepoint per row: partial success and the `{ data, errors }` envelope unchanged, one commit per request; a failed row's held announcements roll back with its savepoint (`FJS-D170`). The write lock is held for the whole array, so `bulkMax` becomes the bound on how long one request keeps other writers waiting, and a crash mid-array keeps none of it.
+
+Asked in [`IDEAS/speed-and-footprint.md`](IDEAS/speed-and-footprint.md) § Open questions. **A** was picked over **B** (leave one commit per row and document it; `transactional:` already makes the call one all-or-nothing transaction for a caller who wants the speed), **C** (commit in fixed chunks of 100, each row under a savepoint: the lock is released between chunks, at the price of a constant and a third behavior to explain).
+
+The paper's recommendation, taken as written: one rule (one request, one commit) with partial success kept, and the lock hold bounded by a cap that already exists. `Factory.createMany` follows without a question: a test seed has no partial success to keep, so it is one plain transaction and a failed row leaves none of the batch.
+
 ### <a id="fjs-d2187"></a>2026-11-15 · `FJS-D2187` — Q4 — Who owns the send — Junction emits `app:crash` on `app.events` and awaits its listeners; notifications listens.
 
 Asked in [`IDEAS/alerting.md`](IDEAS/alerting.md) § Open questions. **A** was picked over **B** (junction calls `app.notify` when a plugin has installed it), **C** (notifications installs its own `uncaughtException` handler).
@@ -14328,6 +14352,18 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d2198"></a>2026-11-15 · `FJS-D2198` — Q7 — Whether a Result matches a word the visitor is still typing — The last word, when no space follows it, matches a word's start; every other word stays whole.
+
+Asked in [`IDEAS/site-search.md`](IDEAS/site-search.md) § Open questions. **A** was picked over **B** (whole words only).
+
+The paper's recommendation, taken as written: under B "insur" finds nothing until "insurance" is finished, and the start of one word adds none of a fuzzy run's noise.
+
+### <a id="fjs-d2197"></a>2026-11-15 · `FJS-D2197` — Q6 — How the signed-in editor joins the palette, when ui's `CommandPalette` portals to `document.body`, outside the editor's shadow root — `CommandPalette` takes a `host` (where it portals, `overlayHost()` by default); the editor mounts it in its own shadow root over `search.js`'s pages and results plus its groups, and while signed in the visitor island hands Cmd+K and its button to it.
+
+Asked in [`IDEAS/site-search.md`](IDEAS/site-search.md) § Open questions. **A** was picked over **B** (the editor sends its groups to the visitor island by a document event, and the palette renders in the page under the site's stylesheet).
+
+The paper's recommendation, taken as written: B lets a site's stylesheet reach the editor again (`FJS-4269`), makes the palette's rows picks, and leaves a site without the Search island no palette for its owner.
 
 ### <a id="fjs-d2192"></a>2026-11-15 · `FJS-D2192` — Q5 — The component the one palette is built on — `@frontierjs/ui`'s `CommandPalette`, already Basecamp's, Workbench's and the example's, over `toolbelt/search`.
 

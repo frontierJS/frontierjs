@@ -32,5 +32,12 @@ export function generateRouteTable(tree: import("./build-tree.js").RouteNode, ou
  * @param {import('./build-tree.js').RouteNode} tree
  * @param {string} projectRoot
  * @param {string} tableOutput  — path of the route table file relative to projectRoot
+ * @param {{ omitLoaders?: boolean, devStaticData?: boolean, target?: string }} [opts]
+ *   `target` decides which routes are prerendered (`render-mode.js`); left out,
+ *   only a `render: static` route is.
  */
-export function renderRouteTable(tree: import("./build-tree.js").RouteNode, projectRoot?: string, tableOutput?: string, opts?: {}): string;
+export function renderRouteTable(tree: import("./build-tree.js").RouteNode, projectRoot?: string, tableOutput?: string, opts?: {
+    omitLoaders?: boolean;
+    devStaticData?: boolean;
+    target?: string;
+}): string;

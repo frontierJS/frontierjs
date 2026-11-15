@@ -23,6 +23,7 @@ plugin.ts         the Junction plugin — register / boot / shutdown; registers 
 services.ts       `push-subscriptions` — the subscribe door, own rows only, upsert by endpoint
 client.ts         `./client` — subscribeToPush / unsubscribeFromPush; BROWSER code, never imports the root
 state.ts          the plugin's state on the app, under one Symbol.for key
+crash.ts          the crash ping: listens for junction's `app:crash`, one ntfy push per 10 min, window in `.crash-ping` beside the db
 errors.ts
 drivers/
   inapp.ts        writes the record, publishes on app.channel()

@@ -5069,6 +5069,19 @@ render: static
     ])
   })
 
+  it('lists an island inside {#if}, {:else} and {#each}, which a bundle otherwise never mounts', async () => {
+    const src = `<script>
+  import B from './B.mesa'
+  import C from './C.mesa'
+  import D from './D.mesa'
+  let x = true
+</script>
+{#if x}<B client:idle />{:else}<C client:load />{/if}
+{#each [1] as i}<D client:visible />{/each}`
+    const r = await compileSource(src, { filename: '/routes/index.mesa', islands: true })
+    expect(r.islands.map((i) => i.component).sort()).toEqual(['B', 'C', 'D'])
+  })
+
   it('does not render the frontmatter block as page text', async () => {
     const r = await compileSource(routeSrc, { filename: '/routes/index.mesa' })
     expect(r.result).not.toContain('title: Catalog')

@@ -47,9 +47,12 @@ beforeAll(async () => {
   await writeFile(join(root, 'src/routes/index.meta.js'), COMPANION('FIRST'), 'utf8')
   await writeFile(join(root, 'src/routes/items/[id].mesa'), '---\nrender: static\n---\n<h1>i</h1>\n', 'utf8')
   await writeFile(join(root, 'src/routes/items/[id].meta.js'), COMPANION('ITEM'), 'utf8')
-  // An ORDINARY route with a companion. Its loader is in the browser graph
+  // A browser route with a companion. Its loader is in the browser graph
   // already, so this endpoint has no business running it.
-  await writeFile(join(root, 'src/routes/spa.mesa'), '<h1>s</h1>\n', 'utf8')
+  await writeFile(join(root, 'src/routes/spa.mesa'), '---\nrender: spa\n---\n<h1>s</h1>\n', 'utf8')
+  await writeFile(join(root, 'src/routes/plain.mesa'), '<h1>p</h1>\n', 'utf8')
+  await writeFile(join(root, 'src/routes/plain.meta.js'),
+    "export async function load() { return { mark: 'PLAIN' } }\n", 'utf8')
   await writeFile(join(root, 'src/routes/spa.meta.js'),
     "export async function load() { return { mark: 'SPA' } }\n", 'utf8')
   // A companion whose head() throws — the build skips the page for this and a
@@ -206,14 +209,20 @@ describe('what it refuses (FJS-822 · static-10)', () => {
     }
   })
 
-  test('a route that does not declare render: static is refused', async () => {
-    // This endpoint exists because a static route's companion never enters the
-    // browser graph. An ordinary route's loader is in the graph already, so
+  test('a `render: spa` route is refused', async () => {
+    // This endpoint exists because a prerendered route's companion never enters
+    // the browser graph. A browser route's loader is in the graph already, so
     // running it here is a second way into code the route table imports
     // differently.
     const res = await ask('route=spa&url=/spa/&params=%7B%7D')
     expect(res.status).toBe(404)
-    expect((await res.json()).error).toContain('not a render: static route')
+    expect((await res.json()).error).toContain('not a prerendered route')
+  })
+
+  test('an undeclared route on a static target answers — the build prerenders it (FJS-D2194)', async () => {
+    const res = await ask('route=plain&url=/plain/&params=%7B%7D')
+    expect(res.status).toBe(200)
+    expect((await res.json()).data).toEqual({ mark: 'PLAIN' })
   })
 
   test('…and a static route beside it still answers', async () => {

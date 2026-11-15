@@ -16,6 +16,12 @@ import { htmlFiles } from '@frontierjs/sierra/postbuild'
 // page must not make every visitor's search slow to start.
 export const TEXT_LIMIT = 8000
 
+// textContent joins the words of two blocks with nothing between them, so
+// "Kitchens" over "Ovens are degreased" reads KitchensOvens and neither whole
+// word is found. A space goes after each of these; inline tags keep their words
+// together.
+const BLOCKS = 'p, li, h1, h2, h3, h4, h5, h6, div, section, article, aside, blockquote, pre, figure, figcaption, ul, ol, dl, dt, dd, table, tr, th, td, details, summary, br, hr'
+
 // What a visitor does not search for: page chrome, and code that is not words.
 const CHROME = 'script, style, noscript, template, nav, header, footer, [aria-hidden="true"]'
 
@@ -52,6 +58,7 @@ export function entryOf(html, url, parser) {
     .filter((h) => h.text)
 
   for (const el of [...root.querySelectorAll(CHROME)]) el.remove()
+  for (const el of root.querySelectorAll(BLOCKS)) el.after(doc.createTextNode(' '))
   const text = root.textContent.replace(/\s+/g, ' ').trim().slice(0, TEXT_LIMIT)
 
   return { url, title, headings, text }

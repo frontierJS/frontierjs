@@ -35,13 +35,13 @@ Done when: `test/content-build.mjs`'s real build writes it, holding each
 route's address, title, headings with ids and words, and no 404 or `noindex`
 page.
 
-- [ ] 1.1 `config/search.js` — `siteSearch()`, a Sierra config plugin whose
+- [x] 1.1 `config/search.js` — `siteSearch()`, a Sierra config plugin whose
   `closeBundle` parses each `dist/**/index.html` with `happy-dom`, reads
   `<title>`, the h2–h4 under `<main>` that have ids and are not inside
   `.ignore-toc`, and `<main>`'s text (header, nav and footer stay out). A page
   carrying `<meta name="robots" content="noindex">` and `404.html` are skipped.
   Placed before `siteImages()`, which must stay last.
-- [ ] 1.2 Assertions in `test/content-build.mjs` over the file it writes.
+- [x] 1.2 Assertions in `test/content-build.mjs` over the file it writes.
 
 ### Phase 2 — The palette
 
@@ -50,15 +50,15 @@ Done when: on a built test site in Chrome, Cmd+K, `/` and the button each open
 it, typing a word from one page's body lists that page with an excerpt, and
 Enter goes there (to the heading's `#id` when the hit is under one).
 
-- [ ] 2.1 `src/site/search.js` — loads `search.json` once, on first open, and
+- [x] 2.1 `src/site/search.js` — loads `search.json` once, on first open, and
   answers `{ pages, results(query) }`: pages for `rank()`, results as page or
   section hits with an excerpt around the first matched word. Shared with the
   editor in Phase 4.
-- [ ] 2.2 `src/site/Search.mesa`, exported as
+- [x] 2.2 `src/site/Search.mesa`, exported as
   `@frontierjs/site-kit/site/Search.mesa` — the button and the shortcut,
   mounting `CommandPalette` with a Pages group and a Results group. site-kit
   takes `@frontierjs/ui` as a dependency.
-- [ ] 2.3 Assertions in `test/blocks.mjs` (renders, parses); the Chrome drive
+- [x] 2.3 Assertions in `test/blocks.mjs` (renders, parses); the Chrome drive
   through `@frontierjs/mesa/drive`, as `src/shots.js` does.
 
 ### Phase 3 — The table of contents
@@ -69,12 +69,12 @@ top, shows the collapsed button after a scroll, opens to numbered h2/h3/h4
 entries (1., 1.1), and a click scrolls the heading to just below the top and
 closes it; a page without `toc` has no island.
 
-- [ ] 3.1 `src/site/Toc.mesa`, exported as `@frontierjs/site-kit/site/Toc.mesa`
+- [x] 3.1 `src/site/Toc.mesa`, exported as `@frontierjs/site-kit/site/Toc.mesa`
   — maid.tech's behavior: headings read from `<main>` on mount, `.ignore-toc`
   skipped, hidden until `scrollY > 0`, a button that toggles the list, a click
   scrolls to 5% below the top and closes it. Styled in `@frontierjs/css` words
   (Invariant 13), no colors.
-- [ ] 3.2 Assertions in `test/blocks.mjs`; the drive from 2.3 covers the scroll.
+- [x] 3.2 Assertions in `test/blocks.mjs`; the drive from 2.3 covers the scroll.
 
 ### Phase 4 — Wire ksite, then the editor
 
@@ -83,12 +83,15 @@ Done when: kobami.com's `try-edit` preview opens search from its header and a
 `toc: true` page shows the outline; signed in, Cmd+K lists pages, results and
 the editor's groups in one palette.
 
-- [ ] 4.1 ksite `Page.mesa` places `{#if meta.toc}<Toc client:idle />{/if}`;
+- [x] 4.1 ksite `Page.mesa` places `{#if meta.toc}<Toc client:idle />{/if}`;
   `Header.mesa` places `<Search client:idle />`.
-- [ ] 4.2 The editor drops `Palette.mesa` and `palette.js`'s `matching()`,
+- [x] 4.2 The editor drops `Palette.mesa` and `palette.js`'s `matching()`,
   mounts `CommandPalette` in its shadow root with `search.js`'s pages and
   results plus its own groups, and while signed in the island yields Cmd+K to
-  it.
+  it. Built 2026-11-15: the editor's own Go to group stands for `pages`, which
+  would list each draft page twice; `<html data-fjs-editing>` is the hand-off,
+  and the island's button and `/` dispatch `fjs-editor:palette`. Driven over a
+  ksite `--preview` build with a stubbed basecamp, 15 checks.
 - [ ] 4.3 Repack and deploy to kobami.com's `try-edit` (the recipe in its
   memory: a new tarball name every time, `FJS-4267`).
 
@@ -121,3 +124,23 @@ the editor's groups in one palette.
   - **B** — site-kit's `Palette.mesa`, moved out of the editor and switched to
     `rank()`.
   - **Recommend A** — B leaves the repo with two palette components.
+- ~~**Q6 — How the signed-in editor joins the palette, when ui's `CommandPalette` portals to `document.body`, outside the editor's shadow root.**~~ **Answered 2026-11-15 (`FJS-D2197`): A — `CommandPalette` takes a `host` (where it portals, `overlayHost()` by default); the editor mounts it in its own shadow root over `search.js`'s pages and results plus its groups, and while signed in the visitor island hands Cmd+K and its button to it.**
+  - **A** — `CommandPalette` takes a `host` (where it portals, `overlayHost()`
+    by default); the editor mounts it in its own shadow root over `search.js`'s
+    pages and results plus its groups, and while signed in the visitor island
+    hands Cmd+K and its button to it.
+  - **B** — the editor sends its groups to the visitor island by a document
+    event, and the palette renders in the page under the site's stylesheet.
+  - **Recommend A** — B lets a site's stylesheet reach the editor again
+    (`FJS-4269`), makes the palette's rows picks, and leaves a site without
+    the Search island no palette for its owner.
+- ~~**Q7 — Whether a Result matches a word the visitor is still typing.**~~ **Answered 2026-11-15 (`FJS-D2198`): A — the last word, when no space follows it, matches a word's start; every other word stays whole.**
+  - **A** — the last word, when no space follows it, matches a word's start;
+    every other word stays whole.
+  - **B** — whole words only.
+  - **Recommend A** — under B "insur" finds nothing until "insurance" is
+    finished, and the start of one word adds none of a fuzzy run's noise.
+- **Q8 — How the outline numbers an h4.**
+  - **A** — its own level, 1.2.1.
+  - **B** — as an h3, 1.1, the way maid.tech's outline does.
+  - **Recommend A** — two levels written the same read as siblings.

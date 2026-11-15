@@ -4,6 +4,7 @@ import { setState } from './state.ts'
 import { notify } from './notify.ts'
 import { loadNotifications, sealRegistry } from './loader.ts'
 import { createPushSubscriptionsService, DEFAULT_SERVICE_NAMES } from './services.ts'
+import { listenForCrash } from './crash.ts'
 import type { NotificationRegistry } from './loader.ts'
 
 // `'x' in db` is how a Litestone client is probed; `$softDelete` names every
@@ -142,6 +143,8 @@ export function notifications(opts: NotificationsPluginOptions) {
         const vapidPublicKey = (drivers.get('push') as { vapidPublicKey?: string } | undefined)?.vapidPublicKey
         services.register(createPushSubscriptionsService(opts.db, pushName, { vapidPublicKey }))
       }
+
+      listenForCrash(app, opts.db)
 
       if (emailUsesMailer && !('mail' in app)) {
         throw new Error(

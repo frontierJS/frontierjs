@@ -50,8 +50,8 @@ The full hazard catalog, moved verbatim from `CLAUDE.md`; the dozen that bite mo
   a verb check cannot cover.** `<img src>`, `<script src>` and a top-level form
   GET are all simple GETs sending no `Origin`. The check allows an ABSENT header
   (not a browser) and `none` (a typed URL) — narrowing it to `same-origin` alone
-  breaks every test and every curl. It also refuses a route that does not
-  declare `render: static`, and lets a throwing `head()` fail the request,
+  breaks every test and every curl. It also refuses a route the surface does
+  not prerender, and lets a throwing `head()` fail the request,
   because the build skips the page for one and a skipped page fails the build.
 - **A `Sitemap:` line takes an ABSOLUTE URL.** A relative one is discarded by
   every crawler rather than fetched and failed, so it looks in the output
