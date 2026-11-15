@@ -35,3 +35,15 @@ describe('a file that threw while loading is reported with its stack', () => {
     expect(found[0]).toContain('explodeHere')
   })
 })
+
+// A Windows service path named its service by the whole path: the loader took
+// the name with split('/'), and join() writes backslashes there.
+describe('a service is named by its file on any OS', () => {
+  test('a Windows path and a posix path name the same file', async () => {
+    const { serviceFileName, deriveName } = await import('../src/core/loader.ts')
+    expect(serviceFileName('C:\\Users\\me\\AppData\\Local\\Vellum\\app\\api\\src\\services\\assets.service.ts')).toBe('assets.service.ts')
+    expect(serviceFileName('/srv/app/api/src/services/assets.service.ts')).toBe('assets.service.ts')
+    expect(serviceFileName('C:\\app\\services/nested\\match-groups.service.ts')).toBe('match-groups.service.ts')
+    expect(deriveName(serviceFileName('C:\\app\\services\\match-groups.service.ts'))).toBe('matchGroups')
+  })
+})

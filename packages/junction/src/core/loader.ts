@@ -50,7 +50,7 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
 
   for (const file of files) {
 
-    const filename = file.split('/').pop() ?? ''
+    const filename = serviceFileName(file)
     if (exclude.some(e => filename.includes(e))) continue
 
     try {
@@ -190,6 +190,17 @@ function definitionOf(mod: Record<string, unknown>): ServiceDefinition | null {
   return def && typeof def === 'object' && !Array.isArray(def) ? def as ServiceDefinition : null
 }
 
+// ─── The file's own name, on any OS ──────────────────────────────────────
+// Both separators, not split('/') nor node's basename: join() writes
+// backslashes on Windows, where split('/') made the whole path the service's
+// name, so no model matched it and its @@transitions methods never existed
+// (vellum's installed sidecar, FJS-D1815). A posix basename would hide the same
+// break from every test run on Linux.
+
+export function serviceFileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? ''
+}
+
 // ─── Derive service name from filename ───────────────────────────────────
 // accounts.service.ts → 'accounts'
 // user-profiles.service.ts → 'userProfiles'
@@ -223,7 +234,7 @@ export async function loadServiceFile(
 ): Promise<void> {
   const def = definitionOf(await import(path))
   if (!def) throw new Error(`${path} export-defaults no service definition — export default createService({ … })`)
-  registry.register({ ...def, name: def.name ?? deriveName(path.split('/').pop() ?? '') })
+  registry.register({ ...def, name: def.name ?? deriveName(serviceFileName(path)) })
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────
