@@ -26,7 +26,7 @@
  * The API runs against a scratch directory -- the database, the jobs queue
  * beside it, the audit trail and the site clones -- removed at
  * the end, so the dev database in db/ is never opened. It starts the API and
- * the web server itself and stops them at the end, so it needs both ports free. Needs Chrome on PATH (or $FJS_CHROME), the same
+ * the web server itself and stops them at the end, so it needs both ports free. Needs Chrome on PATH (or $FRONTIER_CHROME), the same
  * requirement the css package's harness has.
  *
  * Exits non-zero and prints what differed if any assertion fails.
@@ -3348,10 +3348,10 @@ for (const route of [appDetailPath, boardPath, '/', '/dashboards/', '/projects/'
 
 check('no uncaught page errors', await evaluate('JSON.stringify(window.__errs ?? [])'), '[]')
 
-if (process.env.FJS_SHOT) {
+if (process.env.FRONTIER_SHOT) {
   const shot = await send('Page.captureScreenshot', { format: 'png' })
-  await Bun.write(process.env.FJS_SHOT, Buffer.from(shot.data, 'base64'))
-  console.log(`\n  screenshot → ${process.env.FJS_SHOT}`)
+  await Bun.write(process.env.FRONTIER_SHOT, Buffer.from(shot.data, 'base64'))
+  console.log(`\n  screenshot → ${process.env.FRONTIER_SHOT}`)
 }
 
 const failed = results.filter(r => !r.ok)

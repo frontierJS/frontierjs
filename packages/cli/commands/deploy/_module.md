@@ -685,7 +685,7 @@ const swapContainer = async ($, { host, appId, container, image, apiPort, dbPath
     // What this process states on every response, so a browser holding the
     // previous build can tell (`FJS-D160`). The same value the web build was
     // stamped with — one deploy is one build on both sides of the wire.
-    ...(build ? ['--env', `FJS_BUILD=${build}`] : []),
+    ...(build ? ['--env', `FRONTIER_BUILD=${build}`] : []),
     image,
   ]
 

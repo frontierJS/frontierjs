@@ -606,3 +606,26 @@ describe('<script module> reads an unbound name at load', () => {
     expect(errors.join('\n')).not.toMatch(/script module/)
   })
 })
+
+describe('$.inspect anywhere but a top-level statement', () => {
+  // Only a top-level `$.inspect(...)` statement is rewritten into a tracking
+  // effect and stripped when debug is off. One inside a function compiled to a
+  // bare `$inspect(...)` call, so a debug-off build threw a ReferenceError the
+  // first time the function ran (FJS-4300).
+  const src = (body) => `<script>\nlet n = 0\n${body}\n</script>\n<p>{n}</p>`
+
+  it('refuses one inside a function', async () => {
+    const { errors } = await cx(src('function f() { $.inspect(n) }'))
+    expect(errors.join('\n')).toMatch(/'\$\.inspect' is declared at the top level of <script>/)
+  })
+
+  it('refuses one inside a block or used as a value', async () => {
+    expect((await cx(src('if (n) { $.inspect(n) }'))).errors.join('\n')).toMatch(/'\$\.inspect' is declared/)
+    expect((await cx(src('const i = $.inspect(n)'))).errors.join('\n')).toMatch(/'\$\.inspect' is declared/)
+  })
+
+  it('accepts the two top-level forms', async () => {
+    const { errors } = await cx(src('$.inspect(n)\n$.inspect(n).with(console.trace)'))
+    expect(errors.join('\n')).not.toMatch(/inspect/)
+  })
+})

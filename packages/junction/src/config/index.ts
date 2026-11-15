@@ -231,7 +231,7 @@ export interface AppConfig {
   /**
    * This build's identity — what a browser compares its own against.
    *
-   * A deploy supplies it as `FJS_BUILD` in the container's environment;
+   * A deploy supplies it as `FRONTIER_BUILD` in the container's environment;
    * `config.build` is how a test or an embedding app states one. Absent, every
    * reader is inert: an app nobody deployed announces nothing.
    * `core/build-id.ts` is the owner.

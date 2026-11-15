@@ -93,7 +93,7 @@ and one stating another number keeps it and is told where the two differ.
 surface.** The source's `surface` says which (`web` when absent). `web/` of the
 same staged commit is built here with `vite build` into a temp directory, never
 into `web/dist`, resolving its dependencies through the checkout's
-`node_modules`, with `VITE_FJS_BUILD` set to the commit (`FJS-D1969`) and no API
+`node_modules`, with `FRONTIER_PUBLIC_BUILD` set to the commit (`FJS-D1969`) and no API
 origin, since the Domain routes the API back (`FJS-D1547`); where the app has a
 widgets App the build bakes `FRONTIER_PUBLIC_WIDGETS_URL` with its hostname.
 `widgets/` is built with `sierra widgets` in the staged tree, and bakes

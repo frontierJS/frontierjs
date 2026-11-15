@@ -1114,11 +1114,12 @@ export function makeWebVerify(useAuth) {
 // drive() from @frontierjs/testing/drive starts each server below, waits for
 // its URL, opens Chrome, runs the steps and stops everything however the run
 // ends. It refuses a port that already answers, because a running server
-// serves the code it started with. Chrome is found on PATH or at FJS_CHROME.
+// serves the code it started with. Chrome is found on PATH or at FRONTIER_CHROME.
 //
-// portFor() hands out the test slots (7100 and 7000 in a main checkout), so
-// this runs beside fli dev on 8100 and 8000, and a second checkout gets its
-// own offset. The servers open the same db/app.db as dev; a step that writes
+// portFor() hands out test ports on the slot fli dev gives this app (7100 and
+// 7000 beside 8100 and 8000 for the first app, 7101 and 7001 for the next), so
+// this runs beside fli dev and beside another app's drive, and a second
+// checkout gets its own offset. The servers open the same db/app.db as dev; a step that writes
 // rows leaves them there.
 
 import { drive }   from '@frontierjs/testing/drive'

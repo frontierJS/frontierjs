@@ -15,7 +15,7 @@
  * Traps, each paid for once:
  *   - `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` are this run's scratch directory. A
  *     `login` here must never write into the developer's own `~/.config`.
- *   - The API states a build (`FJS_BUILD`), or the command cache is never used
+ *   - The API states a build (`FRONTIER_BUILD`), or the command cache is never used
  *     and its rows pass against a CLI that lists live every time.
  *   - A port that answers is not evidence the right process is on it. 7120 is
  *     REFUSED if held at the start (`FJS-740`).
@@ -53,7 +53,7 @@ const ENV = {
   DATABASE_URL:     DB_PATH,
   AUDIT_PATH:       join(SCRATCH, 'audit.db'),
   FRONTIER_PORT_BE: String(API_PORT),
-  FJS_BUILD:        'verify-cli-build-1',
+  FRONTIER_BUILD:        'verify-cli-build-1',
 }
 
 // ─── Harness ─────────────────────────────────────────────────────────────

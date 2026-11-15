@@ -415,7 +415,7 @@ function testingSection(has) {
   if (!unit && !drive) return ''
   const rows = [
     unit  && '| `bun run test` | `api/test/` under bun: who may read, write and promote, against the real schema | nothing |',
-    drive && '| `bun run verify` | `web/test/verify.js`: the app in Chrome, through `drive()` from `@frontierjs/testing/drive` | Chrome on PATH or `FJS_CHROME`; ports 7000 and 7100 free |',
+    drive && '| `bun run verify` | `web/test/verify.js`: the app in Chrome, through `drive()` from `@frontierjs/testing/drive` | Chrome on PATH or `FRONTIER_CHROME`; ports 7000 and 7100 free |',
   ].filter(Boolean)
   return `
 ## Testing

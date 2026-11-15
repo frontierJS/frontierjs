@@ -209,7 +209,7 @@ ksite's client sites depend on; see its `CLAUDE.md`.
 
 `website` is a root workspace member, so `bun run --filter '*' test` and CI's
 `tests` phase reach it. Its `test` script is the build followed by `verify`, the
-browser drive, so it needs Chrome (`$FJS_CHROME`, which the CI workflow sets).
+browser drive, so it needs Chrome (`$FRONTIER_CHROME`, which the CI workflow sets).
 `verify` prints every check's value and exits 1 naming the ones that failed.
 
 ## Before publishing
@@ -220,7 +220,7 @@ asks the registry. It found two that could never have worked: `@frontierjs/basec
 which is `private` and never publishes because it is an application rather than a
 library, and a marketplace install for an extension with no publisher account.
 Both now say what you actually do. No network is a named skip;
-`FJS_REQUIRE_REGISTRY=1` makes it fatal.
+`FRONTIER_REQUIRE_REGISTRY=1` makes it fatal.
 
 **The set of packages is checked too.** The build refuses a publishable
 `@frontierjs/*` that no entry in `packages.js` describes — the hole is silent

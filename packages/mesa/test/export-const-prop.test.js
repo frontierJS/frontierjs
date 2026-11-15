@@ -20,7 +20,7 @@
  * Run: npx vitest run export-const-prop.test.js
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import * as acorn from 'acorn'
 import { compile } from '../src/compiler.js'
 import * as runtime from '../src/runtime.js'
@@ -213,6 +213,37 @@ describe('the parent, mounting it', () => {
     expect(() => { ref.label = 'x' }).toThrow(/export const/)
     expect(m.text()).toBe('[fallback]')
     delete globalThis.__constRef
+    m.destroy()
+  })
+
+  // The parent compiles alone and cannot see the child's keyword, so RULE 22's
+  // parent side is a mount-time warning. A const child once took the binding
+  // silently, as a one-way push.
+  for (const keyword of ['const', 'var']) {
+    it(`bind: to an export ${keyword} prop is warned at mount, naming the keyword`, async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const m = await mountPair(
+        `<script>export ${keyword} label = 'fallback'</script><span>[{label}]</span>`,
+        `<script>import Child from './Child.mesa'\nlet v = 'a'</script><Child bind:label={v} />`
+      )
+      const said = warn.mock.calls.map((c) => String(c[0])).filter((s) => s.includes('bind:label'))
+      warn.mockRestore()
+      expect(said).toHaveLength(1)
+      expect(said[0]).toMatch(new RegExp(`export ${keyword}`))
+      expect(said[0]).toMatch(/RULE 22/)
+      m.destroy()
+    })
+  }
+
+  it('bind: to an export let prop warns nothing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const m = await mountPair(
+      `<script>export let label = 'fallback'</script><span>[{label}]</span>`,
+      `<script>import Child from './Child.mesa'\nlet v = 'a'</script><Child bind:label={v} />`
+    )
+    const said = warn.mock.calls.filter((c) => String(c[0]).includes('bind:label'))
+    warn.mockRestore()
+    expect(said).toEqual([])
     m.destroy()
   })
 })

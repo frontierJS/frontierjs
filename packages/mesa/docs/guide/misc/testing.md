@@ -43,7 +43,7 @@ To render straight from source with no bundler, use `renderFile` from
 ## Browser drive
 
 `@frontierjs/mesa/drive` launches a real Chrome over the DevTools protocol. It has
-no dependencies. Chrome is `$FJS_CHROME` when that is set, otherwise the first of
+no dependencies. Chrome is `$FRONTIER_CHROME` when that is set, otherwise the first of
 `google-chrome`, `google-chrome-stable`, `chromium` and `chromium-browser` on
 `PATH`, then the macOS app bundles.
 

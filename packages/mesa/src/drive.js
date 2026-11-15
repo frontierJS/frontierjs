@@ -52,14 +52,14 @@ function whichSync(bin) {
 /** The binary, or null. A caller that would rather SKIP than fail asks this
  *  first: no Chrome is a fact about the machine, not about the app.
  *
- *  `$FJS_CHROME` is AUTHORITATIVE rather than preferred. Somebody who names a
+ *  `$FRONTIER_CHROME` is AUTHORITATIVE rather than preferred. Somebody who names a
  *  binary names it for a reason — a specific build, a specific version — and
  *  falling through to whatever else is installed answers a different question
  *  than the one they asked, silently. So a variable pointing at nothing is
  *  null. The world is injectable so both answers are testable on a machine
  *  with either. */
 export function findChrome({ run = whichSync, exists = existsSync, candidates = CANDIDATES, env = process.env } = {}) {
-  const named = env.FJS_CHROME
+  const named = env.FRONTIER_CHROME
   if (named) return (named.includes('/') ? exists(named) : run(named)) ? named : null
 
   for (const c of candidates) {
@@ -380,9 +380,9 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   if (owned) throw new Error(`openChrome: ${owned.split('=')[0]} is the driver's own flag — the attach and the profile sweep depend on it`)
   const exe = findChrome()
   if (!exe)
-    throw new Error(process.env.FJS_CHROME
-      ? `$FJS_CHROME names ${process.env.FJS_CHROME} and there is no such binary`
-      : 'no Chrome on this machine — install Chrome or Chromium, or point $FJS_CHROME at a binary')
+    throw new Error(process.env.FRONTIER_CHROME
+      ? `$FRONTIER_CHROME names ${process.env.FRONTIER_CHROME} and there is no such binary`
+      : 'no Chrome on this machine — install Chrome or Chromium, or point $FRONTIER_CHROME at a binary')
 
   installSweep()
   reapOrphanedProfiles()

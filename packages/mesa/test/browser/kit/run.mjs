@@ -6,7 +6,7 @@
  *   node test/browser/kit/run.mjs --verbose     print the passing rows too
  *   node test/browser/kit/run.mjs --serve       serve and stay up
  *
- * Needs Chrome on PATH or `$FJS_CHROME`.
+ * Needs Chrome on PATH or `$FRONTIER_CHROME`.
  *
  * ── Why a drive of its own ────────────────────────────────────────────
  *

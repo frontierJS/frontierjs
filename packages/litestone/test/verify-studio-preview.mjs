@@ -19,7 +19,7 @@
  *
  * Starts and stops TWO servers on ports the OS names, one on the default
  * resolver and one with --gate ($STUDIO_PORT and $STUDIO_PORT_GATE pin them),
- * and a Chrome. Nothing to launch first. Needs Chrome on PATH or $FJS_CHROME.
+ * and a Chrome. Nothing to launch first. Needs Chrome on PATH or $FRONTIER_CHROME.
  *
  * It owns its schema and its database, in a temp directory, unlike the other
  * four Studio drives which read `example`. Two reasons and the second is the

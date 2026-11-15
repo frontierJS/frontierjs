@@ -29,7 +29,7 @@
  *   bun run verify:build      # builds, then runs this
  *
  * It starts the API and the preview server itself and stops them at the end.
- * Needs Chrome on PATH (or $FJS_CHROME).
+ * Needs Chrome on PATH (or $FRONTIER_CHROME).
  */
 
 // What `fli prove` queues on: this checkout's ports.

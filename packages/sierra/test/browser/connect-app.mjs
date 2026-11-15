@@ -17,7 +17,7 @@
  * other.
  *
  * Usage, from the sierra package root: `bun run test:connect-app`.
- * Needs Chrome on PATH (or $FJS_CHROME).
+ * Needs Chrome on PATH (or $FRONTIER_CHROME).
  */
 
 import { spawn } from 'node:child_process'

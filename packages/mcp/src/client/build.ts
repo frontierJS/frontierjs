@@ -14,7 +14,7 @@
  *   - a route is read off `cli/src/routes/` at run time, which the bundler
  *     cannot follow, so the binary offers every derived command and none of the
  *     app's own. Every route file goes in as an entrypoint of its own, and the
- *     count is stated as `process.env.FJS_CLI_ROUTES`, which `loadRoutes`
+ *     count is stated as `process.env.FRONTIER_CLI_ROUTES`, which `loadRoutes`
  *     checks inside a binary — the hand-built one refuses to start;
  *   - two entrypoints are two bundles, so a route would import its own copy of
  *     this package and `instanceof CallRefused` would fail across the seam.
@@ -72,7 +72,7 @@ export async function buildCli({ root, targets = [] }: BuildOptions): Promise<Bu
       splitting:   true,
       compile:     target ? { outfile, target: target as Bun.Build.CompileTarget } : { outfile },
       define:      {
-        'process.env.FJS_CLI_ROUTES': JSON.stringify(String(routes.length)),
+        'process.env.FRONTIER_CLI_ROUTES': JSON.stringify(String(routes.length)),
         // bun build inlines the builder's NODE_ENV, so a binary would read "development" whatever it runs under
         'process.env.NODE_ENV':       'globalThis.process.env.NODE_ENV',
       },

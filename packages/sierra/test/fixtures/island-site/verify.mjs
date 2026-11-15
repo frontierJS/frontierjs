@@ -18,7 +18,7 @@
  *   npx vite build --config test/fixtures/island-site/vite.config.js
  *   node test/fixtures/island-site/verify.mjs
  *
- * Needs Chrome on PATH (or $FJS_CHROME), same as the css package's harness.
+ * Needs Chrome on PATH (or $FRONTIER_CHROME), same as the css package's harness.
  * Exits non-zero and prints what differed if any assertion fails.
  */
 
@@ -34,7 +34,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const DIST = join(HERE, 'dist/client')
 
 const CHROME = findChrome()
-if (!CHROME) { console.error('No Chrome on this machine — install Chrome or Chromium, or point $FJS_CHROME at a binary'); process.exit(1) }
+if (!CHROME) { console.error('No Chrome on this machine — install Chrome or Chromium, or point $FRONTIER_CHROME at a binary'); process.exit(1) }
 const TYPES  = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }
 
 if (!existsSync(join(DIST, 'index.html'))) {

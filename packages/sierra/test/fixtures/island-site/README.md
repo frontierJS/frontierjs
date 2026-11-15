@@ -11,7 +11,7 @@ node test/fixtures/island-site/verify.mjs
 ```
 
 `verify.mjs` serves `dist/client`, drives it in headless Chrome, and **clicks
-the buttons**. Needs Chrome on PATH or `$FJS_CHROME`.
+the buttons**. Needs Chrome on PATH or `$FRONTIER_CHROME`.
 
 ## What it covers
 

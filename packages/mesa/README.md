@@ -181,8 +181,11 @@ date: 2025-01-15
 <p><button onclick={() => likes++}>Like</button></p>
 ```
 
-Mesa closes no element for you, so a bare inline element on its own line is
-refused — markdown opens a `<p>` around it that nothing closes. Wrap it, as above.
+A bare inline element on its own line is wrapped in a `<p>` by markdown, which
+closes it too. A blank line inside an element whose opening tag shares a line
+with text is refused: markdown closes its `<p>` before the element closes, and
+Mesa closes no element for you. Wrap the element in a block, as above, to
+choose the markup yourself.
 
 Frontmatter keys become `export const` declarations automatically. Mesa
 expressions, `{#if}`, `{#each}`, and Mesa components all work inline.
@@ -501,7 +504,7 @@ DevTools server hooks — no separate import needed.
 
 A real Chrome over CDP, for an app's own drive: launch, navigate, evaluate, send
 input the browser trusts, collect what the page threw. No dependency — the
-protocol goes over the global `WebSocket`. Chrome is `$FJS_CHROME` when it is
+protocol goes over the global `WebSocket`. Chrome is `$FRONTIER_CHROME` when it is
 set, and otherwise the first of `google-chrome`, `google-chrome-stable`,
 `chromium` and `chromium-browser` on `PATH`, then the macOS app bundles.
 `findChrome()` answers that binary or `null`, so a drive that should skip on a

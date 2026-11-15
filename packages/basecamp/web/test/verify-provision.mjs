@@ -187,16 +187,16 @@ children.push(api)
 // what puts that sentence in front of whoever is reading this drive's output.
 const apiWarnings = []
 const apiErrors   = []
-// `FJS_DRIVE_LOG=<path>` tees the app's own output somewhere readable. Not on
+// `FRONTIER_DRIVE_LOG=<path>` tees the app's own output somewhere readable. Not on
 // by default and not needed for a pass — but when this drive fails, the API's
 // own sentence about what it refused is usually the whole answer, and it is
 // otherwise thrown away with the process.
 api.stdout.on('data', d => {
-  if (process.env.FJS_DRIVE_LOG) appendFileSync(process.env.FJS_DRIVE_LOG, String(d))
+  if (process.env.FRONTIER_DRIVE_LOG) appendFileSync(process.env.FRONTIER_DRIVE_LOG, String(d))
 })
 api.stderr.on('data', d => {
   const t = String(d)
-  if (process.env.FJS_DRIVE_LOG) appendFileSync(process.env.FJS_DRIVE_LOG, t)
+  if (process.env.FRONTIER_DRIVE_LOG) appendFileSync(process.env.FRONTIER_DRIVE_LOG, t)
   if (/\[credentials\]/.test(t)) apiWarnings.push(t.trim())
   // Anything the app logged as a failure. A service that refused a call
   // answers the browser, and the browser may or may not render it — this is

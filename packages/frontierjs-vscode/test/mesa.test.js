@@ -23,9 +23,9 @@ const ROOT  = path.resolve(__dirname, '..')
 const REPO  = path.resolve(ROOT, '..', '..')
 const MESA  = path.join(REPO, 'packages', 'mesa')
 
-// FJS_MESA_CLIENT points the suite at another copy of the client, the way
-// FJS_LSP_SERVER does for the language server.
-const CLIENT = process.env.FJS_MESA_CLIENT || path.join(ROOT, 'out', 'mesa', 'client.js')
+// FRONTIER_MESA_CLIENT points the suite at another copy of the client, the way
+// FRONTIER_LSP_SERVER does for the language server.
+const CLIENT = process.env.FRONTIER_MESA_CLIENT || path.join(ROOT, 'out', 'mesa', 'client.js')
 
 const api = stub.install()
 

@@ -33,7 +33,7 @@ an import.
 
 Reproduce, from this directory:
 `bun run test && bun run test:safety && bun run test:widgets && bun run typecheck`.
-The widget drive needs Chrome on PATH or `$FJS_CHROME`; the other three need
+The widget drive needs Chrome on PATH or `$FRONTIER_CHROME`; the other three need
 nothing. None of the three is in the others — `test` does not run either drive.
 
 What the suite cannot reach is the app-shaped half: the SPA, the prerender and

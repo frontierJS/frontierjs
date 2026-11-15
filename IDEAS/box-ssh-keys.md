@@ -6,7 +6,7 @@ dated: 2026-11-04
 
 # Idea — whose SSH key a new box carries
 
-**Status: RULED. Q1–Q3 ruled (FJS-D2154, D2155, D2153); 0.1 next.**
+**Status: RULED. Q1–Q3 ruled (FJS-D2154, D2155, D2153). DigitalOcean only for v1. 0.1 and 0.3 answered; 0.2 (`server:create`) next.**
 Probed against the tree 2026-11-04. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-11-04): when a box is created for Basecamp, what decides whose SSH
@@ -97,9 +97,32 @@ never laid. On a `fli`-made box it is laid, but Basecamp does not know which key
 Goal: what a keyless box really gets, and where a `fli` box becomes a Server.
 Done when: each step below has its answer written under it.
 
-- [ ] 0.1 What DigitalOcean and Hetzner do on a create with no `ssh_keys` (a root password
-  emailed, a console-only login?), and whether the two stand-ins (`digitalocean-sink.ts`,
-  `hetzner-sink.ts`) model it
+- [x] 0.1 What DigitalOcean does on a create with no `ssh_keys`, and whether
+  `digitalocean-sink.ts` models it. **v1 is DigitalOcean only** (owner, 2026-11-14); Hetzner
+  waits until after v1, which is why its stand-in is not probed here.
+  - **No key: root logs in with a password, and the password goes to the account's inbox.**
+    DO's API create takes no password field (the connector sends none), and *"If you do not
+    specify any SSH keys, we email a temporary password to your account's email address"*
+    ([recommended droplet setup](https://docs.digitalocean.com/products/droplets/getting-started/recommended-droplet-setup/)).
+    The support page's *"We do not email a Droplet's root password"* covers the Control
+    Panel, where the person sets a password at create. The enrollment script then leaves
+    password login on (`enrollment.ts:381`), so the box takes SSH passwords and the only
+    person who knows the password is whoever reads the DO account's email, who may not be a
+    Basecamp user.
+  - **With a key: DO turns password login off and emails nothing.** The enrollment drop-in
+    `10-basecamp.conf` turns it off as well. It sorts before cloud-init's `50-cloud-init.conf`,
+    and sshd takes the first value it reads.
+  - **Recovery with no working key** is the Control Panel: Settings, then Reset Root
+    (which emails a temporary password), then the Recovery Console. That works on Ubuntu and
+    Debian only. AlmaLinux, Fedora and Rocky cannot be reset from outside the box
+    ([lost SSH key](https://docs.digitalocean.com/support/i-lost-the-ssh-key-for-my-droplet/)).
+  - **Not yet tested on a real droplet.** The email on an API create rests on one DO page.
+    Confirming it means paying for a droplet, so it is the owner's call and does not block
+    Phase 1, which installs a key either way.
+  - **The stand-in:** `CREATED` keeps the whole create body, `ssh_keys` included, so 1.2's
+    `compute.test.ts` row can assert on it. It accepts any `ssh_keys` without checking that
+    they name a key it holds, and its posture reading carries no keys (that is 1.4). The
+    email happens outside the API, so the stand-in needs nothing for it.
 - [ ] 0.2 Whether `fli basecamp:create` / `fli server:create` ever write a Server row, and
   which step does
   - `basecamp:create` (read 2026-11-14, `commands/basecamp/create.md:117`): an install makes
@@ -107,9 +130,22 @@ Done when: each step below has its answer written under it.
     `~/.config/fli/basecamps.json`. After that step a Server row exists and `fli` holds a key
     to Basecamp's API, so the record goes through that API, not a second path. `server:create`
     is not yet traced
-- [ ] 0.3 Whether an `sshKey` Secret holding only a private key yields a public key line, not
+- [x] 0.3 Whether an `sshKey` Secret holding only a private key yields a public key line, not
   only a fingerprint (`privateKeyBlobs` in `posture.ts` has the blob; the type prefix is what
   is owed)
+  - **Yes, for every OpenSSH private key.** The type prefix is the blob's own first string,
+    so the line is `<type> <base64(blob)>`. Run 2026-11-14 with keys from `ssh-keygen`:
+    ed25519, ed25519 with a passphrase, RSA and ECDSA each gave back exactly the
+    `<type> <body>` in their `.pub`. A passphrase does not matter, because the public blob
+    sits in the unencrypted header.
+  - **The comment is lost.** It sits in the encrypted private section, so a derived line
+    has none. The `name` given to `connector.sshKey()` is the label DO shows.
+  - **A PEM key (`BEGIN RSA PRIVATE KEY`) has no public blob, but its public half can be
+    derived** when the key is unencrypted: `createPublicKey(pem)` gives the JWK, and
+    `ssh-rsa` + `e` + `n` builds a matching line. An encrypted PEM gives nothing without its
+    passphrase. `publicKeyFingerprints` skips PEM today, so a Secret holding only a PEM key
+    grades `ssh.unknown-key` unknown. If 1.1 reads PEM keys, fingerprints should read the
+    same set, so that the key installed and the key graded are always the same key.
 
 ### Phase 1 — Key at create (Q1 = A)
 
@@ -118,7 +154,9 @@ Done when: a `compute.test.ts` row asserts the create body carries the key, and 
 stand-in made grades `ssh.unknown-key` pass.
 
 - [ ] 1.1 `publicKeyLines(data)` beside `publicKeyFingerprints`: every public key line in a
-  Secret, plus the line for each private key's public half
+  Secret, plus the line for each private key's public half, unencrypted RSA PEM keys
+  included (owner, 2026-11-14). `publicKeyFingerprints` reads the same set, so the key
+  installed and the key graded are always the same key
 - [ ] 1.2 `provisionStep('create')` resolves `sshKeyId` (scoped to the workspace, as
   `refuseForeignAccount` already does), calls `connector.sshKey()` per line, passes `sshKeys`
 - [ ] 1.3 The `sshKeyId` picker on the Provision screen. It defaults to the workspace's only

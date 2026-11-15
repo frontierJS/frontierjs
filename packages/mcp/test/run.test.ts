@@ -390,20 +390,20 @@ describe('routes', () => {
   // Inside a binary the count `buildCli` stated is checked, since a hand-run
   // `bun build --compile` embeds no routes/ and would offer none of them.
   test('in a compiled binary, loadRoutes refuses a count it was not given, or one that does not match', async () => {
-    const was = process.env.FJS_CLI_ROUTES
+    const was = process.env.FRONTIER_CLI_ROUTES
     try {
-      delete process.env.FJS_CLI_ROUTES
+      delete process.env.FRONTIER_CLI_ROUTES
       await expect(loadRoutes('/$bunfs/root/routes')).rejects.toThrow(/compiled without its routes.*fli cli:build/)
       await expect(loadRoutes('B:\\~BUN\\root\\routes')).rejects.toThrow(/compiled without its routes/)
-      process.env.FJS_CLI_ROUTES = '1'
+      process.env.FRONTIER_CLI_ROUTES = '1'
       await expect(loadRoutes('/$bunfs/root/routes')).rejects.toThrow(/built with 1 route\(s\) and holds 0/)
-      process.env.FJS_CLI_ROUTES = '0'
+      process.env.FRONTIER_CLI_ROUTES = '0'
       expect(await loadRoutes('/$bunfs/root/routes')).toEqual([])
-      delete process.env.FJS_CLI_ROUTES
+      delete process.env.FRONTIER_CLI_ROUTES
       expect(await loadRoutes('/no/such/routes')).toEqual([])
     } finally {
-      if (was === undefined) delete process.env.FJS_CLI_ROUTES
-      else process.env.FJS_CLI_ROUTES = was
+      if (was === undefined) delete process.env.FRONTIER_CLI_ROUTES
+      else process.env.FRONTIER_CLI_ROUTES = was
     }
   })
 })

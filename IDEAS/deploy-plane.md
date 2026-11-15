@@ -119,7 +119,7 @@ stayed green.
 --source npm` → `make:deploy` → `deploy:local` and asserts a built image, a
 started container, migrations in the entrypoint, and a health answer — ~15s,
 full tier, skipped-with-a-name when there is no Docker daemon and a failure
-when `FJS_CI_REQUIRE_DOCKER=1` (the workflow sets it). **The advertised path now
+when `FRONTIER_CI_REQUIRE_DOCKER=1` (the workflow sets it). **The advertised path now
 runs on every CI run, and it had never run end to end before.**
 
 Reintroducing `FJS-238` — the health path that drops the app's `apiPrefix` —

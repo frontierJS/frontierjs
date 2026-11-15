@@ -23,8 +23,8 @@
  * Traps:
  * - Each screen is fogged for its own figure (6.3), so the art is compared
  *   where the tab draws it, and the color cell is one the tab's figure sees.
- * - The server states a build (`FJS_BUILD`) and the page is served as
- *   another (`VITE_FJS_BUILD`), so the page must say it is stale. Both are
+ * - The server states a build (`FRONTIER_BUILD`) and the page is served as
+ *   another (`FRONTIER_PUBLIC_BUILD`), so the page must say it is stale. Both are
  *   set here; a dev server of Haven's own states no build and says nothing.
  * - The dev server is this drive's own, on a port nobody answers on; one
  *   that already answers is refused rather than reused (`FJS-740`).
@@ -65,7 +65,7 @@ const answers = (url) => fetch(url).then(() => true, () => false)
 
 // ─── Haven ─────────────────────────────────────────────────────────
 
-process.env.FJS_BUILD = 'haven-server-build'
+process.env.FRONTIER_BUILD = 'haven-server-build'
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
@@ -85,7 +85,7 @@ if (await answers(WEB_ORIGIN)) {
 }
 const vite = spawn(VITE, ['-c', 'config/vite.config.js'], {
   cwd: WEB, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, API_PORT: String(env.port), WEB_PORT: String(webPort), VITE_FJS_BUILD: 'haven-page-build' },
+  env: { ...process.env, API_PORT: String(env.port), WEB_PORT: String(webPort), FRONTIER_PUBLIC_BUILD: 'haven-page-build' },
 })
 let viteLog = ''
 vite.stdout.on('data', (d) => { viteLog += d })

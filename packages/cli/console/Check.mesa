@@ -60,7 +60,7 @@
     return {
       scope: 'this machine', rule: m.blocked ? 'fli cannot run here' : 'setup',
       severity: m.blocked ? 'error' : 'warn', file: null, line: null,
-      message: bad.map(c => `${c.name ?? c.label ?? c.key} — ${c.hint ?? c.fix}`).join(' · '),
+      message: bad.map(c => `${c.name ?? c.label ?? c.key} — ${c.install ?? c.hint ?? c.fix}`).join(' · '),
     }
   }
 

@@ -25,6 +25,7 @@
 //   POST /laptop         setPing     { topic } write it; empty removes the file and turns the ping off -> { path, topic, url }
 //   GET  /laptop         services    every account fli signs in to: how, present or not (names only), setup pointer, vendor page, and the commands that use it
 //   POST /laptop         probeService    { id } run that CLI service's login check -> { ok, who, ms }; the one verb that shells out, and only on a press
+//   GET  /laptop         setup       what this laptop can and cannot do, by goal: { goals: [{ id, label, why, required, state, rows }] }; each failing row's fix is a copy, a url or a go, never a verb that shells
 //   GET  /laptop         running     fli dev sessions with their ports and which answer, and the tree holds -> { sessions, holds }
 
 import { createService, BadRequest, $ } from '@frontierjs/junction'
@@ -35,8 +36,9 @@ import { globalEnv, setGlobalEnv, unsetGlobalEnv, commands, profiles, profileLis
 import { ping, setPing }                from '../../domain/laptop/ping.ts'
 import { running }                      from '../../domain/laptop/running.ts'
 import { servicesList, probeService }  from '../../domain/laptop/services.ts'
+import { setup }                      from '../../domain/laptop/setup.ts'
 
-const READS  = ['disk', 'keys', 'globalEnv', 'profiles', 'profileList', 'commands', 'ping', 'running', 'services']
+const READS  = ['disk', 'keys', 'globalEnv', 'profiles', 'profileList', 'commands', 'ping', 'running', 'services', 'setup']
 // probeService shells out to a CLI, so it is a write: a keyed retry must run it again.
 const WRITES = ['clear', 'removeLane', 'fixMode', 'setGlobalEnv', 'unsetGlobalEnv', 'createProfile', 'setProfileKey', 'unsetProfileKey', 'setPing', 'probeService']
 
@@ -146,6 +148,10 @@ export default createService({
 
   async services() {
     return servicesList()
+  },
+
+  async setup() {
+    return setup()
   },
 
   async probeService() {

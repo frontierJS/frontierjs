@@ -60,6 +60,16 @@ function build() {
     .finally(() => { g.fliRoot = held.fliRoot; g.projectRoot = held.projectRoot })
 }
 
+/** The namespaces that declare `requires:`, off the registry this module already built. */
+export async function requiringModulesOnRegistry(): Promise<Array<{ ns: string, requires: string[] }>> {
+  registry ??= build()
+  const [reg, { requiringModules }] = await Promise.all([
+    import('@frontierjs/cli/core/registry.js') as Promise<{ uniqueCommands: (r: unknown) => unknown[], getModule: unknown }>,
+    import('@frontierjs/cli/core/doctor.js') as Promise<{ requiringModules: (o: unknown) => Array<{ ns: string, requires: string[] }> }>,
+  ])
+  return requiringModules({ commands: reg.uniqueCommands(await registry), getModule: reg.getModule })
+}
+
 async function usedBy(row: Row): Promise<Command[]> {
   registry ??= build()
   return commandsUsing(row as never, await registry as never)

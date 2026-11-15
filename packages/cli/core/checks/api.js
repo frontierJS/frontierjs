@@ -195,6 +195,17 @@ export const CHECKS = {
         }
       }
     }
+    // A header the principal resolver reads through junction's header() is
+    // declared too: declaredCallHeaders() adds it to both allow-lists, so the
+    // rule demanding a callHeaders entry would disagree with the server.
+    for (const path of api) {
+      const code = readCode(path)
+      if (!/import\s*\{[^}]*\bheader\b[^}]*\}\s*from\s*['"]@frontierjs\/junction(?:\/bearer)?['"]/.test(code)) continue
+      for (const m of code.matchAll(/(?<![\w$.])header\s*\(\s*([^,)]+)\)/g)) {
+        const value = valueOf(m[1])
+        if (value !== null) declared.add(value.toLowerCase())
+      }
+    }
     // A declaration this rule cannot read is not an absent declaration.
     if (opaque) return { skipped: `http.callHeaders names ${opaque}, which this rule cannot resolve to a string` }
 
@@ -211,7 +222,8 @@ export const CHECKS = {
                    `server merges only declared names and the header is absent the moment the socket ` +
                    `connects — an empty list with a 200, or a 404, depending on what reads it. Declare ` +
                    `it in junction.config.js as middleware: { callHeaders: ['${name}'] } ` +
-                   `(createApp's config spells the same key http: { callHeaders }).`,
+                   `(createApp's config spells the same key http: { callHeaders }), or read it in the ` +
+                   `principal resolver through header() from @frontierjs/junction/bearer, which declares it.`,
         })
       }
     }
@@ -615,7 +627,7 @@ export const CHECKS = {
           'refuses to boot and the release does not start. '
         : 'the API imports @frontierjs/mesa/drive and this image installs no Chrome, so its first ' +
           'openChrome() throws in production. ') +
-      'Install chromium in the runtime stage, or point $FJS_CHROME at a binary the image holds — ' +
+      'Install chromium in the runtime stage, or point $FRONTIER_CHROME at a binary the image holds — ' +
       'fli make:deploy writes the lines for a new Dockerfile' })
     for (const name of needs.offRoad) findings.push({ file, message:
       `the app depends on ${name}, which brings its own pinned browser build that nothing here reads, so ` +

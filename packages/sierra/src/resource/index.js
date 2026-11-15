@@ -299,7 +299,7 @@ function _wrapDebug(client) {
  */
 function buildId() {
   try {
-    const v = import.meta.env?.VITE_FJS_BUILD
+    const v = import.meta.env?.FRONTIER_PUBLIC_BUILD
     return typeof v === 'string' && v.trim() ? v.trim() : null
   } catch {
     return null
@@ -366,7 +366,7 @@ export function initJunction(config) {
     ...(config.authServices ? { authServices: config.authServices } : {}),
     // Which build this bundle IS.
     //
-    // `03-build-web` stamps `VITE_FJS_BUILD` at build time and vite inlines it,
+    // `03-build-web` stamps `FRONTIER_PUBLIC_BUILD` at build time and vite inlines it,
     // so it travels inside the bundle rather than being fetched — which is what
     // makes it true for a browser still running the previous deploy's code. The
     // server states its own on every response and on the socket's `connected`

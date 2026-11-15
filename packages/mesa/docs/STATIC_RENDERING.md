@@ -138,8 +138,8 @@ await renderToHTML(Comp)                          // <div><b>yes</b></div>
 await renderToHTML(Comp, {}, { keepAnchors: true }) // <div><!----><b>yes</b></div>
 ```
 
-When hydration lands (v1.1) it will need those anchors to locate blocks, and
-`keepAnchors` is the switch. The rule for what is an anchor lives in one place —
+There is no hydration (RULE 20). If it is built (`IDEAS/hydration.md`), it
+will need those anchors to locate blocks, and `keepAnchors` is the switch. The rule for what is an anchor lives in one place —
 `isAnchorComment` in `runtime-server.js` — and is narrow (`mesa-root` and a `$`
 prefix): `<!--[if mso]>` conditional comments survive, because email templates
 emit them through `{@html}` on purpose, and island markers survive because a
@@ -243,11 +243,10 @@ hydrated: mesa writes the markers (§ *Island markers*) and sierra's
 
 **Islands do not share state.** Each mounts as its own root with its props and
 nothing else, so a `$context` provider above one is absent on the client and a
-store two islands import starts from its client default (`FJS-4313`). Deferred
-hydration per island across shared state is the trap to stay out of. When
-hydration lands, one client root adopts the server's DOM and server-only regions
-are holes inside it, so context and stores reach every widget through one owner
-tree.
+store two islands import starts from its client default (`FJS-4313`). Pass
+what an island needs as props, or make the shared region one island. Whether
+Mesa hydrates, and in what shape, is unruled: `IDEAS/hydration.md` holds the
+questions.
 
 `renderToHTML` was broken for months before this was written — it called a
 calling convention the compiler had stopped emitting, and nothing imported or

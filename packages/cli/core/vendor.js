@@ -76,7 +76,7 @@ export { chooseDockerfile, needsGenerated, exposedPort, linkedDeps, GENERATED_DI
 //
 // Every candidate is checked against the linked names rather than accepted for
 // existing — a directory called `packages` is not evidence that it holds these.
-// `$FJS_PACKAGES_DIR` stays a one-directory override: it lists that directory's
+// `$FRONTIER_PACKAGES_DIR` stays a one-directory override: it lists that directory's
 // children and nothing deeper.
 
 export function resolvePackageSource(appRoot, names) {
@@ -85,8 +85,8 @@ export function resolvePackageSource(appRoot, names) {
 
   for (const root of workspaceRootsAbove(resolve(appRoot))) candidates.push(() => sourceOfRoot(root, names))
 
-  if (process.env.FJS_PACKAGES_DIR) {
-    const dir = resolve(expandHome(process.env.FJS_PACKAGES_DIR))
+  if (process.env.FRONTIER_PACKAGES_DIR) {
+    const dir = resolve(expandHome(process.env.FRONTIER_PACKAGES_DIR))
     candidates.push(() => sourceOfDir(dir))
   }
   if (process.env.WORKSPACE_DIR) {
@@ -350,7 +350,7 @@ export function vendorWorkspacePackages({ appRoot, include = [], packagesDir: gi
   if (!source)
     throw new Error(
       `cannot find the sources for ${names.join(', ')} — ` +
-      'set $FJS_PACKAGES_DIR, or scaffold with --source npm')
+      'set $FRONTIER_PACKAGES_DIR, or scaffold with --source npm')
   const packagesDir = source.dir
   out.packagesDir = packagesDir
 

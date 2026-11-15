@@ -93,7 +93,7 @@ instance matters: `$` context, the registry and mesa's render environment are
 module state.
 
 **The launcher fills in what a deploy would**: `ENCRYPTION_KEY` generated into
-`db/encryption.key` on first run, `NODE_ENV=production`, `FJS_CHROME` pointed at
+`db/encryption.key` on first run, `NODE_ENV=production`, `FRONTIER_CHROME` pointed at
 the drive's Chromium, `FRONTIER_APP_URL` at its own port, `create-owner` (sign-up
 is closed in thod), `open` (server, then `xdg-open`), and a `Bun.serve` wrapper
 serving `web/` with an `index.html` fallback beside the API.
@@ -129,7 +129,7 @@ thod/
   (on PATH, or in `~/.bun/bin` where bun's own installer puts it and where a
   desktop entry's PATH never looks), when bun is another minor than
   `BUN_VERSION`, and when there is no Chrome (the four names mesa's `findChrome`
-  tries, in its order, or `$FJS_CHROME`, written to `thod.env` when it is a path).
+  tries, in its order, or `$FRONTIER_CHROME`, written to `thod.env` when it is a path).
 - It copies `payload/` to `~/.local/share/thod`, links `~/.local/bin/thod`, and
   writes `~/.local/share/applications/thod.desktop` running `thod open`.
 - A first install makes the owner account: prompted, or `THOD_OWNER_EMAIL` and
@@ -298,11 +298,11 @@ Done when: `verify:portable` runs in CI.
     (Syncthing, [docs](https://docs.syncthing.net/users/config.html), read
     2026-11-02). Confidence 2.
 - **Q2 — Ship Chromium or require one.** 262 MB on the drive, or
-  `apt install chromium`, which is a snap on Ubuntu; `FJS_CHROME` already lets
+  `apt install chromium`, which is a snap on Ubuntu; `FRONTIER_CHROME` already lets
   either work. The installable kind requires one and refuses by name at install;
   Google Chrome's `.deb` is tested there, snap Chromium is not.
   - **A** — require one: the installer refuses by name and prints the fix, and
-    `FJS_CHROME` stays the override `findChrome` reads
+    `FRONTIER_CHROME` stays the override `findChrome` reads
     (`packages/mesa/src/drive.js:53`). Cost: on Ubuntu the easy answer is a snap
     nobody has run here.
   - **B** — ship `chrome-headless-shell`, pinned from Chrome for Testing and cached
@@ -529,7 +529,7 @@ if (!compiled && !Bun.version.startsWith(builtMinor + '.') && process.env.THOD_A
 }
 
 // thod.env beside the app holds what a deploy's environment would: SMTP, a
-// Chrome somewhere unusual (FJS_CHROME), a port. The real environment wins.
+// Chrome somewhere unusual (FRONTIER_CHROME), a port. The real environment wins.
 const envFile = join(drive, 'thod.env')
 if (existsSync(envFile)) for (const line of readFileSync(envFile, 'utf8').split('\n')) {
   const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/)
@@ -562,7 +562,7 @@ process.env['NODE_ENV'] ??= 'production'
 // print-kit refuses to boot with no Chrome, and a stock Ubuntu desktop has only
 // Firefox, so the drive carries a headless Chromium beside the binary.
 const bundledChrome = join(appDir, '..', 'chrome', 'chrome-headless-shell')
-if (!process.env.FJS_CHROME && existsSync(bundledChrome)) process.env.FJS_CHROME = bundledChrome
+if (!process.env.FRONTIER_CHROME && existsSync(bundledChrome)) process.env.FRONTIER_CHROME = bundledChrome
 const port = Number(process.env.PORT ?? 8100)
 process.env.PORT = String(port)
 process.env.FRONTIER_APP_URL ??= `http://localhost:${port}`
@@ -783,8 +783,8 @@ case "$HAVE" in "${WANT%.*}".*) ;; *) die "this build was tested on bun $WANT an
     curl -fsSL https://bun.sh/install | bash -s bun-v$WANT" ;; esac
 
 # Chrome prints the PDFs; the app refuses to start without one. The same names
-# the printer looks for, in the same order, unless FJS_CHROME names one.
-CHROME=${FJS_CHROME:-}
+# the printer looks for, in the same order, unless FRONTIER_CHROME names one.
+CHROME=${FRONTIER_CHROME:-}
 if [ -z "$CHROME" ]; then
   for c in google-chrome google-chrome-stable chromium chromium-browser; do
     if command -v "$c" >/dev/null 2>&1; then CHROME=$c; break; fi
@@ -793,7 +793,7 @@ fi
 [ -n "$CHROME" ] || die "no Chrome or Chromium on this machine; thod prints its documents with it. Install one:
     Google Chrome: https://www.google.com/chrome/  (the .deb, then: sudo apt install ./google-chrome-stable_current_amd64.deb)
     or Chromium:   sudo snap install chromium
-then run this again. One somewhere else: FJS_CHROME=/path/to/chrome sh install.sh"
+then run this again. One somewhere else: FRONTIER_CHROME=/path/to/chrome sh install.sh"
 
 # An upgrade: stop the running copy, keep the data and settings, replace the rest.
 UPGRADE=no
@@ -813,7 +813,7 @@ if [ "$UPGRADE" = yes ]; then
   rm -rf "$DEST"
 fi
 mv "$NEW" "$DEST"
-case "$CHROME" in */*) grep -q '^FJS_CHROME=' "$DEST/thod.env" 2>/dev/null || echo "FJS_CHROME=$CHROME" >> "$DEST/thod.env" ;; esac
+case "$CHROME" in */*) grep -q '^FRONTIER_CHROME=' "$DEST/thod.env" 2>/dev/null || echo "FRONTIER_CHROME=$CHROME" >> "$DEST/thod.env" ;; esac
 
 mkdir -p "$BIN" "$APPS"
 ln -sf "$DEST/thod" "$BIN/thod"
@@ -887,7 +887,7 @@ Then open "thod" from the applications menu, or run: thod open
 It runs at http://localhost:8100 on this machine only.
 
   thod stop                 stop the server
-  ~/.local/share/thod/thod.env   settings (PORT=, SMTP, FJS_CHROME=); restart to apply
+  ~/.local/share/thod/thod.env   settings (PORT=, SMTP, FRONTIER_CHROME=); restart to apply
   sh ~/.local/share/thod/uninstall.sh [--purge]
 
 Back up ~/.local/share/thod/app/db and app/storage together: the

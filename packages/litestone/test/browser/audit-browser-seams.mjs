@@ -14,7 +14,7 @@
  *
  * Builds what it serves, with `--conditions=browser`, like
  * `verify-browser-client.mjs`; serves on 7561 so the two drives can run side by
- * side. Needs Chrome on PATH or $FJS_CHROME.
+ * side. Needs Chrome on PATH or $FRONTIER_CHROME.
  */
 
 import { spawnSync }                                  from 'node:child_process'

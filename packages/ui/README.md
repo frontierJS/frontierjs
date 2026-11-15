@@ -461,7 +461,7 @@ Five suites, and the split matters:
   `bun run verify`.
 - **`test/browser/`** — the kit drive: a server that compiles each `.mesa` on
   request behind an import map, and Chrome over CDP. It needs Chrome on PATH or
-  `$FJS_CHROME`, and it is where everything this kit adds over
+  `$FRONTIER_CHROME`, and it is where everything this kit adds over
   `@frontierjs/css` is actually asserted — a focus trap, a calendar changing
   month, a dropzone taking a file, ⌘K, a toast settling in place. Input goes
   through the browser's own pipeline, because a dispatched `KeyboardEvent` is

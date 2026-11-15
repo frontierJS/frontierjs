@@ -81,9 +81,11 @@ the HTML in the loop:
 </ul>
 ```
 
-Mesa closes no element for you, so an inline element on its own line is wrapped
-in a block yourself, as the `<p><button>` above is. Otherwise markdown opens a
-`<p>` that nothing closes.
+An inline element on its own line is wrapped in a `<p>` by markdown, which
+closes it too; write the block yourself, as the `<p><button>` above does, to
+choose a different one. A blank line inside an element whose opening tag shares
+a line with text is refused: markdown closes its `<p>` before the element
+closes, and Mesa closes no element for you.
 
 ## `client:*`
 

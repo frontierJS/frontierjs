@@ -429,6 +429,12 @@ a member. `membershipClaim({ standing: 'role', guests: ['guest'] })` emits the
 same twin for a roster guest (litestone's `docs/multi-tenancy.md`, *Admitted is
 not a member*).
 
+**The browser names its account with `getClient().setCallHeader(name, id)`** from
+`@frontierjs/sierra/resource`, once, after sign-in; the id comes from a find-only
+service over the `@@tenant(none)` membership model, because every tenant-scoped
+service refuses a call that names no account (sierra's README, *A header on every
+call*).
+
 **A bearer's claims are not on `$.me`.** With no session `ctx.user` stays
 `null` — promoting the claims to a user would grade every guest CREATOR(3) — so the
 claims reach only the Data boundary, through `$.db`. A `gate: 0` method that needs
@@ -530,7 +536,8 @@ Everything above is loud. These are not.
 
 - **A header a caller varies per call must be listed in
   `middleware.callHeaders`** in `junction.config.js` (`config.http.callHeaders`
-  at runtime). Over HTTP it arrives regardless; over the
+  at runtime), unless the principal resolver reads it through `header()` —
+  `declaredCallHeaders()` adds that one itself. Over HTTP it arrives regardless; over the
   WebSocket, which the browser client prefers once connected, an undeclared
   header is absent — a token-scoped row policy then answers empty.
 

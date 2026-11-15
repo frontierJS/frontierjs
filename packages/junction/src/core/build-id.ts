@@ -67,7 +67,7 @@ export function resolveBuildId(config: { build?: unknown } | null | undefined): 
   // app's `tsc`, which is FJS-268's class exactly; `test/client-types.test.ts`
   // is what caught it, by compiling a fixture the way an app does.
   const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
-  const env  = proc?.env?.FJS_BUILD
+  const env  = proc?.env?.FRONTIER_BUILD
   if (typeof env === 'string' && env.trim()) return env.trim()
 
   return null

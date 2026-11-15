@@ -62,7 +62,7 @@ modes and neither works for an app with strangers on it: with
 loopback.
 
 The blind relay also gets one setting wrong in a way nothing reports.
-`FJS_TRUST_PROXY=1` is right behind cloudflared and **wrong behind OpenTunnel**:
+`FRONTIER_TRUST_PROXY=1` is right behind cloudflared and **wrong behind OpenTunnel**:
 nothing in front appends to `X-Forwarded-For`, so the visitor's own header is
 the "trusted" hop, and a forged header buys a fresh rate-limit bucket per
 request (`FJS-744`). Behind a blind tunnel `trustProxy` must stay `false`.
@@ -124,7 +124,7 @@ server.stop(true)
 
 1. **Origin** — one: the command that starts the tunnel is the only thing that
    knows a proxy is in front, the same reasoning as the deploy's
-   `FJS_TRUST_PROXY` (`FJS-D617`).
+   `FRONTIER_TRUST_PROXY` (`FJS-D617`).
 2. **Concept** — no new noun; `fli tunnel` exists. OpenTunnel is a dependency
    charged to the same budget; the own relay (Phase 3) charges nothing new,
    since SSH, Caddy and Outpost's `/route` are already there.
@@ -168,7 +168,7 @@ Done when: 0.2's check passes through `fli tunnel`, not by hand.
 
 - [ ] 1.1 The positional is a port, defaulting to the app's `FLI_PORT_BE`; a
   named tunnel moves to `--name`
-- [ ] 1.2 `fli dev --tunnel` starts the API with `FJS_TRUST_PROXY=1` and the
+- [ ] 1.2 `fli dev --tunnel` starts the API with `FRONTIER_TRUST_PROXY=1` and the
   quick tunnel together, so the setting and the proxy cannot drift apart
 - [ ] 1.3 The startup line prints the public URL and the trust setting it chose
 

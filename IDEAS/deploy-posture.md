@@ -46,7 +46,7 @@ One preflight step, `01c-posture`, that **calls existing owners and grades nothi
 
 Image CVEs and the target's machine grade come later (Phase 4).
 
-**When a check cannot run, it says so by name.** An audit with no network is a named skip, as in CI's `FJS_CI_REQUIRE_AUDIT`. A skipped check that prints nothing is worse than no check.
+**When a check cannot run, it says so by name.** An audit with no network is a named skip, as in CI's `FRONTIER_CI_REQUIRE_AUDIT`. A skipped check that prints nothing is worse than no check.
 
 ---
 

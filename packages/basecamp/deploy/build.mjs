@@ -64,7 +64,7 @@ const output = (r) => [r.stdout, r.stderr].filter(Boolean).join('\n')
 // ─── docker present? ─────────────────────────────────────────
 // Named rather than left to fail inside a build: `docker build` without a
 // daemon reports a context error about a directory that is plainly there,
-// which reads as a bug in this script (the FJS_CI_WORKDIR family).
+// which reads as a bug in this script (the FRONTIER_CI_WORKDIR family).
 const docker = run('docker', ['version', '--format', '{{.Server.Version}}'], { stdio: 'pipe' })
 if (docker.status !== 0)
   fail('no Docker daemon — `docker version` failed', output(docker))

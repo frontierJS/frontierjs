@@ -110,7 +110,7 @@ consumer: its schema has `Room` and `Message` and almost no code yet.
 
 ## Open questions
 
-- **Q1** — Which rig is first: teams (the most evidence, and others depend on
+- ~~**Q1**~~ **Answered 2026-11-14 (`FJS-D2167`): A — teams first: an organization/member/invitation/role package whose gate input is a standing fragment, lifted from basecamp's `Workspace` + `WorkspaceMember` + `applyStanding()` (overview 3.8); chat, boards, tasks and comments then build on it.** — Which rig is first: teams (the most evidence, and others depend on
   it), telephony (the cheapest to extract), or billing (overview 2.5's
   "canonical first")?
   - **A** — teams first: an organization/member/invitation/role package whose

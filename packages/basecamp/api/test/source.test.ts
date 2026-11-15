@@ -213,15 +213,15 @@ describe('git over https', () => {
   test('a repository the account sees answers env entries carrying the token, scoped to github.com', async () => {
     await registerAtSink(account)
     const got = await ask('https://github.com/sink-owner/app.git')
-    expect(got).toMatchObject({ FJS_GIT_TOKEN: GH_TOKEN, GIT_CONFIG_KEY_1: 'credential.https://github.com.helper' })
+    expect(got).toMatchObject({ FRONTIER_GIT_TOKEN: GH_TOKEN, GIT_CONFIG_KEY_1: 'credential.https://github.com.helper' })
     // The helper reads the token from its environment, so it is never written into a config value.
-    expect(Object.entries(got!).filter(([k]) => k !== 'FJS_GIT_TOKEN').map(([, v]) => v).join('\n')).not.toContain(GH_TOKEN)
+    expect(Object.entries(got!).filter(([k]) => k !== 'FRONTIER_GIT_TOKEN').map(([, v]) => v).join('\n')).not.toContain(GH_TOKEN)
   })
 
   test('the ssh form of a repository the account sees answers the same token', async () => {
     await registerAtSink(account)
-    expect(await ask('git@github.com:sink-owner/app.git')).toMatchObject({ FJS_GIT_TOKEN: GH_TOKEN })
-    expect(await ask('ssh://git@github.com/sink-owner/app.git')).toMatchObject({ FJS_GIT_TOKEN: GH_TOKEN })
+    expect(await ask('git@github.com:sink-owner/app.git')).toMatchObject({ FRONTIER_GIT_TOKEN: GH_TOKEN })
+    expect(await ask('ssh://git@github.com/sink-owner/app.git')).toMatchObject({ FRONTIER_GIT_TOKEN: GH_TOKEN })
   })
 
   test('a remote that is not GitHub, or that names no repository an account sees, answers null', async () => {

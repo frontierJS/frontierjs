@@ -126,7 +126,7 @@ function trapSignals() {
 // ─── the daemon cannot see our work directory ────────────────────────────────
 // A build context that is plainly on disk and that the daemon reports as absent
 // is not a deploy defect, and reading it as one costs an hour: it means this
-// shell has a private /tmp, which is the case $FJS_CI_WORKDIR exists for.
+// shell has a private /tmp, which is the case $FRONTIER_CI_WORKDIR exists for.
 //
 // Two shapes, because the two builders word it differently — the classic builder
 // says `unable to prepare context: path … not found`, BuildKit says
@@ -141,25 +141,25 @@ const CONTEXT_BLIND = [
 
 /** Exported because the `tutor` phase's deploy lesson builds in the same kind of
  *  directory and fails the same way: two sentences saying *the daemon cannot see
- *  your /tmp* is how the second one ends up not mentioning `FJS_CI_WORKDIR`. */
+ *  your /tmp* is how the second one ends up not mentioning `FRONTIER_CI_WORKDIR`. */
 export const daemonBlindHint = (output, dir) => {
   if (!dir || !existsSync(dir)) return ''
   if (!CONTEXT_BLIND.some(re => re.test(String(output)))) return ''
   return `\n\nThe build context exists at ${dir} and the Docker daemon cannot see it — ` +
-    `this shell's /tmp is private to it. Re-run with FJS_CI_WORKDIR set to a ` +
-    `directory the daemon shares, e.g. FJS_CI_WORKDIR=$HOME/fjs-ci-work.`
+    `this shell's /tmp is private to it. Re-run with FRONTIER_CI_WORKDIR set to a ` +
+    `directory the daemon shares, e.g. FRONTIER_CI_WORKDIR=$HOME/fjs-ci-work.`
 }
 
 // ─── where the work goes ─────────────────────────────────────────────────────
 // One owner for a default that was restated at six call sites, and MEASURED
-// rather than remembered: an explicit $FJS_CI_WORKDIR still wins, and otherwise
+// rather than remembered: an explicit $FRONTIER_CI_WORKDIR still wins, and otherwise
 // the daemon is asked whether it can read a context under tmpdir() before one is
 // built there. Probed once per process — the answer cannot change mid-run, and
 // the probe costs a `FROM scratch` build.
 let _workBase = null
 export function ciWorkBase(log = () => {}) {
   if (_workBase) return _workBase
-  if (process.env.FJS_CI_WORKDIR) return (_workBase = process.env.FJS_CI_WORKDIR)
+  if (process.env.FRONTIER_CI_WORKDIR) return (_workBase = process.env.FRONTIER_CI_WORKDIR)
 
   const picked   = pickWorkBase(workBaseCandidates(),
     (dir) => {
@@ -191,7 +191,7 @@ export function portFree(port) {
 
 /** A scaffold/deploy work directory: previous runs' swept, this one registered
  *  so an interrupt takes it with it. `base` is honored for the reason
- *  $FJS_CI_WORKDIR exists — the Docker daemon must be able to read it. */
+ *  $FRONTIER_CI_WORKDIR exists — the Docker daemon must be able to read it. */
 function workDir(prefix, base) {
   trapSignals()
   reapTempDirs(WORK_PREFIXES, { root: base })
@@ -235,7 +235,7 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
   const findings = []
   const fail     = (message, output) => { findings.push({ message, output }); return findings }
 
-  // $FJS_CI_WORKDIR for the same reason scaffoldAndDeploy honors it: step 8
+  // $FRONTIER_CI_WORKDIR for the same reason scaffoldAndDeploy honors it: step 8
   // hands this directory to the Docker daemon as a build context, and a shell
   // with a private /tmp gets `unable to prepare context` about a path that is
   // plainly there.
@@ -549,7 +549,7 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
   // they could run at once.
   const PORT = source === 'local' ? 7101 : 7100
 
-  // $FJS_CI_WORKDIR overrides the base directory. The Docker DAEMON has to be
+  // $FRONTIER_CI_WORKDIR overrides the base directory. The Docker DAEMON has to be
   // able to read the build context, and it does not necessarily share the
   // caller's /tmp — a sandboxed or containerized shell with a private tmpfs
   // gets `unable to prepare context: path not found` for a directory that is
@@ -774,8 +774,8 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
 
     // ── the build a browser compares against ──────────────────────
     //
-    // `03-build-web` stamps VITE_FJS_BUILD into the bundle and `06-swap` passes
-    // FJS_BUILD into the container, and the claim is that those are the same
+    // `03-build-web` stamps FRONTIER_PUBLIC_BUILD into the bundle and `06-swap` passes
+    // FRONTIER_BUILD into the container, and the claim is that those are the same
     // value — one deploy is one build on both sides of the wire (`FJS-D160`).
     // Two packages have to agree for that to hold and neither can be asked
     // alone: the cli decides the value, junction states it, and only a deployed

@@ -24,7 +24,7 @@ src/client/                  `@frontierjs/mcp/client` — the terminal client's 
   routes.ts                    cli/src/routes/<service>/<method> — declared `uses`, checkRoutes
   build.ts                     `@frontierjs/mcp/client/build` — cli/ compiled to one binary, routes inside (`fli cli:build`)
   main.ts                      an app's whole entry: main({ name, tenantHeader, url, routes })
-  bin.ts                       main() for an app with no cli/ surface — FJS_* stands in for its config
+  bin.ts                       main() for an app with no cli/ surface — FRONTIER_MCP_* stands in for its config
   index.ts                     held here until the CLI package is named (IDEAS/app-cli.md)
 test/projection.test.ts      the rules, against test/fixtures/shop.lite
 test/plugin.test.ts          the endpoint inside a real Junction app on a real port

@@ -3663,7 +3663,7 @@ function machineRow(m) {
     severity: m.blocked ? 'error' : 'warn',
     file:     null,
     line:     null,
-    message:  bad.map(c => `${c.name ?? c.label ?? c.key} — ${c.hint ?? c.fix}`).join(' · '),
+    message:  bad.map(c => `${c.name ?? c.label ?? c.key} — ${c.install ?? c.hint ?? c.fix}`).join(' · '),
   }
 }
 

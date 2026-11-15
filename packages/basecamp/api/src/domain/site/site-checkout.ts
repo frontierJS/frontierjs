@@ -113,7 +113,7 @@ function git(dir: string, argv: string[], opts: { input?: string | Uint8Array, e
 
 /** A token never reaches a message: a remote that echoed one back would put it in a response and a log. */
 function scrub(message: string, env: Record<string, string> = {}): string {
-  const token = env.FJS_GIT_TOKEN
+  const token = env.FRONTIER_GIT_TOKEN
   return token ? message.split(token).join('[redacted]') : message
 }
 

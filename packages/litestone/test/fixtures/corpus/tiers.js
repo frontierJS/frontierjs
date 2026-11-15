@@ -16,7 +16,7 @@
 //   fetched   — `bun fetch.mjs`, needs the network. Swept when present, skipped
 //               BY NAME when not; never counted toward a floor.
 //   local     — a private schema converted by hand that nobody else can
-//               regenerate. Read from `$FJS_CORPUS_LOCAL` when the tree does not
+//               regenerate. Read from `$FRONTIER_CORPUS_LOCAL` when the tree does not
 //               hold it, so a source file `.gitignore` would have to hide stays
 //               out of the tree and the target still runs.
 //

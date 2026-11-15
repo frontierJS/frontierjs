@@ -281,9 +281,9 @@ An absent fixture is **skipped by name**, never silently not run.
 | `hrms` | GPL-3.0 | **yes** — same upstream org and licence as `erpnext` |
 | `calcom` | AGPL-3.0, with a commercial `/ee` | no — fetched |
 | `documenso` | AGPL-3.0 | no — fetched |
-| `maidtech` | private — a legacy FJS app of this repository's own | no — **local only, and not in the tree either**: set `FJS_CORPUS_LOCAL` to the directory holding it. `fetch.mjs` has no entry and nobody else can regenerate it |
+| `maidtech` | private — a legacy FJS app of this repository's own | no — **local only, and not in the tree either**: set `FRONTIER_CORPUS_LOCAL` to the directory holding it. `fetch.mjs` has no entry and nobody else can regenerate it |
 
-**A LOCAL fixture is read from `$FJS_CORPUS_LOCAL` and must not sit in the
+**A LOCAL fixture is read from `$FRONTIER_CORPUS_LOCAL` and must not sit in the
 tree.** A private schema kept here is a source file `.gitignore` has to hide, and
 the `hygiene` CI phase fails on exactly that — correctly, because a hidden source
 file is what made 20 files of Sierra's build pipeline invisible to a fresh clone.

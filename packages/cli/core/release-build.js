@@ -99,7 +99,7 @@ export function webBuildEnv({ commit, apiOrigin = null, widgetsOrigin = null }) 
   if (!SHA.test(String(commit)))
     throw new Error(`refusing to build: the commit "${commit}" is not a sha`)
   return {
-    VITE_FJS_BUILD: String(commit),
+    FRONTIER_PUBLIC_BUILD: String(commit),
     ...(apiOrigin ? { FRONTIER_PUBLIC_API_URL: apiOrigin } : {}),
     ...(widgetsOrigin ? { FRONTIER_PUBLIC_WIDGETS_URL: widgetsOrigin } : {}),
   }

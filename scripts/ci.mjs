@@ -86,7 +86,7 @@ const fast      = args.includes('--fast')
 const testsOnly = args.includes('--tests-only')
 const update    = args.includes('--update')
 const verbose   = args.includes('--verbose')
-const baseRef   = readFlag(args, '--base-ref') ?? process.env.FJS_CI_BASE_REF ?? 'origin/main'
+const baseRef   = readFlag(args, '--base-ref') ?? process.env.FRONTIER_CI_BASE_REF ?? 'origin/main'
 // Narrows the typecheck and test phases to the packages named. Coverage and
 // hygiene are repo-wide questions and ignore it. Repeatable: a release retry
 // reruns every suite that failed in one run (`retryPlan` in core/ci-log.js).
@@ -170,7 +170,7 @@ Every allowance is a named entry with a reason in scripts/ci-allowances.json.
 // A suite that hangs is the one failure mode that costs more than the bug.
 // css drives a real Chrome and litestone applies migrations, so the ceiling is
 // generous; it exists to end a hang, not to police a slow suite.
-const TIMEOUT_MS = Number(process.env.FJS_CI_TIMEOUT_MS ?? 15 * 60 * 1000)
+const TIMEOUT_MS = Number(process.env.FRONTIER_CI_TIMEOUT_MS ?? 15 * 60 * 1000)
 
 // `git ls-files --others --ignored` lists every file under node_modules —
 // 8090 lines here, well past spawnSync's 1MB default, where it fails with
@@ -180,8 +180,8 @@ const MAX_BUFFER = 64 * 1024 * 1024
 
 // How many packages typecheck and tests run at once. A suite is often several
 // processes of its own (vitest workers, a Chrome, a server), so a third of the
-// cores rather than all of them; `FJS_CI_LANES=1` is the serial run.
-const LANES = Number(process.env.FJS_CI_LANES ?? Math.max(1, Math.floor(availableParallelism() / 3)))
+// cores rather than all of them; `FRONTIER_CI_LANES=1` is the serial run.
+const LANES = Number(process.env.FRONTIER_CI_LANES ?? Math.max(1, Math.floor(availableParallelism() / 3)))
 
 const allowances = loadAllowances()
 const problems   = []   // fatal — sets the exit code
@@ -600,7 +600,7 @@ function sourceFilesUnder(dir) {
 // separated it from the eleven that do not ship.
 //
 // A shipping advisory FAILS; a dev-only one is a note. `bun audit` needs the
-// network, so no answer is a named skip and `FJS_CI_REQUIRE_AUDIT=1` makes that
+// network, so no answer is a named skip and `FRONTIER_CI_REQUIRE_AUDIT=1` makes that
 // skip fatal — a check that quietly stops running is worse than one nobody
 // wrote. An advisory that is known and accepted is a named entry with a reason
 // under `knownAdvisories`, like every other allowance here.
@@ -617,9 +617,9 @@ function advisories() {
 
   if (!report || typeof report !== 'object') {
     const why = r.error ? `bun audit did not run — ${r.error.message}` : 'no answer from the advisory database'
-    if (process.env.FJS_CI_REQUIRE_AUDIT === '1') fail(`advisories phase skipped and FJS_CI_REQUIRE_AUDIT=1 — ${why}`)
+    if (process.env.FRONTIER_CI_REQUIRE_AUDIT === '1') fail(`advisories phase skipped and FRONTIER_CI_REQUIRE_AUDIT=1 — ${why}`)
     else {
-      note(`advisories phase SKIPPED — ${why}. Set FJS_CI_REQUIRE_AUDIT=1 to make this a failure.`)
+      note(`advisories phase SKIPPED — ${why}. Set FRONTIER_CI_REQUIRE_AUDIT=1 to make this a failure.`)
       warn(`skipped — ${why}`)
     }
     return
@@ -906,7 +906,7 @@ async function snapshots() {
 function checkSnapshotsRemoved(present) {
   const ref = resolveRef(baseRef)
   if (!ref) {
-    note(`snapshot removals not checked — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FJS_CI_BASE_REF.`)
+    note(`snapshot removals not checked — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FRONTIER_CI_BASE_REF.`)
     return
   }
 
@@ -970,7 +970,7 @@ function access() {
 
   const ref = resolveRef(baseRef)
   if (!ref) {
-    note(`access not compared — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FJS_CI_BASE_REF.`)
+    note(`access not compared — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FRONTIER_CI_BASE_REF.`)
     console.log(`  ${yellow(`⚠ no baseline — \`${baseRef}\` does not resolve here`)}`)
     return
   }
@@ -1140,7 +1140,7 @@ function checkBaselineDirection() {
   const ref  = resolveRef(baseRef)
 
   if (!ref) {
-    note(`baseline direction not checked — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FJS_CI_BASE_REF.`)
+    note(`baseline direction not checked — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FRONTIER_CI_BASE_REF.`)
     return
   }
 
@@ -1196,7 +1196,7 @@ function checkBaselineDirection() {
 //
 // **A skip is named, never silent**, the same shape the deploy phase uses: with
 // no registry reachable this reports a note and passes, and
-// FJS_CI_REQUIRE_REGISTRY=1 turns that skip into a failure.
+// FRONTIER_CI_REQUIRE_REGISTRY=1 turns that skip into a failure.
 
 async function registry() {
   const from = phase('registry')
@@ -1218,10 +1218,10 @@ async function registry() {
   const unreachable = state.filter(([, v]) => v === 'unreachable')
   if (unreachable.length === state.length) {
     const why = 'no answer from the npm registry'
-    if (process.env.FJS_CI_REQUIRE_REGISTRY === '1') {
-      fail(`registry phase skipped and FJS_CI_REQUIRE_REGISTRY=1 — ${why}`)
+    if (process.env.FRONTIER_CI_REQUIRE_REGISTRY === '1') {
+      fail(`registry phase skipped and FRONTIER_CI_REQUIRE_REGISTRY=1 — ${why}`)
     } else {
-      note(`registry phase SKIPPED — ${why}. Set FJS_CI_REQUIRE_REGISTRY=1 to make this a failure.`)
+      note(`registry phase SKIPPED — ${why}. Set FRONTIER_CI_REQUIRE_REGISTRY=1 to make this a failure.`)
       warn(`skipped — ${why}`)
     }
     return
@@ -1593,7 +1593,7 @@ function scaffold() {
 //
 // **A skip is named, never silent.** Without a daemon this reports a note and
 // passes, because requiring Docker to run `bun run ci` on a laptop is too much —
-// but FJS_CI_REQUIRE_DOCKER=1 turns the skip into a failure, and the workflow
+// but FRONTIER_CI_REQUIRE_DOCKER=1 turns the skip into a failure, and the workflow
 // sets it. A phase that quietly stops running is the failure mode this whole
 // file exists to prevent.
 
@@ -1644,10 +1644,10 @@ async function deploy() {
     const { findings, skipped } = scaffoldAndDeploy({ source, verbose })
 
     if (skipped) {
-      if (process.env.FJS_CI_REQUIRE_DOCKER === '1') {
-        fail(`deploy phase skipped and FJS_CI_REQUIRE_DOCKER=1 — ${skipped}`)
+      if (process.env.FRONTIER_CI_REQUIRE_DOCKER === '1') {
+        fail(`deploy phase skipped and FRONTIER_CI_REQUIRE_DOCKER=1 — ${skipped}`)
       } else {
-        note(`deploy phase SKIPPED — ${skipped}. It did not run; set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
+        note(`deploy phase SKIPPED — ${skipped}. It did not run; set FRONTIER_CI_REQUIRE_DOCKER=1 to make this a failure.`)
         warn(`skipped — ${skipped}`)
       }
       return
@@ -1700,10 +1700,10 @@ async function deploy() {
   const cycle = deployJournalCycle({ verbose })
 
   if (cycle.skipped) {
-    if (process.env.FJS_CI_REQUIRE_DOCKER === '1')
-      fail(`deploy cycle skipped and FJS_CI_REQUIRE_DOCKER=1 — ${cycle.skipped}`)
+    if (process.env.FRONTIER_CI_REQUIRE_DOCKER === '1')
+      fail(`deploy cycle skipped and FRONTIER_CI_REQUIRE_DOCKER=1 — ${cycle.skipped}`)
     else {
-      note(`deploy transition cycle SKIPPED — ${cycle.skipped}. Set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
+      note(`deploy transition cycle SKIPPED — ${cycle.skipped}. Set FRONTIER_CI_REQUIRE_DOCKER=1 to make this a failure.`)
       warn(`cycle skipped — ${cycle.skipped}`)
     }
     return
@@ -1727,10 +1727,10 @@ async function deploy() {
   const edge = pauseEdgeCycle({ verbose })
 
   if (edge.skipped) {
-    if (process.env.FJS_CI_REQUIRE_DOCKER === '1')
-      fail(`pause edge cycle skipped and FJS_CI_REQUIRE_DOCKER=1 — ${edge.skipped}`)
+    if (process.env.FRONTIER_CI_REQUIRE_DOCKER === '1')
+      fail(`pause edge cycle skipped and FRONTIER_CI_REQUIRE_DOCKER=1 — ${edge.skipped}`)
     else
-      note(`pause edge cycle SKIPPED — ${edge.skipped}. Set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
+      note(`pause edge cycle SKIPPED — ${edge.skipped}. Set FRONTIER_CI_REQUIRE_DOCKER=1 to make this a failure.`)
     return
   }
 
@@ -1748,10 +1748,10 @@ async function deploy() {
   const queues = pauseQueueCycle({ verbose })
 
   if (queues.skipped) {
-    if (process.env.FJS_CI_REQUIRE_DOCKER === '1')
-      fail(`pause queue cycle skipped and FJS_CI_REQUIRE_DOCKER=1 — ${queues.skipped}`)
+    if (process.env.FRONTIER_CI_REQUIRE_DOCKER === '1')
+      fail(`pause queue cycle skipped and FRONTIER_CI_REQUIRE_DOCKER=1 — ${queues.skipped}`)
     else
-      note(`pause queue cycle SKIPPED — ${queues.skipped}. Set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
+      note(`pause queue cycle SKIPPED — ${queues.skipped}. Set FRONTIER_CI_REQUIRE_DOCKER=1 to make this a failure.`)
     return
   }
 
@@ -1778,7 +1778,7 @@ function perf() {
   const benchOnly = only.map(name => name.split('/').pop())
 
   const ref = resolveRef(baseRef)
-  if (!ref) note(`perf compared against nothing — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FJS_CI_BASE_REF.`)
+  if (!ref) note(`perf compared against nothing — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FRONTIER_CI_BASE_REF.`)
 
   // A deleted case file leaves nothing to run, and nothing run reads as a pass.
   if (ref) {
@@ -2107,27 +2107,27 @@ function tutor() {
   for (const lesson of LESSONS) {
     // The lesson refuses on its own when there is no daemon and exits 0 saying
     // why — a `stop`, not a failure. Skipping it here as well is what makes
-    // `FJS_CI_REQUIRE_DOCKER=1` mean the same thing in this phase as in the
+    // `FRONTIER_CI_REQUIRE_DOCKER=1` mean the same thing in this phase as in the
     // deploy one: a check that quietly stops running is worse than one nobody
     // wrote.
     if (lesson.needsDocker && !daemon) {
-      if (process.env.FJS_CI_REQUIRE_DOCKER === '1') {
-        fail(`${lesson.id} needs a Docker daemon and FJS_CI_REQUIRE_DOCKER=1`)
+      if (process.env.FRONTIER_CI_REQUIRE_DOCKER === '1') {
+        fail(`${lesson.id} needs a Docker daemon and FRONTIER_CI_REQUIRE_DOCKER=1`)
       } else {
-        note(`${lesson.id} SKIPPED — no Docker daemon. Set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
+        note(`${lesson.id} SKIPPED — no Docker daemon. Set FRONTIER_CI_REQUIRE_DOCKER=1 to make this a failure.`)
         warn(`${lesson.id} skipped — no Docker daemon`)
       }
       continue
     }
 
-    // The same shape one requirement over. `FJS_CI_REQUIRE_CHROME=1` is what the
+    // The same shape one requirement over. `FRONTIER_CI_REQUIRE_CHROME=1` is what the
     // workflow sets: a UI lesson that quietly stops running is exactly the hole
     // it was written to close.
     if (lesson.needsChrome && !chrome) {
-      if (process.env.FJS_CI_REQUIRE_CHROME === '1') {
-        fail(`${lesson.id} needs Chrome and FJS_CI_REQUIRE_CHROME=1`)
+      if (process.env.FRONTIER_CI_REQUIRE_CHROME === '1') {
+        fail(`${lesson.id} needs Chrome and FRONTIER_CI_REQUIRE_CHROME=1`)
       } else {
-        note(`${lesson.id} SKIPPED — no Chrome. Set FJS_CI_REQUIRE_CHROME=1 to make this a failure.`)
+        note(`${lesson.id} SKIPPED — no Chrome. Set FRONTIER_CI_REQUIRE_CHROME=1 to make this a failure.`)
         warn(`${lesson.id} skipped — no Chrome`)
       }
       continue

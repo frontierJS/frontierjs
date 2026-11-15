@@ -33,33 +33,33 @@ describe('findChrome', () => {
     expect(findChrome({ ...world() })).toBe(null)
   })
 
-  test('$FJS_CHROME wins over anything installed', () => {
+  test('$FRONTIER_CHROME wins over anything installed', () => {
     const named = '/opt/chrome-131/chrome'
-    expect(findChrome({ ...world({ have: ['google-chrome'], files: [named], env: { FJS_CHROME: named } }) }))
+    expect(findChrome({ ...world({ have: ['google-chrome'], files: [named], env: { FRONTIER_CHROME: named } }) }))
       .toBe(named)
   })
 
-  test('$FJS_CHROME naming nothing is null, NOT a fallback', () => {
+  test('$FRONTIER_CHROME naming nothing is null, NOT a fallback', () => {
     // An installed google-chrome must not answer here, or a person who pinned
     // a version silently gets a different browser.
-    expect(findChrome({ ...world({ have: ['google-chrome'], env: { FJS_CHROME: '/gone/chrome' } }) }))
+    expect(findChrome({ ...world({ have: ['google-chrome'], env: { FRONTIER_CHROME: '/gone/chrome' } }) }))
       .toBe(null)
   })
 
-  test('$FJS_CHROME may name something on PATH', () => {
-    expect(findChrome({ ...world({ have: ['my-chrome'], env: { FJS_CHROME: 'my-chrome' } }) }))
+  test('$FRONTIER_CHROME may name something on PATH', () => {
+    expect(findChrome({ ...world({ have: ['my-chrome'], env: { FRONTIER_CHROME: 'my-chrome' } }) }))
       .toBe('my-chrome')
   })
 })
 
-test('openChrome throws, rather than exiting, when $FJS_CHROME names nothing', async () => {
-  const was = process.env.FJS_CHROME
-  process.env.FJS_CHROME = '/gone/chrome'
+test('openChrome throws, rather than exiting, when $FRONTIER_CHROME names nothing', async () => {
+  const was = process.env.FRONTIER_CHROME
+  process.env.FRONTIER_CHROME = '/gone/chrome'
   try {
-    await expect(openChrome()).rejects.toThrow(/\$FJS_CHROME names \/gone\/chrome/)
+    await expect(openChrome()).rejects.toThrow(/\$FRONTIER_CHROME names \/gone\/chrome/)
   } finally {
-    if (was === undefined) delete process.env.FJS_CHROME
-    else process.env.FJS_CHROME = was
+    if (was === undefined) delete process.env.FRONTIER_CHROME
+    else process.env.FRONTIER_CHROME = was
   }
 })
 
@@ -76,15 +76,15 @@ test('openChrome rejects at once, with what Chrome printed, when Chrome exits be
   const fake = join(dir, 'chrome')
   writeFileSync(fake, '#!/bin/sh\necho "error while loading shared libraries: libXfixes.so.3" >&2\nexit 127\n')
   chmodSync(fake, 0o755)
-  const was = process.env.FJS_CHROME
-  process.env.FJS_CHROME = fake
+  const was = process.env.FRONTIER_CHROME
+  process.env.FRONTIER_CHROME = fake
   const t0 = Date.now()
   try {
     await expect(openChrome()).rejects.toThrow(/exited.*127[\s\S]*libXfixes\.so\.3/)
     expect(Date.now() - t0).toBeLessThan(5000)
   } finally {
-    if (was === undefined) delete process.env.FJS_CHROME
-    else process.env.FJS_CHROME = was
+    if (was === undefined) delete process.env.FRONTIER_CHROME
+    else process.env.FRONTIER_CHROME = was
     rmSync(dir, { recursive: true, force: true })
   }
 }, 20000)

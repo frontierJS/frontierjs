@@ -24,7 +24,7 @@
 // split falls where it does. An absent fixture is SKIPPED BY NAME rather than
 // silently not run.
 //
-// A LOCAL fixture is also read from `$FJS_CORPUS_LOCAL` when the tree does not
+// A LOCAL fixture is also read from `$FRONTIER_CORPUS_LOCAL` when the tree does not
 // hold it, because a private schema in the tree is a source file `.gitignore`
 // has to hide, and a hidden source file is the shape that made 20 files of a
 // build pipeline invisible to a fresh clone. Keeping it outside means the
@@ -44,7 +44,7 @@ const dir = new URL('./fixtures/corpus/', import.meta.url).pathname
 
 // Where a LOCAL fixture may live instead of the tree. Trailing separator is not
 // assumed — an operator types a directory, not a prefix.
-const localDir = process.env.FJS_CORPUS_LOCAL
+const localDir = process.env.FRONTIER_CORPUS_LOCAL
 
 const read = (name: string) => {
   const candidates = [`${dir}${name}.lite`]
@@ -78,7 +78,7 @@ describe('the corpus — schemas converted from real applications', () => {
 
     if (!source) {
       const how = LOCAL.includes(name)
-        ? 'a private source with no fetch target — convert it by hand, or set FJS_CORPUS_LOCAL to the directory holding it'
+        ? 'a private source with no fetch target — convert it by hand, or set FRONTIER_CORPUS_LOCAL to the directory holding it'
         : `run \`bun test/fixtures/corpus/fetch.mjs ${name}\``
       test.skip(`${name} — not present; ${how}`, () => {})
       continue

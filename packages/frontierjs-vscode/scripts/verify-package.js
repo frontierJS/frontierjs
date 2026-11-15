@@ -83,7 +83,7 @@ for (const entry of ['out/extension.js', 'out/litestone/server.js']) {
 console.log('\nthe unpacked server answers LSP')
 const suite = spawnSync('node', [path.join(ROOT, 'test', 'lsp.test.js')], {
   cwd: tmp,                                            // no node_modules above it
-  env: { ...process.env, FJS_LSP_SERVER: path.join(ext, 'out', 'litestone', 'server.js') },
+  env: { ...process.env, FRONTIER_LSP_SERVER: path.join(ext, 'out', 'litestone', 'server.js') },
   encoding: 'utf8',
 })
 const tail = (suite.stdout || '').trim().split('\n').slice(-3).join('\n')
@@ -93,7 +93,7 @@ ok('lsp suite passes against the unpacked server', suite.status === 0,
 console.log('\nthe unpacked mesa client answers')
 const mesa = spawnSync('node', [path.join(ROOT, 'test', 'mesa.test.js')], {
   cwd: tmp,
-  env: { ...process.env, FJS_MESA_CLIENT: path.join(ext, 'out', 'mesa', 'client.js') },
+  env: { ...process.env, FRONTIER_MESA_CLIENT: path.join(ext, 'out', 'mesa', 'client.js') },
   encoding: 'utf8',
 })
 const mesaTail = (mesa.stdout || '').trim().split('\n').slice(-3).join('\n')
@@ -103,7 +103,7 @@ ok('mesa suite passes against the unpacked client', mesa.status === 0,
 console.log('\nthe unpacked grammars tokenize')
 const grammar = spawnSync('node', [path.join(ROOT, 'test', 'grammar.test.js')], {
   cwd: tmp,
-  env: { ...process.env, FJS_SYNTAXES: path.join(ext, 'syntaxes') },
+  env: { ...process.env, FRONTIER_SYNTAXES: path.join(ext, 'syntaxes') },
   encoding: 'utf8',
 })
 const grammarTail = (grammar.stdout || '').trim().split('\n').slice(-3).join('\n')

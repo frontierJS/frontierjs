@@ -833,7 +833,7 @@ describe('the git credential', () => {
     GIT_CONFIG_COUNT: '2',
     GIT_CONFIG_KEY_0: 'credential.https://github.com.helper', GIT_CONFIG_VALUE_0: '',
     GIT_CONFIG_KEY_1: 'credential.https://github.com.helper', GIT_CONFIG_VALUE_1: '!f() { :; }; f',
-    FJS_GIT_TOKEN: TOKEN,
+    FRONTIER_GIT_TOKEN: TOKEN,
   }
   let bin: string, log: string, oldPath: string | undefined, said: string
 
@@ -842,7 +842,7 @@ describe('the git credential', () => {
     log = join(bin, 'calls.log')
     writeFileSync(join(bin, 'git'), [
       '#!/bin/sh',
-      `{ echo "ARGV $*"; env | grep -E '^(FJS_GIT_TOKEN|GIT_CONFIG_COUNT)=' | sed 's/^/ENV /'; } >> "${log}"`,
+      `{ echo "ARGV $*"; env | grep -E '^(FRONTIER_GIT_TOKEN|GIT_CONFIG_COUNT)=' | sed 's/^/ENV /'; } >> "${log}"`,
       `echo "fatal: Authentication failed for 'https://github.com/o/r.git/'" >&2`,
       'exit 128',
     ].join('\n'))
@@ -862,7 +862,7 @@ describe('the git credential', () => {
     for (const repo of ['https://git.example.com/o/r.git', 'git@gitlab.com:o/r.git', 'https://github.com.evil.example/o/r.git', 'https://u@github.com/o/r.git']) {
       const { calls } = await run(repo, CREDENTIAL)
       expect(calls).toContain('ARGV')
-      expect(calls).not.toContain('FJS_GIT_TOKEN')
+      expect(calls).not.toContain('FRONTIER_GIT_TOKEN')
       expect(calls).not.toContain('GIT_CONFIG_COUNT')
     }
   })
@@ -873,7 +873,7 @@ describe('the git credential', () => {
     expect(remoteEnv({ id: 'a', source: { repo }, credential: null })).toEqual({})
 
     const { err, calls } = await run(repo, CREDENTIAL)
-    expect(calls).toContain(`ENV FJS_GIT_TOKEN=${TOKEN}`)
+    expect(calls).toContain(`ENV FRONTIER_GIT_TOKEN=${TOKEN}`)
     expect(calls).toContain('ENV GIT_CONFIG_COUNT=2')
     for (const line of calls.split('\n').filter(l => l.startsWith('ARGV'))) expect(line).not.toContain(TOKEN)
     expect(err.message).not.toContain(TOKEN)
@@ -884,7 +884,7 @@ describe('the git credential', () => {
     for (const repo of ['git@github.com:o/r.git', 'ssh://git@github.com/o/r']) {
       expect(remoteEnv({ id: 'a', source: { repo }, credential: CREDENTIAL })).toEqual(CREDENTIAL)
       const { calls } = await run(repo, CREDENTIAL)
-      expect(calls).toContain(`ENV FJS_GIT_TOKEN=${TOKEN}`)
+      expect(calls).toContain(`ENV FRONTIER_GIT_TOKEN=${TOKEN}`)
       expect(calls).toMatch(/ARGV .*clone .* https:\/\/github\.com\/o\/r\.git /)
       expect(calls).not.toContain('git@github.com')
     }

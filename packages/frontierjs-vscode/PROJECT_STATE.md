@@ -70,8 +70,8 @@ different bytes; a fix after it is `0.1.1`.
 | `test/snippets.test.js` | 6 | Every `$` in every body of both snippet files |
 | `test/grammar.test.js` | 24 | Real files tokenized against the `.tmLanguage.json`, not read |
 
-`npm run test:nobuild` skips the build while iterating. `FJS_LSP_SERVER` and
-`FJS_MESA_CLIENT` point the first two at any copy — an unpacked `.vsix`, or the
+`npm run test:nobuild` skips the build while iterating. `FRONTIER_LSP_SERVER` and
+`FRONTIER_MESA_CLIENT` point the first two at any copy — an unpacked `.vsix`, or the
 one installed in an editor.
 
 `npm run verify:package` packs, unpacks somewhere with no `node_modules` above

@@ -25,7 +25,7 @@ import { createApp } from '../src/core/app.ts'
 import { channels } from '../index.ts'
 import { createJunctionClient } from '../src/client/index.ts'
 
-const clearEnv = () => { delete process.env.FJS_BUILD }
+const clearEnv = () => { delete process.env.FRONTIER_BUILD }
 afterEach(clearEnv)
 
 describe('resolveBuildId', () => {
@@ -38,19 +38,19 @@ describe('resolveBuildId', () => {
   })
 
   it('reads the environment, which is how a deploy supplies it', () => {
-    process.env.FJS_BUILD = 'abc123'
+    process.env.FRONTIER_BUILD = 'abc123'
     expect(resolveBuildId({})).toBe('abc123')
   })
 
   // A stated value is an app or a test saying what this process is; the
   // environment is what the container was started with.
   it('prefers a stated value over the environment', () => {
-    process.env.FJS_BUILD = 'from-env'
+    process.env.FRONTIER_BUILD = 'from-env'
     expect(resolveBuildId({ build: 'stated' })).toBe('stated')
   })
 
   it('treats blank as absent, which is what an unset env var expands to', () => {
-    process.env.FJS_BUILD = '   '
+    process.env.FRONTIER_BUILD = '   '
     expect(resolveBuildId({})).toBeNull()
     expect(resolveBuildId({ build: '' })).toBeNull()
   })
@@ -75,7 +75,7 @@ describe('the wire names', () => {
 describe('an app that knows its build', () => {
 
   it('records it on the config so every reader sees the resolved value', async () => {
-    process.env.FJS_BUILD = 'deploy-42'
+    process.env.FRONTIER_BUILD = 'deploy-42'
     const app = createApp({ logLevel: 'silent' })
     await app._startForTest()
     expect(app.config.build).toBe('deploy-42')

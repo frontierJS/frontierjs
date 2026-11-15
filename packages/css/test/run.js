@@ -114,13 +114,13 @@ const gradeThemes = external
 
 /* ── Locate a browser ──────────────────────────────────────────────── */
 
-/* The lookup is the driver's, so $FJS_CHROME means the same thing here as in
+/* The lookup is the driver's, so $FRONTIER_CHROME means the same thing here as in
    every other drive: the binary named, or none. */
 const bin = findChrome();
 if (!bin) {
-  console.error(process.env.FJS_CHROME
-    ? `$FJS_CHROME names ${process.env.FJS_CHROME} and there is no such binary.`
-    : 'No Chrome/Chromium found. Install one, or point FJS_CHROME at a binary.');
+  console.error(process.env.FRONTIER_CHROME
+    ? `$FRONTIER_CHROME names ${process.env.FRONTIER_CHROME} and there is no such binary.`
+    : 'No Chrome/Chromium found. Install one, or point FRONTIER_CHROME at a binary.');
   process.exit(2);
 }
 const browser = { bin, version: (spawnSync(bin, ['--version'], { encoding: 'utf8' }).stdout || '').trim() };

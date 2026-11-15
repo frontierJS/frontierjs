@@ -77,7 +77,7 @@ if (!await must($, probe.header({
   expect: commit,
   label:  'the app states the build a browser compares against',
 }), {
-  likely:    'the stamp and the statement disagree — the cli writes VITE_FJS_BUILD and the container is passed FJS_BUILD',
+  likely:    'the stamp and the statement disagree — the cli writes FRONTIER_PUBLIC_BUILD and the container is passed FRONTIER_BUILD',
   reproduce: `curl -sI http://127.0.0.1:${$.config.port}/api/health | grep -i x-frontier-build`,
 })) return
 

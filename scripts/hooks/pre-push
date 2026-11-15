@@ -73,6 +73,6 @@ for sha in $shas; do
 
   # The base ref decides what a RAISED typecheck baseline is measured against.
   # A push is against the remote's main, not the local one, which may be behind.
-  (cd "$tree" && FJS_CI_BASE_REF="${FJS_CI_BASE_REF:-origin/main}" node scripts/ci.mjs --fast) ||
+  (cd "$tree" && FRONTIER_CI_BASE_REF="${FRONTIER_CI_BASE_REF:-origin/main}" node scripts/ci.mjs --fast) ||
     blocked "$short is red — detail in $tree/.cache/ci-last.txt"
 done

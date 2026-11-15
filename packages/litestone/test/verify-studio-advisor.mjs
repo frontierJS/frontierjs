@@ -12,7 +12,7 @@
  *   node packages/litestone/test/verify-studio-advisor.mjs
  *
  * Starts and stops THREE servers and a Chrome. Nothing to launch first. Needs
- * Chrome on PATH or $FJS_CHROME.
+ * Chrome on PATH or $FRONTIER_CHROME.
  *
  * Each server takes a port the OS names; $STUDIO_PORT, $STUDIO_PORT_STALE and
  * $STUDIO_PORT_CTRL pin them.

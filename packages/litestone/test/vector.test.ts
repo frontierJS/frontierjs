@@ -31,7 +31,7 @@
 // as this repo's Chrome and network skips.
 //
 //   bun add -d sqlite-vec           in packages/litestone, to run it
-//   FJS_REQUIRE_VEC=1 bun run test  to make the skip fatal instead
+//   FRONTIER_REQUIRE_VEC=1 bun run test  to make the skip fatal instead
 //
 // The skip is the honest state and not a hole being hidden: what it costs is
 // that the JS path is still graded on every run and the AGREEMENT is not.
@@ -74,8 +74,8 @@ function loadVec(): { db: any, close: () => void } | null {
 }
 
 const vec = loadVec()
-if (!vec && process.env.FJS_REQUIRE_VEC === '1')
-  throw new Error('FJS_REQUIRE_VEC=1 but sqlite-vec did not load — run `bun add -d sqlite-vec` here')
+if (!vec && process.env.FRONTIER_REQUIRE_VEC === '1')
+  throw new Error('FRONTIER_REQUIRE_VEC=1 but sqlite-vec did not load — run `bun add -d sqlite-vec` here')
 
 // ─── layout ───────────────────────────────────────────────────────────────
 

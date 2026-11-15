@@ -172,8 +172,8 @@ name when it declares none.
 
 ### `laptop` · model `laptop`
 
-- **methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`
-- **custom methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`
+- **methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `setup`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`
+- **custom methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `setup`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`
 - **who may call** —
   - `disk` — standing 5 or above — declared `gate: 5`
   - `keys` — standing 5 or above — declared `gate: 5`
@@ -184,6 +184,7 @@ name when it declares none.
   - `ping` — standing 5 or above — declared `gate: 5`
   - `running` — standing 5 or above — declared `gate: 5`
   - `services` — standing 5 or above — declared `gate: 5`
+  - `setup` — standing 5 or above — declared `gate: 5`
   - `clear` — standing 5 or above — declared `gate: 5`
   - `removeLane` — standing 5 or above — declared `gate: 5`
   - `fixMode` — standing 5 or above — declared `gate: 5`

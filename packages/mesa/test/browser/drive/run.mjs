@@ -5,7 +5,7 @@
  *   node test/browser/drive/run.mjs signal      specs whose filename matches
  *   node test/browser/drive/run.mjs --verbose   print the passing rows too
  *
- * Needs Chrome on PATH or `$FJS_CHROME`.
+ * Needs Chrome on PATH or `$FRONTIER_CHROME`.
  *
  * The other drives use one browser and ask what a page does. These ask what the
  * DRIVER does across launches — a kept profile surviving a relaunch, a browser

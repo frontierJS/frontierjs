@@ -264,7 +264,7 @@ const RESTORE_IMAGE = 'busybox:1.36'
 // replayed into it on the next open.
 const RESTORE_SCRIPT = `set -e
 if [ -n "$(ls -A /data)" ]; then
-  [ "$FJS_OVERWRITE" = 1 ] || { echo "the directory already holds files" >&2; exit 3; }
+  [ "$FRONTIER_OVERWRITE" = 1 ] || { echo "the directory already holds files" >&2; exit 3; }
   find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 fi
 tar -xf /restore -C /data
@@ -281,7 +281,7 @@ const RESTORE_TIMEOUT_MS = 3_600_000
 // app may run as its own uid. The last line is `<files> <bytes>`.
 const filesScript = (src) => `set -e
 owner=$(stat -c %u:%g /data)
-if [ "$FJS_OVERWRITE" != 1 ]; then
+if [ "$FRONTIER_OVERWRITE" != 1 ]; then
   for f in ${src}/*.db; do
     n=$(basename "$f")
     [ ! -e "/data/$n" ] || { echo "/data/$n already exists" >&2; exit 3; }
@@ -348,7 +348,7 @@ const READ_ONLY_HEADER = 'x-frontier-read-only'
 // written under a `.partial` name and renamed, so a tar that dies partway never
 // leaves a file that reads as a finished backup; `umask 077` because the
 // archive holds whatever the app keeps, including secrets it stored itself.
-// The container runs as root, so the archive is handed to `FJS_OWNER`, the
+// The container runs as root, so the archive is handed to `FRONTIER_OWNER`, the
 // Outpost's own uid, or an Outpost that is not root cannot read it to upload.
 // The container the app runs in keeps writing, and a write landing while tar
 // reads can leave the database from one moment beside a `-wal` from another.
@@ -362,14 +362,14 @@ state() { find /data -type f -exec stat -c '%n %s %y' {} + | sort; }
 tries=0
 while :; do
   before=$(state)
-  tar -czf "/out/$FJS_NAME.partial" -C /data .
+  tar -czf "/out/$FRONTIER_NAME.partial" -C /data .
   [ "$before" = "$(state)" ] && break
   tries=$((tries + 1))
-  [ "$tries" -lt 5 ] || { rm -f "/out/$FJS_NAME.partial"; echo "the data kept changing under the tar" >&2; exit 4; }
+  [ "$tries" -lt 5 ] || { rm -f "/out/$FRONTIER_NAME.partial"; echo "the data kept changing under the tar" >&2; exit 4; }
 done
-mv "/out/$FJS_NAME.partial" "/out/$FJS_NAME"
-[ -z "\${FJS_OWNER:-}" ] || chown "$FJS_OWNER" "/out/$FJS_NAME"
-echo "$(stat -c %s "/out/$FJS_NAME") $(find /data -type f | wc -l) $(sha256sum "/out/$FJS_NAME" | cut -d ' ' -f 1)"`
+mv "/out/$FRONTIER_NAME.partial" "/out/$FRONTIER_NAME"
+[ -z "\${FRONTIER_OWNER:-}" ] || chown "$FRONTIER_OWNER" "/out/$FRONTIER_NAME"
+echo "$(stat -c %s "/out/$FRONTIER_NAME") $(find /data -type f | wc -l) $(sha256sum "/out/$FRONTIER_NAME" | cut -d ' ' -f 1)"`
 const BACKUP_TIMEOUT_MS = 3_600_000
 // The archive streams off disk; an hour covers a multi-GB one on a slow link,
 // and the signed URL Basecamp mints outlives both this and the tar.
@@ -1141,9 +1141,9 @@ export function createDocker({
       await docker([...box(['-w', `/src${rel}`]), 'bun', 'install', ...frozen], { timeoutMs: 900_000 })
       // web/ reaches the API through its own Domain (`FJS-D1969`), so it is
       // told only the widget origin; a widget runs on a stranger's page and is
-      // told the API's (`FJS-D2034`). VITE_FJS_BUILD is the stamp the API's
-      // FJS_BUILD is compared against (`FJS-D160`).
-      const env = ['-e', 'NODE_ENV=production', '-e', `VITE_FJS_BUILD=${commit}`,
+      // told the API's (`FJS-D2034`). FRONTIER_PUBLIC_BUILD is the stamp the API's
+      // FRONTIER_BUILD is compared against (`FJS-D160`).
+      const env = ['-e', 'NODE_ENV=production', '-e', `FRONTIER_PUBLIC_BUILD=${commit}`,
         ...(surface === 'web'     && widgetsUrl ? ['-e', `FRONTIER_PUBLIC_WIDGETS_URL=${widgetsUrl}`] : []),
         ...(surface === 'widgets' && apiUrl     ? ['-e', `FRONTIER_PUBLIC_API_URL=${apiUrl}`]         : [])]
       if (surface === 'web') {
@@ -1233,7 +1233,7 @@ export function createDocker({
     // empty directory, and the restore extracts nothing and reports success.
     const result = await run([
       'docker', 'run', '--rm', '--network', 'none',
-      '-e', `FJS_OVERWRITE=${overwrite === true ? 1 : 0}`,
+      '-e', `FRONTIER_OVERWRITE=${overwrite === true ? 1 : 0}`,
       '--mount', `type=bind,src=${dir},dst=/data`,
       '--mount', `type=bind,src=${archive},dst=/restore,readonly`,
       RESTORE_IMAGE, 'sh', '-c', perFile === true ? ARCHIVE_FILES_SCRIPT : RESTORE_SCRIPT,
@@ -1680,7 +1680,7 @@ export function createDocker({
       await dataDir(appId, { make: true })
       const result = await run([
         'docker', 'run', '--rm', '--network', 'none',
-        '-e', `FJS_OVERWRITE=${overwrite === true ? 1 : 0}`,
+        '-e', `FRONTIER_OVERWRITE=${overwrite === true ? 1 : 0}`,
         '--mount', `type=bind,src=${data},dst=/data`,
         '--mount', `type=bind,src=${src},dst=/restore,readonly`,
         RESTORE_IMAGE, 'sh', '-c', FILES_SCRIPT,
@@ -1901,8 +1901,8 @@ export function createDocker({
       const name = `${appId}-${new Date().toISOString().replace(/[:.]/g, '-')}.tar.gz`
       const result = await run([
         'docker', 'run', '--rm', '--network', 'none',
-        '-e', `FJS_NAME=${name}`,
-        '-e', `FJS_OWNER=${process.getuid()}:${process.getgid()}`,
+        '-e', `FRONTIER_NAME=${name}`,
+        '-e', `FRONTIER_OWNER=${process.getuid()}:${process.getgid()}`,
         '--mount', `type=bind,src=${dir},dst=/data,readonly`,
         '--mount', `type=bind,src=${root},dst=/out`,
         RESTORE_IMAGE, 'sh', '-c', BACKUP_SCRIPT,

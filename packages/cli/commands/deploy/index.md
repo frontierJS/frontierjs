@@ -86,7 +86,7 @@ skipped.
 `core/release-build.js`: HEAD as committed, an uncommitted edit listed and left
 out (`FJS-D1968`); the Dockerfile `chooseDockerfile` picks, with
 `deploy/generated/` vendored when it installs from there; and web/ built with
-the commit as `VITE_FJS_BUILD` (`FJS-D1969`). The install is what they do not
+the commit as `FRONTIER_PUBLIC_BUILD` (`FJS-D1969`). The install is what they do not
 share: this door keeps the database in `<path>/db` and the env in
 `.env.production`, Basecamp keeps them in the App's volume and Variables, and
 each mints its own `ENCRYPTION_KEY`. So a box holds one door's install of an

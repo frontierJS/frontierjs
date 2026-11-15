@@ -15,7 +15,7 @@ the section of [VISION.md](../../VISION.md) that states it in full.
 | 7 | In a watch with a handler, the handler is last and outside the parentheses | [4.2](../../VISION.md#42-effects-with-explicit-dependencies---deps-handler) |
 | 8 | Shared state is plain JavaScript. A `$:` path makes it reactive per component | [5](../../VISION.md#5-shared-state--plain-javascript-modules) |
 | 9 | Store files cannot import component files. Not checked by the compiler | [5](../../VISION.md#5-shared-state--plain-javascript-modules) |
-| 10 | A circular reactive store import is an error | [5](../../VISION.md#5-shared-state--plain-javascript-modules) |
+| 10 | Stores do not import each other in a circle. Not checked by the compiler | [5](../../VISION.md#5-shared-state--plain-javascript-modules) |
 | 11 | Static paths become targeted accessors. Dynamic paths become runtime effects | [14](../../VISION.md#14-dynamic-paths-and-runtime-effects) |
 | 12 | A template path is an ordinary expression. A nullish value renders empty | [14](../../VISION.md#14-dynamic-paths-and-runtime-effects) |
 | 13 | `var` reads without subscribing and writes without notifying | [6](../../VISION.md#6-var-in-the-component--non-reactive-sampling) |

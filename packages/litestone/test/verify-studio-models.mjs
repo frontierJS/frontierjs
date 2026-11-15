@@ -22,7 +22,7 @@
  *   node packages/litestone/test/verify-studio-models.mjs
  *
  * Starts and stops its own server on a port the OS names ($STUDIO_PORT pins
- * one). Nothing to launch first. Needs Chrome on PATH or $FJS_CHROME.
+ * one). Nothing to launch first. Needs Chrome on PATH or $FRONTIER_CHROME.
  *
  * The server is spawned from `src/tools/cli.js` by path rather than through
  * `bunx litestone`, because bun resolves a workspace dependency to a COPY under

@@ -48,13 +48,13 @@ export const journalPath    = (workspace) => join(workspace, JOURNAL_NAME)
 // teaches you something you cannot then look at. CI gets a temp one, because a
 // lesson must never write into the tree it is grading.
 //
-// `FJS_CI_WORKDIR` is honored for the reason the deploy phase honors it: a
+// `FRONTIER_CI_WORKDIR` is honored for the reason the deploy phase honors it: a
 // shell with a private `/tmp` gives a Docker daemon that cannot read the build
 // context, and the error is about a directory that is plainly there.
 
 // `base` is for the one lesson that hands its workspace to a DAEMON: a shell
 // with a private /tmp gets a Docker build that cannot see a directory plainly
-// there, so `tutor:deploy` asks for somewhere else. $FJS_CI_WORKDIR still wins,
+// there, so `tutor:deploy` asks for somewhere else. $FRONTIER_CI_WORKDIR still wins,
 // because CI states it for the same reason.
 export function tutorWorkspace({ name, tmp = false, cwd = process.cwd(), base: wanted, probe } = {}) {
   if (tmp) {
@@ -62,7 +62,7 @@ export function tutorWorkspace({ name, tmp = false, cwd = process.cwd(), base: w
     // builds an image is the one that cares, and it is also the one whose
     // failure reads as a missing file — so the answer is asked for rather than
     // remembered as a flag by somebody who has met it before.
-    const base = process.env.FJS_CI_WORKDIR
+    const base = process.env.FRONTIER_CI_WORKDIR
       || (probe ? probe([wanted, tmpdir()].filter(Boolean)) : null)
       || wanted || tmpdir()
     mkdirSync(base, { recursive: true })

@@ -29,7 +29,7 @@
  *
  * Starts and stops its own static server on 7560 — test tier, tooling, project
  * litestone, straight off `packages/cli/core/ports.js`'s formula. Nothing to
- * launch first. Needs Chrome on PATH or $FJS_CHROME.
+ * launch first. Needs Chrome on PATH or $FRONTIER_CHROME.
  *
  * ── Traps paid for once ───────────────────────────────────────────────────
  *

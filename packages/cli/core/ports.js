@@ -993,11 +993,13 @@ function freeBranch(sessions, appRoot, tree, worktreeExists) {
  * `from` is the caller's `import.meta.url` or any path inside the app; the app
  * root is the one `fli dev` runs at. An app `PROJECTS` does not name gets the
  * dev slot `fli dev` gave this root as the service digit of every category a
- * surface reads from its variable, as `appPorts` does. `project` names a `PROJECTS` row for a
- * server the app's tests start but do not own — basecamp's drive starts an
- * outpost. A linked worktree the lock holds no number for claims one through
- * `claimSession`, so a test and a dev server in one branch cannot disagree
- * (`FJS-D858`); a main checkout never writes the lock.
+ * surface reads from its variable, as `appPorts` does, in test ports as in dev:
+ * every such app is project 0, so without the slot two of them drive on one
+ * port. `project` names a `PROJECTS` row for a server the app's tests start but
+ * do not own — basecamp's drive starts an outpost. A linked worktree the lock
+ * holds no number for, or a scaffolded app with no slot, claims one through
+ * `claimSession`, so a test and a dev server cannot disagree (`FJS-D858`); a
+ * main checkout of a `PROJECTS` app never writes the lock.
  *
  *   await portFor(import.meta.url, 'be', { env: 'dev' })           // 8110 · 18110
  *   await portFor(import.meta.url, 'be', { service: 3 })           // 7123 · 17123
@@ -1014,17 +1016,18 @@ export async function portFor(from, category, { env = 'test', project, service =
     throw new Error(`Unknown project "${project}" — one of ${Object.keys(PROJECTS).join(', ')}`)
   }
   const projectId = project !== undefined ? PROJECTS[project] : projectIdFor(manifest.name, basename(appRoot))
+  const scaffold = project === undefined && projectId === PROJECTS.scaffold
   let branch = branchFor(appRoot, { lockFile })
-  let slot   = slotFor(appRoot, { env, lockFile })
-  if (branch === null && worktreeOf(appRoot)) {
+  let slot   = slotFor(appRoot, { lockFile })
+  if ((branch === null && worktreeOf(appRoot)) || (scaffold && slot === null)) {
     const claimed = await claimSession(appRoot, { name: manifest.name, scripts: manifest.scripts, lockFile })
     branch = claimed.branch
-    slot   = slotFor(appRoot, { env, lockFile })
+    slot   = slotFor(appRoot, { lockFile })
   }
   // A scaffolded app's surface spends its service digit on the slot `fli dev`
   // gave it, which is what `appPorts` hands the server — a drive asking for the
   // bare formula reaches slot 0, another app's server.
-  const slotted = project === undefined && projectId === PROJECTS.scaffold && slot !== null && SLOTTED.has(category)
+  const slotted = scaffold && slot !== null && SLOTTED.has(category)
   if (slotted && service !== 0) {
     throw new Error(`portFor: "${category}" of a scaffolded app takes its service digit from its dev slot (${slot}); service ${service} has no port of its own`)
   }

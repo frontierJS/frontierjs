@@ -67,6 +67,8 @@ const ICON = {
   error: chalk.red('\u2717'),
 }
 const hint = text => chalk.dim(`  \u2192  ${text}`)
+// A binary's fix is the command and then what it is for, the order the line it replaced read in.
+const installHint = b => hint(b.why ? `${b.install}  (${b.why})` : b.install)
 
 echo('')
 echo(chalk`  {bold fli doctor}\n`)
@@ -74,12 +76,17 @@ echo(chalk`  {bold fli doctor}\n`)
 echo(chalk`  {bold system}`)
 for (const b of report.system) {
   const state = b.status ?? (b.present ? 'found' : 'not found')
-  echo(`    ${ICON[b.level]}  ${chalk.cyan(b.name.padEnd(10))} ${state}${b.ok ? '' : hint(b.hint)}`)
+  echo(`    ${ICON[b.level]}  ${chalk.cyan(b.name.padEnd(10))} ${state}${b.ok ? '' : installHint(b)}`)
 }
 
 echo(chalk`\n  {bold fli config}`)
 for (const c of report.config) {
   echo(`    ${ICON[c.level]}  ${chalk.cyan(c.label.padEnd(14))} ${c.ok ? chalk.dim('ok') : c.hint}`)
+}
+
+echo(chalk`\n  {bold identity}`)
+for (const i of report.identity) {
+  echo(`    ${ICON[i.level]}  ${chalk.cyan(i.label.padEnd(14))} ${i.ok ? chalk.dim(i.detail ?? 'set') : ''}${i.ok ? '' : installHint(i)}`)
 }
 
 echo(chalk`\n  {bold namespace env vars}`)

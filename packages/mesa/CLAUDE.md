@@ -7,7 +7,7 @@ than a member of it (`FJS-D26`). Sierra, jetty, ui and email-kit all sit on top
 of it.
 
 Run tests with **`bun run test`** — vitest, then the five gating **browser
-drives**, which need Chrome on PATH or `$FJS_CHROME`, then the **terminal drive**
+drives**, which need Chrome on PATH or `$FRONTIER_CHROME`, then the **terminal drive**
 (`test:terminal`), which needs no Chrome and no TTY. `bun test` reports ~35 failures
 that are runner artifacts, not defects.
 

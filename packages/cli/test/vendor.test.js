@@ -305,19 +305,19 @@ describe('resolvePackageSource', () => {
     expect(resolvePackageSource(join(TMP, 'elsewhere'), ['@fixture/alpha'])).toBe(null)
   })
 
-  test('$FJS_PACKAGES_DIR is consulted when nothing is walked up to', () => {
+  test('$FRONTIER_PACKAGES_DIR is consulted when nothing is walked up to', () => {
     makeWorkspace()
     // Outside the repo entirely — a directory under packages/ would be walked up
     // from into this workspace, which is the case the previous test covers.
     const outside = join(tmpdir(), `fli-vendor-app-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     mkdirSync(outside, { recursive: true })
-    const before = process.env.FJS_PACKAGES_DIR
-    process.env.FJS_PACKAGES_DIR = join(TMP, 'packages')
+    const before = process.env.FRONTIER_PACKAGES_DIR
+    process.env.FRONTIER_PACKAGES_DIR = join(TMP, 'packages')
     try {
       expect(resolvePackageSource(outside, ['@fixture/alpha']).dir).toBe(join(TMP, 'packages'))
     } finally {
-      if (before === undefined) delete process.env.FJS_PACKAGES_DIR
-      else process.env.FJS_PACKAGES_DIR = before
+      if (before === undefined) delete process.env.FRONTIER_PACKAGES_DIR
+      else process.env.FRONTIER_PACKAGES_DIR = before
       rmSync(outside, { recursive: true, force: true })
     }
   })

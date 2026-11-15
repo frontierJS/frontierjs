@@ -6078,10 +6078,16 @@ export function bindProp(anchor, name, setParent) {
   const registry = _componentRegistry.get(anchor)
   if (!registry) return
   const prop = registry.get(name)
-  if (!prop) {
+  // The parent compiled without seeing the child, so this is where RULE 22's
+  // parent side is caught. An `export var` prop is never registered, which
+  // makes it indistinguishable here from an undeclared one.
+  if (!prop || prop.readOnly) {
+    const found = prop
+      ? `declares \`export const ${name}\`, which it never writes`
+      : `declares no \`export let ${name}\` (an \`export var\` is a snapshot taken at mount; an undeclared prop has nothing to bind)`
     console.warn(
-      `[Mesa] bind:${name} — the child component does not declare \`export let ${name}\`. ` +
-      `Two-way binding needs a writable prop on both sides (RULE 22).`
+      `[Mesa] bind:${name} — the child component ${found}. ` +
+      `Two-way binding needs a writable \`export let\` on both sides (RULE 22).`
     )
     return
   }
@@ -6653,6 +6659,10 @@ export function bindClassPassthrough(el, fn) {
 
 // ── Updated makeExternalProperty — accepts track() objects or v1 fn getters ──
 
+// An `export const` prop is still registered so the parent can push, but the
+// compiler sets `.readOnly` on what this returns, since a parent's `bind:` to it
+// can never hear back (RULE 22). Set there, not here, so a component with no
+// `export const` ships no bytes for it — the sierra bench gates every one.
 export function makeExternalProperty(name, getter, setter, fallback) {
   const readFn = typeof getter === 'function'
     ? getter

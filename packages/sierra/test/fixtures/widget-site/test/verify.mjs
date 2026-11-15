@@ -34,7 +34,7 @@
  *   node src/tools/cli.js widgets --config config/sierra.config.js   # from the surface root
  *   node test/fixtures/widget-site/test/verify.mjs
  *
- * `bun run test:widgets` does both. Needs Chrome on PATH (or $FJS_CHROME), and
+ * `bun run test:widgets` does both. Needs Chrome on PATH (or $FRONTIER_CHROME), and
  * Playwright's Firefox for the CSP page (FJS-3549).
  */
 

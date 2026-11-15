@@ -6,7 +6,7 @@ and a treatment, never a color).
 
 `bun run test` runs four node harnesses in order — compile-all → render →
 attributes → form — and then the **browser drive**, which needs Chrome on PATH
-or `$FJS_CHROME`. `bun run test:browser` is the drive alone; `bun run serve`
+or `$FRONTIER_CHROME`. `bun run test:browser` is the drive alone; `bun run serve`
 starts its server and stays up, for looking at a component in a real browser.
 
 ---

@@ -17,6 +17,8 @@ import { ping, setPing } from '../src/domain/laptop/ping.ts'
 import { globalEnv, setGlobalEnv, unsetGlobalEnv, commands, profiles, profileList, addProfile, setProfileEnv, unsetProfileEnv } from '../src/domain/laptop/settings.ts'
 import { running } from '../src/domain/laptop/running.ts'
 import { servicesList, probeService } from '../src/domain/laptop/services.ts'
+import { setup, stateOf } from '../src/domain/laptop/setup.ts'
+import { DEV_ENCRYPTION_KEY, DEV_WORKBENCH_KEY } from '../src/core/env.ts'
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -334,5 +336,106 @@ describe('phone ping', () => {
     expect(setPing('a/b', { home })).toHaveProperty('refused')
     expect(setPing('x?y=1', { home })).toHaveProperty('refused')
     expect(ping({ home }).topic).toBeNull()
+  })
+})
+
+describe('setup', () => {
+  const setupHome = mkdtempSync(join(tmpdir(), 'wb-setup-'))
+  afterAll(() => rmSync(setupHome, { recursive: true, force: true }))
+
+  const signedIn  = async () => ({ ok: true as const, value: { loggedIn: true, authMethod: 'claude.ai', apiProvider: null, email: 'a@b.c', orgId: null, orgName: null, subscriptionType: null } })
+  const signedOut = async () => ({ ok: true as const, value: { loggedIn: false, authMethod: null, apiProvider: null, email: null, orgId: null, orgName: null, subscriptionType: null } })
+  const fresh     = { WORKBENCH_KEY: 'a-real-pass-phrase', ENCRYPTION_KEY: 'f'.repeat(64) }
+  const common    = { home: setupHome, versionOf: () => '99.0.0', gitOf: () => 'set', env: { PATH: '' } as Record<string, string>, keys: fresh, auth: signedIn }
+  const goal = (out: Awaited<ReturnType<typeof setup>>, id: string) => out.goals.find(g => g.id === id)!
+
+  test('answers the five goals in order, Run fli and Use Claude in Workbench required', async () => {
+    const out = await setup({ ...common, has: () => true })
+    expect(out.goals.map(g => g.id)).toEqual(['fli', 'claude', 'build', 'desktop', 'deploy'])
+    expect(out.goals.filter(g => g.required).map(g => g.id)).toEqual(['fli', 'claude'])
+  })
+
+  test('a machine with every tool and a signed-in claude has Run fli and Claude ok', async () => {
+    const out = await setup({ ...common, has: () => true })
+    expect(goal(out, 'fli').state).toBe('ok')
+    // The phone ping is off in a temp home, so the goal warns rather than errors.
+    expect(goal(out, 'claude').state).toBe('warn')
+    expect(goal(out, 'claude').rows.find(r => r.id === 'ping')).toMatchObject({ ok: false })
+  })
+
+  test('a key held only in fli\'s global env file reads as set, though this process never loaded it', async () => {
+    const own = mkdtempSync(join(tmpdir(), 'wb-setup-global-'))
+    try {
+      const out = await setup({ ...common, home: own, has: () => true })
+      const key = out.goals.flatMap(g => g.rows).find(r => r.id.startsWith('env:'))!
+      expect(key.ok).toBe(false)
+      setGlobalEnv(key.label, 'x', { home: own })
+      const again = await setup({ ...common, home: own, has: () => true })
+      expect(again.goals.flatMap(g => g.rows).find(r => r.id === key.id)).toMatchObject({ ok: true })
+    } finally { rmSync(own, { recursive: true, force: true }) }
+  })
+
+  test('a missing git is an error on Run fli; a missing cargo only warns Desktop builds', async () => {
+    const out = await setup({ ...common, has: (c) => c !== 'git' && c !== 'cargo' })
+    expect(goal(out, 'fli').state).toBe('error')
+    expect(goal(out, 'fli').rows.find(r => r.id === 'bin:git')).toMatchObject({ ok: false, level: 'error', fix: { copy: 'sudo apt install git' } })
+    expect(goal(out, 'desktop')).toMatchObject({ state: 'unset' })
+    expect(goal(out, 'desktop').rows.find(r => r.id === 'bin:cargo')!.fix).toEqual({ url: 'https://rustup.rs', note: expect.any(String) })
+  })
+
+  test('an optional goal with nothing present reads unset, not warn', async () => {
+    const out = await setup({ ...common, has: (c) => ['bun', 'git', 'claude'].includes(c) })
+    expect(goal(out, 'desktop').state).toBe('unset')
+    expect(goal(out, 'deploy').state).toBe('unset')
+    expect(goal(out, 'build').state).toBe('unset')
+  })
+
+  test('a signed-out claude is an error on Use Claude in Workbench, and the fix is a command to copy', async () => {
+    const out = await setup({ ...common, has: () => true, auth: signedOut })
+    expect(goal(out, 'claude').state).toBe('error')
+    expect(goal(out, 'claude').rows.find(r => r.id === 'claude:login')).toMatchObject({ ok: false, fix: { copy: 'claude auth login' } })
+  })
+
+  test('the two dev default keys are flagged as a boolean, and the value never leaves', async () => {
+    const out  = await setup({ ...common, has: () => true, keys: { WORKBENCH_KEY: DEV_WORKBENCH_KEY, ENCRYPTION_KEY: DEV_ENCRYPTION_KEY } })
+    const rows = goal(out, 'claude').rows
+    expect(rows.find(r => r.id === 'key:WORKBENCH_KEY')).toMatchObject({ ok: false, detail: 'still the dev default' })
+    expect(rows.find(r => r.id === 'key:ENCRYPTION_KEY')).toMatchObject({ ok: false })
+    // Advice only: a dev default is not what makes the goal fail.
+    expect(rows.filter(r => r.level === 'error')).toEqual([])
+    const text = JSON.stringify(out)
+    expect(text).not.toContain(DEV_WORKBENCH_KEY)
+    expect(text).not.toContain(DEV_ENCRYPTION_KEY)
+    expect(JSON.stringify(await setup({ ...common, has: () => true }))).not.toContain(fresh.ENCRYPTION_KEY)
+  })
+
+  test('a set ping topic is ok', async () => {
+    put(join(setupHome, '.claude', 'ntfy-topic'), 'my-topic\n')
+    const out = await setup({ ...common, has: () => true })
+    expect(goal(out, 'claude').rows.find(r => r.id === 'ping')).toMatchObject({ ok: true })
+    expect(goal(out, 'claude').state).toBe('ok')
+  })
+
+  test('every row carries a why, and every fix is copy, url or go -- never a verb that runs a shell', async () => {
+    // Q3 = A (FJS-D2162) enforced rather than remembered: a fix with any other key is a test failure.
+    const bare = await setup({ ...common, has: () => false, gitOf: () => '', auth: signedOut, keys: { WORKBENCH_KEY: DEV_WORKBENCH_KEY, ENCRYPTION_KEY: DEV_ENCRYPTION_KEY } })
+    const fixes = bare.goals.flatMap(g => g.rows).filter(r => !r.ok).map(r => r.fix)
+    expect(fixes.length).toBeGreaterThan(10)
+    for (const f of fixes) {
+      expect(f).not.toBeNull()
+      const keys = Object.keys(f!).sort().join(',')
+      expect(['copy', 'go,label', 'note,url']).toContain(keys)
+      for (const v of Object.values(f!)) expect(typeof v).toBe('string')
+    }
+    for (const r of bare.goals.flatMap(g => g.rows)) expect(r.why.length).toBeGreaterThan(0)
+  })
+
+  test('stateOf is derived from the rows alone', () => {
+    const r = (ok: boolean, level: 'ok' | 'warn' | 'error') => ({ id: 'x', label: 'x', ok, level, detail: null, why: 'w', fix: null })
+    expect(stateOf(true,  [r(false, 'error')])).toBe('error')
+    expect(stateOf(true,  [r(false, 'warn'), r(true, 'ok')])).toBe('warn')
+    expect(stateOf(false, [r(false, 'warn')])).toBe('unset')
+    expect(stateOf(false, [r(false, 'warn'), r(true, 'ok')])).toBe('warn')
+    expect(stateOf(false, [r(true, 'ok')])).toBe('ok')
   })
 })

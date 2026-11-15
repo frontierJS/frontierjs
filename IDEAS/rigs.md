@@ -280,7 +280,7 @@ here is blocked on: bare-specifier `.lite` imports and the installer.
   - **Recommend A** — FJS-D06 already answers this: § 7 defers the word until
     `fli add <slice>` is on the table or a third party ships one, and Plugin keeps
     its slot as what attaches a capability to a running app.
-- Upgrade path for ejected Resources — none, by design. Is that acceptable, or is
+- ~~**Upgrade path for ejected Resources — none, by design.**~~ **Answered 2026-11-14 (`FJS-D2163`): B — the installer records the package version and a content hash per ejected file; `fli rig:list` shows which files drifted from what was ejected and the upstream diff since, and never applies it.** Is that acceptable, or is
   there a middle state (ejected but diff-able against the package version)?
   - **A** — none: an ejected file is the consumer's, and the package never speaks
     about it again.
@@ -292,7 +292,7 @@ here is blocked on: bare-specifier `.lite` imports and the installer.
     has to exist anyway, and it turns *upstream fixed a bug in a file you own* from
     silent into a line in a listing. C gives up the restyle promise that is the
     reason to eject.
-- Should `suite/` run against the consumer app in CI by default, or on demand?
+- ~~**Should `suite/` run against the consumer app in CI by default, or on demand?**~~ **Answered 2026-11-14 (`FJS-D2164`): A — by default: an installed rig's suite is collected into the consumer's own `bun run test`, so it runs wherever the app's tests run.**
   - **A** — by default: an installed rig's suite is collected into the consumer's
     own `bun run test`, so it runs wherever the app's tests run.
   - **B** — on demand, through `fli rig:doctor`.
@@ -313,7 +313,7 @@ here is blocked on: bare-specifier `.lite` imports and the installer.
   - **Recommend B** — a codemod over an ejected file edits a file the rig promised
     never to touch, and over a linked part it is redundant with npm plus a
     migration. B costs nothing beyond the eject record already recommended.
-- Does a Rig declare a Litestone version range in its `package.json` peer-deps?
+- ~~**Does a Rig declare a Litestone version range in its `package.json` peer-deps?**~~ **Answered 2026-11-14 (`FJS-D2165`): C — no range required: the installer parses the rig's `model/*.lite` against the consumer's installed litestone and refuses by name on failure.**
   Not a blocker — litestone 1.1.0 is published and npm `latest` points at it as of
   2026-08-02 (verified: `npm view` dist-tags, and the published tarball's `SCALARS`
   carries `Int/String/Float/Bytes`), so a rig shipping a `model/schema.lite` in
@@ -340,7 +340,7 @@ here is blocked on: bare-specifier `.lite` imports and the installer.
     half-bound-at-3am problem `FJS-D158` solved, and the declaration already has an
     owner. Ports are moot: the API part is a plugin inside the running API and owns
     no process.
-- **The fragment question has a second seam, and one ruling should cover both.**
+- ~~**The fragment question has a second seam, and one ruling should cover both.**~~ **Answered 2026-11-14 (`FJS-D2166`): B — the rig exports a fragment, a plain function the app composes in its own `getLevel` or resolver, the way an app's `getLevel` already wraps `sessionGateLevel` and `withCache(inner)` wraps a resolver.**
   The `getLevel` problem above — only one `GatePlugin({ getLevel })` may be installed,
   so a rig supplying standing either owns the ladder or contributes a fragment — is
   the same shape conduit has for credentials: only one `CredentialResolver` may be

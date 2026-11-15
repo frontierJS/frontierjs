@@ -772,7 +772,7 @@ Records of the finished phases, moved verbatim 2026-11-05; the plan keeps each s
   - **D — docs and tests that encode the layout**: `docs/CI.md:15, 23`,
     `packages/conduits/README.md`, `workspace/surface.md:100`, `exports.md:157`;
     fixtures writing `workspaces: ['packages/*']` in `cli/test/` `vendor` (41–320,
-    incl. `FJS_PACKAGES_DIR`), `publish-view` 48/103, `deps:24`, `project-root`,
+    incl. `FRONTIER_PACKAGES_DIR`), `publish-view` 48/103, `deps:24`, `project-root`,
     `runnables:289`, `register-check` 897/969, `terms`, `next:29`, `server:720`,
     `framework-checkout:30`, `checks:6124` (`connector-contract`), `advisories:75`.
   - **Not walkers**: `packages/outpost`, `packages/testing` (only
@@ -840,7 +840,7 @@ Records of the finished phases, moved verbatim 2026-11-05; the plan keeps each s
 
 #### 1.3
   - Done 2026-11-05. `resolvePackageSource(appRoot, names)` returns `{dir,
-    packages: [{name, dir, private}]}` from the owner; `FJS_PACKAGES_DIR` and
+    packages: [{name, dir, private}]}` from the owner; `FRONTIER_PACKAGES_DIR` and
     `packagesDir` stay a one-directory override. `vendor.test` packs a nested
     member, 30 pass. The basecamp Dockerfile template keeps a shell loop —
     over `packages/*/ packages/*/*/`, keeping a dir with a manifest whose

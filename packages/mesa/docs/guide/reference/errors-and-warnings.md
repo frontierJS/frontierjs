@@ -55,6 +55,7 @@ The messages here are shortened. Each one names the thing you wrote.
 | A declaration named `$`, `$$x` or `__anchor` (*throws*) | `'$$x' cannot be declared` | Rename it. The `$$` prefix and the three `__` names are the compiler's |
 | `$` inside `<script module>` (*throws*) | `'$.inspect' is not available in <script module>` | Import from `@frontierjs/mesa/runtime` |
 | `$.after` or `$.every` inside a function (*throws*) | `is declared at the top level of <script>` | Declare it at the top level and gate it with `when` and `key` |
+| `$.inspect` inside a function or block, or used as a value | `'$.inspect' is declared at the top level of <script>` | Make it a top-level statement; it logs every change on its own |
 
 ### Markup
 

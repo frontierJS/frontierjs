@@ -579,17 +579,39 @@ describe('portFor — the port a test asks for', () => {
     await expect(portFor(root, 'be', { project: 'outposts', lockFile })).rejects.toThrow(/Unknown project "outposts"/)
   })
 
-  test("a scaffolded app on a dev slot gets the slot's port, and a test port stays the formula", async () => {
-    const root = join(main, 'my-app')
+  const scaffolded = (top, name) => {
+    const root = join(top, name)
     mkdirSync(join(root, 'api', 'test'), { recursive: true })
     mkdirSync(join(root, 'db'))
+    mkdirSync(join(root, 'web'))
     writeFileSync(join(root, 'db', 'schema.lite'), '')
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'my-app' }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name }))
+    writeFileSync(join(root, 'api', 'server.js'), 'Bun.serve({ port: process.env.FRONTIER_PORT_BE })')
+    writeFileSync(join(root, 'web', 'vite.config.js'), 'export default { server: { port: process.env.FRONTIER_PORT_FE } }')
+    return root
+  }
+
+  test("a scaffolded app on a dev slot gets the slot's port in dev and test alike", async () => {
+    const root = scaffolded(main, 'my-app')
     writeFileSync(lockFile, JSON.stringify({ [root]: { slot: 3, env: 'dev' } }))
     expect(await portFor(join(root, 'api', 'test'), 'be', { env: 'dev', lockFile })).toBe(8103)
     expect(await portFor(join(root, 'api', 'test'), 'fe', { env: 'dev', lockFile })).toBe(8003)
-    expect(await portFor(join(root, 'api', 'test'), 'be', { service: 4, lockFile })).toBe(7104)
+    expect(await portFor(join(root, 'api', 'test'), 'be', { lockFile })).toBe(7103)
+    expect(await portFor(join(root, 'api', 'test'), 'fe', { lockFile })).toBe(7003)
     await expect(portFor(join(root, 'api', 'test'), 'be', { env: 'dev', service: 4, lockFile })).rejects.toThrow(/dev slot \(3\)/)
+    await expect(portFor(join(root, 'api', 'test'), 'be', { service: 4, lockFile })).rejects.toThrow(/dev slot \(3\)/)
+  })
+
+  // FJS-4241: two prototypes no fli dev had run in both drove 7000/7100.
+  test("two scaffolded apps with no slot each claim the one fli dev would take, so their drives do not share ports", async () => {
+    const one = scaffolded(main, 'music')
+    const two = scaffolded(main, 'ela')
+    const a = await portFor(join(one, 'api', 'test'), 'be', { lockFile })
+    const b = await portFor(join(two, 'api', 'test'), 'be', { lockFile })
+    expect(a).not.toBe(b)
+    expect(await portFor(join(one, 'api', 'test'), 'be', { lockFile })).toBe(a)
+    const dev = await claimSession(one, { name: 'music', lockFile })
+    expect(Number(dev.vars.FRONTIER_PORT_BE) - 1000).toBe(a)
   })
 })
 

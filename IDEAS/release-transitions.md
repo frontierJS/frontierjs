@@ -280,6 +280,8 @@ limit — so on a large chart the *history* mechanism fails the *upgrade*, and t
 field's workaround is to lower `maxHistory`, trading rollback depth for storage. A row
 here records a digest, a hash and a path; the bytes live where bytes live.
 
+**Since 2026-11-14 the `Deployment` row is the release record for its path, not a pipeline log.** Basecamp deploys through Outpost and writes it, and nothing on the machine does; the reconciliation is `IDEAS/release-record.md`.
+
 ## Pivot is N-1 compatibility, and that makes the model smaller
 
 Defining a pivot as *irreversible* describes the consequence. The definition one step
@@ -1584,6 +1586,7 @@ Compose has no traffic layer at all and stops the old container before starting 
 
 ## See also
 
+- `IDEAS/release-record.md` — 2026-11-14: Basecamp's `Deployment` became a second writer of release state; where the authoritative record lives, the shared Release id, pinned secrets on a Basecamp rollback, and whether `generation` folds into the Release (invariants 1 and 2)
 - `IDEAS/offline-first-and-release.md` — artefact kinds, and the degrade-to-nothing
   constraint this record inherits
 - `IDEAS/operational-edge.md` — §1 provisioning (refused here for now), §2 preview

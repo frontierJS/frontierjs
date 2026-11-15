@@ -16,7 +16,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 import { writeBasecamp, basecampsPath } from '../core/basecamps.js'
-import { diagnose, requiringModules, BINARIES, MIN_BUN, compareVersions } from '../core/doctor.js'
+import { diagnose, requiringModules, BINARIES, GOALS, goalOf, MIN_BUN, compareVersions } from '../core/doctor.js'
 
 /** A home with a global env file, and a project root with or without a `.env`. */
 function machine({ dotenv = false, globalEnv = true } = {}) {
@@ -59,7 +59,8 @@ describe('what a machine needs', () => {
     const m = machine()
     try {
       for (const b of diagnose({ ...m, has: NONE, env: {}, fliRoot: m.root }).system) {
-        expect(b.hint.length).toBeGreaterThan(0)
+        expect(b.install.length).toBeGreaterThan(0)
+        expect(b.why.length).toBeGreaterThan(0)
       }
       expect(BINARIES.some(b => b.required)).toBe(true)
     } finally { m.cleanup() }
@@ -312,11 +313,13 @@ describe('the summary', () => {
   test('everything present is ok, and the count is every check', () => {
     const m = machine({ dotenv: true })
     try {
-      const r = diagnose({ ...m, has: ALL, env: { T: '1' }, fliRoot: m.root,
+      mkdirSync(join(m.home, '.ssh'))
+      writeFileSync(join(m.home, '.ssh', 'id_rsa.pub'), 'ssh-rsa AAAA')
+      const r = diagnose({ ...m, has: ALL, env: { T: '1' }, fliRoot: m.root, gitOf: () => 'set',
         modules: [{ ns: 'a', requires: ['T'] }] })
       expect(r.ok).toBe(true)
       expect(r.failed).toBe(0)
-      expect(r.checks).toBe(r.system.length + r.config.length + r.namespaces.length + r.profiles.length + r.basecamps.length + r.secrets.length)
+      expect(r.checks).toBe(r.system.length + r.config.length + r.identity.length + r.namespaces.length + r.profiles.length + r.basecamps.length + r.secrets.length)
     } finally { m.cleanup() }
   })
 
@@ -342,7 +345,7 @@ describe('which namespaces declare a requirement', () => {
 
 describe('the bun floor', () => {
 
-  test('a bun below the floor is an error, and the hint names the upgrade', () => {
+  test('a bun below the floor is an error, and the install is the upgrade', () => {
     // The failure it exists for: an engine range is advisory, so a stale bun
     // runs the app and the missing feature reports itself as missing rather
     // than reporting the runtime as old.
@@ -353,8 +356,9 @@ describe('the bun floor', () => {
       expect(bun.level).toBe('error')
       expect(bun.ok).toBe(false)
       expect(bun.present).toBe(true)
-      expect(bun.hint).toContain('1.3.11')
-      expect(bun.hint).toContain(MIN_BUN)
+      expect(bun.why).toContain('1.3.11')
+      expect(bun.why).toContain(MIN_BUN)
+      expect(bun.install).toBe('bun upgrade')
     } finally { m.cleanup() }
   })
 
@@ -373,5 +377,78 @@ describe('the bun floor', () => {
     expect(compareVersions('1.4.0-canary.3', '1.4.0')).toBe(0)
     expect(compareVersions('1.3.11', '1.4.0')).toBeLessThan(0)
     expect(compareVersions('1.10.0', '1.4.0')).toBeGreaterThan(0)
+  })
+})
+
+describe('the checklist rows', () => {
+
+  test('every binary serves a goal that exists, and the identity and namespace rows too', () => {
+    // A row naming a goal the table lacks would drop off the checklist the
+    // Workbench draws, with no error anywhere.
+    const m = machine()
+    try {
+      const ids = new Set(GOALS.map(g => g.id))
+      const r = diagnose({ ...m, has: NONE, env: {}, fliRoot: m.root, gitOf: () => '',
+        modules: [{ ns: 'github', requires: ['GITHUB_TOKEN'] }] })
+      for (const row of [...r.system, ...r.identity, ...r.namespaces]) {
+        expect(row.for.length).toBeGreaterThan(0)
+        for (const g of row.for) expect(ids.has(g)).toBe(true)
+      }
+      expect(GOALS.filter(g => g.required).map(g => g.id)).toEqual(['fli', 'claude'])
+    } finally { m.cleanup() }
+  })
+
+  test('claude, gh, cargo and both browsers are optional rows', () => {
+    const m = machine()
+    try {
+      const r = diagnose({ ...m, has: NONE, env: {}, fliRoot: m.root })
+      for (const name of ['claude', 'gh', 'cargo', 'chromium', 'firefox']) {
+        const row = r.system.find(b => b.name === name)
+        expect(row).toMatchObject({ present: false, level: 'warn' })
+      }
+    } finally { m.cleanup() }
+  })
+
+  test('chromium is present when any of its names is', () => {
+    const m = machine()
+    try {
+      const only = (n) => (cmd) => cmd === n
+      for (const name of ['chromium', 'chromium-browser', 'google-chrome']) {
+        const row = diagnose({ ...m, has: only(name), env: {}, fliRoot: m.root }).system.find(b => b.name === 'chromium')
+        expect(row.ok).toBe(true)
+      }
+      expect(diagnose({ ...m, has: only('firefox'), env: {}, fliRoot: m.root }).system.find(b => b.name === 'chromium').ok).toBe(false)
+    } finally { m.cleanup() }
+  })
+
+  test('a namespace no goal claims lands in Run fli', () => {
+    expect(goalOf('basecamp')).toBe('deploy')
+    expect(goalOf('somenewnamespace')).toBe('fli')
+  })
+})
+
+describe('identity', () => {
+
+  test('git name, git email and a public key are each a warning when absent, and never block', () => {
+    const m = machine()
+    try {
+      const r = diagnose({ ...m, has: ALL, env: {}, fliRoot: m.root, gitOf: () => '' })
+      expect(r.identity.map(i => [i.label, i.level])).toEqual([
+        ['git user.name', 'warn'], ['git user.email', 'warn'], ['ssh public key', 'warn'],
+      ])
+      expect(r.blocked).toBe(0)
+      expect(r.ok).toBe(false)
+    } finally { m.cleanup() }
+  })
+
+  test('each is ok once set, the key where server:create looks for it', () => {
+    const m = machine()
+    try {
+      mkdirSync(join(m.home, '.ssh'))
+      writeFileSync(join(m.home, '.ssh', 'id_ed25519.pub'), 'ssh-ed25519 AAAA')
+      const r = diagnose({ ...m, has: ALL, env: {}, fliRoot: m.root, gitOf: (k) => k === 'user.name' ? 'A' : 'a@b.c' })
+      expect(r.identity.every(i => i.ok)).toBe(true)
+      expect(r.identity[2].detail).toBe('~/.ssh/id_ed25519.pub')
+    } finally { m.cleanup() }
   })
 })

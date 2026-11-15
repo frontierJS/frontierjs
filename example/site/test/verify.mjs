@@ -47,7 +47,7 @@
  * node's strip-only loader refuses a parameter property inside junction. The
  * same reason `build:site` is `bun --bun vite build`.
  *
- * Needs Chrome on PATH or $FJS_CHROME. It signs in NOWHERE: the storefront is
+ * Needs Chrome on PATH or $FRONTIER_CHROME. It signs in NOWHERE: the storefront is
  * public, so it costs nothing against the login limiter the other drives share.
  *
  * The same harness traps as verify.mjs apply — never return a bare `null` from

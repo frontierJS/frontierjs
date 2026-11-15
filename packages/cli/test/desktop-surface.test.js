@@ -439,7 +439,7 @@ describe('--sidecar: the shell starts its own API', () => {
     for (const piece of [
       'const SIDECAR: &str = "shop-api"',            // the binary Tauri copies beside the shell
       'globalThis.__sierraApiUrl',                    // the run-time origin
-      '"FJS_SIDECAR_LIFELINE", "1"',                  // stdin lifeline
+      '"FRONTIER_SIDECAR_LIFELINE", "1"',                  // stdin lifeline
       'fn supervise(', 'MAX_DEATHS',                  // restart on the same port, then give up
       'TrayIconBuilder', '"Start at login"', 'tauri_plugin_single_instance::init',
       'api.prevent_close()',                          // close to tray

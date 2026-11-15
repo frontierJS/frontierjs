@@ -437,10 +437,10 @@ const neededPkgs = [
 
 // Where local package sources live. fli lives at <root>/packages/cli, so the
 // FJS packages are its siblings under <root>/packages/. Override with
-// $FJS_PACKAGES_DIR or $WORKSPACE_DIR if your layout differs.
+// $FRONTIER_PACKAGES_DIR or $WORKSPACE_DIR if your layout differs.
 const expandHome = (p) => p.replace(/^~/, process.env.HOME || '')
-const packagesDir = process.env.FJS_PACKAGES_DIR
-  ? resolve(expandHome(process.env.FJS_PACKAGES_DIR))
+const packagesDir = process.env.FRONTIER_PACKAGES_DIR
+  ? resolve(expandHome(process.env.FRONTIER_PACKAGES_DIR))
   : process.env.WORKSPACE_DIR
     ? resolve(expandHome(process.env.WORKSPACE_DIR), 'packages')
     : resolve(global.fliRoot, '..')
@@ -453,7 +453,7 @@ if (fjsSource === 'local') {
   if (missing.length) {
     log.error(`--source local: package(s) not found under ${packagesDir}:`)
     for (const m of missing) log.error(`  ${m}  (expected ${pkgDir(m)})`)
-    log.info('Set $FJS_PACKAGES_DIR or $WORKSPACE_DIR, or use --source npm.')
+    log.info('Set $FRONTIER_PACKAGES_DIR or $WORKSPACE_DIR, or use --source npm.')
     $.config.abort = true
     return
   }

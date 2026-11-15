@@ -108,7 +108,7 @@ const EMBEDDED = /[\\/]\$bunfs[\\/]|^[A-Za-z]:[\\/]~BUN[\\/]/
  * Every route under a directory, imported.
  *
  * Inside a compiled binary it also checks the count `buildCli` stated as the
- * compile-time constant `process.env.FJS_CLI_ROUTES`. `bun build --compile` run
+ * compile-time constant `process.env.FRONTIER_CLI_ROUTES`. `bun build --compile` run
  * by hand embeds only what is imported, and a route is read off the directory
  * at run time, so that binary finds no routes/ and would offer every derived
  * command and none of the app's own.
@@ -117,7 +117,7 @@ export async function loadRoutes(dir: string | URL): Promise<Route[]> {
   const files = routeFiles(dir)
   const root  = typeof dir === 'string' ? dir : fileURLToPath(dir)
   if (EMBEDDED.test(root)) {
-    const stated = process.env.FJS_CLI_ROUTES
+    const stated = process.env.FRONTIER_CLI_ROUTES
     if (stated === undefined)
       throw new Error('this binary was compiled without its routes: bun build --compile embeds only what is imported, and cli/src/routes/ is read at run time. Build it with `fli cli:build`.')
     if (Number(stated) !== files.length)

@@ -131,7 +131,7 @@ try {
 
   const env = {
     ...process.env,
-    FJS_DESKTOP_PROBE:              probe,
+    FRONTIER_DESKTOP_PROBE:              probe,
     XDG_DATA_HOME:                  join(scratch, 'data'),
     WEBKIT_DISABLE_DMABUF_RENDERER: '1',
   }

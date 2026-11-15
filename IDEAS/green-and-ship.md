@@ -194,7 +194,7 @@ fix in `dev` or a row.
     question rows in `ISSUES.md` and, the same day, as naming-conformance
     rulings in `DECISIONS.md` — and `owed-rulings.md`'s advise-rules entry
     had a `**Recommend …**` line naming no option letter.
-- [x] 0.2 Full tier in the same worktree, `FJS_CI_REQUIRE_DOCKER=1 node
+- [x] 0.2 Full tier in the same worktree, `FRONTIER_CI_REQUIRE_DOCKER=1 node
   scripts/ci.mjs` from `../frontierjs-prepush`, about 30 minutes. A laptop and
   the runner differ in uid and Chrome, so this names what is drift and leaves
   the runner-only reds to Phase 2.
@@ -270,7 +270,7 @@ Done when: a green run on main, and FJS-009 closed citing its run id.
 - [x] 2.2 The deploy cycle's third deploy: why the lock is still held, by the
   runner's own user, in `02-decide`, zero seconds in — a journal dir reused
   between the second deploy and the third, or a lock the second never let go.
-  Reproduced in the worktree under `FJS_CI_REQUIRE_DOCKER=1` first.
+  Reproduced in the worktree under `FRONTIER_CI_REQUIRE_DOCKER=1` first.
   - 2026-11-01: the `deploy:revert --plan` between the second deploy and the
     third. Its preflight takes the deploy lock, and a plan ends with
     `$.config.stop`, which skips every later step — `05-cleanup`, the one

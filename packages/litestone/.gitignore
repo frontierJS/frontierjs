@@ -26,7 +26,7 @@ test/fixtures/corpus/gaps.json
 # local fixture rather than a target anybody else can regenerate. It must NOT
 # sit in the tree — a hidden source file is what the hygiene phase exists to
 # catch, and `generatedIgnored` cannot cover it because that list is for
-# generated files only. Point FJS_CORPUS_LOCAL at the directory holding it.
+# generated files only. Point FRONTIER_CORPUS_LOCAL at the directory holding it.
 # This rule stays as a guard against dropping it back in.
 test/fixtures/corpus/maidtech.lite
 test/browser/dist/

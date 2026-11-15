@@ -20,7 +20,7 @@
  *
  * Prints every check's value, then exits 1 naming the ones that failed.
  *
- * Needs Chrome on PATH or $FJS_CHROME. Nothing to sign in to, no API.
+ * Needs Chrome on PATH or $FRONTIER_CHROME. Nothing to sign in to, no API.
  */
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -242,7 +242,7 @@ t('island.chunks',  readdirSync(join(DIST, 'assets')).filter(f => /^island-/.tes
 // commands that have never worked and cannot, on the pages selling them.
 //
 // The registry is a second origin that moves on its own, so no network is a
-// NAMED skip rather than a pass, and FJS_REQUIRE_REGISTRY=1 makes it fatal —
+// NAMED skip rather than a pass, and FRONTIER_REQUIRE_REGISTRY=1 makes it fatal —
 // the same contract the CI phase gives.
 t('install.published', await (async () => {
   // One command may name several — `npm i @frontierjs/auth @frontierjs/caravan`
@@ -276,8 +276,8 @@ t('install.published', await (async () => {
     const res = await fetch(`https://registry.npmjs.org/${pkg.replace('/', '%2f')}`)
       .catch(() => null)
     if (!res) {
-      out.skipped = 'no network — set FJS_REQUIRE_REGISTRY=1 to make this fatal'
-      if (process.env.FJS_REQUIRE_REGISTRY) out.missing.push('(registry unreachable)')
+      out.skipped = 'no network — set FRONTIER_REQUIRE_REGISTRY=1 to make this fatal'
+      if (process.env.FRONTIER_REQUIRE_REGISTRY) out.missing.push('(registry unreachable)')
       return out
     }
     if (res.status === 404) { out.missing.push(spec); continue }

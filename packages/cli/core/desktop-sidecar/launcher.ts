@@ -5,13 +5,13 @@
 // Chrome, no Worker, no owner command.
 //
 // The shell passes everything by environment:
-//   FJS_SIDECAR_APP      the app's own files (the bundle's resources/app)
+//   FRONTIER_SIDECAR_APP      the app's own files (the bundle's resources/app)
 //   DATABASE_URL         <app data>/api/app.db — jobs.db lands beside it
 //   AUDIT_PATH           <app data>/api/audit.db
 //   STORAGE_ROOT         <app data>/api/storage
 //   ENCRYPTION_KEY_FILE  <app data>/api/encryption.key, made on first run
 //   FRONTIER_PORT_BE     the free 127.0.0.1 port the shell picked
-//   FJS_SIDECAR_LIFELINE=1  stop when stdin closes (a SIGTERM to itself, so the
+//   FRONTIER_SIDECAR_LIFELINE=1  stop when stdin closes (a SIGTERM to itself, so the
 //                        app's graceful shutdown runs): the shell holds the
 //                        other end, so a shell that dies by any means, SIGKILL
 //                        included, takes the API with it
@@ -28,14 +28,14 @@ void bundled
 const plain = (p: string) => p.replace(/^\\\\\?\\UNC\\/, '\\\\').replace(/^\\\\\?\\/, '')
 
 const compiled = import.meta.dir.startsWith('/$bunfs')
-const appDir = plain(process.env.FJS_SIDECAR_APP ?? join(compiled ? dirname(process.execPath) : import.meta.dir, 'app'))
+const appDir = plain(process.env.FRONTIER_SIDECAR_APP ?? join(compiled ? dirname(process.execPath) : import.meta.dir, 'app'))
 if (!existsSync(join(appDir, 'api', 'index.ts'))) {
-  console.error(`__SLUG__-api: no API at ${appDir}/api/index.ts — FJS_SIDECAR_APP names the app's files.`)
+  console.error(`__SLUG__-api: no API at ${appDir}/api/index.ts — FRONTIER_SIDECAR_APP names the app's files.`)
   process.exit(1)
 }
 process.chdir(appDir)
 
-if (process.env.FJS_SIDECAR_LIFELINE === '1') {
+if (process.env.FRONTIER_SIDECAR_LIFELINE === '1') {
   // A signal to ourselves, not process.exit: junction's SIGTERM handler runs
   // app.stop() (sockets told 1012, jobs drained) and then exits. An exit here
   // skipped all of it whenever the person quit the app. Once: 'end' and 'close'
@@ -75,6 +75,6 @@ process.env.FRONTIER_API_URL ??= `http://127.0.0.1:${port}`
 // on the network.
 const serve = Bun.serve
 Bun.serve = ((opts: Parameters<typeof Bun.serve>[0]) =>
-  serve({ ...opts, hostname: process.env.FJS_SIDECAR_HOST ?? '127.0.0.1' } as Parameters<typeof Bun.serve>[0])) as typeof Bun.serve
+  serve({ ...opts, hostname: process.env.FRONTIER_SIDECAR_HOST ?? '127.0.0.1' } as Parameters<typeof Bun.serve>[0])) as typeof Bun.serve
 
 await import(join(appDir, 'api', 'index.ts'))

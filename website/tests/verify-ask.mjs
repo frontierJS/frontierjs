@@ -17,7 +17,7 @@
  *   bun tests/verify-ask.mjs           a fake `claude` that makes the edit itself
  *   bun tests/verify-ask.mjs --real    the real CLI — spends up to $2 a run
  *
- * Needs Chrome on PATH or $FJS_CHROME. Refuses port 7690 if it answers.
+ * Needs Chrome on PATH or $FRONTIER_CHROME. Refuses port 7690 if it answers.
  */
 
 // What `fli prove` queues on: this checkout's ports.

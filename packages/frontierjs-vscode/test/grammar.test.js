@@ -27,7 +27,7 @@ const ROOT = path.resolve(__dirname, '..')
 // `verify:package` points this at the UNPACKED .vsix, so the same assertions
 // grade the artefact — a grammar `.vscodeignore` left out is a file the editor
 // never loads and the working tree cannot see.
-const SYNTAXES = process.env.FJS_SYNTAXES || path.join(ROOT, 'syntaxes')
+const SYNTAXES = process.env.FRONTIER_SYNTAXES || path.join(ROOT, 'syntaxes')
 const GRAMMARS = {
   'source.mesa':      path.join(SYNTAXES, 'mesa.tmLanguage.json'),
   'source.litestone': path.join(SYNTAXES, 'litestone.tmLanguage.json')

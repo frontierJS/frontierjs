@@ -1384,7 +1384,7 @@ describe('what the machine is asked to do', () => {
       expect(status).toBe(200)
       expect(body).toMatchObject({ data_dir: `${APPS}/ela/data`, files: 3, bytes: 4_600_000_000, overwrite: false })
       const argv = calls.find(a => a[1] === 'run')
-      expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '--mount', `type=bind,src=${APPS}/ela/data,dst=/data`, 'FJS_OVERWRITE=0']))
+      expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '--mount', `type=bind,src=${APPS}/ela/data,dst=/data`, 'FRONTIER_OVERWRITE=0']))
       // -v given a path the daemon cannot see mounts an empty directory and
       // extracts nothing; --mount refuses the missing source.
       expect(argv).toContain(`type=bind,src=${realpathSync(restoreDir)}/ela.tar.gz,dst=/restore,readonly`)
@@ -1421,7 +1421,7 @@ describe('what the machine is asked to do', () => {
 
       const again = restoring({ 'docker run --rm': { stdout: '1 6\n' } })
       await restore(again.server, { app_id: 'ela', path: 'ela.tar.gz', overwrite: true })
-      expect(again.calls.find(a => a[1] === 'run')).toContain('FJS_OVERWRITE=1')
+      expect(again.calls.find(a => a[1] === 'run')).toContain('FRONTIER_OVERWRITE=1')
     })
 
     test('a restore that died after the script began says the volume was touched; one refused before it did not', async () => {
@@ -1496,7 +1496,7 @@ describe('what the machine is asked to do', () => {
       expect(body).toMatchObject({ data_dir: `${APPS}/ela/data`, files: 2, bytes: 17, sha256: digest, overwrite: false })
       expect(gets).toEqual([url])
       expect(seen).toEqual([archive])
-      expect(calls.find(a => a[1] === 'run')).toEqual(expect.arrayContaining(['--network', 'none', 'FJS_OVERWRITE=0']))
+      expect(calls.find(a => a[1] === 'run')).toEqual(expect.arrayContaining(['--network', 'none', 'FRONTIER_OVERWRITE=0']))
       expect(readdirSync(restoreDir)).toEqual([])
     })
 
@@ -1589,7 +1589,7 @@ describe('what the machine is asked to do', () => {
       expect(envs[0]).toEqual({ LITESTREAM_ACCESS_KEY_ID: 'K-ela', LITESTREAM_SECRET_ACCESS_KEY: 'S-ela' })
 
       const copy = calls.find(a => a[1] === 'run')
-      expect(copy).toEqual(expect.arrayContaining(['--network', 'none', '--mount', `type=bind,src=${APPS}/ela/data,dst=/data`, 'FJS_OVERWRITE=0']))
+      expect(copy).toEqual(expect.arrayContaining(['--network', 'none', '--mount', `type=bind,src=${APPS}/ela/data,dst=/data`, 'FRONTIER_OVERWRITE=0']))
       expect(copy.find(a => a.includes(',dst=/restore'))).toMatch(new RegExp(`^type=bind,src=${realpathSync(stageDir)}/ela-[^,]+,dst=/restore,readonly$`))
       expect(calls.at(-1)).toEqual(['systemctl', 'restart', 'basecamp-litestream.service'])
       // The staging directory goes, success or not.
@@ -1633,7 +1633,7 @@ describe('what the machine is asked to do', () => {
 
       const again = restoring()
       await restore(again.server, body({ overwrite: true }))
-      expect(again.calls.find(a => a[1] === 'run')).toContain('FJS_OVERWRITE=1')
+      expect(again.calls.find(a => a[1] === 'run')).toContain('FRONTIER_OVERWRITE=1')
     })
 
     test('names, instants and keys a caller could bend are refused before anything runs', async () => {
@@ -2613,7 +2613,7 @@ exec "${realTar}" "$@"
 `, { mode: 0o755 })
         const script = BACKUP_SCRIPT.replace(/\/(data|out)\b/g, (_, d) => d === 'data' ? data : out)
         const done = Bun.spawnSync(['sh', '-c', script], {
-          env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FJS_NAME: 'a.tar.gz' },
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FRONTIER_NAME: 'a.tar.gz' },
         })
         return { done, out, data }
       }
@@ -5603,7 +5603,7 @@ describe('a web build', () => {
       'bun install --frozen-lockfile',
       'bun --bun vite build -c config/vite.config.js --outDir /src/.web-release --emptyOutDir',
     ])
-    expect(runs[1]).toContain(`-e NODE_ENV=production -e VITE_FJS_BUILD=${COMMIT}`)
+    expect(runs[1]).toContain(`-e NODE_ENV=production -e FRONTIER_PUBLIC_BUILD=${COMMIT}`)
     expect(runs[1]).not.toContain('FRONTIER_PUBLIC_API_URL')
     expect(argv().some(c => c.startsWith('git ') && c.includes('GIT_SSH_COMMAND'))).toBe(false)
     expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.web`)
@@ -5639,7 +5639,7 @@ describe('a web build', () => {
       'bun --bun sierra widgets --out-dir /src/.web-release',
     ])
     expect(runs[1]).toContain('-w /src/widgets')
-    expect(runs[1]).toContain(`-e NODE_ENV=production -e VITE_FJS_BUILD=${COMMIT} -e FRONTIER_PUBLIC_API_URL=https://kos.test`)
+    expect(runs[1]).toContain(`-e NODE_ENV=production -e FRONTIER_PUBLIC_BUILD=${COMMIT} -e FRONTIER_PUBLIC_API_URL=https://kos.test`)
     expect(runs[1]).not.toContain('FRONTIER_PUBLIC_WIDGETS_URL')
     expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.web`)
   })

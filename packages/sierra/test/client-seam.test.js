@@ -196,7 +196,7 @@ describe('a browser left open across a deploy', () => {
   // `build:` so `stale` could fire and then subscribed to nothing.
 
   test('is told, on `status.stale`, which build it is and which the server is', async () => {
-    vi.stubEnv('VITE_FJS_BUILD', 'client-1')
+    vi.stubEnv('FRONTIER_PUBLIC_BUILD', 'client-1')
     const J = await freshJunction()
     J.initJunction({ url: API })
     await J.getClient()._request('GET', '/ping')
@@ -205,7 +205,7 @@ describe('a browser left open across a deploy', () => {
   })
 
   test('and a browser on the build the server is running is told nothing', async () => {
-    vi.stubEnv('VITE_FJS_BUILD', 'server-2')
+    vi.stubEnv('FRONTIER_PUBLIC_BUILD', 'server-2')
     const J = await freshJunction()
     J.initJunction({ url: API })
     await J.getClient()._request('GET', '/ping')

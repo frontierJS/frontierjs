@@ -5,7 +5,7 @@ title: Home
   // What the page last read, held for the life of the tab: coming back from
   // another screen draws it at once, and the indicator says when it is re-read.
   const cache = {
-    pins: [], status: {}, sessions: null, running: null, autopilot: null, quota: null,
+    pins: [], status: {}, sessions: null, running: null, autopilot: null, quota: null, setup: null,
     errors: {}, readAt: 0, quotaAt: 0,
   }
 </script>
@@ -46,6 +46,7 @@ title: Home
   let running   = cache.running
   let autopilot = cache.autopilot
   let quota     = cache.quota
+  let setup     = cache.setup        // the laptop's Setup checklist, read once per visit and on Refresh
   let errors    = cache.errors       // panel → message
   let readAt    = cache.readAt
   let loaded    = readAt > 0
@@ -80,6 +81,12 @@ title: Home
     cache.running = running = await laptop.service.invoke('running', null)
   })
 
+  // Setup shells out (a `which` and a `--version` per tool, and `claude auth status`),
+  // so it is not part of the minute's read: a visit that has one keeps it until Refresh.
+  const loadSetup = () => read('setup', async () => {
+    cache.setup = setup = await laptop.service.invoke('setup', null)
+  })
+
   const loadAutopilot = () => read('autopilot', async () => {
     cache.autopilot = autopilot = await atlas.service.invoke('autopilot', null)
   })
@@ -94,6 +101,7 @@ title: Home
     refreshing = true
     const reads = [loadPins(), loadSessions(), loadRunning(), loadAutopilot()]
     if (withQuota || Date.now() - cache.quotaAt > QUOTA_MS) reads.push(loadQuota())
+    if (withQuota || !cache.setup) reads.push(loadSetup())
     await Promise.all(reads)
     cache.readAt = readAt = Date.now()
     loaded = true
@@ -166,6 +174,8 @@ title: Home
   }
 
   const needs = needsYou()
+  // A required goal that cannot work is the one thing here that is not about a chat.
+  const blocked = (setup?.goals ?? []).filter(g => g.required && g.state === 'error')
   const busy  = working()
 
   const LABEL = { asks: 'asks', question: 'plan question', unread: 'finished' }
@@ -240,7 +250,7 @@ title: Home
 </div>
 
 <div class="tiles" id="home-tiles">
-  <StatCard label="Needs you" value={loaded ? needs.length : '…'} tone={needs.length ? 'warning' : ''} href="#home-needs" />
+  <StatCard label="Needs you" value={loaded ? needs.length + (blocked.length ? 1 : 0) : '…'} tone={needs.length || blocked.length ? 'warning' : ''} href="#home-needs" />
   <StatCard label="Working" value={loaded ? busy.length : '…'} tone={busy.length ? 'info' : ''} href="#home-working" />
   <StatCard label="Spent today" value={loaded ? money(spentToday) : '…'} sub="across pinned checkouts" />
   <StatCard label="To rule" value={autopilot ? autopilot.council.decidable : '…'} sub={autopilot ? `${autopilot.council.open} more without options` : ''} href="/atlas/decide/" />
@@ -257,10 +267,21 @@ title: Home
       <article class="alert danger"><div class="alert-content">{errors.pins}</div></article>
     {:else if !loaded}
       <p class="text-sm text-muted">Reading…</p>
-    {:else if !needs.length}
+    {:else if !needs.length && !blocked.length}
       <p class="text-sm text-muted">Nothing is waiting on you.</p>
     {:else}
       <ul class="home-list">
+        {#if blocked.length}
+          <li data-kind="setup">
+            <a href="/laptop/" class="home-row">
+              <Badge tone="danger">setup</Badge>
+              <span class="home-row-main">
+                <strong>This laptop</strong> · {blocked.map(g => g.label).join(', ')} cannot work yet
+                <span class="text-sm text-muted home-clip">Open Laptop to see what is missing and how to fix it.</span>
+              </span>
+            </a>
+          </li>
+        {/if}
         {#each needs as n (n.key)}
           <li data-kind={n.kind}>
             <a href={n.href} class="home-row">

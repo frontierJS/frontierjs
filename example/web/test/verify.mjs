@@ -13,7 +13,7 @@
  *
  *   node web/test/verify.mjs
  *
- * Needs Chrome on PATH or $FJS_CHROME, same as the css package's harness.
+ * Needs Chrome on PATH or $FRONTIER_CHROME, same as the css package's harness.
  * Exits non-zero and prints what differed.
  *
  * One harness trap: NEVER return a bare `null` from a probe. CDP serializes it

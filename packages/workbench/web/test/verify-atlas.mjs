@@ -210,9 +210,9 @@ try {
   const owed    = rings.issues.filter(i => i[2] === 'decision')
   const tabExpr = `document.querySelector('[role=tab][aria-selected=true]')?.textContent.trim() ?? ''`
   await until(`!!document.getElementById('atlas-cards')`, v => v, 'the ring cards never rendered', 30_000)
-  if (process.env.FJS_DRIVE_SHOT) {
+  if (process.env.FRONTIER_DRIVE_SHOT) {
     const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })
-    await Bun.write(process.env.FJS_DRIVE_SHOT, Buffer.from(data, 'base64'))
+    await Bun.write(process.env.FRONTIER_DRIVE_SHOT, Buffer.from(data, 'base64'))
   }
   check('the headline is the rings page\'s', (await textOf('.atlas-headline')) === 'How the work is run.')
   const cards = { core: rings.docs.length, invariants: rings.invariants.length, decisions: rings.decCount, issues: defects.length, ideas: rings.ideas.count }
@@ -423,9 +423,9 @@ async function decideScreen() {
   const done = await until(`document.getElementById('decide-explanation')?.dataset.state ?? null`, s => s !== 'working', 'the explanation never finished', 30_000)
   check('and follows it to done without a reload', done === 'done', done)
   check('the reply is on the card', ((await textOf('#decide-explanation')) ?? '').includes('Placed it.'))
-  if (process.env.FJS_DRIVE_SHOT) {
+  if (process.env.FRONTIER_DRIVE_SHOT) {
     const { data } = await send('Page.captureScreenshot', { format: 'png' })
-    await Bun.write(process.env.FJS_DRIVE_SHOT.replace(/(\.png)?$/, '-decide.png'), Buffer.from(data, 'base64'))
+    await Bun.write(process.env.FRONTIER_DRIVE_SHOT.replace(/(\.png)?$/, '-decide.png'), Buffer.from(data, 'base64'))
   }
   const asked = readFileSync(PROMPT, 'utf8')
   check('Claude was handed the question at its line', asked.includes(`${second.id} — ${second.file}:${second.line}`), asked.slice(0, 200))
@@ -485,9 +485,9 @@ async function autopilotScreen() {
   await until(`document.querySelectorAll('[data-lane]').length`, v => v === 5, 'the five lanes never drew', 30_000)
   const after = readLoopLog({ root: ROOT })
 
-  if (process.env.FJS_DRIVE_SHOT_TOWN) {
+  if (process.env.FRONTIER_DRIVE_SHOT_TOWN) {
     const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })
-    await Bun.write(process.env.FJS_DRIVE_SHOT_TOWN, Buffer.from(data, 'base64'))
+    await Bun.write(process.env.FRONTIER_DRIVE_SHOT_TOWN, Buffer.from(data, 'base64'))
   }
   check('five lanes are drawn', await evaluate(`document.querySelectorAll('[data-lane]').length`) === 5)
   const dock = await evaluate(`Number(document.getElementById('ap-dock-patches')?.dataset.count)`)

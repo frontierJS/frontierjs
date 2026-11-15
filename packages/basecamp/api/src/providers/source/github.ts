@@ -204,7 +204,7 @@ export function githubHttps(repo: string): string | null {
  *  one call, so it is in no argv, no config file and no row. Matched to the URL
  *  `https://github.com` in the key, so a redirect to another host is offered no
  *  credential. */
-const HELPER = '!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=$FJS_GIT_TOKEN"; }; f'
+const HELPER = '!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=$FRONTIER_GIT_TOKEN"; }; f'
 const HELPER_KEY = 'credential.https://github.com.helper'
 
 /**
@@ -251,7 +251,7 @@ export async function gitCredential(
       GIT_CONFIG_COUNT:   '2',
       GIT_CONFIG_KEY_0:   HELPER_KEY, GIT_CONFIG_VALUE_0: '',
       GIT_CONFIG_KEY_1:   HELPER_KEY, GIT_CONFIG_VALUE_1: HELPER,
-      FJS_GIT_TOKEN:      token,
+      FRONTIER_GIT_TOKEN:      token,
     }
   }
   return null

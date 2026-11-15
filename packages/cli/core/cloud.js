@@ -246,6 +246,11 @@ export const waitForSsh = async (dest, { identity, timeoutMs = 240_000, everyMs 
   return false
 }
 
+// Where a public key is looked for when none is named. Here once, because the
+// doctor's identity row and `publicKey` must agree on what counts as found, or
+// the checklist says a key exists that `server:create` then refuses.
+export const DEFAULT_PUBLIC_KEYS = ['id_ed25519.pub', 'id_rsa.pub']
+
 // The public key that goes on the box: --key, else the usual two. Answers
 // { keyPath, identity } or { error }.
 export const publicKey = async (key) => {
@@ -255,7 +260,7 @@ export const publicKey = async (key) => {
   const expand = p => p.replace(/^~(?=\/|$)/, home)
   const keyPath = key
     ? expand(key)
-    : [`${home}/.ssh/id_ed25519.pub`, `${home}/.ssh/id_rsa.pub`].find(p => existsSync(p))
+    : DEFAULT_PUBLIC_KEYS.map(f => `${home}/.ssh/${f}`).find(p => existsSync(p))
   if (!keyPath || !existsSync(keyPath))
     return { error: key ? `No public key at ${keyPath}` : 'No ~/.ssh/id_ed25519.pub or id_rsa.pub: pass --key <file.pub>' }
   if (!keyPath.endsWith('.pub')) return { error: `${keyPath} is not a .pub file: pass the PUBLIC key` }

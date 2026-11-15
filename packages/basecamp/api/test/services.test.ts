@@ -3057,6 +3057,7 @@ describe('an app made from a blueprint', () => {
       image: 'redis:7.2-alpine', appKind: 'database', port: 6379,
       volumePath: '/data', healthCheck: '/ping', cpuLimit: 0.5, memLimitMb: 256,
       command: ['redis-server', '--save', '60 1'],
+      environment: { KV_PASSWORD: '${KV_PASSWORD}', KV_POLICY: '${KV_POLICY}', KV_KEY: '${KV_KEY}', KV_NOTE: '${KV_NOTE}' },
     } })
     for (const [i, p] of [
       { key: 'KV_PASSWORD', label: 'Password',      isRequired: true,  isSecret: true },
@@ -3092,8 +3093,8 @@ describe('an app made from a blueprint', () => {
     expect([r.volumePath, r.healthCheck, r.cpuLimit, r.memLimitMb]).toEqual(['/data', '/ping', 0.5, 256])
     expect(r.command).toEqual(['redis-server', '--save', '60 1'])
 
-    // Every parameter is a variable on the app. A default stands in for a
-    // blank field; a blank optional one is absent.
+    // Each `environment` key is a variable on the app. A default stands in for
+    // a blank field; a blank optional one is absent.
     const vars = await env.as(developer).service('variables').find({ appId: r.id }) as any
     expect(vars.data.map((v: any) => [v.key, v.isSecret, v.value])).toEqual([
       ['KV_KEY', true, null], ['KV_PASSWORD', true, null], ['KV_POLICY', false, 'allkeys-lru'],
@@ -3157,7 +3158,7 @@ describe('an app made from a blueprint', () => {
   const shippedEnv = async (r: any) => releaseEnv(env.system, await snapshotVariables(env.system, r))
 
   test('a generator mints the number of characters it states', async () => {
-    const row = await composed('mint:1', {}, [
+    const row = await composed('mint:1', { HEX: '${HEX}', ALNUM: '${ALNUM}', B64: '${B64}', ID: '${ID}' }, [
       { key: 'HEX',  label: 'Hex',  generate: 'randomHex',          generateLength: 24 },
       { key: 'ALNUM', label: 'An',  generate: 'randomAlphanumeric', generateLength: 37 },
       { key: 'B64',  label: 'B64',  generate: 'randomBase64',       generateLength: 43 },
@@ -3194,6 +3195,8 @@ describe('an app made from a blueprint', () => {
     expect(byKey.DATABASE_URL.isSecret).toBe(true)
     expect(byKey.DATABASE_URL.value ?? null).toBeNull()
     expect(byKey.TMPDIR.isSecret).toBe(false)
+    // A param is an input: one the environment never names is no variable (`FJS-D2157`).
+    expect(byKey.PG_VERSION).toBeUndefined()
 
     const shipped = await shippedEnv(r)
     expect(shipped.DATABASE_URL).toBe('postgres://app:s3cret-interp@db/app')
@@ -3211,8 +3214,20 @@ describe('an app made from a blueprint', () => {
       .rejects.toThrow(/MISSING_TAG/)
   })
 
+  test('$$ is a literal $, and a bare $NAME or ${NAME:?x} is refused rather than passed through', async () => {
+    const row = await composed('ok:1', { PRICE: 'costs $$5' }, [])
+    const r = await make(developer, { blueprintId: row.id, environmentId: environment.id, name: `Esc ${tag()}` }) as any
+    expect((await shippedEnv(r)).PRICE).toBe('costs $5')
+    const bare = await composed('ok:1', { HOME_DIR: '$HOME/data' }, [])
+    await expect(make(developer, { blueprintId: bare.id, environmentId: environment.id }))
+      .rejects.toThrow(/'\$HOME'/)
+    const strict = await composed('ok:1', { X: '${NEEDED:?set it}' }, [])
+    await expect(make(developer, { blueprintId: strict.id, environmentId: environment.id }))
+      .rejects.toThrow(/NEEDED:\?set it/)
+  })
+
   test('a value that does not match its param validRegex is refused, naming the param and the pattern', async () => {
-    const row = await composed('ok:1', {}, [
+    const row = await composed('ok:1', { SUBDOMAIN: '${SUBDOMAIN}' }, [
       { key: 'SUBDOMAIN', label: 'Subdomain', isRequired: true, validRegex: '^[a-z0-9-]+$' },
     ])
     await expect(make(developer, {

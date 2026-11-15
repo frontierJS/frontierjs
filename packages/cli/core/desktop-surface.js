@@ -27,7 +27,7 @@
  *
  * `shell/` is a Tauri 2 crate, named for what it is rather than `src-tauri/`,
  * because `src/` on a surface means the screens. A debug build accepts a probe
- * script through `FJS_DESKTOP_PROBE` and registers the two commands it reports
+ * script through `FRONTIER_DESKTOP_PROBE` and registers the two commands it reports
  * through; a release build does neither. WebKitGTK and WKWebView speak no CDP,
  * so that probe is the only way a drive reaches into the page, and every
  * generated app has it for the day it writes one.
@@ -344,7 +344,7 @@ export function desktopMainRs({ productName = 'app' } = {}) {
 // frontendDist is compiled INTO the binary. Rebuilding the screens without
 // rebuilding this crate runs the previous bundle.
 //
-// A debug build injects a probe when FJS_DESKTOP_PROBE names a script.
+// A debug build injects a probe when FRONTIER_DESKTOP_PROBE names a script.
 // WebKitGTK and WKWebView speak no CDP, so a drive cannot reach into the page
 // the way a browser drive does; the probe runs inside it and reports through
 // the two commands below.
@@ -379,10 +379,10 @@ fn probe_script() -> Option<String> {
     if !cfg!(debug_assertions) {
         return None;
     }
-    let path = std::env::var("FJS_DESKTOP_PROBE").ok()?;
+    let path = std::env::var("FRONTIER_DESKTOP_PROBE").ok()?;
     match std::fs::read_to_string(&path) {
         Ok(script) => Some(script),
-        Err(e) => panic!("FJS_DESKTOP_PROBE={path} could not be read: {e}"),
+        Err(e) => panic!("FRONTIER_DESKTOP_PROBE={path} could not be read: {e}"),
     }
 }
 

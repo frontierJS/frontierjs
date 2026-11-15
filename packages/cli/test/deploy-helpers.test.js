@@ -710,8 +710,8 @@ describe('swapContainer — the docker run line', () => {
   })
 
   test('the build id is stamped when given and absent when not', async () => {
-    expect(await runCmd({ build: 'abc1234' })).toContain('--env FJS_BUILD=abc1234')
-    expect(await runCmd()).not.toContain('FJS_BUILD')
+    expect(await runCmd({ build: 'abc1234' })).toContain('--env FRONTIER_BUILD=abc1234')
+    expect(await runCmd()).not.toContain('FRONTIER_BUILD')
   })
 
   test('the configuration values reach the process, after the env file so they win (FJS-585)', async () => {

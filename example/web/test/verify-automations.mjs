@@ -30,7 +30,7 @@
  *   bun run verify:automations
  *
  * Starts and stops its own API and its own web server, and seeds first. Needs
- * Chrome on PATH or $FJS_CHROME. Signs in four times, inside the login
+ * Chrome on PATH or $FRONTIER_CHROME. Signs in four times, inside the login
  * limiter's ten.
  *
  * **It leaves nothing active.** An active flow on `Customer` create would patch

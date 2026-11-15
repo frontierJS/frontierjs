@@ -140,7 +140,7 @@ describe('stageRelease', () => {
 describe('widgets/ build helpers (widgets-deploy 1.4)', () => {
   test('widgets/ always bakes the API origin, since a widget on another site has none of its own', () => {
     expect(widgetsBuildEnv({ commit: 'abc1234', apiOrigin: 'https://ela.example.com' }))
-      .toEqual({ VITE_FJS_BUILD: 'abc1234', FRONTIER_PUBLIC_API_URL: 'https://ela.example.com' })
+      .toEqual({ FRONTIER_PUBLIC_BUILD: 'abc1234', FRONTIER_PUBLIC_API_URL: 'https://ela.example.com' })
     expect(() => widgetsBuildEnv({ commit: 'abc1234', apiOrigin: null })).toThrow('no API origin')
     expect(() => widgetsBuildEnv({ commit: 'main', apiOrigin: 'https://a.example.com' })).toThrow('is not a sha')
   })
@@ -159,15 +159,15 @@ describe('widgets/ build helpers (widgets-deploy 1.4)', () => {
 
 describe('webBuildEnv', () => {
   test('carries the build stamp, and the API origin only when there is one', () => {
-    expect(webBuildEnv({ commit: 'abc1234', apiOrigin: null })).toEqual({ VITE_FJS_BUILD: 'abc1234' })
-    expect(webBuildEnv({ commit: 'abc1234' })).toEqual({ VITE_FJS_BUILD: 'abc1234' })
+    expect(webBuildEnv({ commit: 'abc1234', apiOrigin: null })).toEqual({ FRONTIER_PUBLIC_BUILD: 'abc1234' })
+    expect(webBuildEnv({ commit: 'abc1234' })).toEqual({ FRONTIER_PUBLIC_BUILD: 'abc1234' })
     expect(webBuildEnv({ commit: 'abc1234', apiOrigin: 'https://api.example.com' }))
-      .toEqual({ VITE_FJS_BUILD: 'abc1234', FRONTIER_PUBLIC_API_URL: 'https://api.example.com' })
+      .toEqual({ FRONTIER_PUBLIC_BUILD: 'abc1234', FRONTIER_PUBLIC_API_URL: 'https://api.example.com' })
   })
 
   test('web/ bakes the widget origin when there is one (widgets-deploy 1.4)', () => {
     expect(webBuildEnv({ commit: 'abc1234', widgetsOrigin: 'https://widgets.example.com' }))
-      .toEqual({ VITE_FJS_BUILD: 'abc1234', FRONTIER_PUBLIC_WIDGETS_URL: 'https://widgets.example.com' })
+      .toEqual({ FRONTIER_PUBLIC_BUILD: 'abc1234', FRONTIER_PUBLIC_WIDGETS_URL: 'https://widgets.example.com' })
   })
 
   test('refuses a commit that is not a sha', () => {
@@ -177,6 +177,6 @@ describe('webBuildEnv', () => {
 
   test('envPrefix is the shell form', () => {
     expect(envPrefix(webBuildEnv({ commit: 'abc1234', apiOrigin: 'https://a.example.com' })))
-      .toBe('VITE_FJS_BUILD=abc1234 FRONTIER_PUBLIC_API_URL=https://a.example.com')
+      .toBe('FRONTIER_PUBLIC_BUILD=abc1234 FRONTIER_PUBLIC_API_URL=https://a.example.com')
   })
 })

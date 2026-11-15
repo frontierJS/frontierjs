@@ -233,12 +233,12 @@ export function printer(/** @type {Parameters<typeof createPrinter>[0]} */ opts)
     name: 'printer',
     register(/** @type {{ own(name: string, value: unknown): void }} */ app) { app.own('printer', printer) },
     boot() {
-      // Only the default find reads $FJS_CHROME; blaming it under a caller's
+      // Only the default find reads $FRONTIER_CHROME; blaming it under a caller's
       // own find sends the reader after a variable nothing consulted.
       if (!printer.available())
-        throw new Error(!opts?.find && process.env.FJS_CHROME
-          ? `printer: $FJS_CHROME names ${process.env.FJS_CHROME} and there is no such binary`
-          : 'printer: no Chrome on this machine — install Chrome or Chromium, or point $FJS_CHROME at a binary')
+        throw new Error(!opts?.find && process.env.FRONTIER_CHROME
+          ? `printer: $FRONTIER_CHROME names ${process.env.FRONTIER_CHROME} and there is no such binary`
+          : 'printer: no Chrome on this machine — install Chrome or Chromium, or point $FRONTIER_CHROME at a binary')
     },
     async shutdown() { await printer.close() },
   }

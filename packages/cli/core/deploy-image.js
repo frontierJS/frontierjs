@@ -130,7 +130,7 @@ const instructions = (text) => String(text ?? '').split('\n')
 
 /** Whether a Dockerfile installs or names a Chrome. */
 export function installsChrome(dockerfile) {
-  return instructions(dockerfile).some(l => /\b(chromium|google-chrome|FJS_CHROME)\b/i.test(l))
+  return instructions(dockerfile).some(l => /\b(chromium|google-chrome|FRONTIER_CHROME)\b/i.test(l))
 }
 
 /** Whether a Dockerfile copies web/src, and .dockerignore lets it through. */

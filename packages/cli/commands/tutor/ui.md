@@ -82,6 +82,6 @@ Everything here is asserted against the DOM of a page Chrome really rendered,
 and against the database afterwards. A screen that renders and does not save is
 the failure this shape of lesson exists to catch.
 
-**This lesson needs Chrome.** Install Chrome or Chromium, or point `$FJS_CHROME`
+**This lesson needs Chrome.** Install Chrome or Chromium, or point `$FRONTIER_CHROME`
 at a binary. Without one the lesson stops with a sentence rather than failing —
 a missing browser is a fact about the machine, not about your app.

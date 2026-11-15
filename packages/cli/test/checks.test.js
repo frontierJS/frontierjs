@@ -2926,6 +2926,30 @@ describe('call-header-declared', () => {
     expect(only(root, 'call-header-declared').findings).toEqual([])
   })
 
+  test('a header a principal resolver reads through header() is declared (FJS-4212)', () => {
+    // declaredCallHeaders() lists every header the installed resolver reads, so
+    // restating it in callHeaders is optional and the rule may not demand it.
+    const root = tree('ch-resolver', {
+      ...CLEAN,
+      'api/src/core/principal.ts': "import { membershipClaim } from '@frontierjs/junction'\n" +
+                                   "import { header } from '@frontierjs/junction/bearer'\n" +
+                                   "export const ACCOUNT_HEADER = 'X-Account-Id'\n" +
+                                   'export const principal = membershipClaim({ tenantFrom: header(ACCOUNT_HEADER) })\n',
+      'web/src/studio.js':         "export const ACCOUNT_HEADER = 'X-Account-Id'\n" +
+                                   'getClient().setCallHeader(ACCOUNT_HEADER, id)\n',
+    })
+    expect(only(root, 'call-header-declared').findings).toEqual([])
+  })
+
+  test('a header() not imported from junction declares nothing', () => {
+    const root = tree('ch-other-header', {
+      ...CLEAN,
+      'api/src/core/mail.ts': "const header = (n) => n\nheader('x-cart-token')\n",
+      'web/src/cart.js':      "getClient().setCallHeader('x-cart-token', t)\n",
+    })
+    expect(only(root, 'call-header-declared').findings).toHaveLength(1)
+  })
+
   test('a // inside a string does not blank the declaration after it', () => {
     // The failure this guards is the expensive direction: blanking from the
     // `//` in an origin URL to the end of the line hides the callHeaders beside
@@ -5084,10 +5108,10 @@ describe('deploy-image-needs', () => {
     expect(findings[0].message).toMatch(/print-kit.*no Chrome/)
   })
 
-  test('chromium installed, or $FJS_CHROME named, is clean', () => {
+  test('chromium installed, or $FRONTIER_CHROME named, is clean', () => {
     expect(only(tree('din-chrome', { 'package.json': PRINTS, 'deploy/Dockerfile': CHROME }),
       'deploy-image-needs').findings).toEqual([])
-    expect(only(tree('din-env', { 'package.json': PRINTS, 'deploy/Dockerfile': SLIM + 'ENV FJS_CHROME=/opt/chrome/chrome\n' }),
+    expect(only(tree('din-env', { 'package.json': PRINTS, 'deploy/Dockerfile': SLIM + 'ENV FRONTIER_CHROME=/opt/chrome/chrome\n' }),
       'deploy-image-needs').findings).toEqual([])
   })
 

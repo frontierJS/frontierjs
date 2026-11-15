@@ -17,7 +17,7 @@
 // this is for is having a catalog on screen, because an empty grid looks
 // exactly like a broken query.
 
-export const BLUEPRINTS = [
+const ROWS = [
   {
     slug: 'n8n', name: 'n8n', category: 'Automation', icon: '🔄', brandColor: '#ea4b71',
     description: 'Workflow automation platform. Connect anything to everything.',
@@ -172,3 +172,11 @@ export const BLUEPRINTS = [
     ],
   },
 ]
+
+// Each param reaches the container under its own name, which compose would
+// write as `KEY: ${KEY}`. Only `environment` keys become Variables
+// (`FJS-D2157`), so a row with no map here deploys with no env at all.
+export const BLUEPRINTS = ROWS.map(bp => ({
+  ...bp,
+  environment: Object.fromEntries(bp.params.map(p => [p.key, `\${${p.key}}`])),
+}))

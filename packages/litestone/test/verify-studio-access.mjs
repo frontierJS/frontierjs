@@ -8,7 +8,7 @@
  *   node packages/litestone/test/verify-studio-access.mjs
  *
  * Starts and stops its own server on a port the OS names ($STUDIO_PORT pins
- * one). Nothing to launch first. Needs Chrome on PATH or $FJS_CHROME, same as
+ * one). Nothing to launch first. Needs Chrome on PATH or $FRONTIER_CHROME, same as
  * the css package's harness.
  *
  * Two traps this harness has already hit:

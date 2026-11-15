@@ -4,7 +4,7 @@
 Semantics first: a **tone** (`danger`) and a **treatment** (`outlined`), never a
 color and never a utility class. Plain CSS, no build step required.
 
-`bun run test` drives **headless Chrome** — needs Chrome on PATH or `$FJS_CHROME`.
+`bun run test` drives **headless Chrome** — needs Chrome on PATH or `$FRONTIER_CHROME`.
 `bun run demo` serves the guide on :8040 (`$PORT` overrides).
 
 ---

@@ -11,6 +11,9 @@ title: Laptop
   // project and the tree holds a drive or a loop is taking, read only. Services
   // lists each account fli signs in to, how, whether it is, and the commands that
   // use it; only a press on Check runs a login probe (nothing shells out on load).
+  // Setup is the first tab: what this laptop can and cannot do, one card per goal,
+  // each failing row with why and a fix that is only a command to copy, a vendor's
+  // page, or the Workbench screen that already fixes it. It never runs anything.
   //
   // The page sends a catalog name or a lane number and never a path; the API
   // resolves what to delete (api services/laptop). Confirmation is in the row.
@@ -39,7 +42,7 @@ title: Laptop
   }
   const classOf = (root) => CLASSES[root] ?? { name: root, tone: 'muted', what: '' }
 
-  let tab     = 'disk'
+  let tab     = 'setup'
   let cls     = ''    // the folder tab open on Disk: a class's root
   let report  = null
   let loading = true
@@ -144,6 +147,46 @@ title: Laptop
   $: up   = runReport ? runReport.sessions.filter(s => s.running) : []
   $: idle = runReport ? runReport.sessions.length - up.length : 0
 
+  // Setup loads when the page opens (it is the first tab) and again on Recheck all. It looks at the
+  // machine (a `which` per tool, `claude auth status`), so nothing polls it.
+  let setupReport  = null
+  let setupError   = null
+  let setupLoading = false
+
+  async function loadSetup() {
+    setupLoading = true
+    try {
+      setupReport = await laptop.service.invoke('setup')
+      setupError  = null
+    } catch (err) {
+      setupError = err.message
+    } finally {
+      setupLoading = false
+    }
+  }
+
+  $: { if (tab === 'setup' && !setupReport && !setupLoading && !setupError) loadSetup() }
+
+  const GOAL_TONE = { ok: 'success', warn: 'warning', error: 'danger', unset: '' }
+  const GOAL_WORD = { ok: 'works', warn: 'works, with gaps', error: 'cannot work', unset: 'not set up' }
+  const missing   = (g) => g.rows.filter(r => !r.ok).length
+
+  async function copy(text) {
+    try {
+      await navigator.clipboard.writeText(text)
+      toasts.success('Copied')
+    } catch {
+      toasts.error('Could not copy; select the command and copy it by hand')
+    }
+  }
+
+  // A `go` into another tab of this page switches the tab; any other goes there.
+  function go(e, href) {
+    if (!href.startsWith('/laptop/#')) return
+    e.preventDefault()
+    tab = href.split('#')[1]
+  }
+
   // Services loads when its tab first opens. A probe runs only on its Check press and the
   // answer is kept per service id; the object is replaced, not mutated, so the row redraws.
   let svcReport  = null
@@ -201,11 +244,77 @@ title: Laptop
 
 <Tabs activeId={tab} onchange={(id) => tab = id}>
   <TabList>
+    <Tab id="setup">Setup</Tab>
     <Tab id="disk">Disk</Tab>
     <Tab id="keys">Keys</Tab>
     <Tab id="running">Running</Tab>
     <Tab id="services">Services</Tab>
   </TabList>
+
+  <!-- ─── Setup ────────────────────────────────────────────────────── -->
+  <TabPanel id="setup">
+    <div class="panel">
+      {#if setupError}
+        <article class="alert danger"><div class="alert-content">{setupError}</div></article>
+      {/if}
+
+      <div class="panel-foot">
+        <p class="text-sm text-muted">What this laptop can do, by what you want to do with it. A goal with nothing set up is not a failure; skip it until you need it. Nothing here runs a command for you.</p>
+        <Button id="setup-recheck" size="sm" treatment="outlined" loading={setupLoading} disabled={setupLoading} onclick={loadSetup}>Recheck all</Button>
+      </div>
+
+      {#if setupLoading && !setupReport}
+        <p class="text-sm text-muted">Reading…</p>
+      {:else if setupReport}
+        {#each setupReport.goals as g (g.id)}
+          <section class="lp-pane" aria-labelledby={`setup-goal-${g.id}`} data-goal={g.id} data-state={g.state}>
+            <details open={g.state !== 'ok'}>
+              <summary class="pane-head">
+                <div class="pane-title">
+                  <h2 class="h6" id={`setup-goal-${g.id}`}>{g.label}</h2>
+                  {#if g.required}<span class="text-sm text-muted">required</span>{/if}
+                </div>
+                <span class="setup-sum text-sm text-muted">
+                  {#if missing(g)}{missing(g)} of {g.rows.length} to do{:else}{g.rows.length} of {g.rows.length} ready{/if}
+                  <Pill tone={GOAL_TONE[g.state]} dot>{GOAL_WORD[g.state]}</Pill>
+                </span>
+              </summary>
+
+              <p class="setup-why text-sm text-muted">{g.why}</p>
+
+              <ul class="rows-list">
+                {#each g.rows as r (r.id)}
+                  <li class={`lp-row lp-setup ${r.ok ? 'ok' : ''}`} data-row={r.id} data-ok={r.ok}>
+                    <div class="row-main">
+                      <div class="row-name">
+                        <Dot tone={r.ok ? 'success' : r.level === 'error' ? 'danger' : 'warning'} hollow={!r.ok} size="xs" label={r.ok ? 'ok' : 'to do'} />
+                        {r.label}
+                        {#if r.detail}<span class="text-sm text-muted">{r.detail}</span>{/if}
+                      </div>
+                      <div class="row-sub">{r.why}</div>
+                      {#if r.fix}
+                        <div class="setup-fix" data-fix={r.id}>
+                          {#if r.fix.copy}
+                            <code class="setup-cmd">{r.fix.copy}</code>
+                            <Button size="sm" treatment="outlined" data-copy={r.id} onclick={() => copy(r.fix.copy)}>Copy</Button>
+                          {:else if r.fix.url}
+                            <a href={r.fix.url} target="_blank" rel="noopener noreferrer">Open the page</a>
+                            {#if r.fix.note}<span class="text-sm text-muted"> — {r.fix.note}</span>{/if}
+                          {:else if r.fix.go}
+                            <a href={r.fix.go} onclick={(e) => go(e, r.fix.go)}>{r.fix.label}</a>
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                  </li>
+                {/each}
+              </ul>
+            </details>
+          </section>
+        {/each}
+      {/if}
+    </div>
+  </TabPanel>
 
   <!-- ─── Disk ─────────────────────────────────────────────────────── -->
   <TabPanel id="disk">
@@ -623,6 +732,13 @@ title: Laptop
   .panel-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
 
   .num  { font-variant-numeric: tabular-nums; }
+  .pane-head { cursor: pointer; }
+  .setup-sum { display: inline-flex; align-items: center; gap: var(--space-sm); }
+  .setup-why { margin: 0; padding: var(--space-sm) var(--space-xl); }
+  .lp-row.lp-setup { grid-template-columns: minmax(0, 1fr); }
+  .lp-row.lp-setup.ok { opacity: 0.7; }
+  .setup-fix { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); margin-block-start: var(--space-xs); }
+  .setup-cmd { background: var(--surface-sunken); padding: var(--space-3xs) var(--space-sm); border-radius: var(--radius-sm, 4px); overflow-wrap: anywhere; }
   .path { color: var(--ink-mute); background: none; padding: 0; overflow-wrap: anywhere; }
 
   /* ─── Disk summary ───────────────────────────────────────────────── */

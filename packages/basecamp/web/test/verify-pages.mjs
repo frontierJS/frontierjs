@@ -159,10 +159,10 @@ try {
     check(`${id} is listed, declared by its command`, ids.includes(id), ids.join(', '))
   check('the committed atlas pages are listed apart', ids.includes('snapshot:repo-atlas.snapshot.html'), ids.join(', '))
   check('and the tools, with their state', ids.includes('tool:gui') && /down|up|unknown/.test((await rowOf('tool:gui'))?.text ?? ''))
-  // `FJS_DRIVE_SHOT=<path>` saves the screen as a PNG, for a person to look at.
-  if (process.env.FJS_DRIVE_SHOT) {
+  // `FRONTIER_DRIVE_SHOT=<path>` saves the screen as a PNG, for a person to look at.
+  if (process.env.FRONTIER_DRIVE_SHOT) {
     const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })
-    await Bun.write(process.env.FJS_DRIVE_SHOT, Buffer.from(data, 'base64'))
+    await Bun.write(process.env.FRONTIER_DRIVE_SHOT, Buffer.from(data, 'base64'))
   }
   const rings = await rowOf('page:repo-rings.html')
   check('a row says the command that writes it', /fli ws:atlas --as=rings/.test(rings?.text ?? ''), rings?.text)

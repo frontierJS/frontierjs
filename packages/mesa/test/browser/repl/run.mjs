@@ -5,7 +5,7 @@
  *   node test/browser/repl/run.mjs --verbose   print the passing rows too
  *   node test/browser/repl/run.mjs --serve     serve the REPL and stay up
  *
- * Needs Chrome on PATH or `$FJS_CHROME`, and no network: the REPL's third-party
+ * Needs Chrome on PATH or `$FRONTIER_CHROME`, and no network: the REPL's third-party
  * code is `example/vendor/`, committed, and `index.html` names it in its own
  * importmap. `bun example/build-vendor.mjs` rewrites it. A page that fetched
  * these off a CDN made this drive a suite that goes red on a train (`FJS-326`).

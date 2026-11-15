@@ -20,11 +20,11 @@ $.config.__step = 1
 // lesson that scaffolded an app and then discovered it could not open one has
 // wasted a minute to say so.
 if (!haveChrome()) {
-  log.warn(process.env.FJS_CHROME
-    ? `$FJS_CHROME names ${process.env.FJS_CHROME} and there is no such binary`
+  log.warn(process.env.FRONTIER_CHROME
+    ? `$FRONTIER_CHROME names ${process.env.FRONTIER_CHROME} and there is no such binary`
     : 'no Chrome on this machine — this lesson needs one to open a page')
   log.info('')
-  log.info('  install Chrome or Chromium, or point $FJS_CHROME at a binary')
+  log.info('  install Chrome or Chromium, or point $FRONTIER_CHROME at a binary')
   log.info('  every other lesson runs without it')
   log.info('')
   // `stop`, not `abort`: nothing failed. The lesson exits 0 and the journal

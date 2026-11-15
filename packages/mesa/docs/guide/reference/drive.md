@@ -16,7 +16,7 @@ Types ship in the package.
 findChrome(): string | null
 ```
 
-The Chrome binary, or `null`. It is `$FJS_CHROME` when that is set (and a
+The Chrome binary, or `null`. It is `$FRONTIER_CHROME` when that is set (and a
 variable that points at nothing finds nothing), otherwise the first of
 `google-chrome`, `google-chrome-stable`, `chromium` and `chromium-browser` on
 `PATH`, then the macOS app bundles. Ask it first when a drive should skip on a

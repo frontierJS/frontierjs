@@ -31,6 +31,7 @@ import { homeReport, holdsOf, exposed } from './home.js'
 import { servicesReport } from './services.js'
 import { execSync }     from 'node:child_process'
 import { join }         from 'node:path'
+import { DEFAULT_PUBLIC_KEYS } from './cloud.js'
 import { MIN_CF }       from './cloudflare.js'
 import { homedir }      from 'node:os'
 
@@ -48,16 +49,43 @@ import { homedir }      from 'node:os'
 // a stale runtime.
 export const MIN_BUN = '1.4.0'
 
+// A row says what is missing three ways, and each has one reader: `install` is
+// a bare command or a URL a Copy button can paste, `why` is the prose that says
+// what the binary is for, and `for` names the goals (`GOALS`) it serves, which
+// the terminal ignores and Workbench groups by. `any` is a list of names where
+// one program ships under several (Chromium is `chromium-browser` on Ubuntu).
 export const BINARIES = [
-  { name: 'bun',     required: true,  hint: 'https://bun.sh', min: MIN_BUN, upgrade: 'bun upgrade' },
-  { name: 'git',     required: true,  hint: 'sudo apt install git' },
-  { name: 'sqlite3', required: false, hint: 'sudo apt install sqlite3  (needed for db: commands)' },
-  { name: 'zip',     required: false, hint: 'sudo apt install zip  (needed for utils:pack)' },
-  { name: 'ssh',     required: false, hint: 'sudo apt install openssh-client' },
-  { name: 'rsync',   required: false, hint: 'sudo apt install rsync  (needed for deploy:)' },
-  { name: 'docker',  required: false, hint: 'https://docs.docker.com/engine/install/' },
-  { name: 'cf',      required: false, hint: 'npm i -g cf  (needed for :dns and cloudflare:)', min: MIN_CF, upgrade: 'npm i -g cf@latest' },
+  { name: 'bun',      required: true,  for: ['fli'],     install: 'https://bun.sh', why: 'runs every fli command', min: MIN_BUN, upgrade: 'bun upgrade' },
+  { name: 'git',      required: true,  for: ['fli'],     install: 'sudo apt install git', why: 'every project is a repository' },
+  { name: 'claude',   required: false, for: ['claude'],  install: 'npm install -g @anthropic-ai/claude-code', why: 'the Claude Code tab spawns it' },
+  { name: 'sqlite3',  required: false, for: ['build'],   install: 'sudo apt install sqlite3', why: 'needed for db: commands' },
+  { name: 'zip',      required: false, for: ['build'],   install: 'sudo apt install zip', why: 'needed for utils:pack' },
+  { name: 'chromium', required: false, for: ['build'],   any: ['chromium', 'chromium-browser', 'google-chrome'], install: 'sudo apt install chromium-browser', why: 'the browser drives run in it' },
+  { name: 'firefox',  required: false, for: ['build'],   install: 'sudo apt install firefox', why: 'the CSP drives need Firefox, which enforces what Chromium does not' },
+  { name: 'cargo',    required: false, for: ['desktop'], install: 'https://rustup.rs', why: 'builds the desktop shells' },
+  { name: 'ssh',      required: false, for: ['deploy'],  install: 'sudo apt install openssh-client', why: 'reaches a Basecamp box' },
+  { name: 'rsync',    required: false, for: ['deploy'],  install: 'sudo apt install rsync', why: 'needed for deploy:' },
+  { name: 'docker',   required: false, for: ['deploy'],  install: 'https://docs.docker.com/engine/install/', why: 'builds the image a release ships' },
+  { name: 'gh',       required: false, for: ['deploy'],  install: 'https://cli.github.com', why: 'publishes a workspace to GitHub' },
+  { name: 'cf',       required: false, for: ['deploy'],  install: 'npm i -g cf', why: 'needed for :dns and cloudflare:', min: MIN_CF, upgrade: 'npm i -g cf@latest' },
 ]
+
+// What a person can do with a laptop, and the namespaces each goal claims. The
+// checklist reads *what does this stop* off a goal, and grading by kind (tools,
+// accounts, keys) lists the same rows without saying that. Only the first two
+// are `required`: without them nothing runs, and everything below is a thing a
+// person may never do. A namespace no goal claims lands in `fli`, so a new one
+// cannot fall off the checklist.
+export const GOALS = [
+  { id: 'fli',     label: 'Run fli',                    why: 'Run fli commands in any project.', required: true,  namespaces: [] },
+  { id: 'claude',  label: 'Use Claude in Workbench',    why: 'Chat with Claude Code from the Workbench tab.', required: true, namespaces: ['ai'] },
+  { id: 'build',   label: 'Build & test apps',          why: 'Develop an app, run its tests and its browser drives.', required: false, namespaces: ['github', 'db', 'env', 'utils'] },
+  { id: 'desktop', label: 'Desktop builds',             why: 'Build the desktop shell of an app.', required: false, namespaces: [] },
+  { id: 'deploy',  label: 'Deploy & Basecamps',         why: 'Buy a box, deploy to it and manage its Basecamp.', required: false, namespaces: ['basecamp', 'server', 'deploy', 'outpost', 'cloudflare', 'site', 'workspace', 'frontier', 'npm'] },
+]
+
+/** The goal a namespace belongs to; the first goal when none claims it. */
+export const goalOf = (ns) => GOALS.find(g => g.namespaces.includes(ns))?.id ?? GOALS[0].id
 
 /**
  * Compare two dotted versions. Numeric segments only — a prerelease tag
@@ -88,6 +116,28 @@ export function binVersion(cmd) {
 export function onPath(cmd) {
   try { execSync(`which ${cmd}`, { stdio: 'pipe' }); return true }
   catch { return false }
+}
+
+/** A git config value, or ''. The default probe; injected in tests. */
+export function gitValue(key, cwd) {
+  try { return execSync(`git config --get ${key}`, { cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() }
+  catch { return '' }
+}
+
+// ─── who you are to git and to a box ──────────────────────────────────────────
+//
+// A commit made with no `user.name` is refused at the first commit and one made
+// with a guessed address lands under a stranger's name, and `server:create`
+// cannot put a key on a box when there is none to put. Warnings only: a laptop
+// that never commits or deploys works.
+function identityRows({ root, home, gitOf }) {
+  const exists = (f) => existsSync(join(home, '.ssh', f))
+  const key = DEFAULT_PUBLIC_KEYS.find(exists)
+  return [
+    { label: 'git user.name',  ok: Boolean(gitOf('user.name', root)),  install: 'git config --global user.name "Your Name"',      why: 'a commit is refused until git knows your name', for: ['fli'] },
+    { label: 'git user.email', ok: Boolean(gitOf('user.email', root)), install: 'git config --global user.email you@example.com', why: 'a commit carries it as its author', for: ['fli'] },
+    { label: 'ssh public key', ok: Boolean(key), detail: key ? `~/.ssh/${key}` : null, install: 'ssh-keygen -t ed25519', why: 'server:create and basecamp:create put it on the box', for: ['deploy'] },
+  ].map(r => ({ ...r, level: r.ok ? 'ok' : 'warn' }))
 }
 
 // ─── the index of Basecamps ───────────────────────────────────────────────────
@@ -175,12 +225,13 @@ function basecampRows(home) {
  * @param {string}   o.home       home directory; absent, every root follows its XDG variable
  * @param {boolean}  o.probe      run each external login's probe (`gh auth status`, `npm whoami`); off by default, they shell out
  * @param {object}   o.profile    `loadFliEnv`'s answer — the profile in use and who named it
+ * @param {Function} o.gitOf      `(key, cwd) => string`, a git config value; injected like `has`
  */
-export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home, probe = false, profile = null } = {}) {
+export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home, probe = false, profile = null, gitOf = gitValue } = {}) {
   const globalEnv = globalEnvPath(home)
 
-  const system = BINARIES.map(b => {
-    const present = has(b.name)
+  const system = BINARIES.map(({ any, ...b }) => {
+    const present = (any ?? [b.name]).some(n => has(n))
     if (!present) return { ...b, ok: false, present, version: null, level: b.required ? 'error' : 'warn' }
     if (!b.min)   return { ...b, ok: true,  present, version: null, level: 'ok' }
 
@@ -194,7 +245,8 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
       ok:      !stale,
       present, version,
       level:   stale ? (b.required ? 'error' : 'warn') : 'ok',
-      hint:    stale ? `${version} is below ${b.min}  \u2192  ${b.upgrade ?? b.hint}` : b.hint,
+      install: stale ? (b.upgrade ?? b.install) : b.install,
+      why:     stale ? `${version} is below ${b.min}` : b.why,
       status:  stale ? `found ${version}, needs >=${b.min}` : version ? `found ${version}` : 'found',
     }
   })
@@ -212,10 +264,11 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
   for (const mod of modules) {
     for (const key of mod.requires ?? []) {
       const ok = Boolean(env[key])
-      namespaces.push({ ns: mod.ns, key, ok, level: ok ? 'ok' : 'error', fix: esetHint(key, env.FLI_PROFILE) })
+      namespaces.push({ ns: mod.ns, key, ok, level: ok ? 'ok' : 'error', fix: esetHint(key, env.FLI_PROFILE), for: [goalOf(mod.ns)] })
     }
   }
 
+  const identity  = identityRows({ root, home: home ?? homedir(), gitOf })
   const basecamps = basecampRows(home)
   const profiles  = profileRows(profile, home)
 
@@ -235,11 +288,11 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
     return { ...s, ok, level: ok ? 'ok' : 'warn' }
   })
 
-  const all    = [...system, ...config, ...namespaces, ...profiles, ...basecamps, ...secrets]
+  const all    = [...system, ...config, ...identity, ...namespaces, ...profiles, ...basecamps, ...secrets]
   const failed = all.filter(c => !c.ok)
 
   return {
-    system, config, namespaces, profiles, basecamps, secrets, services, roots,
+    system, config, identity, namespaces, profiles, basecamps, secrets, services, roots,
     checks:  all.length,
     failed:  failed.length,
     // *Nothing here is broken enough to stop you* is a different sentence from

@@ -16,7 +16,7 @@
  * agree with Chrome on every refusal.
  *
  * Usage, from the sierra package root: `bun run test:installable`.
- * Needs Chrome on PATH (or $FJS_CHROME).
+ * Needs Chrome on PATH (or $FRONTIER_CHROME).
  */
 
 import { createServer } from 'node:http'

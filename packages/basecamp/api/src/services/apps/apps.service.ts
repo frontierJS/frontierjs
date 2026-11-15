@@ -115,15 +115,19 @@ function mint(kind: string, length?: number | null): string {
   return out
 }
 
-/** Compose's interpolation over one value: `${NAME}` and `${NAME:-default}`,
- *  from the param values and the `BLUEPRINT_` built-ins (`FJS-D2016`). A name
- *  that is neither is refused by name rather than left in the container's env
- *  as literal text. Answers whether a secret param's value went in. */
+/** Compose's interpolation over one value: `${NAME}`, `${NAME:-default}` and
+ *  `$$` for a literal `$`, from the param values and the `BLUEPRINT_` built-ins
+ *  (`FJS-D2016`). Every other form compose reads — bare `$NAME`, `${NAME-x}`,
+ *  `${NAME:?x}` — is refused, since passing it through as text would put
+ *  something in the container the file did not mean. Answers whether a secret
+ *  param's value went in. */
 function interpolate(text: string, where: string, scope: Interpolation): { value: string, isSecret: boolean } {
-  if (text.replace(/\$\{[^}]*\}/g, '').includes('${')) throw new BadRequest(`${where} has a '\${' that is never closed`)
+  if (text.replace(/\$\$|\$\{[^}]*\}/g, '').includes('${')) throw new BadRequest(`${where} has a '\${' that is never closed`)
   let isSecret = false
-  const value = text.replace(/\$\{([^}]*)\}/g, (_, inner: string) => {
-    const m = /^([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?$/s.exec(inner)
+  const value = text.replace(/\$\$|\$\{([^}]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole, inner: string | undefined, bare: string | undefined) => {
+    if (whole === '$$') return '$'
+    if (bare) throw new BadRequest(`${where} has '$${bare}'; write \${${bare}}, or $$ for a literal '$'`)
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?$/s.exec(inner!)
     if (!m) throw new BadRequest(`${where} has '\${${inner}}', which is not \${NAME} or \${NAME:-default}`)
     const [, name, fallback] = m
     if (name.startsWith('BLUEPRINT_')) {
@@ -627,11 +631,11 @@ async function lastDrills(appId: string): Promise<Map<string, unknown>> {
 }
 
 /**
- * What a blueprint's parameters become: one `Variable` each, on the app, and
- * a secret parameter's value in the row's `@encrypted` column. A blank field
- * falls back to the blueprint's default, then to a minted value for a param
- * that says how to mint one; a required param with none of the three is
- * refused by label.
+ * The value each of a blueprint's parameters takes. A blank field falls back
+ * to the blueprint's default, then to a minted value for a param that says how
+ * to mint one; a required param with none of the three is refused by label.
+ * A param is an input to `environment` and `image`, never a Variable itself
+ * (`FJS-D2157`).
  */
 function paramValues(params: any[], values: Record<string, unknown>) {
   const known   = new Set(params.map(p => p.key))
@@ -666,9 +670,10 @@ function patternOf(p: { key: string, validRegex: string }): RegExp {
 
 /**
  * The blueprint's `environment` (`FJS-D2140`), interpolated: one variable per
- * key, written as a secret when a secret param's value went into it. A key the
- * params also declare is the environment's, because it names the value the
- * compose file put there.
+ * key, written as a secret when a secret param's value went into it, and none
+ * for a key whose value comes out empty — an optional param left blank is
+ * absent from the container, not set to ''. These are the app's only
+ * variables (`FJS-D2157`).
  */
 function environmentValues(environment: unknown, scope: Interpolation) {
   if (environment == null) return []
@@ -678,7 +683,7 @@ function environmentValues(environment: unknown, scope: Interpolation) {
     if (raw != null && typeof raw !== 'string' && typeof raw !== 'number' && typeof raw !== 'boolean')
       throw new BadRequest(`The blueprint's environment value for '${key}' must be text`)
     return { key, ...interpolate(raw == null ? '' : String(raw), `The environment value for '${key}'`, scope) }
-  })
+  }).filter(v => v.value !== '')
 }
 
 // ─── liveCheck's two lookups ─────────────────────────────────────────────
@@ -1193,9 +1198,7 @@ export default createService({
       builtins: { BLUEPRINT_SLUG: slug },
     }
     const image = interpolate(bp.image, 'The image', scope).value
-    const fixed = environmentValues(bp.environment, scope)
-    const fixedKeys = new Set(fixed.map(v => v.key))
-    const variables = [...params.filter(p => !fixedKeys.has(p.key)), ...fixed]
+    const variables = environmentValues(bp.environment, scope)
 
     // One transaction: an app whose variables did not land is an app whose
     // first release starts a container without its password.

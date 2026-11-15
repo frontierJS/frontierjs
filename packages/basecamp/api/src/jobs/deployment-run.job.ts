@@ -416,8 +416,8 @@ function runner(app: App) {
           // The commit the static App's bundle was stamped with (`FJS-D1969`).
           // Without it the API states no build, and a browser holding the
           // last release's bundle is never told it is stale (`FJS-D160`). After
-          // the Variables, so a stored FJS_BUILD cannot name another commit.
-          ...(build ? { FJS_BUILD: build } : {}),
+          // the Variables, so a stored FRONTIER_BUILD cannot name another commit.
+          ...(build ? { FRONTIER_BUILD: build } : {}),
         },
       },
       source:        config.source ?? service.source ?? {},

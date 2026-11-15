@@ -25,7 +25,7 @@
  *
  * Starts and stops its own server on a port the OS names ($STUDIO_PORT pins
  * one). Nothing to launch first. Needs Chrome on PATH
- * or $FJS_CHROME, and a git repository: with none, the panel says so and this
+ * or $FRONTIER_CHROME, and a git repository: with none, the panel says so and this
  * file asserts that sentence instead of skipping.
  *
  * WHAT IT DOES NOT PIN. Nothing here names a model, a commit or a count from

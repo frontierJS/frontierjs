@@ -61,7 +61,7 @@ jobs:
             echo "::error::No Chrome on the runner — packages/css cannot run"
             exit 1
           }
-          echo "FJS_CHROME=$(which google-chrome || which chromium)" >> "$GITHUB_ENV"
+          echo "FRONTIER_CHROME=$(which google-chrome || which chromium)" >> "$GITHUB_ENV"
 
       # --frozen-lockfile, which is what a clean checkout should want: a
       # lockfile that does not match package.json is exactly the difference
@@ -76,15 +76,15 @@ jobs:
         env:
           # A raised typecheck baseline is measured against where this branch
           # left the base, not against the base's tip.
-          FJS_CI_BASE_REF: origin/${{ github.base_ref || 'main' }}
+          FRONTIER_CI_BASE_REF: origin/${{ github.base_ref || 'main' }}
           # ubuntu-latest ships a Docker daemon, so the deploy phase has no
           # excuse here. Locally a missing daemon is a named note; on the runner
           # a skipped phase is a failure, because a check that quietly stops
           # running is worse than one that was never written.
-          FJS_CI_REQUIRE_DOCKER: '1'
+          FRONTIER_CI_REQUIRE_DOCKER: '1'
           # The runner has network, so an advisory database that did not answer
           # is a failure here, not a skip that passes a shipping advisory.
-          FJS_CI_REQUIRE_AUDIT: '1'
+          FRONTIER_CI_REQUIRE_AUDIT: '1'
         run: node scripts/ci.mjs
 
       # The step log stops at the notes, so a red phase's output is only here.

@@ -34,7 +34,7 @@ Read 2026-11-05 off committed code. `CMD` is `packages/cli/commands/deploy`,
 | Dockerfile | `deploy.api.dockerfile ?? 'deploy/Dockerfile'` (`04-build-api.md`) | `chooseDockerfile` (`FJS-D1560`) |
 | Vendoring | `vendorApp` always | only when `needsGenerated(dockerfile)` |
 | Image tag | `<appId>:<sha7>` | `fjs-<appId>:<sha12>[-dirty]` |
-| web/ build | on the box; `VITE_FJS_BUILD` and `FRONTIER_PUBLIC_API_URL` injected (`03-build-web.md`) | on the laptop from its own `.env`, neither injected |
+| web/ build | on the box; `FRONTIER_PUBLIC_BUILD` and `FRONTIER_PUBLIC_API_URL` injected (`03-build-web.md`) | on the laptop from its own `.env`, neither injected |
 | Runtime env | `<path>/.env.production`, `<path>/secrets` at `/run/secrets` | Basecamp Variables, its own minted `ENCRYPTION_KEY` |
 | Database on the host | `<path>/db` | `/var/lib/outpost/apps/<id>/data` (`OP/layout.js`) |
 | Container | `<appId>-api`, port 3000, no labels | `fjs--<project>-<env>-<slug>-<id8>`, port from 10000, `fjs.*` labels (`OP/docker.js`) |
@@ -98,9 +98,9 @@ secrets including `ENCRYPTION_KEY`, and the domain.
     `-dirty`.
   - **Recommend A** — a release is always a commit, so a rollback rebuilds the
     same tree and two people on one commit ship the same inputs.
-- ~~**Q3 — What the web/ bundle bakes.**~~ **Answered 2026-11-06 (`FJS-D1969`): A — Both doors pass `FRONTIER_PUBLIC_API_URL` from the target's domain and `VITE_FJS_BUILD` from the commit.**
+- ~~**Q3 — What the web/ bundle bakes.**~~ **Answered 2026-11-06 (`FJS-D1969`): A — Both doors pass `FRONTIER_PUBLIC_API_URL` from the target's domain and `FRONTIER_PUBLIC_BUILD` from the commit.**
   - **A** — Both doors pass `FRONTIER_PUBLIC_API_URL` from the target's domain
-    and `VITE_FJS_BUILD` from the commit.
+    and `FRONTIER_PUBLIC_BUILD` from the commit.
   - **B** — Both bake whatever `.env` files the build machine holds.
   - **Recommend A** — the bundle never depends on whose laptop built it, and
     the stale-client check works on both doors.
@@ -171,17 +171,17 @@ Done when: 0.1's test passes, and a Basecamp release and an SSH release of one c
     does not ship.
 - [x] 1.3 The SSH door picks its Dockerfile through `chooseDockerfile`.
   - `02b-build-check` reads the same `$.config.dockerfile` that `04` builds.
-- [x] 1.4 One helper for web/'s build env (`VITE_FJS_BUILD`,
+- [x] 1.4 One helper for web/'s build env (`FRONTIER_PUBLIC_BUILD`,
   `FRONTIER_PUBLIC_API_URL`); the Basecamp door takes the origin from the
   App's Domain.
   - The Basecamp door passes no origin: under `FJS-D1547` the API answers on
     the static App's own Domain through its routes, as the SSH door does
     with no `deploy.api.domain`.
-- [x] 1.5 The Basecamp door's container carries `FJS_BUILD`, so the
+- [x] 1.5 The Basecamp door's container carries `FRONTIER_BUILD`, so the
   stale-client check runs there too.
   - Set in `startBody` (`basecamp/api/src/jobs/deployment-run.job.ts`), the
     one builder of Outpost's `/deploy` body, after the Variables so a stored
-    `FJS_BUILD` cannot name another commit. A git release takes the commit
+    `FRONTIER_BUILD` cannot name another commit. A git release takes the commit
     `/build` answered; a put-back takes the live release's. Outpost is
     unchanged: it runs the env it is sent.
   - The stamp is the full sha, as the Basecamp door's static App bundle is;

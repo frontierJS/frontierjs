@@ -372,7 +372,7 @@ budget is a ceiling with a baseline that ratchets down only, the way
 `scripts/typecheck-baselines.json` already works. **Built**: sierra's postbuild
 weighs the shell as a server would send it, grades it against
 `offline-baseline.json` in the surface root, and FAILS a build that grew.
-`FJS_OFFLINE_BASELINE=update` is the deliberate act.
+`FRONTIER_OFFLINE_BASELINE=update` is the deliberate act.
 
 #### What it actually weighs — measured 2026-09-16, `wa-sqlite@1.0.0`
 

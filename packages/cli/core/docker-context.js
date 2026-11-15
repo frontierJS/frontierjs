@@ -151,7 +151,7 @@ export function contextRefusal(probe, { host, dockerfile, contextPath }) {
 // The other half of the same fact. `contextRefusal` explains a build that has
 // already failed; this picks a directory it will not fail in.
 //
-// Six call sites resolved `FJS_CI_WORKDIR || tmpdir()` by hand, which is a
+// Six call sites resolved `FRONTIER_CI_WORKDIR || tmpdir()` by hand, which is a
 // default restated six times and an operator holding a flag for a condition the
 // machine can measure.
 

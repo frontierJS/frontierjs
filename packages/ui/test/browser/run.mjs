@@ -6,7 +6,7 @@
  *   node test/browser/run.mjs --coverage      also list what no spec opens
  *   node test/browser/run.mjs --serve         serve the kit and stay up
  *
- * Needs Chrome on PATH or `$FJS_CHROME`.
+ * Needs Chrome on PATH or `$FRONTIER_CHROME`.
  *
  * ── What this exists to reach ─────────────────────────────────────────
  *

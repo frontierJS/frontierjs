@@ -370,7 +370,7 @@ the loopback warning.
       the document asserts its own name. The sign-in ends at
       `firstFactorProven()` and never at
       `issueSession` directly. A magic link or a provider click returns to the
-      web surface (`FJS_APP_URL/sign-in/link`) and would have to carry the
+      web surface (`FRONTIER_APP_URL/sign-in/link`) and would have to carry the
       pending request through, so both are outside v1.
   - **Planned per `FJS-D1934`** (0.3). The source is `auth`'s `Authorize.mesa`.
     `fli mesa:pack` writes `authorize-page.snapshot.js` beside it, and

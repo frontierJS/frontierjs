@@ -37,7 +37,7 @@ const [buildCmd, buildCwd] = scripts['build:web'] ? ['bun run build:web', src] :
 // ─── The build's own identity ─────────────────────────────────────────────────
 //
 // A deploy replaces the code under browsers that are already running, and until
-// this nothing identified which build one of them was holding. `VITE_FJS_BUILD`
+// this nothing identified which build one of them was holding. `FRONTIER_PUBLIC_BUILD`
 // is inlined by vite at build time and reaches the client, which compares it
 // against what the server states on every response (`FJS-D160`).
 //

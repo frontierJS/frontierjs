@@ -274,14 +274,21 @@ export var region  = 'US'      // stable for the component's lifetime
 
 ### 3.4 `bind:` Validity
 
-| Prop declaration | `bind:prop` valid? | Reason |
+| Prop declaration | `<Child bind:p>` valid? | Reason |
 |---|---|---|
 | `export let p`   | ✓ Yes | Child can reassign — parent observes changes |
-| `export const p` | ✗ Compiler error | Child cannot reassign — nothing to bind back |
-| `export var p`   | ✗ Compiler error | Child ignores parent updates — binding is inert |
+| `export const p` | ✗ Warning at mount | Child cannot reassign — nothing to bind back |
+| `export var p`   | ✗ Warning at mount | Child ignores parent updates — binding is inert |
 
 > **RULE 22** — `bind:` is only valid on `export let` props. `export const` is
 > read-only on the child side (§3.2), so there is nothing to bind back.
+
+A component compiles alone, so the parent never sees which keyword the child
+used: `<Child bind:p={x}>` compiles for all three, and `bindProp` warns once at
+mount, naming `export const` or `export var`, and wires nothing back. Inside the
+child the keyword is visible, so the child binding its OWN `export const` or
+`export var` prop to an element (`<input bind:value={p}>`) is a compile error
+(§20.1).
 
 The table above is the *child* side. The parent side has a matching requirement:
 the variable being bound must be a writable top-level `let`, since the child's
@@ -943,7 +950,7 @@ RULE 51 is unchanged by this. Reactive *logic* still does not belong in a `.js` 
 
 > **RULE 9** — Store files cannot import from component files. The compiler does not check it.
 
-> **RULE 10** — Circular reactive store imports are a compiler error.
+> **RULE 10** — Stores do not import each other in a circle. The compiler does not check it.
 
 ---
 
@@ -2822,26 +2829,28 @@ components hydrate to their initial render and serialize cleanly.
 | Condition | Error |
 |---|---|
 | Circular derivation (`const a = b`, `const b = a`) | Circular reactive dependency |
-| Store file imports from component file | Stores cannot import from components |
-| Circular import between watched stores | Circular reactive import |
 | `$:` annotation inside function or block | `$:` annotations are top-level only |
 | `$: if/for/while/switch` (statement form) | Wrap in a `$: { }` block — only expression and block forms are valid |
 | Assigning to a derived `const` | Cannot assign to derived const |
-| `bind:` on `export const` prop | Cannot two-way bind an immutable prop |
-| `bind:` on `export var` prop | Cannot two-way bind a non-reactive prop |
+| `bind:` on the file's own `export const` prop | Cannot two-way bind an immutable prop |
+| `bind:` on the file's own `export var` prop | Cannot two-way bind a non-reactive prop |
 | `on:click` or `@click` anywhere | Write `onclick={handler}`, the modifiers piped on |
 | `once`, `passive` or `capture` on a component | An `addEventListener` option, and a component has no listener of its own |
 | `$async.x` where `x` is neither an awaited top-level `const` nor a top-level `async function` | `$async.x` names no async state (RULE 16) |
 | `$.mounted(fn)` used more than once | Only one `$.mounted` per component — use `Promise.all` for multiple operations |
 | `bind:value\|mask` without pattern argument | `\|mask` requires a pattern wrapped in `{ }` |
-| `$.inspect` inside a function or block | `$.inspect` must be at the top level of the script block |
+| `$.inspect` inside a function or block, or used as a value | `$.inspect` is declared at the top level of `<script>` |
+
+A component compiles alone, so nothing that spans two files is checked here: a
+store importing a component (RULE 9) and a circular import between stores
+(RULE 10) are plain JavaScript modules the compiler never reads.
 
 ### 20.2 Warnings (Build Succeeds)
 
-| Condition | Warning |
-|---|---|
-| Getter on reactive object | Getter deps not tracked — use derived `const` |
-| Function call inside template `${}` | Internal deps not tracked |
+The warnings the compiler emits, each with its fix, are
+[errors-and-warnings](guide/reference/errors-and-warnings.md). A getter on a
+reactive object and a function called from the template are not among them:
+both run inside the effect that reads them, so what they read is tracked (§15).
 
 ---
 
@@ -2885,7 +2894,7 @@ components hydrate to their initial render and serialize cleanly.
 | 7 | Watch+handler: handler is always last, always outside parentheses |
 | 8 | Shared state is plain JavaScript — `$:` path declaration makes it reactive per-component |
 | 9 | Store files cannot import from component files — not compiler-checked |
-| 10 | Circular reactive store imports are a compiler error |
+| 10 | Stores do not import each other in a circle — not compiler-checked |
 | 11 | Static paths → targeted accessors; dynamic paths → runtime effects |
 | 12 | A template path is an ordinary expression — the compiler does not rewrite it with `?.`; a nullish value renders empty (`FJS-D208`) |
 | 13 | `var` is a non-reactive sampler — reads without subscribing, writes without notifying; in the template it is the declared snapshot |

@@ -441,7 +441,7 @@ describe('a rollback and the volume', () => {
       expect(started.image).toBe(current.toImage)
       expect(started.digest).toBe(current.builtImage)
       expect(started.deployment_id).toBe(current.id)
-      expect(started.config.env.FJS_BUILD).toBe(current.commitSha)
+      expect(started.config.env.FRONTIER_BUILD).toBe(current.commitSha)
       expect(paths).not.toContain('/health-check')
     })
 
@@ -589,14 +589,14 @@ describe('how the machine swapped, on the row', () => {
   describe('the build the container states (FJS-D1969)', () => {
     const sha = 'c'.repeat(40)
 
-    test('the container is started with the release\'s commit as FJS_BUILD', async () => {
-      expect((await startAgainst({}, {}, {}, undefined, { commitSha: sha })).env.FJS_BUILD).toBe(sha)
+    test('the container is started with the release\'s commit as FRONTIER_BUILD', async () => {
+      expect((await startAgainst({}, {}, {}, undefined, { commitSha: sha })).env.FRONTIER_BUILD).toBe(sha)
     })
 
-    test('a stored FJS_BUILD Variable does not name another commit', async () => {
+    test('a stored FRONTIER_BUILD Variable does not name another commit', async () => {
       const row = await startAgainst({}, {}, {}, undefined, {
-        commitSha: sha, configSnapshot: { env: { FJS_BUILD: 'stale', KEPT: '1' }, runtime: {} } })
-      expect(row.env).toMatchObject({ FJS_BUILD: sha, KEPT: '1' })
+        commitSha: sha, configSnapshot: { env: { FRONTIER_BUILD: 'stale', KEPT: '1' }, runtime: {} } })
+      expect(row.env).toMatchObject({ FRONTIER_BUILD: sha, KEPT: '1' })
     })
 
     test('a git release states the commit /build answered, not the one the row was opened with', async () => {
@@ -620,11 +620,11 @@ describe('how the machine swapped, on the row', () => {
         k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
       await env.app.runAs(admin.id, { tenant: ws.id }, () =>
         (deploymentRun as any).handler({ app: via, data: { deployment_id: release.id } }))
-      expect(sent.find(c => c.path === '/deploy')?.body?.config?.env?.FJS_BUILD).toBe(built)
+      expect(sent.find(c => c.path === '/deploy')?.body?.config?.env?.FRONTIER_BUILD).toBe(built)
     })
 
     test('a release that names no commit states no build', async () => {
-      expect((await startAgainst({})).env).not.toHaveProperty('FJS_BUILD')
+      expect((await startAgainst({})).env).not.toHaveProperty('FRONTIER_BUILD')
     })
   })
 

@@ -20,7 +20,7 @@
  *   bun run verify:reports
  *
  * Starts and stops its own API and its own web server. Needs Chrome on PATH or
- * $FJS_CHROME. Signs in twice, which is inside the login limiter's budget.
+ * $FRONTIER_CHROME. Signs in twice, which is inside the login limiter's budget.
  *
  * Harness rules, repeated from verify-payroll.mjs: never return a bare `null`
  * from a probe (CDP omits `value`, so it reads back as `undefined`), and never

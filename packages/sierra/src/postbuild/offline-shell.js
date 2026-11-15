@@ -252,7 +252,7 @@ async function register(outDir, scope) {
  *                               lowering is somebody's decision to record.
  *   · over it                 — THROW. The build fails with both numbers.
  *
- * `FJS_OFFLINE_BASELINE=update` writes the current number, which is the
+ * `FRONTIER_OFFLINE_BASELINE=update` writes the current number, which is the
  * deliberate act — lowering it after a win, or raising it after a feature
  * somebody chose to pay for.
  */
@@ -269,12 +269,12 @@ async function gradeBudget(over, cfg, root) {
       // number with no name is one nobody can add to.
       shellKB: over,
       note: 'The offline shell over the wire, in kB (brotli). Ratchets down only — FJS-D302. ' +
-            'Rewrite with FJS_OFFLINE_BASELINE=update.',
+            'Rewrite with FRONTIER_OFFLINE_BASELINE=update.',
     }, null, 2) + '\n',
     'utf8',
   )
 
-  if (process.env.FJS_OFFLINE_BASELINE === 'update') { await write(); return ' · baseline written' }
+  if (process.env.FRONTIER_OFFLINE_BASELINE === 'update') { await write(); return ' · baseline written' }
   if (baseline == null) { await write(); return ` · baseline adopted at ${over} kB` }
   if (over > baseline) {
     throw refusal(
@@ -282,7 +282,7 @@ async function gradeBudget(over, cfg, root) {
       `  A shell that grows is a first visit that got slower for everybody who installs it, and the\n` +
       `  budget ratchets down only (FJS-D302). Take the weight back out, or record the decision to\n` +
       `  pay for it:\n\n` +
-      `    FJS_OFFLINE_BASELINE=update bun run build\n\n` +
+      `    FRONTIER_OFFLINE_BASELINE=update bun run build\n\n` +
       `  The baseline lives in ${relative(process.cwd(), file) || file}`,
     )
   }

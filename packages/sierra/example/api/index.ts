@@ -2,11 +2,12 @@
 //
 //   bun run example:api        (from packages/sierra)
 //
-// It starts the app; src/app.ts builds one and exports it unstarted, so
+// It starts the app; src/app.ts exports a builder and never starts one, so
 // anything that wants to describe this app can import it without binding 8130.
 
-import app, { PORT } from './src/app.ts'
+import { buildApp, PORT } from './src/app.ts'
 
+const app = await buildApp()
 await app.start()
 
 console.log(`

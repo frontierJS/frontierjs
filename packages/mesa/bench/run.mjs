@@ -9,7 +9,7 @@
  *   bun run bench -- --adopt             write every gated number, raises included
  *   bun run bench -- --serve             build, serve the fixtures, stay up
  *
- * Needs Chrome on PATH or `$FJS_CHROME`.
+ * Needs Chrome on PATH or `$FRONTIER_CHROME`.
  *
  * ── Three kinds of number, and only two are committed ─────────────────
  *

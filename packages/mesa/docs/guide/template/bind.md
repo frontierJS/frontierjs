@@ -57,7 +57,8 @@ The variable must be a top-level `let`. A `const`, a `var`, an import or a
 function is a compile error that names the variable. For a component, the child
 must declare the prop with `export let`. The parent cannot see the child's
 declaration, so binding to an `export const` or `export var` prop compiles,
-logs a warning when it mounts, and does nothing.
+and when it mounts logs a warning naming the child's keyword. The parent's value
+still goes down as an ordinary prop; nothing comes back.
 
 ```mesa
 <script>

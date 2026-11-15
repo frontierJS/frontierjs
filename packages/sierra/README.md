@@ -505,6 +505,26 @@ of origins is a predicate rather than a list — `middleware: { cors: { origins:
 o.endsWith('.preview.example.com') } }` in `junction.config.js` admits every frozen Basecamp
 preview of the app, with nothing to add or remove as previews come and go.
 
+### A header on every call — the tenant the call is for
+
+An app under `tenancy { strategy row }` names the account a call is for in a header its
+principal resolver reads (`membershipClaim({ tenantFrom: header('X-Account-Id') })`, junction's
+`AGENTS.md` § *Who the caller is*). The page sets it once on the client — after `await ready`,
+with `session.user` set, `getClient().setCallHeader('X-Account-Id', accountId)` from
+`@frontierjs/sierra/resource` — and every later call carries it, over HTTP and over the socket;
+`null` removes it.
+
+A header a resolver reads through `header()` is declared already: the server lets it through
+the CORS preflight and onto a socket frame without a `callHeaders` entry. Any other header
+`setCallHeader` sets goes in `middleware: { callHeaders }` in `junction.config.js`, or it is
+absent the moment the socket connects.
+
+**Which accounts the person belongs to is the app's own read.** No tenant-scoped service can
+answer it — each refuses a call that names no account — so the membership model is
+`@@tenant(none)`, admits its own subject's rows (`@@allow(read, userId == auth().id || accountId
+== auth().accountId)`), and a find-only service over it (`memberships` above) is the list a
+switcher shows.
+
 ### Connection state
 
 ```html

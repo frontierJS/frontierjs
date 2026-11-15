@@ -13,7 +13,7 @@ defects are `../../ISSUES.md`; the package map and its traps are `CLAUDE.md`.
 `test/browser/vite/` (the plugin in a real dev server),
 `test/browser/repl/` (`example/index.html`, offline off `example/vendor/`) and
 `test/browser/kit/` (`@frontierjs/mesa/browser`, on the runtime drive's server). The
-drives need Chrome on PATH or `$FJS_CHROME`.
+drives need Chrome on PATH or `$FRONTIER_CHROME`.
 
 Because SSR and hydration fail apart, a compiler or runtime change is also run
 through `example`: `verify` and `verify:site` (root `CLAUDE.md` § Which drive

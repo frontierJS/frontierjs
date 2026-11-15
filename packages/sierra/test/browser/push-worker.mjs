@@ -20,7 +20,7 @@
  * navigation themselves are the headed drive's (`IDEAS/web-push.md` 4.2).
  *
  * Usage, from the sierra package root: `bun run test:push-worker`.
- * Needs Chrome on PATH (or $FJS_CHROME).
+ * Needs Chrome on PATH (or $FRONTIER_CHROME).
  */
 
 import { createServer } from 'node:http'

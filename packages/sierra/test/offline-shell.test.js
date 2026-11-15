@@ -240,7 +240,7 @@ describe('the byte budget', () => {
     await writeFile(join(dir, 'offline-baseline.json'), JSON.stringify({ shellKB: 0 }), 'utf8')
     const err = await writeOfflineShell(true, dir, dir).catch(e => e)
     expect(inspect(err)).toBe(err.message)
-    expect(err.message).toMatch(/\n {4}FJS_OFFLINE_BASELINE=update bun run build\n/)
+    expect(err.message).toMatch(/\n {4}FRONTIER_OFFLINE_BASELINE=update bun run build\n/)
   })
 
   test('a build that shrinks passes and does NOT rewrite the file on its own', async () => {
@@ -253,10 +253,10 @@ describe('the byte budget', () => {
     expect(await baselineOf(dir)).toBe(9999)
   })
 
-  test('FJS_OFFLINE_BASELINE=update is the deliberate act', async () => {
+  test('FRONTIER_OFFLINE_BASELINE=update is the deliberate act', async () => {
     const dir = await build({ 'index.html': PAGE, 'assets/app.js': 'export {}' })
     await writeFile(join(dir, 'offline-baseline.json'), JSON.stringify({ shellKB: 0 }), 'utf8')
-    process.env.FJS_OFFLINE_BASELINE = 'update'
+    process.env.FRONTIER_OFFLINE_BASELINE = 'update'
     try {
       // It must not throw, and it must write the real number — this is the
       // escape for a feature somebody chose to pay for.
@@ -264,7 +264,7 @@ describe('the byte budget', () => {
       expect(line).toMatch(/baseline written/)
       expect(await baselineOf(dir)).toBeGreaterThan(0)
     } finally {
-      delete process.env.FJS_OFFLINE_BASELINE
+      delete process.env.FRONTIER_OFFLINE_BASELINE
     }
   })
 

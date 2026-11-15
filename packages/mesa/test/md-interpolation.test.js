@@ -213,3 +213,20 @@ describe('a markdown list inside {#each} is one list', () => {
     expect(html.match(/<ul>/g)).toHaveLength(2)
   })
 })
+
+// FJS-4302 — the README said a bare inline element alone on a line was refused.
+// Markdown wraps it in a <p> it also closes, so it compiles; what is refused is
+// an element whose closing tag sits past a blank line, where the <p> markdown
+// opened around the opening tag closes inside the element.
+describe('an inline element alone on a line in markdown', () => {
+  it('is wrapped in a closed <p> and renders', async () => {
+    await md('# T\n\n<button>Like</button>\n')
+    expect(await renderMd('# T\n\n<span>Like</span>\n\nafter\n')).toContain('<p><span>Like</span></p>')
+  })
+
+  it('is refused when its closing tag is past a blank line', async () => {
+    const ctx = await compileMd('# T\n\n<span>Like\n\n</span>\n', { filename: 'Page.md' }).catch(e => ({ thrown: e.message }))
+    const msg = ctx.thrown ?? (ctx.analysis?.errors ?? []).join('\n')
+    expect(msg).toContain('</p> closes nothing here')
+  })
+})

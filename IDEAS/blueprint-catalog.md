@@ -269,12 +269,14 @@ Done when: § Supported subset exists in this file, and Q6 and Q7 are ruled in `
 Goal: a `<slug>.blueprint.yml` is read into `Blueprint` rows and written back out, and the bundled catalog is files.
 Done when: every bundled blueprint goes file → rows → file unchanged, `docker compose -f <file> config` accepts each one, and `bun run test` in `packages/basecamp` is green.
 
-- [ ] 1.1 `image` and env values carry `${PARAM}`, interpolated by `apps.fromBlueprint` (183 of CapRover's 212 single-service apps put the version in the tag).
-- [ ] 1.2 `validRegex String?` on `BlueprintParam`, checked by the deploy form and by `fromBlueprint`.
-- [ ] 1.3 The generator per Q6: kind plus length, the 9 rows moved in the same change. The kinds are `randomHex`, `randomAlphanumeric` and `randomBase64`, plus `uuid`, which takes no length and is the kind with no length that `FJS-D2122` foresaw. They come from § The Coolify and Dokploy catalogs, counted. `mint` in `apps.service.ts` grows; no second minter. **The unit changes:** today's number is bytes (`randomHex32` is 64 characters), and `length` counts characters, so the 9 rows move as `randomHex32` → `length: 64`. Converters 3.3 and 3.4 check their catalog's unit and do not assume it. Tests: one mints at length 24 and asserts 24 hex characters, and one refuses `uuid` with a `length` by name.
+- [x] 1.1 `image` and env values carry `${PARAM}`, interpolated by `apps.fromBlueprint` (183 of CapRover's 212 single-service apps put the version in the tag). `Blueprint.environment` holds the env (`FJS-D2140`), and only its keys become Variables (`FJS-D2157`). `$$` is a literal `$`, and bare `$NAME`, `${X-y}` and `${X:?y}` are refused by name. `BLUEPRINT_SLUG` works; `BLUEPRINT_HOST` and `BLUEPRINT_URL` are refused until 1.7.
+- [x] 1.2 `validRegex String?` on `BlueprintParam`, checked by the deploy form and by `fromBlueprint`.
+- [x] 1.3 The generator per Q6: kind plus length, the 9 rows moved in the same change. The kinds are `randomHex`, `randomAlphanumeric` and `randomBase64`, plus `uuid`, which takes no length and is the kind with no length that `FJS-D2122` foresaw. They come from § The Coolify and Dokploy catalogs, counted. `mint` in `apps.service.ts` grows; no second minter. **The unit changes:** today's number is bytes (`randomHex32` is 64 characters), and `length` counts characters, so the 9 rows move as `randomHex32` → `length: 64`. Converters 3.3 and 3.4 check their catalog's unit and do not assume it. Tests: one mints at length 24 and asserts 24 hex characters, and one refuses `uuid` with a `length` by name. The pairing is two `@@check`s on `BlueprintParam`. Migration `20261114173127_blueprint_param_length_environment`.
 - [ ] 1.4 The reader: file → `Blueprint` + `BlueprintParam` rows. It is the one place a blueprint file is validated. It refuses § Supported subset's refusals and any unknown key by name, and it refuses a param under the `BLUEPRINT_` prefix.
 - [ ] 1.5 The writer: rows → file. Secrets are blank and a minted value is written as its rule (§ Export from a running App).
-- [ ] 1.6 The 9 rows in `db/blueprints.js` become `db/blueprints/<slug>.blueprint.yml`; `db:seed` and `db:catalog-sync` read the directory, and `blueprints.js` is deleted.
+- [ ] 1.6 The 9 rows in `db/blueprints.js` become `db/blueprints/<slug>.blueprint.yml`; `db:seed` and `db:catalog-sync` read the directory, and `blueprints.js` is deleted. Each file writes its `KEY: ${KEY}` environment out, which `blueprints.js` derives today.
+- [ ] 1.7 `BLUEPRINT_HOST` and `BLUEPRINT_URL` at release (`FJS-D2156`): the Variable keeps the template, and `domain/release/variables.ts` fills it each release from the primary Domain, else the ingress name. Before Phase 3, because most Coolify and Dokploy apps name their own URL.
+- [ ] 1.8 (owner) Before the next yuma release, clear the catalog's `blueprint_param` rows so the migration applies (`FJS-D2158`). A row still holding `randomHex16/32/64` fails the new enum check. **Open:** `db:catalog-sync` skips a slug that already exists, so it restores neither the params nor the `environment` the migration leaves as `{}`, and under `FJS-D2157` an App made from such a row gets no env. Either the 9 blueprint rows go too (an App made from one loses its `blueprintId`, `onDelete: SetNull`), or `catalog-sync` refreshes an existing row's params and `environment`. Found 2026-11-14 on the local dev db, which is in this state now: params cleared, 9 blueprints left.
 
 ### Phase 2 — Several volumes
 
@@ -400,3 +402,26 @@ Done when: one such app deploys on the test camp.
      params the file asked for. C is a "param" that is never a parameter.
 
 
+9. ~~**When `BLUEPRINT_HOST` and `BLUEPRINT_URL` are filled.**~~ **Answered 2026-11-14 (`FJS-D2156`): A — at release: the Variable keeps the template, and `domain/release/variables.ts` fills it each release from the primary Domain, else the ingress name.** No Domain exists when
+   `fromBlueprint` runs, yet Coolify names the app's URL 649 times and Dokploy 668.
+   - **A** — at release: the Variable keeps the template, and `domain/release/variables.ts`
+     fills it each release from the primary Domain, else the ingress name.
+   - **B** — at creation, from the ingress name `<appId>.<ingress zone>`, refused when the
+     workspace has no zone.
+   - **C** — keep them refused until Phase 3 needs them.
+   - **Recommend A** — it is the only one still right after a Domain is added, and
+     `variables.ts` already owns what a container's environment is. Coolify resolves at
+     deploy time too.
+10. ~~**Which params reach the container.**~~ **Answered 2026-11-14 (`FJS-D2157`): A — compose's rule: only `environment:` keys become Variables, and a param is an input. The 9 built-ins gain `KEY: ${KEY}` per param in the same change.** As built, every param becomes a Variable and
+    an `environment:` entry with the same key overrides it.
+    - **A** — compose's rule: only `environment:` keys become Variables, and a param is
+      an input. The 9 built-ins gain `KEY: ${KEY}` per param in the same change.
+    - **B** — as built.
+    - **Recommend A** — the file means what it says, and 1.5's writer has one answer for
+      where a param goes. Under B a version-only param leaks into the env.
+11. ~~**The 9 catalog rows on a live hub.**~~ **Answered 2026-11-14 (`FJS-D2158`): B — the owner clears the catalog's param rows by hand before the next yuma release, and `db:catalog-sync` reseeds them.** The new migration rebuilds `blueprint_param`,
+    and a row still holding `randomHex16/32/64` fails the new enum check.
+    - **A** — the rebuild's copy maps each old value to `randomHex` and its length.
+    - **B** — the owner clears the catalog's param rows by hand before the next yuma
+      release, and `db:catalog-sync` reseeds them.
+    - **Recommend A** — yuma migrates with no hand step, and each param keeps its output.

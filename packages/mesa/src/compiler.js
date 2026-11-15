@@ -4773,6 +4773,41 @@ function refuseContextInFunctions(ast, st) {
   ast.body.forEach(walkFnsForContext)
 }
 
+/** Pass of analyzeScript: refuses `$.inspect` (already `$inspect` here) anywhere but a top-level statement. */
+function refuseNestedInspect(ast, st) {
+  // Only a top-level `$inspect(...)` or `$inspect(...).with(fn)` statement is
+  // rewritten into a tracking effect and stripped when debug is off. Anywhere
+  // else it stays a bare `$inspect` call, which a debug-off build never
+  // declares, so it throws a ReferenceError when it runs.
+  const declared = new Set()
+  for (const n of ast.body) {
+    let call = n.type === 'ExpressionStatement' ? n.expression : null
+    if (call?.type === 'CallExpression' && call.callee?.type === 'MemberExpression' &&
+        !call.callee.computed && call.callee.property?.name === 'with') call = call.callee.object
+    if (call?.type === 'CallExpression' && call.callee?.type === 'Identifier' && call.callee.name === '$inspect') {
+      declared.add(call.callee)
+    }
+  }
+  let refused = false
+  const walk = (node) => {
+    if (refused || !node || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(walk); return }
+    if (node.type === 'Identifier' && node.name === '$inspect' && !declared.has(node)) {
+      refused = true
+      st.errors.push(
+        `'$.inspect' is declared at the top level of <script>, like an effect, and returns ` +
+        `nothing — it cannot be called inside a function or a block, or used as a value.`
+      )
+      return
+    }
+    for (const key of Object.keys(node)) {
+      const child = node[key]
+      if (child && typeof child === 'object') walk(child)
+    }
+  }
+  ast.body.forEach(walk)
+}
+
 /** Pass of analyzeScript: refuses a top-level declaration of a reserved or builtin name. */
 function refuseReservedNames(ast) {
   // A top-level declaration naming something the compiler injects into the same
@@ -4862,6 +4897,7 @@ export function analyzeScript(raw, ast) {
   refuseTimerBeforeDeclaration(ast, st)
   annotateWatchDeps(st, reactiveSet)
   refuseContextInFunctions(ast, st)
+  refuseNestedInspect(ast, st)
   refuseCycles(st)
 
   // `$` is one binding the author never owns (FJS-D132).
@@ -9743,7 +9779,7 @@ function emitProps(ctx) {
       : ''
     mod.head.push(
       xNode.raw(
-        `$$runtime.makeExternalProperty('${v.name}', ${sigR}, () => { throw new Error("[Mesa] '${v.name}' is declared \`export const\` — a read-only prop (RULE 56)."); }${fallback});`
+        `$$runtime.makeExternalProperty('${v.name}', ${sigR}, () => { throw new Error("[Mesa] '${v.name}' is declared \`export const\` — a read-only prop (RULE 56)."); }${fallback}).readOnly = true;`
       )
     )
     if (ctx.config?.dev) {
