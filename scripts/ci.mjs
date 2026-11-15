@@ -438,9 +438,12 @@ function substratePurity() {
       const raw  = readFileSync(file, 'utf8')
       const code = stripStrings(stripComments(raw))
 
+      // A declaration runs nothing, and a type-position import('./x.js') would
+      // read as a runtime load. Its specifiers are still checked below.
+      const declaration = file.endsWith('.d.ts')
       const allowed = (allowances.substrateAmbient ?? {})[rel] ?? {}
       for (const [pattern, why] of AMBIENT) {
-        if (!pattern.test(code)) continue
+        if (declaration || !pattern.test(code)) continue
         // Keyed by CAPABILITY, not by file. A kit allowed its entropy is not
         // thereby allowed a clock, a network call or a runtime import, which is
         // the version of this list that stops meaning anything.

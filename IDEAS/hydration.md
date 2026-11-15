@@ -7,10 +7,10 @@ dated: 2026-11-14
 # Idea — Hydration, and what a server-only region is
 
 **Status: PROPOSED. Q1–Q6 ruled 2026-11-15 (`FJS-D2172`–`FJS-D2177`); nothing
-built; 0.5 next.** This is the guiding paper for hydration and server components
-in Mesa and Sierra. Hydration is the direction (`FJS-D2172`), but until 0.5
-lands **VISION RULE 20 still reads: there is no hydration.** The `VISION.md`
-edit lands in the same commit as the rulings.
+built; 0.1 next.** This is the guiding paper for hydration and server components
+in Mesa and Sierra. Hydration is the direction (`FJS-D2172`); VISION RULE 20
+now names it as the planned replacement for islands-replace, and still says
+nothing hydrates today.
 
 The design sketch this paper builds on is `IDEAS/one-mental-model.md` § 5, *The
 target set's missing member*. Read it there; it is not restated here.
@@ -184,6 +184,6 @@ Done when: `FJS-4313` is driven in a browser, the costs in § 2 are measured on
 - [ ] 0.3 Read the marker protocols of Svelte 5, Solid and Marko 6 for one
   keyed by reactive edge
 - [x] 0.4 Owner rules Q1–Q6 — ruled 2026-11-15, `FJS-D2172`–`FJS-D2177`
-- [ ] 0.5 Amend RULE 20 in mesa's `docs/VISION.md` to name hydration as the
-  planned replacement for islands-replace (`FJS-D2172`), committed with the
-  rulings
+- [x] 0.5 Amend RULE 20 in mesa's `docs/VISION.md` to name hydration as the
+  planned replacement for islands-replace (`FJS-D2172`) — 2026-11-14, one
+  commit after the rulings

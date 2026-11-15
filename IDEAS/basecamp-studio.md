@@ -47,7 +47,7 @@ App's data, and a path from the operator's browser to it.
   ([executor.ts](../packages/basecamp/api/src/providers/executor.ts)). Nothing
   forwards arbitrary HTTP from Basecamp to a port on a machine.
 - **A navigated raw route has a precedent.** `/backup-archive/{id}?expires=&sig=`
-  ([backup-archive.ts](../packages/basecamp/api/src/plugins/backup-archive.ts))
+  ([backup-archive/[id].ts](../packages/basecamp/api/src/routes/backup-archive/[id].ts))
   is a raw route whose link carries its own HMAC credential, because a
   navigation carries no bearer. It is listed in `NAVIGATED_API_PATHS`
   ([api-paths.js:132](../packages/basecamp/web/config/api-paths.js#L132)) so both

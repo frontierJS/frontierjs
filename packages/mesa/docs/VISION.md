@@ -2776,6 +2776,14 @@ at module load time.
 > (§18.6) — `island()` in the runtime wraps a `client:*` call site in comment markers on
 > the server, and a loader outside Mesa (Sierra's) clears the range and does a fresh
 > `mount()` into it. Async data is the loader's to fetch again.
+>
+> That is today's behavior, not the destination: hydration is the planned replacement
+> for islands-replace (`FJS-D2172`). The client will adopt server DOM whole-page first,
+> through markers keyed by reactive edge (`FJS-D2173`); `client:*` stays as the timing
+> of that adoption (`FJS-D2174`); settled `{#await}` values ship in the page
+> (`FJS-D2175`); the string mode writes the anchors behind a flag (`FJS-D2176`); and
+> adoption fails closed when the DOM and the compiled walk disagree (`FJS-D2177`).
+> Until that lands, everything above holds. The plan is `IDEAS/hydration.md`.
 
 ### 19.4 `renderComponent` / `renderFile` — Source-In Process
 

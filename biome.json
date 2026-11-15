@@ -44,6 +44,10 @@
     {
       "includes": ["**/test/**", "packages/conduits/*/sink.ts", "packages/cli/core/**", "packages/junction/src/**"],
       "linter": { "rules": { "suspicious": { "noControlCharactersInRegex": "off" } } }
+    },
+    {
+      "includes": ["**/*.d.ts"],
+      "linter": { "rules": { "correctness": { "noUnusedVariables": "off" } } }
     }
   ]
 }

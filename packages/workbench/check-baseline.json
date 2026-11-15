@@ -1,7 +1,7 @@
 {
   "//": "One number per fli check rule id — the count that may never rise. Absent = 0 = clean. `fli check --update` locks in an improvement and cannot raise; `fli check --adopt` records what is there, which is the verb for taking debt on. The findings still print either way.",
-  "//css-class-collision": "Two (.field in atlas/decide, .cluster in workbench/index), inherited from basecamp with the move.",
-  "css-class-collision": 2,
+  "//css-class-collision": "Three. .field in atlas/decide and .cluster in workbench/index were inherited from basecamp with the move. .screen in routes/_module.mesa is the kit's own Screen element: on a phone it drops the Screen's side pad, which stacked with the container's to 40px a side.",
+  "css-class-collision": 3,
   "//gate-unreachable": "One: the three Claude models keep @@gate(5.8) and the one Member's session grades ADMINISTRATOR by `isAdmin` in api/src/auth.ts. The rule reads an isAdmin column or a getLevel resolver and cannot see a session field, so the finding is the rule's blind spot, not a wall.",
   "gate-unreachable": 1,
   "//package-model-drift": "One: db/schema.lite's Notification.userId is Int with a relation to Member, where @frontierjs/notifications' fragment says String for auth's uuid ids. Workbench has no auth package and Member.id is Int; the drift is the one column, on purpose (IDEAS/workbench-package.md 3.2).",

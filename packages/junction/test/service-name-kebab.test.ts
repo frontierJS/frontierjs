@@ -21,7 +21,7 @@
 import { describe, test, expect } from 'bun:test'
 import { deriveName }             from '../src/core/loader.ts'
 import { deriveModelName }        from '../src/core/litestone.ts'
-import { ServiceRegistry, buildService } from '../src/core/service.ts'
+import { ServiceRegistry }        from '../src/core/service.ts'
 
 describe('deriveName', () => {
   test('a single-word filename is unchanged — every app that worked still does', () => {
