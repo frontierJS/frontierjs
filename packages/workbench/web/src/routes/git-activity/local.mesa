@@ -158,7 +158,7 @@ title: Local repositories
   // built, a port held) ends inside a few seconds.
   async function stillUp(id, row) {
     for (let i = 0; i < 5; i++) {
-      await new Promise(done => setTimeout(done, 1000))
+      await $.sleep(1000)
       await refreshRuns()
       if (!runOf(id, row)) return false
     }
@@ -197,7 +197,7 @@ title: Local repositories
       const [rows] = await Promise.all([rowsFor(p.id), refreshRuns()])
       rowsOf = { ...rowsOf, [p.id]: rows }
       if (!isUp(p.id, row)) return
-      await new Promise(done => setTimeout(done, 500))
+      await $.sleep(500)
     }
   }
   async function togglePin(r) {

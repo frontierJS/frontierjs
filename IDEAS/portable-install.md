@@ -379,7 +379,7 @@ Done when: `verify:portable` runs in CI.
     2026-11-02). C keeps a flag and a second drive leg for a target that already
     has bun, which nobody has asked for yet. Confidence 2.
 - ~~**Q6 — A desktop app whose API reads the person's drives (`FJS-D1815`).**~~ **Answered 2026-11-04 (`FJS-D1815`): A — this paper's launcher as a Tauri sidecar: packages compiled in, bun inside (Q5 A), the app's own files shipped as resources beside it (Q1 A), data in the OS app-data directory (Q4 B; `%APPDATA%\<identifier>` on Windows). The shell starts it on a free `127.0.0.1` port, hands the page that origin, restarts it when it dies and stops it on Quit. Closing the window hides it to a tray (Open, Quit) and autostart at login is an opt-in; the shell declares the dialog, tray and autostart plugins, and not fs, because the API reads the drives, not the page. Cost: a bun binary per target triple (`bun build --compile --target bun-windows-x64`, …), a port the bundle cannot know at build time, and walls 1–6 met again on Windows, where nothing has run.**
-  immich (Q7, ruled A: installed as a desktop app) wraps `web/` in the `desktop/`
+  vellum (Q7, ruled A: installed as a desktop app) wraps `web/` in the `desktop/`
   Tauri shell, and its API scans local folders on a schedule, so the API has to
   run on the person's machine, Windows included, and outlive the window. The
   generated shell starts no API, has no plugins and exits when the window closes.

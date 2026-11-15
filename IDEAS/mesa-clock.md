@@ -482,7 +482,7 @@ per-site table is the brief each migration agent gets. Settled on the way:
   the count. Owed a browser pass: intake `triage.mesa`'s Approve/Undo (the item
   now rides in `pending`), serpgrid's Composer flash, locations coalescer and
   chat debounces (serpgrid has no drive). Counted 2026-11-10: 82 raw calls in 19 repos
-  (ela 22, serpgrid 11, portal 6, intake 6, sstime 5, remnant 5, quo 5, immich 3,
+  (ela 22, serpgrid 11, portal 6, intake 6, sstime 5, remnant 5, quo 5, vellum 3,
   chat 3, then 1–2 each). **ela and portal are not linked** — they install the
   published `@frontierjs/mesa` (0.1.12 and 0.1.9), whose compiler passes
   `$.after(...)` through and whose runtime has no `after`, so a build succeeds

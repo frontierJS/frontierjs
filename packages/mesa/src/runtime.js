@@ -388,14 +388,17 @@ function _raise(node, e) {
 // the const nor the fix (`FJS-4292`). Printed in production too (`FJS-D2136`).
 // `asyncDerived` installs the reporter, so an app with no awaited const ships
 // none of it (the `bench/run.mjs --gate` floor).
+//
+// A delegated event handler runs under no owner, so it passes no node and every
+// const still waiting is named (`FJS-4327`).
 const _unanswered = new Set()
 const _namedThrows = new WeakSet()
-let _onFirstRunThrow = null
+let _onReadThrow = null
 
 function _reportUnanswered(node, e) {
   if (!_unanswered.size || !(e instanceof TypeError) || _namedThrows.has(e)) return
   const under = (owner) => {
-    if (!owner) return true
+    if (!owner || !node) return true
     for (let o = node; o; o = o._owner) if (o === owner) return true
     return false
   }
@@ -573,7 +576,7 @@ export function createEffect(fn, opts) {
     // caller has no disposer for it. Left alone it re-runs a body that has
     // already failed on the next write, and inside a root component nothing
     // ever collects it (`FJS-879`).
-    _onFirstRunThrow?.(node, e)
+    _onReadThrow?.(node, e)
     _disposeNode(node, true)
     _unwindComponents(comps, ctxs)
     throw e
@@ -2002,6 +2005,9 @@ function _makeDelegatedHandler(root) {
           if (event.cancelBubble) break
         }
       }
+    } catch (e) {
+      _onReadThrow?.(null, e)
+      throw e
     } finally {
       delete event.currentTarget
     }
@@ -5615,7 +5621,7 @@ export function asyncDerived(getAsyncState, fn, deps, setValue, name) {
   const entry = name ? { name, owner: _owner } : null
   const answered = () => { if (entry) _unanswered.delete(entry) }
   if (entry) {
-    _onFirstRunThrow = _reportUnanswered
+    _onReadThrow = _reportUnanswered
     _unanswered.add(entry)
     if (_owner) onCleanup(answered)
   }

@@ -136,9 +136,9 @@ describe('names, scripts and ports', () => {
     const dir = join(ROOT, 'agent-a26dfaadf4ccc65c5')
     mkdirSync(dir, { recursive: true })
     expect(desktopAppName(dir)).toBe('agent-a26dfaadf4ccc65c5')
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'immich' }))
-    expect(desktopAppName(dir)).toBe('immich')
-    expect(desktopNames(desktopAppName(dir)).identifier).toBe('dev.immich.desktop')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'vellum' }))
+    expect(desktopAppName(dir)).toBe('vellum')
+    expect(desktopNames(desktopAppName(dir)).identifier).toBe('dev.vellum.desktop')
   })
 
   test('a wrapped surface has no dev server of its own', () => {
@@ -414,14 +414,14 @@ describe('--sidecar: the shell starts its own API', () => {
     expect(readFileSync(join(root, 'desktop', 'config', 'desktop.config.js'), 'utf8')).not.toContain('sidecar')
   })
 
-  test('on, every piece is written, named for the app and never for immich', () => {
+  test('on, every piece is written, named for the app and never for vellum', () => {
     const root = appRoot('side', API)
     const { written } = scaffoldDesktopSurface({ root, appName: '@acme/shop', wraps: 'web', sidecar: true })
     for (const f of ['sidecar/launcher.ts', 'sidecar/make-sidecar.ts', 'sidecar/bundled.ts', 'shell/capabilities/default.json'])
       expect(written).toContain(`desktop/${f}`)
     const read = (f) => readFileSync(join(root, 'desktop', f), 'utf8')
     for (const f of written.filter(f => f.startsWith('desktop/') && !f.endsWith('.png')))
-      expect(readFileSync(join(root, f), 'utf8'), f).not.toMatch(/immich|thod|__SLUG__|__PRODUCT__|__API_PREFIX__/)
+      expect(readFileSync(join(root, f), 'utf8'), f).not.toMatch(/vellum|immich|thod|__SLUG__|__PRODUCT__|__API_PREFIX__/)
 
     expect(read('config/desktop.config.js')).toMatch(/\n  sidecar: true,\n/)
     const conf = JSON.parse(read('shell/tauri.conf.json'))

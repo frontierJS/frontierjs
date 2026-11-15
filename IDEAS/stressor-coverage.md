@@ -54,11 +54,11 @@ acted last. Run them as one batch, and expect one design record.
 ### Schema and API only — stopped 2026-10-16
 
 One commit each, no UI past the scaffold. Each `PLAN.md` says "Phase 2 done —
-Phase 3 next" except immich, which is at Phase 2.
+Phase 3 next" except vellum, which is at Phase 2.
 
 | # | Prototype | What its UI and later phases would press |
 | --- | --- | --- |
-| 17 | immich | a 4 GB upload streamed; `FJS-D1159` ruled the shape, so Phase 2 is unblocked — the cheapest to resume |
+| 17 | vellum | a 4 GB upload streamed; `FJS-D1159` ruled the shape, so Phase 2 is unblocked — the cheapest to resume |
 | 19 | vaultwarden | a server that must never read what it stores, behind an API a foreign client fixed |
 | 9 | posthog | a write rate set by strangers' browsers; a query a tenant wrote |
 | 10 | moodle | one value per locale in a column; a quiz attempt alive across a restart |

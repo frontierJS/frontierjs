@@ -1,8 +1,8 @@
 {
   "//": "Written by `bun run bench -- --update` (improvements only) or `--adopt` (raises too). gzip bytes of each built fixture, and DOM mutations per operation in the Mesa fixture. See bench/run.mjs.",
   "bytes": {
-    "floor": 6076,
-    "rows": 11227
+    "floor": 6082,
+    "rows": 11234
   },
   "dom": {
     "create1k": 1000,

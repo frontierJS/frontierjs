@@ -510,6 +510,29 @@ describe('an awaited const read before its first answer', () => {
     expect(mesa[0][0]).toContain(`'user'`)
   })
 
+  // A handler runs outside every effect, so an effect's first-run catch never
+  // saw its throw (`FJS-4327`).
+  it('names the const when an event handler reads it before its first answer', async () => {
+    const seen = []
+    const spy = console.error
+    console.error = (...a) => seen.push(a)
+    globalThis.__slowLoad = () => new Promise((r) => setTimeout(() => r({ id: 7 }), 5))
+    try {
+      const c = mount(await build(`<script>const user = await globalThis.__slowLoad()
+  let saved = 0
+  function save() { saved = user.id }</script><button onclick={save}>save</button>${SHOWN}`))
+      // happy-dom reports a listener's throw rather than raising it from click()
+      try { c.querySelector('button').click() } catch {}
+    } finally {
+      console.error = spy
+      delete globalThis.__slowLoad
+    }
+    const mesa = seen.filter((a) => /^\[Mesa\] ASYNC_OUTSIDE_LOADING_BOUNDARY/.test(String(a[0])))
+    expect(mesa).toHaveLength(1)
+    expect(mesa[0][0]).toContain(`'user'`)
+    expect(mesa[0][1]).toBeInstanceOf(TypeError)
+  })
+
   it('says nothing when a binding throws with every load answered', async () => {
     const seen = []
     const spy = console.error

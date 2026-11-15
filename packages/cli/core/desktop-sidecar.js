@@ -6,8 +6,8 @@
  * (desktop/sidecar/), the app's own files ship beside it as the bundle's
  * resources, and the shell supervises it: a free 127.0.0.1 port, data in the
  * OS app-data directory, `globalThis.__sierraApiUrl` handed to the page, a
- * restart on the same port, a tray, a single instance. Lifted from immich's
- * hand-built shell (fjs-prototypes/immich PLAN 1b.1–1b.2); the long files are
+ * restart on the same port, a tray, a single instance. Lifted from vellum's
+ * hand-built shell (fjs-prototypes/vellum PLAN 1b.1–1b.2); the long files are
  * templates under ./desktop-sidecar/, filled with the app's names here.
  *
  * Without --sidecar nothing here is called and make:desktop writes what it

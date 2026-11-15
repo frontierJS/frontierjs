@@ -60,7 +60,7 @@ than started.
 | 14 | **remnant** — a maid.tech fork with a scripture study corpus beside it | read-only reference data that belongs to no tenant and ships with the app; relations keyed on natural keys; search over Greek and Hebrew | `conversion-maid-tech.md` (the CRM half) · `lexicon.md` |
 | 15 | **Ghost** — blog / publishing | a write that has to rebuild a prerendered page; a transition that fires at a future instant; a stranger's comment held for moderation | `state-machines.md` · `static-safety.md` · `bearer-access.md` |
 | 16 | **ksite** — a legacy-FJS static marketing site, being ported | a site authored in Markdown that names components it never imports; a collection read at build time with no database; a client theme written as colors, not tones | `static-safety.md` · `FJS-D38` · `FJS-D127` |
-| 17 | **Immich** — self-hosted photo library | a 4 GB upload held in memory whole; one upload fanning out into a pipeline of derived files; a backup from a phone that must resume and never send the same bytes twice | `overview.md` 2.7 · `untrusted-bytes.md` · `offline-first-and-release.md` · `bearer-access.md` |
+| 17 | **Vellum** — self-hosted photo library (after Immich) | a 4 GB upload held in memory whole; one upload fanning out into a pipeline of derived files; a backup from a phone that must resume and never send the same bytes twice | `overview.md` 2.7 · `untrusted-bytes.md` · `offline-first-and-release.md` · `bearer-access.md` |
 | 18 | **EventMark** — a staffing schedule written as a Markdown file | a text document that is the record while a screen writes back into it; a staff-to-child ratio broken from either side; a reference to a person who may not exist | `kernel-and-projections.md` · [`FJS-D474`](../DECISIONS.md#fjs-d474) · `time-and-recurrence.md` · `FJS-D305` |
 | 19 | **Vaultwarden** — a Bitwarden-compatible password vault server | a server that must never read what it stores; an API whose shape a client someone else wrote already fixed; a grant that takes effect after a wait unless refused | `bearer-access.md` · `state-machines.md` · `untrusted-bytes.md` · `third-party-credentials.md` |
 | 20 | **Dragonfly** — a JSON grid editor, jsongrid.com taken further, ported from a Svelte 4 app | one document with two writable views, where a cell edit re-serializes the whole text; a chain of derived stores over every row, re-run on every keystroke; identity for rows that have none; three condition languages beside the one `.lite` has | `@frontierjs/ui` `Json.mesa` · `Table.mesa` · `CommandPalette.mesa` · mesa `{#virtual each}` · `toolbelt/json` · `toolbelt/predicate` · #18 |
@@ -78,6 +78,7 @@ than started.
 | 46 | **Five to Nine** — a one-room escape game: a clockmaker's back room that the mantel clock rewinds from 9 PM to 5, the room at each hour a function of his evening and the player's edits, drawn in Three.js inside Mesa | a WebGL scene owned by a component tree — a renderer claimed through `{@attach}` that must dispose contexts, geometries and textures on unmount, or the page loses its context; a scene graph re-derived from one pure `stateAt(hour, edits)` on every hour switch; a prerendered page whose content is all canvas; an app with a `site/`, a `cli/` and nothing else, no `db/`; a browser drive whose script is computed by a solver, never written | [`FJS-D997`](../DECISIONS.md#fjs-d997) (Haven's scene tree) · `static-safety.md` · #28 · #16 |
 | 47 | **Lathe** — a desktop code editor built for simplicity and speed: projects, a tree, tabs, highlighting, find, project search, vim mode and snippets, with a Claude panel beside it; its editor core is written in Mesa and CodeMirror 6 is the yardstick | one keystroke in a 1M-line file allowed one line node and one frame; composition events passing through delegation and a keymap untouched; a file on disk as the record, written by other programs while a buffer is dirty; a 50 MB document with no door but the JSON envelope; a local sidecar that can write any file the person can, reachable from every page in their browser; a frame budget measured in a webview that speaks no CDP; vim's operators and text objects over a buffer that isn't a string; an agent writing the file open in a dirty buffer | [`FJS-D1815`](../DECISIONS.md#fjs-d1815) (the sidecar) · [`FJS-D263`](../DECISIONS.md#fjs-d263) · mesa `{#virtual each}` · `keys.md` · #20 · #28 |
 | 48 | **Swatchbook** — a design spec-sheet builder for web designers: brand-feel axes in (playful ↔ serious, accessible ↔ luxury, airy ↔ dense), a reasoned spec of type, spacing, rhythm, restraint and color out (color seeded from the brand's own colors when it has them), previewed on real content and handed to a site builder | a theme as a ROW, compiled at slider rate onto one subtree, against a package whose themes are files; every spec line no token can carry — *a theme ships no selector* asked from outside the package; a derivation whose every output line cites the rule rows that produced it, from sources that disagree; a font catalog no tenant owns, loaded live under CSP; one record rendered as an `@frontierjs/css` theme and three portable formats, and read back in | `@frontierjs/css` (themes, `--density`, `--measure`) · `stored-templates.md` · `conflict-as-data.md` · `bearer-access.md` · #16 · #28 · #45 |
+| 49 | **Anvil** (codename, provisional) — a self-hosted git forge after Forgejo: repositories over smart HTTP, a code browser, issues, pull requests with review, and Actions; the forge Basecamp deploys from | a push as a write the database never made, announced once; a gate enforced at a raw route a git client speaks, past the service pipeline; a multi-GB pack streamed through a request body; a review comment anchored to a line a force-push moved; a merge allowed only when a check, an approval and its approver say so; an API shape `tea` and Basecamp's `IGit` already fixed | `packages/basecamp/docs/providers.md` § `git` · `git-deploy.md` · [`FJS-D884`](../DECISIONS.md#fjs-d884) · `inbound-email.md` · `app-peering.md` · `markdown-kit.md` · #8 · #19 · #32 · #37 |
 
 **#29–#40 are Phase 2** — a gap scan, none started, in § Phase 2 below the
 entries.
@@ -372,7 +373,7 @@ it. This one assumes neither:
   published before the drop. `forgetting.md` is about a person; this is about
   volume. Shared with #12 Q5 and #39.
 
-**Leave out** session recording (bytes, which are Immich's, #17), the ClickHouse
+**Leave out** session recording (bytes, which are Vellum's, #17), the ClickHouse
 half (SQLite is the ruling), surveys, and the warehouse connectors (Transit's,
 #21). Autocapture is the snippet's problem and not the server's.
 
@@ -419,7 +420,7 @@ speak the student's language. Three breaks, in order:
   and a port is an origin — so the question is whether a tenant's package gets
   an origin of its own, and who hands it one. Video is the easy half:
   `junction/src/transport/static.ts` already answers range requests, and the
-  whole-file read in `file-storage.js` is Immich's finding (#17), cited rather
+  whole-file read in `file-storage.js` is Vellum's finding (#17), cited rather
   than found again.
 - **An attempt that lives for two hours.** A quiz attempt is opened, autosaved
   every thirty seconds, submitted once and graded at submit, with a deadline
@@ -771,7 +772,7 @@ ksite's own Playwright screenshots route for route. Port in
 
 ---
 
-### 17. Immich — the only stressor whose first break is bytes
+### 17. Vellum — the only stressor whose first break is bytes
 
 *Added 2026-09-29. Nothing is built; the rank is only where it was appended, and
 it would sit nearer #5.* ([immich-app/immich](https://github.com/immich-app/immich))
@@ -884,7 +885,7 @@ slot for these:
   the month grid. The outreach sample has `Monday, 8/25` and `Tues, 8/25`: two
   days on one date (the 26th was the Tuesday), and nothing notices. The times
   have no zone by design, because a schedule is one site. That is `FJS-D143`
-  with the zone authored as absent. Immich's (#17) zone is merely missing.
+  with the zone authored as absent. Vellum's (#17) zone is merely missing.
 - **Drag from a roster that keeps its item.** `packages/ui/dnd.js`'s `dndzone`
   moves an item between flow lists: a drop finalizes the origin too. Its header
   says flex-wrap layouts are not built. Both chip rows here are flex-wrap, and
@@ -1470,7 +1471,7 @@ profile that has it.
 ### 44. Music — a track that outlives its path, its bytes and its tags
 
 *Added 2026-11-10. The codename is provisional. Numbered past #43 so `#N` stays
-unique; the plan is `fjs-prototypes/music/PLAN.md`.*
+unique; the plan is `fjs-prototypes/fiddle/PLAN.md`.*
 
 **The product.** A self-hosted music server that owns its library: Navidrome's
 job without Navidrome, so there is no connector and no mirror. It scans folders,
@@ -1478,9 +1479,9 @@ derives a catalog from tags, transcodes, streams, and keeps each person's stars,
 plays and playlists, with its own web player and a Subsonic door for existing
 clients.
 
-**Why it is not #17.** Immich's identity is its bytes. A retag rewrites a
+**Why it is not #17.** Vellum's identity is its bytes. A retag rewrites a
 track's bytes and a move changes its path, and a person's star has to survive
-both, so identity here is a matching policy rather than a column. Immich's
+both, so identity here is a matching policy rather than a column. Vellum's
 derived files are permanent, and a transcode is a cached response with a size
 budget. What else breaks first:
 
@@ -1737,6 +1738,72 @@ has zero AA failures and no selector. A parity drive screenshots the in-app
 preview and the exported theme on a static page and diffs the two. Each token
 gap found is filed. The owner
 specs one real Kobami client site in Swatchbook and ships it through ksite.
+
+### 49. Anvil — a push is a write the database did not make
+
+*Added 2026-11-15 at the owner's request: a Forgejo-shaped forge, with ideas
+taken from GitLab, SourceHut, OneDev, Radicle and Codeberg where each one is
+sharper than Forgejo. Its plan is `fjs-prototypes/anvil/PLAN.md`. The codename
+is provisional.*
+
+**The product.** People and organizations own repositories. A repository is
+cloned and pushed over smart HTTP, browsed as a tree, a blob, a log, a diff and
+a blame, and its README is rendered. Issues and pull requests come with review
+threads, approval rules and merge strategies. Actions read GitHub-Actions-shaped
+YAML and run it on a registered runner. Forgejo is the yardstick for scope.
+Basecamp's `IGit` already names Forgejo as its intended vendor
+(`providers/index.ts`, *TODO ForgejoGit*), so the end of the run is Basecamp
+deploying an app from a push to Anvil.
+
+**Why it is not #8 or #19.** ci-runner asked whether a cancel reaches work
+already in flight, and Anvil's Actions reuse its answer (`FJS-3081`).
+Vaultwarden asked about an API whose shape someone else's client fixed. Here
+that client is `git` itself, and the record it writes is not a row. What breaks
+first:
+
+- **A write the database did not make.** `git receive-pack` moves refs on disk.
+  The rows (the branch list, the open PR's head, a check run) learn of it from a
+  post-receive hook. Invariant 4 says one owner announces a write, and nothing
+  here has announced a write made outside Litestone.
+- **A gate at a door that is not a service.** Clone and push arrive as raw
+  routes (`/{owner}/{repo}.git/info/refs`, `git-upload-pack`,
+  `git-receive-pack`) with a personal access token over HTTP Basic. Invariant 6
+  puts access in the schema. Whether a raw route can ask the repository's gate,
+  rather than repeat it in handler code, has not been tried. A protected-branch
+  rule is a second gate, asked by `pre-receive` on every ref the push moves.
+- **A body measured in gigabytes.** A first push of a large repository is one
+  pack, streamed to a child process's stdin. Whether Junction's raw route hands
+  over a stream or buffers it all is the first measurement.
+- **A comment on a line that moved.** A review comment names a commit, a path and
+  a line. After a force-push it is re-anchored, or shown as outdated against the
+  diff it was written on (#37's anchor, with git's diff as the matcher).
+- **A merge as a transition with three witnesses.** The merge is allowed only when
+  required checks are green, approvals reach N, and no approver is the author or
+  the last pusher (GitLab's approval rules; #32's four-eyes). Each witness is a
+  different row, written by a different principal: a runner, a reviewer, a push.
+- **A path no caller names.** A repository lives on disk at a path derived from
+  its id, never from `owner/name`, in the spirit of Invariant 8. A rename and a
+  transfer move no bytes. A repository's backup is a directory beside the
+  database, and whether `IDEAS/backups.md` covers a directory is a Phase 0
+  question.
+
+**Ideas taken from the others** (each one is a step in Phase 6 of the plan, and
+any of them can be dropped): SourceHut's patches by email, through
+`inbound-email.md`, and its pages that work with no JavaScript. Radicle's
+issues stored as git objects, which makes git the record, and its key as the
+identity, through `app-peering.md`. OneDev's symbol-aware code search. GitLab's
+CODEOWNERS approvals and its read-only replica (`read-only-copy.md`).
+Codeberg's quotas, since a public host has strangers.
+
+**Gradable**: a stock `git` clones, fetches and pushes against Anvil. A 1 GB
+push holds memory flat, and the number is recorded. An anonymous clone of a
+private repository is refused, and so is a push by a reader. `pre-receive`
+refuses a force-push to a protected branch. A review comment survives a
+force-push as either re-anchored or outdated. A merge is refused until the
+check, the approval and the four-eyes rule all hold. A workflow file runs on
+the runner and its cancel empties the process tree. Last, Basecamp's
+`ForgejoGit`, pointed at Anvil, lists its repositories in `/git-activity/`, and
+a push to Anvil releases a Basecamp app through the Receiver's Forgejo HMAC.
 
 ## Phase 2 — the gap scan
 
