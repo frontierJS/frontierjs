@@ -16,7 +16,7 @@ export function firstRealFailure(): any;
  * Cache-busted so a watch rebuild re-reads a file that changed; the failure map
  * above is what stops a re-read from manufacturing a TDZ.
  */
-export function importAppModule(absPath: any): Promise<{
+export function importAppModule(absPath?: any): Promise<{
     ok: boolean;
     reason: string;
     error?: undefined;

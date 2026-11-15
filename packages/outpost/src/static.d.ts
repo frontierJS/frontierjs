@@ -3,10 +3,10 @@
  *  this check is the one that gets written: `..` is caught by three different
  *  spellings (`..`, `%2e%2e`, `a/../..`) and the fourth is the one that writes
  *  outside the directory as whatever user this process is. */
-export function validRelativePath(path: any): string;
+export function validRelativePath(path?: any): string;
 /** An app id or a host label, as a single directory name. Same reasoning as
  *  above: these arrive over the wire and they become path segments. */
-export function validName(value: any, what: any): string;
+export function validName(value?: any, what?: any): string;
 /**
  * The digest of a release: sha256 over every file, path and bytes alike.
  *
@@ -20,7 +20,7 @@ export function validName(value: any, what: any): string;
  * identity: a republish of the same files in a different order is the same
  * release.
  */
-export function digestOfFiles(entries: any): string;
+export function digestOfFiles(entries?: any): string;
 export function createStatic({ staticDir, staticUrl }?: {
     staticDir?: string;
     staticUrl?: string;

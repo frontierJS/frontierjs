@@ -7,37 +7,40 @@ export class ExternalRefPlugin extends LitestonePlugin {
     _cache: Map<any, any>;
     _cacheMax: any;
     _autoResolve: any;
-    serialize(value: any, { field, model, id, ctx }: {
+    serialize(value?: any, { field, model, id, ctx }?: {
         field: any;
         model: any;
         id: any;
         ctx: any;
     }): Promise<void>;
-    resolve(ref: any, { field, model, ctx }: {
+    resolve(ref?: any, { field, model, ctx }?: {
         field: any;
         model: any;
         ctx: any;
     }): Promise<any>;
-    cleanup(ref: any, { field, model, ctx }: {
+    cleanup(ref?: any, { field, model, ctx }?: {
         field: any;
         model: any;
         ctx: any;
     }): Promise<void>;
-    cacheKey(ref: any): any;
-    _maps(ctx: any): any;
-    _table(model: any, ctx: any): any;
-    _fieldOptions(field: any): {};
-    _parseRef(value: any): any;
-    _parseRefArray(value: any): any[];
-    _isRawValue(v: any): boolean;
-    _resolveRef(ref: any, opts: any): Promise<any>;
-    _cleanupRef(ref: any, opts: any): Promise<void>;
+    cacheKey(ref?: any): any;
+    _maps(ctx?: any): any;
+    _oldRead(model?: any, fields?: any, where?: any, ctx?: any): {
+        stmt: any;
+        params: any[];
+    };
+    _fieldOptions(field?: any): {};
+    _parseRef(value?: any): any;
+    _parseRefArray(value?: any): any[];
+    _isRawValue(v?: any): boolean;
+    _resolveRef(ref?: any, opts?: any): Promise<any>;
+    _cleanupRef(ref?: any, opts?: any): Promise<void>;
     _writes: WeakMap<WeakKey, any>;
-    _writeOf(data: any): any;
-    _replaces(data: any, field: any, ref: any): void;
-    _serializeField(model: any, data: any, field: any, opts: any, id: any, ctx: any): Promise<void>;
-    onWriteSettled(model: any, operation: any, args: any, error: any, ctx: any): Promise<any>;
-    _settle(ctx: any, effects: any): any;
+    _writeOf(data?: any): any;
+    _replaces(data?: any, field?: any, ref?: any): void;
+    _serializeField(model?: any, data?: any, field?: any, opts?: any, id?: any, ctx?: any): Promise<void>;
+    onWriteSettled(model?: any, operation?: any, args?: any, error?: any, ctx?: any): Promise<any>;
+    _settle(ctx?: any, effects?: any): any;
     /**
      * Resolve this model's ref fields on every row, then do the same for every
      * INCLUDED row hanging off them.

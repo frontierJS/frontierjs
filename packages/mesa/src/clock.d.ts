@@ -23,11 +23,11 @@ export function virtualClock(startMs?: number): {
 };
 export namespace clock {
     function now(): any;
-    function after(ms: any, fn: any, label: any): any;
-    function every(ms: any, fn: any, label: any): any;
-    function frame(fn: any, label: any): any;
+    function after(ms?: any, fn?: any, label?: any): any;
+    function every(ms?: any, fn?: any, label?: any): any;
+    function frame(fn?: any, label?: any): any;
     /** Install `source` (nullish: the DOM's); answers the one it replaced. */
-    function use(source: any): {
+    function use(source?: any): {
         now: () => number;
         after(ms: any, fn: any): () => void;
         every(ms: any, fn: any): () => void;
@@ -37,7 +37,7 @@ export namespace clock {
 export namespace quietSource {
     export function now_1(): number;
     export { now_1 as now };
-    export function after_1(ms: any, fn: any, label: any): () => void;
+    export function after_1(ms?: any, fn?: any, label?: any): () => void;
     export { after_1 as after };
     export function every_1(): () => void;
     export { every_1 as every };

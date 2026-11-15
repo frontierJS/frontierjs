@@ -533,6 +533,36 @@ describe('an awaited const read before its first answer', () => {
     expect(mesa[0][1]).toBeInstanceOf(TypeError)
   })
 
+  // An async handler's read after its own await rejects the promise it
+  // returned, which a catch around the call never sees (`FJS-4328`).
+  it('names the const when an async handler reads it after its own await', async () => {
+    const seen = []
+    const spy = console.error
+    console.error = (...a) => seen.push(a)
+    const rejected = []
+    const onRejection = (reason) => rejected.push(reason)
+    process.on('unhandledRejection', onRejection)
+    globalThis.__slowLoad = () => new Promise((r) => setTimeout(() => r({ id: 7 }), 30))
+    try {
+      const c = mount(await build(`<script>const user = await globalThis.__slowLoad()
+  let saved = 0
+  async function save() { await Promise.resolve(); saved = user.id }</script><button onclick={save}>save</button>${SHOWN}`))
+      try { c.querySelector('button').click() } catch {}
+      await new Promise((r) => setTimeout(r, 5))
+    } finally {
+      console.error = spy
+      process.off('unhandledRejection', onRejection)
+      delete globalThis.__slowLoad
+    }
+    const mesa = seen.filter((a) => /^\[Mesa\] ASYNC_OUTSIDE_LOADING_BOUNDARY/.test(String(a[0])))
+    expect(mesa).toHaveLength(1)
+    expect(mesa[0][0]).toContain(`'user'`)
+    expect(mesa[0][1]).toBeInstanceOf(TypeError)
+    // Named, not swallowed: the rejection still reaches the page's own report.
+    expect(rejected).toHaveLength(1)
+    expect(rejected[0]).toBe(mesa[0][1])
+  })
+
   it('says nothing when a binding throws with every load answered', async () => {
     const seen = []
     const spy = console.error

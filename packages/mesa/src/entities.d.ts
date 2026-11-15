@@ -4,4 +4,4 @@
  * output: `&amp;lt;` is the text "&lt;", and `.replace(/&amp;/g, '&')` before
  * `.replace(/&lt;/g, '<')` turns it into "<".
  */
-export function htmlEntitiesToText(text: any): any;
+export function htmlEntitiesToText(text?: any): any;

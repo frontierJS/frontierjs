@@ -16,8 +16,8 @@ export function initRenderer(options?: {
  * Reset the render environment (useful for testing).
  */
 export function resetRenderer(): void;
-export function escapeHTML(str: any): string;
-export function renderFailure(cause: any, label: any): Error;
+export function escapeHTML(str?: any): string;
+export function renderFailure(cause?: any, label?: any): Error;
 /**
  * Render a compiled Mesa component to an HTML string.
  *
@@ -74,7 +74,7 @@ export function renderToHTML(ComponentFactory: Function, props?: object, options
     label?: string;
     target?: "server";
 }): Promise<string>;
-export function wrapPage(bodyHTML: any, options?: {}): string;
+export function wrapPage(bodyHTML?: any, options?: {}): string;
 /**
  * Render many pages, in order, and resolve with all their HTML.
  *

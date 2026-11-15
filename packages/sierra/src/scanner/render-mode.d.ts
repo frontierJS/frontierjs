@@ -22,4 +22,4 @@ export function prerenders(node: {
     };
 } | null | undefined, target?: string): boolean;
 /** The route wrote `render: static`: a page that cannot be prerendered fails the build. */
-export function declaresStatic(node: any): boolean;
+export function declaresStatic(node?: any): boolean;

@@ -3,7 +3,7 @@
  * Build a content-script registration entry from an island config object.
  * Pure transform — no side effects. Caller passes results to the API.
  */
-export function buildRegistration(islandId: any, islandConfig: any): {
+export function buildRegistration(islandId?: any, islandConfig?: any): {
     id: any;
     js: string[];
     matches: any[];
@@ -31,12 +31,12 @@ export function registerAllIslands(scriptingApi: object, islandsConfig: object):
     error: any;
 })[]>;
 /** Register a single island (or replace existing registration). */
-export function registerIsland(scriptingApi: any, islandId: any, islandConfig: any): Promise<{
+export function registerIsland(scriptingApi?: any, islandId?: any, islandConfig?: any): Promise<{
     id: any;
     ok: boolean;
 }>;
 /** Unregister a single island. No-op if not currently registered. */
-export function unregisterIsland(scriptingApi: any, islandId: any): Promise<{
+export function unregisterIsland(scriptingApi?: any, islandId?: any): Promise<{
     id: any;
     ok: boolean;
     note: string;

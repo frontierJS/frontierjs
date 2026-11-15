@@ -34,7 +34,6 @@ import { createProvider }     from './index.js'
 import { LocalProvider }      from './providers/local.js'
 import { refUrlUnder }        from './ref-url.js'
 import { contentTypeFor, sniff, baseType, extensionFor, sameType } from '@frontierjs/toolbelt/mime'
-import { buildWhere }         from '../core/query.js'
 import { ValidationError }    from '../core/validate.js'
 import { extname, basename }  from 'path'
 import { existsSync, openAsBlob, createReadStream } from 'fs'
@@ -587,10 +586,9 @@ class FileStoragePlugin extends ExternalRefPlugin {
   _heldRefs(model, field, where, ctx) {
     if (!ctx.readDb || !where) return null
     try {
-      const params   = []
-      const whereSql = buildWhere(where, params)
-      if (!whereSql) return null
-      const rows = ctx.readDb.query(`SELECT "${field}" FROM "${this._table(model, ctx)}" WHERE ${whereSql}`).all(...params)
+      const read = this._oldRead(model, [field], where, ctx)
+      if (!read) return null
+      const rows = read.stmt.all(...read.params)
       const held = rows.map(row => new Map(this._parseRefArray(row[field]).filter(ref => ref?.key).map(ref => [ref.key, ref])))
       const [first = new Map(), ...rest] = held
       return new Map([...first].filter(([key]) => rest.every(m => m.has(key))))
@@ -702,11 +700,9 @@ class FileStoragePlugin extends ExternalRefPlugin {
     const stashFields = rawFields.filter(([, opts]) => !opts.keepVersions)
     if (stashFields.length && ctx.readDb && args.where) {
       try {
-        const params = []
-        const whereSql = buildWhere(args.where, params)
-        if (whereSql) {
-          const colSql = stashFields.map(([f]) => `"${f}"`).join(', ')
-          const oldRow = ctx.readDb.query(`SELECT ${colSql} FROM "${this._table(model, ctx)}" WHERE ${whereSql}`).get(...params)
+        const read = this._oldRead(model, stashFields.map(([f]) => f), args.where, ctx)
+        if (read) {
+          const oldRow = read.stmt.get(...read.params)
           for (const [field, opts] of stashFields) {
             if (opts.isArray) {
               // A ref the new array carries forward is still in use; cleaning it

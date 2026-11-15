@@ -354,6 +354,33 @@ export function askArgv({ session = null, edit = null, reads = [], work = null, 
   return argv
 }
 
+// SESSION is a long-lived process a host talks to over stdin
+// (`fjs-prototypes/lathe/docs/claude-control-protocol.md`): every permission
+// prompt, question and plan approval comes back to the host as a
+// `can_use_tool` request, which is why the settings sources are named — they
+// are what turns the project's hooks on, and without `stdio` as the prompt
+// tool AskUserQuestion and the plan tools silently vanish.
+const SESSION_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions']
+
+export function sessionArgv({ session = null, model = null, effort = null, permissionMode = null } = {}) {
+  const argv = [
+    '-p',
+    '--output-format',          'stream-json',
+    '--verbose',
+    '--input-format',           'stream-json',
+    '--permission-prompt-tool', 'stdio',
+    '--include-partial-messages',
+    '--include-hook-events',
+    '--setting-sources',        'user,project,local',
+    '--replay-user-messages',
+  ]
+  if (model) argv.push('--model', String(model))
+  if (effort && EFFORTS.includes(effort)) argv.push('--effort', effort)
+  if (permissionMode && SESSION_MODES.includes(permissionMode)) argv.push('--permission-mode', permissionMode)
+  if (session && SESSION_ID.test(String(session))) argv.push('--resume', String(session))
+  return argv
+}
+
 function askFlags({ session, edit, reads, work, agent, draw, fork }) {
   // DRAW is `project:diagram`: no tool at all and the whole system prompt
   // replaced, so stdin is the only thing it reads and one input gives one page.

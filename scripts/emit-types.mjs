@@ -17,16 +17,13 @@
 // `--check` either is a failure, since a new kit added that way is the
 // regression this guards.
 //
-// An untyped JS parameter emits as required, so a caller that omits it is
-// TS2554 against the declaration: `/** @param {T} [x] */` on the JS is the fix.
-//
 // The emit runs over a temp copy with every generated file removed: left in
 // place, an import of `./helper.js` resolves to the committed `helper.d.ts`, and
 // a changed helper would regenerate as its old self.
 
-import { spawnSync }                                  from 'node:child_process'
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync,
          rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs'
+import { createRequire }                              from 'node:module'
 import { tmpdir }                                     from 'node:os'
 import { basename, dirname, join, relative }          from 'node:path'
 
@@ -136,30 +133,80 @@ function emit(roots) {
     // its names to every importer.
     symlinkSync(dirname(dirname(tsc)), join(tmp, 'node_modules'), 'dir')
 
-    // --noCheck: a `// @ts-check` file's type errors are its typecheck's to
+    const ts = createRequire(import.meta.url)(join(dirname(dirname(tsc)), 'typescript'))
+    // noCheck: a `// @ts-check` file's type errors are its typecheck's to
     // report, not a reason to withhold its declarations.
-    const run = spawnSync(tsc, [
-      '--allowJs', '--declaration', '--emitDeclarationOnly', '--skipLibCheck', '--noCheck',
-      '--types', 'bun-types',
-      '--target', 'ESNext', '--module', 'Preserve', '--moduleResolution', 'bundler',
-      '--newLine', 'lf', '--rootDir', '.', '--outDir', out,
-      ...roots,
-    ], { cwd: copy, encoding: 'utf8' })
-
-    if (run.status !== 0) fail(`tsc failed:\n${run.stdout}${run.stderr}`)
+    const options = {
+      allowJs: true, declaration: true, emitDeclarationOnly: true, skipLibCheck: true, noCheck: true,
+      types: ['bun-types'],
+      target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.Preserve,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      newLine: ts.NewLineKind.LineFeed, rootDir: copy, outDir: out,
+    }
+    const host = ts.createCompilerHost(options)
+    host.getCurrentDirectory = () => copy
+    const program = ts.createProgram(roots.map(r => join(copy, r)), options, host)
 
     const files = new Map()
-    for (const file of walk(out)) {
+    const result = program.emit(undefined, (file, text) => {
       const rel = relative(out, file)
       const src = './' + basename(rel).replace(/\.d\.ts$/, '.js')
       // tsc copies a bin's #! line into its declaration, and below the header
       // it is a syntax error in every app that imports it.
-      const body = readFileSync(file, 'utf8').replace(/^#!.*\n/, '')
+      const body = text.replace(/^#!.*\n/, '')
       files.set(rel, `${HEADER} from ${src} — edit the JS and run bun run types.\n${body}`)
-    }
+    }, undefined, true, { afterDeclarations: [untypedParamsOptional(ts)] })
+
+    const errors = [...ts.getPreEmitDiagnostics(program), ...result.diagnostics]
+      .filter(d => d.category === ts.DiagnosticCategory.Error)
+    if (errors.length) fail(`tsc failed:\n${ts.formatDiagnostics(errors, host)}`)
     return files
   } finally {
     rmSync(tmp, { recursive: true, force: true })
+  }
+}
+
+// tsc reads a JS function with no @param tag and no @type as taking any number
+// of arguments, then declares every parameter of it required: a linked app
+// calling `FileStorage()` typechecked and the installed one was TS2554
+// (FJS-4330). A declaration whose source is such a function marks its
+// parameters optional; one @param tag makes the JS's arity the declaration's.
+function untypedParamsOptional(ts) {
+  const VALUE_SIGNATURE = new Set([
+    ts.SyntaxKind.FunctionDeclaration, ts.SyntaxKind.FunctionExpression, ts.SyntaxKind.ArrowFunction,
+    ts.SyntaxKind.MethodDeclaration, ts.SyntaxKind.Constructor,
+  ])
+
+  // An exported `const f = (a) => …` declares as a function whose original is
+  // the variable list, not the arrow.
+  function sourceOf(node) {
+    const original = ts.getOriginalNode(node)
+    if (VALUE_SIGNATURE.has(original.kind)) return original
+    if (!ts.isVariableDeclarationList(original) || !node.name || !ts.isIdentifier(node.name)) return null
+    const name = ts.idText(node.name)
+    const init = original.declarations.find(d => ts.isIdentifier(d.name) && ts.idText(d.name) === name)?.initializer
+    return init && VALUE_SIGNATURE.has(init.kind) ? init : null
+  }
+
+  function isUntypedJs(fn) {
+    return !!fn && ts.isInJSFile(fn)
+      && !ts.getJSDocTags(fn).some(ts.isJSDocParameterTag) && !ts.getJSDocType(fn)
+  }
+
+  return ctx => {
+    const { factory } = ctx
+    const optional = p => p.questionToken || p.dotDotDotToken ? p
+      : factory.updateParameterDeclaration(p, p.modifiers, p.dotDotDotToken, p.name,
+          factory.createToken(ts.SyntaxKind.QuestionToken), p.type, p.initializer)
+    // An accessor is passed by: a setter's parameter is never optional, and
+    // visiting a bodiless one trips tsc's "Lexical environment is suspended".
+    const visit = node => {
+      if (ts.isAccessor(node)) return node
+      if (ts.isFunctionLike(node) && isUntypedJs(sourceOf(node)))
+        return ts.visitEachChild(node, child => ts.isParameter(child) ? optional(child) : visit(child), ctx)
+      return ts.visitEachChild(node, visit, ctx)
+    }
+    return file => ts.visitNode(file, visit)
   }
 }
 

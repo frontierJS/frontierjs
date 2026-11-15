@@ -20,4 +20,4 @@ export function htmlFiles(dir: string): Promise<string[]>;
  * reported nothing wrong. Without the tag, after the charset declaration keeps
  * that within the first 1024 bytes where the parser looks for it.
  */
-export function placeInHead(html: any, script: any): string;
+export function placeInHead(html?: any, script?: any): string;

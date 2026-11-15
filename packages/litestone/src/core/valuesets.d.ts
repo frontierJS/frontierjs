@@ -5,7 +5,7 @@
  * Built once at client construction. A model with none is absent, so the check
  * is a map lookup for every schema that does not use the feature.
  */
-export function buildValueSetMap(schema: any): Record<string, any>;
+export function buildValueSetMap(schema?: any): Record<string, any>;
 /**
  * Refuse, or grow the set, before the write.
  *
@@ -34,7 +34,7 @@ export function enforceValueSets(modelName: any, rows: any, ctx: any, opts?: any
  * what has to be SAID about it.
  */
 export class ValueSetExtendError extends Error {
-    constructor(bind: any, value: any, cause: any);
+    constructor(bind?: any, value?: any, cause?: any);
     cause: any;
     status: any;
     retryable: any;

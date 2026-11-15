@@ -156,7 +156,7 @@ import { ENV_PREFIX } from './env-prefix.js';
  * Deep merge two objects. `b` wins over `a` for scalar values.
  * Arrays are concatenated.
  */
-declare function deepMerge(a: any, b: any): any;
+declare function deepMerge(a?: any, b?: any): any;
 /**
  * The class a prerendered page carries on <html>.
  *
@@ -176,5 +176,5 @@ declare function deepMerge(a: any, b: any): any;
  * <head> script answers it before paint; baking either one would be a guess
  * that is wrong half the time and cached by a CDN.
  */
-export function resolveHtmlClass(config: any): any;
+export function resolveHtmlClass(config?: any): any;
 export { ENV_PREFIX, deepMerge as _deepMerge };

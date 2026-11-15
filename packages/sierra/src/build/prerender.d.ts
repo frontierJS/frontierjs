@@ -12,13 +12,13 @@
  * shell at all, while dev wrapped them (FJS-1902). A pass-through `_module.md`
  * is skipped here as the scanner skips it, or the page renders empty.
  */
-export function layoutChainFor(routeFile: any, routesDirAbs: any): string[];
+export function layoutChainFor(routeFile?: any, routesDirAbs?: any): string[];
 /**
  * Why a static route is not written, or null when it is. One answer for the
  * prerender and for `bundleUnreachable`, which has to know whether the home
  * page will overwrite Vite's SPA shell before the bundle is rendered.
  */
-export function omittedReason(node: any): string;
+export function omittedReason(node?: any): string;
 /**
  * Substitute `:param` segments in a route path.
  * '/blog/:slug/' + { slug: 'hello' } → '/blog/hello/'
@@ -32,18 +32,18 @@ export function omittedReason(node: any): string;
  * `products/index.html` — the catalog's own page, replaced by one product,
  * with the build exiting 0 and printing a tick beside it.
  */
-export function fillPath(routePath: any, params: any): any;
+export function fillPath(routePath?: any, params?: any): any;
 /**
  * Enumerate the concrete URL paths a route contributes.
  * Static route → itself. Dynamic route → one per getStaticPaths() entry.
  */
-export function pathsForRoute(node: any, root: any): Promise<any>;
+export function pathsForRoute(node?: any, root?: any): Promise<any>;
 /**
  * Build the synthetic wrapper module that composes layouts around the page.
  * Returned as source text; the caller renders it with Mesa.
  *
  */
-export function composeWrapper(pageFile: any, layoutChain: any): string;
+export function composeWrapper(pageFile?: any, layoutChain?: any): string;
 /**
  * The `document` keys as HTML. One serializer for the prerendered page and for
  * the `index.html` shell (`document-shell.js`), so the two cannot escape differently.
@@ -74,7 +74,7 @@ export function documentParts({ lang, htmlClass, meta, links, jsonLd, bodyClass,
  * fewer request — these pages ship no JS, so the style block is the only thing
  * standing between HTML and first paint.
  */
-export function wrapDocument(bodyHTML: any, { title, description, css, styles, lang, stylesheets, bodyClass, htmlClass, meta, links, jsonLd, bodyAttrs, head, bodyEnd, }?: {
+export function wrapDocument(bodyHTML?: any, { title, description, css, styles, lang, stylesheets, bodyClass, htmlClass, meta, links, jsonLd, bodyAttrs, head, bodyEnd, }?: {
     lang?: string;
     stylesheets?: any[];
     bodyClass?: string;
@@ -87,7 +87,7 @@ export function wrapDocument(bodyHTML: any, { title, description, css, styles, l
     bodyEnd?: string;
 }): string;
 /** '/blog/hello/' → 'blog/hello/index.html' */
-export function outputFileFor(urlPath: any): string;
+export function outputFileFor(urlPath?: any): string;
 /**
  * The file an island's import names, as the bundle has to find it. Joined to the
  * call site as a path, `@frontierjs/site-kit/site/Toc.mesa` became
@@ -104,7 +104,7 @@ export function islandModule(file: string, specifier: string, alias?: Record<str
  * @returns {Promise<{ written: string[], urls: string[], skipped: Array<{route:string, reason:string}>,
  *   fallback: Array<{route:string, reason:string}> }>}
  */
-export function prerenderRoutes(opts: any): Promise<{
+export function prerenderRoutes(opts?: any): Promise<{
     written: string[];
     urls: string[];
     skipped: Array<{
@@ -129,7 +129,7 @@ export function prerenderRoutes(opts: any): Promise<{
  */
 export const DEFAULT_LANG: "en";
 export const SKIP_LINK: "<a class=\"skip-link\" href=\"#main\">Skip to content</a>";
-export function hasSkipLink(html: any): boolean;
+export function hasSkipLink(html?: any): boolean;
 /**
  * The link off-screen before any stylesheet is. An SPA's CSS arrives with its
  * JS — in `vite dev`, only once the whole module graph has loaded — and until

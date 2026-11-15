@@ -8,8 +8,8 @@ export function makeHarborRegistry(): {
     countFor(key: any): any;
     total(): number;
 };
-export function registryKey(parsed: any): any;
-export function makePagesApi(registry: any): {
+export function registryKey(parsed?: any): any;
+export function makePagesApi(registry?: any): {
     dock: {
         send: (type: any, payload: any) => any;
     };

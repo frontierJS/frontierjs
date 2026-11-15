@@ -14353,6 +14353,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2199"></a>2026-11-15 · `FJS-D2199` — Q8 — How the outline numbers an h4 — As an h3, 1.1, the way maid.tech's outline does.
+
+Asked in [`IDEAS/site-search.md`](IDEAS/site-search.md) § Open questions. **B** was picked over **A** (its own level, 1.2.1).
+
+Against the recommendation (**A**): the owner keeps maid.tech's numbering, which its readers already know.
+
 ### <a id="fjs-d2198"></a>2026-11-15 · `FJS-D2198` — Q7 — Whether a Result matches a word the visitor is still typing — The last word, when no space follows it, matches a word's start; every other word stays whole.
 
 Asked in [`IDEAS/site-search.md`](IDEAS/site-search.md) § Open questions. **A** was picked over **B** (whole words only).

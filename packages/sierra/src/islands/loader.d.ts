@@ -29,7 +29,7 @@ export function findIslands(root?: HTMLElement): Array<{
  * Calling a component by mistake would render it into nowhere and return
  * undefined, so this cannot guess: only a zero-argument function is invoked.
  */
-export function resolveComponent(entry: any): Promise<any>;
+export function resolveComponent(entry?: any): Promise<any>;
 /**
  * Mount one island now, replacing whatever currently stands in its range.
  * Exported so a caller can drive mounting itself (tests do).
@@ -38,7 +38,7 @@ export function resolveComponent(entry: any): Promise<any>;
  * longer in the document. That means an ancestor island mounted over this one
  * and rendered the component live itself, which is success, not failure.
  */
-export function mountIsland(island: any, Component: any): any;
+export function mountIsland(island?: any, Component?: any): any;
 /**
  * Schedule `fn` according to a `client:*` directive.
  *
@@ -47,7 +47,7 @@ export function mountIsland(island: any, Component: any): any;
  * reactive" (VISION §18.5), so the prerendered markup is the final answer and
  * mounting would be the opposite of what was asked for.
  */
-export function schedule(directive: any, media: any, target: any, fn: any): () => void;
+export function schedule(directive?: any, media?: any, target?: any, fn?: any): () => void;
 /**
  * Mount every island on the page from a name → component registry.
  *

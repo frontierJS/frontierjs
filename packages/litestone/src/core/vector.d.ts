@@ -7,16 +7,16 @@
  * reads the wrong bytes with no error — a silently wrong distance, which is the
  * failure this whole file is careful about.
  */
-export function readVector(bytes: any, dim: any): Float32Array<ArrayBufferLike>;
+export function readVector(bytes?: any, dim?: any): Float32Array<ArrayBufferLike>;
 /**
  * Turn a caller's numbers into the bytes a `@vector(dim)` column stores.
  *
  * Refuses three things, and the third is the one that matters — see
  * `refuseUnstorable` for why a zero vector is not a value.
  */
-export function toVectorBytes(values: any, dim: any, label?: string): Uint8Array<ArrayBufferLike>;
-export function isZeroVector(floats: any): boolean;
-export function refuseUnstorable(floats: any, dim: any, label?: string): void;
+export function toVectorBytes(values?: any, dim?: any, label?: string): Uint8Array<ArrayBufferLike>;
+export function isZeroVector(floats?: any): boolean;
+export function refuseUnstorable(floats?: any, dim?: any, label?: string): void;
 /**
  * Cosine DISTANCE, matching `vec_distance_cosine` exactly.
  *
@@ -29,7 +29,7 @@ export function refuseUnstorable(floats: any, dim: any, label?: string): void;
  * what the extension answers and the oracle compares the two. Writes are
  * refused above, so a stored null is a bug and not a shape.
  */
-export function cosineDistance(a: any, b: any): number;
+export function cosineDistance(a?: any, b?: any): number;
 /**
  * Score candidate rows and order them, which is the JS half of
  * `orderBy: { embedding: { near: v } }`.
@@ -51,6 +51,6 @@ export function cosineDistance(a: any, b: any): number;
  * filtered set, which is why the record calls the caller's `where` the prune
  * rather than an optimization.
  */
-export function scoreByDistance(rows: any, query: any, { column, dim, take, skip, dir, as }: any): any[];
+export function scoreByDistance(rows?: any, query?: any, { column, dim, take, skip, dir, as }?: any): any[];
 export const BYTES_PER_DIM: 4;
 export const DISTANCE_FIELD: "_distance";

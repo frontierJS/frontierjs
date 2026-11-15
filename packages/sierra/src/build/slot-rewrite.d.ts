@@ -2,7 +2,7 @@
 /**
  * Rewrite <mesa:slot name="X">content</mesa:slot> on PAGE files.
  */
-export function rewriteMesaSlots(source: any, file?: any): any;
+export function rewriteMesaSlots(source?: any, file?: any): any;
 /**
  * Rewrite <slot name="X">fallback</slot> in LAYOUT files.
  *
@@ -15,8 +15,8 @@ export function rewriteMesaSlots(source: any, file?: any): any;
  * The default slot is not rewritten: Mesa lowers `<slot />` and declares the
  * `children` prop it reads, so a second translation here would be a second owner.
  */
-export function rewriteLayoutSlots(source: any, file?: any): any;
-export function extractProvidedSlots(source: any): string[];
+export function rewriteLayoutSlots(source?: any, file?: any): any;
+export function extractProvidedSlots(source?: any): string[];
 /**
  * slot-rewrite.js — Sierra slot system compile-time rewriting
  *

@@ -42,4 +42,4 @@ export function createTethered(resource: object, tetheredQuery: {
     reload: () => any;
     destroy: () => void;
 };
-export function ownsRows(opts: any): boolean;
+export function ownsRows(opts?: any): boolean;

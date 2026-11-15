@@ -15,7 +15,7 @@
  * `install` is the whole set when peers come as a group, so one missing
  * package does not lead to five more errors, one at a time.
  */
-export function missingPeer(name: any, feature: any, install?: any): (err: any) => never;
+export function missingPeer(name?: any, feature?: any, install?: any): (err: any) => never;
 export namespace NO_LOADING {
     let disableJavaScriptFileLoading: boolean;
     let disableCSSFileLoading: boolean;

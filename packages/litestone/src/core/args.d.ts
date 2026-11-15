@@ -87,10 +87,10 @@ export function collectAggKeyProblems(names: string[], sets: Record<string, any>
  * @param {Ctx} ctx
  */
 export function withArgValidation(table: Record<string, any>, model: ModelDef, ctx: Ctx): Record<string, any>;
-export function _guardedNames(model: {
+export function _guardedNames(model?: {
     name: string;
-}, ctx: Ctx): Set<string>;
-export function _shownSet(set: Set<string>, hidden: Set<string> | null | undefined): Set<string>;
+}, ctx?: Ctx): Set<string>;
+export function _shownSet(set?: Set<string>, hidden?: Set<string> | null | undefined): Set<string>;
 /**
  * What a `view` refuses. Everything else `makeTable` offers is forwarded.
  *

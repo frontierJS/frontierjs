@@ -93,7 +93,7 @@ export function createPendingQueue({ now }?: {
  * and re-apply*. That is a different question with a different answer and
  * sharing a word would eventually share a branch.
  */
-export function unreachable(err: any): boolean;
+export function unreachable(err?: any): boolean;
 /**
  * One queue for the whole app, not one per resource.
  *
@@ -104,7 +104,7 @@ export function unreachable(err: any): boolean;
  */
 export function pendingQueue(): any;
 /** Drain everything waiting. Answers what it did, for a caller that wants it. */
-export function drainPending(client: any): Promise<{
+export function drainPending(client?: any): Promise<{
     settled: number;
     rejected: number;
 }>;

@@ -4,9 +4,9 @@ declare namespace _default {
     let sync: boolean;
     namespace vector {
         let cosineDistance: string;
-        function arm(db: any): void;
+        function arm(db?: any): void;
     }
-    function open(path: string, { readonly }?: {
+    function open(path?: string, { readonly }?: {
         readonly?: boolean;
     }): Database;
 }

@@ -35,7 +35,7 @@ export function applySchemaModePatch(createDef: object, patch?: object): object 
  * .toLowerCase() + 's'`, which is not even the rule this registry uses — and it
  * belongs here, where the plural rules already are.
  */
-export function serviceNameFor(modelName: any): any;
+export function serviceNameFor(modelName?: any): any;
 /**
  * A table of model schemas — one app's, as the browser sees it.
  *
@@ -167,7 +167,7 @@ export function resolveRef(ref: string): object | null;
  * statuses/Status, and honestly returns nothing for people/Person, where no
  * string rule could have known.
  */
-export function suggestModel(name: any): string;
+export function suggestModel(name?: any): string;
 /** All registered MODELS, keyed by model name. */
 export function allSchemas(): Record<string, any>;
 /** The whole definition table — models, enums, types, FileRef. */

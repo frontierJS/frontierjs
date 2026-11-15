@@ -11,8 +11,8 @@ export function virtualSierraPlugin(config: any, sierraContext: object): any;
  * when set, `''` turning it off; else the name in the nearest package.json above
  * the Vite root, which for an app whose surfaces carry no manifest is the app's.
  */
-export function storagePrefix(config: any, root: any): any;
-export function _generateEntry(root: any): string;
-export function _generateVirtualSierra(config: any, tableOutput: any, sierraContext: any): string;
-export function _resolveFrontierSubpathForTest(id: any, searchRoots: any): string;
+export function storagePrefix(config?: any, root?: any): any;
+export function _generateEntry(root?: any): string;
+export function _generateVirtualSierra(config?: any, tableOutput?: any, sierraContext?: any): string;
+export function _resolveFrontierSubpathForTest(id?: any, searchRoots?: any): string;
 export const RESOLVED_BOOT_ID: "\0virtual:sierra/boot";

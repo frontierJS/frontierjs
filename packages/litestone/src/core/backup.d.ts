@@ -9,8 +9,8 @@ export function backupSqliteTo(rawDb: any, destPath: string, { vacuum, maxSerial
     maxSerializeBytes?: number;
 }): Promise<number>;
 /** `{ takenAt }` when this database came out of a backup, otherwise null. */
-export function readBackupStamp(rawDb: any): {
+export function readBackupStamp(rawDb?: any): {
     takenAt: any;
 };
-export function writeBackupStamp(rawDb: any, takenAt: string): void;
-export function clearBackupStamp(rawDb: any): void;
+export function writeBackupStamp(rawDb?: any, takenAt?: string): void;
+export function clearBackupStamp(rawDb?: any): void;

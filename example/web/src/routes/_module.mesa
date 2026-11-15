@@ -59,16 +59,13 @@ siteName: Kitchen sink
   // screen owns it, and a toast for it would queue behind whatever the page is
   // saying. `alert` is the one floating channel, mounted once below.
   //
-  // Edge-triggered, and the initial value is `false`: the socket is not
-  // connected at mount either, and firing on that state rather than on the
-  // TRANSITION into it means every cold load announces a drop that never
-  // happened.
-  let wasConnected = false
-  $: {
-    if (wasConnected && !status.connected) {
+  // Edge-triggered: the socket is not connected at mount either, and firing on
+  // that state rather than on the TRANSITION out of connected means every cold
+  // load announces a drop that never happened. A watch skips its mount run.
+  $: status.connected, (now, was) => {
+    if (was && !now) {
       alert.warning('The live connection dropped. Changes made elsewhere will not appear until it is back.')
     }
-    wasConnected = status.connected
   }
 
   async function openNote(note) {

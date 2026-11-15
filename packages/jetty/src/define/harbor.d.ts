@@ -165,4 +165,4 @@ export function defineHarbor(config?: {}): {
     };
     config: {};
 };
-export function handleConnect(port: any, registry: any, getBootContext?: () => any, lifecycleHooks?: {}): void;
+export function handleConnect(port?: any, registry?: any, getBootContext?: () => any, lifecycleHooks?: {}): void;

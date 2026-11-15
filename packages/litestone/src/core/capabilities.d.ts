@@ -13,9 +13,9 @@
  * @returns {any[]}
  */
 export function capabilitiesForModel(model: any): any[];
-export function deriveCapabilities(schema: any): any;
+export function deriveCapabilities(schema?: any): any;
 /** The same set as names alone — what a grant column validates a value against. */
-export function capabilityNames(schema: any): Set<any>;
+export function capabilityNames(schema?: any): Set<any>;
 /**
  * The same declarations keyed by model, for a reader that has a model in hand and
  * needs an answer per call rather than a list — enforcement asks this one.
@@ -24,7 +24,7 @@ export function capabilityNames(schema: any): Set<any>;
  * model absent from it declares no grid. One reading of the attributes, because two
  * would let the set a picker OFFERS drift from the set the boundary ENFORCES.
  */
-export function capabilityDeclarations(schema: any): Record<string, any>;
+export function capabilityDeclarations(schema?: any): Record<string, any>;
 /**
  * Synthesize `enum Capability` from the schema's own surface, so a column that
  * HOLDS capabilities is declared `Capability[]` rather than `String[]`.
@@ -40,6 +40,6 @@ export function capabilityDeclarations(schema: any): Record<string, any>;
  * `Capability[]` over an empty set would refuse every value it was ever given,
  * which is a column that cannot be written and cannot say why.
  */
-export function expandCapabilityType(schema: any): any[];
+export function expandCapabilityType(schema?: any): any[];
 /** The name of the synthesized type. A schema declaring its own is refused. */
 export const CAPABILITY_TYPE: "Capability";

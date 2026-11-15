@@ -35,7 +35,7 @@ export function injectPageScript(resourcePath: string, opts?: {
  *
  * Returns { send, on, off, destroy, nonce }.
  */
-export function makePageBridge(channel: any, { side, nonce }: {
+export function makePageBridge(channel?: any, { side, nonce }?: {
     side: any;
     nonce: any;
 }): {

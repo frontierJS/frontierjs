@@ -5,7 +5,7 @@
  * `functions` is the build's host-function entry. It is imported statically so
  * the bundler embeds it; the binary reads `env` from the process it runs in.
  */
-export function siteEntry(dir: any, files: any, functions: any): string;
+export function siteEntry(dir?: any, files?: any, functions?: any): string;
 /**
  * Compile `dir` into one executable at `outfile`.
  *

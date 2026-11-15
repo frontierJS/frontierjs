@@ -194,68 +194,6 @@ describe('a read through a frozen parent', () => {
 })
 
 /**
- * A write from inside a derivation (`FJS-884`).
- *
- * A memo is lazy: it stops recomputing the moment nothing reads it, and a
- * derivation written for its side effect stops with it — silently. Warned
- * rather than refused, because a write to the memo's OWN dependency is a
- * handled case here that Svelte's outright ban would contradict.
- */
-import { createMemo, resetDerivedWriteWarnings } from '../src/runtime.js'
-
-describe('a write from inside a derivation', () => {
-  const warnings = (fn) => {
-    resetDerivedWriteWarnings()
-    const seen = []
-    const real = console.warn
-    console.warn = (...a) => seen.push(a.join(' '))
-    try { fn() } finally { console.warn = real }
-    return seen.filter((w) => w.includes('[Mesa]'))
-  }
-
-  it('is named, with the reason it will stop working', () => {
-    createRoot(() => {
-      const p = watchProxy({ n: 1, log: 0 })
-      const w = warnings(() => { createMemo(() => { p.log = p.n * 2; return p.n })() })
-      expect(w.length).toBe(1)
-      expect(w[0]).toContain('log')
-      expect(w[0]).toContain('lazy')
-      expect(p.log).toBe(2)          // it is a warning, not a refusal
-    })
-  })
-
-  it('once per path, because a derivation reruns', () => {
-    createRoot(() => {
-      const p = watchProxy({ n: 1, log: 0 })
-      const w = warnings(() => {
-        const m = createMemo(() => { p.log = p.n * 2; return p.n })
-        m(); p.n = 2; m(); p.n = 3; m()
-      })
-      expect(w.length).toBe(1)
-    })
-  })
-
-  it('a write from an EFFECT says nothing — the control', () => {
-    createRoot(() => {
-      const p = watchProxy({ n: 1, log: 0 })
-      const w = warnings(() => {
-        createEffect(() => { p.log = p.n * 2 })
-        flushSync()
-      })
-      expect(w).toEqual([])
-      expect(p.log).toBe(2)
-    })
-  })
-
-  it('an ordinary write outside anything says nothing', () => {
-    createRoot(() => {
-      const p = watchProxy({ n: 1 })
-      expect(warnings(() => { p.n = 5 })).toEqual([])
-    })
-  })
-})
-
-/**
  * A watch over a primitive (`FJS-1338`).
  *
  * The compiler cannot tell `import { count }` from `import { store }`, so

@@ -82,7 +82,7 @@ export function createAttachmentQueue({ now }?: {
 /** One attachment queue for the whole app, the way there is one write queue. */
 export function attachmentQueue(): any;
 /** Drain everything waiting. Answers what it did, for a caller that wants it. */
-export function drainAttachments(client: any): Promise<{
+export function drainAttachments(client?: any): Promise<{
     settled: number;
     rejected: number;
 }>;

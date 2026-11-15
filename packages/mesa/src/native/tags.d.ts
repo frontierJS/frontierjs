@@ -82,7 +82,7 @@ export namespace NATIVE_TAGS {
         export { role_3 as role };
     }
 }
-export function tagClass(tag: any): string;
+export function tagClass(tag?: any): string;
 export const userAgentSheet: string;
 export namespace INPUT_TYPES {
     let text_1: string;
@@ -94,8 +94,8 @@ export namespace INPUT_TYPES {
     export let number: string;
     export let password: string;
 }
-export function inputKind(type: any): any;
-export function isInline(tag: any): boolean;
+export function inputKind(type?: any): any;
+export function isInline(tag?: any): boolean;
 export namespace NATIVE_EVENTS {
     export namespace click {
         let bubbles: boolean;

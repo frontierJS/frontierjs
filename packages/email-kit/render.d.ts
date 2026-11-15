@@ -67,7 +67,7 @@ export function renderEmailFile(filePath: string, options?: object): Promise<{
  *
  * The body's raw HTML is never passed through and a filled value is escaped.
  */
-export function renderStored({ subject, body }: {
+export function renderStored({ subject, body }?: {
     subject?: string;
     body?: string;
 }, ctx?: {}, options?: {}): Promise<{

@@ -32,7 +32,7 @@ export function warnUnexportedSnippets(source: string, id: string, routesDir: st
  * @param {(msg: string) => void} emit
  */
 export function warnReservedFrontmatter(tree: object, reserved: string[], emit: (msg: string) => void): void;
-export function warnDuplicateSnippets(tree: any, layoutPropMap: any, emit: any): void;
+export function warnDuplicateSnippets(tree?: any, layoutPropMap?: any, emit?: any): void;
 /**
  * Extract all `export let` prop names from a Mesa layout source.
  * Called by mesa-plugin when compiling a _module.mesa file.
@@ -66,7 +66,7 @@ export function extractLayoutProps(source: string): Set<string>;
  * the advice instead would be asking the reader to reproduce something this
  * process already knows.
  */
-export function explainModuleInitFailure(message: any, specifier: any): any;
+export function explainModuleInitFailure(message?: any, specifier?: any): any;
 /**
  * A message for `this.warn` / `this.error` inside a `transform` hook, carrying
  * no position. Handed a string, Vite builds `new Error(message)`, and where the
@@ -76,7 +76,7 @@ export function explainModuleInitFailure(message: any, specifier: any): any;
  * `SiteMap.mesa:8766:43` (`FJS-1903`). The compiler's diagnostics carry no
  * position to give, so the honest answer is the file alone.
  */
-export function positionless(message: any): Error;
+export function positionless(message?: any): Error;
 /**
  * A reactivity hint says a read will not update when its import mutates, which
  * is true only of code that re-renders in a browser. A static build compiles
@@ -91,9 +91,9 @@ export function positionless(message: any): Error;
  * second Vite build with its own plugin instances, and its chunks are as
  * published as the main build's.
  */
-export function holdHints(context: any, id: any, hints: any): void;
+export function holdHints(context?: any, id?: any, hints?: any): void;
 /** Which modules each emitted chunk carries, keyed by the file's own name. */
-export function recordChunks(context: any, bundle: any): void;
+export function recordChunks(context?: any, bundle?: any): void;
 /**
  * The held hints whose module a kept script contains, and how many were held
  * for modules none does.

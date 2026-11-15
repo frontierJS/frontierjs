@@ -9,7 +9,7 @@ export function permissionFor(namespace: string): string | string[] | "no-permis
 /**
  * Returns true if a permission is auto-granted (no manifest declaration needed).
  */
-export function isFreePermission(perm: any): boolean;
+export function isFreePermission(perm?: any): boolean;
 /**
  * True when every member seen on a namespace is one that needs no permission.
  * A bare reference ('*') could call anything, so it never qualifies.

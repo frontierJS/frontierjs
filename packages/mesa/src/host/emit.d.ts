@@ -9,8 +9,8 @@
  * its own file and answers for itself. One answer for `hostOffenses` and
  * the emitter both, so the report cannot count a node the emitter drops.
  */
-export function hostDropped(ir: any, t: any): Set<any>;
-export function hostOffenses(ir: any, t: any): any[];
+export function hostDropped(ir?: any, t?: any): Set<any>;
+export function hostOffenses(ir?: any, t?: any): any[];
 /** The refusal for `ir`'s first offender in document order, or null when it lowers. */
-export function hostRefusal(ir: any, t: any): string;
-export function buildHost(ctx: any, t: any): void;
+export function hostRefusal(ir?: any, t?: any): string;
+export function buildHost(ctx?: any, t?: any): void;

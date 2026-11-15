@@ -63,13 +63,13 @@ export function remountKey(entry: {
     meta?: object;
     ownParams?: string[];
 } | undefined, params: Record<string, unknown>): string | null;
-export function registerModule(routeId: any, module: any): void;
+export function registerModule(routeId?: any, module?: any): void;
 /**
  * Get all currently loaded component factories.
  * @returns {Map<string, Function>}
  */
 export function getComponents(): Map<string, Function>;
-export function resolveChain(routeNode: any): any;
+export function resolveChain(routeNode?: any): any;
 /**
  * Register the layout hierarchy from the route tree.
  * Called by initRouter — walks the tree and builds the parent map.
@@ -97,7 +97,7 @@ export function getLayoutChainForNode(routeNode: object): string[];
  */
 export function registerFileComponent(filePath: string, factory: Function): void;
 /** Has a component already been registered for this file path? */
-export function hasFileComponent(filePath: any): boolean;
+export function hasFileComponent(filePath?: any): boolean;
 /**
  * Load the layout components a route needs, if not already loaded.
  *

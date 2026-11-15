@@ -114,11 +114,19 @@ export class ExternalRefPlugin extends LitestonePlugin {
     return this._perClient.get(ctx.shapes ?? ctx) ?? NO_MAPS
   }
 
-  // The table a model's rows live in. The model name is not one: a derived
-  // name (WhiteboardItem → whiteboard_item) throws "no such table", and the
-  // reads that catch it leave a replaced object on disk (FJS-4316).
-  _table(model, ctx) {
-    return ctx.shapes?.[model]?.tableName ?? model
+  // The statement reading `fields` of the rows `where` matches, keyed by field,
+  // and its binds; null when the where builds no clause. It names the model's
+  // table and columns, never the model and field names: a derived table name or
+  // an @map-ped column throws "no such table/column", and the reads that catch
+  // it leave a replaced object on disk (FJS-4316, FJS-4320).
+  _oldRead(model, fields, where, ctx) {
+    const shape    = ctx.shapes?.[model]
+    const cols     = shape?.columnMap ?? {}
+    const params   = []
+    const whereSql = buildWhere(where, params, null, null, null, null, null, cols)
+    if (!whereSql) return null
+    const colSql = fields.map(f => `"${cols[f] ?? f}" AS "${f}"`).join(', ')
+    return { stmt: ctx.readDb.query(`SELECT ${colSql} FROM "${shape?.tableName ?? model}" WHERE ${whereSql}`), params }
   }
 
   onInit(schema, ctx) {
@@ -330,11 +338,9 @@ export class ExternalRefPlugin extends LitestonePlugin {
     // up once it lands.
     if (ctx.readDb && args.where) {
       try {
-        const params = []
-        const whereSql = buildWhere(args.where, params)
-        if (whereSql) {
-          const colSql = rawFields.map(([f]) => `"${f}"`).join(', ')
-          const oldRow = ctx.readDb.query(`SELECT ${colSql} FROM "${this._table(model, ctx)}" WHERE ${whereSql}`).get(...params)
+        const read = this._oldRead(model, rawFields.map(([f]) => f), args.where, ctx)
+        if (read) {
+          const oldRow = read.stmt.get(...read.params)
           for (const [field, opts] of rawFields) {
             const old = opts.isArray ? this._parseRefArray(oldRow?.[field]) : [this._parseRef(oldRow?.[field])]
             for (const oldRef of old) if (oldRef) this._replaces(args.data, field, oldRef)

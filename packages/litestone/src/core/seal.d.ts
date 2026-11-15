@@ -20,7 +20,7 @@ export function sealedStates(attr: any): {
  *
  * @returns {Array<{ kind: 'redundant'|'unseals', move: string, state: any, by?: string }>}
  */
-export function sealFaults(attr: any): Array<{
+export function sealFaults(attr?: any): Array<{
     kind: "redundant" | "unseals";
     move: string;
     state: any;

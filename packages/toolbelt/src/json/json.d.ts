@@ -29,9 +29,9 @@ export function classify(value: any): "null" | "boolean" | "number" | "string" |
  */
 export function jsonLoss(v: any): string | null;
 /** What to store instead of a `jsonLoss()` kind. */
-export function jsonLossAdvice(kind: any): any;
+export function jsonLossAdvice(kind?: any): any;
 /** True for the two kinds that contain other values. */
-export function isContainer(value: any): boolean;
+export function isContainer(value?: any): boolean;
 /**
  * What kind of array this is, which is what decides how it can be edited.
  *
@@ -68,7 +68,7 @@ export function summarize(value: any): {
     preview: string;
 };
 /** The compact form of a value, clipped. Never throws — a cycle previews as its kind. */
-export function preview(value: any, max?: number): string;
+export function preview(value?: any, max?: number): string;
 /**
  * Parse text, and say why it failed.
  *
@@ -98,7 +98,7 @@ export function tryParse(text: string): {
  * every caller is a view: a textarea that throws while rendering takes the
  * screen with it, and an empty one at least says *there is nothing to edit*.
  */
-export function format(value: any, indent?: number): string;
+export function format(value?: any, indent?: number): string;
 /**
  * Give an edited string the type the value it replaces had.
  *
@@ -126,14 +126,14 @@ export function coerceLike(original: any, next: any): any;
  * the same reason — a view keyed by a colliding string shows one node where
  * there are two, and an expand set keyed by it opens both at once.
  */
-export function pathKey(path: any): string;
+export function pathKey(path?: any): string;
 /**
  * Is this document nested past MAX_DEPTH — for a view to ask before it walks,
  * since a walker refuses by throwing. Iterative, so asking cannot overflow.
  */
-export function exceedsDepth(value: any): boolean;
+export function exceedsDepth(value?: any): boolean;
 /** The value at `path`, or `undefined` where the path does not lead anywhere. */
-export function getIn(value: any, path: any): any;
+export function getIn(value?: any, path?: any): any;
 /**
  * A copy of the document with `path` set to `next`.
  *
@@ -146,7 +146,7 @@ export function getIn(value: any, path: any): any;
  * alternative is inventing the container, which turns a typo into a silently
  * restructured document.
  */
-export function setIn(value: any, path: any, next: any): any;
+export function setIn(value?: any, path?: any, next?: any): any;
 /**
  * A copy of the document with `path` removed.
  *
@@ -155,9 +155,9 @@ export function setIn(value: any, path: any, next: any): any;
  * container decides. Removing by INDEX is the whole point: the legacy tree
  * removed by value identity, so a duplicate primitive removed the wrong one.
  */
-export function removeIn(value: any, path: any): any;
+export function removeIn(value?: any, path?: any): any;
 /** A copy of the document with `item` appended to the array at `path`. */
-export function insertIn(value: any, path: any, item: any): any;
+export function insertIn(value?: any, path?: any, item?: any): any;
 /**
  * A copy of the document with one key of the object at `path` renamed, IN PLACE
  * in the key order.
@@ -168,7 +168,7 @@ export function insertIn(value: any, path: any, item: any): any;
  * to put it back. Renaming onto a key that already exists is refused — it is a
  * silent overwrite of a value that is on screen.
  */
-export function renameKey(value: any, path: any, from: any, to: any): any;
+export function renameKey(value?: any, path?: any, from?: any, to?: any): any;
 /**
  * The document as a flat list of visible rows.
  *
@@ -214,7 +214,7 @@ export function treeRows(value: any, { expanded }?: {
  * it. Folding the depth into the walk instead would make a container the person
  * closed spring back open on the next render.
  */
-export function expandToDepth(value: any, depth?: number): Set<any>;
+export function expandToDepth(value?: any, depth?: number): Set<any>;
 /**
  * Deep equality, for JSON values only.
  *
@@ -222,7 +222,7 @@ export function expandToDepth(value: any, depth?: number): Set<any>;
  * because a JSON document holds none of them. A general implementation here
  * would be a second answer to a question this kit already scopes.
  */
-export function sameValue(a: any, b: any): any;
+export function sameValue(a?: any, b?: any): any;
 /**
  * `next`, with every node that equals its counterpart in `prev` replaced by
  * `prev`'s own.
@@ -239,7 +239,7 @@ export function sameValue(a: any, b: any): any;
  * the same only with the same keys in the same order, since key order is the
  * only order a JSON object has.
  */
-export function keepUnchanged(prev: any, next: any): any;
+export function keepUnchanged(prev?: any, next?: any): any;
 /**
  * `text` with only the spans that differ between `prev` and `next` replaced.
  *
@@ -299,7 +299,7 @@ export function patchText(text: string, prev: any, next: any): string;
  * an array was — is one `changed` and is not recursed into: nothing below it
  * corresponds, so every descendant would be reported twice over.
  */
-export function diffDocs(before: any, after: any): {
+export function diffDocs(before?: any, after?: any): {
     merged: any;
     status: {};
     previous: {};
@@ -329,7 +329,7 @@ export function diffDocs(before: any, after: any): {
  * be worse than losing it. That is a decision the caller made on purpose, and
  * in `@frontierjs/ui`'s editor it is one press of undo away.
  */
-export function convertTo(value: any, kind: any): any;
+export function convertTo(value?: any, kind?: any): any;
 /**
  * text + a term → the runs it splits into, each marked hit or not.
  *
@@ -339,7 +339,7 @@ export function convertTo(value: any, kind: any): any;
  * make. Case-insensitive, and the returned text is the ORIGINAL casing, so
  * marking a hit never rewrites what the document says.
  */
-export function markRuns(text: any, term: any): {
+export function markRuns(text?: any, term?: any): {
     i: number;
     text: string;
     hit: boolean;
@@ -367,7 +367,7 @@ export function markRuns(text: any, term: any): {
  * the text a reader sees, so `null` is findable by the word and a number by its
  * digits.
  */
-export function searchDoc(value: any, term: any): {
+export function searchDoc(value?: any, term?: any): {
     keep: any[];
     open: any[];
     count: number;
@@ -381,7 +381,7 @@ export function searchDoc(value: any, term: any): {
  * document with a key like `content-type` or `0` produces something that
  * actually runs rather than something that looks right.
  */
-export function accessorPath(path: any, root?: string): string;
+export function accessorPath(path?: any, root?: string): string;
 /**
  * A path → its RFC 6901 JSON Pointer. `['a','b',0]` → `/a/b/0`.
  *
@@ -391,7 +391,7 @@ export function accessorPath(path: any, root?: string): string;
  * whole reason the format needs a function rather than a join: a key
  * containing a slash is otherwise two segments.
  */
-export function jsonPointer(path: any): any;
+export function jsonPointer(path?: any): any;
 /**
  * How deep a document may nest before a walker refuses it, as `frontmatter`
  * and `query` refuse rather than truncate.

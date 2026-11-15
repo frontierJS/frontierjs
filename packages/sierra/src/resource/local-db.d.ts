@@ -9,7 +9,7 @@
  * whole feature. An app that never asked for a database never reaches this
  * line, and the bytes are already in the shell's precache.
  */
-export function configureLocalDb(config: any): void;
+export function configureLocalDb(config?: any): void;
 /**
  * The client, opened on first use.
  *
@@ -25,7 +25,7 @@ export function localDb(): Promise<any>;
  * Failure is silent on purpose — this is a side effect of a read that already
  * succeeded, and a screen must not fail because a device could not write.
  */
-export function writeThrough(model: any, rows: any, whole?: any, since?: any): Promise<boolean>;
+export function writeThrough(model?: any, rows?: any, whole?: any, since?: any): Promise<boolean>;
 /**
  * The write itself, which THROWS what the device refused.
  *
@@ -53,7 +53,7 @@ export function writeThrough(model: any, rows: any, whole?: any, since?: any): P
  * Answers false where there is nothing to write to: no config, no rows and no
  * whole answer, no database, or a model the device does not hold.
  */
-export function writeRows(model: any, rows: any, whole?: any, since?: any): Promise<boolean>;
+export function writeRows(model?: any, rows?: any, whole?: any, since?: any): Promise<boolean>;
 /**
  * Was this answer everything the server holds for its `where`?
  *
@@ -68,14 +68,14 @@ export function writeRows(model: any, rows: any, whole?: any, since?: any): Prom
  * list with no page 2, which is what `hasMore()` says of it too — or
  * `{ data, hasMore }` from a live list that has already decided.
  */
-export function answeredWhole(res: any, directives: any): boolean;
+export function answeredWhole(res?: any, directives?: any): boolean;
 /**
  * Take rows off the device by key — a `remove` the server acknowledged.
  *
  * A side effect of a write that already landed, so it never throws: a device
  * that could not drop the row has the next whole answer to take it off.
  */
-export function dropRows(model: any, idField: any, ids: any): Promise<boolean>;
+export function dropRows(model?: any, idField?: any, ids?: any): Promise<boolean>;
 /**
  * Answer a read from the device.
  *
@@ -95,7 +95,7 @@ export function dropRows(model: any, idField: any, ids: any): Promise<boolean>;
  * `null` means *this device cannot answer*, which is not the same as an empty
  * list and must never be rendered as one.
  */
-export function readLocal(model: any, query: any, directives: any): Promise<any[]>;
+export function readLocal(model?: any, query?: any, directives?: any): Promise<any[]>;
 /**
  * Somebody signed out. Rows a gate let the PREVIOUS caller read are theirs.
  *
@@ -113,6 +113,6 @@ export function _resetLocalDb(): void;
  * cannot answer. Injected here rather than spied on from outside, because the
  * callers below hold a module-local binding that no namespace spy can reach.
  */
-export function _useLocalDbClient(client: any, config?: {}): void;
+export function _useLocalDbClient(client?: any, config?: {}): void;
 export function localDbConfigured(): boolean;
 export function readMark(): number;

@@ -16,7 +16,7 @@ export function workerName(siteUrl?: string): string;
  */
 export function previewAlias(name: string, given?: string): string;
 /** The first page a preview build stamped, or null for a production build. */
-export function stampedPage(outDir: any): Promise<string>;
+export function stampedPage(outDir?: any): Promise<string>;
 /**
  * The wrangler config for a built site.
  *
@@ -50,7 +50,7 @@ export function writeCloudflare({ root, config, preview }: {
     wrangler: object;
 }>;
 /** What wrangler names a preview after when nothing else does; undefined on a detached HEAD. */
-export function gitBranch(cwd: any): string;
+export function gitBranch(cwd?: any): string;
 /**
  * Whether the site's Worker has a deployment on the account wrangler signs in
  * to — what `fli deploy` asks before it publishes, so the first deploy of a

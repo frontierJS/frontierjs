@@ -23,10 +23,10 @@ export function inlineCSS(html: string, extraCSS?: string, options?: {
  * Extract all <style> block contents from an HTML string.
  * Useful when you want the CSS separately before inlining.
  */
-export function extractStyles(html: any): string;
+export function extractStyles(html?: any): string;
 /**
  * Resolve all CSS custom properties in a string.
  * Public utility — useful when you need to pre-process values
  * before passing to another renderer.
  */
-export function resolveCSSVars(value: any, customProperties: any): any;
+export function resolveCSSVars(value?: any, customProperties?: any): any;

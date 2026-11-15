@@ -56,9 +56,9 @@ export function buildRelations(schema: object, resolveName?: (...names: string[]
  *
  * @returns {() => void} the undo, for a test teardown or an HMR dispose
  */
-export function registerControl(name: any, resolve: any): () => void;
+export function registerControl(name?: any, resolve?: any): () => void;
 /** Remove a registration by name. Answers whether there was one. */
-export function unregisterControl(name: any): boolean;
+export function unregisterControl(name?: any): boolean;
 /** What is registered, in the order `controlFor` asks them. Diagnostics. */
 export function registeredControls(): any[];
 /**
@@ -68,7 +68,7 @@ export function registeredControls(): any[];
  * number input with its own `step` asks for the table's answer and adds to it,
  * which is how a contribution stays one line instead of a copy of the switch.
  */
-export function defaultControlFor(rule: any): {
+export function defaultControlFor(rule?: any): {
     control: any;
     reason: string;
     task?: undefined;
@@ -563,9 +563,9 @@ export function formFieldList(fields: Record<string, object>, { only, except, mo
  *
  * @returns {() => void} the undo, for a test teardown or an HMR dispose
  */
-export function registerDisplay(name: any, resolve: any): () => void;
+export function registerDisplay(name?: any, resolve?: any): () => void;
 /** Remove a registration by name. Answers whether there was one. */
-export function unregisterDisplay(name: any): boolean;
+export function unregisterDisplay(name?: any): boolean;
 /** What is registered, in the order `displayFor` asks them. Diagnostics. */
 export function registeredDisplays(): any[];
 /**
@@ -604,7 +604,7 @@ export function displayFor(rule: object, ctx?: {
  * Exported for `defaultControlFor`'s reason: a resolver that wants to add to an
  * answer rather than replace it asks for the default and spreads it.
  */
-export function defaultDisplayFor(rule: any): {
+export function defaultDisplayFor(rule?: any): {
     display: any;
     reason: string;
     set?: undefined;
@@ -775,7 +775,7 @@ export function defaultDisplayFor(rule: any): {
  * which is the axis `@frontierjs/toolbelt/inflect` owns and the one that may
  * change without the storage and shape axes moving.
  */
-export function columnLabel(name: any, rule: any): any;
+export function columnLabel(name?: any, rule?: any): any;
 /**
  * Which OPERATOR a filter over this kind of column asks with.
  *
@@ -879,7 +879,7 @@ export function columnList(fields: Record<string, object>, { only, except, limit
         reason: any;
     }>;
 };
-export function labelFieldInfo(fields: any, fallback?: string, declared?: any): {
+export function labelFieldInfo(fields?: any, fallback?: string, declared?: any): {
     field: string;
     source: string;
     parts?: undefined;
@@ -898,12 +898,12 @@ export function labelFieldInfo(fields: any, fallback?: string, declared?: any): 
     alt: string[];
     parts?: undefined;
 };
-export function labelFieldFor(fields: any, fallback?: string, declared?: any): any;
+export function labelFieldFor(fields?: any, fallback?: string, declared?: any): any;
 /**
  * The model's `@@gate` levels, or null when it declares none.
  * @returns {{read:number, create:number, update:number, delete:number}|null}
  */
-export function buildGate(schema: any): {
+export function buildGate(schema?: any): {
     read: number;
     create: number;
     update: number;
@@ -918,7 +918,7 @@ export function buildGate(schema: any): {
  *
  * @returns {Record<string, Record<string, {from:string[], to:string, gate:number|null, system:boolean}>>|null}
  */
-export function buildTransitions(schema: any): Record<string, Record<string, {
+export function buildTransitions(schema?: any): Record<string, Record<string, {
     from: string[];
     to: string;
     gate: number | null;
@@ -988,7 +988,7 @@ export function transitionsAt(spec: object | null, row: object, level?: number):
  * The model's `@@commitment` declarations, or null when it has none — litestone's
  * `x-commitments`, keyed as declared (`abandon`, `subscription.lapse`).
  */
-export function buildCommitments(schema: any): any;
+export function buildCommitments(schema?: any): any;
 /**
  * What the system owes `row`, and when — *will be abandoned on 5 Oct*. The
  * counterpart of `transitionsAt` for the moves no button makes: a `@system`
@@ -1057,7 +1057,7 @@ export function validateAgainstFields(fields: Record<string, object>, data: obje
  * The field is also emitted `readOnly` in the update schema, which is what stops
  * a generated form rendering a number input for it.
  */
-export function buildVersion(schema: any): string;
+export function buildVersion(schema?: any): string;
 /**
  * Did this failure mean *the row moved under you*?
  *
@@ -1069,7 +1069,7 @@ export function buildVersion(schema: any): string;
  * `retryable` on the wire for exactly this, and both transports land it at
  * `err.data.retryable`.
  */
-export function isStaleWrite(err: any): boolean;
+export function isStaleWrite(err?: any): boolean;
 /**
  * The two revisions behind a stale write — the one the caller submitted, and the
  * one the row is at now. `null` for anything that is not a race, and for a race
@@ -1196,7 +1196,7 @@ export function normalizeBlanks(fields: Record<string, object>, data: object | o
  * affordances whatever its shape, so an `@email @encrypted` column, which
  * keeps `format: 'email'`, is still one.
  */
-export function isSecret(rule: any): boolean;
+export function isSecret(rule?: any): boolean;
 /**
  * Is this column frozen FOR THIS ROW?
  *
@@ -1235,7 +1235,7 @@ export function refusedFor(rule: object, user: object | null): boolean;
  * on, so `null` is a 400 whatever the create rule said. A `readOnly` column is
  * not the person's to fill, so it is never asked for.
  */
-export function blankRefused(rule: any, mode: any): boolean;
+export function blankRefused(rule?: any, mode?: any): boolean;
 /**
  * Does this column need a value FOR THIS ROW?
  *
@@ -1320,7 +1320,7 @@ export function fromFor(rule: object, record: object, childRules?: object): any;
  * children the record holds. `childRulesOf(target)` hands a `@from` its
  * target's read rules.
  */
-export function previewOf(rules: any, record: any, childRulesOf?: () => {}): {};
+export function previewOf(rules?: any, record?: any, childRulesOf?: () => {}): {};
 /**
  * Which of the columns this write SENT did the boundary decline to write.
  *
@@ -1381,7 +1381,7 @@ export function declinedFields(fields: Record<string, object>, sent: object, sav
  * handed. A create has no record and withholds nothing, because a row being
  * made has no stored value to hide.
  */
-export function withheldFields(fields: any, record: any): string[];
+export function withheldFields(fields?: any, record?: any): string[];
 /**
  * Drop the fields a caller may not write from a create or patch payload.
  *
@@ -1420,7 +1420,7 @@ export function stripReadOnly(fields: Record<string, object>, data: object | obj
 export const INTERACTION_TASKS: readonly string[];
 /** Thrown by a resource whose `validate` option is on. */
 export class ResourceValidationError extends Error {
-    constructor(service: any, errors: any);
+    constructor(service?: any, errors?: any);
     service: any;
     errors: any;
 }
@@ -1433,7 +1433,7 @@ export class ResourceValidationError extends Error {
  * from a class of its own, and a message written twice is a message that drifts.
  */
 export class ResourceHookError extends Error {
-    constructor(service: any, method: any, phase: any, cause: any);
+    constructor(service?: any, method?: any, phase?: any, cause?: any);
     service: any;
     method: any;
     phase: any;

@@ -71,7 +71,7 @@ export function createReadRecorder(client: object | null): {
  *
  * @returns {{ models: Map<string, Set<string>>, error: string|null }}
  */
-export function declaredPublishes(meta: any): {
+export function declaredPublishes(meta?: any): {
     models: Map<string, Set<string>>;
     error: string | null;
 };
@@ -122,4 +122,4 @@ export function checkRoute({ routeId, meta, models, unresolved, columns, exposed
  * proved rather than only what it rejected. A `browser` row is an undeclared
  * route the build could not prerender, with the reason (`FJS-D2195`).
  */
-export function formatReport(rows: any): string;
+export function formatReport(rows?: any): string;

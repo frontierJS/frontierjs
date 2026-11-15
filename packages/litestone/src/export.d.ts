@@ -3,7 +3,7 @@
  * Every dataset this schema says may leave, model and view alike.
  * The CLI lists these; nothing else derives the set.
  */
-export function exportableDatasets(schema: any): {
+export function exportableDatasets(schema?: any): {
     name: any;
     accessor: any;
     kind: string;
@@ -11,7 +11,7 @@ export function exportableDatasets(schema: any): {
     export: any;
 }[];
 /** The columns that leave, and the ones that do not — with the reason. */
-export function columnPlan(decl: any, { includeProtected }?: {
+export function columnPlan(decl?: any, { includeProtected }?: {
     includeProtected?: boolean;
 }): {
     columns: {

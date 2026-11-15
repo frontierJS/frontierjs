@@ -28,12 +28,12 @@ export function textbox(text?: string, { cursor, anchor, mode }?: {
  * entering INSERT and leaving it. A `sync` that only moves the cursor is no
  * change, so a click keeps what `redo` would bring back.
  */
-export function edit(state: any, action: any, arg: any): any;
+export function edit(state?: any, action?: any, arg?: any): any;
 /**
  * A string as the document `editDoc` reads. Lines are indexed once per
  * string, which suits a box's few lines; an editor hands its own buffer.
  */
-export function stringDoc(text: any): Readonly<{
+export function stringDoc(text?: any): Readonly<{
     length: any;
     lineCount: number;
     slice: (from: any, to: any) => any;
@@ -55,7 +55,7 @@ export function stringDoc(text: any): Readonly<{
  * `doc` is read and never written. `sync` is the string host's and is
  * refused here: an editor applies its own typing.
  */
-export function editDoc(state: any, action: any, arg: any, doc: any): Readonly<{
+export function editDoc(state?: any, action?: any, arg?: any, doc?: any): Readonly<{
     state: Readonly<{
         cursor: any;
         anchor: any;
@@ -78,9 +78,9 @@ export function editDoc(state: any, action: any, arg: any, doc: any): Readonly<{
  * line and column. An empty line is not known deleted from the edit alone, so
  * its mark stays and lands where the line was.
  */
-export function shiftMarks(state: any, edit: any, doc: any): any;
+export function shiftMarks(state?: any, edit?: any, doc?: any): any;
 /** The span a visual state selects, for a host to paint: `{ from, to, linewise }`, or null outside visual. */
-export function visualRange(state: any, doc: any): Readonly<{
+export function visualRange(state?: any, doc?: any): Readonly<{
     from: any;
     to: any;
     linewise: boolean;

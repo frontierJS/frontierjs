@@ -15,6 +15,8 @@ import { createRateLimiter } from '../src/core/rate-limit.ts'
 import { clientIp }          from '../src/core/context.ts'
 import { rateLimit as rateLimitHook } from '../src/core/hooks-resilience.ts'
 import { rateLimit as rateLimitMw }   from '../src/transport/middleware.ts'
+import { errorResponse }             from '../src/transport/bridge.ts'
+import { TooManyRequests }           from '../src/core/errors.ts'
 
 const svcCtx = (ip: string, userId?: string) =>
   ({ caller: { ip }, user: userId ? { id: userId } : null }) as never
@@ -114,5 +116,25 @@ describe('the legacy option names are refused, not ignored', () => {
     expect(() => rateLimitMw({ max: 10, window: 1000, keyFn: () => 'k' } as never)).toThrow(/'keyFn' is now 'key'/)
     expect(() => rateLimitMw({ max: 10, window: 1000, skipFn: () => true } as never)).toThrow(/'skipFn' is now 'skip'/)
     expect(() => rateLimitHook({ max: 10, window: '1 hour', key: () => 'k' })).not.toThrow()
+  })
+})
+
+describe('a 429 states its wait in Retry-After', () => {
+
+  // FJS-4331. Every limiter throws its wait as `data.retryAfter`; the one error
+  // mapper is where a thrown value becomes an answer, so the header is set there
+  // or by no tier at all (RFC 9110 § 10.2.3).
+  it('the error answer lifts retryAfter to the header', () => {
+    const l = createRateLimiter<{ ip: string }>({ max: 0, window: 60_000 }, c => c.ip)
+    let thrown: unknown
+    try { l.check({ ip: 'a' }) } catch (err) { thrown = err }
+    l.dispose()
+    const res = errorResponse(thrown)
+    expect(res.status).toBe(429)
+    expect(res.headers.get('retry-after')).toBe('60')
+  })
+
+  it('a 429 with no stated wait carries no header', () => {
+    expect(errorResponse(new TooManyRequests('slow down')).headers.get('retry-after')).toBeNull()
   })
 })

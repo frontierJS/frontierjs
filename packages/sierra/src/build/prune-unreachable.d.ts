@@ -17,7 +17,7 @@
  * and refuses when it was wrong: an unminified chunk that ships is readable
  * source (`FJS-799`), and would ship quietly.
  */
-export function bundleUnreachable(tree: any): boolean;
+export function bundleUnreachable(tree?: any): boolean;
 /**
  * Delete every JS asset no emitted page can reach.
  *

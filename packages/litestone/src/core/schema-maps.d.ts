@@ -14,7 +14,7 @@
  * alone answers a count of every row sharing that column: plausible, real, and
  * an answer to a question nobody asked (`FJS-377`).
  */
-export function inferFromFk(model: any, targetModel: any, via?: any): {
+export function inferFromFk(model?: any, targetModel?: any, via?: any): {
     fkCols: any;
     refCols: any;
     unresolvedVia?: undefined;
@@ -55,7 +55,7 @@ export function inferFromFk(model: any, targetModel: any, via?: any): {
  * models are ambiguous for the reason two foreign keys are: either answer is a
  * plausible number for the other question.
  */
-export function inferFromHop(model: any, targetModel: any, schema: any, via?: any): {
+export function inferFromHop(model?: any, targetModel?: any, schema?: any, via?: any): {
     fkCols: any;
     refCols: any;
     unresolvedVia?: undefined;
@@ -88,7 +88,7 @@ export function inferFromHop(model: any, targetModel: any, schema: any, via?: an
  * returns. Answers `{ error }` rather than throwing so each caller words it
  * with its own prefix.
  */
-export function inferToOneFrom(model: any, schema: any, attr: any): {
+export function inferToOneFrom(model?: any, schema?: any, attr?: any): {
     error: string;
     relField?: undefined;
     targetModel?: undefined;
@@ -101,15 +101,15 @@ export function inferToOneFrom(model: any, schema: any, attr: any): {
     refFields: any;
     error?: undefined;
 };
-export function buildAutoIdMap(schema: any): {};
-export function buildGeneratedDefaultMap(schema: any, now: any): {};
-export function buildLiteralDefaultMap(schema: any): {};
-export function buildAuthDefaultMap(schema: any): {};
-export function buildSelfRelationMap(schema: any): {};
-export function buildFieldRefDefaultMap(schema: any): {};
-export function buildPathDefaultMap(schema: any): {};
-export function buildUpdatedByMap(schema: any): {};
-export function buildVersionMap(schema: any): {};
+export function buildAutoIdMap(schema?: any): {};
+export function buildGeneratedDefaultMap(schema?: any, now?: any): {};
+export function buildLiteralDefaultMap(schema?: any): {};
+export function buildAuthDefaultMap(schema?: any): {};
+export function buildSelfRelationMap(schema?: any): {};
+export function buildFieldRefDefaultMap(schema?: any): {};
+export function buildPathDefaultMap(schema?: any): {};
+export function buildUpdatedByMap(schema?: any): {};
+export function buildVersionMap(schema?: any): {};
 /**
  * What each model declares about a collision — `@@sync`'s argument, by model.
  *
@@ -117,50 +117,50 @@ export function buildVersionMap(schema: any): {};
  * a HELD write; a model that declares nothing is absent, which is what
  * `FJS-D298`'s no-default means at runtime.
  */
-export function buildSyncMap(schema: any): {};
-export function buildCreatedByMap(schema: any): {};
-export function buildSequenceMap(schema: any): {};
-export function buildRankMap(schema: any): {};
-export function schemaDeclaresAccessRules(schema: any): boolean;
-export function buildFieldPolicyMap(schema: any): {};
-export function fieldPolicyOf(model: any): any;
+export function buildSyncMap(schema?: any): {};
+export function buildCreatedByMap(schema?: any): {};
+export function buildSequenceMap(schema?: any): {};
+export function buildRankMap(schema?: any): {};
+export function schemaDeclaresAccessRules(schema?: any): boolean;
+export function buildFieldPolicyMap(schema?: any): {};
+export function fieldPolicyOf(model?: any): any;
 /**
  * Whether a column's value is protected: hidden from a non-system reader and
  * kept out of the audit trail, a default extract and a redacted copy. @personal
  * is not — a reader the gate admits sees it.
  */
-export function isProtected(p: any): boolean;
+export function isProtected(p?: any): boolean;
 /** Whether one model's field policy holds an entry that is more than @personal. */
-export function shapesRead(fieldPolicy: any): boolean;
-export function buildSecretMap(schema: any): {};
-export function buildJsonMap(schema: any): {};
-export function buildGeneratedMap(schema: any): {};
+export function shapesRead(fieldPolicy?: any): boolean;
+export function buildSecretMap(schema?: any): {};
+export function buildJsonMap(schema?: any): {};
+export function buildGeneratedMap(schema?: any): {};
 /** @param {any} def @returns {string[]} */
 export function aggModelsOf(def: any): string[];
-export function buildFromMap(schema: any, pluralize?: boolean): {};
-export function buildCardinalityMap(schema: any, pluralize?: boolean): {
+export function buildFromMap(schema?: any, pluralize?: boolean): {};
+export function buildCardinalityMap(schema?: any, pluralize?: boolean): {
     byParent: {};
     byChild: {};
     requiresChildren: {};
     fkColumns: {};
     any: boolean;
 };
-export function buildExclusionMap(schema: any, pluralize?: boolean): {
+export function buildExclusionMap(schema?: any, pluralize?: boolean): {
     byModel: {};
     byParent: {};
     scopes: {};
     any: boolean;
 };
-export function rangePointKind(field: any): "number" | "instant" | "day" | "clock";
-export function buildComputedSet(schema: any): {};
-export function buildBigMap(schema: any): {};
-export function buildAffinityMap(schema: any): {};
-export function buildBoolMap(schema: any): {};
-export function buildFilterKindMap(schema: any): {};
-export function buildTransitionMap(schema: any): {};
-export function buildEnumMap(schema: any): {};
-export function buildSoftDeleteCascadeMap(schema: any): {};
-export function getCascadeTargets(modelName: any, shapes: any, modelToTable: any): {
+export function rangePointKind(field?: any): "number" | "instant" | "day" | "clock";
+export function buildComputedSet(schema?: any): {};
+export function buildBigMap(schema?: any): {};
+export function buildAffinityMap(schema?: any): {};
+export function buildBoolMap(schema?: any): {};
+export function buildFilterKindMap(schema?: any): {};
+export function buildTransitionMap(schema?: any): {};
+export function buildEnumMap(schema?: any): {};
+export function buildSoftDeleteCascadeMap(schema?: any): {};
+export function getCascadeTargets(modelName?: any, shapes?: any, modelToTable?: any): {
     childModel: any;
     childTable: any;
     parentModel: any;
@@ -169,28 +169,28 @@ export function getCascadeTargets(modelName: any, shapes: any, modelToTable: any
     referencedKeys: any;
     hardDelete: any;
 }[];
-export function relationKeys(rel: any, targetModel: any): {
+export function relationKeys(rel?: any, targetModel?: any): {
     foreignKeys: any;
     referencedKeys: any;
 };
-export function buildRelationMap(schema: any): {};
-export function guardedKeysFor(model: any): Set<any>;
-export function fieldReadKeysFor(model: any): Set<any>;
-export function buildFieldReadMap(schema: any, relationMap: any): {
+export function buildRelationMap(schema?: any): {};
+export function guardedKeysFor(model?: any): Set<any>;
+export function fieldReadKeysFor(model?: any): Set<any>;
+export function buildFieldReadMap(schema?: any, relationMap?: any): {
     own: {};
     reaches: Set<string>;
 };
-export function buildGuardedMap(schema: any, relationMap: any): {
+export function buildGuardedMap(schema?: any, relationMap?: any): {
     own: {};
     reaches: Set<string>;
 };
-export function buildSoftDeleteMap(schema: any): {};
-export function buildHasTemplatesMap(schema: any): {};
-export function buildEffectiveMap(schema: any): {};
-export function buildCoFkMap(schema: any, relationMap: any): {};
-export function buildFtsMap(schema: any): {};
-export function nowISO(clock: any): string;
-export function viewProtectedRead(schema: any, view: any, pluralize?: boolean): {
+export function buildSoftDeleteMap(schema?: any): {};
+export function buildHasTemplatesMap(schema?: any): {};
+export function buildEffectiveMap(schema?: any): {};
+export function buildCoFkMap(schema?: any, relationMap?: any): {};
+export function buildFtsMap(schema?: any): {};
+export function nowISO(clock?: any): string;
+export function viewProtectedRead(schema?: any, view?: any, pluralize?: boolean): {
     table: any;
     column: any;
     star: boolean;
@@ -203,4 +203,4 @@ export function viewProtectedRead(schema: any, view: any, pluralize?: boolean): 
  * one rebuilds rather than answering the first caller's value. The result is
  * SHARED between clients, so a caller treats it as read-only.
  */
-export function derivedOnce(schema: any, key: any, deps: any, build: any): any;
+export function derivedOnce(schema?: any, key?: any, deps?: any, build?: any): any;

@@ -19,7 +19,7 @@ export function getClient(): object | null;
  *
  * The base matches on its own too: `'/docs*'` covers `/docs` and `/docs/a`.
  */
-export function isPublicRoute(rule: any, path: any): boolean;
+export function isPublicRoute(rule?: any, path?: any): boolean;
 /**
  * Install the page's client — the one every Resource naming no `app` reaches.
  *

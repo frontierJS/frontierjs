@@ -3,7 +3,7 @@
  * Whether a `.mesa` file under `<root>/src` renders a `.skip-link` element. A
  * rule in a `<style>` block is not one: only a `class` attribute counts.
  */
-export function appWritesSkipLink(root: any): any;
+export function appWritesSkipLink(root?: any): any;
 /**
  * The shell with `document` applied: `lang` and `htmlClass` on `<html>`,
  * `bodyClass` and `bodyAttrs` on `<body>`, `meta`, `links`, `jsonLd` and `head`
@@ -11,10 +11,10 @@ export function appWritesSkipLink(root: any): any;
  * `doc` holds, `lang` on an `<html>` that has none and the skip link first in
  * a `<body>` that has none.
  */
-export function applyDocument(html: any, doc?: {}, { appSkipLink }?: {
+export function applyDocument(html?: any, doc?: {}, { appSkipLink }?: {
     appSkipLink?: boolean;
 }): any;
-export function documentShellPlugin(config: any, target: any): {
+export function documentShellPlugin(config?: any, target?: any): {
     name: string;
     configResolved(resolved: any): void;
     transformIndexHtml(html: any): any;

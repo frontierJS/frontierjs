@@ -7,7 +7,7 @@
  * only the same character at least as many times, so a four-backtick block can
  * show a three-backtick one.
  */
-export function docFences(text: any, { schemaLang }?: {
+export function docFences(text?: any, { schemaLang }?: {
     schemaLang?: string;
 }): {
     lang: any;
@@ -20,4 +20,4 @@ export function docFences(text: any, { schemaLang }?: {
 }[];
 /** The fence tags a doc-example runner executes; `prisma` is absent on purpose, a block in that language is unverified. */
 export const RUNNABLE_LANGS: Set<string>;
-export function isRunnable(fence: any): boolean;
+export function isRunnable(fence?: any): boolean;

@@ -5,7 +5,7 @@
  * nothing, which is a different answer from a term that does not exist and the
  * drive asks the vocabulary about that.
  */
-export function owes(term: any): {
+export function owes(term?: any): {
     term: any;
     part: any;
     role: any;
@@ -13,7 +13,7 @@ export function owes(term: any): {
     tracks: any;
 }[];
 /** The role a term, or one of its parts, must carry; `null` where the element's own role is the answer. */
-export function roleOf(term: any, part: any): any;
+export function roleOf(term?: any, part?: any): any;
 /** Every `role` the table names, each with the term and part that carries it — what the anatomy grade walks. */
 export function roles(): {
     term: string;

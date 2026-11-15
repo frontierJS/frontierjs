@@ -15,20 +15,20 @@ export class LitestonePlugin {
      * A field wins over this getter by ordinary property lookup.
      */
     get name(): string;
-    onInit(schema: any, ctx: any): void;
-    onBeforeRead(model: any, args: any, ctx: any): Promise<void>;
-    onBeforeCreate(model: any, args: any, ctx: any): Promise<void>;
-    onBeforeUpdate(model: any, args: any, ctx: any): Promise<void>;
-    onBeforeDelete(model: any, args: any, ctx: any): Promise<void>;
-    onAfterRead(model: any, rows: any, ctx: any, opts?: {}): Promise<void>;
-    onWriteResult(model: any, rows: any, ctx: any, opts?: {}): Promise<void>;
-    onAfterWrite(model: any, operation: any, result: any, ctx: any): Promise<void>;
-    onWriteSettled(model: any, operation: any, args: any, error: any, ctx: any): Promise<void>;
-    onAfterDelete(model: any, rows: any, ctx: any): Promise<void>;
-    buildReadFilter(model: any, ctx: any): any;
+    onInit(schema?: any, ctx?: any): void;
+    onBeforeRead(model?: any, args?: any, ctx?: any): Promise<void>;
+    onBeforeCreate(model?: any, args?: any, ctx?: any): Promise<void>;
+    onBeforeUpdate(model?: any, args?: any, ctx?: any): Promise<void>;
+    onBeforeDelete(model?: any, args?: any, ctx?: any): Promise<void>;
+    onAfterRead(model?: any, rows?: any, ctx?: any, opts?: {}): Promise<void>;
+    onWriteResult(model?: any, rows?: any, ctx?: any, opts?: {}): Promise<void>;
+    onAfterWrite(model?: any, operation?: any, result?: any, ctx?: any): Promise<void>;
+    onWriteSettled(model?: any, operation?: any, args?: any, error?: any, ctx?: any): Promise<void>;
+    onAfterDelete(model?: any, rows?: any, ctx?: any): Promise<void>;
+    buildReadFilter(model?: any, ctx?: any): any;
 }
 export class AccessDeniedError extends Error {
-    constructor(message: any, { model, operation, required, got, capability }?: {});
+    constructor(message?: any, { model, operation, required, got, capability }?: {});
     code: string;
     model: any;
     operation: any;
@@ -37,7 +37,7 @@ export class AccessDeniedError extends Error {
     capability: any;
 }
 export class PluginRunner {
-    constructor(plugins: any);
+    constructor(plugins?: any);
     _plugins: any;
     get hasPlugins(): boolean;
     get hearsDeletes(): any;
@@ -50,16 +50,16 @@ export class PluginRunner {
      * it takes that word rather than inventing `after`/`priority` beside it.
      */
     get names(): any;
-    handles(fieldType: any): any;
-    init(schema: any, ctx: any): void;
-    beforeRead(model: any, args: any, ctx: any): Promise<void>;
-    afterRead(model: any, rows: any, ctx: any, opts?: {}): Promise<void>;
-    shapeWriteResult(model: any, rows: any, ctx: any, opts?: {}): Promise<void>;
-    beforeCreate(model: any, args: any, ctx: any): Promise<void>;
-    beforeUpdate(model: any, args: any, ctx: any): Promise<void>;
-    beforeDelete(model: any, args: any, ctx: any): Promise<void>;
-    afterWrite(model: any, operation: any, result: any, ctx: any): Promise<void>;
-    afterDelete(model: any, rows: any, ctx: any): Promise<void>;
-    writeSettled(model: any, operation: any, args: any, error: any, ctx: any): Promise<void>;
-    getReadFilters(model: any, ctx: any): any[];
+    handles(fieldType?: any): any;
+    init(schema?: any, ctx?: any): void;
+    beforeRead(model?: any, args?: any, ctx?: any): Promise<void>;
+    afterRead(model?: any, rows?: any, ctx?: any, opts?: {}): Promise<void>;
+    shapeWriteResult(model?: any, rows?: any, ctx?: any, opts?: {}): Promise<void>;
+    beforeCreate(model?: any, args?: any, ctx?: any): Promise<void>;
+    beforeUpdate(model?: any, args?: any, ctx?: any): Promise<void>;
+    beforeDelete(model?: any, args?: any, ctx?: any): Promise<void>;
+    afterWrite(model?: any, operation?: any, result?: any, ctx?: any): Promise<void>;
+    afterDelete(model?: any, rows?: any, ctx?: any): Promise<void>;
+    writeSettled(model?: any, operation?: any, args?: any, error?: any, ctx?: any): Promise<void>;
+    getReadFilters(model?: any, ctx?: any): any[];
 }

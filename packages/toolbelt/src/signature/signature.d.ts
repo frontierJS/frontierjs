@@ -8,7 +8,7 @@
  * sent, so the far side computes a different digest and the request is refused
  * as an invalid credential. Passed through untouched; only a string is encoded.
  */
-export function sha256Hex(body: any): Promise<string>;
+export function sha256Hex(body?: any): Promise<string>;
 /**
  * The query, as both sides must spell it: pairs sorted by key then value,
  * percent-encoded, joined with `&`. Empty string when there is none.
@@ -22,7 +22,7 @@ export function sha256Hex(body: any): Promise<string>;
  * an array of pairs, or a plain object, because a signer holds a URL and a
  * verifier holds whatever its transport parsed.
  */
-export function canonicalQuery(query: any): string;
+export function canonicalQuery(query?: any): string;
 /**
  * The string both sides run the HMAC over.
  *

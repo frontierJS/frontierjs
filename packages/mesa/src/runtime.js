@@ -488,9 +488,15 @@ function _halt(node, kind) {
       `node(s) were dropped. Still pending: ${sample}`
     : 'The update was abandoned to keep the page responsive.'
   if (kind === 'cycle') {
+    // A dev build knows the line (`createEffect`'s `loc`) and the write that
+    // woke the node last (`_cause`); without them the reader hunts every `$:`.
+    let write = node._cause
+    while (write && !write._isWrite) write = write._cause
+    const at = node._loc ? ` at ${node._loc}` : ''
+    const by = write?.name ? `, last woken by a write to \`${write.name}\`` : ''
     console.error(
-      `[Mesa] Update cycle detected — \`${_nodeName(node)}\` ran ${_MAX_NODE_RUNS} times in a ` +
-      `single flush, so it is being re-triggered by its own effects. This almost always means ` +
+      `[Mesa] Update cycle detected — \`${_nodeName(node)}\`${at} ran ${_MAX_NODE_RUNS} times in a ` +
+      `single flush${by}, so it is being re-triggered by its own effects. This almost always means ` +
       `two reactive statements write each other's signals, e.g. \`$: a = b + 1\` alongside ` +
       `\`$: b = a + 1\`. ${dropped}`
     )
@@ -562,6 +568,8 @@ export function createEffect(fn, opts) {
   // into the derived tier, so they settle in the same fixpoint as memos rather
   // than racing the renders and user effects that read what they write.
   if (opts && opts.derived) node._isDerived = true
+  // A dev build passes the `$:` line, which the cycle cap names.
+  if (opts && opts.loc) node._loc = opts.loc
   // The first run happens here rather than through the flush, and it is where
   // component setup usually lands — a child render, an {#if} branch factory. The
   // error still propagates (a failure during setup is the caller's to see), but
@@ -2001,7 +2009,12 @@ function _makeDelegatedHandler(root) {
         if (handler && !delivered.has(node)) {
           delivered.add(node)
           Object.defineProperty(event, 'currentTarget', { configurable: true, get: () => node })
-          batch(() => handler(event))
+          let result
+          batch(() => result = handler(event))
+          // An async handler's read after its own await rejects this promise,
+          // which the catch below never sees (`FJS-4328`). Re-thrown so the
+          // page's unhandledrejection report still gets it.
+          if (_onReadThrow) result?.then?.(null, (e) => { _onReadThrow(null, e); throw e })
           if (event.cancelBubble) break
         }
       }
@@ -4891,39 +4904,26 @@ function _watchFire(node, key) {
  * that it is frozen are what make that actionable.
  */
 /*
- * A write from inside a derivation.
+ * A write from inside a memo, refused in a dev build (`FJS-D1367`).
  *
  * A memo is LAZY: it recomputes when something reads it, and stops the moment
- * nothing does. So a derivation written for its side effect works while a
- * screen happens to be reading it and then quietly stops — the write does not
- * fail, it just never happens again, which is the shape that gets diagnosed as
- * a data problem.
+ * nothing does. So a memo written for its side effect works while a screen
+ * happens to be reading it and then quietly stops — the write does not fail,
+ * it just never happens again, which is the shape that gets diagnosed as a
+ * data problem. The compiler refuses the write it can see in a `const`
+ * initializer; this catches one reached through a call. A production build
+ * does not check, so the write goes through there.
  *
- * A warning rather than a refusal. Svelte refuses it outright
- * (`state_unsafe_mutation`), but a write from inside `fn()` to one of the
- * memo's OWN dependencies is a handled case here — `_recompute` clears `dirty`
- * before running for exactly that reason — and refusing would contradict
- * behavior this runtime documents. Measured across mesa, sierra and ui: no
- * suite in this repo writes from inside a derivation at all.
- *
- * Once per path, since a derivation reruns.
+ * Only a memo node carries `_out`: an effect in the derived tier writes by
+ * design and is not refused.
  */
-const _warnedDerivedWrites = new Set()
-
-function _warnDerivedWrite(key, pathPrefix) {
-  const at = pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)
-  if (_warnedDerivedWrites.has(at)) return
-  _warnedDerivedWrites.add(at)
-  console.warn(
-    `[Mesa] ${at} was written from inside a derivation. A derivation is lazy — ` +
-    `it stops recomputing the moment nothing reads it, and the write stops with ` +
-    `it, silently. Put the write in an effect, which runs because something ` +
-    `changed rather than because something asked.`,
+function _refuseMemoWrite(written) {
+  const memo = __dev._bySrc.get(_listener._out)?.name
+  throw new Error(
+    `[Mesa] ${memo ? `'${memo}'` : 'A derived value'} wrote ${written} while it computed, ` +
+    `and a derived value runs only when read. Write it in a '$:' or an event handler.`,
   )
 }
-
-/** Test seam: the derivation-write warning is once per path per process. */
-export function resetDerivedWriteWarnings() { _warnedDerivedWrites.clear() }
 
 // `const { rows, loading } = r.tethered()` reads each key once, at setup, and a
 // resource handle's keys are getters over signals: the screen stays on the
@@ -5208,7 +5208,7 @@ function _buildProxy(obj, byTarget, entry, pathPrefix) {
       // A frozen target throws here, and the bare message names the property
       // and `#<Object>` — neither the path it sits at nor the store it belongs
       // to, which is everything a reader needs to find it.
-      if (_listener?._isDerived) _warnDerivedWrite(key, pathPrefix)
+      if (_devOn && _listener?._out) _refuseMemoWrite(`'${pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)}'`)
       try {
         target[key] = _unwrapValue(value)
       } catch (e) {
@@ -6367,6 +6367,10 @@ export function set(tracked, value, force) {
     if (!_devOn) {
       tracked._write(value, force)
       return value
+    }
+    if (_listener?._out) {
+      const name = __dev._signals.get(tracked)?.name
+      _refuseMemoWrite(name ? `'${name}'` : 'a signal')
     }
     // The entry is the cause while the write notifies, so every node it wakes
     // is stamped with it; it is logged only if the write moved the value.

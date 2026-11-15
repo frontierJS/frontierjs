@@ -140,7 +140,7 @@ the editor's groups in one palette.
   - **B** — whole words only.
   - **Recommend A** — under B "insur" finds nothing until "insurance" is
     finished, and the start of one word adds none of a fuzzy run's noise.
-- **Q8 — How the outline numbers an h4.**
+- ~~**Q8 — How the outline numbers an h4.**~~ **Answered 2026-11-15 (`FJS-D2199`): B — as an h3, 1.1, the way maid.tech's outline does.**
   - **A** — its own level, 1.2.1.
   - **B** — as an h3, 1.1, the way maid.tech's outline does.
   - **Recommend A** — two levels written the same read as siblings.

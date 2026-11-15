@@ -161,6 +161,18 @@ answers, and it is not `pending`. Forgejo is the intended vendor; the three
 counts are three separate calls at every host that has them, which is why they
 are on the record rather than fetched per row by a screen.
 
+**The Forgejo dialect is built and not wired.** `api/src/providers/git/forgejo.ts`
+is `ForgejoGit`, over an `AccountSend` like `source/github.ts`: `listRepos` reads
+`/user/repos` to the last page and each default branch's combined status,
+`listPullRequests('owner/name')` the open pulls and each head's status. A
+repository is named `owner/name`, because that is what `listPullRequests` takes
+back. `createRepo`, `deleteRepo` and `createWebhook` refuse by name — the push
+hook is pasted into the forge from the Deploy on push card (`FJS-D1370`).
+`buildProviders` still builds the Stub: no config slot holds the token's ref, so
+there is no conduit target to send through yet. `api/test/git-forgejo.test.ts`
+grades it against a stand-in; Anvil's `scripts/drive-phase5-basecamp.ts` against
+a running Anvil.
+
 ### `observability` — `IObservability`, behind `/observability/`
 
 `queryLogs` and `queryMetrics` have existed for as long as the interface has.

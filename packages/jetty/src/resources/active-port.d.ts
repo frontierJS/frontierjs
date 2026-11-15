@@ -18,7 +18,7 @@ export function getActivePort(): import("../runtime/page-port.js").PagePort;
  * Used by mesa-bridge.js to drive Mesa signals; can also be used directly
  * by non-Mesa code or for debugging.
  */
-export function onConnectionChange(fn: any): () => boolean;
+export function onConnectionChange(fn?: any): () => boolean;
 /** Read current connection state synchronously. */
 export function getConnectionState(): {
     connected: boolean;

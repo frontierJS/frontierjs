@@ -370,8 +370,8 @@ export const INPUT_TYPES: {
     hidden: string;
     file: string;
 };
-export function inputKind(type: any): any;
-export function pickerHidden(hidden: any, cls: any): boolean;
+export function inputKind(type?: any): any;
+export function pickerHidden(hidden?: any, cls?: any): boolean;
 /**
  * `@frontierjs/css`'s surface lineage — the classes `surface.css` gives a
  * background — and the variants that set that background `transparent`. A
@@ -382,14 +382,14 @@ export function pickerHidden(hidden: any, cls: any): boolean;
  */
 export const SURFACES: string[];
 export const SEE_THROUGH: string[];
-export function opaque(cls: any): boolean;
+export function opaque(cls?: any): boolean;
 /**
  * Whether a box of class `cls` is glass: a browser blurs what is behind it
  * (`backdrop-filter`), and a terminal frosts it, so the cells under the box
  * keep the colors of what is behind and lose its characters.
  */
 export const GLASS: "glass";
-export function frosted(cls: any): boolean;
+export function frosted(cls?: any): boolean;
 /**
  * The surfaces a terminal draws a border round, and the variants that clear
  * `surface.css`'s border (`--_surface-border: transparent`). Only the box
@@ -400,7 +400,7 @@ export function frosted(cls: any): boolean;
  */
 export const BORDERED: string[];
 export const BORDERLESS: string[];
-export function bordered(cls: any): boolean;
+export function bordered(cls?: any): boolean;
 /** `@frontierjs/css`'s muted text utility; the `muted` tone is dim too. */
 export const MUTED_TEXT: "text-muted";
 /**
@@ -412,9 +412,9 @@ export const MUTED_TEXT: "text-muted";
  * no row smaller than one, so it leaves none.
  */
 export const STACK: "stack";
-export function stackRows(cls: any, gap: any): 1 | 0;
-export function paintsStyle(prop: any): boolean;
-export function paintsClass(name: any): boolean;
+export function stackRows(cls?: any, gap?: any): 1 | 0;
+export function paintsStyle(prop?: any): boolean;
+export function paintsClass(name?: any): boolean;
 /**
  * The roles a browser lays out inside a line, beside text, rather than as a
  * block of their own. With every tag the table marks `inline`, these are
@@ -422,7 +422,7 @@ export function paintsClass(name: any): boolean;
  * between two of them (`isInline`).
  */
 export const INLINE_ROLES: Set<string>;
-export function isInline(tag: any): boolean;
+export function isInline(tag?: any): boolean;
 export namespace TERMINAL_EVENTS {
     export namespace click {
         let bubbles: boolean;

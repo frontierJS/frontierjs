@@ -18,7 +18,7 @@ const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 /**
  * The words of a query as patterns, empty for blank input. Each is a whole
  * word but the one still being typed, which matches a word's start: otherwise
- * "insur" finds nothing until the visitor finishes "insurance".
+ * "insur" finds nothing until the visitor finishes "insurance" (FJS-D2198).
  */
 export function patternsOf(query) {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)

@@ -61,6 +61,7 @@ Detail: `references/mesa.md`
 - **An import is inert in a component with no `$:` of its own on it, and the default hint level says nothing about that.**
 - **A function hides its reads from the compiler, which costs a subscription and an ordering.**
 - **A `$:` block is woken by what it reads from outside itself, never by its own writes.** A called function that does `++seq` subscribes the block to `seq`; the write is ignored while the block runs (`FJS-2652`), so a state change made BY the block is not a trigger for it.
+- **A derived `const` that writes a signal throws in a dev build and goes through in production** (`FJS-D1367`). The compiler refuses only a write in the initializer's own text; one reached through a call is the runtime's dev throw at the write. A `$:` that reads a signal and then writes it warns unless a test of that signal guards the write; a read after the write does not count, and nor does a write inside a function the block hands out.
 - **A `$: dep, handler` does not run at mount, and its `prev` is the same object when the change was a mutation.**
 - **A watched object cannot be cloned or spread out of its proxy — `unproxy()` it.**
 - **An unkeyed `{#each}` is keyed by INDEX, so a row's DOM state stays with the position after a reorder.**

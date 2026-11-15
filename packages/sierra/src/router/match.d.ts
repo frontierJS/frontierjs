@@ -30,7 +30,7 @@ export function matchRoute(pathname: string, tree: object, options?: {
 /**
  * Normalize a pathname according to the trailingSlash setting.
  */
-export function normalizePath(pathname: any, trailingSlash?: string): any;
+export function normalizePath(pathname?: any, trailingSlash?: string): any;
 /**
  * Build a URL from a path and query params.
  *

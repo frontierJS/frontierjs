@@ -4,15 +4,15 @@
  * expression ended earlier than the author thought, and `a b` would otherwise
  * run as `a`.
  */
-export function parseText(src: any): any;
+export function parseText(src?: any): any;
 /**
  * Throw a ParseError unless `ast` holds only values over `names`, the closed
  * list `{ owner: ['field', …] }` of what it may read. Own keys only, because
  * `constructor.constructor` is an own property of nothing the caller listed.
  */
-export function assertValues(ast: any, names: any): void;
+export function assertValues(ast?: any, names?: any): void;
 /**
  * The expression's value over `data` (`{ owner: { field: value } }`), read by
  * own key and never writable through. A name the data lacks answers null.
  */
-export function evaluateValues(ast: any, data: any): any;
+export function evaluateValues(ast?: any, data?: any): any;

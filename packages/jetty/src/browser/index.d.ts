@@ -18,12 +18,12 @@ export namespace browser {
 export { _resetPermissionsCache } from "./permissions.js";
 declare namespace storage {
     namespace local {
-        function get(keys: any): Promise<any>;
-        function set(items: any): Promise<any>;
-        function remove(keys: any): Promise<any>;
+        function get(keys?: any): Promise<any>;
+        function set(items?: any): Promise<any>;
+        function remove(keys?: any): Promise<any>;
         function clear(): Promise<any>;
         namespace onChanged {
-            function addListener(fn: any): void;
+            function addListener(fn?: any): void;
         }
     }
     namespace sync { }

@@ -140,7 +140,8 @@ what they mean in any app.
 - `src/site/` — what a visitor's page loads, as islands a preset places, exported
   as `@frontierjs/site-kit/site/<Name>.mesa`. `search.js` fetches the index once
   on first open and answers whole-word `results(query)` (a fuzzy run through a
-  page's text matches almost anything) beside the `pages` the palette ranks.
+  page's text matches almost anything), the word still being typed matching a
+  word's start (`FJS-D2198`), beside the `pages` the palette ranks.
   `Search.mesa` is the button, Cmd/Ctrl+K and `/` (not in a field) over
   `@frontierjs/ui`'s `CommandPalette` (`FJS-D2192`). `Toc.mesa` is the
   floating outline for a page with `toc: true`, shown after the first scroll.

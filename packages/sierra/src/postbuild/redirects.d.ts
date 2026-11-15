@@ -16,7 +16,7 @@ export function generateRedirects(redirects: Array<[string, string]>, outDir: st
  * The key a path matches under: `/old` and `/old/` are one rule, the same way
  * serveSite answers both with one page.
  */
-export function redirectKey(path: any): any;
+export function redirectKey(path?: any): any;
 /**
  * Parse a _redirects file into `redirectKey(from)` → `{ to, status }`.
  *

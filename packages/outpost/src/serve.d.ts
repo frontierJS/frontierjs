@@ -7,7 +7,7 @@
  * which is how Sierra's narrower `/assets/*` rule replaces `/*`'s revalidate
  * rather than sending both.
  */
-export function headersFor(text: any, path: any): any;
+export function headersFor(text?: any, path?: any): any;
 export function createStaticServer({ staticDir }?: {
     staticDir?: string;
 }, { log }?: {

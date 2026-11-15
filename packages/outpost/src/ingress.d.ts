@@ -6,32 +6,32 @@
  * lands in the default log as well, so the default excludes it (`FJS-D763`).
  * Unmapped hosts are skipped, so the machine logs only what a route names.
  */
-export function accessLogFor(config: any, id: any, hosts: any): {
+export function accessLogFor(config?: any, id?: any, hosts?: any): {
     logs: any;
     logging: any;
 };
 /** The hostnames a /deploy names, lowercased and de-duplicated, or a refusal
  *  naming the first bad one. Asked BEFORE the old container goes, so a typo
  *  fails the release with the app still up. */
-export function hostsOf(list: any): string[];
+export function hostsOf(list?: any): string[];
 /** The `{host, to}` pairs a /deploy names, hosts lowercased and de-duplicated,
  *  or a refusal naming the first bad one. `to` is an absolute http(s) URL:
  *  Caddy expands `{…}` in a header value, so a target holding a brace would
  *  read the machine's environment into a response, and a relative one is a
  *  redirect to a path on the redirecting host. */
-export function redirectsOf(list: any): {
+export function redirectsOf(list?: any): {
     host: string;
     to: string;
 }[];
 /** A copy's upstream: the container's IPv4 on the internal network and its port. */
-export function checkCopyDial(dial: any): string;
+export function checkCopyDial(dial?: any): string;
 /** The `removing` a push states: hostnames and `host + prefix` keys, only ever
  *  looked up in a set, so anything but a string in an array counts for nothing. */
-export function removingOf(list: any): string[];
+export function removingOf(list?: any): string[];
 /** An app id a route may be written for: a plain name, and not one that spells
  *  another app's `-redirects`, `-copy` or `-path-<n>` route id, which would be
  *  that app's route to Caddy. */
-export function checkRouteAppId(appId: any): void;
+export function checkRouteAppId(appId?: any): void;
 /**
  * A certificate Caddy can be handed, or a refusal in words, BEFORE anything is
  * written: a key that is not the certificate's, or a certificate past its end,
@@ -39,7 +39,7 @@ export function checkRouteAppId(appId: any): void;
  * rejecting the whole config stops every route being written after it.
  * Answers the SAN's names and the expiry.
  */
-export function readCert({ id, cert, key }: {
+export function readCert({ id, cert, key }?: {
     id: any;
     cert: any;
     key: any;
@@ -53,14 +53,14 @@ export function readCert({ id, cert, key }: {
  *  Hosts and prefixes are lowercased because Caddy matches a path without
  *  case; a repeat or a prefix that is `/` itself is refused by name, since the
  *  host is what routes the whole of it. */
-export function pathsOf(list: any): {
+export function pathsOf(list?: any): {
     host: string;
     prefix: string;
 }[];
 /** Where a route's handlers send a request, flattened through every subroute
  *  and de-duplicated — a fli route nests its API proxy and its file server
  *  three levels down, and a reader wants the destinations, not the tree. */
-export function targetsOf(handlers: any): any[];
+export function targetsOf(handlers?: any): any[];
 export function createIngress({ admin, fetch: fetchFn, now }?: {
     admin?: string;
     fetch?: typeof fetch;
@@ -252,9 +252,9 @@ export function createIngress({ admin, fetch: fetchFn, now }?: {
         removing?: any[];
     }): Promise<void>;
 };
-export function routeId(appId: any): string;
-export function accessLogPath(id: any): string;
-export function redirectsId(appId: any): string;
-export function pathRouteId(appId: any): string;
-export function copyRouteId(appId: any): string;
-export function certId(id: any): string;
+export function routeId(appId?: any): string;
+export function accessLogPath(id?: any): string;
+export function redirectsId(appId?: any): string;
+export function pathRouteId(appId?: any): string;
+export function copyRouteId(appId?: any): string;
+export function certId(id?: any): string;

@@ -7,7 +7,7 @@
  * it is what a test asserting contention wants, and what a fire-and-forget write
  * that must never block the loop wants.
  */
-export function resolveBusyTimeout(stated: any): any;
+export function resolveBusyTimeout(stated?: any): any;
 /**
  * Narrow a client's `busyTimeout` option to one database.
  *
@@ -18,7 +18,7 @@ export function resolveBusyTimeout(stated: any): any;
  * nobody is waiting for is the wrong trade — `{ default: 5000, audit: 250 }`
  * says so.
  */
-export function busyTimeoutFor(config: any, dbName: any): any;
+export function busyTimeoutFor(config?: any, dbName?: any): any;
 /**
  * Refuse a malformed `busyTimeout` at `createClient` time rather than at the
  * connection that would have used it.
@@ -27,7 +27,7 @@ export function busyTimeoutFor(config: any, dbName: any): any;
  * key here is a database that silently keeps the default, which is exactly the
  * class of silence this whole issue is about.
  */
-export function validateBusyTimeout(config: any, knownDbNames?: any[]): any;
+export function validateBusyTimeout(config?: any, knownDbNames?: any[]): any;
 /**
  * Apply the wait. Every `openDatabase(...)` in this package calls this.
  *
@@ -37,7 +37,7 @@ export function validateBusyTimeout(config: any, knownDbNames?: any[]): any;
  * omitted by the callers that hold no option (the CLI), which is what makes the
  * environment variable reach them.
  */
-export function applyBusyTimeout(db: any, timeout: any): void;
+export function applyBusyTimeout(db?: any, timeout?: any): void;
 /**
  * The wait, THEN WAL — the order is the point, so it is owned here once.
  *
@@ -56,7 +56,7 @@ export function applyBusyTimeout(db: any, timeout: any): void;
  * switch) and the cli's `core/journal-runner.mjs` (a deploy target has no
  * node_modules).
  */
-export function applyWal(db: any, timeout: any): void;
+export function applyWal(db?: any, timeout?: any): void;
 /**
  * Create the file able to hand freed pages back to the filesystem.
  *
@@ -71,7 +71,7 @@ export function applyWal(db: any, timeout: any): void;
  * second process opening beside a writer waited out `busyTimeout` and threw
  * SQLITE_BUSY out of `createClient` (`FJS-3914`). A read takes no lock.
  */
-export function applyIncrementalVacuum(db: any): void;
+export function applyIncrementalVacuum(db?: any): void;
 /**
  * Create the file with 8192-byte pages.
  *
@@ -80,14 +80,14 @@ export function applyIncrementalVacuum(db: any): void;
  * SQLite reports success and keeps 4096 (`FJS-2303`). A file that already
  * exists keeps its size; changing it is a full VACUUM, the operator's call.
  */
-export function applyPageSize(db: any): void;
+export function applyPageSize(db?: any): void;
 /**
  * Give back every freed page. A no-op unless the file is INCREMENTAL — asked
  * rather than assumed, since `incremental_vacuum` on any other mode is silently
  * nothing. Called per sweep batch, so it holds the write lock for one batch's
  * pages and not for a year's.
  */
-export function reclaimFreePages(db: any): void;
+export function reclaimFreePages(db?: any): void;
 /** Milliseconds a connection waits for the write lock when nobody says otherwise.
  *
  * Long enough to cover an ordinary transaction from another process, short

@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 191**.
+Graded: **13 of 192**.
 
 ## data — 3 of 63
 
@@ -246,7 +246,7 @@ Graded: **13 of 191**.
 | A test may not name a port, and the reason is the runner. | `test-port-literal` |
 | The shutdown budgets live inside the container's stop grace, and a stated one that reaches it refuses the boot | **none** |
 
-## ui — 4 of 56
+## ui — 4 of 57
 
 ### Routes, prerender and static
 
@@ -304,6 +304,7 @@ Graded: **13 of 191**.
 | An import is inert in a component with no `$:` of its own on it, and the default hint level says nothing about that. | **none** |
 | A function hides its reads from the compiler, which costs a subscription and an ordering. | **none** |
 | A `$:` block is woken by what it reads from outside itself, never by its own writes. | **none** |
+| A derived `const` that writes a signal throws in a dev build and goes through in production | **none** |
 | A `$: dep, handler` does not run at mount, and its `prev` is the same object when the change was a mutation. | **none** |
 | A watched object cannot be cloned or spread out of its proxy — `unproxy()` it. | **none** |
 | An unkeyed `{#each}` is keyed by INDEX, so a row's DOM state stays with the position after a reorder. | **none** |

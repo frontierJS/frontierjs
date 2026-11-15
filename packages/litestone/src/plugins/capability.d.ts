@@ -9,7 +9,7 @@
  * does not have to parse the sentence. `required` stays the gate's numeric level
  * and is left absent here.
  */
-export function requireCapability(model: any, action: any, ctx: any): void;
+export function requireCapability(model?: any, action?: any, ctx?: any): void;
 /**
  * The escalation guard: **you may only grant what you hold**.
  *
@@ -32,10 +32,10 @@ export function requireCapability(model: any, action: any, ctx: any): void;
  * that would generalize it and is deliberately not shipped: a blunt off-switch on a
  * security rule is the worse of the two.
  */
-export function requireGrantSubset(model: any, field: any, values: any, ctx: any): void;
+export function requireGrantSubset(model?: any, field?: any, values?: any, ctx?: any): void;
 export class CapabilityPlugin extends LitestonePlugin {
-    onInit(schema: any, ctx: any): void;
-    _check(model: any, op: any, ctx: any): void;
+    onInit(schema?: any, ctx?: any): void;
+    _check(model?: any, op?: any, ctx?: any): void;
     /**
      * The model-wide `update` grant, required only for the part of the payload no
      * FINER grant covers.
@@ -53,10 +53,10 @@ export class CapabilityPlugin extends LitestonePlugin {
      * of the payload is exactly what that grant is about. A write naming NO
      * columns at all (a bare touch) is an ordinary update.
      */
-    _checkUpdate(model: any, args: any, ctx: any): void;
-    onBeforeRead(model: any, args: any, ctx: any): Promise<void>;
-    onBeforeCreate(model: any, args: any, ctx: any): Promise<void>;
-    onBeforeUpdate(model: any, args: any, ctx: any): Promise<void>;
-    onBeforeDelete(model: any, args: any, ctx: any): Promise<void>;
+    _checkUpdate(model?: any, args?: any, ctx?: any): void;
+    onBeforeRead(model?: any, args?: any, ctx?: any): Promise<void>;
+    onBeforeCreate(model?: any, args?: any, ctx?: any): Promise<void>;
+    onBeforeUpdate(model?: any, args?: any, ctx?: any): Promise<void>;
+    onBeforeDelete(model?: any, args?: any, ctx?: any): Promise<void>;
 }
 import { LitestonePlugin } from '../core/plugin.js';

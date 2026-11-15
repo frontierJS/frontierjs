@@ -7,7 +7,7 @@
  * disagree before this existed only because compaction did not write rows at
  * all — it deleted the file.
  */
-export function indexShapeFor(model: any): {
+export function indexShapeFor(model?: any): {
     storedFields: any;
     idName: any;
     indexAttrs: any;
@@ -26,7 +26,7 @@ export function indexShapeFor(model: any): {
  * process crash and only risks the last transactions on a power loss, which is
  * the right trade for a row that is fire-and-forget by construction.
  */
-export function openIndexDb(indexPath: any, busyTimeout?: any): any;
+export function openIndexDb(indexPath?: any, busyTimeout?: any): any;
 /**
  * Hold this file's write lock for the length of `fn`.
  *
@@ -39,7 +39,7 @@ export function openIndexDb(indexPath: any, busyTimeout?: any): any;
  * passes through, because `BEGIN` inside a transaction is an error and the
  * outer holder's lock is the one that matters.
  */
-export function withWriteLock(db: any, fn: any): any;
+export function withWriteLock(db?: any, fn?: any): any;
 /**
  * Create the index table if it is absent, and drop it when its shape has drifted.
  *
@@ -63,7 +63,7 @@ export function withWriteLock(db: any, fn: any): any;
  * and running DDL on every open is what killed 2 of 8 concurrent processes
  * outright. A read-only pragma query needs no write lock at all.
  */
-export function ensureIndexTable(db: any, model: any, shape: any, filePath: any): void;
+export function ensureIndexTable(db?: any, model?: any, shape?: any, filePath?: any): void;
 /**
  * Re-derive every index row from the file, replacing what is there.
  *
@@ -74,10 +74,10 @@ export function ensureIndexTable(db: any, model: any, shape: any, filePath: any)
  * Takes the lock, so a concurrent append cannot land between the clear and the
  * refill and be missed.
  */
-export function rebuildIndex(db: any, model: any, filePath: any): void;
-export function utf8Bytes(text: any): Uint8Array<ArrayBuffer>;
-export function utf8Length(text: any): number;
-export function utf8Text(bytes: any): string;
+export function rebuildIndex(db?: any, model?: any, filePath?: any): void;
+export function utf8Bytes(text?: any): Uint8Array<ArrayBuffer>;
+export function utf8Length(text?: any): number;
+export function utf8Text(bytes?: any): string;
 /** SQLite type per `.lite` scalar, for the index's own columns. */
 export const FIELD_TYPES: Record<string, string>;
-export function indexPathFor(filePath: any): string;
+export function indexPathFor(filePath?: any): string;

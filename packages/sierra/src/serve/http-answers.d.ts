@@ -8,7 +8,7 @@
  * 204 — a preflight, or a client asking what this URL does, and neither is an
  * error.
  */
-export function methodAnswer(method: any): {
+export function methodAnswer(method?: any): {
     status: number;
     headers: {
         Allow: string;
@@ -25,7 +25,7 @@ export function methodAnswer(method: any): {
  *
  * @returns {{ body: Buffer, encoding: string }|null} null means send it as is.
  */
-export function compressed(body: any, contentType: any, acceptEncoding: any): {
+export function compressed(body?: any, contentType?: any, acceptEncoding?: any): {
     body: Buffer;
     encoding: string;
 } | null;
@@ -38,7 +38,7 @@ export function compressed(body: any, contentType: any, acceptEncoding: any): {
  *
  * @returns {{start:number,end:number}|'unsatisfiable'|null} null means send it whole.
  */
-export function byteRange(header: any, size: any): {
+export function byteRange(header?: any, size?: any): {
     start: number;
     end: number;
 } | "unsatisfiable" | null;

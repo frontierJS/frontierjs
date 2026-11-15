@@ -14,7 +14,7 @@ export function discoverWidgets(dir: string): Array<{
  * bundler warning; a false negative would drop a declaration, so `export *`
  * counts as a yes.
  */
-export function declaresWidget(source: any): boolean;
+export function declaresWidget(source?: any): boolean;
 /**
  * The generated entry for one widget.
  *
@@ -32,7 +32,7 @@ export function declaresWidget(source: any): boolean;
  * reading it by name through the namespace instead keeps the whole namespace in
  * the bundle.
  */
-export function widgetEntrySource(widget: any, { prefix, runtime, declares }?: {
+export function widgetEntrySource(widget?: any, { prefix, runtime, declares }?: {
     prefix?: string;
     runtime?: string;
     declares?: boolean;
@@ -78,7 +78,7 @@ export function widgetCssPlugin(): {
  * routing under `vite dev`, so the harness shows the widget the host page will
  * get and does not restyle its own `<h1>`.
  */
-export function inlineStyleImports(code: any): any;
+export function inlineStyleImports(code?: any): any;
 /**
  * One module that embeds every widget, for `vite dev` to load.
  *
@@ -91,7 +91,7 @@ export function inlineStyleImports(code: any): any;
  * module evaluation does not say which import came from which widget. It can
  * carry a neighbor's rules; it cannot miss its own.
  */
-export function widgetDevSource(widgets: any, { prefix, runtime }?: {
+export function widgetDevSource(widgets?: any, { prefix, runtime }?: {
     prefix?: string;
     runtime?: string;
 }): string;

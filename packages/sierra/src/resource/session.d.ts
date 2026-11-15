@@ -50,7 +50,7 @@ export function warmSignIn(path: string): void;
  * branch the refresh below would ask `account.me` with no credential, take the
  * 401 as a dead session and clear — a correct sign-in reported as a failure.
  */
-export function signIn(email: any, password: any): Promise<any>;
+export function signIn(email?: any, password?: any): Promise<any>;
 /**
  * Finish a sign-in that owed a code. A TOTP code or a recovery code — the person
  * typing it is answering one question.
@@ -58,7 +58,7 @@ export function signIn(email: any, password: any): Promise<any>;
  * The ticket is the client's; nothing here threads it through a page, because in
  * cookie mode there is no ticket a page could hold.
  */
-export function completeSignIn(code: any): Promise<any>;
+export function completeSignIn(code?: any): Promise<any>;
 /**
  * Spend a mailed address link. A registration's link makes the account and
  * signs in (`FJS-D1310`), so it lands where `signIn` does -- the session
@@ -67,13 +67,13 @@ export function completeSignIn(code: any): Promise<any>;
  * signs nobody in; a caller already signed in has its session read again, so
  * a screen gated on `verifiedAt` stops asking.
  */
-export function verifyEmail(token: any): Promise<any>;
+export function verifyEmail(token?: any): Promise<any>;
 /**
  * Register and sign in -- the plugin's /auth/register does both. Where the app
  * mails a verification it answers `{ ok: true }` instead and the account is made
  * at the mailed link, so there is no `user` in the result and no session to load.
  */
-export function signUp(data: any): Promise<any>;
+export function signUp(data?: any): Promise<any>;
 /**
  * Sign out — at the server first, then here.
  *

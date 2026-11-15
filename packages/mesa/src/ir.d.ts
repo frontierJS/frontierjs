@@ -3,8 +3,8 @@
  *  order: through an element's children, every arm of a block, a
  *  component's snippets and a snippet's body.
  *  A visit answering `false` skips that node's contents. */
-export function eachNode(children: any, visit: any): void;
-export function lower(ctx: any): {
+export function eachNode(children?: any, visit?: any): void;
+export function lower(ctx?: any): {
     kind: string;
     children: any;
     diagnostics: any;

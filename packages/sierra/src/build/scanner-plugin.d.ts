@@ -10,8 +10,8 @@
  * which decides before the bundle whether it will publish — sees the same
  * tree, not one scanned with a defaulted option.
  */
-export function scanRoutes(config: any, root: any, mounts?: Set<any>): Promise<import("../scanner/build-tree.js").RouteNode>;
-export function scannerPlugin(config: any, sierraContext: any): {
+export function scanRoutes(config?: any, root?: any, mounts?: Set<any>): Promise<import("../scanner/build-tree.js").RouteNode>;
+export function scannerPlugin(config?: any, sierraContext?: any): {
     name: string;
     enforce: string;
     configResolved(viteConfig: any): void;

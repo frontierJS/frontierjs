@@ -4,17 +4,17 @@
  * `src/pages/Home.mesa:12:3` rather than an absolute path; the client puts the
  * root back on before it asks the dev server to open anything.
  */
-export function locFileOf(config: any): any;
+export function locFileOf(config?: any): any;
 /**
  * The `{ box, key }` expressions an element's whole text reads when that text
  * is one field off an object (`{item.name}`, `{hours[day]}`), else null. Text
  * beside the value, a call or a bare name is not one field.
  */
-export function fieldRead(n: any, ctx: any): {
+export function fieldRead(n?: any, ctx?: any): {
     box: any;
     key: any;
 };
-export function assert(condition: any, msg: any): void;
+export function assert(condition?: any, msg?: any): void;
 /**
  * A parse failure carrying the SOURCE OFFSET it happened at. The offset is the
  * half the parser has and the half a message cannot be given later: `compile()`
@@ -24,23 +24,23 @@ export function assert(condition: any, msg: any): void;
  * A diagnostic naming no line is one the author cannot act on, and until this
  * existed every parse error in this file named none.
  */
-export function parseError(msg: any, pos: any): Error;
+export function parseError(msg?: any, pos?: any): Error;
 /**
  * A throw out of one template node's build, placed. `parseText` positions are
  * relative to the text it was handed, so a text node adds its own start; any
  * other node (an attribute's expression) is named by the element it sits on.
  */
-export function locateThrown(ctx: any, e: any, n: any): any;
+export function locateThrown(ctx?: any, e?: any, n?: any): any;
 /**
  * The refusals one template node's build pushed onto `analysis.errors` with no
  * place in them, placed at that node. A node nested inside this one placed its
  * own first, so what is left is this node's.
  */
-export function locateReported(ctx: any, from: any, n: any): void;
-export function Q(s: any, inlineTemplate: any): any;
-export function last(a: any): any;
-export function isSimpleName(name: any): boolean;
-export function toCamelCase(name: any): any;
+export function locateReported(ctx?: any, from?: any, n?: any): void;
+export function Q(s?: any, inlineTemplate?: any): any;
+export function last(a?: any): any;
+export function isSimpleName(name?: any): boolean;
+export function toCamelCase(name?: any): any;
 /**
  * Parse modifier chain from an attribute name.
  * `onclick|preventDefault|debounce(300)` →
@@ -49,7 +49,7 @@ export function toCamelCase(name: any): any;
  * Modifier args can be reactive expressions: `debounce({delay})` → arg: '{delay}'.
  * The `|` split respects nested parentheses so `debounce(fn(x))` parses correctly.
  */
-export function parseModifiers(fullName: any): {
+export function parseModifiers(fullName?: any): {
     directive: string;
     modifiers: ({
         name: string;
@@ -65,7 +65,7 @@ export function parseModifiers(fullName: any): {
  * Null for any other attribute. Every target and every reader of the parse
  * tree asks here, so a second spelling cannot compile on one path and not another.
  */
-export function eventAttribute(name: any): {
+export function eventAttribute(name?: any): {
     event: string;
     modifiers: ({
         name: string;
@@ -85,14 +85,14 @@ export function eventAttribute(name: any): {
  * `ctx` is the compile context: the reactive arg of debounce/throttle is
  * rewritten against its accessors and registered as a dependency.
  */
-export function applyEventModifiers(ctx: any, modifiers: any, event: any, handler: any): {
+export function applyEventModifiers(ctx?: any, modifiers?: any, event?: any, handler?: any): {
     handler: any;
     optsStr: string;
     hasListenerOpts: boolean;
     hasWrappers: boolean;
 };
-export function unwrapExp(e: any): any;
-export function trimEmptyNodes(nodes: any): any;
+export function unwrapExp(e?: any): any;
+export function trimEmptyNodes(nodes?: any): any;
 /**
  * Content-addressed component id — the CSS scope hash.
  *
@@ -122,39 +122,39 @@ export function trimEmptyNodes(nodes: any): any;
  * FNV-1a in two lanes, base36. No dependency and no `node:crypto`, because the
  * compiler also runs in the browser (the REPL imports it).
  */
-export function cssHash(content: any): string;
+export function cssHash(content?: any): string;
 /**
  * Rename identifiers in `exp` by splicing each new name over the old one at
  * acorn's offsets, so the author's spacing and comments survive. Re-printing
  * the tree reflowed them and needed a printer dependency for two call sites.
  */
-export function replaceKeyword(exp: any, fn: any, fullParse: any): any;
+export function replaceKeyword(exp?: any, fn?: any, fullParse?: any): any;
 /**
  * Apply `{start, end, text}` edits to `src`. Offsets are into the ORIGINAL
  * text and edits must not overlap; applied last-first so earlier offsets stay
  * valid. Returns `src` itself when there is nothing to do.
  */
-export function spliceEdits(src: any, edits: any): any;
+export function spliceEdits(src?: any, edits?: any): any;
 /**
  * Map an offset into the spliced text back onto the original: a diagnostic
  * raised against the rewritten script has to name the line the author wrote.
  * An offset inside replaced text maps to where that text began.
  */
-export function unspliceOffset(pos: any, edits: any): any;
-export function detectExpressionType(name: any): "identifier" | "function" | {
+export function unspliceOffset(pos?: any, edits?: any): any;
+export function detectExpressionType(name?: any): "identifier" | "function" | {
     type: string;
     name: any;
 };
-export function parseJS(exp: any, fullParse: any): {
+export function parseJS(exp?: any, fullParse?: any): {
     ast: any;
     transform(fn: any): /*elided*/ any;
     getParent(n: any): any;
 };
-export function extractKeywords(exp: any): any[];
-export function checkRootName(name: any, script: any, warning: any): any;
-export function withoutWatchedCalls(accessorMap: any): any;
-export function rewriteExpr(expr: any, accessorMap: any, setterMap: any, fireFns: any): any;
-export function eachLiftFrame(ctx: any, { getters, rowSource }: {
+export function extractKeywords(exp?: any): any[];
+export function checkRootName(name?: any, script?: any, warning?: any): any;
+export function withoutWatchedCalls(accessorMap?: any): any;
+export function rewriteExpr(expr?: any, accessorMap?: any, setterMap?: any, fireFns?: any): any;
+export function eachLiftFrame(ctx?: any, { getters, rowSource }?: {
     getters: any;
     rowSource: any;
 }): {
@@ -173,11 +173,11 @@ export function eachLiftFrame(ctx: any, { getters, rowSource }: {
  * @returns {string}  New template literal, e.g. `` `${$$sig_count()} items` ``
  */
 export function rewriteTextResult(pe: object, accessorMap: object, opts?: object): string;
-export function rewriteAssignments(src: any, node: any, ctx: any): any;
-export function xBuild(node: any, option?: {}): string;
-export function xNode(type: any, ...args: any[]): xNode;
+export function rewriteAssignments(src?: any, node?: any, ctx?: any): any;
+export function xBuild(node?: any, option?: {}): string;
+export function xNode(type?: any, ...args: any[]): xNode;
 export class xNode {
-    constructor(type: any, ...args: any[]);
+    constructor(type?: any, ...args: any[]);
     $type: any;
     $handler: any;
     $done: boolean;
@@ -194,11 +194,11 @@ export namespace xNode {
     function nodeComment(data: any): xNode;
     function template(data: any): xNode;
 }
-export function parseHTML(source: any): {
+export function parseHTML(source?: any): {
     type: string;
     body: any[];
 };
-export function parseText(source: any, options?: {}): {
+export function parseText(source?: any, options?: {}): {
     parts: {
         value: any;
         type: string;
@@ -207,9 +207,9 @@ export function parseText(source: any, options?: {}): {
     binding: any;
     getResult(): string;
 };
-export function templateSource(node: any, out?: any[]): any[];
-export function boundaryWatchSet(asyncVars: any, body: any): any;
-export function analyzeScript(raw: any, ast: any): {
+export function templateSource(node?: any, out?: any[]): any[];
+export function boundaryWatchSet(asyncVars?: any, body?: any): any;
+export function analyzeScript(raw?: any, ast?: any): {
     vars: {};
     watchPaths: any[];
     watchHandlers: any[];
@@ -231,8 +231,8 @@ export function analyzeScript(raw: any, ast: any): {
  * advances `i` up to but NOT including the terminator char. The main loop
  * always consumes the terminator itself with `i++` after branching on it.
  */
-export function scopeCSS(css: any, cssId: any, lower: any): string;
-export function processCSS(ctx: any): void;
+export function scopeCSS(css?: any, cssId?: any, lower?: any): string;
+export function processCSS(ctx?: any): void;
 /**
  * The component-scope declarations every target emits ahead of its template
  * block — the door, the builtins, `$$props`, `$$attributes` — pushed onto
@@ -241,15 +241,15 @@ export function processCSS(ctx: any): void;
  */
 export function buildHead(): void;
 export function buildRuntime(): void;
-export function buildBlock(data: any, option?: {}): {
+export function buildBlock(data?: any, option?: {}): {
     source: xNode;
     name: string;
     block: xNode;
     template: xNode;
     inuse: {};
 };
-export function makeifBlock(data: any, label: any): xNode;
-export function makeKeyBlock(data: any, label: any): xNode;
+export function makeifBlock(data?: any, label?: any): xNode;
+export function makeKeyBlock(data?: any, label?: any): xNode;
 /**
  * snippetParam — one declared parameter → the name the compiled function takes,
  * and what each name it binds reads through.
@@ -270,7 +270,7 @@ export function makeKeyBlock(data: any, label: any): xNode;
  * item; a snippet does not. So the destructuring moves into the READ, and each
  * bound name keeps its own subscription.
  */
-export function snippetParam(raw: any, index: any, snippetName: any): {
+export function snippetParam(raw?: any, index?: any, snippetName?: any): {
     param: any;
     reads: {
         [x: number]: string;
@@ -305,7 +305,7 @@ export function snippetParam(raw: any, index: any, snippetName: any): {
  * inside the binding's own effect, so it subscribes to whatever signal the
  * caller's expression touched.
  */
-export function makeSnippet(data: any): xNode;
+export function makeSnippet(data?: any): xNode;
 /**
  * makeRenderTag — compile {@render name(args)} to a snippet call.
  *
@@ -320,7 +320,7 @@ export function makeSnippet(data: any): xNode;
  * apart: the callee's name, whether it is optional-chained, the raw argument
  * text and each argument. One owner for the DOM builder and for `lower()`.
  */
-export function parseRenderTag(value: any): {
+export function parseRenderTag(value?: any): {
     expr: any;
     name: any;
     optional: any;
@@ -335,7 +335,7 @@ export function parseRenderTag(value: any): {
  * block called a memo that was not in scope there, and the ReferenceError was
  * contained into a blank (FJS-2273).
  */
-export function constScope(ctx: any): () => void;
+export function constScope(ctx?: any): () => void;
 /**
  * `{@const name = expr}` or `{@const { a, b } = expr}`, read once for every
  * target: `{ names, value, code, lines }` with `lines` the statements that
@@ -344,7 +344,7 @@ export function constScope(ctx: any): () => void;
  * is a plain `const`, and its names shadow an outer accessor as themselves.
  * Either way the names stay registered until the open `constScope` closes.
  */
-export function constDeclaration(ctx: any, tagValue: any): {
+export function constDeclaration(ctx?: any, tagValue?: any): {
     error: string;
     names?: undefined;
     value?: undefined;
@@ -357,7 +357,7 @@ export function constDeclaration(ctx: any, tagValue: any): {
     lines: string[];
     error?: undefined;
 };
-export function makeRenderTag(data: any, label: any): xNode;
+export function makeRenderTag(data?: any, label?: any): xNode;
 /**
  * The `{#each}` header, taken apart: `#each ITEMS as ITEM[, INDEX] [(KEY)]`.
  * One owner for the DOM builder and for `lower()` in ir.js, so the two cannot
@@ -366,7 +366,7 @@ export function makeRenderTag(data: any, label: any): xNode;
  * `patNames` is what a destructuring pattern binds; `itemName` is `$$item`
  * then, because the row receives the whole item and destructures it itself.
  */
-export function parseEachHeader(value: any): {
+export function parseEachHeader(value?: any): {
     arrayName: any;
     itemName: any;
     indexName: any;
@@ -383,7 +383,7 @@ export function parseEachHeader(value: any): {
  * `restore()`, which puts the outer frame back. The DOM builder and `lower()`
  * both enter it, so a row reads the same way on every target.
  */
-export function eachFrame(ctx: any, header: any, rowSource: any): {
+export function eachFrame(ctx?: any, header?: any, rowSource?: any): {
     patFn: string;
     lift: {
         getters: Set<any>;
@@ -393,12 +393,12 @@ export function eachFrame(ctx: any, header: any, rowSource: any): {
     };
     restore: () => void;
 };
-export function makeEachBlock(data: any, option: any): {
+export function makeEachBlock(data?: any, option?: any): {
     source: xNode;
 };
-export function makeVirtualEachBlock(data: any, option: any): xNode;
+export function makeVirtualEachBlock(data?: any, option?: any): xNode;
 export class makeVirtualEachBlock {
-    constructor(data: any, option: any);
+    constructor(data?: any, option?: any);
     accessors: any;
 }
 /**
@@ -406,8 +406,8 @@ export class makeVirtualEachBlock {
  * itself: the branch is handed a plain value, and an outer prop or signal of
  * the same name otherwise wins inside the branch, reading the prop.
  */
-export function withAwaitParam(ctx: any, param: any, fn: any): any;
-export function makeAwaitBlock(data: any, label: any): xNode;
+export function withAwaitParam(ctx?: any, param?: any, fn?: any): any;
+export function makeAwaitBlock(data?: any, label?: any): xNode;
 /**
  * `slot=` and `<slot>` are the HTML spelling of a snippet with no arguments,
  * rewritten to one here, before any target reads the tree, so every runtime
@@ -428,7 +428,7 @@ export function makeAwaitBlock(data: any, label: any): xNode;
  *   component's own `<slot>`s read, for `declareSlotProps` to declare where
  *   the script does not, and every name it renders content from
  */
-export function lowerSlots(ctx: any, body: any): {
+export function lowerSlots(ctx?: any, body?: any): {
     reads: Set<string>;
     renders: Set<string>;
 };
@@ -437,8 +437,8 @@ export function lowerSlots(ctx: any, body: any): {
  * and no `export let header` gets one, appended to the script where no offset
  * before it moves. A name the script already declares is left to the script.
  */
-export function declareSlotProps(script: any, reads: any): any;
-export function blockSlotTarget(node: any, preserveComments: any): {
+export function declareSlotProps(script?: any, reads?: any): any;
+export function blockSlotTarget(node?: any, preserveComments?: any): {
     mixed: string;
     names?: undefined;
     name?: undefined;
@@ -477,7 +477,7 @@ export function blockSlotTarget(node: any, preserveComments: any): {
  *   `mixed` the blocks left in `default` because their branches disagree,
  *   for the caller to warn about.
  */
-export function routeSlots(node: any, preserveComments: any): {
+export function routeSlots(node?: any, preserveComments?: any): {
     slots: Map<string, object[]>;
     snippets: object[];
     mixed: {
@@ -493,7 +493,7 @@ export function routeSlots(node: any, preserveComments: any): {
  * both read it. Every `raw` goes through the accessors like any expression:
  * a bare name emitted as written is a ReferenceError when it names a signal.
  */
-export function styleSource(attr: any, prop: any): {
+export function styleSource(attr?: any, prop?: any): {
     raw: any;
     template: boolean;
 };
@@ -521,7 +521,7 @@ export function styleSource(attr: any, prop: any): {
  * reach a child used to be dropped or passed under a name no child declares,
  * both silently.
  */
-export function componentAttributes(node: any): ({
+export function componentAttributes(node?: any): ({
     kind: string;
     name: string;
     attr: any;
@@ -579,7 +579,7 @@ export function componentAttributes(node: any): ({
  * with the refusal reported when `target` cannot be written. The DOM path
  * and the IR both read it, so a binding one target accepts the other does too.
  */
-export function elementBindTarget(ctx: any, attr: any, varName: any): {
+export function elementBindTarget(ctx?: any, attr?: any, varName?: any): {
     getter: string;
     setter: string;
 };
@@ -591,38 +591,38 @@ export function elementBindTarget(ctx: any, attr: any, varName: any): {
  * dropped the same way on each. `at` is the position suffix the caller's other
  * errors carry.
  */
-export function bindSetter(ctx: any, a: any, at: any): any;
-export function makeComponent(node: any, option?: {}): {
+export function bindSetter(ctx?: any, a?: any, at?: any): any;
+export function makeComponent(node?: any, option?: {}): {
     makeBind: (anchorName: any) => xNode;
     reference: any;
 };
-export function bindProp(prop: any, node: any, element: any): {
+export function bindProp(prop?: any, node?: any, element?: any): {
     bind: xNode;
     first?: undefined;
 } | {
     first: boolean;
     bind: xNode;
 };
-export function inspectProp(prop: any): {
+export function inspectProp(prop?: any): {
     name: any;
     value: any;
     static: boolean;
     mod: {};
 };
-export function emitScript(ctx: any): void;
+export function emitScript(ctx?: any): void;
 /**
  * Called after emitScript. Ensures ctx.rewriteExpr is available for any
  * late-binding builder passes that need to rewrite expressions.
  */
-export function emitTransforms(ctx: any): void;
+export function emitTransforms(ctx?: any): void;
 /**
  * Whether the DOM path writes a binding once, ahead of the render effects,
  * rather than from one. An emitter that must match the DOM's attribute
  * order (the server's string mode) asks this rather than guessing.
  */
-export function writtenOnce(expr: any, opaqueValues: any): boolean;
+export function writtenOnce(expr?: any, opaqueValues?: any): boolean;
 /** Remove every position marker. Line count is unchanged — they are inline. */
-export function stripSourceMarks(code: any): any;
+export function stripSourceMarks(code?: any): any;
 /**
  * Where each marker ended up, in the coordinates of the text handed in.
  * Read before stripping; stripping removes no newlines, so the line numbers
@@ -630,7 +630,7 @@ export function stripSourceMarks(code: any): any;
  *
  * @returns {Array<{ genLine: number, srcOffset: number }>} 0-based genLine
  */
-export function readSourceMarks(code: any): Array<{
+export function readSourceMarks(code?: any): Array<{
     genLine: number;
     srcOffset: number;
 }>;
@@ -655,7 +655,7 @@ export function readSourceMarks(code: any): Array<{
  * @returns {boolean}
  */
 export function detectStatic(analysis: object, dom: object): boolean;
-export function compile(source: any, config?: {}): Promise<{
+export function compile(source?: any, config?: {}): Promise<{
     config: any;
     uniqIndex: number;
     warning: any;
@@ -772,20 +772,20 @@ export const PLACED_PROP: "__fjsPlaced";
  *  handler. A component has no listener of its own, so these are refused on
  *  one while the rest compile into the value it is handed. */
 export const LISTENER_OPTIONS: Set<string>;
-export function isNumber(v: any): boolean;
-export function isObject(d: any): boolean;
+export function isNumber(v?: any): boolean;
+export function isObject(d?: any): boolean;
 export const svgElements: {
     [k: string]: boolean;
 };
 export const EACH_LIFT: unique symbol;
-export function get_context(check: any): any;
-export function use_context(ctx: any, fn: any): any;
-export function resolveDependencies(node: any, option: any): void;
-export function parseBinding(source: any): {
+export function get_context(check?: any): any;
+export function use_context(ctx?: any, fn?: any): any;
+export function resolveDependencies(node?: any, option?: any): void;
+export function parseBinding(source?: any): {
     raw: any;
     value: any;
 };
-export function parseAttributes(source: any, option?: {}): ({
+export function parseAttributes(source?: any, option?: {}): ({
     name: string;
     value: any;
     raw: any;
@@ -814,9 +814,9 @@ export function parseAttributes(source: any, option?: {}): ({
     type: string;
     $classAuto?: undefined;
 })[];
-export function contentFallback(value: any, snippet: any): string;
-export function slotProp(name: any): any;
-export function classSource(attr: any, name: any): any;
+export function contentFallback(value?: any, snippet?: any): string;
+export function slotProp(name?: any): any;
+export function classSource(attr?: any, name?: any): any;
 export const version: "2.0.0";
 export const MESA_ELEMENTS: string[];
 export const PRESERVE_WHITESPACE: Set<string>;

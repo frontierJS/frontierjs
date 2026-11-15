@@ -6,9 +6,9 @@
  *
  * Exported for the router's navigation path.
  */
-export function _prefetchCacheTake(key: any): any;
+export function _prefetchCacheTake(key?: any): any;
 /** Is there a live (unexpired) cached payload for this key? */
-export function _prefetchCacheHas(key: any): boolean;
+export function _prefetchCacheHas(key?: any): boolean;
 /**
  * Drop every prefetched PAYLOAD and the gate that stops a URL being fetched
  * again. Call it whenever the identity behind the requests changes — a sign-in,

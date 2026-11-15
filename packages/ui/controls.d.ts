@@ -11,9 +11,9 @@ export function registerFormControl(name: string, component: Function, options?:
     props?: (ctx: object) => object;
 }): () => void;
 /** Remove a binding by name. Answers whether there was one. */
-export function unregisterFormControl(name: any): boolean;
+export function unregisterFormControl(name?: any): boolean;
 /** The entry for a name, or null. Consulted by `FormField.mesa` before its own table. */
-export function formControl(name: any): any;
+export function formControl(name?: any): any;
 /** Every bound name. Diagnostics — a control that renders nothing is usually a name that was never bound. */
 export function registeredFormControls(): any[];
 /**
@@ -28,15 +28,15 @@ export function registerDisplayComponent(name: string, component: Function, opti
     props?: (ctx: object) => object;
 }): () => void;
 /** Remove a binding by name. Answers whether there was one. */
-export function unregisterDisplayComponent(name: any): boolean;
+export function unregisterDisplayComponent(name?: any): boolean;
 /** The entry for a name, or null. Consulted by `Cell.mesa` before its own table. */
-export function displayComponent(name: any): any;
+export function displayComponent(name?: any): any;
 /** Every bound name. Diagnostics. */
 export function registeredDisplayComponents(): any[];
 /**
  * The props a display gets when its entry supplied no builder.
  */
-export function defaultDisplayProps({ value, column, record }: {
+export function defaultDisplayProps({ value, column, record }?: {
     value: any;
     column: any;
     record: any;
@@ -57,13 +57,13 @@ export function registerFilterComponent(name: string, component: Function, optio
     props?: (ctx: object) => object;
 }): () => void;
 /** Remove a binding by name. Answers whether there was one. */
-export function unregisterFilterComponent(name: any): boolean;
+export function unregisterFilterComponent(name?: any): boolean;
 /** The entry for a name, or null. Consulted by `FilterBar.mesa` before its own table. */
-export function filterComponent(name: any): any;
+export function filterComponent(name?: any): any;
 /** Every bound name. Diagnostics. */
 export function registeredFilterComponents(): any[];
 /** The props a filter gets when its entry supplied no builder. */
-export function defaultFilterProps({ value, onvalue, column, options }: {
+export function defaultFilterProps({ value, onvalue, column, options }?: {
     value: any;
     onvalue: any;
     column: any;
@@ -80,7 +80,7 @@ export function defaultFilterProps({ value, onvalue, column, options }: {
  * Exported because `FormField.mesa` uses it and a `props` builder that only
  * wants to add one key should not have to restate it.
  */
-export function defaultControlProps({ field, value, onvalue, options, total, optionsError }: {
+export function defaultControlProps({ field, value, onvalue, options, total, optionsError }?: {
     field: any;
     value: any;
     onvalue: any;

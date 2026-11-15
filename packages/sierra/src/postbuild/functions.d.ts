@@ -22,10 +22,10 @@ export function writeFunctionsEntry({ root, dir }: {
     dir: string;
 }): Promise<string>;
 /** The build step: nothing without a `functions` key. */
-export function generateFunctions(config: any, root: any): Promise<string>;
+export function generateFunctions(config?: any, root?: any): Promise<string>;
 /** A node request as the web's `Request` a function takes. */
-export function requestFrom(req: any): Promise<Request>;
+export function requestFrom(req?: any): Promise<Request>;
 /** A function's `Response` written to a node response; `extra` headers go first and lose. */
-export function sendResponse(req: any, res: any, response: any, extra?: {}): Promise<void>;
+export function sendResponse(req?: any, res?: any, response?: any, extra?: {}): Promise<void>;
 /** Where the entry lands, relative to the project root. `.sierra/` is gitignored. */
 export const FUNCTIONS_ENTRY: string;

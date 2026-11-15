@@ -3,8 +3,8 @@
  * Each column's declared collation, read off the CREATE statement — no pragma
  * names one for a column. A column naming none is absent, which is BINARY.
  */
-export function parseCollations(sql: any): Map<any, any>;
-export function parseGeneratedColumns(sql: any): Map<any, any>;
+export function parseCollations(sql?: any): Map<any, any>;
+export function parseGeneratedColumns(sql?: any): Map<any, any>;
 /**
  * Every CHECK constraint in a CREATE TABLE, normalized for comparison.
  *
@@ -21,14 +21,14 @@ export function parseGeneratedColumns(sql: any): Map<any, any>;
  *
  * Sorted, because a constraint moving position is not a constraint changing.
  */
-export function parseChecks(sql: any): any[];
+export function parseChecks(sql?: any): any[];
 /**
  * `{ column: places }` for every `@scale(n)` CHECK in a CREATE TABLE, read off
  * the constraint's NAME (`ddl.js` § Scale constraints). The expression is the
  * same at every scale, so the name is the only place a change shows.
  */
-export function parseScales(sql: any): {};
-export function introspect(db: any): {
+export function parseScales(sql?: any): {};
+export function introspect(db?: any): {
     __views: {};
     __triggers: {};
     __fts: {};
@@ -37,19 +37,19 @@ export function introspect(db: any): {
     };
     __sql: {};
 };
-export function normalizeDdl(sql: any): any;
-export function normalizeTableDdl(sql: any): any;
-export function parseIndexColumns(sql: any): any[];
-export function parseIndexSorts(sql: any): any[];
-export function stripParens(t: any): any;
-export function predicateToLite(where: any, nameOf: any, { values }?: {
+export function normalizeDdl(sql?: any): any;
+export function normalizeTableDdl(sql?: any): any;
+export function parseIndexColumns(sql?: any): any[];
+export function parseIndexSorts(sql?: any): any[];
+export function stripParens(t?: any): any;
+export function predicateToLite(where?: any, nameOf?: any, { values }?: {
     values?: boolean;
 }): string;
-export function isIndexExpression(member: any): boolean;
-export function indexPredicate(sql: any): string;
-export function normalizeTriggerSql(sql: any): any;
-export function splitStatements(sql: any): string[];
-export function buildPristine(db: any, parseResult: any): {
+export function isIndexExpression(member?: any): boolean;
+export function indexPredicate(sql?: any): string;
+export function normalizeTriggerSql(sql?: any): any;
+export function splitStatements(sql?: any): string[];
+export function buildPristine(db?: any, parseResult?: any): {
     __views: {};
     __triggers: {};
     __fts: {};
@@ -58,7 +58,7 @@ export function buildPristine(db: any, parseResult: any): {
     };
     __sql: {};
 };
-export function buildPristineForDatabase(db: any, parseResult: any, dbName: any, ddl?: string): {
+export function buildPristineForDatabase(db?: any, parseResult?: any, dbName?: any, ddl?: string): {
     __views: {};
     __triggers: {};
     __fts: {};
@@ -67,7 +67,7 @@ export function buildPristineForDatabase(db: any, parseResult: any, dbName: any,
     };
     __sql: {};
 };
-export function diffSchemas(pristine: any, live: any, parseResult: any, dbName?: string, { pluralize }?: {
+export function diffSchemas(pristine?: any, live?: any, parseResult?: any, dbName?: string, { pluralize }?: {
     pluralize?: boolean;
 }): {
     newTables: any;
@@ -146,14 +146,14 @@ export function diffSchemas(pristine: any, live: any, parseResult: any, dbName?:
     dbName: string;
     hasChanges: boolean;
 };
-export function rescaleUpdate(tableName: any, { column, from, to }: {
+export function rescaleUpdate(tableName?: any, { column, from, to }?: {
     column: any;
     from: any;
     to: any;
 }): string;
-export function generateMigrationSQL(diffResult: any, parseResult: any, { pluralize, first }?: {
+export function generateMigrationSQL(diffResult?: any, parseResult?: any, { pluralize, first }?: {
     pluralize?: boolean;
     first?: any[];
 }): string;
-export function summarizeDiff(diffResult: any): string;
-export function checksum(str: any): string;
+export function summarizeDiff(diffResult?: any): string;
+export function checksum(str?: any): string;

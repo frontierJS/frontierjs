@@ -4,7 +4,7 @@
  * Called by @frontierjs/mesa-render before mounting components in a happy-dom Window.
  * This unlocks htmlToFragment and other DOM-dependent functions in Node.js.
  */
-export function setRenderEnvironment(isBrowser: any, isClient?: any): void;
+export function setRenderEnvironment(isBrowser?: any, isClient?: any): void;
 /** A DOM is reachable AND a reactive graph is running — a browser tab. False
  *  under renderToHTML (DOM, no graph) and on a terminal or a phone (graph, no
  *  DOM). The one spelling of that pair, so nothing outside this file reads a
@@ -29,13 +29,13 @@ export function isClient(): boolean;
  *   expect(el.textContent).toBe('1')  // works
  */
 export function flushSync(): void;
-export function createSignal(value: any, opts: any): ({
+export function createSignal(value?: any, opts?: any): ({
     (): any;
     _src: {
         _subs: Set<any>;
     };
 } | ((next: any, force: any) => boolean))[];
-export function createEffect(fn: any, opts: any): () => void;
+export function createEffect(fn?: any, opts?: any): () => void;
 /**
  * createRoot(fn) — run `fn` inside an owner scope that ends when you say so.
  *
@@ -56,7 +56,7 @@ export function createEffect(fn: any, opts: any): () => void;
  * Reads inside the root do NOT subscribe the caller's effect: `_listener` is
  * cleared for the duration. A root is ownership, not tracking.
  */
-export function createRoot(fn: any): any;
+export function createRoot(fn?: any): any;
 /**
  * trackOwners() — start counting live owner nodes; returns the counter.
  *
@@ -81,7 +81,7 @@ export function trackOwners(): () => number;
  * @returns {[readFn, writeFn]}
  */
 export function createWritableSignal(fn: Function, opts?: object): [readFn, writeFn];
-export function createMemo(fn: any, opts: any): {
+export function createMemo(fn?: any, opts?: any): {
     (): any;
     _src: {
         _subs: Set<any>;
@@ -98,16 +98,16 @@ export function createMemo(fn: any, opts: any): {
         };
     };
 };
-export function createKeyedEquals(source: any): (key: any) => boolean;
-export function batch(fn: any): any;
-export function tick(fn: any): Promise<void>;
-export function untrack(fn: any): any;
-export function onCleanup(fn: any): void;
-export function onMount(fn: any): void;
-export function onDestroy(fn: any): void;
+export function createKeyedEquals(source?: any): (key: any) => boolean;
+export function batch(fn?: any): any;
+export function tick(fn?: any): Promise<void>;
+export function untrack(fn?: any): any;
+export function onCleanup(fn?: any): void;
+export function onMount(fn?: any): void;
+export function onDestroy(fn?: any): void;
 /** The box `el` occupies, as `{ left, top, right, bottom, width, height }`.
  *  No node answers `null`, as `el?.getBoundingClientRect()` would. */
-export function measure(el: any): Promise<any>;
+export function measure(el?: any): Promise<any>;
 /** The area a `position: fixed` box is placed against, as `{ width, height }`
  *  in the units `measure` answers. */
 export function viewport(): Promise<{
@@ -115,7 +115,7 @@ export function viewport(): Promise<{
     height: number;
 }>;
 /** Move focus to `el`. No node does nothing, as `el?.focus()` would. */
-export function focus(el: any): Promise<void>;
+export function focus(el?: any): Promise<void>;
 /**
  * context.key = expr  — provide a reactive getter for `key` in this component's
  * context slot. Descendants can read it via contextRead('key').
@@ -164,34 +164,34 @@ export function contextRead(key: string): Function | null;
  * @returns {(fn: Function) => any} run `fn` with the captured stack installed
  */
 export function captureContext(): (fn: Function) => any;
-export function htmlToFragment(html: any, option: any, clean: any): any;
-export function svgToFragment(content: any): any;
+export function htmlToFragment(html?: any, option?: any, clean?: any): any;
+export function svgToFragment(content?: any): any;
 /**
  * Register a shadow root to receive component styles.
  * Called by mount() when a styleRoot option is provided.
  * Returns a cleanup fn that removes all injected styles on destroy.
  */
-export function _registerStyleRoot(root: any): () => void;
-export function refer(root: any, path: any): any[];
-export function bindText(el: any, fn: any): void;
+export function _registerStyleRoot(root?: any): () => void;
+export function refer(root?: any, path?: any): any[];
+export function bindText(el?: any, fn?: any): void;
 /**
  * `value` with each listed field marked with the file line that wrote it, for
  * the stamp below. `at` is `[path, loc]` pairs from the top of `value`. A `.md`
  * module's `frontmatter` is recorded this way when the build stamps.
  */
-export function recorded(value: any, at: any): any;
+export function recorded(value?: any, at?: any): any;
 /**
  * Stamp `el` with the line of the field it shows, when `read()` answers
  * `[object, key]` for a recorded field still holding the value that line
  * wrote. Anything else keeps the template's stamp: a copy that changed the key
  * is not that line's value any more.
  */
-export function stampFrom(el: any, read: any): void;
-export function bindAttribute(el: any, name: any, fn: any): void;
-export function bindClass(el: any, fn: any, className: any): void;
-export function bindClassExp(el: any, fn: any): void;
-export function bindStyle(el: any, name: any, fn: any): void;
-export function bindInput(el: any, name: any, get: any, set: any): void;
+export function stampFrom(el?: any, read?: any): void;
+export function bindAttribute(el?: any, name?: any, fn?: any): void;
+export function bindClass(el?: any, fn?: any, className?: any): void;
+export function bindClassExp(el?: any, fn?: any): void;
+export function bindStyle(el?: any, name?: any, fn?: any): void;
+export function bindInput(el?: any, name?: any, get?: any, set?: any): void;
 /**
  * bindMask — input masking for bind:value|mask({"pattern"})={value}
  *
@@ -207,7 +207,7 @@ export function bindInput(el: any, name: any, get: any, set: any): void;
  * The signal always holds the formatted value.
  * Initial signal value is formatted on mount.
  */
-export function bindMask(el: any, getter: any, setter: any, pattern: any): () => void;
+export function bindMask(el?: any, getter?: any, setter?: any, pattern?: any): () => void;
 /**
  * bind:group={arr} — checkbox/radio group binding.
  *
@@ -223,19 +223,19 @@ export function bindMask(el: any, getter: any, setter: any, pattern: any): () =>
  * @param {Function} getVal   () => this element's value
  */
 export function bindGroup(el: Element, getArr: Function, setArr: Function, getVal: Function): void;
-export function addEvent(el: any, event: any, fn: any, opts: any): void;
+export function addEvent(el?: any, event?: any, fn?: any, opts?: any): void;
 /**
  * <mesa:window|document|body onevent={fn}> — add listener to a global target.
  * target: 'window' | 'document' | 'body'
  */
-export function addGlobalEvent(target: any, event: any, fn: any, opts: any): void;
+export function addGlobalEvent(target?: any, event?: any, fn?: any, opts?: any): void;
 /**
  * Register event types used by a component module. Called at module scope by
  * compiled output — e.g. `$runtime.$$delegate(['click', 'input'])`.
  * Records the types; actual listeners are attached by mount() to its container.
  * Safe to call multiple times with overlapping sets.
  */
-export function $$delegate(events: any): void;
+export function $$delegate(events?: any): void;
 /**
  * Register a DOM node as a delegation root for a mounted component tree.
  * Called internally by mount(). Returns a cleanup fn that removes all listeners.
@@ -256,7 +256,7 @@ export function delegationRootOf(el: Node | null | undefined): Element | ShadowR
  * `blockFactory` is a makeBlock factory — called once to produce the DOM.
  * Removes the inserted nodes on component destroy.
  */
-export function portal(getTarget: any, blockFactory: any): void;
+export function portal(getTarget?: any, blockFactory?: any): void;
 /**
  * subscribe(start) — one platform listener shared by every effect that reads it.
  *
@@ -284,7 +284,7 @@ export function portal(getTarget: any, blockFactory: any): void;
  * was disposed with the reader while the others still read, and under its
  * listener a signal read there subscribed that one reader to it.
  */
-export function subscribe(start: any): () => void;
+export function subscribe(start?: any): () => void;
 /**
  * <mesa:window bind:prop={var}> — sync a window property to a signal.
  * Reads the initial value synchronously, then re-reads on the matching window
@@ -292,27 +292,27 @@ export function subscribe(start: any): () => void;
  * listener is added; on a terminal there is no window and nothing happens.
  * scrollX / scrollY are writable — assigning them calls window.scrollTo().
  */
-export function bindWindow(prop: any, setter: any): void;
+export function bindWindow(prop?: any, setter?: any): void;
 /**
  * <mesa:head> — insert a DOM fragment into document.head.
  * Removes all inserted nodes on component destroy.
  */
-export function addToHead(domOrFragment: any): void;
+export function addToHead(domOrFragment?: any): void;
 /**
  * <mesa:head><style> — a raw stylesheet for the document, taken off on destroy.
  * A constructed sheet where the engine has them, so a `style-src` without
  * 'unsafe-inline' does not refuse it (FJS-3232); a <style> element otherwise.
  */
-export function addHeadStyle(css: any): void;
+export function addHeadStyle(css?: any): void;
 /**
  * Debounce an event handler. If `ms` is a function (reactive getter),
  * it is called each time to get the current delay.
  */
-export function debounce(fn: any, ms: any): (...args: any[]) => void;
+export function debounce(fn?: any, ms?: any): (...args: any[]) => void;
 /** `$.after` — run `fn` once, `ms` after the timer arms. Returns nothing. */
-export function after(ms: any, fn: any, opts: any): void;
+export function after(ms?: any, fn?: any, opts?: any): void;
 /** `$.every` — run `fn` every `ms` while the timer is armed. Returns nothing. */
-export function every(ms: any, fn: any, opts: any): void;
+export function every(ms?: any, fn?: any, opts?: any): void;
 /**
  * `$.sleep(ms)` for one component instance (`FJS-D2063`): a Promise that
  * resolves `ms` later on the runtime clock. A sleep is awaited after an `await`
@@ -327,7 +327,7 @@ export function sleeper(): (ms: any) => Promise<any>;
  * Throttle an event handler. If `ms` is a function (reactive getter),
  * it is called each time to get the current interval.
  */
-export function throttle(fn: any, ms: any): (...args: any[]) => void;
+export function throttle(fn?: any, ms?: any): (...args: any[]) => void;
 /**
  * {@attach expr} — element-level lifecycle function.
  *
@@ -354,7 +354,7 @@ export function attach(el: Element, getFn: Function): void;
 /**
  * Apply component-level attachments from $option.attachments.
  */
-export function applyAttachments(el: any, fns: any): void;
+export function applyAttachments(el?: any, fns?: any): void;
 /**
  * $.transition(fn) — wrap a state change in the View Transitions API.
  * Falls back to a plain batch() in browsers without View Transitions support.
@@ -362,7 +362,7 @@ export function applyAttachments(el: any, fns: any): void;
  *   $.transition(() => show = !show)
  *   $.transition(() => { tab = 'home'; items = newItems })
  */
-export function transition(fn: any): void;
+export function transition(fn?: any): void;
 /**
  * entrance({ in: inFn, out: outFn }) — enter/exit animation attachment factory.
  *
@@ -402,9 +402,9 @@ export function fly({ x, y, duration, easing }?: {
     duration?: number;
     easing?: string;
 }): Function;
-export function makeEmitter($option: any): (name: any, detail: any) => void;
+export function makeEmitter($option?: any): (name: any, detail: any) => void;
 export function mergeEvents(...cbs: any[]): any;
-export function mergeAllEvents($events: any, local: any): any;
+export function mergeAllEvents($events?: any, local?: any): any;
 /**
  * Creates a delegated event system on a component's root node(s).
  *
@@ -414,7 +414,7 @@ export function mergeAllEvents($events: any, local: any): any;
  *                            the fragment may already have been inserted into the DOM.
  */
 export function makeRootEvent(root: Node | Node[]): (target: any, eventName: any, cb: any) => void;
-export function makeComponent(init: any): ($option?: {}) => {
+export function makeComponent(init?: any): ($option?: {}) => {
     $dom: any;
     /**
      * Map<name, { get, set }> — one entry per `export let` prop.
@@ -439,16 +439,16 @@ export function makeComponent(init: any): ($option?: {}) => {
     $apply(props?: object): void;
     destroy(): void;
 };
-export function mount(label: any, component: any, option: any): {
+export function mount(label?: any, component?: any, option?: any): {
     $dom: Comment;
     find(sel: any): any;
     destroy(): void;
 };
-export function mountStatic(label: any, component: any, option: any): {
+export function mountStatic(label?: any, component?: any, option?: any): {
     $dom: Comment;
 };
-export function makeBlock(fr: any, fn: any): (v: any, i: any) => any;
-export function makeBlockBound(fr: any, fn: any): () => any;
+export function makeBlock(fr?: any, fn?: any): (v: any, i: any) => any;
+export function makeBlockBound(fr?: any, fn?: any): () => any;
 /**
  * $$virtualEach — windowed virtual list renderer.
  *
@@ -492,9 +492,9 @@ export function $$virtualEach(anchor: Comment, getItems: any, keyFn: Function, m
  * both are typos with an obvious intent, and guessing at one produces an empty
  * list where the author expected rows.
  */
-export function eachItems(v: any): any[];
-export function $$eachBlock(anchor: any, mode: any, getArray: any, keyFn: any, makeItem: any, elseBlock: any): void;
-export function ifBlock(anchor: any, condFn: any, blocks: any, noAnchor: any): void;
+export function eachItems(v?: any): any[];
+export function $$eachBlock(anchor?: any, mode?: any, getArray?: any, keyFn?: any, makeItem?: any, elseBlock?: any): void;
+export function ifBlock(anchor?: any, condFn?: any, blocks?: any, noAnchor?: any): void;
 /**
  * keyBlock — destroy and recreate content whenever `keyFn()` changes.
  *
@@ -524,13 +524,13 @@ export function settleAwaits(): Promise<void>;
  * @returns {(fn: Function) => any} run `fn` under a child of the captured owner
  */
 export function captureScope(): (fn: Function) => any;
-export function awaitBlock(anchor: any, getPromise: any, pendingBlock: any, thenBlock: any, catchBlock: any, waits?: boolean): void;
+export function awaitBlock(anchor?: any, getPromise?: any, pendingBlock?: any, thenBlock?: any, catchBlock?: any, waits?: boolean): void;
 /**
  * onMounted(fn) — wraps an async function in a Promise that resolves after the
  * component mounts to the DOM. Used with <mesa:mounted> to gate the template.
  * Only one call per component is allowed — compiler error if used twice.
  */
-export function onMounted(fn: any): Promise<any>;
+export function onMounted(fn?: any): Promise<any>;
 /**
  * mountedBlock — gate the entire component template behind a mount Promise.
  *
@@ -575,12 +575,12 @@ export function mountedBlock(anchor: Comment, getPromise: Function, pendingBlock
  * @param {Function}  failedBlock   (err, reset?) => DOM | null
  */
 export function boundaryBlock(anchor: Comment, getStates: Function, contentBlock: Function, pendingBlock: Function, failedBlock: Function): void;
-export function content(fn: any): any;
-export function unclaimedContent(props: any, declared: any, componentName: any, renders?: any[]): void;
+export function content(fn?: any): any;
+export function unclaimedContent(props?: any, declared?: any, componentName?: any, renders?: any[]): void;
 /** Test seam: the warning fires once per component-and-name for the process. */
 export function resetContentWarnings(): void;
-export function restProps(props: any, declared: any): {};
-export function spreadAttributes(el: any, fn: any): void;
+export function restProps(props?: any, declared?: any): {};
+export function spreadAttributes(el?: any, fn?: any): void;
 /**
  * Ordered watch group — $: { dep, handler \n dep, handler }
  *
@@ -598,19 +598,17 @@ export function orderedGroup(entries: Array<{
     deps: Function[];
     handler: Function;
 }>): void;
-/** Test seam: the derivation-write warning is once per path per process. */
-export function resetDerivedWriteWarnings(): void;
-export function warnDestructuredAccessors(source: any, keys: any, site: any): void;
+export function warnDestructuredAccessors(source?: any, keys?: any, site?: any): void;
 /** Test seam: the destructure warning is once per site per process. */
 export function resetDestructureWarnings(): void;
-export function watchProxy(obj: any): any;
-export function watchPath(obj: any, path: any, label: any): any;
+export function watchProxy(obj?: any): any;
+export function watchPath(obj?: any, path?: any, label?: any): any;
 /**
  * unproxy — unwrap a Mesa watch proxy to its underlying plain object.
  * Deep-clones the result so it can be safely logged without proxy interference.
  * Non-proxy values are returned as-is.
  */
-export function unproxy(value: any): any;
+export function unproxy(value?: any): any;
 /**
  * inspect — reactive dev-mode inspector.
  *
@@ -633,7 +631,7 @@ export function inspect(...args: any[]): {
  * Watch proxy for a LOCAL `let` — the compiler hands the watches over as a flat
  * { dotPath: [read, fire] } map with '' for the whole object.
  */
-export function localWatchProxy(obj: any, signalMap: any): any;
+export function localWatchProxy(obj?: any, signalMap?: any): any;
 export function makeAsyncState(upstream?: any[], unshown?: any): {
     readonly loading: any;
     readonly pending: any;
@@ -673,8 +671,8 @@ export function makeCallState(handled?: boolean): {
     };
     run(fn: any, self: any, args: any): Promise<any>;
 };
-export function asyncDerived(getAsyncState: any, fn: any, deps: any, setValue: any, name: any): void;
-export function push_component(devName: any, devFile: any, devStatic: any): void;
+export function asyncDerived(getAsyncState?: any, fn?: any, deps?: any, setValue?: any, name?: any): void;
+export function push_component(devName?: any, devFile?: any, devStatic?: any): void;
 export function pop_component(): void;
 /**
  * registerExports — the child half of `bind:this` on a component.
@@ -684,8 +682,8 @@ export function pop_component(): void;
  * registry, and reading them through it is what keeps `ref.count` live rather
  * than a copy taken at mount.
  */
-export function registerExports(methods: any): void;
-export function registerComponentAnchor(anchor: any): void;
+export function registerExports(methods?: any): void;
+export function registerComponentAnchor(anchor?: any): void;
 /**
  * captureRemount — how a hot update re-renders one instance in place.
  *
@@ -716,7 +714,7 @@ export function captureRemount(anchor: Comment): (fn: Function, props: any) => v
  * nothing still answers an object rather than a node the caller would then try
  * to call `.focus()` on.
  */
-export function componentApi(anchor: any): {};
+export function componentApi(anchor?: any): {};
 /**
  * bindProp — the child→parent half of `<Child bind:value={x} />`.
  *
@@ -733,7 +731,7 @@ export function componentApi(anchor: any): {};
  * @param {Function} setParent — the parent's setter for the bound variable
  */
 export function bindProp(anchor: Comment, name: string, setParent: Function): void;
-export function pushProps(anchor: any, newProps: any): void;
+export function pushProps(anchor?: any, newProps?: any): void;
 /**
  * Mount a component that carries a `client:*` directive.
  *
@@ -774,7 +772,7 @@ export function island(anchor: Comment, Comp: Function, props: object, meta: {
  * generated from a callback the user passed — both are `() => …` — so the
  * compiler now says which it means by calling trackDerived() instead.
  */
-export function track(value: any, _getInterceptor: any, _setInterceptor: any, _alwaysNotify: any): {
+export function track(value?: any, _getInterceptor?: any, _setInterceptor?: any, _alwaysNotify?: any): {
     _isMemo: boolean;
     _read: {
         (): any;
@@ -796,7 +794,7 @@ export function track(value: any, _getInterceptor: any, _setInterceptor: any, _a
  * The counterpart to track(): the caller states the intent rather than the
  * runtime guessing it from the shape of the value.
  */
-export function trackDerived(fn: any): {
+export function trackDerived(fn?: any): {
     _isMemo: boolean;
     _memo: {
         (): any;
@@ -817,7 +815,7 @@ export function trackDerived(fn: any): {
     };
     readonly __v: any;
 };
-export function get(tracked: any): any;
+export function get(tracked?: any): any;
 /**
  * Write a signal, and ANSWER what was written.
  *
@@ -827,7 +825,7 @@ export function get(tracked: any): any;
  * made that `undefined` — valid JavaScript, no warning, and the whole
  * expression silently wrong.
  */
-export function set(tracked: any, value: any, force: any): any;
+export function set(tracked?: any, value?: any, force?: any): any;
 /**
  * `x++` / `x--` as an expression: write the new value, answer the OLD one.
  *
@@ -837,11 +835,11 @@ export function set(tracked: any, value: any, force: any): any;
  * followed by an inlined `(($$v) => …)(…)` parses as a CALL on the Error and
  * the increment never runs at all. Starting with an identifier cannot do that.
  */
-export function postUpdate(tracked: any, setter: any, delta: any): any;
-export function child(node: any, _isText: any): any;
-export function sibling(node: any): any;
-export function pop(_node: any): void;
-export function template(html: any, flags: any): () => any;
+export function postUpdate(tracked?: any, setter?: any, delta?: any): any;
+export function child(node?: any, _isText?: any): any;
+export function sibling(node?: any): any;
+export function pop(_node?: any): void;
+export function template(html?: any, flags?: any): () => any;
 /**
  * Build one instance of `<mesa:element this={tag}>`.
  *
@@ -860,17 +858,17 @@ export function template(html: any, flags: any): () => any;
  * it during parse and no user agent gives it default properties. It is never in
  * the document: the parse happens inside a detached <template>.
  */
-export function dynamicElement(tagFn: any, tplFn: any): () => HTMLElement;
-export function append(anchor: any, dom: any): void;
-export function render(fn: any, init: any): void;
-export function contain(e: any, last: any): any;
-export function set_text(node: any, value: any): void;
-export function setInnerHTML(anchor: any, html: any): void;
-export function set_attribute(el: any, name: any, value: any): void;
+export function dynamicElement(tagFn?: any, tplFn?: any): () => HTMLElement;
+export function append(anchor?: any, dom?: any): void;
+export function render(fn?: any, init?: any): void;
+export function contain(e?: any, last?: any): any;
+export function set_text(node?: any, value?: any): void;
+export function setInnerHTML(anchor?: any, html?: any): void;
+export function set_attribute(el?: any, name?: any, value?: any): void;
 /** Test seam: the warning is once per element-name and attribute per process. */
 export function resetAttributeWarnings(): void;
-export function bindClassPassthrough(el: any, fn: any): void;
-export function makeExternalProperty(name: any, getter: any, setter: any, fallback: any): {
+export function bindClassPassthrough(el?: any, fn?: any): void;
+export function makeExternalProperty(name?: any, getter?: any, setter?: any, fallback?: any): {
     get: any;
     set: (v: any) => any;
     directWrite: any;
@@ -881,14 +879,14 @@ export function makeExternalProperty(name: any, getter: any, setter: any, fallba
  * A prop's declared default, for a default that cannot be written when the prop
  * is registered because it reads something declared later in the script.
  */
-export function propDefault(name: any, fallback: any): void;
+export function propDefault(name?: any, fallback?: any): void;
 /**
  * The one place a string render starts: the component's pushes under a root,
  * its dispose, and `waiting` when an `{#await}` has yet to settle. `renderToHTML`
  * and `renderString` both begin here, so a page and a packed module write the
  * same bytes for one source. A throw disposes the root before it leaves.
  */
-export function startRender(ComponentFactory: any, props: any): {
+export function startRender(ComponentFactory?: any, props?: any): {
     out: any[];
     dispose: any;
     waiting: Promise<void>;
@@ -903,23 +901,23 @@ export function startRender(ComponentFactory: any, props: any): {
  * on one), and so is a `<mesa:head>`, which has no page here to land in and
  * would otherwise vanish.
  */
-export function renderString(ComponentFactory: any, props: any): string;
+export function renderString(ComponentFactory?: any, props?: any): string;
 export const ANCHOR_DATA: "$";
 export namespace context {
     export { contextRead as use };
     export { contextProvide as provide };
 }
-export function htmlToFragmentClean(html: any, option: any): any;
-export function createTextNode(text: any): Text;
-export function insertAfter(anchor: any, node: any): any;
-export function iterNodes(first: any, last: any, fn: any): void;
-export function removeElements(first: any, last: any): void;
-export function addStyles(id: any, css: any): void;
-export function attachBlock(anchor: any, $dom: any): void;
-export function addBlock(parent: any, $dom: any): void;
-export function insertBlock(anchor: any, $dom: any): void;
-export function eachDefaultKey(_item: any, index: any): any;
-export function ifBlockReadOnly(anchor: any, condFn: any, blocks: any, noAnchor: any): void;
+export function htmlToFragmentClean(html?: any, option?: any): any;
+export function createTextNode(text?: any): Text;
+export function insertAfter(anchor?: any, node?: any): any;
+export function iterNodes(first?: any, last?: any, fn?: any): void;
+export function removeElements(first?: any, last?: any): void;
+export function addStyles(id?: any, css?: any): void;
+export function attachBlock(anchor?: any, $dom?: any): void;
+export function addBlock(parent?: any, $dom?: any): void;
+export function insertBlock(anchor?: any, $dom?: any): void;
+export function eachDefaultKey(_item?: any, index?: any): any;
+export function ifBlockReadOnly(anchor?: any, condFn?: any, blocks?: any, noAnchor?: any): void;
 /**
  * restProps — everything the caller passed that the component did not declare.
  *
@@ -936,8 +934,8 @@ export function ifBlockReadOnly(anchor: any, condFn: any, blocks: any, noAnchor:
  * @param {string[]} declared — prop names the component declared
  */
 export const REST_PROPS: unique symbol;
-export function noop(x: any): any;
-export function addClass(el: any, cls: any): any;
+export function noop(x?: any): any;
+export function addClass(el?: any, cls?: any): any;
 export namespace __dev {
     let _signals: Map<any, any>;
     let _bySrc: Map<any, any>;
@@ -946,10 +944,10 @@ export namespace __dev {
     let _runs: any[];
     let _listeners: Set<any>;
     /** Register a signal. Called by compiler-emitted __dev.r() calls in dev builds. */
-    function r(sig: any, name: any, kind: any): void;
+    function r(sig?: any, name?: any, kind?: any): void;
     /** Called from set() before a registered signal is written. What it wakes
      *  is read off the signal's own `_subs` before they are notified. */
-    function _beginWrite(sig: any, value: any): {
+    function _beginWrite(sig?: any, value?: any): {
         _isWrite: boolean;
         _by: any;
         write: number;
@@ -976,18 +974,18 @@ export namespace __dev {
             pending: boolean;
         };
     };
-    function _endWrite(entry: any): void;
+    function _endWrite(entry?: any): void;
     /** Called by the flush for every node it runs. */
-    function _onRun(node: any): void;
+    function _onRun(node?: any): void;
     /** A registered signal's edges, read off the live graph: what it reads
      *  (a derivation's `_deps`) and what reads it (`_subs`). */
-    function graph(signalId: any): any;
+    function graph(signalId?: any): any;
     /** A node's most recent run and the chain that woke it. The id is one
      *  `graph()` handed out; null means the flush has not run it since. */
-    function why(nodeId: any): any;
-    function _emit(event: any): void;
-    function subscribe(fn: any): void;
-    function unsubscribe(fn: any): void;
+    function why(nodeId?: any): any;
+    function _emit(event?: any): void;
+    function subscribe(fn?: any): void;
+    function unsubscribe(fn?: any): void;
     /** Full state snapshot for devtools page on load. */
     function snapshot(): {
         signals: any[];

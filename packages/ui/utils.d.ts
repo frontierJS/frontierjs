@@ -9,13 +9,13 @@ export function uid(prefix?: string): string;
  * Order: the `error` prop, then an `errors` map passed directly, then the
  * enclosing form's map. First hit wins; '' when there is nothing to say.
  */
-export function resolveError(form: any, name: any, error: any, errors: any): any;
+export function resolveError(form?: any, name?: any, error?: any, errors?: any): any;
 /**
  * The field's rule object from the schema — `{ type, required, maxLength,
  * title, enum, format, … }` as buildFieldRules() emits it — or null when there
  * is no form, no name, or no schema behind it.
  */
-export function resolveRule(form: any, name: any): any;
+export function resolveRule(form?: any, name?: any): any;
 /**
  * What a field's LABEL says when the caller stated none: `@label` verbatim,
  * else the column's name humanized — and for a foreign key, its RELATION's.
@@ -24,7 +24,7 @@ export function resolveRule(form: any, name: any): any;
  * read *Assignee Id* over a column whose header said *Assignee* (FJS-1962).
  * Restated rather than imported: this kit and sierra are siblings.
  */
-export function ruleLabel(name: any, rule: any): any;
+export function ruleLabel(name?: any, rule?: any): any;
 /**
  * Is this control locked by the form above it?
  *
@@ -47,7 +47,7 @@ export function ruleLabel(name: any, rule: any): any;
  * (Invariant 6). What a `disabled={false}` cannot do is put the value back in
  * the payload — `<Form>` drops a frozen key on the way out.
  */
-export function lockedBy(form: any, name: any): any;
+export function lockedBy(form?: any, name?: any): any;
 /**
  * Was this column kept back by the server rather than empty?
  *
@@ -56,7 +56,7 @@ export function lockedBy(form: any, name: any): any;
  * the field around it asks whether to SAY why. An empty disabled box and a
  * withheld one look identical, which is the whole defect.
  */
-export function withheldBy(form: any, name: any): any;
+export function withheldBy(form?: any, name?: any): any;
 /**
  * Pick the first value that was actually stated.
  *
@@ -67,7 +67,7 @@ export function withheldBy(form: any, name: any): any;
  * `optionsError=""` is how a caller states *no error*.
  */
 export function stated(...values: any[]): any;
-export function nativeValidationGuard(el: any): void;
+export function nativeValidationGuard(el?: any): void;
 /**
  * Resolve a prop to one of the seven @frontierjs/css tones, or '' for
  * "untoned" -- every component in the package falls back to its own default
@@ -76,7 +76,7 @@ export function nativeValidationGuard(el: any): void;
  *   tone('danger') → 'danger'
  *   tone('error')  → ''
  */
-export function tone(name: any): any;
+export function tone(name?: any): any;
 /**
  * Join class fragments, dropping anything falsy, and collapse whitespace.
  * Mesa interpolates `{a} {b}` literally, so an empty tone would otherwise
@@ -94,7 +94,7 @@ export function cx(...parts: any[]): string;
  *
  *   sizeClass({ sm: 'text-sm' }, 'sm', 'text-xs')  → ''
  */
-export function sizeClass(map: any, size: any, callerClass: any): any;
+export function sizeClass(map?: any, size?: any, callerClass?: any): any;
 /**
  * Where a portaled `position: fixed` panel sits against its trigger.
  *
@@ -110,7 +110,7 @@ export function sizeClass(map: any, size: any, callerClass: any): any;
  *   const [tr, pr, vp] = await Promise.all([$.measure(triggerEl), $.measure(panelEl), $.viewport()])
  *   const { x, y } = placeAgainst(tr, pr, vp, { placement, offset })
  */
-export function placeAgainst(tr: any, pr: any, vp: any, { placement, offset }?: {
+export function placeAgainst(tr?: any, pr?: any, vp?: any, { placement, offset }?: {
     placement?: string;
     offset?: number;
 }): {
@@ -136,7 +136,7 @@ export function placeAgainst(tr: any, pr: any, vp: any, { placement, offset }?: 
  *
  *   const { flip, maxHeight } = fitDropdown(containerRect, panelHeight, vp)
  */
-export function fitDropdown(cr: any, ph: any, vp: any, { offset }?: {
+export function fitDropdown(cr?: any, ph?: any, vp?: any, { offset }?: {
     offset?: number;
 }): {
     flip: boolean;
@@ -184,7 +184,7 @@ export function menuWalk(): (rows: any, cursor: any, e: any) => {
  * is not *complete*: no number, no sentence, because a wrong count is worse
  * than none. One owner, so three controls cannot word it three ways.
  */
-export function truncationNote(shown: any, total: any, { searchable }?: {
+export function truncationNote(shown?: any, total?: any, { searchable }?: {
     searchable?: boolean;
 }): string;
 /**
@@ -199,9 +199,9 @@ export function truncationNote(shown: any, total: any, { searchable }?: {
  * absent, so marking the field invalid would refuse a submit on every optional
  * relation whose rows happened not to arrive.
  */
-export function optionsNote(error: any): string;
+export function optionsNote(error?: any): string;
 /** The caller's hint and the count, in that order, as one line. */
-export function withNote(hint: any, note: any): string;
+export function withNote(hint?: any, note?: any): string;
 /**
  * A picker's list, split into the three things it can hold.
  *
@@ -239,7 +239,7 @@ export function splitRecent(options?: any[]): {
  * written out at the far end is the copy that disagrees the first time an
  * endpoint changes hands.
  */
-export function bandIndex(thresholds: any, value: any): number;
+export function bandIndex(thresholds?: any, value?: any): number;
 /**
  * A value as a chart plots it: a finite number, or `null` for a gap.
  *
@@ -247,18 +247,18 @@ export function bandIndex(thresholds: any, value: any): number;
  * point as a real zero and announces it as one; and one `undefined` reaching
  * `Math.min(...data)` makes every coordinate NaN, so the whole line vanishes.
  */
-export function plotValue(v: any): number;
+export function plotValue(v?: any): number;
 /**
  * The runs of consecutive plotted values, as arrays of indices — one stroke
  * each, so a gap is a break in the line rather than a dive to the floor.
  */
-export function plotRuns(values: any): any[];
+export function plotRuns(values?: any): any[];
 /**
  * The name a response gives its file in `Content-Disposition`, or null.
  * `filename*` wins over `filename` (RFC 6266 § 4.3), and junction's file route
  * sends only `filename*` — a reader of `filename="…"` alone never sees its name.
  */
-export function fileNameOf(res: any): string;
+export function fileNameOf(res?: any): string;
 /**
  * Hand the person a file: a `Blob` named `filename`, or a `Response` named as
  * the server named it, `filename` when it names nothing.
@@ -273,7 +273,7 @@ export function fileNameOf(res: any): string;
  * The anchor goes in the document for the click: older Firefox ignores a
  * click on a detached one.
  */
-export function download(file: any, filename: any): any;
+export function download(file?: any, filename?: any): any;
 /**
  * Show the person a file in a new tab — a PDF to read or print — or save it.
  * `fetchFile` answers the `Response`; it is a function because the tab must
@@ -285,7 +285,7 @@ export function download(file: any, filename: any): any;
  * A blocked popup leaves no tab, so the file is saved instead of lost, as it
  * is with `save: true`. A failure closes the blank tab and rethrows.
  */
-export function openFile(fetchFile: any, { name, save }?: {
+export function openFile(fetchFile?: any, { name, save }?: {
     save?: boolean;
 }): Promise<any>;
 /**

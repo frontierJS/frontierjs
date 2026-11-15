@@ -4,7 +4,7 @@
  * WebCrypto derives no public key from a private one, but exports it as the
  * JWK's `x`.
  */
-export function seededPair(name: any, seed: any): Promise<{
+export function seededPair(name?: any, seed?: any): Promise<{
     publicKey: string;
     privateKey: string;
 }>;

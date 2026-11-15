@@ -665,8 +665,18 @@ export function errorResponse(err: unknown, ctx?: ServiceContext, host?: ErrorMa
 
   const text   = JSON.stringify(fe.toJSON())
   // Fresh headers: JSON_HEADERS is shared by every answer.
-  const headers = status === 401 ? { ...JSON_HEADERS, 'www-authenticate': bearerChallenge(fe) } : JSON_HEADERS
+  const wait    = retryAfterOf(fe)
+  const headers = status === 401 ? { ...JSON_HEADERS, 'www-authenticate': bearerChallenge(fe) }
+    : wait ? { ...JSON_HEADERS, 'retry-after': wait }
+    : JSON_HEADERS
   return own(new Response(text, { status, headers }), text)
+}
+
+// Every limiter throws its wait as `data.retryAfter` in seconds; a client reads
+// it from the header (RFC 9110 § 10.2.3), which no tier can set on its own.
+function retryAfterOf(fe: { data?: unknown }): string | null {
+  const s = (fe.data as { retryAfter?: unknown } | null | undefined)?.retryAfter
+  return typeof s === 'number' && Number.isFinite(s) && s > 0 ? String(Math.ceil(s)) : null
 }
 
 export function redirectResponse(url: string, status = 302): Response {

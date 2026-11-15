@@ -13,7 +13,7 @@
  *
  * @returns {string|undefined} absolute path, or undefined to let Vite try
  */
-export function findMesaFile(file: any, root: any): string | undefined;
+export function findMesaFile(file?: any, root?: any): string | undefined;
 /**
  * The source Mesa is handed for a `.mesa` file, before auto-imports.
  *
@@ -24,7 +24,7 @@ export function findMesaFile(file: any, root: any): string | undefined;
  * @returns {{ frontmatter: object, content: string|null }} `content` is null
  *   for a redirect-only route, which is never compiled.
  */
-export function prepareMesaSource(source: any, id: any): {
+export function prepareMesaSource(source?: any, id?: any): {
     frontmatter: object;
     content: string | null;
 };
@@ -42,7 +42,7 @@ export function prepareMesaSource(source: any, id: any): {
  *
  * @returns {string|null} null for a redirect-only route, which is never compiled
  */
-export function prepareForCompile(source: any, id: any, autoImportMap: any): string | null;
+export function prepareForCompile(source?: any, id?: any, autoImportMap?: any): string | null;
 /**
  * Which line of `original` each line of `prepared` came from, 1-based, or null
  * when nothing moved. `prepareForCompile` inserts lines (an auto-import, a
@@ -51,7 +51,7 @@ export function prepareForCompile(source: any, id: any, autoImportMap: any): str
  * an insertion opened its source a line or more off. An inserted line maps to
  * the line before it; a line rewritten in place maps to itself.
  */
-export function locLines(original: any, prepared: any): any[];
+export function locLines(original?: any, prepared?: any): any[];
 /**
  * @param {object} [build]
  * @param {boolean} [build.holdHints] — a static build: reactivity hints wait for

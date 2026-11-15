@@ -8,7 +8,7 @@
  * first link that fails, for anything else — a chain arrives from somebody
  * else, so nothing in it is trusted before it verifies.
  */
-export function readChain(links: any): Promise<{
+export function readChain(links?: any): Promise<{
     refused: string;
     root?: undefined;
     seq?: undefined;
@@ -34,7 +34,7 @@ export function readChain(links: any): Promise<{
  * `ROW_AGE` before `now` (seconds), else `{ refused }` naming why. Every field
  * is checked before the signature, since a row arrives from whoever holds it.
  */
-export function readRow(row: any, postKey: any, now: any): Promise<{
+export function readRow(row?: any, postKey?: any, now?: any): Promise<{
     refused: string;
     row?: undefined;
 } | {
@@ -52,7 +52,7 @@ export function readRow(row: any, postKey: any, now: any): Promise<{
     refused?: undefined;
 }>;
 /** `{ sealed, key }` — the bytes to put and the base64url key for the link's fragment. Throws on a file or a name past its room. */
-export function sealFile({ name, type, bytes }: {
+export function sealFile({ name, type, bytes }?: {
     name: any;
     type?: string;
     bytes: any;
@@ -66,12 +66,12 @@ export function sealFile({ name, type, bytes }: {
  * inlines its source into a page, where a free identifier throws at the first
  * download and nothing short of a browser sees it.
  */
-export function openFile(sealed: any, key: any): Promise<{
+export function openFile(sealed?: any, key?: any): Promise<{
     name: string;
     type: string;
     bytes: Uint8Array<ArrayBuffer>;
 }>;
-export function linkMessage({ seq, prev, kind, by, machine, sealKey }: {
+export function linkMessage({ seq, prev, kind, by, machine, sealKey }?: {
     seq: any;
     prev: any;
     kind: any;
@@ -79,8 +79,8 @@ export function linkMessage({ seq, prev, kind, by, machine, sealKey }: {
     machine: any;
     sealKey: any;
 }): string;
-export function linkHash(link: any): Promise<string>;
-export function rootLink(keys: any): Promise<{
+export function linkHash(link?: any): Promise<string>;
+export function rootLink(keys?: any): Promise<{
     sig: string;
     seq: number;
     prev: any;
@@ -89,7 +89,7 @@ export function rootLink(keys: any): Promise<{
     machine: any;
     sealKey: any;
 }>;
-export function nextLink(keys: any, links: any, kind: any, machine: any, sealKey?: any): Promise<{
+export function nextLink(keys?: any, links?: any, kind?: any, machine?: any, sealKey?: any): Promise<{
     sig: string;
     seq: any;
     prev: string;
@@ -98,28 +98,28 @@ export function nextLink(keys: any, links: any, kind: any, machine: any, sealKey
     machine: any;
     sealKey: any;
 }>;
-export function countersign(keys: any, link: any): Promise<any>;
-export function askCode(machine: any, sealKey: any): Promise<string>;
-export function boxClaim(keys: any): Promise<{
+export function countersign(keys?: any, link?: any): Promise<any>;
+export function askCode(machine?: any, sealKey?: any): Promise<string>;
+export function boxClaim(keys?: any): Promise<{
     box: any;
     sig: string;
 }>;
-export function verifyBox(machine: any, claim: any): Promise<boolean>;
-export function extendsSeen(seen: any, chain: any): string;
+export function verifyBox(machine?: any, claim?: any): Promise<boolean>;
+export function extendsSeen(seen?: any, chain?: any): string;
 /** How old a row a reader takes — the reach of a revoke the reader has not seen. */
 export const ROW_AGE: 86400;
 /** Haven's `Member.nick` rule, so a nick here is one Haven accepts — the Worker's and the cli's alike. */
 export const NICK: RegExp;
 /** A version as `package.json` writes one, bounded so it cannot carry a line. */
 export const FLI_VERSION: RegExp;
-export function memberNumber(n: any): string;
-export function signRow(privateKey: any, row: any): Promise<any>;
-export function rowBindsChain(row: any, chain: any): "the row names another chain root than the chain read beside it" | "the row names a head the chain does not hold";
+export function memberNumber(n?: any): string;
+export function signRow(privateKey?: any, row?: any): Promise<any>;
+export function rowBindsChain(row?: any, chain?: any): "the row names another chain root than the chain read beside it" | "the row names a head the chain does not hold";
 /** The owner's 24 MiB (FJS-D1565), as the sender reads its file. */
 export const FILE_PLAIN_MAX: number;
 /** The most the post takes as put: a full file once sealed. */
 export const FILE_MAX: number;
-export function fileLimits({ downloads, expires }: {
+export function fileLimits({ downloads, expires }?: {
     downloads: any;
     expires: any;
-}, now: any): string;
+}, now?: any): string;

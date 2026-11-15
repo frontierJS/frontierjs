@@ -645,9 +645,9 @@ export namespace TARGETS {
         export { tags_2 as tags };
         let events_2: {};
         export { events_2 as events };
-        export function isInline_2(tag: any): boolean;
+        export function isInline_2(tag?: any): boolean;
         export { isInline_2 as isInline };
-        export function inputKind_2(type: any): any;
+        export function inputKind_2(type?: any): any;
         export { inputKind_2 as inputKind };
         export function paintsClass_2(): boolean;
         export { paintsClass_2 as paintsClass };

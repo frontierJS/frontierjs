@@ -8859,6 +8859,169 @@ function _checkUnreadDerived(ctx) {
   }
 }
 
+// ─── Writes during a computation (FJS-D1367) ────────────────────────────────
+
+const _FN_NODE = /^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression)$/
+
+// The signals `node` reads and writes while it runs. A function inside it runs
+// later, outside the computation, so its body is not walked. Each write carries
+// the names the conditions above it read: a write under a test of its own
+// target settles, an unguarded one does not. `reads` maps a name to its first
+// read's offset, since a read after the write sees the block's own value.
+function _computeAccess(node, signals) {
+  let reads = new Map()
+  const writes = []
+  const locals = new Set()
+  const declare = (p) => {
+    if (!p) return
+    if (p.type === 'Identifier') locals.add(p.name)
+    else if (p.type === 'AssignmentPattern') declare(p.left)
+    else if (p.type === 'RestElement') declare(p.argument)
+    else if (p.type === 'ObjectPattern') p.properties.forEach((q) => declare(q.value ?? q.argument))
+    else if (p.type === 'ArrayPattern') p.elements.forEach(declare)
+  }
+  const target = (p, guards, end) => {
+    if (!p) return
+    if (p.type === 'Identifier') { if (signals.has(p.name)) writes.push({ name: p.name, start: p.start, end, guards }) }
+    else if (p.type === 'AssignmentPattern') { target(p.left, guards, end); walk(p.right, guards) }
+    else if (p.type === 'RestElement') target(p.argument, guards, end)
+    else if (p.type === 'ObjectPattern') p.properties.forEach((q) => { if (q.computed) walk(q.key, guards); target(q.value ?? q.argument, guards, end) })
+    else if (p.type === 'ArrayPattern') p.elements.forEach((e) => target(e, guards, end))
+    else walk(p, guards)
+  }
+  const read = (name, at) => { if (!(reads.get(name) <= at)) reads.set(name, at) }
+  const readsIn = (n, guards) => {
+    const outer = reads
+    reads = new Map()
+    walk(n, guards)
+    const got = reads
+    reads = outer
+    got.forEach((at, name) => read(name, at))
+    return new Set([...guards, ...got.keys()])
+  }
+  const walk = (n, guards) => {
+    if (!n || typeof n !== 'object') return
+    if (Array.isArray(n)) { n.forEach((x) => walk(x, guards)); return }
+    if (_FN_NODE.test(n.type)) return
+    switch (n.type) {
+      case 'Identifier': if (signals.has(n.name)) read(n.name, n.start); return
+      case 'MemberExpression': walk(n.object, guards); if (n.computed) walk(n.property, guards); return
+      case 'Property': if (n.computed) walk(n.key, guards); walk(n.value, guards); return
+      case 'AssignmentExpression': if (n.operator !== '=') walk(n.left, guards); target(n.left, guards, n.end); walk(n.right, guards); return
+      case 'UpdateExpression': walk(n.argument, guards); target(n.argument, guards, n.end); return
+      case 'VariableDeclarator': declare(n.id); walk(n.init, guards); return
+      case 'CatchClause': declare(n.param); walk(n.body, guards); return
+      case 'IfStatement':
+      case 'ConditionalExpression': {
+        const g = readsIn(n.test, guards)
+        walk(n.consequent, g); walk(n.alternate, g); return
+      }
+      case 'LogicalExpression': walk(n.right, readsIn(n.left, guards)); return
+      case 'SwitchStatement': {
+        const g = readsIn(n.discriminant, guards)
+        for (const c of n.cases) { walk(c.test, g); walk(c.consequent, g) }
+        return
+      }
+      case 'LabeledStatement': walk(n.body, guards); return
+      case 'BreakStatement':
+      case 'ContinueStatement': return
+    }
+    for (const k of Object.keys(n)) {
+      if (k === 'type' || k === 'start' || k === 'end') continue
+      const c = n[k]
+      if (c && typeof c === 'object') walk(c, guards)
+    }
+  }
+  return {
+    walk: (n) => walk(n, new Set()),
+    readsIn: (n) => readsIn(n, new Set()),
+    declare,
+    result: () => ({
+      reads: new Map([...reads].filter(([x]) => !locals.has(x))),
+      writes: writes.filter((w) => !locals.has(w.name))
+    })
+  }
+}
+
+// A memo recomputes when something reads it, so a write from its initializer
+// lands whenever a reader happens to ask, and stops when nothing does. The
+// compiler sees only the initializer's own text; a write from a function the
+// initializer calls is the runtime's dev throw (`set`).
+function _checkDerivedWrites(ctx) {
+  const vars = Object.values(ctx.analysis.vars ?? {})
+  const signals = new Set(vars.filter((v) => v.kind === 'let').map((v) => v.name))
+  if (!signals.size) return
+  const seen = new Set()
+  for (const v of vars) {
+    if (v.kind !== 'const' || !v.isDerived || v.isProp || !v.initNode) continue
+    const access = _computeAccess(v.initNode, signals)
+    access.walk(v.initNode)
+    for (const w of access.result().writes) {
+      if (seen.has(w.start)) continue
+      seen.add(w.start)
+      const at = ctx.script?.posOf?.(w.start)
+      ctx.analysis.errors.push(
+        `'${v.name}' is a derived 'const', and its initializer writes '${w.name}'. A derived value ` +
+        `recomputes only when something reads it, so the write would land at no time you chose. ` +
+        `Make '${w.name}' its own 'const', or write it in a '$:' or an event handler.` +
+        (at ? ` — ${at}` : ''))
+    }
+  }
+}
+
+// A `$:` that writes a signal it reads computes that signal from itself, and
+// its own write never wakes it again, so the value moves once per outside
+// change rather than settling. A write under a test of its own target is the
+// settled form (`$: { if (x === undefined) x = seed }`) and is left alone.
+function _checkEffectSelfWrites(ctx) {
+  const vars = ctx.analysis.vars ?? {}
+  const signals = new Set(Object.values(vars).filter((v) => v.kind === 'let').map((v) => v.name))
+  if (!signals.size) return
+  const isWatch = (e) => e.type === 'SequenceExpression' &&
+    _FN_NODE.test(e.expressions[e.expressions.length - 1].type)
+  const report = (watched, handler, start) => {
+    const access = _computeAccess(handler, signals)
+    const deps = watched ? access.readsIn(watched) : null
+    if (handler.params) handler.params.forEach(access.declare)
+    access.walk(handler.params ? handler.body : handler)
+    const { reads, writes } = access.result()
+    const readFirst = (w) => deps ? deps.has(w.name) : reads.get(w.name) < w.end
+    const named = new Set()
+    for (const w of writes) {
+      if (!readFirst(w) || w.guards.has(w.name) || named.has(w.name)) continue
+      named.add(w.name)
+      const at = ctx.script?.posOf?.(w.start ?? start)
+      ctx.analysis.warnings.push(
+        `This '$:' writes '${w.name}', which it also ${watched ? 'watches' : 'reads'}. Its own write ` +
+        `does not wake it, so '${w.name}' moves once per outside change instead of settling. ` +
+        `Test '${w.name}' before writing it ('if (${w.name} === undefined) ${w.name} = …'), ` +
+        `compute the value as a 'const', or take a previous value from a watch ` +
+        `('$: x, (now, was) => …').` + (at ? ` — ${at}` : ''))
+    }
+  }
+  for (const node of ctx.script?.ast?.body ?? []) {
+    if (node.type !== 'LabeledStatement' || !/^\$(_.+)?$/.test(node.label.name)) continue
+    const body = node.body
+    if (body.type === 'BlockStatement' && body.body.length &&
+        body.body.every((s) => s.type === 'ExpressionStatement' && isWatch(s.expression))) {
+      for (const s of body.body) {
+        const ex = s.expression.expressions
+        report(ex.slice(0, -1), ex[ex.length - 1], s.start)
+      }
+      continue
+    }
+    if (body.type === 'ExpressionStatement' && isWatch(body.expression)) {
+      const ex = body.expression.expressions
+      report(ex.slice(0, -1), ex[ex.length - 1], node.start)
+      continue
+    }
+    // `$: x = …` that declares `x` is a writable derived, not an effect.
+    const ex = body.type === 'ExpressionStatement' ? body.expression : null
+    if (ex?.type === 'AssignmentExpression' && vars[ex.left?.name]?.nodeStart === node.start) continue
+    report(null, body, node.start)
+  }
+}
+
 // A derived `const` is emitted as a getter call, so `d = 3` becomes `d() = 3`
 // and fails as a syntax error inside compiled output (`FJS-1109`). A function
 // declaring its own `d` shadows it and is skipped.
@@ -9170,6 +9333,12 @@ function emitContextProvides(ctx) {
   })
 }
 
+// A dev build names the `$:` line, which the runtime's cycle cap reports.
+function _effectOpts(ctx, start) {
+  const at = ctx.config?.dev && start != null ? ctx.script?.posOf?.(start) : null
+  return at ? `{ user: true, loc: ${JSON.stringify(at)} }` : '{ user: true }'
+}
+
 /** Phase of emitScript: `$:` auto-tracked effects. */
 function emitEffects(ctx) {
   const { module: mod } = ctx
@@ -9187,11 +9356,12 @@ function emitEffects(ctx) {
     // through the proxy and were never broken, which is why this survived.
     const src = ef.node ? rewriteAssignments(ef.raw, ef.node, ctx) : ef.raw
     const rewritten = rewriteExpr(src, ctx.accessors)
+    const opts = _effectOpts(ctx, ef.node?.start)
     if (ef.type === 'expression') {
-      mod.code.push(xNode.raw(`$$runtime.createEffect(() => { ${rewritten}; }, { user: true });`))
+      mod.code.push(xNode.raw(`$$runtime.createEffect(() => { ${rewritten}; }, ${opts});`))
     } else {
       // block — raw already includes the { }
-      mod.code.push(xNode.raw(`$$runtime.createEffect(() => ${rewritten}, { user: true });`))
+      mod.code.push(xNode.raw(`$$runtime.createEffect(() => ${rewritten}, ${opts});`))
     }
   })
 }
@@ -9273,7 +9443,7 @@ function emitWatchHandlers(ctx, requireWatchSig) {
         `const $$v = ${valueExpr}; ` +
         `if (${firstVar}) { ${firstVar} = false; ${prevVar} = $$v; return; } ` +
         `const $$p = ${prevVar}; ${prevVar} = $$v; ` +
-        `return $$runtime.untrack(() => (${rewrittenHandler})($$v, $$p)); }, { user: true });`
+        `return $$runtime.untrack(() => (${rewrittenHandler})($$v, $$p)); }, ${_effectOpts(ctx, wh.nodeStart)});`
       )
     )
   })
@@ -10463,6 +10633,8 @@ export function emitScript(ctx) {
   _checkExternalReactivity(ctx, imports)
   _checkUnreadDerived(ctx)
   _checkDerivedAssigned(ctx)
+  _checkDerivedWrites(ctx)
+  _checkEffectSelfWrites(ctx)
 
   const watch = planWatchProxies(ctx)
   emitImportedWatchProxies(ctx, watch)

@@ -7,7 +7,7 @@
  * keys are sorted. Without it the cache silently holds two copies and each
  * screen only ever reads its own.
  */
-export function listKey(service: any, query: any, directives: any): string;
+export function listKey(service?: any, query?: any, directives?: any): string;
 export function createListCache({ now }?: {
     now?: () => number;
 }): {

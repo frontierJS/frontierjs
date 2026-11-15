@@ -51,4 +51,4 @@ export function placedTrails(schema: any, places: Record<string, string>): Array
  * @returns {string|null}
  */
 export function tenantFrom(resolution: any, { host, headers, principal }?: any): string | null;
-export function tenantAdmission(claim: any): string;
+export function tenantAdmission(claim?: any): string;

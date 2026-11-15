@@ -7,7 +7,7 @@
  *
  * @returns {string|null} the package's `dist/` directory
  */
-export function findWasmDist(root: any): string | null;
+export function findWasmDist(root?: any): string | null;
 /**
  * @param {object} config         sierra config
  * @param {object} sierraContext  where `schema-plugin.js` leaves the device schema
@@ -36,7 +36,7 @@ export function localDbPlugin(config: object, sierraContext: object): {
  * Not a package condition on litestone: Vite 8 offers no condition scoped to a
  * worker, and a top-level one would hand the page the stub as well.
  */
-export function localDbWorkerPlugins(config: any): {
+export function localDbWorkerPlugins(config?: any): {
     name: string;
     enforce: string;
     buildStart(): Promise<void>;
@@ -49,4 +49,4 @@ export const SCHEMA_URL: "/fjs-device-schema.json";
 export const WASM_URL: "/fjs-sqlite/index.js";
 /** The worker chunk Vite emits for `resource/local-db-worker.js`, named for that file. */
 export const WORKER_CHUNK: RegExp;
-export function wantsLocalDb(config: any): boolean;
+export function wantsLocalDb(config?: any): boolean;

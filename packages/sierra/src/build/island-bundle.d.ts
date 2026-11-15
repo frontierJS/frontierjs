@@ -6,7 +6,7 @@
  * writes into the marker — it has no module path to write, since the marker is
  * produced during a server render where module identity is a temp file.
  */
-export function islandEntrySource(islands: any, { loaderSpecifier, theme, analytics, prefix, }?: {
+export function islandEntrySource(islands?: any, { loaderSpecifier, theme, analytics, prefix, }?: {
     loaderSpecifier?: string;
     theme?: any;
     analytics?: any;
@@ -22,7 +22,7 @@ export function islandEntrySource(islands: any, { loaderSpecifier, theme, analyt
  *
  * @returns {Array<{ line: number, text: string }>}
  */
-export function relativeApiCalls(source: any): Array<{
+export function relativeApiCalls(source?: any): Array<{
     line: number;
     text: string;
 }>;
@@ -67,7 +67,7 @@ export function buildIslandBundle(opts: {
  * Returns the html unchanged if the tag is already there, so re-running a build
  * over an existing output directory cannot stack duplicates.
  */
-export function injectIslandScript(html: any, src: any): any;
+export function injectIslandScript(html?: any, src?: any): any;
 /**
  * Inject the island script into every prerendered page that has an island.
  *
@@ -76,4 +76,4 @@ export function injectIslandScript(html: any, src: any): any;
  *
  * @returns {Promise<string[]>} the files that were modified
  */
-export function injectIntoPages(outDir: any, islandPages: any, src: any): Promise<string[]>;
+export function injectIntoPages(outDir?: any, islandPages?: any, src?: any): Promise<string[]>;

@@ -3,31 +3,31 @@ export function fragment(): any[];
 /** A component's `__anchor` is the marker its caller placed, so appending
  *  to a marker places before it, where the DOM path inserts before the
  *  anchor comment. */
-export function append(parent: any, child: any): void;
-export function element(tag: any, attrs?: {}): any;
-export function set_attribute(node: any, name: any, value: any): void;
+export function append(parent?: any, child?: any): void;
+export function element(tag?: any, attrs?: {}): any;
+export function set_attribute(node?: any, name?: any, value?: any): void;
 /**
  * `class:name={on}` on a terminal node. It paints nothing, as the `class`
  * attribute paints nothing, except a name `paintsClass` in tags.js admits,
  * which are the only ones the emitter sends here.
  */
-export function toggle_class(node: any, name: any, on: any): void;
+export function toggle_class(node?: any, name?: any, on?: any): void;
 /** `style:name={value}` on a terminal node, for a name `paintsStyle` in
  *  tags.js admits: a stack's `gap`. */
-export function set_style(node: any, name: any, value: any): void;
-export function spread(node: any, fn: any): void;
-export function text(value: any): any;
+export function set_style(node?: any, name?: any, value?: any): void;
+export function spread(node?: any, fn?: any): void;
+export function text(value?: any): any;
 /**
  * `{@html}` markup as the text a browser's `innerText` reads from it: tags
  * gone, a `<br>` or the end of a block a line break, references decoded.
  * Outside a `<pre>` a run of whitespace is one space and a line holds no
  * edge spaces, as the page lays it out; inside one, the whitespace stays.
  */
-export function markupText(html: any, pre: any): string;
+export function markupText(html?: any, pre?: any): string;
 /** The text of `{@html}`: `markupText` has laid its white space out already,
  *  and each newline in it is a line break. */
 export function markup(): any;
-export function set_text(node: any, value: any): void;
+export function set_text(node?: any, value?: any): void;
 export function marker(): any;
 /**
  * `onevent` on a terminal node. The listener goes into a list of the
@@ -35,7 +35,7 @@ export function marker(): any;
  * node and keeps no way to take a listener back off; `dispatch` reads the
  * list. `capture` and `once` are the DOM's listener options.
  */
-export function on(node: any, event: any, handler: any, { capture, once }?: {
+export function on(node?: any, event?: any, handler?: any, { capture, once }?: {
     capture?: boolean;
     once?: boolean;
 }): void;
@@ -47,21 +47,21 @@ export function on(node: any, event: any, handler: any, { capture, once }?: {
  * the key or rename it by writing `e.raw.name` and `e.raw.sequence`, which the
  * keydown is then made from.
  */
-export function setShellKeys(r: any, { text, step }: {
+export function setShellKeys(r?: any, { text, step }?: {
     text: any;
     step: any;
 }): void;
 /** The keymaps active on the focus path, innermost first, as `?` lists them. */
-export function keymapsAt(r: any, node?: any): any[];
+export function keymapsAt(r?: any, node?: any): any[];
 /**
  * The mode the innermost `keys()` host on the focus path keeps, or
  * `undefined` when none states one. Read by the shell at each key, after the
  * hosts have stepped it, so a mode a key changed is shown with that key.
  */
-export function modeAt(r: any, node?: any): any;
+export function modeAt(r?: any, node?: any): any;
 /** `<mesa:window onevent>`: a listener on the window, taken off when the
  *  component that wrote it is destroyed. */
-export function onWindow(event: any, handler: any, { capture, once }?: {
+export function onWindow(event?: any, handler?: any, { capture, once }?: {
     capture?: boolean;
     once?: boolean;
 }): void;
@@ -70,7 +70,7 @@ export function onWindow(event: any, handler: any, { capture, once }?: {
  * parent })` — a status line a long page would otherwise carry off screen.
  * Asked for, the page gives up the rows it takes.
  */
-export function footerOf(r: any): any;
+export function footerOf(r?: any): any;
 /**
  * A pane at the right of the page, for `mount(C, { parent })`: the page and
  * the side are a row above the footer, and the page takes what the side
@@ -83,7 +83,7 @@ export function footerOf(r: any): any;
  * page does not reach the window, where a page's scene walks on every key;
  * focus events still do, so a mode line follows focus across.
  */
-export function sideOf(r: any, { width }?: {
+export function sideOf(r?: any, { width }?: {
     width?: string;
 }): any;
 /**
@@ -93,26 +93,26 @@ export function sideOf(r: any, { width }?: {
  * of its rows. A pane as the side is: Tab stays in it, and a key there does
  * not reach the window.
  */
-export function bottomOf(r: any, { height }?: {
+export function bottomOf(r?: any, { height }?: {
     height?: string;
 }): any;
 /** How the side is shown and hidden, said by whoever fills it — the fill is
  *  theirs, mounted the first time it shows, so Mesa cannot show it alone. */
-export function setSideToggle(r: any, fn: any): void;
+export function setSideToggle(r?: any, fn?: any): void;
 /** The side's show-and-hide, or null where nobody fills a side, so a page's
  *  command can be offered only where it works. */
 export function sideToggle(r?: any): any;
 /** The bottom pane's show-and-hide, said by whoever fills it, as the side's. */
-export function setBottomToggle(r: any, fn: any): void;
+export function setBottomToggle(r?: any, fn?: any): void;
 /** The bottom pane's show-and-hide, or null where nobody fills one. */
 export function bottomToggle(r?: any): any;
 /** The pane `node` is in — `'page'`, `'side'` or `'bottom'` — or null where
  *  the renderer has no pane but the page; `node` is what holds focus when
  *  not given. */
-export function paneOf(r: any, node?: any): any;
+export function paneOf(r?: any, node?: any): any;
 /** Focus `pane`: the node last focused there, else its first control.
  *  Answers the node, or null when the pane holds nothing to focus. */
-export function focusPane(r: any, pane: any): any;
+export function focusPane(r?: any, pane?: any): any;
 /**
  * What following a link means on `renderer`: `fn(href)` is handed a link's
  * `href`, as written, when it is activated and its `click` was not
@@ -132,25 +132,25 @@ export function followLinks(renderer: object, fn: (href: string) => void): () =>
  * chooses none. A number or range input reads back a number, and `undefined`
  * for an empty or half-typed box (`FJS-857`).
  */
-export function bind(node: any, name: any, get: any, set: any, value: any): void;
-export function ifBlock(marker: any, selectFn: any, blocks: any): void;
+export function bind(node?: any, name?: any, get?: any, set?: any, value?: any): void;
+export function ifBlock(marker?: any, selectFn?: any, blocks?: any): void;
 /** Build `factory(key)` before `marker`, and rebuild it whenever `keyFn`
  *  answers a different key — `{#key}`, and `<mesa:element this>`, whose
  *  tag is the key. */
-export function keyBlock(marker: any, keyFn: any, factory: any): void;
-export function eachBlock(marker: any, getItems: any, keyFn: any, rowFn: any, elseFn: any): void;
+export function keyBlock(marker?: any, keyFn?: any, factory?: any): void;
+export function eachBlock(marker?: any, getItems?: any, keyFn?: any, rowFn?: any, elseFn?: any): void;
 export function focusNext(): any;
 export function focusPrev(): any;
 /** The cells `node` occupies on screen, as `{ left, top, right, bottom,
  *  width, height }`. No node answers `null`. */
-export function measure(node: any): Promise<any>;
+export function measure(node?: any): Promise<any>;
 /** The renderer's area, as `{ width, height }` in cells. */
 export function viewport(): Promise<{
     width: any;
     height: any;
 }>;
 /** Move focus to `node`. No node does nothing. */
-export function focus(node: any): Promise<void>;
+export function focus(node?: any): Promise<void>;
 /** The engine's renderer on this process's TTY, for `mount`. A caller outside
  *  this package takes it from here: importing the engine itself from another
  *  package's directory installs a second copy, and two copies fail
@@ -163,7 +163,7 @@ export function createHeadlessRenderer({ width, height }?: {
     width?: number;
     height?: number;
 }): Promise<any>;
-export function mount(Component: any, { renderer, props, parent }?: {
+export function mount(Component?: any, { renderer, props, parent }?: {
     props?: {};
     parent?: any;
 }): {
@@ -173,10 +173,10 @@ export function mount(Component: any, { renderer, props, parent }?: {
 };
 export namespace terminalSource {
     function now(): number;
-    function after(ms: any, fn: any): () => void;
-    function every(ms: any, fn: any): () => void;
-    function frame(fn: any): () => void;
+    function after(ms?: any, fn?: any): () => void;
+    function every(ms?: any, fn?: any): () => void;
+    function frame(fn?: any): () => void;
 }
-export function keyFields(k: any): any;
-export function pageOf(r: any): any;
-export function paneBoxOf(r: any, pane: any): any;
+export function keyFields(k?: any): any;
+export function pageOf(r?: any): any;
+export function paneBoxOf(r?: any, pane?: any): any;

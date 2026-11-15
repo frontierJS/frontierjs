@@ -32,7 +32,7 @@ export function stripProse(defs: object): object;
  *
  * @returns {Promise<{ defs: object, models: string[], updatePatch: object, readPatch: object } | null>}
  */
-export function generateSchemas(schemaPath: any, warn: any, root?: string): Promise<{
+export function generateSchemas(schemaPath?: any, warn?: any, root?: string): Promise<{
     defs: object;
     models: string[];
     updatePatch: object;
@@ -49,7 +49,7 @@ export function generateSchemas(schemaPath: any, warn: any, root?: string): Prom
  *
  * @returns {Promise<{ generated: object|null, failure: string|null }>}
  */
-export function clientSchemas(schemaPath: any, warn: any, root?: string): Promise<{
+export function clientSchemas(schemaPath?: any, warn?: any, root?: string): Promise<{
     generated: object | null;
     failure: string | null;
 }>;

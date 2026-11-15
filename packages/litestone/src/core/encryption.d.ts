@@ -10,14 +10,14 @@ export function keyId(key: any): string;
  * does, which is why the write path asks `verifies()` and the read path lets
  * GCM's tag answer.
  */
-export function parseEnvelope(value: any): {
+export function parseEnvelope(value?: any): {
     version: number;
     mode: string;
     kid: string;
     payload: string;
     prefix: string;
 };
-export function encryptField(plaintext: any, key: any): any;
+export function encryptField(plaintext?: any, key?: any): any;
 /**
  * `key` is a Buffer or a KEYRING — `{ current, byKid, all }` from `makeKeyring`.
  * A Buffer is the one-key case and is not a second path: it is wrapped here, so
@@ -29,7 +29,7 @@ export function encryptField(plaintext: any, key: any): any;
  * the kid buys is the ORDER — the right key first, and a resumable rotation,
  * which is a question about which rows are still on the old kid.
  */
-export function decryptField(ciphertext: any, key: any): any;
+export function decryptField(ciphertext?: any, key?: any): any;
 /**
  * The same encoding as this database would have written before the envelope
  * carried a key id.
@@ -43,9 +43,9 @@ export function decryptField(ciphertext: any, key: any): any;
  * this repo could see it, because every one of them builds a fresh database
  * (`FJS-714`, `FJS-251`'s shape).
  */
-export function legacyForm(encoded: any): string;
+export function legacyForm(encoded?: any): string;
 /** One key, several keys, or a ring already built — one shape out. */
-export function makeKeyring(current: any, previous?: any[]): {
+export function makeKeyring(current?: any, previous?: any[]): {
     current: Buffer<any>;
     byKid: Map<any, any>;
     all: Buffer<any>[];
@@ -59,13 +59,13 @@ export function makeKeyring(current: any, previous?: any[]): {
  * because the decrypt then failed (`FJS-715`). GCM's tag is the real answer and
  * a forgery cannot produce one.
  */
-export function verifiesAs(value: any, key: any, mode: any): boolean;
-export function encryptDeterministic(plaintext: any, key: any): any;
-export function hashField(plaintext: any, key: any): any;
-export function isCiphertext(value: any): boolean;
-export function normalizeKey(raw: any): Buffer<any>;
-export function comparisonEncoderFor(policy: any): {
+export function verifiesAs(value?: any, key?: any, mode?: any): boolean;
+export function encryptDeterministic(plaintext?: any, key?: any): any;
+export function hashField(plaintext?: any, key?: any): any;
+export function isCiphertext(value?: any): boolean;
+export function normalizeKey(raw?: any): Buffer<any>;
+export function comparisonEncoderFor(policy?: any): {
     encode: typeof hashField;
     label: string;
 };
-export function opaqueMark(value: any): string;
+export function opaqueMark(value?: any): string;

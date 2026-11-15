@@ -11,7 +11,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ASK_BASH, ASK_EFFORT, ASK_MAX_LINES, ASK_MAX_RULES, ASK_RULES, DRAW_BUDGET_USD, EFFORTS, WORK_BUDGET_USD, askArgv, askInput, askPrompt, readAskEvent, runAsk } from '../core/ask-claude.js'
+import { ASK_BASH, ASK_EFFORT, ASK_MAX_LINES, ASK_MAX_RULES, ASK_RULES, DRAW_BUDGET_USD, EFFORTS, WORK_BUDGET_USD, askArgv, askInput, askPrompt, sessionArgv, readAskEvent, runAsk } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 const dir     = mkdtempSync(join(tmpdir(), 'fli-ask-claude-'))
@@ -38,6 +38,24 @@ async function ask(opts) {
   const code = await out.done
   return { code, events }
 }
+
+describe('sessionArgv', () => {
+  test('a host session: stream-json both ways, prompts to the host, hooks and replays on, no budget', () => {
+    const argv = sessionArgv()
+    for (const f of ['-p', '--verbose', '--include-partial-messages', '--include-hook-events', '--replay-user-messages']) expect(argv).toContain(f)
+    expect(argv[argv.indexOf('--output-format') + 1]).toBe('stream-json')
+    expect(argv[argv.indexOf('--input-format') + 1]).toBe('stream-json')
+    expect(argv[argv.indexOf('--permission-prompt-tool') + 1]).toBe('stdio')
+    expect(argv[argv.indexOf('--setting-sources') + 1]).toBe('user,project,local')
+    for (const f of ['--settings', '--max-budget-usd', '--resume', '--model', '--effort', '--permission-mode']) expect(argv).not.toContain(f)
+  })
+  test('model, effort, mode and resume when given; a value that is not one is dropped', () => {
+    const argv = sessionArgv({ session: SESSION, model: 'haiku', effort: 'low', permissionMode: 'plan' })
+    expect(argv.slice(-8)).toEqual(['--model', 'haiku', '--effort', 'low', '--permission-mode', 'plan', '--resume', SESSION])
+    const bad = sessionArgv({ session: 'nope', effort: 'huge', permissionMode: 'yolo' })
+    for (const f of ['--resume', '--effort', '--permission-mode']) expect(bad).not.toContain(f)
+  })
+})
 
 describe('askArgv', () => {
 
