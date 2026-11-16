@@ -26,8 +26,8 @@
 // to the receiver's `gap`, every event counted, the ones `parse` ignores too.
 
 import type { BrokerFraming, BrokerMessage, FrameDialect, ReceivedEvent, TargetDescriptor } from '@frontierjs/conduit'
-import { channelMemberModel, channelModel, fileInfoModel, postModel, profileModel, reactionModel, threadModel, type ChannelMemberRow, type ChannelRow, type FileInfoRow, type PostRow, type ProfileRow, type ReactionRow, type ThreadRow } from './mirror.ts'
-import type { Channel, ChannelMember, FileInfo, MattermostId, Post, Reaction, User, UserThread } from './types.ts'
+import { channelMemberModel, channelModel, fileInfoModel, isCategoryId, parseCategory, parseDraft, parsePreference, parseUnread, postModel, profileModel, reactionModel, threadModel, type CategoryRow, type ChannelMemberRow, type ChannelRow, type DraftRow, type FileInfoRow, type PostRow, type PreferenceRow, type ProfileRow, type ReactionRow, type ThreadRow, type UnreadRow } from './mirror.ts'
+import type { Channel, ChannelMember, Draft, FileInfo, MattermostId, Post, Preference, Reaction, SidebarCategory, StatusName, User, UserThread } from './types.ts'
 
 export const MATTERMOST_SOCKET_TARGET = 'broker:mattermost'
 
@@ -92,7 +92,13 @@ export const mattermostFraming: BrokerFraming<string> = {
 
 // ─── Events ──────────────────────────────────────────────────
 
-/** The events a mirror lands. Every other event Mattermost pushes — `typing`, `status_change`, `hello` on a redial — is not an event here and writes no receipt. */
+/**
+ * The events a mirror lands, and the ones an app relays: `typing`,
+ * `status_change`, `draft_*`, `preferences_*`, `sidebar_category_*` and
+ * `post_unread` land no mirror row and are for a client's screen. Every other
+ * event Mattermost pushes — `hello` on a redial — is not an event here and
+ * writes no receipt.
+ */
 export type SocketEvent =
   /**
    * `mentions` are the people the post notifies — named, or the other side of a
@@ -122,6 +128,17 @@ export type SocketEvent =
   /** A thread was read, or with no `rootExternalId` every thread on the team was. */
   | (ReceivedEvent & { type: 'thread_read_changed'; payload: { profileExternalId: MattermostId; rootExternalId: MattermostId | null; at: Date | null; unreadReplies: number; unreadMentions: number; teamExternalId: MattermostId | null } })
   | (ReceivedEvent & { type: 'thread_follow_changed'; payload: { profileExternalId: MattermostId; rootExternalId: MattermostId; following: boolean; replyCount: number; teamExternalId: MattermostId | null } })
+  /** Someone is typing in a channel, or in one thread's reply box when `rootExternalId` is set. Pushed to the channel and gone in seconds: a receipt per keystroke is the price of ordering. */
+  | (ReceivedEvent & { type: 'typing'; payload: { profileExternalId: MattermostId; channelExternalId: MattermostId; rootExternalId: MattermostId | null } })
+  /** The socket's person's own status. Other people's are read with `listStatuses`; Mattermost does not push them. */
+  | (ReceivedEvent & { type: 'status_change'; payload: { profileExternalId: MattermostId; status: StatusName } })
+  | (ReceivedEvent & { type: 'draft_created' | 'draft_updated' | 'draft_deleted'; payload: { draft: DraftRow } })
+  | (ReceivedEvent & { type: 'preferences_changed' | 'preferences_deleted'; payload: { preferences: PreferenceRow[] } })
+  | (ReceivedEvent & { type: 'sidebar_category_created' | 'sidebar_category_deleted'; payload: { categoryExternalId: MattermostId; teamExternalId: MattermostId | null } })
+  | (ReceivedEvent & { type: 'sidebar_category_updated'; payload: { categories: CategoryRow[]; teamExternalId: MattermostId | null } })
+  | (ReceivedEvent & { type: 'sidebar_category_order_updated'; payload: { order: MattermostId[]; teamExternalId: MattermostId | null } })
+  /** The socket's person marked a channel unread from a post, here or elsewhere. */
+  | (ReceivedEvent & { type: 'post_unread'; payload: { unread: UnreadRow; postExternalId: MattermostId } })
 
 const inner = <T>(v: unknown): T | null => typeof v === 'string' ? readJson(v) as T | null : null
 const str = (v: unknown) => typeof v === 'string' ? v : ''
@@ -213,6 +230,39 @@ export const mattermostSocketDialect: FrameDialect<SocketEvent> = {
         return ID.test(user) && ID.test(root) ? { id: m.id, type: 'thread_follow_changed', payload: {
           profileExternalId: user, rootExternalId: root, following: data.state === true, replyCount: num(data.reply_count), teamExternalId: str(b.team_id) || null,
         } } : null
+      }
+      case 'typing': {
+        const user = str(data.user_id), channel = str(b.channel_id), root = str(data.parent_id)
+        return ID.test(user) && ID.test(channel) ? { id: m.id, type: 'typing', payload: { profileExternalId: user, channelExternalId: channel, rootExternalId: ID.test(root) ? root : null } } : null
+      }
+      case 'status_change': {
+        const user = str(data.user_id), status = str(data.status)
+        return ID.test(user) && status ? { id: m.id, type: 'status_change', payload: { profileExternalId: user, status: status as StatusName } } : null
+      }
+      case 'draft_created': case 'draft_updated': case 'draft_deleted': {
+        const draft = parseDraft(inner<Draft>(data.draft) as Draft)
+        return draft ? { id: m.id, type: f.event, payload: { draft } } : null
+      }
+      case 'preferences_changed': case 'preferences_deleted': {
+        const raw = typeof data.preferences === 'string' ? (() => { try { return JSON.parse(data.preferences as string) } catch { return null } })() : null
+        const preferences = Array.isArray(raw) ? (raw as Preference[]).map(parsePreference).filter((x): x is PreferenceRow => !!x) : []
+        return preferences.length ? { id: m.id, type: f.event, payload: { preferences } } : null
+      }
+      case 'sidebar_category_created': case 'sidebar_category_deleted': {
+        const category = str(data.category_id)
+        return isCategoryId(category) ? { id: m.id, type: f.event, payload: { categoryExternalId: category, teamExternalId: str(b.team_id) || null } } : null
+      }
+      case 'sidebar_category_updated': {
+        const raw = typeof data.updatedCategories === 'string' ? (() => { try { return JSON.parse(data.updatedCategories as string) } catch { return null } })() : null
+        const categories = Array.isArray(raw) ? (raw as SidebarCategory[]).map(parseCategory).filter((x): x is CategoryRow => !!x) : []
+        return categories.length ? { id: m.id, type: 'sidebar_category_updated', payload: { categories, teamExternalId: str(b.team_id) || null } } : null
+      }
+      case 'sidebar_category_order_updated':
+        return Array.isArray(data.order) ? { id: m.id, type: 'sidebar_category_order_updated', payload: { order: (data.order as unknown[]).filter(isCategoryId), teamExternalId: str(b.team_id) || null } } : null
+      case 'post_unread': {
+        const user = str(b.user_id), channel = str(data.channel_id) || str(b.channel_id), post = str(data.post_id)
+        const unread = parseUnread({ team_id: str(b.team_id), user_id: user, channel_id: channel, msg_count: num(data.msg_count), mention_count: num(data.mention_count), msg_count_root: num(data.msg_count_root), mention_count_root: num(data.mention_count_root), last_viewed_at: num(data.last_viewed_at) })
+        return unread && ID.test(post) ? { id: m.id, type: 'post_unread', payload: { unread, postExternalId: post } } : null
       }
       default: return null
     }

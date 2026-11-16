@@ -4165,13 +4165,17 @@ export interface RawRouteCaller {
  * (`FJS-3977`, `FJS-D1856`). A resolver's refusal travels out of here as
  * thrown, so a dead key is the same 401 a service answers.
  *
- * Under `createApp({ tenants })` the tenant client's lease ends when this
- * returns: a raw route holds `db` for one request, never across requests.
+ * The hook's call stays open until the transport drains `route.__releases`,
+ * because its `finally` is what releases a tenant client's pool lease, and a
+ * pool at capacity closes an evicted client the moment no lease holds it — a
+ * stream route reading its body after this returned lost `db` (`FJS-4325`).
+ * A context with no `__releases` has no request end to wait for, so its lease
+ * ends when this returns.
  */
 export async function resolveRawCaller(
   around: import('./hooks.ts').AroundHook,
   app:    unknown,
-  route:  { user?: unknown; headers?: unknown; ip?: unknown; route?: unknown },
+  route:  { user?: unknown; headers?: unknown; ip?: unknown; route?: unknown; __releases?: Array<() => void> },
   opts:   { query?: Record<string, unknown>; reserved?: Record<string, unknown> } = {},
 ): Promise<RawRouteCaller> {
   const ctx = {
@@ -4189,8 +4193,16 @@ export async function resolveRawCaller(
     raw:        route,
   } as unknown as ServiceContext
   let db: unknown = null
-  // Entered as a call, so a resolver reading `$.db` reads this client.
-  await enterCall(ctx, () => around(ctx, async () => { db = callDb(ctx) }))
+  let end!:     () => void
+  let scoped!:  () => void
+  const ended   = new Promise<void>(resolve => { end = resolve })
+  const reached = new Promise<void>(resolve => { scoped = resolve })
+  if (route.__releases) route.__releases.push(end)
+  else end()
+  // Entered as a call, so a resolver reading `$.db` reads this client. The
+  // race answers at `next()`, or with the resolver's refusal before it.
+  const call = enterCall(ctx, () => around(ctx, async () => { db = callDb(ctx); scoped(); await ended }))
+  await Promise.race([reached, call])
   return {
     db,
     claims: heldClaims(ctx),

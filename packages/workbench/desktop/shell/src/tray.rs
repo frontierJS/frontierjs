@@ -29,7 +29,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager};
 
 const SCREENS: &[(&str, &str)] = &[
-    ("/workbench/",       "Chats"),
+    ("/workbench/",       "Bench"),
     ("/terminal/",        "Terminal"),
     ("/atlas/decide/",    "Decide"),
     ("/atlas/autopilot/", "Autopilot"),

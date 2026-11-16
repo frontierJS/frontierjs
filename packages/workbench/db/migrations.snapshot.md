@@ -9,3 +9,5 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 | `migrations/main/20261103025339_init.sql` | `3ce3dc6475acf376` |
 | `migrations/main/20261103034355_notification.sql` | `d76723a6b4704b04` |
 | `migrations/main/20261107081951_provider_account.sql` | `0ebc4e02a5b2e2cd` |
+| `migrations/main/20261116155503_chat_mirror.sql` | `2252c6bdb8523b99` |
+| `migrations/chat/20261116155503_chat_mirror.sql` | `0c6efd3c8e2f5fce` |

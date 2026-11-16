@@ -11,15 +11,15 @@ signature. Extracted from `frontierjs/example/api/src/providers/stripe/`
 | Piece | Where |
 | --- | --- |
 | target builder | `stripeTarget({ ref?, address? })` — bearer, `encoding: 'form'`, `Stripe-Version` and `Idempotency-Key` on the target |
-| calls | `createPaymentIntent(send, …)` (replayable, unkeyed unless asked), `createRefund(send, …)` (key required), `createCheckoutSession(send, …)` (replayable, unkeyed unless asked) — each takes `account` for a direct charge |
+| calls | `createPaymentIntent(send, …)` (replayable, unkeyed unless asked), `createRefund(send, …)` (key required), `createCheckoutSession(send, …)` (replayable, unkeyed unless asked), `retrieveBalanceTransaction(send, { id, account? })` (Stripe's fee on a charge: the `txn_…` its `balance_transaction` names) — each takes `account` for a direct charge |
 | connect | `createConnectedAccount` (key required), `createAccountLink`, `retrieveAccountStatus`, `accountStatus(account)`, `STANDARD_LIKE_CONTROLLER`, `PLATFORM_FEE_KEYS` — below |
-| payload types | `PaymentIntent`, `StripeRefund`, `StripeCharge`, `StripeEvent`, `StripeCheckoutSession`, `StripeInvoice`, `StripeAccount`, `StripeAccountLink`, `StripeAccountStatus`, `StripeErrorBody` |
+| payload types | `PaymentIntent`, `StripeRefund`, `StripeCharge`, `StripeBalanceTransaction`, `StripeEvent`, `StripeCheckoutSession`, `StripeInvoice`, `StripeAccount`, `StripeAccountLink`, `StripeAccountStatus`, `StripeErrorBody` |
 | error mapping | `translate(ConduitError) → StripeFailure` — the table below |
 | verifier | `verifyStripeSignature({ rawBody, header, secret, now })` — pure; `{ ok, event, account }` |
 | dialect | `stripeDialect` for `app.conduit.receive()`; `ev.account` names the connected account; `stripeObject(ev, 'invoice.paid')` narrows the event's object by type |
 | sink | `sink.ts`, `startStripeSink()` on `port: 0` |
 | tax | `tax` namespace (`src/tax.ts`) — Stripe Tax, below |
-| drive | `bun run drive` — 37 rows (19 stripe, 8 `connect.*`, 10 `tax.*`), sink only; no conforming Stripe exists |
+| drive | `bun run drive` — 40 rows (19 stripe, 11 `connect.*`, 10 `tax.*`), sink only; no conforming Stripe exists |
 
 `send` is `bindSend(conduit)`: the connector never holds an app.
 

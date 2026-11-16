@@ -40,7 +40,7 @@
  * A resumed transition replays rows an earlier version wrote, so a reader has to
  * be able to ask what wrote them before it parses any of them.
  */
-export const JOURNAL_FORMAT = 6
+export const JOURNAL_FORMAT = 7
 
 /**
  * The table names the DDL emits.
@@ -257,6 +257,74 @@ const RELEASE_AT_6 = `CREATE TABLE "release__new" (
   "createdBy" TEXT
 ) STRICT`
 
+/**
+ * `configuration_set`, as it stands at format 2 — the table `binding_set` became.
+ * Frozen — see above. Built by step 2 itself because the DDL the runner sends
+ * first makes today's, which has no `generation` for the rows to carry.
+ */
+const CONFIGURATION_AT_2 = `CREATE TABLE "configuration_set" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "app" TEXT NOT NULL,
+  "environment" TEXT NOT NULL,
+  "generation" INTEGER NOT NULL,
+  "hash" TEXT NOT NULL,
+  "values" TEXT NOT NULL DEFAULT '{}',
+  "secretRefs" TEXT NOT NULL DEFAULT '{}',
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "createdBy" TEXT,
+  UNIQUE ("app", "environment", "generation")
+) STRICT`
+
+/** `release`, as it stands at format 7. Frozen — see above. */
+const RELEASE_AT_7 = `CREATE TABLE "release__new" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "app" TEXT NOT NULL,
+  "environment" TEXT NOT NULL,
+  "digest" TEXT,
+  "imageRef" TEXT,
+  "configurationHash" TEXT NOT NULL,
+  "schemaHash" TEXT NOT NULL,
+  "retentionUntil" TEXT,
+  "audienceKey" TEXT NOT NULL DEFAULT 'everyone',
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "createdBy" TEXT
+) STRICT`
+
+/** `configuration_set`, as it stands at format 7. Frozen — see above. */
+const CONFIGURATION_AT_7 = `CREATE TABLE "configuration_set__new" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "app" TEXT NOT NULL,
+  "environment" TEXT NOT NULL,
+  "hash" TEXT NOT NULL,
+  "values" TEXT NOT NULL DEFAULT '{}',
+  "secretRefs" TEXT NOT NULL DEFAULT '{}',
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "createdBy" TEXT,
+  UNIQUE ("app", "environment", "hash")
+) STRICT`
+
+/** `transition`, as it stands at format 7. Frozen — see above. */
+const TRANSITION_AT_7 = `CREATE TABLE "transition__new" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "kind" TEXT NOT NULL,
+  "app" TEXT NOT NULL,
+  "environment" TEXT NOT NULL,
+  "releaseId" TEXT NOT NULL,
+  "fromReleaseId" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'planned',
+  "isCrossingPivot" INTEGER NOT NULL DEFAULT 0,
+  "pivot" TEXT,
+  "pivotReason" TEXT,
+  "plan" TEXT NOT NULL DEFAULT '[]',
+  "actor" TEXT,
+  "startedAt" TEXT,
+  "finishedAt" TEXT,
+  CHECK ("kind" IN ('deploy', 'revert', 'pause', 'unpause')),
+  CHECK ("status" IN ('planned', 'running', 'succeeded', 'failed')),
+  CHECK ("pivot" IN ('unchanged', 'expand', 'contract', 'unknown')),
+  FOREIGN KEY ("releaseId") REFERENCES "release" ("id")
+) STRICT`
+
 /** The transition indexes, which a rebuild drops with the table. */
 const transitionIndexes = () => [
   { name: 'idx1', sql: `CREATE INDEX IF NOT EXISTS "idx_transition_app_environment_startedAt" ON "${TABLE.transition}" ("app", "environment", "startedAt")`, params: [] },
@@ -293,6 +361,8 @@ const MIGRATIONS = {
     ...transitionIndexes(),
   ],
   2: () => [
+    { name: 'build',  sql: `DROP TABLE "configuration_set"`, params: [] },
+    { name: 'build2', sql: CONFIGURATION_AT_2, params: [] },
     { name: 'copy',   sql: `INSERT INTO "configuration_set" ("id","app","environment","generation","hash","values","secretRefs","createdAt","createdBy")
                              SELECT "id","app","environment","generation","hash","values","secretRefs","createdAt","createdBy" FROM "binding_set"`, params: [] },
     { name: 'drop',   sql: `DROP TABLE "binding_set"`, params: [] },
@@ -329,6 +399,36 @@ const MIGRATIONS = {
     { name: 'copy',   sql: `INSERT INTO "transition__new"
                               ("id","kind","app","environment","releaseId","fromReleaseId","generation","status","isCrossingPivot","plan","actor","startedAt","finishedAt")
                             SELECT "id","kind","app","environment","releaseId","fromReleaseId","generation","status","isCrossingPivot","plan","actor","startedAt","finishedAt"
+                              FROM "${TABLE.transition}"`, params: [] },
+    { name: 'drop',   sql: `DROP TABLE "${TABLE.transition}"`, params: [] },
+    { name: 'rename', sql: `ALTER TABLE "transition__new" RENAME TO "${TABLE.transition}"`, params: [] },
+    ...transitionIndexes(),
+  ],
+  // The configuration generation leaves the journal (`FJS-D2181`): a
+  // configuration change is a new Release, so the hash identifies a set and
+  // row order carries sequence. Where two generations held one hash the first
+  // is kept, so the unique key the hash now owns is never violated mid-copy.
+  6: () => [
+    { name: 'release-build',  sql: RELEASE_AT_7, params: [] },
+    { name: 'release-copy',   sql: `INSERT INTO "release__new"
+                                      ("id","app","environment","digest","imageRef","configurationHash","schemaHash","retentionUntil","audienceKey","createdAt","createdBy")
+                                    SELECT "id","app","environment","digest","imageRef","configurationHash","schemaHash","retentionUntil","audienceKey","createdAt","createdBy"
+                                      FROM "${TABLE.release}"`, params: [] },
+    { name: 'release-drop',   sql: `DROP TABLE "${TABLE.release}"`, params: [] },
+    { name: 'release-rename', sql: `ALTER TABLE "release__new" RENAME TO "${TABLE.release}"`, params: [] },
+    { name: 'release-idx1',   sql: `CREATE INDEX IF NOT EXISTS "idx_release_app_environment_createdAt" ON "${TABLE.release}" ("app", "environment", "createdAt")`, params: [] },
+    { name: 'release-idx2',   sql: `CREATE INDEX IF NOT EXISTS "idx_release_retentionUntil" ON "${TABLE.release}" ("retentionUntil")`, params: [] },
+    { name: 'config-build',   sql: CONFIGURATION_AT_7, params: [] },
+    { name: 'config-copy',    sql: `INSERT OR IGNORE INTO "configuration_set__new"
+                                      ("id","app","environment","hash","values","secretRefs","createdAt","createdBy")
+                                    SELECT "id","app","environment","hash","values","secretRefs","createdAt","createdBy"
+                                      FROM "${TABLE.configuration}" ORDER BY "generation"`, params: [] },
+    { name: 'config-drop',    sql: `DROP TABLE "${TABLE.configuration}"`, params: [] },
+    { name: 'config-rename',  sql: `ALTER TABLE "configuration_set__new" RENAME TO "${TABLE.configuration}"`, params: [] },
+    { name: 'build',  sql: TRANSITION_AT_7, params: [] },
+    { name: 'copy',   sql: `INSERT INTO "transition__new"
+                              ("id","kind","app","environment","releaseId","fromReleaseId","status","isCrossingPivot","pivot","pivotReason","plan","actor","startedAt","finishedAt")
+                            SELECT "id","kind","app","environment","releaseId","fromReleaseId","status","isCrossingPivot","pivot","pivotReason","plan","actor","startedAt","finishedAt"
                               FROM "${TABLE.transition}"`, params: [] },
     { name: 'drop',   sql: `DROP TABLE "${TABLE.transition}"`, params: [] },
     { name: 'rename', sql: `ALTER TABLE "transition__new" RENAME TO "${TABLE.transition}"`, params: [] },
@@ -383,12 +483,6 @@ export function readState({ app, environment }) {
              LIMIT 1`,
       params: [app, environment],
     },
-    {
-      name: 'generation',
-      sql: `SELECT MAX("generation") AS "generation" FROM "${TABLE.configuration}"
-             WHERE "app" = ? AND "environment" = ?`,
-      params: [app, environment],
-    },
   ]
 }
 
@@ -399,15 +493,15 @@ export function readState({ app, environment }) {
  * Queried by COLUMNS rather than by id, because the attempt number is inside the
  * id: asking by id could only ever find the attempt you already guessed.
  */
-export function readAttempts({ kind, app, environment, fromReleaseId, releaseId, generation }) {
+export function readAttempts({ kind, app, environment, fromReleaseId, releaseId }) {
   return [{
     name: 'attempts',
     sql: `SELECT "id", "status" FROM "${TABLE.transition}"
            WHERE "kind" = ? AND "app" = ? AND "environment" = ?
-             AND "releaseId" = ? AND "generation" = ?
+             AND "releaseId" = ?
              AND "fromReleaseId" IS ?
            ORDER BY "rowid"`,
-    params: [kind, app, environment, releaseId, generation, fromReleaseId ?? null],
+    params: [kind, app, environment, releaseId, fromReleaseId ?? null],
   }]
 }
 
@@ -472,13 +566,13 @@ export function recordRelease(release, { now } = {}) {
   return [{
     name: 'release',
     sql: `INSERT OR IGNORE INTO "${TABLE.release}"
-          ("id","app","environment","digest","imageRef","configurationHash","generation",
+          ("id","app","environment","digest","imageRef","configurationHash",
            "schemaHash","retentionUntil","audienceKey","createdAt","createdBy")
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     params: [
       release.id, release.app, release.environment,
       release.digest ?? null, release.imageRef ?? null,
-      release.configurationHash, release.generation ?? 1,
+      release.configurationHash,
       // NOT NULL in the table. A Release minted with no release surface has no
       // data boundary in its id, which is a weaker claim and must not be stored
       // as though it were a hash.
@@ -488,14 +582,14 @@ export function recordRelease(release, { now } = {}) {
   }]
 }
 
-/** The configuration as it stood at one generation. Unique on (app, environment, generation). */
-export function recordConfiguration({ app, environment, generation, hash, values, secretRefs, createdBy, now } = {}) {
+/** The configuration a Release was minted against. Unique on (app, environment, hash). */
+export function recordConfiguration({ app, environment, hash, values, secretRefs, createdBy, now } = {}) {
   return [{
     name: 'configuration',
     sql: `INSERT OR IGNORE INTO "${TABLE.configuration}"
-          ("app","environment","generation","hash","values","secretRefs","createdAt","createdBy")
-          VALUES (?,?,?,?,?,?,?,?)`,
-    params: [app, environment, generation, hash, json(values ?? {}), json(secretRefs ?? {}), stamp(now), createdBy ?? null],
+          ("app","environment","hash","values","secretRefs","createdAt","createdBy")
+          VALUES (?,?,?,?,?,?,?)`,
+    params: [app, environment, hash, json(values ?? {}), json(secretRefs ?? {}), stamp(now), createdBy ?? null],
   }]
 }
 
@@ -512,12 +606,12 @@ export function openTransition({ transition, steps = [], now } = {}) {
   const out = [{
     name: 'transition',
     sql: `INSERT OR IGNORE INTO "${TABLE.transition}"
-          ("id","kind","app","environment","releaseId","fromReleaseId","generation",
+          ("id","kind","app","environment","releaseId","fromReleaseId",
            "status","isCrossingPivot","pivot","pivotReason","plan","actor","startedAt")
-          VALUES (?,?,?,?,?,?,?,'running',?,?,?,?,?,?)`,
+          VALUES (?,?,?,?,?,?,'running',?,?,?,?,?,?)`,
     params: [
       transition.id, transition.kind, transition.app, transition.environment,
-      transition.releaseId, transition.fromReleaseId ?? null, transition.generation,
+      transition.releaseId, transition.fromReleaseId ?? null,
       bool(transition.isCrossingPivot), transition.pivot ?? null, transition.pivotReason ?? null,
       json(transition.plan), transition.actor ?? null, at,
     ],
@@ -631,8 +725,9 @@ export function settleTransition({ id, status, now } = {}) {
 /**
  * Did the world move between planning this and running it?
  *
- * Three terms, which is what `db/deploy.lite` declares a step records: the
- * Release serving, the configuration generation, and the schema as at last applied.
+ * Two terms, which is what `db/deploy.lite` declares a step records: the
+ * Release serving and the schema as at last applied. A configuration change is
+ * a new Release, so `serving` already moves with it.
  * **Nothing here reconciles** — drift refuses and names itself, because the two
  * answers were produced by two different intents and picking one is a guess
  * about which person was right.
@@ -650,8 +745,6 @@ export function preconditionVerdict(expected = {}, actual = {}) {
 
   cmp('serving', expected.serving, actual.serving,
     'another release was deployed after this one was planned')
-  cmp('generation', expected.generation, actual.generation,
-    'the configuration moved to a new generation after this was planned')
   cmp('schemaHash', expected.schemaHash, actual.schemaHash,
     'the release surface changed after this was planned')
 
@@ -674,7 +767,7 @@ export function readHistory({ app, environment, limit = 10 }) {
   return [{
     name: 'history',
     sql: `SELECT t."id", t."kind", t."status", t."releaseId", t."fromReleaseId",
-                 t."generation", t."isCrossingPivot", t."pivot", t."pivotReason",
+                 t."isCrossingPivot", t."pivot", t."pivotReason",
                  t."actor", t."startedAt", t."finishedAt", r."digest"
             FROM "${TABLE.transition}" t
             LEFT JOIN "${TABLE.release}" r ON r."id" = t."releaseId"
@@ -712,13 +805,13 @@ export function readServingTransition({ app, environment, releaseId }) {
   }]
 }
 
-/** The configuration set at one generation — what a revert compares today's against. */
-export function readConfigurationSet({ app, environment, generation }) {
+/** The configuration set a Release was minted against — what a revert compares today's against. */
+export function readConfigurationSet({ app, environment, hash }) {
   return [{
     name: 'configuration',
     sql: `SELECT * FROM "${TABLE.configuration}"
-           WHERE "app" = ? AND "environment" = ? AND "generation" = ?`,
-    params: [app, environment, generation],
+           WHERE "app" = ? AND "environment" = ? AND "hash" = ?`,
+    params: [app, environment, hash],
   }]
 }
 
@@ -791,14 +884,14 @@ export function journalClient({ exec, db, ddl, machine = null, now = null } = {}
       return { journal: { ...row, formatVersion: plan.to }, verdict, migrated: plan }
     },
 
-    /** What is serving, and at which configuration generation. */
+    /** What is serving, and the configuration it runs on. */
     async state({ app, environment }) {
       const r = await send(readState({ app, environment }))
       const serving = one(r, 'serving')
       return {
         serving:     serving?.releaseId ?? null,
         schemaHash:  serving?.schemaHash ?? null,
-        generation:  one(r, 'generation')?.generation ?? null,
+        configurationHash: serving?.configurationHash ?? null,
         transition:  serving?.id ?? null,
         // Derived, never stored. The last succeeded transition names the Release
         // bound; its kind is the whole of whether that Release is answering.
@@ -831,7 +924,7 @@ export function journalClient({ exec, db, ddl, machine = null, now = null } = {}
         release: {
           id: row.releaseId, app: row.app, environment: row.environment,
           digest: row.r_digest ?? null, imageRef: row.r_imageRef ?? null,
-          configurationHash: row.r_configurationHash, generation: row.generation ?? 1,
+          configurationHash: row.r_configurationHash,
           schemaHash: row.r_schemaHash ?? null,
           audienceKey: row.r_audienceKey ?? 'everyone', createdBy: row.r_createdBy ?? null,
         },

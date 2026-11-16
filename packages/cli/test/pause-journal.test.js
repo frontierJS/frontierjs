@@ -61,9 +61,9 @@ const deployed = async () => {
   const j = await journal()
   await j.open({ app: APP, host: HOST })
   await j.begin({
-    release: { id: 'r1', app: APP, environment: ENV, configurationHash: 'bh', generation: 1, schemaHash: 'sh' },
+    release: { id: 'r1', app: APP, environment: ENV, configurationHash: 'bh', schemaHash: 'sh' },
     transition: { id: 't-deploy', kind: 'deploy', app: APP, environment: ENV, releaseId: 'r1',
-                  fromReleaseId: null, generation: 1, plan: {}, actor: 'tester' },
+                  fromReleaseId: null, plan: {}, actor: 'tester' },
     steps: [],
   })
   await j.settle({ id: 't-deploy', status: 'succeeded' })
@@ -120,9 +120,9 @@ describe('a pause through the journal', () => {
   test('a revert reading that history is not moved by it', async () => {
     const j = await deployed()
     await j.begin({
-      release: { id: 'r2', app: APP, environment: ENV, configurationHash: 'bh', generation: 1, schemaHash: 'sh' },
+      release: { id: 'r2', app: APP, environment: ENV, configurationHash: 'bh', schemaHash: 'sh' },
       transition: { id: 't-deploy-2', kind: 'deploy', app: APP, environment: ENV, releaseId: 'r2',
-                    fromReleaseId: 'r1', generation: 1, plan: {}, actor: 'tester' },
+                    fromReleaseId: 'r1', plan: {}, actor: 'tester' },
       steps: [],
     })
     await j.settle({ id: 't-deploy-2', status: 'succeeded' })
@@ -189,9 +189,9 @@ describe('what a pause refuses, against a real journal', () => {
   test('a deploy still open', async () => {
     const j = await deployed()
     await j.begin({
-      release: { id: 'r3', app: APP, environment: ENV, configurationHash: 'bh', generation: 1, schemaHash: 'sh' },
+      release: { id: 'r3', app: APP, environment: ENV, configurationHash: 'bh', schemaHash: 'sh' },
       transition: { id: 't-open', kind: 'deploy', app: APP, environment: ENV, releaseId: 'r3',
-                    fromReleaseId: 'r1', generation: 1, plan: {}, actor: 'tester' },
+                    fromReleaseId: 'r1', plan: {}, actor: 'tester' },
       steps: [],
     })
     const opened = await pause('pause')

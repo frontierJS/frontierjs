@@ -1466,12 +1466,14 @@ maintain correct scroll height without creating DOM nodes for every item. Only
 fixed-height items are supported (variable height: planned).
 
 ```html
-{#virtual each rows as row height=48 viewport="500px"}
-  <div class="row">
-    <span>{row.name}</span>
-    <span>{row.value}</span>
-  </div>
-{/virtual}
+<div class="list">
+  {#virtual each rows as row height=48 viewport="500px"}
+    <div class="row">
+      <span>{row.name}</span>
+      <span>{row.value}</span>
+    </div>
+  {/virtual}
+</div>
 ```
 
 Options, written last — after the optional `(key)`:
@@ -1489,7 +1491,9 @@ An unrecognized option is refused by name at compile time.
 
 The rows and two spacer divs are appended **inside the element the block sits in**;
 that element is the scroller, either because `viewport=` sized it or because the
-caller gave it a height and `overflow-y`. On scroll, a `requestAnimationFrame`
+caller gave it a height and `overflow-y`. A block with no element of its own around
+it — at a component's root, or straight inside an `{#if}` or `{#each}` — is a compile
+error that says so. On scroll, a `requestAnimationFrame`
 handler computes the new `[start, end]` window, disposes blocks that scrolled out,
 and mounts new ones. Each rendered row is a full reactive Mesa block — signals,
 `bind:value`, and child components all work inside `{#virtual each}`.

@@ -110,6 +110,45 @@ model Note {
     expect(observed).toEqual(['b'])
   })
 
+  // The pool closes an evicted client once no lease holds it, so a lease that
+  // ends when principalFor returns lets a stream route's db close under it
+  // while the body is still being read (`FJS-4325`).
+  test('a raw route holds the tenant lease from app.principalFor(ctx) until the request ends', async () => {
+    const registry = await fleet()
+    const retain = registry.retain.bind(registry)
+    let held = 0
+    registry.tenantFor = () => 'a'
+    registry.retain = (id: string) => {
+      held++
+      const release = retain(id)
+      return () => { held--; release() }
+    }
+    const app: any = createApp({ tenants: registry, auth: USERS, config: { port: 0 }, logLevel: 'silent' })
+    const during: number[] = []
+    app.put('/chunk', async (ctx: any) => {
+      const { db } = await app.principalFor(ctx)
+      if (ctx.query.fail) throw new Error('the handler failed holding the lease')
+      during.push(held)
+      await new Response(ctx.body).arrayBuffer()
+      const rows = await db.note.findMany({})
+      during.push(held)
+      return ctx.json({ rows: rows.length })
+    }, { body: 'stream' })
+    await app.start()
+    try {
+      const res = await app.http.fetch(new Request('http://localhost/chunk', {
+        method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body: new Uint8Array(8),
+      }))
+      expect(res.status).toBe(200)
+      expect(during).toEqual([1, 1])
+      expect(held).toBe(0)
+
+      const thrown = await app.http.fetch(new Request('http://localhost/chunk?fail=1', { method: 'PUT', body: 'x' }))
+      expect(thrown.status).toBe(500)
+      expect(held).toBe(0)
+    } finally { await app.stop() }
+  })
+
   test('a unit of work that names no tenant is refused by the same sentence a request gets', async () => {
     const registry = await fleet()
     const app = createApp({ tenants: registry, auth: USERS })

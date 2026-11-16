@@ -6302,15 +6302,13 @@ export function buildBlock(data, option = {}) {
         binds.push(ctx.makeEachBlock(n, { label: ownAnchor('each') }).source)
       } else if (n.type === 'virtual-each') {
         // $$virtualEach() appends rows into its anchor, so the anchor is the
-        // enclosing element. A pending label would be taken by the whitespace
-        // text after the block, which only a component root trims (FJS-4347).
-        if (isRoot) {
-          requireFragment = true
-          if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true, value: 'virtual-each' }))
-          binds.push(ctx.makeVirtualEachBlock(n, { label: requireLabel(true, true) }))
-        } else {
-          binds.push(ctx.makeVirtualEachBlock(n, { label: { name: tpl.bindName() } }))
-        }
+        // enclosing element; at a root that is a Comment, where appending
+        // throws (FJS-4367). A pending label would be taken by the whitespace
+        // text after the block (FJS-4347).
+        assertAt(!isRoot,
+          `{#virtual each} needs an element of its own around it — its rows and spacers are appended into that element, which is the scroll container. Wrap the block in one, e.g. <div style="height:400px;overflow-y:auto">…</div>.`,
+          n.start)
+        binds.push(ctx.makeVirtualEachBlock(n, { label: { name: tpl.bindName() } }))
       } else if (n.type === 'if') {
         if (isRoot) requireFragment = true
         binds.push(ctx.makeifBlock(n, ownAnchor('if')))

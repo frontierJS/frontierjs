@@ -22,6 +22,9 @@ export function layout(env?: {}): {
     builds: string;
     static: string;
     backups: string;
+    /** `<app>.json`, an app's last release records (`FJS-D2178`). Beside
+     *  `apps/` and not in it, which the inspector reads as one app per entry. */
+    releases: string;
     restore: string;
     replicaRestore: string;
     deployKeys: string;

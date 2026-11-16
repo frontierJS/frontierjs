@@ -71,6 +71,8 @@ const NOT_SEEDED: Record<string, string> = {
   // Written by retention's rollup of checks older than its window, and the
   // seed's checks are all from today.
   monitor_uptime_day:    'the rollup of checks past their retention window',
+  // A row exists only once a secret is rotated, and the seed rotates nothing.
+  variable_version:      'a secret value a rotation replaced',
 
   // Credential machinery. A seeded SESSION would be somebody signed in with no
   // browser, and a VERIFICATION is a token in flight — both are states, not data.

@@ -1081,17 +1081,12 @@ export class HttpTransport {
   }
 
   // ─── Execute middleware + handler ─────────────────────────────────
-  // After the handler completes, inject any headers that middleware
-  // deposited on ctx side-channel properties (__cors, __securityHeaders,
-  // __rateLimit). Previously these were computed but never applied.
 
   private async _execute(
     ctx:        TransportContext,
     handler:    RouteHandler,
     middleware: MiddlewareFn[]
   ): Promise<Response> {
-
-    let response: Response
 
     // The request scope opens here, around every route handler, so a route on
     // app.http.router has it as much as one on app.get: without it an audit
@@ -1106,6 +1101,24 @@ export class HttpTransport {
       user:          ctx.user ?? null,
       caller:        { ip: ctx.ip, userAgent: ctx.headers?.['user-agent'], headers: ctx.headers ?? {} },
     }, () => handler(ctx))
+
+    ctx.__releases = []
+    try {
+      return await this._chain(ctx, run, middleware)
+    } finally {
+      for (const release of ctx.__releases.splice(0)) {
+        try { release() } catch (err) { this._opts.onError?.(err, ctx) }
+      }
+    }
+  }
+
+  private async _chain(
+    ctx:        TransportContext,
+    run:        () => Promise<unknown> | unknown,
+    middleware: MiddlewareFn[]
+  ): Promise<Response> {
+
+    let response: Response
 
     if (!middleware.length) {
       response = toResponse(await run(), ctx)

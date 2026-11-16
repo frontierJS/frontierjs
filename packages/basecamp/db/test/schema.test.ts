@@ -373,8 +373,8 @@ describe('generated migration', () => {
     // 71 again with `Backup` merged into `AppBackup` (`FJS-D1606`). 72 with
     // `AppPlatform` (`FJS-D1630`). The three Claude tables went to
     // `packages/workbench`. 73 with `MonitorUptimeDay` (`FJS-D1800`). 74 with
-    // `AppCopy` (`FJS-D2001`).
-    expect(tables.length).toBe(74)
+    // `AppCopy` (`FJS-D2001`). 75 with `VariableVersion` (`FJS-D2216`).
+    expect(tables.length).toBe(75)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {

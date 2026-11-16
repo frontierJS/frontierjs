@@ -55,6 +55,25 @@ function placeValue(data: Record<string, unknown>, secret: boolean) {
   if (secret) { data.secretValue = data.value; delete data.value }
 }
 
+/**
+ * A new secret value, with the one it replaces kept at its revision and
+ * marked revoked (FJS-D2182). One transaction, so a release can never pin a
+ * revision whose value was not kept. Two rotations that read the same
+ * revision both try to keep it, and `@@unique([variableId, revision])`
+ * refuses the second rather than letting both win.
+ */
+async function rotate(row: { id: string; workspaceId: string; revision: number }, patch: Record<string, unknown>) {
+  const held = await $.db.asSystem().variable.findFirst({ where: { id: row.id }, select: { secretValue: true } }) as { secretValue: string | null } | null
+  return db().$transaction(async (tx: any) => {
+    if (held?.secretValue != null)
+      await tx.variableVersion.create({ data: {
+        workspaceId: row.workspaceId, variableId: row.id, revision: row.revision,
+        secretValue: held.secretValue, revokedAt: new Date().toISOString() } })
+    return tx.variable.update({ where: { id: row.id },
+      data: { ...patch, revision: row.revision + 1 }, system: ['revision'] })
+  })
+}
+
 // ─── .env in and out ─────────────────────────────────────────────────────
 
 /** The scope a call names, `{ appId }` or `{ environmentId }`, as the rows in it and a file name. */
@@ -140,7 +159,8 @@ export default createService({
     const patch = narrowPatch($.data as Record<string, unknown>)
     placeValue(patch, row.isSecret)
     if (changesNothing(patch)) return row
-    return db().variable.update({ where: { id: row.id }, data: patch })
+    if (!('secretValue' in patch)) return db().variable.update({ where: { id: row.id }, data: patch })
+    return rotate(row, patch)
   },
 
   async remove(ctx: ServiceContext) {

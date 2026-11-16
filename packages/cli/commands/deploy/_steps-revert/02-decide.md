@@ -64,7 +64,7 @@ const refusals = revertRefusals({
   serving:    chosen.serving,
   target:     targetRelease,
   since,
-  generation: state.generation,
+  servingConfigurationHash: state.configurationHash,
   image,
   servingImage,
   inFlight:   chosen.inFlight,
@@ -116,7 +116,7 @@ const metas = stepFilesIn(readdirSync(dir)).map(f => {
 const intent = {
   kind: 'revert', app: appId, environment: target,
   fromReleaseId: chosen.serving?.releaseId ?? null,
-  releaseId: targetRelease.id, generation: state.generation ?? targetRelease.generation,
+  releaseId: targetRelease.id,
 }
 const { attempt } = await j.attempt(intent)
 
@@ -125,7 +125,6 @@ const planned = planTransition({
   release: { ...targetRelease, app: appId, environment: target },
   steps: planSteps(metas, { flag, $: { config: $.config } }),
   fromReleaseId: intent.fromReleaseId,
-  generation:    intent.generation,
   attempt,
   actor: $.git.user?.() ?? null,
 })
@@ -165,13 +164,13 @@ $.config.journalClient = j
 $.config.revertTo      = targetRelease
 $.config.revertImage   = image.image
 
-// The plain values the restored Release ran on, from the generation it was minted
-// at (FJS-D1029). `--onto-current-configuration` is the operator choosing today's
-// instead, and a generation the journal holds no row for falls back to today's.
+// The plain values the restored Release ran on, from the configuration it was
+// minted against (FJS-D1029). `--onto-current-configuration` is the operator
+// choosing today's instead, and a hash the journal holds no row for falls back to today's.
 const { configurationSet } = await core('release.js')
 const recorded = flag['onto-current-configuration']
   ? null
-  : await j.configurationSet({ app: appId, environment: target, generation: targetRelease.generation })
+  : await j.configurationSet({ app: appId, environment: target, hash: targetRelease.configurationHash })
 const parseValues = (v) => (typeof v === 'string' ? JSON.parse(v) : v)
 $.config.revertConfiguration = recorded?.values
   ? parseValues(recorded.values)

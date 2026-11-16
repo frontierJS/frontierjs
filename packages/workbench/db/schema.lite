@@ -20,12 +20,32 @@ database main {
   announce inProcess    // one API process on one laptop; the channels plugin warns on an unstated database
 }
 
+// The team chat's mirror, apart from workbench.db (`FJS-D2209`): rebuildable
+// from the chat server, so a reset of one never takes the other.
+database chat {
+  path     env("CHAT_DATABASE_URL", "./db/chat.db")
+  announce inProcess
+}
+
 /// Whoever signed in at the door. One row on a laptop; a table so the principal
 /// is read the way every other app's is, and so a second person is a row.
 model Member {
   id        Int       @id
   nick      String    @unique @trim @lower @length(2, 16) @regex("^[a-z0-9_-]+$", "letters, digits, - and _")
   createdAt DateTime  @default(now())
+
+  // The member's link to the team's chat server (`IDEAS/workbench-messages.md`
+  // Phase 1). A post is spent on its author's own token, so the token is
+  // @secret: no read returns it, its owner's included. All three are the
+  // system's to write -- `chat.connect` asks the server whose token it is
+  // before keeping it, and a member who could write profileExternalId could
+  // read every private channel of the profile named. A plain column and no
+  // relation: Profile is in the chat database, and a relation cannot cross one.
+  chatToken         String?   @secret
+  profileExternalId String?   @unique @system
+  // When this member's last complete backfill BEGAN; the next reads what
+  // changed since, a minute early. Null reads the newest page of every channel.
+  chatSyncedAt      DateTime? @system
 
   sessions       Session[]
   notifications  Notification[]
@@ -227,3 +247,255 @@ model ProviderAccount {
 // (`FJS-D1607`), without its `custom`: a custom machine has no list endpoint,
 // and an ssh host is how the screen shows one.
 enum ComputeProvider { hetzner digitalocean }
+
+// ── The team chat, mirrored (`IDEAS/workbench-messages.md` Phase 1) ──────────
+//
+// The chat server holds the truth and these rows are this laptop's copy,
+// moved from the chat prototype. @@mirror(key: externalId) makes every column
+// @system, so a member's write to the server's data is refused by name rather
+// than overwritten by the next sync (`FJS-D843`); the writes a member may make
+// reach the server through the connector's claim (`api/src/providers/chat/`)
+// and land back as the system (`FJS-D1125`).
+//
+// Graded at the door's member, not the prototype's USER: the door grades every
+// member ADMINISTRATOR (`api/src/auth.ts`), so the prototype's
+// `|| auth().isAdmin` escapes are gone -- here they would hand every member
+// every other member's private channels. Privacy is the policies alone: a
+// member reads a non-open channel only when their `profileExternalId` is in it.
+//
+// A relation column holds the server's id under <relation>ExternalId and
+// references the other model's externalId, so a row lands without waiting
+// for a local id.
+
+enum TeamType    { open invite }
+enum ChannelType { open private direct group }
+
+model Team {
+  id              Int       @id
+  externalId      String
+  name            String
+  displayName     String
+  description     String
+  type            TeamType
+  allowOpenInvite Boolean
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  deletedAt       DateTime?
+  channels        Channel[]
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@gate(3.8.8.8)
+  @@allow(read, true)
+}
+
+// The chat server's person. Not `Member`: that is who signed in at the door,
+// and a member links to at most one Profile through Member.profileExternalId.
+model Profile {
+  id         Int       @id
+  externalId String
+  username   String
+  firstName  String    @personal(contact)
+  lastName   String    @personal(contact)
+  nickname   String
+  // The server shows an address to its owner, so this copy does.
+  email      String?   @personal(contact) @allow(read, externalId == auth().profileExternalId)
+  roles      String
+  locale     String?
+  isBot      Boolean
+  createdAt  DateTime?
+  updatedAt  DateTime?
+  deletedAt  DateTime?
+  memberships ChannelMember[]
+  posts      Post[]
+  threads    Thread[]
+  reactions  Reaction[]
+  files      FileInfo[]
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@gate(3.8.8.8)
+  @@allow(read, true)
+}
+
+// A direct or group channel belongs to no team, so teamExternalId is null
+// there. Read: an open channel by any member, any other by its own members.
+model Channel {
+  id                Int         @id
+  externalId        String
+  teamExternalId    String?
+  team              Team?       @relation(fields: [teamExternalId], references: [externalId])
+  creatorExternalId String?
+  type              ChannelType
+  name              String
+  displayName       String
+  header            String
+  purpose           String
+  lastPostAt        DateTime?
+  totalMessageCount Int
+  // Root posts only: a room's unread badge counts these, so a reply counts
+  // once, in Threads. A server without them answers 0 while the room has posts.
+  totalMessageCountRoot Int       @default(0)
+  lastRootPostAt        DateTime?
+  createdAt         DateTime?
+  updatedAt         DateTime?
+  deletedAt         DateTime?
+  members           ChannelMember[]
+  posts             Post[]
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@gate(3.3.3.3)
+  @@index([teamExternalId])
+  @@allow(read, type == 'open' || members.some(profileExternalId == auth().profileExternalId))
+  @@allow(create, true)
+  @@allow(update, members.some(profileExternalId == auth().profileExternalId && isAdmin))
+  @@allow(delete, members.some(profileExternalId == auth().profileExternalId && isAdmin))
+}
+
+// The key is channel:profile, composed by the connector. Adding someone else
+// is an invitation and needs only that the inviter may read the channel;
+// leaving is the member's own.
+model ChannelMember {
+  id                Int       @id
+  externalId        String
+  channelExternalId String
+  channel           Channel   @relation(fields: [channelExternalId], references: [externalId])
+  profileExternalId String
+  profile           Profile   @relation(fields: [profileExternalId], references: [externalId])
+  roles             String
+  isAdmin           Boolean
+  lastViewedAt      DateTime?
+  messageCount      Int
+  mentionCount      Int
+  messageCountRoot  Int       @default(0)
+  mentionCountRoot  Int       @default(0)
+  // Muted where the server is: the room is unread only when it mentions them.
+  muted             Boolean   @default(false)
+  updatedAt         DateTime?
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@gate(3.3.8.3)
+  @@index([channelExternalId, profileExternalId])
+  @@index([profileExternalId])
+  @@allow(read, check(channel))
+  @@allow(create, check(channel, 'read'))
+  @@allow(delete, profileExternalId == auth().profileExternalId)
+}
+
+// A reply names its root; a root names none. The author is never in what the
+// caller sends -- the server takes it from the token the post spent -- so a
+// create cannot claim another author, and an edit is the author's own.
+model Post {
+  id                Int       @id
+  externalId        String
+  channelExternalId String
+  channel           Channel   @relation(fields: [channelExternalId], references: [externalId])
+  profileExternalId String
+  author            Profile   @relation(fields: [profileExternalId], references: [externalId])
+  rootExternalId    String?
+  root              Post?     @relation("replies", fields: [rootExternalId], references: [externalId])
+  replies           Post[]    @relation("replies")
+  message           String
+  type              String
+  isPinned          Boolean
+  props             Json
+  hashtags          String
+  replyCount        Int
+  lastReplyAt       DateTime?
+  createdAt         DateTime?
+  updatedAt         DateTime?
+  editedAt          DateTime?
+  deletedAt         DateTime?
+  threads           Thread[]
+  reactions         Reaction[]
+  files             FileInfo[]
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@index([channelExternalId, createdAt])
+  @@index([rootExternalId, createdAt])
+  @@index([profileExternalId])
+  @@gate(3.3.3.3)
+  @@allow(read, check(channel))
+  @@allow(create, check(channel, 'read'))
+  @@allow(update, profileExternalId == auth().profileExternalId)
+  @@allow(delete, profileExternalId == auth().profileExternalId)
+}
+
+// One profile's view of a root post -- its unread counts are that person's --
+// so the key is profile:root and nobody else reads it.
+model Thread {
+  id                Int       @id
+  externalId        String
+  rootExternalId    String
+  root              Post      @relation(fields: [rootExternalId], references: [externalId])
+  profileExternalId String
+  profile           Profile   @relation(fields: [profileExternalId], references: [externalId])
+  replyCount        Int
+  lastReplyAt       DateTime?
+  lastViewedAt      DateTime?
+  unreadReplies     Int
+  unreadMentions    Int
+  // An unfollowed thread stays a row, with its counts, and leaves Threads.
+  isFollowing       Boolean   @default(true)
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@index([profileExternalId, lastReplyAt])
+  @@index([rootExternalId])
+  @@gate(3.8.8.8)
+  @@allow(read, profileExternalId == auth().profileExternalId)
+}
+
+// The key is post:profile:emoji. A reaction names its profile, so a create
+// naming someone else's is refused here before the server is asked.
+model Reaction {
+  id                Int       @id
+  externalId        String
+  postExternalId    String
+  post              Post      @relation(fields: [postExternalId], references: [externalId])
+  profileExternalId String
+  profile           Profile   @relation(fields: [profileExternalId], references: [externalId])
+  emojiName         String
+  createdAt         DateTime?
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@index([postExternalId])
+  @@index([profileExternalId])
+  @@gate(3.3.8.3)
+  @@allow(read, check(post))
+  @@allow(create, profileExternalId == auth().profileExternalId && check(post, 'read'))
+  @@allow(delete, profileExternalId == auth().profileExternalId)
+}
+
+// A file is uploaded before the post that carries it, so postExternalId is
+// null until then -- and check(post) admits a missing post, which would show
+// an unsent file to everyone (`FJS-3130`). Until it is posted it is its uploader's.
+model FileInfo {
+  id                Int       @id
+  externalId        String
+  postExternalId    String?
+  post              Post?     @relation(fields: [postExternalId], references: [externalId])
+  profileExternalId String
+  profile           Profile   @relation(fields: [profileExternalId], references: [externalId])
+  name              String
+  extension         String
+  size              Int
+  mimeType          String
+  width             Int?
+  height            Int?
+  hasPreviewImage   Boolean
+  createdAt         DateTime?
+  updatedAt         DateTime?
+  deletedAt         DateTime?
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@index([postExternalId])
+  @@index([profileExternalId])
+  @@gate(3.8.8.8)
+  @@allow(read, profileExternalId == auth().profileExternalId || (postExternalId != null && check(post)))
+}

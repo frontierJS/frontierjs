@@ -13,7 +13,9 @@
 import type { App } from '@frontierjs/junction'
 import { announce } from '../../core/channels.ts'
 import { adoptContainerPort } from './runtime.ts'
-import type { DeploySwap } from '#db/schema.d.ts'
+import type { DeploySwap, DeployPivot } from '#db/schema.d.ts'
+import { mintRelease, configurationHash, crossesPivot, ConfigurationError } from '@frontierjs/outpost/release'
+import { secretRefsOf, type ReleaseVariables } from './variables.ts'
 
 /**
  * The step that replaces what is serving. A release that stopped at or before
@@ -167,12 +169,47 @@ export async function sweepStuckReleases(app: App, now = Date.now()): Promise<st
   return failed
 }
 
-/** One step's status. `digest`, `commit` and `swap` are what the machine
- *  reported running; `containerPort` is what its Dockerfile said, for an App
- *  that stores none. */
-export async function recordStep(app: App, deploy: Row, { stepId, status, output, digest, commit, containerPort, swap, swapReason }:
+/**
+ * The Release a row is, by the rule `fli deploy` mints with. The App's id is
+ * the app term: `fli deploy`'s own `deploy.app_id` is free text in
+ * frontier.config.js and names no Basecamp row. Null when the digest is not
+ * known yet, or a configuration the rule refuses by name.
+ */
+export async function releaseIdOf(app: App, deploy: Row): Promise<string | null> {
+  if (!deploy.builtImage) return null
+  const target = await sys(app).app.findUnique({ where: { id: deploy.appId }, select: { environmentId: true } })
+  const env    = target ? await sys(app).environment.findUnique({ where: { id: target.environmentId }, select: { slug: true } }) : null
+  const snapshot = (deploy.configSnapshot ?? {}) as Partial<ReleaseVariables>
+  try {
+    return mintRelease({
+      app: deploy.appId, environment: env?.slug ?? null, digest: deploy.builtImage,
+      configurationHash: configurationHash(snapshot.env ?? {}, secretRefsOf(snapshot)).hash,
+      schemaHash: deploy.schemaHash ?? null,
+    }).id
+  } catch (err) {
+    if (err instanceof ConfigurationError) return null
+    throw err
+  }
+}
+
+/**
+ * Whether going back past this release would cross a schema contract. The
+ * stored verdict is graded by the one rule `fli deploy:revert` uses; a null is
+ * a release nobody asked (a first deploy, a rollback, a row from before the
+ * column), and it passes no predecessor, which that rule reads as nothing to
+ * cross. Every other row has a verdict, so it passes one.
+ */
+export function crossedPivot(row: Row): boolean {
+  return crossesPivot({ pivot: row.pivot ?? null, fromReleaseId: row.pivot == null ? null : (row.previousDeploymentId ?? row.id) })
+}
+
+/** One step's status. `digest`, `commit`, `swap`, `schemaHash` and `pivot` are
+ *  what the machine reported; `pivot` is stated by the step that asked, `null`
+ *  meaning it answered none. `containerPort` is what its Dockerfile said, for
+ *  an App that stores none. */
+export async function recordStep(app: App, deploy: Row, { stepId, status, output, digest, commit, containerPort, swap, swapReason, schemaHash, pivot }:
   { stepId: string, status: string, output?: string, digest?: string, commit?: string, containerPort?: number,
-    swap?: DeploySwap, swapReason?: string | null }) {
+    swap?: DeploySwap, swapReason?: string | null, schemaHash?: string | null, pivot?: DeployPivot | null }) {
   // Addressed by the deployment as well as the step, so a step id from
   // another release cannot be moved through here.
   await sys(app).deploymentStep.updateMany({
@@ -193,6 +230,16 @@ export async function recordStep(app: App, deploy: Row, { stepId, status, output
   if (digest && digest !== deploy.builtImage) ran.builtImage = digest
   if (commit && commit !== deploy.commitSha)  ran.commitSha  = commit
   if (swap) Object.assign(ran, { swap, swapReason: swapReason ?? null })
+  // A step with no checkout answers no hash, and must not erase the build's.
+  if (schemaHash && schemaHash !== deploy.schemaHash) ran.schemaHash = schemaHash
+  // A release with something to replace and no verdict has not shown N-1 keeps
+  // working, so the silence is recorded as `unknown` and not as nothing asked.
+  if (pivot !== undefined)
+    ran.pivot = pivot ?? (deploy.previousDeploymentId && deploy.trigger !== 'rollback' ? 'unknown' : null)
+  if (ran.builtImage || ran.schemaHash || !deploy.releaseId) {
+    const releaseId = await releaseIdOf(app, { ...deploy, ...ran })
+    if (releaseId && releaseId !== deploy.releaseId) ran.releaseId = releaseId
+  }
   if (Object.keys(ran).length) await sys(app).deployment.update({ where: { id: deploy.id }, data: ran })
   // On the App, never the snapshot, which is @immutable: a rollback to this
   // release reads the App's for a snapshot that holds none (`runtimeFor`).

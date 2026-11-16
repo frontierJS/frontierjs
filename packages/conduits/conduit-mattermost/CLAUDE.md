@@ -1,6 +1,6 @@
 # conduit-mattermost — package map
 
-`src/index.ts` `mattermostTargets`, `bindMattermost`, `postMessage`, the backfill reads · `src/mirror.ts` the claim: rows, keys, verbs per model (`FJS-D1125`) · `src/receive.ts` the two Dialects, `verifyMattermostToken`, `respond` (`FJS-D899`) · `src/socket.ts` the socket target, `mattermostFraming`, `mattermostSocketDialect` (`FJS-D1127`) · `src/errors.ts` `translate` · `src/types.ts` Mattermost's shapes · `sink.ts` · `test/mattermost.drive.ts`.
+`src/index.ts` `mattermostTargets`, `bindMattermost`, `postMessage`, the backfill reads · `src/mirror.ts` the claim: rows, keys, verbs per model (`FJS-D1125`) · `src/receive.ts` the two Dialects, `verifyMattermostToken`, `respond` (`FJS-D899`) · `src/socket.ts` the socket target, `mattermostFraming`, `mattermostSocketDialect` (`FJS-D1127`) · `src/errors.ts` `translate` · `src/types.ts` Mattermost's shapes · `sink.ts` · `test/mattermost.drive.ts`. The verbs past the claim (pins, drafts, categories, status, search…) are at the end of `src/index.ts`.
 
 ## What bites
 
@@ -22,8 +22,10 @@
 - **The socket redelivers nothing.** A frame whose `apply` throws, and every frame sent while the connection was down, comes back only through the `listPosts({ since })` backfill.
 - **A quiet socket and a dead one look the same.** Mattermost pushes nothing to an idle person, so the framing's `keepalive` sends the `ping` action (answered `seq_reply` + `text: 'pong'`) and conduit cuts a connection silent for 60 s. A reply has no `event`; without `pong` naming it, every ping counts as `dropped`. The sink's `{ silenceSocket: id }` is that dead link.
 - **A skip in `seq` is lost frames, not a new connection.** The framing's `sequence` answers each frame's `seq` and conduit calls the receiver's `gap` when one connection's jumps; a new connection starts afresh. The sink's `{ skipSeq: n }` makes the jump.
-- **`data.post` and `data.channel` are JSON strings inside the frame**, not objects.
+- **`data.post` and `data.channel` are JSON strings inside the frame**, not objects. So are `data.draft`, `data.preferences` and `data.updatedCategories`.
+- **A code ending `license_error` is `unlicensed`**, never retried; Team Edition 400s scheduled posts and 501s groups, and the sink does too. Conduit still retries a replayable 501.
+- **The sink's `emit` with `channel_id` reaches every member**; a user-only event (`status_change`, drafts, preferences, categories) broadcasts to `{ user_id, team_id }` and carries the channel in `data`.
 
 ## Proving a change
 
-`bun run drive` — 56 rows against the sink; no fixture. The `mirror.forward*` rows bind the claim with `conduit.mirror(mirror)` and wrap `send` to write `who`, as the junction plugin does. The drive's `bridge` is the junction plugin's `app.post(receiver.path)` without junction: request → `Delivery` → `conduit.accept()`. Typecheck from the connectors root with frontierjs's tsc: `../../../frontierjs/node_modules/.bin/tsc -p tsconfig.json --noEmit --typeRoots ../../../frontierjs/node_modules` (never `bunx tsc` here — `AGENT_BRIEF.md`).
+`bun run drive` — 70 rows against the sink; no fixture. The `mirror.forward*` rows bind the claim with `conduit.mirror(mirror)` and wrap `send` to write `who`, as the junction plugin does. The drive's `bridge` is the junction plugin's `app.post(receiver.path)` without junction: request → `Delivery` → `conduit.accept()`. Typecheck from the connectors root with frontierjs's tsc: `../../../frontierjs/node_modules/.bin/tsc -p tsconfig.json --noEmit --typeRoots ../../../frontierjs/node_modules` (never `bunx tsc` here — `AGENT_BRIEF.md`).

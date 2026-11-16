@@ -72,7 +72,7 @@
     const landed = await waitFor(() => location.pathname === '/home/')
     say('signIn', { landed: !!landed, path: location.pathname, token: !!localStorage.getItem('workbench_token') })
 
-    // Home carries no link to Local repos; the Chats screen does.
+    // Home carries no link to Local repos; the Bench screen does.
     const before = pagehides()
     const chats = await waitFor(() => document.querySelector('a[href="/workbench/"]'))
     chats?.click()

@@ -19,8 +19,11 @@ const H = (...rows) => rows
 const t = (id, releaseId, status, extra = {}) =>
   ({ id, releaseId, status, fromReleaseId: null, isCrossingPivot: 0, ...extra })
 
+const CFG_A = 'a'.repeat(64)
+const CFG_B = 'b'.repeat(64)
+
 const RELEASE = (id, extra = {}) =>
-  ({ id, generation: 1, retentionUntil: null, createdAt: '2026-08-01T00:00:00.000Z', ...extra })
+  ({ id, configurationHash: CFG_A, retentionUntil: null, createdAt: '2026-08-01T00:00:00.000Z', ...extra })
 
 const IMAGE = { image: 'sha256:abc', tag: 'shop:1', scope: 'host', parsed: true }
 
@@ -70,7 +73,7 @@ describe('restoring the bytes already running', () => {
   test('is refused, and the refusal carries no override', () => {
     const r = revertRefusals({
       serving: t('t2', 'rA', 'succeeded'), target: RELEASE('rA'),
-      generation: 1, image: SAME, servingImage: SAME,
+      servingConfigurationHash: CFG_A, image: SAME, servingImage: SAME,
     })
     const same = r.find(x => x.kind === 'same-bytes')
     expect(same).toBeTruthy()
@@ -81,7 +84,7 @@ describe('restoring the bytes already running', () => {
   test('different bytes under one Release id is not refused', () => {
     const r = revertRefusals({
       serving: t('t2', 'rA', 'succeeded'), target: RELEASE('rA'),
-      generation: 1, image: SAME, servingImage: { image: 'sha256:def', parsed: true },
+      servingConfigurationHash: CFG_A, image: SAME, servingImage: { image: 'sha256:def', parsed: true },
     })
     expect(r.map(x => x.kind)).not.toContain('same-bytes')
   })
@@ -91,7 +94,7 @@ describe('restoring the bytes already running', () => {
   test('an unknown serving image decides nothing', () => {
     const r = revertRefusals({
       serving: t('t2', 'rA', 'succeeded'), target: RELEASE('rA'),
-      generation: 1, image: SAME, servingImage: null,
+      servingConfigurationHash: CFG_A, image: SAME, servingImage: null,
     })
     expect(r.map(x => x.kind)).not.toContain('same-bytes')
   })
@@ -240,7 +243,7 @@ const check = (over = {}) => revertRefusals({
   serving: t('t2', 'r2', 'succeeded', { fromReleaseId: 'r1' }),
   target:  RELEASE('r1'),
   since:   [t('t2', 'r2', 'succeeded')],
-  generation: 1,
+  servingConfigurationHash: CFG_A,
   image: IMAGE,
   ...over,
 })
@@ -314,26 +317,28 @@ describe('retention', () => {
 describe('the configuration — the pair, not the code', () => {
   // The documented Fly failure this separation exists to refuse: reverting a
   // Release onto today's configuration.
-  test('a moved generation refuses and says what it can and cannot restore', () => {
-    const r = check({ target: RELEASE('r1', { generation: 2 }), generation: 3 })
+  test('a moved configuration refuses, names both hashes short, and says what it can and cannot restore', () => {
+    const r = check({ target: RELEASE('r1', { configurationHash: CFG_A }), servingConfigurationHash: CFG_B })
     expect(kinds(r)).toEqual(['configuration'])
-    expect(r[0].message).toContain('generation 2')
-    expect(r[0].message).toContain('generation 3')
+    expect(r[0].message).toContain('a'.repeat(12))
+    expect(r[0].message).not.toContain('a'.repeat(13))
+    expect(r[0].message).toContain('b'.repeat(12))
+    expect(r[0].message).not.toContain('b'.repeat(13))
     expect(r[0].message).toContain('NOT the configuration')
   })
 
-  test('the same generation is not a refusal', () => {
-    expect(check({ target: RELEASE('r1', { generation: 2 }), generation: 2 })).toEqual([])
+  test('the same configuration is not a refusal', () => {
+    expect(check({ target: RELEASE('r1', { configurationHash: CFG_B }), servingConfigurationHash: CFG_B })).toEqual([])
   })
 
   // A journal with no configuration set recorded cannot answer the question, and a
   // guess either way is wrong: silence, rather than a refusal or a pass.
-  test('an unknown current generation is not graded', () => {
-    expect(check({ target: RELEASE('r1', { generation: 2 }), generation: null })).toEqual([])
+  test('an unknown current configuration is not graded', () => {
+    expect(check({ target: RELEASE('r1', { configurationHash: CFG_B }), servingConfigurationHash: null })).toEqual([])
   })
 
   test('--onto-current-configuration is a different sentence, and it overrides', () => {
-    const r = check({ target: RELEASE('r1', { generation: 2 }), generation: 3, force: { configuration: true } })
+    const r = check({ target: RELEASE('r1', { configurationHash: CFG_A }), servingConfigurationHash: CFG_B, force: { configuration: true } })
     expect(r[0].override).toBe('--onto-current-configuration')
     expect(blocking(r)).toEqual([])
   })
@@ -381,8 +386,8 @@ describe('the whole picture', () => {
   test('every refusal is reported together', () => {
     const r = check({
       since:      [t('t2', 'r2', 'succeeded', { isCrossingPivot: 1 })],
-      target:     RELEASE('r1', { generation: 2, retentionUntil: '2026-01-01T00:00:00.000Z' }),
-      generation: 3,
+      target:     RELEASE('r1', { configurationHash: CFG_A, retentionUntil: '2026-01-01T00:00:00.000Z' }),
+      servingConfigurationHash: CFG_B,
       now:        '2026-08-26T00:00:00.000Z',
       image:      { image: null },
     })
@@ -392,8 +397,8 @@ describe('the whole picture', () => {
   test('forcing three of four still blocks on the fourth', () => {
     const r = check({
       since:      [t('t2', 'r2', 'succeeded', { isCrossingPivot: 1 })],
-      target:     RELEASE('r1', { generation: 2, retentionUntil: '2026-01-01T00:00:00.000Z' }),
-      generation: 3, now: '2026-08-26T00:00:00.000Z', image: { image: null },
+      target:     RELEASE('r1', { configurationHash: CFG_A, retentionUntil: '2026-01-01T00:00:00.000Z' }),
+      servingConfigurationHash: CFG_B, now: '2026-08-26T00:00:00.000Z', image: { image: null },
       force:      { pivot: true, retention: true, configuration: true },
     })
     expect(kinds(blocking(r))).toEqual(['no-image'])
@@ -403,7 +408,7 @@ describe('the whole picture', () => {
     const produced = new Set([
       ...kinds(check({ since: [t('t', 'r', 'succeeded', { isCrossingPivot: 1 })] })),
       ...kinds(check({ target: RELEASE('r1', { retentionUntil: '2000-01-01T00:00:00.000Z' }) })),
-      ...kinds(check({ target: RELEASE('r1', { generation: 9 }), generation: 1 })),
+      ...kinds(check({ target: RELEASE('r1', { configurationHash: CFG_B }), servingConfigurationHash: CFG_A })),
       ...kinds(check({ image: { image: null } })),
       ...kinds(check({ inFlight: t('t', 'r', 'running') })),
       ...kinds(revertRefusals({ target: null })),

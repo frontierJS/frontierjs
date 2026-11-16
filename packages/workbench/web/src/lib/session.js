@@ -55,3 +55,8 @@ export async function signOut() {
     _w.user = null
   }
 }
+
+/** Re-read who the bearer is: linking the team chat changes `profileExternalId` after sign-in. */
+export async function refreshSession() {
+  _w.user = await rawJson('/door/me')
+}

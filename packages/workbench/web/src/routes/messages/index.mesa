@@ -1,0 +1,35 @@
+---
+title: Messages
+---
+<script>
+  // /messages/ -- opens the last channel this browser had open, else the first one
+  // the reader is in. With none, it says so.
+  import { goto } from '@frontierjs/sierra/router'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import { getLists, countsOf, lastChannel } from '../../lib/chat.js'
+
+  const lists = getLists()
+  $: counts = countsOf(lists.channels.rows, lists.mine.rows)
+  $: byId = new Map(lists.channels.rows.map(c => [c.externalId, c]))
+  $: target = (() => {
+    const mine = Object.keys(counts).filter(id => !byId.get(id)?.deletedAt)
+    const want = lastChannel()
+    if (want && mine.includes(want)) return want
+    // Town square first when there is one, then whatever comes first by name.
+    return mine.sort((a, b) => (byId.get(a).name === 'town-square' ? -1 : byId.get(b).name === 'town-square' ? 1 : String(byId.get(a).name).localeCompare(String(byId.get(b).name))))[0] ?? null
+  })()
+  $: { if (target) goto(`/messages/${target}/`, undefined, { replace: true }) }
+  $: empty = !target && !lists.channels.loading && !lists.mine.loading
+</script>
+
+<div class="chat-landing center">
+  {#if empty}
+    <EmptyState title="No channels yet">You are not in any channel on the team's server.</EmptyState>
+  {:else}
+    <p class="text-muted">…</p>
+  {/if}
+</div>
+
+<style>
+  .chat-landing { flex: 1; padding: var(--space-2xl); }
+</style>

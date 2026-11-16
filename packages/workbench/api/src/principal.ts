@@ -12,7 +12,8 @@ type Db = { asSystem: () => any }
 export function standing (db: Db): PrincipalResolver {
   return async function standing (_ctx, user) {
     if (!user) return {}
-    const row = await db.asSystem().member.findFirst({ where: { id: Number(user.id) }, select: { id: true, nick: true } })
-    return row ? { nick: row.nick } : {}
+    const row = await db.asSystem().member.findFirst({ where: { id: Number(user.id) }, select: { id: true, nick: true, profileExternalId: true } })
+    // profileExternalId is what every chat policy reads as auth().profileExternalId.
+    return row ? { nick: row.nick, profileExternalId: row.profileExternalId ?? null } : {}
   }
 }

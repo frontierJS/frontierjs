@@ -177,7 +177,7 @@ describe('planning the steps', () => {
 describe('the id of one attempt to move serving state', () => {
   const base = {
     kind: 'deploy', app: 'shop', environment: 'production',
-    fromReleaseId: 'r1', releaseId: 'r2', generation: 1, attempt: 1,
+    fromReleaseId: 'r1', releaseId: 'r2', attempt: 1,
   }
 
   test.each([
@@ -186,7 +186,6 @@ describe('the id of one attempt to move serving state', () => {
     ['environment',   { environment: 'stage' }],
     ['from',          { fromReleaseId: 'r0' }],
     ['to',            { releaseId: 'r3' }],
-    ['generation',    { generation: 2 }],
     ['attempt',       { attempt: 2 }],
   ])('%s moves the id', (_label, patch) => {
     expect(transitionId({ ...base, ...patch })).not.toBe(transitionId(base))
@@ -227,7 +226,7 @@ describe('the journal rows', () => {
     const { transition } = build()
     expect(transition).toMatchObject({
       kind: 'deploy', app: 'shop', environment: 'production',
-      releaseId: RELEASE.id, fromReleaseId: null, status: 'planned', generation: 1,
+      releaseId: RELEASE.id, fromReleaseId: null, status: 'planned',
     })
   })
 
@@ -245,11 +244,11 @@ describe('the journal rows', () => {
   })
 
   // What each step checks before it runs, and it is the model's own three-part
-  // shape: the Release serving, the configuration generation, the schema as applied.
+  // shape: the Release serving, the schema as applied.
   test('every step carries the same precondition', () => {
     const { steps } = build()
     for (const s of steps)
-      expect(s.precondition).toEqual({ serving: null, generation: 1, schemaHash: RELEASE.schemaHash })
+      expect(s.precondition).toEqual({ serving: null, schemaHash: RELEASE.schemaHash })
   })
 
   test('a resumed transition finds the same step ids', () => {

@@ -35,7 +35,7 @@ flags:
 const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
 
 const { loadFrontierConfig } = await core('utils.js')
-const { configurationSet, schemaSurfaceHash, mintRelease, formatRelease, ConfigurationError } =
+const { configurationSet, schemaSurfaceHash, mintRelease, releaseAppOf, formatRelease, ConfigurationError } =
   await core('release.js')
 
 // ─── target ──────────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ if (schema.missing) {
 
 // ─── the Release ─────────────────────────────────────────────────────────────
 const release = mintRelease({
-  app:           deployConf.app_id,
+  app:           releaseAppOf(deployConf),
   environment:   target,
   digest:        flag.digest || null,
   configurationHash: configuration.hash,
@@ -135,7 +135,7 @@ the row and the configuration is in the hash.
 A deploy writes no `.env` on a target — setup seeds it once and the operator owns it after
 (`FJS-D1186`) — and `06-swap` passes the plain values to `docker run` as `--env K=V` after
 `--env-file`, so they win (`FJS-D1029`). A secret reference stays in the operator's file and
-`01b-env-check` grades it present by key. The generation is the question a revert asks: *has
+`01b-env-check` grades it present by key. The configuration hash is the question a revert asks: *has
 the configuration been changed since the release I am going back to*, which is why
 `fli deploy:revert` refuses once it has moved, since the secrets half cannot be restored.
 
@@ -173,8 +173,7 @@ is not.
 resolved when a process starts, so `latest` means two instances of one immutable
 Release hold two different values — the Release is immutable in name only, and
 Cloud Run's own documentation says to pin. A rotation moves the configuration to a new
-pinned version, which is a new generation, which is exactly what a generation is
-for.
+pinned version, which is a new configuration hash, and so a new Release.
 
 An app that declares nothing has an empty configuration set. That is a set, and it hashes
 like any other.

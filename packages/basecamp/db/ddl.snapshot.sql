@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 77 models · 2 databases
+-- 78 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 -- @@external, managed outside litestone: conduit_targets, conduit_receipts
@@ -1139,6 +1139,7 @@ CREATE TABLE IF NOT EXISTS "variable" (
   "isSecret" INTEGER NOT NULL DEFAULT 0,
   "value" TEXT,
   "secretValue" TEXT,
+  "revision" INTEGER NOT NULL DEFAULT 1,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -1287,6 +1288,9 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   "imageSha256" TEXT,
   "swap" TEXT,
   "swapReason" TEXT,
+  "releaseId" TEXT,
+  "schemaHash" TEXT,
+  "pivot" TEXT,
   "platformVersion" TEXT,
   "previousDeploymentId" TEXT,
   "configSnapshot" TEXT NOT NULL DEFAULT '{}',
@@ -1300,6 +1304,7 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   CHECK ("status" IN ('pending', 'building', 'success', 'failed', 'cancelled', 'rolledBack')),
   CHECK ("trigger" IN ('button', 'push', 'laptop', 'rollback', 'rebind', 'publish', 'freeze', 'observed')),
   CHECK ("swap" IN ('startFirst', 'stopFirst')),
+  CHECK ("pivot" IN ('unchanged', 'expand', 'contract', 'unknown')),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("triggeredBy") REFERENCES "user" ("id")
 ) STRICT;
@@ -1377,6 +1382,18 @@ CREATE TABLE IF NOT EXISTS "hub_config" (
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "version" INTEGER NOT NULL DEFAULT 1,
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE SET NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "variable_version" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "workspaceId" TEXT NOT NULL,
+  "variableId" TEXT NOT NULL,
+  "revision" INTEGER NOT NULL,
+  "secretValue" TEXT NOT NULL,
+  "revokedAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE ("variableId", "revision"),
+  FOREIGN KEY ("variableId") REFERENCES "variable" ("id") ON DELETE CASCADE
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "domain_route" (

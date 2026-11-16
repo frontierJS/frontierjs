@@ -12,7 +12,7 @@
 
 import type { ConduitRequest, ConduitResult, TargetDescriptor } from '@frontierjs/conduit'
 import { translate, type StripeFailure } from './errors.ts'
-import type { PaymentIntent, StripeRefund, StripeAccount, StripeAccountLink, StripeAccountStatus, StripeCheckoutSession } from './types.ts'
+import type { PaymentIntent, StripeRefund, StripeAccount, StripeAccountLink, StripeAccountStatus, StripeCheckoutSession, StripeBalanceTransaction } from './types.ts'
 
 export * from './types.ts'
 export * from './errors.ts'
@@ -249,6 +249,24 @@ export async function retrieveAccountStatus(send: Send, account: string): Promis
   const result = await send<StripeAccount>({ method: 'GET', path: `/v1/accounts/${account}` })
   if (result.error) return { error: translate(result.error) }
   return { status: accountStatus(result.data!) }
+}
+
+/**
+ * The balance transaction a charge names in `balance_transaction` — its `fee`
+ * is Stripe's fee on the charge. A direct charge's lives on the connected
+ * account, so `account` is required to find it there; without it the read
+ * looks on the platform and answers not found.
+ */
+export async function retrieveBalanceTransaction(send: Send, req: {
+  id:       string
+  account?: string
+}): Promise<{ balanceTransaction?: StripeBalanceTransaction; error?: StripeFailure }> {
+  // The id is a path segment: a webhook's `balance_transaction` is caller data and must not walk to another resource.
+  if (typeof req.id !== 'string' || !/^txn_[A-Za-z0-9]+$/.test(req.id))
+    throw new TypeError(`stripe: a balance transaction id is txn_…, got ${JSON.stringify(req.id)}`)
+  const result = await send<StripeBalanceTransaction>({ method: 'GET', path: `/v1/balance_transactions/${req.id}`, ...onAccount(req.account) })
+  if (result.error) return { error: translate(result.error) }
+  return { balanceTransaction: result.data }
 }
 
 /** One line on a hosted Checkout page, priced inline. */

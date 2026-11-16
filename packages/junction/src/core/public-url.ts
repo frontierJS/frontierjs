@@ -17,9 +17,12 @@
 // graded: a caller using `fetch` connects through `pinTo`, to the address
 // `gradePublicUrl` answered, and `assertPublicUrl` alone leaves that window open.
 //
-// `fetchPublicJson` is that walk done once, with the bounds a stranger's server
-// needs: it follows no redirect it has not graded, reads no more than a byte cap
-// and gives up on one deadline for the lookups, the hops and the body together.
+// `fetchPublicJson` and `fetchPublicText` are that walk done once, with the
+// bounds a stranger's server needs: no redirect followed that was not graded,
+// no more read than a byte cap, and one deadline for the lookups, the hops and
+// the body together. An app reading a page calls `fetchPublicText` rather than
+// `assertPublicUrl` and a plain `fetch`, which resolves the name a second time
+// and reads the whole body before any size check.
 // A server that answers one byte a second or a body of a gigabyte is as much
 // the stranger's choice as the URL.
 
@@ -280,15 +283,18 @@ async function readCapped(res: Response, limit: number, where: string): Promise<
   return joined
 }
 
-/**
- * Fetches JSON from a URL somebody else chose and answers it, or throws
- * `PublicFetchError` (a `PublicUrlError`, status 400) naming the URL and why.
- * Every hop, the first and each `Location`, is graded and connected to by
- * `gradePublicUrl` and `pinTo`, so a redirect to a private address is refused
- * where a plain `fetch` would have followed it. No caching: the caller keeps
- * the answer for `maxAge`.
- */
-export async function fetchPublicJson(raw: string | URL, opts: PublicFetchOptions = {}): Promise<PublicJson> {
+interface Fetched { url: URL, res: Response, bytes: Uint8Array }
+
+// The walk both readers share: every hop graded and pinned, one deadline, the
+// body read under the cap. `admits` judges the media type before a byte of the
+// body is read, and `kind` names what it wanted in the refusal.
+async function fetchPublic(
+  raw:    string | URL,
+  opts:   PublicFetchOptions,
+  accept: string,
+  admits: (type: string) => boolean,
+  kind:   string,
+): Promise<Fetched> {
   const maxBytes  = opts.maxBytes  ?? 65_536
   const timeoutMs = opts.timeoutMs ?? 5_000
   const maxHops   = opts.maxHops   ?? 3
@@ -308,7 +314,7 @@ export async function fetchPublicJson(raw: string | URL, opts: PublicFetchOption
     const pinned = graded.address ? pinTo(url, graded.address) : null
     const init: RequestInit & { tls?: { serverName: string } } = {
       method:   'GET',
-      headers:  { accept: 'application/json', ...pinned?.headers },
+      headers:  { accept, ...pinned?.headers },
       redirect: 'manual',
       signal,
       ...(pinned?.tls ? { tls: pinned.tls } : {}),
@@ -336,22 +342,53 @@ export async function fetchPublicJson(raw: string | URL, opts: PublicFetchOption
       throw new PublicFetchError(`${where} answered ${res.status}`)
     }
     const type = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
-    if (type !== 'application/json' && !type.endsWith('+json')) {
+    if (!admits(type)) {
       await res.body?.cancel().catch(() => {})
-      throw new PublicFetchError(`${where} answered ${type || 'no content type'}, not JSON`)
+      throw new PublicFetchError(`${where} answered ${type || 'no content type'}, not ${kind}`)
     }
 
-    let bytes: Uint8Array
-    try { bytes = await readCapped(res, maxBytes, where) }
+    try { return { url, res, bytes: await readCapped(res, maxBytes, where) } }
     catch (err) {
       if (err instanceof PublicFetchError) throw err
       if (signal.aborted) throw late()
       throw new PublicFetchError(`${where} broke off while being read (${(err as Error).message})`)
     }
-    let json: unknown
-    try { json = JSON.parse(new TextDecoder().decode(bytes)) }
-    catch { throw new PublicFetchError(`${where} answered a body that is not valid JSON`) }
-
-    return { url: url.toString(), status: res.status, json, maxAge: maxAgeOf(res.headers.get('cache-control')) }
   }
+}
+
+/**
+ * Fetches JSON from a URL somebody else chose and answers it, or throws
+ * `PublicFetchError` (a `PublicUrlError`, status 400) naming the URL and why.
+ * Every hop, the first and each `Location`, is graded and connected to by
+ * `gradePublicUrl` and `pinTo`, so a redirect to a private address is refused
+ * where a plain `fetch` would have followed it. No caching: the caller keeps
+ * the answer for `maxAge`.
+ */
+export async function fetchPublicJson(raw: string | URL, opts: PublicFetchOptions = {}): Promise<PublicJson> {
+  const { url, res, bytes } = await fetchPublic(raw, opts, 'application/json',
+    type => type === 'application/json' || type.endsWith('+json'), 'JSON')
+  let json: unknown
+  try { json = JSON.parse(new TextDecoder().decode(bytes)) }
+  catch { throw new PublicFetchError(`${shown(url)} answered a body that is not valid JSON`) }
+  return { url: url.toString(), status: res.status, json, maxAge: maxAgeOf(res.headers.get('cache-control')) }
+}
+
+export interface PublicText {
+  url:    string
+  status: number
+  // Decoded as UTF-8 whatever the charset says, as `Response.text()` does.
+  text:   string
+  maxAge: number | null
+}
+
+/**
+ * `fetchPublicJson` for a `text/*` body: an HTML page, a plain-text file. The
+ * same walk and the same bounds; a page larger than the 64 KiB default needs
+ * `maxBytes`, and past it the fetch is refused, never truncated, so a hash of
+ * the text is a hash of the whole page.
+ */
+export async function fetchPublicText(raw: string | URL, opts: PublicFetchOptions = {}): Promise<PublicText> {
+  const { url, res, bytes } = await fetchPublic(raw, opts, 'text/html, text/*;q=0.9',
+    type => type.startsWith('text/'), 'text')
+  return { url: url.toString(), status: res.status, text: new TextDecoder().decode(bytes), maxAge: maxAgeOf(res.headers.get('cache-control')) }
 }

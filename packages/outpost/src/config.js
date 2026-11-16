@@ -82,6 +82,9 @@ export function readConfig(env = process.env) {
      *  StateDirectory, so the sandbox lets it and it exists on a box the
      *  install built. */
     backupDir:   (env.OUTPOST_BACKUP_DIR ?? box.backups).replace(/\/$/, ''),
+    /** An app's last release records, `<app_id>.json` (`FJS-D2178`). Inside the
+     *  unit's StateDirectory, where the sandbox lets it write. */
+    releasesDir: (env.OUTPOST_RELEASES_DIR ?? box.releases).replace(/\/$/, ''),
     /** The Litestream unit's config, which `/replicate` rewrites whole. The
      *  install writes it `dbs: []` and the unit reads it at start. */
     litestreamConfig:  env.OUTPOST_LITESTREAM_CONFIG ?? box.litestreamConfig,

@@ -194,7 +194,7 @@ if (!stoppedEarly) {
   check('the API answers across origins', rows['api.health'] === 200, rows['api.health'])
   check('the key at the door lands on /home/ with a stored token',
     rows.signIn?.landed && rows.signIn?.token, rows.signIn)
-  check('Chats, then Local repos, reaches /git-activity/local/ without a reload',
+  check('Bench, then Local repos, reaches /git-activity/local/ without a reload',
     rows.nav?.arrived && rows.nav?.path === '/git-activity/local/' && rows.nav?.reloads === 0, rows.nav)
   check('the scan lists both checkouts under ~/code',
     scan.listed && /alpha/.test(scan.text) && /beta/.test(scan.text), scan)

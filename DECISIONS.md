@@ -1899,6 +1899,30 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d2229"></a>2026-11-16 · `FJS-D2229` — A create rule is dead when its foreign key names a parent the caller cannot read (`FJS-D576`): what is done about it — Keep `FJS-D576`; add a gate-report / `fli check` warning naming the dead rule, and document the system-write workaround.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a passing create rule vouches for its parents).
+
+The paper's recommendation, taken as written: B undoes `FJS-D576`'s existence-hiding (Invariant 6).
+
+### <a id="fjs-d2228"></a>2026-11-16 · `FJS-D2228` — How does a policy tell a machine principal from a person, given `FJS-D1198`'s one gate — Expose the kind as `auth().userType` for policies; the ladder is unchanged.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (add a SERVICE rung), **C** (the scaffolded `getLevel` grades non-user kinds below USER).
+
+The paper's recommendation, taken as written: C breaks Basecamp's bots, B reopens `FJS-D1198`.
+
+### <a id="fjs-d2222"></a>2026-11-16 · `FJS-D2222` — `@@allow(all, ...)` also grades `postUpdate`, so a separate `@@allow(update, ...)` rolls back: warn, change, or document — A parse-time warning when an `all` rule and a separate `update` rule coexist with no `postUpdate` rule, naming the fix.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`all` stops covering `postUpdate`), **C** (document only).
+
+The paper's recommendation, taken as written: no caller's meaning moves.
+
+### <a id="fjs-d2218"></a>2026-11-16 · `FJS-D2218` — When `asSystem()` is refused by `@@require` (e.g. deleting a signed Note), what does the system caller get — Both: the denied trail entry and the throw.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (a denied trail entry with actor `system`, the answer unchanged), **B** (throw only).
+
+The paper's recommendation, taken as written: a non-system refused write already throws (`FJS-D1707`), so the system caller should not be the odd one out.
+
 ### <a id="fjs-d2205"></a>2026-11-16 · `FJS-D2205` — Q6 — Chat — Basic group chat to match Heylo.
 
 Asked in [`IDEAS/group-kit.md`](IDEAS/group-kit.md) § Open questions. **B** was picked over **A** (defer; members stay in WhatsApp, GroupMe or Discord).
@@ -5308,6 +5332,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d2227"></a>2026-11-16 · `FJS-D2227` — Should a keyword keep two rows' states in agreement — No keyword; document a one-sided `@@require` plus a service writing the other side.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a mirror/derived keyword).
+
+The paper's recommendation, taken as written: a mirror is a second origin of truth; reopen when a second app needs it.
 
 ### <a id="fjs-d1285"></a>2026-11-15 · `FJS-D1285` — What declares that a recurring wall-clock rule fires exactly once per occurrence across a DST gap and overlap: a schema attribute that owns the once-ness CAS, a caravan schedule read from a row, or no spelling — No litestone grammar; Caravan reads the rule off a row: `handle({ cron, timeZone })` is given a per-row source (`schedules(model, { cron: 'cronField', timeZone: 'zone.path' })`) and its existing `cron:<job>:<epoch-minute>` key is the once-ness. The CAS stays Caravan's, the schema only marks which columns are the cron and the zone (`@cron` validator beside `@zone`). Smallest new surface, keeps `FJS-D312`'s one owner; cost is that the wall-clock gap (spring's 01:30 fires at 02:00) is Caravan's rule and the schema cannot state "skip" versus "slide".
 
@@ -9247,6 +9277,48 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d2231"></a>2026-11-16 · `FJS-D2231` — Q8 — How does an operator start a revert on the box with Basecamp down — A signed `POST /revert`, and `outpost revert` is a thin wrapper that signs with the box's own `OUTPOST_SIGNING_KEY` (root-only, `/etc/outpost`) and calls it. Every route verifies against the hub's key today, so the verifier also accepts the box's own key on `/revert` alone.
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **C** was picked over **A** (`outpost revert <app> [release] [--with-todays-secrets]` calls the running service over a loopback-only, unsigned route, checked on the socket peer), **B** (the CLI acts on docker directly).
+
+The paper's recommendation, taken as written: it gives A's ergonomics without a new unsigned door, and whoever can read that key already has root and docker on the box. B races a live `/deploy` outside the chain and skips Caddy's route logic.
+
+### <a id="fjs-d2230"></a>2026-11-16 · `FJS-D2230` — Q7 — Which `app` term do both doors hash — `fli`'s mint hashes `BASECAMP_APP_ID` when the project has one, else `deploy.app_id`. Container names and box paths keep `deploy.app_id`.
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **D** was picked over **A** (`deploy:move` sets `deploy.app_id` to the Basecamp App id), **B** (Document the rule in `deploy:move` and `basecamp:app`, and enforce nothing), **C** (Both doors hash a slug).
+
+First ruled A, then corrected the same day, before anything was built: A rested on `deploy:move` writing the project's `.env`, and it writes only the box's env file. `deploy.app_id` also names the SSH door's container and paths, so setting it to a uuid renames that install. `fli basecamp:app` already writes `BASECAMP_APP_ID`, and `deploy:move` refuses without it, so a project that has met Basecamp holds the App id already. Hashing it gives the same Release id on both doors with no edit, and leaves container naming alone. B leaves the done-when to an operator's memory. A slug can be renamed or reused, so under C a Release id would stop naming one app.
+
+### <a id="fjs-d2224"></a>2026-11-16 · `FJS-D2224` — A service's `create` override has its body pre-validated against the model: what is the contract — Document it; an input that differs from the model goes through a custom method.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (skip pre-validation for overrides), **C** (the override declares its own input).
+
+The paper's recommendation, taken as written: the model is the one input contract, and a different shape is a different verb.
+
+### <a id="fjs-d2223"></a>2026-11-16 · `FJS-D2223` — A raw route has no caller-scoped client, and a refused Basic credential gets a Bearer challenge: document, or add a `ctx.db` — Document the `$setAuth(ctx.user)` / `$checkWrite` recipe (`ctx.app` exists per `FJS-D1663`) and make the refusal's challenge carry the scheme that was tried (`FJS-D475`'s verifier list).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (also add a caller-scoped `ctx.db` to every raw route).
+
+The paper's recommendation, taken as written: the recipe already works and adds no second way to reach the client.
+
+### <a id="fjs-d2219"></a>2026-11-16 · `FJS-D2219` — How does a file in `api/src/routes/` declare per-verb options like `{ body: 'stream' }` — `export const options = { PUT: { body: 'stream' } }`, read by `autoloadRoutes` and passed as `app.<verb>`'s third argument.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`app-layout` stops warning on a stream route in `app.ts`), **C** (a verb may `export { handler, body }` or a bare function).
+
+The paper's recommendation, taken as written: additive, no file moves, the same shape as `app.put`.
+
+### <a id="fjs-d2217"></a>2026-11-16 · `FJS-D2217` — Q5 — With Basecamp down, where does a revert get its secret values — Outpost copies the values from a container that holds exactly those refs. When the target's refs equal the live release's refs, or `_replaced`'s for a one-step revert, the values are already on the box in that container's env. Otherwise it refuses by name, offering *with today's secrets* (`FJS-D2182`'s exit, applied on the box). The live entry records the refs `/deploy` actually applied, never the revert target's.
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **A** was picked over **B** (Outpost caches each release's resolved values, 0600 under `/var/lib/outpost`. A revert works after any rotation, at the cost of a plaintext store of N releases at rest), **C** (Restore the image and the plain configuration, and always run the live container's secrets).
+
+The paper's recommendation, taken as written: it adds no store of plaintext and is exact or refused by name. B widens exposure from one live container to N cached releases. C runs a credential the release never saw, which `FJS-D2182` rules out.
+
+### <a id="fjs-d2216"></a>2026-11-16 · `FJS-D2216` — Q6 — How is a kept secret version stored — A new model, `VariableVersion`: `variableId`, `revision`, `secretValue @encrypted @immutable`, `revokedAt`, `@@unique([variableId, revision])`, `@@trail(audit)`. `Variable` keeps its current `revision`. A snapshot records a secret as `KEY@revision`, by key rather than row id, so an `fli` ref `KEY@3` and a Basecamp ref hash alike (`FJS-D2171`).
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **A** was picked over **B** (A `revision` counter on `Variable` and a JSON column of earlier ciphertexts), **C** (`previousSecretValue @encrypted`, enough for one step back).
+
+The paper's recommendation, taken as written: `FJS-D2182` already needs a version, a revoked marker and a kept value, which is an entity. `@encrypted` is per column, so B's array of ciphertext escapes Invariant 6. C cannot mark anything older than one step as revoked.
 
 ### <a id="fjs-d2193"></a>2026-11-15 · `FJS-D2193` — How does junction's array create pay its commits, given it keeps partial success — One transaction around the loop and a savepoint per row: partial success and the `{ data, errors }` envelope unchanged, one commit per request; a failed row's held announcements roll back with its savepoint (`FJS-D170`). The write lock is held for the whole array, so `bulkMax` becomes the bound on how long one request keeps other writers waiting, and a crash mid-array keeps none of it.
 
@@ -14365,6 +14437,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2225"></a>2026-11-16 · `FJS-D2225` — How does `{#virtual each}` take a huge source without copying — A declared lazy source `{ length, at(i) }` read only for the visible window, never copied; a real array still works.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (pin the Proxy-over-array form as supported, with a test).
+
+The paper's recommendation, taken as written: the contract is named rather than leaning on an `Array.isArray` accident, as every virtual-list library does.
+
 ### <a id="fjs-d2199"></a>2026-11-15 · `FJS-D2199` — Q8 — How the outline numbers an h4 — As an h3, 1.1, the way maid.tech's outline does.
 
 Asked in [`IDEAS/site-search.md`](IDEAS/site-search.md) § Open questions. **B** was picked over **A** (its own level, 1.2.1).
@@ -17678,6 +17756,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2226"></a>2026-11-16 · `FJS-D2226` — `keys()` cannot write a Linux-only binding: a per-binding platform filter, or document `byPlatform` — Document the `byPlatform` spelling with an empty Mac half, which already works, and keep the everywhere check strict.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (a per-binding platform filter).
+
+The paper's recommendation, taken as written: it already works, and the strict everywhere check stays one rule.
+
+### <a id="fjs-d2221"></a>2026-11-16 · `FJS-D2221` — Does the markdown renderer resolve relative URLs and inline images — An optional `resolveUrl(url, kind)` option; an image renders inline when the resolver answers a URL, a link otherwise; default output unchanged, still no raw HTML.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (leave it to the app (anvil rewrites the output)).
+
+The paper's recommendation, taken as written: additive, and the default output and the no-raw-HTML rule do not move.
 
 ### <a id="fjs-d2215"></a>2026-11-16 · `FJS-D2215` — Q7 — task-from-post — Gone.
 
@@ -22334,6 +22424,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2220"></a>2026-11-16 · `FJS-D2220` — Where do recurrence expansion in a named zone and an iCalendar writer live — Stay in grouppi until a second consumer.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (toolbelt, dependency-free (weekly/monthly, BYDAY, INTERVAL, UNTIL/COUNT, DST-correct)), **C** (adopt npm libraries behind a toolbelt wrapper).
+
+Against the recommendation (**A**): owner: keep both in grouppi until a second app needs them.
 
 ### <a id="fjs-d2206"></a>2026-11-16 · `FJS-D2206` — Q4 — SMS reminders — At cost, passed through.
 

@@ -132,20 +132,20 @@ Done when: a drive on the sink links a member, backfills, lands a socket
 frame, forwards a post, and a second member reads none of the first's private
 channels.
 
-- [ ] 1.1 `database chat` and the 8 mirror models with `@@db(chat)`; policies
+- [x] 1.1 `database chat` and the 8 mirror models with `@@db(chat)`; policies
   as the prototype has them, graded at Workbench's member level; initial
   migration under `db/migrations/chat/`.
-- [ ] 1.2 `Member.chatToken @secret`, `profileExternalId @system`,
+- [x] 1.2 `Member.chatToken @secret`, `profileExternalId @system`,
   `chatSyncedAt @system`; `profileExternalId` projected onto the principal
   (`api/src/principal.ts`).
-- [ ] 1.3 `api/src/providers/chat/` (index + sync) moved from the prototype,
+- [x] 1.3 `api/src/providers/chat/` (index + sync) moved from the prototype,
   `app.conduit.mirror(...)` bound, `CHAT_URL`/`CHAT_TOKEN` in `core/env.ts`,
   the sink as the default address in dev.
-- [ ] 1.4 Services for the 8 models, the `chat` service, the file proxy
+- [x] 1.4 Services for the 8 models, the `chat` service, the file proxy
   routes, the backfill job; `/ws` carries the chat channels beside
   notifications.
-- [ ] 1.5 The link card (paste a token, Connect, Disconnect) on `/laptop/`.
-- [ ] 1.6 The drive, on the sink.
+- [x] 1.5 The link card (paste a token, Connect, Disconnect) on `/laptop/`.
+- [x] 1.6 The drive, on the sink.
 
 ### Phase 2 — The core screen
 
@@ -153,9 +153,9 @@ Goal: read and write a channel, a DM and a thread from `/messages/`.
 Done when: a browser drive on the sink posts, replies, reacts, edits,
 deletes, pins, uploads a file and sees another person's post arrive unread.
 
-- [ ] 2.1 Resources `Channel`, `ChannelMember`, `Post`, `Thread`, `Reaction`,
+- [x] 2.1 Resources `Channel`, `ChannelMember`, `Post`, `Thread`, `Reaction`,
   `Profile`, `FileInfo`; nav entry *Messages*.
-- [ ] 2.2 `lib/chat.js` ported onto the mirror nouns — the one place the
+- [x] 2.2 `lib/chat.js` ported onto the mirror nouns — the one place the
   renames land (`roomId` → `channelExternalId`, `body` → `message`, user id →
   `profileExternalId`); agency and client code cut.
 - [ ] 2.3 Sidebar, room header, post list and item, composer, post editor.

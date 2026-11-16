@@ -16,7 +16,7 @@
 //   `fli deploy:rollback`  put the previous IMAGE back. No journal, no history,
 //                          no questions. Works on a target that has never
 //                          deployed through a journal at all.
-//   `fli deploy:revert`    restore the PAIR (Release, Generation), and refuse by
+//   `fli deploy:revert`    restore the PAIR (Release, configuration), and refuse by
 //                          name when it cannot.
 //
 // The second is what this file is. It never silently becomes the first: a
@@ -27,7 +27,7 @@
 //
 // Serving state is the PAIR. A deploy writes no `.env` on a target — setup seeds
 // it once and the operator owns it after (FJS-D1186) — so when the configuration
-// generation has moved, a revert genuinely cannot restore the pair; it can only put old code onto today's config. That is
+// hash has moved, a revert genuinely cannot restore the pair; it can only put old code onto today's config. That is
 // the documented Fly failure this separation exists to refuse, so it is refused,
 // and `--onto-current-configuration` is the operator saying they have read which keys
 // moved and want it anyway.
@@ -162,12 +162,12 @@ export function imageFromSteps(steps = []) {
  * @param serving      the transition currently serving
  * @param target       the Release row being restored
  * @param since        transitions between the target and now
- * @param generation   the configuration generation in force now
+ * @param servingConfigurationHash  the configuration hash in force now
  * @param image        the result of `imageFromSteps` for the target
  * @param force        { pivot, retention, configuration } — each explicitly given
  */
 export function revertRefusals({
-  serving, target, since = [], generation = null, image = null, servingImage = null,
+  serving, target, since = [], servingConfigurationHash = null, image = null, servingImage = null,
   inFlight = null, now = null, force = {},
 } = {}) {
   const out = []
@@ -202,9 +202,9 @@ export function revertRefusals({
 
   // The pair. A deploy writes no env file on a target, so this cannot be fixed here
   // and is not offered as one.
-  if (generation != null && target.generation != null && target.generation !== generation)
+  if (servingConfigurationHash != null && target.configurationHash != null && target.configurationHash !== servingConfigurationHash)
     add('configuration',
-      `release ${target.id} was minted at generation ${target.generation} and generation ${generation} is in force — ` +
+      `release ${target.id} was minted on configuration ${target.configurationHash.slice(0, 12)} and ${servingConfigurationHash.slice(0, 12)} is in force — ` +
       `reverting restores the code and NOT the configuration it ran with`,
       '--onto-current-configuration')
 
@@ -253,7 +253,7 @@ export function formatRevertPlan({ app, environment, serving, target, since = []
     if (serving && target.id === serving.releaseId &&
         image?.image && servingImage?.image && image.image !== servingImage.image)
       row('', 'same Release id as what is serving — the bytes differ, the id cannot')
-    row('configuration', `generation ${target.generation}`)
+    row('configuration', target.configurationHash ? target.configurationHash.slice(0, 12) : '—')
     row('deployed', target.createdAt ?? '—')
   }
   if (since.length) row('since then', `${since.length} transition(s)`)

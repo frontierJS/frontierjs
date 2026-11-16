@@ -24,7 +24,16 @@ without one.
 | socket | `mattermostSocketTarget({ address, id?, ref? })` — a `broker` target at `/api/v4/websocket`, one per person, dialed with that person's token (`FJS-D1153`) · `mattermostSocketDialect` — the `FrameDialect` `app.conduit.receive({ provider: 'mattermost', target: MATTERMOST_SOCKET_TARGET, dialect, apply })` takes (`FJS-D1127`); `mattermostFraming` beneath it |
 | types | Mattermost's own shapes (`Post`, `Channel`, `Team`, `User`, `ChannelMember`, `UserThread`, `Reaction`, `FileInfo`, `PostList`, `OutgoingWebhookPayload`, `SlashCommandPayload`) and the rows (`PostRow` …) |
 | sink | `sink.ts`; `/_sink/seed` answers the seeded ids; `POST /api/v4/channels/direct` makes a direct channel; `{ sinceLimit }` lowers `since`'s cap; `POST /api/v4/hooks/outgoing` and `POST /api/v4/commands` register what it delivers, `POST /api/v4/commands/execute` runs a command; `/api/v4/websocket` pushes what the REST writes did, `POST /_sink/socket` pushes a frame by hand |
-| drive | `bun run drive` — 49 rows, sink only |
+| client verbs | past the mirror, each `(mm, …)` bound `as: 'user'`: `pinPost` · `unpinPost` · `listPinned` · `markUnread` · `muteChannel` · `joinChannel` · `leaveChannel` · `createDirectChannel` · `createGroupChannel` · `followThread` · `unfollowThread` · `markAllThreadsRead` · `listDrafts` · `saveDraft` · `deleteDraft` · `listPreferences` · `savePost` · `unsavePost` · `favoriteChannel` · `unfavoriteChannel` · `listSavedPosts` (`PREFERENCE` names the two categories) · `getStatus` · `listStatuses` · `setStatus` · `setCustomStatus` · `clearCustomStatus` · `customStatusOf(user)` · `typingFrame` · `listCategories` · `createCategory` · `updateCategory` · `deleteCategory` · `reorderCategories` · `searchPosts` · `editHistory` · `setReminder`. Rows with no model claiming them (`DraftRow`, `PreferenceRow`, `StatusRow`, `CustomStatusRow`, `CategoryRow`, `UnreadRow`) are parsed in `mirror.ts` |
+| drive | `bun run drive` — 70 rows, sink only |
+
+## Team Edition, probed 2026-11-16
+
+A GET-only probe of a real Team Edition server (no write sent).
+
+- **Answers:** `/users/me`, teams, channels, members, posts, threads, preferences, status, drafts and sidebar categories.
+- **Refused for want of a license:** `GET /posts/scheduled/team/{id}` is 400 `api.scheduled_posts.license_error` ("Scheduled posts feature requires a license"); `GET /groups` is 501 `api.license_error` ("api endpoint requires a license"). `translate` reads any code ending `license_error` as kind `unlicensed`, not retryable, because the 501 would otherwise grade `server_error`. Conduit's own retry grading still sends a replayable GET to `/groups` more than once (the drive row records it); an app that wants one send asks without `replayable`.
+- **Unprobed:** every write, so the scheduled-posts writes under `/posts/schedule` are assumed to share the 400, and the `/teams/{id}/groups` and `/channels/{id}/groups` paths to share the 501. The sink answers all of them that way.
 
 ## The claim
 
@@ -142,8 +151,21 @@ too, and conduit hands the skip to the receiver's `gap` to start a backfill.
 | `channel_created` · `direct_added` · `group_added` | `{ channelExternalId }` — a channel the socket's person can now read, with no history in the frame |
 | `user_updated` | `{ profile: ProfileRow }` — `data.user` is an object here; another person's copy may blank the email, so the row leaves `email` out |
 
-Every other event (`typing`, `status_change`, `thread_updated`…) is *not an
-event* here: counted `ignored`, no receipt written.
+| `typing` | `{ profileExternalId, channelExternalId, rootExternalId? }` — the person is in `data.user_id`, the channel in `broadcast` |
+| `status_change` | `{ profileExternalId, status }` — pushed to that person only |
+| `draft_created` · `draft_updated` · `draft_deleted` | `{ draft: DraftRow }` — `data.draft` decoded from its JSON string |
+| `preferences_changed` · `preferences_deleted` | `{ preferences: PreferenceRow[] }` |
+| `sidebar_category_created` · `sidebar_category_updated` · `sidebar_category_deleted` | `{ categories: CategoryRow[] }` / `{ categoryId }` |
+| `sidebar_category_order_updated` | `{ order: string[] }` |
+| `post_unread` | `{ postExternalId, unread: UnreadRow }` |
+
+Every other event is *not an event* here: counted `ignored`, no receipt
+written. A `typing` frame is one receipt like any other, so a busy room
+writes one per keystroke burst.
+
+**Typing is sent over a socket the app holds.** `typingFrame(seq, channelId, parentId?)`
+builds the `user_typing` action; conduit's broker offers no outbound frame
+after the handshake, so the app writes it on a socket of its own.
 
 ## Errors
 
@@ -163,4 +185,11 @@ event* here: counted `ignored`, no receipt written.
 - **Incoming webhooks** (`POST /hooks/{id}`, a post with no user token) — the mirror app posts as its humans or as the bot through `/api/v4/posts`, so nothing here needs the unauthenticated door.
 - **Interactive messages and dialogs** (`trigger_id` spent on `POST /actions/dialogs/open`) — a `command` event carries the `triggerId`; opening a dialog with it is a verb with no caller yet.
 - **Login** (`POST /users/login`, the token in a response header) — the per-user token is a personal access token or a session the app obtained; obtaining it is the app's until a caller shows the shape.
-- **File bytes**, **search**, **mark read**, **typing** — proxied verbs with no caller yet.
+- **File bytes** — a proxied verb with no caller yet.
+- **Sending typing through conduit's held socket** — the broker has no outbound frame after the handshake; `typingFrame` is built and the app writes it.
+- **Scheduled posts and groups** — Team Edition refuses both (§ Team Edition); the sink refuses them the same way.
+
+## Unverified
+
+Written from memory of the Mattermost API, not read off a server; the sink matches the memory, so a drive row passing proves the connector and the sink agree, not Mattermost:
+`POST /users/{id}/posts/{post}/set_unread` body and the `post_unread` fields (`msg_count`, `mention_count`); a followed thread's first `last_viewed_at`; `updatedCategories` and `sidebar_category_*` data; the system category id `<type>_<user>_<team>`; the `DELETE` category answer; `dnd_end_time` in seconds; `status_change` going to the person alone; `user_updated` after a custom status; a group channel adding its creator, naming itself a hash of the sorted ids, the `teammate_ids` in `group_added`, and the three-to-eight limit; the draft routes and refusal ids; the reminder and search refusal ids; `edit_history` ordering and its author-only 404; a favorite also moving a channel into the Favorites category; search reading plain terms only (`from:`, `in:` are not read); a single-category `PUT` replacing the whole row; a new category landing after Favorites; the `typing` reply `{ status: 'OK' }`.

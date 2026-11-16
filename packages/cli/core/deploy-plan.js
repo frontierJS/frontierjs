@@ -29,6 +29,7 @@
 // direction, because a typo should not silently remove a step from either.
 
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
+import { crossesPivot } from '@frontierjs/outpost/release'
 
 /**
  * The plan's own format. In the transition's `plan` blob, because a resumed
@@ -107,7 +108,6 @@ export function planSteps(steps, { flag = {}, $ = {} } = {}) {
  *   app, env      one journal per host, and a host can hold several apps
  *   from → to     resuming a crashed R1→R2 must find the same row; R1→R2 and
  *                 R2→R1 must not
- *   generation    a rotated secret is a new intent, not a replay of the old one
  *   attempt       **the journal's count of prior transitions for this pair**
  *
  * The last one is the one a PLAN cannot answer, and it says so rather than
@@ -118,28 +118,13 @@ export function planSteps(steps, { flag = {}, $ = {} } = {}) {
  * provisional — which is exactly the kind of thing `--plan` exists to surface
  * before 1e writes a row under it.
  */
-export function transitionId({ kind, app, environment, fromReleaseId, releaseId, generation, attempt = 1 }) {
+export function transitionId({ kind, app, environment, fromReleaseId, releaseId, attempt = 1 }) {
   return occurrenceKey(kind, app, environment,
-    fromReleaseId ?? 'none', releaseId, String(generation), String(attempt))
+    fromReleaseId ?? 'none', releaseId, String(attempt))
 }
 
-/**
- * Whether a deploy passes the point after which a revert cannot restore the
- * database, from the verdict the target gave (`livePivot`, asked at `04c`).
- *
- * `unchanged` and `expand` leave N-1 able to serve, so no. **A contract, an
- * unknown and a missing verdict all count as crossing** while something is
- * serving: a classifier that did not run has not shown N-1 keeps working, and
- * reading its silence as an expand is how `--past-pivot` stops refusing the one
- * revert that would serve a migrated database to code that cannot read it. A
- * first deploy crosses nothing — there is no earlier Release to revert to, so
- * marking it would only make every later revert refuse on a pivot that never
- * stood between two releases.
- */
-export function crossesPivot({ pivot = null, fromReleaseId = null } = {}) {
-  if (!fromReleaseId) return false
-  return pivot !== 'unchanged' && pivot !== 'expand'
-}
+// One rule for both doors: Basecamp's rollback grades the same question.
+export { crossesPivot }
 
 /**
  * Build the journal rows. Writes nothing — that is 1e.
@@ -155,7 +140,6 @@ export function planTransition({
   kind = 'deploy',
   release,
   fromReleaseId = null,
-  generation    = 1,
   attempt       = 1,
   steps         = [],
   actor         = null,
@@ -170,12 +154,11 @@ export function planTransition({
 
   const id = transitionId({
     kind, app: release.app, environment: release.environment,
-    fromReleaseId, releaseId: release.id, generation, attempt,
+    fromReleaseId, releaseId: release.id, attempt,
   })
 
   const precondition = {
     serving:    fromReleaseId,
-    generation,
     schemaHash: release.schemaHash ?? null,
   }
 
@@ -186,8 +169,8 @@ export function planTransition({
     ordinal:      s.ordinal,
     status:       s.status,
     // Every step carries the same three-part check, which is what the model
-    // declares: the Release serving, the configuration generation, and the schema as
-    // at last applied. Drift refuses and names itself; nothing reconciles.
+    // declares: the Release serving and the schema as at last
+    // applied; a configuration change is a new Release, so `serving` carries it. Drift refuses and names itself; nothing reconciles.
     precondition,
     output:       null,
     startedAt:    null,
@@ -203,7 +186,6 @@ export function planTransition({
       environment:   release.environment,
       releaseId:     release.id,
       fromReleaseId,
-      generation,
       status:        'planned',
       isCrossingPivot:  isCrossingPivot ?? crossesPivot({ pivot, fromReleaseId }),
       pivot,
@@ -248,7 +230,7 @@ export function formatPlan({ transition, steps, release, configuration } = {}) {
   // A tag is not an identity, so an absent digest says so rather than showing
   // one as though it were.
   row('bytes', release.digest ? `${short(release.digest)}  (${release.imageRef ?? 'digest'})` : '— not built')
-  row('configuration', `${short(release.configurationHash)}  · generation ${transition.generation}` +
+  row('configuration', `${short(release.configurationHash)}` +
     (configuration ? `  · ${configuration.count} key(s), ${Object.keys(configuration.secretRefs ?? {}).length} secret ref(s)` : ''))
   row('schema', release.schemaHash ? short(release.schemaHash) : '— none')
   row('serving', transition.fromReleaseId ?? '— nothing recorded (no journal on the target yet)')

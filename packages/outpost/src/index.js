@@ -20,10 +20,11 @@ import { createDocker, createInspector } from './docker.js'
 import { createStaticServer }         from './serve.js'
 import { createReplicator }           from './replicate.js'
 import { createIngress }              from './ingress.js'
+import { createReleaseCache }         from './release-cache.js'
 
 function serveMachine(config) {
   const docker    = createDocker({ workDir: config.workDir, appsDir: config.appsDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile, deployKeyDir: config.deployKeyDir })
-  const inspector = createInspector({ hostFiles: config.hostFiles, appsDir: config.appsDir })
+  const inspector = createInspector({ hostFiles: config.hostFiles, appsDir: config.appsDir, releases: createReleaseCache({ dir: config.releasesDir }), exclusive: docker.exclusive })
   const replicator = createReplicator({ configPath: config.litestreamConfig, appsDir: config.appsDir, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, socketPath: config.litestreamSocket, hostDb: config.hostFiles?.db ?? null })
   // One ingress for the server and the re-point pass: its queue is what keeps
   // a deploy's route write and a re-point from deciding against the same read.

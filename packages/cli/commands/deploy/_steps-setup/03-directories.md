@@ -40,7 +40,7 @@ machine.run(`chmod 750 ${dbDir} 2>/dev/null || sudo chmod 750 ${dbDir}`)
 // ─── The env file, seeded once ────────────────────────────────────────────────
 // The local `.env.production` is copied up only when the target has none, and
 // never over one: from then on the server's copy is the operator's, and a revert
-// grades the configuration generation against it (FJS-D1186). Overwriting would
+// grades the configuration hash against it (FJS-D1186). Overwriting would
 // let a stale laptop file replace production secrets in silence.
 const { existsSync } = await import('fs')
 const { resolve } = await import('path')

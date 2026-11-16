@@ -3140,7 +3140,7 @@ describe('an app made from a blueprint', () => {
       values: { KV_PASSWORD: 'x' },
     }) as any
     const snap = await snapshotVariables(env.system, r)
-    await (env.system as any).variable.delete({ where: { id: snap.secretEnv.KV_PASSWORD } })
+    await (env.system as any).variable.delete({ where: { id: (snap.secretEnv.KV_PASSWORD as { variableId: string }).variableId } })
     await expect(releaseEnv(env.system, snap)).rejects.toThrow(/KV_PASSWORD/)
   })
 

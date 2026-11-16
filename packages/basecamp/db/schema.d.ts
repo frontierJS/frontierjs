@@ -98,6 +98,8 @@ export type DeployTrigger = 'button' | 'push' | 'laptop' | 'rollback' | 'rebind'
 
 export type DeploySwap = 'startFirst' | 'stopFirst'
 
+export type DeployPivot = 'unchanged' | 'expand' | 'contract' | 'unknown'
+
 export type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
 
 export type JobKind = 'oneShot' | 'scheduled'
@@ -381,6 +383,7 @@ export interface AppVolumeRestore {
  */
 export interface DeploymentRollback {
   isRestoringVolume?: boolean | null
+  withTodaysSecrets?: boolean | null
 }
 
 /**
@@ -3415,6 +3418,7 @@ export interface Variable {
   value?: string | null
   /** @encrypted */
   secretValue?: string | null
+  revision: number
   /** @version */
   version: number
   createdAt: string
@@ -3445,6 +3449,10 @@ export interface VariableUpdate {
   version: number
 }
 
+export interface VariableSystem {
+  revision?: number
+}
+
 export interface VariableWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
@@ -3454,6 +3462,7 @@ export interface VariableWhere extends WhereBase {
   isSecret?: boolean | WhereOp<boolean> | null
   value?: string | WhereOp<string> | null
   secretValue?: string | WhereOp<string> | null
+  revision?: number | WhereOp<number> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -3470,6 +3479,59 @@ export type VariableOrderBy =
 export interface VariableRelations {
   environment: Environment | null
   app: App | null
+  versions: VariableVersion[]
+}
+
+// ─── VariableVersion ─────────────────────────────────────────────
+
+export interface VariableVersion {
+  id: string
+  workspaceId: string
+  variableId: string
+  revision: number
+  /** @encrypted */
+  secretValue: string
+  revokedAt?: string | null
+  createdAt: string
+}
+
+export interface VariableVersionCreate {
+  id?: string
+  workspaceId?: string
+  variableId: string
+  revision: number
+  secretValue: string
+  revokedAt?: string | Date | null
+}
+
+export interface VariableVersionUpdate {
+  id?: string
+  workspaceId?: string
+  variableId?: string
+  revision?: number
+  secretValue?: string
+  revokedAt?: string | Date | null
+}
+
+export interface VariableVersionWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  variableId?: string | WhereOp<string> | null
+  revision?: number | WhereOp<number> | null
+  secretValue?: string | WhereOp<string> | null
+  revokedAt?: string | Date | WhereOp<string | Date> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  AND?: VariableVersionWhere[]
+  OR?:  VariableVersionWhere[]
+  NOT?: VariableVersionWhere
+}
+
+export type VariableVersionOrderBy =
+  | { [K in keyof Omit<VariableVersion, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<VariableVersion, never>]?: OrderDir }>
+
+export interface VariableVersionRelations {
+  variable: Variable | null
 }
 
 // ─── Domain ──────────────────────────────────────────────────────
@@ -4130,6 +4192,9 @@ export interface Deployment {
   imageSha256?: string | null
   swap?: DeploySwap | null
   swapReason?: string | null
+  releaseId?: string | null
+  schemaHash?: string | null
+  pivot?: DeployPivot | null
   platformVersion?: string | null
   previousDeploymentId?: string | null
   configSnapshot: unknown
@@ -4179,6 +4244,9 @@ export interface DeploymentSystem {
   imageSha256?: string | null
   swap?: DeploySwap | null
   swapReason?: string | null
+  releaseId?: string | null
+  schemaHash?: string | null
+  pivot?: DeployPivot | null
   platformVersion?: string | null
   previousDeploymentId?: string | null
   startedAt?: string | Date | null
@@ -4202,6 +4270,9 @@ export interface DeploymentWhere extends WhereBase {
   imageSha256?: string | WhereOp<string> | null
   swap?: DeploySwap | WhereOp<DeploySwap> | null
   swapReason?: string | WhereOp<string> | null
+  releaseId?: string | WhereOp<string> | null
+  schemaHash?: string | WhereOp<string> | null
+  pivot?: DeployPivot | WhereOp<DeployPivot> | null
   platformVersion?: string | WhereOp<string> | null
   previousDeploymentId?: string | WhereOp<string> | null
   configSnapshot?: unknown | WhereOp<unknown> | null
@@ -6549,6 +6620,7 @@ export interface ServiceTypes {
   environments: Environment
   apps: App
   variables: Variable
+  variableVersions: VariableVersion
   domains: Domain
   domainRoutes: DomainRoute
   appEditors: AppEditor
@@ -6801,7 +6873,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'conduit_targets' | 'conduit_receipts' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appCopy' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'flag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alert' | 'monitor' | 'monitorCheck' | 'monitorUptimeDay' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'conduit_targets' | 'conduit_receipts' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'variableVersion' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appCopy' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'flag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alert' | 'monitor' | 'monitorCheck' | 'monitorUptimeDay' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | 'refreshToken' | 'previousRefreshToken' | '@@gate'>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
@@ -6837,7 +6909,8 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate', {}, Required<Pick<ProjectCreate, 'workspaceId'>>>
   readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate', {}, Required<Pick<EnvironmentCreate, 'workspaceId'>>>
   readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'isDeployedOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem, Required<Pick<AppCreate, 'workspaceId'>>>
-  readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, '@@gate', {}, Required<Pick<VariableCreate, 'workspaceId'>>>
+  readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, 'revision' | '@@gate', VariableSystem, Required<Pick<VariableCreate, 'workspaceId'>>>
+  readonly variableVersion: TableClient<VariableVersion, VariableVersionCreate, VariableVersionUpdate, VariableVersionWhere, VariableVersionRelations, never, '@@gate', {}, Required<Pick<VariableVersionCreate, 'workspaceId'>>>
   readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | 'copyCertSecretId' | 'copyCertExpiresAt' | '@@gate', DomainSystem, Required<Pick<DomainCreate, 'workspaceId'>>>
   readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate', {}, Required<Pick<DomainRouteCreate, 'workspaceId'>>>
   readonly appEditor: TableClient<AppEditor, AppEditorCreate, AppEditorUpdate, AppEditorWhere, AppEditorRelations, never, '@@gate'>
@@ -6847,7 +6920,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly appDrill: TableClient<AppDrill, AppDrillCreate, AppDrillUpdate, AppDrillWhere, AppDrillRelations, never, '@@gate'>
   readonly appCopy: TableClient<AppCopy, AppCopyCreate, AppCopyUpdate, AppCopyWhere, AppCopyRelations, never, 'status' | 'asOf' | 'error' | 'refreshedAt' | 'certError' | '@@gate', AppCopySystem>
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate'>
-  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'imageSha256' | 'swap' | 'swapReason' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem, Required<Pick<DeploymentCreate, 'workspaceId'>>>
+  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'imageSha256' | 'swap' | 'swapReason' | 'releaseId' | 'schemaHash' | 'pivot' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem, Required<Pick<DeploymentCreate, 'workspaceId'>>>
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>
   readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate', JobSystem, Required<Pick<JobCreate, 'workspaceId'>>>
   readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere, JobRunRelations, never, '@@gate'>

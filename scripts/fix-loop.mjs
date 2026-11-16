@@ -98,7 +98,7 @@ import { dirname, join }            from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
 import { ROOT, LOG_DIR, logOf, runSession, printAttempt, appendLog, lastEntry, readLog, sentBack, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage, sourceOf, dayCapRefusal } from './headless.mjs'
-import { LANES_DIR, LINKED, MAX_LANES, openLanes, syncLane, applyPatch, lanePatch, harvest } from './lanes.mjs'
+import { LANES_DIR, LINKED, MAX_LANES, openLanes, syncLane, applyPatch, lanePatch, harvest, restoreOpen } from './lanes.mjs'
 
 // Not `LADDER`: frame-loop shares that one and starts low.
 const FIX_LADDER = [{ model: 'opus', effort: 'high' }]
@@ -154,6 +154,7 @@ let stopped   = false
 let spent     = 0
 let closed    = 0
 let blocked   = 0
+let conflicted = 0
 
 const usageAtStart = dryRun ? null : await planUsage()
 printPlanUsage('fix-loop', 'start', usageAtStart)
@@ -161,7 +162,7 @@ printPlanUsage('fix-loop', 'start', usageAtStart)
 if (lanes && !dryRun) await Promise.all(openLanes(lanes).map(worker))
 else await worker(null)
 
-console.log(`\n[fix-loop] ${closed} closed · ${blocked} waiting on a ruling · $${spent.toFixed(2)} spent · log ${LOG}`)
+console.log(`\n[fix-loop] ${closed} closed · ${blocked} waiting on a ruling${conflicted ? ` · ${conflicted} reopened on a harvest conflict` : ''} · $${spent.toFixed(2)} spent · log ${LOG}`)
 for (const d of dodged) console.log(`[fix-loop] ${d.id} needs a person: ${d.verdicts.length} attempts ended ${d.verdicts.join(', ')} and it is still open — \`--ids ${d.id}\` runs it anyway`)
 if (usageAtStart) printPlanUsage('fix-loop', 'end', await planUsage(), usageAtStart)
 console.log(`[fix-loop] finished ${new Date().toLocaleString()}`)
@@ -189,6 +190,7 @@ async function work(row, n, lane, tag) {
   if (dryRun) { console.log(await preBrief(row)); return }
 
   const brief   = await preBrief(row)
+  const open    = registerLine(row)
   const ladder = pinned ?? FIX_LADDER
   const patch   = trial
     ? join(LANES_DIR, 'patches', trial, `${row.id}.${ladder[0].model}.patch`)
@@ -230,10 +232,11 @@ async function work(row, n, lane, tag) {
     if (outcome !== 'failed') break
   }
 
-  if (lane) settle(lane, base, row, outcome, patch, tag)
+  if (lane) outcome = settle(lane, base, row, outcome, patch, tag, open)
   if (outcome === 'busy') console.log(`[${tag}] ${row.id} is another session's work in progress — skipped`)
 
   if (outcome === 'closed') closed++
+  if (outcome === 'conflict') conflicted++
   if (outcome === 'blocked') { blocked++; console.log(`[${tag}] ${row.id} waits on a question it filed — fli decide answers it`) }
   if (outcome === 'ruling') {
     console.log(`[${tag}] ${row.id} needs a ruling — stopping; answer it with fli decisions, then rerun`)
@@ -244,37 +247,59 @@ async function work(row, n, lane, tag) {
 // A row that ended carries its edits into the main tree; one that did not keeps
 // them as a patch, so a half-built fix never reaches the tree other lanes copy.
 // On the Dock every outcome is a patch, since the lane's register is a copy and
-// the close rides in the diff.
-function settle(lane, base, row, outcome, patch, tag) {
+// the close rides in the diff. Answers the outcome the row ends with.
+function settle(lane, base, row, outcome, patch, tag, open) {
   if (landing === 'dock') {
     const diff = lanePatch(lane, base)
     if (diff.length) { mkdirSync(dirname(patch), { recursive: true }); writeFileSync(patch, diff) }
     console.log(diff.length ? `[${tag}] ${row.id} ${outcome} — on the Dock, not merged: ${patch}` : `[${tag}] ${row.id} ${outcome} — nothing edited, nothing kept`)
-    return
+    return outcome
   }
   if (trial) {
     const diff = lanePatch(lane, base)
     mkdirSync(dirname(patch), { recursive: true })
     writeFileSync(patch, diff)
     console.log(`[${tag}] ${row.id} ${outcome} — kept, not merged: ${patch}`)
-    return
+    return outcome
   }
   if (['failed', 'ruling'].includes(outcome)) {
     const diff = lanePatch(lane, base)
     if (diff.length) { mkdirSync(join(LANES_DIR, 'patches'), { recursive: true }); writeFileSync(patch, diff) }
     if (diff.length) console.log(`[${tag}] ${row.id} edits kept for its next attempt: ${patch}`)
-    return
+    return outcome
   }
   const got = harvest(lane, base)
   appendLog(LOG, { lane: lane.n, row: row.id, harvest: got })
+  if (got.regenerated.length) console.log(`[${tag}] ${row.id} declarations conflicted and were regenerated from the merged sources in ${got.regenerated.join(', ')}`)
   if (got.dropped.length) console.log(`[${tag}] ${row.id} generated files not merged, regenerate them: ${got.dropped.join(', ')}`)
-  if (got.conflicts.length) {
-    writeFileSync(patch, lanePatch(lane, base))
-    console.log(`[${tag}] ✗ ${row.id} is ${outcome} in the register but its edits CONFLICT with the main tree in ${got.conflicts.join(', ')} — nothing merged; apply ${patch} by hand`)
-    return
-  }
+  if (got.conflicts.length) return unclose(row, outcome, open, patch, lanePatch(lane, base), got.conflicts, tag)
   rmSync(patch, { force: true })
   if (got.written.length) console.log(`[${tag}] ${row.id} merged into the main tree: ${got.written.join(', ')}`)
+  return outcome
+}
+
+// The session's close moved the row into § Closed through the linked register,
+// while its code is only in a patch: left so, the register says fixed and the
+// queue never offers the row again. The open row goes back as it was, and the
+// patch is what the next attempt starts from.
+function unclose(row, outcome, open, patch, diff, conflicts, tag) {
+  mkdirSync(dirname(patch), { recursive: true })
+  writeFileSync(patch, diff)
+  const where = `harvest conflicted with the main tree in ${conflicts.join(', ')}; the attempt's edits are ${patch}`
+  if (outcome !== 'closed' || !open || !restoreOpen(join(ROOT, row.file), row, open)) {
+    console.log(`[${tag}] ✗ ${row.id} is ${outcome} in the register but its edits CONFLICT — ${where}; apply it by hand`)
+    return outcome
+  }
+  try { fli(['amend', row.id, '--detail', `fix-loop: ${where}`]) }
+  catch (err) { console.log(`[${tag}] ${row.id} reopened, but the amend naming the patch failed: ${err.message.split('\n')[0]}`) }
+  appendLog(LOG, { id: row.id, severity: row.severity, cost: 0, outcome: 'conflict', ...(source && { source }) })
+  console.log(`[${tag}] ✗ ${row.id} reopened — ${where}`)
+  return 'conflict'
+}
+
+function registerLine(row) {
+  const line = readFileSync(join(ROOT, row.file), 'utf8').split('\n')[row.line - 1]
+  return line?.includes(`id="${row.id.toLowerCase()}"`) ? line : null
 }
 
 function laneNote() {

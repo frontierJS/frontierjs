@@ -1,0 +1,8 @@
+<script module>
+  // src/resources/ChannelMember.mesa -- the mirror's ChannelMember rows (`IDEAS/workbench-messages.md`).
+  // Mirrored: the rows are the chat server's, landed by the sync, and the schema's
+  // policies decide what a member lists; a write is forwarded as its caller.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const channelMembers = createResource('channelMembers', { model: 'ChannelMember' })
+</script>

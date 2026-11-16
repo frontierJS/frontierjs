@@ -2078,7 +2078,7 @@ function evalCheck(node, ctx, data, modelName, op) {
   if (key.some(v => v == null)) return true
 
   const schema = ctx.schema
-  const db     = ctx.readDb
+  const db     = ctx.readDbFor?.(rel.targetModel) ?? ctx.readDb
   // No schema and no connection is a caller evaluating a policy outside a
   // client — the old conservative answer is the only one available there.
   if (!schema || !db?.query) return true
@@ -2129,7 +2129,7 @@ function evalPath(node, ctx, data, modelName) {
   if (ctx._hiddenParents?.has(node.rel)) return null
 
   const schema = ctx.schema
-  const db     = ctx.readDb
+  const db     = ctx.readDbFor?.(rel.targetModel) ?? ctx.readDb
   if (!schema || !db?.query) return null
 
   const targetDef = schema.models?.find(m => m.name === rel.targetModel)
@@ -2160,7 +2160,7 @@ function evalSome(node, ctx, data, modelName, op) {
   if (key.some(v => v == null)) return false
 
   const schema = ctx.schema
-  const db     = ctx.readDb
+  const db     = ctx.readDbFor?.(modelName) ?? ctx.readDb
   if (!schema || !db?.query) return null
 
   const params = [...key]

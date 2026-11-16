@@ -67,7 +67,7 @@ export interface StripeInvoice {
   metadata?:      Record<string, string>
 }
 
-/** What `charge.refunded` carries. `amount_refunded` is the running total, not this refund. */
+/** What `charge.succeeded`, `charge.updated` and `charge.refunded` carry. `amount_refunded` is the running total, not this refund. */
 export interface StripeCharge {
   id:              string
   object:          'charge'
@@ -76,7 +76,33 @@ export interface StripeCharge {
   currency:        string
   payment_intent:  string | null
   refunded:        boolean         // true once the whole amount is back
+  /**
+   * An id unless the request expanded it; null until Stripe attaches it, which
+   * is often after `charge.succeeded`, announced by `charge.updated`.
+   */
+  balance_transaction?: string | StripeBalanceTransaction | null
   metadata?:       Record<string, string>
+}
+
+/**
+ * Money moving through an account's balance. On a charge, `fee` is what Stripe
+ * kept and `net` is `amount - fee`, all in minor units; `fee` is the only
+ * place Stripe states its fee on a charge.
+ */
+export interface StripeBalanceTransaction {
+  id:            string
+  object:        'balance_transaction'
+  amount:        number
+  fee:           number
+  net:           number
+  currency:      string
+  status:        'available' | 'pending'
+  type:          string            // charge | payment | refund | payout | …
+  /** The charge, refund or payout that moved the money. */
+  source:        string | null
+  available_on:  number            // unix seconds
+  created:       number
+  fee_details:   { amount: number; currency: string; type: string; description: string | null }[]
 }
 
 /** A v1 connected account, as far as onboarding needs it. */
@@ -134,6 +160,8 @@ export interface StripeEventObjects {
   'checkout.session.completed': StripeCheckoutSession
   'invoice.paid':               StripeInvoice
   'payment_intent.succeeded':   PaymentIntent
+  'charge.succeeded':           StripeCharge
+  'charge.updated':             StripeCharge
   'charge.refunded':            StripeCharge
 }
 

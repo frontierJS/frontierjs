@@ -26,6 +26,7 @@ import { readConfig }             from '../src/config.js'
 import { ensureCert }             from '../src/cert.js'
 import { ensureDeployKey, listDeployKeys } from '../src/deploy-key.js'
 import { createReplicator }       from '../src/replicate.js'
+import { createReleaseCache, revertPlan, MAX_RECORDS } from '../src/release-cache.js'
 import { createAnalytics, MAX_LINES, TOP } from '../src/analytics.js'
 import pkg                        from '../package.json' with { type: 'json' }
 import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync, readFileSync, readdirSync, rmSync } from 'node:fs'
@@ -51,6 +52,7 @@ const CONFIG = {
   caddyAdmin: 'http://127.0.0.1:1',
   deployKeyDir: mkdtempSync(join(tmpdir(), 'outpost-keys-')),
   appsDir: APPS,
+  releasesDir: mkdtempSync(join(tmpdir(), 'outpost-releases-')),
 }
 
 const DIGEST = 'sha256:' + 'ab'.repeat(32)
@@ -290,6 +292,27 @@ describe('what the machine is asked to do', () => {
     mkdirSync(`${CONFIG.workDir}/app-1/${context}`, { recursive: true })
     writeFileSync(`${CONFIG.workDir}/app-1/${context}/Dockerfile`.replace('//', '/'), 'FROM oven/bun\n')
   }
+
+  test('a build answers the hash of the release surface it was built beside', async () => {
+    mkdirSync(`${CONFIG.workDir}/app-1/db`, { recursive: true })
+    writeFileSync(`${CONFIG.workDir}/app-1/db/release.snapshot.md`, '# surface\n')
+    const fake = fakeRunner({
+      'docker image inspect': { stdout: DIGEST + '\n' },
+      'git -C':               { stdout: 'c0ffee\n' },
+      'test -d':              { exitCode: 1 },
+    })
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ appsDir: APPS, health: FAST, run: fake.run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }),
+      inspector: createInspector({ run: fake.run }),
+    })
+    const source = { kind: 'git', repo: 'https://git.test/acme/web.git', branch: 'main' }
+    const built  = await (await send(server, 'POST', '/build', { ...SLUGS, app_id: 'app-1', source, image: 'acme-web' })).json()
+    expect(built.schema_hash).toBe(createHash('sha256').update('# surface\n').digest('hex'))
+
+    rmSync(`${CONFIG.workDir}/app-1/db`, { recursive: true })
+    const bare = await (await send(server, 'POST', '/build', { ...SLUGS, app_id: 'app-1', source, image: 'acme-web' })).json()
+    expect(bare.schema_hash).toBeNull()
+  })
 
   test('a git deploy builds here, then runs what it built', async () => {
     // V1: the Outpost is co-resident with Basecamp, so building on the target
@@ -5699,5 +5722,236 @@ describe('a web build', () => {
     const res = await send(server, 'POST', '/web/build', { ...BODY, commit: '--upload-pack=x' })
     expect(res.status).toBe(500)
     expect(argv().some(c => c.startsWith('git ') || c.startsWith('docker '))).toBe(false)
+  })
+})
+
+describe('the release cache (FJS-D2178)', () => {
+  const cacheDir = () => mkdtempSync(join(tmpdir(), 'outpost-cache-'))
+  const D1 = 'sha256:' + '11'.repeat(32)
+  const D2 = 'sha256:' + '22'.repeat(32)
+
+  // A box whose daemon holds the images named in `held` and no others.
+  const boxWith = ({ held = [D1, D2], cache = createReleaseCache({ dir: cacheDir() }) } = {}) => {
+    const fake = fakeRunner({ 'docker image inspect': { stdout: 'id\n' } })
+    const run = async (argv, opts) => {
+      if (argv[1] === 'image' && argv[2] === 'inspect' && !held.includes(argv.at(-1)))
+        return { exitCode: 1, stdout: '', stderr: 'No such image' }
+      return fake.run(argv, opts)
+    }
+    const docker = createDocker({ appsDir: APPS, health: FAST, run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir })
+    const server = createOutpostServer({ ...CONFIG, releasesDir: null }, {
+      docker, inspector: createInspector({ run, releases: cache, exclusive: docker.exclusive }), releases: cache,
+      log: { warn() {}, error() {} },
+    })
+    return { server, cache, fake, run, docker }
+  }
+  const deploy = (server, body) => send(server, 'POST', '/deploy', { ...SLUGS, deployment_id: 'dep-1', app_id: 'app-1', image: 'fjs-app-1:rel', config: { env: {}, port: 3000 }, ...body })
+
+  test('a deploy records what ran, newest first, and drops every secret value', async () => {
+    const { server, cache } = boxWith()
+    const res = await deploy(server, {
+      digest: D1, release_id: 'rel-1',
+      config: { env: { NODE_ENV: 'production', DB_PASSWORD: 'hunter2-value' }, port: 3000 },
+      secret_refs: { DB_PASSWORD: 'DB_PASSWORD@3' },
+    })
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({ release_id: 'rel-1', recorded: true })
+    await (await deploy(server, { digest: D2, release_id: 'rel-2', config: { env: { NODE_ENV: 'production' }, port: 3000 } })).json()
+
+    const [newest, older] = cache.read('app-1')
+    expect(newest).toMatchObject({ release_id: 'rel-2', digest: D2, rollback: false, secret_refs: {} })
+    expect(older).toMatchObject({ release_id: 'rel-1', digest: D1, secret_refs: { DB_PASSWORD: 'DB_PASSWORD@3' } })
+    expect(older.config.env).toEqual({ NODE_ENV: 'production' })
+  })
+
+  test('no secret value reaches the file, whatever the key is called', () => {
+    const dir   = cacheDir()
+    const cache = createReleaseCache({ dir })
+    cache.record('app-1', { release_id: 'r', digest: D1, image: 'i', config: { env: { PLAIN: 'ok', TOKEN: 'sk-live-very-secret' } }, secret_refs: { TOKEN: 'TOKEN@2' } })
+    const text = readFileSync(join(dir, 'app-1.json'), 'utf8')
+    expect(text).not.toContain('sk-live-very-secret')
+    expect(text).toContain('TOKEN@2')
+    expect(text).toContain('PLAIN')
+  })
+
+  test('a ref that is a value is refused before it is written', async () => {
+    const { server, cache } = boxWith()
+    const res = await deploy(server, { digest: D1, release_id: 'rel-1', secret_refs: { TOKEN: 'line one\nline two' } })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain('never a value')
+    expect(cache.read('app-1')).toEqual([])
+  })
+
+  test('a failed deploy leaves no record', async () => {
+    const cache = createReleaseCache({ dir: cacheDir() })
+    const { server } = boxWith({ cache, held: [] })
+    const res = await deploy(server, { digest: D1, release_id: 'rel-1', rollback: true })
+    expect(res.status).toBe(409)
+    expect(cache.read('app-1')).toEqual([])
+  })
+
+  test('the cache is capped, so a box that is never pruned stops growing', () => {
+    const cache = createReleaseCache({ dir: cacheDir() })
+    for (let i = 0; i < MAX_RECORDS + 5; i++) cache.record('app-1', { release_id: `r${i}`, digest: D1, image: 'i', config: {} })
+    const kept = cache.read('app-1')
+    expect(kept.length).toBe(MAX_RECORDS)
+    expect(kept[0].release_id).toBe(`r${MAX_RECORDS + 4}`)
+  })
+
+  test('one Release deployed twice is one record', () => {
+    const cache = createReleaseCache({ dir: cacheDir() })
+    cache.record('app-1', { release_id: 'r', digest: D1, image: 'i', config: {} })
+    cache.record('app-1', { release_id: 'r', digest: D1, image: 'i', config: {} })
+    expect(cache.read('app-1').length).toBe(1)
+  })
+
+  test('an app id that is a path is refused', () => {
+    expect(() => createReleaseCache({ dir: cacheDir() }).record('../x', { digest: D1 })).toThrow(/not an app id/)
+  })
+
+  describe('a rollback is checked against the cache and the image (FJS-D2178)', () => {
+    const seeded = () => {
+      const box = boxWith()
+      box.cache.record('app-1', { release_id: 'rel-1', digest: D1, image: 'fjs-app-1:rel', config: { env: {} } })
+      return box
+    }
+
+    test('a cached Release id on another digest is refused by name, and nothing stops', async () => {
+      const { server, fake } = seeded()
+      const res = await deploy(server, { rollback: true, release_id: 'rel-1', digest: D2 })
+      expect(res.status).toBe(409)
+      const { error } = await res.json()
+      expect(error).toContain('rel-1')
+      expect(error).toContain(D1)
+      expect(error).toContain(D2)
+      expect(fake.calls.some(c => c[1] === 'stop' || c[1] === 'rename')).toBe(false)
+    })
+
+    test('an image gone from the machine is refused by name before the old one is touched', async () => {
+      const { server, fake } = boxWith({ held: [] })
+      const res = await deploy(server, { rollback: true, release_id: 'rel-9', digest: D1 })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toContain('is not on this machine')
+      expect(fake.calls.some(c => c[1] === 'stop' || c[1] === 'rename')).toBe(false)
+    })
+
+    test('a matching record proceeds and says it matched', async () => {
+      const { server, cache } = seeded()
+      const body = await (await deploy(server, { rollback: true, release_id: 'rel-1', digest: D1 })).json()
+      expect(body).toMatchObject({ cache: 'match', release_id: 'rel-1' })
+      expect(cache.read('app-1')[0]).toMatchObject({ release_id: 'rel-1', rollback: true })
+    })
+
+    test('no record is Basecamp\'s word alone, and the reply says cache: absent', async () => {
+      const { server } = boxWith()
+      const res = await deploy(server, { rollback: true, release_id: 'rel-unknown', digest: D1 })
+      expect(res.status).toBe(200)
+      expect((await res.json()).cache).toBe('absent')
+    })
+
+    test('a deploy that is not a rollback is not asked', async () => {
+      const { server } = seeded()
+      const body = await (await deploy(server, { release_id: 'rel-1', digest: D2 })).json()
+      expect(body.cache).toBeUndefined()
+    })
+  })
+
+  describe('a prune takes the records of the images it removed', () => {
+    const LISTING = 'fjs-app-1\t1\tsha256:old\t2026-11-01 10:00:00 -0700 MST\nfjs-app-1\t2\tsha256:new\t2026-11-03 10:00:00 -0700 MST'
+    test('answers how many, and keeps the record whose image stayed', async () => {
+      const cache = createReleaseCache({ dir: cacheDir() })
+      cache.record('app-1', { release_id: 'old', digest: 'sha256:old', image: 'i', config: {} })
+      cache.record('app-1', { release_id: 'new', digest: 'sha256:new', image: 'i', config: {} })
+      let removed = false
+      const run = async (argv) => {
+        if (argv[1] === 'ps') return { exitCode: 0, stdout: '', stderr: '' }
+        if (argv[1] === 'image' && argv[2] === 'ls') return { exitCode: 0, stdout: LISTING, stderr: '' }
+        if (argv[1] === 'image' && argv[2] === 'rm') { removed = true; return { exitCode: 0, stdout: 'Untagged: fjs-app-1:1\nDeleted: sha256:old\n', stderr: '' } }
+        if (argv[1] === 'image' && argv[2] === 'inspect') return removed && argv.at(-1) === 'sha256:old' ? { exitCode: 1, stdout: '', stderr: 'No such image' } : { exitCode: 0, stdout: 'id\n', stderr: '' }
+        return { exitCode: 0, stdout: '', stderr: '' }
+      }
+      const result = await createInspector({ run, releases: cache }).prune({ targets: ['unused_images'], keepImages: 1 })
+      expect(result.removed).toMatchObject({ images: 1, releases: 1 })
+      expect(cache.read('app-1').map(r => r.release_id)).toEqual(['new'])
+    })
+
+    test('a sweep that removed no image reads no record', async () => {
+      const cache = createReleaseCache({ dir: cacheDir() })
+      cache.record('app-1', { release_id: 'r', digest: 'sha256:x', image: 'i', config: {} })
+      const run = async () => ({ exitCode: 0, stdout: '', stderr: '' })
+      const result = await createInspector({ run, releases: cache }).prune({ targets: ['build_cache'] })
+      expect(result.removed.releases).toBe(0)
+      expect(cache.read('app-1').length).toBe(1)
+    })
+  })
+
+  describe('revertPlan', () => {
+    const rec = (release_id, refs, env = { NODE_ENV: 'production' }) => ({ release_id, digest: D1, image: 'i', config: { env }, secret_refs: refs, applied_at: 't', rollback: false })
+    const box = (release_id, refs, env) => ({ release_id, secret_refs: refs, env })
+
+    test('refs equal to the live container\'s copy its values and keep the plain env', () => {
+      const plan = revertPlan({
+        records: [rec('b', { K: 'K@3' }), rec('a', { K: 'K@3' })], targetReleaseId: 'a',
+        live: box('b', { K: 'K@3' }, { K: 'live-value', NODE_ENV: 'x' }),
+      })
+      expect(plan).toMatchObject({ env: { NODE_ENV: 'production', K: 'live-value' }, secret_refs: { K: 'K@3' }, secrets: 'matched', from: 'live' })
+    })
+
+    test('refs one revision apart are refused, offering today\'s secrets', () => {
+      const plan = revertPlan({
+        records: [rec('b', { K: 'K@4' }), rec('a', { K: 'K@3' })], targetReleaseId: 'a',
+        live: box('b', { K: 'K@4' }, { K: 'new-value' }),
+      })
+      expect(plan.env).toBeUndefined()
+      expect(plan.offer).toBe('with-todays-secrets')
+      expect(plan.refusal).toContain('K@3')
+      expect(plan.refusal).toContain('K@4')
+    })
+
+    test('the one-step case: the replaced container IS the target and holds its values', () => {
+      const plan = revertPlan({
+        records: [rec('b', { K: 'K@4' }), rec('a', { K: 'K@3' })], targetReleaseId: 'a',
+        live:     box('b', { K: 'K@4' }, { K: 'new-value' }),
+        replaced: box('a', { K: 'K@3' }, { K: 'old-value' }),
+      })
+      expect(plan).toMatchObject({ env: { K: 'old-value' }, secret_refs: { K: 'K@3' }, secrets: 'matched', from: 'replaced' })
+    })
+
+    test('today\'s secrets copy the live values and record the refs that actually ran', () => {
+      const plan = revertPlan({
+        records: [rec('b', { K: 'K@4' }), rec('a', { K: 'K@3' })], targetReleaseId: 'a', todaysSecrets: true,
+        live: box('b', { K: 'K@4' }, { K: 'new-value' }),
+      })
+      expect(plan).toMatchObject({ env: { K: 'new-value' }, secret_refs: { K: 'K@4' }, secrets: 'todays' })
+    })
+
+    test('today\'s secrets cannot invent a key the live container never held', () => {
+      const plan = revertPlan({
+        records: [rec('b', {}), rec('a', { K: 'K@3' })], targetReleaseId: 'a', todaysSecrets: true,
+        live: box('b', {}, {}),
+      })
+      expect(plan.refusal).toContain('K')
+      expect(plan.env).toBeUndefined()
+    })
+
+    test('a container whose env lacks a value its refs claim is not a source', () => {
+      const plan = revertPlan({
+        records: [rec('b', { K: 'K@3' }), rec('a', { K: 'K@3' })], targetReleaseId: 'a',
+        live: box('b', { K: 'K@3' }, {}),
+      })
+      expect(plan.offer).toBe('with-todays-secrets')
+    })
+
+    test('a release with no secrets needs no container\'s values', () => {
+      const plan = revertPlan({ records: [rec('b', {}), rec('a', {})], targetReleaseId: 'a', live: box('b', {}, {}) })
+      expect(plan).toMatchObject({ secrets: 'none', env: { NODE_ENV: 'production' } })
+    })
+
+    test('an unknown target, and the one already running, are refused by name', () => {
+      const live = box('b', {}, {})
+      expect(revertPlan({ records: [rec('b', {})], targetReleaseId: 'zz', live }).refusal).toContain('zz')
+      expect(revertPlan({ records: [rec('b', {})], targetReleaseId: 'b', live }).refusal).toContain('already running')
+    })
   })
 })

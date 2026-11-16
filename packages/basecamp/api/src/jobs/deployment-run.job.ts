@@ -70,12 +70,12 @@ import { cloudflareFor } from '../domain/site/site-preview.ts'
 import { SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, INTERRUPTED, releaseStatus, pushRow } from '../domain/release/release-record.ts'
 import { frontsOf, type Front } from '../domain/release/fronting.ts'
 import { publishStatic, overPublishLimit, type PublishFile } from '../domain/release/static-publish.ts'
-import { releaseEnv } from '../domain/release/variables.ts'
+import { releaseEnv, secretRefsOf } from '../domain/release/variables.ts'
 import { runtimeFor, routedHosts, routedPaths, routedRedirects, routeRemovals, noindexHosts, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor, releaseCopyOf, restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from './app-backup-run.job.ts'
 import { pushIngressCert } from './ingress-cert.job.ts'
 import type { App }         from '@frontierjs/junction'
-import type { StepStatus, DeploySwap } from '#db/schema.d.ts'
+import type { StepStatus, DeploySwap, DeployPivot } from '#db/schema.d.ts'
 
 // Row shapes come from the schema now, not from hand-written mirrors of it.
 // The old DeploymentRow / ServiceRow / StepRow / ServiceServerRow interfaces
@@ -96,6 +96,17 @@ function swapOf(data: Record<string, unknown> | undefined): Swapped {
   const swap = data?.swap === 'start-first' ? 'startFirst' : data?.swap === 'stop-first' ? 'stopFirst' : null
   if (!swap) return {}
   return { swap, swapReason: typeof data?.swap_reason === 'string' ? data.swap_reason : null }
+}
+
+/** What a reply says of the release against what it replaced. `pivot` is `null`
+ *  when the machine answered none, and absent from a reply that issued nothing
+ *  (a stub executor's). */
+type Reported = { schemaHash?: string | null; pivot?: DeployPivot | null }
+const PIVOTS = new Set<string>(['unchanged', 'expand', 'contract', 'unknown'])
+function reportedOf(data: Record<string, unknown> | undefined, asked: boolean): Reported {
+  const schemaHash = typeof data?.schema_hash === 'string' && data.schema_hash ? data.schema_hash : null
+  if (!asked) return { schemaHash }
+  return { schemaHash, pivot: typeof data?.pivot === 'string' && PIVOTS.has(data.pivot) ? data.pivot as DeployPivot : null }
 }
 
 // Whether a release may ask Outpost for start-first. Mirrors the conditions of
@@ -128,7 +139,7 @@ function runner(app: App) {
   // refusal at the call.
   async function step(
     deploymentId: string, stepId: string, status: StepStatus,
-    extra: { output?: string; digest?: string | null; commit?: string; containerPort?: number } & Swapped = {},
+    extra: { output?: string; digest?: string | null; commit?: string; containerPort?: number } & Swapped & Reported = {},
   ): Promise<void> {
     await deployments.call('stepStatus', deploymentId, {
       stepId, status,
@@ -137,6 +148,8 @@ function runner(app: App) {
       ...(extra.commit ? { commit: extra.commit } : {}),
       ...(extra.containerPort != null ? { containerPort: extra.containerPort } : {}),
       ...(extra.swap ? { swap: extra.swap, swapReason: extra.swapReason ?? null } : {}),
+      ...(extra.schemaHash ? { schemaHash: extra.schemaHash } : {}),
+      ...(extra.pivot !== undefined ? { pivot: extra.pivot } : {}),
     })
   }
 
@@ -321,6 +334,7 @@ function runner(app: App) {
         await step(deploymentId, s.id, 'success', {
           output: result.output, digest, commit: result.commit, containerPort: result.containerPort,
           swap: result.swap, swapReason: result.swapReason,
+          schemaHash: result.schemaHash, pivot: result.pivot,
         })
         current = undefined
       }
@@ -391,8 +405,17 @@ function runner(app: App) {
     const hosts   = await routedHosts(app.db, rel.appId)
     const paths   = await routedPaths(app.db, rel.appId)
     const redirects = await routedRedirects(app.db, rel.appId)
+    // Read now, not off `rel`: the Release id is minted when the build reports
+    // its digest, which is after this job read the row at its start, and an
+    // id sent null is a cache record no revert can find by name.
+    const minted = await (app.db as any).asSystem().deployment.findFirst({ where: { id: rel.id }, select: { releaseId: true } })
     return {
       deployment_id: rel.id,
+      // Outpost keeps what it is told and the digest it ran (`FJS-D2178`). The
+      // refs name each secret's pinned revision and never its value, which is
+      // in `config.env` below and which Outpost drops before it writes.
+      release_id:    minted?.releaseId ?? rel.releaseId ?? null,
+      secret_refs:   secretRefsOf(config as never),
       // The container is found by the APP, and this line is what makes that
       // true: outpost falls back to the deployment id when it is absent, so
       // every release started a container for the deployment while `/stop`,
@@ -522,7 +545,7 @@ function runner(app: App) {
       commit?:  string | null
       web?:     HeldWeb[]
     }
-  ): Promise<{ output?: string; digest: string | null; commit?: string; containerPort?: number } & Swapped> {
+  ): Promise<{ output?: string; digest: string | null; commit?: string; containerPort?: number } & Swapped & Reported> {
     const { deploy, service, executor, digest } = ctx
     const name  = step.name.toLowerCase()
 
@@ -579,7 +602,7 @@ function runner(app: App) {
         ports = `, EXPOSE ${exposed} where the App says ${runtime.containerPort}`
       }
       const output = note(reply) ?? (sha || file ? `built${sha ? ` ${sha}` : ''}${file}${ports}` : undefined)
-      return { output, digest: built ?? digest, commit, containerPort }
+      return { output, digest: built ?? digest, commit, containerPort, ...reportedOf(reply.data, false) }
 
     } else if (name.includes('pull')) {
       const reply = await executor.call('/pull', { image, digest }, { timeoutMs: PULL_TIMEOUT_MS })
@@ -646,7 +669,7 @@ function runner(app: App) {
       const reply = await executor.call('/deploy', await startBody(deploy, ctx.config, service, image, digest, ctx.commit ?? deploy.commitSha ?? null),
         { timeoutMs: DEPLOY_TIMEOUT_MS })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
-      return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest, ...swapOf(reply.data) }
+      return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest, ...swapOf(reply.data), ...reportedOf(reply.data, !reply.data?.stubbed) }
 
     } else if (name.includes('health')) {
       // Polled at Outpost's interval until the release's healthTimeout, the

@@ -18,7 +18,9 @@ title: Laptop
   // The page sends a catalog name or a lane number and never a path; the API
   // resolves what to delete (api services/laptop). Confirmation is in the row.
   import { laptop } from '../../resources/Laptop.mesa'
+  import { chat }   from '../../resources/Chat.mesa'
   import { bytes }  from '../../lib/bytes.js'
+  import { refreshSession } from '../../lib/session.js'
   import { ago, at } from '../../lib/datetime.js'
 
   import Dot                 from '@frontierjs/ui/components/display/Dot.mesa'
@@ -217,6 +219,36 @@ title: Laptop
   }
 
   $: { if (tab === 'services' && !svcReport && !svcLoading) loadServices() }
+
+  // The Messages link, on the Services tab. The token goes to the API once and
+  // is never read back: status answers who it is linked as, never the token.
+  let link        = null    // { server, profileExternalId, username, syncedAt }
+  let linkToken   = ''
+  let linkBusy    = false
+  let linkError   = null
+
+  async function loadLink() {
+    try { link = await chat.service.invoke('status'); linkError = null }
+    catch (err) { linkError = err.message }
+  }
+  async function connectLink() {
+    linkBusy = true
+    try {
+      await chat.service.invoke('connect', null, { token: linkToken })
+      linkToken = ''
+      await loadLink()
+      await refreshSession()
+      toasts.success(`Messages linked as @${link?.username}`)
+    } catch (err) { linkError = err.message }
+    finally { linkBusy = false }
+  }
+  async function disconnectLink() {
+    linkBusy = true
+    try { await chat.service.invoke('disconnect'); await loadLink(); await refreshSession() }
+    catch (err) { linkError = err.message }
+    finally { linkBusy = false }
+  }
+  $: { if (tab === 'services' && !link && !linkError) loadLink() }
 
   const signInTone = (s) => s.signIn.kind === 'cli' ? (s.signIn.installed ? 'info' : '') : (s.present ? 'success' : '')
   const signInWord = (s) => s.signIn.kind === 'cli' ? (s.signIn.installed ? 'installed' : 'not installed') : (s.present ? 'ready' : 'not set up')
@@ -624,6 +656,31 @@ title: Laptop
   <!-- ─── Services ─────────────────────────────────────────────────── -->
   <TabPanel id="services">
     <div class="panel">
+      <section class="lp-pane" aria-labelledby="laptop-pane-messages" data-link={link?.profileExternalId ? 'linked' : 'unlinked'}>
+        <header class="pane-head">
+          <div class="pane-title">
+            <h2 class="h6" id="laptop-pane-messages">Messages</h2>
+            {#if link?.profileExternalId}
+              <span class="text-sm text-muted">linked as @{link.username}{link.syncedAt ? ` · synced ${ago(link.syncedAt)}` : ' · syncing…'}</span>
+            {/if}
+          </div>
+        </header>
+        {#if linkError}
+          <article class="alert danger"><div class="alert-content">{linkError}</div></article>
+        {/if}
+        {#if link && !link.server}
+          <p class="text-sm text-muted">No team chat server is set on this machine. Set CHAT_URL for the API and restart it.</p>
+        {:else if link?.profileExternalId}
+          <Button size="sm" treatment="outlined" tone="danger" disabled={linkBusy} onclick={disconnectLink}>Disconnect</Button>
+        {:else if link}
+          <form class="cluster gap-sm" onsubmit={(e) => { e.preventDefault(); if (linkToken.trim()) connectLink() }}>
+            <input class="input" type="password" autocomplete="off" placeholder="Personal access token" aria-label="Team chat personal access token" bind:value={linkToken} />
+            <Button size="sm" type="submit" disabled={linkBusy || !linkToken.trim()}>Connect</Button>
+          </form>
+          <p class="text-sm text-muted">The token is checked against the server, then kept encrypted on this laptop and never shown again.</p>
+        {/if}
+      </section>
+
       {#if svcError}
         <article class="alert danger"><div class="alert-content">{svcError}</div></article>
       {/if}

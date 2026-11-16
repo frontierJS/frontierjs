@@ -87,7 +87,7 @@ title: Local repositories
   }
 
   // ─── dev and desktop, from a tile ──────────────────────────────────────
-  // The Chats screen's Run tab, one row each: the checkout's root app, or
+  // The Bench screen's Run tab, one row each: the checkout's root app, or
   // its only one. A checkout holding several apps starts from that tab.
 
   let rowsOf  = {}
@@ -187,7 +187,7 @@ title: Local repositories
       const told = out.lines.slice(1).filter(l => l.trim() && !l.startsWith('— exited')).slice(0, 6).join('\n')
       if (!out.running && told) return `${row.start} in ${p.name} stopped:\n${told}`
     } catch {}
-    return `${row.start} in ${p.name} is up but no page answered within a minute — its log is on the Chats screen's Run tab`
+    return `${row.start} in ${p.name} is up but no page answered within a minute — its log is on the Bench screen's Run tab`
   }
 
   async function halt(p, row) {

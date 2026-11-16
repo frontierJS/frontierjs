@@ -51,6 +51,18 @@ export const spec = {
   // (FJS-D2025). Absent, `charterDir()` takes fjs-prototypes/charter beside
   // this repo, where the prototypes are checked out.
   CHARTER_DIR: {},
+
+  // The team chat server (`IDEAS/workbench-messages.md`). Unset, chat is off:
+  // no socket is dialed and the mirrored models answer only what they hold.
+  // No default, on purpose -- a dev value that named a real server would post
+  // as whoever links. CHAT_TOKEN is the server's bot token, which nothing
+  // spends yet; every member's call spends their own Member.chatToken.
+  CHAT_URL:   {},
+  CHAT_TOKEN: {},
+
+  // The job queue's own file. Absent, db/workbench-jobs.db beside the main one,
+  // so a drive over a temp database does not queue into the owner's.
+  JOBS_DATABASE_URL: {},
 } satisfies EnvSpec
 
 export const env = defineEnv(spec)

@@ -1,0 +1,59 @@
+<script>
+  // components/chat/Composer.mesa -- the box a post is typed into. Enter sends,
+  // Shift+Enter breaks a line. Text only in this slice. A create is forwarded to
+  // the server as the reader and lands back by its key, and the post list draws
+  // it from that push, so a send clears the box and draws nothing itself.
+  import Icon from '../Icon.mesa'
+  import { posts } from '../../resources/Post.mesa'
+
+  export let channelId = null
+  export let placeholder = 'Message'
+
+  let text = ''
+  let sending = false
+  let error = null
+  let box = null
+
+  async function send() {
+    const message = text.trim()
+    if (!message || !channelId || sending) return
+    sending = true
+    error = null
+    try {
+      // pendingPostId lets the server collapse a retried send into one post, should the first answer be lost.
+      await posts.service.create({ channelExternalId: channelId, message, pendingPostId: crypto.randomUUID() })
+      text = ''
+    } catch (e) {
+      error = e.message
+    } finally {
+      sending = false
+      box?.focus()
+    }
+  }
+
+  function onKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send() }
+  }
+</script>
+
+<div class="composer" data-composer>
+  {#if error}<p class="text-sm text-danger" role="alert">{error}</p>{/if}
+  <div class="composer-box">
+    <textarea class="field composer-text" bind:this={box} bind:value={text} rows="1" {placeholder}
+              aria-label={placeholder} onkeydown={onKey}></textarea>
+    <button type="button" class="btn primary square composer-send" aria-label="Send" title="Send (Enter)" disabled={sending || !text.trim()} onclick={send}><Icon name="send" /></button>
+  </div>
+  <p class="text-xs text-muted composer-hint">Enter sends · Shift+Enter for a new line</p>
+</div>
+
+<style>
+  .composer { padding-inline: var(--chat-gutter, var(--space-md)); padding-block: 0 var(--space-md); }
+  /* One rounded field with its button inside it, ringed while it has focus. */
+  .composer-box { display: flex; align-items: flex-end; gap: var(--space-xs); padding: var(--space-2xs) var(--space-2xs) var(--space-2xs) var(--space-sm); border: var(--border-width) solid var(--rule); border-radius: var(--radius-lg, var(--space-sm)); background: var(--surface); }
+  .composer-box:focus-within { border-color: var(--rule-strong); box-shadow: var(--shadow-sm); }
+  .composer-text { flex: 1; resize: none; min-block-size: 0; max-block-size: 40vh; field-sizing: content; border: 0; background: none; box-shadow: none; padding-inline: 0; }
+  .composer-text:focus, .composer-text:focus-visible { outline: none; box-shadow: none; }
+  .composer-send { border-radius: var(--pill-radius); }
+  .composer-send:disabled { opacity: 0.35; }
+  .composer-hint { margin: var(--space-2xs) 0 0; }
+</style>

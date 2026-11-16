@@ -76,7 +76,7 @@ export async function drillApp(app: App, opts: {
   let databases: string[], env: Record<string, string>
   try {
     databases = await replicaDatabases(app, replica.dest, replica.entry.path)
-    env       = await releaseEnv(app.db as never, (release.configSnapshot ?? {}) as never)
+    env       = await releaseEnv(app.db as never, (release.configSnapshot ?? {}) as never, { todaysSecrets: true })
   } catch (err) { return failed((err as Error).message) }
   if (!databases.length) return failed(`The replica at ${replica.dest.bucket}/${replica.entry.path} holds no database yet`)
 

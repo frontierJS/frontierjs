@@ -348,7 +348,7 @@ title: Home
   <section class="home-panel home-wide" id="home-pins">
     <h2><a href="/workbench/">Pinned checkouts</a></h2>
     {#if loaded && !pins.length}
-      <EmptyState title="Nothing pinned">Pin a checkout on the Chats screen to talk to Claude about it.</EmptyState>
+      <EmptyState title="Nothing pinned">Pin a checkout on the Bench screen to talk to Claude about it.</EmptyState>
     {:else}
       <div class="home-pins" style="--grid-min: 16rem">
         {#each active as p (p.id)}

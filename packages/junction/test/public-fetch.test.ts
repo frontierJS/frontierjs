@@ -7,7 +7,7 @@
 // connect; these rows say what the fetch does once it has, and every refusal is
 // paired with the acceptance of an otherwise identical request (`FJS-351`).
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { fetchPublicJson, PublicFetchError, PublicUrlError } from '../src/core/public-url.ts'
+import { fetchPublicJson, fetchPublicText, PublicFetchError, PublicUrlError } from '../src/core/public-url.ts'
 
 let server: ReturnType<typeof Bun.serve>
 const json = (body: unknown, headers: Record<string, string> = {}) =>
@@ -22,6 +22,7 @@ beforeAll(() => {
     if (path === '/ld')        return new Response('{"a":1}', { headers: { 'content-type': 'application/ld+json; charset=utf-8' } })
     if (path === '/big')       return json({ pad: 'x'.repeat(2_000) })
     if (path === '/html')      return new Response('<p>hi</p>', { headers: { 'content-type': 'text/html' } })
+    if (path === '/bightml')   return new Response('x'.repeat(2_000), { headers: { 'content-type': 'text/html; charset=utf-8' } })
     if (path === '/broken')    return new Response('{nope', { headers: { 'content-type': 'application/json' } })
     if (path === '/500')       return new Response('{}', { status: 500, headers: { 'content-type': 'application/json' } })
     if (path === '/slow')      { await Bun.sleep(600); return json({ late: true }) }
@@ -120,5 +121,37 @@ describe('every hop is graded', () => {
     const spy = (async (_: unknown) => { called = true; return json({}) }) as typeof fetch
     expect(await refusal(fetchPublicJson('https://10.0.0.5/x', { fetch: spy }))).toBeInstanceOf(PublicUrlError)
     expect(called).toBe(false)
+  })
+})
+
+// FJS-4372: an HTML page a stranger chose (a community's rules page, hashed to
+// flag a change) gets the same walk as a JSON document, not assertPublicUrl
+// followed by a plain fetch that resolves the name again and reads it whole.
+describe('fetchPublicText', () => {
+  it('reads a text body with its max-age, and refuses a type that is not text', async () => {
+    const got = await fetchPublicText(at('/html'), OPEN)
+    expect(got).toEqual({ url: at('/html'), status: 200, text: '<p>hi</p>', maxAge: null })
+    const err = await refusal(fetchPublicText(at('/doc'), OPEN))
+    expect(err).toBeInstanceOf(PublicFetchError)
+    expect(err!.message).toContain('application/json')
+  })
+  it('a body over maxBytes, and the same body under a larger one', async () => {
+    const err = await refusal(fetchPublicText(at('/bightml'), { ...OPEN, maxBytes: 500 }))
+    expect(err).toBeInstanceOf(PublicFetchError)
+    expect(err!.message).toContain('500 bytes')
+    expect((await fetchPublicText(at('/bightml'), { ...OPEN, maxBytes: 5_000 })).text).toHaveLength(2_000)
+  })
+  it('refuses a redirect to a private address, and follows one to a public address', async () => {
+    const stub = (to: string) => (async (input: string | URL | Request) => {
+      const u = String(input)
+      return u.startsWith('https://93.184.216.34')
+        ? new Response(null, { status: 302, headers: { location: to } })
+        : new Response(`reached ${u}`, { headers: { 'content-type': 'text/plain; charset=utf-8' } })
+    }) as typeof fetch
+    const err = await refusal(fetchPublicText('https://93.184.216.34/rules', { fetch: stub('https://127.0.0.1/admin') }))
+    expect(err).toBeInstanceOf(PublicUrlError)
+    expect(err!.message).toContain('private address')
+    const got = await fetchPublicText('https://93.184.216.34/rules', { fetch: stub('https://93.184.216.35/rules') })
+    expect(got.text).toBe('reached https://93.184.216.35/rules')
   })
 })

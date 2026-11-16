@@ -1,0 +1,11 @@
+<script module>
+  // src/resources/Chat.mesa — the Resource layer for a member's link to the
+  // team chat server (api services/chat): status, connect, disconnect.
+  //
+  // No model: the link is two @system columns on Member, written only by the
+  // service after the server has said whose the token is. The screen that
+  // shows the chat itself is Messages (`IDEAS/workbench-messages.md` Phase 2).
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const chat = createResource('chat', { model: null })
+</script>

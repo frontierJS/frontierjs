@@ -89,11 +89,11 @@ describe('migrationPlan', () => {
   test('every step ends by moving the format, guarded on the one it came from', () => {
     const plan = migrationPlan(1, { machine: MACHINE })
     const ends = plan.statements.filter(st => st.name.endsWith(':format'))
-    expect(ends.map(st => st.name)).toEqual(['1→2:format', '2→3:format', '3→4:format', '4→5:format', '5→6:format'])
+    expect(ends.map(st => st.name)).toEqual(['1→2:format', '2→3:format', '3→4:format', '4→5:format', '5→6:format', '6→7:format'])
     expect(plan.statements.at(-1)).toBe(ends.at(-1))
     for (const st of ends)
       expect(st.sql).toMatch(/UPDATE .* SET "formatVersion" = \? WHERE "id" = 'journal' AND "formatVersion" = \?/)
-    expect(ends.map(st => st.params)).toEqual([[2, 1], [3, 2], [4, 3], [5, 4], [6, 5]])
+    expect(ends.map(st => st.params)).toEqual([[2, 1], [3, 2], [4, 3], [5, 4], [6, 5], [7, 6]])
   })
 
   test('3 → 4 needs the machine it records, and refuses without one', () => {
@@ -108,7 +108,8 @@ describe('migrationPlan', () => {
 
   // Invariant 8, and it costs nothing to keep asking.
   test('no statement interpolates a value', () => {
-    for (const s of migrationPlan(1, { machine: MACHINE }).statements)
+    // A frozen CREATE TABLE carries the id default's own `'-' ||`, which is DDL.
+    for (const s of migrationPlan(1, { machine: MACHINE }).statements.filter(st => !/^CREATE TABLE/.test(st.sql)))
       expect(s.sql).not.toMatch(/'\s*\|\|/)
   })
 })
@@ -128,8 +129,8 @@ describe('opening a journal that is behind', () => {
     const db = atFormat1(`${dir}/b.db`)
     await clientFor(db).open({ app: 'shop', host: 'deploy@prod' })
     const d = new Database(db)
-    d.exec(`INSERT INTO "${TABLE.transition}" ("id","kind","app","environment","releaseId","generation","status","isCrossingPivot","plan")
-            VALUES ('t2','pause','shop','production','r1',1,'running',0,'[]')`)
+    d.exec(`INSERT INTO "${TABLE.transition}" ("id","kind","app","environment","releaseId","status","isCrossingPivot","plan")
+            VALUES ('t2','pause','shop','production','r1','running',0,'[]')`)
     d.close()
     expect(rows(db, `SELECT "kind" AS k FROM "${TABLE.transition}" WHERE "id" = 't2'`)[0].k).toBe('pause')
   })
@@ -165,6 +166,24 @@ describe('opening a journal that is behind', () => {
     expect(rows(db, `SELECT "hash", "values" FROM "${TABLE.configuration}"`)).toEqual([{ hash: 'bh', values: '{"LOG":"info"}' }])
     expect(rows(db, `SELECT "configurationHash" AS h FROM "${TABLE.release}"`)[0].h).toBe('bh')
     expect(rows(db, `SELECT name FROM sqlite_master WHERE name = 'binding_set'`)).toEqual([])
+  })
+
+  // Two generations that held one hash collapse onto the hash's unique key, and
+  // the earlier row is the one that stays.
+  test('6 → 7 drops the generation and keeps the first row of a repeated hash', async () => {
+    const db = atFormat1(`${dir}/gen.db`)
+    const j  = clientFor(db)
+    await j.send(migrationPlan(1, { to: 6, machine: MACHINE }).statements, { foreignKeys: false })
+    const d = new Database(db)
+    d.exec(`INSERT INTO "${TABLE.configuration}" ("id","app","environment","generation","hash","values","secretRefs","createdAt")
+            VALUES ('c2','shop','production',2,'other','{}','{}','2026-01-02T00:00:00.000Z'),
+                   ('c3','shop','production',3,'bh','{}','{}','2026-01-03T00:00:00.000Z')`)
+    d.close()
+    await j.send(migrationPlan(6, { to: 7 }).statements, { foreignKeys: false })
+    expect(rows(db, `SELECT "id" FROM "${TABLE.configuration}" ORDER BY "id"`)).toEqual([{ id: 'c1' }, { id: 'c2' }])
+    for (const t of [TABLE.release, TABLE.configuration, TABLE.transition])
+      expect(rows(db, `PRAGMA table_info("${t}")`).map(c => c.name)).not.toContain('generation')
+    expect(rows(db, `SELECT "id" FROM "${TABLE.transition}"`)).toEqual([{ id: 't1' }])
   })
 
   test('the indexes come back with the table', async () => {

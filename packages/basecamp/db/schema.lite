@@ -407,6 +407,9 @@ type AppVolumeRestore {
 /// instead, discarding what the app has written since (`FJS-D1796`).
 type DeploymentRollback {
   isRestoringVolume Boolean?
+  // Put back a release whose secret a rotation revoked, with today's value in
+  // its place; absent, that rollback is refused by name (FJS-D2182).
+  withTodaysSecrets Boolean?
 }
 
 /// What `apps.restoreReplica` accepts: the machine whose volume takes the
@@ -641,6 +644,8 @@ enum DeployTrigger  { button push laptop rollback rebind publish freeze observed
 // How a release's container replaced the live one, as Outpost answered:
 // `startFirst` overlapped the two, `stopFirst` left a gap (`FJS-D1846`).
 enum DeploySwap     { startFirst stopFirst }
+// A release against what it replaced, as Outpost's classifier answered.
+enum DeployPivot    { unchanged expand contract unknown }
 enum StepStatus     { pending running success failed skipped }
 enum JobKind        { oneShot scheduled }
 enum JobStatus      { pending running failed cancelled }
@@ -2165,6 +2170,12 @@ model Variable {
   // Absent from every read but a system one; the release reads it when it
   // sends `/deploy`, and nothing else does.
   secretValue   String?      @encrypted
+  // Which secret value `secretValue` is. A release pins `KEY@revision`, and a
+  // rotation files the value it replaced as a VariableVersion at the old
+  // revision, so a rollback puts back the credential it shipped with or
+  // refuses by name. A plain variable stays at 1: its value is in the snapshot.
+  revision      Int          @default(1) @system
+  versions      VariableVersion[]
 
   version       Int          @version
   createdAt     DateTime     @default(now())
@@ -2187,6 +2198,28 @@ model Variable {
   @@unique([environmentId, key], where: appId == null)
   @@unique([appId, key], nullsDistinct: true)
   @@index([environmentId])
+}
+
+// A secret value a rotation replaced, kept so a release pinned to it can be
+// told apart from today's (FJS-D2182, FJS-D2216). The current value is never
+// here: it is `Variable.secretValue` at `Variable.revision`, one place, so a
+// writer that creates a Variable without knowing this table still leaves its
+// value findable. A row is born revoked, because a rotation is what writes
+// it, and a rollback that would restore it refuses by name.
+model VariableVersion {
+  id          String    @id @default(uuid())
+  workspaceId String    @immutable
+  variableId  String    @immutable
+  variable    Variable  @relation(fields: [variableId], references: [id], onDelete: Cascade)
+  revision    Int       @immutable
+  secretValue String    @encrypted @immutable
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  // Reading one is reading the variable; only a system read has the value.
+  @@gate(2.4.4.4)
+  @@trail(audit)
+  @@unique([variableId, revision])
 }
 
 // A hostname the App answers on, and the certificate that terminates it.
@@ -2568,6 +2601,18 @@ model Deployment {
   // stop-first release could not overlap; null on one nobody asked to.
   swap                 DeploySwap?  @system
   swapReason           String?      @system
+  // The Release this row is: one content-addressed id for the bytes, the
+  // configuration and the schema surface, minted by the rule `fli deploy`
+  // mints with (`FJS-D2171`). Null until the release's digest is known.
+  releaseId            String?      @system
+  // The hash of the committed release surface of the tree Outpost built this
+  // image from; null for a pulled image, which has no checkout.
+  schemaHash           String?      @system
+  // What Outpost's classifier said of this release against what was serving
+  // (`FJS-D2044`). Null only where it was not asked: a first deploy, a
+  // rollback, a row from before the column. A release that had something to
+  // replace and got no verdict is `unknown`, which crosses (`FJS-D2041`).
+  pivot                DeployPivot? @system
   // The vendor's version id on a platform release, as the vendor answered it.
   // A rollback promotes it, so a caller who could write it picks what goes live.
   platformVersion      String?      @system

@@ -50,7 +50,6 @@ CREATE TABLE IF NOT EXISTS "release" (
   "digest" TEXT,
   "imageRef" TEXT,
   "configurationHash" TEXT NOT NULL,
-  "generation" INTEGER NOT NULL,
   "schemaHash" TEXT NOT NULL,
   "retentionUntil" TEXT,
   "audienceKey" TEXT NOT NULL DEFAULT 'everyone',
@@ -60,24 +59,22 @@ CREATE TABLE IF NOT EXISTS "release" (
 CREATE INDEX IF NOT EXISTS "idx_release_app_environment_createdAt" ON "release" ("app", "environment", "createdAt");
 CREATE INDEX IF NOT EXISTS "idx_release_retentionUntil" ON "release" ("retentionUntil");
 
--- The configuration an Environment provides, as it stood at one generation.
+-- The configuration an Environment provides, as it stood when a Release was
+-- minted against it, addressed by its hash.
 -- 
--- Mutable but generational: serving state is the pair (Release, Generation),
--- and reverting a Release onto today's configuration is the documented failure this
--- separation exists to refuse.
+-- Reverting a Release onto today's configuration is the documented failure
+-- this record exists to refuse.
 CREATE TABLE IF NOT EXISTS "configuration_set" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "app" TEXT NOT NULL,
   "environment" TEXT NOT NULL,
-  "generation" INTEGER NOT NULL,
   "hash" TEXT NOT NULL,
   "values" TEXT NOT NULL DEFAULT '{}',
   "secretRefs" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "createdBy" TEXT,
-  UNIQUE ("app", "environment", "generation")
+  UNIQUE ("app", "environment", "hash")
 ) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_configuration_set_app_environment_hash" ON "configuration_set" ("app", "environment", "hash");
 
 -- One attempt to move serving state.
 -- 
@@ -94,7 +91,6 @@ CREATE TABLE IF NOT EXISTS "transition" (
   "environment" TEXT NOT NULL,
   "releaseId" TEXT NOT NULL,
   "fromReleaseId" TEXT,
-  "generation" INTEGER NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'planned',
   "isCrossingPivot" INTEGER NOT NULL DEFAULT 0,
   "pivot" TEXT,

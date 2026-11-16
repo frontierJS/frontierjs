@@ -49,6 +49,9 @@ export function readConfig(env?: NodeJS.ProcessEnv): {
      *  StateDirectory, so the sandbox lets it and it exists on a box the
      *  install built. */
     backupDir: string;
+    /** An app's last release records, `<app_id>.json` (`FJS-D2178`). Inside the
+     *  unit's StateDirectory, where the sandbox lets it write. */
+    releasesDir: string;
     /** The Litestream unit's config, which `/replicate` rewrites whole. The
      *  install writes it `dbs: []` and the unit reads it at start. */
     litestreamConfig: string;

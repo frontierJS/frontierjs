@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-183 definitions · 77 models · 1 view · 45 types · 60 enums · 0 other
+185 definitions · 78 models · 1 view · 45 types · 61 enums · 0 other
 ```
 
 ## Definitions
@@ -61,6 +61,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Environment` | model |
 | `App` | model |
 | `Variable` | model |
+| `VariableVersion` | model |
 | `Domain` | model |
 | `DomainRoute` | model |
 | `AppEditor` | model |
@@ -139,6 +140,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `DeployStatus` | enum |
 | `DeployTrigger` | enum |
 | `DeploySwap` | enum |
+| `DeployPivot` | enum |
 | `StepStatus` | enum |
 | `JobKind` | enum |
 | `JobStatus` | enum |
@@ -250,6 +252,7 @@ validates, and a select that silently drops an option.
 - `DeployStatus` — `pending`, `building`, `success`, `failed`, `cancelled`, `rolledBack`
 - `DeployTrigger` — `button`, `push`, `laptop`, `rollback`, `rebind`, `publish`, `freeze`, `observed`
 - `DeploySwap` — `startFirst`, `stopFirst`
+- `DeployPivot` — `unchanged`, `expand`, `contract`, `unknown`
 - `StepStatus` — `pending`, `running`, `success`, `failed`, `skipped`
 - `JobKind` — `oneShot`, `scheduled`
 - `JobStatus` — `pending`, `running`, `failed`, `cancelled`
@@ -1018,6 +1021,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:2 create:4 update:4 delete:4` · version field `version` · closed (`additionalProperties: false`)
 - relation `environment` — belongsTo `Environment` via `environmentId` · on delete Cascade
 - relation `app` — belongsTo `App` via `appId` · on delete Cascade · optional
+- relation `versions` — hasMany `VariableVersion`
 - capabilities — `Variable.create` · `Variable.update` · `Variable.delete` · read is not graded
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -1030,9 +1034,26 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `isSecret` | `boolean` = `false` | — | — | — | — |
 | `value` | `string`? | — | — | `minLength: 0` `maxLength: 10000` | — |
 | `secretValue` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `revision` | `integer` = `1` | — | — | `x-litestone-kind` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `key` · not accepted — `id`, `version`
+
+### `VariableVersion`
+
+- gate `read:2 create:4 update:4 delete:4` · closed (`additionalProperties: false`)
+- relation `variable` — belongsTo `Variable` via `variableId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
+| `variableId` | `string` | yes | — | — | — |
+| `revision` | `integer` | yes | — | — | — |
+| `secretValue` | `string` | yes | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `revokedAt` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `variableId`, `revision`, `secretValue` · not accepted — `id`
 
 ### `Domain`
 
@@ -1257,6 +1278,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `imageSha256` | `string`? | — | — | `x-litestone-kind` | — |
 | `swap` | `DeploySwap`? | — | — | `x-litestone-kind` | — |
 | `swapReason` | `string`? | — | — | `x-litestone-kind` | — |
+| `releaseId` | `string`? | — | — | `x-litestone-kind` | — |
+| `schemaHash` | `string`? | — | — | `x-litestone-kind` | — |
+| `pivot` | `DeployPivot`? | — | — | `x-litestone-kind` | — |
 | `platformVersion` | `string`? | — | — | `x-litestone-kind` | — |
 | `previousDeploymentId` | `string`? | — | — | `x-litestone-kind` | — |
 | `configSnapshot` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
@@ -2276,6 +2300,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `isRestoringVolume` | `boolean`? | — | — | — | — |
+| `withTodaysSecrets` | `boolean`? | — | — | — | — |
 
 **On create**: required — nothing
 

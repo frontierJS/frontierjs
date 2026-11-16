@@ -28,6 +28,9 @@ import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
 import deploymentRun         from '../src/jobs/deployment-run.job.ts'
+import { snapshotVariables, releaseEnv, secretRefsOf } from '../src/domain/release/variables.ts'
+import { mintRelease, configurationHash } from '@frontierjs/outpost/release'
+import { configurationSet, mintRelease as cliMintRelease } from '../../../cli/core/release.js'
 
 // `resolveExecutor` refuses an app it cannot reach, and this suite has no
 // machine. The stub is the shape a laptop with no fleet already runs in.
@@ -200,6 +203,77 @@ describe('a release is put back', () => {
       where: { deploymentId: replacement.id } })
     expect(steps.length).toBeGreaterThan(0)
     expect(steps.every((s: any) => s.status === 'pending')).toBe(true)
+  })
+})
+
+describe('a secret is put back at the revision that shipped (FJS-D2182)', () => {
+  /** An app whose two releases each pinned API_TOKEN, with a rotation between
+   *  them: the first shipped `tok-1` at revision 1, the live one `tok-2` at 2. */
+  async function rotatedBetweenReleases() {
+    const sys  = env.system as any
+    const slug = `sec-${uniq()}`
+    const app  = await sys.app.create({ data: {
+      workspaceId: ws.id, environmentId: environment.id, name: slug, slug, kind: 'container' } })
+    await sys.appServer.create({ data: { appId: app.id, serverId: box.id, replicaIndex: 0 } })
+    const vars  = env.as(admin).service('variables')
+    const token = await vars.create({ appId: app.id, key: 'API_TOKEN', value: 'tok-1', isSecret: true }) as any
+
+    const shipped = async (n: number, more: Record<string, unknown> = {}) => releaseAt('success', {
+      appId: app.id, workspaceId: ws.id, finishedAt: new Date().toISOString(),
+      toImage: `${slug}:v${n}`, builtImage: 'sha256:' + String(n).repeat(64), commitSha: `${n}`.repeat(7), branch: 'main',
+      configSnapshot: { source: {}, runtime: {}, ...await snapshotVariables(sys, app) }, ...more })
+    const first   = await shipped(1)
+    await vars.patch(token.id, { value: 'tok-2', version: token.version })
+    const current = await shipped(2, { previousDeploymentId: first.id })
+    return { app, token, first, current }
+  }
+
+  test('a release pins each secret as KEY@revision and resolves that revision', async () => {
+    const { first, current } = await rotatedBetweenReleases()
+    expect(secretRefsOf(first.configSnapshot)).toEqual({ API_TOKEN: 'API_TOKEN@1' })
+    expect(secretRefsOf(current.configSnapshot)).toEqual({ API_TOKEN: 'API_TOKEN@2' })
+    expect(JSON.stringify(first.configSnapshot)).not.toContain('tok-1')
+    expect((await releaseEnv(env.system, current.configSnapshot)).API_TOKEN).toBe('tok-2')
+  })
+
+  test('a rotation keeps the value it replaced, revoked and encrypted', async () => {
+    const { token } = await rotatedBetweenReleases()
+    const kept = await (env.system as any).variableVersion.findMany({ where: { variableId: token.id } })
+    expect(kept.map((v: any) => [v.revision, Boolean(v.revokedAt), v.secretValue])).toEqual([[1, true, 'tok-1']])
+    expect((await (env.system as any).variable.findFirst({ where: { id: token.id } })).revision).toBe(2)
+  })
+
+  test('the trail logs a kept version as [redacted] (Invariant 7)', async () => {
+    const { token } = await rotatedBetweenReleases()
+    const kept = await (env.system as any).variableVersion.findFirst({ where: { variableId: token.id } })
+    await new Promise(r => setImmediate(r))
+    const rows = (await (env.system as any).auditTrail.findMany({})).filter((r: any) => JSON.stringify(r).includes(kept.id))
+    expect(rows.length).toBeGreaterThan(0)
+    expect(JSON.stringify(rows)).toContain('[redacted]')
+    expect(JSON.stringify(rows)).not.toContain('tok-1')
+  })
+
+  test('a rollback that would put back a revoked secret is refused by name, before anything moves', async () => {
+    const { first, current } = await rotatedBetweenReleases()
+    await expect(roll(admin, current.id)).rejects.toThrow(/API_TOKEN@1.*today's value/)
+    expect(await statusOf(current.id)).toBe('success')
+    await expect(releaseEnv(env.system, first.configSnapshot)).rejects.toThrow(/API_TOKEN@1/)
+  })
+
+  test('with today\'s secrets it ships the current value and records the revision it ships', async () => {
+    const { current } = await rotatedBetweenReleases()
+    const replacement: any = await env.as(admin).service('deployments')
+      .call('rollback', current.id, { withTodaysSecrets: true })
+    expect(await statusOf(current.id)).toBe('rolledBack')
+    expect(secretRefsOf(replacement.configSnapshot)).toEqual({ API_TOKEN: 'API_TOKEN@2' })
+    expect((await releaseEnv(env.system, replacement.configSnapshot)).API_TOKEN).toBe('tok-2')
+  })
+
+  test('a release made before secrets were pinned resolves a bare id to today\'s value', async () => {
+    const { token } = await rotatedBetweenReleases()
+    const old = { env: {}, secretEnv: { API_TOKEN: token.id } }
+    expect(await releaseEnv(env.system, old)).toEqual({ API_TOKEN: 'tok-2' })
+    expect(secretRefsOf(old)).toEqual({ API_TOKEN: 'API_TOKEN' })
   })
 })
 
@@ -908,5 +982,161 @@ describe('the ingress wildcard a release pushes (FJS-D1975)', () => {
 
   test('a workspace with no wildcard sends no /certs/load', async () => {
     expect((await releaseWith(null)).map(c => c.path)).not.toContain('/certs/load')
+  })
+})
+
+// IDEAS/release-record.md 1.2 and 1.7: the Release a row is, and the verdict it
+// shipped under.
+describe('the Release and the pivot, on the row', () => {
+  const DIGEST = 'sha256:' + '1'.repeat(64)
+  const SCHEMA = '9'.repeat(64)
+
+  /** A git release run to its end against a machine answering `/build` and `/deploy` as given. */
+  async function ship(app: any, { previous, env: vars = { A: '1' }, secretEnv = {}, build = {}, deployed = {}, sent = [] }: {
+    previous?: string, env?: Record<string, string>, secretEnv?: Record<string, unknown>,
+    build?: Record<string, unknown>, deployed?: Record<string, unknown>, sent?: any[] }) {
+    const sys = env.system as any
+    const release = await sys.deployment.create({ data: {
+      appId: app.id, workspaceId: ws.id, toImage: `${app.slug}:git`, trigger: 'push',
+      ...(previous ? { previousDeploymentId: previous } : {}),
+      configSnapshot: { source: { kind: 'git', repo: 'https://example.test/app.git', branch: 'main' }, runtime: {}, env: vars, secretEnv } } })
+    for (const [position, name] of ['Build image', 'Start container'].entries())
+      await sys.deploymentStep.create({ data: { deploymentId: release.id, position, name } })
+    const conduit = {
+      resolve: async () => ({ pinned_cert: true }),
+      send: async (call: any) => (sent.push(call), { data: call.path === '/build'
+        ? { digest: DIGEST, commit_sha: 'e'.repeat(40), schema_hash: SCHEMA, ...build }
+        : call.path === '/deploy' ? { digest: DIGEST, ...deployed } : {} }),
+    }
+    const via = new Proxy(env.app, { get: (t, k) =>
+      k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+    await env.app.runAs(admin.id, { tenant: ws.id }, () =>
+      (deploymentRun as any).handler({ app: via, data: { deployment_id: release.id } }))
+    return sys.deployment.findUnique({ where: { id: release.id } })
+  }
+
+  const anApp = async () => (await anAppWithHistory()).app
+
+  test('the same bytes, configuration and schema are one Release, and a different schema is another', async () => {
+    const app = await anApp()
+    const one = await ship(app, {})
+    const two = await ship(app, { previous: one.id })
+    expect(one.releaseId).toMatch(/^[0-9a-f]{12}$/)
+    expect(one.schemaHash).toBe(SCHEMA)
+    expect(two.releaseId).toBe(one.releaseId)
+    expect((await ship(app, { build: { schema_hash: '8'.repeat(64) } })).releaseId).not.toBe(one.releaseId)
+    expect((await ship(app, { env: { A: '2' } })).releaseId).not.toBe(one.releaseId)
+  })
+
+  test('a pulled image has no checkout, so the Release carries no schema term', async () => {
+    const row = await ship(await anApp(), { build: { schema_hash: null } })
+    expect(row.schemaHash).toBeNull()
+    expect(row.releaseId).toMatch(/^[0-9a-f]{12}$/)
+  })
+
+  test('Basecamp and fli mint one id for one release (FJS-D2171)', async () => {
+    const app = await anApp()
+    const secretEnv = { TOKEN: { variableId: 'v-1', revision: 3 } }
+    const row = await ship(app, { env: { A: '1', B: 'two' }, secretEnv })
+    const refs = secretRefsOf({ secretEnv } as any)
+    expect(refs).toEqual({ TOKEN: 'TOKEN@3' })
+
+    const fromCli = cliMintRelease({
+      app: app.id, environment: 'production', digest: DIGEST, schemaHash: SCHEMA,
+      configurationHash: configurationSet({ configuration: { A: '1', B: 'two' }, secrets: refs }, 'production').hash,
+    })
+    expect(row.releaseId).toBe(fromCli.id)
+    expect(row.releaseId).toBe(mintRelease({
+      app: app.id, digest: DIGEST, schemaHash: SCHEMA, configurationHash: configurationHash({ A: '1', B: 'two' }, refs).hash }).id)
+  })
+
+  test('/deploy carries the Release id the build just minted and the secret refs, never a value (FJS-D2178)', async () => {
+    const app = await anApp()
+    const created = await env.as(admin).service('variables').create({ appId: app.id, key: 'API_TOKEN', value: 'tok-secret-1', isSecret: true }) as any
+    expect(created.id).toBeTruthy()
+    const snap = await snapshotVariables(env.system as any, app)
+    const sent: any[] = []
+    const row = await ship(app, { env: snap.env, secretEnv: snap.secretEnv as any, sent })
+    const body = sent.find(c => c.path === '/deploy').body
+    expect(body.release_id).toBe(row.releaseId)
+    expect(body.release_id).toMatch(/^[0-9a-f]{12}$/)
+    expect(body.secret_refs).toEqual({ API_TOKEN: 'API_TOKEN@1' })
+    expect(JSON.stringify(body.secret_refs)).not.toContain('tok-secret-1')
+    // The value rides in config.env, which is where Outpost drops it from.
+    expect(body.config.env.API_TOKEN).toBe('tok-secret-1')
+  })
+
+  test('the verdict Outpost answered is the one stored', async () => {
+    const app = await anApp()
+    const first = await ship(app, { deployed: { pivot: 'contract' } })
+    expect(first.pivot).toBe('contract')
+    expect((await ship(app, { previous: first.id, deployed: { pivot: 'expand' } })).pivot).toBe('expand')
+  })
+
+  test('a release with something to replace and no verdict is unknown, and a first deploy is not asked', async () => {
+    const app = await anApp()
+    expect((await ship(app, {})).pivot).toBeNull()
+    const { current } = await anAppWithHistory()
+    expect((await ship(app, { previous: current.id })).pivot).toBe('unknown')
+  })
+
+  describe('a rollback across a contract', () => {
+    const crossing = async (pivot: string | null) => {
+      const history = await anAppWithHistory()
+      if (pivot) await (env.system as any).deployment.update({ where: { id: history.current.id }, data: { pivot } })
+      return history
+    }
+
+    test('is refused by name before anything is written, naming the way back', async () => {
+      const { current } = await crossing('contract')
+      await expect(roll(admin, current.id)).rejects.toThrow(/crossed a schema contract.*isRestoringVolume: true/)
+      expect(await statusOf(current.id)).toBe('success')
+    })
+
+    test('an unknown verdict crosses as a contract does', async () => {
+      const { current } = await crossing('unknown')
+      await expect(roll(admin, current.id)).rejects.toThrow(/crossed a schema contract/)
+    })
+
+    test('an expand, and a row recorded before the column, are put back', async () => {
+      const { current } = await crossing('expand')
+      expect(((await roll(admin, current.id)) as any).status).toBe('pending')
+      const legacy = await crossing(null)
+      expect(((await roll(admin, legacy.current.id)) as any).status).toBe('pending')
+    })
+
+    test('a rollback in the range asked nothing, and does not make the next one refuse', async () => {
+      const { app, first } = await crossing(null)
+      const back = await releaseAt('success', {
+        appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
+        previousDeploymentId: first.id, configSnapshot: first.configSnapshot,
+        finishedAt: new Date(Date.now() + 1000).toISOString() })
+      await (env.system as any).deployment.update({ where: { id: back.id }, data: { pivot: 'contract' } })
+      expect(((await roll(admin, back.id)) as any).status).toBe('pending')
+    })
+
+    test('isRestoringVolume lifts the refusal', async () => {
+      const { app, current } = await anAppWithHistory(undefined, { volumePath: '/db' })
+      const sys  = env.system as any
+      await sys.deployment.update({ where: { id: current.id }, data: { pivot: 'contract' } })
+      const dest = await env.as(admin).service('backupDestinations').create({
+        name: `Rollback ${uniq()}`, endpoint: 'http://127.0.0.1:9', region: 'auto',
+        bucket: `rb-${uniq()}`, prefix: 'apps', secret: 'AKID:secret' }) as any
+      await sys.appBackup.create({ data: {
+        appId: app.id, serverId: box.id, destinationId: dest.id, kind: 'release', deploymentId: current.id,
+        status: 'success', location: `apps/${app.id}-x.tar.gz`, sha256: 'd'.repeat(64), sizeBytes: 10 } })
+      await expect(roll(admin, current.id)).rejects.toThrow(/crossed a schema contract/)
+      const replacement: any = await env.as(admin).service('deployments').call('rollback', current.id, { isRestoringVolume: true })
+      expect(replacement.status).toBe('pending')
+    })
+  })
+
+  test('a rollback carries its target\'s Release, since it ships the same bytes and configuration', async () => {
+    const app = await anApp()
+    const first = await ship(app, {})
+    const current = await ship(app, { previous: first.id, deployed: { pivot: 'expand' } })
+    const replacement: any = await roll(admin, current.id)
+    expect(replacement.releaseId).toBe(first.releaseId)
+    expect(replacement.schemaHash).toBe(SCHEMA)
   })
 })

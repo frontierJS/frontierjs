@@ -15,7 +15,9 @@ import { workbenchTerminal }                  from './plugins/workbench-terminal
 import { loginRoute, logoutRoute, meRoute, LOGIN_PATH, LOGOUT_PATH, ME_PATH } from './login.ts'
 import { standing }                           from './principal.ts'
 import { resolvePush }                        from './push.ts'
-import { notificationChannelName }        from './core/channels.ts'
+import { notificationChannelName, CHAT_CHANNELS } from './core/channels.ts'
+import { chatProvider }                   from './providers/chat/index.ts'
+import { fileRoute, uploadRoute, FILE_PATH, FILES_PATH } from './domain/chat/files.ts'
 import { peerKeys, peerRoute, PEER_PATH }     from './peer.ts'
 import { createBasecamp }                     from './domain/peer/basecamp.ts'
 import { conduitSend, type SendFor }          from './domain/servers/servers.ts'
@@ -24,7 +26,7 @@ import './workbench.types.ts'
 
 const SCHEMA = new URL('../../db/schema.lite', import.meta.url).pathname
 // The queue's own file, beside the main one, so `db:reset` takes both.
-const JOBS_DB = new URL('../../db/workbench-jobs.db', import.meta.url).pathname
+const JOBS_DB = env.JOBS_DATABASE_URL || new URL('../../db/workbench-jobs.db', import.meta.url).pathname
 
 export interface WorkbenchAppOptions {
   /** A Litestone client over db/schema.lite. A test hands its own. */
@@ -36,6 +38,8 @@ export interface WorkbenchAppOptions {
   deliver?: typeof fetch
   /** How the Servers screen reaches a provider. A test hands a stub so a list never dials Hetzner or DigitalOcean. */
   serversSend?: SendFor
+  /** The team chat server's address. Default `CHAT_URL`; absent, chat is off. A drive hands the sink's. */
+  chatUrl?: string | null
 }
 
 // A machine that never ran `fli basecamp:create` still has the dev Basecamp;
@@ -103,12 +107,33 @@ export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promis
   app.configure(channels((a) => {
     a.channels?.on('connection', (session: unknown, conn) => {
       const s = session as { id?: string } | null
-      if (s?.id) a.channel?.(notificationChannelName(s.id)).join(conn)
+      if (!s?.id) return
+      a.channel?.(notificationChannelName(s.id)).join(conn)
+      for (const name of CHAT_CHANNELS) a.channel?.(name).join(conn)
     })
+  }, {
+    // A pushed frame is graded without the principal resolver, so without
+    // this a private channel's rows are refused to its own members on the
+    // socket while the same rows answer over a fetch. Read per frame: a
+    // member who links or unlinks keeps the socket they already had.
+    claims: async (_name, conn) => {
+      const id = (conn.user as { id?: string | number } | null)?.id
+      if (id == null) return null
+      const row = await db.asSystem().member.findFirst({ where: { id: Number(id) }, select: { id: true, profileExternalId: true } })
+      return row?.profileExternalId ? { profileExternalId: row.profileExternalId } : null
+    },
   }))
 
   // Jobs under api/src/jobs register themselves; the app's scheduler arms their crons.
   app.configure(caravan({ db: JOBS_DB }))
+
+  // The team chat (`IDEAS/workbench-messages.md`): after caravan, whose queue
+  // the backfill rides and whose workers open each linked member's socket.
+  chatProvider(app, { db, url: opts.chatUrl !== undefined ? opts.chatUrl : env.CHAT_URL })
+  app.configure(a => {
+    a.get(FILE_PATH, fileRoute(app))
+    a.post(FILES_PATH, uploadRoute(app), { body: 'stream' } as any)
+  })
 
   // A shell in a pinned checkout or the home folder, behind the door's one member (plugins/workbench-terminal.ts).
   app.configure(function terminalRoute () { workbenchTerminal(app) })

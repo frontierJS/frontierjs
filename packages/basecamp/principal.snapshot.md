@@ -83,7 +83,7 @@ executed by litestone's `verifyGateLadder`.
 
 | | Count | Models |
 | --- | --- | --- |
-| Scoped by column | 28 | `Flow` · `FlowCredential` · `KvEntry` · `Invitation` · `Secret` · `ApiKey` · `Server` · `Network` · `Project` · `Environment` · `App` · `Variable` · `Domain` · `DomainRoute` · `AppPlatform` · `Deployment` · `Job` · `Recipe` · `Flag` · `NotificationChannel` · `BackupDestination` · `AlertRule` · `Monitor` · `Dashboard` · `AuditEvent` · `RegistryImage` · `Dependency` · `DependencyUse` |
+| Scoped by column | 29 | `Flow` · `FlowCredential` · `KvEntry` · `Invitation` · `Secret` · `ApiKey` · `Server` · `Network` · `Project` · `Environment` · `App` · `Variable` · `VariableVersion` · `Domain` · `DomainRoute` · `AppPlatform` · `Deployment` · `Job` · `Recipe` · `Flag` · `NotificationChannel` · `BackupDestination` · `AlertRule` · `Monitor` · `Dashboard` · `AuditEvent` · `RegistryImage` · `Dependency` · `DependencyUse` |
 | Scoped by delegation | 27 | `FlowVersion` · `FlowLayout` · `Run` · `RunStep` · `Wait` · `ServerEvent` · `Volume` · `ServerNetwork` · `AppServer` · `AppBackup` · `AppDrill` · `AppCopy` · `AppNetwork` · `DeploymentStep` · `JobRun` · `RecipeRun` · `DiskUsage` · `ServerPosture` · `MaintenanceRun` · `FlagOverride` · `AlertRuleChannel` · `Alert` · `MonitorCheck` · `MonitorUptimeDay` · `MonitorEvent` · `MonitorChannel` · `DashboardTile` |
 | Exempt — `@@tenant(none)` | 22 | `Credential` · `Session` · `Verification` · `LoginChallenge` · `OauthFlow` · `MetricSeries` · `MetricPoint` · `MetricHour` · `AuditTrail` · `User` · `Account` · `Workspace` · `WorkspaceMember` · `OutpostNonce` · `conduit_targets` · `conduit_receipts` · `AppEditor` · `Blueprint` · `BlueprintParam` · `HubConfig` · `Notification` · `NotificationPreference` |
 

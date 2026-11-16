@@ -64,7 +64,7 @@
 // person's followed threads (`since`, `before`, `per_page`) and `PUT
 // .../threads/{id}/read/{at}` reads one and pushes `thread_read_changed`.
 
-import type { Channel, ChannelMember, FileInfo, Post, Reaction, Team, User, UserThread } from './src/types.ts'
+import type { Channel, ChannelMember, Draft, FileInfo, Post, Preference, Reaction, SidebarCategory, Team, User, UserStatus, UserThread } from './src/types.ts'
 
 export interface MattermostSinkOptions { port?: number }
 
@@ -97,6 +97,14 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
   const reactions: Reaction[] = []
   const files:    Record<string, { info: FileInfo; bytes: Uint8Array }> = {}
   const pending = new Map<string, { id: string; at: number }>()
+  const drafts:   Draft[] = []
+  const prefs:    Preference[] = []
+  const statuses: Record<string, UserStatus> = {}
+  const history = new Map<string, Post[]>()
+  const reminders: { user_id: string; post_id: string; target_time: number }[] = []
+  const customCats: SidebarCategory[] = []
+  const catOrder = new Map<string, string[]>()
+  const sysState = new Map<string, Pick<SidebarCategory, 'sorting' | 'muted' | 'collapsed'>>()
   const channel = (name: string, type: Channel['type'], creator: string, who: string[]): Channel => {
     const c: Channel = { id: mint(name), create_at: now(), update_at: now(), delete_at: 0, team_id: team.id, type, display_name: name[0].toUpperCase() + name.slice(1), name, header: '', purpose: '', last_post_at: 0, total_msg_count: 0, total_msg_count_root: 0, last_root_post_at: 0, creator_id: creator }
     channels[c.id] = c
@@ -148,10 +156,10 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
   }
   const hello = (ws: Sock) => frame(ws, { event: 'hello', data: { server_version: '10.0.0.sink', connection_id: ws.data.connectionId }, broadcast: { user_id: ws.data.caller } })
   // To every authenticated connection whose user may see it: a channel's members, or the one user named.
-  function emit(event: string, data: Record<string, unknown>, to: { channel_id?: string; user_id?: string; team_id?: string }) {
+  function emit(event: string, data: Record<string, unknown>, to: { channel_id?: string; user_id?: string; team_id?: string; omit_user?: string }) {
     for (const ws of sockets) {
       const u = ws.data.caller
-      if (!u) continue
+      if (!u || u === to.omit_user) continue
       if (to.channel_id ? !isMember(to.channel_id, u) && to.user_id !== u : to.user_id && to.user_id !== u) continue
       frame(ws, { event, data, broadcast: { omit_users: null, user_id: to.user_id ?? '', channel_id: to.channel_id ?? '', team_id: to.team_id ?? '' } })
     }
@@ -189,6 +197,81 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
       emit('thread_updated', { thread: JSON.stringify(threadOf(u, root.id)) }, { user_id: u, team_id: team.id })
     }
   }
+
+  // ─── Preferences and the sidebar they move ─────────────────
+  // A favorite is a preference AND a place in the Favorites category, so the
+  // two are changed together and each push the sidebar owes is a diff of the
+  // categories before and after.
+  const sysId = (type: string, uid: string) => `${type}_${uid}_${team.id}`
+  const orderOf = (uid: string): string[] => {
+    let o = catOrder.get(uid)
+    if (!o) { o = [sysId('favorites', uid), sysId('channels', uid), sysId('direct_messages', uid)]; catOrder.set(uid, o) }
+    return o
+  }
+  const live = (id: string, uid: string) => !!channels[id] && !channels[id].delete_at && isMember(id, uid)
+  function categoriesFor(uid: string): SidebarCategory[] {
+    const mine = Object.values(channels).filter(c => live(c.id, uid) && (c.team_id === team.id || c.team_id === ''))
+    const fav = prefs.filter(q => q.user_id === uid && q.category === 'favorite_channel' && q.value === 'true').map(q => q.name).filter(id => live(id, uid))
+    const cust = customCats.filter(c => c.user_id === uid)
+    const taken = new Set([...fav, ...cust.flatMap(c => c.channel_ids)])
+    const rest = mine.filter(c => !taken.has(c.id))
+    const sys = (type: 'favorites' | 'channels' | 'direct_messages', display_name: string, channel_ids: string[]): SidebarCategory =>
+      ({ id: sysId(type, uid), user_id: uid, team_id: team.id, type, display_name, channel_ids, ...{ sorting: type === 'direct_messages' ? 'recent' : '', muted: false, collapsed: false }, ...sysState.get(sysId(type, uid)) })
+    const all = new Map<string, SidebarCategory>([
+      [sysId('favorites', uid), sys('favorites', 'Favorites', fav)],
+      [sysId('channels', uid), sys('channels', 'Channels', rest.filter(c => c.type === 'O' || c.type === 'P').sort((a, b) => a.name < b.name ? -1 : 1).map(c => c.id))],
+      [sysId('direct_messages', uid), sys('direct_messages', 'Direct Messages', rest.filter(c => c.type === 'D' || c.type === 'G').sort((a, b) => b.last_post_at - a.last_post_at).map(c => c.id))],
+      ...cust.map(c => [c.id, { ...c, channel_ids: c.channel_ids.filter(id => live(id, uid)) }] as [string, SidebarCategory]),
+    ])
+    return orderOf(uid).map(id => all.get(id)).filter((c): c is SidebarCategory => !!c)
+  }
+  const changedSince = (uid: string, before: SidebarCategory[]) => categoriesFor(uid).filter(a => JSON.stringify(a) !== JSON.stringify(before.find(b => b.id === a.id)))
+  function savePrefs(uid: string, list: Preference[], pushCategories = true) {
+    const before = categoriesFor(uid)
+    for (const q of list) { const had = prefs.find(o => o.user_id === uid && o.category === q.category && o.name === q.name); if (had) had.value = q.value; else prefs.push({ ...q }) }
+    emit('preferences_changed', { preferences: JSON.stringify(list) }, { user_id: uid })
+    const moved = pushCategories ? changedSince(uid, before) : []
+    if (moved.length) emit('sidebar_category_updated', { updatedCategories: JSON.stringify(moved) }, { user_id: uid, team_id: team.id })
+  }
+  function dropPrefs(uid: string, list: Preference[], pushCategories = true) {
+    const before = categoriesFor(uid)
+    for (const q of list) { const i = prefs.findIndex(o => o.user_id === uid && o.category === q.category && o.name === q.name); if (i >= 0) prefs.splice(i, 1) }
+    emit('preferences_deleted', { preferences: JSON.stringify(list) }, { user_id: uid })
+    const moved = pushCategories ? changedSince(uid, before) : []
+    if (moved.length) emit('sidebar_category_updated', { updatedCategories: JSON.stringify(moved) }, { user_id: uid, team_id: team.id })
+  }
+  // A channel put in a custom category leaves whatever held it: a favorite stops being one.
+  function moveInto(uid: string, cat: SidebarCategory, ids: string[]) {
+    const before = categoriesFor(uid).filter(c => c.id !== cat.id)
+    cat.channel_ids = ids
+    for (const c of customCats) if (c.user_id === uid && c.id !== cat.id) c.channel_ids = c.channel_ids.filter(id => !ids.includes(id))
+    const unfav = prefs.filter(q => q.user_id === uid && q.category === 'favorite_channel' && ids.includes(q.name))
+    if (unfav.length) dropPrefs(uid, unfav, false)
+    return changedSince(uid, before).filter(c => c.id !== cat.id)
+  }
+  function updateCategory(uid: string, given: SidebarCategory): { changed: SidebarCategory[] } | { error: Response } {
+    const cur = categoriesFor(uid).find(c => c.id === given.id)
+    if (!cur) return { error: refuse(404, 'app.channel.sidebar_categories.app_error', 'Unable to find the category.') }
+    const ids = Array.isArray(given.channel_ids) ? given.channel_ids.map(String) : cur.channel_ids
+    if ((given.user_id && given.user_id !== uid) || ids.some(id => !live(id, uid))) return { error: refuse(403, 'api.context.permissions.app_error', 'You do not have the appropriate permissions.') }
+    const before = categoriesFor(uid)
+    const custom = customCats.find(c => c.id === cur.id)
+    const flags = { sorting: given.sorting ?? cur.sorting, muted: given.muted ?? cur.muted, collapsed: given.collapsed ?? cur.collapsed }
+    if (custom) {
+      if (typeof given.display_name === 'string' && given.display_name.trim()) custom.display_name = given.display_name.trim().slice(0, 22)
+      Object.assign(custom, flags)
+      moveInto(uid, custom, ids)
+    } else {
+      sysState.set(cur.id, flags)
+      if (cur.type === 'favorites') {
+        const drop = cur.channel_ids.filter(id => !ids.includes(id)), add = ids.filter(id => !cur.channel_ids.includes(id))
+        if (drop.length) dropPrefs(uid, drop.map(name => ({ user_id: uid, category: 'favorite_channel', name, value: '' })), false)
+        if (add.length) savePrefs(uid, add.map(name => ({ user_id: uid, category: 'favorite_channel', name, value: 'true' })), false)
+      }
+    }
+    return { changed: changedSince(uid, before) }
+  }
+  const statusOf = (id: string): UserStatus => statuses[id] ?? { user_id: id, status: 'offline', manual: false, last_activity_at: 0 }
 
   // ─── What Mattermost delivers ──────────────────────────────
   interface OutgoingHook { id: string; token: string; channel_id: string; team_id: string; trigger_words: string[]; callback_urls: string[]; content_type: string; display_name: string; create_at: number; update_at: number; delete_at: 0; creator_id: string; trigger_when: 0; description: ''; username: ''; icon_url: '' }
@@ -264,6 +347,12 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
           ws.send(JSON.stringify({ status: 'OK', seq_reply: m.seq, data: { text: 'pong', version: '10.0.0.sink', server_time: now(), node_id: '' } }))
           return
         }
+        if (m.action === 'user_typing' && ws.data.caller) {
+          const d = (m as { data?: { channel_id?: string; parent_id?: string } }).data ?? {}
+          if (d.channel_id && isMember(d.channel_id, ws.data.caller)) emit('typing', { parent_id: d.parent_id ?? '', user_id: ws.data.caller }, { channel_id: d.channel_id, omit_user: ws.data.caller })
+          ws.send(JSON.stringify({ status: 'OK', seq_reply: m.seq }))
+          return
+        }
         if (m.action !== 'authentication_challenge') return
         // An authenticated connection ignores a second challenge and answers nothing.
         if (ws.data.caller) return
@@ -290,7 +379,7 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         for (const ws of sockets) if (ws.data.caller) b.raw !== undefined ? ws.send(b.raw) : frame(ws, { event: b.event, data: b.data ?? {}, broadcast: b.broadcast ?? {} })
         return json({ ok: true })
       }
-      if (path === '/_sink/seen')  return json({ requests: seen, posts: Object.values(posts).length, reactions: reactions.length, members: members.length, deliveries, replies, allPosts: Object.values(posts), sockets: socketLog })
+      if (path === '/_sink/seen')  return json({ requests: seen, posts: Object.values(posts).length, reactions: reactions.length, members: members.length, deliveries, replies, reminders, allPosts: Object.values(posts), sockets: socketLog })
       if (path === '/_sink/reset') { seen.length = 0; deliveries.length = 0; replies.length = 0; Object.assign(armed, { lost: false, failNext: false, rateLimit: null, deliverTwice: false, socketHeader: true, frameTwice: false, sinceLimit: SINCE_LIMIT }); return json({ ok: true }) }
       if (path === '/_sink/arm')   {
         const { dropSockets, silenceSocket, skipSeq, ...rest } = await req.json() as { dropSockets?: boolean; silenceSocket?: string; skipSeq?: number } & Record<string, unknown>
@@ -350,6 +439,259 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
       const m = (re: RegExp) => path.match(re)
       let x: RegExpMatchArray | null
 
+      // ─── Team Edition's refusals ──────────────────────────────
+      // Scheduled posts and groups answer a server with no license, as the real
+      // one does (probed GET-only; the writes under /posts/schedule share the check).
+      if ((path.startsWith('/api/v4/posts/scheduled/') || path.startsWith('/api/v4/posts/schedule')))
+        return record(refuse(400, 'api.scheduled_posts.license_error', 'Scheduled posts feature requires a license'))
+      if (/^\/api\/v4\/(groups|(teams|channels|users)\/[a-z0-9]{26}\/groups)(\/|$)/.test(path))
+        return record(refuse(501, 'api.license_error', 'api endpoint requires a license'))
+
+      statuses[caller] ??= { user_id: caller, status: 'online', manual: false, last_activity_at: now() }
+      const own = (id: string) => id === 'me' ? caller : id
+      const forbidden = () => record(refuse(403, 'api.context.permissions.app_error', 'You do not have the appropriate permissions.'))
+
+      // ─── Pins ─────────────────────────────────────────────────
+      if ((x = m(/^\/api\/v4\/posts\/([a-z0-9]{26})\/(pin|unpin)$/)) && req.method === 'POST') {
+        const p = posts[x[1]]
+        if (!p || p.delete_at) return record(refuse(404, 'app.post.get.app_error', 'Unable to get the post.'))
+        if (!isMember(p.channel_id, caller)) return forbidden()
+        p.is_pinned = x[2] === 'pin'; p.update_at = now()
+        posted('post_edited', p)
+        return record(json({ status: 'OK' }))
+      }
+      if ((x = m(/^\/api\/v4\/channels\/([a-z0-9]{26})\/pinned$/)) && req.method === 'GET') {
+        if (!channels[x[1]] || !isMember(x[1], caller)) return forbidden()
+        const list = Object.values(posts).filter(p => p.channel_id === x![1] && p.is_pinned && !p.delete_at).sort((a, b) => b.create_at - a.create_at)
+        return record(json({ order: list.map(p => p.id), posts: Object.fromEntries(list.map(p => [p.id, withMetadata(p)])), next_post_id: '', prev_post_id: '' }))
+      }
+      // ─── Unread from a post ───────────────────────────────────
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/posts\/([a-z0-9]{26})\/set_unread$/)) && req.method === 'POST') {
+        if (own(x[1]) !== caller) return forbidden()
+        const p = posts[x[2]]
+        if (!p || p.delete_at) return record(refuse(404, 'app.post.get.app_error', 'Unable to get the post.'))
+        const c = channels[p.channel_id], mm = memberOf(p.channel_id, caller)
+        if (!mm) return forbidden()
+        const later = Object.values(posts).filter(q => q.channel_id === c.id && q.create_at >= p.create_at)
+        const named = later.filter(q => !q.delete_at && q.user_id !== caller && mentionsIn(c, q.message, q.user_id).includes(caller))
+        // With collapsed threads a reply marks its thread unread and leaves the channel's counts alone.
+        if (p.root_id && body.collapsed_threads_supported) {
+          const root = posts[p.root_id]
+          const tm = threadMembers.get(`${caller}:${root.id}`) ?? { following: true, last_viewed_at: 0, unread_replies: 0, unread_mentions: 0, last_update_at: 0 }
+          const replies = later.filter(q => q.root_id === root.id && !q.delete_at && q.user_id !== caller)
+          Object.assign(tm, { following: true, last_viewed_at: p.create_at - 1, unread_replies: replies.length, unread_mentions: replies.filter(q => named.includes(q)).length, last_update_at: now() })
+          threadMembers.set(`${caller}:${root.id}`, tm)
+          emit('thread_read_changed', { thread_id: root.id, timestamp: tm.last_viewed_at, unread_replies: tm.unread_replies, unread_mentions: tm.unread_mentions, channel_id: c.id }, { user_id: caller, team_id: team.id })
+        } else {
+          Object.assign(mm, {
+            last_viewed_at: p.create_at - 1, last_update_at: now(),
+            msg_count: c.total_msg_count - later.length, msg_count_root: (c.total_msg_count_root ?? 0) - later.filter(q => !q.root_id).length,
+            mention_count: named.length, mention_count_root: named.filter(q => !q.root_id).length,
+          })
+          emit('post_unread', { last_viewed_at: mm.last_viewed_at, post_id: p.id, channel_id: c.id, msg_count: mm.msg_count, msg_count_root: mm.msg_count_root, mention_count: mm.mention_count, mention_count_root: mm.mention_count_root, urgent_mention_count: 0 }, { user_id: caller, team_id: team.id })
+        }
+        return record(json({ team_id: team.id, user_id: caller, channel_id: c.id, msg_count: mm.msg_count, mention_count: mm.mention_count, msg_count_root: mm.msg_count_root, mention_count_root: mm.mention_count_root, last_viewed_at: mm.last_viewed_at }))
+      }
+      // ─── Follow a thread ──────────────────────────────────────
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/teams\/([a-z0-9]{26})\/threads\/([a-z0-9]{26})\/following$/)) && (req.method === 'PUT' || req.method === 'DELETE')) {
+        if (own(x[1]) !== caller) return forbidden()
+        const root = posts[x[3]]
+        if (!root || root.delete_at) return record(refuse(404, 'app.post.get.app_error', 'Unable to get the post.'))
+        if (!isMember(root.channel_id, caller)) return forbidden()
+        const key = `${caller}:${root.id}`, following = req.method === 'PUT'
+        const tm = threadMembers.get(key) ?? { following, last_viewed_at: now(), unread_replies: 0, unread_mentions: 0, last_update_at: 0 }
+        tm.following = following; tm.last_update_at = now()
+        threadMembers.set(key, tm)
+        emit('thread_follow_changed', { thread_id: root.id, state: following, reply_count: root.reply_count ?? 0 }, { user_id: caller, team_id: x[2] })
+        return record(json({ status: 'OK' }))
+      }
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/teams\/([a-z0-9]{26})\/threads\/read$/)) && req.method === 'PUT') {
+        if (own(x[1]) !== caller) return forbidden()
+        const t = now()
+        for (const [k, tm] of threadMembers) if (k.startsWith(`${caller}:`)) Object.assign(tm, { last_viewed_at: t, unread_replies: 0, unread_mentions: 0, last_update_at: t })
+        emit('thread_read_changed', { timestamp: t, unread_replies: 0, unread_mentions: 0 }, { user_id: caller, team_id: x[2] })
+        return record(json({ status: 'OK' }))
+      }
+      // ─── A group channel ──────────────────────────────────────
+      if (path === '/api/v4/channels/group' && req.method === 'POST') {
+        const asked = Array.isArray(body) ? (body as unknown[]).map(String) : []
+        if (!asked.length || !asked.every(u => users[u])) return record(refuse(400, 'api.context.invalid_body_param.app_error', 'Invalid or missing user_ids in request body.'))
+        const ids = [...new Set([...asked, caller])].sort()
+        if (ids.length < 3 || ids.length > 8) return record(refuse(400, 'api.channel.create_group.bad_size.app_error', 'Group message channels must contain at least 3 users and at most 8 users.'))
+        const name = new Bun.CryptoHasher('sha1').update(ids.join('')).digest('hex')
+        const had = Object.values(channels).find(c => c.type === 'G' && c.name === name)
+        if (had) return record(json(had, 201))
+        const c: Channel = { id: mint('gm'), create_at: now(), update_at: now(), delete_at: 0, team_id: '', type: 'G', display_name: ids.map(u => users[u].username).join(', '), name, header: '', purpose: '', last_post_at: 0, total_msg_count: 0, total_msg_count_root: 0, last_root_post_at: 0, creator_id: caller }
+        channels[c.id] = c
+        for (const u of ids) join(c.id, u)
+        emit('group_added', { teammate_ids: JSON.stringify(ids) }, { channel_id: c.id })
+        return record(json(c, 201))
+      }
+      // ─── Drafts ───────────────────────────────────────────────
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/teams\/([a-z0-9]{26})\/drafts$/)) && req.method === 'GET') {
+        if (own(x[1]) !== caller) return forbidden()
+        const since = Number(url.searchParams.get('since') ?? 0)
+        return record(json(drafts.filter(d => d.user_id === caller && (since ? d.update_at > since : !d.delete_at) && isMember(d.channel_id, caller))))
+      }
+      if (path === '/api/v4/drafts' && req.method === 'POST') {
+        const channel_id = String(body.channel_id ?? ''), root_id = String(body.root_id ?? '')
+        if (String(body.user_id ?? caller) !== caller) return forbidden()
+        if (!channels[channel_id] || !isMember(channel_id, caller)) return forbidden()
+        if (root_id && !posts[root_id]) return record(refuse(400, 'api.draft.upsert_draft.invalid_root_id.app_error', 'Invalid RootId parameter'))
+        const t = now(), had = drafts.find(d => d.user_id === caller && d.channel_id === channel_id && d.root_id === root_id)
+        const fresh: Draft = { create_at: had && !had.delete_at ? had.create_at : t, update_at: t, delete_at: 0, user_id: caller, channel_id, root_id, message: String(body.message ?? ''), props: (body.props as Record<string, unknown>) ?? {}, file_ids: Array.isArray(body.file_ids) ? (body.file_ids as unknown[]).map(String) : [] }
+        if (had) Object.assign(had, fresh); else drafts.push(fresh)
+        emit(had && !had.delete_at && had.create_at !== t ? 'draft_updated' : 'draft_created', { draft: JSON.stringify(fresh) }, { user_id: caller })
+        return record(json(fresh))
+      }
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/channels\/([a-z0-9]{26})\/drafts(?:\/([a-z0-9]{26}))?$/)) && req.method === 'DELETE') {
+        if (own(x[1]) !== caller) return forbidden()
+        const d = drafts.find(q => q.user_id === caller && q.channel_id === x![2] && q.root_id === (x![3] ?? '') && !q.delete_at)
+        if (!d) return record(refuse(404, 'app.draft.get.app_error', 'Unable to get the draft.'))
+        d.delete_at = now(); d.update_at = d.delete_at
+        emit('draft_deleted', { draft: JSON.stringify(d) }, { user_id: caller })
+        return record(json({ status: 'OK' }))
+      }
+      // ─── Preferences, saved posts, favorites ──────────────────
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/preferences(?:\/([a-z_]+))?$/)) && req.method === 'GET') {
+        if (own(x[1]) !== caller) return forbidden()
+        return record(json(prefs.filter(q => q.user_id === caller && (!x![2] || q.category === x![2]))))
+      }
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/preferences$/)) && req.method === 'PUT') {
+        if (own(x[1]) !== caller) return forbidden()
+        const list = Array.isArray(body) ? body as unknown as Preference[] : []
+        if (!list.length || list.some(q => q.user_id !== caller || !q.category || !q.name || typeof q.value !== 'string' || q.category.length > 32 || q.name.length > 32 || q.value.length > 2000)) return record(refuse(400, 'model.preference.is_valid.app_error', 'Invalid preference'))
+        savePrefs(caller, list.map(q => ({ user_id: caller, category: q.category, name: q.name, value: q.value })))
+        return record(json({ status: 'OK' }))
+      }
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/preferences\/delete$/)) && req.method === 'POST') {
+        if (own(x[1]) !== caller) return forbidden()
+        const list = Array.isArray(body) ? body as unknown as Preference[] : []
+        if (!list.length || list.some(q => q.user_id !== caller || !q.category || !q.name)) return record(refuse(400, 'model.preference.is_valid.app_error', 'Invalid preference'))
+        dropPrefs(caller, list)
+        return record(json({ status: 'OK' }))
+      }
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/posts\/flagged$/)) && req.method === 'GET') {
+        if (own(x[1]) !== caller) return forbidden()
+        const teamId = url.searchParams.get('team_id') ?? '', perPage = Number(url.searchParams.get('per_page') ?? 60), page = Number(url.searchParams.get('page') ?? 0)
+        const list = prefs.filter(q => q.user_id === caller && q.category === 'flagged_post' && q.value === 'true').map(q => posts[q.name])
+          .filter(p => p && !p.delete_at && isMember(p.channel_id, caller) && (!teamId || [teamId, ''].includes(channels[p.channel_id].team_id)))
+          .sort((a, b) => b.create_at - a.create_at).slice(page * perPage, (page + 1) * perPage)
+        return record(json({ order: list.map(p => p.id), posts: Object.fromEntries(list.map(p => [p.id, withMetadata(p)])), next_post_id: '', prev_post_id: '' }))
+      }
+      // ─── Status ───────────────────────────────────────────────
+      if (path === '/api/v4/users/status/ids' && req.method === 'POST') {
+        const asked = Array.isArray(body) ? (body as unknown[]).map(String) : []
+        if (!asked.length || !asked.every(id => /^[a-z0-9]{26}$/.test(id))) return record(refuse(400, 'api.context.invalid_body_param.app_error', 'Invalid or missing user_ids in request body.'))
+        return record(json(asked.filter(id => users[id]).map(statusOf)))
+      }
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/status$/)) && req.method === 'GET') {
+        const id = own(x[1])
+        if (!users[id]) return record(refuse(404, 'app.user.missing_account.const', 'Unable to find the user.'))
+        return record(json(statusOf(id)))
+      }
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/status$/)) && req.method === 'PUT') {
+        if (own(x[1]) !== caller) return forbidden()
+        const status = String(body.status ?? '')
+        if (String(body.user_id ?? '') !== caller || !['online', 'away', 'offline', 'dnd'].includes(status)) return record(refuse(400, 'api.context.invalid_body_param.app_error', 'Invalid or missing status in request body.'))
+        const s: UserStatus = { user_id: caller, status: status as UserStatus['status'], manual: true, last_activity_at: now(), ...(status === 'dnd' && Number(body.dnd_end_time) > 0 ? { dnd_end_time: Math.floor(Number(body.dnd_end_time)) } : {}) }
+        statuses[caller] = s
+        emit('status_change', { status, user_id: caller }, { user_id: caller })
+        return record(json(s))
+      }
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/status\/custom$/)) && (req.method === 'PUT' || req.method === 'DELETE')) {
+        if (own(x[1]) !== caller) return forbidden()
+        const u = users[caller]
+        if (req.method === 'PUT') {
+          if (!body.emoji && !body.text) return record(refuse(400, 'api.context.invalid_body_param.app_error', 'Invalid or missing custom status in request body.'))
+          u.props = { ...u.props, customStatus: JSON.stringify({ emoji: String(body.emoji ?? ''), text: String(body.text ?? ''), duration: String(body.duration ?? 'dont_clear'), expires_at: String(body.expires_at ?? '') }) }
+        } else if (u.props) delete u.props.customStatus
+        u.update_at = now()
+        // The frame carries the user sanitized for everyone, the owner included: no email.
+        emit('user_updated', { user: { ...u, email: '' } }, {})
+        return record(json({ status: 'OK' }))
+      }
+      // ─── Sidebar categories ───────────────────────────────────
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/teams\/([a-z0-9]{26})\/channels\/categories(?:\/(order|[a-z0-9_]+))?$/))) {
+        if (own(x[1]) !== caller) return forbidden()
+        if (x[2] !== team.id) return record(refuse(404, 'app.team.get.find.app_error', 'Unable to find the team.'))
+        const sub = x[3], tell = (event: string, data: Record<string, unknown>) => emit(event, data, { user_id: caller, team_id: team.id })
+        if (!sub && req.method === 'GET') { const all = categoriesFor(caller); return record(json({ order: all.map(c => c.id), categories: all })) }
+        if (!sub && req.method === 'POST') {
+          const display_name = String(body.display_name ?? '').trim(), ids = Array.isArray(body.channel_ids) ? (body.channel_ids as unknown[]).map(String) : []
+          if (!display_name || display_name.length > 22) return record(refuse(400, 'model.sidebar_category.is_valid.display_name.app_error', 'Invalid display name.'))
+          if (body.type !== 'custom') return record(refuse(400, 'model.sidebar_category.is_valid.type.app_error', 'Only a custom category is created.'))
+          if (ids.some(c => !channels[c] || !isMember(c, caller))) return forbidden()
+          const cat: SidebarCategory = { id: mint('cat'), user_id: caller, team_id: team.id, type: 'custom', display_name, sorting: '', channel_ids: [], muted: false, collapsed: false }
+          customCats.push(cat)
+          const order = orderOf(caller); order.splice(1, 0, cat.id)
+          const touched = moveInto(caller, cat, ids)
+          tell('sidebar_category_created', { category_id: cat.id })
+          if (touched.length) tell('sidebar_category_updated', { updatedCategories: JSON.stringify(touched) })
+          return record(json(categoriesFor(caller).find(c => c.id === cat.id)))
+        }
+        if (!sub && req.method === 'PUT') {
+          const list = Array.isArray(body) ? body as unknown as SidebarCategory[] : []
+          const out: SidebarCategory[] = []
+          for (const given of list) { const r = updateCategory(caller, given); if ('error' in r) return record(r.error); out.push(...r.changed) }
+          tell('sidebar_category_updated', { updatedCategories: JSON.stringify(out) })
+          return record(json(list.map(g => out.find(c => c.id === g.id)!)))
+        }
+        if (sub === 'order' && req.method === 'PUT') {
+          const given = Array.isArray(body) ? (body as unknown[]).map(String) : [], have = orderOf(caller)
+          if (given.length !== have.length || !have.every(id => given.includes(id))) return record(refuse(400, 'api.invalid_channel_category_order.app_error', 'The order must name every category exactly once.'))
+          catOrder.set(caller, given)
+          tell('sidebar_category_order_updated', { order: given })
+          return record(json(given))
+        }
+        if (sub && sub !== 'order' && req.method === 'GET') {
+          const c = categoriesFor(caller).find(q => q.id === sub)
+          return c ? record(json(c)) : record(refuse(404, 'app.channel.sidebar_categories.app_error', 'Unable to find the category.'))
+        }
+        if (sub && sub !== 'order' && req.method === 'PUT') {
+          const r = updateCategory(caller, { ...body, id: sub } as unknown as SidebarCategory)
+          if ('error' in r) return record(r.error)
+          tell('sidebar_category_updated', { updatedCategories: JSON.stringify(r.changed) })
+          return record(json(r.changed.find(c => c.id === sub)))
+        }
+        if (sub && sub !== 'order' && req.method === 'DELETE') {
+          const i = customCats.findIndex(c => c.id === sub && c.user_id === caller)
+          if (i < 0) return record(refuse(400, 'store.sql_channel.sidebar_categories.delete.app_error', 'A system category cannot be deleted.'))
+          const [gone] = customCats.splice(i, 1)
+          catOrder.set(caller, orderOf(caller).filter(id => id !== sub))
+          tell('sidebar_category_deleted', { category_id: gone.id })
+          return record(json({ status: 'OK' }))
+        }
+      }
+      // ─── Search, edit history, reminders ──────────────────────
+      if ((x = m(/^\/api\/v4\/teams\/([a-z0-9]{26})\/posts\/search$/)) && req.method === 'POST') {
+        const terms = String(body.terms ?? '').trim()
+        if (!terms) return record(refuse(400, 'api.post.search_posts.invalid_body.app_error', 'Unable to parse the request body.'))
+        // `from:` and `in:` filters are not read here; each reads as a word that matches nothing.
+        const words = (terms.match(/"[^"]+"|\S+/g) ?? []).map(w => w.replace(/^"|"$/g, '').toLowerCase())
+        const hits = (message: string) => words.filter(w => new RegExp(`(^|[^\\p{L}\\p{N}])${w.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*$/, '')}${w.endsWith('*') ? '' : '(?![\\p{L}\\p{N}])'}`, 'iu').test(message))
+        const orSearch = body.is_or_search === true, perPage = Number(body.per_page ?? 20), page = Number(body.page ?? 0)
+        const found = Object.values(posts).filter(p => !p.delete_at && isMember(p.channel_id, caller) && [team.id, ''].includes(channels[p.channel_id].team_id) && !channels[p.channel_id].delete_at)
+          .map(p => ({ p, matched: hits(p.message) })).filter(({ matched }) => orSearch ? matched.length > 0 : matched.length === words.length)
+          .sort((a, b) => b.p.create_at - a.p.create_at).slice(page * perPage, (page + 1) * perPage)
+        return record(json({ order: found.map(f => f.p.id), posts: Object.fromEntries(found.map(f => [f.p.id, withMetadata(f.p)])), matches: Object.fromEntries(found.map(f => [f.p.id, f.matched])) }))
+      }
+      if ((x = m(/^\/api\/v4\/posts\/([a-z0-9]{26})\/edit_history$/)) && req.method === 'GET') {
+        const p = posts[x[1]]
+        // Another person's post is a 404 here, as the live server answered it.
+        if (!p || p.delete_at || p.user_id !== caller) return record(refuse(404, 'app.post.get.app_error', 'Unable to get the post.'))
+        return record(json(history.get(p.id) ?? []))
+      }
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/posts\/([a-z0-9]{26})\/reminder$/)) && req.method === 'POST') {
+        if (own(x[1]) !== caller) return forbidden()
+        const p = posts[x[2]], at = Number(body.target_time)
+        if (!p || p.delete_at) return record(refuse(404, 'app.post.get.app_error', 'Unable to get the post.'))
+        if (!isMember(p.channel_id, caller)) return forbidden()
+        if (!Number.isFinite(at) || at <= 0) return record(refuse(400, 'api.context.invalid_body_param.app_error', 'Invalid or missing target_time in request body.'))
+        reminders.push({ user_id: caller, post_id: p.id, target_time: Math.floor(at) })
+        return record(json({ status: 'OK' }))
+      }
+
       if (path === '/api/v4/users/me') return record(json(users[caller]))
       if ((x = m(/^\/api\/v4\/users\/([a-z0-9]{26})\/teams$/)))
         return record(json(users[x[1]] ? [team] : []))
@@ -377,7 +719,9 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         return record(json(members.filter(mm => mm.channel_id === x![1])))
       if ((x = m(/^\/api\/v4\/channels\/([a-z0-9]{26})\/members$/)) && req.method === 'POST') {
         const c = channels[x[1]]
-        if (!c || !isMember(c.id, caller)) return record(refuse(403, 'api.context.permissions.app_error', 'You do not have the appropriate permissions.'))
+        // An open channel takes a person who asks for themselves; a private one needs a member to add them.
+        const selfJoin = !!c && !c.delete_at && c.type === 'O' && String(body.user_id ?? '') === caller
+        if (!c || (!isMember(c.id, caller) && !selfJoin)) return record(refuse(403, 'api.context.permissions.app_error', 'You do not have the appropriate permissions.'))
         const uid = String(body.user_id ?? '')
         if (!users[uid]) return record(refuse(400, 'model.channel_member.is_valid.user_id.app_error', 'Invalid user id.'))
         const had = members.find(mm => mm.channel_id === c.id && mm.user_id === uid)
@@ -474,7 +818,10 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         if (!p || p.delete_at) return record(refuse(404, 'app.post.get.app_error', 'Unable to get the post.'))
         if (p.user_id !== caller) return record(refuse(403, 'api.context.permissions.app_error', 'You do not have the appropriate permissions.'))
         const t = now()
-        if (typeof body.message === 'string' && body.message !== p.message) { p.message = body.message; p.edit_at = t }
+        if (typeof body.message === 'string' && body.message !== p.message) {
+          history.set(p.id, [{ ...p, id: mint('post'), original_id: p.id, delete_at: t }, ...(history.get(p.id) ?? [])])
+          p.message = body.message; p.edit_at = t
+        }
         if (typeof body.is_pinned === 'boolean') p.is_pinned = body.is_pinned
         if (body.props && typeof body.props === 'object') p.props = body.props as Record<string, unknown>
         p.update_at = t

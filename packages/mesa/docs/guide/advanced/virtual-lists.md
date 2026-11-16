@@ -13,12 +13,14 @@ spacers so the scrollbar stays honest.
   }))
 </script>
 
-{#virtual each rows as row (row.id) height=48 viewport="500px"}
-  <div class="row">
-    <span>{row.name}</span>
-    <span>{row.value}</span>
-  </div>
-{/virtual}
+<div class="list">
+  {#virtual each rows as row (row.id) height=48 viewport="500px"}
+    <div class="row">
+      <span>{row.name}</span>
+      <span>{row.value}</span>
+    </div>
+  {/virtual}
+</div>
 
 <style>
   .row { display: flex; justify-content: space-between; height: 48px; }
@@ -52,7 +54,8 @@ it. A row that scrolls out loses its local state when it is disposed.
 - **Fixed height only.** Rows of varying height are not supported. A row taller
   or shorter than `height` makes the scroll position drift.
 - **The block's parent is the scroller.** Put the block in its own element so
-  the spacers do not mix with other children.
+  the spacers do not mix with other children. A block with no element around
+  it, at a component's root or straight inside an `{#if}`, is a compile error.
 - **On the server it renders a window, not nothing.** With no viewport to
   measure, the first window comes from the declared (or fallback) height, and the
   bottom spacer carries the rest, so a prerendered page has its first screen of

@@ -50,6 +50,14 @@
     "./layout": {
       "types": "./src/layout.d.ts",
       "default": "./src/layout.js"
+    },
+    "./release-cache": {
+      "types": "./src/release-cache.d.ts",
+      "default": "./src/release-cache.js"
+    },
+    "./release": {
+      "types": "./src/release.d.ts",
+      "default": "./src/release.js"
     }
   },
   "scripts": {

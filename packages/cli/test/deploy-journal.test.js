@@ -83,7 +83,7 @@ describe('the fragment', () => {
 
     await sys.release.create({ data: {
       id: 'rel_1', app: 'shop', environment: 'production',
-      configurationHash: 'bh1', generation: 1, schemaHash: 'sh1',
+      configurationHash: 'bh1', schemaHash: 'sh1',
     } })
 
     const [row] = await sys.release.findMany()

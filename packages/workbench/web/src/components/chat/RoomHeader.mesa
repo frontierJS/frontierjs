@@ -1,0 +1,40 @@
+<script>
+  // components/chat/RoomHeader.mesa -- the bar above a channel: its name, its
+  // purpose, and who is in it. Read-only in this slice: the star, the mute and
+  // the room menu are later slices'.
+  import Icon from '../Icon.mesa'
+  import AvatarGroup from '@frontierjs/ui/components/display/AvatarGroup.mesa'
+  import { channelLabel, personName } from '../../lib/chat.js'
+
+  export let channel = null
+  export let members = []   // ChannelMember rows of this channel
+  export let people  = []   // Profile rows
+  export let self    = null
+
+  $: label = channelLabel(channel, people, self)
+  $: isDm  = channel?.type === 'direct' || channel?.type === 'group'
+  $: users = members.map(m => ({ name: personName(m.profileExternalId, people) }))
+</script>
+
+{#if channel}
+  <header class="room-head" data-room-header>
+    <div class="room-name stack gap-2xs">
+      <h1 class="h4 cluster gap-xs">
+        {#if isDm}<Icon name="message" />{:else if channel.type === 'private'}<Icon name="lock" label="Private" />{:else}<span class="text-muted" aria-hidden="true">#</span>{/if}
+        <span data-room-title>{label.slice(2)}</span>
+      </h1>
+      {#if channel.purpose}<p class="text-sm text-muted room-purpose">{channel.purpose}</p>{/if}
+    </div>
+    <span class="cluster gap-xs text-sm text-muted" title={users.map(u => u.name).join(', ')} data-room-members>
+      <AvatarGroup {users} size="xs" max={4} /> {members.length}
+    </span>
+  </header>
+{/if}
+
+<style>
+  .room-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding-inline: var(--chat-gutter, var(--space-md)); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .room-name { min-inline-size: 0; }
+  .room-head h1 { margin: 0; align-items: center; font-weight: var(--label-font-weight); }
+  .room-head h1 .text-muted { font-weight: normal; }
+  .room-purpose { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>

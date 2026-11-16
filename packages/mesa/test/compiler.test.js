@@ -4195,6 +4195,23 @@ describe('{#virtual each}', () => {
     app.destroy()
   })
 
+  // FJS-4367. The runtime appends rows into its anchor, and a list with no
+  // element of its own around it anchored on a Comment.
+  it('refuses a list with no enclosing element, as a root or an {#if} branch', async () => {
+    for (const src of [`
+{#virtual each rows as row (row.id)}
+  <div>{row.id}</div>
+{/virtual}`, `
+<p>before</p>
+{#if rows.length}
+  {#virtual each rows as row (row.id)}
+    <div>{row.id}</div>
+  {/virtual}
+{/if}`]) {
+      await expect(compile(src)).rejects.toThrow(/\{#virtual each\} needs an element of its own around it/)
+    }
+  })
+
   // FJS-3737. A drawn row keeps its key across an array change, so it has to be
   // handed the new item and index; the window alone not moving is no reason to
   // skip that, and the row's own effects must outlive the block's re-run.

@@ -10,7 +10,8 @@ const member = ({ user }) => !!user
 // headed list in the drawer.
 export const groups = [
   { label: null, show: member, entries: [
-    { href: '/workbench/',          label: 'Chats',           icon: 'workbench',     sub: 'a Claude Code chat per pinned checkout' },
+    { href: '/workbench/',          label: 'Bench',           icon: 'workbench',     sub: 'a Claude Code chat per pinned checkout' },
+    { href: '/messages/',          label: 'Messages',        icon: 'workbench',     sub: 'the team\'s Mattermost: channels, direct messages and what is unread' },
     { href: '/terminal/',           label: 'Terminal',        icon: 'workbench',     sub: 'a shell in your home folder that outlives the tab' },
   ] },
   { label: 'Atlas', show: member, entries: [

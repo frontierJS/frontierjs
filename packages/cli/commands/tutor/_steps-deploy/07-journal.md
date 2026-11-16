@@ -17,7 +17,7 @@ would be lying in exactly the situation somebody is reading it to get out of.
 
 It is what makes the next two steps possible. A revert is not *run the previous
 image*; it is *restore the pair the journal recorded* — a Release and the
-environment generation it ran with.
+configuration it ran with.
 
 ```js
 if (!await narrate($)) return

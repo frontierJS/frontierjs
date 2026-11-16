@@ -6607,6 +6607,14 @@ export async function createClient({
     plugins:       pluginRunner,
     auth:          null,
     readDb,
+    // The read connection of the database a model lives in. `readDb` is main's,
+    // and a policy's check() lookup on a model in another database ran there
+    // and answered "no such table" (relations never cross databases, so the
+    // model's own database holds the target too).
+    readDbFor(/** @type {string} */ modelName) {
+      const name = shapes[modelName]?.db
+      return name && name !== 'main' && dbRegistry[name]?.readDb ? dbRegistry[name].readDb : this.readDb
+    },
     onLog:        onLog ?? null,
     // Shared by REFERENCE, for the same reason the listener Sets below are: a
     // scoped client is `{ ...ctx }`, so a value assigned to the root after any

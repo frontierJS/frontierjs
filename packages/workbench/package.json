@@ -22,14 +22,17 @@
     "db:types": "bunx litestone types --schema db/schema.lite --audience=system --out db/schema.d.ts",
     "db:reset": "bun run stop; rm -rf db/workbench.db db/workbench.db-shm db/workbench.db-wal db/workbench-jobs.db db/workbench-jobs.db-shm db/workbench-jobs.db-wal",
     "verify:atlas": "bun web/test/verify-atlas.mjs",
+    "verify:messages": "bun web/test/verify-messages.mjs",
     "verify:desktop": "bun desktop/test/verify.mjs",
-    "build:desktop": "bun desktop/deploy/build.mjs"
+    "build:desktop": "bun desktop/deploy/build.mjs",
+    "verify:chat": "bun api/test/verify-chat.ts"
   },
   "dependencies": {
     "@frontierjs/caravan": "workspace:*",
     "@frontierjs/conduit": "workspace:*",
     "@frontierjs/conduit-digitalocean": "workspace:*",
     "@frontierjs/conduit-hetzner": "workspace:*",
+    "@frontierjs/conduit-mattermost": "workspace:*",
     "@frontierjs/css": "workspace:*",
     "@frontierjs/junction": "workspace:*",
     "@frontierjs/litestone": "workspace:*",

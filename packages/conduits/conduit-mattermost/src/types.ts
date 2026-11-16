@@ -96,6 +96,8 @@ export interface User {
   roles: string
   locale?: string; is_bot?: boolean; bot_description?: string
   last_picture_update?: number; timezone?: Record<string, string>
+  /** `customStatus` is a JSON STRING of a `CustomStatus`, as `props` values all are. */
+  props?: Record<string, string>
 }
 
 export interface FileInfo {
@@ -137,4 +139,54 @@ export interface ChannelPatch {
   displayName?: string
   purpose?:     string
   header?:      string
+}
+
+// ─── Beyond the mirror: what a chat client reads and writes about one person ───
+
+/** A person's own saved state for one reply box. `root_id` '' is the channel's box. */
+export interface Draft {
+  create_at: number; update_at: number; delete_at: number
+  user_id: MattermostId; channel_id: MattermostId; root_id: MattermostId | ''
+  message: string; props?: Record<string, unknown>; file_ids?: MattermostId[]
+  metadata?: unknown; priority?: unknown
+}
+
+export interface NewDraft {
+  channelExternalId: MattermostId
+  rootExternalId?:   MattermostId
+  message:           string
+  props?:            Record<string, unknown>
+  fileExternalIds?:  MattermostId[]
+}
+
+/** One preference: a person's key-value under a category. Values are strings, `"true"` for a flag. */
+export interface Preference { user_id: MattermostId; category: string; name: string; value: string }
+
+/** `online` | `away` | `offline` | `dnd`. `manual` says a person set it rather than their activity. */
+export type StatusName = 'online' | 'away' | 'offline' | 'dnd'
+export interface UserStatus { user_id: MattermostId; status: StatusName; manual: boolean; last_activity_at: number; dnd_end_time?: number }
+
+/** What `props.customStatus` holds once parsed. `expires_at` is an ISO time, '' for never. */
+export interface CustomStatus { emoji: string; text: string; duration?: string; expires_at?: string }
+
+export interface SidebarCategory {
+  id: MattermostId; user_id: MattermostId; team_id: MattermostId
+  /** `favorites` | `channels` | `direct_messages` are the system's; `custom` is the person's. */
+  type: 'favorites' | 'channels' | 'direct_messages' | 'custom'
+  display_name: string
+  /** '' for manual order. */
+  sorting: '' | 'alpha' | 'recent' | 'manual'
+  channel_ids: MattermostId[]
+  muted: boolean; collapsed: boolean; sort_order?: number
+}
+export interface SidebarCategories { order: MattermostId[]; categories: SidebarCategory[] }
+
+/** `POST /teams/{id}/posts/search`: a post list and, per post, the terms it matched. */
+export interface SearchResult extends PostList { matches?: Record<MattermostId, string[]> | null }
+
+/** What `set_unread` answers: the person's counts in the channel as they now stand. */
+export interface ChannelUnreadAt {
+  team_id: MattermostId; user_id: MattermostId; channel_id: MattermostId
+  msg_count: number; mention_count: number; msg_count_root?: number; mention_count_root?: number
+  last_viewed_at: number
 }

@@ -47,10 +47,10 @@ describe('the tables are the ones the schema emits', () => {
     const stmts = [
       ...openJournal({ app: 'a', host: 'h' }),
       ...readState({ app: 'a', environment: 'e' }),
-      ...readAttempts({ kind: 'deploy', app: 'a', environment: 'e', releaseId: 'r', generation: 1 }),
+      ...readAttempts({ kind: 'deploy', app: 'a', environment: 'e', releaseId: 'r' }),
       ...recordRelease({ id: 'r', app: 'a', environment: 'e', configurationHash: 'b' }),
-      ...recordConfiguration({ app: 'a', environment: 'e', generation: 1, hash: 'h' }),
-      ...openTransition({ transition: { id: 't', kind: 'deploy', app: 'a', environment: 'e', releaseId: 'r', generation: 1, plan: {} }, steps: [] }),
+      ...recordConfiguration({ app: 'a', environment: 'e', hash: 'h' }),
+      ...openTransition({ transition: { id: 't', kind: 'deploy', app: 'a', environment: 'e', releaseId: 'r', plan: {} }, steps: [] }),
       ...claimStep({ id: 's' }), ...finishStep({ id: 's', status: 'succeeded' }),
       ...settleTransition({ id: 't', status: 'succeeded' }),
       ...readHistory({ app: 'a', environment: 'e' }), ...readSteps({ transitionId: 't' }),
@@ -205,7 +205,7 @@ describe('what a rerun does with a step', () => {
 })
 
 describe('did the world move under the plan', () => {
-  const planned = { serving: 'r1', generation: 2, schemaHash: 'abc' }
+  const planned = { serving: 'r1', schemaHash: 'abc' }
 
   test('agreement is agreement', () => {
     expect(preconditionVerdict(planned, { ...planned }).ok).toBe(true)
@@ -218,7 +218,6 @@ describe('did the world move under the plan', () => {
 
   test.each([
     ['serving',    { serving: 'r9' }],
-    ['generation', { generation: 3 }],
     ['schemaHash', { schemaHash: 'zzz' }],
   ])('%s moving is drift, and it names itself', (key, patch) => {
     const v = preconditionVerdict(planned, { ...planned, ...patch })
@@ -228,7 +227,7 @@ describe('did the world move under the plan', () => {
   })
 
   test('a term the plan did not state is not graded', () => {
-    expect(preconditionVerdict({ serving: 'r1' }, { serving: 'r1', generation: 7 }).ok).toBe(true)
+    expect(preconditionVerdict({ serving: 'r1' }, { serving: 'r1', schemaHash: 'zzz' }).ok).toBe(true)
   })
 
   // The two answers came from two intents, so picking one is a guess about which
@@ -250,17 +249,17 @@ describe('the journal, through the runner that ships to the target', () => {
 
   const RELEASE = {
     id: 'r2aaaaaaaaaa', app: 'shop', environment: 'production',
-    digest: null, configurationHash: 'b'.repeat(64), generation: 1,
+    digest: null, configurationHash: 'b'.repeat(64),
     schemaHash: 'c'.repeat(64), createdBy: 'jordan',
   }
   const NAMES = ['01-preflight', '02-ship', '04-build-api', '06-swap']
   const steps = (tid) => NAMES.map((name, i) => ({
     id: `deploy:${tid}:${name}`, transitionId: tid, name, ordinal: i + 1,
-    status: 'pending', precondition: { serving: null, generation: 1, schemaHash: RELEASE.schemaHash },
+    status: 'pending', precondition: { serving: null, schemaHash: RELEASE.schemaHash },
   }))
   const TRANSITION = {
     id: 't1', kind: 'deploy', app: 'shop', environment: 'production',
-    releaseId: RELEASE.id, fromReleaseId: null, generation: 1,
+    releaseId: RELEASE.id, fromReleaseId: null,
     isCrossingPivot: false, plan: { formatVersion: 1, attempt: 1, steps: [] }, actor: 'jordan',
   }
 
@@ -298,7 +297,7 @@ describe('the journal, through the runner that ships to the target', () => {
       // whole defect: `attempt()` answers nothing here.
       expect(await j.attempt({
         kind: 'deploy', app: 'shop', environment: 'production',
-        releaseId: otherRelease.id, fromReleaseId: null, generation: 1,
+        releaseId: otherRelease.id, fromReleaseId: null,
       })).toMatchObject({ resume: null })
 
       const held = await j.live({ app: 'shop', environment: 'production' })
@@ -401,7 +400,7 @@ describe('the journal, through the runner that ships to the target', () => {
   test('an empty journal reports nothing serving', async () => {
     await j.open({ app: 'shop', host: 'deploy@prod' })
     expect(await j.state({ app: 'shop', environment: 'production' }))
-      .toEqual({ serving: null, schemaHash: null, generation: null, transition: null,
+      .toEqual({ serving: null, schemaHash: null, configurationHash: null, transition: null,
                  kind: null, paused: false, since: null, actor: null })
   })
 
@@ -472,18 +471,19 @@ describe('the journal, through the runner that ships to the target', () => {
     expect((await j.state({ app: 'shop', environment: 'production' })).serving).toBeNull()
   })
 
-  test('the configuration generation comes back off the recorded set', async () => {
+  test('the serving configuration hash comes back off the Release', async () => {
     await j.begin({
       release: RELEASE, transition: TRANSITION, steps: steps('t1'),
-      configuration: { app: 'shop', environment: 'production', generation: 4, hash: 'h', values: { A: '1' }, secretRefs: {} },
+      configuration: { app: 'shop', environment: 'production', hash: RELEASE.configurationHash, values: { A: '1' }, secretRefs: {} },
     })
-    expect((await j.state({ app: 'shop', environment: 'production' })).generation).toBe(4)
+    await j.settle({ id: 't1', status: 'succeeded' })
+    expect((await j.state({ app: 'shop', environment: 'production' })).configurationHash).toBe(RELEASE.configurationHash)
   })
 
   test('attempt numbering is read off the rows, not guessed', async () => {
     const intent = {
       kind: 'deploy', app: 'shop', environment: 'production',
-      fromReleaseId: null, releaseId: RELEASE.id, generation: 1,
+      fromReleaseId: null, releaseId: RELEASE.id,
     }
     expect(await j.attempt(intent)).toMatchObject({ attempt: 1, resume: null })
     await begin()

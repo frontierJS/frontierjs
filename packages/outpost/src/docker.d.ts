@@ -84,6 +84,13 @@ export function createDocker({ run, stream, fetch: fetchFn, workDir, health, app
     deployKeyDir?: string;
 }): {
     digestOf: (image: any) => Promise<string>;
+    /** Whether the image a digest names is on this daemon, so a rollback is
+     *  refused before anything is stopped (`FJS-4128`). A caller with no digest
+     *  asks of the tag. */
+    held: ({ image, digest }: {
+        image: any;
+        digest: any;
+    }) => Promise<boolean>;
     /** The app's deploy key, made on the first ask (`FJS-D1555`). */
     deployKey: ({ appId }: {
         appId: any;
@@ -117,6 +124,7 @@ export function createDocker({ run, stream, fetch: fetchFn, workDir, health, app
         commitSha: string;
         dockerfile: string;
         exposedPort: number;
+        schemaHash: string;
     }>;
     /**
      * One file off the app's last clone, for Basecamp to seed the App's stored
@@ -622,10 +630,36 @@ export function createDocker({ run, stream, fetch: fetchFn, workDir, health, app
     }>;
 };
 /** `hostFiles` is the box a Basecamp runs on only (`config.js` § hostFiles). */
-export function createInspector({ run, hostFiles, appsDir, exclusive }?: {
+export function createInspector({ run, hostFiles, appsDir, releases, exclusive }?: {
     run?: typeof spawnRun;
     hostFiles?: any;
     appsDir?: string;
+    releases?: {
+        read: (appId: any) => any[];
+        apps: () => string[];
+        record(appId: any, { release_id, digest, image, config, secret_refs, rollback, applied_at }: {
+            release_id?: any;
+            digest: any;
+            image: any;
+            config: any;
+            secret_refs?: {};
+            rollback?: boolean;
+            applied_at?: string;
+        }): {
+            release_id: any;
+            digest: any;
+            image: any;
+            config: {
+                env: {
+                    [k: string]: any;
+                };
+            };
+            secret_refs: {};
+            applied_at: string;
+            rollback: boolean;
+        };
+        drop(appId: any, drop: any): any[];
+    };
     exclusive?: (_appId: any, fn: any) => any;
 }): {
     volumes(): Promise<{
@@ -709,6 +743,7 @@ export function createInspector({ run, hostFiles, appsDir, exclusive }?: {
             images: number;
             containers: number;
             build_cache_bytes: number;
+            releases: number;
         };
         volumes: string[];
     }>;

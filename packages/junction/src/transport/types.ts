@@ -210,6 +210,11 @@ export interface TransportContext {
   __correlationHeaders?:  Record<string, string>
   __pendingCookies?:      Array<[string, string, Record<string, unknown>]>
 
+  // What a handler holds for the length of the request, called once the
+  // handler has settled, on the error path too: `app.principalFor(ctx)` parks
+  // the tenant client's pool lease here, which a return value cannot carry.
+  __releases?:            Array<() => void>
+
   // The status the response actually carried, stashed on the way out so a
   // middleware that already ran `await next()` can log it.
   __status?:              number

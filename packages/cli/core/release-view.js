@@ -375,7 +375,7 @@ export const RELEASE_STEPS = [
     title: 'can it be taken back',
     why:   'what a revert would restore, or the refusal by name — runs nothing' },
   { id: 'revert',    stage: 'undo',   scope: 'app', argv: ['deploy:revert'], remote: true,
-    confirm: 'restores the Release and Generation before this one',
+    confirm: 'restores the Release and configuration before this one',
     title: 'revert',
     why:   'restores the pair from the journal; refused past the pivot' },
   { id: 'rollback',  stage: 'undo',   scope: 'app', argv: ['deploy:rollback'], remote: true,

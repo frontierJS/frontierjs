@@ -13,7 +13,7 @@ import { tmpdir }                             from 'os'
 import { join }                               from 'path'
 
 import { configurationSet, schemaSurfaceHash, mintRelease, formatRelease,
-         ConfigurationError, RELEASE_FORMAT } from '../core/release.js'
+         releaseAppOf, ConfigurationError, RELEASE_FORMAT } from '../core/release.js'
 
 const base = (over = {}) => ({
   app: 'shop', environment: 'production',
@@ -175,5 +175,17 @@ describe('the pivot belongs to the transition', () => {
     expect(allowed).toBeTruthy()
     for (const rung of ['unchanged', 'expand', 'unknown', 'contract'])
       expect(allowed).toContain(`'${rung}'`)
+  })
+})
+
+// Basecamp mints with its App id, so a project anchored to one must hash the
+// same term or the two doors name one release twice (FJS-D2230).
+describe('the app term', () => {
+  test('a project anchored to a Basecamp App hashes the App id', () => {
+    expect(releaseAppOf({ app_id: 'shop' }, { BASECAMP_APP_ID: 'a1b2' })).toBe('a1b2')
+  })
+
+  test('a project that never met Basecamp hashes its own app_id', () => {
+    expect(releaseAppOf({ app_id: 'shop' }, {})).toBe('shop')
   })
 })

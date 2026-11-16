@@ -1,6 +1,6 @@
 ---
 title: deploy:revert
-description: Restore the pair (Release, Generation) from the journal — and refuse by name when it cannot
+description: Restore the pair (Release, configuration) from the journal — and refuse by name when it cannot
 alias: revert
 examples:
   - fli deploy:revert --plan
@@ -73,7 +73,7 @@ log.info(`  ${api.host}:${api.path}`)
 | | |
 | --- | --- |
 | `fli deploy:rollback` | put the previous **image** back. No journal, no history, no questions — it works on a target that has never deployed through a journal at all |
-| `fli deploy:revert` | restore the **pair** (Release, Generation), and refuse by name when it cannot |
+| `fli deploy:revert` | restore the **pair** (Release, configuration), and refuse by name when it cannot |
 
 The second never silently becomes the first. A refusal names the flag that would
 override it, and the flags are separate so overriding one does not quietly
@@ -91,7 +91,7 @@ tool ships, and it is wrong in exactly the situations somebody reaches for it.
     cannot serve this database. Recovery past a pivot is forward, not back
     override with --past-pivot
   ✗ configuration
-    release a1b2c3d4e5f6 was minted at generation 2 and generation 3 is in force —
+    release a1b2c3d4e5f6 was minted on configuration 9f3c1a07be42 and 5d8e20c4a1f7 is in force —
     reverting restores the code and NOT the configuration it ran with
     override with --onto-current-configuration
 ```
@@ -109,7 +109,7 @@ release whose bytes nothing recorded — there is no image to start.
 Serving state is the pair. A revert restarts with the plain `configuration` values
 the restored Release recorded (`FJS-D1029`), but a deploy writes no `.env` on a target —
 setup seeds it once and the operator owns it after (`FJS-D1186`) — so once the
-generation has moved a revert cannot restore the secrets half. It can only put old
+configuration hash has moved a revert cannot restore the secrets half. It can only put old
 code onto today's secrets, which is the documented Fly failure this separation exists
 to refuse.
 
@@ -119,6 +119,6 @@ journal records which one happened.
 
 ## `--plan` first
 
-`fli deploy:revert --plan` prints the target, the bytes, the generation and every
+`fli deploy:revert --plan` prints the target, the bytes, the configuration hash and every
 refusal, and touches nothing. It is the same escape hatch `fli deploy --plan` is,
 arriving at the command where an operator is most likely to be in a hurry.

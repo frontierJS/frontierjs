@@ -811,6 +811,7 @@
         "@frontierjs/mesa": "*",
         "@frontierjs/sierra": "*",
         "@frontierjs/toolbelt": "*",
+        "@frontierjs/ui": "*",
         "vite": "^8.3.2",
       },
     },
@@ -848,7 +849,13 @@
       "peerDependencies": {
         "@frontierjs/css": "^0.16.0",
         "@frontierjs/mesa": "^0.1.0",
+        "@xterm/addon-fit": "0.11.0",
+        "@xterm/xterm": "6.0.0",
       },
+      "optionalPeers": [
+        "@xterm/addon-fit",
+        "@xterm/xterm",
+      ],
     },
     "packages/workbench": {
       "name": "@frontierjs/workbench",
@@ -858,6 +865,7 @@
         "@frontierjs/conduit": "workspace:*",
         "@frontierjs/conduit-digitalocean": "workspace:*",
         "@frontierjs/conduit-hetzner": "workspace:*",
+        "@frontierjs/conduit-mattermost": "workspace:*",
         "@frontierjs/css": "workspace:*",
         "@frontierjs/junction": "workspace:*",
         "@frontierjs/litestone": "workspace:*",

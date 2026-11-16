@@ -351,6 +351,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./cert (default)` | `src/cert.js` | yes |
 | exports | `./layout (types)` | `src/layout.d.ts` | yes |
 | exports | `./layout (default)` | `src/layout.js` | yes |
+| exports | `./release (types)` | `src/release.d.ts` | yes |
+| exports | `./release (default)` | `src/release.js` | yes |
 | bin | `outpost` | `src/index.js` | yes |
 
 ## `@frontierjs/print-kit`

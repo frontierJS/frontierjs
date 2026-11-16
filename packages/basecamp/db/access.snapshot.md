@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-77 models · 1 view · 78 gated · 0 unrestricted
-61 with row policies · 31 with protected fields · 36 declared moves · 16 @system · 0 @seals
+78 models · 1 view · 79 gated · 0 unrestricted
+62 with row policies · 32 with protected fields · 36 declared moves · 16 @system · 0 @seals
 ```
 
 ## Gates
@@ -94,6 +94,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `User` | 1 VISITOR | 8 SYSTEM | 1 VISITOR | 5 ADMINISTRATOR |
 | `Variable` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `VariableVersion` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `Verification` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Volume` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Wait` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -653,6 +654,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **delete** — `appId != null || environment.isProtected == false || auth().level >= 5` — "Protected environments require admin or owner role to modify"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
+### `VariableVersion`
+
+- deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+
 ### `Volume`
 
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
@@ -731,6 +740,9 @@ rather than refusing the row.
 | `Deployment` | `imageSha256` | `@system` |
 | `Deployment` | `swap` | `@system` |
 | `Deployment` | `swapReason` | `@system` |
+| `Deployment` | `releaseId` | `@system` |
+| `Deployment` | `schemaHash` | `@system` |
+| `Deployment` | `pivot` | `@system` |
 | `Deployment` | `platformVersion` | `@system` |
 | `Deployment` | `previousDeploymentId` | `@system` |
 | `Deployment` | `startedAt` | `@system` |
@@ -795,6 +807,8 @@ rather than refusing the row.
 | `User` | `status` | `@allow(write, auth().isSystemAdmin)` |
 | `User` | `isSystemAdmin` | `@allow(write, auth().isSystemAdmin)` |
 | `Variable` | `secretValue` | `@encrypted` |
+| `Variable` | `revision` | `@system` |
+| `VariableVersion` | `secretValue` | `@encrypted` |
 | `Verification` | `value` | `@guarded` |
 | `Verification` | `secret` | `@guarded` |
 | `Verification` | `code` | `@guarded` |

@@ -1,0 +1,53 @@
+<script>
+  // routes/messages/_module.mesa -- the Messages frame: the channels on the left,
+  // the routed channel on the right, each column scrolling inside itself. Under
+  // 960px it is one column: the sidebar with no channel open, the channel with one.
+  //
+  // The lists (channels, the reader's memberships, the people) are made here once,
+  // before any child reads them, and let go of with the screen. A member who has
+  // not linked their chat account has no profile to grade a read against, so they
+  // get the way to link it and nothing else.
+  import { page } from '@frontierjs/sierra/router'
+  import { session } from '../../lib/session.js'
+  import { openLists } from '../../lib/chat.js'
+  import ChatSidebar from '../../components/chat/ChatSidebar.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  $: (page.route, page.pathname, page.params.id, session.user)
+
+  // Called as a plain statement, not read from a derived const: a derived const
+  // is lazy, and nothing in this template reads it, so the lists would never be made.
+  const lists = openLists()
+  $.onDestroy(() => lists?.destroy())
+</script>
+
+{#if lists}
+  <div class="chat" class:has-room={!!page.params.id} data-messages>
+    <ChatSidebar currentId={page.params.id ?? null} />
+    <div class="chat-main">
+      <slot />
+    </div>
+  </div>
+{:else}
+  <div class="chat-unlinked" data-messages-unlinked>
+    <EmptyState title="Messages is not linked">
+      Paste your Mattermost personal access token under Services on the Laptop screen to read and write the team's channels from here.
+      {#snippet action()}<Button href="/laptop/#services">Open Laptop</Button>{/snippet}
+    </EmptyState>
+  </div>
+{/if}
+
+<style>
+  /* The frame fills the screen: it pads and scrolls for every other page, but a chat column scrolls itself. */
+  :global(.screen:has(.chat)) { padding: 0; overflow: hidden; }
+  :global(.screen-body:has(.chat)) { max-inline-size: none; padding: 0; block-size: 100%; }
+  .chat { display: grid; grid-template-columns: calc(var(--space-2xl) * 7) minmax(0, 1fr); block-size: 100%; min-block-size: 0; }
+  .chat-main { display: flex; flex-direction: column; min-block-size: 0; min-inline-size: 0; background: var(--surface); }
+  .chat-unlinked { padding: var(--space-2xl); }
+  @media (max-width: 960px) {
+    .chat { grid-template-columns: 1fr; }
+    .chat.has-room > :global(.chat-sidebar) { display: none; }
+    .chat:not(.has-room) > .chat-main { display: none; }
+  }
+</style>

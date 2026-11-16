@@ -54,6 +54,9 @@ export function layout(env = {}) {
     builds:           `${state}/builds`,
     static:           `${state}/static`,
     backups:          `${state}/backups`,
+    /** `<app>.json`, an app's last release records (`FJS-D2178`). Beside
+     *  `apps/` and not in it, which the inspector reads as one app per entry. */
+    releases:         `${state}/releases`,
     restore:          `${state}/restore`,
     replicaRestore:   `${state}/replica-restore`,
     deployKeys:       `${state}/deploy-keys`,

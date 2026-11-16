@@ -1,0 +1,73 @@
+---
+title: Messages
+---
+<script>
+  // /messages/<channelExternalId>/ -- one channel: its header, its posts and the
+  // composer. Opening it calls `chat.view`, which stamps the reader's watermark on
+  // the server; the sync pushes the new counts back and the pill goes. A post that
+  // arrives while the channel is on screen and the window has focus is read at once;
+  // otherwise it counts, and the focus coming back reads it.
+  import { page } from '@frontierjs/sierra/router'
+  import { channelMembers } from '../../../resources/ChannelMember.mesa'
+  import { chat, getLists, countsOf, channelLabel, openChannel, markRead, me } from '../../../lib/chat.js'
+  import RoomHeader from '../../../components/chat/RoomHeader.mesa'
+  import PostList from '../../../components/chat/PostList.mesa'
+  import Composer from '../../../components/chat/Composer.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  const lists = getLists()
+  $: id = page.params.id
+  $: people = lists.people.rows
+  $: channel = lists.channels.rows.find(c => c.externalId === id) ?? null
+  $: counts = countsOf(lists.channels.rows, lists.mine.rows)
+  $: self = me()
+  $: loading = lists.channels.loading
+  $: missing = !channel && !loading
+
+  // Everyone in this channel, for the header.
+  let memberList = null
+  function watchMembers(channelId) {
+    memberList?.destroy()
+    memberList = channelMembers.tethered({ state: 'local', all: true, where: { channelExternalId: channelId } })
+  }
+  watchMembers(id)
+  $.onDestroy(() => memberList?.destroy())
+  $: members = memberList.rows
+
+  let error = null
+  const open = (channelId) => openChannel(channelId).catch(e => { error = e.message })
+  $.onMount(() => open(id))
+  $: id, () => { watchMembers(id); open(id) }
+  $.onDestroy(() => { chat.activeChannelId = null })
+
+  // A post landing while the reader is looking at the channel is read; one that
+  // lands while the window is behind another is left counting.
+  let marking = false
+  async function readIfSeen() {
+    if (marking || !id || !(counts[id]?.unread > 0 || counts[id]?.mentions > 0) || !document.hasFocus()) return
+    marking = true
+    try { await markRead(id) } catch (e) { error = e.message } finally { marking = false }
+  }
+  $: counts, () => readIfSeen()
+</script>
+
+<mesa:window onfocus={readIfSeen} />
+
+{#if missing}
+  <div class="room-missing"><Alert tone="danger">No such channel, or not one you can read.</Alert></div>
+{:else if channel}
+  <div class="room-col" data-channel-page={id}>
+    <RoomHeader {channel} {members} {people} {self} />
+    {#if error}<Alert tone="danger">{error}</Alert>{/if}
+    <PostList channelId={id} {people} />
+    <Composer channelId={id} placeholder={`Message ${channelLabel(channel, people, self).slice(2)}`} />
+  </div>
+{:else}
+  <p class="text-muted room-missing">…</p>
+{/if}
+
+<style>
+  .room-missing { padding: var(--space-2xl); }
+  /* One reading column, however wide the window: the header, the posts and the composer each pad their sides out to it. */
+  .room-col { --chat-gutter: max(var(--space-2xl), calc((100% - var(--container-narrow)) / 2)); display: flex; flex-direction: column; flex: 1; min-block-size: 0; min-inline-size: 0; }
+</style>

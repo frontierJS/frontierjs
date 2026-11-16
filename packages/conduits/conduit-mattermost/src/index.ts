@@ -21,8 +21,8 @@
 
 import type { ConduitRequest, ConduitResult, TargetDescriptor } from '@frontierjs/conduit'
 import { translate, type MattermostFailure } from './errors.ts'
-import { channelModel, channelMemberModel, fileInfoModel, MATTERMOST_TARGET, MATTERMOST_UPLOAD_TARGET, MATTERMOST_USER_TARGET, postModel, reactionModel, teamModel, threadModel, profileModel, type ChannelMemberRow, type ChannelRow, type FileInfoRow, type PostRow, type ReactionRow, type TeamRow, type ThreadRow, type ProfileRow } from './mirror.ts'
-import type { Channel, ChannelMember, FileInfo, MattermostId, NewPost, Post, PostList, Reaction, Team, User, UserThread, UserThreadList } from './types.ts'
+import { channelModel, channelMemberModel, fileInfoModel, MATTERMOST_TARGET, MATTERMOST_UPLOAD_TARGET, MATTERMOST_USER_TARGET, memberKey, isCategoryId, parseCategory, parseDraft, parsePreference, parseStatus, parseUnread, postModel, reactionModel, teamModel, threadModel, profileModel, type CategoryRow, type ChannelMemberRow, type CustomStatusRow, type DraftRow, type PreferenceRow, type StatusRow, type UnreadRow, type ChannelRow, type FileInfoRow, type PostRow, type ReactionRow, type TeamRow, type ThreadRow, type ProfileRow } from './mirror.ts'
+import type { Channel, ChannelMember, ChannelUnreadAt, Draft, FileInfo, MattermostId, NewDraft, NewPost, Post, PostList, Preference, Reaction, SearchResult, SidebarCategories, SidebarCategory, StatusName, Team, User, UserStatus, UserThread, UserThreadList } from './types.ts'
 
 export * from './types.ts'
 export * from './errors.ts'
@@ -154,7 +154,11 @@ export async function listPosts(mm: MattermostSend, channelExternalId: string, o
   if ([opts.since, opts.before, opts.after].filter(x => x !== undefined).length > 1) throw new TypeError('mattermost: listPosts takes one of since, before, after')
   const r = await mm.api<PostList>({ method: 'GET', path: `${API}/channels/${channelExternalId}/posts`, query: { since: opts.since, before: opts.before, after: opts.after, per_page: opts.perPage ?? 60, page: opts.page ?? 0 }, ...LIST })
   if (r.error) return { error: translate(r.error, r.meta.status, r.meta.headers) }
-  const list = r.data
+  return pageOf(r.data)
+}
+
+/** A post list as a page of rows — `listPosts`, `listPinned`, `listSavedPosts` and `searchPosts` all answer one. */
+function pageOf(list: PostList | undefined): PostPage {
   if (!list || !Array.isArray(list.order) || !list.posts) return { error: { kind: 'invalid_response', message: 'Mattermost answered something that is not a post list', retryable: false } }
   const posts = list.order.map(id => list.posts[id]).filter(Boolean)
   const meta = (p: Post) => (p.metadata && typeof p.metadata === 'object' ? p.metadata : {}) as { reactions?: Reaction[]; files?: FileInfo[] }
@@ -332,4 +336,284 @@ export async function fileBytes(mm: MattermostSend, fileExternalId: MattermostId
   if (r.error) return { error: translate(r.error, r.meta.status, r.meta.headers) }
   if (!(r.data instanceof Uint8Array)) return { error: { kind: 'invalid_response', message: 'Mattermost answered a file with something that is not bytes', retryable: false } }
   return { bytes: r.data, type: r.meta.headers?.['content-type'] ?? 'application/octet-stream' }
+}
+
+// ─── What a chat client does beyond the mirror ───────────────
+//
+// Every verb below is one person's, so each binds `as: 'user'`; the profile id
+// a path names is that person's own, and Mattermost refuses another's with a
+// 403. A write that sets an absolute state (pin, mute, follow, a preference)
+// is `replayable`: doing it twice is doing it once. A category create is the
+// exception, since a lost answer may have made one.
+
+/** What a write with no row to answer says. */
+export interface Done { ok?: true; error?: MattermostFailure }
+
+const done = (r: ConduitResult<unknown>): Done => r.error ? { error: translate(r.error, r.meta.status, r.meta.headers) } : { ok: true }
+const rowsOf = <Remote, Row>(r: ConduitResult<Remote[]>, parse: (x: Remote) => Row | null): { rows?: Row[]; error?: MattermostFailure } =>
+  r.error ? { error: translate(r.error, r.meta.status, r.meta.headers) } : { rows: (Array.isArray(r.data) ? r.data : []).map(x => parse(x)).filter((x): x is Row => x !== null) }
+const user = (id: unknown) => needId(id, 'profileExternalId')
+const categoryId = (v: unknown, what: string) => { if (!isCategoryId(v)) throw new TypeError(`mattermost: ${what} is not a category id`); return v }
+
+// ─── Pins ────────────────────────────────────────────────────
+
+/**
+ * `POST /posts/{id}/pin`: any member of the channel may pin any post in it.
+ * `Post.update({ isPinned })` is the same change through `/patch`, which only
+ * the post's author may make. The server pushes `post_edited` carrying the post
+ * with `is_pinned`, so the mirror's Post row follows.
+ */
+export async function pinPost(mm: MattermostSend, postExternalId: MattermostId): Promise<Done> {
+  return done(await mm.api({ method: 'POST', path: `${API}/posts/${needId(postExternalId, 'postExternalId')}/pin`, ...LIST }))
+}
+export async function unpinPost(mm: MattermostSend, postExternalId: MattermostId): Promise<Done> {
+  return done(await mm.api({ method: 'POST', path: `${API}/posts/${needId(postExternalId, 'postExternalId')}/unpin`, ...LIST }))
+}
+/** `GET /channels/{id}/pinned`: the channel's pinned posts, with reactions and files off their metadata. */
+export async function listPinned(mm: MattermostSend, channelExternalId: MattermostId): Promise<PostPage> {
+  const r = await mm.api<PostList>({ method: 'GET', path: `${API}/channels/${needId(channelExternalId, 'channelExternalId')}/pinned`, ...LIST })
+  return r.error ? { error: translate(r.error, r.meta.status, r.meta.headers) } : pageOf(r.data)
+}
+
+// ─── Reading state, mute, membership ─────────────────────────
+
+/**
+ * `POST /users/{id}/posts/{post}/set_unread`: the channel reads as unread from
+ * that post on, for this person only. With collapsed threads a REPLY marks its
+ * thread unread instead of the channel, so the answer is the channel's counts
+ * for a root post and the channel's unchanged ones for a reply; read the thread
+ * with `getThread`. The server pushes `post_unread` to the person's sockets.
+ */
+export async function markUnread(mm: MattermostSend, profileExternalId: MattermostId, postExternalId: MattermostId): Promise<Answer<UnreadRow>> {
+  const r = await mm.api<ChannelUnreadAt>({ method: 'POST', path: `${API}/users/${user(profileExternalId)}/posts/${needId(postExternalId, 'postExternalId')}/set_unread`, body: { collapsed_threads_supported: true }, ...LIST })
+  return answer(r, parseUnread)
+}
+
+/**
+ * `PUT /channels/{id}/members/{user}/notify_props` with `mark_unread`: `mention`
+ * mutes the channel (unread only when it names the member), `all` unmutes it.
+ * Only the keys sent change. The server pushes `channel_member_updated`.
+ */
+export async function muteChannel(mm: MattermostSend, channelExternalId: MattermostId, profileExternalId: MattermostId, muted: boolean): Promise<Done> {
+  return done(await mm.api({ method: 'PUT', path: `${API}/channels/${needId(channelExternalId, 'channelExternalId')}/members/${user(profileExternalId)}/notify_props`, body: { mark_unread: muted ? 'mention' : 'all' }, ...LIST }))
+}
+
+/** `POST /channels/{id}/members` as the person themselves: an open channel takes them, a private one is a 403. */
+export async function joinChannel(mm: MattermostSend, channelExternalId: MattermostId, profileExternalId: MattermostId): Promise<Answer<ChannelMemberRow>> {
+  return answer(await mm.api<ChannelMember>({ ...channelMemberModel.create!({ channelExternalId, profileExternalId }), ...LIST }), channelMemberModel.parse)
+}
+/** `DELETE /channels/{id}/members/{user}` as the person themselves. */
+export async function leaveChannel(mm: MattermostSend, channelExternalId: MattermostId, profileExternalId: MattermostId): Promise<Done> {
+  return done(await mm.api(channelMemberModel.delete!(memberKey(channelExternalId, profileExternalId))))
+}
+
+/**
+ * `POST /channels/direct` for the caller and one other: the channel that
+ * exists, or the one just made, answered either way with 201. It belongs to no
+ * team. The server pushes `direct_added` to both people.
+ */
+export async function createDirectChannel(mm: MattermostSend, profileExternalId: MattermostId, otherExternalId: MattermostId): Promise<Answer<ChannelRow>> {
+  return answer(await mm.api<Channel>({ method: 'POST', path: `${API}/channels/direct`, body: [user(profileExternalId), needId(otherExternalId, 'otherExternalId')], ...LIST }), channelModel.parse)
+}
+
+/**
+ * `POST /channels/group` for three to eight people, the caller among them.
+ * One group per set of people: the same set answers the channel that exists.
+ * The server pushes `group_added` to each.
+ */
+export async function createGroupChannel(mm: MattermostSend, profileExternalIds: MattermostId[]): Promise<Answer<ChannelRow>> {
+  const ids = [...new Set(profileExternalIds.map(user))]
+  if (ids.length < 3 || ids.length > 8) throw new TypeError('mattermost: a group channel is three to eight people; two is a direct channel')
+  return answer(await mm.api<Channel>({ method: 'POST', path: `${API}/channels/group`, body: ids, ...LIST }), channelModel.parse)
+}
+
+// ─── Threads ─────────────────────────────────────────────────
+
+const threadPath = (profile: unknown, team: unknown, root: unknown) => `${API}/users/${user(profile)}/teams/${needId(team, 'teamExternalId')}/threads/${needId(root, 'rootExternalId')}`
+
+/** `PUT .../threads/{root}/following`: follow a thread without replying to it. The server pushes `thread_follow_changed`. */
+export async function followThread(mm: MattermostSend, profileExternalId: MattermostId, teamExternalId: MattermostId, rootExternalId: MattermostId): Promise<Done> {
+  return done(await mm.api({ method: 'PUT', path: `${threadPath(profileExternalId, teamExternalId, rootExternalId)}/following`, ...LIST }))
+}
+/** `DELETE .../threads/{root}/following`: the thread leaves the person's list and its replies stop counting. */
+export async function unfollowThread(mm: MattermostSend, profileExternalId: MattermostId, teamExternalId: MattermostId, rootExternalId: MattermostId): Promise<Done> {
+  return done(await mm.api({ method: 'DELETE', path: `${threadPath(profileExternalId, teamExternalId, rootExternalId)}/following`, ...LIST }))
+}
+/** `PUT /users/{id}/teams/{team}/threads/read`: every followed thread on the team, read now. The push names no thread. */
+export async function markAllThreadsRead(mm: MattermostSend, profileExternalId: MattermostId, teamExternalId: MattermostId): Promise<Done> {
+  return done(await mm.api({ method: 'PUT', path: `${API}/users/${user(profileExternalId)}/teams/${needId(teamExternalId, 'teamExternalId')}/threads/read`, ...LIST }))
+}
+
+// ─── Drafts ──────────────────────────────────────────────────
+
+/**
+ * `GET /users/{id}/teams/{team}/drafts`: the person's saved reply boxes on a
+ * team, the direct and group channels' under every team. A server with
+ * `AllowSyncedDrafts` off answers 404 here.
+ */
+export async function listDrafts(mm: MattermostSend, profileExternalId: MattermostId, teamExternalId: MattermostId, opts: { since?: number } = {}): Promise<{ rows?: DraftRow[]; error?: MattermostFailure }> {
+  return rowsOf(await mm.api<Draft[]>({ method: 'GET', path: `${API}/users/${user(profileExternalId)}/teams/${needId(teamExternalId, 'teamExternalId')}/drafts`, ...(opts.since ? { query: { since: opts.since } } : {}), ...LIST }), parseDraft)
+}
+/**
+ * `POST /drafts`: one draft per person per box (channel, and root for a reply
+ * box); a second save replaces the first. The server pushes `draft_created` the
+ * first time and `draft_updated` after, to the person's every socket.
+ */
+export async function saveDraft(mm: MattermostSend, profileExternalId: MattermostId, draft: NewDraft): Promise<Answer<DraftRow>> {
+  const files = draft.fileExternalIds ?? []
+  const body: Record<string, unknown> = { user_id: user(profileExternalId), channel_id: needId(draft.channelExternalId, 'channelExternalId'), message: draft.message ?? '', root_id: draft.rootExternalId ? needId(draft.rootExternalId, 'rootExternalId') : '' }
+  if (files.length) body.file_ids = files.map(f => needId(f, 'fileExternalId'))
+  if (draft.props)  body.props = draft.props
+  return answer(await mm.api<Draft>({ method: 'POST', path: `${API}/drafts`, body, ...LIST }), parseDraft)
+}
+/** `DELETE /users/{id}/channels/{channel}/drafts[/{root}]`: the channel's box, or one thread's. The server pushes `draft_deleted`. */
+export async function deleteDraft(mm: MattermostSend, profileExternalId: MattermostId, channelExternalId: MattermostId, rootExternalId?: MattermostId | null): Promise<Done> {
+  return done(await mm.api({ method: 'DELETE', path: `${API}/users/${user(profileExternalId)}/channels/${needId(channelExternalId, 'channelExternalId')}/drafts${rootExternalId ? `/${needId(rootExternalId, 'rootExternalId')}` : ''}`, ...LIST }))
+}
+
+// ─── Preferences: saved posts, favorites ─────────────────────
+
+/** The categories a chat client reads. A saved post is `flagged_post` named for the post, a favorite channel `favorite_channel` named for the channel, both valued `"true"`. */
+export const PREFERENCE = { savedPost: 'flagged_post', favoriteChannel: 'favorite_channel' } as const
+
+export async function listPreferences(mm: MattermostSend, profileExternalId: MattermostId, category?: string): Promise<{ rows?: PreferenceRow[]; error?: MattermostFailure }> {
+  return rowsOf(await mm.api<Preference[]>({ method: 'GET', path: `${API}/users/${user(profileExternalId)}/preferences${category ? `/${encodeURIComponent(category)}` : ''}`, ...LIST }), parsePreference)
+}
+/** `PUT /users/{id}/preferences`: each `{ category, name, value }` is set. The server pushes `preferences_changed`. */
+export async function savePreferences(mm: MattermostSend, profileExternalId: MattermostId, prefs: { category: string; name: string; value: string }[]): Promise<Done> {
+  const uid = user(profileExternalId)
+  if (!prefs.length || prefs.some(p => !p.category || !p.name || typeof p.value !== 'string')) throw new TypeError('mattermost: a preference is { category, name, value }, value a string')
+  return done(await mm.api({ method: 'PUT', path: `${API}/users/${uid}/preferences`, body: prefs.map(p => ({ user_id: uid, ...p })), ...LIST }))
+}
+/** `POST /users/{id}/preferences/delete`. The server pushes `preferences_deleted`. */
+export async function deletePreferences(mm: MattermostSend, profileExternalId: MattermostId, prefs: { category: string; name: string }[]): Promise<Done> {
+  const uid = user(profileExternalId)
+  if (!prefs.length || prefs.some(p => !p.category || !p.name)) throw new TypeError('mattermost: a preference to delete is { category, name }')
+  return done(await mm.api({ method: 'POST', path: `${API}/users/${uid}/preferences/delete`, body: prefs.map(p => ({ user_id: uid, ...p, value: '' })), ...LIST }))
+}
+export const savePost    = (mm: MattermostSend, profile: MattermostId, post: MattermostId) => savePreferences(mm, profile, [{ category: PREFERENCE.savedPost, name: needId(post, 'postExternalId'), value: 'true' }])
+export const unsavePost  = (mm: MattermostSend, profile: MattermostId, post: MattermostId) => deletePreferences(mm, profile, [{ category: PREFERENCE.savedPost, name: needId(post, 'postExternalId') }])
+export const favoriteChannel   = (mm: MattermostSend, profile: MattermostId, channel: MattermostId) => savePreferences(mm, profile, [{ category: PREFERENCE.favoriteChannel, name: needId(channel, 'channelExternalId'), value: 'true' }])
+export const unfavoriteChannel = (mm: MattermostSend, profile: MattermostId, channel: MattermostId) => deletePreferences(mm, profile, [{ category: PREFERENCE.favoriteChannel, name: needId(channel, 'channelExternalId') }])
+
+/** `GET /users/{id}/posts/flagged`: the person's saved posts, newest first, optionally one team's and the direct channels'. */
+export async function listSavedPosts(mm: MattermostSend, profileExternalId: MattermostId, opts: { teamExternalId?: MattermostId; page?: number; perPage?: number } = {}): Promise<PostPage> {
+  const r = await mm.api<PostList>({ method: 'GET', path: `${API}/users/${user(profileExternalId)}/posts/flagged`, query: { page: opts.page ?? 0, per_page: opts.perPage ?? 60, ...(opts.teamExternalId ? { team_id: needId(opts.teamExternalId, 'teamExternalId') } : {}) }, ...LIST })
+  return r.error ? { error: translate(r.error, r.meta.status, r.meta.headers) } : pageOf(r.data)
+}
+
+// ─── Status ──────────────────────────────────────────────────
+
+/** `GET /users/{id}/status`. `manual` is a status the person set; otherwise it follows their activity. */
+export async function getStatus(mm: MattermostSend, profileExternalId: MattermostId): Promise<Answer<StatusRow>> {
+  return answer(await mm.api<UserStatus>({ method: 'GET', path: `${API}/users/${user(profileExternalId)}/status`, ...LIST }), parseStatus)
+}
+/** `POST /users/status/ids`: other people's statuses, which Mattermost's clients poll for the ones on screen. A person Mattermost knows no status for is `offline`. */
+export async function listStatuses(mm: MattermostSend, profileExternalIds: MattermostId[]): Promise<{ rows?: StatusRow[]; error?: MattermostFailure }> {
+  if (!profileExternalIds.length) return { rows: [] }
+  return rowsOf(await mm.api<UserStatus[]>({ method: 'POST', path: `${API}/users/status/ids`, body: profileExternalIds.map(user), ...LIST }), parseStatus)
+}
+/**
+ * `PUT /users/{id}/status`. `dndEndTime` is when `dnd` lapses, in whole
+ * seconds — unverified against a live server. The server pushes `status_change`
+ * to that person's sockets.
+ */
+export async function setStatus(mm: MattermostSend, profileExternalId: MattermostId, status: StatusName, opts: { dndEndTime?: number } = {}): Promise<Answer<StatusRow>> {
+  if (!['online', 'away', 'offline', 'dnd'].includes(status)) throw new TypeError('mattermost: a status is online, away, offline or dnd')
+  const uid = user(profileExternalId)
+  return answer(await mm.api<UserStatus>({ method: 'PUT', path: `${API}/users/${uid}/status`, body: { user_id: uid, status, ...(opts.dndEndTime ? { dnd_end_time: Math.floor(opts.dndEndTime) } : {}) }, ...LIST }), parseStatus)
+}
+/**
+ * `PUT /users/{id}/status/custom`: an emoji and a line under the person's name,
+ * kept in `props.customStatus` (read it back with `customStatusOf(user)`). The
+ * server pushes `user_updated`. `expiresAt` is when it lapses; with none it stays.
+ */
+export async function setCustomStatus(mm: MattermostSend, profileExternalId: MattermostId, status: { emoji: string; text?: string; expiresAt?: Date }): Promise<Done> {
+  if (!status.emoji && !status.text) throw new TypeError('mattermost: a custom status needs an emoji or text')
+  const body = { emoji: status.emoji ?? '', text: status.text ?? '', duration: status.expiresAt ? 'date_and_time' : 'dont_clear', ...(status.expiresAt ? { expires_at: status.expiresAt.toISOString() } : {}) }
+  return done(await mm.api({ method: 'PUT', path: `${API}/users/${user(profileExternalId)}/status/custom`, body, ...LIST }))
+}
+export async function clearCustomStatus(mm: MattermostSend, profileExternalId: MattermostId): Promise<Done> {
+  return done(await mm.api({ method: 'DELETE', path: `${API}/users/${user(profileExternalId)}/status/custom`, ...LIST }))
+}
+
+// ─── Typing ──────────────────────────────────────────────────
+
+/**
+ * The `user_typing` action for a channel, or one thread's reply box, as the text
+ * a client writes on its own socket. It rides the socket and has no REST form;
+ * conduit's broker holds the connection and offers an app no way to write to it,
+ * so a caller that wants to relay typing writes this frame on a link of its own.
+ * `seq` counts the frames that link has sent.
+ */
+export function typingFrame(seq: number, channelExternalId: MattermostId, parentExternalId?: MattermostId | null): string {
+  return JSON.stringify({ action: 'user_typing', seq, data: { channel_id: needId(channelExternalId, 'channelExternalId'), parent_id: parentExternalId ? needId(parentExternalId, 'parentExternalId') : '' } })
+}
+
+// ─── Sidebar categories ──────────────────────────────────────
+
+const categoriesPath = (profile: unknown, team: unknown) => `${API}/users/${user(profile)}/teams/${needId(team, 'teamExternalId')}/channels/categories`
+const wireCategory = (c: CategoryRow): Record<string, unknown> => ({ id: c.externalId, user_id: c.profileExternalId, team_id: c.teamExternalId, type: c.type, display_name: c.displayName, sorting: c.sorting, channel_ids: c.channelExternalIds, muted: c.muted, collapsed: c.collapsed })
+
+/** `GET .../channels/categories`: the person's sidebar on a team, `order` being the categories' ids top to bottom. System categories (`favorites`, `channels`, `direct_messages`) are always present. */
+export async function listCategories(mm: MattermostSend, profileExternalId: MattermostId, teamExternalId: MattermostId): Promise<{ order?: MattermostId[]; rows?: CategoryRow[]; error?: MattermostFailure }> {
+  const r = await mm.api<SidebarCategories>({ method: 'GET', path: categoriesPath(profileExternalId, teamExternalId), ...LIST })
+  if (r.error) return { error: translate(r.error, r.meta.status, r.meta.headers) }
+  if (!r.data || !Array.isArray(r.data.categories)) return { error: { kind: 'invalid_response', message: 'Mattermost answered something that is not a category list', retryable: false } }
+  return { order: r.data.order ?? [], rows: r.data.categories.map(parseCategory).filter((x): x is CategoryRow => !!x) }
+}
+/** `POST .../channels/categories`: a custom category, with channels moved into it if named. Not replayable: a lost answer may have made one. */
+export async function createCategory(mm: MattermostSend, profileExternalId: MattermostId, teamExternalId: MattermostId, input: { displayName: string; channelExternalIds?: MattermostId[] }): Promise<Answer<CategoryRow>> {
+  if (typeof input.displayName !== 'string' || !input.displayName.trim()) throw new TypeError('mattermost: a category needs a display name')
+  const body = { user_id: user(profileExternalId), team_id: needId(teamExternalId, 'teamExternalId'), type: 'custom', display_name: input.displayName.trim(), channel_ids: (input.channelExternalIds ?? []).map(c => needId(c, 'channelExternalId')) }
+  return answer(await mm.api<SidebarCategory>({ method: 'POST', path: categoriesPath(profileExternalId, teamExternalId), body }), parseCategory)
+}
+/**
+ * `PUT .../channels/categories/{id}` with the WHOLE category: its name, its
+ * channels in order, its sorting, muted and collapsed. Mattermost replaces what
+ * is stored, so a `channelExternalIds` left short drops channels from it; read
+ * the row, change it, send it back. Moving a channel into a category takes it
+ * out of the one it was in; the server pushes `sidebar_category_updated`.
+ */
+export async function updateCategory(mm: MattermostSend, profileExternalId: MattermostId, teamExternalId: MattermostId, category: CategoryRow): Promise<Answer<CategoryRow>> {
+  return answer(await mm.api<SidebarCategory>({ method: 'PUT', path: `${categoriesPath(profileExternalId, teamExternalId)}/${categoryId(category.externalId, 'category.externalId')}`, body: wireCategory(category), ...LIST }), parseCategory)
+}
+/** `DELETE .../categories/{id}`: a custom category; its channels return to Channels or Direct Messages. A system category is a 400. */
+export async function deleteCategory(mm: MattermostSend, profileExternalId: MattermostId, teamExternalId: MattermostId, categoryExternalId: MattermostId): Promise<Done> {
+  return done(await mm.api({ method: 'DELETE', path: `${categoriesPath(profileExternalId, teamExternalId)}/${categoryId(categoryExternalId, 'categoryExternalId')}`, ...LIST }))
+}
+/** `PUT .../categories/order`: the whole list of category ids, top to bottom. */
+export async function reorderCategories(mm: MattermostSend, profileExternalId: MattermostId, teamExternalId: MattermostId, order: MattermostId[]): Promise<{ order?: MattermostId[]; error?: MattermostFailure }> {
+  const r = await mm.api<MattermostId[]>({ method: 'PUT', path: `${categoriesPath(profileExternalId, teamExternalId)}/order`, body: order.map(c => categoryId(c, 'categoryExternalId')), ...LIST })
+  return r.error ? { error: translate(r.error, r.meta.status, r.meta.headers) } : { order: Array.isArray(r.data) ? r.data : order }
+}
+
+// ─── Search, history, reminders ──────────────────────────────
+
+/**
+ * `POST /teams/{id}/posts/search`: posts in the channels the person belongs to
+ * whose words match every term, or any with `orSearch`. A read behind a POST,
+ * so replayable. `matches` is, per post, the terms that hit it.
+ */
+export async function searchPosts(mm: MattermostSend, teamExternalId: MattermostId, terms: string, opts: { orSearch?: boolean; includeDeletedChannels?: boolean; page?: number; perPage?: number } = {}): Promise<PostPage & { matches?: Record<MattermostId, string[]> }> {
+  if (typeof terms !== 'string' || !terms.trim()) throw new TypeError('mattermost: a search needs terms')
+  const r = await mm.api<SearchResult>({ method: 'POST', path: `${API}/teams/${needId(teamExternalId, 'teamExternalId')}/posts/search`, body: { terms: terms.trim(), is_or_search: !!opts.orSearch, include_deleted_channels: !!opts.includeDeletedChannels, time_zone_offset: 0, page: opts.page ?? 0, per_page: opts.perPage ?? 20 }, ...LIST })
+  if (r.error) return { error: translate(r.error, r.meta.status, r.meta.headers) }
+  return { ...pageOf(r.data), ...(r.data?.matches ? { matches: r.data.matches } : {}) }
+}
+
+/**
+ * `GET /posts/{id}/edit_history`: the versions a post had before each edit,
+ * newest first, each under an id of its own with `deletedAt` set. Only the
+ * post's author may ask; anyone else's is a 404 `app.post.get.app_error`.
+ */
+export async function editHistory(mm: MattermostSend, postExternalId: MattermostId): Promise<{ rows?: PostRow[]; error?: MattermostFailure }> {
+  return rowsOf(await mm.api<Post[]>({ method: 'GET', path: `${API}/posts/${needId(postExternalId, 'postExternalId')}/edit_history`, ...LIST }), x => postModel.parse(x))
+}
+
+/** `POST /users/{id}/posts/{post}/reminder`: Mattermost's own bot messages the person about the post at `at`. `target_time` goes in whole seconds. */
+export async function setReminder(mm: MattermostSend, profileExternalId: MattermostId, postExternalId: MattermostId, at: Date | number): Promise<Done> {
+  const ms = at instanceof Date ? at.getTime() : at
+  if (!Number.isFinite(ms) || ms <= 0) throw new TypeError('mattermost: setReminder takes the time to remind at')
+  return done(await mm.api({ method: 'POST', path: `${API}/users/${user(profileExternalId)}/posts/${needId(postExternalId, 'postExternalId')}/reminder`, body: { target_time: Math.floor(ms / 1000) }, ...LIST }))
 }

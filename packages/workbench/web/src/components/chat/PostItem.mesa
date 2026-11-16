@@ -1,0 +1,58 @@
+<script>
+  // components/chat/PostItem.mesa -- one post. Avatar, name and time on a first
+  // post; a post within five minutes of the same author's last is a continuation
+  // line. The body is Markdown with headings one size down and single newlines
+  // kept, a known @username drawn bold. A root's replies show as a count; the
+  // thread pane that opens from it is a later slice's.
+  import Avatar from '@frontierjs/ui/components/display/Avatar.mesa'
+  import Markdown from '@frontierjs/ui/components/display/Markdown.mesa'
+  import { ago } from '../../lib/datetime.js'
+  import { linkMentions, personName } from '../../lib/chat.js'
+
+  export let post = null
+  export let people = []
+  export let continuation = false
+
+  $: author = personName(post.profileExternalId, people)
+  $: body   = linkMentions(post.message, people)
+  $: time   = post.createdAt ? new Date(post.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+</script>
+
+<article class="post" class:continuation id={`post-${post.externalId}`} data-post={post.externalId}>
+  <div class="post-lead">
+    {#if continuation}
+      <time class="post-time text-muted" datetime={post.createdAt}>{time}</time>
+    {:else}
+      <Avatar name={author} size="sm" />
+    {/if}
+  </div>
+  <div class="post-body stack gap-xs">
+    {#if !continuation}
+      <div class="cluster gap-xs post-head">
+        <strong data-post-author>{author}</strong>
+        <time class="text-muted text-sm" datetime={post.createdAt} title={post.createdAt ? new Date(post.createdAt).toLocaleString() : ''}>{time}</time>
+        {#if post.editedAt}<span class="text-muted text-xs">(edited)</span>{/if}
+      </div>
+    {/if}
+    {#if body}<div class="post-text" data-post-text><Markdown text={body} headingBase={4} breaks /></div>{/if}
+    {#if post.replyCount > 0}
+      <p class="text-sm post-replies" data-post-replies><strong>{post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}</strong> <span class="text-muted">· {ago(post.lastReplyAt)}</span></p>
+    {/if}
+  </div>
+</article>
+
+<style>
+  .post { display: grid; grid-template-columns: calc(var(--space-2xl) * 2) minmax(0, 1fr); column-gap: var(--space-lg); padding-block: var(--space-2xs); padding-inline: var(--space-lg); border-radius: var(--card-radius); }
+  .post:not(.continuation) { margin-block-start: var(--space-lg); padding-block-start: var(--space-sm); }
+  .post:hover { background: var(--surface-sunken); }
+  .post-lead { display: flex; justify-content: center; align-items: flex-start; }
+  .post-time { font-size: var(--text-2xs); visibility: hidden; padding-block-start: var(--space-3xs); font-variant-numeric: tabular-nums; }
+  .post:hover .post-time { visibility: visible; }
+  .post-head { align-items: baseline; column-gap: var(--space-sm); }
+  .post-head strong { font-weight: var(--label-font-weight); }
+  .post-head time { font-size: var(--text-xs); }
+  .post-body { min-inline-size: 0; }
+  .post-text { line-height: var(--leading-body); }
+  .post-text :global(p) { margin: 0; }
+  .post-replies { margin: 0; }
+</style>

@@ -126,6 +126,27 @@ export const tree = {
       children: [],
     },
   {
+      id: "messages",
+      path: "/messages/",
+      file: "src/routes/messages/index.mesa",
+      companion: null,
+      layout: "src/routes/messages/_module.mesa",
+      meta: JSON.parse("{\"siteName\":\"Workbench\",\"title\":\"Messages\",\"isIndex\":true}"),
+      params: [],
+      children: [
+      {
+          id: "messages.[id]",
+          path: "/messages/:id/",
+          file: "src/routes/messages/[id]/index.mesa",
+          companion: null,
+          layout: "src/routes/messages/_module.mesa",
+          meta: JSON.parse("{\"siteName\":\"Workbench\",\"title\":\"Messages\",\"dynamic\":true,\"isIndex\":true}"),
+          params: ["id"],
+          children: [],
+        }
+      ],
+    },
+  {
       id: "notifications",
       path: "/notifications/",
       file: "src/routes/notifications/index.mesa",
@@ -202,6 +223,8 @@ export const components = {
   'home': () => import('../src/routes/home/index.mesa'),
   'laptop': () => import('../src/routes/laptop/index.mesa'),
   'login': () => import('../src/routes/login/index.mesa'),
+  'messages': () => import('../src/routes/messages/index.mesa'),
+  'messages.[id]': () => import('../src/routes/messages/[id]/index.mesa'),
   'notifications': () => import('../src/routes/notifications/index.mesa'),
   'recommended-services': () => import('../src/routes/recommended-services/index.mesa'),
   'servers': () => import('../src/routes/servers/index.mesa'),
@@ -223,6 +246,7 @@ export const loaders = {
 // always has the component factory available when rendering the chain.
 export const layouts = {
   "src/routes/_module.mesa": () => import('../src/routes/_module.mesa'),
+  "src/routes/messages/_module.mesa": () => import('../src/routes/messages/_module.mesa'),
 }
 
 // Flat URL arrays for route table consumers (sitemap, llms.txt, deploys)
@@ -239,6 +263,8 @@ export const all = [
   "/home/",
   "/laptop/",
   "/login/",
+  "/messages/",
+  "/messages/:id/",
   "/notifications/",
   "/recommended-services/",
   "/servers/",
@@ -260,6 +286,8 @@ export const published = [
   "/home/",
   "/laptop/",
   "/login/",
+  "/messages/",
+  "/messages/:id/",
   "/notifications/",
   "/recommended-services/",
   "/servers/",
@@ -281,6 +309,7 @@ export const indexed = [
   "/home/",
   "/laptop/",
   "/login/",
+  "/messages/",
   "/notifications/",
   "/recommended-services/",
   "/servers/",

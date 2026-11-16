@@ -1548,3 +1548,69 @@ The Shapes section above is read as prose and holds no question `fli decisions` 
   - **A** — `fli decide` removes the marker from every row the question held up, in the same write as the ruling. `register:check` is unchanged.
   - **B** — `register:check` stops warning on a marker that resolves to a ruling, and the marker stays as a history pointer.
   - **Recommend A** — a ruled question blocks nothing, so the marker carries no information `fli find` does not, and the row and `fli next` keep reading the same; the hand edit after each ruling goes.
+
+- ~~**FJS-D2218 — When `asSystem()` is refused by `@@require` (e.g. deleting a signed Note), what does the system caller get?**~~ **Answered 2026-11-16 (`FJS-D2218`): C — both: the denied trail entry and the throw.** Found triaging `FJS-4321`.
+  - **A** — a denied trail entry with actor `system`, the answer unchanged.
+  - **B** — throw only.
+  - **C** — both: the denied trail entry and the throw.
+  - **Recommend C** — a non-system refused write already throws (`FJS-D1707`), so the system caller should not be the odd one out.
+
+- ~~**FJS-D2219 — How does a file in `api/src/routes/` declare per-verb options like `{ body: 'stream' }`?**~~ **Answered 2026-11-16 (`FJS-D2219`): A — `export const options = { PUT: { body: 'stream' } }`, read by `autoloadRoutes` and passed as `app.<verb>`'s third argument.** Found triaging `FJS-4229`.
+  - **A** — `export const options = { PUT: { body: 'stream' } }`, read by `autoloadRoutes` and passed as `app.<verb>`'s third argument.
+  - **B** — `app-layout` stops warning on a stream route in `app.ts`.
+  - **C** — a verb may `export { handler, body }` or a bare function.
+  - **Recommend A** — additive, no file moves, the same shape as `app.put`.
+
+- ~~**FJS-D2220 — Where do recurrence expansion in a named zone and an iCalendar writer live?**~~ **Answered 2026-11-16 (`FJS-D2220`): B — stay in grouppi until a second consumer.** Found triaging `FJS-4376` and `FJS-4377`.
+  - **A** — toolbelt, dependency-free (weekly/monthly, BYDAY, INTERVAL, UNTIL/COUNT, DST-correct).
+  - **B** — stay in grouppi until a second consumer.
+  - **C** — adopt npm libraries behind a toolbelt wrapper.
+  - **Recommend A** — both are pure functions any scheduling app needs, and a dependency-free toolbelt module is the house shape.
+
+- ~~**FJS-D2221 — Does the markdown renderer resolve relative URLs and inline images?**~~ **Answered 2026-11-16 (`FJS-D2221`): A — an optional `resolveUrl(url, kind)` option; an image renders inline when the resolver answers a URL, a link otherwise; default output unchanged, still no raw HTML.** Found triaging `FJS-4351`.
+  - **A** — an optional `resolveUrl(url, kind)` option; an image renders inline when the resolver answers a URL, a link otherwise; default output unchanged, still no raw HTML.
+  - **B** — leave it to the app (anvil rewrites the output).
+  - **Recommend A** — additive, and the default output and the no-raw-HTML rule do not move.
+
+- ~~**FJS-D2222 — `@@allow(all, ...)` also grades `postUpdate`, so a separate `@@allow(update, ...)` rolls back: warn, change, or document?**~~ **Answered 2026-11-16 (`FJS-D2222`): A — a parse-time warning when an `all` rule and a separate `update` rule coexist with no `postUpdate` rule, naming the fix.** Found triaging `FJS-4381`.
+  - **A** — a parse-time warning when an `all` rule and a separate `update` rule coexist with no `postUpdate` rule, naming the fix.
+  - **B** — `all` stops covering `postUpdate`.
+  - **C** — document only.
+  - **Recommend A** — no caller's meaning moves.
+
+- ~~**FJS-D2223 — A raw route has no caller-scoped client, and a refused Basic credential gets a Bearer challenge: document, or add a `ctx.db`?**~~ **Answered 2026-11-16 (`FJS-D2223`): A — document the `$setAuth(ctx.user)` / `$checkWrite` recipe (`ctx.app` exists per `FJS-D1663`) and make the refusal's challenge carry the scheme that was tried (`FJS-D475`'s verifier list).** Found triaging `FJS-4344`.
+  - **A** — document the `$setAuth(ctx.user)` / `$checkWrite` recipe (`ctx.app` exists per `FJS-D1663`) and make the refusal's challenge carry the scheme that was tried (`FJS-D475`'s verifier list).
+  - **B** — also add a caller-scoped `ctx.db` to every raw route.
+  - **Recommend A** — the recipe already works and adds no second way to reach the client.
+
+- ~~**FJS-D2224 — A service's `create` override has its body pre-validated against the model: what is the contract?**~~ **Answered 2026-11-16 (`FJS-D2224`): A — document it; an input that differs from the model goes through a custom method.** Found triaging `FJS-4354`.
+  - **A** — document it; an input that differs from the model goes through a custom method.
+  - **B** — skip pre-validation for overrides.
+  - **C** — the override declares its own input.
+  - **Recommend A** — the model is the one input contract, and a different shape is a different verb.
+
+- ~~**FJS-D2225 — How does `{#virtual each}` take a huge source without copying?**~~ **Answered 2026-11-16 (`FJS-D2225`): A — a declared lazy source `{ length, at(i) }` read only for the visible window, never copied; a real array still works.** Found triaging `FJS-4188`. Prior art: react-window (`itemCount` + render by index), TanStack Virtual (`count` + virtual indexes), CodeMirror/Monaco (a document model read by line number); none require an array, and the Proxy works only because `Array.isArray` sees through a Proxy of an array.
+  - **A** — a declared lazy source `{ length, at(i) }` read only for the visible window, never copied; a real array still works.
+  - **B** — pin the Proxy-over-array form as supported, with a test.
+  - **Recommend A** — the contract is named rather than leaning on an `Array.isArray` accident, as every virtual-list library does.
+
+- ~~**FJS-D2226 — `keys()` cannot write a Linux-only binding: a per-binding platform filter, or document `byPlatform`?**~~ **Answered 2026-11-16 (`FJS-D2226`): B — document the `byPlatform` spelling with an empty Mac half, which already works, and keep the everywhere check strict.** Found triaging `FJS-4355`.
+  - **A** — a per-binding platform filter.
+  - **B** — document the `byPlatform` spelling with an empty Mac half, which already works, and keep the everywhere check strict.
+  - **Recommend B** — it already works, and the strict everywhere check stays one rule.
+
+- ~~**FJS-D2227 — Should a keyword keep two rows' states in agreement?**~~ **Answered 2026-11-16 (`FJS-D2227`): A — no keyword; document a one-sided `@@require` plus a service writing the other side.** Found triaging `FJS-4353`.
+  - **A** — no keyword; document a one-sided `@@require` plus a service writing the other side.
+  - **B** — a mirror/derived keyword.
+  - **Recommend A** — a mirror is a second origin of truth; reopen when a second app needs it.
+
+- ~~**FJS-D2228 — How does a policy tell a machine principal from a person, given `FJS-D1198`'s one gate?**~~ **Answered 2026-11-16 (`FJS-D2228`): A — expose the kind as `auth().userType` for policies; the ladder is unchanged.** Found triaging `FJS-4358`.
+  - **A** — expose the kind as `auth().userType` for policies; the ladder is unchanged.
+  - **B** — add a SERVICE rung.
+  - **C** — the scaffolded `getLevel` grades non-user kinds below USER.
+  - **Recommend A** — C breaks Basecamp's bots, B reopens `FJS-D1198`.
+
+- ~~**FJS-D2229 — A create rule is dead when its foreign key names a parent the caller cannot read (`FJS-D576`): what is done about it?**~~ **Answered 2026-11-16 (`FJS-D2229`): A — keep `FJS-D576`; add a gate-report / `fli check` warning naming the dead rule, and document the system-write workaround.** Found triaging `FJS-4359`.
+  - **A** — keep `FJS-D576`; add a gate-report / `fli check` warning naming the dead rule, and document the system-write workaround.
+  - **B** — a passing create rule vouches for its parents.
+  - **Recommend A** — B undoes `FJS-D576`'s existence-hiding (Invariant 6).

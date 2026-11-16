@@ -562,7 +562,8 @@ export interface App {
    * dead key answers the 401 a service would.
    *
    * `user` is `ctx.user` with its claims merged, `null` for a guest, whose
-   * claims scope `db` and stay in `claims`.
+   * claims scope `db` and stay in `claims`. `db` is held until the handler
+   * settles, so a tenant client is not closed under a body still being read.
    */
   principalFor: (ctx: import('../transport/types.ts').TransportContext) => Promise<import('./litestone.ts').RawRouteCaller>
 

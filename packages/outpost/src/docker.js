@@ -29,6 +29,8 @@ import { createSwap, portOf as portIn, runFlags, checkStopGrace, checkHealthTime
 
 export { swapFor }
 import { layout }                  from './layout.js'
+import { createReleaseCache }      from './release-cache.js'
+import { schemaSurfaceHash }       from './release.js'
 
 // Each app's container runs as a host uid of its own (`FJS-D1484`), handed out
 // from here up and never reused: a retired app's volume keeps its files, and a
@@ -214,13 +216,17 @@ export const DRAIN_MS = 60_000
 
 /** The host port an app declared reachable from outside (`FJS-D930`), on its
  *  container. The install's `inet basecamp` table drops every other one. */
-const EXPOSED_LABEL = 'fjs.exposed-port'
+export const EXPOSED_LABEL = 'fjs.exposed-port'
 const EXPOSED_SET   = 'inet basecamp exposed'
 
 /** The container's identity. The NAME is for `docker ps` and carries slugs a
  *  person can rename; this label carries the App's id, which cannot change, so
  *  every lookup asks for the label and a rename never orphans a container. */
 const APP_LABEL = 'fjs.app'
+// Which Release a container was started from. A revert with Basecamp down reads
+// it to know which cached record is live: the newest record is only the newest
+// one written, and a revert writes one too (`FJS-D2231`).
+export const RELEASE_LABEL = 'fjs.release'
 
 /** What the daemon says of a container's life, in one format both readers use
  *  (`FJS-3853`): whether the swap settled and whether the heartbeat reports a
@@ -1256,6 +1262,37 @@ export function createDocker({
   const api = {
     digestOf,
 
+    /** Whether the image a digest names is on this daemon, so a rollback is
+     *  refused before anything is stopped (`FJS-4128`). A caller with no digest
+     *  asks of the tag. */
+    held: async ({ image, digest }) => holds(isDigest(digest) ? digest : image),
+
+    /**
+     * What the app's live and set-aside containers were started with: the
+     * release each carries, its labels, its env as the daemon reports it and
+     * where it answers. A revert with Basecamp down copies a secret's value from
+     * here and nowhere else (`FJS-D2217`). `null` for a container it lacks.
+     */
+    async started({ appId }) {
+      const { live, replaced } = await containersOf(appId)
+      const read = async (name) => {
+        if (!name) return null
+        const r = await run(['docker', 'inspect', '--format', '{{json .Config.Env}}\n{{json .Config.Labels}}', name])
+        if (r.exitCode !== 0) throw new Error(`docker inspect ${name} failed (exit ${r.exitCode}): ${(r.stderr ?? '').trim()}`)
+        const [envLine, labelLine] = String(r.stdout ?? '').trim().split('\n')
+        let env = [], labels = {}
+        try { env = JSON.parse(envLine) ?? [] } catch {}
+        try { labels = JSON.parse(labelLine) ?? {} } catch {}
+        const at = await portOf(name).catch(() => null)
+        return {
+          name, release_id: labels[RELEASE_LABEL] ?? null, labels,
+          env: Object.fromEntries(env.filter(e => e.includes('=')).map(e => [e.slice(0, e.indexOf('=')), e.slice(e.indexOf('=') + 1)]).filter(([k]) => k)),
+          port: at?.port ?? null, loopback: at?.loopback === true,
+        }
+      }
+      return { live: await read(live), replaced: await read(replaced) }
+    },
+
     /** The app's deploy key, made on the first ask (`FJS-D1555`). */
     deployKey: ({ appId }) => ensureDeployKey(deployKeyDir, appId, { run }),
 
@@ -1343,7 +1380,12 @@ export function createDocker({
         { timeoutMs: 1_800_000 })
       // The port the file says the image listens on, for an App that stores
       // none: Basecamp cannot read a private repository's file before this clone.
-      return { digest: await digestOf(image), commitSha: sha, dockerfile, exposedPort: exposedPort(text) }
+      // The committed release surface of the tree this image was built from.
+      // A pulled image has no clone, so its release has no schema term.
+      return {
+        digest: await digestOf(image), commitSha: sha, dockerfile, exposedPort: exposedPort(text),
+        schemaHash: schemaSurfaceHash(`${context}/db`).hash,
+      }
     },
 
     /**
@@ -1406,8 +1448,10 @@ export function createDocker({
      * calls `route(port)` when the live container moves, and `routed()` says
      * which container the route dials; see `swap.js`.
      */
-    async deploy({ appId, project, environment, appSlug, image, digest, config = {}, port, loopback = false, exposesPort = false, swap = 'stop-first', route = null, routed = null, pivot = null, rollback = false }) {
+    async deploy({ appId, project, environment, appSlug, image, digest, config = {}, port, loopback = false, exposesPort = false, swap = 'stop-first', route = null, routed = null, pivot = null, rollback = false, releaseId = null }) {
       const name = containerName({ appId, project, environment, appSlug })
+      if (releaseId != null && (typeof releaseId !== 'string' || !releaseId || releaseId.length > 200 || /[\s=]/.test(releaseId)))
+        throw new Error(`release_id ${JSON.stringify(releaseId)} is not a release id`)
       rmSync(stayedDownMark(appId), { force: true })
       checkRunConfig(config)
       checkSwap({ swap, loopback, exposesPort, port, path: config.healthCheck ?? null })
@@ -1418,6 +1462,7 @@ export function createDocker({
       const argv = ['run', '-d', '--name', startFirst ? `${name}_next` : name, '--restart', 'unless-stopped']
       argv.push('--label', `${APP_LABEL}=${appId}`, '--label', `${APP_LABEL}.slug=${appSlug}`,
                 '--label', `fjs.project=${project}`, '--label', `fjs.env=${environment}`)
+      if (releaseId) argv.push('--label', `${RELEASE_LABEL}=${releaseId}`)
       // A loopback app answers only through Caddy, one hop the app must be told
       // about or every caller shares Caddy's address in its rate limiter
       // (`FJS-D617`, `FJS-1841`). Before the caller's env, so a stated value wins.
@@ -2434,7 +2479,7 @@ function imagesPastKeep(listing, keep, inUse) {
 }
 
 /** `hostFiles` is the box a Basecamp runs on only (`config.js` § hostFiles). */
-export function createInspector({ run = spawnRun, hostFiles = null, appsDir = layout().apps, exclusive = (_appId, fn) => fn() } = {}) {
+export function createInspector({ run = spawnRun, hostFiles = null, appsDir = layout().apps, releases = createReleaseCache(), exclusive = (_appId, fn) => fn() } = {}) {
   const json = async (argv) => {
     const { exitCode, stdout } = await run(argv)
     if (exitCode !== 0) return []
@@ -2498,6 +2543,24 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
     const before = await imagesBytes()
     const { stdout } = await run(['docker', 'image', 'rm', ...names])
     return { images: (String(stdout ?? '').match(/^deleted:/gim) ?? []).length, freed: Math.max(0, before - await imagesBytes()) }
+  }
+
+  const dropGoneReleases = async () => {
+    let dropped = 0
+    for (const appId of releases.apps()) {
+      await exclusive(appId, async () => {
+        const key  = (r) => `${r.release_id}|${r.digest}|${r.applied_at}`
+        const gone = new Set()
+        for (const record of releases.read(appId)) {
+          const ref = record.digest ?? record.image
+          if (!ref) continue
+          const { exitCode } = await run(['docker', 'image', 'inspect', '--format', '{{.Id}}', ref])
+          if (exitCode !== 0) gone.add(key(record))
+        }
+        dropped += releases.drop(appId, r => gone.has(key(r))).length
+      })
+    }
+    return dropped
   }
 
   // A failed `docker ps` throws (`FJS-3844`): read as "no holders" it let
@@ -2665,7 +2728,7 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
       // images every App loses.
       if (targets.includes('unused_images') && (!Number.isInteger(keepImages) || keepImages < 0))
         throw new Error(`keep_images must be a whole number, 0 or more, not ${JSON.stringify(keepImages)}`)
-      const removed = { images: 0, containers: 0, build_cache_bytes: 0 }
+      const removed = { images: 0, containers: 0, build_cache_bytes: 0, releases: 0 }
       let freed = 0
       const volumes = []
 
@@ -2701,6 +2764,10 @@ export function createInspector({ run = spawnRun, hostFiles = null, appsDir = la
         removed.images += past.images
         freed += past.freed
       }
+      // A record lives as long as its image (`FJS-D2178`): one whose bytes this
+      // sweep took would offer a revert nothing can start. Asked of the daemon,
+      // after the sweep, so a record is dropped only for an image that is gone.
+      if (removed.images > 0) removed.releases = await dropGoneReleases()
       if (targets.includes('build_cache')) {
         const before = freed
         await sweep(['docker', 'builder', 'prune', '-f'])

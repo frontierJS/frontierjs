@@ -28,6 +28,10 @@ export interface WhereBase {
 
 export type ComputeProvider = 'hetzner' | 'digitalocean'
 
+export type TeamType = 'open' | 'invite'
+
+export type ChannelType = 'open' | 'private' | 'direct' | 'group'
+
 // ── Models ───────────────────────────────────────────────────────────────────
 
 // ─── Member ──────────────────────────────────────────────────────
@@ -40,22 +44,36 @@ export interface Member {
   id: number
   nick: string
   createdAt: string
+  /** @guarded @encrypted @secret */
+  chatToken?: string | null
+  profileExternalId?: string | null
+  chatSyncedAt?: string | null
 }
 
 export interface MemberCreate {
   id?: number
   nick: string
+  chatToken?: string | null
 }
 
 export interface MemberUpdate {
   id?: number
   nick?: string
+  chatToken?: string | null
+}
+
+export interface MemberSystem {
+  profileExternalId?: string | null
+  chatSyncedAt?: string | Date | null
 }
 
 export interface MemberWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   nick?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
+  chatToken?: string | WhereOp<string> | null
+  profileExternalId?: string | WhereOp<string> | null
+  chatSyncedAt?: string | Date | WhereOp<string | Date> | null
   AND?: MemberWhere[]
   OR?:  MemberWhere[]
   NOT?: MemberWhere
@@ -497,6 +515,555 @@ export type ProviderAccountOrderBy =
 export interface ProviderAccountRelations {
 }
 
+// ─── Team ────────────────────────────────────────────────────────
+
+export interface Team {
+  id: number
+  externalId: string
+  name: string
+  displayName: string
+  description: string
+  type: TeamType
+  allowOpenInvite: boolean
+  createdAt?: string | null
+  updatedAt?: string | null
+  deletedAt?: string | null
+  missingSince?: string | null
+}
+
+export interface TeamCreate {
+  id?: number
+}
+
+export interface TeamUpdate {
+  id?: number
+}
+
+export interface TeamSystem {
+  externalId?: string
+  name?: string
+  displayName?: string
+  description?: string
+  type?: TeamType
+  allowOpenInvite?: boolean
+  missingSince?: string | Date | null
+}
+
+export interface TeamWhere extends WhereBase {
+  id?: number | WhereOp<number> | null
+  externalId?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  displayName?: string | WhereOp<string> | null
+  description?: string | WhereOp<string> | null
+  type?: TeamType | WhereOp<TeamType> | null
+  allowOpenInvite?: boolean | WhereOp<boolean> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  updatedAt?: string | Date | WhereOp<string | Date> | null
+  deletedAt?: string | Date | WhereOp<string | Date> | null
+  missingSince?: string | Date | WhereOp<string | Date> | null
+  AND?: TeamWhere[]
+  OR?:  TeamWhere[]
+  NOT?: TeamWhere
+}
+
+export type TeamOrderBy =
+  | { [K in keyof Omit<Team, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Team, never>]?: OrderDir }>
+
+export interface TeamRelations {
+  channels: Channel[]
+}
+
+// ─── Profile ─────────────────────────────────────────────────────
+
+export interface Profile {
+  id: number
+  externalId: string
+  username: string
+  firstName: string
+  lastName: string
+  nickname: string
+  email?: string | null
+  roles: string
+  locale?: string | null
+  isBot: boolean
+  createdAt?: string | null
+  updatedAt?: string | null
+  deletedAt?: string | null
+  missingSince?: string | null
+}
+
+export interface ProfileCreate {
+  id?: number
+}
+
+export interface ProfileUpdate {
+  id?: number
+}
+
+export interface ProfileSystem {
+  externalId?: string
+  username?: string
+  firstName?: string
+  lastName?: string
+  nickname?: string
+  email?: string | null
+  roles?: string
+  locale?: string | null
+  isBot?: boolean
+  missingSince?: string | Date | null
+}
+
+export interface ProfileWhere extends WhereBase {
+  id?: number | WhereOp<number> | null
+  externalId?: string | WhereOp<string> | null
+  username?: string | WhereOp<string> | null
+  firstName?: string | WhereOp<string> | null
+  lastName?: string | WhereOp<string> | null
+  nickname?: string | WhereOp<string> | null
+  email?: string | WhereOp<string> | null
+  roles?: string | WhereOp<string> | null
+  locale?: string | WhereOp<string> | null
+  isBot?: boolean | WhereOp<boolean> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  updatedAt?: string | Date | WhereOp<string | Date> | null
+  deletedAt?: string | Date | WhereOp<string | Date> | null
+  missingSince?: string | Date | WhereOp<string | Date> | null
+  AND?: ProfileWhere[]
+  OR?:  ProfileWhere[]
+  NOT?: ProfileWhere
+}
+
+export type ProfileOrderBy =
+  | { [K in keyof Omit<Profile, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Profile, never>]?: OrderDir }>
+
+export interface ProfileRelations {
+  memberships: ChannelMember[]
+  posts: Post[]
+  threads: Thread[]
+  reactions: Reaction[]
+  files: FileInfo[]
+}
+
+// ─── Channel ─────────────────────────────────────────────────────
+
+export interface Channel {
+  id: number
+  externalId: string
+  teamExternalId?: string | null
+  creatorExternalId?: string | null
+  type: ChannelType
+  name: string
+  displayName: string
+  header: string
+  purpose: string
+  lastPostAt?: string | null
+  totalMessageCount: number
+  totalMessageCountRoot: number
+  lastRootPostAt?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  deletedAt?: string | null
+  missingSince?: string | null
+}
+
+export interface ChannelCreate {
+  id?: number
+}
+
+export interface ChannelUpdate {
+  id?: number
+}
+
+export interface ChannelSystem {
+  externalId?: string
+  teamExternalId?: string | null
+  creatorExternalId?: string | null
+  type?: ChannelType
+  name?: string
+  displayName?: string
+  header?: string
+  purpose?: string
+  lastPostAt?: string | Date | null
+  totalMessageCount?: number
+  totalMessageCountRoot?: number
+  lastRootPostAt?: string | Date | null
+  missingSince?: string | Date | null
+}
+
+export interface ChannelWhere extends WhereBase {
+  id?: number | WhereOp<number> | null
+  externalId?: string | WhereOp<string> | null
+  teamExternalId?: string | WhereOp<string> | null
+  creatorExternalId?: string | WhereOp<string> | null
+  type?: ChannelType | WhereOp<ChannelType> | null
+  name?: string | WhereOp<string> | null
+  displayName?: string | WhereOp<string> | null
+  header?: string | WhereOp<string> | null
+  purpose?: string | WhereOp<string> | null
+  lastPostAt?: string | Date | WhereOp<string | Date> | null
+  totalMessageCount?: number | WhereOp<number> | null
+  totalMessageCountRoot?: number | WhereOp<number> | null
+  lastRootPostAt?: string | Date | WhereOp<string | Date> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  updatedAt?: string | Date | WhereOp<string | Date> | null
+  deletedAt?: string | Date | WhereOp<string | Date> | null
+  missingSince?: string | Date | WhereOp<string | Date> | null
+  AND?: ChannelWhere[]
+  OR?:  ChannelWhere[]
+  NOT?: ChannelWhere
+}
+
+export type ChannelOrderBy =
+  | { [K in keyof Omit<Channel, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Channel, never>]?: OrderDir }>
+
+export interface ChannelRelations {
+  team: Team | null
+  members: ChannelMember[]
+  posts: Post[]
+}
+
+// ─── ChannelMember ───────────────────────────────────────────────
+
+export interface ChannelMember {
+  id: number
+  externalId: string
+  channelExternalId: string
+  profileExternalId: string
+  roles: string
+  isAdmin: boolean
+  lastViewedAt?: string | null
+  messageCount: number
+  mentionCount: number
+  messageCountRoot: number
+  mentionCountRoot: number
+  muted: boolean
+  updatedAt?: string | null
+  missingSince?: string | null
+}
+
+export interface ChannelMemberCreate {
+  id?: number
+}
+
+export interface ChannelMemberUpdate {
+  id?: number
+}
+
+export interface ChannelMemberSystem {
+  externalId?: string
+  channelExternalId?: string
+  profileExternalId?: string
+  roles?: string
+  isAdmin?: boolean
+  lastViewedAt?: string | Date | null
+  messageCount?: number
+  mentionCount?: number
+  messageCountRoot?: number
+  mentionCountRoot?: number
+  muted?: boolean
+  missingSince?: string | Date | null
+}
+
+export interface ChannelMemberWhere extends WhereBase {
+  id?: number | WhereOp<number> | null
+  externalId?: string | WhereOp<string> | null
+  channelExternalId?: string | WhereOp<string> | null
+  profileExternalId?: string | WhereOp<string> | null
+  roles?: string | WhereOp<string> | null
+  isAdmin?: boolean | WhereOp<boolean> | null
+  lastViewedAt?: string | Date | WhereOp<string | Date> | null
+  messageCount?: number | WhereOp<number> | null
+  mentionCount?: number | WhereOp<number> | null
+  messageCountRoot?: number | WhereOp<number> | null
+  mentionCountRoot?: number | WhereOp<number> | null
+  muted?: boolean | WhereOp<boolean> | null
+  updatedAt?: string | Date | WhereOp<string | Date> | null
+  missingSince?: string | Date | WhereOp<string | Date> | null
+  AND?: ChannelMemberWhere[]
+  OR?:  ChannelMemberWhere[]
+  NOT?: ChannelMemberWhere
+}
+
+export type ChannelMemberOrderBy =
+  | { [K in keyof Omit<ChannelMember, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<ChannelMember, never>]?: OrderDir }>
+
+export interface ChannelMemberRelations {
+  channel: Channel | null
+  profile: Profile | null
+}
+
+// ─── Post ────────────────────────────────────────────────────────
+
+export interface Post {
+  id: number
+  externalId: string
+  channelExternalId: string
+  profileExternalId: string
+  rootExternalId?: string | null
+  message: string
+  type: string
+  isPinned: boolean
+  props: unknown
+  hashtags: string
+  replyCount: number
+  lastReplyAt?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  editedAt?: string | null
+  deletedAt?: string | null
+  missingSince?: string | null
+}
+
+export interface PostCreate {
+  id?: number
+}
+
+export interface PostUpdate {
+  id?: number
+}
+
+export interface PostSystem {
+  externalId?: string
+  channelExternalId?: string
+  profileExternalId?: string
+  rootExternalId?: string | null
+  message?: string
+  type?: string
+  isPinned?: boolean
+  props?: unknown
+  hashtags?: string
+  replyCount?: number
+  lastReplyAt?: string | Date | null
+  editedAt?: string | Date | null
+  missingSince?: string | Date | null
+}
+
+export interface PostWhere extends WhereBase {
+  id?: number | WhereOp<number> | null
+  externalId?: string | WhereOp<string> | null
+  channelExternalId?: string | WhereOp<string> | null
+  profileExternalId?: string | WhereOp<string> | null
+  rootExternalId?: string | WhereOp<string> | null
+  message?: string | WhereOp<string> | null
+  type?: string | WhereOp<string> | null
+  isPinned?: boolean | WhereOp<boolean> | null
+  props?: unknown | WhereOp<unknown> | null
+  hashtags?: string | WhereOp<string> | null
+  replyCount?: number | WhereOp<number> | null
+  lastReplyAt?: string | Date | WhereOp<string | Date> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  updatedAt?: string | Date | WhereOp<string | Date> | null
+  editedAt?: string | Date | WhereOp<string | Date> | null
+  deletedAt?: string | Date | WhereOp<string | Date> | null
+  missingSince?: string | Date | WhereOp<string | Date> | null
+  AND?: PostWhere[]
+  OR?:  PostWhere[]
+  NOT?: PostWhere
+}
+
+export type PostOrderBy =
+  | { [K in keyof Omit<Post, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Post, never>]?: OrderDir }>
+
+export interface PostRelations {
+  channel: Channel | null
+  author: Profile | null
+  root: Post | null
+  replies: Post[]
+  threads: Thread[]
+  reactions: Reaction[]
+  files: FileInfo[]
+}
+
+// ─── Thread ──────────────────────────────────────────────────────
+
+export interface Thread {
+  id: number
+  externalId: string
+  rootExternalId: string
+  profileExternalId: string
+  replyCount: number
+  lastReplyAt?: string | null
+  lastViewedAt?: string | null
+  unreadReplies: number
+  unreadMentions: number
+  isFollowing: boolean
+  missingSince?: string | null
+}
+
+export interface ThreadCreate {
+  id?: number
+}
+
+export interface ThreadUpdate {
+  id?: number
+}
+
+export interface ThreadSystem {
+  externalId?: string
+  rootExternalId?: string
+  profileExternalId?: string
+  replyCount?: number
+  lastReplyAt?: string | Date | null
+  lastViewedAt?: string | Date | null
+  unreadReplies?: number
+  unreadMentions?: number
+  isFollowing?: boolean
+  missingSince?: string | Date | null
+}
+
+export interface ThreadWhere extends WhereBase {
+  id?: number | WhereOp<number> | null
+  externalId?: string | WhereOp<string> | null
+  rootExternalId?: string | WhereOp<string> | null
+  profileExternalId?: string | WhereOp<string> | null
+  replyCount?: number | WhereOp<number> | null
+  lastReplyAt?: string | Date | WhereOp<string | Date> | null
+  lastViewedAt?: string | Date | WhereOp<string | Date> | null
+  unreadReplies?: number | WhereOp<number> | null
+  unreadMentions?: number | WhereOp<number> | null
+  isFollowing?: boolean | WhereOp<boolean> | null
+  missingSince?: string | Date | WhereOp<string | Date> | null
+  AND?: ThreadWhere[]
+  OR?:  ThreadWhere[]
+  NOT?: ThreadWhere
+}
+
+export type ThreadOrderBy =
+  | { [K in keyof Omit<Thread, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Thread, never>]?: OrderDir }>
+
+export interface ThreadRelations {
+  root: Post | null
+  profile: Profile | null
+}
+
+// ─── Reaction ────────────────────────────────────────────────────
+
+export interface Reaction {
+  id: number
+  externalId: string
+  postExternalId: string
+  profileExternalId: string
+  emojiName: string
+  createdAt?: string | null
+  missingSince?: string | null
+}
+
+export interface ReactionCreate {
+  id?: number
+}
+
+export interface ReactionUpdate {
+  id?: number
+}
+
+export interface ReactionSystem {
+  externalId?: string
+  postExternalId?: string
+  profileExternalId?: string
+  emojiName?: string
+  missingSince?: string | Date | null
+}
+
+export interface ReactionWhere extends WhereBase {
+  id?: number | WhereOp<number> | null
+  externalId?: string | WhereOp<string> | null
+  postExternalId?: string | WhereOp<string> | null
+  profileExternalId?: string | WhereOp<string> | null
+  emojiName?: string | WhereOp<string> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  missingSince?: string | Date | WhereOp<string | Date> | null
+  AND?: ReactionWhere[]
+  OR?:  ReactionWhere[]
+  NOT?: ReactionWhere
+}
+
+export type ReactionOrderBy =
+  | { [K in keyof Omit<Reaction, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Reaction, never>]?: OrderDir }>
+
+export interface ReactionRelations {
+  post: Post | null
+  profile: Profile | null
+}
+
+// ─── FileInfo ────────────────────────────────────────────────────
+
+export interface FileInfo {
+  id: number
+  externalId: string
+  postExternalId?: string | null
+  profileExternalId: string
+  name: string
+  extension: string
+  size: number
+  mimeType: string
+  width?: number | null
+  height?: number | null
+  hasPreviewImage: boolean
+  createdAt?: string | null
+  updatedAt?: string | null
+  deletedAt?: string | null
+  missingSince?: string | null
+}
+
+export interface FileInfoCreate {
+  id?: number
+}
+
+export interface FileInfoUpdate {
+  id?: number
+}
+
+export interface FileInfoSystem {
+  externalId?: string
+  postExternalId?: string | null
+  profileExternalId?: string
+  name?: string
+  extension?: string
+  size?: number
+  mimeType?: string
+  width?: number | null
+  height?: number | null
+  hasPreviewImage?: boolean
+  missingSince?: string | Date | null
+}
+
+export interface FileInfoWhere extends WhereBase {
+  id?: number | WhereOp<number> | null
+  externalId?: string | WhereOp<string> | null
+  postExternalId?: string | WhereOp<string> | null
+  profileExternalId?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  extension?: string | WhereOp<string> | null
+  size?: number | WhereOp<number> | null
+  mimeType?: string | WhereOp<string> | null
+  width?: number | WhereOp<number> | null
+  height?: number | WhereOp<number> | null
+  hasPreviewImage?: boolean | WhereOp<boolean> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  updatedAt?: string | Date | WhereOp<string | Date> | null
+  deletedAt?: string | Date | WhereOp<string | Date> | null
+  missingSince?: string | Date | WhereOp<string | Date> | null
+  AND?: FileInfoWhere[]
+  OR?:  FileInfoWhere[]
+  NOT?: FileInfoWhere
+}
+
+export type FileInfoOrderBy =
+  | { [K in keyof Omit<FileInfo, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<FileInfo, never>]?: OrderDir }>
+
+export interface FileInfoRelations {
+  post: Post | null
+  profile: Profile | null
+}
+
 // ── Services ─────────────────────────────────────────────────────────────────
 
 /**
@@ -511,6 +1078,14 @@ export interface ServiceTypes {
   claudeWrites: ClaudeWrite
   notifications: Notification
   providerAccounts: ProviderAccount
+  teams: Team
+  profiles: Profile
+  channels: Channel
+  channelMembers: ChannelMember
+  posts: Post
+  threads: Thread
+  reactions: Reaction
+  fileInfos: FileInfo
 }
 
 // ── Cursor pagination result ─────────────────────────────────────────────────
@@ -646,14 +1221,22 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'member' | 'session' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'notification' | 'providerAccount' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
-  readonly member: TableClient<Member, MemberCreate, MemberUpdate, MemberWhere, MemberRelations, never, '@@gate'>
+  'member' | 'session' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'notification' | 'providerAccount' | 'team' | 'profile' | 'channel' | 'channelMember' | 'post' | 'thread' | 'reaction' | 'fileInfo' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  readonly member: TableClient<Member, MemberCreate, MemberUpdate, MemberWhere, MemberRelations, never, 'chatToken' | 'profileExternalId' | 'chatSyncedAt' | '@@gate', MemberSystem>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'tokenHash' | 'lastUsedAt' | '@@gate', SessionSystem>
   readonly claudeTranscript: TableClient<ClaudeTranscript, ClaudeTranscriptCreate, ClaudeTranscriptUpdate, ClaudeTranscriptWhere, ClaudeTranscriptRelations, never, '@@gate'>
   readonly claudeMessage: TableClient<ClaudeMessage, ClaudeMessageCreate, ClaudeMessageUpdate, ClaudeMessageWhere, ClaudeMessageRelations, never, '@@gate'>
   readonly claudeWrite: TableClient<ClaudeWrite, ClaudeWriteCreate, ClaudeWriteUpdate, ClaudeWriteWhere, ClaudeWriteRelations, never, '@@gate'>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>
   readonly providerAccount: TableClient<ProviderAccount, ProviderAccountCreate, ProviderAccountUpdate, ProviderAccountWhere, ProviderAccountRelations, never, 'token' | '@@gate'>
+  readonly team: TableClient<Team, TeamCreate, TeamUpdate, TeamWhere, TeamRelations, never, 'externalId' | 'name' | 'displayName' | 'description' | 'type' | 'allowOpenInvite' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', TeamSystem>
+  readonly profile: TableClient<Profile, ProfileCreate, ProfileUpdate, ProfileWhere, ProfileRelations, never, 'externalId' | 'username' | 'firstName' | 'lastName' | 'nickname' | 'email' | 'roles' | 'locale' | 'isBot' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', ProfileSystem>
+  readonly channel: TableClient<Channel, ChannelCreate, ChannelUpdate, ChannelWhere, ChannelRelations, never, 'externalId' | 'teamExternalId' | 'creatorExternalId' | 'type' | 'name' | 'displayName' | 'header' | 'purpose' | 'lastPostAt' | 'totalMessageCount' | 'totalMessageCountRoot' | 'lastRootPostAt' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', ChannelSystem>
+  readonly channelMember: TableClient<ChannelMember, ChannelMemberCreate, ChannelMemberUpdate, ChannelMemberWhere, ChannelMemberRelations, never, 'externalId' | 'channelExternalId' | 'profileExternalId' | 'roles' | 'isAdmin' | 'lastViewedAt' | 'messageCount' | 'mentionCount' | 'messageCountRoot' | 'mentionCountRoot' | 'muted' | 'updatedAt' | 'missingSince' | '@@gate', ChannelMemberSystem>
+  readonly post: TableClient<Post, PostCreate, PostUpdate, PostWhere, PostRelations, never, 'externalId' | 'channelExternalId' | 'profileExternalId' | 'rootExternalId' | 'message' | 'type' | 'isPinned' | 'props' | 'hashtags' | 'replyCount' | 'lastReplyAt' | 'createdAt' | 'updatedAt' | 'editedAt' | 'deletedAt' | 'missingSince' | '@@gate', PostSystem>
+  readonly thread: TableClient<Thread, ThreadCreate, ThreadUpdate, ThreadWhere, ThreadRelations, never, 'externalId' | 'rootExternalId' | 'profileExternalId' | 'replyCount' | 'lastReplyAt' | 'lastViewedAt' | 'unreadReplies' | 'unreadMentions' | 'isFollowing' | 'missingSince' | '@@gate', ThreadSystem>
+  readonly reaction: TableClient<Reaction, ReactionCreate, ReactionUpdate, ReactionWhere, ReactionRelations, never, 'externalId' | 'postExternalId' | 'profileExternalId' | 'emojiName' | 'createdAt' | 'missingSince' | '@@gate', ReactionSystem>
+  readonly fileInfo: TableClient<FileInfo, FileInfoCreate, FileInfoUpdate, FileInfoWhere, FileInfoRelations, never, 'externalId' | 'postExternalId' | 'profileExternalId' | 'name' | 'extension' | 'size' | 'mimeType' | 'width' | 'height' | 'hasPreviewImage' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', FileInfoSystem>
 
   // Auth scoping
   asSystem(): __Sudo<LitestoneClient>

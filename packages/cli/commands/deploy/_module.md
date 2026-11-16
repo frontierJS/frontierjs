@@ -400,7 +400,7 @@ const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, doWidgets
   const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
   const { readdirSync, readFileSync } = await import('fs')
 
-  const { configurationSet, schemaSurfaceHash, mintRelease, ConfigurationError } = await core('release.js')
+  const { configurationSet, schemaSurfaceHash, mintRelease, releaseAppOf, ConfigurationError } = await core('release.js')
   const { stepFilesIn, stepNameOf, planSteps, planTransition, formatPlan } = await core('deploy-plan.js')
   const { extractFrontmatter } = await core('compiler.js')
 
@@ -416,8 +416,10 @@ const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, doWidgets
   // asks it there and the verdict goes on the transition (`FJS-4004`).
   const schema = schemaSurfaceHash($.paths.db)
 
-  const release = mintRelease({
-    app:           appIdOf(deployConf),
+  // The id hashes the Basecamp App id where there is one (`FJS-D2230`); the row
+  // keeps `deploy.app_id`, which every journal reader keys on.
+  const release = { ...mintRelease({
+    app:           releaseAppOf(deployConf),
     environment:   target,
     // The bytes, where they exist. `--plan` runs no build and has none, so the
     // id it prints is provisional and says so; the deploy passes what step 04
@@ -426,7 +428,7 @@ const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, doWidgets
     configurationHash: configuration.hash,
     schemaHash:    schema.hash,
     createdBy:     $.git.user?.() ?? null,
-  })
+  }), app: appIdOf(deployConf) }
 
   // The steps, off disk. `skip:` is evaluated against the same shape the runner
   // hands a predicate, so a step shown as skipped is one that will be skipped.
@@ -1177,7 +1179,6 @@ const openDeployJournal = async ($, flag, opts) => {
       kind: 'deploy', app: release.app, environment: release.environment,
       fromReleaseId: held?.transition.fromReleaseId ?? state.serving,
       releaseId: release.id,
-      generation: held?.transition.generation ?? state.generation ?? 1,
     }
     const { attempt, resume } = await j.attempt(intent)
 
@@ -1195,22 +1196,22 @@ const openDeployJournal = async ($, flag, opts) => {
     // `--plan` states as provisional.
     const real = planTransition({
       release, steps: plan.steps.map((s, i) => ({ ...s, ordinal: i + 1 })),
-      fromReleaseId: intent.fromReleaseId, generation: intent.generation, attempt,
+      fromReleaseId: intent.fromReleaseId, attempt,
       actor: release.createdBy,
       pivot: pivot.verdict, pivotReason: pivot.reason,
       ...(opts.doApi ? {} : { isCrossingPivot: false }),
     })
 
     const verdict = preconditionVerdict(
-      { serving: state.serving, generation: intent.generation },
-      { serving: state.serving, generation: state.generation ?? intent.generation })
+      { serving: state.serving },
+      { serving: state.serving })
     if (!verdict.ok) return { error: formatDrift(verdict.drift) }
 
     const begun = await j.begin({
       release,
       configuration: {
         app: release.app, environment: release.environment,
-        generation: intent.generation, hash: release.configurationHash,
+        hash: release.configurationHash,
         values: plan.configuration.values, secretRefs: plan.configuration.secretRefs,
         createdBy: release.createdBy,
       },
@@ -1374,14 +1375,12 @@ const openPauseJournal = async ($, flag, opts) => {
     const intent = {
       kind, app, environment: target,
       fromReleaseId: state.serving, releaseId: state.serving,
-      generation: state.generation ?? 1,
     }
     const { attempt } = await j.attempt(intent)
 
     const real = planTransition({
       kind, release, steps,
       fromReleaseId: intent.fromReleaseId,
-      generation:    intent.generation,
       attempt,
       isCrossingPivot:  false,
       actor:         $.git.user?.() ?? null,

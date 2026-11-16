@@ -20,7 +20,7 @@
 // forward runs these verbs for the app's generated writes.
 
 import type { MirrorClaim, MirrorModel } from '@frontierjs/conduit'
-import type { Channel, ChannelMember, ChannelPatch, FileInfo, MattermostId, NewChannel, NewPost, Post, PostPatch, Reaction, Team, User, UserThread } from './types.ts'
+import type { Channel, ChannelMember, ChannelPatch, ChannelUnreadAt, CustomStatus, Draft, FileInfo, Preference, SidebarCategory, UserStatus, MattermostId, NewChannel, NewPost, Post, PostPatch, Reaction, Team, User, UserThread } from './types.ts'
 
 export const MATTERMOST_TARGET        = 'provider:mattermost'
 export const MATTERMOST_USER_TARGET   = 'provider:mattermost:user'
@@ -275,4 +275,76 @@ export const fileInfoModel: MirrorModel<FileInfoRow, FileInfo> = {
 export const mirror: MirrorClaim = {
   provider: 'mattermost',
   models:   { Team: teamModel, Channel: channelModel, ChannelMember: channelMemberModel, Post: postModel, Thread: threadModel, Reaction: reactionModel, Profile: profileModel, FileInfo: fileInfoModel },
+}
+
+// ─── Rows no model claims ────────────────────────────────────
+//
+// A person's drafts, preferences, status, sidebar and unread marks are read
+// and written through verbs (`src/index.ts`) and pushed over the socket, but
+// the app does not mirror them under `@@mirror`: each is one person's own and
+// a verb answers their current value. Their rows are parsed here so the
+// socket and the verbs read one shape.
+
+export interface DraftRow {
+  profileExternalId: string; channelExternalId: string; rootExternalId: string | null
+  message: string; props: Record<string, unknown>; fileExternalIds: string[]
+  createdAt: Date | null; updatedAt: Date | null; deletedAt: Date | null
+}
+export interface PreferenceRow { profileExternalId: string; category: string; name: string; value: string }
+export interface StatusRow { profileExternalId: string; status: UserStatus['status']; manual: boolean; lastActivityAt: Date | null; dndEndTime: number | null }
+export interface CustomStatusRow { emoji: string; text: string; duration: string | null; expiresAt: Date | null }
+export interface CategoryRow {
+  externalId: string; profileExternalId: string; teamExternalId: string
+  type: SidebarCategory['type']; displayName: string; sorting: SidebarCategory['sorting']
+  channelExternalIds: string[]; muted: boolean; collapsed: boolean
+}
+export interface UnreadRow {
+  profileExternalId: string; channelExternalId: string; teamExternalId: string | null; lastViewedAt: Date | null
+  messageCount: number; mentionCount: number; messageCountRoot: number; mentionCountRoot: number
+}
+
+/** A system category's id is `<type>_<user>_<team>`, a custom one's a plain Mattermost id. */
+export const isCategoryId = (v: unknown): v is string => typeof v === 'string' && (ID.test(v) || /^(favorites|channels|direct_messages)_[a-z0-9]{26}_[a-z0-9]{26}$/.test(v))
+
+export const draftKey = (channelId: string, rootId?: string | null) => `${channelId}:${rootId || ''}`
+
+export function parseDraft(d: Draft): DraftRow | null {
+  if (!d || !isId(d.user_id) || !isId(d.channel_id)) return null
+  return {
+    profileExternalId: d.user_id, channelExternalId: d.channel_id, rootExternalId: d.root_id || null,
+    message: d.message ?? '', props: d.props ?? {}, fileExternalIds: Array.isArray(d.file_ids) ? d.file_ids.filter(isId) : [],
+    createdAt: at(d.create_at), updatedAt: at(d.update_at), deletedAt: at(d.delete_at),
+  }
+}
+export function parsePreference(p: Preference): PreferenceRow | null {
+  if (!p || !isId(p.user_id) || typeof p.category !== 'string' || !p.category || typeof p.name !== 'string') return null
+  return { profileExternalId: p.user_id, category: p.category, name: p.name, value: typeof p.value === 'string' ? p.value : '' }
+}
+export function parseStatus(s: UserStatus): StatusRow | null {
+  if (!s || !isId(s.user_id) || typeof s.status !== 'string') return null
+  return { profileExternalId: s.user_id, status: s.status, manual: !!s.manual, lastActivityAt: at(s.last_activity_at), dndEndTime: s.dnd_end_time ? s.dnd_end_time : null }
+}
+/** `props.customStatus` of a user as Mattermost sends it: a JSON string, absent when none is set. */
+export function customStatusOf(u: { props?: Record<string, string> } | null | undefined): CustomStatusRow | null {
+  const raw = u?.props?.customStatus
+  if (typeof raw !== 'string' || !raw) return null
+  let c: CustomStatus
+  try { c = JSON.parse(raw) } catch { return null }
+  if (!c || typeof c !== 'object' || (!c.emoji && !c.text)) return null
+  const exp = c.expires_at ? Date.parse(c.expires_at) : NaN
+  return { emoji: c.emoji ?? '', text: c.text ?? '', duration: c.duration || null, expiresAt: Number.isFinite(exp) && exp > 0 ? new Date(exp) : null }
+}
+export function parseCategory(c: SidebarCategory): CategoryRow | null {
+  if (!c || !isCategoryId(c.id) || !isId(c.user_id)) return null
+  return {
+    externalId: c.id, profileExternalId: c.user_id, teamExternalId: c.team_id, type: c.type, displayName: c.display_name ?? '',
+    sorting: c.sorting ?? '', channelExternalIds: Array.isArray(c.channel_ids) ? c.channel_ids.filter(isId) : [], muted: !!c.muted, collapsed: !!c.collapsed,
+  }
+}
+export function parseUnread(u: ChannelUnreadAt): UnreadRow | null {
+  if (!u || !isId(u.user_id) || !isId(u.channel_id)) return null
+  return {
+    profileExternalId: u.user_id, channelExternalId: u.channel_id, teamExternalId: u.team_id || null, lastViewedAt: at(u.last_viewed_at),
+    messageCount: u.msg_count ?? 0, mentionCount: u.mention_count ?? 0, messageCountRoot: u.msg_count_root ?? 0, mentionCountRoot: u.mention_count_root ?? 0,
+  }
 }

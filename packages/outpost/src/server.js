@@ -13,15 +13,22 @@
  * process's user, so an unsigned request reaching it is remote code execution
  * with extra steps; that is why the default is refuse-everything and a route
  * opts OUT rather than in.
+ *
+ * Basecamp's key signs every route. `POST /revert` alone also takes this
+ * machine's own key (`FJS-D2231`): `outpost revert` is run at a root shell on
+ * the box with Basecamp down, and whoever can read that key already has root
+ * and docker here. Any other route signed with it is refused, or the box key
+ * would be a second way to send `/exec`.
  */
 
 import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
-import { createDocker, createInspector, checkRunConfig, checkSwap, swapFor } from './docker.js'
+import { createDocker, createInspector, checkRunConfig, checkSwap, swapFor, EXPOSED_LABEL } from './docker.js'
 import { createStatic, validName } from './static.js'
 import { createIngress, checkRouteAppId, hostsOf, pathsOf, redirectsOf, removingOf } from './ingress.js'
 import { doorRefusal } from './doors.js'
 import { createReplicator } from './replicate.js'
 import { createAnalytics } from './analytics.js'
+import { createReleaseCache, revertPlan } from './release-cache.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
@@ -69,12 +76,42 @@ function eventStream(events, abort, done) {
   }), { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' } })
 }
 
+/** A refusal with a reason, answered 409 as a held volume is: the request was
+ *  understood and the machine says no. */
+const refusal = (message) => Object.assign(new Error(message), { refusal: true })
+
+/** `{ KEY: 'KEY@3' }` off the wire; anything else is refused, or a value could
+ *  ride in as a ref and be written to disk. */
+function secretRefsOf(refs) {
+  if (refs == null) return {}
+  if (typeof refs !== 'object' || Array.isArray(refs)) throw new Error('secret_refs must be an object of KEY: "KEY@revision"')
+  for (const [key, ref] of Object.entries(refs))
+    if (typeof ref !== 'string' || ref.length > 200 || ref.includes('\n'))
+      throw new Error(`secret_refs.${key} must be a reference like "${key}@3", never a value`)
+  return refs
+}
+
+/** The public half of this machine's Ed25519 key, from the private half it
+ *  holds. `null` when there is none or it does not parse: `/revert` is then
+ *  Basecamp's alone, as every other route is. */
+async function publicHalf(privateKey) {
+  if (typeof privateKey !== 'string' || !privateKey) return null
+  try {
+    const key = await crypto.subtle.importKey('pkcs8', Buffer.from(privateKey, 'base64url'), { name: 'Ed25519' }, true, ['sign'])
+    return (await crypto.subtle.exportKey('jwk', key)).x ?? null
+  } catch { return null }
+}
+
+/** The routes this machine's own key may sign (`FJS-D2231`). */
+const BOX_SIGNED = new Set(['POST /revert'])
+
 export function createOutpostServer(config, {
   docker    = createDocker({ workDir: config.workDir, appsDir: config.appsDir, restoreDir: config.restoreDir, backupDir: config.backupDir, deployKeyDir: config.deployKeyDir }),
   inspector = createInspector({ appsDir: config.appsDir, exclusive: docker.exclusive }),
   statics   = createStatic({ staticDir: config.staticDir, staticUrl: config.staticUrl }),
   ingress   = createIngress({ admin: config.caddyAdmin }),
   analytics = createAnalytics(),
+  releases  = createReleaseCache({ dir: config.releasesDir }),
   replicator = createReplicator({ configPath: config.litestreamConfig, appsDir: config.appsDir, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, hostDb: config.hostFiles?.db ?? null }),
   log       = console,
 } = {}) {
@@ -99,6 +136,33 @@ export function createOutpostServer(config, {
   const syncExposed = () => docker.syncExposed()
     .catch(err => log.error?.(`outpost: the firewall's exposed set was not refilled — ${err.message}`))
 
+  // A revert is refused before anything stops, by name. The cache is CHECKED,
+  // never trusted (`FJS-D2178`): a record that disagrees with the request is
+  // not a reason to start either one. No record is Basecamp's word alone, and
+  // the reply says so.
+  const checkRollback = async ({ appId, releaseId, image, digest }) => {
+    const cached = releases.read(appId).find(r => r.release_id === releaseId) ?? null
+    if (cached && digest && cached.digest && cached.digest !== digest)
+      throw refusal(`release ${releaseId} of ${appId} is recorded on this machine with digest ${cached.digest}, but the request names ${digest} — one of them is wrong, so nothing was stopped. Revert from the release's own record in Basecamp, or deploy it again`)
+    const wanted = digest ?? cached?.digest ?? null
+    if (!await docker.held({ image, digest: wanted }))
+      throw refusal(`${wanted ?? image} is not on this machine — Cleanup or a prune removed the image of release ${releaseId}, and a build made here has no registry to come back from. Release the app again to build it`)
+    return cached ? 'match' : 'absent'
+  }
+
+  // After the swap, inside the chain: a record written for a release that did
+  // not start would offer a revert to bytes that never ran. A failed write is
+  // told, not thrown, because the release is already serving.
+  const keepRecord = (appId, entry) => {
+    try {
+      releases.record(appId, entry)
+      return true
+    } catch (err) {
+      log.error?.(`outpost: release ${entry.release_id ?? entry.digest} of ${appId} is serving but its record was not kept — ${err.message}`)
+      return false
+    }
+  }
+
   const routes = {
     // snake_case in, camelCase inside. The bodies are basecamp's wire contract
     // — `app_id`, `timeout_s`, `keep_images` — and a route that passed one
@@ -114,7 +178,10 @@ export function createOutpostServer(config, {
       const built = await docker.build({
         appId: body.app_id, source: body.source, image: body.image ?? `fjs-${body.app_id}`,
       })
-      return { digest: built.digest, commit_sha: built.commitSha, dockerfile: built.dockerfile, exposed_port: built.exposedPort ?? null }
+      return {
+        digest: built.digest, commit_sha: built.commitSha, dockerfile: built.dockerfile,
+        exposed_port: built.exposedPort ?? null, schema_hash: built.schemaHash ?? null,
+      }
     },
     // Asked when the App is made, so its public half is on screen to add at the
     // forge before the first build needs it. The id names a key file.
@@ -206,6 +273,8 @@ export function createOutpostServer(config, {
       const port      = body.config?.port
       if (fronted && !port) throw new Error('hosts need a published port to route to — config.port is not set')
       checkRunConfig(body.config)
+      const releaseId  = typeof body.release_id === 'string' && body.release_id.trim() ? body.release_id.trim() : null
+      const secretRefs = secretRefsOf(body.secret_refs)
       const asked = body.swap ?? 'stop-first'
       checkSwap({ swap: asked, loopback: fronted, exposesPort: body.exposes_port === true, port, path: body.config?.healthCheck ?? null })
       const routeTo = (to) => ingress.route({ appId, hosts, port: to, redirects, paths, noindex, removing })
@@ -222,6 +291,7 @@ export function createOutpostServer(config, {
       return exclusive(appId, async () => {
         const image = body.image ?? `fjs-${body.deployment_id}`
         let built   = { digest: body.digest ?? null }
+        const cache = body.rollback && releaseId ? await checkRollback({ appId, releaseId, image, digest: body.digest }) : null
         if (body.source?.kind === 'git' && body.source.repo && !body.digest)
           built = await docker.build({ appId, source: body.source, image })
 
@@ -272,6 +342,7 @@ export function createOutpostServer(config, {
             routed,
             pivot:       body.rollback ? null : pivot?.verdict ?? null,
             rollback:    body.rollback === true,
+            releaseId,
             held:        true,
           })
         } catch (err) {
@@ -279,7 +350,13 @@ export function createOutpostServer(config, {
           throw err
         }
         await syncExposed()
-        return { ...started, hosts, paths, commit_sha: built.commitSha ?? null, pivot: pivot?.verdict ?? null, swap_reason: reason }
+        const recorded = keepRecord(appId, {
+          release_id: releaseId, digest: started.digest ?? built.digest ?? null, image,
+          config: body.config ?? {}, secret_refs: secretRefs, rollback: body.rollback === true,
+        })
+        return { ...started, hosts, paths, commit_sha: built.commitSha ?? null, schema_hash: built.schemaHash ?? null,
+                 pivot: pivot?.verdict ?? null, swap_reason: reason, release_id: releaseId, recorded,
+                 ...(cache ? { cache } : {}) }
       })
     },
 
@@ -598,7 +675,7 @@ export function createOutpostServer(config, {
       // how a deploy fails with nothing on screen but a red pill. A flag on the
       // error rides with them: `volume_touched` is how a caller that failed a
       // restore knows whether the data directory is still what it was.
-      return json({ error: err.message, ...(err.volumeTouched ? { volume_touched: true } : {}) }, 500)
+      return json({ error: err.message, ...(err.volumeTouched ? { volume_touched: true } : {}) }, err.refusal ? 409 : 500)
     }
   }
 

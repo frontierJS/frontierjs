@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-77 model(s) · 60 enum(s) · 2 database(s) · 1 value set(s)
+78 model(s) · 61 enum(s) · 2 database(s) · 1 value set(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -35,6 +35,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
 | `ComputeProvider` | `custom` · `digitalocean` · `hetzner` |
 | `DependencyKind` | `dependency` · `dev` · `optional` · `peer` |
+| `DeployPivot` | `contract` · `expand` · `unchanged` · `unknown` |
 | `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolledBack` · `success` |
 | `DeploySwap` | `startFirst` · `stopFirst` |
 | `DeployTrigger` | `button` · `freeze` · `laptop` · `observed` · `publish` · `push` · `rebind` · `rollback` |
@@ -946,9 +947,12 @@ table `deployment` · db `main` · gate `2.4.4.4`
 | `fromImage` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `imageSha256` | `String` | yes | — | @system |
+| `pivot` | `DeployPivot` | yes | — | @system |
 | `platformVersion` | `String` | yes | — | @system |
 | `previousDeploymentId` | `String` | yes | — | @system |
 | `queuedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `releaseId` | `String` | yes | — | @system |
+| `schemaHash` | `String` | yes | — | @system |
 | `startedAt` | `DateTime` | yes | — | @system |
 | `status` | `DeployStatus` | no | `'pending'` | — |
 | `steps` | `DeploymentStep[]` | — | — | relation |
@@ -2332,10 +2336,12 @@ table `variable` · db `main` · gate `2.4.4.4` · @@softDelete
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isSecret` | `Boolean` | no | `0` | — |
 | `key` | `String` | no | — | **required on write** |
+| `revision` | `Int` | no | `1` | @system |
 | `secretValue` | `String` | yes | — | @encrypted |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `value` | `String` | yes | — | — |
 | `version` | `Int` | no | `1` | — |
+| `versions` | `VariableVersion[]` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
@@ -2350,6 +2356,30 @@ table `variable` · db `main` · gate `2.4.4.4` · @@softDelete
 @@deny(postUpdate, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(read, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@allow(update, appId != null || environment.isProtected == false || auth().level >= 5)
+@@deny(update, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+```
+
+### `VariableVersion`
+
+table `variable_version` · db `main` · gate `2.4.4.4`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `revision` | `Int` | no | — | **required on write** |
+| `revokedAt` | `DateTime` | yes | — | — |
+| `secretValue` | `String` | no | — | @encrypted · **required on write** |
+| `variable` | `Variable` | — | — | relation |
+| `variableId` | `String` | no | — | **required on write** |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@unique(revision, variableId)
+@@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(delete, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(postUpdate, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(read, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(update, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 ```
 

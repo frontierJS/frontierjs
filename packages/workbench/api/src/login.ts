@@ -21,6 +21,10 @@ const same = (a: string, b: string): boolean => {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
+// profileExternalId is who the member is linked to in the team chat; the Messages
+// screen filters on it, and a page that never heard it would show an unlinked prompt.
+const DOOR_MEMBER = { id: true, nick: true, profileExternalId: true } as const
+
 export function loginRoute (db: Db, auth: WorkbenchAuth, opts: { key: string }) {
   return async (ctx: TransportContext): Promise<Response> => {
     const body = (ctx.body ?? {}) as { key?: unknown }
@@ -28,8 +32,8 @@ export function loginRoute (db: Db, auth: WorkbenchAuth, opts: { key: string }) 
     if (!same(body.key, opts.key)) return ctx.json({ message: 'That is not this machine\'s key.' }, 401)
 
     const sys = db.asSystem()
-    const member = await sys.member.findFirst({ where: { nick: OWNER }, select: { id: true, nick: true } })
-      ?? await sys.member.create({ data: { nick: OWNER }, select: { id: true, nick: true } })
+    const member = await sys.member.findFirst({ where: { nick: OWNER }, select: DOOR_MEMBER })
+      ?? await sys.member.create({ data: { nick: OWNER }, select: DOOR_MEMBER })
 
     const { token, expiresAt } = await auth.mint(member.id)
     return ctx.json({ token, expiresAt, member }, 200)
@@ -43,7 +47,7 @@ export const LOGOUT_PATH = '/door/logout'
 export function meRoute (db: Db) {
   return async (ctx: TransportContext): Promise<Response> => {
     if (!ctx.user) return ctx.json({ message: 'Not signed in.' }, 401)
-    const member = await db.asSystem().member.findFirst({ where: { id: Number(ctx.user.id) }, select: { id: true, nick: true } })
+    const member = await db.asSystem().member.findFirst({ where: { id: Number(ctx.user.id) }, select: DOOR_MEMBER })
     return member ? ctx.json(member, 200) : ctx.json({ message: 'Not signed in.' }, 401)
   }
 }

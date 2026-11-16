@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-10 services · 19 routes · 7 plugins · prefix (none)
+19 services · 21 routes · 8 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -113,6 +113,56 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `channelMembers` · model `ChannelMember`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `channelMembers`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `channels` · model `Channel`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `channels`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `chat`
+
+- **methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `openDirect`
+- **custom methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `openDirect`
+- **who may call** —
+  - `status` — standing 3 or above — declared `gate: 3`
+  - `connect` — standing 3 or above — declared `gate: 3`
+  - `disconnect` — standing 3 or above — declared `gate: 3`
+  - `view` — standing 3 or above — declared `gate: 3`
+  - `readThread` — standing 3 or above — declared `gate: 3`
+  - `pin` — standing 3 or above — declared `gate: 3`
+  - `markUnread` — standing 3 or above — declared `gate: 3`
+  - `mute` — standing 3 or above — declared `gate: 3`
+  - `follow` — standing 3 or above — declared `gate: 3`
+  - `openDirect` — standing 3 or above — declared `gate: 3`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+
 ### `claude` · model `claude`
 
 - **methods** — `config`, `file`, `stats`, `index`, `insights`, `sessions`, `transcript`, `context`, `account`, `quota`, `writes`, `rev`, `mcpHealth`, `mcpTools`, `hookTools`, `doctor`, `undo`, `plugin`, `marketplace`, `mcp`, `settings`, `permissions`, `save`, `trash`
@@ -142,6 +192,21 @@ name when it declares none.
   - `permissions` — standing 5 or above — declared `gate: 5`
   - `save` — standing 5 or above — declared `gate: 5`
   - `trash` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `fileInfos` · model `FileInfo`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `fileInfos`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -244,6 +309,52 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `posts` · model `Post`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `posts`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+| after | `create` | `anonymous` |
+
+### `profiles` · model `Profile`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `profiles`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `reactions` · model `Reaction`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `reactions`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `restoreDrills` · model `restoreDrills`
 
 - **methods** — `state`, `fleet`, `run`
@@ -282,10 +393,40 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `teams` · model `Team`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `teams`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `threads` · model `Thread`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `threads`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `workbench` · model `workbench`
 
-- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `importable`, `nextFor`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `importSession`, `setPackage`, `setPlace`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
-- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `importable`, `nextFor`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `importSession`, `setPackage`, `setPlace`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
+- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `importable`, `nextFor`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `importSession`, `setPackage`, `setPlace`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`, `open`
+- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `importable`, `nextFor`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `importSession`, `setPackage`, `setPlace`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`, `open`
 - **who may call** —
   - `pins` — standing 5 or above — declared `gate: 5`
   - `status` — standing 5 or above — declared `gate: 5`
@@ -326,6 +467,7 @@ name when it declares none.
   - `archive` — standing 5 or above — declared `gate: 5`
   - `run` — standing 5 or above — declared `gate: 5`
   - `halt` — standing 5 or above — declared `gate: 5`
+  - `open` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -360,6 +502,8 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/door/logout` | raw |
 | GET | `/door/me` | raw |
 | GET | `/door/peer` | raw |
+| POST | `/files` | raw |
+| GET | `/files/{id}` | raw |
 | GET | `/health` | raw |
 | GET | `/health/live` | raw |
 | GET | `/health/ready` | raw |
@@ -374,5 +518,6 @@ In configure order, which is what `requires:` is checked against.
 3. `notifications`
 4. `channels`
 5. `caravan`
-6. `terminalRoute`
-7. `corsPlugin`
+6. `anonymous`
+7. `terminalRoute`
+8. `corsPlugin`

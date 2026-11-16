@@ -11,13 +11,14 @@
 // `include: { app: { include: { environment: true } } }` — declared in the
 // schema rather than spelled out as SQL.
 
+import { revokedSecretsOf, pinnedToToday, RevokedSecret, type ReleaseVariables } from '../../domain/release/variables.ts'
 import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { releaseCopyOf, restoreSourceOf } from '../../jobs/app-backup-run.job.ts'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, narrowPatch, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
-import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, inFlightRelease, swapBegunSince } from '../../domain/release/release-record.ts'
+import { crossedPivot, startRelease, recordStep, finishRelease, pushRow as pushReleaseRow, SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, inFlightRelease, swapBegunSince } from '../../domain/release/release-record.ts'
 import { isInline, isGit, imageOf, inlineFilesFor, refuseBranch } from '../../domain/release/app-source.ts'
 import { snapshotVariables } from '../../domain/release/variables.ts'
 import { runtimeOf, type Runtime, CONTAINER_KINDS } from '../../domain/release/runtime.ts'
@@ -119,6 +120,19 @@ async function deployInScope(id: string) {
   const row = await db().deployment.findUnique({ where: { id } })
   if (!row) throw new NotFound(`Deployment '${id}' not found`)
   return row as Record<string, any>
+}
+
+/**
+ * The releases that began after `target` and up to and including the one live,
+ * that crossed a contract. A rollback's own row asked nothing and is not one.
+ */
+async function crossedSince(live: Record<string, any>, target: Record<string, any>): Promise<Record<string, any>[]> {
+  if (!live.finishedAt || !target.finishedAt) return []
+  const rows = await db().asSystem().deployment.findMany({
+    where: { appId: live.appId, trigger: { not: 'rollback' },
+             finishedAt: { gt: target.finishedAt, lte: live.finishedAt } },
+    orderBy: { finishedAt: 'asc' } }) as Record<string, any>[]
+  return rows.filter(crossedPivot)
 }
 
 /** The `@system` columns a release row is created with, named so the call says
@@ -512,6 +526,27 @@ export default createService({
       if (!plan.available) throw new BadRequest(plan.reason)
     }
 
+    // Going back past a contract serves a migrated database to code that cannot
+    // read it (FJS-D2041), so it is refused here by name, where `deploy:revert`
+    // refuses with `--past-pivot`. Restoring the copy taken before is the way.
+    if (!restoring) {
+      const crossed = await crossedSince(being, target)
+      if (crossed.length) throw new BadRequest(
+        `${crossed.length === 1 ? 'Release' : 'Releases'} ${crossed.map((r: any) => r.releaseId ?? r.id).join(', ')} crossed a schema contract since ${target.releaseId ?? target.id}, ` +
+        `so ${target.releaseId ?? target.id} cannot serve this database. Recovery across a contract is isRestoringVolume: true, ` +
+        `which puts back the copy taken before it, at the cost of every write since.`)
+    }
+
+    // A secret is put back at the revision that shipped, and one a rotation has
+    // revoked since is refused by name before anything moves (FJS-D2182). The
+    // way out is asked for, and the replacement then records the revisions it
+    // really ships, so its configuration never claims a credential it lacks.
+    const todays = (($.data ?? {}) as Record<string, unknown>).withTodaysSecrets === true
+    const shipped = (target.configSnapshot ?? {}) as Partial<ReleaseVariables>
+    const revoked = await revokedSecretsOf(db(), shipped)
+    if (revoked.length && !todays) throw new BadRequest(new RevokedSecret(revoked).message)
+    const configSnapshot = revoked.length ? await pinnedToToday(db(), shipped) : shipped
+
     // The move, and the enforcement: `success -> rolledBack @gate(5)` is the
     // model's and so is the level. Everything above this line was a read.
     //
@@ -530,16 +565,20 @@ export default createService({
       toImage:       image,
       builtImage:    target.builtImage ?? null,
       // The target's, never the app's — see above.
-      configSnapshot: target.configSnapshot ?? {},
+      configSnapshot,
       commitSha:      target.commitSha ?? null,
       commitMessage:  target.commitMessage ?? null,
       branch:         target.branch ?? null,
       commitAuthor:   target.commitAuthor ?? null,
+      // Same bytes and schema; the same configuration unless a revoked secret
+      // was re-pinned, and then recordStep mints the Release it really is.
+      schemaHash:     target.schemaHash ?? null,
+      releaseId:      revoked.length ? null : target.releaseId ?? null,
       // The release this one replaces, which is `create`'s own meaning for
       // the column: the one that was current before it.
       previousDeploymentId: being.id,
       triggeredBy:    actor() === 'system' ? null : actor(),
-    }, system: ['builtImage', 'commitSha', 'branch', 'previousDeploymentId'] })
+    }, system: ['builtImage', 'commitSha', 'branch', 'previousDeploymentId', 'schemaHash', 'releaseId'] })
 
     await tx.deploymentStep.createMany({
       // The step list the TARGET's source needs, not the app's current one.

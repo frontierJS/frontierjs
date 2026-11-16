@@ -109,14 +109,14 @@ or a classifier that could not run is the pivot, after which only forward.
 ## The transition id, and the one term a plan cannot answer
 
 ```
-deploy:shop:production:none:a1b2c3d4e5f6:1:1
- kind  app  environment  from  to  generation  attempt
+deploy:shop:production:none:a1b2c3d4e5f6:1
+ kind  app  environment  from  to  attempt
 ```
 
 Every term is there for a collision it prevents. `from → to` is what lets a
 crashed deploy be resumed — rerunning computes the same id and finds the same
-row — while keeping R1→R2 and R2→R1 apart. `generation` is there because a
-rotated secret is a new intent rather than a replay of the old one.
+row — while keeping R1→R2 and R2→R1 apart. A rotated secret needs no term of its
+own: it changes the configuration hash, which is a term of the Release id.
 
 **`attempt` is the journal's count of prior transitions for that pair, and a
 plan has no journal to count.** So it says `1` and labels the id provisional.

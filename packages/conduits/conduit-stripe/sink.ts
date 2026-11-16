@@ -27,10 +27,22 @@
 // sends `account.updated`). A request carrying `Stripe-Account` acts on that
 // account: its intents, refunds and idempotency keys are that account's, and
 // its events carry `account` and are signed with the Connect secret.
-// `/_sink/checkout/<cs>/complete` stands in for a customer paying a session.
+// `/_sink/checkout/<cs>/complete` stands in for a customer paying a session,
+// by the session's first payment method or `?method=`; it makes the session's
+// PaymentIntent on the session's account, so a paid session refunds through
+// `/v1/refunds` like any intent. A `us_bank_account` debit completes `unpaid`
+// with the intent `processing`, and `/settle` or `/fail` on it sends
+// `async_payment_succeeded` or `async_payment_failed`, as the bank answers
+// days later at Stripe.
+//
+// A succeeding intent makes one charge, sends `charge.succeeded` naming its
+// balance transaction by id, and `GET /v1/balance_transactions/<txn>` reads it
+// on the account the charge was made on. The fees are the sink's: a card 2.9%
+// + 30, a bank debit 0.8% capped at 500.
 //
 // It does NOT pretend to be Stripe's semantics: no card tokens, no 3DS, no
-// balance. A reserved amount of 4242 is the decline.
+// payouts, no refund's own balance transaction. A reserved amount of 4242 is
+// the decline.
 
 import { createHmac } from 'node:crypto'
 
@@ -53,7 +65,7 @@ export interface StripeSinkOptions {
 interface Intent {
   id: string; object: 'payment_intent'; amount: number; currency: string
   status: string; client_secret: string; metadata: Record<string, string>; refunded: number
-  account: string | null
+  account: string | null; latest_charge?: string | null
 }
 
 const DUE = ['business_profile.mcc', 'business_profile.url', 'business_type', 'external_account', 'representative.first_name', 'tos_acceptance.date']
@@ -94,6 +106,8 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
   const intents = new Map<string, Intent>()
   const accounts = new Map<string, Record<string, any>>()
   const sessions = new Map<string, Record<string, any>>()
+  const charges  = new Map<string, Record<string, any>>()   // by payment intent
+  const balances = new Map<string, { account: string | null; body: Record<string, unknown> }>()
   const calcs   = new Map<string, { madeAt: number; body: Record<string, unknown> }>()
   const txns    = new Map<string, Record<string, unknown>>()
   const TAX_TTL = (opts.taxExpiresInSeconds ?? 5400) * 1000
@@ -120,6 +134,18 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
     }
   }
 
+  function charge(intent: Intent, method: string) {
+    intent.status = 'succeeded'
+    const fee = method === 'us_bank_account' ? Math.min(500, Math.round(intent.amount * 0.008)) : Math.round(intent.amount * 0.029) + 30
+    const now = Math.floor(Date.now() / 1000), txn = id('txn')
+    const ch = { id: id('ch'), object: 'charge', amount: intent.amount, amount_refunded: 0, currency: intent.currency, payment_intent: intent.id, refunded: false, balance_transaction: txn, metadata: intent.metadata }
+    balances.set(txn, { account: intent.account, body: { id: txn, object: 'balance_transaction', amount: intent.amount, fee, net: intent.amount - fee, currency: intent.currency, status: 'pending', type: 'charge',
+      source: ch.id, available_on: now + 2 * 86_400, created: now, fee_details: [{ amount: fee, currency: intent.currency, type: 'stripe_fee', description: 'Stripe processing fees' }] } })
+    charges.set(intent.id, ch)
+    intent.latest_charge = ch.id
+    return ch
+  }
+
   const server = Bun.serve({
     port: opts.port ?? 0,
     async fetch(req) {
@@ -137,13 +163,30 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
         await deliver('account.updated', a, a.id)
         return json(a)
       }
-      const paid = path.match(/^\/_sink\/checkout\/([^/]+)\/complete$/)
-      if (paid) {
-        const cs = sessions.get(paid[1])
+      const paying = path.match(/^\/_sink\/checkout\/([^/]+)\/(complete|settle|fail)$/)
+      if (paying) {
+        const cs = sessions.get(paying[1])
         if (!cs) return json({ error: 'no such session' }, 404)
-        Object.assign(cs, { status: 'complete', payment_status: 'paid', url: null })
-        const { _account, ...shown } = cs
-        await deliver('checkout.session.completed', shown, _account)
+        const step = paying[2]
+        let paidBy: Record<string, any> | null = null
+        if (step === 'complete') {
+          const method = url.searchParams.get('method') ?? cs.payment_method_types[0]
+          if (!cs.payment_method_types.includes(method)) return json({ error: `the session does not offer ${method}` }, 400)
+          if (cs.status === 'complete') return json({ error: 'the session is already complete' }, 409)
+          const ach = method === 'us_bank_account'
+          const intent: Intent = { id: id('pi'), object: 'payment_intent', amount: cs.amount_total, currency: String(cs.currency ?? 'usd'), status: ach ? 'processing' : 'succeeded', client_secret: id('pi') + '_secret', metadata: cs._piMetadata, refunded: 0, account: cs._account }
+          intents.set(intent.id, intent)
+          if (!ach) paidBy = charge(intent, method)
+          Object.assign(cs, { status: 'complete', payment_status: ach ? 'unpaid' : 'paid', url: null, payment_intent: intent.id, _method: method })
+        } else {
+          if (cs.status !== 'complete' || cs._method !== 'us_bank_account' || cs.payment_status !== 'unpaid') return json({ error: 'only a completed bank debit still pending settles or fails' }, 409)
+          const intent = intents.get(cs.payment_intent)!
+          if (step === 'settle') { cs.payment_status = 'paid'; paidBy = charge(intent, 'us_bank_account') }
+          else { cs._method = null; intent.status = 'requires_payment_method' }
+        }
+        const { _account, _method, _piMetadata, ...shown } = cs
+        if (paidBy) await deliver('charge.succeeded', paidBy, _account)
+        await deliver(step === 'complete' ? 'checkout.session.completed' : `checkout.session.async_payment_${step === 'settle' ? 'succeeded' : 'failed'}`, shown, _account)
         return json(shown)
       }
 
@@ -193,7 +236,12 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
       if (confirm && req.method === 'POST') {
         const intent = intents.get(confirm[1])
         if (!intent || intent.account !== acting) answer = stripeError('invalid_request_error', 'No such payment_intent', 404)
-        else { intent.status = 'succeeded'; await deliver('payment_intent.succeeded', intent, intent.account); answer = json(intent) }
+        else {
+          const ch = charge(intent, 'card')
+          await deliver('payment_intent.succeeded', intent, intent.account)
+          await deliver('charge.succeeded', ch, intent.account)
+          answer = json(intent)
+        }
       }
 
       if (path === '/v1/refunds' && req.method === 'POST') {
@@ -208,7 +256,10 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
           else {
             intent.refunded += asked
             const refund = { id: id('re'), object: 'refund', amount: asked, currency: intent.currency, payment_intent: intent.id, status: 'succeeded' }
-            await deliver('charge.refunded', { id: id('ch'), object: 'charge', amount: intent.amount, amount_refunded: intent.refunded, currency: intent.currency, payment_intent: intent.id, refunded: intent.refunded === intent.amount, metadata: intent.metadata }, intent.account)
+            // The charge the intent succeeded with, so an app keying on the charge id finds it again.
+            const ch = Object.assign(charges.get(intent.id) ?? { id: id('ch'), object: 'charge', amount: intent.amount, currency: intent.currency, payment_intent: intent.id, balance_transaction: null, metadata: intent.metadata },
+              { amount_refunded: intent.refunded, refunded: intent.refunded === intent.amount })
+            await deliver('charge.refunded', ch, intent.account)
             answer = remember(200, refund)
           }
         }
@@ -231,6 +282,13 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
         answer = a ? json(a) : stripeError('invalid_request_error', `No such account: '${oneAccount[1]}'`, 404, { code: 'resource_missing' })
       }
 
+      const oneBalance = path.match(/^\/v1\/balance_transactions\/([^/]+)$/)
+      if (oneBalance && req.method === 'GET') {
+        // A direct charge's balance transaction lives on the connected account: asked for from anywhere else it does not exist.
+        const b = balances.get(oneBalance[1])
+        answer = b && b.account === acting ? json(b.body) : stripeError('invalid_request_error', `No such balance transaction: '${oneBalance[1]}'`, 404, { code: 'resource_missing' })
+      }
+
       if (path === '/v1/account_links' && req.method === 'POST') {
         const a = accounts.get(String(form.account ?? ''))
         if (!a) answer = stripeError('invalid_request_error', `No such account: '${form.account}'`, 404, { code: 'resource_missing' })
@@ -248,10 +306,10 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
           const total = items.reduce((t, li) => t + Number(li.price_data?.unit_amount) * Number(li.quantity ?? 1), 0)
           const cs = { id: id('cs_test'), object: 'checkout.session', mode: 'payment', status: 'open', payment_status: 'unpaid', amount_total: total, currency: items[0].price_data?.currency ?? null,
             customer: null, customer_email: f.customer_email ?? null, client_reference_id: f.client_reference_id ?? null, payment_intent: null,
-            payment_method_types: Object.values(f.payment_method_types ?? { 0: 'card' }), metadata: f.metadata ?? {}, expires_at: Number(f.expires_at ?? Math.floor(Date.now() / 1000) + 86_400), url: '', _account: acting }
+            payment_method_types: Object.values(f.payment_method_types ?? { 0: 'card' }), metadata: f.metadata ?? {}, expires_at: Number(f.expires_at ?? Math.floor(Date.now() / 1000) + 86_400), url: '', _account: acting, _piMetadata: f.payment_intent_data?.metadata ?? {} }
           cs.url = `https://checkout.stripe.com/c/pay/${cs.id}`
           sessions.set(cs.id, cs)
-          const { _account: _a, ...shown } = cs
+          const { _account: _a, _piMetadata: _m, ...shown } = cs
           answer = remember(200, shown)
         }
       }

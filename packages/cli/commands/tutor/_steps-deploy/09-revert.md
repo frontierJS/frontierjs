@@ -22,7 +22,7 @@ until the swap step started doing it.
 `fli deploy:revert` is not `fli deploy:rollback`. Rollback puts the previous
 image back with no journal, no history and no questions, and works on a machine
 that has never deployed through one. Revert restores the **pair** — a Release
-and the environment generation it ran with — and refuses by name when it
+and the configuration it ran with — and refuses by name when it
 cannot: no recorded image, a deploy in flight, nothing prior. Three of its
 refusals carry no override at all, because they are not judgement calls.
 

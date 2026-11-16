@@ -79,7 +79,7 @@ export async function refreshCopy(app: App, opts: {
   let databases: string[], env: Record<string, string>, imageUrl: string | null = null
   try {
     databases = await replicaDatabases(app, replica.dest, replica.entry.path)
-    env       = await releaseEnv(app.db as never, (release.configSnapshot ?? {}) as never)
+    env       = await releaseEnv(app.db as never, (release.configSnapshot ?? {}) as never, { todaysSecrets: true })
     if (release.imageSha256) imageUrl = await mintDownload(app, replica.dest, imageKey(replica.entry.path, release.id))
   } catch (err) { return failed((err as Error).message) }
   if (!databases.length) return failed(`The replica at ${replica.dest.bucket}/${replica.entry.path} holds no database yet`)

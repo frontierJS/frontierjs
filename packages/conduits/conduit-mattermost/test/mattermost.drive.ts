@@ -28,6 +28,10 @@ import { startMattermostSink } from '../sink.ts'
 import {
   mattermostTargets, bindMattermost, uploadFile, fileBytes, postMessage, listPosts, listChannels, listTeams, listMembers, listProfiles, postsSince, me, translate,
   viewChannel, listThreads, getThread, markThreadRead,
+  pinPost, unpinPost, listPinned, markUnread, muteChannel, joinChannel, leaveChannel, createDirectChannel, createGroupChannel,
+  followThread, unfollowThread, markAllThreadsRead, listDrafts, saveDraft, deleteDraft,
+  listPreferences, savePost, unsavePost, favoriteChannel, unfavoriteChannel, listSavedPosts, getStatus, listStatuses, setStatus, setCustomStatus, clearCustomStatus, customStatusOf,
+  typingFrame, listCategories, createCategory, updateCategory, deleteCategory, reorderCategories, searchPosts, editHistory, setReminder,
   mirror, postModel, channelModel, channelMemberModel, reactionModel, threadModel, teamModel, profileModel, fileInfoModel, memberKey, reactionKey, threadKey,
   mattermostWebhookDialect, mattermostCommandDialect, verifyMattermostToken, respond,
   mattermostSocketTarget, mattermostSocketDialect, MATTERMOST_SOCKET_TARGET, type SocketEvent,
@@ -59,6 +63,7 @@ type Seen = {
   deliveries: { kind: string; url: string; contentType: string; headers: Record<string, string>; body: string; status: number | null; answered: { outcome?: string } | null }[]
   replies: { via: string; kind: string; response_type: string; text: string; user_id?: string; channel_id: string }[]
   allPosts: { id: string; user_id: string; root_id: string; message: string }[]
+  reminders: { user_id: string; post_id: string; target_time: number }[]
   sockets: { connectionId: string; user: string | null; authBy: string | null; frames: number; pings: number; open: boolean }[]
 }
 const seen = () => ctl.seen() as unknown as Promise<Seen>
@@ -405,8 +410,9 @@ try {
   const before6 = { frames: frames.length, ignored: counts().ignored, dropped: health().dropped }
   await fetch(`${sink.url}/_sink/socket`, { method: 'POST', body: JSON.stringify({ event: 'typing', data: { parent_id: '', user_id: ids.alice }, broadcast: { channel_id: ids.open } }) })
   await fetch(`${sink.url}/_sink/socket`, { method: 'POST', body: JSON.stringify({ raw: 'not a frame' }) })
-  await until(() => counts().ignored > before6.ignored && health().dropped > before6.dropped)
-  t('socket.typingIgnoredGarbageCounted', { landed: frames.length - before6.frames, ignored: counts().ignored - before6.ignored, dropped: health().dropped - before6.dropped })
+  await until(() => frames.length > before6.frames && health().dropped > before6.dropped)
+  const typed = frames.at(-1)
+  t('socket.typingLandsGarbageCounted', { landed: frames.length - before6.frames, typing: typed?.type === 'typing' && typed.payload.profileExternalId === ids.alice && typed.payload.channelExternalId === ids.open && typed.payload.rootExternalId, ignored: counts().ignored - before6.ignored, dropped: health().dropped - before6.dropped })
 
   await ctl.arm({ frameTwice: true })
   const twice = await postMessage(alice, { channelExternalId: ids.open, message: 'twice' })
@@ -625,6 +631,229 @@ try {
     posted: !!filed.row, emptyMessage: filed.row?.message, same: !!read.bytes && read.bytes.length === png.length && read.bytes.every((b, i) => b === png[i]),
     readType: read.type, thumb: !!thumb.bytes, claimedTwice: reclaim.error?.kind, notAMember: offRoom.error?.kind, noBytes,
   })
+  {
+  // ─── A full client's verbs ───────────────────────────────────
+  // Two people on raw sockets, each frame read through the dialect, so a row
+  // proves both what the sink pushed and that the connector parses it.
+  // A union member that carries several `type`s is Extract's `never`, so the match distributes by hand.
+  type Of<T extends string> = SocketEvent extends infer E ? E extends { type: infer U } ? T extends U ? E : never : never : never
+  const listen = async (token: string) => {
+    const events: (SocketEvent | null)[] = []
+    const ws = new WebSocket(`${sink.url.replace(/^http/, 'ws')}/api/v4/websocket`, { headers: { authorization: `Bearer ${token}` } } as never)
+    let hello = false
+    ws.onmessage = e => {
+      const f = JSON.parse(String(e.data))
+      if (f.event === 'hello') hello = true
+      else if (typeof f.event === 'string') events.push(mattermostSocketDialect.parse({ id: `raw:${f.seq}`, body: f }) as SocketEvent | null)
+    }
+    await until(() => hello)
+    const of = <T extends SocketEvent['type']>(type: T) => events.filter((e): e is Of<T> => e?.type === type)
+    return { ws, events, of, close: () => ws.close() }
+  }
+  await ctl.arm({ socketHeader: true })
+  const lAlice = await listen(sink.tokens.alice), lBob = await listen(sink.tokens.bob)
+  const get = (token: string, path: string) => fetch(`${sink.url}/api/v4${path}`, { headers: { authorization: `Bearer ${token}` } }).then(r => r.json() as Promise<any>)
+  const patchOf = (id: string, message: string) => alice.api(postModel.update!(id, { message }))
+
+  // What Team Edition refuses for want of a license, read through translate.
+  const reqsTo = async (path: string) => (await seen()).requests.filter(r => r.path === path).length
+  const sched = await alice.api({ method: 'GET', path: `/api/v4/posts/scheduled/team/${ids.team}`, replayable: true })
+  const groups = await alice.api({ method: 'GET', path: '/api/v4/groups', replayable: true })
+  const schedF = translate(sched.error!, sched.meta.status, sched.meta.headers), groupsF = translate(groups.error!, groups.meta.status, groups.meta.headers)
+  t('license.scheduledAndGroupsAreRefused', {
+    scheduled: { status: sched.meta.status, kind: schedF.kind, code: schedF.code, message: schedF.message, retryable: schedF.retryable },
+    groups: { status: groups.meta.status, kind: groupsF.kind, code: groupsF.code, message: groupsF.message, retryable: groupsF.retryable },
+    scheduledSentOnce: await reqsTo(`/api/v4/posts/scheduled/team/${ids.team}`), groupsRetried: (await reqsTo('/api/v4/groups')) > 1,
+  })
+
+  // Pins: any member pins any post; `/patch` stays the author's.
+  const pinned0 = await postMessage(alice, { channelExternalId: ids.open, message: 'pin me' })
+  const pinId = pinned0.row!.externalId
+  const bobPatch = await bob.api(postModel.update!(pinId, { isPinned: true }))
+  const pin = await pinPost(bob, pinId)
+  const pinnedList = await listPinned(alice, ids.open)
+  await until(() => lAlice.of('post_edited').some(e => e.payload.post.externalId === pinId && e.payload.post.isPinned))
+  const unpin = await unpinPost(bob, pinId)
+  await until(() => lAlice.of('post_edited').filter(e => e.payload.post.externalId === pinId).length >= 2)
+  const offRoomPin = await pinPost(bob, pinId.replace(/^./, 'z'))
+  const secretPost = await postMessage(alice, { channelExternalId: ids.secret, message: 'private pin' })
+  const bobPinSecret = await pinPost(bob, secretPost.row!.externalId)
+  t('pin.anyMemberPinsAndTheFrameSays', {
+    patchIsTheAuthors: bobPatch.error ? translate(bobPatch.error, bobPatch.meta.status).kind : 'sent', pinned: pin.ok, listed: pinnedList.rows?.map(r => r.externalId), isPinnedOnTheRow: pinnedList.rows?.[0]?.isPinned,
+    frame: lAlice.of('post_edited').filter(e => e.payload.post.externalId === pinId).map(e => e.payload.post.isPinned), unpinned: unpin.ok, listedAfter: (await listPinned(alice, ids.open)).rows?.length, gone: offRoomPin.error?.kind, notAMember: bobPinSecret.error?.kind,
+  })
+
+  // Unread from a post, and mute.
+  await viewChannel(bob, ids.open)
+  const u1 = await postMessage(alice, { channelExternalId: ids.open, message: 'unread one' })
+  const u2 = await postMessage(alice, { channelExternalId: ids.open, message: 'unread two' })
+  const u3 = await postMessage(alice, { channelExternalId: ids.open, message: 'unread three @bob' })
+  await viewChannel(bob, ids.open)
+  const total = (await listChannels(bob, ids.bob, ids.team)).rows!.find(c => c.externalId === ids.open)!.totalMessageCount
+  const un = await markUnread(bob, ids.bob, u2.row!.externalId)
+  await until(() => lBob.of('post_unread').length > 0)
+  const unFrame = lBob.of('post_unread')[0]
+  const memberAfter = (await listMembers(bob, ids.open)).rows!.find(m => m.profileExternalId === ids.bob)!
+  const mute = await muteChannel(bob, ids.open, ids.bob, true)
+  const muted = (await listMembers(bob, ids.open)).rows!.find(m => m.profileExternalId === ids.bob)!.muted
+  await muteChannel(bob, ids.open, ids.bob, false)
+  await until(() => lBob.of('channel_member_updated').length >= 2)
+  const aliceUnread = await markUnread(alice, ids.bob, u2.row!.externalId)
+  t('read.unreadFromAPostAndMute', {
+    unread: total - un.row!.messageCount, mentions: un.row?.mentionCount, lastViewedBeforeThePost: un.row!.lastViewedAt!.getTime() < u2.row!.createdAt!.getTime(), listedAgrees: memberAfter.messageCount === un.row!.messageCount,
+    frame: [unFrame?.payload.postExternalId === u2.row!.externalId, unFrame?.payload.unread.messageCount === un.row!.messageCount], aliceHeardNothing: lAlice.of('post_unread').length, muted: [mute.ok, muted], notYours: aliceUnread.error?.kind, u1u3: [!!u1.row, !!u3.row],
+    mutePushed: lBob.of('channel_member_updated').map(e => e.payload.member.muted),
+  })
+
+  // Follow, unfollow, read every thread.
+  const root = await postMessage(alice, { channelExternalId: ids.open, message: 'follow this' })
+  const follow = await followThread(bob, ids.bob, ids.team, root.row!.externalId)
+  const followed = (await listThreads(bob, ids.bob, ids.team)).rows!.some(r => r.rootExternalId === root.row!.externalId)
+  const unfollow = await unfollowThread(bob, ids.bob, ids.team, root.row!.externalId)
+  await until(() => lBob.of('thread_follow_changed').filter(e => e.payload.rootExternalId === root.row!.externalId).length >= 2)
+  const unfollowed = !(await listThreads(bob, ids.bob, ids.team)).rows!.some(r => r.rootExternalId === root.row!.externalId)
+  const allRead = await markAllThreadsRead(bob, ids.bob, ids.team)
+  await until(() => lBob.of('thread_read_changed').some(e => e.payload.rootExternalId === null))
+  const followFrames = lBob.of('thread_follow_changed').filter(e => e.payload.rootExternalId === root.row!.externalId)
+  t('thread.followUnfollowReadAll', {
+    followed: [follow.ok, followed], unfollowed: [unfollow.ok, unfollowed], frames: followFrames.map(e => e.payload.following), allRead: allRead.ok,
+    readNamesNoThread: lBob.of('thread_read_changed').some(e => e.payload.rootExternalId === null && e.payload.unreadReplies === 0), notYours: (await followThread(bob, ids.alice, ids.team, root.row!.externalId)).error?.kind,
+  })
+
+  // Direct and group channels, join and leave.
+  const dm = await createDirectChannel(alice, ids.alice, ids.bob), dm2 = await createDirectChannel(bob, ids.bob, ids.alice)
+  const group = await createGroupChannel(alice, [ids.alice, ids.bob, ids.bot]), group2 = await createGroupChannel(bob, [ids.bot, ids.bob, ids.alice])
+  let pair = ''
+  try { await createGroupChannel(alice, [ids.alice, ids.bob]) } catch (e) { pair = (e as Error).message }
+  const lounge = await api<{ id: string }>(sink.tokens.alice, '/channels', { team_id: ids.team, name: 'lounge', display_name: 'Lounge', type: 'O' })
+  const joined = await joinChannel(bob, lounge.id, ids.bob)
+  await until(() => lAlice.of('user_added').some(e => e.payload.channelExternalId === lounge.id))
+  const joinSeen = lAlice.of('user_added').some(e => e.payload.channelExternalId === lounge.id && e.payload.profileExternalId === ids.bob)
+  const joinSecret = await joinChannel(bob, ids.secret, ids.bob)
+  const left = await leaveChannel(bob, lounge.id, ids.bob)
+  const leftAgain = await leaveChannel(bob, lounge.id, ids.bob)
+  await until(() => lAlice.of('group_added').length > 0 && lBob.of('group_added').length > 0)
+  t('channel.directGroupJoinLeave', {
+    direct: [dm.row?.type, dm.row?.teamExternalId, dm.row?.externalId === dm2.row?.externalId], group: [group.row?.type, group.row?.teamExternalId, group.row?.externalId === group2.row?.externalId, group.row?.displayName],
+    pairIsADirectChannel: pair, groupPushed: [lAlice.of('group_added').length, lBob.of('group_added').length], joined: [joined.row?.channelExternalId === lounge.id, joined.row?.profileExternalId === ids.bob], joinSeen,
+    privateNeedsAMember: joinSecret.error?.kind, left: left.ok, leftAgain: leftAgain.error?.kind,
+  })
+
+  // Drafts: one per box, saved twice is updated once, a thread has its own.
+  const d1 = await saveDraft(alice, ids.alice, { channelExternalId: ids.open, message: 'half a thou' })
+  const d2 = await saveDraft(alice, ids.alice, { channelExternalId: ids.open, message: 'half a thought' })
+  const d3 = await saveDraft(alice, ids.alice, { channelExternalId: ids.open, rootExternalId: root.row!.externalId, message: 'reply draft' })
+  const listed = await listDrafts(alice, ids.alice, ids.team)
+  const del = await deleteDraft(alice, ids.alice, ids.open)
+  const delThread = await deleteDraft(alice, ids.alice, ids.open, root.row!.externalId)
+  const delAgain = await deleteDraft(alice, ids.alice, ids.open)
+  await until(() => lAlice.of('draft_deleted').length >= 2)
+  t('draft.saveListDelete', {
+    one: [d1.row?.message, d2.row?.message, d2.row?.createdAt?.getTime() === d1.row?.createdAt?.getTime()], listed: listed.rows?.map(r => [r.message, r.rootExternalId === root.row!.externalId]).sort(),
+    deleted: [del.ok, delThread.ok], after: (await listDrafts(alice, ids.alice, ids.team)).rows?.length, again: delAgain.error?.kind, thread: d3.row?.rootExternalId === root.row!.externalId,
+    pushed: lAlice.events.filter(e => e?.type.startsWith('draft_')).map(e => e!.type), bobSawNone: lBob.events.filter(e => e?.type.startsWith('draft_')).length,
+  })
+
+  // Saved posts and favorites are preferences; a favorite is also a place in the sidebar.
+  const saved = await savePost(alice, ids.alice, pinId)
+  const prefs = await listPreferences(alice, ids.alice, 'flagged_post')
+  const flagged = await listSavedPosts(alice, ids.alice)
+  const catsBefore = await listCategories(alice, ids.alice, ids.team)
+  const fav = await favoriteChannel(alice, ids.alice, ids.open)
+  const catsFav = await listCategories(alice, ids.alice, ids.team)
+  await until(() => lAlice.of('sidebar_category_updated').length > 0)
+  const unfav = await unfavoriteChannel(alice, ids.alice, ids.open)
+  const unsaved = await unsavePost(alice, ids.alice, pinId)
+  await until(() => lAlice.events.filter(e => e?.type === 'preferences_deleted').length >= 2)
+  const kind = (r: typeof catsFav, type: string) => r.rows!.find(c => c.type === type)!.channelExternalIds
+  t('preference.savedPostsAndFavorites', {
+    saved: saved.ok, pref: prefs.rows?.map(r => [r.category, r.name === pinId, r.value]), flagged: flagged.rows?.map(r => r.externalId === pinId), otherCategoryEmpty: (await listPreferences(alice, ids.alice, 'nothing')).rows?.length,
+    favoritesMove: [kind(catsBefore, 'favorites').includes(ids.open), kind(catsFav, 'favorites').includes(ids.open), kind(catsBefore, 'channels').includes(ids.open), kind(catsFav, 'channels').includes(ids.open)],
+    fav: fav.ok, unfav: unfav.ok, unsaved: unsaved.ok, flaggedAfter: (await listSavedPosts(alice, ids.alice)).rows?.length, backInChannels: kind(await listCategories(alice, ids.alice, ids.team), 'channels').includes(ids.open),
+    pushed: lAlice.events.filter(e => e?.type === 'preferences_changed' || e?.type === 'preferences_deleted').map(e => e!.type), bobSawNone: lBob.events.filter(e => e?.type.startsWith('preferences_')).length,
+    categoryPushed: lAlice.of('sidebar_category_updated')[0]?.payload.categories.some(c => c.type === 'favorites'),
+  })
+
+  // Status: own, by ids, set, and a custom one carried in the user's props.
+  const st0 = await getStatus(alice, ids.alice)
+  const setDnd = await setStatus(alice, ids.alice, 'dnd', { dndEndTime: 4102444800 })
+  const many = await listStatuses(bob, [ids.alice, ids.bob])
+  let badStatus = ''
+  try { await setStatus(alice, ids.alice, 'busy' as never) } catch (e) { badStatus = (e as Error).message }
+  const customSet = await setCustomStatus(alice, ids.alice, { emoji: 'palm_tree', text: 'On a beach', expiresAt: new Date('2100-01-01T00:00:00Z') })
+  const custom = customStatusOf(await get(sink.tokens.alice, '/users/me'))
+  const customClear = await clearCustomStatus(alice, ids.alice)
+  await until(() => lAlice.of('user_updated').length >= 2)
+  t('status.ownByIdsSetAndCustom', {
+    own: [st0.row?.status, st0.row?.manual], set: [setDnd.row?.status, setDnd.row?.manual, setDnd.row?.dndEndTime], byIds: many.rows?.find(r => r.profileExternalId === ids.alice)?.status, rowsAsked: many.rows?.length,
+    pushed: lAlice.of('status_change').map(e => e.payload.status), bobHeardNothing: lBob.of('status_change').length, badStatus: badStatus.includes('online, away, offline or dnd'),
+    custom: [customSet.ok, custom?.emoji, custom?.text, custom?.expiresAt?.toISOString()], cleared: [customClear.ok, customStatusOf(await get(sink.tokens.alice, '/users/me'))], userUpdated: lAlice.of('user_updated').length >= 2,
+    notYours: (await setStatus(bob, ids.alice, 'away')).error?.kind,
+  })
+
+  // Typing rides the socket: the frame is built here and written on a link of the caller's own.
+  lAlice.ws.send(typingFrame(9, ids.open, root.row!.externalId))
+  await until(() => lBob.of('typing').length > 0)
+  const typing = lBob.of('typing')[0]
+  let badTyping = ''
+  try { typingFrame(1, 'nope') } catch (e) { badTyping = (e as Error).message }
+  t('typing.frameRelaysToTheOthers', {
+    wire: JSON.parse(typingFrame(3, ids.open)), bob: [typing?.payload.profileExternalId === ids.alice, typing?.payload.channelExternalId === ids.open, typing?.payload.rootExternalId === root.row!.externalId],
+    senderOmitted: lAlice.of('typing').length, badTyping,
+  })
+
+  // Sidebar categories: create, move a channel in, rename, reorder, delete.
+  const c0 = await listCategories(alice, ids.alice, ids.team)
+  const created = await createCategory(alice, ids.alice, ids.team, { displayName: 'Work', channelExternalIds: [ids.open] })
+  const c1 = await listCategories(alice, ids.alice, ids.team)
+  const custom1 = created.row!
+  const renamed = await updateCategory(alice, ids.alice, ids.team, { ...custom1, displayName: 'Projects', channelExternalIds: [ids.open, ids.secret], collapsed: true })
+  const reordered = await reorderCategories(alice, ids.alice, ids.team, [...c1.order!].reverse())
+  const sysDelete = await deleteCategory(alice, ids.alice, ids.team, c0.rows![0].externalId)
+  const gone = await deleteCategory(alice, ids.alice, ids.team, custom1.externalId)
+  const c2 = await listCategories(alice, ids.alice, ids.team)
+  let tooLong = ''
+  try { await createCategory(alice, ids.alice, ids.team, { displayName: '' }) } catch (e) { tooLong = (e as Error).message }
+  const refusedLong = await createCategory(alice, ids.alice, ids.team, { displayName: 'x'.repeat(40) })
+  await until(() => lAlice.of('sidebar_category_deleted').length >= 1 && lAlice.of('sidebar_category_order_updated').length >= 1)
+  t('category.listCreateMoveDelete', {
+    system: [c0.rows!.map(c => c.type), c0.order?.join() === c0.rows!.map(c => c.externalId).join(), c0.rows!.every(c => /^(favorites|channels|direct_messages)_[a-z0-9]{26}_[a-z0-9]{26}$/.test(c.externalId))],
+    created: [custom1.type, custom1.displayName, custom1.channelExternalIds, c1.rows!.findIndex(c => c.externalId === custom1.externalId), kind(c1, 'channels').includes(ids.open)],
+    renamed: [renamed.row?.displayName, renamed.row?.channelExternalIds, renamed.row?.collapsed], reordered: reordered.order?.join() === [...c1.order!].reverse().join(), sysDelete: sysDelete.error?.kind,
+    gone: [gone.ok, c2.rows!.some(c => c.externalId === custom1.externalId), kind(c2, 'channels').includes(ids.open)], tooLong, refusedLong: refusedLong.error?.kind,
+    pushed: [...new Set(lAlice.events.filter(e => e?.type.startsWith('sidebar_category_')).map(e => e!.type))].sort(),
+    orderPushed: lAlice.of('sidebar_category_order_updated').at(-1)?.payload.order.length === c1.order!.length,
+  })
+
+  // Search, a post's edit history, a reminder.
+  const s1 = await postMessage(alice, { channelExternalId: ids.open, message: 'pineapple pizza night' })
+  const s2 = await postMessage(bob, { channelExternalId: ids.open, message: 'pineapple only' })
+  const s3 = await postMessage(alice, { channelExternalId: ids.secret, message: 'pineapple secret' })
+  const andSearch = await searchPosts(bob, ids.team, 'pineapple pizza'), orSearch = await searchPosts(bob, ids.team, 'pineapple pizza', { orSearch: true }), aliceOr = await searchPosts(alice, ids.team, 'pineapple', { orSearch: true })
+  const phrase = await searchPosts(bob, ids.team, '"pizza night"'), none = await searchPosts(bob, ids.team, 'zzzznothing')
+  let noTerms = ''
+  try { await searchPosts(bob, ids.team, '  ') } catch (e) { noTerms = (e as Error).message }
+  t('search.termsOrAndMembership', {
+    and: andSearch.rows?.map(r => r.externalId === s1.row!.externalId), or: orSearch.rows?.length, matches: orSearch.matches?.[s1.row!.externalId], privateHidden: !orSearch.rows?.some(r => r.externalId === s3.row!.externalId), memberSees: aliceOr.rows?.some(r => r.externalId === s3.row!.externalId),
+    phrase: phrase.rows?.length, none: none.rows?.length, noTerms, s2: !!s2.row,
+  })
+
+  const e0 = await postMessage(alice, { channelExternalId: ids.open, message: 'draft one' })
+  await patchOf(e0.row!.externalId, 'draft two'); await patchOf(e0.row!.externalId, 'draft three')
+  const hist = await editHistory(alice, e0.row!.externalId), othersHist = await editHistory(bob, e0.row!.externalId)
+  t('history.editsNewestFirstAuthorOnly', {
+    messages: hist.rows?.map(r => r.message), versionsAreOld: hist.rows?.every(r => r.externalId !== e0.row!.externalId && r.deletedAt !== null), others: [othersHist.error?.kind, othersHist.error?.code],
+    neverEdited: (await editHistory(alice, pinId)).rows?.length,
+  })
+
+  const when = Date.now() + 3_600_000
+  const remind = await setReminder(alice, ids.alice, pinId, new Date(when))
+  const remindWire = (await seen()).reminders.at(-1)
+  let badAt = ''
+  try { await setReminder(alice, ids.alice, pinId, 0) } catch (e) { badAt = (e as Error).message }
+  t('reminder.targetTimeInSeconds', { ok: remind.ok, seconds: remindWire?.target_time === Math.floor(when / 1000), post: remindWire?.post_id === pinId, badAt, notAMember: (await setReminder(bob, ids.bob, secretPost.row!.externalId, when)).error?.kind })
+  lAlice.close(); lBob.close()
+  }
 } catch (e) { console.error('\nThe drive threw:', (e as Error).stack); got.__threw = String((e as Error).message) }
 finally { sink.stop(); bridge.stop(true); await conduit.destroy() }
 
@@ -667,7 +896,7 @@ process.exit(report(got, {
   'socket.postLandsAsRow':                     { type: 'posted', same: true, user: true, message: 'over the socket', keyed: true, applied: 1 },
   'socket.editThenDeleteInOrder':              { types: ['posted', 'post_edited', 'post_deleted'], edited: 'edited', deleted: true },
   'socket.membershipAndChannel':               { types: ['user_added', 'channel_updated', 'user_removed'], added: true, renamed: 'Socket Room', removedNamesTheChannel: true },
-  'socket.typingIgnoredGarbageCounted':        { landed: 0, ignored: 1, dropped: 1 },
+  'socket.typingLandsGarbageCounted':          { landed: 1, typing: null, ignored: 0, dropped: 1 },
   'socket.frameTwiceAppliedOnce':              { landed: 1, duplicate: 1 },
   'socket.applyThrowsNothingRedelivers':       { failed: 1, lostLanded: false, nextLanded: true },
   'socket.reconnectIsANewConnection':          { wentDown: true, back: true, connections: 2, distinct: 2, keyedToTheNew: true },
@@ -686,4 +915,17 @@ process.exit(report(got, {
   'backfill.channelsIncludeDirectAndArchived': { direct: 'direct', directTeam: null, archived: true, archivedHiddenByDefault: true },
   'backfill.metadataAndProfiles':              { reaction: true, files: true, profiles: ['alice', 'bob'] },
   'file.uploadPostAndRead':                    { bearer: `Bearer ${sink.tokens.alice}`, type: 'image/png', size: 12, mime: 'image/png', unclaimed: null, preview: true, posted: true, emptyMessage: '', same: true, readType: 'image/png', thumb: true, claimedTwice: 'refused', notAMember: 'forbidden', noBytes: 'mattermost: an upload needs its bytes' },
+  'license.scheduledAndGroupsAreRefused': {scheduled:{status:400,kind:'unlicensed',code:'api.scheduled_posts.license_error',message:'Scheduled posts feature requires a license',retryable:false},groups:{status:501,kind:'unlicensed',code:'api.license_error',message:'api endpoint requires a license',retryable:false},scheduledSentOnce:1,groupsRetried:true},
+  'pin.anyMemberPinsAndTheFrameSays': {patchIsTheAuthors:'forbidden',pinned:true,listed:['post2d00000000000000000000'],isPinnedOnTheRow:true,frame:[true,false],unpinned:true,listedAfter:0,gone:'gone',notAMember:'forbidden'},
+  'read.unreadFromAPostAndMute': {unread:2,mentions:1,lastViewedBeforeThePost:true,listedAgrees:true,frame:[true,true],aliceHeardNothing:0,muted:[true,true],notYours:'forbidden',u1u3:[true,true],mutePushed:[true,false]},
+  'thread.followUnfollowReadAll': {followed:[true,true],unfollowed:[true,true],frames:[true,false],allRead:true,readNamesNoThread:true,notYours:'forbidden'},
+  'channel.directGroupJoinLeave': {direct:['direct',null,true],group:['group',null,true,'alice, bob, bot'],pairIsADirectChannel:'mattermost: a group channel is three to eight people; two is a direct channel',groupPushed:[1,1],joined:[true,true],joinSeen:true,privateNeedsAMember:'forbidden',left:true,leftAgain:'forbidden'},
+  'draft.saveListDelete': {one:['half a thou','half a thought',true],listed:[['half a thought',false],['reply draft',true]],deleted:[true,true],after:0,again:'gone',thread:true,pushed:['draft_created','draft_updated','draft_created','draft_deleted','draft_deleted'],bobSawNone:0},
+  'preference.savedPostsAndFavorites': {saved:true,pref:[['flagged_post',true,'true']],flagged:[true],otherCategoryEmpty:0,favoritesMove:[false,true,true,false],fav:true,unfav:true,unsaved:true,flaggedAfter:0,backInChannels:true,pushed:['preferences_changed','preferences_changed','preferences_deleted','preferences_deleted'],bobSawNone:0,categoryPushed:true},
+  'status.ownByIdsSetAndCustom': {own:['online',false],set:['dnd',true,4102444800],byIds:'dnd',rowsAsked:2,pushed:['dnd'],bobHeardNothing:0,badStatus:true,custom:[true,'palm_tree','On a beach','2100-01-01T00:00:00.000Z'],cleared:[true,null],userUpdated:true,notYours:'forbidden'},
+  'typing.frameRelaysToTheOthers': {wire:{action:'user_typing',seq:3,data:{channel_id:'general5000000000000000000',parent_id:''}},bob:[true,true,true],senderOmitted:0,badTyping:'mattermost: channelExternalId is not a Mattermost id'},
+  'category.listCreateMoveDelete': {system:[['favorites','channels','direct_messages'],true,true],created:['custom','Work',['general5000000000000000000'],1,false],renamed:['Projects',['general5000000000000000000','ops60000000000000000000000'],true],reordered:true,sysDelete:'refused',gone:[true,false,true],tooLong:'mattermost: a category needs a display name',refusedLong:'refused',pushed:['sidebar_category_created','sidebar_category_deleted','sidebar_category_order_updated','sidebar_category_updated'],orderPushed:true},
+  'search.termsOrAndMembership': {and:[true],or:2,matches:['pineapple','pizza'],privateHidden:true,memberSees:true,phrase:1,none:0,noTerms:'mattermost: a search needs terms',s2:true},
+  'history.editsNewestFirstAuthorOnly': {messages:['draft two','draft one'],versionsAreOld:true,others:['gone','app.post.get.app_error'],neverEdited:0},
+  'reminder.targetTimeInSeconds': {ok:true,seconds:true,post:true,badAt:'mattermost: setReminder takes the time to remind at',notAMember:'forbidden'},
 }))
