@@ -439,7 +439,6 @@ function buildTreeFromEntries(entries, routesDir, layoutMap, trailingSlash) {
     }
   }
 
-  // Sort children within each node: static before dynamic, alphabetically within type
   sortChildren(root)
 
   return root
@@ -463,26 +462,36 @@ function attachToNearestAncestor(entry, nodeMap, root) {
 }
 
 /**
- * Sort children: static segments first, then dynamic, then catch-all.
- * Alphabetical within each category.
+ * Sort children so the matcher's first hit is the right one: at the first
+ * segment where two paths differ, static before dynamic before catch-all.
+ * Ranked per segment, not per route, because every sibling under
+ * `[owner]/` is a dynamic route — ranked whole, `issues/:number` sorted
+ * before `issues/new` on ':' < 'n' and swallowed it (`FJS-4352`).
  */
 function sortChildren(node) {
-  node.children.sort((a, b) => {
-    const aScore = routePriority(a)
-    const bScore = routePriority(b)
-    if (aScore !== bScore) return aScore - bScore
-    return a.path.localeCompare(b.path)
-  })
+  node.children.sort(comparePaths)
 
   for (const child of node.children) {
     sortChildren(child)
   }
 }
 
-function routePriority(node) {
-  if (node.meta?.spread) return 2   // catch-all last
-  if (node.meta?.dynamic) return 1  // dynamic middle
-  return 0                          // static first
+function comparePaths(a, b) {
+  const as = a.path.split('/').filter(Boolean)
+  const bs = b.path.split('/').filter(Boolean)
+  for (let i = 0; i < Math.min(as.length, bs.length); i++) {
+    if (as[i] === bs[i]) continue
+    const rank = segmentRank(as[i]) - segmentRank(bs[i])
+    if (rank !== 0) return rank
+    return as[i].localeCompare(bs[i])
+  }
+  return as.length - bs.length
+}
+
+function segmentRank(segment) {
+  if (segment === '*') return 2
+  if (segment.startsWith(':')) return 1
+  return 0
 }
 
 /**

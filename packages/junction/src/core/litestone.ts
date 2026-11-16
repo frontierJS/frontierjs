@@ -5090,16 +5090,22 @@ export function announceDataWrites(
         // The columns of each reached model a read verdict reads, so a write
         // that touches none of them regrades nothing (`FJS-3127`). A client
         // predating the probe answers none, and then every write regrades.
-        let columns: Record<string, string[]> = {}
-        try {
-          const fn = (db as Record<string, ((a: string) => Record<string, string[]>) | undefined>).$readColumns
-          if (typeof fn === 'function')
-            for (const candidate of accessorCandidates(accessor)) {
-              const answer = fn(candidate)
-              if (Object.keys(answer).length) { columns = answer; break }
-            }
-        } catch { /* an unknown name */ }
-        const readBy = Object.fromEntries(Object.entries(columns).map(([m, c]) => [m.toLowerCase(), c]))
+        // `$fromColumns` is the same for an `@from`: a model it leaves out
+        // moves a value on any write.
+        const columnsBy = (probe: '$readColumns' | '$fromColumns'): Record<string, string[]> => {
+          try {
+            const fn = (db as Record<string, ((a: string) => Record<string, string[]>) | undefined>)[probe]
+            if (typeof fn === 'function')
+              for (const candidate of accessorCandidates(accessor)) {
+                const answer = fn(candidate)
+                if (Object.keys(answer).length)
+                  return Object.fromEntries(Object.entries(answer).map(([m, c]) => [m.toLowerCase(), c]))
+              }
+          } catch { /* an unknown name */ }
+          return {}
+        }
+        const readBy = columnsBy('$readColumns')
+        const fromBy = columnsBy('$fromColumns')
         // `$fromReach` joins `$readReach` as a reason to re-read: an `@from`
         // count moves when a CHILD is written and the parent row never does, so
         // no frame names it (`FJS-2632`). A model reading its own table through
@@ -5107,10 +5113,10 @@ export function announceDataWrites(
         // by its own write and not for the parent whose count moved, so that
         // service is regraded too (`FJS-2919`); a self-reach through a read
         // policy is the written row itself and stays out.
-        // A value computed off a child's columns is not narrowed: every write
-        // to that child regrades.
+        const readReached = reachBy('$readReach')
         const fromReached = new Set(reachBy('$fromReach').map(m => m.toLowerCase()))
-        for (const reached of [...reachBy('$readReach'), ...reachBy('$fromReach')]) {
+        const readKeys    = new Set(readReached.map(m => m.toLowerCase()))
+        for (const reached of [...readReached, ...reachBy('$fromReach')]) {
           const key = reached.toLowerCase()
           if (spellings.has(key)) {
             modelOf.set(name, reached)
@@ -5120,7 +5126,11 @@ export function announceDataWrites(
           let set = dependents.get(key)
           if (!set) dependents.set(key, set = new Set())
           set.add(name)
-          if (!fromReached.has(key) && readBy[key]) readColumnsOf.set(`${name}\0${key}`, new Set(readBy[key]))
+          // A model reached both ways narrows only when both name its columns:
+          // an aggregate is recomputed under each reader's policy on the child.
+          const read = readKeys.has(key) ? readBy[key] : []
+          const from = fromReached.has(key) ? fromBy[key] : []
+          if (read && from) readColumnsOf.set(`${name}\0${key}`, new Set([...read, ...from]))
         }
       }
     }

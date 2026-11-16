@@ -519,3 +519,34 @@ describe('a _module.md with no body (FJS-D1240)', () => {
       .rejects.toMatchObject({ code: 'SIERRA_LAYOUT_NO_SLOT', message: expect.stringContaining('src/routes/thank-you/_module.md') })
   })
 })
+
+// ─── sibling priority under a dynamic parent (FJS-4352) ─────────────────────
+
+describe('static beats dynamic under a dynamic ancestor', () => {
+  const page = '<p>x</p>'
+
+  for (const newFile of ['new.mesa', 'new/index.mesa']) {
+    it(`issues/${newFile} wins /dev/x/issues/new/ over issues/[number].mesa`, async () => {
+      const files = [
+        'src/routes/[owner]/[repo]/issues/[number].mesa',
+        `src/routes/[owner]/[repo]/issues/${newFile}`,
+        'src/routes/[owner]/[repo]/issues/[...rest].mesa',
+      ]
+      const cwd = await makeTmpFixture(Object.fromEntries(files.map(f => [f, page])))
+      const tree = await buildTree(files, 'src/routes', { cwd })
+      const { matchRoute } = await import('../src/router/match.js')
+
+      const hit = matchRoute('/dev/x/issues/new/', tree)
+      expect(hit.node.id).toBe('[owner].[repo].issues.new')
+      expect(hit.params).toEqual({ owner: 'dev', repo: 'x' })
+      expect(matchRoute('/dev/x/issues/7/', tree).params.number).toBe('7')
+
+      const order = flattenNode(tree).map(n => n.id).filter(id => id.includes('issues.'))
+      expect(order).toEqual([
+        '[owner].[repo].issues.new',
+        '[owner].[repo].issues.[number]',
+        '[owner].[repo].issues.[...rest]',
+      ])
+    })
+  }
+})

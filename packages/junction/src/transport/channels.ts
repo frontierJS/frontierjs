@@ -172,6 +172,10 @@ export class Channel {
   // join that skips the grading, for the manager to call once it has graded.
   __admit?: (connection: Connection, opts?: { meta?: Record<string, unknown> }) => unknown
 
+  // Set by the manager: a join on a channel the gc pruned puts it back in the
+  // map, or a disconnect never leaves it and presence never hears the leave.
+  __reinstate?: (channel: Channel) => void
+
   constructor(name: string) {
     this.name        = name
     this.connections = new Set()
@@ -183,6 +187,7 @@ export class Channel {
    * every other channel joins at once and answers itself.
    */
   join(connection: Connection, opts?: { meta?: Record<string, unknown> }): this | Promise<boolean> {
+    this.__reinstate?.(this)
     this.connections.add(connection)
     // Store join opts on connection for presence manager to read
     if (opts?.meta) connection.__joinMeta = opts.meta
@@ -903,15 +908,31 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
   const onConnectHandlers:    Array<(session: unknown, conn: Connection) => void | Promise<void>> = []
   const onDisconnectHandlers: Array<(conn: Connection) => void | Promise<void>> = []
 
+  // An empty channel leaves the map, or it grows by one entry per channel name
+  // ever used (workspace:{id}, user:{id}). It stays reachable by a WeakRef
+  // while a caller still holds it, so the next channel(name) answers that same
+  // object: a fresh one would leave the holder sending to nobody (FJS-4365).
+  const pruned  = new Map<string, WeakRef<Channel>>()
+  const reclaim = new FinalizationRegistry<string>(name => {
+    if (!pruned.get(name)?.deref()) pruned.delete(name)
+  })
+
+  function prune(channel: Channel): void {
+    if (channel.length !== 0 || channels.get(channel.name) !== channel) return
+    channels.delete(channel.name)
+    pruned.set(channel.name, new WeakRef(channel))
+  }
+
+  function reinstate(channel: Channel): void {
+    if (channels.has(channel.name)) return
+    channels.set(channel.name, channel)
+    pruned.delete(channel.name)
+  }
+
   const gcTimer = setInterval(() => {
     for (const channel of channels.values()) {
       channel.gc()
-      // Drop channels with no live connections — the map otherwise grows
-      // by one entry per channel name ever used, forever. NOTE: callers
-      // should re-fetch channels via manager.channel(name) rather than
-      // holding long-lived Channel references; a pruned instance is
-      // replaced by a fresh one on next access.
-      if (channel.length === 0) channels.delete(channel.name)
+      prune(channel)
     }
   }, 30_000)
   if (gcTimer.unref) gcTimer.unref()
@@ -925,8 +946,14 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
   }
 
   function getOrCreate(name: string): Channel {
-    let ch = channels.get(name)
-    if (!ch) { ch = new Channel(name); channels.set(name, ch) }
+    const live = channels.get(name)
+    if (live) return live
+    const held = pruned.get(name)?.deref()
+    if (held) { reinstate(held); return held }
+    const ch = new Channel(name)
+    ch.__reinstate = reinstate
+    reclaim.register(ch, name)
+    channels.set(name, ch)
     return ch
   }
 
@@ -1045,10 +1072,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       const ok = (await roomAdmits(room, ch.name, [conn])).has(conn)
       if (!ok || !connections.has(conn.id)) return false
       if (writesSince(room, before)) continue
-      // The gc prunes an empty channel, and this one was empty while it graded.
-      let live = channels.get(ch.name)
-      if (!live) { channels.set(ch.name, ch); live = ch }
-      live.__admit!(conn, opts)
+      ch.__admit!(conn, opts)
       return true
     }
     return false
@@ -1270,9 +1294,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       // channel.leave is wrapped — triggers presenceLeave per channel automatically
       for (const channel of channels.values()) {
         channel.leave(conn)
-        // Prune empty channels — high-cardinality names (workspace:{id},
-        // user:{id}) otherwise accumulate Channel objects forever.
-        if (channel.length === 0) channels.delete(channel.name)
+        prune(channel)
       }
       for (const handler of onDisconnectHandlers) {
         try { await handler(conn) } catch {}
@@ -1482,6 +1504,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       for (const untap of untapRoomClients) untap()
       untapRoomClients.clear()
       channels.clear()
+      pruned.clear()
       connections.clear()
     }
   }

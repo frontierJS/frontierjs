@@ -747,6 +747,14 @@ export interface LitestoneClient {
    */
   $fromReach(accessor: string): string[]
   /**
+   * `$fromReach` with the columns of each reached model the values read (the
+   * key a child joins on, the aggregated column, the `where:` columns and the
+   * soft-delete / template filters), by model name. A write to a listed model
+   * that moves none of them leaves every value as it was; a reached model some
+   * value cannot narrow is absent. An unknown accessor answers `{}`.
+   */
+  $fromColumns(accessor: string): Record<string, string[]>
+  /**
    * What level the app grades a caller at for one model — `getLevel(auth, model)`,
    * asked rather than re-derived.
    *

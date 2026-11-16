@@ -163,6 +163,39 @@ model Post {
     expect(lines.slice(rename).join('\n')).toMatch(/-- CREATE INDEX .*idx_post_title/)
   })
 
+  // The copy's own prose lines shared its '-- ' prefix, so removing that prefix
+  // as told left them bare and apply failed on them (FJS-4356).
+  for (const [label, schema] of [
+    ['rebuild', `model Post {\n  id     Int    @id\n  title  String\n  rating Int\n  @@index([title])\n}`],
+    ['column add', `model Post {\n  id     Int    @id\n  title  String\n  views  Int    @default(0)\n  rating Int\n  @@index([title])\n}`],
+  ] as const) {
+    it(`a BLOCKED ${label} on an empty table applies once its copy is uncommented as told`, async () => {
+      const { dir, db } = freshLab()
+      create(db, parse(V1), 'initial', dir)
+      await apply(db, dir)
+
+      const made = create(db, parse(schema), 'blocked', dir)
+      const lines = readFileSync(made.filePath!, 'utf8').split('\n')
+      const start = lines.findIndex(l => l.startsWith('-- Then delete the BLOCKED line above')) + 1
+      expect(start).toBeGreaterThan(0)
+      let end = start
+      while (end < lines.length && lines[end] !== '') end++
+      const out = [
+        ...lines.slice(0, start).filter(l => !/rebuild BLOCKED/.test(l)),
+        ...lines.slice(start, end).map(l => l.replace(/^-- ?/, '')),
+        ...lines.slice(end),
+      ]
+      writeFileSync(made.filePath!, out.join('\n'))
+      acceptLoss(made.filePath!)
+
+      const res = await apply(db, dir)
+      expect(res.error).toBeUndefined()
+      const cols = db.query(`PRAGMA table_info(post)`).all().map((c: { name: string }) => c.name)
+      expect(cols).toContain('rating')
+      expect(db.query(`SELECT name FROM sqlite_master WHERE name = 'idx_post_title'`).all()).toHaveLength(1)
+    })
+  }
+
   // Applying the rest of the file and recording it left the database between
   // two schemas, and the backfill the comment asks for could no longer go into
   // a file already marked applied (FJS-1785).
@@ -1163,13 +1196,13 @@ model Post {
     const made = create(db, parse(blockedSchema), 'rating', dir)
     const path = made.filePath!
     const all = readFileSync(path, 'utf8').split('\n')
-    const start = all.findIndex(l => l.startsWith('-- rebuild "post"'))
+    const start = all.findIndex(l => l.startsWith('-- -- rebuild "post"'))
     const end = all.findIndex(l => l.includes('"post": add indexes'))
     const filled = all
       .map((l, i) => {
         if (i < start && /^--\s+"post": rebuild BLOCKED/.test(l)) return '--'
         if (i < start || i >= end) return l
-        return /^-- (rebuild|the copy|recreate)/.test(l) ? l : l.replace(/^-- ?/, '').replace(/NULL \/\*[^*]*\*\//, '3')
+        return l.replace(/^-- ?/, '').replace(/NULL \/\*[^*]*\*\//, '3')
       })
       .join('\n')
     writeFileSync(path, filled)

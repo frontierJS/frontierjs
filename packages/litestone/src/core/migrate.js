@@ -1407,7 +1407,9 @@ function rebuildStatements(model, parseResult, pluralize, d) {
   return lines
 }
 
-const commentedOut = lines => lines.join('\n').split('\n').map(l => l.startsWith('--') ? l : `-- ${l}`).join('\n')
+// Every line takes one more '-- ', prose included, so removing one prefix per
+// line — the advice in the hint — leaves the prose still commented (FJS-4356).
+const commentedOut = lines => lines.join('\n').split('\n').map(l => l ? `-- ${l}` : '--').join('\n')
 
 function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
   // Must match createTable's physical columns exactly — implicit m2m and @edge

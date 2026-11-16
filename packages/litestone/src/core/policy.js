@@ -1386,6 +1386,30 @@ export function fromReach(modelName, ctx) {
   return [...reach].sort()
 }
 
+// The COLUMNS of each `fromReach` model the values read, by model: the key the
+// child joins on, the aggregated column, the `where:` columns and the default
+// filters. A write to a listed model that moves none of them leaves every value
+// as it was. A model some value cannot narrow (a picked row, a join table, a
+// to-one or @derived read) is absent, and its every write moves the value. A
+// model counting its own rows also lists the key its children name.
+export function fromColumns(modelName, ctx) {
+  const out = new Map()
+  const whole = new Set()
+  for (const entry of Object.values(shapeOf(ctx, modelName).fromFields ?? {})) {
+    for (const m of entry.through ?? []) whole.add(m)
+    if (!entry.target) continue
+    if (!entry.reads) { whole.add(entry.target); continue }
+    let set = out.get(entry.target)
+    if (!set) out.set(entry.target, set = new Set())
+    for (const c of entry.reads) set.add(c)
+    if (entry.target === modelName) for (const c of entry.keys ?? []) set.add(c)
+  }
+  const answer = {}
+  for (const [model, set] of [...out].sort(([a], [b]) => a.localeCompare(b)))
+    if (!whole.has(model)) answer[model] = [...set].sort()
+  return answer
+}
+
 // Returns { sql, params } to AND-merge into a query WHERE, or null (no filter).
 // Pass op = 'read' | 'update' | 'delete' for SQL-based enforcement.
 // ─── One clock per evaluation ────────────────────────────────────────────────

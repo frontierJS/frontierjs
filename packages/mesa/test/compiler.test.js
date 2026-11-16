@@ -4170,6 +4170,31 @@ describe('{#virtual each}', () => {
     app.destroy()
   })
 
+  // FJS-4347. Inside a block the element keeps the whitespace around the list,
+  // and that text node took the anchor the runtime appends rows into.
+  it('renders inside an {#if} with the list on its own line', async () => {
+    const fn = await compileAndExec(`
+<script>
+  let rows = Array.from({ length: 50 }, (_, i) => ({ id: i + 1, name: 'Item ' + (i + 1) }))
+</script>
+{#if rows.length}
+  <div class="container" style="height:200px;overflow-y:auto">
+    {#virtual each rows as row (row.id) height=40}
+      <div class="row">{row.name}</div>
+    {/virtual}
+  </div>
+  <p class="after">after</p>
+{/if}`, runtime)
+
+    const app = mount(fn, runtime)
+    const rows = app.container.querySelectorAll('.container > .row')
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.length).toBeLessThan(50)
+    expect(rows[0].textContent.trim()).toBe('Item 1')
+    expect(app.container.querySelector('.after')).not.toBeNull()
+    app.destroy()
+  })
+
   // FJS-3737. A drawn row keeps its key across an array change, so it has to be
   // handed the new item and index; the window alone not moving is no reason to
   // skip that, and the row's own effects must outlive the block's re-run.

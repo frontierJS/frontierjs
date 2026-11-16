@@ -871,6 +871,51 @@ describe('a write moves a @from on its own table (FJS-2919)', () => {
   })
 })
 
+// FJS-4346 — the self-`@from` regrade ignored which columns moved, so every
+// PATCH of a counted model reached its own tabs as `patched` and then `changed`.
+describe('an update the @from on its own table does not read regrades nothing (FJS-4346)', () => {
+  const REPOS = `
+    model Repository { id Int @id  description String?  stars Int @default(0)  archived Boolean @default(false)
+                       forkOf Int?  parent Repository? @relation("forks", fields: [forkOf], references: [id])
+                       forks Repository[] @relation("forks")
+                       forkCount Int @from(Repository, count: true, via: parent)
+                       forkStars Int @from(Repository, sum: stars, via: parent, where: archived == false) }
+  `
+  type Sys = Record<string, Record<string, (a: unknown) => Promise<unknown>>>
+
+  async function mk() {
+    const db  = await createClient({ db: ':memory:', schema: REPOS })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({ name: 'repositories', model: 'Repository', db: db as never }))
+    await app._startForTest()
+    const sys = () => (db as never as { asSystem(): Sys }).asSystem()
+    await sys().repository.create({ data: { id: 1 } })
+    await sys().repository.create({ data: { id: 2 } })
+    await sys().repository.create({ data: { id: 3, forkOf: 1 } })
+    await tick(); await tick()
+    const seen: string[] = []
+    app.events.on('repositories:changed', (d: { operation: string }) => { seen.push(d.operation) })
+    return { sys, seen }
+  }
+
+  test('a description patch leaves the channel alone', async () => {
+    const { sys, seen } = await mk()
+    await sys().repository.update({ where: { id: 3 }, data: { description: 'x' } })
+    await tick(); await tick()
+    expect(seen).toEqual([])
+  })
+
+  test('moving the fork key, the summed column or the where: column regrades', async () => {
+    const { sys, seen } = await mk()
+    for (const data of [{ forkOf: 2 }, { stars: 5 }, { archived: true }]) {
+      seen.length = 0
+      await sys().repository.update({ where: { id: 3 }, data })
+      await tick(); await tick()
+      expect(seen).toEqual(['regrade'])
+    }
+  })
+})
+
 // FJS-2255 — the service announces the row it removed and SQLite removes the
 // cascade children inside the same statement, so no `removed` frame named them
 // and every other open tab kept showing rows that no longer exist.

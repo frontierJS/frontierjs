@@ -173,7 +173,7 @@ export function eachLiftFrame(ctx?: any, { getters, rowSource }?: {
  * @returns {string}  New template literal, e.g. `` `${$$sig_count()} items` ``
  */
 export function rewriteTextResult(pe: object, accessorMap: object, opts?: object): string;
-export function rewriteAssignments(src?: any, node?: any, ctx?: any): any;
+export function rewriteAssignments(src?: any, node?: any, ctx?: any, scope?: Set<string>): any;
 export function xBuild(node?: any, option?: {}): string;
 export function xNode(type?: any, ...args: any[]): xNode;
 export class xNode {

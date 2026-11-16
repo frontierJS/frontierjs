@@ -330,6 +330,47 @@ model Tag {
     expect(db.$fromReach('nope')).toEqual([])
     expect(db.asSystem().$fromReach('shift')).toEqual(['Assignment'])
   })
+
+  // FJS-4346 — what the value reads of each reached model, so a write that
+  // moves none of it leaves the value alone.
+  test('$fromColumns names the key, the aggregated and where: columns, and leaves out what cannot narrow', async () => {
+    const db = await createClient({ schema: FROM, resolveFrom: import.meta.dir })
+    expect(db.$fromColumns('shift')).toEqual({ Assignment: ['shiftId'] })
+    expect(db.$fromColumns('assignment')).toEqual({})
+    expect(db.$fromColumns('tag')).toEqual({})
+    expect(db.$fromColumns('nope')).toEqual({})
+    const SELF = `
+database main { path ":memory:" }
+model Repo {
+  id        Int     @id
+  stars     Int     @default(0)
+  archived  Boolean @default(false)
+  forkOf    Int?
+  parent    Repo?   @relation("forks", fields: [forkOf], references: [id])
+  forks     Repo[]  @relation("forks")
+  forkStars Int     @from(Repo, sum: stars, via: parent, where: archived == false)
+  newest    Repo?   @from(Repo, last: true, via: parent)
+}
+model Org {
+  id    Int    @id
+  repos Team[]
+  open  Int    @from(Team, count: true, where: archived == false)
+}
+model Team {
+  id       Int     @id
+  orgId    Int
+  org      Org     @relation(fields: [orgId], references: [id])
+  archived  Boolean   @default(false)
+  deletedAt DateTime?
+  @@softDelete
+}
+`
+    const self = await createClient({ schema: SELF, resolveFrom: import.meta.dir })
+    // A picked row is read whole, so it takes the model out.
+    expect(self.$fromColumns('repo')).toEqual({})
+    expect(self.$fromColumns('org')).toEqual({ Team: ['archived', 'deletedAt', 'orgId'] })
+    expect(self.asSystem().$fromColumns('org')).toEqual(self.$fromColumns('org'))
+  })
 })
 
 describe('$readColumns — which columns of a reached model a verdict reads', () => {

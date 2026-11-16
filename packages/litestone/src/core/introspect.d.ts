@@ -31,6 +31,7 @@ export function makeIntrospection(ctx?: any, { schemaFilePath, asSystem }?: {
     $readReach: (accessor: any) => any[];
     $readColumns: (accessor: any) => {};
     $fromReach: (accessor: any) => any[];
+    $fromColumns: (accessor: any) => {};
     $levelOfAs: (ownCtx: any) => (/** @type {any} */ accessor: any, ...principal: any[]) => any;
     $checkWriteAs: (ownCtx: any) => (/** @type {any} */ accessor: any, /** @type {any} */ op: any, /** @type {any} */ row: any, changes?: any) => Promise<{
         ok: boolean;

@@ -858,6 +858,98 @@ const STATEMENT_HEADS = new Set(['if', 'while', 'switch', 'with'])
 const isStatementHeadMethod = (p) =>
   p.type === 'Property' && p.method && !p.computed && STATEMENT_HEADS.has(p.key.name)
 
+// ─── local scope ──────────────────────────────────────────────────────────────
+// A local that shares a name with a reactive `let` is a different variable.
+// Both rewriters read scope through these, so a read and a write of the same
+// name agree on which binding it is — when only the read side knew,
+// `let left = 2; left = left + 1` read the local and wrote the signal (FJS-4348).
+
+/** Parameter names of a function node. */
+const collectParams = (node) => {
+  const names = new Set()
+  ;(node.params || []).forEach((p) => addBound(p, names))
+  return names
+}
+
+/** Names a pattern binds. */
+const addBound = (p, names) => {
+  if (!p) return
+  if (p.type === 'Identifier') names.add(p.name)
+  else if (p.type === 'AssignmentPattern') addBound(p.left, names)
+  else if (p.type === 'RestElement') addBound(p.argument, names)
+  else if (p.type === 'ArrayPattern') p.elements.forEach((e) => addBound(e, names))
+  else if (p.type === 'ObjectPattern')
+    p.properties.forEach((prop) => addBound(prop.value || prop.key, names))
+}
+
+// What a scope DECLARES, as against what it receives as parameters.
+//
+// Without this a local declaration that happens to share a name with a
+// reactive top-level `let` was rewritten as a read of that signal — in its
+// own declaration, giving `const $$runtime.get($$sig_d) = new Date(ts)`. That
+// is not valid JavaScript, and the compiler reported no error, so it landed
+// as a module the browser refused to parse (Invariant 15).
+//
+// `var` is function-scoped and hoists, so it is collected across the whole
+// function body; `let`/`const` are collected per block, which is what keeps
+// a read BEFORE a later block's shadow correctly rewritten.
+const collectVars = (node, names = new Set()) => {
+  if (!node || typeof node !== 'object') return names
+  if (
+    node.type === 'ArrowFunctionExpression' ||
+    node.type === 'FunctionExpression' ||
+    node.type === 'FunctionDeclaration'
+  ) return names                                  // its own scope, its own vars
+  if (node.type === 'VariableDeclaration' && node.kind === 'var')
+    node.declarations.forEach((d) => addBound(d.id, names))
+  for (const k of Object.keys(node)) {
+    if (k === 'start' || k === 'end' || k === 'type' || k === 'raw') continue
+    const v = node[k]
+    if (Array.isArray(v)) v.forEach((item) => item?.type && collectVars(item, names))
+    else if (v?.type) collectVars(v, names)
+  }
+  return names
+}
+
+// let/const/function/class declared DIRECTLY in this block, plus a `for`
+// head's own binding — `for (const row of rows)` shadows for the length of
+// the loop, and a `switch`'s own declarations live one level down under
+// `cases`, which is why a bare `case 1: let n = 2` was never collected.
+//
+// One enumeration, read by every scope branch. A second hand-written list is
+// how `CatchClause` came to be known to `refuseDollarMisuse` and unknown here.
+const collectBlockDeclared = (node) => {
+  const names = new Set()
+  const fromDecl = (d) => {
+    if (d?.type === 'VariableDeclaration') d.declarations.forEach((x) => addBound(x.id, names))
+    else if ((d?.type === 'FunctionDeclaration' || d?.type === 'ClassDeclaration') && d.id)
+      names.add(d.id.name)
+  }
+  if (Array.isArray(node.body)) node.body.forEach(fromDecl)
+  if (Array.isArray(node.cases)) node.cases.forEach((c) => c.consequent?.forEach(fromDecl))
+  fromDecl(node.init)                              // for (let i = 0; …)
+  fromDecl(node.left)                              // for (const x of …)
+  addBound(node.param, names)                      // catch (e) / catch ({ message })
+  return names
+}
+
+const SCOPE_BLOCKS = new Set(['BlockStatement', 'SwitchStatement', 'ForStatement', 'ForOfStatement', 'ForInStatement', 'CatchClause'])
+
+/** The local names visible inside `n`, given those visible around it. */
+function scopeInside(n, scope) {
+  if (n.type === 'ArrowFunctionExpression' || n.type === 'FunctionExpression' || n.type === 'FunctionDeclaration') {
+    const inner = new Set([...scope, ...collectParams(n), ...collectVars(n.body)])
+    if (n.id) inner.add(n.id.name)
+    return inner
+  }
+  if ((n.type === 'ClassDeclaration' || n.type === 'ClassExpression') && n.id) return new Set([...scope, n.id.name])
+  if (SCOPE_BLOCKS.has(n.type)) {
+    const declared = collectBlockDeclared(n)
+    if (declared.size) return new Set([...scope, ...declared])
+  }
+  return scope
+}
+
 export function rewriteExpr(expr, accessorMap, setterMap, fireFns) {
   if (!accessorMap || !expr) return expr
 
@@ -894,87 +986,6 @@ export function rewriteExpr(expr, accessorMap, setterMap, fireFns) {
   const syncCallbacks = new Set()
   let laterDepth = 0
   let watchedDepth = 0
-
-  // Collect parameter names for a function node.
-  const collectParams = (node) => {
-    const names = new Set()
-    const addPattern = (p) => {
-      if (!p) return
-      if (p.type === 'Identifier') names.add(p.name)
-      else if (p.type === 'AssignmentPattern') addPattern(p.left)
-      else if (p.type === 'RestElement') addPattern(p.argument)
-      else if (p.type === 'ArrayPattern') p.elements.forEach(addPattern)
-      else if (p.type === 'ObjectPattern')
-        p.properties.forEach((prop) => addPattern(prop.value || prop.key))
-    }
-    ;(node.params || []).forEach(addPattern)
-    return names
-  }
-
-  // Names a pattern binds — the same shapes collectParams walks, reused for
-  // declarations.
-  const addBound = (p, names) => {
-    if (!p) return
-    if (p.type === 'Identifier') names.add(p.name)
-    else if (p.type === 'AssignmentPattern') addBound(p.left, names)
-    else if (p.type === 'RestElement') addBound(p.argument, names)
-    else if (p.type === 'ArrayPattern') p.elements.forEach((e) => addBound(e, names))
-    else if (p.type === 'ObjectPattern')
-      p.properties.forEach((prop) => addBound(prop.value || prop.key, names))
-  }
-
-  // What a scope DECLARES, as against what it receives as parameters.
-  //
-  // Without this a local declaration that happens to share a name with a
-  // reactive top-level `let` was rewritten as a read of that signal — in its
-  // own declaration, giving `const $$runtime.get($$sig_d) = new Date(ts)`. That
-  // is not valid JavaScript, and the compiler reported no error, so it landed
-  // as a module the browser refused to parse (Invariant 15). Parameters were
-  // already handled, which is why a shadow only broke when it was declared.
-  //
-  // `var` is function-scoped and hoists, so it is collected across the whole
-  // function body; `let`/`const` are collected per block, which is what keeps
-  // a read BEFORE a later block's shadow correctly rewritten.
-  const collectVars = (node, names = new Set()) => {
-    if (!node || typeof node !== 'object') return names
-    if (
-      node.type === 'ArrowFunctionExpression' ||
-      node.type === 'FunctionExpression' ||
-      node.type === 'FunctionDeclaration'
-    ) return names                                  // its own scope, its own vars
-    if (node.type === 'VariableDeclaration' && node.kind === 'var')
-      node.declarations.forEach((d) => addBound(d.id, names))
-    for (const k of Object.keys(node)) {
-      if (k === 'start' || k === 'end' || k === 'type' || k === 'raw') continue
-      const v = node[k]
-      if (Array.isArray(v)) v.forEach((item) => item?.type && collectVars(item, names))
-      else if (v?.type) collectVars(v, names)
-    }
-    return names
-  }
-
-  // let/const/function/class declared DIRECTLY in this block, plus a `for`
-  // head's own binding — `for (const row of rows)` shadows for the length of
-  // the loop, and a `switch`'s own declarations live one level down under
-  // `cases`, which is why a bare `case 1: let n = 2` was never collected.
-  //
-  // One enumeration, read by every scope branch below. A second hand-written
-  // list is how `CatchClause` came to be known to `refuseDollarMisuse` and
-  // unknown here.
-  const collectBlockDeclared = (node) => {
-    const names = new Set()
-    const fromDecl = (d) => {
-      if (d?.type === 'VariableDeclaration') d.declarations.forEach((x) => addBound(x.id, names))
-      else if ((d?.type === 'FunctionDeclaration' || d?.type === 'ClassDeclaration') && d.id)
-        names.add(d.id.name)
-    }
-    if (Array.isArray(node.body)) node.body.forEach(fromDecl)
-    if (Array.isArray(node.cases)) node.cases.forEach((c) => c.consequent?.forEach(fromDecl))
-    fromDecl(node.init)                              // for (let i = 0; …)
-    fromDecl(node.left)                              // for (const x of …)
-    addBound(node.param, names)                      // catch (e) / catch ({ message })
-    return names
-  }
 
   const walk = (n, parentKey, localScope) => {
     if (!n || typeof n !== 'object') return
@@ -1536,7 +1547,9 @@ function rewritePatternAssignment(n, { source, setterFor, rewriteSub }) {
 
 const spanOf = (node) => ({ start: node.start, end: node.end })
 
-export function rewriteAssignments(src, node, ctx) {
+// `scope` is the local names visible around `node`; a caller handing it a
+// component-level node passes none.
+export function rewriteAssignments(src, node, ctx, scope = new Set()) {
   const { setters, accessors, script } = ctx
   // Early return only if there are NEITHER local setters NOR proxy fire functions.
   // Without proxy fire fns, self-assignments like `themeNew = themeNew` also need rewriting.
@@ -1547,20 +1560,22 @@ export function rewriteAssignments(src, node, ctx) {
   const patches = [] // positions relative to full script source
   const srcOffset = node.start
 
-  const walk = (n) => {
+  const walk = (n, sc) => {
     if (!n || typeof n !== 'object') return
+    sc = scopeInside(n, sc)
+    const setterOf = (name) => (sc.has(name) ? null : setters?.[name] || null)
 
     if (n.type === 'AssignmentExpression') {
       const left = n.left
-      if (isSelfAssignment(n)) {
+      if (isSelfAssignment(n) && !sc.has(left.name)) {
         const replacement = selfAssignmentWrite(left.name, setters, ctx.proxyFireFns)
         if (replacement) {
           patches.push({ start: n.start, end: n.end, replacement })
           return
         }
       }
-      if (left.type === 'Identifier' && setters[left.name]) {
-        const setter = setters[left.name]
+      if (left.type === 'Identifier' && setterOf(left.name)) {
+        const setter = setterOf(left.name)
         const op = n.operator
         // Recursively rewrite ASSIGNMENTS on the right-hand side before building
         // our replacement. This handles nested ones inside callbacks:
@@ -1578,7 +1593,7 @@ export function rewriteAssignments(src, node, ctx) {
         // scope is visible and `collectBlockDeclared` already gets it right.
         const rightRawOriginal = script.source.slice(n.right.start, n.right.end)
         // Build a fake node spanning just the right side for recursive rewriting
-        const rightRw = rewriteAssignments(rightRawOriginal, n.right, ctx)
+        const rightRw = rewriteAssignments(rightRawOriginal, n.right, ctx, sc)
         let replacement
         if (op === '=') {
           replacement = `${setter}(${rightRw})`
@@ -1604,10 +1619,10 @@ export function rewriteAssignments(src, node, ctx) {
       ) {
         const replacement = rewritePatternAssignment(n, {
           source:    script.source,
-          setterFor: (name) => setters[name] || null,
+          setterFor: setterOf,
           rewriteSub: (sub) =>
             rewriteExpr(
-              rewriteAssignments(script.source.slice(sub.start, sub.end), sub, ctx),
+              rewriteAssignments(script.source.slice(sub.start, sub.end), sub, ctx, sc),
               accessors
             )
         })
@@ -1620,8 +1635,8 @@ export function rewriteAssignments(src, node, ctx) {
 
     if (n.type === 'UpdateExpression') {
       const arg = n.argument
-      if (arg.type === 'Identifier' && setters[arg.name]) {
-        patches.push({ start: n.start, end: n.end, replacement: updateExpr(n, setters[arg.name], arg.name) })
+      if (arg.type === 'Identifier' && setterOf(arg.name)) {
+        patches.push({ start: n.start, end: n.end, replacement: updateExpr(n, setterOf(arg.name), arg.name) })
         return
       }
     }
@@ -1631,13 +1646,13 @@ export function rewriteAssignments(src, node, ctx) {
       const v = n[k]
       if (Array.isArray(v))
         v.forEach((item) => {
-          if (item?.type) walk(item)
+          if (item?.type) walk(item, sc)
         })
-      else if (v?.type) walk(v)
+      else if (v?.type) walk(v, sc)
     }
   }
 
-  walk(node)
+  walk(node, scope)
   if (!patches.length) return src
 
   // Convert absolute script positions → src-relative positions, then patch.
@@ -6286,14 +6301,16 @@ export function buildBlock(data, option = {}) {
         if (isRoot) requireFragment = true
         binds.push(ctx.makeEachBlock(n, { label: ownAnchor('each') }).source)
       } else if (n.type === 'virtual-each') {
-        // virtual-each is special: $$virtualEach() treats its anchor as the scroll
-        // container element (calls parent.appendChild directly). Keep original behavior —
-        // pass the parent element rather than a comment anchor.
+        // $$virtualEach() appends rows into its anchor, so the anchor is the
+        // enclosing element. A pending label would be taken by the whitespace
+        // text after the block, which only a component root trims (FJS-4347).
         if (isRoot) {
           requireFragment = true
           if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true, value: 'virtual-each' }))
+          binds.push(ctx.makeVirtualEachBlock(n, { label: requireLabel(true, true) }))
+        } else {
+          binds.push(ctx.makeVirtualEachBlock(n, { label: { name: tpl.bindName() } }))
         }
-        binds.push(ctx.makeVirtualEachBlock(n, { label: requireLabel(true, isRoot) }))
       } else if (n.type === 'if') {
         if (isRoot) requireFragment = true
         binds.push(ctx.makeifBlock(n, ownAnchor('if')))

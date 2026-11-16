@@ -582,8 +582,14 @@ shape an un-defaultable new column gets:
 --   • recreate each one below the rebuild, then uncomment it
 --   • move it into the schema, where litestone regenerates it
 --   • if it is no longer wanted, drop it by hand and uncomment
--- … the whole rebuild, commented …
+-- -- rebuild "note" — full table reconstruction required
+-- CREATE TABLE "note__new" (
+-- … the whole rebuild, one '-- ' deeper per line …
 ```
+
+Every line of the copy carries one more `-- ` than it would live, its own
+comments included, so removing one `-- ` from each line yields the rebuild
+with its comments still comments.
 
 `autoMigrate` reports `blocked` with the same list and writes no hash, so it
 surfaces on every startup until the schema or the database says what should

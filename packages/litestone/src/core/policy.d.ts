@@ -38,6 +38,7 @@ export function writeClaims(field?: any): {};
 export function readReach(modelName?: any, ctx?: any, op?: string): any[];
 export function readColumns(modelName?: any, ctx?: any, op?: string): {};
 export function fromReach(modelName?: any, ctx?: any): any[];
+export function fromColumns(modelName?: any, ctx?: any): {};
 export function atOneInstant(ctx?: any): any;
 /** @param {string} modelName @param {unknown[] | null | undefined} exprs @param {string} op @param {any} ctx */
 export function compileFieldPredicate(modelName: string, exprs: unknown[] | null | undefined, op: string, ctx: any): {

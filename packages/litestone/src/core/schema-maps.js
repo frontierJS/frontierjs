@@ -877,6 +877,23 @@ export function buildFromMap(schema, pluralize = false) {
       // target has a policy for the caller (guardArgs).
       if (op !== 'first' && op !== 'last')
         aggRef = { model: targetModel.name, fkCols, refCols, op, opValue, extra, through }
+      // The target columns the value reads, so a write moving none of them
+      // leaves it as it was (`fromColumns`). A picked row is read whole and a
+      // join table's pair is written on another model: neither narrows.
+      const whereFields = []
+      ;(function walk(n) {
+        if (!n || typeof n !== 'object') return
+        if (Array.isArray(n)) { n.forEach(walk); return }
+        if (n.type === 'field') whereFields.push(n.name)
+        for (const v of Object.values(n)) walk(v)
+      })(where)
+      const reads = aggRef && !through ? [...new Set([
+        ...fkCols,
+        ...(op !== 'count' && op !== 'exists' && typeof opValue === 'string' ? [opValue] : []),
+        ...(targetSoftDelete && !withDeleted ? ['deletedAt'] : []),
+        ...(targetHtField && !withTemplates ? [targetHtField] : []),
+        ...whereFields,
+      ])] : null
 
       map[model.name][field.name] = {
         // The model whose rows the value is read off. Its read gate is the one
@@ -890,6 +907,8 @@ export function buildFromMap(schema, pluralize = false) {
         isBool: op === 'exists',
         rowRef,
         aggRef,
+        reads,
+        keys: refCols,
       }
     }
   }

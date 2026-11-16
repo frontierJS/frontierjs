@@ -46,9 +46,38 @@ describe('P2: channel lifecycle', () => {
     expect(manager.channel('workspace:42')).toBe(ch1)   // stable while occupied
 
     await manager.handleDisconnect((conn as Connection).id)
-    const ch2 = manager.channel('workspace:42')
-    expect(ch2).not.toBe(ch1)                            // old entry was pruned
-    expect(ch2.length).toBe(0)
+    expect(manager.stats().channels).toBe(0)
+    manager.destroy()
+  })
+
+  // FJS-4365: a chat's emitter cached the channel and a page reload silenced it.
+  it('a held channel still reaches whoever joins after its last member left', async () => {
+    const manager = createChannelManager()
+    const first   = await manager.handleConnection(fakeSocket().socket as never, null)
+    const held    = manager.channel('chat:7')
+    held.join(first as Connection)
+    await manager.handleDisconnect((first as Connection).id)
+
+    const sent: string[] = []
+    const second = await manager.handleConnection({ ...fakeSocket().socket, send: (m: string) => { sent.push(m) } } as never, null)
+    manager.channel('chat:7').join(second as Connection)
+    held.send('message', { body: 'hi' })
+    expect(sent.some(m => m.includes('"message"'))).toBe(true)
+    manager.destroy()
+  })
+
+  it('a held channel joined directly after pruning is the one the manager answers and leaves', async () => {
+    const manager = createChannelManager()
+    const first   = await manager.handleConnection(fakeSocket().socket as never, null)
+    const held    = manager.channel('chat:8')
+    held.join(first as Connection)
+    await manager.handleDisconnect((first as Connection).id)
+
+    const second = await manager.handleConnection(fakeSocket().socket as never, null)
+    held.join(second as Connection)
+    expect(manager.channel('chat:8')).toBe(held)
+    await manager.handleDisconnect((second as Connection).id)
+    expect(held.length).toBe(0)
     manager.destroy()
   })
 

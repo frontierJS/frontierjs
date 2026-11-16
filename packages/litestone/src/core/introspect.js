@@ -1,7 +1,7 @@
 // introspect.js — the `$`-introspection surface every flavor of the client
 // answers identically: $checkWhere, $checkOrderBy, $protectedFields,
 // $primaryKey, $mirrorKey, $declaresAccessRules, $readAs, $inWindow,
-// $readGrading, $readReach, $readColumns, $fromReach, $levelOf, $checkWrite,
+// $readGrading, $readReach, $readColumns, $fromReach, $fromColumns, $levelOf, $checkWrite,
 // $capabilitiesFor, $claimsFor, $scopes and $tenancy.
 //
 // Questions about the SCHEMA and about SOMEBODY ELSE'S standing, asked without
@@ -18,7 +18,7 @@ import { AccessDeniedError } from './plugin.js'
 import { levelPasses } from '../plugins/gate.js'
 import { requireCapability } from '../plugins/capability.js'
 import { capabilityNames } from './capabilities.js'
-import { policyExprToString, policyVerdict, withLiteralDefaults, readReach, readColumns, fromReach } from './policy.js'
+import { policyExprToString, policyVerdict, withLiteralDefaults, readReach, readColumns, fromReach, fromColumns } from './policy.js'
 import { resolveTenancy } from './tenancy.js'
 import { schemaDeclaresAccessRules, shapesRead, nowISO } from './schema-maps.js'
 import { sortableKeysFor } from './query.js'
@@ -474,6 +474,14 @@ export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSy
     return model?.name ? fromReach(model.name, ctx) : []
   }
 
+  // $fromColumns(accessor) → $fromReach with the columns of each reached model
+  // the values read, as { Model: [column] }. A reached model absent from it
+  // moves a value on every write. An unknown accessor answers {}.
+  function $fromColumns(/** @type {any} */ accessor) {
+    const model = modelForAccessor(accessor)
+    return model?.name ? fromColumns(model.name, ctx) : {}
+  }
+
   // ─── $levelOf ───────────────────────────────────────────────────────────
   //
   // $levelOf(accessor?, principal?) → 0–8, or null where this client cannot
@@ -654,7 +662,7 @@ export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSy
   return {
     $checkWhere, $scopes, $checkOrderBy, $protectedFields, $trailMarks, $primaryKey, $mirrorKey,
     $declaresAccessRules, $readAs, $inWindow, $readGrading, $readReach, $readColumns,
-    $fromReach, $levelOfAs, $checkWriteAs, $capabilitiesFor, $claimsFor,
+    $fromReach, $fromColumns, $levelOfAs, $checkWriteAs, $capabilitiesFor, $claimsFor,
     modelForAccessor, accessorIndex, tenancyInfo,
   }
 }
