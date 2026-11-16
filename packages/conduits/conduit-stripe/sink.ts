@@ -21,6 +21,14 @@
 // format is `tax_id_invalid`. A transaction from an expired or unknown
 // calculation is `resource_missing`.
 //
+// Connect: `POST /v1/accounts` makes an account with every requirement due,
+// `POST /v1/account_links` a link to it, and `/_sink/onboard/<acct>` stands in
+// for the owner finishing hosted onboarding (it clears the requirements and
+// sends `account.updated`). A request carrying `Stripe-Account` acts on that
+// account: its intents, refunds and idempotency keys are that account's, and
+// its events carry `account` and are signed with the Connect secret.
+// `/_sink/checkout/<cs>/complete` stands in for a customer paying a session.
+//
 // It does NOT pretend to be Stripe's semantics: no card tokens, no 3DS, no
 // balance. A reserved amount of 4242 is the decline.
 
@@ -34,6 +42,10 @@ export interface StripeSinkOptions {
   webhookSecret?: string
   /** Where it POSTs events; none means events are recorded and not sent. */
   hookUrl?:      string
+  /** What it signs a connected account's events with — the platform's Connect endpoint secret. */
+  connectWebhookSecret?: string
+  /** Where a connected account's events go; defaults to `hookUrl`. */
+  connectHookUrl?: string
   /** Tax: seconds a calculation lives after it is made (90 min at Stripe; a drive sets 1). */
   taxExpiresInSeconds?: number
 }
@@ -41,7 +53,10 @@ export interface StripeSinkOptions {
 interface Intent {
   id: string; object: 'payment_intent'; amount: number; currency: string
   status: string; client_secret: string; metadata: Record<string, string>; refunded: number
+  account: string | null
 }
+
+const DUE = ['business_profile.mcc', 'business_profile.url', 'business_type', 'external_account', 'representative.first_name', 'tos_acceptance.date']
 
 /** `a[b]=1&c[0][d]=2` → `{ a: { b: '1' }, c: [ { d: '2' } ] }`. Values stay strings. */
 export function parseForm(text: string): Record<string, unknown> {
@@ -75,7 +90,10 @@ const stripeError = (type: string, message: string, status: number, extra: Recor
 export function startStripeSink(opts: StripeSinkOptions = {}) {
   const KEY     = opts.key ?? 'sk_test_dev'
   const SECRET  = opts.webhookSecret ?? 'whsec_dev'
+  const CONNECT_SECRET = opts.connectWebhookSecret ?? 'whsec_connect_dev'
   const intents = new Map<string, Intent>()
+  const accounts = new Map<string, Record<string, any>>()
+  const sessions = new Map<string, Record<string, any>>()
   const calcs   = new Map<string, { madeAt: number; body: Record<string, unknown> }>()
   const txns    = new Map<string, Record<string, unknown>>()
   const TAX_TTL = (opts.taxExpiresInSeconds ?? 5400) * 1000
@@ -85,17 +103,18 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
   const armed = { failNext: false, lost: false, rateLimit: null as null | { retryAfter: number }, deliverTwice: false }
   const hanging: Array<() => void> = []
 
-  async function deliver(type: string, data: unknown) {
-    const evt = { id: id('evt'), type, status: null as number | null }
-    const payload = JSON.stringify({ id: evt.id, object: 'event', type, created: Math.floor(Date.now() / 1000), data: { object: data } })
+  async function deliver(type: string, data: unknown, account: string | null = null) {
+    const evt = { id: id('evt'), type, status: null as number | null, account }
+    const payload = JSON.stringify({ id: evt.id, object: 'event', type, created: Math.floor(Date.now() / 1000), data: { object: data }, ...(account ? { account } : {}) })
     const t   = Math.floor(Date.now() / 1000)
-    const sig = createHmac('sha256', SECRET).update(`${t}.${payload}`).digest('hex')
+    const sig = createHmac('sha256', account ? CONNECT_SECRET : SECRET).update(`${t}.${payload}`).digest('hex')
+    const hookUrl = account ? opts.connectHookUrl ?? opts.hookUrl : opts.hookUrl
     const times = armed.deliverTwice ? 2 : 1
     armed.deliverTwice = false
     for (let i = 0; i < times; i++) {
-      if (!opts.hookUrl) { events.push({ ...evt }); continue }
+      if (!hookUrl) { events.push({ ...evt }); continue }
       try {
-        const res = await fetch(opts.hookUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'stripe-signature': `t=${t},v1=${sig}` }, body: payload })
+        const res = await fetch(hookUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'stripe-signature': `t=${t},v1=${sig}` }, body: payload })
         events.push({ ...evt, status: res.status })
       } catch { events.push({ ...evt, status: null }) }
     }
@@ -110,6 +129,23 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
       if (path === '/_sink/seen')  return json({ requests: seen, intents: [...intents.values()], events, transactions: [...txns.values()] })
       if (path === '/_sink/reset') { seen.length = 0; events.length = 0; Object.assign(armed, { failNext: false, lost: false, rateLimit: null, deliverTwice: false }); return json({ ok: true }) }
       if (path === '/_sink/arm')   { Object.assign(armed, await req.json()); return json({ ok: true, armed }) }
+      const onboard = path.match(/^\/_sink\/onboard\/([^/]+)$/)
+      if (onboard) {
+        const a = accounts.get(onboard[1])
+        if (!a) return json({ error: 'no such account' }, 404)
+        Object.assign(a, { details_submitted: true, charges_enabled: true, payouts_enabled: true, requirements: { currently_due: [], eventually_due: [], past_due: [], disabled_reason: null } })
+        await deliver('account.updated', a, a.id)
+        return json(a)
+      }
+      const paid = path.match(/^\/_sink\/checkout\/([^/]+)\/complete$/)
+      if (paid) {
+        const cs = sessions.get(paid[1])
+        if (!cs) return json({ error: 'no such session' }, 404)
+        Object.assign(cs, { status: 'complete', payment_status: 'paid', url: null })
+        const { _account, ...shown } = cs
+        await deliver('checkout.session.completed', shown, _account)
+        return json(shown)
+      }
 
       const text = req.method === 'POST' ? await req.text() : ''
       seen.push({ method: req.method, path, headers: Object.fromEntries(req.headers), body: text, at: Date.now() })
@@ -129,7 +165,9 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
 
       // Idempotency: Stripe answers the FIRST response again for the same key
       // and payload, and refuses the same key over a different payload.
-      const idem = req.headers.get('idempotency-key')
+      // A key is scoped to the account the request acts on, as Stripe scopes it.
+      const acting = req.headers.get('stripe-account')
+      const idem = req.headers.get('idempotency-key') ? `${acting ?? ''}:${req.headers.get('idempotency-key')}` : null
       if (idem && keys.has(idem)) {
         const prior = keys.get(idem)!
         if (prior.body !== text) return stripeError('idempotency_error', `Keys for idempotent requests can only be used with the same parameters they were first used with. Key: ${idem}`, 400)
@@ -145,7 +183,7 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
         if (!Number.isInteger(amount) || amount <= 0) answer = stripeError('invalid_request_error', 'Invalid integer: amount', 400, { code: 'parameter_invalid_integer' })
         else if (amount === 4242) answer = stripeError('card_error', 'Your card was declined.', 402, { code: 'card_declined', decline_code: 'generic_decline' })
         else {
-          const intent: Intent = { id: id('pi'), object: 'payment_intent', amount, currency: String(form.currency ?? 'usd'), status: 'requires_payment_method', client_secret: id('pi') + '_secret', metadata: (form.metadata ?? {}) as Record<string, string>, refunded: 0 }
+          const intent: Intent = { id: id('pi'), object: 'payment_intent', amount, currency: String(form.currency ?? 'usd'), status: 'requires_payment_method', client_secret: id('pi') + '_secret', metadata: (form.metadata ?? {}) as Record<string, string>, refunded: 0, account: acting }
           intents.set(intent.id, intent)
           answer = remember(200, intent)
         }
@@ -154,13 +192,14 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
       const confirm = path.match(/^\/v1\/payment_intents\/([^/]+)\/confirm$/)
       if (confirm && req.method === 'POST') {
         const intent = intents.get(confirm[1])
-        if (!intent) answer = stripeError('invalid_request_error', 'No such payment_intent', 404)
-        else { intent.status = 'succeeded'; await deliver('payment_intent.succeeded', intent); answer = json(intent) }
+        if (!intent || intent.account !== acting) answer = stripeError('invalid_request_error', 'No such payment_intent', 404)
+        else { intent.status = 'succeeded'; await deliver('payment_intent.succeeded', intent, intent.account); answer = json(intent) }
       }
 
       if (path === '/v1/refunds' && req.method === 'POST') {
+        // A direct charge lives on the connected account: asked for from anywhere else it does not exist.
         const intent = intents.get(String(form.payment_intent ?? ''))
-        if (!intent) answer = stripeError('invalid_request_error', 'No such payment_intent', 404)
+        if (!intent || intent.account !== acting) answer = stripeError('invalid_request_error', `No such payment_intent: '${form.payment_intent}'`, 404, { code: 'resource_missing' })
         else {
           const left  = intent.amount - intent.refunded
           const asked = form.amount === undefined ? left : Number(form.amount)
@@ -169,9 +208,51 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
           else {
             intent.refunded += asked
             const refund = { id: id('re'), object: 'refund', amount: asked, currency: intent.currency, payment_intent: intent.id, status: 'succeeded' }
-            await deliver('charge.refunded', { ...intent })
+            await deliver('charge.refunded', { id: id('ch'), object: 'charge', amount: intent.amount, amount_refunded: intent.refunded, currency: intent.currency, payment_intent: intent.id, refunded: intent.refunded === intent.amount, metadata: intent.metadata }, intent.account)
             answer = remember(200, refund)
           }
+        }
+      }
+
+      if (path === '/v1/accounts' && req.method === 'POST') {
+        if (acting) answer = stripeError('invalid_request_error', 'A connected account cannot create accounts', 400)
+        else if (!form.country) answer = stripeError('invalid_request_error', 'Missing required param: country', 400, { code: 'parameter_missing' })
+        else {
+          const a = { id: id('acct'), object: 'account', country: String(form.country), email: form.email ?? null, business_type: form.business_type ?? null, charges_enabled: false, payouts_enabled: false, details_submitted: false,
+            controller: form.controller ?? {}, metadata: form.metadata ?? {}, requirements: { currently_due: [...DUE], eventually_due: [...DUE], past_due: [], disabled_reason: 'requirements.past_due' } }
+          accounts.set(a.id, a)
+          answer = remember(200, a)
+        }
+      }
+
+      const oneAccount = path.match(/^\/v1\/accounts\/([^/]+)$/)
+      if (oneAccount && req.method === 'GET') {
+        const a = accounts.get(oneAccount[1])
+        answer = a ? json(a) : stripeError('invalid_request_error', `No such account: '${oneAccount[1]}'`, 404, { code: 'resource_missing' })
+      }
+
+      if (path === '/v1/account_links' && req.method === 'POST') {
+        const a = accounts.get(String(form.account ?? ''))
+        if (!a) answer = stripeError('invalid_request_error', `No such account: '${form.account}'`, 404, { code: 'resource_missing' })
+        else if (form.type !== 'account_onboarding' && form.type !== 'account_update') answer = stripeError('invalid_request_error', 'Invalid type', 400)
+        else if (!form.refresh_url || !form.return_url) answer = stripeError('invalid_request_error', 'Missing required param: refresh_url or return_url', 400, { code: 'parameter_missing' })
+        else { const now = Math.floor(Date.now() / 1000); answer = json({ object: 'account_link', created: now, expires_at: now + 300, url: `https://connect.stripe.com/setup/s/${a.id}/${id('link')}` }) }
+      }
+
+      if (path === '/v1/checkout/sessions' && req.method === 'POST') {
+        const f = form as Record<string, any>
+        const items = Object.values(f.line_items ?? {}) as Record<string, any>[]
+        if (f.mode !== 'payment') answer = stripeError('invalid_request_error', 'The sink speaks mode=payment only', 400)
+        else if (!items.length || !f.success_url) answer = stripeError('invalid_request_error', 'Missing required param: line_items or success_url', 400, { code: 'parameter_missing' })
+        else {
+          const total = items.reduce((t, li) => t + Number(li.price_data?.unit_amount) * Number(li.quantity ?? 1), 0)
+          const cs = { id: id('cs_test'), object: 'checkout.session', mode: 'payment', status: 'open', payment_status: 'unpaid', amount_total: total, currency: items[0].price_data?.currency ?? null,
+            customer: null, customer_email: f.customer_email ?? null, client_reference_id: f.client_reference_id ?? null, payment_intent: null,
+            payment_method_types: Object.values(f.payment_method_types ?? { 0: 'card' }), metadata: f.metadata ?? {}, expires_at: Number(f.expires_at ?? Math.floor(Date.now() / 1000) + 86_400), url: '', _account: acting }
+          cs.url = `https://checkout.stripe.com/c/pay/${cs.id}`
+          sessions.set(cs.id, cs)
+          const { _account: _a, ...shown } = cs
+          answer = remember(200, shown)
         }
       }
 

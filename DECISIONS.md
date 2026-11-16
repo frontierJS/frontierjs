@@ -1899,6 +1899,18 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d2205"></a>2026-11-16 · `FJS-D2205` — Q6 — Chat — Basic group chat to match Heylo.
+
+Asked in [`IDEAS/group-kit.md`](IDEAS/group-kit.md) § Open questions. **B** was picked over **A** (defer; members stay in WhatsApp, GroupMe or Discord).
+
+Against the recommendation (**A**): Against the recommendation (A): the owner wants group chat in the kit, reusing what chat (fjs-prototypes/chat) and serpgrid already built rather than writing a new one. A member chats as a bearerClaim guest under the name they gave, with no account, so the no-account promise holds; organizers moderate by revoking a link, and 3.1's report link covers chat.
+
+### <a id="fjs-d2201"></a>2026-11-16 · `FJS-D2201` — Q3 — Require nonprofit status to take payments — No; Stripe's own identity checks are the gate.
+
+Asked in [`IDEAS/group-kit.md`](IDEAS/group-kit.md) § Open questions. **B** was picked over **A** (yes, an EIN, as Zeffy does).
+
+The paper's recommendation, taken as written: Clubs that are not 501(c)(3)s are the open ground, and a gate hands them back to Venmo.
+
 ### <a id="fjs-d2196"></a>2026-11-15 · `FJS-D2196` — Where does the classification table live — The build output: `prerenderRoutes` already returns `safety.rows` and the build prints them; add the group and its reason.
 
 Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. **A** was picked over **B** (also a column in `routes.snapshot.md`, so a gate change that flips a page shows in a diff).
@@ -17667,6 +17679,72 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2215"></a>2026-11-16 · `FJS-D2215` — Q7 — task-from-post — Gone.
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (a Workbench version: a post becomes an `ISSUES.md` row or opens a Claude Code chat on a pin, quoting the post).
+
+The paper's recommendation, taken as written: B is a second feature with its own design, and nothing in Phases 0–4 depends on it.
+
+### <a id="fjs-d2214"></a>2026-11-16 · `FJS-D2214` — Q6 — the name — The screen is *Messages* at `/messages/`; the database, provider folder, component folder and notification names stay `chat`, the prototype's and the connector's noun, which no Workbench page shows.
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (*Chat*, beside the Claude Code *Chats*).
+
+The paper's recommendation, taken as written: the nav cannot carry two entries a letter apart.
+
+### <a id="fjs-d2213"></a>2026-11-16 · `FJS-D2213` — Q5 — what backs a feature the mirror lacks — Mattermost's own API where Team Edition has one, a local model in `chat.db` otherwise; the screen marks a local-only feature as laptop-only.
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (every extra is a local model).
+
+The paper's recommendation, taken as written: the phone and the real clients then agree on drafts, saved posts and status.
+
+### <a id="fjs-d2212"></a>2026-11-16 · `FJS-D2212` — Q4 — where the UI code goes — Copied and ported into `packages/workbench/web/src/components/chat/`; the copy ends at Phase 5, which rules on what moves to `@frontierjs/ui` with serpgrid as the second caller.
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (a shared chat UI package with an adapter per backend, designed up front).
+
+The paper's recommendation, taken as written: the two backends' nouns differ, and which components are generic is only visible after one port.
+
+### <a id="fjs-d2211"></a>2026-11-16 · `FJS-D2211` — Q3 — writes to the live server — A full client: the owner posts for real, every drive runs on the sink, and no agent writes to `chat.kobami.cloud`.
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (read-only first).
+
+The paper's recommendation, taken as written: a client that cannot post is not the screen asked for, and the sink carries the proof.
+
+### <a id="fjs-d2210"></a>2026-11-16 · `FJS-D2210` — Q2 — the first version's cut — Full serpgrid parity, less the two features that need serpgrid's `Client` and `Task` (Q7).
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (the core only: what the 8 mirror models already hold).
+
+The paper's recommendation, taken as written: the owner asked for the whole screen, and Phase 3 lands it one feature at a time.
+
+### <a id="fjs-d2209"></a>2026-11-16 · `FJS-D2209` — Q1 — where the mirror lives — Inside Workbench, in a dedicated `chat` database of its own file, apart from `workbench.db`; `Member` holds a plain `profileExternalId` column and a local model a plain `memberId`, neither a relation, because Litestone refuses one across databases.
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (Workbench dials the running chat prototype's API), **C** (Workbench opens the prototype's `app.db` as a second database).
+
+The paper's recommendation, taken as written: one process, so Resources and the `/ws` tether work directly, and the mirror stays apart from Workbench's own rows.
+
+### <a id="fjs-d2207"></a>2026-11-16 · `FJS-D2207` — Q8 — Price (rule before Phase 6) — Free, donation-funded.
+
+Asked in [`IDEAS/group-kit.md`](IDEAS/group-kit.md) § Open questions. **A** was picked over **B** (free for sheets and events, a flat yearly fee once a group takes payments), **C** (a flat yearly fee for every group, on a sliding scale. - Lean B, ruled with the real cost ledger in hand. The earlier report's arithmetic: $60 a year needs about 1,700 paying groups per $100k of budget. - A flat yearly fee is a subscription billed to the group by the kit, not a cut of the group's payments. It keeps the no-platform-cut promise and 3.7 still holds).
+
+Against the lean (B): free for every group, funded by voluntary donations to the kit's own Stripe account, never a tip on a group's checkout, so 3.7's no-fee test is untouched. The ledger in 6.1 stays public; reopen to B if running cost outruns donations.
+
+### <a id="fjs-d2204"></a>2026-11-16 · `FJS-D2204` — Q5 — Scheduling polls — Full polls.
+
+Asked in [`IDEAS/group-kit.md`](IDEAS/group-kit.md) § Open questions. **C** was picked over **A** (link out to Rallly or When2meet), **B** (a bare date vote on a sheet).
+
+Against the recommendation (**A**): Against the recommendation (A then B): the owner wants full polls in the kit, not a link-out. A poll is built on Sheet in vote mode, so a date vote picks the date and creates the Event, and general questions ride the same model.
+
+### <a id="fjs-d2203"></a>2026-11-16 · `FJS-D2203` — Q9 — First marketing channel (rule at 4.6, before Phase 5) — A, low confidence.
+
+Asked in [`IDEAS/group-kit.md`](IDEAS/group-kit.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, low confidence*) over **B** (SEO template pages first, aimed at intent searches the way SignUpGenius does, with intent-based paid search later as Zeffy did. - The two can both happen eventually. The real decision is whether pilot season spends its effort on template pages).
+
+A whole, ruled early at the owner's call rather than at 4.6: guest links that show the kit to non-members, organizer referral and one activation metric first; the reopen path to B stays, read off 0.7's pages at 4.6.
+
+### <a id="fjs-d2202"></a>2026-11-16 · `FJS-D2202` — Q7 — Product or stressor — A, run with stressor discipline.
+
+Asked in [`IDEAS/group-kit.md`](IDEAS/group-kit.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, run with stressor discipline*) over **B** (a stressor: an instrument whose output is FJS rows).
+
+A, run with stressor discipline: a Kobami product with pilots and Phase 6, every framework gap filed as an FJS row, and a filed seam never deferred to meet a pilot date.
+
 ### <a id="fjs-d1370"></a>2026-11-15 · `FJS-D1370` — Does enabling deploy on push register the hook on the forge, and with whose credential, or is pasting the shown URL the design — Pasting is the design: the screen shows the URL, secret and token URL once (CapRover's and Cloudflare's deploy-hook shape, `FJS-D884`), and `createWebhook` leaves `IGit` since nothing calls it. No credential held, nothing to rotate on a forge.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (a ForgejoGit behind `IGit` (the `TODO: if (cfg.git?.url)` in `providers/index.ts`): `createWebhook` gains the secret, `enablePush` registers on Basecamp's own forge when the repo URL is that host and `disablePush` deletes the hook. One host, one installation-level token; every other host still pastes), **B** (a per-workspace forge connection (a `Secret` of kind `forge_token` per host, like `provider_key` for a compute account, `FJS-D558`): `enablePush` registers on whichever host `source.repo` names through a GitHub/Forgejo/Gitea dialect, `disablePush` removes it. Coins a noun and a screen to hold the token; covers customers' repos).
@@ -22256,6 +22334,18 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2206"></a>2026-11-16 · `FJS-D2206` — Q4 — SMS reminders — At cost, passed through.
+
+Asked in [`IDEAS/group-kit.md`](IDEAS/group-kit.md) § Open questions. **A** was picked over **B** (defer and use email only).
+
+Against the recommendation (**B**): Against the recommendation (B), and A changed: SMS ships, sent through conduit-telnyx from the kit's own number with the cost covered by donations (Q8), so the kit bills no group and holds no group money. A group may connect its own Telnyx key and number instead. ntfy.sh push is offered beside SMS for members who want a non-SMS option. STOP is honored.
+
+### <a id="fjs-d2200"></a>2026-11-16 · `FJS-D2200` — Q2 — Stripe account model — Controller properties / Accounts v2, set to behave like Standard.
+
+Asked in [`IDEAS/group-kit.md`](IDEAS/group-kit.md) § Open questions. **C** was picked over **A** (legacy Standard), **B** (Express: Stripe-hosted onboarding, platform carries liability, extra cost per account).
+
+As recommended: Provisional on step 0.2: the controller property values (losses.payments, fee payer) and what the platform pays per account are recorded first; reopen to A if Accounts v2 costs a migration.
 
 ### <a id="fjs-d2179"></a>2026-11-15 · `FJS-D2179` — How does a plain-JS framework subpath get types for an app installed from the package host — Generate them: `tsc --allowJs --declaration --emitDeclarationOnly` over the JS kits, committed beside the source, with a snapshot check that fails when the emit differs. Mostly `any` where the JS carries no JSDoc, but never wrong and no hand upkeep; a second artifact per kit.
 

@@ -141,13 +141,12 @@ A Provider that dials you — Stripe posting an event, a carrier posting a recei
 - the **app** declares the `Receiver` — the path, which credential verifies a delivery, whose tenant an event is about, and what to do with it.
 - **conduit** mounts the route and runs the order: credential → verify → parse → owner → receipt → apply → mark.
 
-```ts
-// the connector's half
-export const stripeDialect: Dialect<string, StripeEvent> = {
-  verify:    (d, secret, { now }) => verifyStripeSignature({ rawBody: d.rawBody, header: d.headers['stripe-signature'], secret, now }),
-  parse:     (d)                  => isEvent(d.body) ? { id: d.body.id, type: d.body.type, payload: d.body } : null,
-  dedupeKey: (_d, ev)             => ev.id,
-}
+```ts fragment
+// the connector's half is `stripeDialect` from @frontierjs/conduit-stripe:
+//   verify     Stripe-Signature over the raw bytes, the clock passed in
+//   parse      the event out of the body, or null
+//   dedupeKey  the event id
+import { stripeDialect } from '@frontierjs/conduit-stripe'
 
 // the app's half
 app.conduit.receive({
@@ -160,11 +159,13 @@ app.conduit.receive({
 })
 ```
 
-`credential` is a ref for the ordinary one-key relationship, or a function choosing the key for ONE delivery before the body is believed — a per-subscription secret the path names: `credential: d => keyFor(d.route.hookId)`. `null` refuses.
+`credential` is a ref for the ordinary one-key relationship, or a function choosing the key for ONE delivery before the body is believed — a per-subscription secret the path names: `credential: d => keyFor(d.route.hookId)`. `null` refuses. `owner` is handed the delivery too, so a path that names the tenant names the receipt's owner: `owner: (ev, cred, d) => d.route.productId`.
 
 **What the route answers.** A refusal — forged, stale, a replayed nonce, a key that did not resolve — is a 401 with one sentence, `not verified`; the reason goes to the log (`observers.onReceived`), never to the sender. A body that is not an event is 200 and `ignored`, because a 4xx retries forever. An `apply` that throws is a 500 and the sender retries.
 
 **Dedupe means applied, not seen.** Conduit keeps a receipt per delivery in its store (`conduit_receipts` beside `conduit_targets`), written before `apply` and marked after it. Only an applied receipt makes a redelivery a `duplicate`; a receipt left unapplied by a throw is applied again by the retry. So applying twice must be safe, and the subject's own unique key inside your `apply` is what makes it so — one fact can also arrive as two deliveries with two ids, which no receipt can see. `apply` answers `applied`, `ignored` (recorded and done, marked too) or `parked` (left unapplied on purpose: a receipt that arrived before the send that minted its id).
+
+The store's `receipts(provider, owner, limit = 50)` reads one owner's receipts under one Provider, newest first, applied or not (read `applied_at`), so "has a signed delivery for this owner ever landed?" needs no copy of your own. A receipt whose owner was `null` is never returned.
 
 A dialect whose signed timestamp bounds freshness needs nothing more; one whose scheme carries a nonce (FrontierJS's own) is handed `seenNonce(nonce, keepSeconds)` in `verify`'s context — one memory per receiver, kept for twice the tolerance.
 

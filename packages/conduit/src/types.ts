@@ -456,6 +456,10 @@ export interface ConduitStore {
   receipt(provider: string, key: string): Promise<Receipt | null>
   record(receipt: Receipt): Promise<void>
   markApplied(provider: string, key: string, at: number): Promise<void>
+  // One owner's receipts under one Provider, newest `received_at` first,
+  // applied or not — the caller reads `applied_at`. A receipt whose owner is
+  // null belongs to no owner and is never returned. `limit` defaults to 50.
+  receipts(provider: string, owner: string, limit?: number): Promise<Receipt[]>
 }
 
 /** What a Receiver remembers of one delivery. Times are unix ms. */

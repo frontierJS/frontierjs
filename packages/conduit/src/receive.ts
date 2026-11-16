@@ -117,9 +117,11 @@ export interface Receiver<Cred = string, Ev extends ReceivedEvent = ReceivedEven
   /**
    * Whose tenant the event is about, found AFTER verify: the vendor names our
    * number or our mailbox, never our tenant. Optional for an app with one.
-   * `null` is an event about nothing of ours, still recorded.
+   * `null` is an event about nothing of ours, still recorded. `delivery` is
+   * for an owner the path names — `/webhooks/stripe/{productId}` reads
+   * `delivery.route.productId`, trustworthy only because verify has passed.
    */
-  owner?:     (ev: Ev, cred: Cred) => Owner | null | Promise<Owner | null>
+  owner?:     (ev: Ev, cred: Cred, delivery: Delivery) => Owner | null | Promise<Owner | null>
   apply(ev: Ev, ctx: { owner: Owner | null; cred: Cred; delivery: Delivery }): Outcome | Promise<Outcome>
 }
 
@@ -304,7 +306,7 @@ export async function accept<Cred, Ev extends ReceivedEvent, Owner>(
   const ev = await r.dialect.parse(d, cred)
   if (!ev) return { status: 200, body: { received: true, outcome: 'ignored' }, result: 'ignored', reason: 'not an event envelope' }
 
-  const owner = (await r.owner?.(ev, cred)) ?? null
+  const owner = (await r.owner?.(ev, cred, d)) ?? null
   const key   = r.dialect.dedupeKey(d, ev, cred)
   return land(r.provider, ev, owner, key, now, deps.store, 'the sender will retry', () => r.apply(ev, { owner, cred, delivery: d }))
 }

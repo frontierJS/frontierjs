@@ -200,6 +200,10 @@ title: Local repositories
       await $.sleep(500)
     }
   }
+  async function openInLathe(p) {
+    error = null
+    try { await workbench.service.invoke('open', p.id) } catch (err) { error = err.message }
+  }
   async function togglePin(r) {
     try {
       if (pinned[r.path]) await workbench.service.invoke('unpin', pinned[r.path])
@@ -292,8 +296,12 @@ title: Local repositories
               </span>
               <span class="text-sm text-muted">{t.repo.lastCommitAt ? ago(t.repo.lastCommitAt) : 'no commits'}</span>
             {/if}
-            {#if launcher(t.pin.id, 'app') || launcher(t.pin.id, 'desktop')}
+            {#if !t.pin.missing || launcher(t.pin.id, 'app') || launcher(t.pin.id, 'desktop')}
               <span class="local-repos-tile-run" role="group" aria-label={`Run ${t.pin.name}`}>
+                {#if !t.pin.missing}
+                  <Button size="xs" treatment="outlined" id={`local-repos-open-${t.pin.id}`}
+                          title={`Open ${tilde(t.pin.path)} in Lathe`} onclick={() => openInLathe(t.pin)}>Open</Button>
+                {/if}
                 {#each [launcher(t.pin.id, 'app'), launcher(t.pin.id, 'desktop')].filter(Boolean) as row (row.id)}
                   <Button size="xs" treatment="outlined" tone={isUp(t.pin.id, row) ? 'success' : undefined}
                           disabled={runWait[`${t.pin.id} ${row.id}`] || (row.kind === 'desktop' && isUp(t.pin.id, row))}

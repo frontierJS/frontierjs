@@ -46,6 +46,7 @@
 //   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy?, preview? }
 //   POST /workbench/:id           run         { row } — started detached by row id, never by command
 //   POST /workbench/:id           halt        { row } — stopped, its process group with it; on one already stopped, forgotten
+//   POST /workbench/:id           open        the checkout's folder opened in Lathe, on this machine's desktop
 //
 // A preview's settings name a project and a machine in Basecamp, and cutting
 // one is Basecamp's `apps.preview`, dialed as a signed peer (`$.app.basecamp`).
@@ -53,7 +54,9 @@
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
+import { spawn }                   from 'node:child_process'
 import { existsSync }              from 'node:fs'
+import { homedir }                 from 'node:os'
 import { dirname, join }           from 'node:path'
 import { describeRepo }            from '../../domain/local/local-git.ts'
 import { doneScript, refOf }       from '../../domain/workbench/workbench.ts'
@@ -61,7 +64,7 @@ import { readAtlas, nextRows }     from '../../domain/atlas/atlas.ts'
 import type { Opened, PreviewSettings } from '../../domain/workbench/workbench-preview.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan', 'importable', 'nextFor']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'importSession', 'setPackage', 'setPlace', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'importSession', 'setPackage', 'setPlace', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt', 'open']
 
 const wb = () => $.app.workbench
 
@@ -80,6 +83,14 @@ function previewOf(p: ReturnType<typeof pinned>): { opened: Opened, settings: Pr
   if (!p.opened?.appId || !p.opened.environmentId) throw new Conflict(`${p.name} is not a preview — fork one with { preview: true }`)
   if (!parent?.preview) throw new Conflict(`${p.name}'s checkout no longer carries preview settings`)
   return { opened: p.opened as Opened, settings: parent.preview }
+}
+
+// The API may run without ~/.local/bin on its PATH, where Lathe's installer
+// writes its launcher, so a bare `lathe` lookup alone would refuse a laptop
+// that has it.
+function latheBin(): string | null {
+  const local = join(homedir(), '.local', 'bin', 'lathe')
+  return Bun.which('lathe') ?? (existsSync(local) ? local : null)
 }
 
 export default createService({
@@ -380,6 +391,18 @@ export default createService({
     const r = wb().setPlace(p.id, $.data)
     if ('refused' in r) throw new BadRequest(r.refused)
     return r
+  },
+
+  async open() {
+    const p = pinned()
+    if (!existsSync(p.path)) throw new Conflict(`${p.name}'s folder is gone`)
+    const bin = latheBin()
+    if (!bin) throw new Conflict('lathe is not on PATH — install it with desktop/deploy/install.mjs')
+    // An 'error' event with no listener throws on the API's own loop.
+    const child = spawn(bin, [p.path], { detached: true, stdio: 'ignore' })
+    child.on('error', () => {})
+    child.unref()
+    return { opened: p.path }
   },
 
   async seen() {

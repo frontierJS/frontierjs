@@ -229,6 +229,41 @@ function orderCases(name: string, makeStore: () => ConduitStore) {
       expect((await store.receipt('p', 'k'))?.applied_at).toBe(3)
       expect(await store.receipt('p', 'other')).toBeNull()
     })
+
+    it('receipts(provider, owner) answers that owner under that Provider, newest first, applied or not, bounded by limit', async () => {
+      const store = makeStore()
+      await store.init()
+      const row = (provider: string, key: string, owner: string | null, received_at: number, applied_at: number | null = received_at) =>
+        store.record({ provider, key, event_type: 'paid', owner, received_at, applied_at })
+      await row('acme', 'a1', 'shop-1', 100)
+      await row('acme', 'a2', 'shop-1', 300, null)
+      await row('acme', 'a3', 'shop-1', 200)
+      await row('acme', 'b1', 'shop-2', 400)
+      await row('other', 'o1', 'shop-1', 500)
+      await row('acme', 'n1', null, 600)
+
+      const mine = await store.receipts('acme', 'shop-1')
+      expect(mine.map(r => r.key)).toEqual(['a2', 'a3', 'a1'])
+      expect(mine[0]).toEqual({ provider: 'acme', key: 'a2', event_type: 'paid', owner: 'shop-1', received_at: 300, applied_at: null })
+      expect((await store.receipts('acme', 'shop-1', 2)).map(r => r.key)).toEqual(['a2', 'a3'])
+      expect((await store.receipts('other', 'shop-1')).map(r => r.key)).toEqual(['o1'])
+      expect((await store.receipts('acme', 'shop-9'))).toEqual([])
+      // A null owner is no owner: no string reaches it, 'null' included.
+      expect((await store.receipts('acme', 'null'))).toEqual([])
+      expect((await store.receipts('acme', '')).length).toBe(0)
+    })
+
+    it('receipts() defaults to 50, and a tie on received_at answers the later-recorded receipt first', async () => {
+      const store = makeStore()
+      await store.init()
+      for (let i = 0; i < 60; i++)
+        await store.record({ provider: 'acme', key: `k${i}`, event_type: 't', owner: 'o', received_at: 1000, applied_at: null })
+      const page = await store.receipts('acme', 'o')
+      expect(page).toHaveLength(50)
+      expect(page[0].key).toBe('k59')
+      expect(page[49].key).toBe('k10')
+      expect(await store.receipts('acme', 'o', 0)).toEqual([])
+    })
   })
 }
 
@@ -254,6 +289,22 @@ describe('accept(): the rest of the order', () => {
     const d = await delivery({ id: 'e1', type: 't', ref: 'r' })
     await c.accept(PATH, d, NOW)
     expect(got).toMatchObject({ ev: { id: 'e1', type: 't' }, ctx: { owner: 'tenant-1', cred: SECRET, delivery: { rawBody: d.rawBody } } })
+  })
+
+  it('owner is handed the delivery, so an owner the path names lands on the receipt and receipts() finds it', async () => {
+    const store = createSQLiteStore(new Database(':memory:'))
+    const c = createConduit({ store, credentials: createStaticResolver({ HOOK: SECRET }) })
+    c.receive<string, AcmeEvent, string>({
+      provider: 'acme', path: '/webhooks/acme/{productId}', dialect: acme, credential: 'HOOK',
+      owner: (_ev, _cred, d) => d.route.productId ?? null,
+      apply: () => 'applied',
+    })
+    await c.init()
+    const d = await delivery({ id: 'evt_p', type: 'paid' }, { path: '/webhooks/acme/prod_7', route: { productId: 'prod_7' } })
+    expect((await c.accept('/webhooks/acme/{productId}', d, NOW)).result).toBe('applied')
+    expect(await store.receipts('acme', 'prod_7')).toEqual([
+      { provider: 'acme', key: 'evt_p', event_type: 'paid', owner: 'prod_7', received_at: NOW * 1000, applied_at: NOW * 1000 },
+    ])
   })
 
   it('stats().received counts every result per path, and an observer sees each one with its reason', async () => {

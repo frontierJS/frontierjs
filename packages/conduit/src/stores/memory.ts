@@ -66,5 +66,16 @@ export function createMemoryStore(): ConduitStore {
       const found = receipts.get(receiptKey(provider, key))
       if (found) receipts.set(receiptKey(provider, key), { ...found, applied_at: at })
     },
+
+    // Reversed before the stable sort so a tie on received_at answers the
+    // later-recorded receipt first, as the SQLite store's rowid tiebreak does.
+    async receipts(provider, owner, limit = 50) {
+      return [...receipts.values()]
+        .filter(r => r.provider === provider && r.owner === owner)
+        .reverse()
+        .sort((a, b) => b.received_at - a.received_at)
+        .slice(0, Math.max(0, Math.floor(limit)))
+        .map(r => ({ ...r }))
+    },
   }
 }

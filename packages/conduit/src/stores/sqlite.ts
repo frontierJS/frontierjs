@@ -36,6 +36,13 @@ const CREATE_RECEIPTS = `
   )
 `
 
+// receipts() reads one owner's rows under one Provider, newest first; without
+// this a table that grows by every delivery is scanned whole per read.
+const CREATE_RECEIPTS_BY_OWNER = `
+  CREATE INDEX IF NOT EXISTS conduit_receipts_owner
+    ON conduit_receipts (provider, owner, received_at)
+`
+
 // The descriptor's optional fields, carried as one JSON column.
 //
 // One column rather than one per field, because every one of these is optional
@@ -76,6 +83,7 @@ export function createSQLiteStore(db: Database): ConduitStore {
   async function init() {
     db.run(CREATE_TABLE)
     db.run(CREATE_RECEIPTS)
+    db.run(CREATE_RECEIPTS_BY_OWNER)
     ensureExtraColumn(db)
   }
 
@@ -160,7 +168,17 @@ export function createSQLiteStore(db: Database): ConduitStore {
     `, { $provider: provider, $key: key, $at: at })
   }
 
-  return { init, get, set, delete: deleteTarget, list, touch, receipt, record, markApplied }
+  // A negative LIMIT is no limit in SQLite, so the bound is clamped first.
+  async function receipts(provider: string, owner: string, limit = 50): Promise<Receipt[]> {
+    return db.query(`
+      SELECT provider, key, event_type, owner, received_at, applied_at FROM conduit_receipts
+      WHERE provider = $provider AND owner = $owner
+      ORDER BY received_at DESC, rowid DESC
+      LIMIT $limit
+    `).all({ $provider: provider, $owner: owner, $limit: Math.max(0, Math.floor(limit)) }) as Receipt[]
+  }
+
+  return { init, get, set, delete: deleteTarget, list, touch, receipt, record, markApplied, receipts }
 }
 
 // ─── Internal ────────────────────────────────────────────────

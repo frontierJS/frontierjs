@@ -858,3 +858,37 @@ Records of the finished phases, moved verbatim 2026-11-05; the plan keeps each s
     releases (2.4), so it moves when 2.4 touches that phase, and 2.6's lane
     uses `workspaceDirs()`. `docs/CI.md` has no connector-contract row to
     update; its `FJS-026` allowance is untouched.
+
+## IDEAS/paylode.md
+
+### Phase 2 — Where customers came from
+
+**Built 2026-11-16, uncommitted.** `bun web/test/drive-phase2.js` passes
+71/0 at 390×844 on a throwaway database with a stand-in junction sender
+(`web/test/groupkit-sender.js`), and `bun run check` is green (49 API
+tests) with three `service-as-system` warnings that wait on `FJS-D2208`.
+Choices made while building, by the main session with the owner away, each
+reopenable:
+- The Stripe secret is `@secret`. An owner cannot patch a `@secret` column,
+  so `products.connectStripe` writes it through system code (`FJS-D2208`).
+- Rule precedence is UTM source, then referrer, then the stated answer; the
+  longest matching pattern wins. UTM source must equal the pattern; the
+  other two contain it.
+- Plausible's sources are sorted by the same rules, so a rule reads
+  `reddit`, not `reddit.com`, to match Plausible's `Reddit`. Unmatched
+  sources report as Unattributed. Each product names its own Plausible site.
+- A bet's window ends at its planned end, or the day it was killed or
+  finished when that came first, so the next bet's window never overlaps
+  it. Payers are distinct paying customers whose payment falls inside it,
+  credited to their signup's channel whenever that signup arrived.
+- A checkout that arrives before its signup is parked for Stripe to retry;
+  an invoice before its checkout is stored and joined later; a zero-amount
+  invoice is ignored.
+- Classifying with a rule also credits the rest of that product's queue the
+  rule matches. Connecting signups again mints a new secret.
+Reopen paths: the stated answer could outrank a referrer where a rule
+matches it (community referrers are often stripped), and Phase 4 waits until
+the owner says drafting, not measurement, is the slow part.
+Not driven: a real Stripe test-mode payment and the real Group kit form
+(both the owner's), visitor counts from a live Plausible site, and lists
+past 100 signups (no pager yet).

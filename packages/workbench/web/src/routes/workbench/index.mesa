@@ -1503,6 +1503,10 @@ title: Workbench
                      label={dotLabel(p.id)} />
                 {p.name}
               </h2>
+              {#if !p.missing}
+                <Button size="xs" treatment="ghost" id={`workbench-open-${p.id}`} onclick={() => act('open', p)}
+                        title={`Open ${p.path} in Lathe`}>Open</Button>
+              {/if}
               {#if !isSlim(p.id)}
                 <span class="workbench-viewmenu">
                   <DropdownMenu placement="bottom-start">

@@ -10,30 +10,47 @@
 import { createHmac } from 'node:crypto'
 import { createConduit, createStaticResolver } from '@frontierjs/conduit'
 import { results, report, control, DRIVE_RESILIENCE } from '../../lib/drive.ts'
-import { startStripeSink } from '../sink.ts'
-import { stripeTarget, bindSend, createPaymentIntent, createRefund, verifyStripeSignature, tax } from '../src/index.ts'
+import { startStripeSink, parseForm } from '../sink.ts'
+import { stripeTarget, bindSend, createPaymentIntent, createRefund, verifyStripeSignature, stripeDialect, stripeObject, tax,
+  createConnectedAccount, createAccountLink, retrieveAccountStatus, accountStatus, createCheckoutSession, type StripeAccountStatus } from '../src/index.ts'
 
 const { got, t } = results()
-const KEY = 'sk_test_dev', HOOK_SECRET = 'whsec_dev'
+const KEY = 'sk_test_dev', HOOK_SECRET = 'whsec_dev', CONNECT_SECRET = 'whsec_connect_dev'
 
-// ── the receiving end: a raw route running the pure verifier ─────────────
+// ── the receiving end: the dialect through conduit's own order (FJS-D899) ─
+// The route stands in for the plugin's: it hands the delivery to `accept()`,
+// so the sink's redelivery is deduped by a receipt and not by this file.
 const received: string[] = []
 const receiver = Bun.serve({
   port: 0,
   async fetch(req) {
-    const raw = await req.text()
-    const v = verifyStripeSignature({ rawBody: raw, header: req.headers.get('stripe-signature'), secret: HOOK_SECRET, now: Math.floor(Date.now() / 1000) })
-    if (!v.ok) return Response.json({ error: 'invalid signature' }, { status: 401 })
-    // Redelivery is ordinary; the id is the dedupe and the answer is 200 either way.
-    if (!received.some(r => r.endsWith(':' + v.event.id))) received.push(`${v.event.type}:${v.event.id}`)
-    return Response.json({ received: true, id: v.event.id, type: v.event.type })
+    const raw = await req.text(), url = new URL(req.url)
+    const r = await conduit.accept(url.pathname, { method: req.method, path: url.pathname, query: url.search, route: {}, headers: Object.fromEntries(req.headers), rawBody: raw, body: JSON.parse(raw) }, Math.floor(Date.now() / 1000))
+    return Response.json(r.body, { status: r.status })
   },
 })
 
-const sink = startStripeSink({ key: KEY, webhookSecret: HOOK_SECRET, hookUrl: `http://127.0.0.1:${receiver.port}/webhooks/stripe`, taxExpiresInSeconds: 1 })
+const sink = startStripeSink({ key: KEY, webhookSecret: HOOK_SECRET, hookUrl: `http://127.0.0.1:${receiver.port}/webhooks/stripe`, taxExpiresInSeconds: 1,
+  connectWebhookSecret: CONNECT_SECRET, connectHookUrl: `http://127.0.0.1:${receiver.port}/webhooks/stripe-connect` })
 const ctl  = control(sink.url)
-const conduit = createConduit({ credentials: createStaticResolver({ STRIPE_SECRET_KEY: KEY }), ...DRIVE_RESILIENCE })
+const conduit = createConduit({ credentials: createStaticResolver({ STRIPE_SECRET_KEY: KEY, STRIPE_WEBHOOK_SECRET: HOOK_SECRET, STRIPE_CONNECT_WEBHOOK_SECRET: CONNECT_SECRET }), ...DRIVE_RESILIENCE })
 await conduit.register(stripeTarget({ address: sink.url }))
+conduit.receive({
+  provider: 'stripe', path: '/webhooks/stripe', dialect: stripeDialect, credential: 'STRIPE_WEBHOOK_SECRET',
+  apply(ev) { received.push(`${ev.type}:${ev.id}`); return 'applied' },
+})
+// The Connect endpoint: a second endpoint at Stripe with its own secret, so a second Receiver under its own provider.
+const connectReceived: string[] = []
+let lastStatus: StripeAccountStatus | null = null, completedFor = ''
+conduit.receive({
+  provider: 'stripe-connect', path: '/webhooks/stripe-connect', dialect: stripeDialect, credential: 'STRIPE_CONNECT_WEBHOOK_SECRET',
+  apply(ev) {
+    connectReceived.push(`${ev.account}:${ev.type}`)
+    const a = stripeObject(ev, 'account.updated'); if (a) lastStatus = accountStatus(a)
+    const cs = stripeObject(ev, 'checkout.session.completed'); if (cs) completedFor = `${ev.account}:${cs.client_reference_id}`
+    return 'applied'
+  },
+})
 const send = bindSend(conduit)
 
 try {
@@ -107,6 +124,91 @@ try {
   t('verify.movedClock',  { past: v(`t=${now - 400},v1=${sig(now - 400)}`).ok, future: v(`t=${now + 400},v1=${sig(now + 400)}`).ok, edge: v(`t=${now - 300},v1=${sig(now - 300)}`).ok })
   t('verify.unsigned',    v(null).ok)
   t('verify.rotation',    v(`t=${now},v1=${sig(now, 'whsec_old')},v1=${sig(now)}`).ok)
+  let nanThrew = false
+  try { verifyStripeSignature({ rawBody: body, header: `t=${now - 9999},v1=${sig(now - 9999)}`, secret: HOOK_SECRET, now, toleranceSeconds: Number(undefined) }) } catch { nanThrew = true }
+  t('verify.unsetToleranceThrows', nanThrew)
+
+  // A forged delivery at the dialect's route is one 401 and applies nothing; a body that is not an event is ignored.
+  const at = (header: string, raw = body) => conduit.accept('/webhooks/stripe', { method: 'POST', path: '/webhooks/stripe', query: '', route: {}, headers: { 'stripe-signature': header }, rawBody: raw, body: JSON.parse(raw) }, now)
+  const before = received.length
+  const forged = await at(`t=${now},v1=${sig(now, 'whsec_wrong')}`)
+  const notEvent = JSON.stringify({ object: 'balance' })
+  const ignored = await at(`t=${now},v1=${createHmac('sha256', HOOK_SECRET).update(`${now}.${notEvent}`).digest('hex')}`, notEvent)
+  t('dialect.refusesAndIgnores', { forged: forged.status, ignored: ignored.result, applied: received.length - before })
+
+  const paid = { type: 'invoice.paid', payload: { id: 'evt_i', object: 'event' as const, type: 'invoice.paid', created: 1, data: { object: { id: 'in_1', object: 'invoice', status: 'paid', amount_paid: 900, currency: 'usd', customer: 'cus_1' } } } }
+  t('dialect.objectNarrowsByType', { invoice: stripeObject(paid, 'invoice.paid')?.amount_paid, other: stripeObject(paid, 'checkout.session.completed') })
+
+  // ── Connect (FJS-D2200): the club's own account, direct charges, no platform fee ─
+  await ctl.reset()
+  type Seen = { requests: { method: string; path: string; headers: Record<string, string>; body: string }[] }
+  const seenNow = () => ctl.seen() as unknown as Promise<Seen>
+  const asked = { country: 'us', email: 'treasurer@club.test', businessType: 'company' as const, metadata: { club: 'C1' }, key: 'club:C1:account' }
+  const acct = await createConnectedAccount(send, asked)
+  const again = await createConnectedAccount(send, asked)
+  const acctReq = (await seenNow()).requests.find(r => r.path === '/v1/accounts')!
+  const wire = parseForm(acctReq.body) as Record<string, any>
+  let noKey = ''
+  try { await createConnectedAccount(send, { country: 'US', key: '' }) } catch (e) { noKey = (e as Error).message }
+  t('connect.account.standardLike', { ok: !acct.error, sameAccountOnRetry: acct.account?.id === again.account?.id, losses: wire.controller?.losses?.payments, fees: wire.controller?.fees?.payer,
+    requirements: wire.controller?.requirement_collection, dashboard: wire.controller?.stripe_dashboard?.type, noType: !('type' in wire), country: wire.country, key: acctReq.headers['idempotency-key'], unkeyedThrows: /idempotency key/.test(noKey) })
+
+  const club = acct.account!.id
+  const link = await createAccountLink(send, { account: club, refreshUrl: 'https://club.test/onboard/refresh', returnUrl: 'https://club.test/onboard/done' })
+  const linkReq = (await seenNow()).requests.find(r => r.path === '/v1/account_links')!
+  t('connect.link.hostedOnboarding', { url: !!link.link?.url.startsWith('https://connect.stripe.com/'), type: parseForm(linkReq.body).type, onPlatform: !('stripe-account' in linkReq.headers) })
+
+  const unboarded = await retrieveAccountStatus(send, club)
+  await fetch(`${sink.url}/_sink/onboard/${club}`, { method: 'POST' })
+  const after = await retrieveAccountStatus(send, club)
+  t('connect.status.beforeAndAfterOnboarding', { before: { charges: unboarded.status?.chargesEnabled, due: unboarded.status!.currentlyDue.length > 0 },
+    after: { charges: after.status?.chargesEnabled, payouts: after.status?.payoutsEnabled, details: after.status?.detailsSubmitted, due: after.status?.currentlyDue }, fromEvent: (lastStatus as StripeAccountStatus | null)?.chargesEnabled })
+
+  const pi = await createPaymentIntent(send, { amountMinor: 2000, currency: 'usd', reference: 'TIX-1', account: club })
+  await fetch(`${sink.url}/v1/payment_intents/${pi.intent!.id}/confirm`, { method: 'POST', headers: { authorization: `Bearer ${KEY}`, 'stripe-account': club } })
+  const elsewhere = await createRefund(send, { paymentIntentId: pi.intent!.id, amountMinor: 500, key: 'TIX-1:r0' })
+  const refunded  = await createRefund(send, { paymentIntentId: pi.intent!.id, amountMinor: 500, account: club, key: 'TIX-1:r1' })
+  const piReq = (await seenNow()).requests.find(r => r.path === '/v1/payment_intents')!
+  t('connect.directCharge.onTheClubsAccount', { header: piReq.headers['stripe-account'] === club, refundElsewhereNotFound: elsewhere.error?.kind, refunded: refunded.refund?.amount,
+    events: connectReceived.filter(r => r.startsWith(club + ':')).map(r => r.split(':')[1]) })
+
+  let badAcct = ''
+  try { await createPaymentIntent(send, { amountMinor: 100, currency: 'usd', reference: 'x', account: '' }) } catch (e) { badAcct = (e as Error).message }
+  t('connect.emptyAccountRefusedBeforeSending', /acct_/.test(badAcct))
+
+  const cs = await createCheckoutSession(send, { account: club, currency: 'USD', lineItems: [{ name: 'Spring dinner', amountMinor: 3500, quantity: 2 }], successUrl: 'https://club.test/paid',
+    cancelUrl: 'https://club.test/cart', clientReferenceId: 'signup_9', metadata: { event: 'E1' }, paymentMethodTypes: ['card', 'us_bank_account'], expiresAt: new Date(Date.now() + 45 * 60_000) })
+  const csSeen = (await seenNow()).requests.find(r => r.path === '/v1/checkout/sessions')!
+  const csWire = parseForm(csSeen.body) as Record<string, any>
+  await fetch(`${sink.url}/_sink/checkout/${cs.session!.id}/complete`, { method: 'POST' })
+  t('connect.checkout.hostedOnTheClubsAccount', { header: csSeen.headers['stripe-account'] === club, url: !!cs.session?.url?.startsWith('https://checkout.stripe.com/'), total: cs.session?.amount_total,
+    ach: Object.values(csWire.payment_method_types ?? {}), piMetadata: csWire.payment_intent_data?.metadata?.event, completedFor: completedFor === `${club}:signup_9`,
+    expiresIn45: Math.abs(Number(csWire.expires_at) - (Date.now() / 1000 + 45 * 60)) < 60 && cs.session?.expires_at === Number(csWire.expires_at),
+    tooSoonRefused: await createCheckoutSession(send, { currency: 'usd', lineItems: [{ name: 'x', amountMinor: 100 }], successUrl: 'https://x.test', expiresAt: new Date(Date.now() + 60_000) }).then(() => false, e => e instanceof TypeError) })
+
+  // The type refuses a platform fee at compile time; a cast gets past the type, so the runtime refuses it too.
+  // @ts-expect-error -- no platform-fee key on a charge's input (FJS-D2200)
+  const _noFeeOnIntent: Parameters<typeof createPaymentIntent>[1] = { amountMinor: 1, currency: 'usd', reference: 'x', application_fee_amount: 1 }
+  // @ts-expect-error -- nor on a checkout session's
+  const _noFeeOnSession: Parameters<typeof createCheckoutSession>[1] = { currency: 'usd', lineItems: [], successUrl: 'x', transfer_data: { destination: 'acct_x' } }
+  void _noFeeOnIntent; void _noFeeOnSession
+  let feeRefusals = 0
+  for (const attempt of [
+    () => createPaymentIntent(send, { amountMinor: 100, currency: 'usd', reference: 'x', account: club, application_fee_amount: 10 } as never),
+    () => createCheckoutSession(send, { account: club, currency: 'usd', lineItems: [{ name: 'x', amountMinor: 100 }], successUrl: 'https://x.test', transfer_data: { destination: 'acct_x' } } as never),
+    () => createCheckoutSession(send, { account: club, currency: 'usd', lineItems: [{ name: 'x', amountMinor: 100 }], successUrl: 'https://x.test', application_fee_percent: 5 } as never),
+  ]) { try { await attempt() } catch (e) { if (/FJS-D2200/.test((e as Error).message)) feeRefusals++ } }
+  const onClub = (await seenNow()).requests.filter(r => r.headers['stripe-account'])
+  t('connect.noPlatformFee', { refusedBeforeSending: feeRefusals, bodiesOnTheClub: onClub.length, carryingAFeeKey: onClub.filter(r => /application_fee|transfer_data/.test(decodeURIComponent(r.body))).length })
+
+  const cBody = JSON.stringify({ id: 'evt_c', object: 'event', type: 'account.updated', created: 1, account: 'acct_club1', data: { object: {} } })
+  const cHeader = `t=${now},v1=${createHmac('sha256', CONNECT_SECRET).update(`${now}.${cBody}`).digest('hex')}`
+  const withConnect  = verifyStripeSignature({ rawBody: cBody, header: cHeader, secret: CONNECT_SECRET, now })
+  const withPlatform = verifyStripeSignature({ rawBody: cBody, header: cHeader, secret: HOOK_SECRET, now })
+  const platformEvent = v(`t=${now},v1=${sig(now)}`)
+  const crossed = await conduit.accept('/webhooks/stripe', { method: 'POST', path: '/webhooks/stripe', query: '', route: {}, headers: { 'stripe-signature': cHeader }, rawBody: cBody, body: JSON.parse(cBody) }, now)
+  t('connect.webhook.connectSecretAndAccount', { ok: withConnect.ok, account: withConnect.ok ? withConnect.account : 'unverified', platformSecretRefuses: withPlatform.ok,
+    platformEventAccount: platformEvent.ok ? platformEvent.account : 'unverified', crossedEndpoints: crossed.status })
 
   // ── Stripe Tax: the same listener, the same key ────────────────────────
   const lines = [{ amountMinor: 10_000, reference: 'L1', taxCode: 'txcd_10000000' }, { amountMinor: 2_500, reference: 'L2', quantity: 2 }]
@@ -172,6 +274,17 @@ process.exit(report(got, {
   'verify.movedClock':  { past: false, future: false, edge: true },
   'verify.unsigned':    false,
   'verify.rotation':    true,
+  'verify.unsetToleranceThrows': true,
+  'dialect.refusesAndIgnores':   { forged: 401, ignored: 'ignored', applied: 0 },
+  'dialect.objectNarrowsByType': { invoice: 900, other: null },
+  'connect.account.standardLike':            { ok: true, sameAccountOnRetry: true, losses: 'stripe', fees: 'account', requirements: 'stripe', dashboard: 'full', noType: true, country: 'US', key: 'club:C1:account', unkeyedThrows: true },
+  'connect.link.hostedOnboarding':           { url: true, type: 'account_onboarding', onPlatform: true },
+  'connect.status.beforeAndAfterOnboarding': { before: { charges: false, due: true }, after: { charges: true, payouts: true, details: true, due: [] }, fromEvent: true },
+  'connect.directCharge.onTheClubsAccount':  { header: true, refundElsewhereNotFound: 'refused', refunded: 500, events: ['account.updated', 'payment_intent.succeeded', 'charge.refunded'] },
+  'connect.emptyAccountRefusedBeforeSending': true,
+  'connect.checkout.hostedOnTheClubsAccount': { header: true, url: true, total: 7000, ach: ['card', 'us_bank_account'], piMetadata: 'E1', completedFor: true, expiresIn45: true, tooSoonRefused: true },
+  'connect.noPlatformFee':                   { refusedBeforeSending: 3, bodiesOnTheClub: 4, carryingAFeeKey: 0 },
+  'connect.webhook.connectSecretAndAccount': { ok: true, account: 'acct_club1', platformSecretRefuses: false, platformEventAccount: null, crossedEndpoints: 401 },
   'tax.calculation.statesTheTaxAndRecordsIt':      { ok: true, total: 16_588, tax: 1_088, rate: '7.25', lines: [725, 363], expiresSoon: true, notYet: false },
   'tax.transaction.keyCollapsesAndConflicts':      { sameId: true, conflict: 'idempotency_conflict', filed: 1 },
   'tax.transaction.lostResponseReplayedUnderKey':  { ok: true, attempts: 2, filed: 2 },

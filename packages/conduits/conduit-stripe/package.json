@@ -1,7 +1,7 @@
 {
   "name": "@frontierjs/conduit-stripe",
   "version": "0.0.1",
-  "description": "Stripe over @frontierjs/conduit — payment intents, refunds, and the webhook signature.",
+  "description": "Stripe over @frontierjs/conduit — payment intents, refunds, Checkout, Connect, and the webhook signature.",
   "type": "module",
   "license": "MIT",
   "exports": {
