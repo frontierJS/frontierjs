@@ -121,6 +121,7 @@ const HELD     = 7187
 const CADDY    = 'fjs-verify-caddy'
 const CADDY_IMAGE = 'caddy:2'
 const HOST     = 'verify-docker.test'
+const EXTRA_HOST = 'extra.verify-docker.test'
 const ALSO     = 'also.verify-docker.test'
 const WILD     = 'shop.wild.test'
 const IMAGE    = 'traefik/whoami:v1.10.3'
@@ -365,6 +366,7 @@ try {
       OUTPOST_APPS_DIR:     appsDir,
       OUTPOST_UID_FILE:     join(scratch, 'uids.json'),
       OUTPOST_DEPLOY_KEY_DIR: join(scratch, 'deploy-keys'),
+      OUTPOST_RELEASES_DIR: join(scratch, 'releases'),
       OUTPOST_CADDY_ADMIN:  ADMIN,
     },
   })
@@ -410,6 +412,30 @@ try {
     if (!page) await sleep(250)
   }
   t('deploy.answersOnItsPort', /Name: fjs-drive/.test(page ?? ''))
+
+  // ─── revert ─────────────────────────────────────────────────────────────
+
+  // FJS-D2231: two recorded releases, then a revert signed with the box's own
+  // key puts the first back with its secret copied from the running container.
+  // FJS-D2232: rel-b is routed to one more host than rel-a, so the revert has a
+  // host to move the route off.
+  const recorded = (release, env) => call('/deploy', {
+    app_id: APP, ...SLUGS, image: IMAGE, digest: pulled.body?.digest, hosts: release === 'rel-b' ? [HOST, EXTRA_HOST] : [HOST], release_id: release,
+    config: { port: APP_PORT, containerPort: 80, env: { WHOAMI_NAME: 'fjs-drive', DRIVE_RELEASE: release, DRIVE_SECRET: 'kept', ...env } },
+    secret_refs: { DRIVE_SECRET: 'DRIVE_SECRET@1' },
+  })
+  await recorded('rel-a')
+  await recorded('rel-b')
+  t('revert.deployWritesTheReleaseLabel', inspect('{{index .Config.Labels "fjs.release"}}') === 'rel-b')
+  t('revert.refusesTheBoxKeyElsewhere', (await call('/stop', { app_id: APP }, { key: MACHINE.privateKey })).status === 401)
+  const reverted = await call('/revert', { app_id: APP }, { key: MACHINE.privateKey })
+  if (reverted.status !== 200) console.log(reverted.body)
+  const revertedEnv = inspect('{{json .Config.Env}}')
+  t('revert.swapsToTheRecordBefore', reverted.status === 200 && reverted.body?.release_id === 'rel-a' &&
+    inspect('{{index .Config.Labels "fjs.release"}}') === 'rel-a' && revertedEnv.includes('DRIVE_RELEASE=rel-a'))
+  t('revert.copiesTheSecretItShippedWith', reverted.body?.secrets === 'matched' && revertedEnv.includes('DRIVE_SECRET=kept'))
+  const keptRoute = await admin(`/id/${ROUTE}`).then(r => r.ok ? r.json() : null, () => null)
+  t('revert.restoresTheRoute', JSON.stringify(keptRoute?.match?.[0]?.host) === JSON.stringify([HOST]) && reverted.body?.routes === 'restored')
 
   // ─── ingress ────────────────────────────────────────────────────────────
 
@@ -955,6 +981,11 @@ const expected = [
   'pull.answersTheDaemonsDigest',
   'deploy.startsAContainer', 'deploy.namesItForTheSlugs', 'deploy.runsTheDigestItWasGiven', 'deploy.passesTheEnv', 'deploy.capsTheLog',
   'deploy.answersOnItsPort',
+  'revert.deployWritesTheReleaseLabel',
+  'revert.refusesTheBoxKeyElsewhere',
+  'revert.swapsToTheRecordBefore',
+  'revert.copiesTheSecretItShippedWith',
+  'revert.restoresTheRoute',
   'ingress.routeNamesTheHost', 'ingress.answersOverHttpsByName', 'ingress.plainHttpRedirects',
   'ingress.portRefusesOffLoopback', 'ingress.writesItsOwnAccessLog', 'ingress.survivesACaddyRestart',
   'cert.pushAnswersItsNames', 'cert.samePairWritesNothing', 'cert.refusesAKeyThatIsNotItsOwn', 'cert.wildcardServesTheRoutedHost',

@@ -1,6 +1,6 @@
 # conduit-mattermost — state
 
-**Prototyped 2026-10-16; sink-only, drive green (70 rows).** Steps 2.1–2.4 of `IDEAS/mirror-apps.md`.
+**Prototyped 2026-10-16; sink-only, drive green (71 rows).** Steps 2.1–2.4 of `IDEAS/mirror-apps.md`.
 
 - Drive green against: the sink. Fixture: none; a Team Edition runs on a dev slot and its API has not been called from here. Field names are the v4 spec's as read for 0.3, the webhook/slash-command docs as read for 2.2, and the WebSocket event docs as read for 2.3; the wording of each refusal `id` is the sink's reading of it. **Unverified against a real server:** whether an outgoing webhook carries `Authorization: Token` (the docs show it for slash commands only; the verifier takes either source, the sink sends both); whether the socket's upgrade reads `Authorization: Bearer` or only the challenge (the framing sends both and waits for `hello`, the sink runs either); the shapes of `channel_deleted`, `user_added` and `user_removed`.
 - Conforms to the connector contract (`FJS-D890`); amendments it brought: C1 (no default address for a self-hosted vendor; the three REST targets are one bundle, `mattermostTargets` + `bindMattermost(…, { as })`, under C1 — the bundle), C3 (a 403 is the policy's; the wait is a vendor header), C5 (a key in the BODY, the caller's), C8 (a static token with the dedupe key as the replay guard; the key chosen by a non-secret field; a socket has no verifier and its key carries the connection), C12 (the reply to a delivery is a send, never conduit's answer body).

@@ -1,0 +1,36 @@
+<script>
+  // components/chat/ReactionPicker.mesa -- the emoji a post can be given: six quick
+  // ones, then every name lib/emoji.js knows as a grid. No free-form entry: the
+  // server names a reaction by a short name, and a glyph typed in has none. A
+  // DropdownMenu, so choosing one closes it, and Esc and click-away do too. The
+  // trigger is the caller's: the hover bar's smile, or the `+` on a reactions row.
+  import { EMOJI, QUICK, glyphOf } from '../../lib/emoji.js'
+  import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
+
+  export let trigger   = null          // snippet
+  export let placement = 'bottom-end'
+  export let onpick    = undefined     // (name) => void
+</script>
+
+<DropdownMenu {placement} {trigger}>
+  <div class="reaction-grid" role="group" aria-label="Quick reactions" data-reaction-quick>
+    {#each QUICK as name (name)}
+      <DropdownItem onclick={() => onpick?.(name)}><span class="reaction-emoji" aria-label={`React ${name}`} data-emoji={name}>{glyphOf(name)}</span></DropdownItem>
+    {/each}
+  </div>
+  <DropdownSeparator />
+  <div class="reaction-grid reaction-all" role="group" aria-label="All reactions" data-reaction-all>
+    {#each Object.keys(EMOJI) as name (name)}
+      <DropdownItem onclick={() => onpick?.(name)}><span class="reaction-emoji" aria-label={`React ${name}`} title={name} data-emoji={name}>{glyphOf(name)}</span></DropdownItem>
+    {/each}
+  </div>
+</DropdownMenu>
+
+<style>
+  .reaction-grid { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+  .reaction-all { max-inline-size: calc(var(--space-2xl) * 7); max-block-size: calc(var(--space-2xl) * 4); overflow-y: auto; }
+  .reaction-grid :global([role="menuitem"]) { justify-content: center; padding-inline: var(--space-xs); }
+  .reaction-emoji { font-size: var(--text-lg); line-height: 1; }
+</style>

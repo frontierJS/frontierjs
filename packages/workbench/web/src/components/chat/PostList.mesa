@@ -14,6 +14,8 @@
 
   export let channelId = null
   export let people = []
+  export let threadId = null   // the thread open beside the room, marked in the list
+  export let markId = null     // a post a pin jumped to: scrolled to and marked
 
   const NEWEST = 50
 
@@ -26,7 +28,8 @@
     pinned = true
     list = posts.tethered({
       state: 'local',
-      where: { channelExternalId: id },
+      // Roots only, asked of the server: a window of 50 spent on replies would show fewer roots.
+      where: { channelExternalId: id, rootExternalId: null },
       directives: { orderBy: '-createdAt', limit: NEWEST },
     })
   }
@@ -40,6 +43,12 @@
 
   const toBottom = () => { if (el) el.scrollTop = el.scrollHeight }
   $: { rows; if (pinned) requestAnimationFrame(toBottom) }
+  // A jump to a post the window holds; an older one is not loaded, and the caller is told.
+  $: markId, () => {
+    if (!markId) return
+    const el = document.getElementById(`post-${markId}`)
+    if (el) { pinned = false; el.scrollIntoView({ block: 'center' }) }
+  }
   function onScroll() { if (el) pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 40 }
 
   const dayOf = (t) => new Date(t).toDateString()
@@ -61,7 +70,7 @@
     {#if i === 0 || dayOf(rows[i - 1].createdAt) !== dayOf(p.createdAt)}
       <div class="posts-day" role="separator">{dayLabel(p.createdAt)}</div>
     {/if}
-    <PostItem post={p} {people} continuation={continues(rows[i - 1], p)} />
+    <PostItem post={p} {people} continuation={continues(rows[i - 1], p)} selected={p.externalId === threadId} marked={p.externalId === markId} />
   {:else}
     <p class="text-muted center posts-empty">{list.loading ? '…' : 'Nothing yet. Say something.'}</p>
   {/each}

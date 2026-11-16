@@ -1,0 +1,93 @@
+---
+title: Threads
+---
+<script>
+  // /messages/threads/ -- the threads the reader follows, newest reply first, the
+  // ones with something unread marked. A Thread row is the reader's own view of a
+  // thread (`isFollowing`, its unread counts), and the root it belongs to is a Post
+  // with replies; the two are joined here, so a reply, a follow from another client or
+  // a read is a push into either tether and the list moves with no re-read.
+  import { posts } from '../../../resources/Post.mesa'
+  import { getLists, channelLabel, me, personName, threadHref, setFollowing } from '../../../lib/chat.js'
+  import { ago } from '../../../lib/datetime.js'
+  import Icon from '../../../components/Icon.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  const lists = getLists()
+  const roots = posts.tethered({
+    state: 'local', all: true,
+    where: { rootExternalId: null, replyCount: { gt: 0 } },
+    directives: { orderBy: '-lastReplyAt', limit: 200 },
+  })
+  $.onDestroy(() => roots.destroy())
+
+  $: people = lists.people.rows
+  $: byRoot = new Map(roots.rows.filter(p => !p.deletedAt).map(p => [p.externalId, p]))
+  $: shown = lists.threads.rows
+    .filter(t => t.isFollowing && byRoot.has(t.rootExternalId))
+    .map(t => ({ t, post: byRoot.get(t.rootExternalId) }))
+    .sort((a, b) => String(b.t.lastReplyAt ?? '').localeCompare(String(a.t.lastReplyAt ?? '')))
+  $: loading = roots.loading || lists.threads.loading
+
+  const where  = (c) => channelLabel(lists.channels.rows.find(x => x.externalId === c), people, me())
+  const flat   = (s, n = 160) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n)
+  const isNew  = (t) => t.unreadReplies > 0 || t.unreadMentions > 0
+
+  let error = null
+  async function unfollow(t) {
+    error = null
+    try { await setFollowing(t.rootExternalId, false) } catch (e) { error = e.message }
+  }
+</script>
+
+<header class="threads-head">
+  <h1 class="h4 cluster gap-xs"><Icon name="thread" /> Threads</h1>
+  <p class="text-sm text-muted">Threads you follow: the ones you started, replied in or were mentioned in, unless you unfollowed them, and any you followed.</p>
+</header>
+
+<div class="threads" data-threads>
+  {#if error}<Alert tone="danger">{error}</Alert>{/if}
+  {#if roots.error}<Alert tone="danger">{roots.error.message}</Alert>{/if}
+  {#each shown as { t, post } (t.rootExternalId)}
+    <div class="thread-item" data-thread-row={t.rootExternalId}>
+      <a class="card thread-row stack gap-xs" class:unread={isNew(t)} href={threadHref(post)}>
+        <div class="cluster gap-xs text-sm text-muted">
+          <span class="thread-where">{where(post.channelExternalId)}</span>
+          <span>· {ago(t.lastReplyAt)}</span>
+          {#if isNew(t)}<span class="badge primary thread-new" data-thread-new>New</span>{/if}
+        </div>
+        <div class="stack gap-2xs">
+          <strong>{personName(post.profileExternalId, people)}</strong>
+          <p class="thread-root">{flat(post.message)}</p>
+        </div>
+        <strong class="text-sm thread-count">{post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}</strong>
+      </a>
+      <button type="button" class="btn ghost xs thread-unfollow" title="Stop following: it leaves this page; a mention still reaches you" data-thread-unfollow onclick={() => unfollow(t)}><Icon name="notify" /> Unfollow</button>
+    </div>
+  {:else}
+    {#if !loading}
+      <EmptyState title="No threads yet">
+        Reply in a thread, start one that gets an answer, or follow one, and it collects here.
+      </EmptyState>
+    {:else}
+      <p class="text-muted center">…</p>
+    {/if}
+  {/each}
+</div>
+
+<style>
+  .threads-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .threads-head h1, .threads-head p { margin: 0; }
+  .threads-head h1 { align-items: center; }
+  .threads { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+  .thread-row { color: inherit; text-decoration: none; }
+  .thread-row:hover, .thread-row:focus-visible { background: var(--surface-sunken); }
+  .thread-where { font-weight: var(--label-font-weight); }
+  .thread-new { margin-inline-start: auto; margin-inline-end: calc(var(--space-2xl) * 2); }
+  /* Unfollow sits in the row's top corner, beside the link rather than in it. */
+  .thread-item { position: relative; }
+  .thread-unfollow { position: absolute; inset-block-start: var(--space-xs); inset-inline-end: var(--space-xs); }
+  .thread-root { margin: 0; }
+  .thread-count { color: var(--color-primary); }
+</style>

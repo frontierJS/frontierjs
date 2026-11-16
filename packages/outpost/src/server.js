@@ -21,7 +21,7 @@
  * would be a second way to send `/exec`.
  */
 
-import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
+import { verifyRequest, nonceMemory, publicKeyOf } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector, checkRunConfig, checkSwap, swapFor, EXPOSED_LABEL } from './docker.js'
 import { createStatic, validName } from './static.js'
 import { createIngress, checkRouteAppId, hostsOf, pathsOf, redirectsOf, removingOf } from './ingress.js'
@@ -91,17 +91,6 @@ function secretRefsOf(refs) {
   return refs
 }
 
-/** The public half of this machine's Ed25519 key, from the private half it
- *  holds. `null` when there is none or it does not parse: `/revert` is then
- *  Basecamp's alone, as every other route is. */
-async function publicHalf(privateKey) {
-  if (typeof privateKey !== 'string' || !privateKey) return null
-  try {
-    const key = await crypto.subtle.importKey('pkcs8', Buffer.from(privateKey, 'base64url'), { name: 'Ed25519' }, true, ['sign'])
-    return (await crypto.subtle.exportKey('jwk', key)).x ?? null
-  } catch { return null }
-}
-
 /** The routes this machine's own key may sign (`FJS-D2231`). */
 const BOX_SIGNED = new Set(['POST /revert'])
 
@@ -117,6 +106,8 @@ export function createOutpostServer(config, {
 } = {}) {
 
   const TOLERANCE_S = 300
+  // null (no key, or one that does not parse) leaves /revert Basecamp's alone, as every other route is.
+  const boxKey      = publicKeyOf(config.signingKey)
   const exclusive   = docker.exclusive ?? ((_appId, fn) => fn())
   // Per process, like basecamp's own: a captured signature is dead in five
   // minutes either way, and a shared store is the change to make when an
@@ -353,10 +344,111 @@ export function createOutpostServer(config, {
         const recorded = keepRecord(appId, {
           release_id: releaseId, digest: started.digest ?? built.digest ?? null, image,
           config: body.config ?? {}, secret_refs: secretRefs, rollback: body.rollback === true,
+          hosts, paths, redirects, noindex,
         })
         return { ...started, hosts, paths, commit_sha: built.commitSha ?? null, schema_hash: built.schemaHash ?? null,
                  pivot: pivot?.verdict ?? null, swap_reason: reason, release_id: releaseId, recorded,
                  ...(cache ? { cache } : {}) }
+      })
+    },
+
+    // A revert with Basecamp down (`FJS-D2231`), from this machine's own record
+    // of the app's releases. `outpost revert` signs it with the box's key.
+    // Nothing is stopped until the plan holds: a record, a target that is not
+    // the one running, its image on disk, and every secret it shipped with
+    // held by a container started with exactly those refs (`FJS-D2217`) — or
+    // `with_todays_secrets`, which starts it on the running values and records
+    // the refs they are. A record that kept its routes (`FJS-D2232`) serves
+    // the release under them, through the call `/deploy` makes; an older one
+    // has none, so the live routes are kept and only follow the container's port.
+    'POST /revert': async (body) => {
+      const appId = body.app_id
+      if (typeof appId !== 'string' || !appId.trim()) throw new Error('a revert needs the app_id it reverts')
+      if (body.release_id != null && (typeof body.release_id !== 'string' || !body.release_id.trim()))
+        throw new Error('release_id names a cached release, or is left out for the newest one not running')
+      const asked = body.release_id?.trim() ?? null
+
+      return exclusive(appId, async () => {
+        const records = releases.read(appId)
+        if (!records.length)
+          throw refusal(`this machine holds no release record of ${appId} — a release deployed before the cache, or one whose image a prune took, is not kept here. Revert from Basecamp`)
+        const { live, replaced } = await docker.started({ appId })
+        if (!live) throw refusal(`${appId} has no container on this machine, so there is nothing to revert from and no secret to copy — deploy it from Basecamp`)
+
+        // The refs a container holds are the ones its own Release recorded.
+        const holder = (c) => c && { release_id: c.release_id, env: c.env,
+          secret_refs: c.release_id ? records.find(r => r.release_id === c.release_id)?.secret_refs : undefined }
+        const target = asked ?? (live.release_id ? records.find(r => r.release_id && r.release_id !== live.release_id)?.release_id : null)
+        if (!target)
+          throw refusal(live.release_id
+            ? `release ${live.release_id} is the only one this machine holds a record of for ${appId}, and it is the one running`
+            : `the running container of ${appId} carries no release label, so which record is live is unknown — name the release to revert to`)
+
+        const plan = revertPlan({ records, live: holder(live), replaced: holder(replaced), targetReleaseId: target, todaysSecrets: body.with_todays_secrets === true })
+        if ('refusal' in plan) throw Object.assign(refusal(plan.refusal), { offer: plan.offer })
+        const { record } = plan
+        if (!await docker.held({ image: record.image, digest: record.digest }))
+          throw refusal(`${record.digest ?? record.image} is not on this machine — Cleanup or a prune removed the image of release ${target}, and a build made here has no registry to come back from. Revert from Basecamp, or release it again`)
+
+        const project     = live.labels['fjs.project']
+        const environment = live.labels['fjs.env']
+        const appSlug     = live.labels['fjs.app.slug']
+        if (!project || !environment || !appSlug)
+          throw refusal(`${live.name} carries no project, environment or app slug label, so the reverted container could not be named — revert from Basecamp`)
+        const config  = { ...record.config, env: plan.env }
+        const port    = config.port ?? live.port
+        const kept    = Array.isArray(record.hosts)
+        const hosts     = kept ? hostsOf(record.hosts) : []
+        const paths     = kept ? pathsOf(record.paths) : []
+        const redirects = kept ? redirectsOf(record.redirects) : []
+        const noindex   = kept ? hostsOf(record.noindex) : []
+        const fronted = kept ? hosts.length > 0 || paths.length > 0 : live.loopback
+        if (kept && fronted && !port) throw refusal(`release ${target} was routed to hostnames and its record holds no port to route them to — revert from Basecamp`)
+        let dialing = null
+        let route   = fronted ? (to) => ingress.repoint({ appId, port: to }) : null
+        if (kept) {
+          // A restored route moves the live host off, so the operator's own ask
+          // states the drop that `route` would otherwise refuse (`FJS-D2045`).
+          const removing = await ingress.dropping({ appId, hosts, redirects, paths })
+          const routeTo  = (to) => ingress.route({ appId, hosts, port: to, redirects, paths, noindex, removing })
+          const theirs   = await ingress.heldBy('ssh', [...hosts, ...paths.map(p => p.host), ...redirects.map(r => r.host)])
+          if (theirs.length) throw refusal(doorRefusal('basecamp', theirs))
+          if (fronted || redirects.length) {
+            dialing = live.port ?? port
+            await routeTo(dialing)
+          } else await ingress.withdraw({ appId, removing })
+          route = fronted ? async (to) => { if (to !== dialing) await routeTo(to) } : null
+        }
+        let started
+        try {
+          started = await docker.deploy({
+            appId, project, environment, appSlug,
+            image:       record.image,
+            digest:      record.digest,
+            config,
+            port,
+            loopback:    fronted,
+            exposesPort: EXPOSED_LABEL in live.labels,
+            swap:        'stop-first',
+            route,
+            routed:      () => ingress.dialed({ appId }),
+            rollback:    true,
+            releaseId:   target,
+            held:        true,
+          })
+        } catch (err) {
+          await syncExposed()
+          throw err
+        }
+        await syncExposed()
+        const recorded = keepRecord(appId, {
+          release_id: target, digest: started.digest ?? record.digest, image: record.image,
+          config, secret_refs: plan.secret_refs, rollback: true,
+          ...(kept ? { hosts, paths, redirects, noindex } : {}),
+        })
+        return { ...started, app_id: appId, release_id: target, from_release_id: live.release_id,
+                 secrets: plan.secrets, secrets_from: plan.from, secret_refs: plan.secret_refs,
+                 routes: kept ? 'restored' : fronted ? 'kept' : 'none', recorded }
       })
     },
 
@@ -601,14 +693,24 @@ export function createOutpostServer(config, {
     if (req.method === 'GET' && path === '/health')
       return json({ ok: true, version: config.version, server_id: config.serverId })
 
-    const verify = (body, nonces) => verifyRequest({
-      // Recomputed from the RAW request URL: the query is part of the canonical
-      // string since `FJS-678`, and reading a path the router already stripped
-      // would sign a different request than the one that arrived.
-      publicKey: config.hubKey, method: req.method, path, query: url.search, body, headers: req.headers,
-      // This machine's clock, stated: the kit takes no ambient state.
-      toleranceSeconds: TOLERANCE_S, now: Math.floor(Date.now() / 1000), seenNonce: nonces,
-    })
+    const keys = BOX_SIGNED.has(`${req.method} ${path}`) ? [config.hubKey, await boxKey] : [config.hubKey]
+    // A nonce is spent only by a signature that matched, so trying the hub's
+    // key first leaves it unspent for the box's.
+    const verify = async (body, nonces) => {
+      let checked = { ok: false, reason: 'no key verifies this route' }
+      for (const publicKey of keys.filter(Boolean)) {
+        checked = await verifyRequest({
+          // Recomputed from the RAW request URL: the query is part of the canonical
+          // string since `FJS-678`, and reading a path the router already stripped
+          // would sign a different request than the one that arrived.
+          publicKey, method: req.method, path, query: url.search, body, headers: req.headers,
+          // This machine's clock, stated: the kit takes no ambient state.
+          toleranceSeconds: TOLERANCE_S, now: Math.floor(Date.now() / 1000), seenNonce: nonces,
+        })
+        if (checked.ok || checked.reason !== 'signature does not match') return checked
+      }
+      return checked
+    }
 
     // Missing headers, a stale timestamp and a wrong scheme are decided without
     // the body, so they are answered before it is buffered (`FJS-1861`). With the
@@ -675,7 +777,8 @@ export function createOutpostServer(config, {
       // how a deploy fails with nothing on screen but a red pill. A flag on the
       // error rides with them: `volume_touched` is how a caller that failed a
       // restore knows whether the data directory is still what it was.
-      return json({ error: err.message, ...(err.volumeTouched ? { volume_touched: true } : {}) }, err.refusal ? 409 : 500)
+      return json({ error: err.message, ...(err.volumeTouched ? { volume_touched: true } : {}),
+                    ...(err.offer ? { offer: err.offer } : {}) }, err.refusal ? 409 : 500)
     }
   }
 

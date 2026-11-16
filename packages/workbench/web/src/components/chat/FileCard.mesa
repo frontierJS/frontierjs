@@ -1,0 +1,54 @@
+<script>
+  // components/chat/FileCard.mesa -- one of a post's files. An image draws inline at a
+  // capped height from the server's preview and opens whole on click; anything else is a
+  // name and size card with a download. Both go through the member's credentials
+  // (lib/files.js), since the route answers nobody it cannot grade.
+  import Icon from '../Icon.mesa'
+  import { downloadFile, fileBlobUrl, fileSize, isImage } from '../../lib/files.js'
+
+  export let file = null   // { id, name, mime, size, preview }
+
+  let src = ''
+  let failed = false
+
+  async function load() {
+    src = ''; failed = false
+    if (!file || !isImage(file.mime)) return
+    try { src = await fileBlobUrl(file.id, file.preview ? 'preview' : 'full') } catch { failed = true }
+  }
+  $.onMount(load)
+  $: file?.id, () => load()
+
+  async function save() {
+    failed = false
+    try { await downloadFile(file) } catch { failed = true }
+  }
+  // The whole image, not the preview, opened in its own tab.
+  async function openFull() {
+    try { window.open(await fileBlobUrl(file.id, 'full'), '_blank', 'noopener') } catch { failed = true }
+  }
+</script>
+
+{#if file}
+  {#if isImage(file.mime) && !failed}
+    <button type="button" class="chat-image" onclick={openFull} aria-label={`Open ${file.name}`} data-file-card="image" data-file={file.id}>
+      {#if src}<img {src} alt={file.name} />{:else}<span class="skeleton chat-image-wait" aria-hidden="true"></span>{/if}
+    </button>
+  {:else}
+    <div class="item chat-file" data-file-card="file" data-file={file.id}>
+      <span class="item-lead"><Icon name="attach" /></span>
+      <span class="item-text">
+        <span class="item-title" data-file-name>{file.name}</span>
+        <span class="item-sub">{fileSize(file.size)}{#if failed} · could not be read{/if}</span>
+      </span>
+      <button type="button" class="btn ghost sm" data-file-download onclick={save}><Icon name="link" /> Download</button>
+    </div>
+  {/if}
+{/if}
+
+<style>
+  .chat-image { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; max-inline-size: 100%; }
+  .chat-image img { display: block; max-block-size: calc(var(--space-2xl) * 10); max-inline-size: 100%; border-radius: var(--card-radius); }
+  .chat-image-wait { display: block; inline-size: calc(var(--space-2xl) * 8); block-size: calc(var(--space-2xl) * 5); }
+  .chat-file { inline-size: fit-content; max-inline-size: 100%; }
+</style>

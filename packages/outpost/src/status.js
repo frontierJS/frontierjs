@@ -28,7 +28,7 @@ export const STATUS_SHAPE = 1
 
 /** The unit's `EnvironmentFile`, which an ssh shell does not have. Its lines
  *  are `KEY=VALUE` with nothing quoted, written by the install. */
-function envFile(path) {
+export function envFile(path) {
   try {
     return Object.fromEntries(readFileSync(path, 'utf8').split('\n')
       .map(l => /^([A-Z_][A-Z0-9_]*)=(.*)$/.exec(l.trim())).filter(Boolean).map(m => [m[1], m[2]]))

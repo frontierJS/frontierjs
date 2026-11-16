@@ -15,10 +15,12 @@ import { session } from './session.js'
 import { channels } from '../resources/Channel.mesa'
 import { channelMembers } from '../resources/ChannelMember.mesa'
 import { profiles } from '../resources/Profile.mesa'
+import { threads } from '../resources/Thread.mesa'
 import { chat as link } from '../resources/Chat.mesa'
+import { reactions } from '../resources/Reaction.mesa'
 
 /** The channel on screen, so the sidebar marks it and a post arriving in it is read at once. */
-export const chat = watchProxy({ activeChannelId: null })
+export const chat = watchProxy({ activeChannelId: null, held: {} })
 
 /** The reader's own `profileExternalId`, or null when the member has not linked. */
 export const me = () => session.user?.profileExternalId ?? null
@@ -36,7 +38,9 @@ export function openLists() {
     // Everyone's memberships of a readable channel are readable; the reader's own are what count.
     mine:     channelMembers.tethered({ state: 'local', all: true, where: { profileExternalId: me() } }),
     people:   profiles.tethered({ state: 'local', all: true }),
-    destroy() { this.channels.destroy(); this.mine.destroy(); this.people.destroy() },
+    // Thread rows are one person's view of a thread, and only the reader's own are readable.
+    threads:  threads.tethered({ state: 'local', all: true, where: { profileExternalId: me() } }),
+    destroy() { this.channels.destroy(); this.mine.destroy(); this.people.destroy(); this.threads.destroy() },
   }
   return lists
 }
@@ -126,11 +130,204 @@ export async function markRead(externalId, prevChannelExternalId = null) {
 // ── Mentions ──
 // A known @username is drawn bold; an unknown one stays text. Workbench has no
 // profile page to link to yet, and Markdown keeps only same-site links.
+// `@channel`, `@all` and `@here` call the room: drawn bold too, never as a person.
+const BROADCAST = ['channel', 'all', 'here']
+const CALLS = [
+  { id: '@channel', handle: 'channel', name: 'Notify everyone in this channel', call: true },
+  { id: '@here',    handle: 'here',    name: 'Notify everyone in this channel who is online', call: true },
+  { id: '@all',     handle: 'all',     name: 'Notify everyone in this channel', call: true },
+]
 export function linkMentions(message, people) {
   if (!message || !message.includes('@')) return message
   const byName = new Map(people.map((p) => [p.username.toLowerCase(), p]))
   return message.replace(/(^|[^\w@`])@([a-z0-9][\w.-]*)/gi, (m, pre, name) => {
-    const p = byName.get(name.toLowerCase().replace(/[.-]+$/, ''))
+    const key = name.toLowerCase().replace(/[.-]+$/, '')
+    if (BROADCAST.includes(key)) return `${pre}**@${key}**`
+    const p = byName.get(key)
     return p ? `${pre}**@${p.username}**` : m
   })
+}
+
+/** Whether a post names the reader, by their username or by a call on the room: it is drawn marked. */
+export function mentionsMe(post, people, self = me()) {
+  if (!post?.message || !post.message.includes('@') || post.profileExternalId === self) return false
+  const mine = people.find((p) => p.externalId === self)?.username?.toLowerCase()
+  for (const m of post.message.matchAll(/(?:^|[^\w@`])@([a-z0-9][\w.-]*)/gi)) {
+    const key = m[1].toLowerCase().replace(/[.-]+$/, '')
+    if (BROADCAST.includes(key) || key === mine) return true
+  }
+  return false
+}
+
+// ── The @ picker ──
+// Shared by the composer and the post editor. The people of the channel come first, then
+// everyone else the mirror holds, then the calls on the room; each by the prefix typed
+// after the `@`, matching a username, a first name or a display name.
+const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+export const handleFor = (p) => p.username
+
+export function mentionMatches(prefix, people, memberIds = [], inChannel = false) {
+  const q = norm(prefix)
+  const here = new Set(memberIds)
+  const hit = (p) => !p.deletedAt && (!q || [p.username, p.firstName, p.lastName, nameOf(p)].some(x => norm(x).startsWith(q)))
+  const found = people.filter(hit)
+  const byName = (a, b) => nameOf(a).localeCompare(nameOf(b))
+  const first = found.filter(p => here.has(p.externalId)).sort(byName)
+  const rest = found.filter(p => !here.has(p.externalId)).sort(byName)
+  const calls = inChannel ? CALLS.filter(c => !q || c.handle.startsWith(q)) : []
+  return [...first, ...rest].slice(0, 8).concat(calls).map(x => x.call ? x : { id: x.externalId, handle: x.username, name: nameOf(x), inChannel: here.has(x.externalId) })
+}
+
+/** The picker for the `@` behind the caret, or null: `{ at, prefix, items, index }`. */
+export function mentionAt(text, caret, people, memberIds = [], inChannel = false) {
+  const at = text.lastIndexOf('@', caret - 1)
+  if (at < 0 || (at > 0 && /[\w@]/.test(text[at - 1]))) return null
+  const prefix = text.slice(at + 1, caret)
+  if (/\s/.test(prefix)) return null
+  const items = mentionMatches(prefix, people, memberIds, inChannel)
+  return items.length ? { at, prefix, items, index: 0 } : null
+}
+
+/** The text with the picked name in place of the typed `@prefix`, and where the caret goes. */
+export function applyMention(text, picker, item) {
+  const put = '@' + item.handle + ' '
+  return { text: text.slice(0, picker.at) + put + text.slice(picker.at + 1 + picker.prefix.length), caret: picker.at + put.length }
+}
+
+/**
+ * A key while the picker is open: the picker after it (null closes it), 'pick' for the
+ * highlighted one, or undefined when the key is not the picker's.
+ */
+export function pickerKey(picker, e) {
+  const n = picker.items.length
+  if (e.key === 'ArrowDown') return { ...picker, index: (picker.index + 1) % n }
+  if (e.key === 'ArrowUp')   return { ...picker, index: (picker.index - 1 + n) % n }
+  if (e.key === 'Tab' || e.key === 'Enter') return 'pick'
+  if (e.key === 'Escape') return null
+  return undefined
+}
+
+/** A channel's memberships, as a tether of their own: the people the picker offers first. */
+export const watchMembers = (channelExternalId) => channelMembers.tethered({ state: 'local', all: true, where: { channelExternalId } })
+
+// ── Verbs on the chat service ──
+// Each is the server's own answer: a refusal (403, 404, 502) reaches the caller as an
+// error with the server's words, and nothing here guesses at a time window.
+const say = (method, data) => link.service.invoke(method, null, data)
+
+export const readThread = (rootExternalId) => say('readThread', { rootExternalId })
+export const setPinned = (post, pinned) => say('pin', { postExternalId: post.externalId, pinned })
+export const setFollowing = (rootExternalId, following) => say('follow', { rootExternalId, following })
+export const setMuted = (channelExternalId, muted) => say('mute', { channelExternalId, muted })
+
+/**
+ * The channel reads as unread from this post. The channel on screen would be read again the
+ * moment the count moved, so it is held: the reader leaving the channel, or sending, ends it.
+ */
+export async function markUnread(post) {
+  chat.held = { ...chat.held, [post.channelExternalId]: true }
+  try { await say('markUnread', { postExternalId: post.externalId }) }
+  catch (e) { release(post.channelExternalId); throw e }
+}
+export function release(channelExternalId) {
+  if (!(channelExternalId in chat.held)) return
+  const { [channelExternalId]: _, ...rest } = chat.held
+  chat.held = rest
+}
+
+/** A post's thread, from its own or its root's id: the root is the thread's key. */
+export const rootOf = (post) => post.rootExternalId ?? post.externalId
+export const threadHref = (post) => `/messages/${post.channelExternalId}/?thread=${rootOf(post)}`
+
+// ── Reactions ──
+/**
+ * `[{ name, count, mine, who }]` in the order each name was first used, from a post's
+ * Reaction rows: one chip per name, `mine` when the reader gave it.
+ */
+export function reactionChips(rows, self, people) {
+  const by = new Map()
+  for (const r of rows) {
+    const c = by.get(r.emojiName) ?? { name: r.emojiName, count: 0, mine: false, names: [] }
+    c.count++
+    if (r.profileExternalId === self) c.mine = true
+    c.names.push(r.profileExternalId === self ? 'You' : personName(r.profileExternalId, people))
+    by.set(r.emojiName, c)
+  }
+  return [...by.values()].map(c => ({ ...c, who: c.names.join(', ') }))
+}
+
+/**
+ * React, or take it back when the reader already did; the row lands back by its push. The
+ * create names its profile because the schema's policy compares it to the caller's before
+ * the server is asked.
+ */
+export async function toggleReaction(post, name, rows, self) {
+  const mine = rows.find(r => r.emojiName === name && r.profileExternalId === self)
+  if (mine) await reactions.service.remove(mine.id)
+  else await reactions.service.create({ postExternalId: post.externalId, profileExternalId: self, emojiName: name })
+}
+
+// ── Making and leaving channels ──
+const joinedBy = (rows, channelExternalId) => rows.find(m => m.channelExternalId === channelExternalId)
+
+/** The team a new channel is made in: the one any channel the reader is in belongs to (a direct channel has none). */
+export const teamOf = (channelList) => channelList.find(c => c.teamExternalId && !c.deletedAt)?.teamExternalId ?? null
+
+/** Open the direct channel with one person, or a group with two to seven; answers its id. */
+export async function openDirect(profileExternalIds) {
+  const r = await say('openDirect', { profileExternalIds })
+  return r.channelExternalId
+}
+
+/** Make a channel on the server as the reader; answers its id. `name` is the slug, `displayName` what is typed. */
+export async function createChannel({ teamExternalId, displayName, purpose, isPrivate }) {
+  const name = slugOf(displayName)
+  const made = await channels.service.create({ teamExternalId, name, displayName: displayName.trim(), purpose: purpose?.trim() || '', type: isPrivate ? 'private' : 'open' })
+  if (made?.externalId) return made.externalId
+  // A private channel is readable by its members, and the creator's own membership arrives by the
+  // socket after the answer, so the answer is empty: the channel is found when its row lands.
+  const end = Date.now() + 8000
+  while (Date.now() < end) {
+    const row = lists?.channels.rows.find(c => c.name === name && c.teamExternalId === teamExternalId)
+    if (row) return row.externalId
+    await new Promise(r => setTimeout(r, 100))
+  }
+  throw new Error('The channel was made, but has not reached this screen yet. Reload to see it.')
+}
+
+/** The server's channel name: lower case, hyphens for spaces. */
+export const slugOf = (s) => String(s ?? '').trim().toLowerCase().replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64)
+
+/** The open channels of the reader's team they are not in; the server lands each as a row. */
+export const browseChannels = async () => (await link.service.invoke('browse', null, {})).channels
+
+export const joinChannel = (channelExternalId) => channelMembers.service.create({ channelExternalId, profileExternalId: me() })
+
+/** Leave: take the reader's own membership row away. */
+export async function leaveChannel(channelExternalId, memberships) {
+  const mine = joinedBy(memberships, channelExternalId)
+  if (!mine) throw new Error('You are not in that channel.')
+  await channelMembers.service.remove(mine.id)
+}
+
+/**
+ * Where the screen goes with no channel named: the last one this browser had open, else
+ * Town Square, else the first by name, never `except` (a channel just left). Null when the reader is in none.
+ */
+export function landingChannel(channelList, memberships, except = null) {
+  const byId = new Map(channelList.map(c => [c.externalId, c]))
+  const mine = memberships.map(m => m.channelExternalId).filter(id => id !== except && byId.has(id) && !byId.get(id).deletedAt)
+  const want = lastChannel()
+  if (want && mine.includes(want)) return want
+  const name = (id) => String(byId.get(id).name)
+  return mine.slice().sort((a, b) => (name(a) === 'town-square' ? -1 : name(b) === 'town-square' ? 1 : name(a).localeCompare(name(b))))[0] ?? null
+}
+
+/** Wait for a channel the reader just made or opened to reach the lists, so the screen opening it does not find it missing. */
+export async function whenListed(channelExternalId, ms = 5000) {
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    if (lists?.channels.rows.some(c => c.externalId === channelExternalId) && lists.mine.rows.some(m => m.channelExternalId === channelExternalId)) return
+    await new Promise(r => setTimeout(r, 100))
+  }
 }

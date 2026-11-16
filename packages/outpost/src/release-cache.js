@@ -74,10 +74,14 @@ export function createReleaseCache({ dir = layout().releases, max = MAX_RECORDS 
      * a redeploy of one Release is one record. `secret_refs` is what `/deploy`
      * applied, and `config.env` loses those keys' values before it is written.
      */
-    record(appId, { release_id = null, digest, image, config, secret_refs = {}, rollback = false, applied_at = new Date().toISOString() }) {
+    record(appId, { release_id = null, digest, image, config, secret_refs = {}, rollback = false, applied_at = new Date().toISOString(), hosts, paths, redirects, noindex }) {
       const entry = {
         release_id, digest: digest ?? null, image: image ?? null,
         config: scrubbed(config, secret_refs), secret_refs, applied_at, rollback: rollback === true,
+        // Left out, not empty, when the caller knew none: a record that says
+        // `hosts: []` names a release with no hostnames, one without the key
+        // names nothing, and a revert keeps the live routes for it.
+        ...(Array.isArray(hosts) ? { hosts, paths: paths ?? [], redirects: redirects ?? [], noindex: noindex ?? [] } : {}),
       }
       const rest = read(appId).filter(r => release_id === null || r.release_id !== release_id)
       write(appId, [entry, ...rest].slice(0, max))

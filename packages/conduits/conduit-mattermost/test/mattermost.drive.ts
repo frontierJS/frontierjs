@@ -26,7 +26,7 @@ import type { ConduitError, CredentialResolver, Delivery } from '@frontierjs/con
 import { results, report, control, DRIVE_RESILIENCE } from '@frontierjs/conduit/testing'
 import { startMattermostSink } from '../sink.ts'
 import {
-  mattermostTargets, bindMattermost, uploadFile, fileBytes, postMessage, listPosts, listChannels, listTeams, listMembers, listProfiles, postsSince, me, translate,
+  mattermostTargets, bindMattermost, uploadFile, fileBytes, postMessage, listPosts, listChannels, browseChannels, listTeams, listMembers, listProfiles, postsSince, me, translate,
   viewChannel, listThreads, getThread, markThreadRead,
   pinPost, unpinPost, listPinned, markUnread, muteChannel, joinChannel, leaveChannel, createDirectChannel, createGroupChannel,
   followThread, unfollowThread, markAllThreadsRead, listDrafts, saveDraft, deleteDraft,
@@ -739,6 +739,17 @@ try {
     privateNeedsAMember: joinSecret.error?.kind, left: left.ok, leftAgain: leftAgain.error?.kind,
   })
 
+  // Browse: a team's open channels, the person's own among them; a private, a direct and a group channel never.
+  const browsed = await browseChannels(bob, ids.team)
+  const page0 = await browseChannels(bob, ids.team, { perPage: 1 }), page1 = await browseChannels(bob, ids.team, { perPage: 1, page: 1 })
+  const noTeam = await browseChannels(bob, 'z'.repeat(26))
+  t('channel.browseOpenOfATeam', {
+    lounge: browsed.rows?.some(c => c.externalId === lounge.id), joinedIsListedToo: browsed.rows?.some(c => c.externalId === ids.open),
+    onlyOpen: browsed.rows?.every(c => c.type === 'open' && !c.deletedAt), noPrivate: !browsed.rows?.some(c => c.externalId === ids.secret),
+    noDirect: !browsed.rows?.some(c => c.teamExternalId === null), paged: [page0.rows?.length, page1.rows?.length, page0.rows?.[0]?.externalId !== page1.rows?.[0]?.externalId],
+    noSuchTeam: noTeam.error?.kind, notAnId: await browseChannels(bob, 'x').catch((e: Error) => e.message),
+  })
+
   // Drafts: one per box, saved twice is updated once, a thread has its own.
   const d1 = await saveDraft(alice, ids.alice, { channelExternalId: ids.open, message: 'half a thou' })
   const d2 = await saveDraft(alice, ids.alice, { channelExternalId: ids.open, message: 'half a thought' })
@@ -920,6 +931,7 @@ process.exit(report(got, {
   'read.unreadFromAPostAndMute': {unread:2,mentions:1,lastViewedBeforeThePost:true,listedAgrees:true,frame:[true,true],aliceHeardNothing:0,muted:[true,true],notYours:'forbidden',u1u3:[true,true],mutePushed:[true,false]},
   'thread.followUnfollowReadAll': {followed:[true,true],unfollowed:[true,true],frames:[true,false],allRead:true,readNamesNoThread:true,notYours:'forbidden'},
   'channel.directGroupJoinLeave': {direct:['direct',null,true],group:['group',null,true,'alice, bob, bot'],pairIsADirectChannel:'mattermost: a group channel is three to eight people; two is a direct channel',groupPushed:[1,1],joined:[true,true],joinSeen:true,privateNeedsAMember:'forbidden',left:true,leftAgain:'forbidden'},
+  'channel.browseOpenOfATeam': { lounge: true, joinedIsListedToo: true, onlyOpen: true, noPrivate: true, noDirect: true, paged: [1, 1, true], noSuchTeam: 'gone', notAnId: 'mattermost: teamExternalId is not a Mattermost id' },
   'draft.saveListDelete': {one:['half a thou','half a thought',true],listed:[['half a thought',false],['reply draft',true]],deleted:[true,true],after:0,again:'gone',thread:true,pushed:['draft_created','draft_updated','draft_created','draft_deleted','draft_deleted'],bobSawNone:0},
   'preference.savedPostsAndFavorites': {saved:true,pref:[['flagged_post',true,'true']],flagged:[true],otherCategoryEmpty:0,favoritesMove:[false,true,true,false],fav:true,unfav:true,unsaved:true,flaggedAfter:0,backInChannels:true,pushed:['preferences_changed','preferences_changed','preferences_deleted','preferences_deleted'],bobSawNone:0,categoryPushed:true},
   'status.ownByIdsSetAndCustom': {own:['online',false],set:['dnd',true,4102444800],byIds:'dnd',rowsAsked:2,pushed:['dnd'],bobHeardNothing:0,badStatus:true,custom:[true,'palm_tree','On a beach','2100-01-01T00:00:00.000Z'],cleared:[true,null],userUpdated:true,notYours:'forbidden'},

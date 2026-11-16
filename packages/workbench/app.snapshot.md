@@ -145,8 +145,8 @@ name when it declares none.
 
 ### `chat`
 
-- **methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `openDirect`
-- **custom methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `openDirect`
+- **methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`
+- **custom methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`
 - **who may call** —
   - `status` — standing 3 or above — declared `gate: 3`
   - `connect` — standing 3 or above — declared `gate: 3`
@@ -157,6 +157,7 @@ name when it declares none.
   - `markUnread` — standing 3 or above — declared `gate: 3`
   - `mute` — standing 3 or above — declared `gate: 3`
   - `follow` — standing 3 or above — declared `gate: 3`
+  - `browse` — standing 3 or above — declared `gate: 3`
   - `openDirect` — standing 3 or above — declared `gate: 3`
 
 | Phase | Method | Chain |

@@ -1,0 +1,50 @@
+<script>
+  // components/chat/NewRoomDialog.mesa -- "Add channel": a name, a purpose, and private or
+  // not. The server's channel name is the lower-case slug of what is typed; what is typed
+  // stays its display name. A private channel cannot be made public again from here, so the
+  // box says so. The channel is made as the reader, who is its first member.
+  import { goto } from '@frontierjs/sierra/router'
+  import { createChannel, getLists, slugOf, teamOf, whenListed } from '../../lib/chat.js'
+  import Modal    from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import Input    from '@frontierjs/ui/components/forms/Input.mesa'
+  import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let open = false
+
+  const lists = getLists()
+  let name      = ''
+  let purpose   = ''
+  let isPrivate = false
+  let saving    = false
+  let error     = null
+
+  $: slug = slugOf(name)
+
+  async function save() {
+    if (!slug || slug.length < 2 || saving) return
+    const teamExternalId = teamOf(lists.channels.rows)
+    if (!teamExternalId) { error = 'No team to make a channel in: you are in no channel yet.'; return }
+    saving = true; error = null
+    try {
+      const id = await createChannel({ teamExternalId, displayName: name, purpose, isPrivate })
+      await whenListed(id)
+      open = false; name = ''; purpose = ''; isPrivate = false
+      goto(`/messages/${id}/`)
+    } catch (e) { error = e.message } finally { saving = false }
+  }
+</script>
+
+<Modal bind:open title="Add channel" size="sm">
+  <form class="stack gap-md" novalidate onsubmit|preventDefault={save} data-new-room>
+    <Input label="Name" name="name" bind:value={name} placeholder="e.g. design" maxlength={64}
+           hint={slug ? `#${slug}` : 'Lower-case, hyphens for spaces.'} />
+    <Input label="Purpose" name="purpose" bind:value={purpose} placeholder="What this channel is for" maxlength={250} />
+    <Checkbox label="Private" name="private" bind:checked={isPrivate} description="Only people added to it can see it. A private channel stays private." />
+    {#if error}<p class="text-sm text-danger" role="alert" data-new-room-error>{error}</p>{/if}
+    <div class="cluster gap-sm">
+      <Button type="submit" loading={saving} disabled={slug.length < 2}>Create channel</Button>
+      <Button treatment="ghost" onclick={() => open = false}>Cancel</Button>
+    </div>
+  </form>
+</Modal>

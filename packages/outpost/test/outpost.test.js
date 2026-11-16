@@ -5760,7 +5760,7 @@ describe('the release cache (FJS-D2178)', () => {
     await (await deploy(server, { digest: D2, release_id: 'rel-2', config: { env: { NODE_ENV: 'production' }, port: 3000 } })).json()
 
     const [newest, older] = cache.read('app-1')
-    expect(newest).toMatchObject({ release_id: 'rel-2', digest: D2, rollback: false, secret_refs: {} })
+    expect(newest).toMatchObject({ release_id: 'rel-2', digest: D2, rollback: false, secret_refs: {}, hosts: [], paths: [], redirects: [], noindex: [] })
     expect(older).toMatchObject({ release_id: 'rel-1', digest: D1, secret_refs: { DB_PASSWORD: 'DB_PASSWORD@3' } })
     expect(older.config.env).toEqual({ NODE_ENV: 'production' })
   })
@@ -5953,5 +5953,203 @@ describe('the release cache (FJS-D2178)', () => {
       expect(revertPlan({ records: [rec('b', {})], targetReleaseId: 'zz', live }).refusal).toContain('zz')
       expect(revertPlan({ records: [rec('b', {})], targetReleaseId: 'b', live }).refusal).toContain('already running')
     })
+  })
+})
+
+describe('a revert with Basecamp down (FJS-D2231)', () => {
+  const cacheDir = () => mkdtempSync(join(tmpdir(), 'outpost-revert-'))
+  const D1   = 'sha256:' + '11'.repeat(32)
+  const D2   = 'sha256:' + '22'.repeat(32)
+  const LIVE = nameFor('app-1')
+  const LABELS = { 'fjs.app': 'app-1', 'fjs.app.slug': 'web', 'fjs.project': 'acme', 'fjs.env': 'prod' }
+
+  // A box running `rel-2` with `DB_PASSWORD` set, whose daemon holds `held`.
+  const boxWith = ({ held = [D1, D2], records = [], live = { release: 'rel-2', env: ['PATH=/usr/bin', 'DB_PASSWORD=today-value'] }, ingress } = {}) => {
+    const cache = createReleaseCache({ dir: cacheDir() })
+    for (const r of [...records].reverse()) cache.record('app-1', { image: 'fjs-app-1:rel', ...r })
+    const fake = fakeRunner()
+    // Every call logged with its opts, so `calls.opts[i]` stays `calls[i]`'s.
+    const seen = (argv, opts) => { fake.calls.push(argv); fake.calls.opts = [...(fake.calls.opts ?? []), opts] }
+    const run = async (argv, opts) => {
+      if (argv[1] === 'image' && argv[2] === 'inspect' && argv.includes('{{.Id}}')) {
+        seen(argv, opts)
+        return held.includes(argv.at(-1)) ? { exitCode: 0, stdout: 'id\n', stderr: '' } : { exitCode: 1, stdout: '', stderr: 'No such image' }
+      }
+      if (argv[1] === 'inspect' && String(argv[3]).startsWith('{{json .Config.Env}}')) {
+        seen(argv, opts)
+        const labels = { ...LABELS, ...(live.release ? { 'fjs.release': live.release } : {}) }
+        return { exitCode: 0, stdout: `${JSON.stringify(live.env)}\n${JSON.stringify(labels)}\n`, stderr: '' }
+      }
+      return fake.run(argv, opts)
+    }
+    const docker = createDocker({ appsDir: APPS, health: FAST, run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir })
+    const server = createOutpostServer({ ...CONFIG, releasesDir: null }, {
+      docker, inspector: createInspector({ run, releases: cache, exclusive: docker.exclusive }), releases: cache,
+      ...(ingress ? { ingress } : {}), log: { warn() {}, error() {} },
+    })
+    return { server, cache, fake }
+  }
+  const revert = (server, body = {}, key = MACHINE.privateKey) => send(server, 'POST', '/revert', { app_id: 'app-1', ...body }, { key })
+  const touched = (fake) => fake.calls.some(c => ['stop', 'rename', 'run'].includes(c[1]))
+  const shipped = (refs) => [
+    { release_id: 'rel-2', digest: D2, config: { env: { NODE_ENV: 'production' }, port: 3000 }, secret_refs: { DB_PASSWORD: 'DB_PASSWORD@3' } },
+    { release_id: 'rel-1', digest: D1, config: { env: { NODE_ENV: 'production' }, port: 3000 }, secret_refs: { DB_PASSWORD: refs } },
+  ]
+
+  test('the box key signs /revert and nothing else; the hub key signs both', async () => {
+    const { server } = boxWith()
+    const byBox = await send(server, 'POST', '/deploy', { ...SLUGS, app_id: 'app-1', deployment_id: 'd', config: { port: 3000 } }, { key: MACHINE.privateKey })
+    expect(byBox.status).toBe(401)
+    for (const key of [MACHINE.privateKey, HUB.privateKey]) {
+      const res = await revert(server, {}, key)
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toContain('no release record of app-1')
+    }
+    expect((await revert(server, {}, (await generateSigningKeys()).privateKey)).status).toBe(401)
+  })
+
+  test('refs that match the running container swap to the newest record not live, and the revert is recorded', async () => {
+    const { server, cache, fake } = boxWith({ records: shipped('DB_PASSWORD@3') })
+    const res  = await revert(server)
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({ release_id: 'rel-1', from_release_id: 'rel-2', secrets: 'matched', secrets_from: 'live', recorded: true })
+    const runAt = fake.calls.findIndex(c => c[1] === 'run' && c.includes('-d'))
+    const argv  = fake.calls[runAt].join(' ')
+    expect(argv).toContain('--label fjs.release=rel-1')
+    expect(argv).toContain(D1)
+    expect(argv).toContain('-e DB_PASSWORD ')
+    expect(argv).not.toContain('today-value')
+    expect(fake.calls.opts[runAt]?.env?.DB_PASSWORD).toBe('today-value')
+    const [newest] = cache.read('app-1')
+    expect(newest).toMatchObject({ release_id: 'rel-1', digest: D1, rollback: true, secret_refs: { DB_PASSWORD: 'DB_PASSWORD@3' } })
+    expect(newest.config.env).toEqual({ NODE_ENV: 'production' })
+  })
+
+  // Caddy's admin API as the revert sees it: what each call received, and the
+  // live host the restored route moves off.
+  const caddyStub = ({ live = ['new.example.com'] } = {}) => {
+    const calls = []
+    const note = (name) => async (arg) => { calls.push([name, arg]); return {} }
+    return {
+      calls,
+      dropping: async ({ hosts }) => live.filter(h => !hosts.includes(h)),
+      heldBy: async () => [],
+      route: note('route'), repoint: note('repoint'), withdraw: note('withdraw'),
+      dialed: async () => [],
+    }
+  }
+  const routed = (hosts) => [
+    { release_id: 'rel-2', digest: D2, config: { port: 3000 }, hosts: ['new.example.com'], paths: [], redirects: [], noindex: [] },
+    { release_id: 'rel-1', digest: D1, config: { port: 3000 }, hosts, paths: [{ host: 'old.example.com', prefix: '/app' }], redirects: [{ host: 'www.old.example.com', to: 'https://old.example.com' }], noindex: ['old.ingress.example.com'] },
+  ]
+
+  test('a revert across a host change serves the release under its own routes (FJS-D2232)', async () => {
+    const caddy = caddyStub()
+    const { server, cache } = boxWith({ records: routed(['old.example.com']), ingress: caddy })
+    const res  = await revert(server)
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({ release_id: 'rel-1', routes: 'restored', recorded: true })
+    const sent = caddy.calls.filter(([name]) => name === 'route').map(([, arg]) => arg)
+    expect(sent.length).toBeGreaterThan(0)
+    for (const arg of sent) expect(arg).toMatchObject({
+      appId: 'app-1', hosts: ['old.example.com'], paths: [{ host: 'old.example.com', prefix: '/app' }],
+      redirects: [{ host: 'www.old.example.com', to: 'https://old.example.com' }],
+      noindex: ['old.ingress.example.com'], removing: ['new.example.com'],
+    })
+    expect(caddy.calls.some(([name]) => name === 'repoint')).toBe(false)
+    expect(cache.read('app-1')[0]).toMatchObject({ release_id: 'rel-1', rollback: true, hosts: ['old.example.com'], noindex: ['old.ingress.example.com'] })
+  })
+
+  test('a record from before routes were kept leaves the live routes where they are (FJS-D2232)', async () => {
+    const caddy = caddyStub()
+    const { server, cache } = boxWith({ records: shipped('DB_PASSWORD@3'), ingress: caddy })
+    const body = await (await revert(server)).json()
+    expect(body.routes).not.toBe('restored')
+    expect(caddy.calls.some(([name]) => name === 'route' || name === 'withdraw')).toBe(false)
+    expect(cache.read('app-1')[0]).not.toHaveProperty('hosts')
+  })
+
+  test('the cache keeps the routes it is handed, and a record without them has none (FJS-D2232)', async () => {
+    const dir  = cacheDir()
+    const cache = createReleaseCache({ dir })
+    cache.record('app-1', { release_id: 'r', digest: D1, image: 'i', config: { env: { A: 'plain', S: 'secret' } }, secret_refs: { S: 'S@1' },
+      hosts: ['a.example.com'], paths: [{ host: 'a.example.com', prefix: '/x' }], redirects: [], noindex: ['n.example.com'] })
+    const [kept] = cache.read('app-1')
+    expect(kept).toMatchObject({ hosts: ['a.example.com'], paths: [{ host: 'a.example.com', prefix: '/x' }], redirects: [], noindex: ['n.example.com'] })
+    expect(kept.config.env).toEqual({ A: 'plain' })
+    cache.record('app-1', { release_id: 'old', digest: D2, image: 'i', config: {} })
+    expect(cache.read('app-1').find(r => r.release_id === 'old')).not.toHaveProperty('hosts')
+  })
+
+  test('refs one revision apart are refused with the offer, and nothing stops', async () => {
+    const { server, fake } = boxWith({ records: shipped('DB_PASSWORD@2') })
+    const res = await revert(server)
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.offer).toBe('with-todays-secrets')
+    expect(body.error).toContain('DB_PASSWORD@2')
+    expect(body.error).toContain('DB_PASSWORD@3')
+    expect(touched(fake)).toBe(false)
+  })
+
+  test('with_todays_secrets starts it on the running values and records the refs they are', async () => {
+    const { server, cache, fake } = boxWith({ records: shipped('DB_PASSWORD@2') })
+    const body = await (await revert(server, { with_todays_secrets: true })).json()
+    expect(body).toMatchObject({ release_id: 'rel-1', secrets: 'todays', secret_refs: { DB_PASSWORD: 'DB_PASSWORD@3' } })
+    const runAt = fake.calls.findIndex(c => c[1] === 'run' && c.includes('-d'))
+    expect(fake.calls.opts[runAt]?.env?.DB_PASSWORD).toBe('today-value')
+    expect(cache.read('app-1')[0]).toMatchObject({ release_id: 'rel-1', rollback: true, secret_refs: { DB_PASSWORD: 'DB_PASSWORD@3' } })
+  })
+
+  test('a target whose image is gone is refused by name before anything stops', async () => {
+    const { server, fake } = boxWith({ held: [D2], records: shipped('DB_PASSWORD@3') })
+    const res = await revert(server)
+    expect(res.status).toBe(409)
+    const { error } = await res.json()
+    expect(error).toContain(`${D1} is not on this machine`)
+    expect(error).toContain('rel-1')
+    expect(touched(fake)).toBe(false)
+  })
+
+  test('a running container with no release label is refused unless the release is named', async () => {
+    const { server } = boxWith({ records: shipped('DB_PASSWORD@3'), live: { release: null, env: ['DB_PASSWORD=x'] } })
+    const res = await revert(server)
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toContain('carries no release label')
+  })
+
+  test('outpost revert signs with the box key, prints plain lines, and exits non-zero on a refusal', async () => {
+    const { runRevert } = await import('../src/revert.js')
+    const cert = join(cacheDir(), 'cert.pem')
+    writeFileSync(cert, 'not read by the fake fetch')
+    const run = async (box, args) => {
+      const lines = []
+      const fetch = (url, init) => box.server.handle(new Request(`http://outpost.test${new URL(url).pathname}`, init))
+      const code = await runRevert(args, { config: { ...CONFIG, tlsCert: cert, releasesDir: null }, fetch, print: l => lines.push(l) })
+      return { code, lines }
+    }
+    const refused = await run(boxWith({ records: shipped('DB_PASSWORD@2') }), ['app-1'])
+    expect(refused.code).toBe(1)
+    expect(refused.lines[0]).toStartWith('refused: ')
+    expect(refused.lines[1]).toContain('--with-todays-secrets')
+
+    const done = await run(boxWith({ records: shipped('DB_PASSWORD@2') }), ['app-1', 'rel-1', '--with-todays-secrets'])
+    expect(done.code).toBe(0)
+    expect(done.lines[0]).toBe('reverted app-1 to rel-1 (111111111111)')
+
+    expect((await run(boxWith(), ['app-1', '--bogus'])).code).toBe(2)
+  })
+
+  test('outpost revert --list prints the cached records without sending anything', async () => {
+    const { runRevert } = await import('../src/revert.js')
+    const dir = cacheDir()
+    createReleaseCache({ dir }).record('app-1', { release_id: 'rel-1', digest: D1, image: 'x', config: {}, secret_refs: { DB_PASSWORD: 'DB_PASSWORD@3' } })
+    const lines = []
+    const code = await runRevert(['app-1', '--list'], { config: { ...CONFIG, releasesDir: dir }, fetch: () => { throw new Error('sent') }, print: l => lines.push(l) })
+    expect(code).toBe(0)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toMatch(/^rel-1  111111111111  \S+  secrets: DB_PASSWORD@3$/)
   })
 })

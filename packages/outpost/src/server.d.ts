@@ -6,6 +6,30 @@ export function createOutpostServer(config?: any, { docker, inspector, statics, 
             image: any;
             digest: any;
         }) => Promise<boolean>;
+        started({ appId }: {
+            appId: any;
+        }): Promise<{
+            live: {
+                name: any;
+                release_id: any;
+                labels: {};
+                env: {
+                    [k: string]: any;
+                };
+                port: any;
+                loopback: boolean;
+            };
+            replaced: {
+                name: any;
+                release_id: any;
+                labels: {};
+                env: {
+                    [k: string]: any;
+                };
+                port: any;
+                loopback: boolean;
+            };
+        }>;
         deployKey: ({ appId }: {
             appId: any;
         }) => Promise<{
@@ -106,7 +130,7 @@ export function createOutpostServer(config?: any, { docker, inspector, statics, 
             verdict: any;
             reason: any;
         }>;
-        deploy({ appId, project, environment, appSlug, image, digest, config, port, loopback, exposesPort, swap, route, routed, pivot, rollback }: {
+        deploy({ appId, project, environment, appSlug, image, digest, config, port, loopback, exposesPort, swap, route, routed, pivot, rollback, releaseId }: {
             appId: any;
             project: any;
             environment: any;
@@ -122,6 +146,7 @@ export function createOutpostServer(config?: any, { docker, inspector, statics, 
             routed?: any;
             pivot?: any;
             rollback?: boolean;
+            releaseId?: any;
         }): Promise<{
             digest: any;
             swap: string;
@@ -561,6 +586,12 @@ export function createOutpostServer(config?: any, { docker, inspector, statics, 
             paths?: any[];
             removing?: any[];
         }): Promise<void>;
+        dropping({ appId, hosts, redirects, paths }: {
+            appId: any;
+            hosts?: any[];
+            redirects?: any[];
+            paths?: any[];
+        }): Promise<any[]>;
     };
     analytics?: {
         report: ({ routeId, from: fromIso, to: toIso }: {
@@ -604,7 +635,7 @@ export function createOutpostServer(config?: any, { docker, inspector, statics, 
     releases?: {
         read: (appId: any) => any[];
         apps: () => string[];
-        record(appId: any, { release_id, digest, image, config, secret_refs, rollback, applied_at }: {
+        record(appId: any, { release_id, digest, image, config, secret_refs, rollback, applied_at, hosts, paths, redirects, noindex }: {
             release_id?: any;
             digest: any;
             image: any;
@@ -612,7 +643,15 @@ export function createOutpostServer(config?: any, { docker, inspector, statics, 
             secret_refs?: {};
             rollback?: boolean;
             applied_at?: string;
+            hosts: any;
+            paths: any;
+            redirects: any;
+            noindex: any;
         }): {
+            hosts?: any[];
+            paths?: any;
+            redirects?: any;
+            noindex?: any;
             release_id: any;
             digest: any;
             image: any;

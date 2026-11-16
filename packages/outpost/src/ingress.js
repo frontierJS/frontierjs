@@ -884,5 +884,14 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
       const routes = await listRoutes()
       if (routes) refuseDrop(appId, routes, { hosts, redirects, paths, removing })
     },
+
+    /** What a call routing exactly these names would take off this app, for a
+     *  caller that states it as `removing`: a revert is the operator asking for
+     *  the release's own routes, so the host it moves off is stated, not a
+     *  surprise. A machine with no Caddy answers none. */
+    async dropping({ appId, hosts = [], redirects = [], paths = [] }) {
+      const routes = await listRoutes()
+      return routes ? droppedBy(appId, routes, { hosts, redirects, paths }) : []
+    },
   }
 }

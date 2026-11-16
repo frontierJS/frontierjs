@@ -1,28 +1,103 @@
 <script>
   // components/chat/Composer.mesa -- the box a post is typed into. Enter sends,
-  // Shift+Enter breaks a line. Text only in this slice. A create is forwarded to
-  // the server as the reader and lands back by its key, and the post list draws
-  // it from that push, so a send clears the box and draws nothing itself.
+  // Shift+Enter breaks a line; with a `rootExternalId` it replies in that thread.
+  //
+  // A file (the button, a paste, a drop) is uploaded as it is attached, as the reader, and
+  // answers its id; the post then names the ids in `fileExternalIds` and claims them. A
+  // send waits for every upload. `@` opens the picker over the channel's people, then
+  // everyone (lib/chat.js). A create is forwarded to the server as the reader and lands
+  // back by its key, and the post list draws it from that push, so a send clears the box
+  // and draws nothing itself.
   import Icon from '../Icon.mesa'
+  import MentionList from './MentionList.mesa'
   import { posts } from '../../resources/Post.mesa'
+  import { applyMention, getLists, mentionAt, pickerKey, watchMembers } from '../../lib/chat.js'
+  import { MAX_FILE_BYTES, MAX_FILES, fileSize, filesOf, uploadFile } from '../../lib/files.js'
 
   export let channelId = null
+  export let rootExternalId = null   // a reply: the thread's root
   export let placeholder = 'Message'
+  export let onsent = undefined      // () => void
+
+  const lists = getLists()
+  $: people = lists.people.rows
 
   let text = ''
   let sending = false
   let error = null
   let box = null
+  let picker = null     // { at, prefix, items, index } while an @ is being typed
+  let files = []        // { key, name, size, id?, failed? }: attached, uploading until it has an id
+  let dragging = false
+  let fileInput = null
+
+  let members = null
+  function watch(id) { members?.destroy(); members = watchMembers(id) }
+  watch(channelId)
+  $: channelId, () => watch(channelId)
+  $.onDestroy(() => members?.destroy())
+  $: memberIds = members.rows.map(m => m.profileExternalId)
+  $: inChannel = (lists.channels.rows.find(c => c.externalId === channelId)?.type ?? 'open') !== 'direct'
+
+  $: uploading = files.some(f => !f.id && !f.failed)
+  $: ready = files.filter(f => f.id)
+
+  // ── @ ──
+  function watchMention() { picker = mentionAt(text, box?.selectionStart ?? text.length, people, memberIds, inChannel) }
+  function pick(item) {
+    if (!picker) return
+    const put = applyMention(text, picker, item)
+    text = put.text
+    picker = null
+    box?.focus()
+    requestAnimationFrame(() => box?.setSelectionRange(put.caret, put.caret))
+  }
+
+  // ── Files ──
+  let keys = 0
+  async function take(list) {
+    error = null
+    const incoming = [...(list ?? [])]
+    if (!incoming.length || !channelId) return
+    if (files.length + incoming.length > MAX_FILES) { error = `A post carries at most ${MAX_FILES} files.`; return }
+    const big = incoming.find(f => f.size > MAX_FILE_BYTES)
+    if (big) { error = `${big.name || 'That file'} is ${fileSize(big.size)}; the limit is ${MAX_FILE_BYTES / 1_048_576} MB per file.`; return }
+    const added = incoming.map(f => ({ key: ++keys, name: f.name || 'file', size: f.size }))
+    files = [...files, ...added]
+    box?.focus()
+    await Promise.all(incoming.map(async (f, i) => {
+      const key = added[i].key
+      try {
+        const up = await uploadFile(channelId, f)
+        files = files.map(x => x.key === key ? { ...x, id: up.id, name: up.name } : x)
+      } catch (e) {
+        error = e.message
+        files = files.filter(x => x.key !== key)
+      }
+    }))
+  }
+  function onPaste(e) {
+    const got = filesOf(e.clipboardData)
+    if (got.length) { e.preventDefault(); take(got) }
+  }
+  function onDrop(e) { e.preventDefault(); dragging = false; take(filesOf(e.dataTransfer)) }
+  const dropFile = (key) => { files = files.filter(f => f.key !== key) }
 
   async function send() {
     const message = text.trim()
-    if (!message || !channelId || sending) return
+    if ((!message && !ready.length) || !channelId || sending || uploading) return
     sending = true
     error = null
     try {
       // pendingPostId lets the server collapse a retried send into one post, should the first answer be lost.
-      await posts.service.create({ channelExternalId: channelId, message, pendingPostId: crypto.randomUUID() })
+      await posts.service.create({
+        channelExternalId: channelId, ...(rootExternalId ? { rootExternalId } : {}), message, pendingPostId: crypto.randomUUID(),
+        ...(ready.length ? { fileExternalIds: ready.map(f => f.id) } : {}),
+      })
       text = ''
+      files = []
+      picker = null
+      onsent?.()
     } catch (e) {
       error = e.message
     } finally {
@@ -32,28 +107,51 @@
   }
 
   function onKey(e) {
+    if (picker) {
+      // Esc here is the picker's, not the thread pane's.
+      const next = pickerKey(picker, e)
+      if (next !== undefined) { e.preventDefault(); e.stopPropagation(); if (next === 'pick') pick(picker.items[picker.index]); else picker = next; return }
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send() }
   }
 </script>
 
-<div class="composer" data-composer>
-  {#if error}<p class="text-sm text-danger" role="alert">{error}</p>{/if}
+<div class="composer" class:dragging data-composer={rootExternalId ? 'reply' : 'post'} ondragover|preventDefault={() => dragging = true} ondragleave={() => dragging = false} ondrop={onDrop}>
+  {#if error}<p class="text-sm text-danger composer-error" role="alert" data-composer-error>{error}</p>{/if}
+  {#if files.length}
+    <ul class="cluster gap-xs composer-files" aria-label="Attached files" data-composer-files>
+      {#each files as f (f.key)}
+        <li class="pill removable" data-composer-file={f.name}>
+          <Icon name="attach" /> {f.name} <span class="text-muted">{f.id ? fileSize(f.size) : 'uploading…'}</span>
+          <button type="button" class="pill-close" aria-label={`Remove ${f.name}`} onclick={() => dropFile(f.key)}>×</button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
   <div class="composer-box">
+    <MentionList {picker} onpick={pick} />
     <textarea class="field composer-text" bind:this={box} bind:value={text} rows="1" {placeholder}
-              aria-label={placeholder} onkeydown={onKey}></textarea>
-    <button type="button" class="btn primary square composer-send" aria-label="Send" title="Send (Enter)" disabled={sending || !text.trim()} onclick={send}><Icon name="send" /></button>
+              aria-label={placeholder} oninput={watchMention} onkeydown={onKey} onpaste={onPaste} onclick={watchMention}></textarea>
+    <div class="composer-actions">
+      <input type="file" multiple bind:this={fileInput} class="visually-hidden" tabindex="-1" aria-hidden="true" data-composer-input onchange={(e) => { take(e.target.files); e.target.value = '' }} />
+      <button type="button" class="btn ghost square" aria-label="Attach a file" title="Attach a file" onclick={() => fileInput?.click()}><Icon name="attach" /></button>
+      <button type="button" class="btn primary square composer-send" aria-label="Send" title="Send (Enter)" disabled={sending || uploading || (!text.trim() && !ready.length)} onclick={send}><Icon name="send" /></button>
+    </div>
   </div>
-  <p class="text-xs text-muted composer-hint">Enter sends · Shift+Enter for a new line</p>
+  <p class="text-xs text-muted composer-hint">Enter sends · Shift+Enter for a new line · @ names someone</p>
 </div>
 
 <style>
   .composer { padding-inline: var(--chat-gutter, var(--space-md)); padding-block: 0 var(--space-md); }
-  /* One rounded field with its button inside it, ringed while it has focus. */
-  .composer-box { display: flex; align-items: flex-end; gap: var(--space-xs); padding: var(--space-2xs) var(--space-2xs) var(--space-2xs) var(--space-sm); border: var(--border-width) solid var(--rule); border-radius: var(--radius-lg, var(--space-sm)); background: var(--surface); }
+  /* One rounded field with its buttons inside it, ringed while it has focus. */
+  .composer-box { position: relative; display: flex; align-items: flex-end; gap: var(--space-xs); padding: var(--space-2xs) var(--space-2xs) var(--space-2xs) var(--space-sm); border: var(--border-width) solid var(--rule); border-radius: var(--radius-lg, var(--space-sm)); background: var(--surface); }
   .composer-box:focus-within { border-color: var(--rule-strong); box-shadow: var(--shadow-sm); }
+  .composer.dragging .composer-box { border-style: dashed; border-color: var(--color-primary); }
   .composer-text { flex: 1; resize: none; min-block-size: 0; max-block-size: 40vh; field-sizing: content; border: 0; background: none; box-shadow: none; padding-inline: 0; }
   .composer-text:focus, .composer-text:focus-visible { outline: none; box-shadow: none; }
-  .composer-send { border-radius: var(--pill-radius); }
+  .composer-actions { display: flex; align-items: center; gap: var(--space-3xs); }
+  .composer-actions :global(.btn) { border-radius: var(--pill-radius); }
   .composer-send:disabled { opacity: 0.35; }
-  .composer-hint { margin: var(--space-2xs) 0 0; }
+  .composer-files { list-style: none; margin: 0 0 var(--space-xs); padding: 0; }
+  .composer-hint, .composer-error { margin: var(--space-2xs) 0 0; }
 </style>

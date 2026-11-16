@@ -6,7 +6,7 @@ dated: 2026-11-14
 
 # Idea — one release record for both deploy paths
 
-**Status: PROPOSED. Phase 0 done 2026-11-14: Q1–Q4 ruled (`FJS-D2171`, `D2178`, `D2181`, `D2182`). Phase 1 is the build: 1.1 done 2026-11-16, Q5–Q6 ruled (`FJS-D2217`, `D2216`) as 1.3 and 1.4 raised them. Phase 1's steps were drafted against the recommendations, and every one was taken.**
+**Status: PROPOSED. Phase 0 done 2026-11-14: Q1–Q4 ruled (`FJS-D2171`, `D2178`, `D2181`, `D2182`). Phase 1 is the build: 1.1 done 2026-11-16, Q5–Q8 ruled (`FJS-D2217`, `D2216`, `D2230`, `D2231`); 1.1–1.5, 1.7, 1.8 done 2026-11-16, 1.6 built and proved locally, its live drill owed. Phase 1's steps were drafted against the recommendations, and every one was taken.**
 Probed against the tree 2026-11-14. Do not cite this file as behavior — see `VERIFYING.md`.
 
 This continues `IDEAS/release-transitions.md` (overview row 2.3b). That paper fixed the recorded-state format for `fli deploy`, and its Phase 1 shipped on 2026-08-26. Since then Basecamp started deploying through Outpost and writing release state of its own, in a different shape. A recorded-state format is the one thing that cannot be added later, so the two have to be reconciled before more depends on either.
@@ -127,6 +127,18 @@ Rule them in the order Q2, Q1, Q4, Q3. Q2 gives Q1's cache its key, and Q4 settl
   - **B** — the CLI acts on docker directly.
   - **C** — a signed `POST /revert`, and `outpost revert` is a thin wrapper that signs with the box's own `OUTPOST_SIGNING_KEY` (root-only, `/etc/outpost`) and calls it. Every route verifies against the hub's key today, so the verifier also accepts the box's own key on `/revert` alone.
   - **Recommend C** — it gives A's ergonomics without a new unsigned door, and whoever can read that key already has root and docker on the box. B races a live `/deploy` outside the chain and skips Caddy's route logic.
+- ~~**Q9 — Does a revert from the box restore the release's routes?**~~ **Answered 2026-11-16 (`FJS-D2232`): A — `/deploy` also records `hosts`, `paths`, `redirects` and `noindex`, and `/revert` routes them through `ingress.route`.** Raised by 1.6. `/deploy` takes hostnames, paths and redirects from the request body, so a cached record has none, and `/revert` keeps the live routes on the new port.
+  - **A** — `/deploy` also records `hosts`, `paths`, `redirects` and `noindex`, and `/revert` routes them through `ingress.route`.
+  - **B** — keep the live routes.
+  - **Recommend A** — a revert across a route change otherwise serves the old image under today's routes, which is not the Release it names.
+- ~~**Q10 — Where does a revert's own record go in the box's cache?**~~ **Answered 2026-11-16 (`FJS-D2233`): A — one record per Release, holding what it last ran with.** Raised by 1.6. `cache.record` replaces the entry with the same `release_id`, so after `--with-todays-secrets` the refs the release shipped with are no longer kept on the box.
+  - **A** — one record per Release, holding what it last ran with.
+  - **B** — a second entry under the same id.
+  - **Recommend A** — one Release is one record, and Basecamp keeps the original refs.
+- ~~**Q11 — Who derives a public key from an Ed25519 private key?**~~ **Answered 2026-11-16 (`FJS-D2234`): A — `publicKeyOf(privateKey)` in `@frontierjs/toolbelt/signature`.** Raised by 1.6. `/revert`'s verifier needs the box's public half, and `publicHalf()` sits in Outpost's `server.js`.
+  - **A** — `publicKeyOf(privateKey)` in `@frontierjs/toolbelt/signature`.
+  - **B** — leave it in Outpost.
+  - **Recommend A** — that module owns the key format, and a second reading of it is a second answer.
 
 ## Plan
 
@@ -160,6 +172,7 @@ Done when: a Basecamp release and a `fli deploy` release of the same digest and 
 - [x] 1.5 Outpost refuses a revert whose cached Release id or digest disagrees with the request or the image on disk (Q1)
   - Done 2026-11-16. A rollback `/deploy` with a `release_id` is checked before anything stops: another digest than the cache's, or an image not held under that digest (`docker.held`), is a 409 by name; no record answers `cache: 'absent'`. `revertPlan` is the pure Basecamp-down revert (`FJS-D2217`). The operator's entry point is Q8.
 - [ ] 1.6 The drill: stop `frontier-basecamp` and revert an app from the machine
+  - Built 2026-11-16 (`FJS-D2231`): signed `POST /revert` (the box's own key is accepted on that route alone), `outpost revert <app> [release] [--with-todays-secrets] [--list]`, and an `fjs.release` label written on every `/deploy`. Q9–Q11 built the same day: a record carries its routes and `/revert` restores them (`FJS-D2232`), and `publicKeyOf` lives in toolbelt's signature module (`FJS-D2234`). Proved locally: `packages/outpost` `bun run test` 592 pass, `verify:docker` 102/102 with five `revert.*` checks. **Owed:** an Outpost release, then the live drill on yuma (owner's go).
 - [x] 1.7 `Deployment` records the pivot verdict Outpost already returns, and `rollback` refuses by name across a contract, naming `isRestoringVolume` as the way back, the way `deploy:revert` names `--past-pivot`
   - Done 2026-11-16. `crossesPivot` moved to `@frontierjs/outpost/release`, so both doors grade with one rule. A real `/deploy` that answers no verdict records `unknown`; null means not asked (first deploy, rollback, rows from before). `rollback` refuses by name across a non-rollback release that crossed, any status, and `isRestoringVolume: true` lifts it.
 - [x] 1.8 `generation` leaves `mintRelease`, the journal's `Release` row and the transition id, and `deploy:revert`'s configuration check reads `configurationHash` (Q4); 79 mentions across `packages/cli/core`, `db/deploy.lite` and `commands/deploy/` — the journal's `formatVersion` moves with it

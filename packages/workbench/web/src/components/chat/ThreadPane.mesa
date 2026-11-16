@@ -1,0 +1,126 @@
+<script>
+  // components/chat/ThreadPane.mesa -- one thread beside its channel: the root, its
+  // replies oldest first, and a composer that replies. Two tethers, the root and its
+  // replies, so a reply from another person (or an edit, a delete, a reaction) is a
+  // push and nothing here appends by hand. Esc or the close button closes it; the
+  // root deleted closes it too.
+  //
+  // Opening it reads the thread (`chat.readThread`) when the reader has unread in it, and
+  // so does a reply that lands while it is on screen and the window has focus. The header says Following while
+  // the reader's own Thread row does, and its button follows or unfollows.
+  import Icon from '../Icon.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import { posts } from '../../resources/Post.mesa'
+  import { getLists, readThread, setFollowing } from '../../lib/chat.js'
+  import PostItem from './PostItem.mesa'
+  import Composer from './Composer.mesa'
+
+  export let channel = null
+  export let rootId = null
+  export let people = []
+  export let label = ''
+  export let onclose = undefined
+
+  const lists = getLists()
+
+  let rootList = null
+  let replyList = null
+  let el = null
+  let pinned = true
+  let error = null
+
+  function open(id) {
+    rootList?.destroy()
+    replyList?.destroy()
+    pinned = true
+    rootList = posts.tethered({ state: 'local', all: true, where: { externalId: id } })
+    replyList = posts.tethered({ state: 'local', all: true, where: { rootExternalId: id }, directives: { orderBy: 'createdAt', limit: 200 } })
+  }
+  open(rootId)
+  $: rootId, () => open(rootId)
+  $.onDestroy(() => { rootList?.destroy(); replyList?.destroy() })
+
+  $: root = rootList.rows.find(p => p.externalId === rootId) ?? null
+  $: replies = replyList.rows.filter(p => !p.deletedAt).slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+  $: loading = rootList.loading || replyList.loading
+  // Gone, or never in this channel: both read as one answer.
+  $: missing = !loading && (!root || root.deletedAt || root.channelExternalId !== channel?.externalId)
+  $: mine = lists.threads.rows.find(t => t.rootExternalId === rootId) ?? null
+  $: following = !!mine?.isFollowing
+  $: unread = (mine?.unreadReplies ?? 0) + (mine?.unreadMentions ?? 0)
+
+  // A thread read on open, and again for a reply that lands while it is looked at.
+  let reading = false
+  async function readIfSeen() {
+    if (reading || !rootId || !mine || !document.hasFocus() || unread === 0) return
+    reading = true
+    try { await readThread(rootId) } catch (e) { error = e.message } finally { reading = false }
+  }
+  // The server refuses to read a thread the reader has no view of (404), so a thread opened
+  // from a channel they never replied in is not asked: no Thread row, nothing to read.
+  $.onMount(readIfSeen)
+  $: rootId, () => readIfSeen()
+  $: unread, () => readIfSeen()
+
+  async function follow() {
+    error = null
+    try { await setFollowing(rootId, !following) } catch (e) { error = e.message }
+  }
+
+  const toBottom = () => { if (el) el.scrollTop = el.scrollHeight }
+  $: { replies; if (pinned) requestAnimationFrame(toBottom) }
+  const onScroll = () => { if (el) pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 40 }
+
+  // Esc closes the pane, unless something on top took the key first (a menu, an editor).
+  function onKey(e) {
+    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return
+    onclose?.()
+  }
+  const continues = (prev, p) => !!prev && prev.profileExternalId === p.profileExternalId
+    && new Date(p.createdAt) - new Date(prev.createdAt) < 5 * 60_000
+</script>
+
+<mesa:window onkeydown={onKey} onfocus={readIfSeen} />
+
+<aside class="thread" aria-label="Thread" data-thread-pane={rootId}>
+  <header class="thread-head">
+    <div class="stack gap-2xs">
+      <h2 class="h5 thread-title">Thread</h2>
+      <span class="text-sm text-muted">{label}{#if following}<span title="Replies here show on your Threads page" data-thread-following> · Following</span>{/if}</span>
+    </div>
+    <div class="cluster gap-xs">
+      <button type="button" class="btn ghost sm" aria-pressed={following} data-thread-follow onclick={follow} title={following ? 'Stop following: it leaves Threads' : 'Follow: replies collect in Threads'}>
+        <Icon name="notify" /> {following ? 'Unfollow' : 'Follow'}
+      </button>
+      <button type="button" class="btn ghost square" aria-label="Close thread" title="Close (Esc)" data-thread-close onclick={() => onclose?.()}><Icon name="close" /></button>
+    </div>
+  </header>
+
+  <div class="thread-posts" bind:this={el} onscroll|passive={onScroll} role="log" aria-live="polite" aria-label="Replies" data-thread-posts>
+    {#if error}<div class="thread-note"><Alert tone="danger">{error}</Alert></div>{/if}
+    {#if missing}
+      <div class="thread-note"><Alert tone="warning">That thread is gone, or was never in this channel.</Alert></div>
+    {:else if root}
+      <PostItem post={root} {people} inThread />
+      {#if replies.length}<div class="divider-label" role="separator">{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</div>{/if}
+      {#each replies as p, i (p.externalId)}
+        <PostItem post={p} {people} inThread continuation={continues(replies[i - 1], p)} />
+      {/each}
+    {:else}
+      <p class="text-muted center thread-note">…</p>
+    {/if}
+  </div>
+
+  {#if root && !missing}
+    <Composer channelId={channel.externalId} rootExternalId={rootId} placeholder="Reply…" />
+  {/if}
+</aside>
+
+<style>
+  .thread { --chat-gutter: var(--space-md); display: flex; flex-direction: column; min-block-size: 0; min-inline-size: 0; border-inline-start: var(--border-width) solid var(--rule); background: var(--surface); }
+  .thread-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-sm); padding-inline: var(--space-md); padding-block: var(--space-sm); border-block-end: var(--border-width) solid var(--rule); }
+  .thread-title { margin: 0; }
+  .thread-posts { flex: 1; min-block-size: 0; overflow-y: auto; padding-block: var(--space-md); padding-inline: var(--space-xs); display: flex; flex-direction: column; }
+  .thread-posts .divider-label { margin: var(--space-sm) var(--space-md); }
+  .thread-note { padding: var(--space-md); }
+</style>

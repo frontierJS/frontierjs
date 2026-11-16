@@ -91,6 +91,36 @@ export function createDocker({ run, stream, fetch: fetchFn, workDir, health, app
         image: any;
         digest: any;
     }) => Promise<boolean>;
+    /**
+     * What the app's live and set-aside containers were started with: the
+     * release each carries, its labels, its env as the daemon reports it and
+     * where it answers. A revert with Basecamp down copies a secret's value from
+     * here and nowhere else (`FJS-D2217`). `null` for a container it lacks.
+     */
+    started({ appId }: {
+        appId: any;
+    }): Promise<{
+        live: {
+            name: any;
+            release_id: any;
+            labels: {};
+            env: {
+                [k: string]: any;
+            };
+            port: any;
+            loopback: boolean;
+        };
+        replaced: {
+            name: any;
+            release_id: any;
+            labels: {};
+            env: {
+                [k: string]: any;
+            };
+            port: any;
+            loopback: boolean;
+        };
+    }>;
     /** The app's deploy key, made on the first ask (`FJS-D1555`). */
     deployKey: ({ appId }: {
         appId: any;
@@ -227,7 +257,7 @@ export function createDocker({ run, stream, fetch: fetchFn, workDir, health, app
      * calls `route(port)` when the live container moves, and `routed()` says
      * which container the route dials; see `swap.js`.
      */
-    deploy({ appId, project, environment, appSlug, image, digest, config, port, loopback, exposesPort, swap, route, routed, pivot, rollback }: {
+    deploy({ appId, project, environment, appSlug, image, digest, config, port, loopback, exposesPort, swap, route, routed, pivot, rollback, releaseId }: {
         appId: any;
         project: any;
         environment: any;
@@ -243,6 +273,7 @@ export function createDocker({ run, stream, fetch: fetchFn, workDir, health, app
         routed?: any;
         pivot?: any;
         rollback?: boolean;
+        releaseId?: any;
     }): Promise<{
         digest: any;
         swap: string;
@@ -637,7 +668,7 @@ export function createInspector({ run, hostFiles, appsDir, releases, exclusive }
     releases?: {
         read: (appId: any) => any[];
         apps: () => string[];
-        record(appId: any, { release_id, digest, image, config, secret_refs, rollback, applied_at }: {
+        record(appId: any, { release_id, digest, image, config, secret_refs, rollback, applied_at, hosts, paths, redirects, noindex }: {
             release_id?: any;
             digest: any;
             image: any;
@@ -645,7 +676,15 @@ export function createInspector({ run, hostFiles, appsDir, releases, exclusive }
             secret_refs?: {};
             rollback?: boolean;
             applied_at?: string;
+            hosts: any;
+            paths: any;
+            redirects: any;
+            noindex: any;
         }): {
+            hosts?: any[];
+            paths?: any;
+            redirects?: any;
+            noindex?: any;
             release_id: any;
             digest: any;
             image: any;
@@ -790,5 +829,9 @@ export const SETTLE_MS: number;
  *  sets no TimeoutStopSec, so systemd's default 90s is the hard kill; this
  *  stays well under it. */
 export const DRAIN_MS: 60000;
+/** The host port an app declared reachable from outside (`FJS-D930`), on its
+ *  container. The install's `inet basecamp` table drops every other one. */
+export const EXPOSED_LABEL: "fjs.exposed-port";
+export const RELEASE_LABEL: "fjs.release";
 export const BACKUP_SCRIPT: "set -e\numask 077\nstate() { find /data -type f -exec stat -c '%n %s %y' {} + | sort; }\ntries=0\nwhile :; do\n  before=$(state)\n  tar -czf \"/out/$FRONTIER_NAME.partial\" -C /data .\n  [ \"$before\" = \"$(state)\" ] && break\n  tries=$((tries + 1))\n  [ \"$tries\" -lt 5 ] || { rm -f \"/out/$FRONTIER_NAME.partial\"; echo \"the data kept changing under the tar\" >&2; exit 4; }\ndone\nmv \"/out/$FRONTIER_NAME.partial\" \"/out/$FRONTIER_NAME\"\n[ -z \"${FRONTIER_OWNER:-}\" ] || chown \"$FRONTIER_OWNER\" \"/out/$FRONTIER_NAME\"\necho \"$(stat -c %s \"/out/$FRONTIER_NAME\") $(find /data -type f | wc -l) $(sha256sum \"/out/$FRONTIER_NAME\" | cut -d ' ' -f 1)\"";
 import { swapFor } from './swap.js';

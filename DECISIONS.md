@@ -1899,6 +1899,18 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d2240"></a>2026-11-16 · `FJS-D2240` — May a `@@require` or row policy read a `@from` aggregate — Yes: a numeric aggregate (count, sum, min, max, exists) is inlined from the subquery SQL it already has; `first`/`last` stay refused; the count is every child row that exists; `.every` is a separate row.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a count quantifier in predicates, `rel.count(…) >= n`), **C** (no; keep `@system` counters).
+
+The paper's recommendation, taken as written: the rule reads the declared derivation rather than a copy the app keeps.
+
+### <a id="fjs-d2239"></a>2026-11-16 · `FJS-D2239` — How does a rule inside `rel.some(…)` or a `@from` `where:` name the parent row's own column — `this.col` names the row the rule is declared on, compiled to a correlated EXISTS; still one hop (`FJS-499`).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the model's name, `Repository.authorId`), **C** (no; keep `@system` flags).
+
+The paper's recommendation, taken as written: the familiar spelling, and the same word serves `@from` `where:` in `FJS-4335`.
+
 ### <a id="fjs-d2229"></a>2026-11-16 · `FJS-D2229` — A create rule is dead when its foreign key names a parent the caller cannot read (`FJS-D576`): what is done about it — Keep `FJS-D576`; add a gate-report / `fli check` warning naming the dead rule, and document the system-write workaround.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a passing create rule vouches for its parents).
@@ -5332,6 +5344,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d2241"></a>2026-11-16 · `FJS-D2241` — Where does a content check written in code live so the schema shows it and every writer is graded — The field carries `@validate`, bound by `path` to a `$validate` rule in `db/computed.js`; boot refuses a `@validate` field with no rule naming it and a rule naming a field without `@validate`, and a path-less rule needs `@@validate`; `buildValidationMap` counts `$validate` so the pass is never skipped.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (model-level `@@validate` only), **C** (`$validate` keyed by field, like a computed).
+
+The paper's recommendation, taken as written: `$validate` already runs in `validate()` with the field validators at the Data boundary; the marker makes it visible in the schema, and `@check` would read as `@@check`'s SQL.
 
 ### <a id="fjs-d2227"></a>2026-11-16 · `FJS-D2227` — Should a keyword keep two rows' states in agreement — No keyword; document a one-sided `@@require` plus a service writing the other side.
 
@@ -9277,6 +9295,48 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d2238"></a>2026-11-16 · `FJS-D2238` — How does a channel gated by a credential that is not a session carry it to the WebSocket upgrade — `channels.on('connection')` is handed the subprotocol bearer `extractToken` already pulls, with or without an auth plugin.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a connect ticket minted over HTTP), **C** (allow `?token=` on loopback).
+
+The paper's recommendation, taken as written: keeps `FJS-D486`'s subprotocol path; `socketQuery` stays never a credential.
+
+### <a id="fjs-d2237"></a>2026-11-16 · `FJS-D2237` — How does a custom method declare that only in-process callers may reach it — `transports: ['internal']` on the `methods:` entry, from the existing `ctx.transport` values; `callService` answers 405 where it already does, mcp included.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a boolean `internal: true`), **C** (keep the hand-written `$.transport` guard).
+
+The paper's recommendation, taken as written: no new noun, and an HTTP-but-not-MCP case needs no second flag.
+
+### <a id="fjs-d2236"></a>2026-11-16 · `FJS-D2236` — How does a model-backed service's custom method return a one-time secret under a field name the model protects (`@secret`) — The `methods:` entry declares the disclosure, `{ method: 'mint', reveal: ['token'] }`; stripping stays the default and the existing redaction owner skips only the declared keys.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (shape only returns junction recognizes as rows), **C** (document renaming the field).
+
+The paper's recommendation, taken as written: explicit at the method, beside `log:` and `read:`; B already guesses wrong on a wrapped return.
+
+### <a id="fjs-d2235"></a>2026-11-16 · `FJS-D2235` — How does a `{ body: 'stream' }` route take a body larger than Bun's server-wide limit without raising every buffered route's bound — The route declares `maxBodySize` in its `FJS-D2219` options (`{ POST: { body: 'stream', maxBodySize } }`); Bun's `maxRequestBodySize` is set to the largest declared bound and buffered routes keep `http.maxBodySize`, which `body.ts` already enforces.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (document raising `http.maxBodySize` app-wide), **C** (keep the limit; refuse loudly (413 or a log line) before the handler answers).
+
+The paper's recommendation, taken as written: the bound belongs to the route that needs it, and junction already bounds buffered bodies without Bun.
+
+### <a id="fjs-d2234"></a>2026-11-16 · `FJS-D2234` — Q11 — Who derives a public key from an Ed25519 private key — `publicKeyOf(privateKey)` in `@frontierjs/toolbelt/signature`.
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **A** was picked over **B** (leave it in Outpost).
+
+The paper's recommendation, taken as written: that module owns the key format, and a second reading of it is a second answer.
+
+### <a id="fjs-d2233"></a>2026-11-16 · `FJS-D2233` — Q10 — Where does a revert's own record go in the box's cache — One record per Release, holding what it last ran with.
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **A** was picked over **B** (a second entry under the same id).
+
+The paper's recommendation, taken as written: one Release is one record, and Basecamp keeps the original refs.
+
+### <a id="fjs-d2232"></a>2026-11-16 · `FJS-D2232` — Q9 — Does a revert from the box restore the release's routes — `/deploy` also records `hosts`, `paths`, `redirects` and `noindex`, and `/revert` routes them through `ingress.route`.
+
+Asked in [`IDEAS/release-record.md`](IDEAS/release-record.md) § Open questions. **A** was picked over **B** (keep the live routes).
+
+The paper's recommendation, taken as written: a revert across a route change otherwise serves the old image under today's routes, which is not the Release it names.
 
 ### <a id="fjs-d2231"></a>2026-11-16 · `FJS-D2231` — Q8 — How does an operator start a revert on the box with Basecamp down — A signed `POST /revert`, and `outpost revert` is a thin wrapper that signs with the box's own `OUTPOST_SIGNING_KEY` (root-only, `/etc/outpost`) and calls it. Every route verifies against the hub's key today, so the verifier also accepts the box's own key on `/revert` alone.
 

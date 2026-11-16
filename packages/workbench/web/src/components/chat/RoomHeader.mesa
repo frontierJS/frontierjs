@@ -1,19 +1,45 @@
 <script>
   // components/chat/RoomHeader.mesa -- the bar above a channel: its name, its
-  // purpose, and who is in it. Read-only in this slice: the star, the mute and
-  // the room menu are later slices'.
+  // purpose, who is in it, a pins menu and Mute. A muted channel is unread only
+  // when it names the reader, which the server decides and the sidebar draws. The
+  // star and the room menu are later slices'.
   import Icon from '../Icon.mesa'
   import AvatarGroup from '@frontierjs/ui/components/display/AvatarGroup.mesa'
-  import { channelLabel, personName } from '../../lib/chat.js'
+  import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import { posts } from '../../resources/Post.mesa'
+  import { channelLabel, personName, setMuted } from '../../lib/chat.js'
 
   export let channel = null
   export let members = []   // ChannelMember rows of this channel
   export let people  = []   // Profile rows
   export let self    = null
+  export let muted   = false  // the reader's own mute of this channel
+  export let onjump  = undefined // (postExternalId) => void
+  export let onleave = undefined // () => void -- offered to a member of a channel, not of a direct one
+  export let inRoom  = false     // the reader is a member
 
   $: label = channelLabel(channel, people, self)
   $: isDm  = channel?.type === 'direct' || channel?.type === 'group'
   $: users = members.map(m => ({ name: personName(m.profileExternalId, people) }))
+
+  // The channel's pinned posts, a tether of their own: another member's pin arrives as a push.
+  let pins = null
+  function watchPins(id) {
+    pins?.destroy()
+    pins = posts.tethered({ state: 'local', all: true, where: { channelExternalId: id, isPinned: true } })
+  }
+  watchPins(channel?.externalId)
+  $: channel?.externalId, () => watchPins(channel?.externalId)
+  $.onDestroy(() => pins?.destroy())
+  $: pinned = pins.rows.filter(p => !p.deletedAt && p.isPinned).slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+  const excerpt = (p) => String(p.message ?? '').replace(/\s+/g, ' ').slice(0, 90)
+
+  let error = null
+  async function mute() {
+    error = null
+    try { await setMuted(channel.externalId, !muted) } catch (e) { error = e.message }
+  }
 </script>
 
 {#if channel}
@@ -25,6 +51,26 @@
       </h1>
       {#if channel.purpose}<p class="text-sm text-muted room-purpose">{channel.purpose}</p>{/if}
     </div>
+    <div class="cluster gap-xs room-tools">
+      {#if error}<span class="text-sm text-danger" role="alert" data-room-error>{error}</span>{/if}
+      <DropdownMenu placement="bottom-end">
+        {#snippet trigger()}<button type="button" class="btn ghost sm" aria-label="Pinned posts" title="Pinned posts" data-room-pins><Icon name="pushpin" /> <span data-room-pin-count>{pinned.length}</span></button>{/snippet}
+        {#each pinned as p (p.externalId)}
+          <DropdownItem onclick={() => onjump?.(p.externalId)}><span data-pin-item={p.externalId}>{personName(p.profileExternalId, people)}: {excerpt(p)}</span></DropdownItem>
+        {:else}
+          <DropdownItem disabled>Nothing pinned here</DropdownItem>
+        {/each}
+      </DropdownMenu>
+      {#if inRoom && !isDm && onleave}
+        <DropdownMenu placement="bottom-end">
+          {#snippet trigger()}<button type="button" class="btn ghost square sm" aria-label="Channel actions" title="Channel actions" data-room-menu><Icon name="more" /></button>{/snippet}
+          <DropdownItem tone="danger" data-confirm="Leave this channel? A private channel needs someone to add you back." data-confirm-label="Leave" onclick={onleave}>Leave channel</DropdownItem>
+        </DropdownMenu>
+      {/if}
+      <button type="button" class="btn ghost sm" aria-pressed={muted} aria-label={muted ? 'Unmute channel' : 'Mute channel'} title={muted ? 'Unmute: its unread counts again' : 'Mute: only a mention counts'} data-room-mute onclick={mute}>
+        <Icon name={muted ? 'muted' : 'notify'} /> {muted ? 'Unmute' : 'Mute'}
+      </button>
+    </div>
     <span class="cluster gap-xs text-sm text-muted" title={users.map(u => u.name).join(', ')} data-room-members>
       <AvatarGroup {users} size="xs" max={4} /> {members.length}
     </span>
@@ -33,6 +79,7 @@
 
 <style>
   .room-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding-inline: var(--chat-gutter, var(--space-md)); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .room-tools { margin-inline-start: auto; }
   .room-name { min-inline-size: 0; }
   .room-head h1 { margin: 0; align-items: center; font-weight: var(--label-font-weight); }
   .room-head h1 .text-muted { font-weight: normal; }

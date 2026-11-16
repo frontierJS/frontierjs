@@ -2,23 +2,67 @@
   // components/chat/PostItem.mesa -- one post. Avatar, name and time on a first
   // post; a post within five minutes of the same author's last is a continuation
   // line. The body is Markdown with headings one size down and single newlines
-  // kept, a known @username drawn bold. A root's replies show as a count; the
-  // thread pane that opens from it is a later slice's.
+  // kept, a known @username drawn bold. A root's replies show as a link that
+  // opens its thread beside the room; in the pane itself (`inThread`) there is
+  // no count and no Reply.
+  //
+  // The hover bar is react, reply and More. More holds what the server decides:
+  // Edit and Delete (the author's; a refusal comes back as its own words, never
+  // a time window decided here), Pin, Mark unread (also Alt-click) and Follow.
   import Avatar from '@frontierjs/ui/components/display/Avatar.mesa'
   import Markdown from '@frontierjs/ui/components/display/Markdown.mesa'
+  import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
+  import Icon from '../Icon.mesa'
+  import { goto } from '@frontierjs/sierra/router'
+  import { posts } from '../../resources/Post.mesa'
   import { ago } from '../../lib/datetime.js'
-  import { linkMentions, personName } from '../../lib/chat.js'
+  import { getLists, linkMentions, markUnread, me, mentionsMe, personName, rootOf, setFollowing, setPinned, threadHref } from '../../lib/chat.js'
+  import PostEditor from './PostEditor.mesa'
+  import Reactions from './Reactions.mesa'
+  import PostFiles from './PostFiles.mesa'
+  import ReactionPicker from './ReactionPicker.mesa'
 
   export let post = null
   export let people = []
   export let continuation = false
+  export let inThread = false      // drawn in the thread pane: no count, no Reply
+  export let selected = false      // its thread is the one open beside the room
+  export let marked = false        // the post a pin or a link jumped to
 
+  const lists = getLists()
   $: author = personName(post.profileExternalId, people)
   $: body   = linkMentions(post.message, people)
   $: time   = post.createdAt ? new Date(post.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+  $: named  = mentionsMe(post, people)
+  $: mine   = !!me() && post.profileExternalId === me()
+  // A membership is what lets the server mark a channel unread or pin in it.
+  $: inRoom = lists.mine.rows.some(m => m.channelExternalId === post.channelExternalId)
+  $: isRoot = !post.rootExternalId
+  $: following = !!lists.threads.rows.find(t => t.rootExternalId === rootOf(post))?.isFollowing
+
+  let editing = false
+  let error = null
+  let reactions = null
+  async function act(fn) { error = null; try { await fn() } catch (e) { error = e.message } }
+
+  const pin    = () => act(() => setPinned(post, !post.isPinned))
+  const unread = () => act(() => markUnread(post))
+  const follow = () => act(() => setFollowing(rootOf(post), !following))
+  const drop   = () => act(() => posts.service.remove(post.id))
+  // Alt-click marks unread, as Slack does; a click on a link or a button inside stays theirs.
+  function onClick(e) {
+    if (!e.altKey || !inRoom || editing || e.target.closest?.('a, button, input, textarea')) return
+    e.preventDefault()
+    unread()
+  }
 </script>
 
-<article class="post" class:continuation id={`post-${post.externalId}`} data-post={post.externalId}>
+<article class="post" class:continuation class:selected class:marked class:pinned={post.isPinned} class:named data-post-named={named ? 'true' : null} id={`post-${post.externalId}`} data-post={post.externalId} onclick={onClick}>
+  {#if post.isPinned}
+    <p class="post-flag text-xs cluster gap-2xs" data-post-pinned><Icon name="pushpin" /> Pinned</p>
+  {/if}
   <div class="post-lead">
     {#if continuation}
       <time class="post-time text-muted" datetime={post.createdAt}>{time}</time>
@@ -31,20 +75,56 @@
       <div class="cluster gap-xs post-head">
         <strong data-post-author>{author}</strong>
         <time class="text-muted text-sm" datetime={post.createdAt} title={post.createdAt ? new Date(post.createdAt).toLocaleString() : ''}>{time}</time>
-        {#if post.editedAt}<span class="text-muted text-xs">(edited)</span>{/if}
+        {#if post.editedAt}<span class="text-muted text-xs" data-post-edited>(edited)</span>{/if}
       </div>
     {/if}
-    {#if body}<div class="post-text" data-post-text><Markdown text={body} headingBase={4} breaks /></div>{/if}
-    {#if post.replyCount > 0}
-      <p class="text-sm post-replies" data-post-replies><strong>{post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}</strong> <span class="text-muted">· {ago(post.lastReplyAt)}</span></p>
+    {#if editing}
+      <PostEditor {post} ondone={() => editing = false} />
+    {:else if body}
+      <div class="post-text" data-post-text><Markdown text={body} headingBase={4} breaks />{#if continuation && post.editedAt} <span class="text-muted text-xs" data-post-edited>(edited)</span>{/if}</div>
+    {/if}
+    {#if error}<p class="text-sm text-danger post-note" role="alert" data-post-error>{error}</p>{/if}
+    <PostFiles {post} />
+    <Reactions bind:this={reactions} {post} {people} onerror={(e) => error = e.message} />
+    {#if !inThread && isRoot && post.replyCount > 0}
+      <a class="text-sm post-replies" href={threadHref(post)} data-post-replies>
+        <Icon name="thread" /> <strong>{post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}</strong>
+        <span class="text-muted">· {ago(post.lastReplyAt)}</span>
+      </a>
     {/if}
   </div>
+  {#if !editing}
+    <div class="post-bar card" role="toolbar" aria-label="Post actions">
+      <ReactionPicker onpick={(name) => reactions?.toggle(name)}>
+        {#snippet trigger()}<button type="button" class="btn ghost square xs" aria-label="Add a reaction" title="React" data-post-react><Icon name="smile" /></button>{/snippet}
+      </ReactionPicker>
+      {#if !inThread && isRoot}
+        <button type="button" class="btn ghost square xs" aria-label="Reply in thread" title="Reply in thread" data-post-reply onclick={() => goto(threadHref(post))}><Icon name="thread" /></button>
+      {/if}
+      <DropdownMenu placement="bottom-end">
+        {#snippet trigger()}<button type="button" class="btn ghost square xs" aria-label="More actions" title="More" data-post-more><Icon name="more" /></button>{/snippet}
+        {#if mine}<DropdownItem onclick={() => editing = true}>Edit</DropdownItem>{/if}
+        {#if inRoom}<DropdownItem onclick={pin}>{post.isPinned ? 'Unpin from the channel' : 'Pin to the channel'}</DropdownItem>{/if}
+        {#if isRoot || inRoom}<DropdownSeparator />{/if}
+        {#if inRoom}<DropdownItem onclick={follow}>{following ? 'Unfollow thread' : 'Follow thread'}</DropdownItem>{/if}
+        {#if inRoom}<DropdownItem onclick={unread}>Mark unread</DropdownItem>{/if}
+        {#if mine}
+          <DropdownSeparator />
+          <DropdownItem tone="danger" data-confirm="Delete this post? There is no undo." data-confirm-label="Delete" onclick={drop}>Delete</DropdownItem>
+        {/if}
+      </DropdownMenu>
+    </div>
+  {/if}
 </article>
 
 <style>
-  .post { display: grid; grid-template-columns: calc(var(--space-2xl) * 2) minmax(0, 1fr); column-gap: var(--space-lg); padding-block: var(--space-2xs); padding-inline: var(--space-lg); border-radius: var(--card-radius); }
+  .post { position: relative; display: grid; grid-template-columns: calc(var(--space-2xl) * 2) minmax(0, 1fr); column-gap: var(--space-lg); padding-block: var(--space-2xs); padding-inline: var(--space-lg); border-radius: var(--card-radius); transition: background-color var(--duration-fast, 0.12s); }
   .post:not(.continuation) { margin-block-start: var(--space-lg); padding-block-start: var(--space-sm); }
-  .post:hover { background: var(--surface-sunken); }
+  .post:hover, .post.selected, .post.marked { background: var(--surface-sunken); }
+  /* A post that names the reader: a warm ground and a bar, the way the sidebar's pill is danger. */
+  .post.named { background: var(--tint-bg, var(--surface-sunken)); box-shadow: inset calc(var(--border-width) * 3) 0 0 var(--color-warning, var(--color-primary)); }
+  .post.marked { box-shadow: inset calc(var(--border-width) * 3) 0 0 var(--color-primary); }
+  .post-flag { grid-column: 2; margin: 0; color: var(--tint-ink); }
   .post-lead { display: flex; justify-content: center; align-items: flex-start; }
   .post-time { font-size: var(--text-2xs); visibility: hidden; padding-block-start: var(--space-3xs); font-variant-numeric: tabular-nums; }
   .post:hover .post-time { visibility: visible; }
@@ -54,5 +134,15 @@
   .post-body { min-inline-size: 0; }
   .post-text { line-height: var(--leading-body); }
   .post-text :global(p) { margin: 0; }
-  .post-replies { margin: 0; }
+  .post-text :global(p:last-of-type) { display: inline; }
+  .post-note { margin: 0; }
+  .post-replies { display: inline-flex; align-items: center; gap: var(--space-2xs); inline-size: fit-content; text-decoration: none; }
+  .post-replies:hover strong { text-decoration: underline; }
+  /* The actions float over the post's corner as one quiet capsule. */
+  .post-bar { position: absolute; inset-inline-end: var(--space-sm); inset-block-start: calc(-1 * var(--space-lg)); display: flex; align-items: center; gap: var(--space-3xs); padding: var(--space-3xs); border-radius: var(--pill-radius); box-shadow: var(--shadow-md); opacity: 0; pointer-events: none; transition: opacity var(--duration-fast, 0.12s); }
+  /* DropdownMenu wraps its trigger in an inline-block span; make it a flex box so it sits on the same centre line as the bare buttons. */
+  .post-bar > :global(*) { margin: 0; }
+  .post-bar > :global(span) { display: flex !important; }
+  .post-bar :global(.btn) { border-radius: var(--pill-radius); }
+  .post:hover .post-bar, .post:focus-within .post-bar { opacity: 1; pointer-events: auto; }
 </style>

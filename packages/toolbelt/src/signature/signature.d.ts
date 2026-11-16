@@ -139,6 +139,17 @@ export function generateSigningKeys({ seed }?: {
     privateKey: string;
 }>;
 /**
+ * The public half of a `generateSigningKeys` private key, in that pair's own
+ * encoding, or `null` for a key that is missing or does not parse. A second
+ * reading of the private key's format elsewhere is a second answer to what
+ * the public half is (`FJS-D2234`), and a verifier that holds only the private
+ * half must be able to name the key it checks against.
+ *
+ * @param {string | null | undefined} privateKey
+ * @returns {Promise<string | null>}
+ */
+export function publicKeyOf(privateKey: string | null | undefined): Promise<string | null>;
+/**
  * A message signed with a `generateSigningKeys` pair, outside any request —
  * a letter that outlives the request carrying it, verified by whoever opens
  * it later. The caller puts a purpose line at the top of `message`, so a

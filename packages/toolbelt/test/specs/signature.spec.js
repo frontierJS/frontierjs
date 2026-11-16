@@ -10,7 +10,7 @@
  * Each refusal below is a real attack on the shape, not a spelling check.
  */
 
-import { canonicalRequest, canonicalQuery, signRequest, verifyRequest, sha256Hex, generateSigningKeys, nonceMemory } from '../../src/signature/signature.js'
+import { canonicalRequest, canonicalQuery, signRequest, verifyRequest, sha256Hex, generateSigningKeys, publicKeyOf, nonceMemory } from '../../src/signature/signature.js'
 
 const SECRET = 'a-fleet-secret'
 const BODY   = JSON.stringify({ outpost_version: '0.4.1' })
@@ -45,6 +45,21 @@ test('signature: a key pair signs, the public half verifies, and nothing else do
   // Remote input that does not parse is a refusal, not a crash.
   assert.deepEqual(await verify({ publicKey: 'not-a-key', ...req, headers }), { ok: false, reason: 'signature does not match' })
   assert.deepEqual(await verify({ publicKey: mine.publicKey, ...req, headers: { ...headers, 'X-Frontier-Signature': 'v1-ed25519=@@' } }), { ok: false, reason: 'signature does not match' })
+})
+
+test('signature: publicKeyOf names the public half of a private key, and null for one that is not', async function () {
+  const keys = await generateSigningKeys()
+  assert.equal(await publicKeyOf(keys.privateKey), keys.publicKey)
+  const seeded = await generateSigningKeys({ seed: new Uint8Array(32).fill(7) })
+  assert.equal(await publicKeyOf(seeded.privateKey), seeded.publicKey)
+
+  const req = { method: 'POST', path: '/revert', body: BODY }
+  const headers = await sign({ privateKey: keys.privateKey, ...req })
+  const derived = await verify({ publicKey: await publicKeyOf(keys.privateKey), ...req, headers })
+  assert.ok(derived.ok, JSON.stringify(derived))
+
+  for (const bad of [undefined, null, '', 42, 'not-a-key', keys.publicKey])
+    assert.equal(await publicKeyOf(bad), null)
 })
 
 test('signature: the scheme is named — an HMAC where a key pair is expected, and the reverse, say which', async function () {

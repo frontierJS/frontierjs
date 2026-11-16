@@ -427,6 +427,26 @@ export async function generateSigningKeys({ seed } = {}) {
 }
 
 
+/**
+ * The public half of a `generateSigningKeys` private key, in that pair's own
+ * encoding, or `null` for a key that is missing or does not parse. A second
+ * reading of the private key's format elsewhere is a second answer to what
+ * the public half is (`FJS-D2234`), and a verifier that holds only the private
+ * half must be able to name the key it checks against.
+ *
+ * @param {string | null | undefined} privateKey
+ * @returns {Promise<string | null>}
+ */
+export async function publicKeyOf(privateKey) {
+  if (typeof privateKey !== 'string' || !privateKey) return null
+  try {
+    const key = await crypto.subtle.importKey('pkcs8', fromBase64url(privateKey), ED25519, true, ['sign'])
+    return (await crypto.subtle.exportKey('jwk', key)).x ?? null
+  } catch {
+    return null
+  }
+}
+
 async function ed25519Sign(privateKey, message) {
   const key = await crypto.subtle.importKey('pkcs8', fromBase64url(privateKey), ED25519, false, ['sign'])
   return toBase64url(await crypto.subtle.sign(ED25519, key, ENCODER.encode(message)))

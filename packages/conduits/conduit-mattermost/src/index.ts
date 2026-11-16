@@ -130,6 +130,17 @@ export async function listChannels(mm: MattermostSend, profileExternalId: string
   return { rows: (Array.isArray(r.data) ? r.data : []).map(x => channelModel.parse(x)).filter((x): x is ChannelRow => !!x) }
 }
 
+/**
+ * A team's open channels, whoever is in them -- what a person browses to find
+ * one to join. Private, direct and group channels are not listed, and the
+ * person's own are among them: the caller tells them apart by membership.
+ */
+export async function browseChannels(mm: MattermostSend, teamExternalId: string, opts: { page?: number; perPage?: number } = {}): Promise<{ rows?: ChannelRow[]; error?: MattermostFailure }> {
+  const r = await mm.api<Channel[]>({ method: 'GET', path: `${API}/teams/${needId(teamExternalId, 'teamExternalId')}/channels`, query: { page: opts.page ?? 0, per_page: opts.perPage ?? 200 }, ...LIST })
+  if (r.error) return { error: translate(r.error, r.meta.status, r.meta.headers) }
+  return { rows: (Array.isArray(r.data) ? r.data : []).map(x => channelModel.parse(x)).filter((x): x is ChannelRow => !!x) }
+}
+
 export async function listMembers(mm: MattermostSend, channelExternalId: string, opts: { page?: number; perPage?: number } = {}): Promise<{ rows?: ChannelMemberRow[]; error?: MattermostFailure }> {
   const r = await mm.api<ChannelMember[]>({ method: 'GET', path: `${API}/channels/${channelExternalId}/members`, query: { page: opts.page ?? 0, per_page: opts.perPage ?? 200 }, ...LIST })
   if (r.error) return { error: translate(r.error, r.meta.status, r.meta.headers) }

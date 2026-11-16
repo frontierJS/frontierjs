@@ -10,7 +10,8 @@
  * It refuses to start without a server id, its keys and a control-plane URL —
  * see `config.js` for why each of the three has no safe default. `outpost
  * status` is the other entry: one reading of the box, printed, and no server
- * (`status.js`).
+ * (`status.js`). `outpost revert` is the third: a revert with Basecamp down,
+ * signed with this machine's key and sent to the running one (`revert.js`).
  */
 
 import { readConfig }            from './config.js'
@@ -104,6 +105,9 @@ function serveMachine(config) {
 if (process.argv[2] === 'status') {
   const { readStatus } = await import('./status.js')
   console.log(JSON.stringify(await readStatus(), null, 2))
+} else if (process.argv[2] === 'revert') {
+  const { runRevert } = await import('./revert.js')
+  process.exit(await runRevert(process.argv.slice(3)))
 } else {
   serveMachine(readConfig())
 }

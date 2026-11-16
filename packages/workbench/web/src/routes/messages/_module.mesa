@@ -23,8 +23,8 @@
 </script>
 
 {#if lists}
-  <div class="chat" class:has-room={!!page.params.id} data-messages>
-    <ChatSidebar currentId={page.params.id ?? null} />
+  <div class="chat" class:has-room={!!page.params.id || page.pathname.startsWith('/messages/threads') || page.pathname.startsWith('/messages/browse')} data-messages>
+    <ChatSidebar currentId={page.params.id ?? null} onThreads={page.pathname.startsWith('/messages/threads')} onBrowse={page.pathname.startsWith('/messages/browse')} />
     <div class="chat-main">
       <slot />
     </div>

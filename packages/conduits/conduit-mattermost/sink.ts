@@ -71,7 +71,8 @@ export interface MattermostSinkOptions { port?: number }
 const json   = (b: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json', ...headers } })
 const refuse = (status: number, id: string, message: string) => json({ id, message, detailed_error: '', request_id: mint('req'), status_code: status }, status)
 let n = 0
-const mint = (prefix: string) => `${prefix}${(++n).toString(36)}`.padEnd(26, '0')
+// A channel's id begins with its name, so a hyphen or a long name must still make a 26-character [a-z0-9] id, as the server's are.
+const mint = (prefix: string) => `${prefix.replace(/[^a-z0-9]/g, '').slice(0, 18)}${(++n).toString(36)}`.padEnd(26, '0')
 const PENDING_WINDOW_MS = 30_000
 const SINCE_LIMIT = 1000
 
@@ -695,6 +696,12 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
       if (path === '/api/v4/users/me') return record(json(users[caller]))
       if ((x = m(/^\/api\/v4\/users\/([a-z0-9]{26})\/teams$/)))
         return record(json(users[x[1]] ? [team] : []))
+      if ((x = m(/^\/api\/v4\/teams\/([a-z0-9]{26})\/channels$/)) && req.method === 'GET') {
+        if (x[1] !== team.id) return record(refuse(404, 'app.team.get.find.app_error', 'Unable to find the team.'))
+        const page = Number(url.searchParams.get('page') ?? 0), per = Number(url.searchParams.get('per_page') ?? 60)
+        const open = Object.values(channels).filter(c => c.type === 'O' && !c.delete_at && c.team_id === team.id)
+        return record(json(open.slice(page * per, (page + 1) * per)))
+      }
       if ((x = m(/^\/api\/v4\/users\/([a-z0-9]{26})\/teams\/([a-z0-9]{26})\/channels$/))) {
         const deleted = url.searchParams.get('include_deleted') === 'true'
         return record(json(Object.values(channels).filter(c => (deleted || !c.delete_at) && (c.team_id === x![2] || c.team_id === '') && isMember(c.id, x![1]))))

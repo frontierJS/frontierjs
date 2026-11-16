@@ -84,6 +84,21 @@ async function countPost(app: App, post: PostRow): Promise<boolean> {
   return (r?.count ?? 0) > 0
 }
 
+/**
+ * A reply's arrival raises its root's reply count, once. The server tells only a
+ * thread's followers (`thread_updated`, with the root), so a member who is not
+ * following one would otherwise keep a root that says no replies. The reply's own
+ * time is the guard: a root whose lastReplyAt has reached it has counted it, whether
+ * this frame, another socket's or a `thread_updated` got there first.
+ */
+async function countReply(app: App, post: PostRow): Promise<void> {
+  if (!post.rootExternalId || !post.createdAt) return
+  await table(app, 'Post').updateMany({
+    where: { externalId: post.rootExternalId, OR: [{ lastReplyAt: null }, { lastReplyAt: { lt: post.createdAt } }] },
+    data: { replyCount: { increment: 1 }, lastReplyAt: post.createdAt },
+  })
+}
+
 /** (member, post) pairs already counted as a mention here — a redelivered frame counts nothing twice. Bounded: a pair is only ever met within seconds. */
 const mentioned = new Set<string>()
 const MENTIONED_MAX = 5000
@@ -344,6 +359,7 @@ export async function applyFrame(app: App, memberId: string, profile: string, ev
     // the post when they land can attach them.
     case 'posted':
       await countPost(app, ev.payload.post)
+      await countReply(app, ev.payload.post)
       await countFor(app, profile, ev.payload.post, ev.payload.mentions)
       await land(app, 'Post', [ev.payload.post])
       return land(app, 'FileInfo', ev.payload.files ?? [])

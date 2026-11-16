@@ -201,6 +201,7 @@ try {
   const root = await say(sink.tokens.bob, ids.open, 'a thread to follow')
   await say(sink.tokens.bob, ids.open, 'its reply', root.id)
   await until(() => sys.post.findUnique({ where: { externalId: root.id } }))
+  check(await until(async () => (await sys.post.findUnique({ where: { externalId: root.id } }))?.replyCount === 1), 'a reply on the server raises its root\'s replyCount in the mirror, though alice does not follow the thread yet (the server tells only followers)')
   const threadKeyOf = `${ids.alice}:${root.id}`
   const followed = await call(ada, 'follow', { rootExternalId: root.id, following: true })
   const followedThere = (await sinkCall(`/users/${ids.alice}/teams/${ids.team}/threads/${root.id}`, sink.tokens.alice)).json
@@ -267,6 +268,22 @@ try {
   check(await mirrorMember(lounge.id, ids.alice), 'and the mirror holds her membership')
   const left = await as(ada).service('channelMembers').remove(joined?.id).catch((e: any) => e)
   check(!(await memberOn(lounge.id, ids.alice)) && !(await mirrorMember(lounge.id, ids.alice)), 'channelMembers.remove leaves it on both', left?.message ?? left)
+
+  // channels.create: a private room made as alice, who is its first member
+  const made = await as(ada).service('channels').create({ teamExternalId: ids.team, name: 'made-by-create', displayName: 'Made by create', purpose: 'a purpose', type: 'private' }).catch((e: any) => e)
+  const madeOnSink = (await sinkCall(`/users/${ids.alice}/teams/${ids.team}/channels`, sink.tokens.alice)).json?.find((c: any) => c.name === 'made-by-create')
+  // The answer is the row as the caller reads it, and a private room is readable by its members: the creator's own
+  // membership arrives by the socket, so the answer is null until it lands and the screen finds the room by name.
+  check(!made?.message && (made === null || made?.externalId === madeOnSink?.id) && madeOnSink?.type === 'P' && madeOnSink.purpose === 'a purpose' && madeOnSink.creator_id === ids.alice, 'channels.create makes a private room on the server as alice', { made, madeOnSink })
+  check(await until(() => sys.channel.findUnique({ where: { externalId: madeOnSink?.id } })) && await until(() => mirrorMember(madeOnSink?.id, ids.alice)), 'and the room and its creator\'s membership land in the mirror')
+
+  // browse: the team's open rooms she is not in, landed as rows she can open
+  const browsed = await call(ada, 'browse', {})
+  const browsedIds: string[] = (browsed?.channels ?? []).map((c: any) => c.externalId)
+  check(browsedIds.includes(lounge.id) && !browsedIds.includes(ids.open) && !browsedIds.includes(ids.secret), 'chat.browse answers the open rooms alice is not in, and neither her own nor a private one', browsed)
+  check(!!(await sys.channel.findUnique({ where: { externalId: lounge.id } })) && (browsed?.channels ?? []).every((c: any) => c.teamExternalId === ids.team && c.name), 'each landed in the mirror, carrying its team')
+  await as(ada).service('channelMembers').create({ channelExternalId: lounge.id, profileExternalId: ids.alice })
+  check(!((await call(ada, 'browse', {}))?.channels ?? []).some((c: any) => c.externalId === lounge.id), 'and once she joins, browse stops listing it')
   await sinkCall(`/channels/${lounge.id}/members`, sink.tokens.alice, { method: 'POST', body: { user_id: ids.alice } })
   check(await until(() => mirrorMember(lounge.id, ids.alice)), 'a join from another client lands as user_added and her backfill')
   await sinkCall(`/channels/${lounge.id}/members/${ids.alice}`, sink.tokens.alice, { method: 'DELETE' })

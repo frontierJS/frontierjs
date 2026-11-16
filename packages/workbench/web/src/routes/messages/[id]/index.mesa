@@ -6,17 +6,24 @@ title: Messages
   // composer. Opening it calls `chat.view`, which stamps the reader's watermark on
   // the server; the sync pushes the new counts back and the pill goes. A post that
   // arrives while the channel is on screen and the window has focus is read at once;
-  // otherwise it counts, and the focus coming back reads it.
-  import { page } from '@frontierjs/sierra/router'
+  // otherwise it counts, and the focus coming back reads it. A channel the reader
+  // marked unread is held (lib/chat.js `markUnread`) until they leave it or send.
+  //
+  // `?thread=<rootExternalId>` opens that thread beside the room: a query, so the
+  // URL is one and Back closes the pane. Under 960px the pane covers the room.
+  import { page, goto } from '@frontierjs/sierra/router'
   import { channelMembers } from '../../../resources/ChannelMember.mesa'
-  import { chat, getLists, countsOf, channelLabel, openChannel, markRead, me } from '../../../lib/chat.js'
+  import { chat, getLists, countsOf, channelLabel, openChannel, markRead, release, me, landingChannel, leaveChannel } from '../../../lib/chat.js'
   import RoomHeader from '../../../components/chat/RoomHeader.mesa'
   import PostList from '../../../components/chat/PostList.mesa'
   import Composer from '../../../components/chat/Composer.mesa'
+  import ThreadPane from '../../../components/chat/ThreadPane.mesa'
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
 
   const lists = getLists()
   $: id = page.params.id
+  $: page.query
+  $: threadId = page.query.thread ? String(page.query.thread) : null
   $: people = lists.people.rows
   $: channel = lists.channels.rows.find(c => c.externalId === id) ?? null
   $: counts = countsOf(lists.channels.rows, lists.mine.rows)
@@ -37,18 +44,37 @@ title: Messages
   let error = null
   const open = (channelId) => openChannel(channelId).catch(e => { error = e.message })
   $.onMount(() => open(id))
-  $: id, () => { watchMembers(id); open(id) }
-  $.onDestroy(() => { chat.activeChannelId = null })
+  $: id, (_, prev) => { release(prev); markId = null; watchMembers(id); open(id) }
+  $.onDestroy(() => { release(id); chat.activeChannelId = null })
+
+  // A pin's click: the post is scrolled to and marked when the window holds it.
+  let markId = null
+  function jump(postId) {
+    error = document.getElementById(`post-${postId}`) ? null : 'That post is older than what is loaded here.'
+    markId = null
+    requestAnimationFrame(() => { markId = postId })
+  }
+  // Leave, then go to a channel still held: the one `landingChannel` names without this one.
+  async function leave() {
+    error = null
+    try {
+      const next = landingChannel(lists.channels.rows, lists.mine.rows, id)
+      await leaveChannel(id, lists.mine.rows)
+      goto(next ? `/messages/${next}/` : '/messages/', undefined, { replace: true })
+    } catch (e) { error = e.message }
+  }
+  const closeThread = () => goto(`/messages/${id}/`)
+  const sent = () => { if (id in chat.held) { release(id); markRead(id).catch(e => { error = e.message }) } }
 
   // A post landing while the reader is looking at the channel is read; one that
   // lands while the window is behind another is left counting.
   let marking = false
   async function readIfSeen() {
-    if (marking || !id || !(counts[id]?.unread > 0 || counts[id]?.mentions > 0) || !document.hasFocus()) return
+    if (marking || !id || id in chat.held || !(counts[id]?.unread > 0 || counts[id]?.mentions > 0) || !document.hasFocus()) return
     marking = true
     try { await markRead(id) } catch (e) { error = e.message } finally { marking = false }
   }
-  $: counts, () => readIfSeen()
+  $: counts, chat.held, () => readIfSeen()
 </script>
 
 <mesa:window onfocus={readIfSeen} />
@@ -56,11 +82,16 @@ title: Messages
 {#if missing}
   <div class="room-missing"><Alert tone="danger">No such channel, or not one you can read.</Alert></div>
 {:else if channel}
-  <div class="room-col" data-channel-page={id}>
-    <RoomHeader {channel} {members} {people} {self} />
-    {#if error}<Alert tone="danger">{error}</Alert>{/if}
-    <PostList channelId={id} {people} />
-    <Composer channelId={id} placeholder={`Message ${channelLabel(channel, people, self).slice(2)}`} />
+  <div class="room" class:has-thread={!!threadId} data-channel-page={id}>
+    <div class="room-col">
+      <RoomHeader {channel} {members} {people} {self} muted={!!counts[id]?.muted} inRoom={id in counts} onjump={jump} onleave={leave} />
+      {#if error}<Alert tone="danger">{error}</Alert>{/if}
+      <PostList channelId={id} {people} {threadId} {markId} />
+      <Composer channelId={id} placeholder={`Message ${channelLabel(channel, people, self).slice(2)}`} onsent={sent} />
+    </div>
+    {#if threadId}
+      <ThreadPane {channel} rootId={threadId} {people} label={channelLabel(channel, people, self)} onclose={closeThread} />
+    {/if}
   </div>
 {:else}
   <p class="text-muted room-missing">…</p>
@@ -69,5 +100,12 @@ title: Messages
 <style>
   .room-missing { padding: var(--space-2xl); }
   /* One reading column, however wide the window: the header, the posts and the composer each pad their sides out to it. */
-  .room-col { --chat-gutter: max(var(--space-2xl), calc((100% - var(--container-narrow)) / 2)); display: flex; flex-direction: column; flex: 1; min-block-size: 0; min-inline-size: 0; }
+  .room { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); min-block-size: 0; }
+  .room.has-thread { grid-template-columns: minmax(0, 1fr) minmax(0, calc(var(--space-2xl) * 9)); }
+  .room-col { --chat-gutter: max(var(--space-2xl), calc((100% - var(--container-narrow)) / 2)); display: flex; flex-direction: column; min-block-size: 0; min-inline-size: 0; }
+  .room.has-thread .room-col { --chat-gutter: var(--space-lg); }
+  @media (max-width: 960px) {
+    .room.has-thread { grid-template-columns: minmax(0, 1fr); }
+    .room.has-thread > .room-col { display: none; }
+  }
 </style>

@@ -1,0 +1,35 @@
+<script>
+  // components/chat/MentionList.mesa -- the `@` picker's list. The composer opens it above
+  // itself, and the edit box under itself in the flow (a post near the top of the list has
+  // no room above it, and floating it below would cover Save). The channel's people come
+  // first and say so; `@channel`, `@here` and `@all` are drawn as calls. The box owns the
+  // keys (`pickerKey` in lib/chat.js); this draws and takes a pointer, on mousedown so the
+  // box keeps its focus.
+  import Icon from '../Icon.mesa'
+
+  export let picker = null          // { items, index } from mentionAt
+  export let below  = false
+  export let onpick = undefined     // (item) => void
+</script>
+
+{#if picker}
+  <ul class="popover mention-list items menu" class:below role="listbox" aria-label="People" data-mention-list>
+    {#each picker.items as p, i (p.id)}
+      <li><button type="button" class="item" class:mention-call={p.call} role="option" aria-selected={i === picker.index} data-mention={p.handle} onmousedown|preventDefault={() => onpick?.(p)}>
+        {#if p.call}<span class="mention-dot"><Icon name="group" label="Everyone" /></span>{/if}
+        <span class="item-text"><span class="item-title">{p.name}</span><span class="item-sub">@{p.handle}{#if p.inChannel} · in this channel{/if}</span></span>
+      </button></li>
+    {/each}
+  </ul>
+{/if}
+
+<style>
+  .mention-list { position: absolute; inset-block-end: 100%; inset-inline-start: 0; margin-block-end: var(--space-xs); min-inline-size: calc(var(--space-2xl) * 8); list-style: none; padding: var(--space-2xs); z-index: 2; }
+  /* Under the edit box, in the flow: it pushes Save and Cancel down rather than covering them. */
+  .mention-list.below { position: static; inline-size: fit-content; margin-block: var(--space-xs) 0; }
+  .mention-list li { display: contents; }
+  .mention-list :global(.item) { inline-size: 100%; text-align: start; }
+  .mention-list :global(.item)[aria-selected="true"] { background: var(--surface-sunken); }
+  .mention-call .item-sub { font-weight: var(--label-font-weight); }
+  .mention-dot { display: inline-flex; align-items: center; }
+</style>

@@ -26,7 +26,7 @@ export function createReleaseCache({ dir, max }?: {
      * a redeploy of one Release is one record. `secret_refs` is what `/deploy`
      * applied, and `config.env` loses those keys' values before it is written.
      */
-    record(appId: any, { release_id, digest, image, config, secret_refs, rollback, applied_at }: {
+    record(appId: any, { release_id, digest, image, config, secret_refs, rollback, applied_at, hosts, paths, redirects, noindex }: {
         release_id?: any;
         digest: any;
         image: any;
@@ -34,7 +34,15 @@ export function createReleaseCache({ dir, max }?: {
         secret_refs?: {};
         rollback?: boolean;
         applied_at?: string;
+        hosts: any;
+        paths: any;
+        redirects: any;
+        noindex: any;
     }): {
+        hosts?: any[];
+        paths?: any;
+        redirects?: any;
+        noindex?: any;
         release_id: any;
         digest: any;
         image: any;

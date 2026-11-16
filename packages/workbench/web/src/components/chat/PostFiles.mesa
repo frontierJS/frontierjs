@@ -1,0 +1,21 @@
+<script>
+  // components/chat/PostFiles.mesa -- the files under a post. A post row does not say
+  // whether it has any, and a FileInfo row names its post and nothing above it, so each
+  // post asks for its own: a file shows once its row has landed, which an upload's own
+  // answer or the sync does, and a deleted one is gone from the list.
+  import { fileInfos } from '../../resources/FileInfo.mesa'
+  import { attachmentOf } from '../../lib/files.js'
+  import FileCard from './FileCard.mesa'
+
+  export let post = null
+
+  const list = fileInfos.tethered({ state: 'local', all: true, where: { postExternalId: post.externalId } })
+  $.onDestroy(() => list.destroy())
+  $: files = list.rows.filter(f => !f.deletedAt).map(attachmentOf)
+</script>
+
+{#if files.length}
+  <div class="stack gap-xs" data-post-files>
+    {#each files as f (f.id)}<FileCard file={f} />{/each}
+  </div>
+{/if}

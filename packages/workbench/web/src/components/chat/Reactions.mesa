@@ -1,0 +1,57 @@
+<script>
+  // components/chat/Reactions.mesa -- the row of `emoji · n` under a post. Mine is
+  // marked; a click toggles mine; the title names who. The `+` at the end opens the
+  // picker. The post's Reaction rows are a tether of their own, so a reaction from
+  // another person (or the reader's from another tab) arrives as a push.
+  //
+  // One tether per post: a Reaction row names its post and nothing above it, so the
+  // channel cannot be asked for its reactions at once, and a `$in` over the rows on
+  // screen would be re-made every time a post lands.
+  import { reactions } from '../../resources/Reaction.mesa'
+  import { glyphOf } from '../../lib/emoji.js'
+  import { me, reactionChips, toggleReaction } from '../../lib/chat.js'
+  import Icon from '../Icon.mesa'
+  import ReactionPicker from './ReactionPicker.mesa'
+
+  export let post   = null
+  export let people = []
+  export let onerror = undefined
+
+  const list = reactions.tethered({ state: 'local', all: true, where: { postExternalId: post.externalId } })
+  $.onDestroy(() => list.destroy())
+
+  $: rows  = list.rows
+  $: chips = reactionChips(rows, me(), people)
+
+  let busy = false
+  export async function toggle(name) {
+    if (busy) return
+    busy = true
+    try { await toggleReaction(post, name, rows, me()) } catch (e) { onerror?.(e) } finally { busy = false }
+  }
+</script>
+
+{#if chips.length}
+  <div class="cluster gap-2xs reactions" role="group" aria-label="Reactions" data-reactions>
+    {#each chips as c (c.name)}
+      <button type="button" class="pill reaction" class:mine={c.mine} aria-pressed={c.mine} disabled={busy}
+              title={`${c.who} reacted ${c.name}`} aria-label={`${c.name} ${c.count}, ${c.who}`} data-reaction={c.name} onclick={() => toggle(c.name)}>
+        <span class="reaction-emoji">{glyphOf(c.name)}</span> <span data-reaction-count>{c.count}</span>
+      </button>
+    {/each}
+    <ReactionPicker placement="bottom-start" onpick={toggle}>
+      {#snippet trigger()}<button type="button" class="pill reaction reaction-add" aria-label="Add a reaction" title="Add a reaction"><Icon name="smile" /></button>{/snippet}
+    </ReactionPicker>
+  </div>
+{/if}
+
+<style>
+  .reactions { margin-block-start: var(--space-2xs); }
+  .reaction { cursor: pointer; gap: var(--space-2xs); }
+  .reaction.mine { border-color: var(--color-primary); background: var(--surface-sunken); }
+  .reaction-emoji { line-height: 1; }
+  /* The + waits for the pointer: a row of chips reads cleaner without it. */
+  .reaction-add { opacity: 0; transition: opacity var(--duration-fast, 0.12s); }
+  :global(.post:hover) .reaction-add { opacity: 0.6; }
+  .reaction-add:hover, .reaction-add:focus-visible { opacity: 1; }
+</style>

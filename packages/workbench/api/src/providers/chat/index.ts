@@ -13,8 +13,8 @@
 import { byRef, conduit, createEnvResolver } from '@frontierjs/conduit'
 import type { CredentialCaller, CredentialResolver } from '@frontierjs/conduit'
 import {
-  bindMattermost, createDirectChannel, createGroupChannel, fileBytes, followThread, getThread, listProfiles, markThreadRead, markUnread,
-  me, mirror, muteChannel, pinPost, threadKey, unfollowThread, unpinPost, uploadFile, viewChannel,
+  bindMattermost, browseChannels, createDirectChannel, createGroupChannel, fileBytes, followThread, getThread, listProfiles, markThreadRead, markUnread,
+  listTeams, me, mirror, muteChannel, pinPost, threadKey, unfollowThread, unpinPost, uploadFile, viewChannel,
   mattermostSocketDialect, mattermostSocketTarget, mattermostTargets,
 } from '@frontierjs/conduit-mattermost'
 import type { FileSize, NewFile } from '@frontierjs/conduit-mattermost'
@@ -237,4 +237,26 @@ export async function fileOf (app: App, externalId: string, size: FileSize) {
 /** Upload one file as the caller into a channel; a post naming it in `fileExternalIds` claims it. */
 export async function uploadAs (app: App, file: NewFile) {
   return uploadFile(asCaller(app), file)
+}
+
+/**
+ * The open channels of the caller's teams that they are not in, read live and
+ * landed so each is a row the screen can open. The caller's own memberships are
+ * the mirror's, which the sync keeps whole, so a channel they hold is left out
+ * without a second question to the server.
+ */
+export async function browseAs (app: App, profile: string) {
+  const mm = asCaller(app)
+  const teams = await listTeams(mm, profile)
+  if (!teams.rows) return { error: teams.error }
+  const found: any[] = []
+  for (const t of teams.rows) {
+    const r = await browseChannels(mm, t.externalId)
+    if (!r.rows) return { error: r.error }
+    found.push(...r.rows)
+  }
+  const open = found.filter(c => c.type === 'open' && !c.deletedAt)
+  if (open.length) await land(app, 'Channel', open)
+  const mine = new Set((await sysOf(app).channelMember.findMany({ where: { profileExternalId: profile }, select: { channelExternalId: true } })).map((m: { channelExternalId: string }) => m.channelExternalId))
+  return { rows: open.filter(c => !mine.has(c.externalId)) }
 }

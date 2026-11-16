@@ -1,0 +1,83 @@
+<script>
+  // components/chat/PostEditor.mesa -- a post's text, edited in place. Enter saves,
+  // Shift+Enter breaks a line, Esc puts it back; Esc is taken here so the thread pane
+  // around it stays open. Saving an unchanged text is a cancel. An empty text is
+  // refused: taking a post back is Delete's. The author alone may edit, and the
+  // server says so (403) rather than this box guessing at a window.
+  import { posts } from '../../resources/Post.mesa'
+  import MentionList from './MentionList.mesa'
+  import { applyMention, getLists, mentionAt, pickerKey, watchMembers } from '../../lib/chat.js'
+
+  export let post   = null
+  export let ondone = undefined   // () => void -- saved or put back
+
+  let text   = post?.message ?? ''
+  let box    = null
+  let saving = false
+  let error  = null
+  let picker = null   // the @ picker, drawn under the box so it never covers Save
+
+  const lists = getLists()
+  const members = watchMembers(post.channelExternalId)
+  $.onDestroy(() => members.destroy())
+  $: inChannel = (lists.channels.rows.find(c => c.externalId === post.channelExternalId)?.type ?? 'open') !== 'direct'
+  function watchMention() { picker = mentionAt(text, box?.selectionStart ?? text.length, lists.people.rows, members.rows.map(m => m.profileExternalId), inChannel) }
+  function pick(item) {
+    if (!picker) return
+    const put = applyMention(text, picker, item)
+    text = put.text
+    picker = null
+    box?.focus()
+    requestAnimationFrame(() => { box?.setSelectionRange(put.caret, put.caret); grow() })
+  }
+
+  $.onMount(() => {
+    if (!box) return
+    box.focus()
+    box.setSelectionRange(text.length, text.length)
+    grow()
+  })
+  function grow() {
+    if (!box) return
+    box.style.height = 'auto'
+    box.style.height = Math.min(box.scrollHeight, 320) + 'px'
+  }
+
+  async function save() {
+    const message = text.trim()
+    if (saving) return
+    if (message === (post.message ?? '').trim()) { ondone?.(); return }
+    if (!message) { error = 'A post says something. To take it back, delete it.'; return }
+    saving = true
+    error = null
+    try {
+      await posts.service.patch(post.id, { message })
+      ondone?.()
+    } catch (e) { error = e.message } finally { saving = false }
+  }
+  function onKey(e) {
+    if (picker) {
+      const next = pickerKey(picker, e)
+      if (next !== undefined) { e.preventDefault(); e.stopPropagation(); if (next === 'pick') pick(picker.items[picker.index]); else picker = next; return }
+    }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ondone?.(); return }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); save() }
+  }
+</script>
+
+<div class="post-edit stack gap-xs" data-post-editor>
+  <textarea class="field post-edit-text" bind:this={box} bind:value={text} rows="1" aria-label="Edit message"
+            oninput={() => { grow(); watchMention() }} onkeydown={onKey} onclick={watchMention} disabled={saving}></textarea>
+  <MentionList {picker} below onpick={pick} />
+  {#if error}<p class="text-sm text-danger post-edit-note" role="alert">{error}</p>{/if}
+  <div class="cluster gap-xs">
+    <button type="button" class="btn sm" data-edit-save onclick={save} disabled={saving}>Save</button>
+    <button type="button" class="btn ghost sm" onclick={() => ondone?.()}>Cancel</button>
+    <span class="text-xs text-muted">Enter saves · Esc cancels</span>
+  </div>
+</div>
+
+<style>
+  .post-edit-text { resize: none; min-block-size: 0; inline-size: 100%; }
+  .post-edit-note { margin: 0; }
+</style>

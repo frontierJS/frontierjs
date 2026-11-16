@@ -1614,3 +1614,45 @@ The Shapes section above is read as prose and holds no question `fli decisions` 
   - **A** — keep `FJS-D576`; add a gate-report / `fli check` warning naming the dead rule, and document the system-write workaround.
   - **B** — a passing create rule vouches for its parents.
   - **Recommend A** — B undoes `FJS-D576`'s existence-hiding (Invariant 6).
+
+- ~~**FJS-D2235 — How does a `{ body: 'stream' }` route take a body larger than Bun's server-wide limit without raising every buffered route's bound?**~~ **Answered 2026-11-16 (`FJS-D2235`): A — the route declares `maxBodySize` in its `FJS-D2219` options (`{ POST: { body: 'stream', maxBodySize } }`); Bun's `maxRequestBodySize` is set to the largest declared bound and buffered routes keep `http.maxBodySize`, which `body.ts` already enforces.** Found triaging `FJS-4342`.
+  - **A** — the route declares `maxBodySize` in its `FJS-D2219` options (`{ POST: { body: 'stream', maxBodySize } }`); Bun's `maxRequestBodySize` is set to the largest declared bound and buffered routes keep `http.maxBodySize`, which `body.ts` already enforces.
+  - **B** — document raising `http.maxBodySize` app-wide.
+  - **C** — keep the limit; refuse loudly (413 or a log line) before the handler answers.
+  - **Recommend A** — the bound belongs to the route that needs it, and junction already bounds buffered bodies without Bun.
+
+- ~~**FJS-D2236 — How does a model-backed service's custom method return a one-time secret under a field name the model protects (`@secret`)?**~~ **Answered 2026-11-16 (`FJS-D2236`): A — the `methods:` entry declares the disclosure, `{ method: 'mint', reveal: ['token'] }`; stripping stays the default and the existing redaction owner skips only the declared keys.** Found triaging `FJS-4343`.
+  - **A** — the `methods:` entry declares the disclosure, `{ method: 'mint', reveal: ['token'] }`; stripping stays the default and the existing redaction owner skips only the declared keys.
+  - **B** — shape only returns junction recognizes as rows.
+  - **C** — document renaming the field.
+  - **Recommend A** — explicit at the method, beside `log:` and `read:`; B already guesses wrong on a wrapped return.
+
+- ~~**FJS-D2237 — How does a custom method declare that only in-process callers may reach it?**~~ **Answered 2026-11-16 (`FJS-D2237`): A — `transports: ['internal']` on the `methods:` entry, from the existing `ctx.transport` values; `callService` answers 405 where it already does, mcp included.** Found triaging `FJS-4345`.
+  - **A** — `transports: ['internal']` on the `methods:` entry, from the existing `ctx.transport` values; `callService` answers 405 where it already does, mcp included.
+  - **B** — a boolean `internal: true`.
+  - **C** — keep the hand-written `$.transport` guard.
+  - **Recommend A** — no new noun, and an HTTP-but-not-MCP case needs no second flag.
+
+- ~~**FJS-D2238 — How does a channel gated by a credential that is not a session carry it to the WebSocket upgrade?**~~ **Answered 2026-11-16 (`FJS-D2238`): A — `channels.on('connection')` is handed the subprotocol bearer `extractToken` already pulls, with or without an auth plugin.** Found triaging `FJS-4226`.
+  - **A** — `channels.on('connection')` is handed the subprotocol bearer `extractToken` already pulls, with or without an auth plugin.
+  - **B** — a connect ticket minted over HTTP.
+  - **C** — allow `?token=` on loopback.
+  - **Recommend A** — keeps `FJS-D486`'s subprotocol path; `socketQuery` stays never a credential.
+
+- ~~**FJS-D2239 — How does a rule inside `rel.some(…)` or a `@from` `where:` name the parent row's own column?**~~ **Answered 2026-11-16 (`FJS-D2239`): A — `this.col` names the row the rule is declared on, compiled to a correlated EXISTS; still one hop (`FJS-499`).** Found triaging `FJS-4336`.
+  - **A** — `this.col` names the row the rule is declared on, compiled to a correlated EXISTS; still one hop (`FJS-499`).
+  - **B** — the model's name, `Repository.authorId`.
+  - **C** — no; keep `@system` flags.
+  - **Recommend A** — the familiar spelling, and the same word serves `@from` `where:` in `FJS-4335`.
+
+- ~~**FJS-D2240 — May a `@@require` or row policy read a `@from` aggregate?**~~ **Answered 2026-11-16 (`FJS-D2240`): A — yes: a numeric aggregate (count, sum, min, max, exists) is inlined from the subquery SQL it already has; `first`/`last` stay refused; the count is every child row that exists; `.every` is a separate row.** Found triaging `FJS-4335`.
+  - **A** — yes: a numeric aggregate (count, sum, min, max, exists) is inlined from the subquery SQL it already has; `first`/`last` stay refused; the count is every child row that exists; `.every` is a separate row.
+  - **B** — a count quantifier in predicates, `rel.count(…) >= n`.
+  - **C** — no; keep `@system` counters.
+  - **Recommend A** — the rule reads the declared derivation rather than a copy the app keeps.
+
+- ~~**FJS-D2241 — Where does a content check written in code live so the schema shows it and every writer is graded?**~~ **Answered 2026-11-16 (`FJS-D2241`): A — the field carries `@validate`, bound by `path` to a `$validate` rule in `db/computed.js`; boot refuses a `@validate` field with no rule naming it and a rule naming a field without `@validate`, and a path-less rule needs `@@validate`; `buildValidationMap` counts `$validate` so the pass is never skipped.** Found triaging `FJS-4221`.
+  - **A** — the field carries `@validate`, bound by `path` to a `$validate` rule in `db/computed.js`; boot refuses a `@validate` field with no rule naming it and a rule naming a field without `@validate`, and a path-less rule needs `@@validate`; `buildValidationMap` counts `$validate` so the pass is never skipped.
+  - **B** — model-level `@@validate` only.
+  - **C** — `$validate` keyed by field, like a computed.
+  - **Recommend A** — `$validate` already runs in `validate()` with the field validators at the Data boundary; the marker makes it visible in the schema, and `@check` would read as `@@check`'s SQL.

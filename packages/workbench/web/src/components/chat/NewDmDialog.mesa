@@ -1,0 +1,43 @@
+<script>
+  // components/chat/NewDmDialog.mesa -- "New message": pick one person for a direct
+  // channel, or two to seven for a group, and the channel for that set opens, made if
+  // missing (`chat.openDirect`). The server hands back the one that exists for the same set.
+  import { goto } from '@frontierjs/sierra/router'
+  import { getLists, me, nameOf, openDirect, whenListed } from '../../lib/chat.js'
+  import Modal       from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import MultiSelect from '@frontierjs/ui/components/forms/MultiSelect.mesa'
+  import Button      from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let open = false
+
+  const lists = getLists()
+  $: options = lists.people.rows.filter(p => p.externalId !== me() && !p.deletedAt)
+    .slice().sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+    .map(p => ({ value: p.externalId, label: `${nameOf(p)} · @${p.username}` }))
+
+  let picked = []
+  let saving = false
+  let error  = null
+
+  async function start() {
+    if (!picked.length || saving) return
+    saving = true; error = null
+    try {
+      const id = await openDirect(picked)
+      await whenListed(id)
+      open = false; picked = []
+      goto(`/messages/${id}/`)
+    } catch (e) { error = e.message } finally { saving = false }
+  }
+</script>
+
+<Modal bind:open title="New message" size="sm">
+  <form class="stack gap-md" novalidate onsubmit|preventDefault={start} data-new-dm>
+    <MultiSelect label="To" name="profileExternalIds" bind:value={picked} {options} multiple placeholder="Pick people…" max={7} hint="One person is a direct message; two to seven make a group." />
+    {#if error}<p class="text-sm text-danger" role="alert" data-new-dm-error>{error}</p>{/if}
+    <div class="cluster gap-sm">
+      <Button type="submit" loading={saving} disabled={!picked.length}>Open</Button>
+      <Button treatment="ghost" onclick={() => open = false}>Cancel</Button>
+    </div>
+  </form>
+</Modal>

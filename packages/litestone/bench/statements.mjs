@@ -99,10 +99,16 @@ const modelNames = new Set(env.schema.models.map(m => m.name))
 const accessors  = Object.keys(env.factories).filter(a => byAccessor.has(a)).sort()
 
 // A fixture that fails to build is a fixture, not a measurement; it is the same
-// failure on every run because the factories are seeded.
+// failure on every run because the factories are seeded. Rows are built one at
+// a time: createMany is one transaction, so a third row that fails would roll
+// back the two before it and shrink the workload the numbers are measured over.
 let seeded = 0
 await env.setup(async ({ factories }) => {
-  for (const a of accessors) { try { await factories[a].createMany(3); seeded++ } catch {} }
+  for (const a of accessors) {
+    let built = 0
+    for (let i = 0; i < 3; i++) { try { await factories[a].createOne(); built++ } catch { break } }
+    if (built === 3) seeded++
+  }
   await factories.user.createMany(2)
 })
 const [userA, userB] = await env.system.user.findMany({ orderBy: { id: 'desc' }, limit: 2 })

@@ -12,6 +12,8 @@
 //   markUnread  the room reads as unread from a post { postExternalId }
 //   mute        mute or unmute a room { channelExternalId, muted }
 //   follow      follow or unfollow a thread { rootExternalId, following }
+//   browse      the open channels of the caller's teams they are not in, landed
+//               in the mirror and answered { channels: [...] }
 //   openDirect  the direct channel with one person, or a group with two to
 //               seven { profileExternalIds }; joining and leaving a room are
 //               channelMembers.create and .remove
@@ -24,7 +26,7 @@
 import { createService } from '@frontierjs/junction'
 import type { App, ServiceContext } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
-import { chatOn, followAs, land, listen, markUnreadAs, muteAs, openDirectAs, pinAs, profileOfCaller, readThreadAs, sysOf, unlisten, viewAs } from '../../providers/chat/index.ts'
+import { browseAs, chatOn, followAs, land, listen, markUnreadAs, muteAs, openDirectAs, pinAs, profileOfCaller, readThreadAs, sysOf, unlisten, viewAs } from '../../providers/chat/index.ts'
 
 type Ctx = ServiceContext & { app: App }
 
@@ -85,6 +87,7 @@ export default createService({
     { method: 'markUnread', gate: LEVELS.CREATOR },
     { method: 'mute',       gate: LEVELS.CREATOR },
     { method: 'follow',     gate: LEVELS.CREATOR },
+    { method: 'browse',     gate: LEVELS.CREATOR, read: true },
     { method: 'openDirect', gate: LEVELS.CREATOR },
   ],
 
@@ -183,6 +186,14 @@ export default createService({
     const r = await followAs(ctx.app, profile, root, following)
     if (r.error) throw refused('follow', r.error.kind)
     return { rootExternalId: root, following }
+  },
+
+  async browse (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const r = await browseAs(ctx.app, profile)
+    if (!r.rows) throw refused('browse', r.error?.kind ?? 'no answer')
+    return { channels: r.rows.map(c => ({ externalId: c.externalId, teamExternalId: c.teamExternalId, name: c.name, displayName: c.displayName, purpose: c.purpose })) }
   },
 
   // A direct channel belongs to no team and its members are the two people,

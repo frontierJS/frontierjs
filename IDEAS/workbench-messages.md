@@ -158,11 +158,11 @@ deletes, pins, uploads a file and sees another person's post arrive unread.
 - [x] 2.2 `lib/chat.js` ported onto the mirror nouns — the one place the
   renames land (`roomId` → `channelExternalId`, `body` → `message`, user id →
   `profileExternalId`); agency and client code cut.
-- [ ] 2.3 Sidebar, room header, post list and item, composer, post editor.
-- [ ] 2.4 Thread pane, the threads route, follow and unfollow.
-- [ ] 2.5 Reactions, mentions, files, new channel and new DM dialogs.
-- [ ] 2.6 Unread, mark read and unread, mute; pin and unpin (connector verb).
-- [ ] 2.7 The browser drive.
+- [x] 2.3 Sidebar, room header, post list and item, composer, post editor.
+- [x] 2.4 Thread pane, the threads route, follow and unfollow.
+- [x] 2.5 Reactions, mentions, files, new channel and new DM dialogs.
+- [x] 2.6 Unread, mark read and unread, mute; pin and unpin (connector verb).
+- [x] 2.7 The browser drive.
 
 ### Phase 3 — The extras
 

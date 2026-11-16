@@ -6,18 +6,10 @@ title: Messages
   // the reader is in. With none, it says so.
   import { goto } from '@frontierjs/sierra/router'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
-  import { getLists, countsOf, lastChannel } from '../../lib/chat.js'
+  import { getLists, landingChannel } from '../../lib/chat.js'
 
   const lists = getLists()
-  $: counts = countsOf(lists.channels.rows, lists.mine.rows)
-  $: byId = new Map(lists.channels.rows.map(c => [c.externalId, c]))
-  $: target = (() => {
-    const mine = Object.keys(counts).filter(id => !byId.get(id)?.deletedAt)
-    const want = lastChannel()
-    if (want && mine.includes(want)) return want
-    // Town square first when there is one, then whatever comes first by name.
-    return mine.sort((a, b) => (byId.get(a).name === 'town-square' ? -1 : byId.get(b).name === 'town-square' ? 1 : String(byId.get(a).name).localeCompare(String(byId.get(b).name))))[0] ?? null
-  })()
+  $: target = landingChannel(lists.channels.rows, lists.mine.rows)
   $: { if (target) goto(`/messages/${target}/`, undefined, { replace: true }) }
   $: empty = !target && !lists.channels.loading && !lists.mine.loading
 </script>

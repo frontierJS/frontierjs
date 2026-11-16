@@ -28,4 +28,4 @@
 
 ## Proving a change
 
-`bun run drive` — 70 rows against the sink; no fixture. The `mirror.forward*` rows bind the claim with `conduit.mirror(mirror)` and wrap `send` to write `who`, as the junction plugin does. The drive's `bridge` is the junction plugin's `app.post(receiver.path)` without junction: request → `Delivery` → `conduit.accept()`. Typecheck from the connectors root with frontierjs's tsc: `../../../frontierjs/node_modules/.bin/tsc -p tsconfig.json --noEmit --typeRoots ../../../frontierjs/node_modules` (never `bunx tsc` here — `AGENT_BRIEF.md`).
+`bun run drive` — 71 rows against the sink; no fixture. The `mirror.forward*` rows bind the claim with `conduit.mirror(mirror)` and wrap `send` to write `who`, as the junction plugin does. The drive's `bridge` is the junction plugin's `app.post(receiver.path)` without junction: request → `Delivery` → `conduit.accept()`. Typecheck from the connectors root with frontierjs's tsc: `../../../frontierjs/node_modules/.bin/tsc -p tsconfig.json --noEmit --typeRoots ../../../frontierjs/node_modules` (never `bunx tsc` here — `AGENT_BRIEF.md`).

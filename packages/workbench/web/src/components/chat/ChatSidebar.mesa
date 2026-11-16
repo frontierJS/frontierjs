@@ -5,14 +5,23 @@
   // mention puts a pill on it. The counts are lib/chat.js's.
   import Icon from '../Icon.mesa'
   import { getLists, countsOf, channelLabel, me } from '../../lib/chat.js'
+  import NewDmDialog from './NewDmDialog.mesa'
+  import NewRoomDialog from './NewRoomDialog.mesa'
 
   export let currentId = null
+  export let onThreads = false   // the Threads route is open
+  export let onBrowse = false    // the Browse route is open
+
+  let dmOpen = false
+  let roomOpen = false
 
   const lists = getLists()
   $: all    = lists.channels.rows
   $: people = lists.people.rows
   $: counts = countsOf(lists.channels.rows, lists.mine.rows)
   $: self   = me()
+  // Threads the reader follows with something unread in them.
+  $: threadsUnread = lists.threads.rows.filter(t => t.isFollowing && (t.unreadReplies > 0 || t.unreadMentions > 0)).length
 
   const label    = (c) => channelLabel(c, people, self)
   const byName   = (a, b) => label(a).localeCompare(label(b))
@@ -22,16 +31,29 @@
   // A channel the reader is in, or the one open (a public preview). Archived ones are gone.
   const listed = (c) => !c.deletedAt && (c.externalId in counts || c.externalId === currentId)
   $: sections = [
-    { key: 'channels', label: 'Channels',        list: all.filter(c => !isDm(c) && listed(c)).sort(byName) },
-    { key: 'dms',      label: 'Direct messages', list: all.filter(c => isDm(c) && listed(c)).sort(byRecent) },
+    { key: 'channels', label: 'Channels',        add: 'Add channel', list: all.filter(c => !isDm(c) && listed(c)).sort(byName) },
+    { key: 'dms',      label: 'Direct messages', add: 'New message', list: all.filter(c => isDm(c) && listed(c)).sort(byRecent) },
   ]
 </script>
 
 <nav class="chat-sidebar stack gap-md" aria-label="Channels" data-chat-sidebar>
+  <ul class="navlist">
+    <li>
+      <a class="navlink chat-room" class:unread={threadsUnread > 0} href="/messages/threads/" aria-current={onThreads ? 'page' : null} data-threads-link>
+        <Icon name="thread" /> <span class="chat-room-name">Threads</span>
+        {#if threadsUnread > 0}<span class="badge primary chat-pill" data-pill="threads" title={`${threadsUnread} unread`}>{threadsUnread}</span>{/if}
+      </a>
+    </li>
+  </ul>
   {#each sections as h (h.key)}
-    {#if h.list.length}
-      <ul class="navlist" data-section={h.key}>
-        <li class="navlist-label">{h.label}</li>
+    <ul class="navlist" data-section={h.key}>
+        <li class="navlist-label cluster chat-section-head">
+          <span>{h.label}</span>
+          <button type="button" class="btn ghost square xs chat-add" aria-label={h.add} title={h.add} data-add={h.key} onclick={() => h.key === 'dms' ? dmOpen = true : roomOpen = true}><Icon name="plus" /></button>
+        </li>
+        {#if h.key === 'channels'}
+          <li><a class="navlink chat-room" href="/messages/browse/" aria-current={onBrowse ? 'page' : null} data-browse-link><span class="chat-hash" aria-hidden="true">+</span> <span class="chat-room-name">Browse channels</span></a></li>
+        {/if}
         {#each h.list as c (c.externalId)}
           {@const n = counts[c.externalId]}
           {@const unread = n?.unread ?? 0}
@@ -52,9 +74,10 @@
           </li>
         {/each}
       </ul>
-    {/if}
   {/each}
 </nav>
+<NewDmDialog bind:open={dmOpen} />
+<NewRoomDialog bind:open={roomOpen} />
 
 <style>
   .chat-sidebar { border-inline-end: var(--border-width) solid var(--rule); background: var(--surface-sunken); padding: var(--space-lg) var(--space-sm); overflow-y: auto; min-block-size: 0; }
@@ -64,5 +87,7 @@
   .chat-pill { margin-inline-start: auto; }
   .chat-room-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chat-hash { inline-size: var(--space-md); text-align: center; opacity: 0.6; }
+  .chat-section-head { justify-content: space-between; align-items: center; }
+  .chat-add { opacity: 0.7; }
   .chat-quiet { display: inline-flex; opacity: 0.7; }
 </style>

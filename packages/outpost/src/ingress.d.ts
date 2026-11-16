@@ -251,6 +251,16 @@ export function createIngress({ admin, fetch: fetchFn, now }?: {
         paths?: any[];
         removing?: any[];
     }): Promise<void>;
+    /** What a call routing exactly these names would take off this app, for a
+     *  caller that states it as `removing`: a revert is the operator asking for
+     *  the release's own routes, so the host it moves off is stated, not a
+     *  surprise. A machine with no Caddy answers none. */
+    dropping({ appId, hosts, redirects, paths }: {
+        appId: any;
+        hosts?: any[];
+        redirects?: any[];
+        paths?: any[];
+    }): Promise<any[]>;
 };
 export function routeId(appId?: any): string;
 export function accessLogPath(id?: any): string;
