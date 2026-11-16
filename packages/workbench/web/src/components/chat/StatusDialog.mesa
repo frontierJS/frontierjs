@@ -1,0 +1,84 @@
+<script>
+  // components/chat/StatusDialog.mesa -- the reader's custom status: an emoji from the
+  // table in lib/emoji.js, a line, and when it clears. Saving with both empty clears it.
+  import { EMOJI } from '../../lib/emoji.js'
+  import { customOf, me, setCustomStatus, getLists } from '../../lib/chat.js'
+  import Modal  from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let open = false
+
+  const lists = getLists()
+  const NAMES = ['calendar', 'car', 'sick', 'palm_tree', 'house', 'headphones', 'coffee', 'pizza', 'memo', 'fire', 'rocket', 'eyes', 'smile', 'tada'].filter(n => EMOJI[n])
+  // The table is the vocabulary; any name in it is offered after the favorites.
+  const OFFER = [...new Set([...NAMES, ...Object.keys(EMOJI).filter(n => !/^[-+]?\d+$/.test(n))])].slice(0, 28)
+  const CLEAR = [
+    { value: 'never', label: "Don't clear" },
+    { value: '30m',   label: '30 minutes' },
+    { value: '1h',    label: '1 hour' },
+    { value: '4h',    label: '4 hours' },
+    { value: 'today', label: 'Today' },
+  ]
+  const endOf = (choice) => {
+    const d = new Date()
+    if (choice === '30m') return new Date(d.getTime() + 30 * 60_000)
+    if (choice === '1h')  return new Date(d.getTime() + 60 * 60_000)
+    if (choice === '4h')  return new Date(d.getTime() + 240 * 60_000)
+    if (choice === 'today') { d.setHours(23, 59, 0, 0); return d }
+    return null
+  }
+
+  let emoji = ''
+  let text = ''
+  let clear = 'never'
+  let saving = false
+  let error = null
+
+  // Opened: what the reader has now.
+  $: open, () => {
+    if (!open) return
+    const mine = lists.people.rows.find(p => p.externalId === me())
+    emoji = customOf(mine) ? (mine.customEmoji ?? '') : ''
+    text = customOf(mine) ? (mine.customText ?? '') : ''
+    clear = 'never'
+    error = null
+  }
+
+  async function save() {
+    if (saving) return
+    saving = true; error = null
+    try {
+      await setCustomStatus({ emoji, text: text.trim(), expiresAt: emoji || text.trim() ? endOf(clear) : null })
+      open = false
+    } catch (e) { error = e.message } finally { saving = false }
+  }
+</script>
+
+<Modal bind:open title="Your status" size="sm">
+  <form class="stack gap-md" novalidate onsubmit|preventDefault={save} data-status-dialog>
+    <div class="cluster gap-xs">
+      <span class="status-emoji" aria-hidden="true" data-status-emoji>{emoji ? (EMOJI[emoji] ?? '') : '🙂'}</span>
+      <input class="field" aria-label="What's your status?" bind:value={text} maxlength="100" placeholder="What's your status?" data-status-text />
+    </div>
+    <div class="cluster gap-2xs" role="group" aria-label="Pick an emoji">
+      {#each OFFER as n (n)}
+        <button type="button" class="btn ghost square sm" aria-pressed={emoji === n} title={n} data-status-pick={n} onclick={() => emoji = emoji === n ? '' : n}>{EMOJI[n]}</button>
+      {/each}
+    </div>
+    <label class="stack gap-2xs">
+      <span class="text-sm">Clear after</span>
+      <select class="field" bind:value={clear} aria-label="Clear after" data-status-clear>
+        {#each CLEAR as c (c.value)}<option value={c.value}>{c.label}</option>{/each}
+      </select>
+    </label>
+    {#if error}<p class="text-sm text-danger" role="alert" data-status-error>{error}</p>{/if}
+    <div class="cluster gap-sm">
+      <Button type="submit" loading={saving}>{emoji || text.trim() ? 'Save' : 'Clear status'}</Button>
+      <Button treatment="ghost" onclick={() => open = false}>Cancel</Button>
+    </div>
+  </form>
+</Modal>
+
+<style>
+  .status-emoji { font-size: var(--text-xl, 1.5rem); inline-size: var(--space-2xl); text-align: center; }
+</style>

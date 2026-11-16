@@ -1,0 +1,8 @@
+<script module>
+  // src/resources/ChatSection.mesa -- the mirror's ChatSection rows (`IDEAS/workbench-messages.md`):
+  // the person's sidebar sections. Read-only here and own rows only; every write is a
+  // `chat` verb, which forwards to the server first (lib/chat.js).
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const chatSections = createResource('chatSections', { model: 'ChatSection' })
+</script>

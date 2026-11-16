@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-7 models · 7 gated · 0 unrestricted
-2 with row policies · 3 with protected fields · 0 declared moves · 0 @system · 0 @seals
+15 models · 15 gated · 0 unrestricted
+10 with row policies · 12 with protected fields · 0 declared moves · 0 @system · 0 @seals
 ```
 
 ## Gates
@@ -21,19 +21,44 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 
 | Model | Read | Create | Update | Delete |
 | --- | --- | --- | --- | --- |
+| `Channel` | 3 CREATOR | 3 CREATOR | 3 CREATOR | 3 CREATOR |
+| `ChannelMember` | 3 CREATOR | 3 CREATOR | 8 SYSTEM | 3 CREATOR |
 | `ClaudeMessage` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ClaudeTranscript` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ClaudeWrite` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `FileInfo` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Member` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Notification` | 0 STRANGER | 8 SYSTEM | 4 USER | 8 SYSTEM |
+| `Post` | 3 CREATOR | 3 CREATOR | 3 CREATOR | 3 CREATOR |
+| `Profile` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ProviderAccount` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Reaction` | 3 CREATOR | 3 CREATOR | 8 SYSTEM | 3 CREATOR |
 | `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Team` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Thread` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 
 ## Row policies
 
 A policy compiles into the WHERE clause. It never raises — a wrong one is an
 empty result with a 200, so read these as "which rows", not "which callers".
 An operation with no `@@allow` is unrestricted at this layer.
+
+### `Channel`
+
+- allow **read** — `type == 'open' || members.some(profileExternalId == auth().profileExternalId)`
+- allow **create** — `true`
+- allow **update** — `members.some(profileExternalId == auth().profileExternalId && isAdmin)`
+- allow **delete** — `members.some(profileExternalId == auth().profileExternalId && isAdmin)`
+
+### `ChannelMember`
+
+- allow **read** — `check(channel)`
+- allow **create** — `check(channel, 'read')`
+- allow **delete** — `profileExternalId == auth().profileExternalId`
+
+### `FileInfo`
+
+- allow **read** — `profileExternalId == auth().profileExternalId || postExternalId != null && check(post)`
 
 ### `Member`
 
@@ -44,6 +69,31 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **read** — `userId == auth().id`
 - allow **update** — `userId == auth().id`
 
+### `Post`
+
+- allow **read** — `check(channel)`
+- allow **create** — `check(channel, 'read')`
+- allow **update** — `profileExternalId == auth().profileExternalId`
+- allow **delete** — `profileExternalId == auth().profileExternalId`
+
+### `Profile`
+
+- allow **read** — `true`
+
+### `Reaction`
+
+- allow **read** — `check(post)`
+- allow **create** — `profileExternalId == auth().profileExternalId && check(post, 'read')`
+- allow **delete** — `profileExternalId == auth().profileExternalId`
+
+### `Team`
+
+- allow **read** — `true`
+
+### `Thread`
+
+- allow **read** — `profileExternalId == auth().profileExternalId`
+
 ## Protected fields
 
 `@guarded` needs a system context. `@encrypted`/`@secret` are ciphertext at rest
@@ -52,10 +102,111 @@ rather than refusing the row.
 
 | Model | Field | Rule |
 | --- | --- | --- |
+| `Channel` | `externalId` | `@system` |
+| `Channel` | `teamExternalId` | `@system` |
+| `Channel` | `creatorExternalId` | `@system` |
+| `Channel` | `type` | `@system` |
+| `Channel` | `name` | `@system` |
+| `Channel` | `displayName` | `@system` |
+| `Channel` | `header` | `@system` |
+| `Channel` | `purpose` | `@system` |
+| `Channel` | `lastPostAt` | `@system` |
+| `Channel` | `totalMessageCount` | `@system` |
+| `Channel` | `totalMessageCountRoot` | `@system` |
+| `Channel` | `lastRootPostAt` | `@system` |
+| `Channel` | `createdAt` | `@system` |
+| `Channel` | `updatedAt` | `@system` |
+| `Channel` | `deletedAt` | `@system` |
+| `Channel` | `missingSince` | `@system` |
+| `ChannelMember` | `externalId` | `@system` |
+| `ChannelMember` | `channelExternalId` | `@system` |
+| `ChannelMember` | `profileExternalId` | `@system` |
+| `ChannelMember` | `roles` | `@system` |
+| `ChannelMember` | `isAdmin` | `@system` |
+| `ChannelMember` | `lastViewedAt` | `@system` |
+| `ChannelMember` | `messageCount` | `@system` |
+| `ChannelMember` | `mentionCount` | `@system` |
+| `ChannelMember` | `messageCountRoot` | `@system` |
+| `ChannelMember` | `mentionCountRoot` | `@system` |
+| `ChannelMember` | `muted` | `@system` |
+| `ChannelMember` | `updatedAt` | `@system` |
+| `ChannelMember` | `missingSince` | `@system` |
 | `ClaudeWrite` | `before` | `@encrypted` |
+| `FileInfo` | `externalId` | `@system` |
+| `FileInfo` | `postExternalId` | `@system` |
+| `FileInfo` | `profileExternalId` | `@system` |
+| `FileInfo` | `name` | `@system` |
+| `FileInfo` | `extension` | `@system` |
+| `FileInfo` | `size` | `@system` |
+| `FileInfo` | `mimeType` | `@system` |
+| `FileInfo` | `width` | `@system` |
+| `FileInfo` | `height` | `@system` |
+| `FileInfo` | `hasPreviewImage` | `@system` |
+| `FileInfo` | `createdAt` | `@system` |
+| `FileInfo` | `updatedAt` | `@system` |
+| `FileInfo` | `deletedAt` | `@system` |
+| `FileInfo` | `missingSince` | `@system` |
+| `Member` | `chatToken` | `@secret` |
+| `Member` | `profileExternalId` | `@system` |
+| `Member` | `chatSyncedAt` | `@system` |
+| `Post` | `externalId` | `@system` |
+| `Post` | `channelExternalId` | `@system` |
+| `Post` | `profileExternalId` | `@system` |
+| `Post` | `rootExternalId` | `@system` |
+| `Post` | `message` | `@system` |
+| `Post` | `type` | `@system` |
+| `Post` | `isPinned` | `@system` |
+| `Post` | `props` | `@system` |
+| `Post` | `hashtags` | `@system` |
+| `Post` | `replyCount` | `@system` |
+| `Post` | `lastReplyAt` | `@system` |
+| `Post` | `createdAt` | `@system` |
+| `Post` | `updatedAt` | `@system` |
+| `Post` | `editedAt` | `@system` |
+| `Post` | `deletedAt` | `@system` |
+| `Post` | `missingSince` | `@system` |
+| `Profile` | `externalId` | `@system` |
+| `Profile` | `username` | `@system` |
+| `Profile` | `firstName` | `@system` |
+| `Profile` | `lastName` | `@system` |
+| `Profile` | `nickname` | `@system` |
+| `Profile` | `email` | `@system` · `@allow(read, externalId == auth().profileExternalId)` |
+| `Profile` | `roles` | `@system` |
+| `Profile` | `locale` | `@system` |
+| `Profile` | `isBot` | `@system` |
+| `Profile` | `createdAt` | `@system` |
+| `Profile` | `updatedAt` | `@system` |
+| `Profile` | `deletedAt` | `@system` |
+| `Profile` | `missingSince` | `@system` |
 | `ProviderAccount` | `token` | `@encrypted` |
+| `Reaction` | `externalId` | `@system` |
+| `Reaction` | `postExternalId` | `@system` |
+| `Reaction` | `profileExternalId` | `@system` |
+| `Reaction` | `emojiName` | `@system` |
+| `Reaction` | `createdAt` | `@system` |
+| `Reaction` | `missingSince` | `@system` |
 | `Session` | `tokenHash` | `@guarded @system` |
 | `Session` | `lastUsedAt` | `@system` |
+| `Team` | `externalId` | `@system` |
+| `Team` | `name` | `@system` |
+| `Team` | `displayName` | `@system` |
+| `Team` | `description` | `@system` |
+| `Team` | `type` | `@system` |
+| `Team` | `allowOpenInvite` | `@system` |
+| `Team` | `createdAt` | `@system` |
+| `Team` | `updatedAt` | `@system` |
+| `Team` | `deletedAt` | `@system` |
+| `Team` | `missingSince` | `@system` |
+| `Thread` | `externalId` | `@system` |
+| `Thread` | `rootExternalId` | `@system` |
+| `Thread` | `profileExternalId` | `@system` |
+| `Thread` | `replyCount` | `@system` |
+| `Thread` | `lastReplyAt` | `@system` |
+| `Thread` | `lastViewedAt` | `@system` |
+| `Thread` | `unreadReplies` | `@system` |
+| `Thread` | `unreadMentions` | `@system` |
+| `Thread` | `isFollowing` | `@system` |
+| `Thread` | `missingSince` | `@system` |
 
 ## Levels
 

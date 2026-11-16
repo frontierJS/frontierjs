@@ -1,0 +1,8 @@
+<script module>
+  // src/resources/SavedPost.mesa -- the mirror's SavedPost rows (`IDEAS/workbench-messages.md`):
+  // the posts the person saved. Read-only here and own rows only; every write is a
+  // `chat` verb, which forwards to the server first (lib/chat.js).
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const savedPosts = createResource('savedPosts', { model: 'SavedPost' })
+</script>

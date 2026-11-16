@@ -1,0 +1,76 @@
+<script>
+  // components/chat/QuietDialog.mesa -- the reader's quiet hours: the days, the window and the
+  // zone it is read in, kept in `quietSchedules` (one row, local to this laptop). A window
+  // whose end is before its start runs past midnight. Nothing reads it yet; notifications
+  // are a later phase.
+  import { quietSchedules } from '../../resources/QuietSchedule.mesa'
+  import Modal  from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let open = false
+
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const toTime = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+  const toMinute = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m }
+  const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  let row = null
+  let enabled = true
+  let days = [0, 1, 2, 3, 4, 5, 6]
+  let from = '22:00'
+  let to = '07:00'
+  let timezone = zone()
+  let loading = false
+  let saving = false
+  let error = null
+
+  // Opened: the row the reader has, or the defaults.
+  $: open, () => {
+    if (!open) return
+    error = null; loading = true
+    quietSchedules.service.find({}).then((r) => {
+      row = r.data?.[0] ?? null
+      enabled = row ? !!row.enabled : true
+      days = row ? [...(Array.isArray(row.days) ? row.days : JSON.parse(row.days ?? '[]'))] : [0, 1, 2, 3, 4, 5, 6]
+      from = row ? toTime(row.fromMinute) : '22:00'
+      to = row ? toTime(row.toMinute) : '07:00'
+      timezone = row?.timezone ?? zone()
+    }).catch((e) => { error = e.message }).finally(() => { loading = false })
+  }
+  const toggle = (d) => { days = days.includes(d) ? days.filter(x => x !== d) : [...days, d].sort() }
+
+  async function save() {
+    if (saving) return
+    saving = true; error = null
+    const body = { enabled, days, fromMinute: toMinute(from), toMinute: toMinute(to), timezone: timezone.trim() }
+    try {
+      row = row ? await quietSchedules.service.patch(row.id, body) : await quietSchedules.service.create(body)
+      open = false
+    } catch (e) { error = e.message } finally { saving = false }
+  }
+</script>
+
+<Modal bind:open title="Quiet hours" size="sm">
+  <form class="stack gap-md" novalidate onsubmit|preventDefault={save} data-quiet-dialog>
+    <p class="text-sm text-muted">Quiet hours will hold Workbench's chat notifications. They are kept on this laptop, and nothing reads them yet.</p>
+    <label class="cluster gap-xs text-sm"><input type="checkbox" class="check" bind:checked={enabled} data-quiet-enabled /> Quiet hours are on</label>
+    <div class="cluster gap-2xs" role="group" aria-label="Days">
+      {#each DAYS as d, i (d)}
+        <button type="button" class="btn sm" class:primary={days.includes(i)} aria-pressed={days.includes(i)} data-quiet-day={i} onclick={() => toggle(i)}>{d}</button>
+      {/each}
+    </div>
+    <div class="cluster gap-md">
+      <label class="stack gap-2xs"><span class="text-sm">From</span><input type="time" class="field" bind:value={from} aria-label="From" data-quiet-from /></label>
+      <label class="stack gap-2xs"><span class="text-sm">To</span><input type="time" class="field" bind:value={to} aria-label="To" data-quiet-to /></label>
+    </div>
+    <label class="stack gap-2xs">
+      <span class="text-sm">Time zone</span>
+      <input class="field" bind:value={timezone} aria-label="Time zone" placeholder="America/Chicago" data-quiet-zone />
+    </label>
+    {#if error}<p class="text-sm text-danger" role="alert" data-quiet-error>{error}</p>{/if}
+    <div class="cluster gap-sm">
+      <Button type="submit" loading={saving || loading} data-quiet-save>Save</Button>
+      <Button treatment="ghost" onclick={() => open = false}>Cancel</Button>
+    </div>
+  </form>
+</Modal>

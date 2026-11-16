@@ -14,6 +14,7 @@
   import { getLists, readThread, setFollowing } from '../../lib/chat.js'
   import PostItem from './PostItem.mesa'
   import Composer from './Composer.mesa'
+  import TypingLine from './TypingLine.mesa'
 
   export let channel = null
   export let rootId = null
@@ -112,6 +113,7 @@
   </div>
 
   {#if root && !missing}
+    <TypingLine channelId={channel.externalId} rootExternalId={rootId} {people} />
     <Composer channelId={channel.externalId} rootExternalId={rootId} placeholder="Reply…" />
   {/if}
 </aside>

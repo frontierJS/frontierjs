@@ -269,6 +269,8 @@ enum ComputeProvider { hetzner digitalocean }
 
 enum TeamType    { open invite }
 enum ChannelType { open private direct group }
+enum Presence    { online away offline dnd }
+enum SectionKind { favorites channels direct custom }
 
 model Team {
   id              Int       @id
@@ -306,6 +308,16 @@ model Profile {
   createdAt  DateTime?
   updatedAt  DateTime?
   deletedAt  DateTime?
+  // Presence. Null is never read: the server pushes a change to some sockets
+  // only, so a screen asks chat.statuses for the people it shows.
+  status          Presence?
+  statusManual    Boolean   @default(false)
+  lastActivityAt  DateTime?
+  dndEndAt        DateTime?
+  // The line under a name, on every profile read and user_updated frame.
+  customEmoji     String?
+  customText      String?
+  customExpiresAt DateTime?
   memberships ChannelMember[]
   posts      Post[]
   threads    Thread[]
@@ -372,6 +384,9 @@ model ChannelMember {
   mentionCountRoot  Int       @default(0)
   // Muted where the server is: the room is unread only when it mentions them.
   muted             Boolean   @default(false)
+  // The person's own favorite, a server-side preference; a membership read
+  // never carries it, so a landing leaves it alone.
+  isFavorite        Boolean   @default(false)
   updatedAt         DateTime?
 
   @@db(chat)
@@ -408,6 +423,8 @@ model Post {
   updatedAt         DateTime?
   editedAt          DateTime?
   deletedAt         DateTime?
+  // The links the server unfurled: [{ type, url, title, description, image, siteName }].
+  embeds            Json      @default("[]")
   threads           Thread[]
   reactions         Reaction[]
   files             FileInfo[]
@@ -498,4 +515,133 @@ model FileInfo {
   @@index([profileExternalId])
   @@gate(3.8.8.8)
   @@allow(read, profileExternalId == auth().profileExternalId || (postExternalId != null && check(post)))
+}
+
+// One person's unsent text in one box: a room's (rootExternalId null) or a
+// thread's. The key is profile:channel:root, root '' for the room's box. Plain
+// columns, no relation: a draft may name a room or thread this copy has not
+// landed, and a relation would refuse the row.
+model Draft {
+  id                Int       @id
+  externalId        String
+  profileExternalId String
+  channelExternalId String
+  rootExternalId    String?
+  message           String
+  props             Json
+  fileExternalIds   Json
+  createdAt         DateTime?
+  updatedAt         DateTime?
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@index([profileExternalId])
+  @@gate(3.8.8.8)
+  @@allow(read, profileExternalId == auth().profileExternalId)
+}
+
+// A post one person saved, a server-side preference. The key is profile:post.
+// No relation, for a draft's reason: the saved list answers posts from rooms
+// whose history this copy never read. The screen lists the saved posts as
+// Post rows newest first; chat.saved lands them.
+model SavedPost {
+  id                Int       @id
+  externalId        String
+  profileExternalId String
+  postExternalId    String
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@index([profileExternalId])
+  @@gate(3.8.8.8)
+  @@allow(read, profileExternalId == auth().profileExternalId)
+}
+
+// One person's sidebar section on one team, the server's own: the key is its
+// id there. sortOrder is its place among the person's sections on the team,
+// channelExternalIds its rooms top to bottom. Written only through the chat
+// service, which sends the server the whole section and lands its answer.
+model ChatSection {
+  id                 Int         @id
+  externalId         String
+  profileExternalId  String
+  teamExternalId     String
+  name               String
+  kind               SectionKind
+  sortOrder          Int         @default(0)
+  channelExternalIds Json        @default("[]")
+
+  @@db(chat)
+  @@mirror(key: externalId)
+  @@index([profileExternalId, teamExternalId])
+  @@gate(3.8.8.8)
+  @@allow(read, profileExternalId == auth().profileExternalId)
+}
+
+// ─── Local to this laptop ──────────────────────────────────────
+// The server refuses scheduled posts and groups unlicensed (`license_error`),
+// so these are Workbench's own rows in chat.db and reach no other client.
+
+enum ScheduledPostStatus { scheduled sent failed cancelled }
+
+// One post the member asked to send later; the chat-scheduled job sends it as
+// them when sendAt passes. A failed send is kept with its error and never
+// retried. sentAt is stamped as the send BEGINS, so a cancel or a second run
+// racing the send sees it taken; a row left scheduled with sentAt set was cut
+// off mid-send and is failed, since whether it reached the room is unknown.
+model ScheduledPost {
+  id                 Int                 @id
+  memberId           Int                 @system
+  profileExternalId  String              @system
+  channelExternalId  String
+  rootExternalId     String?
+  message            String              @default("")
+  fileExternalIds    Json                @default("[]")
+  sendAt             DateTime
+  status             ScheduledPostStatus @default(scheduled)
+  error              String?             @system
+  sentPostExternalId String?             @system
+  sentAt             DateTime?           @system
+  createdAt          DateTime            @default(now())
+
+  @@db(chat)
+  @@index([status, sendAt])
+  @@index([memberId])
+  @@gate(3.3.3.3)
+  @@allow(all, memberId == auth().id)
+}
+
+// An @handle the composer expands into the people it names. Every member
+// reads every group; only its creator changes it.
+model ChatGroup {
+  id                         Int      @id
+  handle                     String   @unique @trim @lower @length(2, 32) @regex("^[a-z0-9-]+$", "letters, digits and -")
+  name                       String   @trim @length(1, 64)
+  profileExternalIds         Json     @default("[]")
+  createdByProfileExternalId String   @system
+  createdAt                  DateTime @default(now())
+
+  @@db(chat)
+  @@gate(3.3.3.3)
+  @@allow(read, true)
+  @@allow(create, createdByProfileExternalId == auth().profileExternalId)
+  @@allow(update, createdByProfileExternalId == auth().profileExternalId)
+  @@allow(delete, createdByProfileExternalId == auth().profileExternalId)
+}
+
+// One member's quiet hours: days are 0 (Sunday) to 6, the window is minutes
+// past midnight in timezone, and a window whose end is before its start runs
+// past midnight.
+model QuietSchedule {
+  id                Int      @id
+  profileExternalId String   @unique @system
+  enabled           Boolean  @default(true)
+  days              Json     @default("[0,1,2,3,4,5,6]")
+  fromMinute        Int      @gte(0) @lte(1439)
+  toMinute          Int      @gte(0) @lte(1439)
+  timezone          String
+
+  @@db(chat)
+  @@gate(3.3.3.3)
+  @@allow(all, profileExternalId == auth().profileExternalId)
 }

@@ -65,6 +65,16 @@ export interface PostRow {
   message: string; type: string; isPinned: boolean; props: Record<string, unknown>; hashtags: string
   replyCount: number; lastReplyAt: Date | null
   createdAt: Date | null; updatedAt: Date | null; editedAt: Date | null; deletedAt: Date | null
+  /** The link previews the server unfurled into `metadata.embeds`, in its order; [] when none. */
+  embeds: EmbedRow[]
+}
+/**
+ * One unfurled link. `opengraph` carries the page's title, description, site
+ * name and first image; `image` is a bare image link, its own `image`; any
+ * other type (`permalink`, `message_attachment`) keeps its type and url only.
+ */
+export interface EmbedRow {
+  type: string; url: string; title: string | null; description: string | null; image: string | null; siteName: string | null
 }
 export interface ThreadRow {
   externalId: string; rootExternalId: string; profileExternalId: string
@@ -86,6 +96,12 @@ export interface ProfileRow {
    */
   email?: string; roles: string; locale: string | null; isBot: boolean
   createdAt: Date | null; updatedAt: Date | null; deletedAt: Date | null
+  /**
+   * The person's custom status from `props.customStatus`; null is none set.
+   * Absent when the user came with no `props` at all, which says nothing, so
+   * landing it must leave a known status alone.
+   */
+  customEmoji?: string | null; customText?: string | null; customExpiresAt?: Date | null
 }
 export interface FileInfoRow {
   externalId: string; postExternalId: string | null; profileExternalId: string
@@ -184,6 +200,7 @@ export const postModel: MirrorModel<PostRow, Post, NewPost, PostPatch> = {
       message: p.message ?? '', type: p.type ?? '', isPinned: !!p.is_pinned, props: p.props ?? {}, hashtags: p.hashtags ?? '',
       replyCount: p.reply_count ?? 0, lastReplyAt: at(p.last_reply_at),
       createdAt: at(p.create_at), updatedAt: at(p.update_at), editedAt: at(p.edit_at), deletedAt: at(p.delete_at),
+      embeds: embedsOf(p.metadata),
     }
   },
   // Unkeyed and unreplayable unless the caller states `pendingPostId`: the
@@ -254,8 +271,29 @@ export const profileModel: MirrorModel<ProfileRow, User> = {
       externalId: u.id, username: u.username, firstName: u.first_name ?? '', lastName: u.last_name ?? '', nickname: u.nickname ?? '',
       ...(u.email ? { email: u.email } : {}), roles: u.roles ?? '', locale: u.locale || null, isBot: !!u.is_bot,
       createdAt: at(u.create_at), updatedAt: at(u.update_at), deletedAt: at(u.delete_at),
+      ...(u.props && typeof u.props === 'object' ? customStatusColumns(customStatusOf(u)) : {}),
     }
   },
+}
+
+const customStatusColumns = (c: CustomStatusRow | null) => ({ customEmoji: c?.emoji || null, customText: c?.text || null, customExpiresAt: c?.expiresAt ?? null })
+
+const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null)
+function embedsOf(metadata: unknown): EmbedRow[] {
+  const list = (metadata && typeof metadata === 'object' ? (metadata as { embeds?: unknown }).embeds : null)
+  if (!Array.isArray(list)) return []
+  const out: EmbedRow[] = []
+  for (const e of list as Array<{ type?: unknown; url?: unknown; data?: Record<string, unknown> | null }>) {
+    const url = str(e?.url)
+    if (!url || !str(e.type)) continue
+    const d = e.type === 'opengraph' && e.data && typeof e.data === 'object' ? e.data : null
+    const img = Array.isArray(d?.images) ? (d!.images as Array<Record<string, unknown>>)[0] : null
+    out.push({
+      type: e.type as string, url, title: str(d?.title), description: str(d?.description), siteName: str(d?.site_name),
+      image: e.type === 'image' ? url : str(img?.secure_url) ?? str(img?.url),
+    })
+  }
+  return out
 }
 
 export const fileInfoModel: MirrorModel<FileInfoRow, FileInfo> = {

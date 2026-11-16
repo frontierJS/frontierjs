@@ -1,0 +1,72 @@
+---
+title: Groups
+---
+<script>
+  // /messages/groups/ -- the `@` groups: `@design` in a post names everyone in the group, and
+  // the composer writes it out as `@design (@ana @bo)` when it sends. A group exists only in
+  // Workbench, so readers on other clients see the usernames and nothing else. Every member
+  // reads every group; the one who made it changes or deletes it, and the rest see it read-only.
+  import { getLists, me, idsOf, personName, dropGroup } from '../../../lib/chat.js'
+  import Icon from '../../../components/Icon.mesa'
+  import GroupDialog from '../../../components/chat/GroupDialog.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  const lists = getLists()
+  $: people = lists.people.rows
+  $: rows = lists.groups.rows.slice().sort((a, b) => a.handle.localeCompare(b.handle))
+  const mine = (g) => g.createdByProfileExternalId === me()
+
+  let open = false
+  let group = null
+  let error = null
+  const edit = (g) => { group = g; open = true }
+  const make = () => { group = null; open = true }
+  async function drop(g) {
+    error = null
+    try { await dropGroup(g) } catch (e) { error = e.message }
+  }
+</script>
+
+<header class="later-head">
+  <div class="cluster gap-sm later-title">
+    <h1 class="h4 cluster gap-xs"><Icon name="group" /> Groups</h1>
+    <button type="button" class="btn sm" data-group-new onclick={make}><Icon name="plus" /> New group</button>
+  </div>
+  <p class="text-sm text-muted" data-groups-note>Groups exist only in Workbench. @design in a post becomes @design (@ana @bo), so people on other clients see who was called.</p>
+</header>
+
+<div class="later" data-groups>
+  {#if error}<Alert tone="danger">{error}</Alert>{/if}
+  {#each rows as g (g.id)}
+    <article class="card later-row stack gap-xs" data-group-row={g.handle}>
+      <div class="cluster gap-xs">
+        <strong>@{g.handle}</strong>
+        <span class="text-muted" data-group-title>{g.name}</span>
+        {#if !mine(g)}<span class="badge" data-group-readonly>Read only</span>{/if}
+      </div>
+      <p class="text-sm text-muted later-members" data-group-members>{idsOf(g.profileExternalIds).length ? idsOf(g.profileExternalIds).map(id => personName(id, people)).join(', ') : 'Nobody yet'}</p>
+      {#if mine(g)}
+        <div class="cluster gap-xs">
+          <button type="button" class="btn ghost sm" data-group-edit onclick={() => edit(g)}><Icon name="edit" /> Edit</button>
+          <button type="button" class="btn ghost sm" data-group-delete onclick={() => drop(g)}><Icon name="trash" /> Delete</button>
+        </div>
+      {/if}
+    </article>
+  {:else}
+    <EmptyState title="No groups yet">
+      Make one for each team you call on together and reach them all with one @.
+    </EmptyState>
+  {/each}
+</div>
+
+<GroupDialog bind:open {group} />
+
+<style>
+  .later-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .later-head h1, .later-head p { margin: 0; }
+  .later-head h1 { align-items: center; }
+  .later-title { justify-content: space-between; align-items: center; }
+  .later { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+  .later-members { margin: 0; }
+</style>

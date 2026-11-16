@@ -119,11 +119,18 @@ Done when: the table above has no "decided by 0.1" row.
   *Probed 2026-11-16: Mattermost 11.5.1, Team Edition, unlicensed, collapsed
   threads always on.*
 - [x] 0.2 Fill the Backing column per feature from 0.1 under Q5.
-- [ ] 0.2a Write 0.1's result into `packages/conduits/conduit-mattermost/README.md`
+- [x] 0.2a Write 0.1's result into `packages/conduits/conduit-mattermost/README.md`
   and make the sink refuse each endpoint Team Edition lacks, so a feature
   cannot go green on the sink and fail live.
-- [ ] 0.3 Read `discovery/chat.md` for behaviors the UI relies on that the
+- [x] 0.3 Read `discovery/chat.md` for behaviors the UI relies on that the
   mirror states differently (unread counts, mark-unread, who may post).
+  Three differ, and the screen follows the server on each. **Unread** is
+  serpgrid's watermark (`lastReadAt`, counted in JS, a thread sharing its
+  room's); here it is the server's stored counts on `ChannelMember`, and a
+  thread carries its own on `Thread`. **Mark unread** moved a watermark;
+  here it is a server call, and on a reply it marks the thread. **Posting**
+  in an unjoined public room joined it; here the server refuses, so Browse
+  joins first.
 
 ### Phase 1 — The mirror in Workbench
 

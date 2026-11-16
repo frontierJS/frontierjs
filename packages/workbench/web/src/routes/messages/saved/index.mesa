@@ -1,0 +1,77 @@
+---
+title: Saved
+---
+<script>
+  // /messages/saved/ -- the posts the reader saved, newest first. `chat.saved` answers the
+  // ids in that order and lands the posts, which are then read by externalId into a tether
+  // of their own, so an edit or a reaction on one is a push. A save or unsave from any
+  // window changes the `savedPosts` rows, which asks again.
+  import { posts } from '../../../resources/Post.mesa'
+  import { getLists, channelLabel, listSaved, me } from '../../../lib/chat.js'
+  import PostItem from '../../../components/chat/PostItem.mesa'
+  import Icon from '../../../components/Icon.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  const lists = getLists()
+  $: people = lists.people.rows
+
+  let order = []
+  let list = null
+  let ready = false
+  let error = null
+  let asked = 0
+
+  async function load() {
+    const mine = ++asked
+    try {
+      const ids = await listSaved()
+      if (mine !== asked) return
+      order = ids
+      list?.destroy()
+      list = ids.length ? posts.tethered({ state: 'local', all: true, where: { externalId: { in: ids } }, directives: { limit: 200 } }) : null
+      error = null
+    } catch (e) { error = e.message } finally { ready = true }
+  }
+  $.onMount(load)
+  $.onDestroy(() => list?.destroy())
+
+  // One saved set, whichever window changed it.
+  $: key = lists.saved.rows.map(r => r.postExternalId).sort().join(',')
+  $: key, () => load()
+
+  $: byId = new Map((list ? list.rows : []).filter(p => !p.deletedAt).map(p => [p.externalId, p]))
+  $: savedNow = new Set(lists.saved.rows.map(r => r.postExternalId))
+  $: shown = order.filter(id => byId.has(id) && savedNow.has(id)).map(id => byId.get(id))
+  const where = (p) => channelLabel(lists.channels.rows.find(c => c.externalId === p.channelExternalId), people, me()) || '…'
+  const href = (p) => p.rootExternalId ? `/messages/${p.channelExternalId}/?thread=${p.rootExternalId}` : `/messages/${p.channelExternalId}/`
+</script>
+
+<header class="saved-head">
+  <h1 class="h4 cluster gap-xs"><Icon name="bookmark" /> Saved</h1>
+  <p class="text-sm text-muted">Posts you saved, newest first.</p>
+</header>
+
+<div class="saved" data-saved>
+  {#if error}<Alert tone="danger">{error}</Alert>{/if}
+  {#each shown as p (p.externalId)}
+    <section class="saved-item stack gap-2xs" data-saved-row={p.externalId}>
+      <a class="text-sm saved-jump" href={href(p)} data-saved-jump>{where(p)} <Icon name="external" /></a>
+      <PostItem post={p} {people} />
+    </section>
+  {:else}
+    {#if ready}
+      <EmptyState title="Nothing saved">Save a post from its More menu and it is kept here.</EmptyState>
+    {:else}
+      <p class="text-muted center">…</p>
+    {/if}
+  {/each}
+</div>
+
+<style>
+  .saved-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .saved-head h1, .saved-head p { margin: 0; }
+  .saved-head h1 { align-items: center; }
+  .saved { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+  .saved-jump { display: inline-flex; align-items: center; gap: var(--space-2xs); padding-inline: var(--space-lg); inline-size: fit-content; }
+</style>

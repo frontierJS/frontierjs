@@ -1,27 +1,63 @@
 <script>
-  // components/chat/ChatSidebar.mesa -- the channels the reader is in, then their
-  // direct messages. A channel with something unread is bold with a count pill,
-  // in `danger` when it names the reader; a muted one is faded and only a
-  // mention puts a pill on it. The counts are lib/chat.js's.
+  // components/chat/ChatSidebar.mesa -- the reader at the top (their presence and custom
+  // status), then Threads, Drafts and Saved, then the rooms in the reader's own sections:
+  // favorites, custom ones, channels and direct messages, in the order the server keeps
+  // them. A reader with no section rows (never backfilled) gets Channels and Direct
+  // messages. A channel with something unread is bold with a count pill, in `danger` when
+  // it names the reader; a muted one is faded and only a mention puts a pill on it. The
+  // counts are lib/chat.js's. A section folds; the fold is this browser's, kept in
+  // localStorage.
+  //
+  // Presence is not pushed to every socket, so the direct messages' people are asked
+  // for on mount and every minute while the tab is showing.
+  import { goto } from '@frontierjs/sierra/router'
   import Icon from '../Icon.mesa'
-  import { getLists, countsOf, channelLabel, me } from '../../lib/chat.js'
+  import {
+    getLists, countsOf, channelLabel, me, liveDrafts, nameOf, peerOf, teamOf, statusOf, STATUS, statusLine,
+    refreshStatuses, setStatus, setFavorite, createSection, renameSection, deleteSection, moveToSection, SECTION_NAME_MAX,
+  } from '../../lib/chat.js'
+  import Presence from './Presence.mesa'
   import NewDmDialog from './NewDmDialog.mesa'
   import NewRoomDialog from './NewRoomDialog.mesa'
+  import SectionDialog from './SectionDialog.mesa'
+  import StatusDialog from './StatusDialog.mesa'
+  import QuietDialog from './QuietDialog.mesa'
+  import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
+  import DropdownSubmenu from '@frontierjs/ui/components/overlay/DropdownSubmenu.mesa'
 
   export let currentId = null
   export let onThreads = false   // the Threads route is open
   export let onBrowse = false    // the Browse route is open
+  export let onDrafts = false    // the Drafts route is open
+  export let onSaved = false     // the Saved route is open
+  export let onActivity = false  // the Activity route is open
+  export let onScheduled = false // the Scheduled route is open
+  export let onGroups = false    // the Groups route is open
 
   let dmOpen = false
   let roomOpen = false
+  let statusOpen = false
+  let quietOpen = false
+  let error = null
+  let words = ''
+  const search = () => { const q = words.trim(); if (q) goto(`/messages/search/?q=${encodeURIComponent(q)}`) }
 
   const lists = getLists()
   $: all    = lists.channels.rows
   $: people = lists.people.rows
   $: counts = countsOf(lists.channels.rows, lists.mine.rows)
   $: self   = me()
+  $: myProfile = people.find(p => p.externalId === self) ?? null
+  $: myName = myProfile ? nameOf(myProfile) : 'You'
+  $: myStatus = statusOf(myProfile)
   // Threads the reader follows with something unread in them.
   $: threadsUnread = lists.threads.rows.filter(t => t.isFollowing && (t.unreadReplies > 0 || t.unreadMentions > 0)).length
+  $: drafts = liveDrafts(lists.drafts.rows)
+  $: draftRooms = new Set(drafts.map(d => d.channelExternalId))
+  $: savedCount = lists.saved.rows.length
+  $: waiting = lists.scheduled.rows.filter(r => r.status === 'scheduled').length
 
   const label    = (c) => channelLabel(c, people, self)
   const byName   = (a, b) => label(a).localeCompare(label(b))
@@ -30,40 +66,186 @@
 
   // A channel the reader is in, or the one open (a public preview). Archived ones are gone.
   const listed = (c) => !c.deletedAt && (c.externalId in counts || c.externalId === currentId)
-  $: sections = [
-    { key: 'channels', label: 'Channels',        add: 'Add channel', list: all.filter(c => !isDm(c) && listed(c)).sort(byName) },
-    { key: 'dms',      label: 'Direct messages', add: 'New message', list: all.filter(c => isDm(c) && listed(c)).sort(byRecent) },
-  ]
+
+  // ── The groups ──
+  // The sections' own order and contents, with the two defaults filling in whatever the
+  // section rows have not caught up with, so a channel just made or joined is never missing.
+  // Favorites claim first, then custom sections, so a room appears under one heading only.
+  $: team = teamOf(all)
+  $: mySections = lists.sections.rows.filter(r => r.teamExternalId === team).slice().sort((a, b) => a.sortOrder - b.sortOrder)
+  $: favIds = new Set(lists.mine.rows.filter(m => m.isFavorite).map(m => m.channelExternalId))
+  // The leading reads are the subscription: the builders are local functions that reach these through their bodies.
+  $: groups = (all, counts, currentId, favIds, people, self, mySections.length ? sectioned(mySections) : plain())
+
+  const keyOf = (r) => r.kind === 'direct' ? 'dms' : r.kind === 'custom' ? `custom-${r.externalId}` : r.kind
+  function plain() {
+    return [
+      { key: 'channels', kind: 'channels', label: 'Channels',        add: 'Add channel', list: all.filter(c => !isDm(c) && listed(c)).sort(byName) },
+      { key: 'dms',      kind: 'direct',   label: 'Direct messages', add: 'New message', list: all.filter(c => isDm(c) && listed(c)).sort(byRecent) },
+    ]
+  }
+  function sectioned(rows) {
+    const byId = new Map(all.map(c => [c.externalId, c]))
+    const placed = new Set()
+    const take = (ids) => ids.map(id => byId.get(id)).filter(c => c && listed(c) && !placed.has(c.externalId)).map(c => (placed.add(c.externalId), c))
+    const mark = (r) => r.channelExternalIds ?? []
+    const out = new Map()
+    const fav = rows.find(r => r.kind === 'favorites')
+    const favList = take([...mark(fav ?? {}).filter(id => favIds.has(id)), ...favIds])
+    out.set('favorites', favList)
+    for (const r of rows.filter(r => r.kind === 'custom')) out.set(keyOf(r), take(mark(r)))
+    const chRow = rows.find(r => r.kind === 'channels'), dmRow = rows.find(r => r.kind === 'direct')
+    out.set('channels', [...take(mark(chRow ?? {}).filter(id => byId.get(id) && !isDm(byId.get(id)))), ...take(all.filter(c => !isDm(c)).sort(byName).map(c => c.externalId))])
+    out.set('dms', [...take(mark(dmRow ?? {}).filter(id => byId.get(id) && isDm(byId.get(id)))), ...take(all.filter(isDm).map(c => c.externalId))])
+    const make = (r) => r.kind === 'channels' ? { key: 'channels', kind: 'channels', label: 'Channels', add: 'Add channel', list: out.get('channels').slice().sort(byName) }
+      : r.kind === 'direct' ? { key: 'dms', kind: 'direct', label: 'Direct messages', add: 'New message', list: out.get('dms').slice().sort(byRecent) }
+      : r.kind === 'favorites' ? { key: 'favorites', kind: 'favorites', label: 'Favorites', list: out.get('favorites') }
+      : { key: keyOf(r), kind: 'custom', id: r.externalId, label: r.name, list: out.get(keyOf(r)) }
+    const made = rows.map(make).filter(g => g.kind !== 'favorites' || g.list.length)
+    for (const [k, kind] of [['channels', 'channels'], ['dms', 'direct']]) {
+      if (!made.some(g => g.key === k)) made.push(make({ kind }))
+    }
+    if (!made.some(g => g.key === 'favorites') && favList.length) made.unshift(make({ kind: 'favorites' }))
+    return made
+  }
+
+  // ── Folding ──
+  const FOLD = 'workbench_messages_folded'
+  const readFolds = () => { try { return JSON.parse(localStorage.getItem(FOLD) ?? '{}') ?? {} } catch { return {} } }
+  let folded = readFolds()
+  function fold(key) {
+    folded = { ...folded, [key]: !folded[key] }
+    try { localStorage.setItem(FOLD, JSON.stringify(folded)) } catch {}
+  }
+
+  // ── A room's and a section's menus ──
+  let sectionOpen = false
+  let sectionTitle = 'New section'
+  let sectionValue = ''
+  let sectionSave = undefined
+  const askName = (title, value, save) => { sectionTitle = title; sectionValue = value; sectionSave = save; sectionOpen = true }
+  const act = async (fn) => { error = null; try { await fn() } catch (e) { error = e.message } }
+
+  // Where a room can go: favorites, each custom section, and its own default.
+  const targets = (c) => mySections.filter(r => r.kind === 'favorites' || r.kind === 'custom' || r.kind === (isDm(c) ? 'direct' : 'channels'))
+  const moveTo = (c, r) => act(() => r.kind === 'favorites' ? setFavorite(c.externalId, true) : moveToSection(c.externalId, r.externalId))
+  const newSection = (c) => askName('New section', '', async (name) => { await createSection(team, name, [c.externalId]) })
+  const addSection = () => askName('New section', '', async (name) => { await createSection(team, name) })
+  const rename = (g) => askName('Rename section', g.label, async (name) => { await renameSection(g.id, name) })
+  const drop = (g) => act(() => deleteSection(g.id))
+
+  // ── Presence ──
+  $: peers = all.filter(c => c.type === 'direct' && listed(c)).map(c => peerOf(c, self))
+  const peerOfRoom = (c) => people.find(p => p.externalId === peerOf(c, self)) ?? null
+  const ask = () => { if (document.visibilityState === 'visible') refreshStatuses([self, ...peers]).catch(() => {}) }
+  let asked = ''
+  // Asked again when the set of people on screen grows, not on each push into the rows.
+  $: peerKey = peers.slice().sort().join(',')
+  $: peerKey, () => { if (peerKey !== asked) { asked = peerKey; ask() } }
+  $.onMount(() => { asked = peerKey; ask() })
+  $.every(60_000, ask)
+  const chooseStatus = (s) => act(() => setStatus(s))
 </script>
 
 <nav class="chat-sidebar stack gap-md" aria-label="Channels" data-chat-sidebar>
+  <DropdownMenu placement="bottom-start">
+    {#snippet trigger()}
+      <button type="button" class="navlink chat-me" data-me title={[STATUS[myStatus].label, statusLine(myProfile)].filter(Boolean).join(' · ')}>
+        <Presence status={myStatus} />
+        <span class="chat-room-name" data-me-name>{myName}</span>
+        {#if statusLine(myProfile)}<span class="text-xs text-muted chat-room-name" data-me-line>{statusLine(myProfile)}</span>{/if}
+      </button>
+    {/snippet}
+    {#each ['online', 'away', 'dnd', 'offline'] as s (s)}
+      <DropdownItem onclick={() => chooseStatus(s)}><span data-set-status={s}>{STATUS[s].label}</span></DropdownItem>
+    {/each}
+    <DropdownSeparator />
+    <DropdownItem onclick={() => statusOpen = true}><span data-set-custom>Set a custom status…</span></DropdownItem>
+    <DropdownItem onclick={() => quietOpen = true}><span data-set-quiet>Quiet hours…</span></DropdownItem>
+  </DropdownMenu>
+  {#if error}<p class="text-xs text-danger" role="alert" data-sidebar-error>{error}</p>{/if}
+  <form role="search" onsubmit|preventDefault={search} data-chat-search>
+    <label class="visually-hidden" for="chat-search">Search messages</label>
+    <div class="field-row">
+      <span class="field-addon" aria-hidden="true"><Icon name="search" /></span>
+      <input id="chat-search" class="field" type="search" placeholder="Search messages" autocomplete="off" bind:value={words} data-chat-search-box />
+    </div>
+  </form>
   <ul class="navlist">
+    <li>
+      <a class="navlink chat-room" href="/messages/activity/" aria-current={onActivity ? 'page' : null} data-activity-link>
+        <Icon name="notify" /> <span class="chat-room-name">Activity</span>
+      </a>
+    </li>
     <li>
       <a class="navlink chat-room" class:unread={threadsUnread > 0} href="/messages/threads/" aria-current={onThreads ? 'page' : null} data-threads-link>
         <Icon name="thread" /> <span class="chat-room-name">Threads</span>
         {#if threadsUnread > 0}<span class="badge primary chat-pill" data-pill="threads" title={`${threadsUnread} unread`}>{threadsUnread}</span>{/if}
       </a>
     </li>
+    <li>
+      <a class="navlink chat-room" href="/messages/drafts/" aria-current={onDrafts ? 'page' : null} data-drafts-link>
+        <Icon name="edit" /> <span class="chat-room-name">Drafts</span>
+        {#if drafts.length > 0}<span class="badge chat-pill" data-drafts-count title={`${drafts.length} unsent`}>{drafts.length}</span>{/if}
+      </a>
+    </li>
+    <li>
+      <a class="navlink chat-room" href="/messages/saved/" aria-current={onSaved ? 'page' : null} data-saved-link>
+        <Icon name="bookmark" /> <span class="chat-room-name">Saved</span>
+        {#if savedCount > 0}<span class="badge chat-pill" data-saved-count title={`${savedCount} saved`}>{savedCount}</span>{/if}
+      </a>
+    </li>
+    <li>
+      <a class="navlink chat-room" href="/messages/scheduled/" aria-current={onScheduled ? 'page' : null} data-scheduled-link>
+        <Icon name="clock" /> <span class="chat-room-name">Scheduled</span>
+        {#if waiting > 0}<span class="badge chat-pill" data-scheduled-count title={`${waiting} waiting to send`}>{waiting}</span>{/if}
+      </a>
+    </li>
+    <li>
+      <a class="navlink chat-room" href="/messages/groups/" aria-current={onGroups ? 'page' : null} data-groups-link>
+        <Icon name="group" /> <span class="chat-room-name">Groups</span>
+      </a>
+    </li>
   </ul>
-  {#each sections as h (h.key)}
+  {#each groups as h (h.key)}
     <ul class="navlist" data-section={h.key}>
-        <li class="navlist-label cluster chat-section-head">
-          <span>{h.label}</span>
-          <button type="button" class="btn ghost square xs chat-add" aria-label={h.add} title={h.add} data-add={h.key} onclick={() => h.key === 'dms' ? dmOpen = true : roomOpen = true}><Icon name="plus" /></button>
-        </li>
-        {#if h.key === 'channels'}
+      <li class="navlist-label cluster chat-section-head">
+        <button type="button" class="chat-fold" aria-expanded={!folded[h.key]} data-fold={h.key} onclick={() => fold(h.key)}>
+          <span class="chat-caret" class:open={!folded[h.key]}><Icon name="chevron" /></span> <span>{h.label}</span>
+        </button>
+        <span class="cluster gap-2xs">
+          {#if h.kind === 'custom'}
+            <DropdownMenu placement="bottom-end">
+              {#snippet trigger()}<button type="button" class="btn ghost square xs chat-add" aria-label={`${h.label} actions`} title="Section actions" data-section-menu={h.id}><Icon name="more" /></button>{/snippet}
+              <DropdownItem onclick={() => rename(h)}>Rename</DropdownItem>
+              <DropdownItem tone="danger" data-confirm="Delete this section? Its rooms move back to Channels." data-confirm-label="Delete" onclick={() => drop(h)}>Delete</DropdownItem>
+            </DropdownMenu>
+          {/if}
+          {#if h.add}
+            <button type="button" class="btn ghost square xs chat-add" aria-label={h.add} title={h.add} data-add={h.key} onclick={() => h.kind === 'direct' ? dmOpen = true : roomOpen = true}><Icon name="plus" /></button>
+          {/if}
+        </span>
+      </li>
+      {#if !folded[h.key]}
+        {#if h.kind === 'channels'}
           <li><a class="navlink chat-room" href="/messages/browse/" aria-current={onBrowse ? 'page' : null} data-browse-link><span class="chat-hash" aria-hidden="true">+</span> <span class="chat-room-name">Browse channels</span></a></li>
         {/if}
         {#each h.list as c (c.externalId)}
           {@const n = counts[c.externalId]}
           {@const unread = n?.unread ?? 0}
           {@const named = n?.mentions ?? 0}
-          <li>
+          {@const peer = c.type === 'direct' ? peerOfRoom(c) : null}
+          <li class="chat-row">
             <a class="navlink chat-room" class:not-joined={!n} class:muted-room={n?.muted} class:unread={unread > 0 || named > 0}
                href={`/messages/${c.externalId}/`} aria-current={c.externalId === currentId ? 'page' : null}
                title={label(c)} data-channel={c.externalId}>
-              {#if c.type === 'direct' || c.type === 'group'}<Icon name="message" />{:else if c.type === 'private'}<Icon name="lock" label="Private" />{:else}<span class="chat-hash" aria-hidden="true">#</span>{/if}
+              {#if peer?.status}<Presence status={statusOf(peer)} />
+              {:else if c.type === 'direct' || c.type === 'group'}<Icon name="message" />
+              {:else if c.type === 'private'}<Icon name="lock" label="Private" />
+              {:else}<span class="chat-hash" aria-hidden="true">#</span>{/if}
               <span class="chat-room-name">{label(c).slice(2)}</span>
+              {#if peer && statusLine(peer)}<span class="chat-mood" title={statusLine(peer)} data-dm-mood>{statusLine(peer)}</span>{/if}
+              {#if draftRooms.has(c.externalId)}<span class="chat-quiet" title="You have a draft here" data-room-draft><Icon name="edit" label="Draft" /></span>{/if}
               {#if n?.muted}<span class="chat-quiet"><Icon name="muted" label="Muted" /></span>{/if}
               {#if named > 0}
                 <span class="badge danger chat-pill" data-pill="mention" title={`${named} mention${named === 1 ? '' : 's'}`}>{named}</span>
@@ -71,13 +253,35 @@
                 <span class="badge primary chat-pill" data-pill="unread" title={`${unread} unread`}>{unread}</span>
               {/if}
             </a>
+            {#if n}
+              <span class="chat-row-menu">
+                <DropdownMenu placement="bottom-end">
+                  {#snippet trigger()}<button type="button" class="btn ghost square xs" aria-label={`${label(c).slice(2)} actions`} title="Room actions" data-room-actions={c.externalId}><Icon name="more" /></button>{/snippet}
+                  <DropdownItem onclick={() => act(() => setFavorite(c.externalId, !favIds.has(c.externalId)))}>{favIds.has(c.externalId) ? 'Remove from favorites' : 'Add to favorites'}</DropdownItem>
+                  <DropdownSubmenu heading="Move to…">
+                    {#each targets(c) as r (r.externalId)}
+                      <DropdownItem onclick={() => moveTo(c, r)}><span data-move-to={r.externalId}>{r.kind === 'favorites' ? 'Favorites' : r.kind === 'channels' ? 'Channels' : r.kind === 'direct' ? 'Direct messages' : r.name}</span></DropdownItem>
+                    {/each}
+                    <DropdownSeparator />
+                    <DropdownItem onclick={() => newSection(c)}><span data-move-new>New section…</span></DropdownItem>
+                  </DropdownSubmenu>
+                </DropdownMenu>
+              </span>
+            {/if}
           </li>
         {/each}
-      </ul>
+      {/if}
+    </ul>
   {/each}
+  {#if mySections.length}
+    <button type="button" class="btn ghost sm chat-new-section" data-new-section onclick={addSection}><Icon name="plus" /> New section</button>
+  {/if}
 </nav>
 <NewDmDialog bind:open={dmOpen} />
 <NewRoomDialog bind:open={roomOpen} />
+<SectionDialog bind:open={sectionOpen} title={sectionTitle} value={sectionValue} onsave={sectionSave} />
+<StatusDialog bind:open={statusOpen} />
+<QuietDialog bind:open={quietOpen} />
 
 <style>
   .chat-sidebar { border-inline-end: var(--border-width) solid var(--rule); background: var(--surface-sunken); padding: var(--space-lg) var(--space-sm); overflow-y: auto; min-block-size: 0; }
@@ -90,4 +294,14 @@
   .chat-section-head { justify-content: space-between; align-items: center; }
   .chat-add { opacity: 0.7; }
   .chat-quiet { display: inline-flex; opacity: 0.7; }
+  .chat-mood { font-size: var(--text-xs); opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
+  .chat-me { inline-size: 100%; text-align: start; background: none; border: 0; cursor: pointer; }
+  .chat-fold { display: inline-flex; align-items: center; gap: var(--space-2xs); background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+  .chat-caret { display: inline-flex; transition: transform var(--duration-fast, 0.12s); }
+  .chat-caret.open { transform: rotate(90deg); }
+  /* The room's menu sits over the row's end and shows when the row is pointed at or focused. */
+  .chat-row { position: relative; }
+  .chat-row-menu { position: absolute; inset-block-start: 50%; inset-inline-end: var(--space-2xs); transform: translateY(-50%); opacity: 0; }
+  .chat-row:hover .chat-row-menu, .chat-row:focus-within .chat-row-menu { opacity: 1; }
+  .chat-new-section { align-self: flex-start; }
 </style>

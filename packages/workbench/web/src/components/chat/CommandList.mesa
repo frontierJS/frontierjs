@@ -1,0 +1,25 @@
+<script>
+  // components/chat/CommandList.mesa -- the `/` list over the composer: each command with
+  // what it takes and its one line. Drawn only while a `/name` is typed at the start of the
+  // box. The box owns the keys (`pickerKey` in lib/chat.js); this draws and takes a pointer,
+  // on mousedown so the box keeps its focus.
+  export let picker = null          // { items, index } from commandAt
+  export let onpick = undefined     // (command) => void
+</script>
+
+{#if picker}
+  <ul class="popover command-list items menu" role="listbox" aria-label="Commands" data-command-list>
+    {#each picker.items as c, i (c.name)}
+      <li><button type="button" class="item" role="option" aria-selected={i === picker.index} data-command={c.name} onmousedown|preventDefault={() => onpick?.(c)}>
+        <span class="item-text"><span class="item-title">/{c.name}{#if c.takes} <span class="text-muted">{c.takes}</span>{/if}</span><span class="item-sub">{c.help}</span></span>
+      </button></li>
+    {/each}
+  </ul>
+{/if}
+
+<style>
+  .command-list { position: absolute; inset-block-end: 100%; inset-inline-start: 0; margin-block-end: var(--space-xs); min-inline-size: calc(var(--space-2xl) * 8); max-block-size: calc(var(--space-2xl) * 8); overflow-y: auto; list-style: none; padding: var(--space-2xs); z-index: 2; }
+  .command-list li { display: contents; }
+  .command-list :global(.item) { inline-size: 100%; text-align: start; }
+  .command-list :global(.item)[aria-selected="true"] { background: var(--surface-sunken); }
+</style>

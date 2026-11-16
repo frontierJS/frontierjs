@@ -1,0 +1,22 @@
+<script>
+  // components/chat/TypingLine.mesa -- "<name> is typing…" under a box's posts, for
+  // as long as lib/chat.js has heard someone in that room (or thread) in the last
+  // five seconds. The row is always drawn, empty, so the line coming and going
+  // moves nothing above it.
+  import { typing, typingNames, typingLine } from '../../lib/chat.js'
+
+  export let channelId = null
+  export let rootExternalId = null
+  export let people = []
+
+  // Standalone reads above the derived line: a leading read inside the expression is not a subscription to an import's field.
+  $: typing.seen
+  $: typing.now
+  $: line = typingLine(typingNames(channelId, rootExternalId, people))
+</script>
+
+<p class="typing text-xs text-muted" aria-live="polite" data-typing={rootExternalId ? 'reply' : 'post'}>{line}</p>
+
+<style>
+  .typing { margin: 0; padding-inline: var(--chat-gutter, var(--space-md)); min-block-size: var(--space-lg); }
+</style>

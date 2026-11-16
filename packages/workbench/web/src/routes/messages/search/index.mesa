@@ -1,0 +1,91 @@
+---
+title: Search
+---
+<script>
+  // /messages/search/?q=… -- the posts whose words match, newest first. `chat.search` asks the
+  // server through the reader's own account, so a room they cannot read is never a hit, and
+  // it lands the posts, which are then read by externalId into a tether of their own (an edit
+  // or a reaction on a hit is a push). The query lives in the URL, so Back returns to the hits;
+  // the box on this page refines it, and the sidebar's box starts it.
+  import { page, goto } from '@frontierjs/sierra/router'
+  import { getLists, channelLabel, me, postsById, searchPosts } from '../../../lib/chat.js'
+  import PostItem from '../../../components/chat/PostItem.mesa'
+  import Icon from '../../../components/Icon.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  const lists = getLists()
+  $: people = lists.people.rows
+
+  // A query-only navigation moves `page.query` and nothing else: the standalone read is what subscribes.
+  $: page.query
+  $: q = String(page.query.q ?? '').trim()
+
+  let words = String(page.query.q ?? '').trim()
+  let order = []
+  let list = null
+  let loading = false
+  let error = null
+  let asked = 0
+
+  async function run() {
+    const mine = ++asked
+    if (!q) { order = []; list?.destroy(); list = null; error = null; loading = false; return }
+    loading = true; error = null
+    try {
+      const ids = await searchPosts(q)
+      if (mine !== asked) return
+      order = ids
+      list?.destroy()
+      list = postsById(ids)
+    } catch (e) { if (mine === asked) error = e.message } finally { if (mine === asked) loading = false }
+  }
+  $.onMount(run)
+  $.onDestroy(() => list?.destroy())
+  $: q, () => { words = q; run() }
+
+  $: byId = new Map((list ? list.rows : []).filter(p => !p.deletedAt).map(p => [p.externalId, p]))
+  $: shown = order.filter(id => byId.has(id)).map(id => byId.get(id))
+
+  const refine = () => { const t = words.trim(); goto(t ? `/messages/search/?q=${encodeURIComponent(t)}` : '/messages/search/') }
+  const where = (p) => channelLabel(lists.channels.rows.find(c => c.externalId === p.channelExternalId), people, me()) || '…'
+  const href = (p) => p.rootExternalId ? `/messages/${p.channelExternalId}/?thread=${p.rootExternalId}` : `/messages/${p.channelExternalId}/`
+</script>
+
+<header class="search-head stack gap-xs">
+  <h1 class="h4 cluster gap-xs"><Icon name="search" /> Search</h1>
+  <form role="search" onsubmit|preventDefault={refine} data-search-form>
+    <label class="visually-hidden" for="search-page-box">Search messages</label>
+    <div class="field-row">
+      <span class="field-addon" aria-hidden="true"><Icon name="search" /></span>
+      <input id="search-page-box" class="field" type="search" placeholder="Search messages" autocomplete="off" bind:value={words} data-search-box />
+    </div>
+  </form>
+  {#if q && !loading && !error}<p class="text-sm text-muted" data-search-count>{shown.length} {shown.length === 1 ? 'match' : 'matches'} for “{q}”</p>{/if}
+</header>
+
+<div class="search" data-search>
+  {#if error}<Alert tone="danger">{error}</Alert>{/if}
+  {#each shown as p (p.externalId)}
+    <section class="search-item stack gap-2xs" data-search-row={p.externalId}>
+      <a class="text-sm search-jump" href={href(p)} data-search-jump>{where(p)} <Icon name="external" /></a>
+      <PostItem post={p} {people} />
+    </section>
+  {:else}
+    {#if !q}
+      <EmptyState title="Search messages">Every word must match. Type some words above and press Enter.</EmptyState>
+    {:else if loading}
+      <p class="text-muted center">…</p>
+    {:else if !error}
+      <EmptyState title="No matches">Nothing you can read matches all of those words. Try fewer.</EmptyState>
+    {/if}
+  {/each}
+</div>
+
+<style>
+  .search-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .search-head h1, .search-head p { margin: 0; }
+  .search-head h1 { align-items: center; }
+  .search { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+  .search-jump { display: inline-flex; align-items: center; gap: var(--space-2xs); padding-inline: var(--space-lg); inline-size: fit-content; }
+</style>

@@ -1,0 +1,7 @@
+<script module>
+  // src/resources/ChatGroup.mesa -- the the @handle groups (local to this laptop; every member reads, the creator writes).
+  // Written through the `chatGroups` service itself; no chat server is involved.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const chatGroups = createResource('chatGroups', { model: 'ChatGroup' })
+</script>

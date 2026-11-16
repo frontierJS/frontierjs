@@ -1,0 +1,8 @@
+<script module>
+  // src/resources/Draft.mesa -- the mirror's Draft rows (`IDEAS/workbench-messages.md`):
+  // the person's own unsent text, one row per box. Read-only here and own rows only; every write is a
+  // `chat` verb, which forwards to the server first (lib/chat.js).
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const drafts = createResource('drafts', { model: 'Draft' })
+</script>

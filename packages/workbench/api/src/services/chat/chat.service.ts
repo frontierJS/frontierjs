@@ -17,6 +17,30 @@
 //   openDirect  the direct channel with one person, or a group with two to
 //               seven { profileExternalIds }; joining and leaving a room are
 //               channelMembers.create and .remove
+//   saveDraft   the caller's draft for one box { channelExternalId,
+//               rootExternalId?, message, fileExternalIds? } -> the Draft row
+//   deleteDraft discard it { channelExternalId, rootExternalId? }
+//   save        save or unsave a post { postExternalId, saved }
+//   saved       the saved list read whole and landed -> { postExternalIds },
+//               newest first
+//   favorite    favorite or unfavorite a room { channelExternalId, favorite }
+//   setStatus   the caller's presence { status, dndEndAt? }
+//   setCustomStatus  { emoji, text?, expiresAt? }, or null/{} to clear
+//   statuses    presence of the people on screen, read now { profileExternalIds }
+//   search      posts matching { terms }, landed -> { postExternalIds, matches }
+//   activity    -> { mentions: postExternalIds, threads: rootExternalIds }
+//   editHistory the caller's own post's earlier versions { postExternalId }
+//               -> { versions: [{ message, editedAt }] }, newest first
+//   remind      the server messages the caller about a post { postExternalId, at }
+//   createSection   { teamExternalId, name, channelExternalIds? } -> the ChatSection row
+//   renameSection   { sectionExternalId, name } -> the row
+//   deleteSection   { sectionExternalId }; a system section is the server's 400
+//   reorderSections { teamExternalId, sectionExternalIds } -> every section on
+//                   the team, top to bottom
+//   moveToSection   { channelExternalId, sectionExternalId, index? } -> the row
+//
+// Someone typing reaches the members of the room as a `chat typing` frame
+// { channelExternalId, rootExternalId, profileExternalId }; nothing stores it.
 //
 // Member.chatToken and Member.profileExternalId are the system's to write,
 // because a caller who could set profileExternalId could read every private
@@ -26,7 +50,10 @@
 import { createService } from '@frontierjs/junction'
 import type { App, ServiceContext } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
-import { browseAs, chatOn, followAs, land, listen, markUnreadAs, muteAs, openDirectAs, pinAs, profileOfCaller, readThreadAs, sysOf, unlisten, viewAs } from '../../providers/chat/index.ts'
+import {
+  activityAs, browseAs, chatOn, createSectionAs, deleteDraftAs, deleteSectionAs, editHistoryAs, isSectionId, moveToSectionAs, remindAs, renameSectionAs, reorderSectionsAs, favoriteAs, followAs, land, listen, markUnreadAs, muteAs, openDirectAs, pinAs, profileOfCaller, readThreadAs,
+  saveAs, saveDraftAs, savedAs, searchAs, setCustomStatusAs, setStatusAs, statusesAs, sysOf, unlisten, viewAs,
+} from '../../providers/chat/index.ts'
 
 type Ctx = ServiceContext & { app: App }
 
@@ -70,9 +97,41 @@ const peopleOf = (ctx: Ctx, self: string): string[] => {
   return others
 }
 
-/** A refusal from the server, as this app's status. */
+const dataOf = (ctx: Ctx) => (ctx.data ?? {}) as Record<string, unknown>
+const textOf = (ctx: Ctx, key: string, max: number, optional = false): string => {
+  const v = dataOf(ctx)[key]
+  if (optional && (v === undefined || v === null)) return ''
+  if (typeof v !== 'string' || v.length > max) throw fail(400, `chat: ${key} is text of at most ${max} characters`)
+  return v
+}
+/** A time to come, or null when absent. */
+const laterOf = (ctx: Ctx, key: string): Date | null => {
+  const v = dataOf(ctx)[key]
+  if (v === undefined || v === null || v === '') return null
+  const at = new Date(v as string)
+  if (Number.isNaN(at.getTime()) || at.getTime() <= Date.now()) throw fail(400, `chat: ${key} is a time to come`)
+  return at
+}
+const idsOf = (ctx: Ctx, key: string, max: number): string[] => {
+  const v = dataOf(ctx)[key]
+  if (!Array.isArray(v) || v.length > max || !v.every(x => typeof x === 'string' && ID.test(x))) throw fail(400, `chat: ${key} is a list of at most ${max} chat ids`)
+  return [...new Set(v as string[])]
+}
+
+/** A refusal from the server, as this app's status: what it refused as malformed is the caller's 400. */
 const refused = (what: string, kind: string) =>
-  fail(kind === 'forbidden' ? 403 : kind === 'not_found' || kind === 'gone' ? 404 : 502, `chat.${what}: the chat server refused (${kind})`)
+  fail(kind === 'forbidden' ? 403 : kind === 'not_found' || kind === 'gone' ? 404 : kind === 'refused' ? 400 : 502, `chat.${what}: the chat server refused (${kind})`)
+
+const sectionNameOf = (ctx: Ctx): string => {
+  const name = textOf(ctx, 'name', 22).trim()
+  if (!name) throw fail(400, 'chat: name is the section\'s name')
+  return name
+}
+const sectionIdOf = (ctx: Ctx, key: string): string => {
+  const v = dataOf(ctx)[key]
+  if (!isSectionId(v)) throw fail(400, `chat: ${key} is a section id`)
+  return v
+}
 
 export default createService({
   name:    'chat',
@@ -89,6 +148,23 @@ export default createService({
     { method: 'follow',     gate: LEVELS.CREATOR },
     { method: 'browse',     gate: LEVELS.CREATOR, read: true },
     { method: 'openDirect', gate: LEVELS.CREATOR },
+    { method: 'saveDraft',  gate: LEVELS.CREATOR },
+    { method: 'deleteDraft', gate: LEVELS.CREATOR },
+    { method: 'save',       gate: LEVELS.CREATOR },
+    { method: 'saved',      gate: LEVELS.CREATOR, read: true },
+    { method: 'favorite',   gate: LEVELS.CREATOR },
+    { method: 'setStatus',  gate: LEVELS.CREATOR },
+    { method: 'setCustomStatus', gate: LEVELS.CREATOR },
+    { method: 'statuses',   gate: LEVELS.CREATOR, read: true },
+    { method: 'search',     gate: LEVELS.CREATOR, read: true },
+    { method: 'activity',   gate: LEVELS.CREATOR, read: true },
+    { method: 'editHistory', gate: LEVELS.CREATOR, read: true },
+    { method: 'remind',     gate: LEVELS.CREATOR },
+    { method: 'createSection',   gate: LEVELS.CREATOR },
+    { method: 'renameSection',   gate: LEVELS.CREATOR },
+    { method: 'deleteSection',   gate: LEVELS.CREATOR },
+    { method: 'reorderSections', gate: LEVELS.CREATOR },
+    { method: 'moveToSection',   gate: LEVELS.CREATOR },
   ],
 
   async status (ctx: Ctx) {
@@ -204,6 +280,161 @@ export default createService({
     const r = await openDirectAs(ctx.app, profile, peopleOf(ctx, profile))
     if (!r.row) throw refused('openDirect', r.error?.kind ?? 'no answer')
     return { channelExternalId: r.row.externalId, type: r.row.type }
+  },
+
+  // The server keeps one draft per box, so a save replaces the box's last.
+  async saveDraft (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const channel = idOf(ctx, 'channelExternalId')!, root = idOf(ctx, 'rootExternalId', true)
+    const files = dataOf(ctx).fileExternalIds === undefined ? [] : idsOf(ctx, 'fileExternalIds', 10)
+    const r = await saveDraftAs(ctx.app, profile, { channelExternalId: channel, ...(root ? { rootExternalId: root } : {}), message: textOf(ctx, 'message', 16383), fileExternalIds: files })
+    if (!r.row) throw refused('saveDraft', r.error?.kind ?? 'no answer')
+    return await sysOf(ctx.app).draft.findFirst({ where: { profileExternalId: profile, channelExternalId: channel, rootExternalId: root } })
+  },
+
+  async deleteDraft (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const channel = idOf(ctx, 'channelExternalId')!, root = idOf(ctx, 'rootExternalId', true)
+    const r = await deleteDraftAs(ctx.app, profile, channel, root) as { error?: { kind: string } }
+    if (r.error) throw refused('deleteDraft', r.error.kind)
+    return { channelExternalId: channel, rootExternalId: root }
+  },
+
+  async save (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const post = idOf(ctx, 'postExternalId')!, saved = flagOf(ctx, 'saved')
+    const r = await saveAs(ctx.app, profile, post, saved)
+    if (r.error) throw refused('save', r.error.kind)
+    return { postExternalId: post, saved }
+  },
+
+  async saved (ctx: Ctx) {
+    serverOn(ctx)
+    const r = await savedAs(ctx.app, await callerProfile(ctx))
+    if (!r.rows) throw refused('saved', r.error?.kind ?? 'no answer')
+    return { postExternalIds: r.rows }
+  },
+
+  async favorite (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const channel = idOf(ctx, 'channelExternalId')!, favorite = flagOf(ctx, 'favorite')
+    const r = await favoriteAs(ctx.app, profile, channel, favorite)
+    if (r.error) throw refused('favorite', r.error.kind)
+    return { channelExternalId: channel, favorite }
+  },
+
+  async setStatus (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const status = dataOf(ctx).status
+    if (status !== 'online' && status !== 'away' && status !== 'offline' && status !== 'dnd') throw fail(400, 'chat.setStatus: status is online, away, offline or dnd')
+    const r = await setStatusAs(ctx.app, profile, status, status === 'dnd' ? laterOf(ctx, 'dndEndAt') : null)
+    if (!r.row) throw refused('setStatus', r.error?.kind ?? 'no answer')
+    return { profileExternalId: profile, status: r.row.status }
+  },
+
+  // An empty emoji and text is a clear.
+  async setCustomStatus (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const emoji = textOf(ctx, 'emoji', 64, true), text = textOf(ctx, 'text', 100, true)
+    const custom = emoji || text ? { emoji, text, expiresAt: laterOf(ctx, 'expiresAt') } : null
+    const r = await setCustomStatusAs(ctx.app, profile, custom)
+    if (r.error) throw refused('setCustomStatus', r.error.kind)
+    return { profileExternalId: profile, customEmoji: custom?.emoji || null, customText: custom?.text || null, customExpiresAt: custom?.expiresAt ?? null }
+  },
+
+  async statuses (ctx: Ctx) {
+    serverOn(ctx)
+    await callerProfile(ctx)
+    const r = await statusesAs(ctx.app, idsOf(ctx, 'profileExternalIds', 200))
+    if (!r.rows) throw refused('statuses', r.error?.kind ?? 'no answer')
+    return { statuses: r.rows.map(s => ({ profileExternalId: s.profileExternalId, status: s.status })) }
+  },
+
+  async search (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const terms = textOf(ctx, 'terms', 500).trim()
+    if (!terms) throw fail(400, 'chat.search takes { terms }')
+    const r = await searchAs(ctx.app, profile, terms)
+    if (!r.rows) throw refused('search', r.error?.kind ?? 'no answer')
+    return { postExternalIds: r.rows, matches: r.matches }
+  },
+
+  async activity (ctx: Ctx) {
+    serverOn(ctx)
+    const r = await activityAs(ctx.app, await callerProfile(ctx))
+    if (!('mentions' in r) || !r.mentions) throw refused('activity', r.error?.kind ?? 'no answer')
+    return r
+  },
+
+  async editHistory (ctx: Ctx) {
+    serverOn(ctx)
+    await callerProfile(ctx)
+    const r = await editHistoryAs(ctx.app, idOf(ctx, 'postExternalId')!)
+    if (!r.rows) throw refused('editHistory', r.error?.kind ?? 'no answer')
+    return { versions: r.rows }
+  },
+
+  async remind (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const post = idOf(ctx, 'postExternalId')!, at = laterOf(ctx, 'at')
+    if (!at) throw fail(400, 'chat.remind takes { postExternalId, at }')
+    const r = await remindAs(ctx.app, profile, post, at)
+    if (r.error) throw refused('remind', r.error.kind)
+    return { postExternalId: post, at }
+  },
+
+  async createSection (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const channels = dataOf(ctx).channelExternalIds === undefined ? [] : idsOf(ctx, 'channelExternalIds', 200)
+    const r = await createSectionAs(ctx.app, profile, idOf(ctx, 'teamExternalId')!, sectionNameOf(ctx), channels)
+    if (!r.row) throw refused('createSection', r.error?.kind ?? 'no answer')
+    return r.row
+  },
+
+  async renameSection (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const r = await renameSectionAs(ctx.app, profile, sectionIdOf(ctx, 'sectionExternalId'), sectionNameOf(ctx))
+    if (!r.row) throw refused('renameSection', r.error?.kind ?? 'no answer')
+    return r.row
+  },
+
+  async deleteSection (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const id = sectionIdOf(ctx, 'sectionExternalId')
+    const r = await deleteSectionAs(ctx.app, profile, id)
+    if (r.error) throw refused('deleteSection', r.error.kind)
+    return { sectionExternalId: id }
+  },
+
+  async reorderSections (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const order = dataOf(ctx).sectionExternalIds
+    if (!Array.isArray(order) || order.length > 200 || !order.every(isSectionId)) throw fail(400, 'chat: sectionExternalIds is a list of section ids')
+    const r = await reorderSectionsAs(ctx.app, profile, idOf(ctx, 'teamExternalId')!, order as string[])
+    if (!r.order) throw refused('reorderSections', r.error?.kind ?? 'no answer')
+    return { sectionExternalIds: r.order }
+  },
+
+  async moveToSection (ctx: Ctx) {
+    serverOn(ctx)
+    const profile = await callerProfile(ctx)
+    const index = dataOf(ctx).index
+    if (index !== undefined && index !== null && !(Number.isInteger(index) && (index as number) >= 0)) throw fail(400, 'chat: index is a whole number from 0')
+    const r = await moveToSectionAs(ctx.app, profile, idOf(ctx, 'channelExternalId')!, sectionIdOf(ctx, 'sectionExternalId'), (index ?? null) as number | null)
+    if (!r.row) throw refused('moveToSection', r.error?.kind ?? 'no answer')
+    return r.row
   },
 
   async disconnect (ctx: Ctx) {

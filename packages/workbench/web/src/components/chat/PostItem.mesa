@@ -14,14 +14,18 @@
   import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
+  import DropdownSubmenu from '@frontierjs/ui/components/overlay/DropdownSubmenu.mesa'
   import Icon from '../Icon.mesa'
   import { goto } from '@frontierjs/sierra/router'
   import { posts } from '../../resources/Post.mesa'
   import { ago } from '../../lib/datetime.js'
-  import { getLists, linkMentions, markUnread, me, mentionsMe, personName, rootOf, setFollowing, setPinned, threadHref } from '../../lib/chat.js'
+  import { getLists, linkMentions, markUnread, me, mentionsMe, personName, remindAt, REMINDERS, rootOf, setFollowing, setPinned, setSaved, statusOf, threadHref } from '../../lib/chat.js'
   import PostEditor from './PostEditor.mesa'
+  import Presence from './Presence.mesa'
   import Reactions from './Reactions.mesa'
   import PostFiles from './PostFiles.mesa'
+  import PostLinks from './PostLinks.mesa'
+  import EditedMark from './EditedMark.mesa'
   import ReactionPicker from './ReactionPicker.mesa'
 
   export let post = null
@@ -40,6 +44,9 @@
   // A membership is what lets the server mark a channel unread or pin in it.
   $: inRoom = lists.mine.rows.some(m => m.channelExternalId === post.channelExternalId)
   $: isRoot = !post.rootExternalId
+  $: saved  = lists.saved.rows.some(r => r.postExternalId === post.externalId)
+  // A person whose presence was never asked for has none to draw: null is not offline.
+  $: presence = people.find(p => p.externalId === post.profileExternalId)?.status ? statusOf(people.find(p => p.externalId === post.profileExternalId)) : null
   $: following = !!lists.threads.rows.find(t => t.rootExternalId === rootOf(post))?.isFollowing
 
   let editing = false
@@ -47,8 +54,18 @@
   let reactions = null
   async function act(fn) { error = null; try { await fn() } catch (e) { error = e.message } }
 
+  // The server rings the reminder; this line only says it was taken, and goes after a few seconds.
+  let reminded = null
+  $.after(8000, () => reminded = null, { key: reminded, when: reminded != null })
+  const remind = (r) => act(async () => {
+    const at = r.when()
+    await remindAt(post, at)
+    reminded = `Reminder set for ${at.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.`
+  })
+
   const pin    = () => act(() => setPinned(post, !post.isPinned))
   const unread = () => act(() => markUnread(post))
+  const save   = () => act(() => setSaved(post, !saved))
   const follow = () => act(() => setFollowing(rootOf(post), !following))
   const drop   = () => act(() => posts.service.remove(post.id))
   // Alt-click marks unread, as Slack does; a click on a link or a button inside stays theirs.
@@ -63,6 +80,9 @@
   {#if post.isPinned}
     <p class="post-flag text-xs cluster gap-2xs" data-post-pinned><Icon name="pushpin" /> Pinned</p>
   {/if}
+  {#if saved}
+    <p class="post-flag text-xs cluster gap-2xs" data-post-saved><Icon name="bookmark" /> Saved</p>
+  {/if}
   <div class="post-lead">
     {#if continuation}
       <time class="post-time text-muted" datetime={post.createdAt}>{time}</time>
@@ -73,18 +93,21 @@
   <div class="post-body stack gap-xs">
     {#if !continuation}
       <div class="cluster gap-xs post-head">
+        {#if presence}<Presence status={presence} />{/if}
         <strong data-post-author>{author}</strong>
         <time class="text-muted text-sm" datetime={post.createdAt} title={post.createdAt ? new Date(post.createdAt).toLocaleString() : ''}>{time}</time>
-        {#if post.editedAt}<span class="text-muted text-xs" data-post-edited>(edited)</span>{/if}
+        {#if post.editedAt}<EditedMark {post} {mine} />{/if}
       </div>
     {/if}
     {#if editing}
       <PostEditor {post} ondone={() => editing = false} />
     {:else if body}
-      <div class="post-text" data-post-text><Markdown text={body} headingBase={4} breaks />{#if continuation && post.editedAt} <span class="text-muted text-xs" data-post-edited>(edited)</span>{/if}</div>
+      <div class="post-text" data-post-text><Markdown text={body} headingBase={4} breaks />{#if continuation && post.editedAt} <EditedMark {post} {mine} />{/if}</div>
     {/if}
     {#if error}<p class="text-sm text-danger post-note" role="alert" data-post-error>{error}</p>{/if}
+    {#if reminded}<p class="text-sm text-muted post-note" role="status" data-post-reminded>{reminded}</p>{/if}
     <PostFiles {post} />
+    <PostLinks {post} />
     <Reactions bind:this={reactions} {post} {people} onerror={(e) => error = e.message} />
     {#if !inThread && isRoot && post.replyCount > 0}
       <a class="text-sm post-replies" href={threadHref(post)} data-post-replies>
@@ -104,10 +127,18 @@
       <DropdownMenu placement="bottom-end">
         {#snippet trigger()}<button type="button" class="btn ghost square xs" aria-label="More actions" title="More" data-post-more><Icon name="more" /></button>{/snippet}
         {#if mine}<DropdownItem onclick={() => editing = true}>Edit</DropdownItem>{/if}
+        <DropdownItem onclick={save}>{saved ? 'Unsave' : 'Save'}</DropdownItem>
         {#if inRoom}<DropdownItem onclick={pin}>{post.isPinned ? 'Unpin from the channel' : 'Pin to the channel'}</DropdownItem>{/if}
         {#if isRoot || inRoom}<DropdownSeparator />{/if}
         {#if inRoom}<DropdownItem onclick={follow}>{following ? 'Unfollow thread' : 'Follow thread'}</DropdownItem>{/if}
         {#if inRoom}<DropdownItem onclick={unread}>Mark unread</DropdownItem>{/if}
+        {#if inRoom}
+          <DropdownSubmenu heading="Remind me…">
+            {#each REMINDERS as r (r.key)}
+              <DropdownItem onclick={() => remind(r)}><span data-remind={r.key}>{r.label}</span></DropdownItem>
+            {/each}
+          </DropdownSubmenu>
+        {/if}
         {#if mine}
           <DropdownSeparator />
           <DropdownItem tone="danger" data-confirm="Delete this post? There is no undo." data-confirm-label="Delete" onclick={drop}>Delete</DropdownItem>

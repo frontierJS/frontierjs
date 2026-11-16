@@ -7,11 +7,27 @@
   // send waits for every upload. `@` opens the picker over the channel's people, then
   // everyone (lib/chat.js). A create is forwarded to the server as the reader and lands
   // back by its key, and the post list draws it from that push, so a send clears the box
-  // and draws nothing itself.
+  // and draws nothing itself. A clock beside Send writes the box as a scheduled post instead
+  // (local to this laptop, sent by the API's job), and clears the box the same way.
+  //
+  // `@` also offers the groups (`@handle`); a send writes each one out as its people's
+  // usernames. `/` as the box's first character offers the slash commands
+  // (lib/chat-commands.js): a known one runs instead of posting, anything else posts.
+  //
+  // The box is a draft that follows the person (`drafts`, `chat.saveDraft`): restored when
+  // it opens, saved 800 ms after the last key, deleted when it is sent or emptied. `synced`
+  // is the text the server is known to hold; a draft pushed from another client replaces the
+  // box only while the box still equals it, so a box being typed in is never overwritten, and
+  // a push that arrives while a save is pending or in flight is the echo of an older one.
   import Icon from '../Icon.mesa'
   import MentionList from './MentionList.mesa'
+  import CommandList from './CommandList.mesa'
+  import WhenDialog from './WhenDialog.mesa'
+  import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import { posts } from '../../resources/Post.mesa'
-  import { applyMention, getLists, mentionAt, pickerKey, watchMembers } from '../../lib/chat.js'
+  import { applyMention, deleteDraft, draftFor, expandGroups, getLists, laterChoices, mentionAt, pickerKey, saveDraft, scheduleSend, watchMembers } from '../../lib/chat.js'
+  import { commandAt, runCommand } from '../../lib/chat-commands.js'
   import { MAX_FILE_BYTES, MAX_FILES, fileSize, filesOf, uploadFile } from '../../lib/files.js'
 
   export let channelId = null
@@ -22,7 +38,11 @@
   const lists = getLists()
   $: people = lists.people.rows
 
-  let text = ''
+  const DRAFT_MS = 800
+  let text = draftFor(lists.drafts.rows, channelId, rootExternalId)?.message ?? ''
+  let synced = text
+  let bound = { channelExternalId: channelId, rootExternalId }
+  let flying = false
   let sending = false
   let error = null
   let box = null
@@ -30,6 +50,10 @@
   let files = []        // { key, name, size, id?, failed? }: attached, uploading until it has an id
   let dragging = false
   let fileInput = null
+  let commands = null   // { prefix, items, index } while a /name is being typed
+  let answer = null     // { text, tone }: what the last command said, for the sender only
+  let whenOpen = false
+  const TONES = { danger: 'danger', warning: 'warning', success: 'success' }
 
   let members = null
   function watch(id) { members?.destroy(); members = watchMembers(id) }
@@ -42,8 +66,45 @@
   $: uploading = files.some(f => !f.id && !f.failed)
   $: ready = files.filter(f => f.id)
 
+  // ── The draft ──
+  $: row = draftFor(lists.drafts.rows, channelId, rootExternalId)
+  $: draftMessage = row?.message ?? ''
+  $: draftMessage, () => {
+    if (flying || text !== synced || draftMessage === text) return
+    text = draftMessage
+    synced = draftMessage
+  }
+
+  // Saved DRAFT_MS after the last keystroke; a box that matches the saved draft has nothing pending.
+  $.after(DRAFT_MS, () => flush(), { key: text, when: text !== synced })
+
+  async function flush(at = bound, message = text) {
+    if (message === synced && at === bound) return
+    const empty = !message.trim()
+    if (at === bound) { synced = message; flying = true }
+    try {
+      if (empty) await deleteDraft(at)
+      else await saveDraft({ ...at, message })
+    } catch (e) { if (at === bound) error = e.message } finally { if (at === bound) flying = false }
+  }
+
+  // The same component serving another room: what was typed here is kept for the room it was typed in.
+  $: channelId, rootExternalId, () => {
+    if (channelId === bound.channelExternalId && rootExternalId === bound.rootExternalId) return
+    if (text !== synced) flush(bound, text)
+    bound = { channelExternalId: channelId, rootExternalId }
+    files = []
+    text = draftFor(lists.drafts.rows, channelId, rootExternalId)?.message ?? ''
+    synced = text
+  }
+  $.onDestroy(() => { if (text !== synced) flush(bound, text) })
+
   // ── @ ──
-  function watchMention() { picker = mentionAt(text, box?.selectionStart ?? text.length, people, memberIds, inChannel) }
+  function watchMention() {
+    picker = mentionAt(text, box?.selectionStart ?? text.length, people, memberIds, inChannel, lists.groups.rows)
+    commands = rootExternalId ? null : commandAt(text)
+    answer = null
+  }
   function pick(item) {
     if (!picker) return
     const put = applyMention(text, picker, item)
@@ -83,20 +144,44 @@
   function onDrop(e) { e.preventDefault(); dragging = false; take(filesOf(e.dataTransfer)) }
   const dropFile = (key) => { files = files.filter(f => f.key !== key) }
 
+  // The box after a send, a schedule or a command: empty, its draft dropped at once.
+  function clearBox() {
+    text = ''
+    files = []
+    picker = null
+    commands = null
+    // The sent text is no draft: dropped at once, whatever the save in flight did.
+    synced = ''
+    deleteDraft(bound).catch(() => {})
+  }
+
+  const ctxOf = () => ({
+    channelId, channel: lists.channels.rows.find(c => c.externalId === channelId) ?? null,
+    memberships: lists.mine.rows, membership: lists.mine.rows.find(m => m.channelExternalId === channelId) ?? null,
+  })
+
   async function send() {
-    const message = text.trim()
+    let message = text.trim()
     if ((!message && !ready.length) || !channelId || sending || uploading) return
     sending = true
     error = null
+    answer = null
     try {
+      if (!rootExternalId && !ready.length) {
+        const ran = await runCommand(message, ctxOf())
+        if (ran?.answer !== undefined) {
+          answer = ran.answer
+          if (!ran.answer?.keep) clearBox()
+          return
+        }
+        if (ran?.literal != null) message = ran.literal
+      }
       // pendingPostId lets the server collapse a retried send into one post, should the first answer be lost.
       await posts.service.create({
-        channelExternalId: channelId, ...(rootExternalId ? { rootExternalId } : {}), message, pendingPostId: crypto.randomUUID(),
+        channelExternalId: channelId, ...(rootExternalId ? { rootExternalId } : {}), message: expandGroups(message, lists.groups.rows, people), pendingPostId: crypto.randomUUID(),
         ...(ready.length ? { fileExternalIds: ready.map(f => f.id) } : {}),
       })
-      text = ''
-      files = []
-      picker = null
+      clearBox()
       onsent?.()
     } catch (e) {
       error = e.message
@@ -106,11 +191,34 @@
     }
   }
 
+  // The box becomes a scheduled post at `at`; the API refuses a past time and an empty box.
+  async function later(at) {
+    const message = text.trim()
+    if ((!message && !ready.length) || !channelId || sending || uploading) throw new Error('Write something first.')
+    error = null
+    await scheduleSend({ channelExternalId: channelId, rootExternalId, message: expandGroups(message, lists.groups.rows, people), fileExternalIds: ready.map(f => f.id), at })
+    clearBox()
+    answer = { tone: 'success', text: `Scheduled for ${at.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}. It is under Scheduled in the sidebar.` }
+  }
+  const laterIn = (c) => later(c.at).catch((e) => { error = e.message })
+  // A /command picked from the list is put in the box with a space, for its words.
+  function pickCommand(c) {
+    text = `/${c.name} `
+    commands = null
+    box?.focus()
+  }
+
   function onKey(e) {
     if (picker) {
       // Esc here is the picker's, not the thread pane's.
       const next = pickerKey(picker, e)
       if (next !== undefined) { e.preventDefault(); e.stopPropagation(); if (next === 'pick') pick(picker.items[picker.index]); else picker = next; return }
+    }
+    if (commands) {
+      const next = pickerKey(commands, e)
+      // Enter on a command typed out in full runs it; Tab or Enter on a part of one completes it.
+      const whole = e.key === 'Enter' && commands.items[commands.index].name === commands.prefix
+      if (next !== undefined && !whole) { e.preventDefault(); e.stopPropagation(); if (next === 'pick') pickCommand(commands.items[commands.index]); else commands = next; return }
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send() }
   }
@@ -118,6 +226,7 @@
 
 <div class="composer" class:dragging data-composer={rootExternalId ? 'reply' : 'post'} ondragover|preventDefault={() => dragging = true} ondragleave={() => dragging = false} ondrop={onDrop}>
   {#if error}<p class="text-sm text-danger composer-error" role="alert" data-composer-error>{error}</p>{/if}
+  {#if answer}<p class={`text-sm composer-error text-${TONES[answer.tone] ?? 'muted'}`} role="status" data-composer-answer>{answer.text}</p>{/if}
   {#if files.length}
     <ul class="cluster gap-xs composer-files" aria-label="Attached files" data-composer-files>
       {#each files as f (f.key)}
@@ -130,16 +239,25 @@
   {/if}
   <div class="composer-box">
     <MentionList {picker} onpick={pick} />
+    <CommandList picker={commands} onpick={pickCommand} />
     <textarea class="field composer-text" bind:this={box} bind:value={text} rows="1" {placeholder}
               aria-label={placeholder} oninput={watchMention} onkeydown={onKey} onpaste={onPaste} onclick={watchMention}></textarea>
     <div class="composer-actions">
       <input type="file" multiple bind:this={fileInput} class="visually-hidden" tabindex="-1" aria-hidden="true" data-composer-input onchange={(e) => { take(e.target.files); e.target.value = '' }} />
       <button type="button" class="btn ghost square" aria-label="Attach a file" title="Attach a file" onclick={() => fileInput?.click()}><Icon name="attach" /></button>
+      <DropdownMenu placement="top-end">
+        {#snippet trigger()}<button type="button" class="btn ghost square" aria-label="Send later" title="Send later" disabled={sending || uploading || (!text.trim() && !ready.length)} data-later><Icon name="clock" /></button>{/snippet}
+        {#each laterChoices(new Date()) as c (c.key)}
+          <DropdownItem onclick={() => laterIn(c)}><span data-later-choice={c.key}>{c.label}</span></DropdownItem>
+        {/each}
+        <DropdownItem onclick={() => whenOpen = true}><span data-later-choice="custom">Pick a time…</span></DropdownItem>
+      </DropdownMenu>
       <button type="button" class="btn primary square composer-send" aria-label="Send" title="Send (Enter)" disabled={sending || uploading || (!text.trim() && !ready.length)} onclick={send}><Icon name="send" /></button>
     </div>
   </div>
-  <p class="text-xs text-muted composer-hint">Enter sends · Shift+Enter for a new line · @ names someone</p>
+  <p class="text-xs text-muted composer-hint">Enter sends · Shift+Enter for a new line · @ names someone{#if !rootExternalId} · / for commands{/if}</p>
 </div>
+<WhenDialog bind:open={whenOpen} title="Send later" action="Schedule" onpick={later} />
 
 <style>
   .composer { padding-inline: var(--chat-gutter, var(--space-md)); padding-block: 0 var(--space-md); }

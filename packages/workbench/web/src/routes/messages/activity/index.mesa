@@ -1,0 +1,118 @@
+---
+title: Activity
+---
+<script>
+  // /messages/activity/ -- what needs the reader: the posts that name them, and the threads
+  // they follow with replies they have not read. `chat.activity` answers the ids and lands
+  // the posts, which are read by externalId into a tether of their own. A post or a thread
+  // row arriving may add an item, so a push on either asks again, debounced: the answer is
+  // the server's, never worked out here.
+  import { posts } from '../../../resources/Post.mesa'
+  import { threads } from '../../../resources/Thread.mesa'
+  import { getLists, channelLabel, loadActivity, me, personName, postsById, threadHref } from '../../../lib/chat.js'
+  import { ago } from '../../../lib/datetime.js'
+  import PostItem from '../../../components/chat/PostItem.mesa'
+  import Icon from '../../../components/Icon.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  const lists = getLists()
+  $: people = lists.people.rows
+
+  let mentions = []
+  let roots = []
+  let list = null
+  let ready = false
+  let error = null
+  let asked = 0
+
+  async function load() {
+    const mine = ++asked
+    try {
+      const a = await loadActivity()
+      if (mine !== asked) return
+      mentions = a.mentions
+      roots = a.threads
+      list?.destroy()
+      list = postsById([...new Set([...a.mentions, ...a.threads])])
+      error = null
+    } catch (e) { if (mine === asked) error = e.message } finally { ready = true }
+  }
+
+  // A burst of writes reads once, 400ms after the last of them.
+  let pokes = 0
+  const soon = () => { pokes++ }
+  $.after(400, load, { key: pokes, when: pokes > 0 })
+  let offs = []
+  $.onMount(() => {
+    offs = [
+      posts.service.on('created', soon), posts.service.on('patched', soon),
+      threads.service.on('created', soon), threads.service.on('patched', soon),
+    ]
+    load()
+  })
+  $.onDestroy(() => { offs.forEach(off => off?.()); list?.destroy() })
+
+  $: byId = new Map((list ? list.rows : []).filter(p => !p.deletedAt).map(p => [p.externalId, p]))
+  $: mentioned = mentions.filter(id => byId.has(id)).map(id => byId.get(id))
+  $: replied = roots.filter(id => byId.has(id)).map(id => byId.get(id))
+
+  const where = (p) => channelLabel(lists.channels.rows.find(c => c.externalId === p.channelExternalId), people, me()) || '…'
+  const href = (p) => p.rootExternalId ? `/messages/${p.channelExternalId}/?thread=${p.rootExternalId}` : `/messages/${p.channelExternalId}/`
+  const flat = (s, n = 160) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n)
+</script>
+
+<header class="activity-head">
+  <h1 class="h4 cluster gap-xs"><Icon name="notify" /> Activity</h1>
+  <p class="text-sm text-muted">Posts that name you, and threads you follow with replies you have not read.</p>
+</header>
+
+<div class="activity stack gap-lg" data-activity>
+  {#if error}<Alert tone="danger">{error}</Alert>{/if}
+
+  <section class="stack gap-sm" data-activity-group="mentions">
+    <h2 class="h5">Mentions</h2>
+    {#each mentioned as p (p.externalId)}
+      <div class="activity-item stack gap-2xs" data-mention-row={p.externalId}>
+        <a class="text-sm activity-jump" href={href(p)} data-activity-jump>{where(p)} <Icon name="external" /></a>
+        <PostItem post={p} {people} />
+      </div>
+    {:else}
+      {#if ready}<p class="text-sm text-muted" data-activity-empty="mentions">Nothing names you right now.</p>{/if}
+    {/each}
+  </section>
+
+  <section class="stack gap-sm" data-activity-group="threads">
+    <h2 class="h5">Threads with new replies</h2>
+    {#each replied as p (p.externalId)}
+      <a class="card activity-thread stack gap-xs" href={threadHref(p)} data-thread-activity={p.externalId}>
+        <div class="cluster gap-xs text-sm text-muted">
+          <span class="activity-where">{where(p)}</span>
+          {#if p.lastReplyAt}<span>· {ago(p.lastReplyAt)}</span>{/if}
+          <span class="badge primary activity-new">New replies</span>
+        </div>
+        <p class="activity-root"><strong>{personName(p.profileExternalId, people)}</strong> {flat(p.message)}</p>
+        <strong class="text-sm activity-open">Open thread</strong>
+      </a>
+    {:else}
+      {#if ready}<p class="text-sm text-muted" data-activity-empty="threads">No followed thread has unread replies.</p>{/if}
+    {/each}
+  </section>
+
+  {#if !ready}<p class="text-muted center">…</p>{/if}
+</div>
+
+<style>
+  .activity-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .activity-head h1, .activity-head p { margin: 0; }
+  .activity-head h1 { align-items: center; }
+  .activity { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); }
+  .activity h2 { margin: 0; }
+  .activity-jump { display: inline-flex; align-items: center; gap: var(--space-2xs); padding-inline: var(--space-lg); inline-size: fit-content; }
+  .activity-thread { color: inherit; text-decoration: none; }
+  .activity-thread:hover, .activity-thread:focus-visible { background: var(--surface-sunken); }
+  .activity-where { font-weight: var(--label-font-weight); }
+  .activity-new { margin-inline-start: auto; }
+  .activity-root { margin: 0; overflow-wrap: anywhere; }
+  .activity-open { color: var(--color-primary); }
+</style>

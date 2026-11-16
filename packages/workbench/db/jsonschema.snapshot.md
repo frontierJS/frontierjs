@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-8 definitions · 7 models · 1 enum · 0 other
+18 definitions · 15 models · 3 enums · 0 other
 ```
 
 ## Definitions
@@ -32,7 +32,17 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ClaudeWrite` | model |
 | `Notification` | model |
 | `ProviderAccount` | model |
+| `Team` | model |
+| `Profile` | model |
+| `Channel` | model |
+| `ChannelMember` | model |
+| `Post` | model |
+| `Thread` | model |
+| `Reaction` | model |
+| `FileInfo` | model |
 | `ComputeProvider` | enum |
+| `TeamType` | enum |
+| `ChannelType` | enum |
 
 ## Enums
 
@@ -40,6 +50,8 @@ A value removed here is a row already in the database that no longer
 validates, and a select that silently drops an option.
 
 - `ComputeProvider` — `hetzner`, `digitalocean`
+- `TeamType` — `open`, `invite`
+- `ChannelType` — `open`, `private`, `direct`, `group`
 
 ## Models
 
@@ -57,6 +69,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `nick` | `string` | yes | — | `pattern: "^[a-z0-9_-]+$"` `minLength: 2` `maxLength: 16` `x-transforms` | `pattern` `regex` |
+| `profileExternalId` | `string`? | — | — | `x-litestone-kind` | — |
+| `chatSyncedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
 **On create**: required — `nick` · not accepted — `id`
 
@@ -170,3 +184,188 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `provider` | `ComputeProvider` | yes | — | — | — |
 
 **On create**: required — `label`, `provider` · not accepted — `id`
+
+### `Team`
+
+- gate `read:3 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `channels` — hasMany `Channel`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `name` | `string` | — | — | `x-litestone-kind` | — |
+| `displayName` | `string` | — | — | `x-litestone-kind` | — |
+| `description` | `string` | — | — | `x-litestone-kind` | — |
+| `type` | `TeamType` | — | — | `x-litestone-kind` | — |
+| `allowOpenInvite` | `boolean` | — | — | `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `Profile`
+
+- gate `read:3 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `memberships` — hasMany `ChannelMember`
+- relation `posts` — hasMany `Post`
+- relation `threads` — hasMany `Thread`
+- relation `reactions` — hasMany `Reaction`
+- relation `files` — hasMany `FileInfo`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `username` | `string` | — | — | `x-litestone-kind` | — |
+| `firstName` | `string` | — | — | `x-litestone-kind` | — |
+| `lastName` | `string` | — | — | `x-litestone-kind` | — |
+| `nickname` | `string` | — | — | `x-litestone-kind` | — |
+| `email` | `string`? | — | — | `x-litestone-kind` `x-litestone-read-policy` | — |
+| `roles` | `string` | — | — | `x-litestone-kind` | — |
+| `locale` | `string`? | — | — | `x-litestone-kind` | — |
+| `isBot` | `boolean` | — | — | `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `Channel`
+
+- gate `read:3 create:3 update:3 delete:3` · closed (`additionalProperties: false`)
+- relation `team` — belongsTo `Team` via `teamExternalId` · optional
+- relation `members` — hasMany `ChannelMember`
+- relation `posts` — hasMany `Post`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `teamExternalId` | `string`? | — | — | `x-litestone-kind` | — |
+| `creatorExternalId` | `string`? | — | — | `x-litestone-kind` | — |
+| `type` | `ChannelType` | — | — | `x-litestone-kind` | — |
+| `name` | `string` | — | — | `x-litestone-kind` | — |
+| `displayName` | `string` | — | — | `x-litestone-kind` | — |
+| `header` | `string` | — | — | `x-litestone-kind` | — |
+| `purpose` | `string` | — | — | `x-litestone-kind` | — |
+| `lastPostAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `totalMessageCount` | `integer` | — | — | `x-litestone-kind` | — |
+| `totalMessageCountRoot` | `integer` = `0` | — | — | `x-litestone-kind` | — |
+| `lastRootPostAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `ChannelMember`
+
+- gate `read:3 create:3 update:8 delete:3` · closed (`additionalProperties: false`)
+- relation `channel` — belongsTo `Channel` via `channelExternalId`
+- relation `profile` — belongsTo `Profile` via `profileExternalId`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `channelExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `roles` | `string` | — | — | `x-litestone-kind` | — |
+| `isAdmin` | `boolean` | — | — | `x-litestone-kind` | — |
+| `lastViewedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `messageCount` | `integer` | — | — | `x-litestone-kind` | — |
+| `mentionCount` | `integer` | — | — | `x-litestone-kind` | — |
+| `messageCountRoot` | `integer` = `0` | — | — | `x-litestone-kind` | — |
+| `mentionCountRoot` | `integer` = `0` | — | — | `x-litestone-kind` | — |
+| `muted` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `Post`
+
+- gate `read:3 create:3 update:3 delete:3` · closed (`additionalProperties: false`)
+- relation `channel` — belongsTo `Channel` via `channelExternalId`
+- relation `author` — belongsTo `Profile` via `profileExternalId`
+- relation `root` — belongsTo `Post` via `rootExternalId` · optional
+- relation `replies` — hasMany `Post`
+- relation `threads` — hasMany `Thread`
+- relation `reactions` — hasMany `Reaction`
+- relation `files` — hasMany `FileInfo`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `channelExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `rootExternalId` | `string`? | — | — | `x-litestone-kind` | — |
+| `message` | `string` | — | — | `x-litestone-kind` | — |
+| `type` | `string` | — | — | `x-litestone-kind` | — |
+| `isPinned` | `boolean` | — | — | `x-litestone-kind` | — |
+| `props` | `json` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
+| `hashtags` | `string` | — | — | `x-litestone-kind` | — |
+| `replyCount` | `integer` | — | — | `x-litestone-kind` | — |
+| `lastReplyAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `editedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `Thread`
+
+- gate `read:3 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `root` — belongsTo `Post` via `rootExternalId`
+- relation `profile` — belongsTo `Profile` via `profileExternalId`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `rootExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `replyCount` | `integer` | — | — | `x-litestone-kind` | — |
+| `lastReplyAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `lastViewedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `unreadReplies` | `integer` | — | — | `x-litestone-kind` | — |
+| `unreadMentions` | `integer` | — | — | `x-litestone-kind` | — |
+| `isFollowing` | `boolean` = `true` | — | — | `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `Reaction`
+
+- gate `read:3 create:3 update:8 delete:3` · closed (`additionalProperties: false`)
+- relation `post` — belongsTo `Post` via `postExternalId`
+- relation `profile` — belongsTo `Profile` via `profileExternalId`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `postExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `emojiName` | `string` | — | — | `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `FileInfo`
+
+- gate `read:3 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `post` — belongsTo `Post` via `postExternalId` · optional
+- relation `profile` — belongsTo `Profile` via `profileExternalId`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `postExternalId` | `string`? | — | — | `x-litestone-kind` | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `name` | `string` | — | — | `x-litestone-kind` | — |
+| `extension` | `string` | — | — | `x-litestone-kind` | — |
+| `size` | `integer` | — | — | `x-litestone-kind` | — |
+| `mimeType` | `string` | — | — | `x-litestone-kind` | — |
+| `width` | `integer`? | — | — | `x-litestone-kind` | — |
+| `height` | `integer`? | — | — | `x-litestone-kind` | — |
+| `hasPreviewImage` | `boolean` | — | — | `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`

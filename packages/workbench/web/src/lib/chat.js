@@ -18,6 +18,13 @@ import { profiles } from '../resources/Profile.mesa'
 import { threads } from '../resources/Thread.mesa'
 import { chat as link } from '../resources/Chat.mesa'
 import { reactions } from '../resources/Reaction.mesa'
+import { drafts } from '../resources/Draft.mesa'
+import { posts } from '../resources/Post.mesa'
+import { savedPosts } from '../resources/SavedPost.mesa'
+import { chatSections } from '../resources/ChatSection.mesa'
+import { scheduledPosts } from '../resources/ScheduledPost.mesa'
+import { chatGroups } from '../resources/ChatGroup.mesa'
+import { glyphOf } from './emoji.js'
 
 /** The channel on screen, so the sidebar marks it and a post arriving in it is read at once. */
 export const chat = watchProxy({ activeChannelId: null, held: {} })
@@ -40,8 +47,21 @@ export function openLists() {
     people:   profiles.tethered({ state: 'local', all: true }),
     // Thread rows are one person's view of a thread, and only the reader's own are readable.
     threads:  threads.tethered({ state: 'local', all: true, where: { profileExternalId: me() } }),
-    destroy() { this.channels.destroy(); this.mine.destroy(); this.people.destroy(); this.threads.destroy() },
+    // Own rows only: the schema's policy refuses another person's, so no filter is needed to keep them out.
+    drafts:   drafts.tethered({ state: 'local', all: true }),
+    saved:    savedPosts.tethered({ state: 'local', all: true }),
+    sections: chatSections.tethered({ state: 'local', all: true }),
+    // Local to this laptop: own scheduled rows, and every member's groups.
+    scheduled: scheduledPosts.tethered({ state: 'local', all: true }),
+    groups:   chatGroups.tethered({ state: 'local', all: true }),
+    destroy() {
+      this.channels.destroy(); this.mine.destroy(); this.people.destroy(); this.threads.destroy()
+      this.drafts.destroy(); this.saved.destroy(); this.sections.destroy()
+      this.scheduled.destroy(); this.groups.destroy()
+      stopTyping()
+    },
   }
+  startTyping()
   return lists
 }
 
@@ -166,7 +186,13 @@ export function mentionsMe(post, people, self = me()) {
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 export const handleFor = (p) => p.username
 
-export function mentionMatches(prefix, people, memberIds = [], inChannel = false) {
+/** A Json column's list: the array, or the text of one. */
+export const idsOf = (v) => {
+  if (Array.isArray(v)) return v
+  try { const a = JSON.parse(v ?? '[]'); return Array.isArray(a) ? a : [] } catch { return [] }
+}
+
+export function mentionMatches(prefix, people, memberIds = [], inChannel = false, groups = []) {
   const q = norm(prefix)
   const here = new Set(memberIds)
   const hit = (p) => !p.deletedAt && (!q || [p.username, p.firstName, p.lastName, nameOf(p)].some(x => norm(x).startsWith(q)))
@@ -175,17 +201,38 @@ export function mentionMatches(prefix, people, memberIds = [], inChannel = false
   const first = found.filter(p => here.has(p.externalId)).sort(byName)
   const rest = found.filter(p => !here.has(p.externalId)).sort(byName)
   const calls = inChannel ? CALLS.filter(c => !q || c.handle.startsWith(q)) : []
-  return [...first, ...rest].slice(0, 8).concat(calls).map(x => x.call ? x : { id: x.externalId, handle: x.username, name: nameOf(x), inChannel: here.has(x.externalId) })
+  const named = groups.filter(g => !q || [g.handle, g.name].some(x => norm(x).startsWith(q))).sort((a, b) => a.handle.localeCompare(b.handle)).slice(0, 4)
+    .map(g => ({ id: `group:${g.handle}`, handle: g.handle, name: g.name, group: true, count: idsOf(g.profileExternalIds).length }))
+  return [...first, ...rest].slice(0, 8).map(x => ({ id: x.externalId, handle: x.username, name: nameOf(x), inChannel: here.has(x.externalId) })).concat(named, calls)
 }
 
 /** The picker for the `@` behind the caret, or null: `{ at, prefix, items, index }`. */
-export function mentionAt(text, caret, people, memberIds = [], inChannel = false) {
+export function mentionAt(text, caret, people, memberIds = [], inChannel = false, groups = []) {
   const at = text.lastIndexOf('@', caret - 1)
   if (at < 0 || (at > 0 && /[\w@]/.test(text[at - 1]))) return null
   const prefix = text.slice(at + 1, caret)
   if (/\s/.test(prefix)) return null
-  const items = mentionMatches(prefix, people, memberIds, inChannel)
+  const items = mentionMatches(prefix, people, memberIds, inChannel, groups)
   return items.length ? { at, prefix, items, index: 0 } : null
+}
+
+/**
+ * Each `@handle` that names a group becomes `@handle (@ana @bo)`: the group exists only in
+ * Workbench, so a reader on another client sees who was called. A username of the same
+ * spelling wins, and so does a call on the room.
+ */
+export function expandGroups(message, groups, people) {
+  if (!message || !message.includes('@') || !groups.length) return message
+  const byHandle = new Map(groups.map(g => [g.handle.toLowerCase(), g]))
+  const names = new Set(people.map(p => p.username.toLowerCase()))
+  return message.replace(/(^|[^\w@`])@([a-z0-9][\w.-]*)/gi, (m, pre, name) => {
+    const whole = name.toLowerCase()
+    const key = byHandle.has(whole) ? whole : whole.replace(/[.-]+$/, '')
+    const g = byHandle.get(key)
+    if (!g || names.has(key) || BROADCAST.includes(key)) return m
+    const who = idsOf(g.profileExternalIds).map(id => people.find(p => p.externalId === id)).filter(p => p && !p.deletedAt).map(p => '@' + p.username)
+    return who.length ? `${pre}@${key} (${who.join(' ')})${name.slice(key.length)}` : m
+  })
 }
 
 /** The text with the picked name in place of the typed `@prefix`, and where the caret goes. */
@@ -330,4 +377,187 @@ export async function whenListed(channelExternalId, ms = 5000) {
     if (lists?.channels.rows.some(c => c.externalId === channelExternalId) && lists.mine.rows.some(m => m.channelExternalId === channelExternalId)) return
     await new Promise(r => setTimeout(r, 100))
   }
+}
+
+// ── Drafts ──
+export const saveDraft = ({ channelExternalId, rootExternalId, message, fileExternalIds }) =>
+  say('saveDraft', { channelExternalId, ...(rootExternalId ? { rootExternalId } : {}), message, ...(fileExternalIds?.length ? { fileExternalIds } : {}) })
+export const deleteDraft = ({ channelExternalId, rootExternalId }) =>
+  say('deleteDraft', { channelExternalId, ...(rootExternalId ? { rootExternalId } : {}) })
+
+/** The draft for one box, a room's (no root) or a thread's. */
+export const draftFor = (rows, channelExternalId, rootExternalId = null) =>
+  rows.find(d => d.channelExternalId === channelExternalId && (d.rootExternalId || null) === (rootExternalId || null)) ?? null
+
+/** A draft is a row with something typed; the server keeps no empty one. */
+export const liveDrafts = (rows) => rows.filter(d => String(d.message ?? '').trim())
+
+// ── Scheduled posts ──
+// Local to this laptop: a job on the API sends each row as the reader at its time.
+// A row that is not `scheduled` is history; the API refuses to change it (409).
+export const localInput = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 16) }
+
+/** The times the Send later menu offers, from `now`. */
+export function laterChoices(now = new Date()) {
+  const at = (days) => { const t = new Date(now); t.setDate(t.getDate() + days); t.setHours(9, 0, 0, 0); return t }
+  const toMonday = ((8 - now.getDay()) % 7) || 7
+  return [
+    { key: '1h',       label: 'In 1 hour',        at: new Date(now.getTime() + 3_600_000) },
+    { key: 'tomorrow', label: 'Tomorrow, 9:00',   at: at(1) },
+    { key: 'monday',   label: 'Monday, 9:00',     at: at(toMonday) },
+  ]
+}
+
+export const scheduleSend = ({ channelExternalId, rootExternalId, message, fileExternalIds, at }) =>
+  scheduledPosts.service.create({
+    channelExternalId, ...(rootExternalId ? { rootExternalId } : {}), message,
+    ...(fileExternalIds?.length ? { fileExternalIds } : {}), sendAt: at.toISOString(),
+  })
+export const editScheduled = (row, message) => scheduledPosts.service.patch(row.id, { message })
+export const cancelScheduled = (row) => scheduledPosts.service.patch(row.id, { status: 'cancelled' })
+export const dropScheduled = (row) => scheduledPosts.service.remove(row.id)
+
+/** A waiting row moves its time; a failed or cancelled one is closed to the API, so it is written again and the old row goes. */
+export async function rescheduleScheduled(row, at) {
+  if (row.status === 'scheduled') return scheduledPosts.service.patch(row.id, { sendAt: at.toISOString() })
+  await scheduleSend({ channelExternalId: row.channelExternalId, rootExternalId: row.rootExternalId, message: row.message, fileExternalIds: idsOf(row.fileExternalIds), at })
+  await scheduledPosts.service.remove(row.id)
+}
+
+// ── Groups ──
+export const makeGroup = ({ handle, name, profileExternalIds }) => chatGroups.service.create({ handle, name, profileExternalIds })
+export const changeGroup = (group, fields) => chatGroups.service.patch(group.id, fields)
+export const dropGroup = (group) => chatGroups.service.remove(group.id)
+
+// ── Saved ──
+export const setSaved = (post, saved) => say('save', { postExternalId: post.externalId, saved })
+/** The saved list newest first; the call also lands the posts, so they are readable by externalId. */
+export const listSaved = async () => (await say('saved', {})).postExternalIds ?? []
+
+// ── Search, activity, history, reminders ──
+// Each answer names posts by externalId and has landed them in the mirror, so a screen reads
+// them back through `postsById` and an edit or a reaction on one is a push.
+export const searchPosts = async (terms) => (await say('search', { terms })).postExternalIds ?? []
+/** `{ mentions, threads }`: the posts naming the reader, and the roots of followed threads with unread replies. */
+export const loadActivity = async () => { const a = await say('activity', {}); return { mentions: a.mentions ?? [], threads: a.threads ?? [] } }
+/** The earlier versions of one of the reader's own posts, newest first; another person's post is the server's 404. */
+export const editHistory = async (post) => (await say('editHistory', { postExternalId: post.externalId })).versions ?? []
+export const remindAt = (post, at) => say('remind', { postExternalId: post.externalId, at: at.toISOString() })
+
+/** A tether over posts landed by id; null for none, which is not a read of everything. */
+export const postsById = (ids) => ids.length ? posts.tethered({ state: 'local', all: true, where: { externalId: { in: ids } }, directives: { limit: 200 } }) : null
+
+const IN_MINUTES = (n) => () => new Date(Date.now() + n * 60_000)
+const TOMORROW = () => { const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0); return t }
+export const REMINDERS = [
+  { key: '30m',      label: 'In 30 minutes', when: IN_MINUTES(30) },
+  { key: '1h',       label: 'In 1 hour',     when: IN_MINUTES(60) },
+  { key: '3h',       label: 'In 3 hours',    when: IN_MINUTES(180) },
+  { key: 'tomorrow', label: 'Tomorrow, 9:00', when: TOMORROW },
+]
+
+// ── Link previews ──
+/** An http(s) URL as the browser parses it, or null: nothing else becomes a link or an image source. */
+export function safeUrl(u) {
+  try { const x = new URL(String(u)); return x.protocol === 'http:' || x.protocol === 'https:' ? x.href : null } catch { return null }
+}
+
+/** A post's previews as `[{ type, url, title, description, image, siteName }]`, each URL already checked. */
+export function embedsOf(post) {
+  let raw = post?.embeds
+  if (typeof raw === 'string') { try { raw = JSON.parse(raw) } catch { raw = [] } }
+  if (!Array.isArray(raw)) return []
+  return raw.map(e => ({ ...e, url: safeUrl(e?.url), image: safeUrl(e?.image) }))
+    .filter(e => e.url && (e.type === 'image' || e.type === 'opengraph'))
+    .slice(0, 3)
+}
+
+// ── Favorites and sections ──
+export const setFavorite = (channelExternalId, favorite) => say('favorite', { channelExternalId, favorite })
+export const createSection = (teamExternalId, name, channelExternalIds) => say('createSection', { teamExternalId, name, ...(channelExternalIds?.length ? { channelExternalIds } : {}) })
+export const renameSection = (sectionExternalId, name) => say('renameSection', { sectionExternalId, name })
+export const deleteSection = (sectionExternalId) => say('deleteSection', { sectionExternalId })
+export const moveToSection = (channelExternalId, sectionExternalId) => say('moveToSection', { channelExternalId, sectionExternalId })
+export const SECTION_NAME_MAX = 22
+
+// ── Status ──
+export const STATUS = {
+  online:  { tone: 'success', label: 'Online' },
+  away:    { tone: 'warning', label: 'Away' },
+  dnd:     { tone: 'danger',  label: 'Do not disturb' },
+  offline: { tone: '',        label: 'Offline' },
+}
+/** A profile's presence; null is never read, and reads as offline. */
+export const statusOf = (p) => STATUS[p?.status] ? p.status : 'offline'
+
+/** The custom status that has not run out, as `{ emoji, text }`, or null. */
+export function customOf(p) {
+  if (!p || !(p.customEmoji || p.customText)) return null
+  if (p.customExpiresAt && new Date(p.customExpiresAt) <= new Date()) return null
+  return { emoji: p.customEmoji ? glyphOf(p.customEmoji) : '', text: p.customText ?? '' }
+}
+export const statusLine = (p) => { const c = customOf(p); return c ? [c.emoji, c.text].filter(Boolean).join(' ') : '' }
+
+export const setStatus = (status, dndEndAt) => say('setStatus', { status, ...(dndEndAt ? { dndEndAt: dndEndAt.toISOString() } : {}) })
+export const setCustomStatus = ({ emoji, text, expiresAt }) => say('setCustomStatus', { ...(emoji ? { emoji } : {}), ...(text ? { text } : {}), ...(expiresAt ? { expiresAt: expiresAt.toISOString() } : {}) })
+
+/** The other person of a direct channel, by the `<id>__<id>` name; a group has none. */
+export const peerOf = (c, self) => c?.type === 'direct' ? ((c.name ?? '').split('__').find(id => id && id !== self) ?? null) : null
+
+/** Ask the server for these people's presence now; it lands on their Profile rows. */
+export const refreshStatuses = (profileExternalIds) => {
+  const ids = [...new Set(profileExternalIds.filter(Boolean))].slice(0, 200)
+  return ids.length ? say('statuses', { profileExternalIds: ids }) : Promise.resolve()
+}
+
+// ── Typing (receive only) ──
+// A `chat typing` frame is nothing stored: who, where, and when this screen heard it.
+// The line stays up for TYPING_FOR after the last one; a one-second clock is what takes it down.
+export const TYPING_FOR = 5_000
+export const typing = watchProxy({ seen: {}, now: Date.now() })
+const boxKey = (channelExternalId, rootExternalId) => `${channelExternalId}|${rootExternalId || ''}`
+let offTyping = null
+let tick = null
+
+function startTyping() {
+  stopTyping()
+  const heard = (e) => {
+    if (!e?.channelExternalId || !e.profileExternalId) return
+    const now = Date.now()
+    typing.now = now
+    typing.seen = { ...typing.seen, [`${boxKey(e.channelExternalId, e.rootExternalId)}|${e.profileExternalId}`]: now }
+  }
+  offTyping = link.service.on('typing', heard)
+  tick = setInterval(() => {
+    const now = Date.now()
+    typing.now = now
+    const live = Object.entries(typing.seen).filter(([, t]) => now - t < TYPING_FOR)
+    if (live.length !== Object.keys(typing.seen).length) typing.seen = Object.fromEntries(live)
+  }, 1000)
+}
+function stopTyping() {
+  if (typeof offTyping === 'function') offTyping()
+  offTyping = null
+  if (tick) clearInterval(tick)
+  tick = null
+}
+
+/** The names typing in one box right now, never the reader. */
+export function typingNames(channelExternalId, rootExternalId, people, self = me()) {
+  const prefix = boxKey(channelExternalId, rootExternalId) + '|'
+  const out = []
+  for (const [k, t] of Object.entries(typing.seen)) {
+    if (!k.startsWith(prefix) || typing.now - t >= TYPING_FOR) continue
+    const id = k.slice(prefix.length)
+    if (id !== self) out.push(personName(id, people))
+  }
+  return out
+}
+
+/** The line under a box: one name, two, or "Several people". */
+export function typingLine(names) {
+  if (!names.length) return ''
+  if (names.length === 1) return `${names[0]} is typing…`
+  if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`
+  return 'Several people are typing…'
 }

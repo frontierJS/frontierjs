@@ -41,7 +41,7 @@
 // `include_deleted`, the archived ones; `since` answers every post whose
 // `update_at` is later, deletions included, at most 1000 rows in no stated
 // order (`{ sinceLimit }` lowers the cap so a drive can meet it); a post
-// carries its reactions and files under `metadata`. `POST /channels/direct`
+// carries its reactions, files and link embeds under `metadata`. `POST /channels/direct`
 // makes a direct channel and pushes `direct_added` to both people; a channel
 // made by `POST /channels` pushes `channel_created` to its creator; a reaction
 // added or removed is pushed to the channel. `POST /files` takes one file's
@@ -132,9 +132,19 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
     const tm = threadMembers.get(`${user}:${rootId}`)!, root = posts[rootId]
     return { id: rootId, reply_count: root.reply_count ?? 0, last_reply_at: root.last_reply_at ?? 0, last_viewed_at: tm.last_viewed_at, participants: [], post: withMetadata(root), unread_replies: tm.unread_replies, unread_mentions: tm.unread_mentions, is_following: tm.following, delete_at: root.delete_at }
   }
+  // The real server fetches a post's first link and unfurls it; nothing is
+  // fetched here, so an https link unfurls to a page named for its host, and
+  // one ending in .png to a bare image.
+  const embedsOf = (message: string) => {
+    const url = /https:\/\/[^\s<>]+/.exec(message ?? '')?.[0]
+    if (!url) return []
+    if (url.endsWith('.png')) return [{ type: 'image', url }]
+    const host = new URL(url).host
+    return [{ type: 'opengraph', url, data: { type: 'website', url, title: `${host} page`, description: `What ${host} says about itself`, site_name: host, images: [{ url: `https://${host}/og.png`, secure_url: `https://${host}/og.png` }] } }]
+  }
   const withMetadata = (p: Post): Post => {
-    const rs = reactions.filter(r => r.post_id === p.id)
-    return { ...p, metadata: { ...(rs.length ? { reactions: rs } : {}), files: Object.values(files).filter(f => f.info.post_id === p.id).map(f => f.info) } }
+    const rs = reactions.filter(r => r.post_id === p.id), embeds = embedsOf(p.message)
+    return { ...p, metadata: { ...(rs.length ? { reactions: rs } : {}), files: Object.values(files).filter(f => f.info.post_id === p.id).map(f => f.info), ...(embeds.length ? { embeds } : {}) } }
   }
   const open    = channel('general', 'O', bot.id, [bot.id, alice.id, bob.id])
   const secret  = channel('ops', 'P', alice.id, [alice.id])
@@ -268,6 +278,13 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         const drop = cur.channel_ids.filter(id => !ids.includes(id)), add = ids.filter(id => !cur.channel_ids.includes(id))
         if (drop.length) dropPrefs(uid, drop.map(name => ({ user_id: uid, category: 'favorite_channel', name, value: '' })), false)
         if (add.length) savePrefs(uid, add.map(name => ({ user_id: uid, category: 'favorite_channel', name, value: 'true' })), false)
+      } else {
+        // Mattermost takes a room named into Channels or Direct Messages out of
+        // whatever held it; ignoring the list left it in its custom category.
+        const add = ids.filter(id => !cur.channel_ids.includes(id))
+        for (const c of customCats) if (c.user_id === uid) c.channel_ids = c.channel_ids.filter(id => !add.includes(id))
+        const unfav = prefs.filter(q => q.user_id === uid && q.category === 'favorite_channel' && add.includes(q.name))
+        if (unfav.length) dropPrefs(uid, unfav, false)
       }
     }
     return { changed: changedSince(uid, before) }
@@ -636,7 +653,8 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
           const out: SidebarCategory[] = []
           for (const given of list) { const r = updateCategory(caller, given); if ('error' in r) return record(r.error); out.push(...r.changed) }
           tell('sidebar_category_updated', { updatedCategories: JSON.stringify(out) })
-          return record(json(list.map(g => out.find(c => c.id === g.id)!)))
+          const now = categoriesFor(caller)
+          return record(json(list.map(g => now.find(c => c.id === g.id)!)))
         }
         if (sub === 'order' && req.method === 'PUT') {
           const given = Array.isArray(body) ? (body as unknown[]).map(String) : [], have = orderOf(caller)
@@ -653,7 +671,8 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
           const r = updateCategory(caller, { ...body, id: sub } as unknown as SidebarCategory)
           if ('error' in r) return record(r.error)
           tell('sidebar_category_updated', { updatedCategories: JSON.stringify(r.changed) })
-          return record(json(r.changed.find(c => c.id === sub)))
+          // The category is answered whether or not this PUT changed it; an unchanged one was answered as nothing.
+          return record(json(categoriesFor(caller).find(c => c.id === sub)))
         }
         if (sub && sub !== 'order' && req.method === 'DELETE') {
           const i = customCats.findIndex(c => c.id === sub && c.user_id === caller)

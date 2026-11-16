@@ -15,11 +15,17 @@ import type { CredentialCaller, CredentialResolver } from '@frontierjs/conduit'
 import {
   bindMattermost, browseChannels, createDirectChannel, createGroupChannel, fileBytes, followThread, getThread, listProfiles, markThreadRead, markUnread,
   listTeams, me, mirror, muteChannel, pinPost, threadKey, unfollowThread, unpinPost, uploadFile, viewChannel,
+  clearCustomStatus, deleteDraft, favoriteChannel, listSavedPosts, listStatuses, saveDraft, savePost, searchPosts, setCustomStatus, setStatus,
+  unfavoriteChannel, unsavePost,
+  createCategory, deleteCategory, editHistory, isCategoryId, listCategories, reorderCategories, setReminder, updateCategory,
   mattermostSocketDialect, mattermostSocketTarget, mattermostTargets,
 } from '@frontierjs/conduit-mattermost'
-import type { FileSize, NewFile } from '@frontierjs/conduit-mattermost'
+import type { FileSize, NewDraft, NewFile, PostRow } from '@frontierjs/conduit-mattermost'
 import type { App } from '@frontierjs/junction'
-import { applyFrame, land, landFollow, landMuted, landPinned, landThreads, landUnread, queueBackfill, syncMembers, viewed } from './sync.ts'
+import {
+  applyFrame, dropDraft, land, landDrafts, landFavorite, landFollow, landMuted, landPinned, landPosts, landSaved, landStatuses, landThreads, landUnread,
+  queueBackfill, savedKey, syncMembers, syncSections, viewed,
+} from './sync.ts'
 
 export { attach, backfill, land } from './sync.ts'
 
@@ -260,3 +266,206 @@ export async function browseAs (app: App, profile: string) {
   const mine = new Set((await sysOf(app).channelMember.findMany({ where: { profileExternalId: profile }, select: { channelExternalId: true } })).map((m: { channelExternalId: string }) => m.channelExternalId))
   return { rows: open.filter(c => !mine.has(c.externalId)) }
 }
+
+// ─── A person's own: drafts, saved posts, favorites, presence ───
+
+/** Save the caller's draft for one box; the server keeps one per box and answers it. */
+export async function saveDraftAs (app: App, profile: string, draft: NewDraft) {
+  const r = await saveDraft(asCaller(app), profile, draft)
+  if (r.row) await landDrafts(app, profile, [r.row])
+  return r
+}
+
+/** Discard the caller's draft for one box -- sent, or emptied. */
+export async function deleteDraftAs (app: App, profile: string, channel: string, root: string | null) {
+  const r = await deleteDraft(asCaller(app), profile, channel, root)
+  // Already gone on the server is the outcome asked for.
+  if (!r.error || r.error.kind === 'gone') { await dropDraft(app, profile, channel, root); return { ok: true as const } }
+  return r
+}
+
+/** Save or unsave a post for the caller. */
+export async function saveAs (app: App, profile: string, post: string, saved: boolean) {
+  const r = await (saved ? savePost : unsavePost)(asCaller(app), profile, post)
+  if (!r.error) await landSaved(app, profile, post, saved)
+  return r
+}
+
+/** Favorite or unfavorite a room for the caller. */
+export async function favoriteAs (app: App, profile: string, channel: string, favorite: boolean) {
+  const r = await (favorite ? favoriteChannel : unfavoriteChannel)(asCaller(app), profile, channel)
+  if (!r.error) await landFavorite(app, profile, channel, favorite)
+  return r
+}
+
+/**
+ * Land a page of posts the server answered outside a room's own read, so the
+ * screen draws them with the room's components. A post in a room this copy
+ * holds no Channel for is answered by id and not landed: its row would point
+ * at a room that is not here.
+ */
+async function landFound (app: App, rows: PostRow[], page: { reactions?: any[], files?: any[] }): Promise<string[]> {
+  const rooms = new Set((await sysOf(app).channel.findMany({ where: { externalId: { in: [...new Set(rows.map(p => p.channelExternalId))] } }, select: { externalId: true } }))
+    .map((c: { externalId: string }) => c.externalId))
+  const here = rows.filter(p => rooms.has(p.channelExternalId)), ids = new Set(here.map(p => p.externalId))
+  await landPosts(app, { rows: here, reactions: (page.reactions ?? []).filter(r => ids.has(r.postExternalId)), files: (page.files ?? []).filter(f => ids.has(f.postExternalId)) })
+  return rows.map(p => p.externalId)
+}
+
+/**
+ * The caller's saved posts, newest first, read whole and landed: the list is
+ * the server's, so a save made while no socket was open is in it.
+ */
+export async function savedAs (app: App, profile: string) {
+  const page = await listSavedPosts(asCaller(app), profile, { perPage: 200 })
+  if (!page.rows) return { error: page.error }
+  const ids = await landFound(app, page.rows, page)
+  for (const id of ids) await landSaved(app, profile, id, true)
+  await sysOf(app).savedPost.deleteMany({ where: { profileExternalId: profile, externalId: { notIn: ids.map(id => savedKey(profile, id)) } } })
+  return { rows: ids }
+}
+
+/** Set the caller's presence; `dndEndAt` ends a dnd. */
+export async function setStatusAs (app: App, profile: string, status: 'online' | 'away' | 'offline' | 'dnd', dndEndAt: Date | null) {
+  const r = await setStatus(asCaller(app), profile, status, dndEndAt ? { dndEndTime: Math.floor(dndEndAt.getTime() / 1000) } : {})
+  if (r.row) await landStatuses(app, [r.row])
+  return r
+}
+
+/** Set or clear the caller's custom status; the answer is no row, so what was asked is landed. */
+export async function setCustomStatusAs (app: App, profile: string, custom: { emoji: string, text: string, expiresAt: Date | null } | null) {
+  const mm = asCaller(app)
+  const r = custom ? await setCustomStatus(mm, profile, { emoji: custom.emoji, text: custom.text, ...(custom.expiresAt ? { expiresAt: custom.expiresAt } : {}) }) : await clearCustomStatus(mm, profile)
+  if (!r.error)
+    await sysOf(app).profile.updateMany({ where: { externalId: profile }, data: { customEmoji: custom?.emoji || null, customText: custom?.text || null, customExpiresAt: custom?.expiresAt ?? null } })
+  return r
+}
+
+/** Presence of the people a screen shows, read now: the server pushes a change to some sockets only. */
+export async function statusesAs (app: App, profiles: string[]) {
+  const r = await listStatuses(asCaller(app), profiles)
+  if (r.rows) await landStatuses(app, r.rows)
+  return r
+}
+
+// ─── Search and activity ───────────────────────────────────────
+
+/** Posts matching `terms` across the caller's teams, newest first, landed; `matches` is the words each matched. */
+export async function searchAs (app: App, profile: string, terms: string) {
+  const mm = asCaller(app)
+  const teams = await listTeams(mm, profile)
+  if (!teams.rows) return { error: teams.error }
+  const found = new Map<string, PostRow>(), reactions: any[] = [], files: any[] = []
+  const matches: Record<string, string[]> = {}
+  for (const t of teams.rows) {
+    const r = await searchPosts(mm, t.externalId, terms, { perPage: 100 })
+    if (!r.rows) return { error: r.error }
+    for (const p of r.rows) found.set(p.externalId, p)
+    reactions.push(...(r.reactions ?? [])); files.push(...(r.files ?? []))
+    Object.assign(matches, r.matches ?? {})
+  }
+  const rows = [...found.values()].sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
+  return { rows: await landFound(app, rows, { reactions, files }), matches }
+}
+
+/**
+ * What asks for the caller: posts naming them (a search for their @username,
+ * since the server keeps no mention list) and the followed threads with
+ * replies they have not read, from this copy's Thread rows.
+ */
+export async function activityAs (app: App, profile: string) {
+  const self = await sysOf(app).profile.findUnique({ where: { externalId: profile }, select: { username: true } })
+  if (!self?.username) return { error: { kind: 'not_found', message: 'the caller\'s profile is not here yet' } }
+  const mentions = await searchAs(app, profile, `@${self.username}`)
+  if (!mentions.rows) return { error: mentions.error }
+  const threads = await sysOf(app).thread.findMany({
+    where: { profileExternalId: profile, isFollowing: true, unreadReplies: { gt: 0 } }, orderBy: { lastReplyAt: 'desc' }, select: { rootExternalId: true },
+  })
+  return { mentions: mentions.rows, threads: threads.map((t: { rootExternalId: string }) => t.rootExternalId) }
+}
+
+// ─── Edit history and reminders ────────────────────────────────
+
+/**
+ * The versions the caller's own post had before each edit, newest first, each
+ * stamped when it was written: its own edit, or the post's creation for the
+ * first. The server answers another person's post as not found.
+ */
+export async function editHistoryAs (app: App, post: string) {
+  const r = await editHistory(asCaller(app), post)
+  if (!r.rows) return { error: r.error }
+  return { rows: r.rows.map(v => ({ message: v.message, editedAt: v.editedAt ?? v.createdAt })) }
+}
+
+/** The server's own bot messages the caller about a post at `at`; nothing here keeps it, since the server lists none back. */
+export async function remindAs (app: App, profile: string, post: string, at: Date) {
+  return setReminder(asCaller(app), profile, post, at)
+}
+
+// ─── Sidebar sections ──────────────────────────────────────────
+
+/** A section id as the server writes it, a system one or a person's own. */
+export const isSectionId = isCategoryId
+
+/**
+ * One of the caller's sections as the server holds it NOW: a section is sent
+ * back whole, so a stale copy would undo another client's move.
+ */
+async function liveSection (app: App, profile: string, id: string) {
+  const mine = await sysOf(app).chatSection.findFirst({ where: { externalId: id, profileExternalId: profile }, select: { teamExternalId: true } })
+  if (!mine) return { error: { kind: 'gone', message: 'that section is not here' } }
+  const r = await listCategories(asCaller(app), profile, mine.teamExternalId)
+  if (!r.rows) return { error: r.error }
+  const row = r.rows.find(c => c.externalId === id)
+  return row ? { row, team: mine.teamExternalId as string } : { error: { kind: 'gone', message: 'the server holds no such section' } }
+}
+
+const sectionOf = (app: App, id: string) => sysOf(app).chatSection.findUnique({ where: { externalId: id } })
+
+/** A new section of the caller's on a team, holding the rooms named. */
+export async function createSectionAs (app: App, profile: string, team: string, name: string, channels: string[]) {
+  const r = await createCategory(asCaller(app), profile, team, { displayName: name, channelExternalIds: channels })
+  if (!r.row) return { error: r.error }
+  await syncSections(app, profile, team)
+  return { row: await sectionOf(app, r.row.externalId) }
+}
+
+export async function renameSectionAs (app: App, profile: string, id: string, name: string) {
+  const live = await liveSection(app, profile, id)
+  if (!live.row) return { error: live.error }
+  const r = await updateCategory(asCaller(app), profile, live.team, { ...live.row, displayName: name })
+  if (!r.row) return { error: r.error }
+  await syncSections(app, profile, live.team)
+  return { row: await sectionOf(app, id) }
+}
+
+/** A section of the caller's own making; its rooms go back where the server puts them. */
+export async function deleteSectionAs (app: App, profile: string, id: string) {
+  const live = await liveSection(app, profile, id)
+  if (!live.row) return { error: live.error }
+  const r = await deleteCategory(asCaller(app), profile, live.team, id)
+  if (r.error) return { error: r.error }
+  await syncSections(app, profile, live.team)
+  return { ok: true as const }
+}
+
+/** The caller's sections on a team, top to bottom: every one of them, named once. */
+export async function reorderSectionsAs (app: App, profile: string, team: string, order: string[]) {
+  const r = await reorderCategories(asCaller(app), profile, team, order)
+  if (!r.order) return { error: r.error }
+  await syncSections(app, profile, team)
+  return { order: r.order }
+}
+
+/** A room into one of the caller's sections at `index` (the end when absent); the server takes it out of the one that held it. */
+export async function moveToSectionAs (app: App, profile: string, channel: string, id: string, index: number | null) {
+  const live = await liveSection(app, profile, id)
+  if (!live.row) return { error: live.error }
+  const rest = live.row.channelExternalIds.filter(c => c !== channel)
+  const at = index === null ? rest.length : Math.min(Math.max(index, 0), rest.length)
+  const r = await updateCategory(asCaller(app), profile, live.team, { ...live.row, channelExternalIds: [...rest.slice(0, at), channel, ...rest.slice(at)] })
+  if (!r.row) return { error: r.error }
+  await syncSections(app, profile, live.team)
+  return { row: await sectionOf(app, id) }
+}
+

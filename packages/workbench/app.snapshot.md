@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-19 services · 21 routes · 8 plugins · prefix (none)
+25 services · 21 routes · 8 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -145,8 +145,8 @@ name when it declares none.
 
 ### `chat`
 
-- **methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`
-- **custom methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`
+- **methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`, `saveDraft`, `deleteDraft`, `save`, `saved`, `favorite`, `setStatus`, `setCustomStatus`, `statuses`, `search`, `activity`, `editHistory`, `remind`, `createSection`, `renameSection`, `deleteSection`, `reorderSections`, `moveToSection`
+- **custom methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`, `saveDraft`, `deleteDraft`, `save`, `saved`, `favorite`, `setStatus`, `setCustomStatus`, `statuses`, `search`, `activity`, `editHistory`, `remind`, `createSection`, `renameSection`, `deleteSection`, `reorderSections`, `moveToSection`
 - **who may call** —
   - `status` — standing 3 or above — declared `gate: 3`
   - `connect` — standing 3 or above — declared `gate: 3`
@@ -159,10 +159,57 @@ name when it declares none.
   - `follow` — standing 3 or above — declared `gate: 3`
   - `browse` — standing 3 or above — declared `gate: 3`
   - `openDirect` — standing 3 or above — declared `gate: 3`
+  - `saveDraft` — standing 3 or above — declared `gate: 3`
+  - `deleteDraft` — standing 3 or above — declared `gate: 3`
+  - `save` — standing 3 or above — declared `gate: 3`
+  - `saved` — standing 3 or above — declared `gate: 3`
+  - `favorite` — standing 3 or above — declared `gate: 3`
+  - `setStatus` — standing 3 or above — declared `gate: 3`
+  - `setCustomStatus` — standing 3 or above — declared `gate: 3`
+  - `statuses` — standing 3 or above — declared `gate: 3`
+  - `search` — standing 3 or above — declared `gate: 3`
+  - `activity` — standing 3 or above — declared `gate: 3`
+  - `editHistory` — standing 3 or above — declared `gate: 3`
+  - `remind` — standing 3 or above — declared `gate: 3`
+  - `createSection` — standing 3 or above — declared `gate: 3`
+  - `renameSection` — standing 3 or above — declared `gate: 3`
+  - `deleteSection` — standing 3 or above — declared `gate: 3`
+  - `reorderSections` — standing 3 or above — declared `gate: 3`
+  - `moveToSection` — standing 3 or above — declared `gate: 3`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
+
+### `chatGroups` · model `ChatGroup`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `chatGroups`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `create` | `made` → `autoValidate` |
+| before | `patch` | `changed` → `autoValidate` |
+| before | `update` | `changed` → `autoValidate` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+
+### `chatSections` · model `ChatSection`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `chatSections`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
 
 ### `claude` · model `claude`
 
@@ -193,6 +240,21 @@ name when it declares none.
   - `permissions` — standing 5 or above — declared `gate: 5`
   - `save` — standing 5 or above — declared `gate: 5`
   - `trash` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `drafts` · model `Draft`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `drafts`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -341,6 +403,21 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `quietSchedules` · model `QuietSchedule`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `quietSchedules`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `create` | `made` → `autoValidate` |
+| before | `patch` | `changed` → `autoValidate` |
+| before | `update` | `changed` → `autoValidate` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+
 ### `reactions` · model `Reaction`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
@@ -374,6 +451,36 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+
+### `savedPosts` · model `SavedPost`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `savedPosts`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `scheduledPosts` · model `ScheduledPost`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `scheduledPosts`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `create` | `scheduled` → `autoValidate` |
+| before | `patch` | `stillScheduled` → `autoValidate` |
+| before | `update` | `stillScheduled` → `autoValidate` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 
 ### `servers` · model `servers`
 

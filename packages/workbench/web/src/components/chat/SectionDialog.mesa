@@ -1,0 +1,36 @@
+<script>
+  // components/chat/SectionDialog.mesa -- a name for a sidebar section, new or renamed.
+  // The server refuses a name past SECTION_NAME_MAX, so the box stops there and says why.
+  import { SECTION_NAME_MAX } from '../../lib/chat.js'
+  import Modal  from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let open = false
+  export let title = 'New section'
+  export let value = ''
+  export let onsave = undefined   // async (name) => void
+
+  let name = value
+  let saving = false
+  let error = null
+  $: open, () => { if (open) { name = value; error = null } }
+
+  async function save() {
+    const trimmed = name.trim()
+    if (!trimmed || saving) return
+    saving = true; error = null
+    try { await onsave?.(trimmed); open = false } catch (e) { error = e.message } finally { saving = false }
+  }
+</script>
+
+<Modal bind:open {title} size="sm">
+  <form class="stack gap-md" novalidate onsubmit|preventDefault={save} data-section-dialog>
+    <Input label="Name" name="section" bind:value={name} maxlength={SECTION_NAME_MAX} hint={`Up to ${SECTION_NAME_MAX} characters.`} />
+    {#if error}<p class="text-sm text-danger" role="alert" data-section-error>{error}</p>{/if}
+    <div class="cluster gap-sm">
+      <Button type="submit" loading={saving} disabled={!name.trim()}>Save</Button>
+      <Button treatment="ghost" onclick={() => open = false}>Cancel</Button>
+    </div>
+  </form>
+</Modal>

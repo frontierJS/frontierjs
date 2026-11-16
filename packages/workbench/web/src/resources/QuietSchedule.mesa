@@ -1,0 +1,7 @@
+<script module>
+  // src/resources/QuietSchedule.mesa -- the person's one quiet-hours row (local to this laptop).
+  // Written through the `quietSchedules` service itself; no chat server is involved.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const quietSchedules = createResource('quietSchedules', { model: 'QuietSchedule' })
+</script>

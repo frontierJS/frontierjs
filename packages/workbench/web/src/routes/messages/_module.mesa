@@ -23,8 +23,8 @@
 </script>
 
 {#if lists}
-  <div class="chat" class:has-room={!!page.params.id || page.pathname.startsWith('/messages/threads') || page.pathname.startsWith('/messages/browse')} data-messages>
-    <ChatSidebar currentId={page.params.id ?? null} onThreads={page.pathname.startsWith('/messages/threads')} onBrowse={page.pathname.startsWith('/messages/browse')} />
+  <div class="chat" class:has-room={!!page.params.id || page.pathname.startsWith('/messages/threads') || page.pathname.startsWith('/messages/browse') || page.pathname.startsWith('/messages/drafts') || page.pathname.startsWith('/messages/saved') || page.pathname.startsWith('/messages/search') || page.pathname.startsWith('/messages/activity') || page.pathname.startsWith('/messages/scheduled') || page.pathname.startsWith('/messages/groups')} data-messages>
+    <ChatSidebar currentId={page.params.id ?? null} onThreads={page.pathname.startsWith('/messages/threads')} onBrowse={page.pathname.startsWith('/messages/browse')} onDrafts={page.pathname.startsWith('/messages/drafts')} onSaved={page.pathname.startsWith('/messages/saved')} onActivity={page.pathname.startsWith('/messages/activity')} onScheduled={page.pathname.startsWith('/messages/scheduled')} onGroups={page.pathname.startsWith('/messages/groups')} />
     <div class="chat-main">
       <slot />
     </div>

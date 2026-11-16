@@ -836,6 +836,18 @@ try {
     orderPushed: lAlice.of('sidebar_category_order_updated').at(-1)?.payload.order.length === c1.order!.length,
   })
 
+  // A room moved back into a system category: Mattermost accepts its changed channel_ids.
+  const backTo = (await createCategory(alice, ids.alice, ids.team, { displayName: 'Back', channelExternalIds: [ids.open] })).row!
+  const sysChannels = (await listCategories(alice, ids.alice, ids.team)).rows!.find(c => c.type === 'channels')!
+  const back = await updateCategory(alice, ids.alice, ids.team, { ...sysChannels, channelExternalIds: [ids.open, ...sysChannels.channelExternalIds] })
+  const c3 = await listCategories(alice, ids.alice, ids.team)
+  const unchanged = await updateCategory(alice, ids.alice, ids.team, back.row ?? sysChannels)
+  await deleteCategory(alice, ids.alice, ids.team, backTo.externalId)
+  t('category.moveIntoSystem', {
+    back: [back.row?.type, back.row?.channelExternalIds.includes(ids.open) ?? back.error?.kind],
+    leftCustom: c3.rows!.find(c => c.externalId === backTo.externalId)?.channelExternalIds.includes(ids.open), unchanged: unchanged.row?.type ?? unchanged.error?.kind,
+  })
+
   // Search, a post's edit history, a reminder.
   const s1 = await postMessage(alice, { channelExternalId: ids.open, message: 'pineapple pizza night' })
   const s2 = await postMessage(bob, { channelExternalId: ids.open, message: 'pineapple only' })
@@ -863,6 +875,32 @@ try {
   let badAt = ''
   try { await setReminder(alice, ids.alice, pinId, 0) } catch (e) { badAt = (e as Error).message }
   t('reminder.targetTimeInSeconds', { ok: remind.ok, seconds: remindWire?.target_time === Math.floor(when / 1000), post: remindWire?.post_id === pinId, badAt, notAMember: (await setReminder(bob, ids.bob, secretPost.row!.externalId, when)).error?.kind })
+
+  // A custom status rides the person's profile row on every read and on user_updated.
+  await setCustomStatus(alice, ids.alice, { emoji: 'coffee', text: 'Brewing', expiresAt: new Date('2100-01-01T00:00:00Z') })
+  await until(() => lAlice.of('user_updated').some(e => e.payload.profile.customText === 'Brewing'))
+  const people = (await listProfiles(bob, [ids.alice, ids.bob])).rows ?? []
+  const csAlice = people.find(r => r.externalId === ids.alice)
+  await clearCustomStatus(alice, ids.alice)
+  t('profile.customStatusOnTheRow', {
+    listed: [csAlice?.customEmoji, csAlice?.customText, csAlice?.customExpiresAt?.toISOString()],
+    pushed: lAlice.of('user_updated').some(e => e.payload.profile.customEmoji === 'coffee'),
+    cleared: [(await me(alice)).row?.customText],
+    noPropsSaysNothing: 'customText' in (profileModel.parse({ id: ids.bob, username: 'bob' } as never) ?? {}),
+  })
+
+  // Link previews ride a post's metadata.embeds.
+  const og = (await postMessage(alice, { channelExternalId: ids.open, message: 'see https://example.com/a for more' })).row!
+  const img = (await postMessage(alice, { channelExternalId: ids.open, message: 'https://example.com/cat.png' })).row!
+  await until(() => lBob.of('posted').some(e => e.payload.post.externalId === img.externalId))
+  const read = (await listPosts(alice, ids.open, { perPage: 10 })).rows ?? []
+  t('post.embedsFromMetadata', {
+    opengraph: read.find(p => p.externalId === og.externalId)?.embeds,
+    image: read.find(p => p.externalId === img.externalId)?.embeds.map(e => [e.type, e.image]),
+    pushed: lBob.of('posted').find(e => e.payload.post.externalId === og.externalId)?.payload.post.embeds.length,
+    noLink: read.find(p => p.externalId === pinId)?.embeds,
+    otherTypesKeepUrl: postModel.parse({ id: og.externalId, channel_id: ids.open, metadata: { embeds: [{ type: 'permalink', url: 'https://x.test/p' }, { type: 'opengraph' }] } } as never)?.embeds,
+  })
   lAlice.close(); lBob.close()
   }
 } catch (e) { console.error('\nThe drive threw:', (e as Error).stack); got.__threw = String((e as Error).message) }
@@ -937,7 +975,10 @@ process.exit(report(got, {
   'status.ownByIdsSetAndCustom': {own:['online',false],set:['dnd',true,4102444800],byIds:'dnd',rowsAsked:2,pushed:['dnd'],bobHeardNothing:0,badStatus:true,custom:[true,'palm_tree','On a beach','2100-01-01T00:00:00.000Z'],cleared:[true,null],userUpdated:true,notYours:'forbidden'},
   'typing.frameRelaysToTheOthers': {wire:{action:'user_typing',seq:3,data:{channel_id:'general5000000000000000000',parent_id:''}},bob:[true,true,true],senderOmitted:0,badTyping:'mattermost: channelExternalId is not a Mattermost id'},
   'category.listCreateMoveDelete': {system:[['favorites','channels','direct_messages'],true,true],created:['custom','Work',['general5000000000000000000'],1,false],renamed:['Projects',['general5000000000000000000','ops60000000000000000000000'],true],reordered:true,sysDelete:'refused',gone:[true,false,true],tooLong:'mattermost: a category needs a display name',refusedLong:'refused',pushed:['sidebar_category_created','sidebar_category_deleted','sidebar_category_order_updated','sidebar_category_updated'],orderPushed:true},
+  'category.moveIntoSystem': { back: ['channels', true], leftCustom: false, unchanged: 'channels' },
   'search.termsOrAndMembership': {and:[true],or:2,matches:['pineapple','pizza'],privateHidden:true,memberSees:true,phrase:1,none:0,noTerms:'mattermost: a search needs terms',s2:true},
   'history.editsNewestFirstAuthorOnly': {messages:['draft two','draft one'],versionsAreOld:true,others:['gone','app.post.get.app_error'],neverEdited:0},
+  'profile.customStatusOnTheRow': {listed:['coffee','Brewing','2100-01-01T00:00:00.000Z'],pushed:true,cleared:[null],noPropsSaysNothing:false},
+  'post.embedsFromMetadata': {opengraph:[{type:'opengraph',url:'https://example.com/a',title:'example.com page',description:'What example.com says about itself',siteName:'example.com',image:'https://example.com/og.png'}],image:[['image','https://example.com/cat.png']],pushed:1,noLink:[],otherTypesKeepUrl:[{type:'permalink',url:'https://x.test/p',title:null,description:null,siteName:null,image:null}]},
   'reminder.targetTimeInSeconds': {ok:true,seconds:true,post:true,badAt:'mattermost: setReminder takes the time to remind at',notAMember:'forbidden'},
 }))

@@ -1,0 +1,21 @@
+<script>
+  // components/chat/Presence.mesa -- a person's presence as a dot: online success,
+  // away warning, do not disturb danger, offline a hollow ring. One branch per state,
+  // because Dot reads its tone once, so a changed tone prop on a live Dot would not redraw.
+  import Dot from '@frontierjs/ui/components/display/Dot.mesa'
+  import { STATUS } from '../../lib/chat.js'
+
+  export let status = 'offline'
+  $: label = STATUS[status in STATUS ? status : 'offline'].label
+</script>
+
+<span class="presence" data-presence={status}>
+  {#if status === 'online'}<Dot tone="success" size="xs" label={label} />
+  {:else if status === 'away'}<Dot tone="warning" size="xs" label={label} />
+  {:else if status === 'dnd'}<Dot tone="danger" size="xs" label={label} />
+  {:else}<Dot size="xs" hollow label={label} />{/if}
+</span>
+
+<style>
+  .presence { display: inline-flex; align-items: center; flex: none; }
+</style>

@@ -1,0 +1,7 @@
+<script module>
+  // src/resources/ScheduledPost.mesa -- the the person's own posts waiting to be sent (local to this laptop; a job on the API sends each at its time).
+  // Written through the `scheduledPosts` service itself; no chat server is involved.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const scheduledPosts = createResource('scheduledPosts', { model: 'ScheduledPost' })
+</script>

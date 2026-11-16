@@ -1,0 +1,47 @@
+<script>
+  // components/chat/EditedMark.mesa -- the "(edited)" beside a post. On the reader's own post
+  // it opens the earlier versions (`chat.editHistory`); on another person's it is plain text,
+  // because the server keeps that history for its author and answers anyone else 404.
+  import { editHistory } from '../../lib/chat.js'
+  import Modal from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  export let post = null
+  export let mine = false
+
+  let open = false
+  let versions = []
+  let loading = false
+  let error = null
+
+  async function show() {
+    open = true; loading = true; error = null
+    try { versions = await editHistory(post) } catch (e) { error = e.message } finally { loading = false }
+  }
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : ''
+</script>
+
+{#if mine}
+  <button type="button" class="edited-mark text-muted text-xs" title="Show earlier versions" data-post-edited data-edit-history-open onclick={show}>(edited)</button>
+  <Modal bind:open title="Earlier versions" size="sm">
+    <div class="stack gap-sm" data-edit-history>
+      {#if error}<Alert tone="danger">{error}</Alert>{/if}
+      {#each versions as v, i (i)}
+        <section class="stack gap-3xs" data-edit-version>
+          <time class="text-xs text-muted">{when(v.editedAt)}</time>
+          <div class="edited-text">{v.message}</div>
+        </section>
+      {:else}
+        {#if !loading && !error}<p class="text-sm text-muted">No earlier versions are kept.</p>{/if}
+      {/each}
+    </div>
+  </Modal>
+{:else}
+  <span class="text-muted text-xs" data-post-edited>(edited)</span>
+{/if}
+
+<style>
+  .edited-mark { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+  .edited-mark:hover, .edited-mark:focus-visible { text-decoration: underline; }
+  .edited-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>

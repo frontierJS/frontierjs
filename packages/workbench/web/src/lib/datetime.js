@@ -30,6 +30,11 @@ export function day(instant, none = '—') {
   return instant ? dt.format(instant, 'MMM D, YYYY') : none
 }
 
+/** `'Sep 14, 2026, 4:05 PM'` -- a time a person picked, to the minute. */
+export function minute(instant, none = '—') {
+  return instant ? dt.format(instant, 'MMM D, YYYY, h:mm aa') : none
+}
+
 /** `'Sep 14, 2026, 4:05:03 PM'` — an event somebody may need to line up with a log. */
 export function at(instant, none = '—') {
   return instant ? dt.format(instant, 'MMM D, YYYY, h:mm:ss aa') : none

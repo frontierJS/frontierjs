@@ -316,6 +316,232 @@ try {
     live.disconnect(); outsider.disconnect()
   }
 
+  // ── the extras: a person's own, kept on the server ───────────────────
+  // drafts
+  const draftKeyOf = (channel: string, root = '') => `${ids.alice}:${channel}:${root}`
+  const drafted = await call(ada, 'saveDraft', { channelExternalId: ids.open, message: 'half a thought' })
+  const draftsThere = async () => (await sinkCall(`/users/${ids.alice}/teams/${ids.team}/drafts`, sink.tokens.alice)).json as any[]
+  check(drafted?.message === 'half a thought' && (await draftsThere())?.some(d => d.channel_id === ids.open && d.message === 'half a thought'), 'chat.saveDraft saves the draft on the server and answers the mirror row', drafted?.message ?? drafted)
+  check((await sys.draft.findUnique({ where: { externalId: draftKeyOf(ids.open) } }))?.message === 'half a thought', 'and the mirror holds one Draft for the box')
+  await call(ada, 'saveDraft', { channelExternalId: ids.open, message: 'a whole thought' })
+  check((await sys.draft.findMany({ where: { profileExternalId: ids.alice, channelExternalId: ids.open, rootExternalId: null } })).length === 1, 'a second save replaces it: still one row for the box')
+  check(((await as(bo).service('drafts').find({}) as any).data as any[]).every(d => d.profileExternalId === ids.bob), 'bo reads none of alice\'s drafts')
+  const undrafted = await call(ada, 'deleteDraft', { channelExternalId: ids.open })
+  check(undrafted?.channelExternalId === ids.open && !(await draftsThere())?.some(d => d.channel_id === ids.open && !d.delete_at)
+    && !(await sys.draft.findUnique({ where: { externalId: draftKeyOf(ids.open) } })), 'chat.deleteDraft discards it on both', undrafted)
+  await sinkCall('/drafts', sink.tokens.alice, { method: 'POST', body: { user_id: ids.alice, channel_id: ids.open, root_id: u1.id, message: 'typed on a phone' } })
+  check(await until(async () => (await sys.draft.findUnique({ where: { externalId: draftKeyOf(ids.open, u1.id) } }))?.message === 'typed on a phone'), 'a reply draft saved on another client lands as a draft_created frame')
+  await sinkCall(`/users/${ids.alice}/channels/${ids.open}/drafts/${u1.id}`, sink.tokens.alice, { method: 'DELETE' })
+  check(await until(async () => !(await sys.draft.findUnique({ where: { externalId: draftKeyOf(ids.open, u1.id) } }))), 'and its discard as draft_deleted')
+
+  // saved posts and favorite rooms
+  const prefsThere = async (category: string) => ((await sinkCall(`/users/${ids.alice}/preferences/${category}`, sink.tokens.alice)).json ?? []) as any[]
+  const savedRow = (post: string) => sys.savedPost.findUnique({ where: { externalId: `${ids.alice}:${post}` } })
+  const saved = await call(ada, 'save', { postExternalId: u2.id, saved: true })
+  check(saved?.saved === true && (await prefsThere('flagged_post')).some(p => p.name === u2.id && p.value === 'true') && await savedRow(u2.id), 'chat.save saves the post on the server and the mirror holds a SavedPost', saved)
+  const savedList = await call(ada, 'saved', {})
+  check(savedList?.postExternalIds?.[0] === u2.id && await sys.post.findUnique({ where: { externalId: u2.id } }), 'chat.saved answers the saved posts newest first, landed as Post rows', savedList)
+  check(((await as(bo).service('savedPosts').find({}) as any).data as any[]).length === 0, 'bo reads none of alice\'s saved posts')
+  await call(ada, 'save', { postExternalId: u2.id, saved: false })
+  check(!(await prefsThere('flagged_post')).some(p => p.name === u2.id && p.value === 'true') && !(await savedRow(u2.id)), 'chat.save unsaves it on both')
+  await sinkCall(`/users/${ids.alice}/preferences`, sink.tokens.alice, { method: 'PUT', body: [{ user_id: ids.alice, category: 'flagged_post', name: u3.id, value: 'true' }] })
+  check(await until(() => savedRow(u3.id)), 'a save on another client lands as a preferences_changed frame')
+  await sinkCall(`/users/${ids.alice}/preferences/delete`, sink.tokens.alice, { method: 'POST', body: [{ user_id: ids.alice, category: 'flagged_post', name: u3.id, value: '' }] })
+  check(await until(async () => !(await savedRow(u3.id))), 'and an unsave as preferences_deleted')
+  const fav = await call(ada, 'favorite', { channelExternalId: ids.open, favorite: true })
+  check(fav?.favorite === true && (await prefsThere('favorite_channel')).some(p => p.name === ids.open && p.value === 'true') && (await mirrorMember(ids.open, ids.alice))?.isFavorite === true,
+    'chat.favorite favorites the room on the server and ChannelMember.isFavorite is true', fav)
+  await sinkCall(`/users/${ids.alice}/preferences/delete`, sink.tokens.alice, { method: 'POST', body: [{ user_id: ids.alice, category: 'favorite_channel', name: ids.open, value: '' }] })
+  check(await until(async () => (await mirrorMember(ids.open, ids.alice))?.isFavorite === false), 'an unfavorite on another client lands as a frame')
+
+  // presence and custom status
+  const st = await call(ada, 'setStatus', { status: 'dnd', dndEndAt: new Date(Date.now() + 3_600_000).toISOString() })
+  const stThere = (await sinkCall(`/users/${ids.alice}/status`, sink.tokens.alice)).json
+  const alice = () => sys.profile.findUnique({ where: { externalId: ids.alice } })
+  check(st?.status === 'dnd' && stThere?.status === 'dnd' && (await alice())?.status === 'dnd' && (await alice())?.statusManual === true, 'chat.setStatus sets dnd on the server and on alice\'s Profile', { st, stThere })
+  await sinkCall(`/users/${ids.bob}/status`, sink.tokens.bob, { method: 'PUT', body: { user_id: ids.bob, status: 'away' } })
+  check(await until(async () => (await sys.profile.findUnique({ where: { externalId: ids.bob } }))?.status === 'away'), 'bob going away on another client lands as a status_change frame')
+  await sys.profile.updateMany({ where: { externalId: ids.bob }, data: { status: null } })
+  const polled = await call(ada, 'statuses', { profileExternalIds: [ids.bob] })
+  check(polled?.statuses?.[0]?.status === 'away' && (await sys.profile.findUnique({ where: { externalId: ids.bob } }))?.status === 'away', 'chat.statuses reads presence for the people on screen and lands it', polled)
+  const cs = await call(ada, 'setCustomStatus', { emoji: 'coffee', text: 'back soon' })
+  const csThere = (await sinkCall('/users/me', sink.tokens.alice)).json?.props?.customStatus ?? ''
+  check(cs?.customText === 'back soon' && csThere.includes('back soon') && (await alice())?.customText === 'back soon' && (await alice())?.customEmoji === 'coffee', 'chat.setCustomStatus sets it on the server and on the Profile', { cs, csThere })
+  await call(ada, 'setCustomStatus', {})
+  check(!((await sinkCall('/users/me', sink.tokens.alice)).json?.props?.customStatus) && (await alice())?.customText == null, 'and an empty one clears it on both')
+  const badStatus = await call(ada, 'setStatus', { status: 'asleep' })
+  check((badStatus?.status ?? badStatus?.code) === 400, 'a status the server has no name for is a 400', { ...badStatus, message: badStatus?.message })
+
+  // search and activity
+  const found = await call(ada, 'search', { terms: 'unread' })
+  check([u1.id, u2.id, u3.id].every(id => found?.postExternalIds?.includes(id)) && await sys.post.findUnique({ where: { externalId: u3.id } }), 'chat.search answers the matching posts, landed', found)
+  const act = await call(ada, 'activity', {})
+  check(act?.mentions?.includes(u1.id) && !act.mentions.includes(u2.id), 'chat.activity answers the posts naming alice', act)
+  const actThreads = await sys.thread.findMany({ where: { profileExternalId: ids.alice, rootExternalId: { in: act?.threads ?? [] } } })
+  check(Array.isArray(act?.threads) && actThreads.every((t: any) => t.isFollowing && t.unreadReplies > 0), 'and only followed threads with unread replies', { threads: act?.threads, actThreads })
+
+  // another person's custom status, live
+  const bobRow = () => sys.profile.findUnique({ where: { externalId: ids.bob } })
+  await sinkCall(`/users/${ids.bob}/status/custom`, sink.tokens.bob, { method: 'PUT', body: { emoji: 'palm_tree', text: 'On a beach' } })
+  check((await sinkCall('/users/me', sink.tokens.bob)).json?.props?.customStatus?.includes('On a beach')
+    && await until(async () => (await bobRow())?.customText === 'On a beach' && (await bobRow())?.customEmoji === 'palm_tree'), 'bob\'s custom status set on another client lands on his Profile as user_updated', await bobRow())
+  await sinkCall(`/users/${ids.bob}/status/custom`, sink.tokens.bob, { method: 'DELETE' })
+  check(await until(async () => (await bobRow())?.customText == null && (await bobRow())?.customEmoji == null), 'and his clear lands as null')
+
+  // sidebar sections
+  const sectionsThere = async () => (await sinkCall(`/users/${ids.alice}/teams/${ids.team}/channels/categories`, sink.tokens.alice)).json as { order: string[], categories: any[] }
+  const sections = () => sys.chatSection.findMany({ where: { profileExternalId: ids.alice, teamExternalId: ids.team }, orderBy: { sortOrder: 'asc' } })
+  const kindsHere = (await sections()).map((c: any) => c.kind)
+  check(['favorites', 'channels', 'direct'].every(k => kindsHere.includes(k)) && (await sections()).map((c: any) => c.externalId).join() === (await sectionsThere()).order.join(), 'the backfill lands alice\'s sections whole, in the server\'s order', kindsHere)
+  const work = await call(ada, 'createSection', { teamExternalId: ids.team, name: 'Work', channelExternalIds: [ids.open] })
+  const sectionThere = async (id: string) => (await sectionsThere()).categories.find(c => c.id === id)
+  check(work?.kind === 'custom' && work?.name === 'Work' && work?.channelExternalIds?.join() === ids.open && (await sectionThere(work.externalId))?.display_name === 'Work',
+    'chat.createSection makes the section on the server and answers its ChatSection row', work)
+  check(!(await sections()).some((c: any) => c.kind === 'channels' && c.channelExternalIds.includes(ids.open)), 'and the room leaves the section that held it, here too')
+  const renamed = await call(ada, 'renameSection', { sectionExternalId: work?.externalId, name: 'Projects' })
+  check(renamed?.name === 'Projects' && (await sectionThere(work?.externalId))?.display_name === 'Projects', 'chat.renameSection renames it on both', renamed)
+  const moved = await call(ada, 'moveToSection', { channelExternalId: ids.secret, sectionExternalId: work?.externalId, index: 0 })
+  check(moved?.channelExternalIds?.join() === [ids.secret, ids.open].join() && (await sectionThere(work?.externalId))?.channel_ids?.join() === [ids.secret, ids.open].join(), 'chat.moveToSection puts a room at the place asked, on both', moved)
+  const channelsSection = (await sections()).find((c: any) => c.kind === 'channels')
+  const movedBack = await call(ada, 'moveToSection', { channelExternalId: ids.secret, sectionExternalId: channelsSection?.externalId })
+  check(movedBack?.kind === 'channels' && movedBack.channelExternalIds?.includes(ids.secret) && (await sectionThere(channelsSection?.externalId))?.channel_ids?.includes(ids.secret)
+    && !(await sectionThere(work?.externalId))?.channel_ids?.includes(ids.secret) && !(await sys.chatSection.findUnique({ where: { externalId: work?.externalId } }))?.channelExternalIds?.includes(ids.secret),
+    'chat.moveToSection moves a room back into Channels, a system section, on both', { ...movedBack, message: movedBack?.message })
+  const reversed = [...(await sectionsThere()).order].reverse()
+  const reordered = await call(ada, 'reorderSections', { teamExternalId: ids.team, sectionExternalIds: reversed })
+  check(reordered?.sectionExternalIds?.join() === reversed.join() && (await sectionsThere()).order.join() === reversed.join() && (await sections()).map((c: any) => c.externalId).join() === reversed.join(), 'chat.reorderSections orders them on both', reordered)
+  check(((await as(bo).service('chatSections').find({}) as any).data as any[]).every(c => c.profileExternalId === ids.bob), 'bo reads none of alice\'s sections')
+  const phone = (await sinkCall(`/users/${ids.alice}/teams/${ids.team}/channels/categories`, sink.tokens.alice, { method: 'POST', body: { user_id: ids.alice, team_id: ids.team, type: 'custom', display_name: 'Phone', channel_ids: [] } })).json
+  check(await until(async () => (await sys.chatSection.findUnique({ where: { externalId: phone?.id } }))?.name === 'Phone'), 'a section work on another client lands as sidebar_category_created', phone)
+  const phoneOrder = [phone.id, ...(await sectionsThere()).order.filter(id => id !== phone.id)]
+  await sinkCall(`/users/${ids.alice}/teams/${ids.team}/channels/categories/order`, sink.tokens.alice, { method: 'PUT', body: phoneOrder })
+  check(await until(async () => (await sections())[0]?.externalId === phone.id), 'its move to the top lands as sidebar_category_order_updated')
+  await sinkCall(`/users/${ids.alice}/teams/${ids.team}/channels/categories/${work?.externalId}`, sink.tokens.alice, { method: 'PUT', body: { ...(await sectionThere(work?.externalId)), display_name: 'Elsewhere' } })
+  check(await until(async () => (await sys.chatSection.findUnique({ where: { externalId: work?.externalId } }))?.name === 'Elsewhere'), 'a rename on another client lands as sidebar_category_updated')
+  await sinkCall(`/users/${ids.alice}/teams/${ids.team}/channels/categories/${phone.id}`, sink.tokens.alice, { method: 'DELETE' })
+  check(await until(async () => !(await sys.chatSection.findUnique({ where: { externalId: phone.id } }))), 'and a delete there as sidebar_category_deleted')
+  const unmade = await call(ada, 'deleteSection', { sectionExternalId: work?.externalId })
+  check(unmade?.sectionExternalId === work?.externalId && !(await sectionThere(work?.externalId)) && !(await sys.chatSection.findUnique({ where: { externalId: work?.externalId } }))
+    && (await sections()).some((c: any) => c.kind === 'channels' && c.channelExternalIds.includes(ids.open)), 'chat.deleteSection deletes it on both and its rooms go back', unmade)
+  const sysSection = (await sections()).find((c: any) => c.kind === 'favorites')
+  const sysDelete = await call(ada, 'deleteSection', { sectionExternalId: sysSection?.externalId })
+  check((sysDelete?.status ?? sysDelete?.code) === 400 && await sys.chatSection.findUnique({ where: { externalId: sysSection?.externalId } }), 'a system section\'s delete is the server\'s 400, and it stays', { ...sysDelete, message: sysDelete?.message })
+
+  // edit history
+  const edited = await say(sink.tokens.alice, ids.open, 'version one')
+  await sinkCall(`/posts/${edited.id}/patch`, sink.tokens.alice, { method: 'PUT', body: { message: 'version two' } })
+  await sinkCall(`/posts/${edited.id}/patch`, sink.tokens.alice, { method: 'PUT', body: { message: 'version three' } })
+  const hist = await call(ada, 'editHistory', { postExternalId: edited.id })
+  check(hist?.versions?.map((v: any) => v.message).join() === 'version two,version one' && hist.versions.every((v: any) => v.editedAt), 'chat.editHistory answers the earlier versions newest first, each stamped', hist)
+  const notHers = await call(ada, 'editHistory', { postExternalId: u1.id })
+  check((notHers?.status ?? notHers?.code) === 404, 'another person\'s post is the server\'s 404, not a 500', { ...notHers, message: notHers?.message })
+
+  // link previews
+  const linkPost = await say(sink.tokens.bob, ids.open, 'look at https://example.com/launch today')
+  const embedded = await until(async () => { const p = await sys.post.findUnique({ where: { externalId: linkPost.id } }); return p?.embeds?.length ? p : null })
+  check(embedded?.embeds?.[0]?.title === 'example.com page' && embedded.embeds[0].siteName === 'example.com' && embedded.embeds[0].image === 'https://example.com/og.png'
+    && (await sinkCall(`/channels/${ids.open}/posts?per_page=5`, sink.tokens.alice)).json?.posts?.[linkPost.id]?.metadata?.embeds?.length === 1, 'a post with a link lands its preview on Post.embeds', embedded?.embeds)
+  check(Array.isArray((await sys.post.findUnique({ where: { externalId: u2.id } }))?.embeds) && (await sys.post.findUnique({ where: { externalId: u2.id } }))?.embeds.length === 0, 'and one with none holds []')
+
+  // reminders
+  const remindAt = new Date(Date.now() + 3_600_000)
+  const reminded = await call(ada, 'remind', { postExternalId: u1.id, at: remindAt.toISOString() })
+  const remindWire = ((await (await fetch(`${sink.url}/_sink/seen`)).json()) as any).reminders.at(-1)
+  check(reminded?.postExternalId === u1.id && remindWire?.post_id === u1.id && remindWire?.user_id === ids.alice && remindWire?.target_time === Math.floor(remindAt.getTime() / 1000), 'chat.remind sets the reminder on the server in whole seconds', { reminded, remindWire })
+  const pastRemind = await call(ada, 'remind', { postExternalId: u1.id, at: new Date(Date.now() - 1000).toISOString() })
+  check((pastRemind?.status ?? pastRemind?.code) === 400, 'a reminder in the past is a 400', { ...pastRemind, message: pastRemind?.message })
+
+  // typing reaches the room's members' tabs, and no one else's
+  const typingToken = await (env.app as any).auth.mint(ada.id), cyTyping = await (env.app as any).auth.mint(cy.id)
+  const tab = (t: string) => createJunctionClient({ url: env.url, token: t, timeout: 8_000 })
+  const adaTab = tab(typingToken.token), cyTab = tab(cyTyping.token)
+  adaTab.connect(); cyTab.connect()
+  await until(() => (adaTab as any)._wsReady && (cyTab as any)._wsReady)
+  const adaHeard: any[] = [], cyHeard: any[] = []
+  ;(adaTab as any).on('event', (name: string, data: any) => { if (name === 'chat typing') adaHeard.push(data) })
+  ;(cyTab as any).on('event', (name: string, data: any) => { if (name === 'chat typing') cyHeard.push(data) })
+  const bobWs = new WebSocket(`${sink.url.replace(/^http/, 'ws')}/api/v4/websocket`, { headers: { authorization: `Bearer ${sink.tokens.bob}` } } as any)
+  await new Promise(r => { bobWs.onopen = r; setTimeout(r, 3000) })
+  bobWs.send(JSON.stringify({ action: 'user_typing', seq: 1, data: { channel_id: ids.secret, parent_id: '' } }))
+  check(await until(() => adaHeard.length > 0) && adaHeard[0]?.channelExternalId === ids.secret && adaHeard[0]?.profileExternalId === ids.bob && adaHeard[0]?.rootExternalId == null,
+    'bob typing in their private room reaches alice\'s tab as a chat typing frame', adaHeard)
+  await new Promise(r => setTimeout(r, 500))
+  check(cyHeard.length === 0, 'and reaches no one outside the room', cyHeard)
+  bobWs.close(); adaTab.disconnect(); cyTab.disconnect()
+
+  // ── scheduled posts (local) ───────────────────────────────────────────
+  const { sendDue } = await import('../src/domain/chat/scheduled.ts')
+  const errOf = (p: Promise<unknown>) => p.then(() => null, (e: any) => e)
+  const codeOf = (e: any) => e?.status ?? e?.code
+  const shown_ = (e: any) => e && { ...e, message: e.message }
+  const sched = (m: { id: number }) => as(m).service('scheduledPosts')
+  const later = () => new Date(Date.now() + 3_600_000).toISOString()
+  const schedRow = (id: number) => sys.scheduledPost.findUnique({ where: { id } })
+  const s1 = await sched(ada).create({ channelExternalId: ids.open, message: 'later, from Workbench', sendAt: later() }).catch((e: any) => e)
+  check(s1?.status === 'scheduled' && s1.profileExternalId === ids.alice && s1.memberId === ada.id, 'scheduledPosts.create keeps a scheduled row stamped with its member', shown_(s1))
+  const pastSend = await errOf(sched(ada).create({ channelExternalId: ids.open, message: 'too late', sendAt: new Date(Date.now() - 60_000).toISOString() }))
+  check(codeOf(pastSend) === 400, 'a send time in the past is a 400', shown_(pastSend))
+  const emptySend = await errOf(sched(ada).create({ channelExternalId: ids.open, message: '  ', sendAt: later() }))
+  check(codeOf(emptySend) === 400, 'and so is a post with no message and no file', shown_(emptySend))
+  check(((await sched(bo).find({}) as any).data as any[]).length === 0, 'another member reads none of them')
+  const boCancel = await errOf(sched(bo).patch(s1?.id, { status: 'cancelled' }))
+  check(codeOf(boCancel) >= 400 && (await schedRow(s1?.id))?.status === 'scheduled', 'nor cancels one', shown_(boCancel))
+  const dueRow = await sched(ada).create({ channelExternalId: ids.secret, message: 'scheduled for now', sendAt: later() })
+  const badRow = await sched(ada).create({ channelExternalId: 'z'.repeat(26), message: 'into nowhere', sendAt: later() })
+  const stopRow = await sched(ada).create({ channelExternalId: ids.open, message: 'never sent', sendAt: later() })
+  const cyRow = await sched(cy).create({ channelExternalId: ids.open, message: 'from an old link', sendAt: later() })
+  const cancelled = await sched(ada).patch(stopRow.id, { status: 'cancelled' })
+  check(cancelled?.status === 'cancelled', 'a patch to cancelled cancels it', cancelled)
+  await call(cy, 'disconnect', {})
+  const dueNow = new Date(Date.now() - 1000).toISOString()
+  for (const r of [dueRow, badRow, stopRow, cyRow]) await sys.scheduledPost.update({ where: { id: r.id }, data: { sendAt: dueNow } })
+  const ran = await sendDue(env.app)
+  const sentRow = await schedRow(dueRow.id)
+  check(ran.sent === 1 && sentRow?.status === 'sent' && sentRow.sentPostExternalId && sentRow.sentAt, 'the job sends a due row as its member and marks it sent with the post', { ran, sentRow })
+  const sentThere = (await sinkCall(`/channels/${ids.secret}/posts`, sink.tokens.alice)).json?.posts?.[sentRow?.sentPostExternalId]
+  check(sentThere?.message === 'scheduled for now' && sentThere.user_id === ids.alice, 'the post is on the server, authored by alice', sentThere)
+  check((await sys.post.findUnique({ where: { externalId: sentRow?.sentPostExternalId } }))?.message === 'scheduled for now', 'and in the mirror')
+  const failedRow = await schedRow(badRow.id)
+  check(failedRow?.status === 'failed' && !!failedRow.error, 'a refused send is kept failed with its error', failedRow)
+  const cyFailed = await schedRow(cyRow.id)
+  check(cyFailed?.status === 'failed' && /link/.test(cyFailed.error ?? ''), 'a member whose link is gone is failed with a plain reason', cyFailed)
+  const openPosts = Object.values((await sinkCall(`/channels/${ids.open}/posts?per_page=200`, sink.tokens.alice)).json?.posts ?? {}) as any[]
+  check((await schedRow(stopRow.id))?.status === 'cancelled' && !openPosts.some(p => p.message === 'never sent' || p.message === 'from an old link'), 'a cancelled row is not sent, nor an unlinked member\'s')
+  const schedAgain = await sendDue(env.app)
+  check(schedAgain.sent === 0 && schedAgain.failed === 0 && (await schedRow(badRow.id))?.status === 'failed' && (await schedRow(s1?.id))?.status === 'scheduled', 'a failed row is not retried, and a future one waits', schedAgain)
+  const editSent = await errOf(sched(ada).patch(dueRow.id, { message: 'too late to edit' }))
+  check(codeOf(editSent) === 409, 'a sent row cannot be changed', shown_(editSent))
+
+  // ── groups (local) ────────────────────────────────────────────────────
+  const grp = (m: { id: number }) => as(m).service('chatGroups')
+  const chatGroup = await grp(ada).create({ handle: 'Design-Team', name: 'Design', profileExternalIds: [ids.alice, ids.bob] }).catch((e: any) => e)
+  check(chatGroup?.handle === 'design-team' && chatGroup.createdByProfileExternalId === ids.alice && chatGroup.profileExternalIds?.join() === [ids.alice, ids.bob].join(), 'chatGroups.create keeps the chatGroup, its handle lowercased, stamped with its creator', shown_(chatGroup))
+  check(((await grp(bo).find({}) as any).data as any[]).some(g => g.id === chatGroup?.id), 'every member reads it')
+  const boRename = await errOf(grp(bo).patch(chatGroup?.id, { name: 'Mine now' }))
+  const boUnmake = await errOf(grp(bo).remove(chatGroup?.id))
+  check(codeOf(boRename) >= 400 && codeOf(boUnmake) >= 400 && (await sys.chatGroup.findUnique({ where: { id: chatGroup?.id } }))?.name === 'Design', 'a member who did not make it can neither change nor remove it', { rename: shown_(boRename), remove: shown_(boUnmake) })
+  const dupGroup = await errOf(grp(bo).create({ handle: 'design-team', name: 'Other' }))
+  check(codeOf(dupGroup) >= 400 && codeOf(dupGroup) < 500, 'a handle already taken is refused', shown_(dupGroup))
+  const badHandle = await errOf(grp(ada).create({ handle: 'no spaces!', name: 'Bad' }))
+  check(codeOf(badHandle) >= 400 && codeOf(badHandle) < 500, 'a handle outside [a-z0-9-] is refused', shown_(badHandle))
+  const regrouped = await grp(ada).patch(chatGroup?.id, { name: 'Designers', profileExternalIds: [ids.bob] }).catch((e: any) => e)
+  check(regrouped?.name === 'Designers' && regrouped.profileExternalIds?.join() === ids.bob, 'its creator changes it', shown_(regrouped))
+  await grp(ada).remove(chatGroup?.id)
+  check(!(await sys.chatGroup.findUnique({ where: { id: chatGroup?.id } })), 'and removes it')
+
+  // ── quiet hours (local) ───────────────────────────────────────────────
+  const quiet = (m: { id: number }) => as(m).service('quietSchedules')
+  const qh = await quiet(ada).create({ days: [5, 1, 2, 3, 4], fromMinute: 1320, toMinute: 420, timezone: 'America/Chicago' }).catch((e: any) => e)
+  check(qh?.profileExternalId === ids.alice && qh.days?.join() === '1,2,3,4,5' && qh.enabled === true, 'quietSchedules.create keeps the caller\'s own row', shown_(qh))
+  const qh2 = await quiet(ada).patch(qh?.id, { enabled: false, toMinute: 480 }).catch((e: any) => e)
+  const qhMine = (await quiet(ada).find({}) as any).data
+  check(qh2?.enabled === false && qh2.toMinute === 480 && qhMine.length === 1 && qhMine[0].enabled === false, 'a patch round-trips', { qh2: shown_(qh2), qhMine })
+  check(((await quiet(bo).find({}) as any).data as any[]).length === 0, 'another member reads none of it')
+  const qhSecond = await errOf(quiet(ada).create({ fromMinute: 0, toMinute: 60, timezone: 'UTC' }))
+  check(codeOf(qhSecond) >= 400 && codeOf(qhSecond) < 500, 'a second row for the same member is refused', shown_(qhSecond))
+  const qhZone = await errOf(quiet(bo).create({ fromMinute: 0, toMinute: 60, timezone: 'Mars/Olympus' }))
+  check(codeOf(qhZone) === 400, 'a timezone that is not one is a 400', shown_(qhZone))
+
   // ── unlink ────────────────────────────────────────────────────────────
   await as(ada).service('chat').call('disconnect', null, {})
   const gone = await sys.member.findUnique({ where: { id: ada.id }, select: { profileExternalId: true, chatSyncedAt: true } })

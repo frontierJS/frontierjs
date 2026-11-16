@@ -15,14 +15,16 @@
 
 import type { App } from '@frontierjs/junction'
 import {
-  getThread, listChannels, listMembers, listPosts, listProfiles, listTeams, listThreads, me, memberKey, postsSince, threadKey,
-  type ChannelMemberRow, type PostPage, type PostRow, type SocketEvent, type ThreadRow, type UnreadRow,
+  getThread, listCategories, listChannels, listDrafts, listMembers, listPosts, listPreferences, listProfiles, listStatuses, listTeams, listThreads, me, memberKey, postsSince, threadKey, PREFERENCE,
+  type CategoryRow, type ChannelMemberRow, type DraftRow, type PostPage, type PostRow, type PreferenceRow, type SocketEvent, type StatusRow, type ThreadRow, type UnreadRow,
 } from '@frontierjs/conduit-mattermost'
+import { notificationChannelName } from '../../core/channels.ts'
 import { asCaller, sysOf } from './index.ts'
 
 const ACCESSOR = {
   Team: 'team', Profile: 'profile', Channel: 'channel', ChannelMember: 'channelMember',
   Post: 'post', Reaction: 'reaction', FileInfo: 'fileInfo', Thread: 'thread',
+  Draft: 'draft', SavedPost: 'savedPost', ChatSection: 'chatSection',
 } as const
 type Landed = keyof typeof ACCESSOR
 type Table = {
@@ -212,8 +214,11 @@ export async function landFollow(app: App, profile: string, team: string | null,
   return true
 }
 
-/** Delete rows the server no longer holds — for access rows only (FJS-D1155). */
-async function drop(app: App, model: 'ChannelMember' | 'Reaction', where: Record<string, unknown>): Promise<void> {
+/**
+ * Delete rows the server no longer holds: access rows (FJS-D1155), and a
+ * person's drafts and saved posts, which the server keeps no tombstone of.
+ */
+async function drop(app: App, model: 'ChannelMember' | 'Reaction' | 'Draft' | 'SavedPost' | 'ChatSection', where: Record<string, unknown>): Promise<void> {
   await table(app, model).deleteMany({ where })
 }
 
@@ -247,8 +252,143 @@ export async function syncMembers(app: App, channel: string): Promise<ChannelMem
   return rows
 }
 
+// ─── A person's own: drafts, saved posts, favorites, presence ───
+
+/** One draft per person per box; a room's box has no root, written '' in the key. */
+export const draftKey = (profile: string, channel: string, root?: string | null) => `${profile}:${channel}:${root ?? ''}`
+export const savedKey = (profile: string, post: string) => `${profile}:${post}`
+
+/**
+ * A person's drafts as the server answered them: a deleted one leaves. With
+ * `whole`, the list is all of them and a draft here and not there was sent or
+ * discarded on another client.
+ */
+export async function landDrafts(app: App, profile: string, rows: DraftRow[], whole = false): Promise<void> {
+  const mine = rows.filter(d => d.profileExternalId === profile)
+  for (const d of mine) {
+    const externalId = draftKey(profile, d.channelExternalId, d.rootExternalId)
+    if (d.deletedAt) { await drop(app, 'Draft', { externalId }); continue }
+    const row = {
+      externalId, profileExternalId: profile, channelExternalId: d.channelExternalId, rootExternalId: d.rootExternalId,
+      message: d.message, props: d.props, fileExternalIds: d.fileExternalIds, createdAt: d.createdAt, updatedAt: d.updatedAt,
+    }
+    await land(app, 'Draft', [row])
+  }
+  if (whole) await drop(app, 'Draft', { profileExternalId: profile, externalId: { notIn: mine.filter(d => !d.deletedAt).map(d => draftKey(profile, d.channelExternalId, d.rootExternalId)) } })
+}
+
+export const dropDraft = (app: App, profile: string, channel: string, root?: string | null) => drop(app, 'Draft', { externalId: draftKey(profile, channel, root) })
+
+/** A post saved or unsaved by a person, here or anywhere. */
+export async function landSaved(app: App, profile: string, post: string, saved: boolean): Promise<void> {
+  const externalId = savedKey(profile, post)
+  const row = { externalId, profileExternalId: profile, postExternalId: post }
+  if (saved) await land(app, 'SavedPost', [row])
+  else await drop(app, 'SavedPost', { externalId })
+}
+
+/** A room favorited or not by a person; their membership row carries it. */
+export async function landFavorite(app: App, profile: string, channel: string, favorite: boolean): Promise<void> {
+  await table(app, 'ChannelMember').updateMany({ where: { externalId: memberKey(channel, profile) }, data: { isFavorite: favorite } })
+}
+
+/**
+ * Preferences set (`on`) or deleted. A client may unset a flag by writing
+ * 'false' rather than deleting it, so only 'true' counts as set. Every other
+ * category is the server's clients' business and is not kept.
+ */
+export async function landPreferences(app: App, profile: string, prefs: PreferenceRow[], on: boolean): Promise<void> {
+  for (const p of prefs) {
+    if (p.profileExternalId !== profile) continue
+    const set = on && p.value === 'true'
+    if (p.category === PREFERENCE.savedPost) await landSaved(app, profile, p.name, set)
+    else if (p.category === PREFERENCE.favoriteChannel) await landFavorite(app, profile, p.name, set)
+  }
+}
+
+/** Each person's presence onto their Profile. `dndEndTime` is whole seconds; 0 is no end. */
+export async function landStatuses(app: App, rows: StatusRow[]): Promise<void> {
+  for (const r of rows)
+    await table(app, 'Profile').updateMany({
+      where: { externalId: r.profileExternalId },
+      data: { status: r.status, statusManual: r.manual, lastActivityAt: r.lastActivityAt, dndEndAt: r.dndEndTime ? new Date(r.dndEndTime * 1000) : null },
+    })
+}
+
+// ─── Sidebar sections ──────────────────────────────────────
+
+const SECTION_KIND = { favorites: 'favorites', channels: 'channels', direct_messages: 'direct', custom: 'custom' } as const
+
+const sectionRow = (c: CategoryRow) => ({
+  externalId: c.externalId, profileExternalId: c.profileExternalId, teamExternalId: c.teamExternalId,
+  name: c.displayName, kind: SECTION_KIND[c.type] ?? 'custom', channelExternalIds: c.channelExternalIds,
+})
+
+/** Sections a frame or an answer carried, one person's only; their place among the rest is left as it was. */
+export async function landSections(app: App, profile: string, rows: CategoryRow[]): Promise<void> {
+  await land(app, 'ChatSection', rows.filter(c => c.profileExternalId === profile).map(sectionRow))
+}
+
+/** A team's sections put in the server's order, top to bottom. */
+export async function landSectionOrder(app: App, profile: string, team: string, order: string[]): Promise<void> {
+  for (const [i, id] of order.entries())
+    await table(app, 'ChatSection').updateMany({ where: { externalId: id, profileExternalId: profile, teamExternalId: team }, data: { sortOrder: i } })
+}
+
+/**
+ * One person's sections on a team read whole, as the caller: a section here
+ * and not there was deleted on another client. Answers false when the read failed.
+ */
+export async function syncSections(app: App, profile: string, team: string): Promise<boolean> {
+  const r = await listCategories(asCaller(app), profile, team)
+  if (!r.rows) return false
+  const mine = r.rows.filter(c => c.profileExternalId === profile)
+  await land(app, 'ChatSection', mine.map(sectionRow))
+  await landSectionOrder(app, profile, team, r.order ?? [])
+  await drop(app, 'ChatSection', { profileExternalId: profile, teamExternalId: team, externalId: { notIn: mine.map(c => c.externalId) } })
+  return true
+}
+
+/**
+ * A person's drafts, saved posts, favorites, sidebar sections and the presence
+ * of everyone they see, read whole. A failure here is said and left for the next backfill:
+ * none of it is what the rooms need to read, so it does not hold the cursor.
+ */
+async function backfillOwn(app: App, profile: string, teams: string[], people: string[]): Promise<void> {
+  const mm = asCaller(app)
+  const warn = (what: string, kind: string) => console.warn(`[chat] ${profile}: ${what} could not be read (${kind}); the next backfill reads them again`)
+  const drafts: DraftRow[] = []
+  let draftsWhole = true
+  for (const team of teams) {
+    const r = await listDrafts(mm, profile, team)
+    if (!r.rows) { draftsWhole = false; warn('drafts', r.error?.kind ?? 'no answer'); break }
+    drafts.push(...r.rows)
+  }
+  if (draftsWhole) await landDrafts(app, profile, drafts, true)
+
+  for (const category of [PREFERENCE.savedPost, PREFERENCE.favoriteChannel]) {
+    const r = await listPreferences(mm, profile, category)
+    if (!r.rows) { warn(category, r.error?.kind ?? 'no answer'); continue }
+    const set = r.rows.filter(p => p.value === 'true').map(p => p.name)
+    if (category === PREFERENCE.savedPost) {
+      for (const post of set) await landSaved(app, profile, post, true)
+      await drop(app, 'SavedPost', { profileExternalId: profile, postExternalId: { notIn: set } })
+    } else {
+      await table(app, 'ChannelMember').updateMany({ where: { profileExternalId: profile, channelExternalId: { notIn: set } }, data: { isFavorite: false } })
+      await table(app, 'ChannelMember').updateMany({ where: { profileExternalId: profile, channelExternalId: { in: set } }, data: { isFavorite: true } })
+    }
+  }
+
+  for (const team of teams)
+    if (!await syncSections(app, profile, team)) warn(`the sections of ${team}`, 'no answer')
+
+  const statuses = await listStatuses(mm, people)
+  if (statuses.rows) await landStatuses(app, statuses.rows)
+  else warn('statuses', statuses.error?.kind ?? 'no answer')
+}
+
 /** A page of posts with each post's reactions as the WHOLE set: one the page no longer names was removed. */
-async function landPosts(app: App, page: PostPage): Promise<string[]> {
+export async function landPosts(app: App, page: PostPage): Promise<string[]> {
   const posts = page.rows ?? []
   await land(app, 'Post', posts)
   await land(app, 'Reaction', page.reactions ?? [])
@@ -333,6 +473,7 @@ export async function backfill(app: App, memberId: string): Promise<void> {
   const profiles = await listProfiles(mm, [...people])
   if (!profiles.rows) throw fail('profiles could not be read', profiles.error?.kind ?? 'no answer')
   await land(app, 'Profile', profiles.rows)
+  await backfillOwn(app, profile, teams.rows.map(t => t.externalId), [...people, profile])
 
   await sys.member.update({ where: { id: Number(memberId) }, data: { chatSyncedAt: began.toISOString() } })
 }
@@ -416,6 +557,38 @@ export async function applyFrame(app: App, memberId: string, profile: string, ev
       if (ev.payload.profileExternalId === profile) { await queueBackfill(app, memberId, cause); return }
       await app.runAs(memberId, () => syncMembers(app, ev.payload.channelExternalId))
       return
+    case 'draft_created': case 'draft_updated':
+      return landDrafts(app, profile, [ev.payload.draft])
+    case 'draft_deleted':
+      if (ev.payload.draft.profileExternalId !== profile) return
+      return dropDraft(app, profile, ev.payload.draft.channelExternalId, ev.payload.draft.rootExternalId)
+    case 'preferences_changed': case 'preferences_deleted':
+      return landPreferences(app, profile, ev.payload.preferences, ev.type === 'preferences_changed')
+    // Presence is everyone's to read; whoever's socket hears it lands it.
+    case 'status_change':
+      await table(app, 'Profile').updateMany({ where: { externalId: ev.payload.profileExternalId }, data: { status: ev.payload.status } })
+      return
+    // Ephemeral: the server sent it to this socket because its person is in
+    // the room, so it goes to their tabs alone and nothing is stored.
+    case 'typing':
+      if (ev.payload.profileExternalId === profile) return
+      ;(app as unknown as { channel?: (name: string) => { send: (event: string, data: unknown) => void } }).channel?.(notificationChannelName(memberId))
+        .send('chat typing', { channelExternalId: ev.payload.channelExternalId, rootExternalId: ev.payload.rootExternalId, profileExternalId: ev.payload.profileExternalId })
+      return
+    // A sidebar's events go to its own person's sockets only.
+    case 'sidebar_category_updated':
+      return landSections(app, profile, ev.payload.categories)
+    case 'sidebar_category_order_updated':
+      if (ev.payload.teamExternalId) return landSectionOrder(app, profile, ev.payload.teamExternalId, ev.payload.order)
+      await queueBackfill(app, memberId, cause)
+      return
+    // A new section has no row in the frame, and a deleted one's rooms moved
+    // into others: either way the team's sidebar is read whole.
+    case 'sidebar_category_created': case 'sidebar_category_deleted': {
+      const team = ev.payload.teamExternalId
+      if (!team || !await app.runAs(memberId, () => syncSections(app, profile, team))) await queueBackfill(app, memberId, cause)
+      return
+    }
     case 'user_removed':
       return drop(app, 'ChannelMember', { channelExternalId: ev.payload.channelExternalId, profileExternalId: ev.payload.profileExternalId })
   }

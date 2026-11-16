@@ -1,0 +1,115 @@
+---
+title: Scheduled
+---
+<script>
+  // /messages/scheduled/ -- the reader's posts waiting to go, then the ones that did not.
+  // The rows are the `scheduledPosts` tether, so a send by the API's job moves a row from
+  // Scheduled to Sent as it happens. Scheduled posts live on this laptop (the chat server
+  // has no such feature here) and are sent by the API's job only while Workbench runs.
+  //
+  // A waiting row can have its words edited, its time moved, or be cancelled. The API closes
+  // every other row to change (409), so a failed or cancelled one is "scheduled again" as a new
+  // row; any row can be deleted. There is no Send now: the API refuses a time that is not in
+  // the future, and the job sends within a minute of the time given.
+  import { getLists, channelLabel, me, laterChoices, editScheduled, cancelScheduled, dropScheduled, rescheduleScheduled, localInput } from '../../../lib/chat.js'
+  import { minute } from '../../../lib/datetime.js'
+  import Icon from '../../../components/Icon.mesa'
+  import WhenDialog from '../../../components/chat/WhenDialog.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+
+  const lists = getLists()
+  $: people = lists.people.rows
+  const SECTIONS = [
+    { status: 'scheduled', title: 'Scheduled' },
+    { status: 'failed',    title: 'Failed' },
+    { status: 'sent',      title: 'Sent' },
+    { status: 'cancelled', title: 'Cancelled' },
+  ]
+  const when = (r) => r.status === 'sent' ? r.sentAt ?? r.sendAt : r.sendAt
+  $: parts = SECTIONS.map(g => ({ ...g, rows: lists.scheduled.rows.filter(r => r.status === g.status).slice().sort((a, b) => g.status === 'scheduled' ? String(a.sendAt).localeCompare(String(b.sendAt)) : String(when(b)).localeCompare(String(when(a)))) })).filter(g => g.rows.length)
+  const where = (r) => channelLabel(lists.channels.rows.find(c => c.externalId === r.channelExternalId), people, me()) || '…'
+  const href = (r) => r.rootExternalId ? `/messages/${r.channelExternalId}/?thread=${r.rootExternalId}` : `/messages/${r.channelExternalId}/`
+  const flat = (s, n = 240) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n)
+
+  let error = null
+  const act = async (fn) => { error = null; try { await fn() } catch (e) { error = e.message } }
+
+  // ── Editing the words in place ──
+  let editing = null   // { id, message } while one is open
+  const startEdit = (r) => { editing = { id: r.id, message: r.message } }
+  const saveEdit = (r) => act(async () => { await editScheduled(r, editing.message); editing = null })
+
+  // ── A custom time ──
+  let whenOpen = false
+  let moving = null
+  const custom = (r) => { moving = r; whenOpen = true }
+</script>
+
+<header class="later-head">
+  <h1 class="h4 cluster gap-xs"><Icon name="clock" /> Scheduled</h1>
+  <p class="text-sm text-muted" data-scheduled-note>Scheduled posts live on this laptop and send only while Workbench is running. A post that comes due while it is closed is sent the next time it opens.</p>
+</header>
+
+<div class="later" data-scheduled>
+  {#if error}<Alert tone="danger">{error}</Alert>{/if}
+  {#each parts as g (g.status)}
+    <section class="stack gap-xs" data-scheduled-group={g.status}>
+      <h2 class="h6 text-muted">{g.title} <span data-scheduled-group-count>{g.rows.length}</span></h2>
+      {#each g.rows as r (r.id)}
+        <article class="card later-row stack gap-xs" data-scheduled-row={r.id} data-scheduled-status={r.status}>
+          <div class="cluster gap-xs text-sm text-muted">
+            <a class="later-where" href={href(r)} data-scheduled-where>{where(r)}</a>
+            {#if r.rootExternalId}<span>· in a thread</span>{/if}
+            <span class="cluster gap-2xs" data-scheduled-when><Icon name="clock" /> {minute(when(r))}</span>
+          </div>
+          {#if r.status === 'failed'}<p class="text-sm text-danger later-error" data-scheduled-error>{r.error || 'It could not be sent.'}</p>{/if}
+          {#if editing?.id === r.id}
+            <textarea class="field" rows="3" aria-label="Message" bind:value={editing.message} data-scheduled-edit></textarea>
+            <div class="cluster gap-xs">
+              <button type="button" class="btn sm" data-scheduled-save onclick={() => saveEdit(r)}>Save</button>
+              <button type="button" class="btn ghost sm" onclick={() => editing = null}>Cancel</button>
+            </div>
+          {:else}
+            <p class="later-body" data-scheduled-body>{flat(r.message) || 'Files only'}</p>
+            <div class="cluster gap-xs">
+              {#if r.status === 'scheduled'}
+                <button type="button" class="btn ghost sm" data-scheduled-edit-open onclick={() => startEdit(r)}><Icon name="edit" /> Edit text</button>
+              {/if}
+              {#if r.status === 'scheduled' || r.status === 'failed' || r.status === 'cancelled'}
+                <DropdownMenu placement="bottom-start">
+                  {#snippet trigger()}<button type="button" class="btn ghost sm" data-scheduled-reschedule><Icon name="clock" /> {r.status === 'scheduled' ? 'Reschedule' : 'Schedule again'}</button>{/snippet}
+                  {#each laterChoices(new Date()) as c (c.key)}
+                    <DropdownItem onclick={() => act(() => rescheduleScheduled(r, c.at))}><span data-reschedule-choice={c.key}>{c.label}</span></DropdownItem>
+                  {/each}
+                  <DropdownItem onclick={() => custom(r)}><span data-reschedule-choice="custom">Pick a time…</span></DropdownItem>
+                </DropdownMenu>
+              {/if}
+              {#if r.status === 'scheduled'}
+                <button type="button" class="btn ghost sm" data-scheduled-cancel onclick={() => act(() => cancelScheduled(r))}>Cancel</button>
+              {/if}
+              <button type="button" class="btn ghost sm" data-scheduled-delete onclick={() => act(() => dropScheduled(r))}><Icon name="trash" /> Delete</button>
+            </div>
+          {/if}
+        </article>
+      {/each}
+    </section>
+  {:else}
+    <EmptyState title="Nothing scheduled">
+      Write a message, then press the clock beside Send to choose when it goes.
+    </EmptyState>
+  {/each}
+</div>
+
+<WhenDialog bind:open={whenOpen} title="Pick a time" initial={moving?.sendAt} onpick={(at) => rescheduleScheduled(moving, at)} />
+
+<style>
+  .later-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .later-head h1, .later-head p { margin: 0; }
+  .later-head h1 { align-items: center; }
+  .later { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-md); }
+  .later-where { font-weight: var(--label-font-weight); }
+  .later-body, .later-error { margin: 0; overflow-wrap: anywhere; }
+</style>

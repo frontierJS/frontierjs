@@ -1,0 +1,64 @@
+---
+title: Drafts
+---
+<script>
+  // /messages/drafts/ -- what the reader typed and has not sent: one row per box, a room's
+  // or a thread's, newest first. The rows are the `drafts` tether, so a draft saved on
+  // another client appears as it is written and one sent or discarded there leaves. A
+  // row opens the box it came from; Discard deletes it on the server.
+  import { goto } from '@frontierjs/sierra/router'
+  import { getLists, liveDrafts, channelLabel, me, threadHref, deleteDraft } from '../../../lib/chat.js'
+  import { ago } from '../../../lib/datetime.js'
+  import Icon from '../../../components/Icon.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  const lists = getLists()
+  $: people = lists.people.rows
+  $: rows = liveDrafts(lists.drafts.rows).slice().sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+  const where = (d) => channelLabel(lists.channels.rows.find(c => c.externalId === d.channelExternalId), people, me()) || '…'
+  const href = (d) => d.rootExternalId ? threadHref({ channelExternalId: d.channelExternalId, externalId: d.rootExternalId }) : `/messages/${d.channelExternalId}/`
+  const flat = (s, n = 240) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n)
+
+  let error = null
+  async function discard(d) {
+    error = null
+    try { await deleteDraft(d) } catch (e) { error = e.message }
+  }
+</script>
+
+<header class="drafts-head">
+  <h1 class="h4 cluster gap-xs"><Icon name="edit" /> Drafts</h1>
+  <p class="text-sm text-muted">What you typed and have not sent. It follows you to any window.</p>
+</header>
+
+<div class="drafts" data-drafts>
+  {#if error}<Alert tone="danger">{error}</Alert>{/if}
+  {#each rows as d (d.externalId)}
+    <article class="card draft-row stack gap-xs" data-draft-row={d.externalId}>
+      <div class="cluster gap-xs text-sm text-muted">
+        <span class="draft-where" data-draft-where>{where(d)}</span>
+        {#if d.rootExternalId}<span>· in a thread</span>{/if}
+        <span>· {ago(d.updatedAt)}</span>
+      </div>
+      <p class="draft-body" data-draft-body>{flat(d.message)}</p>
+      <div class="cluster gap-xs">
+        <button type="button" class="btn sm" data-draft-open onclick={() => goto(href(d))}>Open</button>
+        <button type="button" class="btn ghost sm" data-draft-delete onclick={() => discard(d)}>Delete</button>
+      </div>
+    </article>
+  {:else}
+    <EmptyState title="No drafts">
+      Anything you type in a room or a thread and leave unsent is kept here until you send it.
+    </EmptyState>
+  {/each}
+</div>
+
+<style>
+  .drafts-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .drafts-head h1, .drafts-head p { margin: 0; }
+  .drafts-head h1 { align-items: center; }
+  .drafts { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+  .draft-where { font-weight: var(--label-font-weight); }
+  .draft-body { margin: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+</style>

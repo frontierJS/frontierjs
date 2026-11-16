@@ -5960,7 +5960,6 @@ describe('a revert with Basecamp down (FJS-D2231)', () => {
   const cacheDir = () => mkdtempSync(join(tmpdir(), 'outpost-revert-'))
   const D1   = 'sha256:' + '11'.repeat(32)
   const D2   = 'sha256:' + '22'.repeat(32)
-  const LIVE = nameFor('app-1')
   const LABELS = { 'fjs.app': 'app-1', 'fjs.app.slug': 'web', 'fjs.project': 'acme', 'fjs.env': 'prod' }
 
   // A box running `rel-2` with `DB_PASSWORD` set, whose daemon holds `held`.

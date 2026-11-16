@@ -1,0 +1,71 @@
+<script>
+  // components/chat/GroupDialog.mesa -- make or change an `@` group: its name, its handle
+  // and who is in it, picked from the profiles the mirror holds. A group exists only in
+  // Workbench; the composer expands `@handle` into the people's usernames when it sends.
+  // The API refuses a handle that is taken or not 2-32 of a-z, 0-9 and -, and says so here.
+  import { changeGroup, getLists, idsOf, makeGroup, nameOf } from '../../lib/chat.js'
+  import Modal  from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let open  = false
+  export let group = null     // the group to change; null makes one
+
+  const lists = getLists()
+  let handle = '', name = '', picked = [], filter = ''
+  let error  = null
+  let saving = false
+  $: open, () => {
+    if (!open) return
+    handle = group?.handle ?? ''; name = group?.name ?? ''
+    picked = [...idsOf(group?.profileExternalIds)]; filter = ''; error = null
+  }
+  $: shown = lists.people.rows.filter(p => !p.deletedAt && (!filter || `${nameOf(p)} ${p.username}`.toLowerCase().includes(filter.toLowerCase())))
+    .slice().sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+  const toggle = (id) => { picked = picked.includes(id) ? picked.filter(x => x !== id) : [...picked, id] }
+  // A name typed first suggests the handle.
+  const onName = () => { if (!group && !handle.trim()) handle = name.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) }
+
+  async function save() {
+    const h = handle.trim().replace(/^@/, '').toLowerCase()
+    if (!h || !name.trim()) { error = 'A group has a handle and a name.'; return }
+    saving = true; error = null
+    try {
+      if (!group) await makeGroup({ handle: h, name: name.trim(), profileExternalIds: picked })
+      else await changeGroup(group, { handle: h, name: name.trim(), profileExternalIds: picked })
+      open = false
+    } catch (err) { error = err.message } finally { saving = false }
+  }
+</script>
+
+<Modal bind:open title={group ? `Edit @${group.handle}` : 'New group'} size="sm">
+  <form class="stack gap-md" novalidate onsubmit|preventDefault={save} data-group-dialog>
+    <label class="stack gap-2xs">
+      <span class="text-sm">Name</span>
+      <input class="field" bind:value={name} oninput={onName} maxlength="64" placeholder="Design" aria-label="Name" data-group-name />
+    </label>
+    <label class="stack gap-2xs">
+      <span class="text-sm">Handle</span>
+      <div class="field-row"><span class="field-addon" aria-hidden="true">@</span><input class="field" bind:value={handle} maxlength="32" placeholder="design" aria-label="Handle" data-group-handle /></div>
+      <span class="text-xs text-muted">Lower-case letters, numbers and hyphens, 2 to 32. Typing @{handle || 'design'} in a post names everyone below.</span>
+    </label>
+    <fieldset class="stack gap-xs group-people">
+      <legend class="text-sm">People <span class="text-muted" data-group-count>{picked.length}</span></legend>
+      {#if lists.people.rows.length > 8}<input class="field sm" type="search" bind:value={filter} placeholder="Find a person" aria-label="Find a person" />{/if}
+      <ul class="group-list">
+        {#each shown as p (p.externalId)}
+          <li><label class="cluster gap-xs text-sm"><input type="checkbox" class="check" checked={picked.includes(p.externalId)} data-group-person={p.username} onchange={() => toggle(p.externalId)} /> {nameOf(p)} <span class="text-muted text-xs">@{p.username}</span></label></li>
+        {/each}
+      </ul>
+    </fieldset>
+    {#if error}<p class="text-sm text-danger" role="alert" data-group-error>{error}</p>{/if}
+    <div class="cluster gap-sm">
+      <Button type="submit" loading={saving} data-group-save>{group ? 'Save' : 'Create group'}</Button>
+      <Button treatment="ghost" onclick={() => open = false}>Cancel</Button>
+    </div>
+  </form>
+</Modal>
+
+<style>
+  .group-people { border: 0; margin: 0; padding: 0; }
+  .group-list { list-style: none; margin: 0; padding: 0; max-block-size: calc(var(--space-2xl) * 7); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-2xs); }
+</style>

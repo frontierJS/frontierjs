@@ -17,17 +17,21 @@ title: Messages
   import RoomHeader from '../../../components/chat/RoomHeader.mesa'
   import PostList from '../../../components/chat/PostList.mesa'
   import Composer from '../../../components/chat/Composer.mesa'
+  import TypingLine from '../../../components/chat/TypingLine.mesa'
   import ThreadPane from '../../../components/chat/ThreadPane.mesa'
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
 
   const lists = getLists()
-  $: id = page.params.id
+  // Read once: the router remounts this page when the id changes, and on the way to
+  // another route the params change under it before it goes.
+  var id = page.params.id
   $: page.query
   $: threadId = page.query.thread ? String(page.query.thread) : null
   $: people = lists.people.rows
   $: channel = lists.channels.rows.find(c => c.externalId === id) ?? null
   $: counts = countsOf(lists.channels.rows, lists.mine.rows)
   $: self = me()
+  $: favorite = !!lists.mine.rows.find(m => m.channelExternalId === id)?.isFavorite
   $: loading = lists.channels.loading
   $: missing = !channel && !loading
 
@@ -44,7 +48,6 @@ title: Messages
   let error = null
   const open = (channelId) => openChannel(channelId).catch(e => { error = e.message })
   $.onMount(() => open(id))
-  $: id, (_, prev) => { release(prev); markId = null; watchMembers(id); open(id) }
   $.onDestroy(() => { release(id); chat.activeChannelId = null })
 
   // A pin's click: the post is scrolled to and marked when the window holds it.
@@ -84,9 +87,10 @@ title: Messages
 {:else if channel}
   <div class="room" class:has-thread={!!threadId} data-channel-page={id}>
     <div class="room-col">
-      <RoomHeader {channel} {members} {people} {self} muted={!!counts[id]?.muted} inRoom={id in counts} onjump={jump} onleave={leave} />
+      <RoomHeader {channel} {members} {people} {self} muted={!!counts[id]?.muted} {favorite} inRoom={id in counts} onjump={jump} onleave={leave} />
       {#if error}<Alert tone="danger">{error}</Alert>{/if}
       <PostList channelId={id} {people} {threadId} {markId} />
+      <TypingLine channelId={id} {people} />
       <Composer channelId={id} placeholder={`Message ${channelLabel(channel, people, self).slice(2)}`} onsent={sent} />
     </div>
     {#if threadId}

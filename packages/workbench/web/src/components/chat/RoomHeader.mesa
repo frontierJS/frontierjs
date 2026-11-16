@@ -1,14 +1,15 @@
 <script>
   // components/chat/RoomHeader.mesa -- the bar above a channel: its name, its
-  // purpose, who is in it, a pins menu and Mute. A muted channel is unread only
-  // when it names the reader, which the server decides and the sidebar draws. The
-  // star and the room menu are later slices'.
+  // purpose, who is in it, a pins menu, the star and Mute. A muted channel is unread only
+  // when it names the reader, which the server decides and the sidebar draws. A direct
+  // channel's header carries the other person's presence dot and custom status.
   import Icon from '../Icon.mesa'
   import AvatarGroup from '@frontierjs/ui/components/display/AvatarGroup.mesa'
   import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import { posts } from '../../resources/Post.mesa'
-  import { channelLabel, personName, setMuted } from '../../lib/chat.js'
+  import { channelLabel, customOf, peerOf, personName, setFavorite, setMuted, statusOf } from '../../lib/chat.js'
+  import Presence from './Presence.mesa'
 
   export let channel = null
   export let members = []   // ChannelMember rows of this channel
@@ -18,9 +19,12 @@
   export let onjump  = undefined // (postExternalId) => void
   export let onleave = undefined // () => void -- offered to a member of a channel, not of a direct one
   export let inRoom  = false     // the reader is a member
+  export let favorite = false    // the reader's own star on this channel
 
   $: label = channelLabel(channel, people, self)
   $: isDm  = channel?.type === 'direct' || channel?.type === 'group'
+  $: peer = people.find(p => p.externalId === peerOf(channel, self)) ?? null
+  $: mood = customOf(peer)
   $: users = members.map(m => ({ name: personName(m.profileExternalId, people) }))
 
   // The channel's pinned posts, a tether of their own: another member's pin arrives as a push.
@@ -36,6 +40,10 @@
   const excerpt = (p) => String(p.message ?? '').replace(/\s+/g, ' ').slice(0, 90)
 
   let error = null
+  async function star() {
+    error = null
+    try { await setFavorite(channel.externalId, !favorite) } catch (e) { error = e.message }
+  }
   async function mute() {
     error = null
     try { await setMuted(channel.externalId, !muted) } catch (e) { error = e.message }
@@ -48,6 +56,8 @@
       <h1 class="h4 cluster gap-xs">
         {#if isDm}<Icon name="message" />{:else if channel.type === 'private'}<Icon name="lock" label="Private" />{:else}<span class="text-muted" aria-hidden="true">#</span>{/if}
         <span data-room-title>{label.slice(2)}</span>
+        {#if peer?.status}<Presence status={statusOf(peer)} />{/if}
+        {#if mood}<span class="text-sm text-muted room-mood" data-room-mood>{mood.emoji} {mood.text}</span>{/if}
       </h1>
       {#if channel.purpose}<p class="text-sm text-muted room-purpose">{channel.purpose}</p>{/if}
     </div>
@@ -67,6 +77,9 @@
           <DropdownItem tone="danger" data-confirm="Leave this channel? A private channel needs someone to add you back." data-confirm-label="Leave" onclick={onleave}>Leave channel</DropdownItem>
         </DropdownMenu>
       {/if}
+      {#if inRoom}
+        <button type="button" class="btn ghost square sm" class:warning={favorite} aria-pressed={favorite} aria-label={favorite ? 'Remove from favorites' : 'Add to favorites'} title={favorite ? 'Favorite: click to remove' : 'Add to favorites'} data-room-star onclick={star}><Icon name="star" /></button>
+      {/if}
       <button type="button" class="btn ghost sm" aria-pressed={muted} aria-label={muted ? 'Unmute channel' : 'Mute channel'} title={muted ? 'Unmute: its unread counts again' : 'Mute: only a mention counts'} data-room-mute onclick={mute}>
         <Icon name={muted ? 'muted' : 'notify'} /> {muted ? 'Unmute' : 'Mute'}
       </button>
@@ -83,5 +96,6 @@
   .room-name { min-inline-size: 0; }
   .room-head h1 { margin: 0; align-items: center; font-weight: var(--label-font-weight); }
   .room-head h1 .text-muted { font-weight: normal; }
+  .room-mood { font-weight: normal; }
   .room-purpose { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

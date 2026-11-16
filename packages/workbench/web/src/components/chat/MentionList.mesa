@@ -15,9 +15,10 @@
 {#if picker}
   <ul class="popover mention-list items menu" class:below role="listbox" aria-label="People" data-mention-list>
     {#each picker.items as p, i (p.id)}
-      <li><button type="button" class="item" class:mention-call={p.call} role="option" aria-selected={i === picker.index} data-mention={p.handle} onmousedown|preventDefault={() => onpick?.(p)}>
+      <li><button type="button" class="item" class:mention-call={p.call} data-mention-group={p.group ? 'true' : null} role="option" aria-selected={i === picker.index} data-mention={p.handle} onmousedown|preventDefault={() => onpick?.(p)}>
         {#if p.call}<span class="mention-dot"><Icon name="group" label="Everyone" /></span>{/if}
-        <span class="item-text"><span class="item-title">{p.name}</span><span class="item-sub">@{p.handle}{#if p.inChannel} · in this channel{/if}</span></span>
+        {#if p.group}<span class="mention-dot"><Icon name="group" label="Group" /></span>{/if}
+        <span class="item-text"><span class="item-title">{p.name}</span><span class="item-sub">@{p.handle}{#if p.group} · group, {p.count} {p.count === 1 ? 'person' : 'people'}{/if}{#if p.inChannel} · in this channel{/if}</span></span>
       </button></li>
     {/each}
   </ul>

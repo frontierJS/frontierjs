@@ -1,0 +1,52 @@
+<script>
+  // components/chat/WhenDialog.mesa -- "Pick a time…" for a scheduled post: a date and a time
+  // on this browser's clock, which must be in the future. The menus offer the usual times;
+  // this is the rest. `onpick(date)` answers the instant and the caller writes it.
+  import { localInput } from '../../lib/chat.js'
+  import { minute } from '../../lib/datetime.js'
+  import Modal  from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let open    = false
+  export let title   = 'Pick a time'
+  export let action  = 'Schedule'
+  export let initial = null          // a Date or an ISO string to start from
+  export let onpick  = undefined     // async (Date) => void
+
+  let value  = ''
+  let error  = null
+  let saving = false
+  // Each opening starts from the time given, or an hour from now on the hour.
+  $: open, () => {
+    if (!open) return
+    const start = initial ? new Date(initial) : (() => { const d = new Date(Date.now() + 3_600_000); d.setMinutes(0, 0, 0); return d })()
+    value = localInput(start); error = null
+  }
+  $: chosen = value ? new Date(value) : null
+
+  async function save() {
+    if (!chosen || Number.isNaN(chosen.getTime())) { error = 'Pick a date and a time.'; return }
+    if (chosen.getTime() <= Date.now()) { error = 'Pick a time in the future.'; return }
+    saving = true; error = null
+    try { await onpick?.(chosen); open = false } catch (err) { error = err.message } finally { saving = false }
+  }
+</script>
+
+<Modal bind:open {title} size="sm">
+  <form class="stack gap-md" novalidate onsubmit|preventDefault={save} data-when-dialog>
+    <label class="stack gap-2xs">
+      <span class="text-sm">Date and time</span>
+      <input type="datetime-local" class="field" aria-label="Date and time" bind:value={value} data-when-input />
+    </label>
+    {#if chosen && !Number.isNaN(chosen.getTime())}<p class="text-sm text-muted when-line">{minute(chosen)}</p>{/if}
+    {#if error}<p class="text-sm text-danger" role="alert" data-when-error>{error}</p>{/if}
+    <div class="cluster gap-sm">
+      <Button type="submit" loading={saving} data-when-save>{action}</Button>
+      <Button treatment="ghost" onclick={() => open = false}>Cancel</Button>
+    </div>
+  </form>
+</Modal>
+
+<style>
+  .when-line { margin: 0; }
+</style>
