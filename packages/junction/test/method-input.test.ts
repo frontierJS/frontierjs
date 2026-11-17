@@ -328,8 +328,11 @@ describe('a declared output is reported', () => {
     expect(desc.services.find(s => s.name === 'orders')!.outputs).toEqual({ search: 'SearchResult' })
 
     const { generateJsonSchema } = await import('../../litestone/src/index.js')
-    const defs = (generateJsonSchema((db as any).$schema, { mode: 'create' }) as any).$defs
-    const spec = generateOpenAPI(app, { title: 't', version: '1' }, defs) as any
+    const seed = generateJsonSchema((db as any).$schema, { mode: 'create' }) as any
+    const spec = generateOpenAPI(app, { title: 't', version: '1' }, seed) as any
+    // The rules no keyword states ride to the spec's root as the seed lists them (FJS-D2130).
+    expect(spec['x-opaque']).toEqual(seed['x-opaque'])
+    expect(Array.isArray(spec['x-opaque'])).toBe(true)
     const ok   = spec.paths['/orders/{id}'].post.responses['200']
     expect(ok.content['application/json'].schema).toEqual({ $ref: '#/components/schemas/SearchResult' })
     expect(spec.components.schemas.SearchResult).toBeDefined()

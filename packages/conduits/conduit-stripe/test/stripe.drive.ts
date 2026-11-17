@@ -43,6 +43,8 @@ conduit.receive({
 const connectReceived: string[] = []
 let lastStatus: StripeAccountStatus | null = null, completedFor = ''
 const chargesSucceeded: StripeCharge[] = []
+const intentsTold: string[] = []
+const toldOf = (intent: unknown) => intentsTold.filter(r => r.startsWith(`${intent}:`)).map(r => r.slice(String(intent).length + 1))
 conduit.receive({
   provider: 'stripe-connect', path: '/webhooks/stripe-connect', dialect: stripeDialect, credential: 'STRIPE_CONNECT_WEBHOOK_SECRET',
   apply(ev) {
@@ -50,6 +52,7 @@ conduit.receive({
     const a = stripeObject(ev, 'account.updated'); if (a) lastStatus = accountStatus(a)
     const cs = stripeObject(ev, 'checkout.session.completed'); if (cs) completedFor = `${ev.account}:${cs.client_reference_id}`
     const ch = stripeObject(ev, 'charge.succeeded'); if (ch) chargesSucceeded.push(ch)
+    if (ev.type.startsWith('payment_intent.')) intentsTold.push(`${(ev.payload.data.object as { id: string }).id}:${ev.type.slice('payment_intent.'.length)}`)
     return 'applied'
   },
 })
@@ -191,7 +194,8 @@ try {
   // A paid session names the intent that took the money, and that intent refunds on the club's account.
   const csIntent = (await seenNow()).intents.find((i: Record<string, any>) => i.id === paidCs.payment_intent)
   const csRefund = await createRefund(send, { paymentIntentId: String(paidCs.payment_intent), amountMinor: 2000, account: club, key: 'signup_9:r1' })
-  t('connect.checkout.paidSessionRefunds', { intent: [csIntent?.status, csIntent?.amount, csIntent?.account === club, csIntent?.metadata?.event], refunded: csRefund.refund?.amount ?? csRefund.error?.kind })
+  t('connect.checkout.paidSessionRefunds', { intent: [csIntent?.status, csIntent?.amount, csIntent?.account === club, csIntent?.metadata?.event], refunded: csRefund.refund?.amount ?? csRefund.error?.kind,
+    told: toldOf(paidCs.payment_intent) })
 
   // A bank debit completes unpaid and settles or fails days later, each its own event.
   const sinkPost = (path: string) => fetch(`${sink.url}${path}`, { method: 'POST' }).then(async r => ({ status: r.status, body: await r.json() as Record<string, any> }))
@@ -206,7 +210,8 @@ try {
   const failed  = await sinkPost(`/_sink/checkout/${failing}/fail`)
   const twice   = await sinkPost(`/_sink/checkout/${settling}/settle`)
   t('connect.checkout.achSettlesOrFailsLater', { pending: [pending.body.status, pending.body.payment_status], settled: settled.body.payment_status, failed: failed.body.payment_status,
-    notYetComplete: settledEarly.status, settledTwice: twice.status, events: achEvents().slice(eventsBefore) })
+    notYetComplete: settledEarly.status, settledTwice: twice.status, events: achEvents().slice(eventsBefore),
+    told: [toldOf(settled.body.payment_intent), toldOf(failed.body.payment_intent)] })
 
   // The type refuses a platform fee at compile time; a cast gets past the type, so the runtime refuses it too.
   // @ts-expect-error -- no platform-fee key on a charge's input (FJS-D2200)
@@ -318,9 +323,9 @@ process.exit(report(got, {
   'connect.directCharge.onTheClubsAccount':  { header: true, refundElsewhereNotFound: 'refused', refunded: 500, events: ['account.updated', 'payment_intent.succeeded', 'charge.succeeded', 'charge.refunded'] },
   'connect.emptyAccountRefusedBeforeSending': true,
   'connect.checkout.hostedOnTheClubsAccount': { header: true, url: true, total: 7000, ach: ['card', 'us_bank_account'], piMetadata: 'E1', completedFor: true, expiresIn45: true, tooSoonRefused: true },
-  'connect.checkout.paidSessionRefunds':     { intent: ['succeeded', 7000, true, 'E1'], refunded: 2000 },
+  'connect.checkout.paidSessionRefunds':     { intent: ['succeeded', 7000, true, 'E1'], refunded: 2000, told: ['succeeded'] },
   'connect.checkout.achSettlesOrFailsLater': { pending: ['complete', 'unpaid'], settled: 'paid', failed: 'unpaid', notYetComplete: 409, settledTwice: 409,
-    events: ['completed', 'completed', 'async_payment_succeeded', 'async_payment_failed'] },
+    events: ['completed', 'completed', 'async_payment_succeeded', 'async_payment_failed'], told: [['succeeded'], ['payment_failed']] },
   'connect.noPlatformFee':                  { refusedBeforeSending: 3, bodiesOnTheClub: 7, carryingAFeeKey: 0 },
   'connect.balance.feeOnTheCharge':         { fee: 88, net: 1912, amount: 2000, ofThisCharge: true, elsewhere: 'refused', achFee: 40, badIdThrows: true },
   'connect.webhook.connectSecretAndAccount': { ok: true, account: 'acct_club1', platformSecretRefuses: false, platformEventAccount: null, crossedEndpoints: 401 },

@@ -477,17 +477,21 @@ export const REMINDERS = [
 ]
 
 // ── Link previews ──
-/** An http(s) URL as the browser parses it, or null: nothing else becomes a link or an image source. */
+/** An http(s) URL as the browser parses it, or null: nothing else becomes a link. */
 export function safeUrl(u) {
   try { const x = new URL(String(u)); return x.protocol === 'http:' || x.protocol === 'https:' ? x.href : null } catch { return null }
 }
 
-/** A post's previews as `[{ type, url, title, description, image, siteName }]`, each URL already checked. */
+/**
+ * A post's previews as `[{ type, url, title, description, siteName }]`, each URL already
+ * checked. The unfurled `image` is dropped: drawing it would load it from the linked
+ * host, which then sees this machine's IP for every post scrolled past.
+ */
 export function embedsOf(post) {
   let raw = post?.embeds
   if (typeof raw === 'string') { try { raw = JSON.parse(raw) } catch { raw = [] } }
   if (!Array.isArray(raw)) return []
-  return raw.map(e => ({ ...e, url: safeUrl(e?.url), image: safeUrl(e?.image) }))
+  return raw.map(({ image: _image, ...e }) => ({ ...e, url: safeUrl(e?.url) }))
     .filter(e => e.url && (e.type === 'image' || e.type === 'opengraph'))
     .slice(0, 3)
 }

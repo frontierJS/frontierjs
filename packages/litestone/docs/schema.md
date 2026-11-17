@@ -326,7 +326,7 @@ All of it holds on every read path — `findMany`, `findFirst`, `findUnique`,
 @gt(n)  @gte(n)  @lt(n)  @lte(n)
 @startsWith(s)  @endsWith(s)  @contains(s)
 @minItems(n)  @maxItems(n)                       an array, or a relation's child rows
-@uniqueItems                                     array columns only
+@uniqueItems                                     an array; object members compare by value
 ```
 
 `@time` is a wall clock and not an instant: no date, no zone. It reaches a form
@@ -1357,6 +1357,7 @@ model Order {
 - **The two compose, and they answer different questions.** `@gate(N)` is *how senior must a caller be*; `@system` is *whose decision is this*. `@system @gate(5)` is the person-REQUESTED engine move — somebody presses *sync*, a provider's answer picks the move — which is the shape `@gate(8)` cannot express at all. Declaring `@system` with `@gate(8)` or `@gate(9)` is refused at parse: those admit no caller, which contradicts it. So the filter that separates the two halves of a machine is **every move carrying neither `@gate(8)` nor `@system`** (`FJS-D150`, `IDEAS/shipped/permission-sets.md`).
 - **`@stamps(sentAt)` on a move records WHEN it was made** (`FJS-D975`). The named `DateTime` columns get the clock in the move's own `UPDATE`, as `@updatedAt` does, whether the move came from `transition(id, name)` or from an `update()` that lands it, so a direct `transition()` cannot leave the column null and a `@@check` requiring it holds in the same statement. The column is the engine's: a payload naming it is refused by name (`ValidationError`). Move-keyed, so two moves into one state can stamp different columns, and `@@allow(update, … status == 'draft')` does not hide the row from the stamp because there is no second write.
 - **`@stamps(…, by: submittedById)` records WHO** (`FJS-D1699`, `FJS-3693`). The same `UPDATE` writes `ctx.auth.id` into the named column, so a four-eyes policy compares `approvedBy1Id` to `auth().id` over a column no hook writes. The column must be `@system` or `@guarded`, else a caller could name the actor, and a payload naming it is refused as a stamped clock column is. No principal leaves it as it was (a bare `asSystem()`, a `service` principal); `db.$setAuth(user).asSystem()` still names `user`. The engine-kept last-mover column is not built (`FJS-3694`).
+- **`while: <predicate>` refuses a move while the predicate fails, and `unless:` while it holds** (`FJS-D1286`). `merge: open -> merged while: isChecksGreen == true` and `resolve: open -> resolved while: component.lastCheckOk == true` read the stored row and one to-one hop, in the predicate grammar `@@allow` uses, and NULL refuses in both spellings. It is graded only on the write that makes the move, so a later write to the merged row is not graded by it — a `@@require(postUpdate, …)` in its place grades every write after. It is the move's last clause, after its attributes. It is integrity, so `asSystem()` is held to it as to the machine; it refuses with `TransitionGuardError` (409, not retryable), and the compare-and-swap carries it, so a guard that fails between the read and the write leaves the row where it was.
 
 Any move that isn't declared throws `TransitionViolationError`; a declared one the caller can't make throws `TransitionGateError` (which carries `status: 403`). The `WHERE` clause is narrowed to the from-state, so two concurrent writers can't both win — the loser gets a `TransitionConflictError`.
 
@@ -1386,7 +1387,7 @@ await db.order.transitions(row)   // or transitions(row.id)
 
 The legal next states for *this* record, for *this* caller. A move the caller can't make is returned with `allowed: false` rather than dropped — a disabled button is usually better UI than a missing one.
 
-**Both halves of *may I* are graded, and `refusedBy` says which said no.** A move is an update, so a row policy refuses one exactly as a gate does: `@@allow(update, ownerId == auth().id)` on the model means somebody else's order offers no moves at all, and `refusedBy` is `'policy'` rather than `'gate'`. The two are different sentences on a screen — *you are not senior enough* and *not this record* — and a status code cannot carry the difference.
+**Both halves of *may I* are graded, and `refusedBy` says which said no.** A move is an update, so a row policy refuses one exactly as a gate does: `@@allow(update, ownerId == auth().id)` on the model means somebody else's order offers no moves at all, and `refusedBy` is `'policy'` rather than `'gate'`. The two are different sentences on a screen — *you are not senior enough* and *not this record* — and a status code cannot carry the difference. A move whose `while:` guard fails on the stored row is `'guard'`, asked last: it lifts when the record changes, not the caller.
 
 The `update` policy is graded against the row as it is, so it is one evaluation per call. A `post-update` policy is graded against the row as it *would be* — the current row with that one column moved — so it is one per distinct target state, and it is the half that genuinely varies between moves.
 

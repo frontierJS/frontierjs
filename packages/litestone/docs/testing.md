@@ -966,6 +966,7 @@ data the schema rejects is worse than no factory:
 | `@gte`/`@gt`/`@lte`/`@lt` | a number inside the range, on `Int` and `Float` alike |
 | `@startsWith`/`@endsWith`/`@contains` | text carrying the required affix          |
 | `String[] @minItems(2)` | two elements                                           |
+| `Json @type(T[]) @minItems(2)` | two `T`s, their members generated as columns are |
 | `Enum`                  | first value unseeded, `rng.pick` when seeded           |
 | `DateTime`              | derived from `seq` — never the wall clock              |
 | `Json` / `Bytes`        | `{}` / bytes when required, `null` when optional       |
@@ -1352,7 +1353,8 @@ string `x-messages` carries to Junction and Sierra.
 
 Covered: `@email`, `@url`, `@phone`, `@date`, `@datetime`, `@time`, `@regex`,
 `@length`, `@gte`/`@gt`/`@lte`/`@lt`, `@startsWith`, `@endsWith`, `@contains`,
-and on array columns `@minItems`, `@maxItems`, `@uniqueItems`.
+and `@minItems`, `@maxItems`, `@uniqueItems` on array columns and on `Json @type(T[])`
+lists.
 
 **Every case is executed against a real client in litestone's own suite** —
 invalid ones must be refused with the message they predicted, boundary ones must

@@ -157,7 +157,9 @@ serializes alike on both paths.
 { full: true, ...options })` renders and wraps in one call. `head` is markup
 spliced into `<head>` as written; the string mode fills it from every
 `<mesa:head>` the render wrote (a `<style>` child as its raw text), on top of
-whatever the caller passed. The DOM path has nowhere to keep one — its
+whatever the caller passed. A caller assembling its own document gets the
+same markup apart: `renderToParts` answers `{ html, head }`, and
+`renderComponent` hands it back as `result.head`. The DOM path has nowhere to keep one — its
 `<mesa:head>` lands in happy-dom's `document.head`, which no serializer reads —
 so a head a page depends on is a reason to render on `target: 'server'`.
 

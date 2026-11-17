@@ -4074,6 +4074,31 @@ async function resolveAppClaims(ctx: ServiceContext, db: unknown, principal: Pri
   return claims
 }
 
+/**
+ * What the app's resolver answers for a recipient of a pushed frame, against
+ * the client the frame is graded on. A push has no request, so the resolver
+ * sees no header and no query; without its answer a policy reading a field
+ * only the resolver supplies refused on the socket what a fetch allowed
+ * (`FJS-4395`). A throw travels out, for the caller to decide.
+ */
+export async function resolverClaimsFor(
+  app:       unknown,
+  db:        unknown,
+  principal: PrincipalSetting,
+  user:      ServiceContext['user'] | null,
+): Promise<PrincipalClaims> {
+  const client = db as LitestoneClient
+  const ctx = {
+    app, user: user ?? null, caller: { headers: {} }, route: {}, query: {}, reserved: {},
+    directives: {}, locals: {}, data: null, id: null, result: null,
+  } as unknown as ServiceContext
+  setCallClient(ctx, user && typeof client?.$setAuth === 'function' ? client.$setAuth(toDataPrincipal(user)) : client)
+  // Entered as a call, so a resolver reading `$.db` reads this client.
+  let claims: PrincipalClaims = {}
+  await enterCall(ctx, async () => { claims = await resolveAppClaims(ctx, db, principal) })
+  return claims
+}
+
 /** The client verbs that write — what `read: true` refuses, and what a production `sys` asks `--force` for. */
 export const WRITE_VERBS = new Set([
   'create', 'createMany', 'update', 'updateMany', 'upsert', 'upsertMany',

@@ -4063,6 +4063,7 @@ export interface AppCopy {
   asOf?: string | null
   error?: string | null
   refreshedAt?: string | null
+  releaseId?: string | null
   certError?: string | null
   isServingMainAddress: boolean
   requestedBy?: string | null
@@ -4093,6 +4094,7 @@ export interface AppCopySystem {
   asOf?: string | Date | null
   error?: string | null
   refreshedAt?: string | Date | null
+  releaseId?: string | null
   certError?: string | null
 }
 
@@ -4105,6 +4107,7 @@ export interface AppCopyWhere extends WhereBase {
   asOf?: string | Date | WhereOp<string | Date> | null
   error?: string | WhereOp<string> | null
   refreshedAt?: string | Date | WhereOp<string | Date> | null
+  releaseId?: string | WhereOp<string> | null
   certError?: string | WhereOp<string> | null
   isServingMainAddress?: boolean | WhereOp<boolean> | null
   requestedBy?: string | WhereOp<string> | null
@@ -6918,7 +6921,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly appPlatform: TableClient<AppPlatform, AppPlatformCreate, AppPlatformUpdate, AppPlatformWhere, AppPlatformRelations, never, 'receiverSecret' | 'status' | 'liveVersion' | 'observedAt' | '@@gate', AppPlatformSystem, Required<Pick<AppPlatformCreate, 'workspaceId'>>>
   readonly appBackup: TableClient<AppBackup, AppBackupCreate, AppBackupUpdate, AppBackupWhere, AppBackupRelations, never, '@@gate'>
   readonly appDrill: TableClient<AppDrill, AppDrillCreate, AppDrillUpdate, AppDrillWhere, AppDrillRelations, never, '@@gate'>
-  readonly appCopy: TableClient<AppCopy, AppCopyCreate, AppCopyUpdate, AppCopyWhere, AppCopyRelations, never, 'status' | 'asOf' | 'error' | 'refreshedAt' | 'certError' | '@@gate', AppCopySystem>
+  readonly appCopy: TableClient<AppCopy, AppCopyCreate, AppCopyUpdate, AppCopyWhere, AppCopyRelations, never, 'status' | 'asOf' | 'error' | 'refreshedAt' | 'releaseId' | 'certError' | '@@gate', AppCopySystem>
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate'>
   readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'imageSha256' | 'swap' | 'swapReason' | 'releaseId' | 'schemaHash' | 'pivot' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem, Required<Pick<DeploymentCreate, 'workspaceId'>>>
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>

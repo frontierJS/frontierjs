@@ -415,12 +415,13 @@
                   </span>
                 {/if}
 
-                <!-- Label + sub. item-text/-title/-sub ship in lists.css. -->
-                <span class="item-text">
+                <!-- Label + sub. The fjs-cp- classes carry the layout too: a page
+                     that loads only part of the kit has no lists.css. -->
+                <span class="item-text fjs-cp-rowtext">
                   <!-- One line: a break here renders whitespace inside the word. -->
                   <span class="item-title fjs-cp-rowlabel {isActive ? 'fjs-cp-rowlabel--active' : ''}">{#each segments(row.label, marksOf.get(row)?.label ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
                   {#if row.sub}
-                    <span class={cx('item-sub', toTone(row.tone), toTone(row.tone) && 'fjs-cp-sub--toned')}>{#each segments(row.sub, marksOf.get(row)?.sub ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
+                    <span class={cx('item-sub fjs-cp-rowsub', toTone(row.tone), toTone(row.tone) && 'fjs-cp-sub--toned')}>{#each segments(row.sub, marksOf.get(row)?.sub ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
                   {/if}
                 </span>
                 {/if}
@@ -679,16 +680,26 @@
   .fjs-cp-rowicon--active { color: var(--tint-ink); }
 
   /*
-   * The stacked text block is `.item-text` / `.item-title` / `.item-sub`
-   * from @frontierjs/css lists.css. What stays here is the palette's own:
-   * one line each, ellipsed, and the active row's color shift.
+   * The stacked text block repeats lists.css's `.item-text` / `.item-sub` on
+   * the palette's own classes, because a site-kit page loads only the kit's
+   * tokens: without them a search snippet ran past the panel's edge.
    *
-   * A palette row is fixed-height by design — the list is navigated with
-   * arrow keys, and a row that grows to two lines moves every row under it
-   * while the reader is aiming at one. So these clamp to `nowrap` rather
-   * than reaching for `.clamp-*`, which is the opposite decision from a
-   * search snippet and is made here because the reason is the keyboard.
+   * A palette row is fixed-height — the list is navigated with arrow keys,
+   * and a row that grows to two lines moves every row under it while the
+   * reader is aiming at one. So these clamp to `nowrap` rather than
+   * `.clamp-*`, the opposite decision from a search snippet elsewhere.
    */
+  .fjs-cp-rowtext {
+    flex:            1;
+    min-inline-size: 0;
+    display:         flex;
+    flex-direction:  column;
+    gap:             var(--space-3xs);
+  }
+  .fjs-cp-rowsub {
+    font-size: var(--text-xs);
+    color:     var(--ink-mute);
+  }
   .fjs-cp-row .item-title,
   .fjs-cp-row .item-sub {
     overflow:      hidden;

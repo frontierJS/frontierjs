@@ -19,6 +19,7 @@ export function makeStateGuards(shape?: any, ctx?: any, deps?: any): {
         declared: boolean;
         stamps?: undefined;
         stampBy?: undefined;
+        guard?: undefined;
     } | {
         transitionName: any;
         field: string;
@@ -26,6 +27,11 @@ export function makeStateGuards(shape?: any, ctx?: any, deps?: any): {
         to: any;
         stamps: any;
         stampBy: any;
+        guard: {
+            sql: string;
+            params: any[];
+            refuse: () => TransitionGuardError;
+        };
         declared?: undefined;
     }>;
     transitionLevel: () => Promise<any>;
@@ -48,6 +54,13 @@ export function makeStateGuards(shape?: any, ctx?: any, deps?: any): {
         sql: any;
         params: any;
     };
+    guardHolds: (guard: any, whereSql: any, whereParams: any) => boolean;
+    guardMove: (fieldName: any, moveName: any, move: any, whereSql: any, whereParams: any) => {
+        sql: string;
+        params: any[];
+        refuse: () => TransitionGuardError;
+    };
 };
 export const NOT_VISIBLE: unique symbol;
+import { TransitionGuardError } from './errors.js';
 import { SealedDocumentError } from './errors.js';

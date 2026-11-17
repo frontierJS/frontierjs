@@ -1248,6 +1248,7 @@ CREATE TABLE IF NOT EXISTS "app_copy" (
   "asOf" TEXT,
   "error" TEXT,
   "refreshedAt" TEXT,
+  "releaseId" TEXT,
   "certError" TEXT,
   "isServingMainAddress" INTEGER NOT NULL DEFAULT 0,
   "requestedBy" TEXT,

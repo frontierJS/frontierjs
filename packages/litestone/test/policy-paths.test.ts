@@ -278,3 +278,87 @@ describe('the correlated subquery reaches the parent by its key', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   }, 60000)
 })
+
+// ─── a model in a second database ─────────────────────────────────────────────
+//
+// The JS half answers a create or a postUpdate by reading another row. It read
+// on MAIN's connection, where a model declared `@@db(chat)` has no table, so
+// the write threw `no such table: channel` (FJS-4396). One rule form each that
+// reads another row: a path, a check() and a some().
+
+describe('a policy on a model in a second database reads that database', () => {
+  const schema = `
+database main { path ":memory:" }
+database chat { path ":memory:" }
+
+model User {
+  id String @id
+  @@auth
+}
+model Channel {
+  id       String    @id
+  ownerId  String
+  topic    String?
+  members  Member[]
+  messages Message[]
+  @@db(chat)
+  @@allow(read, ownerId == auth().id)
+  @@allow(update, true)
+  @@allow(postUpdate, members.some(userId == auth().id))
+}
+model Member {
+  id        String  @id
+  channelId String
+  channel   Channel @relation(fields: [channelId], references: [id])
+  userId    String
+  @@db(chat)
+  @@allow(read, true)
+  @@allow(create, check(channel, 'read'))
+}
+model Message {
+  id        String  @id
+  channelId String
+  channel   Channel @relation(fields: [channelId], references: [id])
+  @@db(chat)
+  @@allow(read, true)
+  @@allow(create, channel.ownerId == auth().id)
+}
+`
+  const open = async () => {
+    const db: any = await createClient({ schema, encryptionKey: KEY })
+    await db.asSystem().channel.create({ data: { id: 'c1', ownerId: 'u1' } })
+    return db
+  }
+  const as = (db: any, id: string) => db.$setAuth({ id })
+
+  it('a one-hop path admits the owner and refuses anybody else', async () => {
+    const db = await open()
+    try {
+      await as(db, 'u1').message.create({ data: { id: 'm1', channelId: 'c1' } })
+      await expect(as(db, 'u2').message.create({ data: { id: 'm2', channelId: 'c1' } }))
+        .rejects.toThrow(/denied/i)
+      expect((await db.asSystem().message.findMany()).map((m: any) => m.id)).toEqual(['m1'])
+    } finally { db.$close() }
+  })
+
+  it('a check() delegation admits the owner and refuses anybody else', async () => {
+    const db = await open()
+    try {
+      await as(db, 'u1').member.create({ data: { id: 'k1', channelId: 'c1', userId: 'u1' } })
+      await expect(as(db, 'u2').member.create({ data: { id: 'k2', channelId: 'c1', userId: 'u2' } }))
+        .rejects.toThrow(/denied/i)
+      expect((await db.asSystem().member.findMany()).map((m: any) => m.id)).toEqual(['k1'])
+    } finally { db.$close() }
+  })
+
+  it('a some() over children admits a member and refuses anybody else', async () => {
+    const db = await open()
+    try {
+      await db.asSystem().member.create({ data: { id: 'k1', channelId: 'c1', userId: 'u1' } })
+      await as(db, 'u1').channel.update({ where: { id: 'c1' }, data: { topic: 'mine' } })
+      await expect(as(db, 'u2').channel.update({ where: { id: 'c1' }, data: { topic: 'theirs' } }))
+        .rejects.toThrow(/denied/i)
+      expect((await db.asSystem().channel.findMany()).map((c: any) => c.topic)).toEqual(['mine'])
+    } finally { db.$close() }
+  })
+})

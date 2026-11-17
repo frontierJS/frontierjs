@@ -19,17 +19,20 @@ describe('buildYaml', () => {
     expect(replica).not.toContain('retention')
   })
 
-  it('lists the bucket on a cadence a free B2 account can afford (FJS-4250)', () => {
+  it('lists the bucket on a cadence a free B2 account can afford (FJS-4250, FJS-4423)', () => {
     const yml = buildYaml(targets, {})
-    expect(yml).toContain('l0-retention-check-interval: 30m\nlevels:\n  - interval: 1h\n  - interval: 6h\n  - interval: 24h\n')
+    expect(yml).toContain('l0-retention-check-interval: 24h\nlevels:\n  - interval: 1h\n  - interval: 6h\n  - interval: 24h\n')
     const replica = yml.slice(yml.indexOf('replicas:'))
     expect(replica).not.toContain('interval: 1h')
-    // Litestream asks for the expiry check to run more often than L1 compacts.
-    const minutes = (d: string) => Number.parseInt(d, 10) * (d.endsWith('h') ? 60 : 1)
-    expect(minutes(L0_CHECK_INTERVAL)).toBeLessThan(minutes(LEVEL_INTERVALS[0]))
-    // Each check or compaction is a listing: a day of them, per database.
-    const perDay = [L0_CHECK_INTERVAL, ...LEVEL_INTERVALS].reduce((n, d) => n + 1440 / minutes(d), 0)
-    expect(perDay).toBeLessThan(100)
+    // Listings a day per database, counted from Litestream 0.5.17's loops: the
+    // expiry check lists L1 and L0 on every database; an L1 compaction lists L0,
+    // then sweeps (L1 and L0 again); a higher level lists the one below; the
+    // daily snapshot pass lists the snapshots and each level above L0.
+    const perDay = (d: string) => 1440 / (Number.parseInt(d, 10) * (d.endsWith('h') ? 60 : 1))
+    const idle = perDay(L0_CHECK_INTERVAL) * 2 + 1 + LEVEL_INTERVALS.length
+    const busy = idle + perDay(LEVEL_INTERVALS[0]) * 3 + LEVEL_INTERVALS.slice(1).reduce((n, d) => n + perDay(d), 0)
+    expect(idle).toBeLessThanOrEqual(10)
+    expect(busy).toBeLessThanOrEqual(100)
   })
 
   it('keeps a busy database\'s L0 inside one listing page (FJS-4315)', () => {
@@ -38,9 +41,10 @@ describe('buildYaml', () => {
     // monitor-interval is a database's key: on a replica it is dropped and the 1s default stays.
     expect(yml).toContain(`  - path: /data/app.db\n    monitor-interval: ${MONITOR_INTERVAL}\n    replicas:\n`)
     // Litestream pages a level 1,000 keys a call and lists L0 whole; L0 holds one
-    // file per tick that saw a write, for the retention window plus one check.
+    // file per tick that saw a write, swept at each L1 compaction of what is older
+    // than the retention window — so up to the window plus one L1 interval.
     const seconds = (d: string) => Number.parseInt(d, 10) * ({ s: 1, m: 60, h: 3600 } as Record<string, number>)[d.at(-1)!]
-    const files = (seconds(L0_RETENTION) + seconds(L0_CHECK_INTERVAL)) / seconds(MONITOR_INTERVAL)
+    const files = (seconds(L0_RETENTION) + seconds(LEVEL_INTERVALS[0])) / seconds(MONITOR_INTERVAL)
     expect(files).toBeLessThanOrEqual(1000)
   })
 

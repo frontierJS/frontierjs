@@ -58,13 +58,19 @@
 {/if}
 
 <style>
+  /* The outline sits on a page's own prose, so the sizes are stated: a site's
+     `.editorial * { width: 100% }` stretched the button across the page. */
   .toc {
     position: fixed;
     top: var(--space-lg);
     left: var(--space-md);
     z-index: var(--z-popover);
+    width: max-content;
     max-width: calc(100vw - 2 * var(--space-md));
+    margin: 0;
+    padding: 0;
   }
+  .toc > button { width: auto; max-width: none; margin: 0; }
   .toc-list {
     list-style: none;
     margin: var(--space-xs) 0 0;

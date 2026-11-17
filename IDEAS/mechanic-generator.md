@@ -1,17 +1,22 @@
 ---
 id: mechanic-generator
-status: reading
+status: partial
 dated: 2026-11-16
 ---
 
 # Mechanic generator — prompts for inventing board games from a balanced draw of mechanics
 
-**Status: READING.** Dated 2026-11-16. A stressor candidate (#50 in
-`stressors.md`). Nothing is built. The research below comes from three web
-passes on this date. The claims everything else rests on were re-read directly:
-the paper behind AutoBG, BGG's API terms, and Ludii's license. The other
-findings are the agents' reading of search results, and each one is marked where
-the source could not be opened.
+**Status: PARTIAL.** Stressor #50, codename gameplay, in
+`fjs-prototypes/gameplay/`. The v1 scope (Q6) is built: Phases 0–3 closed
+2026-11-17, uncommitted. Not yet proven: a deck sheet through a real printer.
+What waits: B′ (2.3) at ≥10 playtests across ≥3 prompts, and the items in
+§ Later. It becomes `shipped` when the app is committed and a sheet has been
+printed.
+
+The research below comes from three web passes on 2026-11-16. The claims
+everything else rests on were re-read directly: the paper behind AutoBG, BGG's
+API terms, and Ludii's license. The other findings are the agents' reading of
+search results, and each one is marked where the source could not be opened.
 
 ---
 
@@ -171,18 +176,26 @@ wanted to replay**. That last figure feeds the tension table and the draw.
 
 ---
 
-## What it would stress (inferred, unchecked against the tree)
+## What it stressed (checked 2026-11-17, after Phase 3)
 
-- **A reference catalog no tenant owns**, seeded and revised by the
-  maintainers, read by every user.
-- **Tags with weights on a many-to-many** (mechanic ↔ role, mechanic ↔ mechanic
-  tension), queried by the draw at slider rate.
-- **A model call with structured output in a job**, whose result must contain
-  four named parts or be refused.
-- **Per-seat rows aggregated into statistics** (seat win rate, length drift,
-  pair outcomes) that feed back into the draw.
-- **A playful Mesa screen**: slot reels with per-slot lock and reroll, dials,
-  and a printable card deck of the catalog.
+- **A model answer by schema from `claude -p`.** `prompts.write` calls the
+  model inside the service call (about 14 s), not in a job, and refuses an
+  answer missing one of the four parts with a 422. Its `door.ts` is a trimmed
+  copy of Chronicle's, which makes this the second app on **FJS-4171** (open).
+- **A tethered list after a remove.** The total stayed one too high, so an
+  empty state never showed. Filed and fixed as **FJS-4412**.
+- **Per-seat rows as `Json @type(Seat[]) @minItems(1)`.** The auto factory
+  ignored `@minItems`, so every Playtest rung of the gate ladder failed until
+  the app added a factory override. Filed and fixed as **FJS-4413**, and the
+  override is gone. Fixing it found **FJS-4430** (`@uniqueItems` refused every
+  typed list of two or more members) and **FJS-4431** (no validation cases for a
+  typed list's count rules), both fixed.
+- **Statistics from the log are shown and never fed back into the draw** (2.3 =
+  A), so the same seed gives the same draw. The guess that rates would tilt
+  the draw did not survive decision-rules.
+- **No framework gap in:** the reference catalog no tenant owns, the weighted
+  many-to-many the draw reads, the Mesa draw screen, or the printable deck
+  (CSS crop marks, `@page { margin: 0 }`, one grid for Letter and A4).
 
 ---
 
@@ -352,6 +365,9 @@ pages, ResearchGate, ACM), the claim comes from search summaries and says so.
 ## Open questions
 
 - **Q1 — Name.** The codename is provisional.
+  - **Ruled 2026-11-17 (owner): the codename is gameplay.** The app folder is
+    `fjs-prototypes/gameplay/` and its package is `@frontierjs/gameplay`. This
+    file keeps its name, as Group kit kept its file under the codename grouppi.
 - **Q2 — BGG data.** **A**: our own tags and definitions only, keyed by
   mechanic name, with no BGG game data. **B**: A, plus pair statistics from a
   CC0 snapshot, shipping only the aggregates. **C**: register a BGG application
@@ -383,6 +399,26 @@ pages, ResearchGate, ACM), the claim comes from search summaries and says so.
     so draws can happen at the table. Pair statistics and simulation stay
     deferred.
 
+- **Q7 — What the deck holds.** **A**: the 191 mechanics only. **B**: four
+  decks, namely mechanics, themes (60), constraints (24) and one rules card,
+  as Design Space Cards splits mechanics from themes. **Recommend B.** A table
+  draw fills the same five slots the app does, and A leaves the theme and the
+  constraint to improvised words. decision-rules passed B.
+  - **Ruled 2026-11-17 (owner): B.** Four decks.
+- **Q8 — How a card shows its tier.** **A**: a colored band with the tier word
+  on the front, and no backs. **B**: printed backs too, duplex or gutterfold.
+  **Recommend A.** Duplex alignment changes from printer to printer, and a
+  notebook deck sorts by band. Reopen B if the deck is ever sold.
+  - **Ruled 2026-11-17 (owner): A.** Front band, no backs.
+- **Q9 — How much of the draw the table follows.** **A**: loose. Flip one
+  constraint, one theme, 1–2 core and 0–2 supporting, then structural cards
+  until the four required roles show. **B**: A, plus the refusals printed on the
+  card (its clash and needs names, and its job role), so a clash or a second
+  card with the same job goes back and a needed card is fetched. **Recommend
+  B.** Otherwise the same cards make a different game at the table than in the
+  app. The refusals are names only, so a card stays one line of definition.
+  - **Ruled 2026-11-17 (owner): B.** Refusals on the card.
+
 ---
 
 ## A sketch of the plan
@@ -393,8 +429,8 @@ Goal: every mechanic on BGG's list tagged with family, roles, tier and dials.
 Done when: the catalog loads, and a draw of 1–2 core + structural fills every
 role on 50 random draws.
 
-The app is `fjs-prototypes/mechanic-generator/` (a provisional folder name
-until Q1), on ports 7520–7529. The proof is `bun run test`:
+The app is `fjs-prototypes/gameplay/` (renamed from mechanic-generator at
+Q1), on ports 7520–7529. The proof is `bun run test`:
 `api/test/catalog.test.ts` seeds a fresh database, reads the catalog back as a
 signed-in user and runs 50 seeded draws. "Every role" means the four every game
 needs (`REQUIRED_ROLES` in `shared/draw.js`): a core decision, turn structure,
@@ -531,11 +567,112 @@ Income, Lose a Turn, Neighbor Scope and Variable Set-up.
   Two framework rows were filed: FJS-4412 (a tether's `total` stays one too
   high after a remove) and FJS-4413 (the auto factory ignores `@minItems` on a
   typed list).
-- [ ] 2.2 Seat win rate, length drift, flag agreement rate. Count agreement
-  by stored flag id. A rule whose `when` changed has a new id (the
-  `shared/risks.js` header), so one id is one rule's predictions.
-- [ ] 2.3 Pair outcomes fed back into the draw
+- [x] 2.2 Seat win rate, length drift, flag agreement rate. Built 2026-11-17,
+  uncommitted. `web/src/lib/rates.js` is pure and runs in the browser over the
+  two owner-scoped lists, which `/playtests/` now loads whole (`all: true`): a
+  first page would be a partial log that reads as complete. Every figure is
+  counts beside a share, because "1 of 1" is not a rate. **Seats:** a game
+  counts only if it finished and some seats won but not all (a cooperative
+  table that won or lost together says nothing about turn order); a shared win
+  is split among the winners, the fair share is the sum of 1/n, and the left-out
+  count is shown. **Length:** the median of actual over planned, with the
+  shortest and longest, and no verdict on what is sane. **Agreement:** four
+  counts per rule id (hit, false alarm, miss, quiet). A rule is graded only on a
+  playtest whose prompt was checked against it, which needed a new column:
+  `Prompt.checked` holds every rule id the draw was checked against, written by
+  `prompts.write`, the twin of `Playtest.watched`. Without it a rule added later
+  would count every earlier prompt as a miss it never predicted. Dev prompts 1
+  and 2 predate the rule table and stay ungraded; prompt 3 was backfilled.
+  decision-rules passed all five calls; its condition (load the lists whole and
+  say "Over N playtests") is built. `rates.js` sits in `web/` because only the
+  screen imports it (FJS-D1320); it moves to `shared/` when a second surface
+  needs it. Proof: 16 new tests (74 in the app), each of 23 breaks failed one,
+  and `bun run check` is clean. Driven on the dev db: four playtests logged
+  through the form, every figure matched a hand count, the console was clean,
+  and the playtests were deleted again.
+- [x] 2.3 Pair outcomes fed back into the draw. Built 2026-11-17, uncommitted.
+  Ruled 2026-11-17 (owner): A, show only. decision-rules failed tilting the
+  draw (B/B′): same seed must give same draw, and a notebook's few seats over
+  confounded pairs would bury a pair. Reopen B′ (Beta(1+yes,1+no) mean, opt-in
+  per draw) when pairs have ≥10 playtests across ≥3 prompts, or Q5 flips to
+  public. Proposing clash rows from a bad record (C) comes after. **Built:**
+  `pairRecord(playtests, prompts)` in `web/src/lib/rates.js`, pure and returned
+  by `rates()` as `pairs`. A prompt's game mechanics are its core, supporting
+  and needed slots plus a constraint's frame, read through the draw's own
+  `mechanicOf` (now exported) and leaving out structural and theme as
+  `profile()` does. Its pairs are every unordered pair, keyed sorted by name.
+  Every seat's `isReplayWanted` credits every pair of the prompt once (null
+  skipped), and a row is `{ a, b, yes, no, playtests, prompts }` with the last
+  two distinct counts, because pairs from one prompt move together. The log
+  cannot say which pair a seat meant, so the line reads "seats at games that
+  had this pair", with counts and no verdict: "5 of 7 seats would replay · 2
+  playtests · 1 prompt". `/playtests/` shows the table beside the 2.2 figures
+  (30 rows, then a count of the rest). `/draw/` lists each pair of the current
+  draw with its record or "never played", over the same whole lists
+  (`all: true`). `draw()` does not change and never sees the record. Proof: 15
+  new tests in `api/test/rates.test.ts` (89 in the app), among them the
+  invariant that `draw(catalog, { seed, record })` equals `draw(catalog, { seed })`
+  over seven seeds with every pair of the draw recorded as a disaster. 19
+  breaks of `pairRecord`, `pairsOf`, `gameMechanics` and `draw()` each failed a
+  test; a 20th, a Set around the mechanic names, survived because `pairsOf`
+  already dedupes, so the redundant copy was removed. `bun run check` and
+  `fli check` are clean. Driven on the dev db: two playtests logged on prompt 3
+  through the form (answers yes/no/not asked, then yes/yes), and all three of
+  its pairs read "3 of 4 seats would replay · 2 playtests · 1 prompt", matching
+  a hand count. /draw/ showed one recorded pair and two "never played" on a
+  drawn game. The console was clean on both screens, and the playtests were
+  deleted again.
 
 ### Phase 3 — Printable deck
 
-- [ ] 3.1 The catalog as cards: role color, dial icons, one line each
+Goal: the catalog prints as poker cards (63.5 × 88.9 mm, nine to a sheet on
+Letter or A4), so a game can be drawn at the table without the app. Done when:
+`/deck/` prints to PDF with one card per catalog row, and a draw dealt from
+the printed cards by the rules card gives a draw the app's `draw()` could
+have made. Q7–Q9 ruled 2026-11-17: four decks, a front band and no backs,
+refusals on the card.
+
+Prior art: Design Space Cards (ResearchGate 355114310) deals separate
+mechanic, theme, pleasure and emotion decks to sample a design space.
+Print-and-play generators (ilove.cards, getlabelmerge) agree that poker size
+fits 3 × 3 on both papers with no gutter. Browsers ignore `@page { marks }`, so
+the crop marks are drawn in the page.
+
+- [x] 3.1 The catalog as cards. Built 2026-11-17, uncommitted.
+  `web/src/lib/deck.js` is pure and turns the catalog into card objects, and
+  `/deck/` (with `components/DeckCard.mesa`) only renders them, loading every
+  list whole. A mechanic card has a tier band, its roles as colored chips with
+  1–3 pips heaviest first, a JOB tag on a weight-3 role, three marks per dial
+  (filled pips for numeric dials, one lit square for ordered ones) and the
+  fixture's line unchanged. `shared/draw.js` now exports `JOB` and `CARRIES`,
+  so the card prints the draw's own thresholds. The cards sit in a fixed
+  190.5 × 266.7 mm grid with crop marks drawn from it, and `@page` sets only
+  `margin: 0`, so Letter and A4 both print with no option. Colors are
+  `--data-*` properties and print the same under either theme.
+- [x] 3.2 Themes, constraints and the rules card (Q7 = B). A constraint card
+  names its mechanic whenever the row names one: the five frames and
+  Paper-and-Pencil, because the draw puts that mechanic in play for any
+  constraint. The rules card has seven steps in `draw()`'s order and four
+  refusals, with every number and role name read from `shared/draw.js`. It
+  leaves out the target, `invites`, and lock and reroll, which the slot fill
+  does not use.
+- [x] 3.3 Refusals on the card (Q9 = B). Clash names print on both sides, and
+  needs prints only on the side that needs, because `draw()` pulls the needed
+  card in and never the reverse. A test checks that no printed refusal lacks a
+  backing row. Proof for 3.1–3.3: 11 tests in `api/test/deck.test.ts` (100 in
+  the app). Each of six breaks in `deck.js` failed a test: a dropped card, a
+  one-sided clash, no needs, the job threshold off by one, an altered line, and
+  an extra rules step. `bun run check` is clean. Driven: `/deck/` shows 276
+  cards on 33 sheets, and the console was clean. `Page.printToPDF` gave 33
+  pages on both Letter and A4 (22 + 7 + 3 + 1). Rendered at 110 dpi a card
+  measures 63.3 × 88.9 mm, and the crop marks fall on every cut line.
+- [x] 3.4 A table deal checked against the app. Done 2026-11-17 by script, not
+  by typing deals into `/draw/`. That screen runs the same `draw()`, and a
+  script could check 500 deals instead of five. The deal used only what
+  `deckFrom()` prints (pips, JOB tags, clash and needs names) and followed the
+  rules card. Every one of 500 deals held no duplicate, no clash and no
+  shared job by the draw's own tests, and `draw()` with every slot kept added
+  nothing. Two breaks of the table side show the check can fail: ignoring the
+  printed refusals failed 101 deals, and skipping step 7 failed 179. Not
+  proven: a sheet through a real printer, where an unprintable margin may clip
+  the 5 mm crop ticks.

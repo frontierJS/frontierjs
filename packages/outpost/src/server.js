@@ -611,10 +611,19 @@ export function createOutpostServer(config, {
     // reaches the copy that replaced it.
     // A machine without the image sends `image_url` and `image_sha256`, what
     // `/image/export` uploaded (`FJS-D1914`).
+    // With `since`, the as_of of the copy Basecamp last saw served by this
+    // release, a replica that has not moved past it keeps the running copy
+    // and only rewrites its route: a restore lists the bucket, which B2 caps
+    // per account (`FJS-4424`). With no copy running, `since` is ignored.
     'POST /replica/serve': async (body) => {
       const [host = null] = hostsOf(body.host == null ? [] : [body.host])
       const hosts = hostsOf(body.hosts).filter(h => h !== host)
-      const staged = await replicator.stage({ appId: body.app_id, replica: body.replica, databases: body.databases, at: body.at ?? null })
+      const since = body.since != null && await docker.servingCopy({ appId: body.app_id }) ? body.since : null
+      const staged = await replicator.stage({ appId: body.app_id, replica: body.replica, databases: body.databases, at: body.at ?? null, since })
+      if (staged.unchanged) {
+        await docker.rerouteCopy({ appId: body.app_id, ingress, host, hosts })
+        return { unchanged: true, databases: [], as_of: staged.as_of, host, hosts }
+      }
       let served
       try {
         if (!staged.as_of) throw new Error(`no database's newest point could be read from ${body.replica?.bucket}/${body.replica?.path} (litestream ltx), so the copy cannot say how old it is`)

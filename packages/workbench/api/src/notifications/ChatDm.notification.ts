@@ -13,7 +13,7 @@ export default defineNotification<ChatNoticePayload>({
 
   inApp: (p) => inApp()
     .title(p.author)
-    .body(p.excerpt)
+    .body(p.excerpt || 'Sent you a message')
     .action('Open', p.link)
     .data({ ...p }),
 

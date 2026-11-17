@@ -274,6 +274,9 @@ export function createOutpostServer(config?: any, { docker, inspector, statics, 
             digest: any;
             uploadUrl: any;
         }) => any;
+        servingCopy: ({ appId }: {
+            appId: any;
+        }) => any;
         rerouteCopy: ({ appId, ingress, host, hosts }: {
             appId: any;
             ingress: any;
@@ -709,12 +712,18 @@ export function createOutpostServer(config?: any, { docker, inspector, statics, 
             host: any;
             error?: undefined;
         }>;
-        stage({ appId, replica, databases, at }: {
+        stage({ appId, replica, databases, at, since }: {
             appId: any;
             replica: any;
             databases: any;
             at?: any;
+            since?: any;
         }): Promise<{
+            unchanged: boolean;
+            as_of: any;
+            dir?: undefined;
+            databases?: undefined;
+        } | {
             dir: string;
             databases: {
                 name: any;
@@ -723,6 +732,7 @@ export function createOutpostServer(config?: any, { docker, inspector, statics, 
                 bytes: any;
             }[];
             as_of: any;
+            unchanged?: undefined;
         }>;
         unstage(dir: any): Promise<void>;
         reregister(): Promise<{

@@ -1,9 +1,10 @@
 <script>
   // components/chat/PostLinks.mesa -- what a post's links draw under it, from `Post.embeds`
   // (the server unfurls them; nothing is fetched here). An opengraph embed is a card: site,
-  // title as the link, a clamped description and a thumbnail; an image embed is the image,
-  // bounded. Only http(s) URLs reach an href or a src (lib/chat.js `embedsOf`), and a link
-  // opens in a new tab with `noopener noreferrer`.
+  // title as the link and a clamped description; an image embed is a link to the image.
+  // No image is drawn: an img src on a third-party host shows it this machine's IP. Only
+  // http(s) URLs reach an href (lib/chat.js `embedsOf`), and a link opens in a new tab
+  // with `noopener noreferrer`.
   import { embedsOf } from '../../lib/chat.js'
 
   export let post = null
@@ -15,15 +16,12 @@
   <div class="stack gap-xs post-embeds" data-post-embeds>
     {#each embeds as e, i (i)}
       {#if e.type === 'image'}
-        <a class="post-embed-image" href={e.url} target="_blank" rel="noopener noreferrer" data-embed="image"><img src={e.url} alt="" loading="lazy" /></a>
+        <a class="text-sm post-embed-title" href={e.url} target="_blank" rel="noopener noreferrer" data-embed="image">{e.url}</a>
       {:else}
-        <div class="card outlined dense post-embed" data-embed="opengraph">
-          <div class="stack gap-3xs post-embed-text">
-            {#if e.siteName}<span class="text-xs text-muted" data-embed-site>{e.siteName}</span>{/if}
-            <a class="post-embed-title" href={e.url} target="_blank" rel="noopener noreferrer" data-embed-title><strong>{e.title || e.url}</strong></a>
-            {#if e.description}<p class="text-sm text-muted post-embed-desc" data-embed-desc>{e.description}</p>{/if}
-          </div>
-          {#if e.image}<img class="post-embed-thumb" src={e.image} alt="" loading="lazy" data-embed-thumb />{/if}
+        <div class="card outlined dense stack gap-3xs" data-embed="opengraph">
+          {#if e.siteName}<span class="text-xs text-muted" data-embed-site>{e.siteName}</span>{/if}
+          <a class="post-embed-title" href={e.url} target="_blank" rel="noopener noreferrer" data-embed-title><strong>{e.title || e.url}</strong></a>
+          {#if e.description}<p class="text-sm text-muted post-embed-desc" data-embed-desc>{e.description}</p>{/if}
         </div>
       {/if}
     {/each}
@@ -32,11 +30,6 @@
 
 <style>
   .post-embeds { max-inline-size: calc(var(--space-2xl) * 11); }
-  .post-embed { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-sm); }
-  .post-embed-text { min-inline-size: 0; }
   .post-embed-title { overflow-wrap: anywhere; }
   .post-embed-desc { margin: 0; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .post-embed-thumb { flex: none; inline-size: calc(var(--space-2xl) * 2); block-size: calc(var(--space-2xl) * 2); object-fit: cover; border-radius: var(--card-radius); }
-  .post-embed-image { display: block; inline-size: fit-content; max-inline-size: 100%; }
-  .post-embed-image img { display: block; max-inline-size: 100%; max-block-size: calc(var(--space-2xl) * 8); border-radius: var(--card-radius); }
 </style>

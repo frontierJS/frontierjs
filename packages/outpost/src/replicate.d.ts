@@ -81,13 +81,25 @@ export function createReplicator({ run, configPath, appsDir, metaDir, unit, sock
      *  machine that stopped replicating yesterday stages yesterday's data, and
      *  a copy stamped with the staging time would call it current. A database
      *  with no writes gets no new LTX file, so a quiet one stays at its last
-     *  write and the newest across them is the copy's (`FJS-D1999`). */
-    stage({ appId, replica, databases, at }: {
+     *  write and the newest across them is the copy's (`FJS-D1999`).
+     *
+     *  With `since`, the as_of of a copy already serving, a replica no
+     *  database of which has moved past it is answered `{ unchanged: true }`
+     *  with nothing staged: a restore lists ten levels per database, each a
+     *  Class C call B2 caps per account, and a scheduled refresh of a quiet
+     *  app would spend them restaging the same bytes (`FJS-4424`). */
+    stage({ appId, replica, databases, at, since }: {
         appId: any;
         replica: any;
         databases: any;
         at?: any;
+        since?: any;
     }): Promise<{
+        unchanged: boolean;
+        as_of: any;
+        dir?: undefined;
+        databases?: undefined;
+    } | {
         dir: string;
         databases: {
             name: any;
@@ -96,6 +108,7 @@ export function createReplicator({ run, configPath, appsDir, metaDir, unit, sock
             bytes: any;
         }[];
         as_of: any;
+        unchanged?: undefined;
     }>;
     unstage(dir: any): Promise<void>;
     /** After a restore into a replicated app's data. Litestream drops a database

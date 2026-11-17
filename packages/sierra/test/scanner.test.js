@@ -550,3 +550,27 @@ describe('static beats dynamic under a dynamic ancestor', () => {
     })
   }
 })
+
+// ─── a catch-all below the root (FJS-4366) ──────────────────────────────────
+
+describe('a catch-all under a folder', () => {
+  it('matches what its static and dynamic siblings do not, under its own param name', async () => {
+    const files = [
+      'src/routes/[...404].mesa',
+      'src/routes/[owner]/[repo]/issues/[number].mesa',
+      'src/routes/[owner]/[repo]/issues/[...rest].mesa',
+    ]
+    const cwd = await makeTmpFixture(Object.fromEntries(files.map(f => [f, '<p>x</p>'])))
+    const tree = await buildTree(files, 'src/routes', { cwd })
+    const { matchRoute } = await import('../src/router/match.js')
+
+    const deep = matchRoute('/dev/x/issues/a/b%20c/', tree)
+    expect(deep.node.id).toBe('[owner].[repo].issues.[...rest]')
+    expect(deep.params).toEqual({ owner: 'dev', repo: 'x', rest: 'a/b c' })
+
+    expect(matchRoute('/dev/x/issues/7/', tree).node.id).toBe('[owner].[repo].issues.[number]')
+    expect(matchRoute('/dev/x/issues/', tree).params).toEqual({ owner: 'dev', repo: 'x', rest: '' })
+    expect(matchRoute('/elsewhere/a/b/c/d/', tree).node.id).toBe('[...404]')
+    expect(matchRoute('/elsewhere/a/b/c/d/', tree).params['404']).toBe('elsewhere/a/b/c/d')
+  })
+})

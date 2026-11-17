@@ -172,6 +172,7 @@ interface OASpec {
   servers?: Array<{ url: string; description?: string }>
   paths:   Record<string, OAPathItem>
   components: { schemas: Record<string, OASchema> }
+  'x-opaque'?: unknown[]
 }
 
 interface OAPathItem {
@@ -481,12 +482,16 @@ function buildOperation(
 // ─── generateOpenAPI ──────────────────────────────────────────────────────
 
 /**
- * `defs` is the seed's `$defs` — the object types a `methods: [{ input }]`
- * entry names. Optional and third rather than a second generator: a standalone
- * caller that has not derived them still gets a spec, and the operation still
- * NAMES the type it expects, so a declared input is never silently absent.
+ * `seed` is the seed's JSON Schema document. Its `$defs` are the object types
+ * a `methods: [{ input }]` entry names, and its `x-opaque` the rules no keyword
+ * states, carried to the spec's root as they are (`FJS-D2130`) — a client
+ * generated from the spec otherwise accepts what the server refuses. Optional
+ * and third rather than a second generator: a standalone caller that has not
+ * derived it still gets a spec, and the operation still NAMES the type it
+ * expects, so a declared input is never silently absent.
  */
-export function generateOpenAPI(app: App, opts: OpenAPIOptions, defs?: Record<string, unknown>): OASpec {
+export function generateOpenAPI(app: App, opts: OpenAPIOptions, seed?: { $defs?: Record<string, unknown>, 'x-opaque'?: unknown[] }): OASpec {
+  const defs = seed?.$defs
 
   // Respect apiPrefix from config (e.g. '/v1') — defaults to empty string (no prefix)
   const prefix = (app.config as Record<string, unknown>).apiPrefix as string ?? ''
@@ -689,6 +694,8 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions, defs?: Record<st
     spec.paths[path] = item as OAPathItem
   }
 
+  if (seed?.['x-opaque']) spec['x-opaque'] = seed['x-opaque']
+
   return spec
 }
 
@@ -732,7 +739,7 @@ export function openapi(opts: OpenAPIOptions): Plugin {
           // owns the derivation and its cache; an app with no Litestone client
           // answers null and the spec names the type instead.
           const schema = await appJsonSchema(app)
-          specCache = JSON.stringify(generateOpenAPI(app, opts, schema?.$defs as Record<string, unknown> | undefined), null, 2)
+          specCache = JSON.stringify(generateOpenAPI(app, opts, schema as Parameters<typeof generateOpenAPI>[2]), null, 2)
         }
         return new Response(specCache, {
           headers: { 'content-type': 'application/json' }

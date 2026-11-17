@@ -30,10 +30,11 @@
 // `/_sink/checkout/<cs>/complete` stands in for a customer paying a session,
 // by the session's first payment method or `?method=`; it makes the session's
 // PaymentIntent on the session's account, so a paid session refunds through
-// `/v1/refunds` like any intent. A `us_bank_account` debit completes `unpaid`
+// `/v1/refunds` like any intent, and sends `payment_intent.succeeded` beside
+// the session's event as Stripe does. A `us_bank_account` debit completes `unpaid`
 // with the intent `processing`, and `/settle` or `/fail` on it sends
-// `async_payment_succeeded` or `async_payment_failed`, as the bank answers
-// days later at Stripe.
+// `async_payment_succeeded` or `async_payment_failed` with the intent's
+// `succeeded` or `payment_failed`, as the bank answers days later at Stripe.
 //
 // A succeeding intent makes one charge, sends `charge.succeeded` naming its
 // balance transaction by id, and `GET /v1/balance_transactions/<txn>` reads it
@@ -185,6 +186,9 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
           else { cs._method = null; intent.status = 'requires_payment_method' }
         }
         const { _account, _method, _piMetadata, ...shown } = cs
+        const sessionIntent = intents.get(cs.payment_intent)!
+        if (paidBy) await deliver('payment_intent.succeeded', sessionIntent, _account)
+        if (step === 'fail') await deliver('payment_intent.payment_failed', sessionIntent, _account)
         if (paidBy) await deliver('charge.succeeded', paidBy, _account)
         await deliver(step === 'complete' ? 'checkout.session.completed' : `checkout.session.async_payment_${step === 'settle' ? 'succeeded' : 'failed'}`, shown, _account)
         return json(shown)

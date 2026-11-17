@@ -80,6 +80,15 @@ export function excerpt (message: string, max = 140): string {
   return plain.length > max ? `${plain.slice(0, max - 1).trimEnd()}…` : plain
 }
 
+/**
+ * What of the post a notification row may hold. The row lives in the main
+ * database and on the phone's lock screen, so a private room's or a DM's text
+ * stays out; the title still says who and where.
+ */
+export function noticeExcerpt (roomType: string, message: string): string {
+  return roomType === 'open' ? excerpt(message) : ''
+}
+
 /** (member, post) pairs already raised in this process: two sockets' frames can race the row check below. */
 const raised = new Set<string>()
 const RAISED_MAX = 5000
@@ -126,7 +135,7 @@ export async function raiseChatNotice (app: App, sys: any, memberId: string, pro
       channelExternalId: post.channelExternalId,
       author:            author?.nickname || author?.username || 'Someone',
       room:              room.name,
-      excerpt:           excerpt(post.message ?? ''),
+      excerpt:           noticeExcerpt(String(room.type), post.message ?? ''),
       link:              `/messages/${post.channelExternalId}/${post.rootExternalId ? `?thread=${post.rootExternalId}` : ''}`,
       held:              inQuietHours(schedule, now),
       phone:             owner?.id === id,

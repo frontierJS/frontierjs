@@ -2065,6 +2065,7 @@ async function cmdJsonSchema(cfg) {
       const { size } = statSync(outPath)
       console.log(`  ${green('✓')}  ${rel(outPath)}  ${dim(`(${size}b)`)}`)
     }
+    console.log(`  ${dim(opaqueSummary(generateJsonSchema(parseResult.schema, { ...opts, mode: 'full' })))}`)
   } else {
     const outPath = outputPath
       ? existsSync(outputPath) && statSync(outputPath).isDirectory()
@@ -2087,6 +2088,7 @@ async function cmdJsonSchema(cfg) {
     const models = parseResult.schema.models.length
     const enums  = parseResult.schema.enums.length
     console.log(`  ${dim(`${models} model${models!==1?'s':''}, ${enums} enum${enums!==1?'s':''}, mode=${mode}, format=${format}`)}`)
+    console.log(`  ${dim(opaqueSummary(schema))}`)
   }
 
   hints([
@@ -2098,6 +2100,15 @@ async function cmdJsonSchema(cfg) {
     `  ${dim('--include-timestamps')}       ${dim('include createdAt/updatedAt')}`,
     `  ${dim('--include-deleted-at')}       ${dim('include deletedAt')}`,
   ])
+}
+
+// A client validating against the file accepts what these rules refuse, so the
+// count is said where the file is written rather than left inside it (FJS-D2130).
+function opaqueSummary(doc) {
+  const n = doc['x-opaque'].length
+  return n === 0
+    ? 'every rule is stated in the document'
+    : `${n} rule${n !== 1 ? 's' : ''} the document cannot state — x-opaque lists them; the server still refuses by them`
 }
 
 // ─── hints — the "what else you can pass" block under a command's result ────

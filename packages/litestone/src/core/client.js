@@ -35,7 +35,7 @@ import {
   buildPolicyMap, buildScopeMap, compileStatic,
   buildPolicyFilter, checkPostUpdatePolicy, policyVerdict, 
   compileFieldPredicate, delegationProblems, buildClaimSet, checkFieldPolicies,
-  authClaimsUsed } from './policy.js'
+  authClaimsUsed, compileMoveGuard } from './policy.js'
 import {
   encryptField, decryptField, encryptDeterministic, normalizeKey,makeKeyring, } from './encryption.js'
 import { backupSqliteTo, readBackupStamp, clearBackupStamp } from './backup.js'
@@ -929,7 +929,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     _tableTransitions, _sealSelf, _sealInsertSql, _selfFreezes,
     _bulkTransitionField, refuseSoftDeleteWrite, refuseOffEntry, checkTransitions, transitionLevel, declaredTransitions,
     sealWhereClause, sealInsertGuard, sealRefusal, throwIfSealed, sealSelfClause, throwIfSealedSelf,
-    applyTransitionWhereClause,
+    applyTransitionWhereClause, guardHolds,
   } = makeStateGuards(shape, ctx, {
     readDb, col, _ecp, plugins, _immutableWriteKeys, _modelForKeys,
     // Hoisted function and a const built later: both reached only at call time.
@@ -2774,8 +2774,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // Still at `from` means no writer moved it, so the refusal is one of
       // the other conjuncts — and a conflict reading "expected 'sent', the
       // row is at 'sent'" would contradict itself. The seal and the version
-      // ride the same WHERE and have their own answers.
-      if (cur && cur.v === t.from) { versionMoved(); sealed() }
+      // ride the same WHERE and have their own answers, and so does a guard
+      // that failed after checkTransitions read it.
+      if (cur && cur.v === t.from) {
+        if (t.guard && !guardHolds(t.guard, r.where.sql, r.where.params)) throw t.guard.refuse()
+        versionMoved(); sealed()
+      }
       throw new TransitionConflictError(tableName, t.field, t.from, t.to,
         { actual: cur ? cur.v : undefined, move: t.transitionName })
     }
@@ -5269,7 +5273,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           moves = declaredTransitions(fieldName, scopeValue).filter(m => m.from != null)
             .map(m => [m.to, { from: [m.from], to: m.to, gate: m.gate, system: false }])
         }
-        for (const [name, { from, to, gate, system }] of moves) {
+        for (const [name, { from, to, gate, system, guard }] of moves) {
           if (!from.includes(currentValue)) continue
 
           // `@system` is asked FIRST and it is the cheapest: no level to
@@ -5290,6 +5294,17 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
             if (!postOk.has(to)) postOk.set(to, admits('postUpdate', { ...row, [fieldName]: to }))
             allowed   = updateOk && postOk.get(to)
             refusedBy = allowed ? null : 'policy'
+          }
+
+          // The guard reads the STORED row and its hop, as the write will, and
+          // is asked last: it is the one refusal that lifts when the record
+          // changes rather than when the caller does.
+          if (allowed && guard) {
+            try {
+              allowed = guardHolds(compileMoveGuard(modelName, guard, ctx),
+                `${ident(col(idField)).sql} = ?`, [row[idField]])
+            } catch { allowed = true }
+            refusedBy = allowed ? null : 'guard'
           }
 
           // `refusedBy` says which half said no, because a screen has three

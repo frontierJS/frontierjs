@@ -419,6 +419,47 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
     expect(text).toContain("'core/auth.ts'")
   })
 
+  // FJS-4404 — fli new writes core/auth.ts as makeAuth(db), since buildApp takes
+  // its client; the command read only an \`auth\` export and refused every new app.
+  test('auth:create-user builds the auth from the makeAuth(db) fli new writes', async () => {
+    const root = makeApp({
+      'api/src/core/db.ts': [
+        "import { appendFileSync } from 'fs'",
+        "const user = { update: async () => appendFileSync(process.env.MARK, 'verified\\n') }",
+        'export const db = { asSystem: () => ({ user }), $close: async () => {} }',
+      ].join('\n') + '\n',
+      'api/src/core/auth.ts': [
+        "import { appendFileSync } from 'fs'",
+        'export function makeAuth(db) {',
+        '  const auth = { createUser: async ({ email, role }) => {',
+        "    appendFileSync(process.env.MARK, 'created ' + email + '\\n')",
+        "    return { id: 1, email, role }",
+        '  } }',
+        '  return { auth, authPlugin: {} }',
+        '}',
+      ].join('\n') + '\n',
+    })
+    const saved = { ENCRYPTION_KEY: process.env.ENCRYPTION_KEY, MARK: process.env.MARK }
+    process.env.ENCRYPTION_KEY ??= 'a'.repeat(64)
+    process.env.MARK = join(root, 'mark.txt')
+    try {
+      global.projectRoot = root
+      global.fliRoot     = CLI
+      const events = []
+      const { Command } = await import('../core/runtime.js')
+      ;(await import('../core/registry.js')).buildRegistry()
+      const go = await Command({ file: join(CLI, 'commands/auth/create-user.md'), arg: ['ann@acme.test'],
+        flag: { name: '', role: 'admin', tenant: '', password: 'a-long-random-one', dry: false },
+        emit: (e) => { events.push(e) } })
+      await go().catch(err => { if (!err.refusal) throw err })
+      expect(events.map(e => `${e.level ?? e.type}: ${e.text}`).join('\n')).not.toMatch(/Refused|failed/)
+      expect(await Bun.file(process.env.MARK).text()).toBe('created ann@acme.test\nverified\n')
+    } finally {
+      for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : process.env[k] = v
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   // FJS-D2004 — a deployed App takes its first owner from auth:dev-admin under
   // NODE_ENV=production; the default login must still never land there.
   test('auth:dev-admin in production refuses the default login and takes an explicit one', async () => {

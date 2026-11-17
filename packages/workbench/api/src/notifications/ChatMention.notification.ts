@@ -13,6 +13,7 @@ export interface ChatNoticePayload {
   channelExternalId: string
   author:            string
   room:              string
+  /** Empty for a private room or a DM (`noticeExcerpt`). */
   excerpt:           string
   /** `/messages/<channel>/`, with `?thread=<root>` for a reply. */
   link:              string
@@ -28,7 +29,7 @@ export default defineNotification<ChatNoticePayload>({
 
   inApp: (p) => inApp()
     .title(`${p.author} in #${p.room}`)
-    .body(p.excerpt)
+    .body(p.excerpt || 'Mentioned you')
     .action('Open', p.link)
     .data({ ...p }),
 

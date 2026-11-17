@@ -513,6 +513,10 @@ export function createDocker({ run, stream, fetch: fetchFn, workDir, health, app
         digest: any;
         uploadUrl: any;
     }) => any;
+    /** The running copy's `<ipv4>:<port>`, or null when none runs. */
+    servingCopy: ({ appId }: {
+        appId: any;
+    }) => any;
     /**
      * The running copy's route written again with `host` and `hosts`
      * (`ingress.routeCopy`), without restaging it: how the App's main

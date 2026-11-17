@@ -21,3 +21,4 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 | `migrations/main/20261114173127_blueprint_param_length_environment.sql` | `43f10c82640edc03` |
 | `migrations/main/20261116162849_variable_version.sql` | `2e62febf52091e9a` |
 | `migrations/main/20261116163827_release_id_pivot.sql` | `0baf097ccdd28c59` |
+| `migrations/main/20261117224510_copy_release_id.sql` | `c3caee5633a09393` |

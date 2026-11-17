@@ -67,18 +67,6 @@ describe('shippedFile', () => {
     expect(shippedFile(root, PKG, './schema.lite')).toBeNull()
   })
 
-  test('a conditional export is not a schema fragment', () => {
-    // `{ import, require }` is how JavaScript is published. A `.lite` is a
-    // plain string target, and reading the object form would hand a caller an
-    // object where it expects a path.
-    const root = app({
-      'package.json':                        JSON.stringify({ name: 'app' }),
-      'node_modules/@acme/kit/package.json': manifest({ './schema.lite': { import: './db/kit.lite' } }),
-      'node_modules/@acme/kit/db/kit.lite':  'model Token {\n  id Int @id\n}\n',
-    })
-    expect(shippedFile(root, PKG, './schema.lite')).toBeNull()
-  })
-
   test('a link:ed package is read through its symlink — the shape every app in this repo has', () => {
     const real = app({
       'package.json': manifest({ './schema.lite': './db/kit.lite' }),
@@ -89,6 +77,15 @@ describe('shippedFile', () => {
     symlinkSync(real, join(root, 'node_modules', PKG), 'dir')
 
     expect(shippedFile(root, PKG, './schema.lite').text).toContain('model Token')
+  })
+
+  test('a conditional export is read through its runtime condition, not refused for not being a string', () => {
+    const root = app({
+      'package.json':                        JSON.stringify({ name: 'app' }),
+      'node_modules/@acme/kit/package.json': manifest({ './tui': { types: './tui.d.ts', default: './tui.js' } }),
+      'node_modules/@acme/kit/tui.js':       'export const shell = 1\n',
+    })
+    expect(shippedFile(root, PKG, './tui').file).toEndWith('tui.js')
   })
 
   test('a manifest that will not parse is null, not a throw', () => {

@@ -11046,8 +11046,8 @@ describe('@@transitions — parser', () => {
 
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
     expect(attr.field).toBe('status')
-    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [], stampBy: null })
-    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false, seals: false, stamps: [], stampBy: null })
+    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [], stampBy: null, guard: null })
+    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false, seals: false, stamps: [], stampBy: null, guard: null })
     expect(attr.transitions.cancel.from).toEqual(['pending', 'paid'])
   })
 
@@ -11056,7 +11056,7 @@ describe('@@transitions — parser', () => {
 model Order { id Int @id  status S @default(pending)  @@transitions(status, pending -> paid) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
-    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [], stampBy: null })
+    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [], stampBy: null, guard: null })
   })
 
   test('@gate refuses a level name and names the digit it means (FJS-D239)', () => {
@@ -16476,6 +16476,7 @@ model Asset {
 // validate.js or to writeData's array block and not to the generator shows up
 // here as a rule with no case rather than as silence.
 const RULES_SCHEMA = `
+  type Seat { name String @length(1, 40); score Int? }
   model Lead {
     id     Int      @id
     email  String   @email("Use your work address")
@@ -16493,6 +16494,7 @@ const RULES_SCHEMA = `
     score  Int      @gte(0) @lte(100)
     ratio  Float    @gt(0) @lt(1)
     tags   String[] @minItems(1) @maxItems(3) @uniqueItems
+    seats  Json     @type(Seat[]) @minItems(1) @maxItems(3) @uniqueItems
   }
 `
 
@@ -16567,6 +16569,12 @@ describe('generateValidationCases — conformance against a real client', () => 
 
   test('array rules are covered, not skipped for being arrays', () => {
     const rules = cases.invalid.filter((c: any) => c.field === 'tags').map((c: any) => c.rule).sort()
+    expect(rules).toEqual(['@maxItems(3)', '@minItems(1)', '@uniqueItems'])
+  })
+
+  // FJS-4413: a typed list's count rules generated no case and said nothing.
+  test('a Json @type(T[]) list gets the same array cases', () => {
+    const rules = cases.invalid.filter((c: any) => c.field === 'seats').map((c: any) => c.rule).sort()
     expect(rules).toEqual(['@maxItems(3)', '@minItems(1)', '@uniqueItems'])
   })
 })

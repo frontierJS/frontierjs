@@ -280,6 +280,20 @@ export function renderFailure(cause, label) {
  * @returns {Promise<string>}
  */
 export function renderToHTML(ComponentFactory, props = {}, options = {}) {
+  return renderToParts(ComponentFactory, props, options).then(({ html, head }) =>
+    options.full ? wrapPage(html, { ...options, head: (options.head ?? '') + head }) : html)
+}
+
+/**
+ * `renderToHTML` without the page: the body and the markup every
+ * `<mesa:head>` wrote, apart, for a caller that assembles its own document
+ * (`renderComponent`'s `result.head`). A body alone has nowhere to put a
+ * title or an og: tag. `head` is `''` on the DOM path, whose `<mesa:head>`
+ * lands in a `document.head` no serializer reads.
+ *
+ * @returns {Promise<{ html: string, head: string }>}
+ */
+export function renderToParts(ComponentFactory, props = {}, options = {}) {
   // An idle renderer starts at once, so a render with no `{#await}` has
   // finished before the caller's next line runs.
   const run = _queue ? _queue.then(() => _render(ComponentFactory, props, options)) : _render(ComponentFactory, props, options)
@@ -348,7 +362,7 @@ async function _render(ComponentFactory, props, options) {
   }
   const html = options.keepAnchors ? container.innerHTML : _serializeWithoutAnchors(container)
   dispose()
-  return options.full ? wrapPage(html, options) : html
+  return { html, head: '' }
 }
 
 // The string mode's half of renderToHTML, trimmed as the DOM serializer trims,
@@ -377,11 +391,10 @@ async function _renderString(ComponentFactory, props, options) {
   }
   const { out, dispose } = started
   const html = out.join('').trim()
-  // `<mesa:head>` wrote beside the body (`runtime-server.js` `head`); the
-  // page is the one place it has somewhere to go.
-  if (out.head) options = { ...options, head: (options.head ?? '') + out.head.join('') }
+  // `<mesa:head>` wrote beside the body (`runtime-server.js` `head`).
+  const head = out.head ? out.head.join('') : ''
   dispose()
-  return options.full ? wrapPage(html, options) : html
+  return { html, head }
 }
 
 // ─── Full page wrapper ────────────────────────────────────────────────────────

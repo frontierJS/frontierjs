@@ -3324,6 +3324,25 @@ class Parser {
           `@@transitions(${field}): unknown transition attribute '@${attr.value}' — only @gate, @system, @seals and @stamps are supported`, attr)
       }
 
+      // `while: <predicate>` or `unless: <predicate>` — the move is refused
+      // while the predicate fails (holds, for unless), graded only when the
+      // write makes this move (`FJS-D1286`). Last, because the predicate runs
+      // to the comma or the paren and an attribute after it would read as part
+      // of the expression.
+      let guard = null
+      while (this.check(TK.IDENT) && (this.peek().value === 'while' || this.peek().value === 'unless')
+             && this.peek(1)?.type === TK.COLON) {
+        const at = this.eat(TK.IDENT)
+        if (guard)
+          throw new ParseError(
+            `@@transitions(${field}) '${name}': a guard stated twice — join the conditions with && in one ${guard.when}:`, at)
+        this.eat(TK.COLON)
+        guard = { when: at.value, expr: this.parsePolicyExpr() }
+      }
+      if (guard && this.check(TK.AT))
+        throw new ParseError(
+          `@@transitions(${field}) '${name}': @${this.peek(1)?.value} goes before ${guard.when}: — the guard is the move's last clause`, this.peek())
+
       // 8 and 9 are sentinels meaning *no caller reaches this*, which is the
       // opposite of what @system says. A move declaring both has two answers to
       // one question and the reader cannot tell which was meant.
@@ -3335,7 +3354,7 @@ class Parser {
 
       if (name in transitions)
         throw new ParseError(`@@transitions(${field}): duplicate transition name '${name}'`, this.peek())
-      transitions[name] = { from, to, gate, system, seals, stamps, stampBy }
+      transitions[name] = { from, to, gate, system, seals, stamps, stampBy, guard }
     } while (this.maybeEat(TK.COMMA))
 
     this.eat(TK.RPAREN)

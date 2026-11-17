@@ -46,6 +46,9 @@ function segmentsFor(node) {
   let segs = _segCache.get(node)
   if (segs) return segs
   segs = splitPath(node.path).map((part) => {
+    // The scanner writes every [...name] as `*`, at any depth (FJS-4366); the
+    // name lives only in node.params. A tree built by hand may carry none.
+    if (part === '*') return { spread: true, name: node.params?.at(-1) ?? '404' }
     if (part.startsWith(':')) return { dynamic: true, name: part.slice(1) }
     return { dynamic: false, value: part }
   })
@@ -68,14 +71,6 @@ function matchNode(pathname, pathParts, node, inheritedParams) {
       return { node, params: inheritedParams }
     }
     return matchChildren(pathname, pathParts, node, inheritedParams)
-  }
-
-  // Catch-all — matches everything
-  if (node.path === '/*') {
-    return {
-      node,
-      params: { ...inheritedParams, '404': pathname.slice(1).replace(/\/$/, '') },
-    }
   }
 
   // Check if this node's pattern is a prefix of (or exact match for) the pathname
@@ -130,7 +125,8 @@ function matchChildren(pathname, pathParts, parent, inheritedParams) {
  */
 function matchPattern(node, pathParts, inheritedParams) {
   const patternParts = segmentsFor(node)
-  const plen = patternParts.length
+  const spread = patternParts.at(-1)?.spread ? patternParts.at(-1) : null
+  const plen = spread ? patternParts.length - 1 : patternParts.length
   const ulen = pathParts.length
 
   if (ulen < plen) return null   // pathname shorter than pattern — no match
@@ -142,15 +138,7 @@ function matchPattern(node, pathParts, inheritedParams) {
     const uPart = pathParts[i]
 
     if (seg.dynamic) {
-      if (params === null) params = { ...inheritedParams }
-      // Defined, not assigned. `params.__proto__ = value` on an ordinary object
-      // is a call to Object.prototype's setter, so a route file legally named
-      // `[__proto__].mesa` matched and then handed back a param that could never
-      // be read (`FJS-821` (g)). Every other name behaves identically either
-      // way — an own data property is what an assignment would have produced.
-      Object.defineProperty(params, seg.name, {
-        value: safeDecode(uPart), writable: true, enumerable: true, configurable: true,
-      })
+      params = setParam(params ?? { ...inheritedParams }, seg.name, safeDecode(uPart))
     } else if (seg.value !== uPart) {
       // Case-SENSITIVE, per `FJS-D210`. This compared lowercased for a long
       // time, and it was the only one of four readers of *which route is this*
@@ -162,10 +150,27 @@ function matchPattern(node, pathParts, inheritedParams) {
     }
   }
 
+  // A catch-all takes zero or more segments, so `/issues/` reaches
+  // issues/[...rest] when no issues/index answers first.
+  if (spread) {
+    const rest = pathParts.slice(plen).map(safeDecode).join('/')
+    return { exact: true, params: setParam(params ?? { ...inheritedParams }, spread.name, rest) }
+  }
+
   if (params === null) params = inheritedParams
 
   if (plen === ulen) return { exact: true, params }
   return { prefix: true, params }
+}
+
+// Defined, not assigned. `params.__proto__ = value` on an ordinary object is a
+// call to Object.prototype's setter, so a route file legally named
+// `[__proto__].mesa` matched and then handed back a param that could never be
+// read (`FJS-821` (g)).
+function setParam(params, name, value) {
+  return Object.defineProperty(params, name, {
+    value, writable: true, enumerable: true, configurable: true,
+  })
 }
 
 /**

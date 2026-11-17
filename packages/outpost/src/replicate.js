@@ -110,8 +110,13 @@ export function createReplicator({
   const heldNames = (yaml) => yamlDirs(yaml ?? '').map(dir => dir.replace(`${appsDir}/`, '').replace(/\/data$/, ''))
 
   async function lastWrite(r, url) {
-    const said = await run([litestream, ...lastWriteArgs(url)], { env: keyEnv(r), timeoutMs: 60_000 })
-    return said.exitCode === 0 ? parseLastWrite(said.stdout) : null
+    for (const level of ['0', 'all']) {
+      const said = await run([litestream, ...lastWriteArgs(url, level)], { env: keyEnv(r), timeoutMs: 60_000 })
+      if (said.exitCode !== 0) return null
+      const last = parseLastWrite(said.stdout)
+      if (last != null) return last
+    }
+    return null
   }
 
   return {
@@ -229,8 +234,14 @@ export function createReplicator({
      *  machine that stopped replicating yesterday stages yesterday's data, and
      *  a copy stamped with the staging time would call it current. A database
      *  with no writes gets no new LTX file, so a quiet one stays at its last
-     *  write and the newest across them is the copy's (`FJS-D1999`). */
-    async stage({ appId, replica, databases, at = null }) {
+     *  write and the newest across them is the copy's (`FJS-D1999`).
+     *
+     *  With `since`, the as_of of a copy already serving, a replica no
+     *  database of which has moved past it is answered `{ unchanged: true }`
+     *  with nothing staged: a restore lists ten levels per database, each a
+     *  Class C call B2 caps per account, and a scheduled refresh of a quiet
+     *  app would spend them restaging the same bytes (`FJS-4424`). */
+    async stage({ appId, replica, databases, at = null, since = null }) {
       if (typeof appId !== 'string' || !APP_ID.test(appId)) throw new Error(`app_id '${appId}' is not a plain name`)
       if (typeof replica !== 'object' || replica === null || Array.isArray(replica)) throw new Error('replica must be one entry')
       checkFields(replica, appId)
@@ -240,6 +251,14 @@ export function createReplicator({
       if (new Set(databases).size !== databases.length) throw new Error('a database is named twice')
       if (at !== null && !(typeof at === 'string' && ISO_INSTANT.test(at) && Number.isFinite(Date.parse(at))))
         throw new Error(`at '${at}' is not a UTC instant (2026-10-25T18:00:00Z)`)
+      if (since !== null && !(typeof since === 'string' && Number.isFinite(Date.parse(since))))
+        throw new Error(`since '${since}' is not a time`)
+
+      const lasts = new Map()
+      for (const name of databases) lasts.set(name, await lastWrite(replica, urlOf(replica, name)))
+      // A database whose newest point cannot be read counts as moved.
+      if (since !== null && at === null && [...lasts.values()].every(last => last != null && last <= Date.parse(since)))
+        return { unchanged: true, as_of: since }
 
       await mkdir(stageDir, { recursive: true, mode: 0o700 })
       const dir = await mkdtemp(`${stageDir}/${appId}-`)
@@ -247,7 +266,7 @@ export function createReplicator({
         const restored = []
         for (const name of databases) {
           const url  = urlOf(replica, name)
-          const last = await lastWrite(replica, url)
+          const last = lasts.get(name)
           const { args, pinned } = restoreArgs({ url, out: `${dir}/${name}`, at, last })
           const said = await run([litestream, ...args], { env: keyEnv(replica), timeoutMs: RESTORE_TIMEOUT_MS })
           if (said.exitCode !== 0)

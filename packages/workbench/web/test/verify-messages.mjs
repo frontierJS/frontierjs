@@ -189,7 +189,6 @@ const reactionsOn = async (post) => ((await sinkCall(`/channels/${ids.open}/post
 
 const poll = async (fn, ms = 15_000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(250) } return null }
 const pillOf = id => textOf(`[data-chat-sidebar] [data-channel="${id}"] .chat-pill`)
-const postTexts = () => evaluate(`[...document.querySelectorAll('[data-post-list] [data-post-text]')].map(e => e.textContent.replace(/\\s+/g, ' ').trim())`)
 
 try {
   console.log('\n  Sign in, and link a member on /laptop/')
@@ -274,7 +273,7 @@ try {
   await evaluate(`document.querySelector('[data-chat-sidebar] [data-channel="${ids.open}"]').click()`)
   await until(`document.querySelector('[data-chat-sidebar] [data-channel="${ids.open}"] [data-pill]') === null`, v => v === true, 'opening general never cleared its pill', 15_000)
   ok('opening the channel (chat.view) clears the pill')
-  const seen = await until(`[...document.querySelectorAll('[data-post-list] [data-post-text]')].map(e => e.textContent).join('|')`, t => t.includes(away) && t.includes(named), 'the unread posts never drew')
+  await until(`[...document.querySelectorAll('[data-post-list] [data-post-text]')].map(e => e.textContent).join('|')`, t => t.includes(away) && t.includes(named), 'the unread posts never drew')
   ok('and its posts are there')
 
   // ── 2.4 The thread pane ──
@@ -304,7 +303,7 @@ try {
   check('the thread reads as read on the server (opening it called readThread)', th?.unread_replies === 0, th)
   const listNow = await textsIn('[data-post-list]')
   check('the replies are not drawn as root posts in the channel', !listNow.some(t => t.includes(mineReply) || t.includes(theirReply)), listNow)
-  const link = await until(`document.querySelector('[data-post="${R}"] [data-post-replies]')?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`, t => t.includes('2 replies'), 'the root never showed 2 replies', 15_000)
+  await until(`document.querySelector('[data-post="${R}"] [data-post-replies]')?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`, t => t.includes('2 replies'), 'the root never showed 2 replies', 15_000)
   ok('the root carries "2 replies" as the link that opens the thread')
 
   // Following: replying follows; the pane's button turns it off and on.
@@ -697,7 +696,6 @@ try {
     await fillSel('[data-section-dialog] input[name=section]', name)
     await evaluate(`document.querySelector('[data-section-dialog] button[type=submit]').click()`)
   }
-  const customKey = async (name) => evaluate(`[...document.querySelectorAll('[data-section^="custom-"]')].find(e => e.querySelector('[data-fold]')?.textContent.trim() === ${sel(name)})?.dataset.section ?? null`)
   await openMenu('[data-chat-sidebar]', `[data-room-actions="${ids.open}"]`)
   await clickText('[role=menuitem]', 'Move to')
   await until(`!!document.querySelector('[data-move-new]')`, v => v, 'Move to never offered New section')
@@ -827,21 +825,25 @@ try {
   ok('a query with no hits shows the empty state')
 
   console.log('\n  Link previews')
-  // The sink's unfurled image is a made-up host; a page asking for it would be a failed request.
+  // Every https request the page makes is caught and answered here, so one to the
+  // unfurled host is counted rather than leaving the machine.
   const DOT = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
-  browser.on('Fetch.requestPaused', (p) => { send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'image/png' }], body: DOT }).catch(() => {}) })
+  const thirdParty = []
+  browser.on('Fetch.requestPaused', (p) => { thirdParty.push(p.request.url); send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'image/png' }], body: DOT }).catch(() => {}) })
   await send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] })
   const tag = Date.now()
   const linked = (await sinkPost(tokens.bob, ids.open, `look at https://example.com/launch-${tag} today`)).json
   const pictured = (await sinkPost(tokens.bob, ids.open, `a picture https://example.com/shot-${tag}.png`)).json
   await goto(`/messages/${ids.open}/`)
   await until(`!!document.querySelector('[data-post="${linked.id}"] [data-embed="opengraph"]')`, v => v, 'the link post never drew its preview card', 30_000)
-  const card = await evaluate(`(() => { const c = document.querySelector('[data-post="${linked.id}"] [data-embed="opengraph"]'); const a = c.querySelector('[data-embed-title]'); return { site: c.querySelector('[data-embed-site]')?.textContent.trim(), title: a.textContent.trim(), href: a.getAttribute('href'), target: a.target, rel: a.rel, desc: c.querySelector('[data-embed-desc]')?.textContent.trim(), thumb: c.querySelector('[data-embed-thumb]')?.getAttribute('src') } })()`)
-  check('an opengraph embed is a card: site, title as the link, description, thumbnail', card.site === 'example.com' && card.title === 'example.com page' && card.desc === 'What example.com says about itself' && card.thumb === 'https://example.com/og.png', card)
+  const card = await evaluate(`(() => { const c = document.querySelector('[data-post="${linked.id}"] [data-embed="opengraph"]'); const a = c.querySelector('[data-embed-title]'); return { site: c.querySelector('[data-embed-site]')?.textContent.trim(), title: a.textContent.trim(), href: a.getAttribute('href'), target: a.target, rel: a.rel, desc: c.querySelector('[data-embed-desc]')?.textContent.trim(), imgs: c.querySelectorAll('img').length } })()`)
+  check('an opengraph embed is a card: site, title as the link, description, and no thumbnail', card.site === 'example.com' && card.title === 'example.com page' && card.desc === 'What example.com says about itself' && card.imgs === 0, card)
   check('its link opens in a new tab with noopener noreferrer', card.href === `https://example.com/launch-${tag}` && card.target === '_blank' && /noopener/.test(card.rel) && /noreferrer/.test(card.rel), card)
-  await until(`!!document.querySelector('[data-post="${pictured.id}"] [data-embed="image"] img')`, v => v, 'the .png post never drew its image', 30_000)
-  const shot = await evaluate(`(() => { const a = document.querySelector('[data-post="${pictured.id}"] [data-embed="image"]'); return { href: a.getAttribute('href'), src: a.querySelector('img').getAttribute('src'), rel: a.rel, target: a.target, bounded: getComputedStyle(a.querySelector('img')).maxHeight } })()`)
-  check('an image embed is the image itself, bounded, linked in a new tab', shot.src === `https://example.com/shot-${tag}.png` && shot.href === shot.src && shot.target === '_blank' && /noopener/.test(shot.rel) && shot.bounded !== 'none', shot)
+  await until(`!!document.querySelector('[data-post="${pictured.id}"] [data-embed="image"]')`, v => v, 'the .png post never drew its image link', 30_000)
+  const shot = await evaluate(`(() => { const a = document.querySelector('[data-post="${pictured.id}"] [data-embed="image"]'); return { href: a.getAttribute('href'), text: a.textContent.trim(), imgs: a.querySelectorAll('img').length, rel: a.rel, target: a.target } })()`)
+  check('an image embed is a link to the image, not the image, opening in a new tab', shot.href === `https://example.com/shot-${tag}.png` && shot.text === shot.href && shot.imgs === 0 && shot.target === '_blank' && /noopener/.test(shot.rel), shot)
+  await sleep(1_000)
+  check('no preview asked the linked host for anything', !thirdParty.some(u => new URL(u).hostname === 'example.com'), thirdParty)
   check('a post with no link has no preview', !(await exists(`[data-post="${needleOne.id}"] [data-post-embeds]`)) && !(await exists(`[data-post="${heyPost.id}"] [data-post-embeds]`)))
 
   console.log('\n  Edit history')
@@ -991,7 +993,6 @@ try {
   const t0 = Date.now()
   await menuPick('[data-composer="post"]', '[data-later]', 'In 1 hour')
   await until(`document.querySelector(${sel(box)}).value`, v => v === '', 'Send later never cleared the box', 15_000)
-  const offeredLater = ['In 1 hour', 'Tomorrow, 9:00', 'Monday, 9:00', 'Pick a time…']
   const first = await poll(async () => (await apiRows('/scheduledPosts')).find(r => r.message === later))
   check('Send later writes a scheduled row an hour out, with the box\'s text, and posts nothing', !!first && first.status === 'scheduled' && first.channelExternalId === ids.open && Math.abs(Date.parse(first.sendAt) - (t0 + 3_600_000)) < 120_000 && !(await sinkPostBy(later)), first)
   check('the box says where it went', /Scheduled for/.test(await textOf('[data-composer-answer]') ?? ''), await textOf('[data-composer-answer]'))
@@ -1159,6 +1160,37 @@ try {
   await roomReady(ids.open)
   await until(`!document.querySelector('.topbar-nav [data-nav-badge]')`, v => v, 'opening the room never cleared the dot', 20_000)
   ok('opening the room clears the dot')
+  }
+
+  console.log('\n  Sidebar width')
+  {
+  await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
+  await evaluate(`localStorage.removeItem('workbench.messages.sidebarWidth')`)
+  await goto('/messages/')
+  await until(`!!document.querySelector('[data-chat-resize]')`, v => v, 'the sidebar never showed its resize handle')
+  const sideWidth = () => evaluate(`Math.round(document.querySelector('.chat-sidebar').getBoundingClientRect().width)`)
+  check('the sidebar opens at 260px', await sideWidth() === 260, await sideWidth())
+  const at = await evaluate(`(() => { const r = document.querySelector('[data-chat-resize]').getBoundingClientRect(); return { x: r.left + r.width / 2, y: (Math.max(r.top, 0) + Math.min(r.bottom, innerHeight)) / 2 } })()`)
+  const mouse = (type, x) => send('Input.dispatchMouseEvent', { type, x, y: at.y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 })
+  await mouse('mousePressed', at.x)
+  await mouse('mouseMoved', at.x + 60)
+  await mouse('mouseMoved', at.x + 100)
+  await mouse('mouseReleased', at.x + 100)
+  check('dragging the edge 100px right widens it to 360px', await sideWidth() === 360, await sideWidth())
+  await mouse('mousePressed', at.x + 100)
+  await mouse('mouseMoved', at.x - 400)
+  await mouse('mouseReleased', at.x - 400)
+  check('dragging far left stops at the 180px floor', await sideWidth() === 180, await sideWidth())
+  await evaluate(`document.querySelector('[data-chat-resize]').focus()`)
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 })
+  check('ArrowRight on the focused handle widens it 10px', await sideWidth() === 190, await sideWidth())
+  await goto('/messages/')
+  await until(`!!document.querySelector('.chat-sidebar')`, v => v, 'the sidebar never came back after a reload')
+  check('the width survives a reload', await sideWidth() === 190, await sideWidth())
+  await evaluate(`document.querySelector('[data-chat-resize]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
+  check('a double-click puts it back to 260px', await sideWidth() === 260, await sideWidth())
+  await send('Emulation.clearDeviceMetricsOverride')
   }
 
   console.log('\n  Chrome')

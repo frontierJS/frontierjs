@@ -1884,6 +1884,36 @@ describe('what the machine is asked to do', () => {
       expect(staged()).toEqual([])
     })
 
+    // A restore lists ten levels per database, each a Class C call B2 caps per
+    // account; a scheduled refresh of a quiet app restaged the same bytes (FJS-4424).
+    test('a replica no database of which moved past `since` keeps the running copy and restores nothing', async () => {
+      const { server, calls, copies, staged } = serving()
+      const first = (await post(server, '/replica/serve', body({ at: undefined }))).body
+      const before = calls.length
+      const { status, body: said } = await post(server, '/replica/serve', body({ at: undefined, since: first.as_of }))
+      expect(status).toBe(200)
+      expect(said).toMatchObject({ unchanged: true, as_of: first.as_of })
+      const after = calls.slice(before)
+      expect(after.some(a => a[1] === 'restore' || a[1] === 'run')).toBe(false)
+      // One level read per database: L0 holds the newest write.
+      expect(after.filter(a => a[1] === 'ltx').map(a => a[a.indexOf('-level') + 1])).toEqual(['0'])
+      expect(copies.map(c => c.container)).toEqual([first.container])
+      expect(staged()).toHaveLength(1)
+    })
+
+    test('a database past `since` restages, and with no copy running `since` is ignored', async () => {
+      const moved = serving({ ltx: { 'app.db': '2026-10-25T13:00:00Z' } })
+      await post(moved.server, '/replica/serve', body({ at: undefined }))
+      const again = (await post(moved.server, '/replica/serve', body({ at: undefined, since: '2026-10-25T12:00:00Z' }))).body
+      expect(again.unchanged).toBeUndefined()
+      expect(again.as_of).toBe('2026-10-25T13:00:00Z')
+
+      const none = serving()
+      const said = (await post(none.server, '/replica/serve', body({ at: undefined, since: '2026-10-25T12:00:00Z' }))).body
+      expect(said.unchanged).toBeUndefined()
+      expect(none.calls.some(a => a[1] === 'restore')).toBe(true)
+    })
+
     test('a caller cannot unset the variable through the release env', async () => {
       const { server, envs } = serving()
       await post(server, '/replica/serve', body({ config: { volumePath: '/db', port: 8080, env: { FRONTIER_READ_ONLY_COPY: '' } } }))

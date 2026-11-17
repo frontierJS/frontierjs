@@ -114,6 +114,14 @@ function vectorWriteError(v, dim) {
   return null
 }
 
+// A scalar item keeps String()'s identity, so '1' and 1 are still one item.
+const itemKey = (x) => x === null || typeof x !== 'object' ? String(x) : sortedJson(x)
+function sortedJson(x) {
+  if (x === null || typeof x !== 'object') return JSON.stringify(x) ?? 'null'
+  if (Array.isArray(x)) return `[${x.map(sortedJson).join(',')}]`
+  return `{${Object.keys(x).sort().map(k => `${JSON.stringify(k)}:${sortedJson(x[k])}`).join(',')}}`
+}
+
 const VALIDATORS = {
   // @vector(n) — the shape the CHECK cannot see.
   //
@@ -163,7 +171,11 @@ const VALIDATORS = {
   // handed one element's worth of value, and these are handed the whole column.
   minItems:    (v, n) => v.length >= n,
   maxItems:    (v, n) => v.length <= n,
-  uniqueItems: (v)    => new Set(v.map(String)).size === v.length,
+  // A member of a `Json @type(T[])` list is an object, and String() makes
+  // every object '[object Object]', so any two members read as duplicates.
+  // Objects compare by value with their keys sorted, as JSON Schema's
+  // uniqueItems does.
+  uniqueItems: (v)    => new Set(v.map(itemKey)).size === v.length,
 
   // Exact numbers. A scaled column holds the value with the point moved, so
   // what a caller sends is the WHOLE number of minor units — 1299, not 12.99.

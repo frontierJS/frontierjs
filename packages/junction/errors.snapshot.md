@@ -122,6 +122,7 @@ something that will never work, or not to retry something that would.
 | `SoftDeletedUniqueError` | status 409 · retryable false | `Conflict` | 409 | false | — |
 | `TransitionConflictError` | status 409 · retryable true | `Conflict` | 409 | true | `model`, `field`, `expected`, `actual`, `move`, `to` |
 | `TransitionGateError` | status 403 · retryable false | `Forbidden` | 403 | false | — |
+| `TransitionGuardError` | status 409 · retryable false | `Conflict` | 409 | false | — |
 | `TransitionNotFoundError` | status 400 · retryable false | `BadRequest` | 400 | false | — |
 | `TransitionSystemError` | status 403 · retryable false | `Forbidden` | 403 | false | — |
 | `TransitionViolationError` | status 409 · retryable false | `Conflict` | 409 | false | — |

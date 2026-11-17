@@ -145,6 +145,18 @@ describe('generateFactory reads the rules on a field', () => {
     await expect(db.asSystem().t.create({ data: { ...r, id: 1 } })).resolves.toBeDefined()
   })
 
+  // FJS-4413: the list was always [], so a model with @minItems on it had no row.
+  test('Json @type(T[]) honors its @minItems, and the client takes the row', async () => {
+    const src = `type Seat { name String @length(1, 40); score Int? }
+      model T { id Int @id; seats Json @type(Seat[]) @minItems(2); notes Json @type(Seat[]) }`
+    const r = row(src)
+    expect(r.seats).toHaveLength(2)
+    expect(r.seats[0].name).toBeString()
+    expect(r.notes).toEqual([])
+    const { db } = await makeTestClient(src)
+    await expect(db.asSystem().t.create({ data: { ...r, id: 1 } })).resolves.toBeDefined()
+  })
+
   test('an optional @type Json stays null', () => {
     const r = row(`type Cfg { url String }  model T { id Int @id; config Json? @type(Cfg) }`)
     expect(r.config).toBeNull()

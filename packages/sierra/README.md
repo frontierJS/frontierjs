@@ -210,7 +210,8 @@ blocks are escaped before compilation.
 | --- | --- | --- |
 | `leads/index.mesa` | `/leads/` | |
 | `leads/[leadId].mesa` | `/leads/:leadId/` | `page.params.leadId` |
-| `[...404].mesa` | `/*` | catch-all |
+| `[...404].mesa` | `/*` | catch-all — `page.params['404']` is the unmatched path |
+| `docs/[...rest].mesa` | `/docs/*` | catch-all below a folder — `/docs/a/b/` gives `page.params.rest` `'a/b'`, `/docs/` gives `''`; any static or `[param]` sibling wins first |
 | `(auth)/login.mesa` | `/login/` | `(group)` folders are organizational — zero URL impact |
 | `account/settings/index.mesa` | `/account/settings/` | |
 

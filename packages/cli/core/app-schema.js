@@ -150,7 +150,11 @@ export function shippedFile(root, pkg, subpath) {
 
   try {
     const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-    const target   = manifest.exports?.[subpath]
+    // A conditional export (`{ types, default }`) names its runtime file under
+    // a condition; reading only a bare string reported an installed package
+    // as missing the day sierra's `./tui` gained a `types` key.
+    const entry    = manifest.exports?.[subpath]
+    const target   = typeof entry === 'string' ? entry : entry?.bun ?? entry?.import ?? entry?.default
     if (typeof target !== 'string') return null
 
     const file = join(dir, target)

@@ -2,7 +2,7 @@
 // (`domain/chat/notice.ts`). Pure: no app, no socket, no ntfy.
 
 import { describe, expect, test } from 'bun:test'
-import { excerpt, inQuietHours, noticeKind } from '../src/domain/chat/notice.ts'
+import { excerpt, inQuietHours, noticeExcerpt, noticeKind } from '../src/domain/chat/notice.ts'
 
 const UTC = 'UTC'
 const at = (iso: string) => new Date(iso)
@@ -80,4 +80,9 @@ test('excerpt is one plain line of at most 140 characters', () => {
   const long = excerpt('x'.repeat(300))
   expect(long.length).toBe(140)
   expect(long.endsWith('…')).toBe(true)
+})
+
+test('a notice carries post text from an open room only', () => {
+  expect(noticeExcerpt('open', 'ship it')).toBe('ship it')
+  for (const type of ['private', 'direct', 'group']) expect(noticeExcerpt(type, 'ship it')).toBe('')
 })

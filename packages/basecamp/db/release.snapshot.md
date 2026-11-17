@@ -384,6 +384,7 @@ table `app_copy` · db `main` · gate `5`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isServingMainAddress` | `Boolean` | no | `0` | — |
 | `refreshedAt` | `DateTime` | yes | — | @system |
+| `releaseId` | `String` | yes | — | @system |
 | `requestedBy` | `String` | yes | — | — |
 | `server` | `Server` | — | — | relation |
 | `serverId` | `String` | no | — | **required on write** |

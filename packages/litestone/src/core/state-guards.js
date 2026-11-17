@@ -14,11 +14,11 @@ import { modelToTableName, fieldToColumnName } from './ddl.js'
 import { frozenAfterMove, machineWithMove } from './seal.js'
 import { levelPasses } from '../plugins/gate.js'
 import { requireCapability } from '../plugins/capability.js'
-import { buildPolicyFilter } from './policy.js'
+import { buildPolicyFilter, compileMoveGuard, policyExprToString } from './policy.js'
 import { ident, sqlFragment, pairsOn } from './query.js'
 import { ValidationError } from './validate.js'
 import {
-  TransitionViolationError, TransitionConflictError, TransitionGateError, TransitionSystemError,
+  TransitionViolationError, TransitionConflictError, TransitionGateError, TransitionSystemError, TransitionGuardError,
   SoftDeleteWriteError, SealedDocumentError,
 } from './errors.js'
 
@@ -61,6 +61,29 @@ export function makeStateGuards(shape, ctx, deps) {
   //
   const _tableTransitions = shape.transitions
   const _tableCapabilities = shape.capabilities
+
+  // ── A move's guard (`FJS-D1286`) ─────────────────────────────────────────
+  // Asked after the row is proven at `from`, so it grades only a write that
+  // makes this move — a later write to the moved row never meets it, which is
+  // what a postUpdate `@@require` in its place got wrong (`FJS-4334`). It is
+  // integrity, so `asSystem()` is held to it as to the machine. The fragment
+  // rides the compare-and-swap, and `refuse` is the no-row reader's answer
+  // when the guard failed between this read and the write.
+  function guardHolds(guard, whereSql, whereParams) {
+    return readDb.query(`SELECT 1 FROM ${ident(tableName).sql} WHERE (${whereSql}) AND ${guard.sql} LIMIT 1`)
+      .get(...whereParams, ...guard.params) != null
+  }
+
+  function guardMove(fieldName, moveName, move, whereSql, whereParams) {
+    if (!move.guard) return null
+    const frag  = compileMoveGuard(modelName, move.guard, ctx)
+    const guard = {
+      sql: frag.sql, params: frag.params,
+      refuse: () => new TransitionGuardError(modelName, fieldName, moveName, move.guard.when, policyExprToString(move.guard.expr)),
+    }
+    if (!guardHolds(guard, whereSql, whereParams)) throw guard.refuse()
+    return guard
+  }
 
   // Which transitions-typed column a bulk payload names, or null. `verb` is
   // carried into the message so the refusal names the call that was made.
@@ -335,7 +358,8 @@ export function makeStateGuards(shape, ctx, deps) {
           throw new TransitionViolationError(tableName, fieldName, currentValue, named.to,
             Object.values(transitions).filter(t => t.from.includes(currentValue)).map(t => t.to))
 
-        return { transitionName: requestedMove, field: fieldName, from: currentValue, to: named.to, stamps: named.stamps ?? [], stampBy: named.stampBy ?? null }
+        return { transitionName: requestedMove, field: fieldName, from: currentValue, to: named.to, stamps: named.stamps ?? [], stampBy: named.stampBy ?? null,
+                 guard: guardMove(fieldName, requestedMove, named, whereSql, whereParams) }
       }
 
       if (currentValue === newValue) return null   // no change — nothing to enforce
@@ -357,7 +381,8 @@ export function makeStateGuards(shape, ctx, deps) {
       // The move is legal — is this caller allowed to make it?
       await gradeMove(fieldName, matchedName, transitions[matchedName])
 
-      return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue, stamps: transitions[matchedName].stamps ?? [], stampBy: transitions[matchedName].stampBy ?? null }
+      return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue, stamps: transitions[matchedName].stamps ?? [], stampBy: transitions[matchedName].stampBy ?? null,
+               guard: guardMove(fieldName, matchedName, transitions[matchedName], whereSql, whereParams) }
     }
     return null
   }
@@ -537,12 +562,13 @@ export function makeStateGuards(shape, ctx, deps) {
       params: [...finalWhereParams, transitionResult.from, transitionResult.from, transitionResult.to],
     }
     // Add WHERE field = currentValue for optimistic concurrency
+    const g = transitionResult.guard
     return {
-      sql:    `(${finalWhereSql}) AND "${col(transitionResult.field)}" = ?`,
+      sql:    `(${finalWhereSql}) AND "${col(transitionResult.field)}" = ?` + (g ? ` AND ${g.sql}` : ''),
       // _ecp: a boolean state is stored 1/0, and a raw `false` binds as nothing
       // the column ever equals — the swap would match no row and every move on a
       // Boolean machine would report a conflict.
-      params: [...finalWhereParams, _ecp(transitionResult.from)],
+      params: [...finalWhereParams, _ecp(transitionResult.from), ...(g ? g.params : [])],
     }
   }
 
@@ -550,6 +576,6 @@ export function makeStateGuards(shape, ctx, deps) {
     _tableTransitions, _sealSelf, _sealInsertSql, _selfFreezes,
     _bulkTransitionField, refuseSoftDeleteWrite, refuseOffEntry, checkTransitions, transitionLevel, declaredTransitions,
     sealWhereClause, sealInsertGuard, sealRefusal, throwIfSealed, sealSelfClause, throwIfSealedSelf,
-    applyTransitionWhereClause,
+    applyTransitionWhereClause, guardHolds, guardMove,
   }
 }

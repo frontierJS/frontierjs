@@ -31,12 +31,12 @@ that claimed the strong check while holding the weak one would be worse than no 
 | --- | --- | --- |
 | `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | 34 |
 | `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 20 |
-| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 15 |
-| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 13 |
+| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 17 |
+| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 14 |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 13 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 11 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 10 |
-| `app.principal()` | `packages/junction/src/core/app.ts` | 8 |
+| `app.principal()` | `packages/junction/src/core/app.ts` | 9 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 7 |
 | `app.conduit.mirror(claim)` | `packages/conduit/src/mirror.ts` | 7 |
@@ -93,7 +93,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
 | `labelFieldInfo(fields, fallback, declared)` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
 | `x-values` | `packages/litestone/src/jsonschema.js` | mentioned | — |
-| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | yes | 13 |
+| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | yes | 14 |
 | `toFieldErrors(err)` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
 | `$context.form` | `packages/ui/components/forms/Form.mesa` | mentions `form` — weak | — |
 | `buildRelations()` / `buildGate()` / `canAtLevel()` | `packages/sierra/src/resource/field-rules.js` | yes | 1 |
@@ -138,7 +138,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `runStartPhases(bindHost)` | `packages/junction/src/core/app.ts` | yes | — |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | yes | 11 |
 | `app.withDb(fn)` / `app.onTenantClient(observer)` | `packages/junction/src/core/app.ts` | yes | 1 |
-| `app.principal()` / `app.runAs(userId, fn)` | `packages/junction/src/core/app.ts` | yes | 8 |
+| `app.principal()` / `app.runAs(userId, fn)` | `packages/junction/src/core/app.ts` | yes | 9 |
 | `createLitestoneAuth(db, { sessionFields })` | `packages/auth/auth.ts` | yes | — |
 | `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | yes | 34 |
 | `app.registerMetricsSource(name, fn)` / `app.registerReadiness(name, fn)` | `packages/junction/src/core/app.ts` | yes | — |
@@ -154,7 +154,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `announce()` | `packages/junction/src/transport/channels.ts` | yes | 8 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | 1 |
-| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 15 |
+| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 17 |
 | `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 20 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |

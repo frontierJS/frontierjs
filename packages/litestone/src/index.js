@@ -3,7 +3,7 @@
 
 export { createClient, ValidationError,
          TransitionViolationError, TransitionConflictError,
-         TransitionNotFoundError, TransitionGateError, TransitionSystemError, BulkTransitionError,
+         TransitionNotFoundError, TransitionGateError, TransitionSystemError, TransitionGuardError, BulkTransitionError,
          VersionRequiredError, VersionConflictError,
          LockNotAcquiredError, LockReleasedByOtherError,
          LockExpiredError, SoftDeletedUniqueError, SoftDeleteWriteError,

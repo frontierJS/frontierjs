@@ -51,7 +51,11 @@
   })
   $.onDestroy(() => hideWords(el, false))
 
-  function grow() { box.style.height = Math.max(r.height, box.scrollHeight) + 'px' }
+  // Collapsed first: a box only ever measured grows, and never shrinks back.
+  function grow() {
+    box.style.height = 'auto'
+    box.style.height = Math.max(r.height, box.scrollHeight) + 'px'
+  }
 
   function typed() {
     grow()
@@ -91,9 +95,9 @@
 
 <div class="fjs-editor-inline" data-fjs-editor-ui
      style:left="{r.left + scrollX}px" style:top="{r.top + scrollY}px" style:width="{r.width}px">
-  <textarea bind:this={box} id="fjs-inline" aria-label={`Change these words in ${path}`} disabled={busy}
+  <textarea bind:this={box} id="fjs-inline" rows="1" aria-label={`Change these words in ${path}`} disabled={busy}
             oninput={typed} onkeydown={keydown} onblur={() => { if (!busy) done(null) }}></textarea>
-  <div class="card fjs-editor-inline-bar">
+  <div class="card glass theme-basecamp fjs-editor-inline-bar">
     <span>{busy ? 'Saving…' : `Enter saves to ${site.draft} · Esc cancels`}</span>
     <button class="btn ghost" id="fjs-inline-file" onmousedown={(e) => e.preventDefault()}
             onclick={() => { over = true; live.restore(); onform?.(null, null) }}>Edit the file</button>
@@ -118,6 +122,7 @@
     background: transparent;
   }
   .fjs-editor-inline-bar {
+    --glass-alpha: 96%;
     width: max-content;
     min-width: 100%;
     max-width: calc(100vw - 2rem);

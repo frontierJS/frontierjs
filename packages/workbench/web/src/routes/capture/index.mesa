@@ -70,7 +70,6 @@ title: Capture
   let waiting     = false
   let testing     = false
   let testResult  = null
-  let poller      = null
 
   const scaleOptions = () => {
     if (SCALES.some(s => s.value === scale)) return SCALES
@@ -97,7 +96,7 @@ title: Capture
       fill(await capture.service.invoke('config'))
       loadErr = null
       // A reload while the browser is away picks the wait back up.
-      if (info.connecting) watchConnect()
+      if (info.connecting) waiting = true
     } catch (err) {
       loadErr = err.message
     }
@@ -134,24 +133,18 @@ title: Capture
 
   // The same `config` the screen loaded with, but only `info` moves, so what is
   // being typed in the other fields survives the poll.
-  async function watchConnect() {
-    waiting = true
-    clearInterval(poller)
-    poller = setInterval(async () => {
-      try {
-        const out = await capture.service.invoke('config')
-        info = out
-        if (out.connecting) return
-        clearInterval(poller)
-        waiting = false
-        if (out.webKeySet) toasts.success('Connected to the share server')
-        else toasts.error('The connection was not completed')
-      } catch (err) {
-        clearInterval(poller)
-        waiting = false
-        toasts.error(err.message)
-      }
-    }, 2000)
+  async function pollConnect() {
+    try {
+      const out = await capture.service.invoke('config')
+      info = out
+      if (out.connecting) return
+      waiting = false
+      if (out.webKeySet) toasts.success('Connected to the share server')
+      else toasts.error('The connection was not completed')
+    } catch (err) {
+      waiting = false
+      toasts.error(err.message)
+    }
   }
 
   async function connect() {
@@ -162,7 +155,7 @@ title: Capture
       connectUrl = out.url
       // A new window is the system browser in the desktop shell, and the link below is the fallback.
       window.open(out.url, '_blank', 'noopener')
-      watchConnect()
+      waiting = true
     } catch (err) {
       toasts.error(err.message)
     } finally {
@@ -195,7 +188,7 @@ title: Capture
     }
   }
 
-  $.onDestroy(() => clearInterval(poller))
+  $.every(2000, pollConnect, { when: waiting })
   load()
 </script>
 

@@ -160,9 +160,14 @@ validate.
     "Status":  { "type": "string", "enum": ["draft","published","archived","settled"], "title": "Status" },
     "Address": { "type": "object", "title": "Address", "properties": {…}, "required": ["line1","city"] },
     "FileRef": { "type": "object", "x-litestone-file": true, … }
-  }
+  },
+  "x-opaque": []
 }
 ```
+
+**`x-opaque` at the root is every rule the document cannot state** — see
+[§ `x-opaque`](#x-opaque--the-rules-the-document-cannot-state). It is always
+present, and empty means the document is exactly as strict as the schema.
 
 **`$defs` is the whole definition table** — models keyed by PascalCase model
 name, enums, `type T { … }` declarations, and `FileRef` when any model has a
@@ -253,6 +258,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-litestone-generated` | field | an unquoted `@generated` as `{ expr }`, its AST, or a backtick one as `{ template }`; absent for quoted SQL. `full` mode only, beside `readOnly` | sierra (`generatedFor` → `resource.preview(draft)`) |
 | `x-litestone-secret` | field | `true` — `audience: 'system'` only | nothing yet |
 | `x-litestone-guarded` | field | `true` — `audience: 'system'` only | nothing yet |
+| `x-opaque` | model, root | the rules no keyword states — `[{ rule, message, field? }]` on a model, `[{ path, rule, message }]` at the root, always present there (`FJS-D2130`) | junction's OpenAPI spec (passed through), `litestone jsonschema` (the count) |
 
 **`x-sortable` and `x-filterable` emit only the EXCEPTIONS**, which is why absent
 is the answer for most columns: they ship in a bundle whose size is already an
@@ -275,6 +281,41 @@ client: that pulls in `bun:sqlite`, and sierra's build runs in plain Node.
 `x-gate`, `x-capabilities` and the `gate` inside `x-transitions` are **UI affordances**. The Data
 boundary enforces regardless of what the client believes, so an unknown answer
 is permissive by design (Invariant 6).
+
+---
+
+## `x-opaque` — the rules the document cannot state
+
+A rule the Data boundary refuses by and no JSON Schema keyword expresses is
+listed rather than dropped (`FJS-D2130`). Dropped in silence, a client
+validating against the document accepts a row the server refuses.
+
+| Word | Why no keyword |
+|---|---|
+| `@check(expr)` | a SQL expression, evaluated by SQLite |
+| `@@check(expr)` | a SQL expression over several columns of one row |
+| `@@arc([a, b])` | exactly one of the columns set, which a create and a patch grade differently |
+| `@zone` | the list is the host's ICU zone table, which differs between hosts |
+
+The model carries `x-opaque: [{ rule, message }]`, with `field` on an entry
+that is one column's; the root carries one list of `{ path, rule, message }`,
+`path` the model or `Model.field`. `rule` is the word as written and `message`
+the authored sentence or `null`:
+
+```json
+"x-opaque": [
+  { "path": "Discount", "rule": "@@check(\"startsAt IS NULL OR endsAt IS NULL OR startsAt < endsAt\")",
+    "message": "a discount must end after it starts" }
+]
+```
+
+A field `@check` on a column this audience is not sent is not listed. Gates
+and transitions are never listed — `x-gate` and `x-transitions` carry them.
+Cross-row rules (`@unique`, `@@exclude`) are not listed: no document validator
+can grade them. `litestone jsonschema` prints the count, and junction's OpenAPI
+spec carries the root list at its own root. `test/jsonschema-opaque.test.ts`
+walks every word that refuses a value and fails one that is neither emitted as a
+keyword nor listed.
 
 ---
 

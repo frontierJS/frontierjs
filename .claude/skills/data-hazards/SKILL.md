@@ -61,6 +61,7 @@ Detail: `references/transitions.md`
 - **A `@@commitment`'s fire is graded as `createApp({ system })`, so the model's read policy must admit that principal by name** (`FJS-2231`)
 - **`@zoned` is read by `due()` alone — a window over the same day is still read in the call's zone** (`FJS-2170`)
 - **What a `@seals` commitment's move owes is written in `before`; a write its from-state contends with, in `after`** (`FJS-2163`)
+- **A move's `while:` guard refuses on NULL, and `asSystem()` is held to it** (`FJS-D1286`)
 
 ## `@immutable` and encryption
 Detail: `references/immutable-and-encryption.md`

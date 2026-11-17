@@ -92,9 +92,14 @@ export async function refreshCopy(app: App, opts: {
     if (typeof cert === 'object') return failed(`The workspace's wildcard certificate did not reach the machine: ${cert.failed}`)
   }
 
+  // A copy this release already serves is restored again only once the
+  // replica moved past it: a restore lists every level of every database, and
+  // B2 caps those listings per account (`FJS-4424`). A variable changed without
+  // a release reaches the copy with the next write or release.
+  const since = copy.status === 'success' && copy.asOf && copy.releaseId === release.id ? copy.asOf : null
   const { app_id, ...entry } = replica.entry
   const reply = await executor.call('/replica/serve', {
-    app_id, replica: entry, databases, ...(host ? { host } : {}), ...(hosts.length ? { hosts } : {}),
+    app_id, replica: entry, databases, ...(since ? { since } : {}), ...(host ? { host } : {}), ...(hosts.length ? { hosts } : {}),
     image: release.toImage, ...(release.builtImage ? { digest: release.builtImage } : {}),
     ...(imageUrl ? { image_url: imageUrl, image_sha256: release.imageSha256 } : {}),
     config: { ...runtimeFor((release.configSnapshot ?? {}) as Record<string, unknown>, target as never), env },
@@ -106,7 +111,7 @@ export async function refreshCopy(app: App, opts: {
   const asOf = reply.data?.as_of
   if (typeof asOf !== 'string' || !Number.isFinite(Date.parse(asOf))) return failed('the outpost answered no as_of for the copy')
   if (host) await app.jobs.dispatch(appCopyDns, { appId: target.id }, { actor: null })
-  return finish({ status: 'success', asOf, error: null, refreshedAt: new Date().toISOString() })
+  return finish({ status: 'success', asOf, error: null, refreshedAt: new Date().toISOString(), releaseId: release.id })
 }
 
 // ─── The main address ─────────────────────────────────────────────────────

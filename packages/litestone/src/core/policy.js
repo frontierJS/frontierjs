@@ -1147,6 +1147,15 @@ export function buildPolicyMap(schema, relationMap, claims = null) {
         }
         continue
       }
+      // A move's guard is no row policy and joins no bucket, but it compiles
+      // through the same compiler, so a name that is no column is refused here
+      // rather than read by SQLite as a string constant.
+      if (attr.kind === 'transitions') {
+        for (const [name, move] of Object.entries(attr.transitions ?? {}))
+          if (move.guard) checkExpr(model, move.guard.expr, relationMap,
+            `@@transitions(${attr.field}) '${name}' ${move.guard.when}:`, claims, schema)
+        continue
+      }
       if (attr.kind !== 'allow' && attr.kind !== 'deny') continue
       checkExpr(model, attr.expr, relationMap, '@@allow/@@deny', claims, schema)
       if (!map[model.name]) map[model.name] = {}
@@ -1488,6 +1497,18 @@ export function buildPolicyFilter(modelName, op, ctx) {
     )
   }
   return sqlFragment(sql, params)
+}
+
+// The SQL a row must satisfy for a guarded move to be made (`FJS-D1286`). It
+// reads the STORED row, so it is AND-ed into the move's compare-and-swap and a
+// guard that fails between the read and the write leaves the row unmoved.
+// UNKNOWN refuses in both spellings: a related row that is absent says nothing
+// either way, and a move is the thing being asked to happen.
+export function compileMoveGuard(modelName, guard, ctx) {
+  ctx = atOneInstant(ctx)
+  const params = []
+  const sql    = compileSql(guard.expr, params, ctx, modelName, 'update', new Set())
+  return sqlFragment(guard.when === 'unless' ? `COALESCE(NOT (${sql}), 0)` : `COALESCE((${sql}), 0)`, params)
 }
 
 /**
@@ -2201,7 +2222,7 @@ function evalSome(node, ctx, data, modelName, op) {
 
 // Which half refused a transition: `client.js` `transitions()` returns one of these, or null
 // when allowed. Listed here for readers that must name the set (`litestone spec`).
-export const REFUSED_BY = ['system', 'gate', 'policy']
+export const REFUSED_BY = ['system', 'gate', 'policy', 'guard']
 
 // Does this rule fire? An ALLOW is a whitelist and only TRUE admits; a DENY
 // excludes on TRUE and on UNKNOWN alike, because `AND NOT (NULL)` keeps no row.

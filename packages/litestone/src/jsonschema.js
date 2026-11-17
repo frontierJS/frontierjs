@@ -327,6 +327,11 @@ export function generateJsonSchema(schema, options = {}) {
   }
   if (title) root.title = title
 
+  // Always present: an empty list is the claim that the document is exactly as
+  // strict as the schema, and an absent one would read the same as an old export.
+  root['x-opaque'] = schema.models.flatMap(m => (modelDefs[m.name]['x-opaque'] ?? []).map(({ field, rule, message }) =>
+    ({ path: field ? `${m.name}.${field}` : m.name, rule, message })))
+
   if (format === 'definitions') {
     root['$defs'] = { ...modelDefs, ...enumDefs, ...typeDefs, ...fileRefDef }
   } else {
@@ -1185,7 +1190,36 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   }
   if (relations.length) result['x-relations'] = relations
 
+  const opaque = opaqueRules(model, properties)
+  if (opaque.length) result['x-opaque'] = opaque
+
   return result
+}
+
+// ─── x-opaque ─────────────────────────────────────────────────────────────────
+// A rule the Data boundary refuses by and no JSON Schema keyword states. Left
+// out in silence, a client validating against this document accepts a row the
+// server refuses (`FJS-D2130`). A field check on a column this audience is not
+// sent is not listed: the document offers no way to write it.
+function opaqueRules(model, properties) {
+  const out = []
+  for (const field of model.fields) {
+    if (!(field.name in properties)) continue
+    for (const a of field.attributes) {
+      if (a.kind === 'check' && a.expr)
+        out.push({ field: field.name, rule: `@check(${JSON.stringify(a.expr)})`, message: a.message ?? null })
+      // The host's ICU zone table is the list, and it differs between hosts.
+      if (a.kind === 'zone')
+        out.push({ field: field.name, rule: '@zone', message: a.message ?? null })
+    }
+  }
+  for (const a of model.attributes ?? []) {
+    if (a.kind === 'check')
+      out.push({ rule: `@@check(${JSON.stringify(a.expr)})`, message: a.message ?? null })
+    if (a.kind === 'arc' && Array.isArray(a.fields))
+      out.push({ rule: `@@arc([${a.fields.join(', ')}]${a.optional ? ', optional: true' : ''})`, message: a.message ?? null })
+  }
+  return out
 }
 
 // ─── Per-field schema ─────────────────────────────────────────────────────────

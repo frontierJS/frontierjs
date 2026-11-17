@@ -372,3 +372,61 @@ model Client {
     db.$close()
   })
 })
+
+// FJS-4421: SQLite checks NOT NULL before ON CONFLICT, so a sheet of keys and
+// new prices was refused for every stored row it named.
+describe('loadRows under upsert needs only the key of a stored row', () => {
+  const parts = `
+model Part {
+  id    Int    @id
+  sku   String @unique
+  name  String
+  price Int
+  note  String?
+}
+`
+  const openParts = async () => {
+    const db = (await createClient({ schema: parts, db: ':memory:' })) as any
+    await db.part.createMany({ data: [{ sku: 'A', name: 'Alpha', price: 100 }, { sku: 'B', name: 'Beta', price: 200 }] })
+    return db
+  }
+
+  it('a file without a required column updates the stored rows it names and rejects a new one by line', async () => {
+    const db = await openParts()
+    const out = await loadRows(db, 'Part', 'sku,price\nA,150\nZ,900\nB,250\n', { key: 'sku', mode: 'upsert' })
+    expect(out.loaded).toBe(2)
+    expect(out.rejects).toEqual([{ row: 1, line: 3, key: 'Z', field: 'name', reason: 'required, and the key names no stored row to keep it from' }])
+    expect(await db.part.findMany({ orderBy: { sku: 'asc' } })).toMatchObject([
+      { sku: 'A', name: 'Alpha', price: 150 }, { sku: 'B', name: 'Beta', price: 250 },
+    ])
+    db.$close()
+  })
+
+  it('a blank required cell keeps the stored value, and on a new row is required, and empty', async () => {
+    const db = await openParts()
+    const out = await loadRows(db, 'Part', 'sku,name,price,note\nA,,150,x\nC,Gamma,300,\nD,,400,\n', { key: 'sku', mode: 'upsert' })
+    expect(out.loaded).toBe(2)
+    expect(out.rejects.map((r: any) => [r.key, r.field, r.reason])).toEqual([['D', 'name', 'required, and empty']])
+    expect(await db.part.findMany({ orderBy: { sku: 'asc' } })).toMatchObject([
+      { sku: 'A', name: 'Alpha', price: 150, note: 'x' }, { sku: 'B', name: 'Beta' }, { sku: 'C', name: 'Gamma', price: 300 },
+    ])
+    db.$close()
+  })
+
+  it('a record naming only a stored key loads and changes nothing', async () => {
+    const db = await openParts()
+    const out = await loadRows(db, 'Part', [{ sku: 'A' }, { sku: 'Q' }], { key: 'sku', mode: 'upsert' })
+    expect(out.loaded).toBe(1)
+    expect(out.rejects.map((r: any) => [r.row, r.key, r.field])).toEqual([[1, 'Q', 'name']])
+    expect(await db.part.findFirst({ where: { sku: 'A' } })).toMatchObject({ name: 'Alpha', price: 100 })
+    db.$close()
+  })
+
+  it('a dry run reports the same split and writes nothing', async () => {
+    const db = await openParts()
+    const out = await loadRows(db, 'Part', 'sku,price\nA,150\nZ,900\n', { key: 'sku', mode: 'upsert', dryRun: true })
+    expect([out.loaded, out.rejects.length]).toEqual([1, 1])
+    expect((await db.part.findFirst({ where: { sku: 'A' } })).price).toBe(100)
+    db.$close()
+  })
+})

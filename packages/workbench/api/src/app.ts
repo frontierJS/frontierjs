@@ -112,17 +112,6 @@ export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promis
       a.channel?.(notificationChannelName(s.id)).join(conn)
       for (const name of CHAT_CHANNELS) a.channel?.(name).join(conn)
     })
-  }, {
-    // A pushed frame is graded without the principal resolver, so without
-    // this a private channel's rows are refused to its own members on the
-    // socket while the same rows answer over a fetch. Read per frame: a
-    // member who links or unlinks keeps the socket they already had.
-    claims: async (_name, conn) => {
-      const id = (conn.user as { id?: string | number } | null)?.id
-      if (id == null) return null
-      const row = await db.asSystem().member.findFirst({ where: { id: Number(id) }, select: { id: true, profileExternalId: true } })
-      return row?.profileExternalId ? { profileExternalId: row.profileExternalId } : null
-    },
   }))
 
   // Jobs under api/src/jobs register themselves; the app's scheduler arms their crons.

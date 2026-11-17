@@ -5345,6 +5345,10 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d2250"></a>2026-11-17 · `FJS-D2250` — A ranged read is an option on the reader: `useStorage(config).stream(ref, { start, end })`, inclusive byte offsets as in HTTP's `bytes=a-b`, either one optional. Every provider returns exactly those bytes; the S3 provider sends a `Range` GET and throws unless the answer is 206. Parsing a `Range` header and answering 416 stay the app's, measured against the ref's stored `size`.
+
+Asked through the question tool while deploying fjs-prototypes/capture: the owner picked R2 over the box's disk, knowing it needed a ranged read first, and the spelling is the main thread's. An option on `stream` was picked over **a second verb `storage.range(ref, start, end)`** (two verbs that read bytes, Invariant 4) and **a 302 to `storage.sign(ref)`** (no framework change, but the app loses its cache headers and stable-bytes route). As recommended. The nine: owner — `stream` already owns "the bytes of a File as a stream", and `sign` and `put` take options the same way; silence — a store that ignores `Range` answers 200 with the whole object, so the 206 check is what keeps a seek from playing the wrong bytes, and `test/file-from-stream.test.ts` reads five ranges back on local and a fake S3 and asserts they agree. Not driven against a live bucket: capture's Phase 5 does that. Reopen as its own verb if a ranged read ever has to return metadata beside the bytes.
+
 ### <a id="fjs-d2241"></a>2026-11-16 · `FJS-D2241` — Where does a content check written in code live so the schema shows it and every writer is graded — The field carries `@validate`, bound by `path` to a `$validate` rule in `db/computed.js`; boot refuses a `@validate` field with no rule naming it and a rule naming a field without `@validate`, and a path-less rule needs `@@validate`; `buildValidationMap` counts `$validate` so the pass is never skipped.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (model-level `@@validate` only), **C** (`$validate` keyed by field, like a computed).
@@ -5482,10 +5486,6 @@ The hook carries the caller's args, not the row: `ExternalRefPlugin` keys what o
 ### <a id="fjs-d1810"></a>2026-11-03 · `FJS-D1810` — A one-row update stays on the one update path: there is no fast path beside `prepareUpdate`. What the path skips is what the model's shape already decides: the hasMany call runs only when something is nested, the select-all text is built only when a reader needs it, `gradesParents()` is asked before `hiddenParents`, and nothing is allocated for a seal or a move the model does not have. `bench/cases.mjs` `update-by-id` holds it to 14x the raw statement: the round harness reports 8–12x across runs, since the raw statement is ~2 µs and noise moves the ratio, and the ~5x below is a min-of-chunks figure that harness does not reproduce.
 
 Asked in chat, through the question tool, closing `FJS-3911`. Measured in one process, min of chunks, at load average 15–27. The trims save 1.6–4.9 µs of 16–21 µs, which puts the update at about 5x raw. A throwaway fast path for a plain model (pk-only where, scalar patch, no plugins, policies, logs or listeners; `writeData`, one `UPDATE … RETURNING *`, `read`, the query event) took ~8.5 µs against ~16 µs for the trimmed path, about 2.2x raw. **Trims only** was picked over **a fast path gated by a write-rule registry** and **trims with the row left open**, as recommended. The nine: owner — update has one owner, and a fast path would be a second whose gate restates about fifteen stages of `prepareUpdate` (Invariant 4); failure — a rule the gate misses is skipped silently, as `@map` was on the read fast paths (`FJS-969`); silence — `update-by-id` reports a regression. Reopen if a profiled app shows single-row updates dominating its time. Then build the registry form, where each stage declares when it is idle and is refused at load when it does not (as `READ_RULES` `narrows` is), proved against `update-by-id` and a rule-by-rule parity test. Never build a hand-written eligibility list.
-
-### <a id="fjs-d2250"></a>2026-11-17 · `FJS-D2250` — A ranged read is an option on the reader: `useStorage(config).stream(ref, { start, end })`, inclusive byte offsets as in HTTP's `bytes=a-b`, either one optional. Every provider returns exactly those bytes; the S3 provider sends a `Range` GET and throws unless the answer is 206. Parsing a `Range` header and answering 416 stay the app's, measured against the ref's stored `size`.
-
-Asked through the question tool while deploying fjs-prototypes/capture: the owner picked R2 over the box's disk, knowing it needed a ranged read first, and the spelling is the main thread's. An option on `stream` was picked over **a second verb `storage.range(ref, start, end)`** (two verbs that read bytes, Invariant 4) and **a 302 to `storage.sign(ref)`** (no framework change, but the app loses its cache headers and stable-bytes route). As recommended. The nine: owner — `stream` already owns "the bytes of a File as a stream", and `sign` and `put` take options the same way; silence — a store that ignores `Range` answers 200 with the whole object, so the 206 check is what keeps a seek from playing the wrong bytes, and `test/file-from-stream.test.ts` reads five ranges back on local and a fake S3 and asserts they agree. Not driven against a live bucket: capture's Phase 5 does that. Reopen as its own verb if a ranged read ever has to return metadata beside the bytes.
 
 ### <a id="fjs-d1808"></a>2026-11-03 · `FJS-D1808` — `fromStream` to a remote provider takes a stated size: `fromStream(readable, { name, type, size })`. The S3 provider refuses a stream with no `size` by name and sends it as one unsigned PUT over https; over plain http it refuses a stream by name, since a signed payload would buffer the file. The local provider needs no size. A stream whose byte count disagrees with a stated `size` is refused and its partial object deleted, by one check in `file-storage.js` and not one per provider (Invariant 4). Multipart, for an object past S3's 5 GB single-PUT ceiling or of unknown length, is `FJS-3905`.
 
@@ -17821,11 +17821,17 @@ work, not a decision.)*
 
 ## Repo conventions
 
-### <a id="fjs-d2246"></a>2026-11-16 · `FJS-D2246` — Q6 — How does Workbench find `kapture` — On `PATH`, installed with `cargo install`; Workbench checks for it and never builds it.
+### <a id="fjs-d2255"></a>2026-11-17 · `FJS-D2255` — Q2 — Does it ship before the extension's first marketplace publish — Yes, in 0.1.x.
 
-Asked in [`IDEAS/workbench-capture.md`](IDEAS/workbench-capture.md) § Open questions. **A** was picked over **B** (Workbench builds Kapture from a checkout path it is given).
+Asked in [`IDEAS/site-kit-media-completion.md`](IDEAS/site-kit-media-completion.md) § Open questions. **A** was picked over **B** (after, as the first feature release).
 
-The paper's recommendation, taken as written: it is how Workbench already treats `claude` and `gh`: a binary it checks for and never builds.
+The paper's recommendation, taken as written: publishing waits only on the PAT, and no release boundary exists yet for B to respect.
+
+### <a id="fjs-d2254"></a>2026-11-17 · `FJS-D2254` — Q1 — Which paths complete — Any `/` in a path position, so `/theme/…` and other public files complete too.
+
+Asked in [`IDEAS/site-kit-media-completion.md`](IDEAS/site-kit-media-completion.md) § Open questions. **B** was picked over **A** (only after `/media/`, as the legacy extension did).
+
+The paper's recommendation, taken as written: site-kit's URL space is all of `public/`, and `/media/` is a ksite habit rather than a site-kit rule. The extension already asks Litestone's catalog for what the language contains rather than listing it, so B is the same shape.
 
 ### <a id="fjs-d2245"></a>2026-11-17 · `FJS-D2245` — Q4 — Which Flameshot extras are in v1 — Pin to screen, delayed capture, and a size readout with a magnifier.
 
@@ -17851,6 +17857,12 @@ Asked in [`IDEAS/workbench-capture.md`](IDEAS/workbench-capture.md) § Open ques
 
 The paper's recommendation, taken as written: Kapture already does the job. One codebase serves both display servers, and Workbench's build does not grow a tiny-skia renderer or depend on a sibling checkout's path. C rewrites in JS what is already written in Rust.
 
+### <a id="fjs-d2246"></a>2026-11-16 · `FJS-D2246` — Q6 — How does Workbench find `kapture` — On `PATH`, installed with `cargo install`; Workbench checks for it and never builds it.
+
+Asked in [`IDEAS/workbench-capture.md`](IDEAS/workbench-capture.md) § Open questions. **A** was picked over **B** (Workbench builds Kapture from a checkout path it is given).
+
+The paper's recommendation, taken as written: it is how Workbench already treats `claude` and `gh`: a binary it checks for and never builds.
+
 ### <a id="fjs-d2226"></a>2026-11-16 · `FJS-D2226` — `keys()` cannot write a Linux-only binding: a per-binding platform filter, or document `byPlatform` — Document the `byPlatform` spelling with an empty Mac half, which already works, and keep the everywhere check strict.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (a per-binding platform filter).
@@ -17862,6 +17874,14 @@ The paper's recommendation, taken as written: it already works, and the strict e
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (leave it to the app (anvil rewrites the output)).
 
 The paper's recommendation, taken as written: additive, and the default output and the no-raw-HTML rule do not move.
+
+### <a id="fjs-d2253"></a>2026-11-17 · `FJS-D2253` — Messages draws no image from a link preview's host — An opengraph card is site, title and description; an image embed is a link to the image.
+
+Ruled by the owner on the Phase 0–4 report's call #9. **Cut** was picked over **click to load** and **keep as built**. An `img` whose src is the linked host shows that host this machine's IP for every post scrolled past, and serpgrid draws none. The mirror still stores the unfurled `image`; `embedsOf` in `packages/workbench/web/src/lib/chat.js` drops it, and `verify:messages` § Link previews checks that the page sends no request to the linked host.
+
+### <a id="fjs-d2252"></a>2026-11-17 · `FJS-D2252` — A chat notification holds post text from an open room only — A private room's or a DM's bell row and push say who wrote and where, never what.
+
+Ruled by the owner on the Phase 0–4 report's call #8. **Open rooms only** was picked over **no excerpt anywhere** and **keep as built** (a 140-character excerpt everywhere). The row sits in Workbench's main database and the push on a lock screen, where a private room's text should not end up. `noticeExcerpt` in `packages/workbench/api/src/domain/chat/notice.ts` decides; the body falls back to *Sent you a message* or *Mentioned you*.
 
 ### <a id="fjs-d2215"></a>2026-11-16 · `FJS-D2215` — Q7 — task-from-post — Gone.
 

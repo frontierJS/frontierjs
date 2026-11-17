@@ -102,7 +102,10 @@ async function anAppWithHistory(runtime: Record<string, unknown> = { cpuLimit: 3
     appId: target.id, workspaceId: ws.id,
     finishedAt: new Date().toISOString(), ...data })
 
+  // crossedSince reads finishedAt strictly after the target, so two releases
+  // stamped in the same millisecond would hide the live one from it.
   const first = await shipped({
+    finishedAt: new Date(Date.now() - 60_000).toISOString(),
     toImage: `${slug}:v1`, builtImage: 'sha256:' + 'a'.repeat(64),
     configSnapshot: { source: {}, runtime: shipped1 },
     commitSha: 'aaaaaaa', branch: 'main',

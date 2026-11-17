@@ -170,6 +170,27 @@ export class TransitionGateError extends Error {
 }
 
 /**
+ * A move whose `while:` guard fails, or whose `unless:` guard holds, on the
+ * stored row and its one hop (`FJS-D1286`).
+ *
+ * Its own class rather than `AccessDeniedError` or a conflict: no caller and no
+ * level answers it, and a retry is answered the same until the row it reads
+ * changes. 409 because the refusal is a fact about the record's state.
+ */
+export class TransitionGuardError extends Error {
+  constructor(model, field, transitionName, when, predicate) {
+    super(`Transition '${transitionName}' on ${model}.${field} is refused while ` +
+          `${when === 'unless' ? 'this holds' : 'this does not hold'}: ${predicate}`)
+    this.name       = 'TransitionGuardError'
+    this.model      = model
+    this.field      = field
+    this.transition = transitionName
+    this.status     = 409
+    this.retryable  = false
+  }
+}
+
+/**
  * A move declared `@system` — the application makes it, and this caller did not
  * say they were the application.
  *

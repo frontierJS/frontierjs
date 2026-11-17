@@ -725,6 +725,25 @@ describe('composed: the rows carry what a push does not', () => {
     expect(composed.total).toBe(ROWS.length)
   })
 
+  // FJS-4412: the tether notified before the count moved, so an empty state
+  // reading `total === 0` never showed after the last row went.
+  test('a pushed remove or create moves total in the same update as the rows', async () => {
+    await boot('/invoices/')
+    const list = track(invoicesResource().tethered({ state: 'local' }))
+    await settle()
+    expect(list.total).toBe(3)
+
+    for (const id of [1, 2, 3]) client.service('invoices').emit('removed', { id })
+    await settle()
+    expect(list.rows).toHaveLength(0)
+    expect(list.total).toBe(0)
+
+    client.service('invoices').emit('created', { id: 4, number: 'INV-4', status: 'open', total: 1 })
+    await settle()
+    expect(list.rows).toHaveLength(1)
+    expect(list.total).toBe(1)
+  })
+
   test('growing the window widens the limit and re-reads from the top', async () => {
     await boot('/invoices/')
     total = 10

@@ -261,10 +261,14 @@ Litestone sets the SQLite pragmas Litestream needs on every connection it opens
 
 Uploads go out at the replica's `sync-interval`, but every L0 expiry check and
 every compaction LISTS the bucket, which B2 bills and caps per account as a
-Class C call. The config litestone writes checks every 30 minutes and compacts
-L1/L2/L3 at 1h/6h/24h (`L0_CHECK_INTERVAL`, `LEVEL_INTERVALS`), about 96
-listings of L0 a day per database; Litestream's own defaults list about 9,000, and
-three databases ran a free B2 account's 2,500 out (`FJS-4250`).
+Class C call. Litestream's own defaults list about 9,000 times a day per
+database, and three databases ran a free B2 account's 2,500 out (`FJS-4250`).
+The config litestone writes compacts L1/L2/L3 at 1h/6h/24h
+(`LEVEL_INTERVALS`), and each L1 compaction of a database that changed sweeps
+expired L0 files itself. The separate expiry check lists L1 and L0 of every
+database, idle ones too, so it runs once a day as a backstop
+(`L0_CHECK_INTERVAL`; Litestream refuses 0). That comes to about 6 calls a day
+for an idle database and about 80 for one written all day (`FJS-4423`).
 
 A listing is not one call: Litestream pages through every file at a level,
 1,000 keys a call. L0 holds one file per `monitor-interval` tick that saw a

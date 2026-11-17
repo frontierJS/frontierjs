@@ -1,0 +1,27 @@
+<!--
+  Journey — the layout a Markdown journey post names with `layout: Journey`.
+  Its front-matter arrives as props and its Markdown is the slot, rendered
+  inside the same JourneyPost frame the .mesa posts use.
+
+  `title` carries the " — The journey" suffix for the browser tab, so the
+  heading strips it. A post with no `date` is a draft: it builds, the index
+  does not list it, and the page says so where the date would be.
+-->
+<script>
+  import JourneyPost from '../components/JourneyPost.mesa'
+
+  export let title = ''
+  export let date = undefined
+  export let description = undefined
+
+  const LONG = new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: 'UTC' })
+
+  $: heading = title.replace(/ — The journey$/, '')
+  $: when = date ? LONG.format(new Date(date + 'T00:00:00Z')) : 'Draft — not listed'
+</script>
+
+<JourneyPost>
+  <time datetime={date}>{when}</time>
+  <h1>{heading}</h1>
+  <slot />
+</JourneyPost>

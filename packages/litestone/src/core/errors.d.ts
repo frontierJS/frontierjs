@@ -106,6 +106,22 @@ export class TransitionGateError extends Error {
     retryable: boolean;
 }
 /**
+ * A move whose `while:` guard fails, or whose `unless:` guard holds, on the
+ * stored row and its one hop (`FJS-D1286`).
+ *
+ * Its own class rather than `AccessDeniedError` or a conflict: no caller and no
+ * level answers it, and a retry is answered the same until the row it reads
+ * changes. 409 because the refusal is a fact about the record's state.
+ */
+export class TransitionGuardError extends Error {
+    constructor(model?: any, field?: any, transitionName?: any, when?: any, predicate?: any);
+    model: any;
+    field: any;
+    transition: any;
+    status: number;
+    retryable: boolean;
+}
+/**
  * A move declared `@system` — the application makes it, and this caller did not
  * say they were the application.
  *

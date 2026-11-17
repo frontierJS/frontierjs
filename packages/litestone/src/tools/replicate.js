@@ -197,7 +197,7 @@ export async function getReplicaFile(base, name) {
 // leading `*` reads back as the bytes it was.
 const q = v => JSON.stringify(String(v))
 
-export const L0_CHECK_INTERVAL = '30m'
+export const L0_CHECK_INTERVAL = '24h'
 export const LEVEL_INTERVALS   = ['1h', '6h', '24h']
 export const L0_RETENTION      = '1h'
 export const MONITOR_INTERVAL  = '10s'
@@ -215,11 +215,13 @@ export function buildYaml(targets, opts) {
     // on B2, and B2's free account allows 2,500 a day for every bucket
     // together (FJS-4250). A listing is not one call: Litestream pages through
     // EVERY file at a level, 1,000 keys a call, and drops the old ones on its
-    // side. L0 holds one file per monitor tick that saw a write, for the whole
-    // l0-retention window, and is listed whole about 96 times a day — so a
-    // database written every second on a 24h window cost ~88 calls a listing,
-    // ~8,400 a day alone (FJS-4315). A 10s tick and a 1h window keep L0 under
-    // one page. The check stays shorter than L1, as Litestream asks.
+    // side. L0 holds one file per monitor tick that saw a write, for the
+    // l0-retention window plus one L1 interval, so a database written every
+    // second on a 24h window cost ~88 calls a listing (FJS-4315). A 10s tick
+    // and a 1h window keep L0 under one page.
+    // The expiry check lists L1 and L0 for EVERY database, idle ones too, and
+    // each L1 compaction already runs the same sweep on a database that
+    // changed — so the check is a daily backstop, and 0 is refused (FJS-4423).
     ...(l0 ? [`l0-retention: ${l0}`] : []),
     `l0-retention-check-interval: ${L0_CHECK_INTERVAL}`,
     'levels:',
@@ -463,7 +465,10 @@ export async function replicate({ targets, options, dir, verbose = true }) {
 // timestamp later than a replica's last write — which a registry that has not
 // changed since morning always is. Past the last write, the latest IS that
 // instant's state, so the timestamp is dropped rather than refused.
-export const lastWriteArgs = (url) => ['ltx', '-json', '-level', 'all', url]
+// Every write lands in L0 first and the L0 sweep keeps its newest file, so L0
+// alone answers; `all` lists ten levels, each a Class C call on B2 (FJS-4424),
+// and is asked only of a replica whose L0 is empty.
+export const lastWriteArgs = (url, level = '0') => ['ltx', '-json', '-level', level, url]
 
 /** The newest LTX file's time off `ltx -json`, or null when it lists none. */
 export function parseLastWrite(stdout) {
@@ -474,8 +479,13 @@ export function parseLastWrite(stdout) {
 }
 
 export function lastWrite(binary, url) {
-  const r = spawnSync(binary, lastWriteArgs(url), { encoding: 'utf8' })
-  return r.status === 0 ? parseLastWrite(r.stdout) : null
+  for (const level of ['0', 'all']) {
+    const r = spawnSync(binary, lastWriteArgs(url, level), { encoding: 'utf8' })
+    if (r.status !== 0) return null
+    const last = parseLastWrite(r.stdout)
+    if (last != null) return last
+  }
+  return null
 }
 
 /** `restore`'s argv for one file. `last` is `lastWrite`'s answer, asked only

@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 192**.
+Graded: **13 of 193**.
 
-## data — 3 of 63
+## data — 3 of 64
 
 ### Schema and parse
 
@@ -70,6 +70,7 @@ Graded: **13 of 192**.
 | A `@@commitment`'s fire is graded as `createApp({ system })`, so the model's read policy must admit that principal by name | **none** |
 | `@zoned` is read by `due()` alone — a window over the same day is still read in the call's zone | **none** |
 | What a `@seals` commitment's move owes is written in `before`; a write its from-state contends with, in `after` | **none** |
+| A move's `while:` guard refuses on NULL, and `asSystem()` is held to it | **none** |
 
 ### `@immutable` and encryption
 

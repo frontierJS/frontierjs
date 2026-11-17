@@ -564,10 +564,12 @@ try {
 
   const noteDm = (await sinkCall('/channels/direct', sink.tokens.bob, { method: 'POST', body: [ids.bob, ids.alice] })).json
   check(await until(() => mirrorMember(noteDm?.id, ids.alice)), 'a direct room bob opens lands alice\'s membership', noteDm)
+  const noteDmPushesBefore = pushes.length
   const noteDirect = await say(sink.tokens.bob, noteDm?.id, `just us d${noteStamp}`)
   const noteDmRows = await until(async () => { const r = await noteBellOf(noteDirect.id); return r.length ? r : null })
-  check(noteDmRows?.length === 1 && noteDmRows[0].type === 'ChatDm' && noteDmRows[0].data?.title === 'bob' && noteDmRows[0].data?.body === `just us d${noteStamp}`, 'a DM from bob raises one ChatDm row', noteDmRows)
-  check(await until(() => notePushesOf(`d${noteStamp}`).length === 1), 'and one push', notePushesOf(`d${noteStamp}`))
+  check(noteDmRows?.length === 1 && noteDmRows[0].type === 'ChatDm' && noteDmRows[0].data?.title === 'bob' && noteDmRows[0].data?.body === 'Sent you a message' && !JSON.stringify(noteDmRows[0]).includes(`d${noteStamp}`), 'a DM from bob raises one ChatDm row, holding none of the post\'s text', noteDmRows)
+  const noteDmPushes = () => pushes.slice(noteDmPushesBefore).filter(p => p.title === 'bob' && p.body === 'Sent you a message')
+  check(await until(() => noteDmPushes().length === 1) && notePushesOf(`d${noteStamp}`).length === 0, 'and one push, saying only that bob wrote', noteDmPushes())
 
   const noteOwn = await say(sink.tokens.alice, ids.open, `@channel @alice mine o${noteStamp}`)
   await until(() => sys.post.findUnique({ where: { externalId: noteOwn.id } })); await noteSettle()

@@ -4,7 +4,7 @@ description: Notes from building FrontierJS in the open — what got built, what
 render: static
 ---
 <!--
-  The journey's index. Every entry is a sibling .mesa file; the companion
+  The journey's index. Every entry is a sibling .md or .mesa file; the companion
   reads their frontmatter, so publishing a post is adding a file with a date.
 -->
 <script>

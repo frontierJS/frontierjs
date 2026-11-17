@@ -98,8 +98,16 @@ the editor's groups in one palette.
   would list each draft page twice; `<html data-fjs-editing>` is the hand-off,
   and the island's button and `/` dispatch `fjs-editor:palette`. Driven over a
   ksite `--preview` build with a stubbed basecamp, 15 checks.
-- [ ] 4.3 Repack and deploy to kobami.com's `try-edit` (the recipe in its
-  memory: a new tarball name every time, `FJS-4267`).
+- [x] 4.3 Repack and deploy to kobami.com's `try-edit` (the recipe in its
+  memory: a new tarball name every time, `FJS-4267`). Done 2026-11-17:
+  every framework tarball packed whole from the tree, `@frontierjs/ui` vendored
+  for the first time; try-edit `be1469c` READY, a visitor drive 14/14 against
+  the live preview. It found `FJS-4426` (palette rows ran past the panel on a
+  ksite page) and `FJS-4427` (the outline's button stretched, the site-wide call
+  to action listed), both fixed; Privacy Policy is the `toc: true` page, its
+  typed heading numbers dropped. Open: `FJS-4428` (a click before the island
+  loads is lost), `FJS-4429` (front-matter `noindex` writes no meta). The
+  signed-in palette on the live preview is the owner's to try.
 
 ## Open questions
 

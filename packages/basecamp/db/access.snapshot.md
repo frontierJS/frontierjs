@@ -716,6 +716,7 @@ rather than refusing the row.
 | `AppCopy` | `asOf` | `@system` |
 | `AppCopy` | `error` | `@system` |
 | `AppCopy` | `refreshedAt` | `@system` |
+| `AppCopy` | `releaseId` | `@system` |
 | `AppCopy` | `certError` | `@system` |
 | `AppPlatform` | `hookUrl` | `@encrypted` |
 | `AppPlatform` | `receiverSecret` | `@encrypted` |

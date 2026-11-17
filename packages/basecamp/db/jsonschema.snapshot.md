@@ -1228,6 +1228,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `asOf` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` `x-litestone-kind` | — |
 | `refreshedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `releaseId` | `string`? | — | — | `x-litestone-kind` | — |
 | `certError` | `string`? | — | — | `minLength: 0` `maxLength: 2000` `x-litestone-kind` | — |
 | `isServingMainAddress` | `boolean` = `false` | — | — | — | — |
 | `requestedBy` | `string`? | — | — | — | — |

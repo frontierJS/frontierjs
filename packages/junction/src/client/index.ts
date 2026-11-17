@@ -1833,10 +1833,15 @@ export class JunctionClient extends EventEmitter {
     let issuedQuery: Record<string, unknown> | null = null
     let issuedParams: QueryDirectives = {}
 
+    // A list whose load was asked and never answered still means its question:
+    // judged by nothing, a load refused while the API booted let every member's
+    // row into a list filtered to one member (FJS-4425).
     const verdict = (record: T): boolean | null => {
-      if (!opts.match || lastQuery === null) return true
+      const query  = lastQuery ?? issuedQuery
+      const params = lastQuery ? lastParams : issuedParams
+      if (!opts.match || query === null) return true
       try {
-        return opts.match(record, lastQuery, lastParams)
+        return opts.match(record, query, params)
       } catch {
         return null
       }
@@ -1972,10 +1977,7 @@ export class JunctionClient extends EventEmitter {
     }
 
     const drop = (record: T | null, id: unknown): void => {
-      const had = tether.get().length
-      tether.remove(id, key)
-
-      if (tether.get().length === had) {
+      if (!tether.get().some((r) => r[key] === id)) {
         // Not one of this page's rows. Page 1's contents do not depend on a row
         // further down the query, but a later page's window does — every row
         // behind it shifts by one.
@@ -1986,7 +1988,10 @@ export class JunctionClient extends EventEmitter {
         return
       }
 
+      // Before the remove: the tether's subscribers read total as it notifies,
+      // so a count moved after it reads one too high (FJS-4412).
       if (total !== null) total--
+      tether.remove(id, key)
       // A row left a page with rows behind it, so one should slide up and only
       // the server knows which.
       if (hasMore()) stale.bump()

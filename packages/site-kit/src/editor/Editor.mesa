@@ -44,6 +44,11 @@
   let notice  = null
   let asking  = false
   let palette = false
+  // A pick on words a developer's file drew: a passing note, and the list of
+  // files that may hold them only once the note is clicked. Opened at once, the
+  // list covered half the page on every stray click.
+  let drawn   = null
+  let drawnTimer
   // The last save's way to the preview: `building`, `ready` or `failed`.
   let rebuild = null
   let rebuildError = null
@@ -131,10 +136,28 @@
     e.preventDefault()
     e.stopPropagation()
     const field = fieldFor(el.getAttribute(LOC), files, location.pathname)
+    if (field?.template) return showDrawn(field)
+    drawn = null
     notice = null
     asking = false
     opened = field?.path ? { ...field, inline: el } : field
   }
+
+  function showDrawn(field) {
+    drawn = field
+    fadeDrawn()
+  }
+  function fadeDrawn() {
+    clearTimeout(drawnTimer)
+    drawnTimer = setTimeout(() => drawn = null, 5000)
+  }
+  function openDrawn() {
+    clearTimeout(drawnTimer)
+    opened = drawn
+    drawn = null
+    asking = false
+  }
+  const fileName = (path) => path.split('/').pop()
 
   function inlineClosed(result) {
     if (result?.saved) { notice = `Saved to ${site.draft}.`; watch(result.commit) }
@@ -185,7 +208,7 @@
     if ((e.metaKey || e.ctrlKey) && e.key?.toLowerCase() === 'k' && who && files?.length) {
       e.preventDefault()
       palette = !palette
-    } else if (e.key === 'Escape') { opened = null; asking = false; palette = false }
+    } else if (e.key === 'Escape') { opened = null; asking = false; palette = false; drawn = null }
   }
 
   document.addEventListener('pointermove', hover, { capture: true, passive: true })
@@ -198,9 +221,17 @@
     document.removeEventListener('pointermove', hover, { capture: true })
     document.removeEventListener('click', pick, { capture: true })
     removeEventListener('scroll', leave)
+    clearTimeout(drawnTimer)
     unhear()
   })
   $.every(3000, rebuilding, { when: rebuild === 'building' })
+
+  // A panel ends above the bar, which wraps taller on a narrow screen and
+  // covered the panel's Save button at a fixed offset.
+  let dock
+  const docked = new ResizeObserver(() => root?.host.style.setProperty('--fjs-dock', `${dock.offsetHeight}px`))
+  $.onMount(() => docked.observe(dock))
+  $.onDestroy(() => docked.disconnect())
 </script>
 
 <mesa:window onkeydown={keydown} />
@@ -224,7 +255,7 @@
 {:else if opened?.template}
   <article class="card glass theme-basecamp fjs-editor-field" data-fjs-editor-ui aria-label="Pick a file">
     <div class="surface-header">
-      <span>Drawn by <code>{opened.template}</code>, a developer's file. Its words are in one of these:</span>
+      <span>Drawn by <code>{fileName(opened.template)}</code>, a developer's file. Its words are in one of these:</span>
       <button class="btn ghost" onclick={() => opened = null}>Close</button>
     </div>
     <ul class="surface-body stack" id="fjs-files">
@@ -235,7 +266,14 @@
   </article>
 {/if}
 
-<div class="fjs-editor-dock">
+<div class="fjs-editor-dock" bind:this={dock}>
+  {#if drawn}
+    <button class="card glass theme-basecamp fjs-editor-drawn" id="fjs-drawn" data-fjs-editor-ui
+            onmouseenter={() => clearTimeout(drawnTimer)} onmouseleave={fadeDrawn} onclick={openDrawn}>
+      <span>That part is drawn by <code>{fileName(drawn.template)}</code>, a developer's file.</span>
+      <span class="fjs-editor-drawn-more">Find its words in your files</span>
+    </button>
+  {/if}
   {#if asking}
     <Ask {site} key={who.key} {files} onclose={() => asking = false} />
   {/if}
@@ -332,6 +370,26 @@
   .fjs-editor-outline.editable {
     outline: 2px solid var(--color-primary);
   }
+  .fjs-editor-drawn {
+    --glass-alpha: 96%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+    max-width: 26rem;
+    padding: 0.65rem 0.9rem;
+    font: inherit;
+    font-family: var(--font-primary), sans-serif;
+    font-size: 0.85rem;
+    color: inherit;
+    text-align: start;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+  }
+  .fjs-editor-drawn-more {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
   .fjs-editor-field {
     --glass-alpha: 96%;
     position: fixed;
@@ -339,7 +397,7 @@
     right: 1rem;
     z-index: 2147483000;
     width: min(32rem, calc(100vw - 2rem));
-    max-height: calc(100vh - 6rem);
+    max-height: calc(100vh - 2.75rem - var(--fjs-dock, 4rem));
     overflow: auto;
   }
 </style>

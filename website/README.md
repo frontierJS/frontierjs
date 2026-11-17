@@ -47,8 +47,11 @@ its material is folded into one.
 - `/why/` — position against other stacks: `before-after`, `vs-laravel`,
   `landscape` (`projects.json`), `comparisons` (`comparisons.json`).
 - `/journey/` — the build-in-the-open journal. **A post is a file**:
-  `site/content/routes/journey/<slug>.mesa` with `title`, `description` and `date`
-  in its frontmatter, rendered inside `site/content/components/JourneyPost.mesa`.
+  `site/content/routes/journey/<slug>.md` with `layout: Journey`, `title`,
+  `description` and `date` in its frontmatter; the layout
+  (`site/content/layouts/Journey.mesa`) draws the date and heading inside
+  `site/content/components/JourneyPost.mesa`. A `.mesa` post wraps itself in
+  `JourneyPost` and writes its own.
   The index reads every sibling's frontmatter (`site/content/data/journey.js`), so
   publishing is adding the file; no `date` means a draft, built but unlisted.
 - `/direction/` — where it points, labeled as direction: `story`, `specs`.

@@ -149,3 +149,86 @@ describe('a claim the schema reads off a row, on a broadcast', () => {
     expect(u2.map(f => JSON.parse(f).event)).not.toContain('shifts created')
   })
 })
+
+// ─── the app's resolver, on a broadcast (FJS-4395) ───────────────────────────
+//
+// A field only `createApp({ principal })` supplies is what a private channel's
+// policy reads on Workbench Messages. Its rows answered a member's fetch and
+// never reached the member's socket, until the app restated the resolver in
+// `channels({ claims })`.
+
+const PRIVATE = `
+  claim profile
+
+  model User { id String @id  @@auth }
+
+  model Member {
+    id      Int    @id @default(autoincrement())
+    userId  String @unique
+    profile String
+  }
+
+  model Post {
+    id      Int    @id @default(autoincrement())
+    profile String
+    body    String
+    @@allow(read, profile == auth().profile)
+  }
+`
+
+describe("a claim the app's resolver answers, on a broadcast", () => {
+  async function privateApp() {
+    const { channels } = await import('../src/transport/channels.ts')
+    const { setCallDb } = await import('../src/core/context.ts')
+    const db: any = await createClient({ db: ':memory:', schema: PRIVATE })
+    const sys = db.asSystem()
+    await sys.user.create({ data: { id: 'u1' } })
+    await sys.user.create({ data: { id: 'u2' } })
+    await sys.member.create({ data: { userId: 'u1', profile: 'p-1' } })
+    await sys.member.create({ data: { userId: 'u2', profile: 'p-2' } })
+    await sys.post.create({ data: { profile: 'p-1', body: 'for p-1' } })
+    const profileOf: PrincipalResolver = async function profileOf (_ctx, user) {
+      if (!user) return {}
+      const row = await ($.db as any).asSystem().member.findFirst({ where: { userId: String(user.id) } })
+      return row ? { profile: row.profile } : {}
+    }
+    const app: any = createApp({ db, principal: profileOf })
+    app.services.register(createService({
+      name: 'posts',
+      model: 'Post',
+      async find() { return ($.db as any).post.findMany({}) },
+    }))
+    app.configure(channels())
+    const listen = (id: string) => {
+      const frames: string[] = []
+      const conn = { id, user: { id }, data: {}, socket: { send: (d: string) => { frames.push(d); return 1 }, close() {}, readyState: 1 } }
+      app.channels.channel('posts').join(conn as never)
+      return () => frames.map(f => JSON.parse(f)).filter(f => f.event === 'posts created').map(f => f.data.body)
+    }
+    const ctx = setCallDb({ service: 'posts', locals: {}, app } as unknown as ServiceContext, db)
+    return { app, db, listen, ctx }
+  }
+
+  test('a fetch and the socket agree: the member hears it, the other member does not', async () => {
+    const { app, listen, ctx } = await privateApp()
+    const u1 = listen('u1')
+    const u2 = listen('u2')
+
+    expect(rowsOf(await app.service('posts').find({}, as('u1'))).map((r: any) => r.body)).toEqual(['for p-1'])
+    await app.channels.announce('posts created', { id: 1, profile: 'p-1', body: 'for p-1' }, ctx, () => [app.channels.channel('posts')])
+
+    expect(u1()).toEqual(['for p-1'])
+    expect(u2()).toEqual([])
+  })
+
+  test('a write outside any service call is graded the same way', async () => {
+    const { app, db, listen } = await privateApp()
+    const u1 = listen('u1')
+    const u2 = listen('u2')
+
+    await app.channels.sendGraded('posts', 'posts created', { id: 1, profile: 'p-1', body: 'for p-1' }, { db, accessor: 'post' })
+
+    expect(u1()).toEqual(['for p-1'])
+    expect(u2()).toEqual([])
+  })
+})

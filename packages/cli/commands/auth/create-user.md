@@ -45,6 +45,8 @@ flags:
 // too: a second createLitestoneAuth never reads the app's options, so its
 // onRegistered would not run and the user would miss what registration sets up
 // (an Account row, a membership). Only an app with no auth module gets a bare one.
+// fli new writes the module as makeAuth(db) and auth:install as an auth export,
+// so both are read.
 const SCRIPT = `
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 import { createLitestoneAuth }               from '@frontierjs/auth'
@@ -54,10 +56,10 @@ const input = JSON.parse(process.env.FLI_INPUT)
 let db, auth
 if (input.appAuth) {
   const mod = await import(input.appAuth)
-  auth = mod.auth
   db   = mod.db ?? (input.appDb ? (await import(input.appDb)).db : null)
+  auth = mod.auth ?? (db && typeof mod.makeAuth === 'function' ? mod.makeAuth(db).auth : null)
   if (!auth || !db) {
-    console.error('ERROR: ' + input.appAuth + ' must export auth, and db from it or from a db module beside it')
+    console.error('ERROR: ' + input.appAuth + ' must export auth or makeAuth(db), and db from it or from a db module beside it')
     process.exit(1)
   }
 } else {

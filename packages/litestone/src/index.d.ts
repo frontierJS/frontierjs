@@ -547,7 +547,7 @@ export interface TableClient<
   /** `system: true` makes a move declared `@system` — the gate, the row policies and the audit actor all survive, where asSystem() drops all three. */
   transition(id: number | string, name: string, opts?: { system?: boolean }): Promise<TRow>
   /** `refusedBy` says which half said no: a screen renders *not senior enough*, *not this record* and *not you, ever* differently, and neither the status nor a non-null `gate` separates them. */
-  transitions(idOrRow: number | string | TRow): Promise<Array<{ name: string; field: string; from: string; to: string; gate: number | null; system: boolean; allowed: boolean; refusedBy: 'system' | 'gate' | 'policy' | null }>>
+  transitions(idOrRow: number | string | TRow): Promise<Array<{ name: string; field: string; from: string; to: string; gate: number | null; system: boolean; allowed: boolean; refusedBy: 'system' | 'gate' | 'policy' | 'guard' | null }>>
   /**
    * `@@commitment` — the rows owing a declared transition by `by` (the client's
    * clock unless stated), and when each fell due. A read through `findMany`, so
@@ -1265,6 +1265,19 @@ export declare class TransitionGateError extends Error {
   required:   number
   got:        number
   status:     403
+  retryable:  false
+}
+
+/**
+ * A move's `while:` guard failed, or its `unless:` guard held, on the stored
+ * row and its one hop (`FJS-D1286`). 409 and not retryable: the record has to
+ * change before the move can be made, and no caller or level answers it.
+ */
+export declare class TransitionGuardError extends Error {
+  model:      string
+  field:      string
+  transition: string
+  status:     409
   retryable:  false
 }
 

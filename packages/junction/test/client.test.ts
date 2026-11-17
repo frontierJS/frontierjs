@@ -613,6 +613,18 @@ describe('client.resource()', () => {
     expect(tether.get()).toHaveLength(1)
   })
 
+  it('a load that failed still filters by the query it asked (FJS-4425)', async () => {
+    const { service, tether, load } = makeClient().resource('items', { match: matchStatus })
+    const original = stubbable.fetch
+    stubbable.fetch = (async () => { throw new TypeError('connection refused') }) as unknown as typeof fetch
+    try { await load({ status: 'active' }).catch(() => {}) }
+    finally { stubbable.fetch = original }
+
+    service._receive('created', { id: '1', status: 'active' })
+    service._receive('created', { id: '2', status: 'draft' })
+    expect(tether.get()).toEqual([{ id: '1', status: 'active' }])
+  })
+
   it('an undecidable record reloads instead of being guessed at', async () => {
     const { service, tether, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
     await ready

@@ -74,6 +74,19 @@ export function renderToHTML(ComponentFactory: Function, props?: object, options
     label?: string;
     target?: "server";
 }): Promise<string>;
+/**
+ * `renderToHTML` without the page: the body and the markup every
+ * `<mesa:head>` wrote, apart, for a caller that assembles its own document
+ * (`renderComponent`'s `result.head`). A body alone has nowhere to put a
+ * title or an og: tag. `head` is `''` on the DOM path, whose `<mesa:head>`
+ * lands in a `document.head` no serializer reads.
+ *
+ * @returns {Promise<{ html: string, head: string }>}
+ */
+export function renderToParts(ComponentFactory?: any, props?: {}, options?: {}): Promise<{
+    html: string;
+    head: string;
+}>;
 export function wrapPage(bodyHTML?: any, options?: {}): string;
 /**
  * Render many pages, in order, and resolve with all their HTML.

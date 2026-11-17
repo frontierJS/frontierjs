@@ -2231,7 +2231,12 @@ function _fieldValue(schema, ownerName, field, seq, rng, { fkFields = new Set(),
       // survived `mutate` for want of a verdict.
       const pt = attrs.find(a => a.kind === 'point')
       if (pt) return { [pt.lat]: 40 + (seq % 40) / 10, [pt.lng]: -75 - (seq % 40) / 10 }
-      if (typeAttr?.array) return []
+      // `[]` under `@minItems(n)` is refused, so the model had no row and the
+      // gate ladder asked none of its gates (FJS-4413).
+      if (typeAttr?.array) {
+        const minItems = attrs.find(a => a.kind === 'minItems')?.value ?? 0
+        return Array.from({ length: minItems }, (_, i) => _typeValue(schema, typeAttr.name, seq + i, rng, depth + 1))
+      }
       return typeAttr ? _typeValue(schema, typeAttr.name, seq, rng, depth) : {}
     }
 
@@ -2423,23 +2428,29 @@ export function generateValidationCases(schema, modelName) {
     // Same table as every other family, and for the same reason: the generator
     // restating the wording is a second copy, and it was the copy that noticed
     // the server was ignoring an authored message (FJS-194).
-    if (field.type.array) {
+    // A `Json @type(T[])` list is held to the same count rules, and generating
+    // none for it left them ungraded with nothing in `uncheckable` to say so.
+    const typedList = field.attributes.find(a => a.kind === 'type' && a.array)
+    if (field.type.array || typedList) {
       const name = field.name
+      const listOf = (n) => typedList
+        ? Array.from({ length: n }, (_, i) => _typeValue(schema, typedList.name, i + 1, null))
+        : _arrayOf(field, n)
       for (const attr of field.attributes) {
         if (attr.kind === 'minItems' && attr.value > 0) {
           invalid.push({ field: name, value: [], rule: `@minItems(${attr.value})`,
             expect: 'fail', message: msg(attr, DEFAULT_MESSAGES.minItems(attr.value)) })
-          boundary.push({ field: name, value: _arrayOf(field, attr.value), rule: `@minItems(${attr.value})`,
+          boundary.push({ field: name, value: listOf(attr.value), rule: `@minItems(${attr.value})`,
             expect: 'pass', message: '' })
         }
         if (attr.kind === 'maxItems') {
-          invalid.push({ field: name, value: _arrayOf(field, attr.value + 1), rule: `@maxItems(${attr.value})`,
+          invalid.push({ field: name, value: listOf(attr.value + 1), rule: `@maxItems(${attr.value})`,
             expect: 'fail', message: msg(attr, DEFAULT_MESSAGES.maxItems(attr.value)) })
-          boundary.push({ field: name, value: _arrayOf(field, attr.value), rule: `@maxItems(${attr.value})`,
+          boundary.push({ field: name, value: listOf(attr.value), rule: `@maxItems(${attr.value})`,
             expect: 'pass', message: '' })
         }
         if (attr.kind === 'uniqueItems') {
-          invalid.push({ field: name, value: _arrayOf(field, 1).concat(_arrayOf(field, 1)), rule: '@uniqueItems',
+          invalid.push({ field: name, value: listOf(1).concat(listOf(1)), rule: '@uniqueItems',
             expect: 'fail', message: msg(attr, DEFAULT_MESSAGES.uniqueItems()) })
         }
       }

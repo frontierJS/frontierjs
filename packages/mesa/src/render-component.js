@@ -41,6 +41,8 @@
  *     cwd:    '/path/to/templates',
  *     target: 'html',
  *   })
+ *   // result.head — what every <mesa:head> wrote: title, meta, og: tags,
+ *   //               for wrapPage's `head`; '' on the happy-dom path
  *
  *   // Compiled JS module map (for client-side use)
  *   const result = await renderComponent(source, {
@@ -59,7 +61,7 @@ import { readFile, writeFile, mkdir, realpath } from 'fs/promises'
 import { existsSync, unlinkSync, readdirSync, statSync } from 'fs'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { compileSource } from './compiler.js'
-import { initRenderer, renderToHTML, escapeHTML } from './render.js'
+import { initRenderer, renderToParts, escapeHTML } from './render.js'
 
 // ── Module-level renderer init guard ─────────────────────────────────────────
 let _rendererReady = false
@@ -790,9 +792,9 @@ async function executeComponent(mod, props, { label, sources, mode } = {}) {
   // noticing — nothing exercised it. Delegating also picks up root disposal,
   // which this copy never had: rendering N pages left N live effect sets
   // subscribed to any module-scope signal they read.
-  let html
+  let html, head
   try {
-    html = await renderToHTML(fn, props, mode === 'server' ? { label, target: 'server' } : { label })
+    ({ html, head } = await renderToParts(fn, props, mode === 'server' ? { label, target: 'server' } : { label }))
   } catch (err) {
     throw attributeToSource(err, sources)
   }
@@ -804,7 +806,7 @@ async function executeComponent(mod, props, { label, sources, mode } = {}) {
     if (key !== 'default') namedExports[key] = mod[key]
   }
 
-  return { html, namedExports }
+  return { html, head, namedExports }
 }
 
 // ── Email document wrapper ────────────────────────────────────────────────────
@@ -1276,6 +1278,7 @@ export async function renderComponent(source, options = {}) {
 
   const result = {
     html,
+    head:    rendered.head,
     css,
     exports: namedExports,
     subject: namedExports.subject,

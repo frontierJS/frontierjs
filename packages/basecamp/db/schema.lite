@@ -2533,6 +2533,10 @@ model AppCopy {
   error       String?    @system @length(0, 2000)
   // The last refresh that served the copy; a failed one leaves it.
   refreshedAt DateTime?  @system
+  // The release whose image serves the copy. A scheduled refresh under the
+  // same release sends its asOf as `since`, and a replica that has not moved
+  // keeps the copy instead of restoring it again (`FJS-4424`).
+  releaseId   String?    @system
   // Why the last `app-copy:cert` left a Domain without a certificate on the
   // machine; null once every Domain holds one.
   certError   String?    @system @length(0, 2000)

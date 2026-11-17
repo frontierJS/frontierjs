@@ -808,14 +808,17 @@ export class Seeder {
 //
 // What is NOT a reject is a mapping mistake — a header naming no column, a
 // required column the file does not carry. Every row would be rejected for the
-// same reason, so it throws before any row is read.
+// same reason, so it throws before any row is read. Under upsert a required
+// column may be absent or blank: a row whose key is stored keeps that value,
+// and only a row whose key is new is rejected for lacking it.
 //
 // Rows go through the ORM in batches, so defaults, validators, `@encrypted`
 // and plugins all apply; a batch the database refuses is retried a row at a
 // time, each under its own savepoint, so the refusal lands on its row.
 //
 //   mode 'insert'   the default; a key repeated in the source is a reject
-//   mode 'upsert'   on `key`, which is required; a repeat updates the row
+//   mode 'upsert'   on `key`, which is required; a repeat updates the row,
+//                   and a row lacking a required value is an update by key
 //   mode 'replace'  every stored row deleted and the source inserted, in one
 //                   transaction, so a reader sees the old rows or the new
 //   dryRun          the whole load, rolled back: what WOULD land, exactly
@@ -863,7 +866,7 @@ export async function loadRows(db, modelName, source, opts = {}) {
       if (h in stamp) throw new Error(`loadRows(${modelName}): the file has a column '${h}', which this load stamps`)
     }
     const missing = model.fields.filter(f => columns.required(f) && !header.includes(f.name) && !(f.name in stamp)).map(f => f.name)
-    if (missing.length)
+    if (missing.length && mode !== 'upsert')
       throw new Error(`loadRows(${modelName}): the file has no column for ${missing.join(', ')}, which ${missing.length > 1 ? 'are' : 'is'} required and ${missing.length > 1 ? 'have' : 'has'} no default`)
   }
 
@@ -885,11 +888,23 @@ export async function loadRows(db, modelName, source, opts = {}) {
   }
 
   const accessor = modelToAccessor(modelName)
+  const requiredNames = mode === 'upsert' ? model.fields.filter(columns.required).map(f => f.name) : []
   let loaded = 0
+  // SQLite checks NOT NULL before it resolves ON CONFLICT, so a row lacking a
+  // required value cannot ride upsertMany even when its key is stored: it is
+  // an update by key, and a key no row holds makes it a new row that lacks it.
   const write = async (tx, rows) => {
-    const data = rows.map(r => r.data)
-    if (mode === 'upsert') await tx[accessor].upsertMany({ data, conflictTarget: [key] })
-    else                   await tx[accessor].createMany({ data })
+    if (mode !== 'upsert') return tx[accessor].createMany({ data: rows.map(r => r.data) })
+    const whole = rows.filter(r => !r.lacking.length)
+    if (whole.length) await tx[accessor].upsertMany({ data: whole.map(r => r.data), conflictTarget: [key] })
+    for (const r of rows) {
+      if (!r.lacking.length) continue
+      const { [key]: keyValue, ...set } = r.data
+      const stored = Object.keys(set).length
+        ? await tx[accessor].update({ where: { [key]: keyValue }, data: set })
+        : await tx[accessor].findFirst({ where: { [key]: keyValue } })
+      if (!stored) throw new LacksForNewRow(r.lacking[0], r.blank.includes(r.lacking[0]))
+    }
   }
 
   const run = async (tx) => {
@@ -925,7 +940,7 @@ export async function loadRows(db, modelName, source, opts = {}) {
       if (named) throw new Error(`loadRows(${modelName}): row ${at.i} names '${named}', which this load stamps`)
       if (overflow && !header && record && overflow in record)
         throw new Error(`loadRows(${modelName}): row ${at.i} names '${overflow}', which this load fills with what no column takes`)
-      const out = columns.read(record, stamp)
+      const out = columns.read(record, stamp, mode === 'upsert')
       const keyValue = key ? (out.data?.[key] ?? record?.[key]) : null
       if (out.reason) { reject(at, out.field, out.reason, keyValue); continue }
       let k = null
@@ -940,7 +955,7 @@ export async function loadRows(db, modelName, source, opts = {}) {
         if (!firstAt.has(k)) firstAt.set(k, { i: at.i, line: at.line })
       }
       if (group.length >= batch || (mode === 'upsert' && inGroup.has(k))) await flush()
-      group.push({ at, data: out.data, keyValue })
+      group.push({ at, data: out.data, keyValue, lacking: requiredNames.filter(n => !(n in out.data)), blank: out.blank })
       if (mode === 'upsert') inGroup.add(k)
     }
     await flush()
@@ -954,10 +969,19 @@ export async function loadRows(db, modelName, source, opts = {}) {
   return { loaded, rejects }
 }
 
+// An upsert row lacking a required value whose key no stored row holds.
+class LacksForNewRow extends Error {
+  constructor(field, blank) {
+    super(`'${field}' is required for a new row`)
+    this.field  = field
+    this.reason = blank ? 'required, and empty' : 'required, and the key names no stored row to keep it from'
+  }
+}
+
 // The refusals that are about one row's values. Anything else — a gate, a
 // closed client, a disk — is about the load, and is thrown.
 function refusesARow(e) {
-  return e instanceof ValidationError || e instanceof UniqueConflictError || e instanceof ForeignKeyError
+  return e instanceof LacksForNewRow || e instanceof ValidationError || e instanceof UniqueConflictError || e instanceof ForeignKeyError
     || e instanceof TransitionViolationError
     || /constraint failed/i.test(e?.message ?? '')
 }
@@ -965,6 +989,7 @@ function refusesARow(e) {
 // In the reject's own words, because the errors' words quote the value: a
 // conflict names what is taken, a foreign key the id it could not find.
 function reasonFor(e) {
+  if (e instanceof LacksForNewRow) return { field: e.field, reason: e.reason }
   if (e instanceof UniqueConflictError)
     return { field: e.fields?.join(' + ') || null, reason: 'already taken by a stored row' }
   if (e instanceof ForeignKeyError)
@@ -1026,9 +1051,12 @@ function columnReader(model, schema, modelName, overflow) {
     return true
   }
 
-  function read(record, stamp) {
+  // `keepBlank`: under upsert a blank required cell may mean "keep the stored
+  // value", which only the row's key can decide, so it is left out and named.
+  function read(record, stamp, keepBlank = false) {
     if (!record || typeof record !== 'object') return { field: null, reason: 'not a record' }
     const data = { ...stamp }
+    const blank = []
     const later = []
     let extra = null
     for (const [name, raw] of Object.entries(record)) {
@@ -1056,10 +1084,11 @@ function columnReader(model, schema, modelName, overflow) {
         // A blank in a defaulted column means "take the default", which only
         // leaving the key out says.
         if (col.defaulted) { delete data[name]; continue }
+        if (keepBlank) { delete data[name]; blank.push(name); continue }
         return { field: name, reason: 'required, and empty' }
       }
     }
-    return { data }
+    return { data, blank }
   }
 
   return { of, required, read, overflows }

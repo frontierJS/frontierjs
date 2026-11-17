@@ -21,7 +21,7 @@
 
 import type { ConduitRequest, ConduitResult, TargetDescriptor } from '@frontierjs/conduit'
 import { translate, type MattermostFailure } from './errors.ts'
-import { channelModel, channelMemberModel, fileInfoModel, MATTERMOST_TARGET, MATTERMOST_UPLOAD_TARGET, MATTERMOST_USER_TARGET, memberKey, isCategoryId, parseCategory, parseDraft, parsePreference, parseStatus, parseUnread, postModel, reactionModel, teamModel, threadModel, profileModel, type CategoryRow, type ChannelMemberRow, type CustomStatusRow, type DraftRow, type PreferenceRow, type StatusRow, type UnreadRow, type ChannelRow, type FileInfoRow, type PostRow, type ReactionRow, type TeamRow, type ThreadRow, type ProfileRow } from './mirror.ts'
+import { channelModel, channelMemberModel, fileInfoModel, MATTERMOST_TARGET, MATTERMOST_UPLOAD_TARGET, MATTERMOST_USER_TARGET, memberKey, isCategoryId, parseCategory, parseDraft, parsePreference, parseStatus, parseUnread, postModel, reactionModel, teamModel, threadModel, profileModel, type CategoryRow, type ChannelMemberRow, type DraftRow, type PreferenceRow, type StatusRow, type UnreadRow, type ChannelRow, type FileInfoRow, type PostRow, type ReactionRow, type TeamRow, type ThreadRow, type ProfileRow } from './mirror.ts'
 import type { Channel, ChannelMember, ChannelUnreadAt, Draft, FileInfo, MattermostId, NewDraft, NewPost, Post, PostList, Preference, Reaction, SearchResult, SidebarCategories, SidebarCategory, StatusName, Team, User, UserStatus, UserThread, UserThreadList } from './types.ts'
 
 export * from './types.ts'

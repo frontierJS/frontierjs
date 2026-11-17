@@ -6571,12 +6571,24 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         expect(calls[0].body).toMatchObject({ app_id: app.id, databases: ['main.db'], image: 'registry.test/copy:1',
           config: { containerPort: 3000, volumePath: '/data' } })
         expect(calls[0].body.replica.app_id).toBeUndefined()
+        expect(calls[0].body.since).toBeUndefined()
+        expect(served.releaseId).toBe(release.id)
+
+        // The same release over a replica that has not moved keeps the copy
+        // rather than restoring it (FJS-4424): `since` is the copy's as-of.
+        const kept = await refreshCopy(env.app, { copy: served, target: await sys.app.findFirst({ where: { id: app.id } }), executor }) as any
+        expect(calls[1].body.since).toBe('2026-11-05T03:00:00.000Z')
+        expect(kept).toMatchObject({ status: 'success', asOf: '2026-11-05T03:00:00.000Z' })
+        const restaged = await refreshCopy(env.app, { copy: { ...served, releaseId: 'an-older-release' }, target: await sys.app.findFirst({ where: { id: app.id } }), executor }) as any
+        expect(restaged).toMatchObject({ status: 'success' })
+        expect(calls[2].body.since).toBeUndefined()
+        calls.length = 1
 
         answer = { error: { message: 'the copy never answered read-only' } }
         expect(await refresh()).toMatchObject({ status: 'failed', asOf: '2026-11-05T03:00:00.000Z', error: 'the copy never answered read-only' })
         answer = { data: {} }
         expect(await refresh()).toMatchObject({ status: 'failed', asOf: '2026-11-05T03:00:00.000Z', error: expect.stringMatching(/no as_of/),
-          refreshedAt: served.refreshedAt })
+          refreshedAt: restaged.refreshedAt })
 
         // Once the workspace holds its wildcard the copy answers at its own
         // name (FJS-D1982), and the wildcard reaches the machine first, since

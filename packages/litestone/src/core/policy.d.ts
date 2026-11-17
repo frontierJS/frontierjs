@@ -46,6 +46,7 @@ export function compileFieldPredicate(modelName: string, exprs: unknown[] | null
     params: any[];
 };
 export function buildPolicyFilter(modelName?: any, op?: any, ctx?: any): import("./query.js").SqlFragment;
+export function compileMoveGuard(modelName?: any, guard?: any, ctx?: any): import("./query.js").SqlFragment;
 /**
  * Does this policy admit this row, evaluated in JS — `{ ok }`, plus the
  * refusing rule's own message where it has one.

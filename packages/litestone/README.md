@@ -2368,7 +2368,9 @@ const { loaded, rejects } = await loadRows(db.asSystem(), 'Lead', csvText, {
 - `loaded + rejects.length` is always the number of input rows.
 - **A reason never quotes the cell**: the text may be what the column encrypts.
 - A header naming no column, or a required column with no default that the file
-  lacks, **throws** before any row: every row would be rejected for it.
+  lacks, **throws** before any row: every row would be rejected for it. Under
+  `mode: 'upsert'` it does not: a row whose key is stored keeps the value the
+  file lacks or leaves blank, and a row whose key is new is a reject naming it.
 - A non-string value (a record from an API) goes to the ORM as it is.
 - The source is read as the load writes, a `batch` at a time: memory is a batch
   and the keys seen, not the file. Records may be an array or any (async)

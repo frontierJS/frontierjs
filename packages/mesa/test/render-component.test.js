@@ -90,6 +90,24 @@ describe('renderComponent — target: html', () => {
     )
     expect(result.subject).toBe('Welcome, Alice!')
   })
+
+  // FJS-4403: a page's title and og: tags were rendered and thrown away.
+  it('result.head carries what <mesa:head> wrote, and the body does not', async () => {
+    const result = await renderComponent(
+      `<script>export let title = ''</script>` +
+      `<mesa:head><title>{title}</title><meta property="og:title" content={title}></mesa:head><p>body</p>`,
+      { data: { title: 'Shared' }, cwd: '/tmp/mesa', target: 'html' }
+    )
+    expect(result.head).toContain('<title>Shared</title>')
+    expect(result.head).toContain('<meta property="og:title" content="Shared">')
+    expect(result.html).not.toContain('og:title')
+    expect(result.html).toContain('<p>body</p>')
+  })
+
+  it('result.head is empty when nothing wrote one', async () => {
+    const result = await renderComponent(`<p>x</p>`, { cwd: '/tmp/mesa', target: 'html' })
+    expect(result.head).toBe('')
+  })
 })
 
 // ── Import resolution ─────────────────────────────────────────────────────────

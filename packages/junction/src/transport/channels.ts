@@ -36,7 +36,7 @@ import { DEV_ENV }            from '@frontierjs/toolbelt/devline'
 import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markAnnounceHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
-import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders } from '../core/litestone.ts'
+import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders, resolverClaimsFor, PRINCIPAL_RESOLVER, type PrincipalSetting } from '../core/litestone.ts'
 import { PROTOCOL_CALL_HEADERS, acceptedRequestId, callDb } from '../core/context.ts'
 import { serviceAccessor, channelsOf } from '../core/service.ts'
 import { columnsUnmoved }       from '../core/write-narrowing.ts'
@@ -426,6 +426,36 @@ async function resolveSchemaClaims(db: unknown, user: unknown, label?: string): 
   }
 }
 
+/**
+ * What the app's `principal:` resolver answers for one signed-in recipient,
+ * against the client the frame is graded on. Under the channel's claims and
+ * over the schema's, the order a request merges them in. A guest is not asked:
+ * what a guest's resolver reads is on the request, and a push has none.
+ */
+export type ResolverClaimsFn = (user: unknown, db: unknown) => Promise<Record<string, unknown> | null>
+
+const _resolverThrew = new Set<string>()
+
+async function resolveResolverClaims(resolve: ResolverClaimsFn | undefined, db: unknown, user: unknown, label?: string): Promise<Record<string, unknown> | null> {
+  if (!resolve || user == null) return null
+  try {
+    const got = await resolve(user, db)
+    return got && Object.keys(got).length ? got : null
+  } catch (err) {
+    // Graded carrying none, which is never wider: an absent claim fails an
+    // `@@allow` and fires an `@@deny`.
+    const key = label ?? ''
+    if (!_resolverThrew.has(key)) {
+      _resolverThrew.add(key)
+      console.warn(
+        `[Junction] the principal resolver threw while grading a '${label ?? 'channel'}' broadcast, so its ` +
+        `recipient is graded carrying none of its claims: ${(err as Error)?.message ?? err}`
+      )
+    }
+    return null
+  }
+}
+
 /** The claim name the tenancy deny reads, under `strategy row` only. */
 function rowTenancyClaim(db: unknown): string | null {
   if (!db || typeof db !== 'object' || !('$tenancy' in db)) return null
@@ -562,6 +592,7 @@ export async function gradeRecipients(
   mode:    'row' | 'gate' = 'row',
   claimsFor?: ChannelClaimsFn,
   channelsOf?: (conn: Connection) => Iterable<string>,
+  resolverFor?: ResolverClaimsFn,
 ): Promise<Cohort[] | null> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
 
@@ -646,7 +677,12 @@ export async function gradeRecipients(
   }
   const fromSchema = new Map<unknown, Record<string, unknown> | null>()
   await Promise.all([...byPrincipal].map(async ([key, group]) => {
-    fromSchema.set(key, await resolveSchemaClaims(db, group.user, src.label))
+    // The resolver is handed a principal already carrying the schema's claims,
+    // as a request hands it one.
+    const schema   = await resolveSchemaClaims(db, group.user, src.label)
+    const resolved = await resolveResolverClaims(resolverFor, db,
+      schema && group.user ? { ...(group.user as object), ...schema } : group.user, src.label)
+    fromSchema.set(key, schema || resolved ? { ...schema, ...resolved } : null)
   }))
   const asked = [...byChannel].flatMap(([key, chans]) => [...chans].map(([name, conns]) => ({ key, name, conns })))
   const answers = claimsFor
@@ -835,7 +871,7 @@ export interface PresenceOptions {
   flushMs: number
 }
 
-export function createChannelManager(presenceOptions?: PresenceOptions, claimsFor?: ChannelClaimsFn, rooms?: RoomPolicy) {
+export function createChannelManager(presenceOptions?: PresenceOptions, claimsFor?: ChannelClaimsFn, rooms?: RoomPolicy, resolverFor?: ResolverClaimsFn) {
 
   const _presenceOptions: PresenceOptions = presenceOptions ?? { enabled: () => false, flushMs: 50 }
 
@@ -977,7 +1013,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       if (!row) return new Set()
       const probe = new Channel(name)
       for (const conn of conns) probe.connections.add(conn)
-      const graded = await gradeRecipients([probe], 'room', row, { db, accessor: room.model }, 'row', claimsFor, channelsOf)
+      const graded = await gradeRecipients([probe], 'room', row, { db, accessor: room.model }, 'row', claimsFor, channelsOf, resolverFor)
       // Null once the row was read means the model can only ever say yes.
       if (graded === null) return new Set(conns.filter(c => c.socket.readyState === 1))
       return new Set(graded.flatMap(c => c.conns))
@@ -1145,7 +1181,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
         if (ch && !targets.includes(ch)) targets.push(ch)
       }
       if (!targets.length) return
-      const graded = await gradeRecipients(targets, event, payload, src, mode, claimsFor, channelsOf)
+      const graded = await gradeRecipients(targets, event, payload, src, mode, claimsFor, channelsOf, resolverFor)
       if (!graded) {
         // Ungraded means "no boundary to ask", which is a reason to send a row
         // and none to send a removal nobody was shown to be owed.
@@ -1395,7 +1431,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
         // row it answers belongs to another model (`FJS-D914`).
         accessor: accessor ?? serviceAccessor({ name: (ctx as { service?: string }).service ?? '', model: svc?.model }) ?? '',
         label:    (ctx as { service?: string }).service,
-      }, 'row', claimsFor, channelsOf)
+      }, 'row', claimsFor, channelsOf, resolverFor)
       if (graded) {
         for (const { conns, frame } of graded)
           for (const conn of conns)
@@ -1677,7 +1713,13 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
       const rooms: RoomPolicy | undefined = opts.rooms
         ? { match: roomMatcher(opts.rooms, !!app.tenants), open: openRoomClient(app) }
         : undefined
-      const manager = createChannelManager({ enabled, flushMs: opts.presenceFlushMs ?? 50 }, opts.claims, rooms)
+      // Read per frame rather than here: `createApp` parks the resolver, and a
+      // plugin may be configured before it is.
+      const resolverFor: ResolverClaimsFn = async (user, db) => {
+        const principal = (app as unknown as Record<symbol, PrincipalSetting | undefined>)[PRINCIPAL_RESOLVER]
+        return principal ? resolverClaimsFor(app, db, principal, user as never) : null
+      }
+      const manager = createChannelManager({ enabled, flushMs: opts.presenceFlushMs ?? 50 }, opts.claims, rooms, resolverFor)
       if (typeof app.own === 'function') app.own('channels', manager)
       else (app as unknown as Record<string, unknown>).channels = manager
       _manager = manager
